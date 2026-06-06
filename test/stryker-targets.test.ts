@@ -3,6 +3,10 @@ import {
   MUTATION_TARGETS,
   DEFAULT_TARGET,
   resolveTarget,
+  isHardExclusion,
+  isApprovedExclusion,
+  assertAllowedTarget,
+  HUMAN_APPROVED_EXCLUSIONS,
 } from "../stryker.targets.mjs";
 
 describe("mutation target registry", () => {
@@ -26,18 +30,7 @@ describe("mutation target registry", () => {
     expect(() => resolveTarget("nope")).toThrow(/macro-gap-context/);
   });
 
-  const FORBIDDEN =
-    /(^|\/)auth\.ts|api-key-auth|goal-calculator|adaptive-goals|receipt-validation|healthkit|(^|\/)health\.ts|jwt-|shared\/schema\.ts|(^|\/)migrations\//i;
-
-  it("never registers a Hard-Exclusion module (policy guard)", () => {
-    const paths = Object.values(MUTATION_TARGETS).flatMap((t) => [
-      ...t.mutate,
-      ...t.testInclude,
-    ]);
-    for (const p of paths) expect(p).not.toMatch(FORBIDDEN);
-  });
-
-  it("policy guard regex actually matches known Hard-Exclusion paths", () => {
+  it("isHardExclusion matches known Hard-Exclusion paths", () => {
     const forbiddenExamples = [
       "server/middleware/auth.ts",
       "server/routes/auth.ts",
@@ -51,6 +44,77 @@ describe("mutation target registry", () => {
       "shared/schema.ts",
       "migrations/0001_init.ts",
     ];
-    for (const p of forbiddenExamples) expect(p).toMatch(FORBIDDEN);
+    for (const p of forbiddenExamples) expect(isHardExclusion(p)).toBe(true);
+  });
+
+  it("isHardExclusion clears non-excluded targets", () => {
+    expect(isHardExclusion("server/lib/verification-consensus.ts")).toBe(false);
+    expect(isHardExclusion("server/lib/macro-gap-context.ts")).toBe(false);
+  });
+
+  it("every registered target passes the approval gate", () => {
+    for (const [name, target] of Object.entries(MUTATION_TARGETS)) {
+      expect(() => assertAllowedTarget(name, target)).not.toThrow();
+    }
+  });
+
+  it("assertAllowedTarget throws for an unapproved Hard-Exclusion target", () => {
+    expect(() =>
+      assertAllowedTarget("fake-auth", {
+        mutate: ["server/middleware/auth.ts"],
+        testInclude: ["server/__tests__/auth.test.ts"],
+      }),
+    ).toThrow(/HUMAN_APPROVED_EXCLUSIONS/);
+  });
+
+  it("fail-closed: an approval entry with an empty note does NOT count", () => {
+    const approvals = {
+      "server/middleware/auth.ts": {
+        approvedOn: "x",
+        planPath: "p",
+        note: "   ",
+      },
+    };
+    expect(() =>
+      assertAllowedTarget(
+        "fake-auth",
+        {
+          mutate: ["server/middleware/auth.ts"],
+          testInclude: ["server/__tests__/auth.test.ts"],
+        },
+        approvals,
+      ),
+    ).toThrow();
+  });
+
+  it("passes for an approval entry with non-empty note + planPath", () => {
+    const approvals = {
+      "server/middleware/auth.ts": {
+        approvedOn: "2026-06-05",
+        planPath: "docs/mutation-testing/README.md",
+        note: "approved for a test",
+      },
+    };
+    expect(() =>
+      assertAllowedTarget(
+        "fake-auth",
+        {
+          mutate: ["server/middleware/auth.ts"],
+          testInclude: ["server/__tests__/auth.test.ts"],
+        },
+        approvals,
+      ),
+    ).not.toThrow();
+  });
+
+  it("the two goal-safety modules are approved with provenance", () => {
+    for (const src of [
+      "server/services/goal-calculator.ts",
+      "server/services/adaptive-goals.ts",
+    ]) {
+      expect(isApprovedExclusion(src)).toBe(true);
+      expect(HUMAN_APPROVED_EXCLUSIONS[src].planPath.trim()).not.toBe("");
+      expect(HUMAN_APPROVED_EXCLUSIONS[src].note.trim()).not.toBe("");
+    }
   });
 });
