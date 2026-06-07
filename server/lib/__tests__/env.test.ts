@@ -18,6 +18,11 @@ describe("validateEnv R2 production guard", () => {
   const saved = { ...process.env };
   beforeEach(() => {
     process.env = { ...saved, ...BASE };
+    // CI sets RECEIPT_VALIDATION_STUB=true globally. With NODE_ENV=production
+    // that guard throws before the R2 check, masking these cases (passes
+    // locally only because the dev shell doesn't set it). Clear it so each
+    // test exercises the R2 production guard in isolation.
+    delete process.env.RECEIPT_VALIDATION_STUB;
   });
   afterEach(() => {
     process.env = saved;
