@@ -303,7 +303,9 @@ export function register(app: Express): void {
         const user = await storage.updateUser(req.userId, { avatarUrl });
 
         if (!user) {
-          await deleteImage(avatarUrl); // roll back the just-uploaded object
+          // Best-effort rollback; the request already fails 404, so a cleanup
+          // failure must not turn it into a 500.
+          await deleteImage(avatarUrl).catch(() => {}); // roll back the just-uploaded object
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
@@ -330,8 +332,9 @@ export function register(app: Express): void {
     crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        // Clear the DB pointer first so a retryable storage cleanup failure
+        // can't 500 the request or leave the row pointing at a deleted object.
         const currentUser = await storage.getUser(req.userId);
-        await deleteImage(currentUser?.avatarUrl);
 
         const user = await storage.updateUser(req.userId, {
           avatarUrl: null,
@@ -340,6 +343,10 @@ export function register(app: Express): void {
         if (!user) {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
+
+        // Best-effort cleanup after the DB is cleared; a storage failure here
+        // must not 500 a request whose updateUser already succeeded.
+        await deleteImage(currentUser?.avatarUrl).catch(() => {});
 
         res.json({ success: true });
       } catch (error) {

@@ -817,6 +817,11 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(200);
       // Old avatar should have been deleted via image-store after the update.
       expect(mockDeleteImage).toHaveBeenCalledWith("/api/avatars/1-old.jpg");
+      // Cleanup must run AFTER the DB pointer is updated, so a delete failure
+      // can never strand the user with a missing avatar still referenced.
+      expect(mockDeleteImage.mock.invocationCallOrder[0]).toBeGreaterThan(
+        vi.mocked(storage.updateUser).mock.invocationCallOrder[0],
+      );
     });
 
     it("forwards a non-local old avatarUrl to image-store (no-op there)", async () => {
