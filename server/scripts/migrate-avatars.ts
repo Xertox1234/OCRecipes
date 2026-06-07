@@ -1,5 +1,12 @@
 /* eslint-disable no-console */
 /**
+ * DEPRECATED (2026-06): one-shot legacy migration that writes images to LOCAL DISK
+ * and stores relative `/api/...` URLs. Superseded by Cloudflare R2 storage. Do NOT
+ * run after the R2 deployment — it would reintroduce ephemeral disk paths. Use
+ * `npm run migrate:images-r2` (server/scripts/migrate-images-to-r2.ts) instead.
+ * Kept for historical reference only.
+ */
+/**
  * Migration script: converts existing base64 avatar data URLs stored in the
  * users table into files on disk under uploads/avatars/.
  *

@@ -348,4 +348,8 @@ describe("resolveImageUrl", () => {
     expect(resolveImageUrl(null)).toBeNull();
     expect(resolveImageUrl(undefined)).toBeNull();
   });
+  it("prepends the API base to a relative /api path", () => {
+    const out = resolveImageUrl("/api/recipe-images/foo.png");
+    expect(out).toMatch(/^https?:\/\/.+\/api\/recipe-images\/foo\.png$/);
+  });
 });

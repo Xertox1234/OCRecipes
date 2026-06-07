@@ -166,6 +166,12 @@ async function main() {
       "R2 is not configured — set R2_* env vars before applying.",
     );
   }
+  if (!fs.existsSync(UPLOADS_ROOT)) {
+    console.warn(
+      `WARNING: ${UPLOADS_ROOT} not found — every row will report MISSING. ` +
+        `Run this on the machine that holds the original uploads/ tree.`,
+    );
+  }
   const a = await migrateRecipeTable("communityRecipes", communityRecipes);
   const b = await migrateRecipeTable("mealPlanRecipes", mealPlanRecipes);
   const c = await migrateAvatars();

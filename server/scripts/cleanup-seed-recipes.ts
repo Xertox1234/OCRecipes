@@ -50,8 +50,7 @@ const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
 // Accept only filenames with safe chars and an image extension. This blocks
 // path-traversal (`../`) and absolute paths that could be injected via a
 // malicious `imageUrl` in the DB. Keep in sync with allowed extensions used
-// by `server/services/recipe-generation.ts::saveImageBuffer` (currently
-// `.png`).
+// by `server/lib/image-store.ts::saveRecipeImage` (currently `.png`).
 const IMAGE_FILENAME_PATTERN = /^[a-zA-Z0-9._-]+\.(jpg|jpeg|png|webp)$/;
 
 function parseArgs(argv: string[]): { commit: boolean } {
