@@ -1,5 +1,5 @@
 import { ApiError } from "../api-error";
-import { appStateToFocus } from "../query-client";
+import { appStateToFocus, resolveImageUrl } from "../query-client";
 
 // Test the getApiUrl function logic
 describe("getApiUrl", () => {
@@ -327,5 +327,25 @@ describe("URL Construction", () => {
     const url = new URL(queryKey.join("/") as string, baseUrl);
 
     expect(url.href).toBe("http://localhost:3000/api/scanned-items/123");
+  });
+});
+
+describe("resolveImageUrl", () => {
+  // After the R2 migration the DB stores absolute CDN URLs. resolveImageUrl
+  // must pass http(s)/data: URLs through unchanged and only prepend the API
+  // base to legacy relative paths — these assertions lock that contract so a
+  // future refactor can't silently re-break R2 image URLs.
+  it("returns absolute R2/CDN URLs unchanged", () => {
+    const url = "https://img.example.com/recipe-images/recipe-abc.png";
+    expect(resolveImageUrl(url)).toBe(url);
+  });
+  it("passes data: URLs through unchanged", () => {
+    expect(resolveImageUrl("data:image/png;base64,AAAA")).toBe(
+      "data:image/png;base64,AAAA",
+    );
+  });
+  it("returns null for nullish input", () => {
+    expect(resolveImageUrl(null)).toBeNull();
+    expect(resolveImageUrl(undefined)).toBeNull();
   });
 });
