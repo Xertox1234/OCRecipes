@@ -1,7 +1,4 @@
 import { z } from "zod";
-import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import type { UserProfile } from "@shared/schema";
 import type {
   RecipeContent,
@@ -18,15 +15,13 @@ import {
   generateImage as runwareGenerateImage,
   isRunwareConfigured,
 } from "../lib/runware";
+import { saveRecipeImage } from "../lib/image-store";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { createServiceLogger, toError } from "../lib/logger";
 import { storage } from "../storage";
 
 const log = createServiceLogger("recipe-generation");
-
-const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
-fs.mkdirSync(RECIPE_IMAGES_DIR, { recursive: true });
 
 // Zod schemas for recipe generation
 const ingredientSchema = z.object({
@@ -357,18 +352,8 @@ export async function generateRecipeImage(
   }
 }
 
-const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
-
 async function saveImageBuffer(buffer: Buffer): Promise<string> {
-  if (buffer.length > MAX_IMAGE_SIZE_BYTES) {
-    throw new Error(
-      `Image too large: ${buffer.length} bytes (max ${MAX_IMAGE_SIZE_BYTES})`,
-    );
-  }
-  const filename = `recipe-${crypto.randomUUID()}.png`;
-  const filepath = path.join(RECIPE_IMAGES_DIR, filename);
-  await fs.promises.writeFile(filepath, buffer);
-  return `/api/recipe-images/${filename}`;
+  return saveRecipeImage(buffer);
 }
 
 /**

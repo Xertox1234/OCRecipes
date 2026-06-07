@@ -1,7 +1,6 @@
-import fs from "node:fs";
-import path from "node:path";
 import crypto from "node:crypto";
 import { logger } from "./logger";
+import { saveRecipeImage } from "./image-store";
 import { z } from "zod";
 
 const RUNWARE_API_URL = "https://api.runware.ai/v1";
@@ -175,19 +174,10 @@ export async function removeBackground(
   }
 }
 
-const IMAGES_DIR = path.join(process.cwd(), "uploads", "recipe-images");
-const MAX_IMAGE_BUFFER_SIZE = 10 * 1024 * 1024; // 10 MB
-
 /**
- * Save an image Buffer to uploads/recipe-images/ and return the API URL path.
- * Throws if the buffer exceeds the 10 MB size limit.
+ * Persist a generated image Buffer (delegates to the image-store, which writes
+ * to R2 in production and disk in dev). Returns the stored URL.
  */
 export async function saveImageBuffer(buffer: Buffer): Promise<string> {
-  if (buffer.length > MAX_IMAGE_BUFFER_SIZE) {
-    throw new Error(`Image too large: ${buffer.length} bytes`);
-  }
-  await fs.promises.mkdir(IMAGES_DIR, { recursive: true });
-  const filename = `recipe-${crypto.randomUUID()}.png`;
-  await fs.promises.writeFile(path.join(IMAGES_DIR, filename), buffer);
-  return `/api/recipe-images/${filename}`;
+  return saveRecipeImage(buffer);
 }
