@@ -1,0 +1,191 @@
+/* eslint-disable no-console */
+/**
+ * One-shot backfill: upload existing on-disk images to Cloudflare R2 and
+ * rewrite their stored URLs (relative `/api/...`) to absolute CDN URLs.
+ *
+ * Covers communityRecipes.imageUrl, mealPlanRecipes.imageUrl, users.avatarUrl.
+ * Requires R2_* env vars set and the local `uploads/` tree present.
+ *
+ * Usage:
+ *   npx tsx server/scripts/migrate-images-to-r2.ts            # apply
+ *   npx tsx server/scripts/migrate-images-to-r2.ts --dry-run  # preview only
+ */
+import "dotenv/config";
+import fs from "node:fs";
+import path from "node:path";
+import { db, pool } from "../db";
+import { communityRecipes, mealPlanRecipes, users } from "@shared/schema";
+import { eq, like } from "drizzle-orm";
+import {
+  isR2Configured,
+  saveRecipeImage,
+  saveAvatar,
+} from "../lib/image-store";
+
+const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
+const DRY_RUN = process.argv.includes("--dry-run");
+
+function diskPathFor(relativeUrl: string): string | null {
+  // /api/recipe-images/<f> -> uploads/recipe-images/<f>; same for avatars
+  const m = relativeUrl.match(/^\/api\/(recipe-images|avatars)\/(.+)$/);
+  if (!m) return null;
+  return path.join(UPLOADS_ROOT, m[1], path.basename(m[2]));
+}
+
+function extOf(file: string): "jpg" | "png" | "webp" {
+  const e = path.extname(file).slice(1).toLowerCase();
+  if (e === "png") return "png";
+  if (e === "webp") return "webp";
+  return "jpg";
+}
+
+type UploadResult =
+  | { status: "uploaded"; url: string }
+  | { status: "wouldMigrate" }
+  | { status: "missing" };
+
+async function uploadOne(
+  relativeUrl: string,
+  kind: "recipe" | "avatar",
+  userId?: string,
+): Promise<UploadResult> {
+  const diskPath = diskPathFor(relativeUrl);
+  if (!diskPath || !fs.existsSync(diskPath)) {
+    console.log(`  MISSING on disk: ${relativeUrl}`);
+    return { status: "missing" };
+  }
+  if (DRY_RUN) {
+    console.log(`  [dry-run] would upload ${relativeUrl}`);
+    return { status: "wouldMigrate" };
+  }
+  const buffer = await fs.promises.readFile(diskPath);
+  if (kind === "recipe") {
+    return { status: "uploaded", url: await saveRecipeImage(buffer) };
+  }
+  if (!userId) throw new Error("userId required for avatar upload");
+  return {
+    status: "uploaded",
+    url: await saveAvatar(buffer, extOf(diskPath), userId),
+  };
+}
+
+type MigrationCounts = {
+  migrated: number;
+  wouldMigrate: number;
+  missing: number;
+  failed: number;
+};
+
+async function migrateRecipeTable(
+  label: string,
+  table: typeof communityRecipes | typeof mealPlanRecipes,
+) {
+  const rows = await db
+    .select({ id: table.id, imageUrl: table.imageUrl })
+    .from(table)
+    .where(like(table.imageUrl, "/api/recipe-images/%"));
+  console.log(`\n${label}: ${rows.length} row(s) to migrate`);
+  const counts: MigrationCounts = {
+    migrated: 0,
+    wouldMigrate: 0,
+    missing: 0,
+    failed: 0,
+  };
+  for (const row of rows) {
+    try {
+      const result = await uploadOne(row.imageUrl!, "recipe");
+      if (result.status === "uploaded") {
+        await db
+          .update(table)
+          .set({ imageUrl: result.url })
+          .where(eq(table.id, row.id));
+        counts.migrated++;
+        console.log(`  [${row.id}] -> ${result.url}`);
+      } else if (result.status === "wouldMigrate") {
+        counts.wouldMigrate++;
+      } else {
+        counts.missing++;
+      }
+    } catch (err) {
+      counts.failed++;
+      console.error(`  [${row.id}] FAILED:`, err);
+      continue;
+    }
+  }
+  console.log(
+    `${label}: migrated ${counts.migrated}, wouldMigrate ${counts.wouldMigrate}, missing ${counts.missing}, failed ${counts.failed}`,
+  );
+  return counts;
+}
+
+async function migrateAvatars() {
+  const rows = await db
+    .select({ id: users.id, avatarUrl: users.avatarUrl })
+    .from(users)
+    .where(like(users.avatarUrl, "/api/avatars/%"));
+  console.log(`\nusers.avatarUrl: ${rows.length} row(s) to migrate`);
+  const counts: MigrationCounts = {
+    migrated: 0,
+    wouldMigrate: 0,
+    missing: 0,
+    failed: 0,
+  };
+  for (const row of rows) {
+    try {
+      const result = await uploadOne(row.avatarUrl!, "avatar", row.id);
+      if (result.status === "uploaded") {
+        await db
+          .update(users)
+          .set({ avatarUrl: result.url })
+          .where(eq(users.id, row.id));
+        counts.migrated++;
+        console.log(`  [${row.id}] -> ${result.url}`);
+      } else if (result.status === "wouldMigrate") {
+        counts.wouldMigrate++;
+      } else {
+        counts.missing++;
+      }
+    } catch (err) {
+      counts.failed++;
+      console.error(`  [${row.id}] FAILED:`, err);
+      continue;
+    }
+  }
+  console.log(
+    `users.avatarUrl: migrated ${counts.migrated}, wouldMigrate ${counts.wouldMigrate}, missing ${counts.missing}, failed ${counts.failed}`,
+  );
+  return counts;
+}
+
+async function main() {
+  console.log(
+    `=== Migrate disk images to R2 ${DRY_RUN ? "(dry-run)" : ""} ===`,
+  );
+  if (!DRY_RUN && !isR2Configured()) {
+    throw new Error(
+      "R2 is not configured — set R2_* env vars before applying.",
+    );
+  }
+  if (!fs.existsSync(UPLOADS_ROOT)) {
+    console.warn(
+      `WARNING: ${UPLOADS_ROOT} not found — every row will report MISSING. ` +
+        `Run this on the machine that holds the original uploads/ tree.`,
+    );
+  }
+  const a = await migrateRecipeTable("communityRecipes", communityRecipes);
+  const b = await migrateRecipeTable("mealPlanRecipes", mealPlanRecipes);
+  const c = await migrateAvatars();
+  const migrated = a.migrated + b.migrated + c.migrated;
+  const wouldMigrate = a.wouldMigrate + b.wouldMigrate + c.wouldMigrate;
+  const missing = a.missing + b.missing + c.missing;
+  const failed = a.failed + b.failed + c.failed;
+  console.log(
+    `\n=== Done. migrated=${migrated}, wouldMigrate=${wouldMigrate}, missing=${missing}, failed=${failed} ===`,
+  );
+  await pool.end();
+}
+
+main().catch((err) => {
+  console.error("Fatal error:", err);
+  void pool.end().then(() => process.exit(1));
+});

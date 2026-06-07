@@ -47,27 +47,25 @@ vi.mock("../../lib/image-mime", () => ({
   detectImageMimeType: vi.fn(),
 }));
 
-const { mockWriteFile, mockUnlink, mockMkdirSync } = vi.hoisted(() => ({
-  mockWriteFile: vi.fn().mockResolvedValue(undefined),
-  mockUnlink: vi.fn((_path: string, cb: () => void) => cb()),
-  mockMkdirSync: vi.fn(),
+// Avatar persistence now flows through ../lib/image-store (saveAvatar /
+// deleteImage), which wraps R2-or-disk I/O. Mock that boundary instead of fs.
+// saveAvatar returns a disk-mode URL so the existing URL-shape assertions hold;
+// deleteImage is a spy the handlers delegate old/new-avatar cleanup to.
+// (The basename/traversal stripping + external-URL no-op live in image-store
+// itself and are covered by server/lib/__tests__/image-store.test.ts.)
+const { mockSaveAvatar, mockDeleteImage } = vi.hoisted(() => ({
+  mockSaveAvatar: vi
+    .fn()
+    .mockImplementation((_buffer: Buffer, ext: string, userId: string) =>
+      Promise.resolve(`/api/avatars/${userId}-${Date.now()}.${ext}`),
+    ),
+  mockDeleteImage: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("fs", async () => {
-  const actual = await vi.importActual<typeof import("fs")>("fs");
-  return {
-    ...actual,
-    default: {
-      ...actual,
-      mkdirSync: mockMkdirSync,
-      unlink: mockUnlink,
-      promises: { ...actual.promises, writeFile: mockWriteFile },
-    },
-    mkdirSync: mockMkdirSync,
-    unlink: mockUnlink,
-    promises: { ...actual.promises, writeFile: mockWriteFile },
-  };
-});
+vi.mock("../../lib/image-store", () => ({
+  saveAvatar: mockSaveAvatar,
+  deleteImage: mockDeleteImage,
+}));
 
 function createApp() {
   const app = express();
@@ -541,7 +539,7 @@ describe("Auth Routes", () => {
 
       vi.mocked(storage.getUserForAuth).mockResolvedValue(userWithHash);
       vi.mocked(storage.deleteUser).mockResolvedValue(true);
-      mockUnlink.mockClear();
+      mockDeleteImage.mockClear();
 
       const res = await request(app)
         .delete("/api/auth/account")
@@ -549,10 +547,8 @@ describe("Auth Routes", () => {
         .send({ password: "correctpassword" });
 
       expect(res.status).toBe(200);
-      const unlinkCalls = mockUnlink.mock.calls;
-      expect(unlinkCalls.length).toBeGreaterThan(0);
-      const lastCall = unlinkCalls[unlinkCalls.length - 1];
-      expect(lastCall[0]).toMatch(/avatars[/\\]1-123\.jpg$/);
+      // The deleted user's own avatar is cleaned up via image-store.
+      expect(mockDeleteImage).toHaveBeenCalledWith("/api/avatars/1-123.jpg");
     });
   });
 
@@ -650,10 +646,12 @@ describe("Auth Routes", () => {
       expect(res.body.error).toContain("Invalid image content");
     });
 
-    it("returns 404 when user not found after update", async () => {
+    it("returns 404 and rolls back the new avatar when user not found after update", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
       vi.mocked(storage.getUser).mockResolvedValue(mockUser);
       vi.mocked(storage.updateUser).mockResolvedValue(undefined);
+      mockSaveAvatar.mockResolvedValueOnce("/api/avatars/1-rollback.jpg");
+      mockDeleteImage.mockClear();
 
       const res = await request(app)
         .post("/api/user/avatar")
@@ -664,6 +662,10 @@ describe("Auth Routes", () => {
         });
 
       expect(res.status).toBe(404);
+      // The just-saved avatar must be rolled back via image-store.
+      expect(mockDeleteImage).toHaveBeenCalledWith(
+        "/api/avatars/1-rollback.jpg",
+      );
     });
 
     it("returns 500 when storage throws", async () => {
@@ -724,23 +726,25 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(500);
     });
 
-    it("sanitizes path traversal in stored avatarUrl", async () => {
+    it("delegates the stored avatarUrl to image-store for deletion", async () => {
+      // The route forwards the user's own stored avatarUrl to image-store; the
+      // path.basename traversal-stripping now lives in deleteImage and is
+      // covered by server/lib/__tests__/image-store.test.ts.
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ avatarUrl: "/api/avatars/../../etc/passwd" }),
       );
       const updated = createMockUser({ avatarUrl: null });
       vi.mocked(storage.updateUser).mockResolvedValue(updated);
+      mockDeleteImage.mockClear();
 
       const res = await request(app)
         .delete("/api/user/avatar")
         .set("Authorization", "Bearer mock-token");
 
       expect(res.status).toBe(200);
-      // path.basename strips traversal — unlink target should be just "passwd"
-      const unlinkCalls = mockUnlink.mock.calls;
-      const lastCall = unlinkCalls[unlinkCalls.length - 1];
-      expect(lastCall[0]).not.toContain("..");
-      expect(lastCall[0]).toMatch(/avatars[/\\]passwd$/);
+      expect(mockDeleteImage).toHaveBeenCalledWith(
+        "/api/avatars/../../etc/passwd",
+      );
     });
   });
 
@@ -799,7 +803,7 @@ describe("Auth Routes", () => {
         avatarUrl: "/api/avatars/1-new.jpg",
       });
       vi.mocked(storage.updateUser).mockResolvedValue(updated);
-      mockUnlink.mockClear();
+      mockDeleteImage.mockClear();
 
       const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
       const res = await request(app)
@@ -811,14 +815,18 @@ describe("Auth Routes", () => {
         });
 
       expect(res.status).toBe(200);
-      // Old avatar file should have been deleted
-      expect(mockUnlink).toHaveBeenCalledWith(
-        expect.stringContaining("1-old.jpg"),
-        expect.any(Function),
+      // Old avatar should have been deleted via image-store after the update.
+      expect(mockDeleteImage).toHaveBeenCalledWith("/api/avatars/1-old.jpg");
+      // Cleanup must run AFTER the DB pointer is updated, so a delete failure
+      // can never strand the user with a missing avatar still referenced.
+      expect(mockDeleteImage.mock.invocationCallOrder[0]).toBeGreaterThan(
+        vi.mocked(storage.updateUser).mock.invocationCallOrder[0],
       );
     });
 
-    it("skips old avatar deletion when avatarUrl is not a local path", async () => {
+    it("forwards a non-local old avatarUrl to image-store (no-op there)", async () => {
+      // The route always delegates the old avatarUrl to deleteImage; image-store
+      // no-ops on unrecognized/external URLs (covered by image-store.test.ts).
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ avatarUrl: "https://external.com/avatar.jpg" }),
@@ -827,7 +835,7 @@ describe("Auth Routes", () => {
         avatarUrl: "/api/avatars/1-new.jpg",
       });
       vi.mocked(storage.updateUser).mockResolvedValue(updated);
-      mockUnlink.mockClear();
+      mockDeleteImage.mockClear();
 
       const jpegBuffer = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
       const res = await request(app)
@@ -839,8 +847,9 @@ describe("Auth Routes", () => {
         });
 
       expect(res.status).toBe(200);
-      // unlink should NOT have been called for external URLs
-      expect(mockUnlink).not.toHaveBeenCalled();
+      expect(mockDeleteImage).toHaveBeenCalledWith(
+        "https://external.com/avatar.jpg",
+      );
     });
   });
 
@@ -862,13 +871,13 @@ describe("Auth Routes", () => {
   });
 
   describe("DELETE /api/user/avatar (edge cases)", () => {
-    it("handles null avatarUrl gracefully (no unlink called)", async () => {
+    it("handles null avatarUrl gracefully", async () => {
       vi.mocked(storage.getUser).mockResolvedValue(
         createMockUser({ avatarUrl: null }),
       );
       const updated = createMockUser({ avatarUrl: null });
       vi.mocked(storage.updateUser).mockResolvedValue(updated);
-      mockUnlink.mockClear();
+      mockDeleteImage.mockClear();
 
       const res = await request(app)
         .delete("/api/user/avatar")
@@ -876,7 +885,8 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(mockUnlink).not.toHaveBeenCalled();
+      // deleteImage receives null and no-ops (no file is touched).
+      expect(mockDeleteImage).toHaveBeenCalledWith(null);
     });
   });
 });

@@ -43,6 +43,7 @@
     "seed:recipes": "tsx server/scripts/seed-recipes.ts",
     "cleanup:seeds": "tsx server/scripts/cleanup-seed-recipes.ts",
     "cleanup:retention": "tsx server/scripts/cleanup-retention.ts",
+    "migrate:images-r2": "tsx server/scripts/migrate-images-to-r2.ts",
     "backfill:community-nutrition": "tsx server/scripts/backfill-community-nutrition.ts",
     "e2e": "maestro test e2e/flows/",
     "e2e:smoke": "maestro test --tags smoke e2e/flows/",
@@ -57,6 +58,7 @@
   },
   "dependencies": {
     "@apple/app-store-server-library": "^2.0.0",
+    "@aws-sdk/client-s3": "^3.1063.0",
     "@expo-google-fonts/nunito": "^0.4.2",
     "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/vector-icons": "^15.0.2",

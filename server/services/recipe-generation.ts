@@ -1,7 +1,4 @@
 import { z } from "zod";
-import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import type { UserProfile } from "@shared/schema";
 import type {
   RecipeContent,
@@ -18,15 +15,13 @@ import {
   generateImage as runwareGenerateImage,
   isRunwareConfigured,
 } from "../lib/runware";
+import { saveRecipeImage } from "../lib/image-store";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { createServiceLogger, toError } from "../lib/logger";
 import { storage } from "../storage";
 
 const log = createServiceLogger("recipe-generation");
-
-const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
-fs.mkdirSync(RECIPE_IMAGES_DIR, { recursive: true });
 
 // Zod schemas for recipe generation
 const ingredientSchema = z.object({
@@ -303,7 +298,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
 
 /**
  * Generate a food image using Runware (primary) or DALL-E 3 (fallback).
- * Saves to uploads/recipe-images/ and returns the URL path, or null on failure.
+ * Persists the image via the image-store (Cloudflare R2 in production, local disk in dev) and returns the URL, or null on failure.
  */
 export async function generateRecipeImage(
   recipeTitle: string,
@@ -318,7 +313,7 @@ export async function generateRecipeImage(
     try {
       const buffer = await runwareGenerateImage({ prompt });
       if (buffer) {
-        return await saveImageBuffer(buffer);
+        return await saveRecipeImage(buffer);
       }
       log.warn("Runware returned no image, falling back to DALL-E");
     } catch (error) {
@@ -350,25 +345,11 @@ export async function generateRecipeImage(
       return null;
     }
 
-    return await saveImageBuffer(Buffer.from(imageData, "base64"));
+    return await saveRecipeImage(Buffer.from(imageData, "base64"));
   } catch (error) {
     log.error({ err: toError(error) }, "DALL-E image generation error");
     return null;
   }
-}
-
-const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
-
-async function saveImageBuffer(buffer: Buffer): Promise<string> {
-  if (buffer.length > MAX_IMAGE_SIZE_BYTES) {
-    throw new Error(
-      `Image too large: ${buffer.length} bytes (max ${MAX_IMAGE_SIZE_BYTES})`,
-    );
-  }
-  const filename = `recipe-${crypto.randomUUID()}.png`;
-  const filepath = path.join(RECIPE_IMAGES_DIR, filename);
-  await fs.promises.writeFile(filepath, buffer);
-  return `/api/recipe-images/${filename}`;
 }
 
 /**

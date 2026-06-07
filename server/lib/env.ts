@@ -26,6 +26,14 @@ const envSchema = z.object({
   USDA_API_KEY: z.string().optional(),
   API_NINJAS_KEY: z.string().optional(),
   RUNWARE_API_KEY: z.string().optional(),
+
+  // Cloudflare R2 image storage (required in production — see guard below)
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+  R2_PUBLIC_BASE_URL: z.string().url().optional(),
+
   EXPO_PUBLIC_DOMAIN: z.string().optional(),
   EXPO_ACCESS_TOKEN: z.string().optional(),
 
@@ -110,6 +118,26 @@ export function validateEnv(): Env {
   ) {
     throw new Error(
       "RECEIPT_VALIDATION_STUB=true is not allowed in production — receipts would be auto-approved!",
+    );
+  }
+
+  const r2Configured =
+    !!validated.R2_ACCOUNT_ID &&
+    !!validated.R2_ACCESS_KEY_ID &&
+    !!validated.R2_SECRET_ACCESS_KEY &&
+    !!validated.R2_BUCKET &&
+    !!validated.R2_PUBLIC_BASE_URL;
+  if (!r2Configured) {
+    if (validated.NODE_ENV === "production") {
+      throw new Error(
+        "R2 image storage is not configured but NODE_ENV=production — " +
+          "uploaded images would be written to Railway's ephemeral disk and " +
+          "lost on every redeploy. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, " +
+          "R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_BASE_URL.",
+      );
+    }
+    warnings.push(
+      "R2 not configured — images stored on local (ephemeral) disk",
     );
   }
 
