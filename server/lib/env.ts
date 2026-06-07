@@ -122,11 +122,11 @@ export function validateEnv(): Env {
   }
 
   const r2Configured =
-    validated.R2_ACCOUNT_ID &&
-    validated.R2_ACCESS_KEY_ID &&
-    validated.R2_SECRET_ACCESS_KEY &&
-    validated.R2_BUCKET &&
-    validated.R2_PUBLIC_BASE_URL;
+    !!validated.R2_ACCOUNT_ID &&
+    !!validated.R2_ACCESS_KEY_ID &&
+    !!validated.R2_SECRET_ACCESS_KEY &&
+    !!validated.R2_BUCKET &&
+    !!validated.R2_PUBLIC_BASE_URL;
   if (!r2Configured) {
     if (validated.NODE_ENV === "production") {
       throw new Error(
