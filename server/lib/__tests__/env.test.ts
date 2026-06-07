@@ -3,10 +3,6 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 const BASE = {
   DATABASE_URL: "postgres://localhost/test",
   JWT_SECRET: "x".repeat(32),
-  // test/setup.ts sets LOG_LEVEL="silent", which the env schema's pino-level
-  // enum rejects. Override it to a valid level so these cases exercise the R2
-  // guard rather than failing on an unrelated LOG_LEVEL validation error.
-  LOG_LEVEL: "info",
 };
 
 async function load() {
@@ -77,5 +73,12 @@ describe("validateEnv R2 production guard", () => {
     });
     const { validateEnv } = await load();
     expect(() => validateEnv()).toThrow(/R2.*production/i);
+  });
+
+  it("accepts LOG_LEVEL=silent (a valid pino level)", async () => {
+    process.env.NODE_ENV = "development";
+    process.env.LOG_LEVEL = "silent";
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
   });
 });
