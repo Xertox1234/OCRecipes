@@ -298,7 +298,7 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
 
 /**
  * Generate a food image using Runware (primary) or DALL-E 3 (fallback).
- * Saves to uploads/recipe-images/ and returns the URL path, or null on failure.
+ * Persists the image via the image-store (Cloudflare R2 in production, local disk in dev) and returns the URL, or null on failure.
  */
 export async function generateRecipeImage(
   recipeTitle: string,
@@ -313,7 +313,7 @@ export async function generateRecipeImage(
     try {
       const buffer = await runwareGenerateImage({ prompt });
       if (buffer) {
-        return await saveImageBuffer(buffer);
+        return await saveRecipeImage(buffer);
       }
       log.warn("Runware returned no image, falling back to DALL-E");
     } catch (error) {
@@ -345,15 +345,11 @@ export async function generateRecipeImage(
       return null;
     }
 
-    return await saveImageBuffer(Buffer.from(imageData, "base64"));
+    return await saveRecipeImage(Buffer.from(imageData, "base64"));
   } catch (error) {
     log.error({ err: toError(error) }, "DALL-E image generation error");
     return null;
   }
-}
-
-async function saveImageBuffer(buffer: Buffer): Promise<string> {
-  return saveRecipeImage(buffer);
 }
 
 /**
