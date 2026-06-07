@@ -126,6 +126,21 @@ describe("image-store", () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
+  it("deleteImage strips path traversal from a legacy disk URL (basename)", async () => {
+    setR2Env(false);
+    const fsp = await import("node:fs");
+    const unlinkSpy = vi
+      .spyOn(fsp.default.promises, "unlink")
+      .mockResolvedValue(undefined);
+    const { deleteImage } = await load();
+    await deleteImage("/api/avatars/../../etc/passwd");
+    expect(unlinkSpy).toHaveBeenCalledTimes(1);
+    const calledPath = unlinkSpy.mock.calls[0][0] as string;
+    expect(calledPath).not.toContain("..");
+    expect(calledPath).toMatch(/uploads\/avatars\/passwd$/);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
   it("deleteImage is a no-op for an unrecognized URL", async () => {
     setR2Env(true);
     const { deleteImage } = await load();

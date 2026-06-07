@@ -1,7 +1,5 @@
 import type { Express, Request, Response } from "express";
 import bcrypt from "bcrypt";
-import fs, { promises as fsp } from "fs";
-import * as path from "path";
 import { storage } from "../storage";
 import type { UpdatableUserFields } from "../storage";
 import {
@@ -13,6 +11,7 @@ import {
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { detectImageMimeType } from "../lib/image-mime";
+import { saveAvatar, deleteImage } from "../lib/image-store";
 import { handleRouteError } from "./_helpers";
 import {
   registerLimiter,
@@ -31,15 +30,6 @@ import { upload } from "./_upload";
 import { logger, toError } from "../lib/logger";
 import { isUniqueViolation } from "../lib/db-errors";
 import type { MeasurementUnit } from "@shared/lib/units";
-
-const AVATAR_DIR = path.resolve(process.cwd(), "uploads/avatars");
-fs.mkdirSync(AVATAR_DIR, { recursive: true });
-
-function deleteOldAvatarFile(avatarUrl: string | null | undefined): void {
-  if (!avatarUrl?.startsWith("/api/avatars/")) return;
-  const safeName = path.basename(avatarUrl);
-  fs.unlink(path.join(AVATAR_DIR, safeName), () => {});
-}
 
 function serializeUser(user: {
   id: string;
@@ -260,8 +250,9 @@ export function register(app: Express): void {
         // Invalidate token cache so any in-flight requests are rejected
         invalidateTokenVersionCache(req.userId);
 
-        // Clean up avatar file after successful deletion
-        deleteOldAvatarFile(user.avatarUrl);
+        // Clean up avatar after successful deletion (best-effort; account is
+        // already gone, so a storage cleanup failure must not 500 the response)
+        await deleteImage(user.avatarUrl).catch(() => {});
 
         res.json({ success: true });
       } catch (error) {
@@ -270,7 +261,7 @@ export function register(app: Express): void {
     },
   );
 
-  // Avatar upload endpoint - saves image to disk
+  // Avatar upload endpoint
   app.post(
     "/api/user/avatar",
     requireAuth,
@@ -305,23 +296,20 @@ export function register(app: Express): void {
             : detectedMime === "image/png"
               ? "png"
               : "webp";
-        const filename = `${req.userId}-${Date.now()}.${ext}`;
-        const filepath = path.join(AVATAR_DIR, filename);
-
-        // Delete old avatar file if it exists (path.basename prevents traversal)
+        // Old avatar (if any) is removed from storage after the new one lands.
         const currentUser = await storage.getUser(req.userId);
-        deleteOldAvatarFile(currentUser?.avatarUrl);
+        const avatarUrl = await saveAvatar(req.file.buffer, ext, req.userId);
 
-        await fsp.writeFile(filepath, req.file.buffer);
-
-        const avatarUrl = `/api/avatars/${filename}`;
         const user = await storage.updateUser(req.userId, { avatarUrl });
 
         if (!user) {
-          fs.unlink(filepath, () => {});
+          await deleteImage(avatarUrl); // roll back the just-uploaded object
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
+        // Best-effort cleanup; a storage failure here must not 500 a request
+        // whose updateUser already succeeded.
+        await deleteImage(currentUser?.avatarUrl).catch(() => {});
         res.json({ avatarUrl: user.avatarUrl });
       } catch (error) {
         logger.error({ err: toError(error) }, "avatar upload error");
@@ -343,7 +331,7 @@ export function register(app: Express): void {
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const currentUser = await storage.getUser(req.userId);
-        deleteOldAvatarFile(currentUser?.avatarUrl);
+        await deleteImage(currentUser?.avatarUrl);
 
         const user = await storage.updateUser(req.userId, {
           avatarUrl: null,
