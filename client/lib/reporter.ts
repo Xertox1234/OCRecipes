@@ -14,6 +14,16 @@ import * as Sentry from "@sentry/react-native";
 const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
 
 /**
+ * Reporting is active only with a DSN configured AND outside dev/test builds.
+ * `__DEV__` is true in Expo dev and under the test runner, so this enforces the
+ * documented "dev/test = no-op" contract even when a DSN is present in a local
+ * `.env` — otherwise a developer's machine emails Sentry for every dev crash.
+ */
+function reportingActive(): boolean {
+  return Boolean(dsn) && !__DEV__;
+}
+
+/**
  * Defense-in-depth PII scrubber for outbound events. `sendDefaultPii: false`
  * (set in `initReporter`) already keeps Sentry from attaching request
  * headers/bodies, but this strips any `Authorization` header an integration
@@ -37,7 +47,7 @@ export function scrubEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
  * absent (dev / pre-deploy) so no traffic is sent before a DSN is configured.
  */
 export function initReporter(): void {
-  if (!dsn) return;
+  if (!reportingActive()) return;
   Sentry.init({
     dsn,
     // Keep PII (auth headers, cookies, request bodies, client IP) off events.
@@ -56,7 +66,7 @@ export function initReporter(): void {
  * @param context  Optional string label for breadcrumb context.
  */
 export function reportError(error: unknown, context?: string): void {
-  if (!dsn) return;
+  if (!reportingActive()) return;
   if (context) {
     Sentry.addBreadcrumb({ message: context, level: "error" });
   }
