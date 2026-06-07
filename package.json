@@ -10,7 +10,7 @@
     "server:dev": "NODE_ENV=development tsx server/index.ts",
     "expo:start:static:build": "npx expo start --no-dev --minify",
     "expo:static:build": "node scripts/build.js",
-    "server:build": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server_dist",
+    "server:build": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server_dist --alias:@shared=./shared",
     "server:prod": "NODE_ENV=production node server_dist/index.js",
     "predb:push": "tsx scripts/check-timestamptz-migration.ts",
     "db:push": "drizzle-kit push",
