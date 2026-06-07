@@ -69,18 +69,26 @@ async function migrateRecipeTable(
     .where(like(table.imageUrl, "/api/recipe-images/%"));
   console.log(`\n${label}: ${rows.length} row(s) to migrate`);
   let done = 0;
+  let failed = 0;
   for (const row of rows) {
-    const newUrl = await uploadOne(row.imageUrl!, "recipe");
-    if (newUrl) {
-      await db
-        .update(table)
-        .set({ imageUrl: newUrl })
-        .where(eq(table.id, row.id));
-      done++;
-      console.log(`  [${row.id}] -> ${newUrl}`);
+    try {
+      const newUrl = await uploadOne(row.imageUrl!, "recipe");
+      if (newUrl) {
+        await db
+          .update(table)
+          .set({ imageUrl: newUrl })
+          .where(eq(table.id, row.id));
+        done++;
+        console.log(`  [${row.id}] -> ${newUrl}`);
+      }
+    } catch (err) {
+      failed++;
+      console.error(`  [${row.id}] FAILED:`, err);
+      continue;
     }
   }
-  return done;
+  console.log(`${label}: migrated ${done}, failed ${failed}`);
+  return { done, failed };
 }
 
 async function migrateAvatars() {
@@ -90,18 +98,26 @@ async function migrateAvatars() {
     .where(like(users.avatarUrl, "/api/avatars/%"));
   console.log(`\nusers.avatarUrl: ${rows.length} row(s) to migrate`);
   let done = 0;
+  let failed = 0;
   for (const row of rows) {
-    const newUrl = await uploadOne(row.avatarUrl!, "avatar", row.id);
-    if (newUrl) {
-      await db
-        .update(users)
-        .set({ avatarUrl: newUrl })
-        .where(eq(users.id, row.id));
-      done++;
-      console.log(`  [${row.id}] -> ${newUrl}`);
+    try {
+      const newUrl = await uploadOne(row.avatarUrl!, "avatar", row.id);
+      if (newUrl) {
+        await db
+          .update(users)
+          .set({ avatarUrl: newUrl })
+          .where(eq(users.id, row.id));
+        done++;
+        console.log(`  [${row.id}] -> ${newUrl}`);
+      }
+    } catch (err) {
+      failed++;
+      console.error(`  [${row.id}] FAILED:`, err);
+      continue;
     }
   }
-  return done;
+  console.log(`users.avatarUrl: migrated ${done}, failed ${failed}`);
+  return { done, failed };
 }
 
 async function main() {
@@ -116,7 +132,12 @@ async function main() {
   const a = await migrateRecipeTable("communityRecipes", communityRecipes);
   const b = await migrateRecipeTable("mealPlanRecipes", mealPlanRecipes);
   const c = await migrateAvatars();
-  console.log(`\n=== Done. recipes=${a + b}, avatars=${c} ===`);
+  const recipes = a.done + b.done;
+  const avatars = c.done;
+  const failed = a.failed + b.failed + c.failed;
+  console.log(
+    `\n=== Done. recipes=${recipes}, avatars=${avatars}, failed=${failed} ===`,
+  );
   await pool.end();
 }
 
