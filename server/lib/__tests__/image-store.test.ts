@@ -111,4 +111,43 @@ describe("image-store", () => {
     expect(url).toMatch(/^\/api\/recipe-images\/recipe-[0-9a-f-]+\.png$/);
     expect(sendMock).not.toHaveBeenCalled();
   });
+
+  it("deleteImage removes a legacy disk file when R2 is unconfigured", async () => {
+    setR2Env(false);
+    const fsp = await import("node:fs");
+    const unlinkSpy = vi
+      .spyOn(fsp.default.promises, "unlink")
+      .mockResolvedValue(undefined);
+    const { deleteImage } = await load();
+    await deleteImage("/api/avatars/user-42-1.jpg");
+    expect(unlinkSpy).toHaveBeenCalledTimes(1);
+    const calledPath = unlinkSpy.mock.calls[0][0] as string;
+    expect(calledPath).toMatch(/uploads\/avatars\/user-42-1\.jpg$/);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("deleteImage is a no-op for an unrecognized URL", async () => {
+    setR2Env(true);
+    const { deleteImage } = await load();
+    await deleteImage("https://other.cdn.com/img.jpg");
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("handles a trailing slash in R2_PUBLIC_BASE_URL without doubling", async () => {
+    setR2Env(true);
+    process.env.R2_PUBLIC_BASE_URL = "https://img.example.com/";
+    const { saveRecipeImage } = await load();
+    const url = await saveRecipeImage(Buffer.from("png"));
+    expect(url).not.toMatch(/example\.com\/\/+/);
+    expect(url).toMatch(/^https:\/\/img\.example\.com\/recipe-images\//);
+  });
+
+  it("saveAvatar sets image/webp content-type for webp", async () => {
+    setR2Env(true);
+    const { saveAvatar } = await load();
+    await saveAvatar(Buffer.from("webp"), "webp", "user-9");
+    const cmd = sendMock.mock.calls[0][0];
+    expect(cmd.input.ContentType).toBe("image/webp");
+    expect(cmd.input.Key).toMatch(/^avatars\/user-9-\d+\.webp$/);
+  });
 });

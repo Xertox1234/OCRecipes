@@ -145,12 +145,15 @@ export async function deleteImage(
 ): Promise<void> {
   if (!url) return;
   const cfg = readR2Config();
-  if (cfg && url.startsWith(cfg.publicBaseUrl.replace(/\/$/, ""))) {
-    const key = url.slice(cfg.publicBaseUrl.replace(/\/$/, "").length + 1);
-    await client(cfg).send(
-      new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }),
-    );
-    return;
+  if (cfg) {
+    const normalizedBase = cfg.publicBaseUrl.replace(/\/$/, "");
+    if (url.startsWith(normalizedBase + "/")) {
+      const key = url.slice(normalizedBase.length + 1);
+      await client(cfg).send(
+        new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }),
+      );
+      return;
+    }
   }
   // Legacy disk paths: /api/avatars/<f> or /api/recipe-images/<f>
   for (const prefix of ["avatars", "recipe-images"]) {
@@ -162,9 +165,4 @@ export async function deleteImage(
       return;
     }
   }
-}
-
-/** Test-only: drop the cached S3 client so env changes take effect. */
-export function __resetImageStoreForTests(): void {
-  cachedClient = null;
 }
