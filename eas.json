@@ -11,13 +11,15 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "https://api.ocrecipes.com"
+        "EXPO_PUBLIC_DOMAIN": "https://api.ocrecipes.com",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://e9bbc06fa2f31e435b8abdae9928694b@o4510684193423360.ingest.us.sentry.io/4511498696785920"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "https://api.ocrecipes.com"
+        "EXPO_PUBLIC_DOMAIN": "https://api.ocrecipes.com",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://e9bbc06fa2f31e435b8abdae9928694b@o4510684193423360.ingest.us.sentry.io/4511498696785920"
       }
     }
   }
