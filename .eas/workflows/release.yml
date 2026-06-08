@@ -1,0 +1,16 @@
+name: Release Build
+
+# Manual-only: trigger from the EAS dashboard (Workflows → Run) or CLI
+#   npx eas-cli@latest workflow:run release.yml
+# Build-only by design — there is no `submit` block in eas.json yet and no
+# store credentials configured. Add submit jobs (needs: [build]) once
+# `eas credentials` is set up for iOS/Android.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    type: build
+    params:
+      platform: all
+      profile: production
