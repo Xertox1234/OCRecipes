@@ -55,9 +55,11 @@ yarn-error.*
 
 app-example
 
-# generated native folders
-/ios
-/android
+# Native folders (ios/, android/) are COMMITTED so EAS cloud builds use the real
+# customized projects (VisionCamera, MLKit patches, ios.buildReactNativeFromSource).
+# Build artifacts inside them (Pods/, build/, .gradle/, .xcode.env.local) are
+# excluded by ios/.gitignore and android/.gitignore.
+# Do NOT run `expo prebuild --clean` — it clobbers these customizations.
 
 # Attached assets (user uploads during development)
 attached_assets/
