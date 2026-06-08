@@ -13,7 +13,8 @@
       "bundleIdentifier": "com.williamtower.ocrecipes",
       "infoPlist": {
         "NSCameraUsageDescription": "OCRecipes needs camera access to scan barcodes and nutrition labels.",
-        "NSMicrophoneUsageDescription": "OCRecipes uses the microphone for voice food logging."
+        "NSMicrophoneUsageDescription": "OCRecipes uses the microphone for voice food logging.",
+        "NSSpeechRecognitionUsageDescription": "OCRecipes uses speech recognition for voice food logging."
       }
     },
     "android": {
@@ -61,6 +62,12 @@
     ],
     "experiments": {
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "94fa8c8a-5f2e-4a4e-a781-25985a8c7bf5"
+      }
+    },
+    "owner": "xertox1234"
   }
 }
