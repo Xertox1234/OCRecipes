@@ -111,14 +111,21 @@ target 'OCRecipes' do
       end
     end
 
-    # Swift 6.2 (Xcode 26) ICE with nitrogen-generated C++/Swift interop.
-    # VisionCameraBarcodeScanner's whole-module batch triggers a swift-frontend crash;
-    # singlefile mode compiles each .swift file independently and avoids the ICE.
+    # Swift 6.2 (Xcode 26) ICE with nitrogen-generated C++/Swift interop
+    # (std::function capture, swiftlang/swift#76143). Manifests two ways:
+    #  - whole-module batch ICE  -> SWIFT_COMPILATION_MODE = singlefile
+    #  - LLVM optimizer crash in the Release archive ("Global is external, but
+    #    doesn't have external or weak linkage" in the verify pass) -> -Onone
+    # Local `expo run:ios` is Debug (-Onone) so it never hits the optimizer
+    # crash; EAS's Release archive does. Apply to ALL VisionCamera-family
+    # targets so the main VisionCamera lib (not just the barcode scanner) is
+    # covered. Runtime cost is negligible — the heavy work is native AVFoundation.
     installer.pods_project.targets.each do |target|
-      next unless target.name == 'VisionCameraBarcodeScanner'
+      next unless target.name.start_with?('VisionCamera')
       target.build_configurations.each do |config|
         config.build_settings['SWIFT_COMPILATION_MODE'] = 'singlefile'
         config.build_settings['SWIFT_VERSION'] = '5'
+        config.build_settings['SWIFT_OPTIMIZATION_LEVEL'] = '-Onone'
       end
     end
   end
