@@ -467,6 +467,32 @@ Audit M10 2026-04-26.
 - `server/routes/_helpers.ts` — `handleRouteError`, `sendError`, `checkPremiumFeature`, `ipKeyGenerator`
 - `server/lib/logger.ts` — pino instance, `createServiceLogger`, `toError`
 
+## Dead-Code / Orphaned-Export Verification
+
+Before reporting an export as dead / orphaned / safe-to-delete (a recurring cleanup-audit task),
+clear three checks — `findReferences` alone is necessary but **not** sufficient:
+
+1. **Zero callers via LSP** (`findReferences`, not grep) — and read the ref _locations_: a 2-ref
+   result can still be dead if the second ref is in the same file (a type used only by another type
+   in the module). Warm LSP first; the first query under-reports.
+2. **Cross-check `docs/rules/` for the symbol before deleting.** A zero-caller export can be a
+   deliberately **rule-prescribed helper** kept ahead of use — deleting it orphans a binding rule.
+   Precedent: `throwStatusError` (`client/lib/throw-status-error.ts`) reads as dead, but
+   `docs/rules/client-state.md` names it the canonical bare-status→`ApiError` helper. Flag such a
+   symbol as a QUESTION, not a deletion.
+3. **For a "dead" invalidate/cleanup/teardown helper, trace the actual mutation path before claiming
+   a regression.** A helper can be dead because a _blunter_ call superseded it, not because the
+   behavior is missing. Precedent: `invalidateApiKeyCache(rawKey)` was unreachable, but the revoke
+   route already calls `clearApiKeyCache()` (`server/routes/admin-api-keys.ts:129`/`:177`) — so
+   removing the dead fn is safe and there is **no** "revoked key honored until TTL" defect. Read the
+   call site; do not infer a phantom security gap. (Both LSP-less kimi-review and a file-isolated
+   read mis-flagged this; the call-site trace is what disproves it.)
+
+Completeness backstop for cleanup scopes: `npx --yes ts-prune` enumerates every zero-importer export
+(noisy — filter default-export components, intentional `shared/` contract types, and test
+scaffolding), then LSP-verify survivors. See
+`docs/solutions/best-practices/cleanup-audit-ts-prune-completeness-and-intentional-unused-2026-06-09.md`.
+
 <!-- LSP-AGENT-BLOCK:START -->
 
 ## Tooling: LSP-First Symbol Navigation
