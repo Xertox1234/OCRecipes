@@ -15,11 +15,11 @@ Code review is **orchestrator-dispatched, domain-selected, and scoped to the cod
 At review time the orchestrator (the `todo-executor` for `/todo`, the `/audit` skill for its review phases, or the main session for an on-demand review):
 
 1. **Inspects the in-context diff** — both file **paths** and **content**.
-2. **Selects the relevant reviewer subagents** from the roster below — typically **1–3, cap 4**. Path is a starting hint (the `docs/rules/<domain>` mapping); **content overrides it** — a JWT call → `security-auditor`, an `any` cast → `typescript-specialist`, an N+1 query → `database-specialist` / `performance-specialist`, even when the path looks generic. Prefer the _most relevant_ reviewers over exhaustive coverage.
+2. **Always dispatches `code-reviewer`** as the cross-cutting baseline (it carries the broad OCRecipes pattern + correctness checklist that catches stray issues outside any single domain — a rogue `as` cast, a missing error boundary), **plus selects the relevant domain specialists** for depth — typically **1–2 more**. Path is a starting hint (the `docs/rules/<domain>` mapping); **content overrides it** — a JWT call → add `security-auditor`, an `any` cast → add `typescript-specialist`, an N+1 query → add `database-specialist` / `performance-specialist`, even when the path looks generic. For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
 3. **Dispatches them in parallel**, each scoped to the in-context diff and reviewing through its own lens.
 4. **Merges** findings (dedupe overlaps) and applies the tier rule.
 
-**Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo's reviewers at **1–2 (max 3)** to avoid a 4×N subagent blow-up against the project's "max ~4 parallel agents" guidance. A branch-wide review (`/codify`) or an audit may use more (2–4) because it is not itself nested in a parallel batch.
+**Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo at **`code-reviewer` + 1–2 specialists (≤3 total)** to avoid a 4×N subagent blow-up against the project's "max ~4 parallel agents" guidance. A branch-wide review (`/codify`) or an audit may use more (`code-reviewer` + 2–3 specialists) because it is not itself nested in a parallel batch.
 
 #### Reviewer roster
 
@@ -39,9 +39,9 @@ At review time the orchestrator (the `todo-executor` for `/todo`, the `/audit` s
 | Tests / Vitest / mocks / testability                 | `testing-specialist`                  |
 | Error handling / lint / minimal-changes / todo UX    | `quality-specialist`                  |
 | Library/API correctness vs current docs              | `docs-researcher`                     |
-| No specific domain / broad cross-cutting / trivial   | `code-reviewer` (generalist fallback) |
+| Cross-cutting baseline — **always dispatched**       | `code-reviewer` (+ specialists above) |
 
-`code-reviewer` is the generalist: use it when no specific domain dominates, for broad cross-cutting changes, or as the sole reviewer for a trivial diff. `todo-executor` and `todo-researcher` are workflow drivers, **not** reviewers.
+`code-reviewer` **always** runs as the cross-cutting baseline; the domain specialists are selected on top of it for depth (and `code-reviewer` is the _sole_ reviewer only for a docs/config-only or trivial diff). `todo-executor` and `todo-researcher` are workflow drivers, **not** reviewers.
 
 #### Working-tree safety (critical — do not skip)
 
@@ -68,12 +68,14 @@ Agent({
 
 #### Selection examples
 
-- `client/screens/ScanScreen.tsx` → `camera-specialist` + `rn-ui-ux-specialist`
-- `server/routes/recipes.ts` with a new auth check → `api-specialist` + `security-auditor`
-- `server/storage/cookbooks.ts` ownership-filter change → `database-specialist` + `security-auditor`
-- a new Zod schema in `shared/` → `typescript-specialist`
+Every review includes `code-reviewer` (baseline); the specialists below are added on top.
+
+- `client/screens/ScanScreen.tsx` → `code-reviewer` + `camera-specialist` + `rn-ui-ux-specialist`
+- `server/routes/recipes.ts` with a new auth check → `code-reviewer` + `api-specialist` + `security-auditor`
+- `server/storage/cookbooks.ts` ownership-filter change → `code-reviewer` + `database-specialist` + `security-auditor`
+- a new Zod schema in `shared/` → `code-reviewer` + `typescript-specialist`
 - bumping a library / new third-party API usage → add `docs-researcher`
-- a docs-only / config-only diff, or a tiny cross-cutting change → `code-reviewer`
+- a docs-only / config-only or tiny cross-cutting diff → `code-reviewer` alone
 
 #### Self-improving
 

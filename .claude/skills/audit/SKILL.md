@@ -230,7 +230,7 @@ For **each** finding the user wants fixed:
    })
    ```
 
-   Reviewers have full tool access (LSP, file reads). Scope to the single fix so each finding is verified before you move on (Phase 6 later deepens the inspection across the whole multi-file diff). If multiple reviewers are selected, merge their findings before applying the tier rule.
+   Reviewers have full tool access (LSP, file reads). Scope to the single fix so each finding is verified before you move on. Per-fix review uses the **domain specialist only** — the always-on `code-reviewer` cross-cutting baseline runs in **Phase 6** over the whole multi-file diff, not once per finding (that would spawn it dozens of times). If multiple specialists are selected for one fix, merge their findings before applying the tier rule.
 
    Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
    - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
