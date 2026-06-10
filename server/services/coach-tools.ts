@@ -482,6 +482,8 @@ export async function executeToolCall(
   args: ToolArgs,
   userId: string,
   preloadedProfile?: UserProfile | null,
+  /** IANA timezone of the requesting user — day-buckets "today" tool data. */
+  tz: string = "UTC",
 ): Promise<ToolErrorResult | object> {
   logger.debug(
     { toolName, userIdHash: hashUserId(userId) },
@@ -543,8 +545,8 @@ export async function executeToolCall(
         : new Date();
 
       const [logs, totals] = await Promise.all([
-        storage.getDailyLogs(userId, date),
-        storage.getDailySummary(userId, date),
+        storage.getDailyLogs(userId, date, tz),
+        storage.getDailySummary(userId, date, tz),
       ]);
 
       return {

@@ -262,8 +262,9 @@ export async function getFrequentItems(
 export async function getDailyLogs(
   userId: string,
   date: Date,
+  tz: string = "UTC",
 ): Promise<DailyLog[]> {
-  const { startOfDay, endOfDay } = getDayBounds(date);
+  const { startOfDay, endOfDay } = getDayBounds(date, tz);
 
   const rows = await db
     .select({ dailyLog: dailyLogs })

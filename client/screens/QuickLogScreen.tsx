@@ -66,6 +66,10 @@ export default function QuickLogScreen() {
   const [showCheckmark, setShowCheckmark] = useState(false);
 
   const session = useQuickLogSession({
+    // This full-screen surface is always "open" while mounted — without this
+    // the hook's frequent-items query stays disabled and "Previous Items"
+    // never renders here (it defaults isOpen to false for drawer consumers).
+    isOpen: true,
     onLogSuccess: () => {
       AccessibilityInfo.announceForAccessibility("Food items logged");
       setShowCheckmark(true);

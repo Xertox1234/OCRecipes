@@ -25,9 +25,23 @@ import {
   groceryListItems,
   cookbooks,
   cookbookRecipes,
+  pantryItems,
+  savedItems,
+  favouriteScannedItems,
+  favouriteRecipes,
+  tastePicks,
+  coachNotebook,
+  menuScans,
+  receiptScans,
+  recipeDismissals,
+  pendingReminders,
+  pushTokens,
+  transactions,
+  verificationHistory,
+  recipeGenerationLog,
 } from "@shared/schema";
 import { db } from "../db";
-import { eq, and, isNull, inArray, asc, desc } from "drizzle-orm";
+import { eq, inArray, asc, desc } from "drizzle-orm";
 
 // Explicit allowlist of user-account columns that are safe to export. Using an
 // allowlist (rather than blocklisting `password`/`tokenVersion`) means any new
@@ -81,6 +95,22 @@ export interface UserDataExport {
     cookbooks: Record<string, unknown>[];
     recipes: Record<string, unknown>[];
   };
+  pantryItems: Record<string, unknown>[];
+  savedItems: Record<string, unknown>[];
+  favourites: {
+    scannedItems: Record<string, unknown>[];
+    recipes: Record<string, unknown>[];
+  };
+  tastePicks: Record<string, unknown>[];
+  coachNotebook: Record<string, unknown>[];
+  menuScans: Record<string, unknown>[];
+  receiptScans: Record<string, unknown>[];
+  recipeDismissals: Record<string, unknown>[];
+  pendingReminders: Record<string, unknown>[];
+  pushTokens: Record<string, unknown>[];
+  transactions: Record<string, unknown>[];
+  verificationHistory: Record<string, unknown>[];
+  recipeGenerationLog: Record<string, unknown>[];
 }
 
 /**
@@ -117,15 +147,29 @@ export async function getUserDataExport(
     groceryListItemRows,
     cookbookRows,
     cookbookRecipeRows,
+    pantryRows,
+    savedItemRows,
+    favouriteScannedRows,
+    favouriteRecipeRows,
+    tastePickRows,
+    coachNotebookRows,
+    menuScanRows,
+    receiptScanRows,
+    recipeDismissalRows,
+    pendingReminderRows,
+    pushTokenRows,
+    transactionRows,
+    verificationHistoryRows,
+    recipeGenerationLogRows,
   ] = await Promise.all([
     db.select(exportUserColumns).from(users).where(eq(users.id, userId)),
     db.select().from(userProfiles).where(eq(userProfiles.userId, userId)),
+    // Includes soft-deleted (discarded) items — the contract is "everything
+    // we hold", and discarded rows are still held until retention cleanup.
     db
       .select()
       .from(scannedItems)
-      .where(
-        and(eq(scannedItems.userId, userId), isNull(scannedItems.discardedAt)),
-      )
+      .where(eq(scannedItems.userId, userId))
       .orderBy(desc(scannedItems.scannedAt)),
     db
       .select()
@@ -188,6 +232,61 @@ export async function getUserDataExport(
       .from(cookbookRecipes)
       .innerJoin(cookbooks, eq(cookbookRecipes.cookbookId, cookbooks.id))
       .where(eq(cookbooks.userId, userId)),
+    db.select().from(pantryItems).where(eq(pantryItems.userId, userId)),
+    db.select().from(savedItems).where(eq(savedItems.userId, userId)),
+    db
+      .select()
+      .from(favouriteScannedItems)
+      .where(eq(favouriteScannedItems.userId, userId)),
+    db
+      .select()
+      .from(favouriteRecipes)
+      .where(eq(favouriteRecipes.userId, userId)),
+    db.select().from(tastePicks).where(eq(tastePicks.userId, userId)),
+    db.select().from(coachNotebook).where(eq(coachNotebook.userId, userId)),
+    db.select().from(menuScans).where(eq(menuScans.userId, userId)),
+    db.select().from(receiptScans).where(eq(receiptScans.userId, userId)),
+    db
+      .select()
+      .from(recipeDismissals)
+      .where(eq(recipeDismissals.userId, userId)),
+    db
+      .select()
+      .from(pendingReminders)
+      .where(eq(pendingReminders.userId, userId)),
+    // Push token redacted: an Expo push token is an infrastructure
+    // credential (anyone holding it can push to the device), not user data.
+    db
+      .select({
+        id: pushTokens.id,
+        platform: pushTokens.platform,
+        createdAt: pushTokens.createdAt,
+        updatedAt: pushTokens.updatedAt,
+      })
+      .from(pushTokens)
+      .where(eq(pushTokens.userId, userId)),
+    // Raw IAP receipt blob omitted: it's a store validation artifact (a
+    // Google purchase token is queryable), not user-meaningful data.
+    db
+      .select({
+        id: transactions.id,
+        transactionId: transactions.transactionId,
+        platform: transactions.platform,
+        productId: transactions.productId,
+        status: transactions.status,
+        createdAt: transactions.createdAt,
+        updatedAt: transactions.updatedAt,
+      })
+      .from(transactions)
+      .where(eq(transactions.userId, userId)),
+    db
+      .select()
+      .from(verificationHistory)
+      .where(eq(verificationHistory.userId, userId)),
+    db
+      .select()
+      .from(recipeGenerationLog)
+      .where(eq(recipeGenerationLog.userId, userId)),
   ]);
 
   // After fetching all parent rows, batch-load meal-plan recipe ingredients
@@ -242,5 +341,25 @@ export async function getUserDataExport(
       cookbooks: cookbookRows,
       recipes: cookbookRecipeRows.map((r) => r.recipe),
     },
+    pantryItems: pantryRows,
+    savedItems: savedItemRows,
+    favourites: {
+      scannedItems: favouriteScannedRows,
+      recipes: favouriteRecipeRows,
+    },
+    tastePicks: tastePickRows,
+    coachNotebook: coachNotebookRows,
+    menuScans: menuScanRows,
+    receiptScans: receiptScanRows,
+    recipeDismissals: recipeDismissalRows,
+    pendingReminders: pendingReminderRows,
+    pushTokens: pushTokenRows,
+    // On Android the transactionId IS the Google purchase token (a queryable
+    // store credential) — redact it; Apple transaction ids are inert.
+    transactions: transactionRows.map((t) =>
+      t.platform === "android" ? { ...t, transactionId: "[redacted]" } : t,
+    ),
+    verificationHistory: verificationHistoryRows,
+    recipeGenerationLog: recipeGenerationLogRows,
   };
 }

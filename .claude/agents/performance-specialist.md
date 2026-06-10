@@ -498,3 +498,5 @@ errors still come from `npm run check:types` / CI. It is TypeScript-only: keep
 using `grep` for `.sql`, config, native code, and plain-text searches.
 
 <!-- LSP-AGENT-BLOCK:END -->
+
+**React Compiler check (2026-06-10 audit):** this app compiles with React Compiler (`app.json` `experiments.reactCompiler`). Before flagging missing `React.memo`/`useCallback`/inline closures, verify the value's CONSUMER: compiler-covered function components are non-findings; values feeding class-component PureComponent props (`FlatList` `extraData`) and components that read refs during render (plausible compiler bailout) are still real. See `docs/solutions/best-practices/react-compiler-memoization-audits-2026-06-10.md`.

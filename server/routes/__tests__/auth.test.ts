@@ -54,10 +54,12 @@ vi.mock("../../lib/image-mime", () => ({
 // (The basename/traversal stripping + external-URL no-op live in image-store
 // itself and are covered by server/lib/__tests__/image-store.test.ts.)
 const { mockSaveAvatar, mockDeleteImage } = vi.hoisted(() => ({
+  // Mirrors the real signature: (buffer, ext) — keys are random, not
+  // userId-derived (the key must not leak the UUID on the public CDN).
   mockSaveAvatar: vi
     .fn()
-    .mockImplementation((_buffer: Buffer, ext: string, userId: string) =>
-      Promise.resolve(`/api/avatars/${userId}-${Date.now()}.${ext}`),
+    .mockImplementation((_buffer: Buffer, ext: string) =>
+      Promise.resolve(`/api/avatars/mock-key-${Date.now()}.${ext}`),
     ),
   mockDeleteImage: vi.fn().mockResolvedValue(undefined),
 }));
@@ -599,8 +601,9 @@ describe("Auth Routes", () => {
     it("uploads a valid JPEG avatar", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/jpeg");
       vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+      // Keys are random (never userId-derived) — fixtures mirror that.
       const updated = createMockUser({
-        avatarUrl: "/api/avatars/1-1234567890.jpg",
+        avatarUrl: "/api/avatars/mock-key-1234567890.jpg",
       });
       vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
@@ -614,11 +617,14 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body).toHaveProperty("avatarUrl");
-      expect(res.body.avatarUrl).toMatch(/^\/api\/avatars\/1-\d+\.jpg$/);
+      // res.body echoes the updateUser fixture, not the saveAvatar return
+      expect(res.body.avatarUrl).toMatch(/^\/api\/avatars\/mock-key-\d+\.jpg$/);
       expect(storage.updateUser).toHaveBeenCalledWith(
         "1",
         expect.objectContaining({
-          avatarUrl: expect.stringMatching(/^\/api\/avatars\/1-\d+\.jpg$/),
+          avatarUrl: expect.stringMatching(
+            /^\/api\/avatars\/mock-key-\d+\.jpg$/,
+          ),
         }),
       );
     });
@@ -758,7 +764,7 @@ describe("Auth Routes", () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/png");
       vi.mocked(storage.getUser).mockResolvedValue(mockUser);
       const updated = createMockUser({
-        avatarUrl: "/api/avatars/1-1234567890.png",
+        avatarUrl: "/api/avatars/mock-key-1234567890.png",
       });
       vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
@@ -771,14 +777,14 @@ describe("Auth Routes", () => {
         });
 
       expect(res.status).toBe(200);
-      expect(res.body.avatarUrl).toMatch(/^\/api\/avatars\/1-\d+\.png$/);
+      expect(res.body.avatarUrl).toMatch(/^\/api\/avatars\/mock-key-\d+\.png$/);
     });
 
     it("uploads a valid WebP avatar", async () => {
       vi.mocked(detectImageMimeType).mockReturnValue("image/webp");
       vi.mocked(storage.getUser).mockResolvedValue(mockUser);
       const updated = createMockUser({
-        avatarUrl: "/api/avatars/1-1234567890.webp",
+        avatarUrl: "/api/avatars/mock-key-1234567890.webp",
       });
       vi.mocked(storage.updateUser).mockResolvedValue(updated);
 
@@ -791,7 +797,9 @@ describe("Auth Routes", () => {
         });
 
       expect(res.status).toBe(200);
-      expect(res.body.avatarUrl).toMatch(/^\/api\/avatars\/1-\d+\.webp$/);
+      expect(res.body.avatarUrl).toMatch(
+        /^\/api\/avatars\/mock-key-\d+\.webp$/,
+      );
     });
 
     it("deletes old avatar file when uploading new one", async () => {

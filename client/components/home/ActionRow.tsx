@@ -86,7 +86,12 @@ export const ActionRow = React.memo(function ActionRow({
               { backgroundColor: theme.backgroundRoot },
             ]}
           >
-            <Feather name="lock" size={10} color={theme.textSecondary} />
+            <Feather
+              name="lock"
+              size={10}
+              color={theme.textSecondary}
+              accessible={false}
+            />
           </View>
         )}
       </View>

@@ -8,6 +8,7 @@ import {
   Image,
   ScrollView,
   ActivityIndicator,
+  AccessibilityInfo,
   Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -70,10 +71,21 @@ export default function ReceiptCaptureScreen() {
         skipProcessing: Platform.OS === "android",
       });
       if (photo?.uri) {
-        const ocrResult = await recognizeTextFromPhoto(photo.uri);
+        // OCR failure here is non-fatal — the capture succeeded and the
+        // server scan runs regardless (gallery picks have no OCR either).
+        let ocrText: string | undefined;
+        try {
+          const ocrResult = await recognizeTextFromPhoto(photo.uri);
+          ocrText = ocrResult.text || undefined;
+        } catch (ocrError) {
+          logger.error("receipt capture OCR failed (non-fatal):", ocrError);
+        }
         haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
         setPhotos((prev) => [...prev, photo.uri]);
-        setOcrTexts((prev) => [...prev, ocrResult.text || undefined]);
+        setOcrTexts((prev) => [...prev, ocrText]);
+        AccessibilityInfo.announceForAccessibility(
+          `Photo ${photos.length + 1} of ${MAX_PHOTOS} added`,
+        );
       } else {
         Alert.alert("Capture failed", "Try again or pick from your gallery.");
       }
@@ -103,6 +115,12 @@ export default function ReceiptCaptureScreen() {
       setPhotos((prev) => [...prev, ...galleryUris]);
       // Gallery photos have no capture-time OCR available
       setOcrTexts((prev) => [...prev, ...galleryUris.map(() => undefined)]);
+      const newTotal = photos.length + galleryUris.length;
+      AccessibilityInfo.announceForAccessibility(
+        galleryUris.length === 1
+          ? `Photo ${newTotal} of ${MAX_PHOTOS} added`
+          : `${galleryUris.length} photos added, ${newTotal} of ${MAX_PHOTOS}`,
+      );
     }
   }, [photos.length, haptics]);
 
@@ -251,6 +269,9 @@ export default function ReceiptCaptureScreen() {
                 <Pressable
                   onPress={() => handleRemovePhoto(index)}
                   style={styles.removeBadge}
+                  // 20×20 visual badge — hitSlop lifts the touch target past
+                  // the WCAG 2.5.8 AA 24px floor without growing the badge.
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   accessibilityRole="button"
                   accessibilityLabel={`Remove photo ${index + 1}`}
                 >

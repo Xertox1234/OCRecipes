@@ -150,6 +150,12 @@ export default function ProfileScreen() {
           },
         ]}
         pointerEvents={isBarVisible ? "auto" : "none"}
+        // pointerEvents="none" does NOT remove the bar from the a11y tree —
+        // hide it explicitly or screen readers focus an invisible button.
+        accessibilityElementsHidden={!isBarVisible}
+        importantForAccessibility={
+          isBarVisible ? "auto" : "no-hide-descendants"
+        }
       >
         <View style={styles.collapsedBarContent}>
           {user.avatarUrl && resolveImageUrl(user.avatarUrl) ? (
@@ -199,6 +205,12 @@ export default function ProfileScreen() {
         <Animated.View
           entering={getEntering(0)}
           style={[styles.expandableHeader, headerAnimatedStyle]}
+          // Inverse of the collapsed bar: when the bar takes over, the faded
+          // header is visually gone but still in the a11y tree — hide it.
+          accessibilityElementsHidden={isBarVisible}
+          importantForAccessibility={
+            isBarVisible ? "no-hide-descendants" : "auto"
+          }
         >
           <ProfileCard
             displayName={user.displayName || ""}

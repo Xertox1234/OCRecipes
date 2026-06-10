@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   useSharedValue,
   useAnimatedStyle,
@@ -42,9 +42,25 @@ export function useScrollLinkedHeader({
     setIsBarVisible(visible);
   }, []);
 
+  // Resync when reduced motion toggles at runtime — the scroll handler
+  // skips state maintenance while it's ON, so without this the visibility
+  // state stays frozen at its pre-toggle value until the next threshold
+  // crossing (an invisible-but-tappable bar, or a visible-but-dead one).
+  useEffect(() => {
+    const visible = !reducedMotion && scrollY.value > collapseThreshold * 0.5;
+    lastBarVisible.value = visible;
+    setIsBarVisible(visible);
+    // scrollY/lastBarVisible are stable shared-value refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reducedMotion, collapseThreshold]);
+
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
       scrollY.value = event.contentOffset.y;
+      // Reduced motion keeps the collapsed bar at opacity 0 forever — the
+      // visibility flag must stay false too, or consumers flip
+      // pointerEvents to "auto" on an invisible full-width Pressable.
+      if (reducedMotion) return;
       // Only cross the UI→JS bridge when the boolean transitions, not every frame
       const barShouldBeVisible =
         event.contentOffset.y > collapseThreshold * 0.5;
@@ -104,6 +120,6 @@ export function useScrollLinkedHeader({
     headerAnimatedStyle,
     collapsedBarAnimatedStyle,
     /** Whether the collapsed bar is sufficiently visible to receive touches */
-    isBarVisible,
+    isBarVisible: reducedMotion ? false : isBarVisible,
   };
 }

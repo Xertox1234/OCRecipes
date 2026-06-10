@@ -407,6 +407,8 @@ export async function* generateCoachProResponse(
    * Callers that omit it self-classify the last user message.
    */
   intent?: CoachIntent,
+  /** IANA timezone of the requesting user — threads through to day-bucketed tool calls. */
+  tz: string = "UTC",
 ): AsyncGenerator<string> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
@@ -609,6 +611,7 @@ export async function* generateCoachProResponse(
             args as Record<string, unknown>,
             userId,
             preloadedProfile,
+            tz,
           );
           return { tc, result };
         } catch (error) {

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { getDeviceTimezone } from "@/lib/timezone";
 import type { CoachNotebookEntry } from "@shared/schema";
 
 export interface CoachContextData {
@@ -26,10 +27,15 @@ export interface CoachContextData {
 }
 
 export function useCoachContext(enabled: boolean) {
+  // Day-bucket "today's intake" in the device timezone — without the header
+  // the server falls back to UTC and the panel disagrees with Home.
+  const tz = getDeviceTimezone();
   return useQuery<CoachContextData>({
-    queryKey: ["/api/coach/context"],
+    queryKey: ["/api/coach/context", { tz }],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/coach/context");
+      const res = await apiRequest("GET", "/api/coach/context", undefined, {
+        headers: { "X-Timezone": tz },
+      });
       return res.json();
     },
     enabled,

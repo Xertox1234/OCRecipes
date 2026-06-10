@@ -27,7 +27,6 @@ export interface PremiumFeatures {
   dailyAiSuggestions: number;
   pantryTracking: boolean;
   mealConfirmation: boolean;
-  exerciseAnalytics: boolean;
   voiceLogging: boolean;
   dailyNlpLogs: number;
   aiCoach: boolean;
@@ -70,7 +69,6 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     dailyAiSuggestions: 0,
     pantryTracking: false,
     mealConfirmation: false,
-    exerciseAnalytics: false,
     voiceLogging: false,
     dailyNlpLogs: 5,
     aiCoach: true,
@@ -104,7 +102,6 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     dailyAiSuggestions: 10,
     pantryTracking: true,
     mealConfirmation: true,
-    exerciseAnalytics: true,
     voiceLogging: true,
     dailyNlpLogs: 999999,
     aiCoach: true,

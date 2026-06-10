@@ -28,6 +28,19 @@ function buildExport() {
     chatHistory: { conversations: [], messages: [] },
     groceryLists: { lists: [], items: [] },
     cookbooks: { cookbooks: [], recipes: [] },
+    pantryItems: [],
+    savedItems: [],
+    favourites: { scannedItems: [], recipes: [] },
+    tastePicks: [],
+    coachNotebook: [],
+    menuScans: [],
+    receiptScans: [],
+    recipeDismissals: [],
+    pendingReminders: [],
+    pushTokens: [],
+    transactions: [],
+    verificationHistory: [],
+    recipeGenerationLog: [],
   };
 }
 

@@ -1,8 +1,11 @@
 // @ts-check
-import { resolveTarget } from "./stryker.targets.mjs";
+import { resolveTarget, assertAllowedTarget } from "./stryker.targets.mjs";
 
 const targetName = process.env.MUTATION_TARGET ?? "macro-gap-context";
 const target = resolveTarget(targetName);
+// Fail-closed at run time, not just in the registry tests — a locally added
+// Hard-Exclusion target must not run Stryker without a human-approved plan.
+assertAllowedTarget(targetName, target);
 const { mutate, testInclude } = target;
 
 // Hand the resolved test-discovery glob to vitest.mutation.config.ts. Stryker

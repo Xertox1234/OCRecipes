@@ -1,5 +1,11 @@
-import React from "react";
-import { View, Pressable, StyleSheet } from "react-native";
+import React, { useEffect } from "react";
+import {
+  View,
+  Pressable,
+  StyleSheet,
+  Platform,
+  AccessibilityInfo,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -29,6 +35,15 @@ export const CarouselError = React.memo(function CarouselError({
   onRetry,
 }: CarouselErrorProps) {
   const { theme } = useTheme();
+
+  // accessibilityLiveRegion is Android-only and role="alert" does not post
+  // an announcement on iOS — announce explicitly on mount (the component
+  // only renders when a fetch has failed).
+  useEffect(() => {
+    if (Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(`Couldn't load ${label}.`);
+    }
+  }, [label]);
 
   return (
     <View

@@ -223,6 +223,7 @@ describe("generateCoachProResponse", () => {
       { query: "chicken" },
       "user-1",
       undefined,
+      "UTC",
     );
   });
 
@@ -567,12 +568,14 @@ describe("generateCoachProResponse", () => {
       { query: "apple" },
       "user-1",
       undefined,
+      "UTC",
     );
     expect(executeToolCall).toHaveBeenCalledWith(
       "lookup_nutrition",
       { query: "banana" },
       "user-1",
       undefined,
+      "UTC",
     );
   });
 

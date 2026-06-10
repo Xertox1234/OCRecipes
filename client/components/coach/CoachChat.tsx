@@ -97,6 +97,13 @@ export default function CoachChat({
   const [quickReplyVersion, setQuickReplyVersion] = useState(0);
   const acceptedCommitmentsRef = useRef<Set<number | string>>(new Set());
   const [commitmentVersion, setCommitmentVersion] = useState(0);
+  // extraData must be treated immutably (FlatList is a PureComponent and
+  // React Compiler does not protect its internal class-component compare) —
+  // an inline array literal would re-render every visible cell per keystroke.
+  const listExtraData = useMemo(
+    () => [quickReplyVersion, commitmentVersion],
+    [quickReplyVersion, commitmentVersion],
+  );
 
   const {
     isListening,
@@ -671,7 +678,7 @@ export default function CoachChat({
         data={chatItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        extraData={[quickReplyVersion, commitmentVersion]}
+        extraData={listExtraData}
         ListFooterComponent={streamingFooter}
         ListEmptyComponent={historyErrorEmpty}
         style={styles.messageList}

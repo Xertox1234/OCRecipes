@@ -32,6 +32,17 @@ function mimeToExt(mime: string): string {
 }
 
 async function main() {
+  // DEPRECATED runtime guard — running this post-R2 rewrites rows back to
+  // ephemeral disk paths (silent image loss on the next redeploy).
+  if (process.env.ALLOW_DEPRECATED_DISK_MIGRATION !== "1") {
+    console.error(
+      "This script is deprecated (writes local-disk URLs, superseded by R2). " +
+        "Use `npm run migrate:images-r2` instead. Set " +
+        "ALLOW_DEPRECATED_DISK_MIGRATION=1 to override.",
+    );
+    process.exit(1);
+  }
+
   console.log("=== Migrate Base64 Recipe Images to Disk ===\n");
 
   // Ensure output directory exists

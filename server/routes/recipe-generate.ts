@@ -4,6 +4,7 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { generateRecipeContent } from "../services/recipe-generation";
 import {
+  checkAiConfigured,
   checkPremiumFeature,
   handleRouteError,
   parseTimezone,
@@ -24,6 +25,8 @@ export function register(app: Express): void {
     recipeGenerationRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        if (!checkAiConfigured(res)) return;
+
         // Premium gate — mirrors POST /api/recipes/generate. Both endpoints
         // call the AI generator and must be restricted to premium users.
         const features = await checkPremiumFeature(

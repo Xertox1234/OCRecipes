@@ -78,7 +78,14 @@ export function CollapsibleSection({
         </Animated.View>
       </Pressable>
 
-      <Animated.View style={[animatedStyle, styles.clipContainer]}>
+      <Animated.View
+        style={[animatedStyle, styles.clipContainer]}
+        // Visual clipping (height 0) does not remove the children from the
+        // a11y tree — hide them so screen readers can't focus into a
+        // collapsed section (mirrors QuickLogDrawer's gating).
+        aria-hidden={!isExpanded}
+        importantForAccessibility={isExpanded ? "auto" : "no-hide-descendants"}
+      >
         <View style={styles.contentWrapper} onLayout={onContentLayout}>
           {children}
         </View>

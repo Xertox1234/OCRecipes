@@ -43,11 +43,12 @@ export interface CoachContextData {
 export async function buildCoachContext(
   userId: string,
   _features: PremiumFeatures,
+  tz: string = "UTC",
 ): Promise<CoachContextData> {
   const [profile, todayIntake, notebookEntries, dueCommitments, user] =
     await Promise.all([
       storage.getUserProfile(userId),
-      storage.getDailySummary(userId, new Date()),
+      storage.getDailySummary(userId, new Date(), tz),
       storage.getActiveNotebookEntries(userId),
       storage.getCommitmentsWithDueFollowUp(userId),
       storage.getUser(userId),

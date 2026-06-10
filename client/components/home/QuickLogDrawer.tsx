@@ -6,8 +6,6 @@ import React, {
   useMemo,
 } from "react";
 import {
-  AccessibilityInfo,
-  Platform,
   Pressable,
   StyleSheet,
   TextInput,
@@ -118,6 +116,9 @@ const ParsedItemRow = React.memo(function ParsedItemRow({
           onPress={handleRemove}
           accessibilityLabel={`Remove ${item.name}`}
           accessibilityRole="button"
+          // 14pt icon — hitSlop lifts the touch target past the WCAG 2.5.8
+          // AA 24px floor without growing the row.
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={({ pressed }) => ({
             opacity: pressed ? 0.5 : 1,
           })}
@@ -179,17 +180,9 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
     if (session.capWarning) toast.info(session.capWarning);
   }, [session.capWarning, toast]);
 
-  useEffect(() => {
-    if (Platform.OS === "ios" && session.parseError) {
-      AccessibilityInfo.announceForAccessibility(session.parseError);
-    }
-  }, [session.parseError]);
-
-  useEffect(() => {
-    if (Platform.OS === "ios" && session.submitError) {
-      AccessibilityInfo.announceForAccessibility(session.submitError);
-    }
-  }, [session.submitError]);
+  // parse/submit errors render via <InlineError>, which fires its own
+  // iOS-gated announce internally — do not announce them here too
+  // (docs/rules/accessibility.md double-announce exception).
 
   const { reset: sessionReset } = session;
 

@@ -298,7 +298,7 @@ export function register(app: Express): void {
               : "webp";
         // Old avatar (if any) is removed from storage after the new one lands.
         const currentUser = await storage.getUser(req.userId);
-        const avatarUrl = await saveAvatar(req.file.buffer, ext, req.userId);
+        const avatarUrl = await saveAvatar(req.file.buffer, ext);
 
         const user = await storage.updateUser(req.userId, { avatarUrl });
 

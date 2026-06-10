@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 import { logger } from "./logger";
+import { isR2Configured } from "./image-store";
 
 const envSchema = z.object({
   // Required — server will not start without these
@@ -32,7 +33,15 @@ const envSchema = z.object({
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET: z.string().optional(),
-  R2_PUBLIC_BASE_URL: z.string().url().optional(),
+  R2_PUBLIC_BASE_URL: z
+    .string()
+    .url()
+    .startsWith("https://", {
+      message:
+        "R2_PUBLIC_BASE_URL must use HTTPS — stored image URLs are served " +
+        "verbatim and plain HTTP becomes blocked mixed content",
+    })
+    .optional(),
 
   EXPO_PUBLIC_DOMAIN: z.string().optional(),
   EXPO_ACCESS_TOKEN: z.string().optional(),
@@ -121,13 +130,9 @@ export function validateEnv(): Env {
     );
   }
 
-  const r2Configured =
-    !!validated.R2_ACCOUNT_ID &&
-    !!validated.R2_ACCESS_KEY_ID &&
-    !!validated.R2_SECRET_ACCESS_KEY &&
-    !!validated.R2_BUCKET &&
-    !!validated.R2_PUBLIC_BASE_URL;
-  if (!r2Configured) {
+  // Single source of truth for "R2 is configured" — image-store owns the
+  // var list, so a future sixth R2 var can't drift past this guard.
+  if (!isR2Configured()) {
     if (validated.NODE_ENV === "production") {
       throw new Error(
         "R2 image storage is not configured but NODE_ENV=production — " +

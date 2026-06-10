@@ -138,8 +138,23 @@ export default function BatchScanScreen() {
     const unsubscribe = navigation.addListener("beforeRemove", (e) => {
       if (itemCount === 0) return;
 
+      // beforeRemove fires for ANY removal action, including our own
+      // "Done" replace to BatchSummary — that forward navigation must not
+      // trigger the discard guard (it reads the session it would clear).
+      // Narrowed to the known-safe target so a future redirect-style
+      // REPLACE doesn't silently bypass the guard.
+      const { action } = e.data;
+      if (
+        action.type === "REPLACE" &&
+        typeof action.payload === "object" &&
+        action.payload !== null &&
+        "name" in action.payload &&
+        (action.payload as { name?: unknown }).name === "BatchSummary"
+      ) {
+        return;
+      }
+
       e.preventDefault();
-      const action = e.data.action;
       confirm({
         title: "Discard scanned items?",
         message: `You have ${itemCount} item${itemCount !== 1 ? "s" : ""}. Discard and leave?`,
@@ -166,12 +181,21 @@ export default function BatchScanScreen() {
     navigation.goBack();
   }, [navigation]);
 
-  // Request permission on mount
+  // Request permission on mount. Dep on the status primitive, not the
+  // `permission` object — the hook returns a fresh object every render, so
+  // an object dep would re-fire the native request after every render.
+  // Auto-request only the never-asked state: re-requesting after an
+  // in-session denial would re-pop the Android system dialog with no user
+  // gesture (the on-screen grant button covers explicit retries). Note the
+  // hook's status is session-synthesized, so a prior-session OS denial still
+  // reads "undetermined" here — fixing that is tracked in
+  // todos/P3-2026-06-10-camera-permission-hook-accuracy.md.
+  const permissionStatus = permission?.status;
   useEffect(() => {
-    if (permission?.status !== "granted") {
+    if (permissionStatus === "undetermined") {
       void requestPermission();
     }
-  }, [permission, requestPermission]);
+  }, [permissionStatus, requestPermission]);
 
   if (permission?.status !== "granted") {
     return (

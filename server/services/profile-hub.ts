@@ -11,12 +11,13 @@ export interface ProfileWidgetData {
 
 export async function getProfileWidgets(
   userId: string,
+  tz: string = "UTC",
 ): Promise<ProfileWidgetData | null> {
   const date = new Date();
 
   const [user, dailySummary] = await Promise.all([
     storage.getUser(userId),
-    storage.getDailySummary(userId, date),
+    storage.getDailySummary(userId, date, tz),
   ]);
 
   if (!user) return null;

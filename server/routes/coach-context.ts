@@ -2,7 +2,11 @@ import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
-import { checkPremiumFeature, handleRouteError } from "./_helpers";
+import {
+  checkPremiumFeature,
+  handleRouteError,
+  parseTimezone,
+} from "./_helpers";
 import { crudRateLimit, chatRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -36,7 +40,11 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const data = await buildCoachContext(req.userId, features);
+        const data = await buildCoachContext(
+          req.userId,
+          features,
+          parseTimezone(req.headers["x-timezone"]),
+        );
         res.json(data);
       } catch (error) {
         handleRouteError(res, error, "get coach context");
