@@ -347,3 +347,5 @@ The script checks all `TextInput`s for `accessibilityLabel` but does not verify 
 - `client/constants/theme.ts` — WCAG contrast ratio comments to update after palette changes
 - `scripts/check-accessibility.js` — pre-commit script (with documented gaps above)
 - WCAG 2.1 Level AA: 1.4.3 (contrast ≥ 4.5:1), 2.5.5 (touch targets ≥ 44×44pt), 4.1.2 (role/state/name)
+
+**Hidden-surface checks (2026-06-10 audit):** `pointerEvents="none"`/`opacity: 0`/clipped-height views stay in the a11y tree — verify visually-hidden-but-mounted surfaces set `accessibilityElementsHidden` + `importantForAccessibility="no-hide-descendants"`, in BOTH directions when two surfaces swap (header ⇄ collapsed bar), and that reduced-motion-forced invisibility resyncs on runtime toggle. Also: RN 0.81 `Pressable` auto-propagates `disabled` to accessibilityState — only flag missing `accessibilityState={{disabled}}` on non-Pressable touchables.

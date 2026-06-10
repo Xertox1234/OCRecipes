@@ -424,3 +424,5 @@ using `grep` for `.sql`, config, native code, and plain-text searches.
 <!-- LSP-AGENT-BLOCK:END -->
 
 **For review:** before flagging a symbol as unused, or asserting a rename / signature change is safe, confirm the blast radius with `findReferences` / call-hierarchy — do not rely on grep.
+
+**Export/redaction check (2026-06-10 audit):** in data exports, treat infrastructure credentials as non-user-data even in own-data exports — Expo push tokens, raw IAP receipt blobs, and on Android the `transactionId` itself (it IS the Google purchase token). Object-storage keys on public CDNs must be random (`crypto.randomUUID()`), never `userId`-or-timestamp-derived.

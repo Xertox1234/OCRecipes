@@ -626,3 +626,5 @@ using `grep` for `.sql`, config, native code, and plain-text searches.
 <!-- LSP-AGENT-BLOCK:END -->
 
 **For review:** before flagging a symbol as unused, or asserting a rename / signature change is safe, confirm the blast radius with `findReferences` / call-hierarchy — do not rely on grep.
+
+**Test-fixture invariants (2026-06-10 audit):** when a fix changes a value's FORMAT (key shapes, URL schemes, ID derivation), check that test fixtures and assertions stopped encoding the old format — a suite can stay green while its fixtures document a dead invariant. Also: adding a named export consumed by a module under test requires updating every `vi.mock` factory of that module (Vitest mock proxies throw lazily on missing exports, and SUT catch blocks mask the real error).
