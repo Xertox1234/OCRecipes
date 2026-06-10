@@ -39,7 +39,6 @@ const receiptAnalysisSchema = z.object({
   overallConfidence: z.number().min(0).max(1),
 });
 
-export type ReceiptItem = z.infer<typeof receiptItemSchema>;
 export type ReceiptAnalysisResult = z.infer<typeof receiptAnalysisSchema>;
 
 const RECEIPT_ANALYSIS_PROMPT = `You are a grocery receipt analysis assistant. Analyze the receipt photo(s) and extract all purchased items.

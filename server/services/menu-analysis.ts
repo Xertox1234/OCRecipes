@@ -31,7 +31,6 @@ const menuAnalysisSchema = z.object({
   cuisine: z.string().optional(),
 });
 
-export type MenuAnalysisItem = z.infer<typeof menuItemSchema>;
 export type MenuAnalysisResult = z.infer<typeof menuAnalysisSchema> & {
   /** Per-item allergen flags keyed by item name. */
   allergenFlags?: Record<string, AllergenMatch>;

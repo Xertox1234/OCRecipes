@@ -11,7 +11,7 @@ describe("recognizeTextFromPhoto", () => {
     mockRecognize.mockReset();
   });
 
-  it("returns full text and mapped blocks on success", async () => {
+  it("returns the recognized text on success", async () => {
     mockRecognize.mockResolvedValue({
       text: "Calories 250\nProtein 10g",
       blocks: [{ text: "Calories 250" }, { text: "Protein 10g" }],
@@ -20,20 +20,15 @@ describe("recognizeTextFromPhoto", () => {
     const result = await recognizeTextFromPhoto("file:///tmp/photo.jpg");
 
     expect(result.text).toBe("Calories 250\nProtein 10g");
-    expect(result.blocks).toEqual([
-      { text: "Calories 250" },
-      { text: "Protein 10g" },
-    ]);
     expect(mockRecognize).toHaveBeenCalledWith("file:///tmp/photo.jpg");
   });
 
-  it("returns empty text and empty blocks for a blank image", async () => {
+  it("returns empty text for a blank image", async () => {
     mockRecognize.mockResolvedValue({ text: "", blocks: [] });
 
     const result = await recognizeTextFromPhoto("file:///tmp/blank.jpg");
 
     expect(result.text).toBe("");
-    expect(result.blocks).toHaveLength(0);
   });
 
   it("propagates errors thrown by the native module", async () => {

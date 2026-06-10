@@ -65,7 +65,7 @@ export type RootStackParamList = {
     barcode?: string;
     verificationMode?: boolean;
     verifyBarcode?: string;
-    /** Raw OCR text from frame processor for instant local parsing */
+    /** Raw OCR text from on-device snapshot OCR for instant local parsing */
     localOCRText?: string;
   };
   NutritionDetail: {
