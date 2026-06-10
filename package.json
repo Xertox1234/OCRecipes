@@ -177,7 +177,8 @@
     "vitest": "^4.1.7"
   },
   "overrides": {
-    "postcss": "^8.5.10"
+    "postcss": "^8.5.10",
+    "qs": "^6.15.2"
   },
   "lint-staged": {
     "*.{ts,tsx}": [
