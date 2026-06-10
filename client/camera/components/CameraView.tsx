@@ -2,7 +2,6 @@ import React, {
   forwardRef,
   useImperativeHandle,
   useRef,
-  useEffect,
   useCallback,
 } from "react";
 import { StyleSheet, View } from "react-native";
@@ -119,15 +118,6 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       },
     });
 
-    // Torch is imperative in V5 — drive it via controller ref
-    useEffect(() => {
-      cameraRef.current?.controller
-        ?.setTorchMode(enableTorch ? "on" : "off")
-        .catch(() => {
-          // Device may not have a torch; ignore
-        });
-    }, [enableTorch]);
-
     useImperativeHandle(ref, () => ({
       takePicture: async (
         _options?: PhotoOptions,
@@ -160,6 +150,12 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
         device={device}
         isActive={isActive}
         outputs={outputs}
+        // Declarative torch (v5) — the framework re-applies it when the
+        // session restarts (isActive false→true), unlike an imperative
+        // setTorchMode effect which left the hardware torch off on resume.
+        // undefined skips the lib's torch updater entirely — setTorchMode
+        // throws on torch-less devices and the lib doesn't catch it.
+        torchMode={device.hasTorch ? (enableTorch ? "on" : "off") : undefined}
         onError={(error) => {
           logger.warn("[CameraView] Camera error:", error.message);
         }}

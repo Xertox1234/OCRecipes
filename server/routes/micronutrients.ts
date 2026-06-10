@@ -4,6 +4,7 @@ import {
   handleRouteError,
   parsePositiveIntParam,
   parseQueryString,
+  parseTimezone,
 } from "./_helpers";
 import { micronutrientRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
@@ -75,8 +76,13 @@ export function register(app: Express): void {
         const dateStr = parseQueryString(req.query.date);
         const date = dateStr ? new Date(dateStr) : new Date();
 
-        // Get daily logs for the date
-        const logs = await storage.getDailyLogs(req.userId, date);
+        // Get daily logs for the date, day-bucketed in the client's timezone
+        // so micros cover the same day window as the macro summary endpoints.
+        const logs = await storage.getDailyLogs(
+          req.userId,
+          date,
+          parseTimezone(req.headers["x-timezone"]),
+        );
 
         // Batch-fetch all scanned items in a single query (fixes N+1)
         const scannedItemIds = [

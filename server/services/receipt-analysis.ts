@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { openai, MODEL_HEAVY } from "../lib/openai";
+import { openai, MODEL_HEAVY, OPENAI_TIMEOUT_HEAVY_MS } from "../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
 import { createServiceLogger, toError } from "../lib/logger";
 
@@ -109,31 +109,36 @@ export async function analyzeReceiptPhotos(
 
   let response;
   try {
-    response = await openai.chat.completions.create({
-      model: MODEL_HEAVY,
-      messages: [
-        {
-          role: "system",
-          content: RECEIPT_ANALYSIS_PROMPT,
-        },
-        {
-          role: "user",
-          content: [
-            ...imageContents,
-            {
-              type: "text" as const,
-              text:
-                imagesBase64.length > 1
-                  ? `Analyze these ${imagesBase64.length} receipt photos. They may be different sections of the same receipt.`
-                  : "Analyze this receipt photo and extract all food items.",
-            },
-          ],
-        },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 4096,
-      temperature: 0.2,
-    });
+    response = await openai.chat.completions.create(
+      {
+        model: MODEL_HEAVY,
+        messages: [
+          {
+            role: "system",
+            content: RECEIPT_ANALYSIS_PROMPT,
+          },
+          {
+            role: "user",
+            content: [
+              ...imageContents,
+              {
+                type: "text" as const,
+                text:
+                  imagesBase64.length > 1
+                    ? `Analyze these ${imagesBase64.length} receipt photos. They may be different sections of the same receipt.`
+                    : "Analyze this receipt photo and extract all food items.",
+              },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 4096,
+        temperature: 0.2,
+      },
+      // Multi-image high-detail vision is a heavy call — same tier as
+      // menu-analysis (the 45s client default can cut off large receipts).
+      { timeout: OPENAI_TIMEOUT_HEAVY_MS },
+    );
   } catch (error) {
     log.error({ err: toError(error) }, "receipt analysis API error");
     throw new Error("Failed to analyze receipt photo. Please try again.");

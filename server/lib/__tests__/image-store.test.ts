@@ -68,15 +68,16 @@ describe("image-store", () => {
     );
   });
 
-  it("saveAvatar uploads under avatars/ with the given extension", async () => {
+  it("saveAvatar uploads under avatars/ with a random key and the given extension", async () => {
     setR2Env(true);
     const { saveAvatar } = await load();
-    const url = await saveAvatar(Buffer.from("jpg-bytes"), "jpg", "user-42");
+    const url = await saveAvatar(Buffer.from("jpg-bytes"), "jpg");
     const cmd = sendMock.mock.calls[0][0];
-    expect(cmd.input.Key).toMatch(/^avatars\/user-42-\d+\.jpg$/);
+    // Key must be a UUID — not userId/timestamp, which leak on the public CDN
+    expect(cmd.input.Key).toMatch(/^avatars\/[0-9a-f-]{36}\.jpg$/);
     expect(cmd.input.ContentType).toBe("image/jpeg");
     expect(url).toMatch(
-      /^https:\/\/img\.example\.com\/avatars\/user-42-\d+\.jpg$/,
+      /^https:\/\/img\.example\.com\/avatars\/[0-9a-f-]{36}\.jpg$/,
     );
   });
 
@@ -160,9 +161,9 @@ describe("image-store", () => {
   it("saveAvatar sets image/webp content-type for webp", async () => {
     setR2Env(true);
     const { saveAvatar } = await load();
-    await saveAvatar(Buffer.from("webp"), "webp", "user-9");
+    await saveAvatar(Buffer.from("webp"), "webp");
     const cmd = sendMock.mock.calls[0][0];
     expect(cmd.input.ContentType).toBe("image/webp");
-    expect(cmd.input.Key).toMatch(/^avatars\/user-9-\d+\.webp$/);
+    expect(cmd.input.Key).toMatch(/^avatars\/[0-9a-f-]{36}\.webp$/);
   });
 });

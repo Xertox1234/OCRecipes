@@ -156,13 +156,23 @@ export default function HomeScreen() {
           },
         ]}
         pointerEvents={isBarVisible ? "auto" : "none"}
+        // pointerEvents="none" does NOT remove the bar from the a11y tree —
+        // hide it explicitly or screen readers focus an invisible button.
+        accessibilityElementsHidden={!isBarVisible}
+        importantForAccessibility={
+          isBarVisible ? "auto" : "no-hide-descendants"
+        }
       >
         <Pressable
           onPress={handleCalorieTap}
           style={styles.collapsedBarContent}
           accessibilityRole="button"
           accessibilityLabel={
-            budgetErrored ? calorieText : `${calorieText}. Tap for details.`
+            budgetErrored
+              ? calorieText
+              : calorieText
+                ? `${calorieText}. Tap for details.`
+                : "Calorie summary loading"
           }
         >
           <ThemedText style={[styles.collapsedBarText, { color: theme.text }]}>
@@ -188,7 +198,15 @@ export default function HomeScreen() {
           <RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} />
         }
       >
-        <Animated.View style={[styles.expandableHeader, headerAnimatedStyle]}>
+        <Animated.View
+          style={[styles.expandableHeader, headerAnimatedStyle]}
+          // Inverse of the collapsed bar: when the bar takes over, the faded
+          // header is visually gone but still in the a11y tree — hide it.
+          accessibilityElementsHidden={isBarVisible}
+          importantForAccessibility={
+            isBarVisible ? "no-hide-descendants" : "auto"
+          }
+        >
           <DailySummaryHeader
             onCalorieTap={handleCalorieTap}
             budget={budget}

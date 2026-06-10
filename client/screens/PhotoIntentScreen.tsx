@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { StyleSheet, View, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -8,6 +8,7 @@ import * as Haptics from "expo-haptics";
 import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { Card } from "@/components/Card";
+import { UpgradeModal } from "@/components/UpgradeModal";
 import { ScanFlowStepIndicator } from "@/components/ScanFlowStepIndicator";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -24,10 +25,6 @@ type PhotoIntentScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   "PhotoIntent"
 >;
-
-type RouteParams = {
-  imageUri?: string;
-};
 
 interface IntentOption {
   intent: PhotoIntent | "cook";
@@ -94,18 +91,37 @@ export default function PhotoIntentScreen() {
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<PhotoIntentScreenNavigationProp>();
-  const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
+  const route = useRoute<RouteProp<RootStackParamList, "PhotoIntent">>();
   const { features, canGenerateRecipe } = usePremiumContext();
 
-  const { imageUri } = route.params;
+  // Params are declared `| undefined` in RootStackParamList — the Home
+  // "scan-menu" action navigates here with no params at all.
+  const { imageUri } = route.params ?? {};
 
   const headerPaddingStyle = useMemo(
     () => ({ paddingTop: headerHeight }),
     [headerHeight],
   );
 
+  const [showUpgrade, setShowUpgrade] = useState(false);
+
+  const isRecipeAvailable = features.recipeGeneration && canGenerateRecipe;
+
+  // Single source of truth for the lock — used by both the badge rendering
+  // and the tap handler so a locked affordance also gates the interaction.
+  const isOptionLocked = (option: IntentOption) =>
+    option.intent === "cook"
+      ? !!option.requiresPremium && !features.cookAndTrack
+      : !!option.requiresPremium && !isRecipeAvailable;
+
   const handleSelectIntent = (option: IntentOption) => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    // Locked premium intents open the upgrade flow instead of uploading a
+    // photo that the server-side premium gate would reject with a raw error.
+    if (isOptionLocked(option)) {
+      setShowUpgrade(true);
+      return;
+    }
     // If no image was provided, user must capture one first via Scan screen
     if (!imageUri) {
       navigation.navigate("Scan");
@@ -122,8 +138,6 @@ export default function PhotoIntentScreen() {
       });
     }
   };
-
-  const isRecipeAvailable = features.recipeGeneration && canGenerateRecipe;
 
   return (
     <ThemedView style={styles.container} accessibilityViewIsModal>
@@ -154,10 +168,7 @@ export default function PhotoIntentScreen() {
         {/* Intent Options */}
         <View style={styles.optionsContainer}>
           {INTENT_OPTIONS.map((option, index) => {
-            const isLocked =
-              option.intent === "cook"
-                ? option.requiresPremium && !features.cookAndTrack
-                : option.requiresPremium && !isRecipeAvailable;
+            const isLocked = isOptionLocked(option);
 
             return (
               <Animated.View
@@ -171,8 +182,12 @@ export default function PhotoIntentScreen() {
                 <Card
                   elevation={option.isPrimary ? 2 : 1}
                   onPress={() => handleSelectIntent(option)}
-                  accessibilityLabel={option.label}
-                  accessibilityHint={option.description}
+                  accessibilityLabel={
+                    isLocked ? `${option.label}, premium feature` : option.label
+                  }
+                  accessibilityHint={
+                    isLocked ? "Opens the upgrade screen" : option.description
+                  }
                   style={[
                     styles.intentCard,
                     option.isPrimary && {
@@ -240,6 +255,10 @@ export default function PhotoIntentScreen() {
           })}
         </View>
       </View>
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+      />
     </ThemedView>
   );
 }

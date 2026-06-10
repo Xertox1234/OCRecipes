@@ -114,12 +114,19 @@ async function putToR2(
   return publicUrl(cfg, key);
 }
 
-/** Persist a generated recipe image (PNG). Returns the stored URL. */
-export async function saveRecipeImage(buffer: Buffer): Promise<string> {
+/**
+ * Persist a recipe image. Returns the stored URL.
+ * AI-generated images are PNG (the default); pass `ext` when migrating
+ * legacy disk images so JPEG/WebP bytes aren't stored as `image/png`.
+ */
+export async function saveRecipeImage(
+  buffer: Buffer,
+  ext: Ext = "png",
+): Promise<string> {
   assertSize(buffer);
-  const filename = `recipe-${crypto.randomUUID()}.png`;
+  const filename = `recipe-${crypto.randomUUID()}.${ext}`;
   const cfg = readR2Config();
-  if (cfg) return putToR2(cfg, `recipe-images/${filename}`, buffer, "png");
+  if (cfg) return putToR2(cfg, `recipe-images/${filename}`, buffer, ext);
   return putToDisk("recipe-images", filename, buffer);
 }
 
@@ -127,10 +134,12 @@ export async function saveRecipeImage(buffer: Buffer): Promise<string> {
 export async function saveAvatar(
   buffer: Buffer,
   ext: "jpg" | "png" | "webp",
-  userId: string,
 ): Promise<string> {
   assertSize(buffer);
-  const filename = `${userId}-${Date.now()}.${ext}`;
+  // Random key (not userId + timestamp): avatar URLs live on a public CDN,
+  // so the key must not leak the user's UUID or be guessable, and two
+  // same-millisecond uploads must not silently overwrite each other.
+  const filename = `${crypto.randomUUID()}.${ext}`;
   const cfg = readR2Config();
   if (cfg) return putToR2(cfg, `avatars/${filename}`, buffer, ext);
   return putToDisk("avatars", filename, buffer);

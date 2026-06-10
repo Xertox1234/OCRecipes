@@ -213,6 +213,10 @@ function main(): void {
         ].join("\n"),
       );
       process.exit(0);
+    } else {
+      // A typo like `--aply` must not silently run in report-only mode.
+      console.error(`Unknown argument: ${args[i]} (see --help)`);
+      process.exit(2);
     }
   }
 

@@ -427,7 +427,7 @@ export async function* handleCoachChat(
     notebookEntries,
   ] = await Promise.all([
     storage.getUserProfile(userId),
-    storage.getDailySummary(userId, today),
+    storage.getDailySummary(userId, today, tz),
     storage.getChatMessages(conversationId, 20, userId),
     tierConfig.fetchMealPatterns
       ? storage.getDailyLogsInRange(userId, sevenDaysAgo, today)
@@ -603,6 +603,7 @@ export async function* handleCoachChat(
       // Reuse the intent classified once at the top of the turn — skips a
       // redundant classifyIntent call inside the generator.
       intent,
+      tz,
     )) {
       for (const label of pendingStatusLabels.splice(0)) {
         if (!isAborted()) yield { type: "status", label };

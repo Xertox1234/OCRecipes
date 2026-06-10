@@ -52,7 +52,10 @@ describe("useMicronutrients", () => {
         micronutrients: [],
       };
       queryClient.setQueryData(
-        ["/api/micronutrients/daily?date=2024-06-15"],
+        [
+          "/api/micronutrients/daily?date=2024-06-15",
+          { tz: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        ],
         mockData,
       );
 

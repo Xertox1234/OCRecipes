@@ -41,7 +41,6 @@ interface SettingsItemConfig {
   id: string;
   icon: FeatherIconName;
   label: string;
-  premiumKey?: never;
   danger?: boolean;
   iosOnly?: boolean;
 }
@@ -241,7 +240,6 @@ export default function SettingsScreen() {
     >
       <Card elevation={1} style={styles.card}>
         {visibleItems.map((item, index) => {
-          const unlocked = true;
           return (
             <React.Fragment key={item.id}>
               {index > 0 && (
@@ -251,15 +249,9 @@ export default function SettingsScreen() {
               )}
               <Pressable
                 onPress={() => handlePress(item.id)}
-                accessibilityLabel={
-                  !unlocked
-                    ? `${item.label}. Premium feature, locked`
-                    : item.label
-                }
+                accessibilityLabel={item.label}
                 accessibilityRole="button"
-                accessibilityHint={
-                  !unlocked ? "Opens upgrade screen" : "Tap to open"
-                }
+                accessibilityHint="Tap to open"
                 style={({ pressed }) => [
                   styles.settingsItem,
                   pressed && { opacity: 0.7 },
@@ -282,14 +274,6 @@ export default function SettingsScreen() {
                   </ThemedText>
                 </View>
                 <View style={styles.settingsItemRight}>
-                  {!unlocked && (
-                    <Feather
-                      name="lock"
-                      size={14}
-                      color={theme.textSecondary}
-                      accessible={false}
-                    />
-                  )}
                   {!item.danger && (
                     <Feather
                       name="chevron-right"

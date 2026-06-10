@@ -16,6 +16,7 @@ import type {
   AllergenSubstitutionSuggestion,
 } from "@shared/types/allergen-check";
 import { getSubstitutions } from "../services/ingredient-substitution";
+import { isAiConfigured } from "../lib/openai";
 import type { CookingSessionIngredient } from "@shared/types/cook-session";
 
 export function register(app: Express): void {
@@ -62,7 +63,11 @@ export function register(app: Express): void {
         // Build substitution suggestions for matched ingredients
         let substitutions: AllergenSubstitutionSuggestion[] = [];
 
-        if (matches.length > 0) {
+        // Substitutions are AI enrichment on top of the deterministic
+        // allergen match — when the OpenAI key is absent (PR #390 degraded
+        // mode), return matches with no suggestions instead of failing the
+        // safety check with a 500/503.
+        if (matches.length > 0 && isAiConfigured) {
           // Build a lookup: ingredient name → first allergen match
           const matchMap = new Map(matches.map((m) => [m.ingredientName, m]));
           const uniqueIngredients = [...matchMap.keys()];

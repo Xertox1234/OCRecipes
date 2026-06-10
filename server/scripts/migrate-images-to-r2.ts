@@ -25,6 +25,17 @@ import {
 const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
 const DRY_RUN = process.argv.includes("--dry-run");
 
+// Fail loudly on unrecognized flags — a typo like `--dryrun` would
+// otherwise silently APPLY the migration.
+const unknownFlags = process.argv.slice(2).filter((a) => a !== "--dry-run");
+if (unknownFlags.length > 0) {
+  console.error(`Unknown argument(s): ${unknownFlags.join(", ")}`);
+  console.error(
+    "Usage: npx tsx server/scripts/migrate-images-to-r2.ts [--dry-run]",
+  );
+  process.exit(2);
+}
+
 function diskPathFor(relativeUrl: string): string | null {
   // /api/recipe-images/<f> -> uploads/recipe-images/<f>; same for avatars
   const m = relativeUrl.match(/^\/api\/(recipe-images|avatars)\/(.+)$/);
@@ -47,7 +58,6 @@ type UploadResult =
 async function uploadOne(
   relativeUrl: string,
   kind: "recipe" | "avatar",
-  userId?: string,
 ): Promise<UploadResult> {
   const diskPath = diskPathFor(relativeUrl);
   if (!diskPath || !fs.existsSync(diskPath)) {
@@ -60,12 +70,16 @@ async function uploadOne(
   }
   const buffer = await fs.promises.readFile(diskPath);
   if (kind === "recipe") {
-    return { status: "uploaded", url: await saveRecipeImage(buffer) };
+    // Legacy disk recipe images can be jpg/webp — pass the real extension
+    // so the R2 object isn't stored with an image/png ContentType.
+    return {
+      status: "uploaded",
+      url: await saveRecipeImage(buffer, extOf(diskPath)),
+    };
   }
-  if (!userId) throw new Error("userId required for avatar upload");
   return {
     status: "uploaded",
-    url: await saveAvatar(buffer, extOf(diskPath), userId),
+    url: await saveAvatar(buffer, extOf(diskPath)),
   };
 }
 
@@ -132,7 +146,7 @@ async function migrateAvatars() {
   };
   for (const row of rows) {
     try {
-      const result = await uploadOne(row.avatarUrl!, "avatar", row.id);
+      const result = await uploadOne(row.avatarUrl!, "avatar");
       if (result.status === "uploaded") {
         await db
           .update(users)
@@ -183,6 +197,9 @@ async function main() {
     `\n=== Done. migrated=${migrated}, wouldMigrate=${wouldMigrate}, missing=${missing}, failed=${failed} ===`,
   );
   await pool.end();
+  // Partial failure must be visible to operators/pipelines via exit code —
+  // a 0 here would read as "fully migrated".
+  if (failed > 0) process.exitCode = 1;
 }
 
 main().catch((err) => {

@@ -15,6 +15,7 @@ import {
 } from "./_rate-limiters";
 import { numericStringField, nullableNumericStringField } from "./_schemas";
 import {
+  checkAiConfigured,
   checkPremiumFeature,
   formatZodError,
   handleRouteError,
@@ -617,6 +618,8 @@ export function register(app: Express): void {
     pantryMealPlanRateLimit,
     async (req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
+        if (!checkAiConfigured(res)) return;
+
         const features = await checkPremiumFeature(
           req,
           res,

@@ -219,7 +219,7 @@ export async function sendDailyCheckinReminders(): Promise<void> {
           );
           if (alreadyPending) return;
 
-          const summary = await storage.getDailySummary(userId, new Date());
+          const summary = await storage.getDailySummary(userId, new Date(), tz);
 
           await storage.createPendingReminder({
             userId,
@@ -275,11 +275,11 @@ export async function sendMealLogReminders(): Promise<void> {
           const profile = profileMap.get(userId);
           if (isMuted(profile?.reminderMutes, "meal-log")) return;
 
-          const logs = await storage.getDailyLogs(userId, new Date());
-          if (logs.length > 0) return;
-
           // Day-bucket in the user's stored timezone (NULL/invalid → "UTC").
           const tz = parseTimezone(tzMap.get(userId));
+
+          const logs = await storage.getDailyLogs(userId, new Date(), tz);
+          if (logs.length > 0) return;
           const alreadyPending = await storage.hasPendingReminderToday(
             userId,
             "meal-log",
