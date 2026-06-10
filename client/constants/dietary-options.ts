@@ -316,31 +316,7 @@ export const COOKING_TIMES: CookingTimeOption[] = [
   { id: "leisurely", name: "Leisurely", description: "1+ hours, no rush" },
 ];
 
-// Label lookups for display (used in ProfileScreen)
-export const DIET_LABELS: Record<string, string> = Object.fromEntries(
-  DIET_TYPES.map((d) => [d.id, d.name]),
-);
-
-export const GOAL_LABELS: Record<string, string> = Object.fromEntries(
-  GOALS.map((g) => [g.id, g.name]),
-);
-
-export const ACTIVITY_LABELS: Record<string, string> = Object.fromEntries(
-  ACTIVITY_LEVELS.map((a) => [a.id, a.name]),
-);
-
-export const SKILL_LABELS: Record<string, string> = Object.fromEntries(
-  SKILL_LEVELS.map((s) => [s.id, s.name]),
-);
-
-export const TIME_LABELS: Record<string, string> = Object.fromEntries(
-  COOKING_TIMES.map((t) => [t.id, t.name]),
-);
-
-export const CONDITION_LABELS: Record<string, string> = Object.fromEntries(
-  HEALTH_CONDITIONS.map((c) => [c.id, c.name]),
-);
-
+// Label lookup for display
 export const ALLERGEN_LABELS: Record<string, string> = Object.fromEntries(
   COMMON_ALLERGENS.map((a) => [a.id, a.name]),
 );

@@ -11,6 +11,5 @@ export async function recognizeTextFromPhoto(
   const result = await TextRecognition.recognize(uri);
   return {
     text: result.text,
-    blocks: result.blocks.map((block) => ({ text: block.text })),
   };
 }

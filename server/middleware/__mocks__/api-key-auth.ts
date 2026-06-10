@@ -11,5 +11,4 @@ export const requireApiKey = (
   next();
 };
 
-export const invalidateApiKeyCache = vi.fn();
 export const clearApiKeyCache = vi.fn();

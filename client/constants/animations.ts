@@ -73,9 +73,3 @@ export const successPopConfig: WithSpringConfig = {
   stiffness: 200,
   overshootClamping: false,
 };
-
-/** Timing configuration for the fade-out phase of a success flash */
-export const successFlashConfig: WithTimingConfig = {
-  duration: 200,
-  easing: Easing.out(Easing.cubic),
-};

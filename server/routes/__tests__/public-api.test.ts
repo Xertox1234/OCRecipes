@@ -30,7 +30,6 @@ vi.mock("../../middleware/api-key-auth", () => ({
     req.apiKeyTier = mockTier;
     next();
   },
-  invalidateApiKeyCache: vi.fn(),
   clearApiKeyCache: vi.fn(),
 }));
 

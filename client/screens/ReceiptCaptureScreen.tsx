@@ -101,7 +101,7 @@ export default function ReceiptCaptureScreen() {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
       const galleryUris = result.assets.map((a) => a.uri).slice(0, remaining);
       setPhotos((prev) => [...prev, ...galleryUris]);
-      // Gallery photos have no frame-processor OCR available
+      // Gallery photos have no capture-time OCR available
       setOcrTexts((prev) => [...prev, ...galleryUris.map(() => undefined)]);
     }
   }, [photos.length, haptics]);

@@ -23,14 +23,8 @@ export interface PhotoOptions {
 }
 
 // Local type for snapshot OCR results (from @react-native-ml-kit/text-recognition)
-export interface LocalOCRBlock {
-  text: string;
-  bounds?: { x: number; y: number; width: number; height: number };
-}
-
 export interface LocalOCRResult {
   text: string;
-  blocks: LocalOCRBlock[];
 }
 
 // Camera ref interface for imperative operations

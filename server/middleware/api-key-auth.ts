@@ -59,12 +59,7 @@ function setCachedApiKey(
   });
 }
 
-/** Immediately remove a cached API key (call on revocation) */
-export function invalidateApiKeyCache(rawKey: string): void {
-  apiKeyCache.delete(cacheKey(rawKey));
-}
-
-/** Clear all cached keys (for testing) */
+/** Clear all cached keys (call on revocation/tier change; also used by tests) */
 export function clearApiKeyCache(): void {
   apiKeyCache.clear();
 }
