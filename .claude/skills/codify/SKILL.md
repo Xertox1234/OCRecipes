@@ -32,39 +32,50 @@ Build a list of changed file domains using this table (read top-to-bottom, first
 
 Combine all matched labels. If the diff is empty, output "Nothing to codify — no changes on this branch." and stop.
 
-## Step 2 — Map domains to kimi-review patterns
+## Step 2 — Map domains to specialist review agents
 
-| Domain label(s)                | `--patterns` value |
-| ------------------------------ | ------------------ |
-| `security`                     | `security`         |
-| `architecture`, `duplication`  | `architecture`     |
-| `react-native`, `ui`, `camera` | `react-native`     |
-| `performance`                  | `performance`      |
-| `testing`, `test`              | `testing`          |
-| `database`                     | `database`         |
-| `api`                          | `api`              |
-| `hooks`                        | `hooks`            |
-| `typescript`, `types`          | `typescript`       |
-| `client-state`                 | `client-state`     |
-| _(no match)_                   | _(omit flag)_      |
+The domain labels from Step 1 carry forward to two places: they tell the code-reviewer subagent (Step 3) which lenses matter most, and they drive the self-improvement routing in Step 5 (which specialist agents get a new review rule). Map each label to its specialist agent(s):
 
-Combine values for multiple matches, e.g. `--patterns react-native,security`.
+| Domain label(s)                | Specialist agent(s) (self-improvement target)           |
+| ------------------------------ | ------------------------------------------------------- |
+| `security`                     | `security-auditor.md`, `ai-llm-specialist.md`           |
+| `architecture`, `duplication`  | `architecture-specialist.md`, `api-specialist.md`       |
+| `react-native`, `ui`, `camera` | `rn-ui-ux-specialist.md`, `camera-specialist.md`        |
+| `performance`                  | `performance-specialist.md`, `database-specialist.md`   |
+| `testing`, `test`              | `testing-specialist.md`                                 |
+| `database`                     | `database-specialist.md`, `nutrition-domain-expert.md`  |
+| `api`                          | `api-specialist.md`                                     |
+| `hooks`                        | `rn-ui-ux-specialist.md`                                |
+| `typescript`, `types`          | `typescript-specialist.md`                              |
+| `client-state`                 | `rn-ui-ux-specialist.md`                                |
+| `accessibility`                | `accessibility-specialist.md`, `rn-ui-ux-specialist.md` |
+| _(no match)_                   | `code-reviewer.md` only                                 |
 
-## Step 3 — Run kimi-review on the branch diff
+Combine targets for multiple matched domains. A finding in a touched domain that reveals a reusable review rule updates both `code-reviewer.md` and the matching specialist agent(s) (see Step 5).
+
+## Step 3 — Review the branch diff with the code-reviewer subagent
+
+**First, reuse existing review signal.** If a `code-reviewer` subagent already ran earlier in this session (e.g. the todo-executor's Step 6, or a manual review), its findings are your `review_output` — do not re-review. Skip the spawn below and go to Step 4.
+
+Otherwise, confirm there is a diff to review, then spawn the subagent:
 
 ```bash
-git diff main...HEAD | kimi-review \
-        --scope "session: $(git branch --show-current)" \
-        --patterns <mapped-patterns> \
-        --rules <mapped-patterns> \
-        --pattern-max-chars 12000 \
-        --profile ocrecipes \
-        --tiers CRITICAL,WARNING
+git diff main...HEAD --stat
 ```
 
-**Store the full output in working context as `review_output`.** Shell variables do not persist between Bash invocations — keep this in your context.
+If the diff is empty, set `review_output=""` and proceed to Step 4. Otherwise invoke the subagent via the Agent tool:
 
-Also check the current conversation for any kimi-review output from earlier in this session. Union both sources for Step 4.
+```
+Agent({
+  description: "Codify review: <branch name>",
+  subagent_type: "code-reviewer",
+  prompt: "Review the changes on this branch against established OCRecipes patterns.\n\nRun `git diff main...HEAD` to see the changes. Use LSP and file-reading tools as needed for full context. This branch touched these domains: <domain labels from Step 1>.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\n\nIf there are no issues, return exactly: No findings."
+})
+```
+
+**Store the subagent's full response in working context as `review_output`.** Shell variables do not persist between Bash invocations — keep this in your context.
+
+Also check the current conversation for any code-reviewer findings from earlier in this session. Union both sources for Step 4.
 
 ## Step 4 — Apply codification criteria
 
@@ -84,7 +95,7 @@ If nothing qualifies, output: "Nothing to codify from this session." and stop.
 
 ## Step 5 — Route each candidate
 
-For each codification candidate, classify by **nature of the finding**, not by kimi-review tier — a `CRITICAL` can be a knowledge-track convention; a `WARNING` can be a runtime-errors crash. Pick exactly one **solution target** from the 7-way table below.
+For each codification candidate, classify by **nature of the finding**, not by review tier — a `CRITICAL` can be a knowledge-track convention; a `WARNING` can be a runtime-errors crash. Pick exactly one **solution target** from the 7-way table below.
 
 **Solution target** — directory under `docs/solutions/`:
 
@@ -189,4 +200,4 @@ git add docs/solutions/conventions/<slug-1>-YYYY-MM-DD.md \
 git commit -m "docs(solutions): codify findings from $(git branch --show-current)"
 ```
 
-Use `docs(solutions):` as the conventional-commit type — matches Step 2-3 commits from the Phase 2 refactor (e.g. `88c16a6e`, `247eacd9`). The pre-commit hook re-runs `kimi-review` on the staged diff; resolve any CRITICAL findings before the commit lands.
+Use `docs(solutions):` as the conventional-commit type — matches Step 2-3 commits from the Phase 2 refactor (e.g. `88c16a6e`, `247eacd9`). The pre-commit hook runs `lint-staged` only (ESLint fix + Prettier on staged files); the full lint/type/test gate is enforced by CI on push.

@@ -10,7 +10,9 @@ For human contributor setup, see [DEV_SETUP.md](DEV_SETUP.md).
 
 ## Review Policy
 
-For code review, use the `code-reviewer` subagent (Agent tool with `subagent_type: "code-reviewer"`) for deep cross-file inspection, or the `/code-review` skill for diff-scoped review. Use specialist subagents for security, health-data, auth, or high-blast-radius changes.
+Code review runs through the OCRecipes-pattern-aware **`code-reviewer` subagent** (Agent tool with `subagent_type: "code-reviewer"`). It reviews only the current context's changed files against established patterns (`.claude/agents/code-reviewer.md`) and is the canonical path wired into the `/todo` executor (Step 6) and the `/codify` self-improvement loop (Step 3). Escalate to specialist subagents (`security-auditor`, `database-specialist`, `performance-specialist`, etc.) for security, health-data, auth, or high-blast-radius changes.
+
+The loop is **self-improving**: any review finding that reveals a reusable rule is fed back into `code-reviewer.md` and the matching specialist agent via `/codify` (`.claude/skills/codify/SKILL.md`), so the reviewer gets sharper over time. For a quick, generic, non-pattern-aware diff pass, the built-in `/code-review` skill is also available.
 
 ### CI (GitHub Actions)
 

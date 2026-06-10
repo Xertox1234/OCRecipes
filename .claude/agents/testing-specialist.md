@@ -15,7 +15,7 @@ You are a specialized agent for writing, reviewing, and maintaining tests in the
 4. **Test architecture** - Pure function extraction, testability boundaries
 5. **Pre-commit compatibility** - Ensure tests pass in the pre-commit hook pipeline
 6. **Coverage gaps** - Identify untested logic and recommend test additions
-7. **Review-gate regressions** - Kimi/Husky/CI shell gates need tests for clean-output sentinels, decorated CRITICAL findings, deletion/rename filters, and credential setup errors
+7. **Shell-gate regressions** - Husky/CI pattern-check scripts (accessibility, hardcoded-color, IDOR, eval-dataset-secrets) need tests for their detection logic and clean-pass behavior
 
 ---
 
@@ -43,17 +43,15 @@ You are a specialized agent for writing, reviewing, and maintaining tests in the
 
 ### Pre-Commit Pipeline
 
-The pre-commit hook (`.husky/pre-commit`) is deliberately fast — it runs `lint-staged` then a `kimi-review` staged-diff check. It does NOT run `check:types` or the Vitest suite; those are gated by CI on every push.
+The pre-commit hook (`.husky/pre-commit`) is deliberately fast — it runs `lint-staged` only. It does NOT run `check:types`, the Vitest suite, or any code-review pass; those are gated by CI on every push.
 
-1. `lint-staged` runs on staged files only:
-   - `*.{ts,tsx}` → `eslint --fix` + `prettier --write`
-   - `client/**/*.tsx` → `check-accessibility.js` + `check-hardcoded-colors.js`
-   - `server/storage/*.ts` → `check-idor-storage.js`
-   - `evals/datasets/*.json` → `check-eval-dataset-secrets.js`
-   - `*.{js,md}` → `prettier --write`
-2. `kimi-review` runs on the staged `.ts`/`.tsx` diff — **CRITICAL findings block the commit**, WARNING findings print but do not block. Auto-skips when no `.ts`/`.tsx` files are staged, when `SKIP_KIMI_REVIEW=1` is set, or when `kimi-review` is not on PATH.
+`lint-staged` runs on staged files only:
 
-Kimi gate tests must use real clean-output shapes (`[CRITICAL] — No findings.` and `No findings in requested tiers: ...`) and real decorated finding shapes (`- [CRITICAL] ...`, `**[CRITICAL]** ...`). If CI, Husky, and Claude hooks duplicate CRITICAL parsing, the harness should exercise all three paths.
+- `*.{ts,tsx}` → `eslint --fix` + `prettier --write`
+- `client/**/*.tsx` → `check-accessibility.js` + `check-hardcoded-colors.js`
+- `server/storage/*.ts` → `check-idor-storage.js`
+- `evals/datasets/*.json` → `check-eval-dataset-secrets.js`
+- `*.{js,md}` → `prettier --write`
 
 CI (`.github/workflows/ci.yml`) enforces the full gate on every push: `lint` → `check:types` → accessibility/colors/IDOR pattern scripts → `test:run`. Per CLAUDE.md, avoid running `test:run` / `check:types` / `lint` locally at session start or as a routine self-verify — trust CI to catch the typical pass/fail. Local runs are appropriate when debugging a specific failure CI reported, or when iterating on a single file's tests.
 
@@ -326,7 +324,7 @@ describe("ServiceName", () => {
 - `test/setup.ts` - Global Vitest setup: `vi.clearAllMocks()` in `beforeEach`, `JWT_SECRET` default, `__DEV__` global, production-DB guard. Wired via `setupFiles` in `vitest.config.ts`.
 - `docs/rules/testing.md` + `docs/solutions/` - Current testing rules and codified solutions (the live knowledge base)
 - `docs/legacy-patterns/testing.md` - Frozen archive of retired testing patterns (kept for deep-linked named sections only)
-- `.husky/pre-commit` - Pre-commit hook pipeline (`lint-staged` + `kimi-review`)
+- `.husky/pre-commit` - Pre-commit hook pipeline (`lint-staged` only)
 - `eslint.config.js` - ESLint rules including `as never` ban
 - `vitest.config.ts` - Vitest configuration
 - `tsconfig.check.json` - TypeScript config used by the CI type-check gate
