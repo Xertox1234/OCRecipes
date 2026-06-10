@@ -5,7 +5,7 @@ implement, open PRs, and (once trusted) auto-merge low-priority work on green CI
 
 `/goal` is a **native Claude Code CLI command**: you set a completion condition and
 Claude keeps working across turns until it's met, with a live elapsed/turns/tokens
-overlay. `/todo` is the worker it drives (worktree-isolated executors, kimi-gated).
+overlay. `/todo` is the worker it drives (worktree-isolated executors).
 `/goal` is the supervisor loop; `/todo` does the work.
 
 ## The five-filter safety model
@@ -15,12 +15,11 @@ No sleeping human is in the loop, so five independent filters stand in:
 1. **CI (required)** — `main` physically refuses any PR whose 5 checks aren't green
    (Lint·Types·Patterns, Tests 1-3/3, Coverage). No human approval is required by
    branch protection — only green CI. That is the repo's real merge bar.
-2. **kimi-review** — CRITICAL findings block the commit (semantic skim at commit time).
-3. **`scripts/todo-automerge-guard.sh`** — fail-CLOSED allowlist; HOLDs any PR that
+2. **`scripts/todo-automerge-guard.sh`** — fail-CLOSED allowlist; HOLDs any PR that
    touches a path outside the known-safe set (catches a mislabeled-severity todo).
-4. **Bounded stop conditions** — the `/goal` condition halts on N merges / token cap /
+3. **Bounded stop conditions** — the `/goal` condition halts on N merges / token cap /
    2 reds, so a systemic mistake can't merge many bad PRs before you wake.
-5. **In-loop `update-branch`** — the loop runs `gh pr update-branch` right before each
+4. **In-loop `update-branch`** — the loop runs `gh pr update-branch` right before each
    merge, re-passing CI against current main and closing the stale-merge hole (see gate).
 
 ## Rollout: debut attended, graduate to asleep
@@ -69,7 +68,7 @@ guarantee enforced outside the automation.
 ```
 /goal Drive every actionable todo with frontmatter `priority: low` in todos/ to a merged
 state (ignore the filename prefix; read the priority field). For each:
-  1. Implement it via the /todo executor flow (worktree-isolated, kimi-gated).
+  1. Implement it via the /todo executor flow (worktree-isolated).
   2. In the SAME branch/commit, move the todo file to todos/archive/ so archival is
      atomic with the change.
   3. Push the branch and OPEN A PR (low todos get no PR by default — you must create one

@@ -50,11 +50,6 @@ Check whether this todo is eligible for execution:
 2. **Dependency check**: If the Dependencies section lists other todo files, check whether each specific dependency filename exists as a file at `todos/<dependency-filename>.md`. If it exists (not moved to `todos/archive/`), the dependency is still pending — report `blocked` with the list of blocking todo filenames and stop.
    - Dependencies that reference external services, APIs, or non-todo items are not blocking.
 3. **Copilot delegation gate**: If the todo has a `github_issue` frontmatter value, treat the GitHub Issue as the active Copilot work queue item and report `skipped` with reason `delegated to Copilot: <url>`. Do not implement locally unless the orchestrator explicitly tells you this is a manual takeover.
-4. **kimi-review availability gate**: Check that the required API key is set:
-   ```bash
-   if [[ -z "${WORKER_API_KEY:-}" && -z "${OPENROUTER_API_KEY:-}" && ( -z "${MOONSHOT_API_KEY:-}" || -z "${WORKER_BASE_URL:-}" ) ]]; then echo "missing"; else echo "found"; fi
-   ```
-   If `missing`, report `blocked` with reason "kimi-review requires WORKER_API_KEY, OPENROUTER_API_KEY, or MOONSHOT_API_KEY with WORKER_BASE_URL — set one and retry."
 
 ---
 
@@ -167,7 +162,7 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 
 Before writing any code, call the `advisor` tool to validate the planned approach. The advisor automatically sees the executor's full transcript — which by this point includes the todo body, the research brief (or verified-solution citation from Step 3a), the `verified_solutions` note, and the source files you read in Step 3. No parameters are passed; the transcript is forwarded automatically.
 
-**Write a brief framing note immediately before calling `advisor()`.** The note scopes the advisor to _approach review_, not code-level critique (that is kimi-review's job at Step 6). It must cover:
+**Write a brief framing note immediately before calling `advisor()`.** The note scopes the advisor to _approach review_, not code-level critique (that is the code-reviewer subagent's job at Step 6). It must cover:
 
 - Todo title and the specific Acceptance Criteria checkboxes to be satisfied
 - The planned approach (research brief summary, or the matched solution from Step 3a if short-circuited)
@@ -182,7 +177,7 @@ Then end the note with: "Please end your response with exactly one verdict line:
 | Verdict            | Executor behavior                                                                                                                                                                                                                  |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GREEN`            | Proceed silently. Record `ADVISOR: green` for Step 11.                                                                                                                                                                             |
-| `YELLOW: <reason>` | Proceed. Add the reason to your `DEFERRED_WARNINGS` (same field as kimi-review WARNINGs). Record `ADVISOR: yellow` for Step 11.                                                                                                    |
+| `YELLOW: <reason>` | Proceed. Add the reason to your `DEFERRED_WARNINGS` (same field as code review WARNINGs). Record `ADVISOR: yellow` for Step 11.                                                                                                    |
 | `RED: <reason>`    | **Do not write code.** Report `blocked: advisor red-flag: <reason>` to the orchestrator (Step 11 "On skip/block"). The todo remains at `backlog` — no status flip, no revert needed (Step 4.0's in-progress flip has not yet run). |
 
 **Fallback: unparseable response.** If the advisor's response contains no line starting with `GREEN`, `YELLOW:`, or `RED:`, treat it as `YELLOW: advisor returned prose without a verdict line` — proceed and record the note in `DEFERRED_WARNINGS`. Never block on an ambiguous response.
@@ -228,51 +223,25 @@ After all commands pass, re-read every modified file and confirm the changes mat
 
 ## Step 6 — Code Review
 
-Run `kimi-review` against the uncommitted working-tree changes in this worktree. Map the todo's labels to `--patterns` using this table:
-
-| Todo label(s)                       | `--patterns` value                     |
-| ----------------------------------- | -------------------------------------- |
-| `security`                          | `security,api,database`                |
-| `architecture`, `duplication`       | `architecture,typescript`              |
-| `ui`, `remix`                       | `react-native,design-system,animation` |
-| `performance`                       | `performance,react-native,database`    |
-| `testing`, `test`                   | `testing,typescript`                   |
-| `database`                          | `database,security,architecture`       |
-| `api`                               | `api,security,architecture`            |
-| `hooks`                             | `hooks,client-state,react-native`      |
-| `typescript`, `types`               | `typescript`                           |
-| `client-state`                      | `client-state,hooks`                   |
-| `ai`, `prompting`, `evals`, `coach` | `ai-prompting,security,testing`        |
-| _(no match)_                        | _(omit `--patterns` flag)_             |
-
-Use the first matching row. If multiple labels match different rows, combine their values (e.g., `--patterns react-native,security`).
-
-Prefer a richer combination over a single narrow pattern when the todo crosses boundaries. The goal is to give Kimi enough repo-specific domain context to approximate the subagent checklist, not just a generic diff review.
-
-Pipe the working-tree diff into kimi-review and capture the output for use in Step 9. The review runs before the commit (Step 8), so the changes are staged or unstaged but not yet on HEAD — stdin is the correct way to pass them.
-
-First capture the diff, then guard for empty output before running the review:
+Check for working-tree changes, then review them with the `code-reviewer` subagent:
 
 ```bash
 DIFF=$(git diff HEAD -- .)
-if [[ -z "$DIFF" ]]; then
-  echo "No working-tree changes — skipping kimi-review."
-  REVIEW_OUTPUT=""
-else
-  REVIEW_OUTPUT=$(echo "$DIFF" | kimi-review \
-    --scope "<todo title>" \
-    --patterns <mapped-patterns> \
-      --rules <mapped-patterns> \
-      --pattern-max-chars 12000 \
-      --profile ocrecipes \
-    --tiers CRITICAL,WARNING,SUGGESTION)
-  echo "$REVIEW_OUTPUT"
-fi
 ```
 
-If no labels matched the table, omit `--patterns`, `--rules`, and `--pattern-max-chars`, but keep `--profile ocrecipes`.
+If `$DIFF` is empty, skip and set `REVIEW_OUTPUT=""`.
 
-**Store the full text of `REVIEW_OUTPUT` in your working context now** — shell variables do not persist between Bash tool invocations, and Step 9 needs this text. Treat it as an in-context note labeled `review_output`.
+Otherwise, invoke the subagent via the Agent tool:
+
+```
+Agent({
+  description: "Code review: <todo title>",
+  subagent_type: "code-reviewer",
+  prompt: "Review the uncommitted working-tree changes in this repository for correctness bugs, security issues, and adherence to OCRecipes patterns.\n\nRun `git diff HEAD -- .` to see the changes. Use LSP and file-reading tools as needed for full context.\n\nThis review is for todo: <todo title>.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n\nIf there are no issues, return exactly: No findings."
+})
+```
+
+Store the subagent's full response in working context as `review_output`.
 
 ---
 
@@ -549,7 +518,7 @@ FILES_CHANGED: <list of modified files>
 SHORT_CIRCUIT: <docs/solutions path reused as the primary guide (researcher skipped), or "none">
 REVIEW_ROUNDS: <0 if reviewer said LGTM first pass; 1 if one fix cycle was needed; 2 if two fix cycles were needed>
 ADVISOR: <green | yellow | red | skipped>
-DEFERRED_WARNINGS: <one line per unaddressed kimi-review WARNING or YELLOW advisor reason (description + file path), or "none">
+DEFERRED_WARNINGS: <one line per unaddressed code review WARNING or YELLOW advisor reason (description + file path), or "none">
 ```
 
 **On failure:**
