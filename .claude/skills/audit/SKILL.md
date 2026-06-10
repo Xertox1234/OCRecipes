@@ -220,17 +220,17 @@ For **each** finding the user wants fixed:
    - Grep/read the fixed code to confirm the change is present
    - For a **symbol-changing fix**, re-run `findReferences` to confirm the change propagated to every call site with no stale callers or dangling references — grep can miss alias-resolved usages.
    - Run the specific test file(s) to confirm they pass
-7. **Review the fix** with the `code-reviewer` subagent, scoped to just the files this fix touched. Spawn it via the Agent tool:
+7. **Review the fix** using the orchestrator-dispatched model in `docs/AI_WORKFLOW.md` → Review Policy, scoped to just the files this fix touched. The finding already carries a **domain** (the specialist that discovered it), so the natural reviewer is that domain's specialist — select it from the roster (usually **1**, cap **2** if the fix genuinely spans domains; content overrides the recorded domain). Dispatch via the Agent tool with the Review-Policy dispatch prompt, scoped to `git diff HEAD -- <files this fix touched>`:
 
    ```
    Agent({
-     description: "Audit fix review: <finding ID>",
-     subagent_type: "code-reviewer",
-     prompt: "Review a single audit fix for correctness, security, and OCRecipes pattern compliance.\n\nFix: <one-line fix description>\nDomain lens to emphasize: <finding domain>\n\nRun `git diff HEAD -- <files this fix touched>` to see only this fix's changes; read surrounding code and use LSP for full context.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\n\nIf there are no issues, return exactly: No findings."
+     description: "Audit fix review (<domain>): <finding ID>",
+     subagent_type: "<domain specialist, e.g. security-auditor>",
+     prompt: "Review a single audit fix through your <domain> lens — correctness, security, and OCRecipes pattern compliance.\n\nFix: <one-line fix description>\n\nRun `git diff HEAD -- <files this fix touched>` to see only this fix's changes; read surrounding code and use LSP for full context. Do NOT review unchanged code.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
    })
    ```
 
-   The subagent has full tool access (LSP, file reads) and applies the OCRecipes pattern checklist in `.claude/agents/code-reviewer.md` through the named domain lens — scope it to the single fix so each finding is verified before you move on (Phase 6 later deepens the inspection across the whole multi-file diff).
+   Reviewers have full tool access (LSP, file reads). Scope to the single fix so each finding is verified before you move on (Phase 6 later deepens the inspection across the whole multi-file diff). If multiple reviewers are selected, merge their findings before applying the tier rule.
 
    Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
    - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
@@ -239,7 +239,7 @@ For **each** finding the user wants fixed:
 
 8. Update manifest:
    - Status → `verified`
-   - Verification column → what you checked (e.g., "grep confirms userId param; 83/83 tests pass; code-reviewer: no findings"; for a symbol-changing fix: "findReferences shows 0 stale callers; 83/83 tests pass; code-reviewer: no findings")
+   - Verification column → what you checked (e.g., "grep confirms userId param; 83/83 tests pass; security-auditor review: no findings"; for a symbol-changing fix: "findReferences shows 0 stale callers; 83/83 tests pass; review: no findings")
 9. Move to the next finding
 
 **CRITICAL RULES:**
@@ -276,14 +276,13 @@ For findings the user wants deferred:
 
 ## Phase 6: Code Review
 
-This phase runs the `code-reviewer` subagent across the **whole multi-file diff** — a deeper pass than Phase 3's per-fix, per-finding reviews. Audit work is one of the places where the extra token cost is justified because the reviewer may need to reason across multiple files, patterns, and fix interactions that a single-fix scoped review cannot see.
+This phase reviews the **whole multi-file diff** — a deeper pass than Phase 3's per-fix, per-finding reviews. Audit work is one of the places where the extra token cost is justified because reviewers may need to reason across multiple files, patterns, and fix interactions that a single-fix scoped review cannot see. Dispatch per the `docs/AI_WORKFLOW.md` → Review Policy model.
 
-1. Run the code-reviewer subagent (`.claude/agents/code-reviewer.md`) with:
-   - The list of all modified files from Phase 3
-   - A one-line description of each fix (copy from the manifest)
-   - The instruction:
+1. **Select reviewers for the full diff** (per Review Policy): the relevant **domain specialists** for the union of all touched domains across the fixes, **plus** the `code-reviewer` generalist — always, here, because Phase 6's distinctive value is the cross-file + structural-quality pass that only the generalist carries. Dispatch them **in parallel** over the list of all modified files from Phase 3, giving each the one-line fix descriptions (from the manifest) for context.
+   - **Domain specialists**: use the Review-Policy dispatch prompt, scoped to the modified-file set, reviewing through each lens.
+   - **`code-reviewer`** (`.claude/agents/code-reviewer.md`): give it the cross-cutting instruction:
 
-     > Report CRITICAL / HIGH / MEDIUM / LOW / PASS per file. Focus on correctness, security, and pattern compliance. Do not flag style preferences.
+     > Report CRITICAL / HIGH / MEDIUM / LOW / PASS per file. Focus on correctness, security, and pattern compliance across files. Do not flag style preferences.
      >
      > **Additionally, apply the structural-quality approval bar** from `.claude/skills/audit/maintainability-checklist.md`. Treat as presumptive CRITICAL blockers when the fix:
      >
@@ -316,7 +315,7 @@ After code review is clean:
 
 After fixes are committed, extract reusable knowledge inline from the audit manifest and update specialist agents with new checks.
 
-**Important:** Codify all findings from Phase 3, including any corrections triggered by the per-fix code-reviewer pass — this Phase 8 pass should see the complete picture.
+**Important:** Codify all findings from Phase 3, including any corrections triggered by the per-fix review — this Phase 8 pass should see the complete picture.
 
 1. Review the manifest for codification candidates. Look for:
    - **Patterns** — Fixes that established reusable approaches (used/needed in 3+ places, non-obvious, project-specific)
@@ -360,7 +359,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
 
 **Why the order is fix → commit → codify:**
 
-- the per-fix code-reviewer pass runs inside Phase 3, so every fix is reviewed and verified before Phase 6 (Code Review) deepens the inspection across files
+- the per-fix domain-specialist review runs inside Phase 3, so every fix is reviewed and verified before Phase 6 (Code Review) deepens the inspection across files
 - Phase 6 (Code Review) is a subagent-based audit pass over the multi-file diff; Phase 7 (Commit) follows once review is clean
 - Committing before codifying keeps the fix diff clean and reviewable without docs noise
 - Codification (Phase 8) happens last so the codifier sees the complete picture — all verified fixes, including any corrections triggered by the per-fix review or by the Phase 6 review
@@ -409,7 +408,7 @@ After the fix commit (Phase 7) and the codification commit (Phase 8) both exist 
 - **The manifest is the source of truth.** Every finding must be in it. Every status change must be recorded.
 - **Zero open findings at close.** Everything is either verified, deferred (with todo), or false-positive.
 - **No documentation during the fix phase.** Fix code first (Phases 3-6). Codify patterns only after the fix commit in Phase 8.
-- **Per-fix review is not optional.** Every fix in Phase 3 must pass the `code-reviewer` subagent before being marked `verified`. It catches what test-based verification misses and gives Phase 8 the full context needed for codification and agent updates.
+- **Per-fix review is not optional.** Every fix in Phase 3 must pass its selected reviewer(s) (the finding's domain specialist, per the Review Policy roster) before being marked `verified`. It catches what test-based verification misses and gives Phase 8 the full context needed for codification and agent updates.
 - **Deferred is not dropped.** Findings the user explicitly chose to defer at Phase 2.5 triage get a todo (Phase 4) with priority and rationale. Surfaced WARNING/MEDIUM/LOW findings from Phases 3 and 6 stay in the manifest's Deferred Items table — they are NOT auto-filed as todos. The manifest is their record; the user decides at close whether any warrant a todo. "We'll get to it" is not a rationale.
 - **The changelog is append-only.** Never edit previous entries.
 - **Codification is not optional.** Every audit must run Phase 8 to extract knowledge. Do not spawn `.claude/agents/pattern-codifier.md`; codify directly from the manifest after fixes are committed.

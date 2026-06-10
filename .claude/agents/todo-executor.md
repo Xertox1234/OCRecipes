@@ -162,7 +162,7 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 
 Before writing any code, call the `advisor` tool to validate the planned approach. The advisor automatically sees the executor's full transcript — which by this point includes the todo body, the research brief (or verified-solution citation from Step 3a), the `verified_solutions` note, and the source files you read in Step 3. No parameters are passed; the transcript is forwarded automatically.
 
-**Write a brief framing note immediately before calling `advisor()`.** The note scopes the advisor to _approach review_, not code-level critique (that is the code-reviewer subagent's job at Step 6). It must cover:
+**Write a brief framing note immediately before calling `advisor()`.** The note scopes the advisor to _approach review_, not code-level critique (that is the Step 6 reviewers' job). It must cover:
 
 - Todo title and the specific Acceptance Criteria checkboxes to be satisfied
 - The planned approach (research brief summary, or the matched solution from Step 3a if short-circuited)
@@ -223,25 +223,29 @@ After all commands pass, re-read every modified file and confirm the changes mat
 
 ## Step 6 — Code Review
 
-Check for working-tree changes, then review them with the `code-reviewer` subagent:
+Review the working-tree changes using the **orchestrator-dispatched, domain-selected** model defined in `docs/AI_WORKFLOW.md` → Review Policy. You are the orchestrator here.
 
 ```bash
 DIFF=$(git diff HEAD -- .)
 ```
 
-If `$DIFF` is empty, skip and set `REVIEW_OUTPUT=""`.
+If `$DIFF` is empty, skip and set `review_output=""`.
 
-Otherwise, invoke the subagent via the Agent tool:
+Otherwise:
 
-```
-Agent({
-  description: "Code review: <todo title>",
-  subagent_type: "code-reviewer",
-  prompt: "Review the uncommitted working-tree changes in this repository for correctness bugs, security issues, and adherence to OCRecipes patterns.\n\nRun `git diff HEAD -- .` to see the changes. Use LSP and file-reading tools as needed for full context.\n\nThis review is for todo: <todo title>.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n\nIf there are no issues, return exactly: No findings."
-})
-```
+1. **Inspect the diff** (`git diff HEAD -- .`) — file paths **and** content.
+2. **Select the relevant reviewer subagents** from the roster in the Review Policy — typically **1–2 for a single todo, cap 3**. Match by domain: path is a hint, content overrides (a JWT/ownership change → `security-auditor`; a Drizzle query → `database-specialist`; a camera screen → `camera-specialist`; an `any`/Zod change → `typescript-specialist`; a new library API → add `docs-researcher`). If no specific domain dominates, or the diff is broad/cross-cutting, use the `code-reviewer` generalist.
+3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt from the Review Policy. Substitute the agent, its domain lens, and `todo: <todo title>` as the context label. Example for a selected reviewer:
 
-Store the subagent's full response in working context as `review_output`.
+   ```
+   Agent({
+     description: "Review (<domain>): <todo title>",
+     subagent_type: "<selected agent>",
+     prompt: "Review ONLY the working-tree changes through your <domain> lens — correctness, security, and OCRecipes pattern compliance.\n\nRun `git diff HEAD -- .` to see the changes; use LSP and file reads for context. Do NOT review unchanged code. This review is for todo: <todo title>.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
+   })
+   ```
+
+4. **Merge** all reviewers' findings into one list (dedupe where two reviewers flag the same file:line). Store the merged result in working context as `review_output`, noting which agent reported each finding.
 
 ---
 

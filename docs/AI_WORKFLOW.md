@@ -10,9 +10,65 @@ For human contributor setup, see [DEV_SETUP.md](DEV_SETUP.md).
 
 ## Review Policy
 
-Code review runs through the OCRecipes-pattern-aware **`code-reviewer` subagent** (Agent tool with `subagent_type: "code-reviewer"`). It reviews only the current context's changed files against established patterns (`.claude/agents/code-reviewer.md`) and is the canonical path wired into the `/todo` executor (Step 6) and the `/codify` self-improvement loop (Step 3). Escalate to specialist subagents (`security-auditor`, `database-specialist`, `performance-specialist`, etc.) for security, health-data, auth, or high-blast-radius changes.
+Code review is **orchestrator-dispatched, domain-selected, and scoped to the code in the current context** — the session's changed / working-tree files, never a repo-wide re-review. This section is the single source of truth; `/todo` (Step 6), `/audit` (Phases 3 + 6), `/codify` (Step 3), and on-demand reviews all follow it.
 
-The loop is **self-improving**: any review finding that reveals a reusable rule is fed back into `code-reviewer.md` and the matching specialist agent via `/codify` (`.claude/skills/codify/SKILL.md`), so the reviewer gets sharper over time. For a quick, generic, non-pattern-aware diff pass, the built-in `/code-review` skill is also available.
+At review time the orchestrator (the `todo-executor` for `/todo`, the `/audit` skill for its review phases, or the main session for an on-demand review):
+
+1. **Inspects the in-context diff** — both file **paths** and **content**.
+2. **Selects the relevant reviewer subagents** from the roster below — typically **1–3, cap 4**. Path is a starting hint (the `docs/rules/<domain>` mapping); **content overrides it** — a JWT call → `security-auditor`, an `any` cast → `typescript-specialist`, an N+1 query → `database-specialist` / `performance-specialist`, even when the path looks generic. Prefer the _most relevant_ reviewers over exhaustive coverage.
+3. **Dispatches them in parallel**, each scoped to the in-context diff and reviewing through its own lens.
+4. **Merges** findings (dedupe overlaps) and applies the tier rule.
+
+#### Reviewer roster
+
+| Pick when the in-context code touches…               | Agent                                 |
+| ---------------------------------------------------- | ------------------------------------- |
+| Camera / OCR / vision / barcode / frame processors   | `camera-specialist`                   |
+| RN UI / components / animations / theming / layout   | `rn-ui-ux-specialist`                 |
+| Accessibility (VoiceOver/TalkBack, WCAG, focus trap) | `accessibility-specialist`            |
+| HTTP routes / Express / uploads / premium gates      | `api-specialist`                      |
+| Server architecture / layering / SSE / sessions      | `architecture-specialist`             |
+| Drizzle / schema / storage modules / migrations      | `database-specialist`                 |
+| Security (IDOR, JWT, SSRF, prompt injection, rate)   | `security-auditor`                    |
+| AI/LLM / OpenAI / prompts / AI safety / caching      | `ai-llm-specialist`                   |
+| Nutrition science / macros / food NLP / Verified API | `nutrition-domain-expert`             |
+| Perf (memo, FlatList, TTL caches, Reanimated)        | `performance-specialist`              |
+| Strict TS / Zod / type guards / nav typing           | `typescript-specialist`               |
+| Tests / Vitest / mocks / testability                 | `testing-specialist`                  |
+| Error handling / lint / minimal-changes / todo UX    | `quality-specialist`                  |
+| Library/API correctness vs current docs              | `docs-researcher`                     |
+| No specific domain / broad cross-cutting / trivial   | `code-reviewer` (generalist fallback) |
+
+`code-reviewer` is the generalist: use it when no specific domain dominates, for broad cross-cutting changes, or as the sole reviewer for a trivial diff. `todo-executor` and `todo-researcher` are workflow drivers, **not** reviewers.
+
+#### Dispatch prompt (per selected reviewer)
+
+```
+Agent({
+  description: "Review (<domain>): <context label>",
+  subagent_type: "<selected agent>",
+  prompt: "Review ONLY the current changes through your <domain> lens — correctness, security, and OCRecipes pattern compliance.\n\nRun `git diff HEAD -- .` (or the file list provided) to see the changes; use LSP and file reads for context. Do NOT review unchanged code.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
+})
+```
+
+#### Tier handling (project convention)
+
+- **CRITICAL** blocks — must be fixed before the work proceeds.
+- **WARNING** — fix inline if clearly in-scope and small; otherwise surface it (e.g. `DEFERRED_WARNINGS`) for the user to triage. Never auto-file a follow-up todo.
+- **SUGGESTION** — informational; apply only if trivial and in-scope.
+
+#### Selection examples
+
+- `client/screens/ScanScreen.tsx` → `camera-specialist` + `rn-ui-ux-specialist`
+- `server/routes/recipes.ts` with a new auth check → `api-specialist` + `security-auditor`
+- `server/storage/cookbooks.ts` ownership-filter change → `database-specialist` + `security-auditor`
+- a new Zod schema in `shared/` → `typescript-specialist`
+- bumping a library / new third-party API usage → add `docs-researcher`
+- a docs-only / config-only diff, or a tiny cross-cutting change → `code-reviewer`
+
+#### Self-improving
+
+Any review finding that reveals a reusable rule feeds back — via `/codify` (`.claude/skills/codify/SKILL.md`) — into both `code-reviewer.md` and the matching specialist agent, so the roster sharpens over time. For a quick, generic, non-pattern-aware diff pass, the built-in `/code-review` skill is also available.
 
 ### CI (GitHub Actions)
 

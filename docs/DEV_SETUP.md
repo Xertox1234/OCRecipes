@@ -345,7 +345,7 @@ The project uses Husky with lint-staged. On every commit, **lint-staged** runs o
 
 The pre-commit hook does not run `npm run test:run` or `npm run check:types`; CI runs the full test and type-check suite on pushes and pull requests.
 
-Code review is not part of the commit hook. It runs through the `code-reviewer` subagent (see [AI_WORKFLOW.md](AI_WORKFLOW.md) → Review Policy) — invoked in the `/todo` and `/audit` workflows, or on demand.
+Code review is not part of the commit hook. It runs through **orchestrator-dispatched, domain-selected reviewer subagents** scoped to the current changes (see [AI_WORKFLOW.md](AI_WORKFLOW.md) → Review Policy for the roster and selection rule) — invoked in the `/todo` and `/audit` workflows, or on demand.
 
 ## Troubleshooting
 

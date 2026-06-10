@@ -53,29 +53,27 @@ The domain labels from Step 1 carry forward to two places: they tell the code-re
 
 Combine targets for multiple matched domains. A finding in a touched domain that reveals a reusable review rule updates both `code-reviewer.md` and the matching specialist agent(s) (see Step 5).
 
-## Step 3 — Review the branch diff with the code-reviewer subagent
+## Step 3 — Review the branch diff (orchestrator-dispatched, domain-selected)
 
-**First, reuse existing review signal.** If a `code-reviewer` subagent already ran earlier in this session (e.g. the todo-executor's Step 6, or a manual review), its findings are your `review_output` — do not re-review. Skip the spawn below and go to Step 4.
+Review uses the model in `docs/AI_WORKFLOW.md` → Review Policy. You are the orchestrator.
 
-Otherwise, confirm there is a diff to review, then spawn the subagent:
+**First, reuse existing review signal.** If reviewers already ran earlier in this session (e.g. the todo-executor's Step 6, or a manual review), their findings are your `review_output` — do not re-review. Skip the dispatch below and go to Step 4.
+
+Otherwise, confirm there is a diff to review:
 
 ```bash
 git diff main...HEAD --stat
 ```
 
-If the diff is empty, set `review_output=""` and proceed to Step 4. Otherwise invoke the subagent via the Agent tool:
+If the diff is empty, set `review_output=""` and proceed to Step 4. Otherwise:
 
-```
-Agent({
-  description: "Codify review: <branch name>",
-  subagent_type: "code-reviewer",
-  prompt: "Review the changes on this branch against established OCRecipes patterns.\n\nRun `git diff main...HEAD` to see the changes. Use LSP and file-reading tools as needed for full context. This branch touched these domains: <domain labels from Step 1>.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\n\nIf there are no issues, return exactly: No findings."
-})
-```
+1. You already have the touched **domain labels** from Step 1 and their **specialist agents** from the Step 2 mapping. Select the relevant reviewer subagents for the branch — typically **2–4** (a branch usually spans more domains than a single todo). Use content as well as paths (a JWT/ownership change → `security-auditor` even if Step 1 didn't tag it). If no specific domain dominates, fall back to the `code-reviewer` generalist.
+2. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt from the Review Policy with `git diff main...HEAD` as the diff command and the branch name as the context label. Each reviews ONLY the branch changes through its lens and returns `[CRITICAL]/[WARNING]/[SUGGESTION] file:line — description`, or `No findings`.
+3. **Merge** all reviewers' findings (dedupe overlaps), noting which agent reported each.
 
-**Store the subagent's full response in working context as `review_output`.** Shell variables do not persist between Bash invocations — keep this in your context.
+**Store the merged findings in working context as `review_output`.** Shell variables do not persist between Bash invocations — keep this in your context.
 
-Also check the current conversation for any code-reviewer findings from earlier in this session. Union both sources for Step 4.
+Also check the current conversation for any reviewer findings from earlier in this session. Union both sources for Step 4.
 
 ## Step 4 — Apply codification criteria
 
