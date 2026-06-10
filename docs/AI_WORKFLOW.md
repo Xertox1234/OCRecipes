@@ -45,10 +45,10 @@ At review time the orchestrator (the `todo-executor` for `/todo`, the `/audit` s
 
 #### Working-tree safety (critical — do not skip)
 
-A dispatched reviewer subagent **does not inherit the orchestrator's worktree cwd**. Its `git` / file commands run against the **main checkout** unless the prompt explicitly `cd`s it into the right tree — so a reviewer told "run `git diff HEAD`" from a `/todo` or `/audit` worktree would see an _empty_ diff in the main checkout, return "No findings", and the review gate would silently pass unreviewed code. To prevent this, the orchestrator MUST:
+A dispatched reviewer subagent **does not inherit the orchestrator's worktree cwd**. Its `git` / file commands run against the **main checkout** unless told otherwise — so a reviewer told "run `git diff HEAD`" from a `/todo` or `/audit` worktree would see an _empty_ diff in the main checkout, return "No findings", and the review gate would silently pass unreviewed code. To prevent this, the orchestrator MUST:
 
 1. Capture the working tree's absolute path **in its own (correct) cwd**: `WORKTREE=$(git rev-parse --show-toplevel)`, plus the changed-file list (`git diff HEAD --name-only` for working-tree review, or `git diff main...HEAD --name-only` for branch review) and the expected branch/HEAD.
-2. Pass all of that into each reviewer, and make the reviewer prompt **begin** with a `cd "$WORKTREE"` and a `pwd && git branch --show-current && git rev-parse --short HEAD` verification — stating the expected branch/HEAD so the reviewer stops if it landed in the wrong tree.
+2. Pass all of that into each reviewer, and require the reviewer to address `$WORKTREE` explicitly: use **`git -C "$WORKTREE" …`** for every git command and **read files at `$WORKTREE/<path>`** — do **not** `cd`. (A leading `cd` in a compound command can trigger a permission prompt, which stalls an autonomous `/todo` run; `git -C` is dependency-free.) The reviewer prompt must **begin** with a tree check — `git -C "$WORKTREE" rev-parse --abbrev-ref HEAD` + `--short HEAD` must match the expected branch/HEAD, else STOP and report "wrong working tree".
 
 #### Dispatch prompt (per selected reviewer)
 
@@ -56,7 +56,7 @@ A dispatched reviewer subagent **does not inherit the orchestrator's worktree cw
 Agent({
   description: "Review (<domain>): <context label>",
   subagent_type: "<selected agent>",
-  prompt: "cd \"<ABSOLUTE WORKTREE PATH>\" && pwd && git branch --show-current && git rev-parse --short HEAD — you must be in tree <expected branch>/<short HEAD>; if not, STOP and report 'wrong working tree'.\n\nThen review ONLY these changed files through your <domain> lens — correctness, security, and OCRecipes pattern compliance:\n<changed-file list>\n\nRun `git diff HEAD -- <those files>` (or `git diff main...HEAD -- <those files>` for branch review) to see the changes; read surrounding code and use LSP for context. Do NOT review unchanged code.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
+  prompt: "Your ambient cwd is the main checkout, NOT the tree under review. Use `git -C \"<WORKTREE>\"` for every git command and read files at <WORKTREE>/<path>; do not cd.\n\nFirst confirm the tree: `git -C \"<WORKTREE>\" rev-parse --abbrev-ref HEAD` and `git -C \"<WORKTREE>\" rev-parse --short HEAD` must be <expected branch>/<short HEAD> — if not, STOP and report 'wrong working tree'.\n\nThen review ONLY these changed files through your <domain> lens — correctness, security, and OCRecipes pattern compliance:\n<changed-file list>\n\nRun `git -C \"<WORKTREE>\" diff HEAD -- <those files>` (or `git -C \"<WORKTREE>\" diff main...HEAD -- <those files>` for branch review) to see the changes; read surrounding code at <WORKTREE>/<path> and use LSP for context. Do NOT review unchanged code.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
 })
 ```
 
