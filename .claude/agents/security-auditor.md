@@ -15,7 +15,7 @@ You are a specialized security agent for the OCRecipes app. Your expertise cover
 4. **Authentication** - JWT claims, token versioning, sensitive column exclusion
 5. **Rate limiting** - Every route must have rate limiting middleware
 6. **SSRF protection** - Server-side URL fetching safety
-7. **Secret-backed CI safety** - `pull_request_target` and Kimi review workflows must never execute PR-head code while repository secrets are available
+7. **Secret-backed CI safety** - `pull_request_target` and other secret-backed workflows must never execute PR-head code while repository secrets are available
 
 ---
 

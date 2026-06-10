@@ -485,7 +485,7 @@ clear three checks — `findReferences` alone is necessary but **not** sufficien
    behavior is missing. Precedent: `invalidateApiKeyCache(rawKey)` was unreachable, but the revoke
    route already calls `clearApiKeyCache()` (`server/routes/admin-api-keys.ts:129`/`:177`) — so
    removing the dead fn is safe and there is **no** "revoked key honored until TTL" defect. Read the
-   call site; do not infer a phantom security gap. (Both LSP-less kimi-review and a file-isolated
+   call site; do not infer a phantom security gap. (Both an LSP-less external review and a file-isolated
    read mis-flagged this; the call-site trace is what disproves it.)
 
 Completeness backstop for cleanup scopes: `npx --yes ts-prune` enumerates every zero-importer export

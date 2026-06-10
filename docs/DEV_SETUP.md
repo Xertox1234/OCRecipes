@@ -336,20 +336,16 @@ This prevents 403 CORS errors when accessing from mobile devices.
 
 ## Pre-Commit Hooks
 
-The project uses Husky with lint-staged. On every commit:
+The project uses Husky with lint-staged. On every commit, **lint-staged** runs on staged files:
 
-1. **lint-staged** runs on staged files:
-   - `.ts` / `.tsx` — ESLint + Prettier
-   - `client/**/*.tsx` — accessibility and hardcoded color checks
-   - `server/storage/*.ts` — IDOR storage check
-   - `.js` / `.md` — Prettier
-2. **kimi-review** runs on staged `.ts` / `.tsx` diffs when the `kimi-review` CLI is on `PATH`. CRITICAL findings block the commit; WARNING findings print but do not block.
-
-The Kimi gate skips when no TypeScript files are staged, when `SKIP_KIMI_REVIEW=1` is set, or when `kimi-review` is not installed. This keeps Kimi optional for local setup while preserving lint-staged locally and CI as the shared lint/type/test gate.
+- `.ts` / `.tsx` — ESLint + Prettier
+- `client/**/*.tsx` — accessibility and hardcoded color checks
+- `server/storage/*.ts` — IDOR storage check
+- `.js` / `.md` — Prettier
 
 The pre-commit hook does not run `npm run test:run` or `npm run check:types`; CI runs the full test and type-check suite on pushes and pull requests.
 
-Kimi can also run as an opt-in pull request CI gate. To enable it for same-repo PRs, add `WORKER_API_KEY` or `OPENROUTER_API_KEY` as a repository secret and set repository variable `KIMI_REVIEW_CI_ENABLED=true`. Custom providers may use `MOONSHOT_API_KEY` only with `WORKER_BASE_URL`. The workflow installs the Python `openai` dependency and uses the bundled `scripts/kimi-review.py` helper when a global `kimi-review` CLI is not already on the runner.
+Code review is not part of the commit hook. It runs through the `code-reviewer` subagent (see [AI_WORKFLOW.md](AI_WORKFLOW.md) → Review Policy) — invoked in the `/todo` and `/audit` workflows, or on demand.
 
 ## Troubleshooting
 

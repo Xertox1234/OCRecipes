@@ -144,7 +144,7 @@ Phase 1 sets up both correctly.
 3. For each **genuinely new finding**, verify it exists in the current code:
    - Read the file at the reported line
    - Grep for the pattern the agent flagged
-   - For **symbol-level findings** (unused export, dead code, signature-change or rename impact), confirm with the LSP tool (`findReferences` / call-hierarchy), not grep — it resolves `@/` and `@shared/` aliases and avoids false "unused"/"safe to change" verdicts. (`kimi-review` / `kimi-multi-review` are an external model with no LSP access; this applies to Claude-driven verification only.) See `docs/rules/lsp.md`.
+   - For **symbol-level findings** (unused export, dead code, signature-change or rename impact), confirm with the LSP tool (`findReferences` / call-hierarchy), not grep — it resolves `@/` and `@shared/` aliases and avoids false "unused"/"safe to change" verdicts. See `docs/rules/lsp.md`.
    - If the code doesn't match the finding, mark `false-positive` with evidence
 4. Write all verified findings to the manifest with status `open`, including which agent reported each finding
 
@@ -220,28 +220,17 @@ For **each** finding the user wants fixed:
    - Grep/read the fixed code to confirm the change is present
    - For a **symbol-changing fix**, re-run `findReferences` to confirm the change propagated to every call site with no stale callers or dangling references — grep can miss alias-resolved usages.
    - Run the specific test file(s) to confirm they pass
-7. **kimi-review** the fix — run from the audit worktree root:
+7. **Review the fix** with the `code-reviewer` subagent, scoped to just the files this fix touched. Spawn it via the Agent tool:
 
-   ```bash
-   kimi-review --scope "[one-line fix description]" --patterns [domain]
+   ```
+   Agent({
+     description: "Audit fix review: <finding ID>",
+     subagent_type: "code-reviewer",
+     prompt: "Review a single audit fix for correctness, security, and OCRecipes pattern compliance.\n\nFix: <one-line fix description>\nDomain lens to emphasize: <finding domain>\n\nRun `git diff HEAD -- <files this fix touched>` to see only this fix's changes; read surrounding code and use LSP for full context.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\n\nIf there are no issues, return exactly: No findings."
+   })
    ```
 
-   Domain → `--patterns` mapping:
-
-   | Finding Domain                                | `--patterns` value        |
-   | --------------------------------------------- | ------------------------- |
-   | security                                      | `security`                |
-   | performance                                   | `performance`             |
-   | data-integrity                                | `database`                |
-   | architecture                                  | `architecture`            |
-   | code-quality                                  | `typescript,api`          |
-   | camera / RN-UX                                | `react-native`            |
-   | accessibility                                 | `react-native`            |
-   | reliability — server resilience (1-3)         | `security,architecture`   |
-   | reliability — client reliability (4-7)        | `react-native`            |
-   | reliability — cross-cutting correctness (8-9) | `typescript,database`     |
-   | reliability — detection/observability (10)    | `architecture`            |
-   | maintainability                               | `architecture,typescript` |
+   The subagent has full tool access (LSP, file reads) and applies the OCRecipes pattern checklist in `.claude/agents/code-reviewer.md` through the named domain lens — scope it to the single fix so each finding is verified before you move on (Phase 6 later deepens the inspection across the whole multi-file diff).
 
    Response handling (project convention — see `CLAUDE.md` and `docs/AI_WORKFLOW.md`):
    - **CRITICAL finding**: stop the audit loop, surface to user — do not mark `verified` or move to the next finding until resolved.
@@ -250,7 +239,7 @@ For **each** finding the user wants fixed:
 
 8. Update manifest:
    - Status → `verified`
-   - Verification column → what you checked (e.g., "grep confirms userId param; 83/83 tests pass; kimi-review: no findings"; for a symbol-changing fix: "findReferences shows 0 stale callers; 83/83 tests pass; kimi-review: no findings")
+   - Verification column → what you checked (e.g., "grep confirms userId param; 83/83 tests pass; code-reviewer: no findings"; for a symbol-changing fix: "findReferences shows 0 stale callers; 83/83 tests pass; code-reviewer: no findings")
 9. Move to the next finding
 
 **CRITICAL RULES:**
@@ -287,7 +276,7 @@ For findings the user wants deferred:
 
 ## Phase 6: Code Review
 
-This phase intentionally keeps the deeper subagent-based review path. Audit work is one of the places where the extra token cost is justified because the reviewer may need to reason across multiple files, patterns, and fix interactions. Use `kimi-review` as the cheaper default in repetitive implementation workflows, but keep this audit pass as a deep inspection gate.
+This phase runs the `code-reviewer` subagent across the **whole multi-file diff** — a deeper pass than Phase 3's per-fix, per-finding reviews. Audit work is one of the places where the extra token cost is justified because the reviewer may need to reason across multiple files, patterns, and fix interactions that a single-fix scoped review cannot see.
 
 1. Run the code-reviewer subagent (`.claude/agents/code-reviewer.md`) with:
    - The list of all modified files from Phase 3
@@ -327,7 +316,7 @@ After code review is clean:
 
 After fixes are committed, extract reusable knowledge inline from the audit manifest and update specialist agents with new checks.
 
-**Important:** Codify all findings from Phase 3, including any corrections triggered by kimi-review — this Phase 8 pass should see the complete picture.
+**Important:** Codify all findings from Phase 3, including any corrections triggered by the per-fix code-reviewer pass — this Phase 8 pass should see the complete picture.
 
 1. Review the manifest for codification candidates. Look for:
    - **Patterns** — Fixes that established reusable approaches (used/needed in 3+ places, non-obvious, project-specific)
@@ -371,10 +360,10 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
 
 **Why the order is fix → commit → codify:**
 
-- kimi-review runs per-fix inside Phase 3, so every fix is reviewed and verified before Phase 6 (Code Review) deepens the inspection across files
+- the per-fix code-reviewer pass runs inside Phase 3, so every fix is reviewed and verified before Phase 6 (Code Review) deepens the inspection across files
 - Phase 6 (Code Review) is a subagent-based audit pass over the multi-file diff; Phase 7 (Commit) follows once review is clean
 - Committing before codifying keeps the fix diff clean and reviewable without docs noise
-- Codification (Phase 8) happens last so the codifier sees the complete picture — all verified fixes, including any corrections triggered by kimi-review or by the Phase 6 review
+- Codification (Phase 8) happens last so the codifier sees the complete picture — all verified fixes, including any corrections triggered by the per-fix review or by the Phase 6 review
 - If codification reveals issues, the fixes are already safely committed
 
 ## Phase 9: Push & Open PR
@@ -420,7 +409,7 @@ After the fix commit (Phase 7) and the codification commit (Phase 8) both exist 
 - **The manifest is the source of truth.** Every finding must be in it. Every status change must be recorded.
 - **Zero open findings at close.** Everything is either verified, deferred (with todo), or false-positive.
 - **No documentation during the fix phase.** Fix code first (Phases 3-6). Codify patterns only after the fix commit in Phase 8.
-- **kimi-review is not optional.** Every fix in Phase 3 must pass kimi-review before being marked `verified`. It catches what test-based verification misses and gives Phase 8 the full context needed for codification and agent updates.
+- **Per-fix review is not optional.** Every fix in Phase 3 must pass the `code-reviewer` subagent before being marked `verified`. It catches what test-based verification misses and gives Phase 8 the full context needed for codification and agent updates.
 - **Deferred is not dropped.** Findings the user explicitly chose to defer at Phase 2.5 triage get a todo (Phase 4) with priority and rationale. Surfaced WARNING/MEDIUM/LOW findings from Phases 3 and 6 stay in the manifest's Deferred Items table — they are NOT auto-filed as todos. The manifest is their record; the user decides at close whether any warrant a todo. "We'll get to it" is not a rationale.
 - **The changelog is append-only.** Never edit previous entries.
 - **Codification is not optional.** Every audit must run Phase 8 to extract knowledge. Do not spawn `.claude/agents/pattern-codifier.md`; codify directly from the manifest after fixes are committed.

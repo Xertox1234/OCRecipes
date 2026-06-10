@@ -11,7 +11,7 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 [ "$TOOL" = "Bash" ] || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 
-# Match only real `git commit` invocations (same RE as kimi-review.sh).
+# Match only real `git commit` invocations.
 GIT_COMMIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
 [[ "$CMD" =~ $GIT_COMMIT_RE ]] || exit 0
 

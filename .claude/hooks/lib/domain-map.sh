@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Shared path-to-domain mapping for inject-patterns, kimi-review, and pre-commit.
-# Source this file — do NOT execute directly.
+# Shared path-to-domain mapping, currently consumed by inject-patterns.sh.
+# Source this file — do NOT execute directly. (Consumer-agnostic: define your
+# own _add() adapter before sourcing, so additional consumers can reuse it.)
 #
 # USAGE:
 #   Define _add() as an adapter for your accumulator before sourcing, then call
 #   apply_domain_map for each file path:
 #
 #     _add() { add_domain "$1"; }        # inject-patterns.sh
-#     _add() { add_pattern "$1"; }       # kimi-review.sh / pre-commit
+#     _add() { add_pattern "$1"; }       # (example: an alternate accumulator)
 #     source ".../lib/domain-map.sh"
 #     apply_domain_map "$FILE_PATH"      # single file (inject-patterns)
 #     while IFS= read -r f; do apply_domain_map "$f"; done <<< "$FILES"
@@ -19,7 +20,7 @@
 #   - Typescript handling is intentionally EXCLUDED. Each consumer applies its
 #     own policy:
 #       inject-patterns: adds typescript only when no other domain matched
-#       kimi-review / pre-commit: adds typescript unconditionally for .ts/.tsx
+#       (a consumer that wants typescript on every .ts/.tsx adds it unconditionally)
 #   - vitest.config.* and eslint.config.* map to testing+typescript here because
 #     all three consumers share that policy.
 
