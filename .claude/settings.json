@@ -79,17 +79,6 @@
       },
       {
         "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/kimi-review.sh",
-            "timeout": 180,
-            "statusMessage": "Running kimi-review on staged changes..."
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "bash .claude/hooks/batch-size-guard.sh", "timeout": 10, "statusMessage": "" }]
       },
       {

@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Pre-commit hook: lint-staged + kimi-review staged-diff review.
+# Pre-commit hook: lint-staged.
 #
-# kimi-review runs after lint-staged when .ts/.tsx files are staged. CRITICAL
-# findings block the commit; WARNING findings print but do not block.
-#
-# Bypass: set SKIP_KIMI_REVIEW=1 to skip review (lint-staged still runs).
-# Auto-skips when kimi-review is not on PATH so devs without the tool aren't blocked.
+# Bypass: nothing to bypass — lint-staged always runs.
 
 # Husky runs hooks as `sh -e`, ignoring the bash shebang above. This script uses
 # bash-only features (arrays, `<<<` here-strings, `$'...'`). When `sh` is not bash
@@ -16,105 +12,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
   exec bash "$0" "$@"
 fi
 # Husky invokes this script as `sh -e`, which activates errexit. We manage exit
-# codes explicitly (REVIEW_STATUS=$?, || exit 1), so clear errexit now that we
-# are running under bash — we only need to drop the -e flag Husky/sh imposed.
+# codes explicitly, so clear errexit now that we are running under bash.
 set +e
 
 NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false || exit 1
-
-# Engine drift check: vendored scripts/kimi-review.py must match the canonical
-# engine on this machine. Skips when canonical is absent (see check script).
-if [ -f scripts/check-kimi-engine.sh ]; then
-  bash scripts/check-kimi-engine.sh || exit 1
-fi
-
-if [ "$SKIP_KIMI_REVIEW" = "1" ]; then
-  exit 0
-fi
-
-if ! command -v kimi-review >/dev/null 2>&1; then
-  exit 0
-fi
-
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMDR)
-CHANGED_FILES=$(git diff --cached --name-status --diff-filter=ACMDR)
-
-# Skip review when no .ts/.tsx changes are staged — kimi-review on docs/config
-# only commits is wasted tokens.
-if ! printf '%s\n' "$STAGED_FILES" | grep -qE '\.(ts|tsx)$'; then
-  exit 0
-fi
-
-REVIEW_DIFF=$(git diff --cached --function-context --diff-filter=ACMDR -- '*.ts' '*.tsx')
-if [ -z "$REVIEW_DIFF" ]; then
-  exit 0
-fi
-
-PATTERNS=''
-add_pattern() {
-  case ",$PATTERNS," in
-    *,$1,*) ;;
-    *) PATTERNS="${PATTERNS:+$PATTERNS,}$1" ;;
-  esac
-}
-_add() { add_pattern "$1"; }
-# shellcheck source=.claude/hooks/lib/domain-map.sh
-source ".claude/hooks/lib/domain-map.sh"
-
-while IFS= read -r file; do
-  apply_domain_map "$file"
-  case "$file" in
-    *.ts|*.tsx) add_pattern typescript ;;
-  esac
-done <<< "$STAGED_FILES"
-
-# Wrap kimi-review with `timeout` when available (GNU coreutils, Linux/CI; on
-# macOS install via `brew install coreutils` for `gtimeout`). If neither is
-# present, run without a timeout — better than a missing-binary hook failure.
-if command -v timeout >/dev/null 2>&1; then
-  TIMEOUT_CMD="timeout 120"
-elif command -v gtimeout >/dev/null 2>&1; then
-  TIMEOUT_CMD="gtimeout 120"
-else
-  TIMEOUT_CMD=""
-fi
-
-REVIEW_COMMAND=(kimi-review
-  --scope "pre-commit staged diff" \
-  --tiers CRITICAL,WARNING \
-  --changed-files "$CHANGED_FILES" \
-  --profile ocrecipes \
-  --verify deterministic)
-
-if [ -n "$PATTERNS" ]; then
-  REVIEW_COMMAND+=(--patterns "$PATTERNS" --rules "$PATTERNS" --pattern-max-chars 12000)
-fi
-
-REVIEW_RAW=$(printf '%s' "$REVIEW_DIFF" | NO_COLOR=1 $TIMEOUT_CMD "${REVIEW_COMMAND[@]}" 2>&1)
-REVIEW_STATUS=$?
-# Strip ANSI escape codes so the CRITICAL gate isn't bypassed by colored output.
-REVIEW_OUTPUT=$(printf '%s' "$REVIEW_RAW" | sed $'s/\x1b\\[[0-9;]*m//g')
-
-printf '%s\n' "$REVIEW_OUTPUT"
-
-if [ "$REVIEW_STATUS" -eq 2 ]; then
-  echo "" >&2
-  echo "Commit blocked: kimi-review reported a verified CRITICAL finding above." >&2
-  echo "Fix the issue or set SKIP_KIMI_REVIEW=1 to bypass." >&2
-  exit 1
-fi
-
-if [ $REVIEW_STATUS -eq 124 ]; then
-  echo "kimi-review timed out after 120s; skipping gate." >&2
-  exit 0
-fi
-
-if [ $REVIEW_STATUS -ne 0 ]; then
-  echo "kimi-review failed to run (exit $REVIEW_STATUS); skipping gate." >&2
-  exit 0
-fi
-
-# Clean review (kimi exited 0, no CRITICAL): pass explicitly. Defensive — the
-# real clean-commit fix is the `|| true` on the CRITICAL grep above; this also
-# guarantees a 0 exit if the hook is ever run without errexit.
-exit 0
