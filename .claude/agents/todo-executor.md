@@ -225,8 +225,14 @@ After all commands pass, re-read every modified file and confirm the changes mat
 
 Review the working-tree changes using the **orchestrator-dispatched, domain-selected** model defined in `docs/AI_WORKFLOW.md` → Review Policy. You are the orchestrator here.
 
+Capture the diff **and the worktree coordinates** in your own (correct) cwd — you run inside the todo worktree; a dispatched reviewer subagent does **not** inherit that cwd (see Review Policy → "Working-tree safety"):
+
 ```bash
 DIFF=$(git diff HEAD -- .)
+WORKTREE=$(git rev-parse --show-toplevel)      # absolute path of THIS worktree
+BRANCH=$(git branch --show-current)            # the todo/<slug> branch
+HEAD_SHORT=$(git rev-parse --short HEAD)
+git diff HEAD --name-only                       # the changed-file list to hand each reviewer
 ```
 
 If `$DIFF` is empty, skip and set `review_output=""`.
@@ -234,14 +240,14 @@ If `$DIFF` is empty, skip and set `review_output=""`.
 Otherwise:
 
 1. **Inspect the diff** (`git diff HEAD -- .`) — file paths **and** content.
-2. **Select the relevant reviewer subagents** from the roster in the Review Policy — typically **1–2 for a single todo, cap 3**. Match by domain: path is a hint, content overrides (a JWT/ownership change → `security-auditor`; a Drizzle query → `database-specialist`; a camera screen → `camera-specialist`; an `any`/Zod change → `typescript-specialist`; a new library API → add `docs-researcher`). If no specific domain dominates, or the diff is broad/cross-cutting, use the `code-reviewer` generalist.
-3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt from the Review Policy. Substitute the agent, its domain lens, and `todo: <todo title>` as the context label. Example for a selected reviewer:
+2. **Select the relevant reviewer subagents** from the roster in the Review Policy — typically **1–2 for a single todo, cap 3** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match by domain: path is a hint, content overrides (a JWT/ownership change → `security-auditor`; a Drizzle query → `database-specialist`; a camera screen → `camera-specialist`; an `any`/Zod change → `typescript-specialist`; a new library API → add `docs-researcher`). If no specific domain dominates, or the diff is broad/cross-cutting, use the `code-reviewer` generalist.
+3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the Review-Policy dispatch prompt. Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. The reviewer prompt **must begin** with the `cd "$WORKTREE"` + pwd/branch/HEAD verification — otherwise it reviews an empty diff in the main checkout and falsely returns "No findings". Example:
 
    ```
    Agent({
      description: "Review (<domain>): <todo title>",
      subagent_type: "<selected agent>",
-     prompt: "Review ONLY the working-tree changes through your <domain> lens — correctness, security, and OCRecipes pattern compliance.\n\nRun `git diff HEAD -- .` to see the changes; use LSP and file reads for context. Do NOT review unchanged code. This review is for todo: <todo title>.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
+     prompt: "cd \"<WORKTREE>\" && pwd && git branch --show-current && git rev-parse --short HEAD — you must be in tree <BRANCH>/<HEAD_SHORT>; if not, STOP and report 'wrong working tree'.\n\nThen review ONLY these changed files through your <domain> lens — correctness, security, and OCRecipes pattern compliance (todo: <todo title>):\n<changed-file list>\n\nRun `git diff HEAD -- <those files>` to see the changes; use LSP and file reads for context. Do NOT review unchanged code.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
    })
    ```
 

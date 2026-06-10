@@ -19,6 +19,8 @@ At review time the orchestrator (the `todo-executor` for `/todo`, the `/audit` s
 3. **Dispatches them in parallel**, each scoped to the in-context diff and reviewing through its own lens.
 4. **Merges** findings (dedupe overlaps) and applies the tier rule.
 
+**Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo's reviewers at **1–2 (max 3)** to avoid a 4×N subagent blow-up against the project's "max ~4 parallel agents" guidance. A branch-wide review (`/codify`) or an audit may use more (2–4) because it is not itself nested in a parallel batch.
+
 #### Reviewer roster
 
 | Pick when the in-context code touches…               | Agent                                 |
@@ -41,13 +43,20 @@ At review time the orchestrator (the `todo-executor` for `/todo`, the `/audit` s
 
 `code-reviewer` is the generalist: use it when no specific domain dominates, for broad cross-cutting changes, or as the sole reviewer for a trivial diff. `todo-executor` and `todo-researcher` are workflow drivers, **not** reviewers.
 
+#### Working-tree safety (critical — do not skip)
+
+A dispatched reviewer subagent **does not inherit the orchestrator's worktree cwd**. Its `git` / file commands run against the **main checkout** unless the prompt explicitly `cd`s it into the right tree — so a reviewer told "run `git diff HEAD`" from a `/todo` or `/audit` worktree would see an _empty_ diff in the main checkout, return "No findings", and the review gate would silently pass unreviewed code. To prevent this, the orchestrator MUST:
+
+1. Capture the working tree's absolute path **in its own (correct) cwd**: `WORKTREE=$(git rev-parse --show-toplevel)`, plus the changed-file list (`git diff HEAD --name-only` for working-tree review, or `git diff main...HEAD --name-only` for branch review) and the expected branch/HEAD.
+2. Pass all of that into each reviewer, and make the reviewer prompt **begin** with a `cd "$WORKTREE"` and a `pwd && git branch --show-current && git rev-parse --short HEAD` verification — stating the expected branch/HEAD so the reviewer stops if it landed in the wrong tree.
+
 #### Dispatch prompt (per selected reviewer)
 
 ```
 Agent({
   description: "Review (<domain>): <context label>",
   subagent_type: "<selected agent>",
-  prompt: "Review ONLY the current changes through your <domain> lens — correctness, security, and OCRecipes pattern compliance.\n\nRun `git diff HEAD -- .` (or the file list provided) to see the changes; use LSP and file reads for context. Do NOT review unchanged code.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
+  prompt: "cd \"<ABSOLUTE WORKTREE PATH>\" && pwd && git branch --show-current && git rev-parse --short HEAD — you must be in tree <expected branch>/<short HEAD>; if not, STOP and report 'wrong working tree'.\n\nThen review ONLY these changed files through your <domain> lens — correctness, security, and OCRecipes pattern compliance:\n<changed-file list>\n\nRun `git diff HEAD -- <those files>` (or `git diff main...HEAD -- <those files>` for branch review) to see the changes; read surrounding code and use LSP for context. Do NOT review unchanged code.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
 })
 ```
 
