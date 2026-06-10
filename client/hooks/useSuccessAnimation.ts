@@ -15,11 +15,11 @@ import { successPopConfig } from "@/constants/animations";
 import type { ViewStyle } from "react-native";
 
 /**
- * Reusable success animation hooks.
+ * Success animation hook.
  *
- * Each returns a `trigger()` callback and an `animatedStyle` to spread onto
- * an `Animated.View`. All animations are GPU-bound (transform + opacity only),
- * ≤300ms, and respect `reducedMotion`.
+ * `useSuccessPop` returns a `trigger()` callback and an `animatedStyle` to
+ * spread onto an `Animated.View`. GPU-bound (transform only), ≤300ms, and
+ * respects `reducedMotion`.
  */
 
 // ── Pop variant ──────────────────────────────────────────────────────────────
