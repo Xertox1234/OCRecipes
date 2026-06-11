@@ -64,6 +64,55 @@ export const loginLimiter = createRateLimiter({
   keyByUser: false,
 });
 
+/**
+ * Normalize an unvalidated `req.body.username` into a stable rate-limit key
+ * fragment. Runs at keyGenerator time — BEFORE Zod validation — so the value
+ * may be any JSON type; String() coercion never throws on JSON-derived values
+ * (an object becomes "[object object]", a harmless shared bucket). The length
+ * cap bounds memory per key; trim+lowercase collapses cosmetic variants of
+ * the same account. Returns null when no usable username is present.
+ */
+export function normalizeUsernameKey(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const normalized = String(value).trim().toLowerCase().slice(0, 100);
+  return normalized.length > 0 ? normalized : null;
+}
+
+/**
+ * Per-account login throttle: keys FAILED login attempts by normalized
+ * username so a distributed attacker rotating source IPs against one account
+ * is still throttled (the IP-keyed loginLimiter above stays in place — the
+ * two layers compose). skipSuccessfulRequests un-counts responses < 400, so
+ * successful logins never accumulate toward the lockout. The message/shape
+ * is byte-identical to loginLimiter's 429 (no account-existence oracle).
+ * Defined inline rather than via createRateLimiter because it needs a
+ * body-derived keyGenerator (the documented factory exception). The window
+ * is deliberately a short backoff (not a hard lockout) and the threshold is
+ * well above typical typo counts, limiting account-lockout DoS impact.
+ * In-memory store is fine on the current single Railway instance.
+ */
+export const loginAccountLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  message: {
+    error: "Too many login attempts, please try again later",
+    code: "RATE_LIMITED",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    const username = normalizeUsernameKey(
+      (req.body as { username?: unknown } | undefined)?.username,
+    );
+    // Prefix prevents cross-bucket collisions with IP-keyed entries when a
+    // username happens to look like an IP. Requests with no usable username
+    // fall back to the per-IP key (they can never match a real account, but
+    // must not all share one global bucket an attacker could poison).
+    return username ? `login-account:${username}` : ipKeyGenerator(req);
+  },
+});
+
 export const registerLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 5,

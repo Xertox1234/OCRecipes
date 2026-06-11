@@ -16,6 +16,7 @@ import { handleRouteError } from "./_helpers";
 import {
   registerLimiter,
   loginLimiter,
+  loginAccountLimiter,
   avatarRateLimit,
   accountDeletionLimiter,
   crudRateLimit,
@@ -104,6 +105,7 @@ export function register(app: Express): void {
   app.post(
     "/api/auth/login",
     loginLimiter,
+    loginAccountLimiter,
     async (req: Request, res: Response) => {
       try {
         const validated = loginSchema.parse(req.body);
