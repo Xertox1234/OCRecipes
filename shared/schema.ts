@@ -21,7 +21,6 @@ import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
 import type { DerivedRecipeAllergen } from "./constants/allergens";
 import type { MealSuggestion } from "./types/meal-suggestions";
-import type { CarouselRecipeCard } from "./types/carousel";
 import type { ReminderMutes, ReminderType } from "./types/reminders";
 import type { MeasurementUnit } from "./lib/units";
 
@@ -1779,34 +1778,8 @@ export const recipeDismissals = pgTable(
   ],
 );
 
-export const carouselSuggestionCache = pgTable(
-  "carousel_suggestion_cache",
-  {
-    id: serial("id").primaryKey(),
-    userId: varchar("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    profileHash: text("profile_hash").notNull(),
-    mealType: text("meal_type").notNull(),
-    suggestions: jsonb("suggestions").$type<CarouselRecipeCard[]>().notNull(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .default(sql`CURRENT_TIMESTAMP`)
-      .notNull(),
-  },
-  (table) => [
-    uniqueIndex("carousel_cache_user_profile_meal_idx").on(
-      table.userId,
-      table.profileHash,
-      table.mealType,
-    ),
-  ],
-);
-
 export type RecipeDismissal = typeof recipeDismissals.$inferSelect;
 export type InsertRecipeDismissal = typeof recipeDismissals.$inferInsert;
-export type CarouselSuggestionCacheEntry =
-  typeof carouselSuggestionCache.$inferSelect;
 
 // ── Type exports ─────────────────────────────────────────────────────
 

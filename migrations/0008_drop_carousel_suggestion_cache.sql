@@ -1,0 +1,22 @@
+-- Drop the orphaned carousel_suggestion_cache table.
+--
+-- The table has no writers or readers — carousel suggestions are built live
+-- via server/storage/carousel.ts / server/services/carousel-builder.ts and
+-- were never persisted here. The only code references were the schema
+-- definition and the TTL janitor in server/storage/cache.ts (both removed in
+-- the same change as this file). Surfaced by the 2026-06-10 full audit (L10).
+-- Pre-drop row check (2026-06-10, dev DB): 0 rows. Run the same check against
+-- prod before applying — expected 0, since nothing ever writes:
+--
+--   SELECT count(*) FROM carousel_suggestion_cache;
+--
+-- ORDERING: deploy the new server bundle FIRST, then apply this migration.
+-- The previous bundle's cache janitor (purgeExpiredCacheRows) still issues a
+-- DELETE against this table every 6 hours and would fail with "relation does
+-- not exist" if the drop lands first.
+-- Note: migrations/0002 (lines 95-96) ALTERs this table's timestamp columns
+-- and is no longer replayable on a DB where this migration has been applied.
+--
+-- Apply with:  psql "$DATABASE_URL" -f migrations/0008_drop_carousel_suggestion_cache.sql
+
+DROP TABLE IF EXISTS carousel_suggestion_cache;

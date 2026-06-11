@@ -39,7 +39,6 @@ import {
   createMockInstructionCache,
   createMockMealSuggestionCache,
   createMockCoachResponseCache,
-  createMockCarouselSuggestionCache,
   createMockSavedItem,
   createMockFavouriteRecipe,
   createMockResolvedFavouriteRecipe,
@@ -749,26 +748,6 @@ describe("factories/cache", () => {
 
     it("merges overrides", () => {
       const obj = createMockCoachResponseCache({ id: 99 });
-      expect(obj.id).toBe(99);
-    });
-  });
-
-  describe("createMockCarouselSuggestionCache", () => {
-    it("creates valid defaults", () => {
-      const obj = createMockCarouselSuggestionCache();
-      expect(obj).toMatchObject({
-        id: 1,
-        userId: "1",
-        profileHash: "test-profile-hash",
-        mealType: "breakfast",
-      });
-      expect(obj.suggestions).not.toBeNull();
-      expect(obj.createdAt).toBeInstanceOf(Date);
-      expect(obj.expiresAt).toBeInstanceOf(Date);
-    });
-
-    it("merges overrides", () => {
-      const obj = createMockCarouselSuggestionCache({ id: 99 });
       expect(obj.id).toBe(99);
     });
   });

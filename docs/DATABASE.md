@@ -2,7 +2,7 @@
 
 ## Overview
 
-OCRecipes uses PostgreSQL with Drizzle ORM for database operations. The schema is defined in `shared/schema.ts` (42 tables) and is shared between the frontend and backend.
+OCRecipes uses PostgreSQL with Drizzle ORM for database operations. The schema is defined in `shared/schema.ts` (39 tables) and is shared between the frontend and backend.
 
 ## Schema Definition
 
@@ -791,22 +791,6 @@ Tracks recipes dismissed by users in the recipe discovery carousel.
 | dismissed_at      | TIMESTAMP | NOT NULL, auto       | When recipe was dismissed           |
 
 **Constraints:** Unique on `(user_id, recipe_identifier)`.
-
-### Carousel Suggestion Cache Table
-
-Caches AI-generated meal suggestions for the home screen recipe carousel. Keyed by user, profile hash, and meal type.
-
-| Column       | Type      | Constraints          | Description                               |
-| ------------ | --------- | -------------------- | ----------------------------------------- |
-| id           | SERIAL    | PK                   | Auto-incrementing ID                      |
-| user_id      | VARCHAR   | FK → users, NOT NULL | User these suggestions are for            |
-| profile_hash | TEXT      | NOT NULL             | Hash of dietary profile for invalidation  |
-| meal_type    | TEXT      | NOT NULL             | Meal type (e.g. `"breakfast"`, `"lunch"`) |
-| suggestions  | JSONB     | NOT NULL             | Array of carousel suggestion objects      |
-| expires_at   | TIMESTAMP | NOT NULL             | TTL expiry                                |
-| created_at   | TIMESTAMP | NOT NULL, auto       | When cached                               |
-
-**Constraints:** Unique on `(user_id, profile_hash, meal_type)`.
 
 ---
 

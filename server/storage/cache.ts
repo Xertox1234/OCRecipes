@@ -6,7 +6,6 @@ import {
   instructionCache,
   mealSuggestionCache,
   micronutrientCache,
-  carouselSuggestionCache,
   coachResponseCache,
 } from "@shared/schema";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
@@ -314,7 +313,6 @@ export async function purgeExpiredCacheRows(): Promise<number> {
     micronutrientCache,
     suggestionCache,
     mealSuggestionCache,
-    carouselSuggestionCache,
     coachResponseCache,
   ] as const;
 

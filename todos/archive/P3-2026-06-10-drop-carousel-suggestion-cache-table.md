@@ -3,7 +3,7 @@
 ---
 
 title: "Drop orphaned carouselSuggestionCache table (no writers, no readers)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-10
 updated: 2026-06-10
@@ -30,7 +30,7 @@ requires a `db:push` schema migration, same class as the archived
 adaptive-goals columns drop). LSP findReferences (warmed) confirmed exactly two
 non-schema references, both in `server/storage/cache.ts` (import + expired-row
 cleanup). Not caught by the 2026-06-09 dead-export sweep because a pgTable
-import isn't a dead *export*.
+import isn't a dead _export_.
 
 ## Acceptance Criteria
 
@@ -56,3 +56,7 @@ import isn't a dead *export*.
 ### 2026-06-10
 
 - Initial creation — deferred from 2026-06-10 full audit (L10).
+- Implemented. Reference sweep (LSP non-functional in executor worktree — exhaustive camelCase + snake_case + type-name grep across all file types, same fallback as the adaptive-goals precedent) found refs in: schema def + type export + `CarouselRecipeCard` import (`shared/schema.ts`), janitor entry (`server/storage/cache.ts`), test factory + index re-export + factory tests, `docs/DATABASE.md` section. All removed.
+- Pre-drop row check (dev DB): 0 rows in `carousel_suggestion_cache` — confirms no writers.
+- Migration `migrations/0008_drop_carousel_suggestion_cache.sql` (`DROP TABLE IF EXISTS`) applied to dev. PROD NOT YET APPLIED — apply at a deploy window AFTER the new bundle deploys (old bundle's janitor DELETEs this table every 6h; ordering note in the migration header, per `docs/solutions/conventions/deploy-before-drop-column-migration-2026-06-10.md`).
+- `npm run db:push` verified no carousel diff remains; it surfaced unrelated pre-existing drift (drizzle-kit wants to re-add `favourite_scanned_items_user_id_scanned_item_id_unique`, which already exists in the dev DB) — not addressed here.

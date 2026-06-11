@@ -45,7 +45,6 @@ export {
   createMockInstructionCache,
   createMockMealSuggestionCache,
   createMockCoachResponseCache,
-  createMockCarouselSuggestionCache,
 } from "./cache";
 export { createMockSavedItem } from "./saved-item";
 export {
