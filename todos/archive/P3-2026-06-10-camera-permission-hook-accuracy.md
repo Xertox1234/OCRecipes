@@ -3,7 +3,7 @@
 ---
 
 title: "Camera hooks: persisted permission state via canRequestPermission + batch isScanning latch"
-status: backlog
+status: done
 priority: low
 created: 2026-06-10
 updated: 2026-06-10
@@ -44,7 +44,7 @@ prior-session OS denial reports as "undetermined"; `useCamera` batch mode sets
 
 ## Implementation Notes
 
-- BatchScanScreen now deps on `permission?.status` (fixed in the audit), so the hook's return-identity churn is no longer load-bearing — this todo is about *accuracy*, not re-render churn.
+- BatchScanScreen now deps on `permission?.status` (fixed in the audit), so the hook's return-identity churn is no longer load-bearing — this todo is about _accuracy_, not re-render churn.
 
 ## Dependencies
 

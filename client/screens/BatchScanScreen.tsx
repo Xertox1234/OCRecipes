@@ -5,6 +5,7 @@ import {
   Text,
   StyleSheet,
   AccessibilityInfo,
+  Linking,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -181,15 +182,13 @@ export default function BatchScanScreen() {
     navigation.goBack();
   }, [navigation]);
 
-  // Request permission on mount. Dep on the status primitive, not the
-  // `permission` object — the hook returns a fresh object every render, so
-  // an object dep would re-fire the native request after every render.
-  // Auto-request only the never-asked state: re-requesting after an
-  // in-session denial would re-pop the Android system dialog with no user
-  // gesture (the on-screen grant button covers explicit retries). Note the
-  // hook's status is session-synthesized, so a prior-session OS denial still
-  // reads "undetermined" here — fixing that is tracked in
-  // todos/P3-2026-06-10-camera-permission-hook-accuracy.md.
+  // Request permission on mount. Dep on the status primitive keeps this
+  // effect keyed to the OS state transition rather than object identity.
+  // Auto-request only the re-askable state: the hook derives "undetermined"
+  // from V5's persisted canRequestPermission, so iOS/permanent denials read
+  // "denied" here and are never auto-requested. (An Android soft denial —
+  // no "don't ask again" — persists as re-askable, so it IS re-requested on
+  // mount; the OS permits that and screen entry is a user gesture.)
   const permissionStatus = permission?.status;
   useEffect(() => {
     if (permissionStatus === "undetermined") {
@@ -207,15 +206,25 @@ export default function BatchScanScreen() {
           Camera permission is required for batch scanning.
         </Text>
         <Pressable
-          onPress={requestPermission}
+          onPress={() => {
+            if (permission?.canAskAgain) {
+              void requestPermission();
+            } else {
+              void Linking.openSettings();
+            }
+          }}
           style={[styles.permissionButton, { backgroundColor: theme.link }]}
           accessibilityRole="button"
-          accessibilityLabel="Grant camera permission"
+          accessibilityLabel={
+            permission?.canAskAgain
+              ? "Grant camera permission"
+              : "Open settings"
+          }
         >
           <Text
             style={[styles.permissionButtonText, { color: theme.buttonText }]}
           >
-            Grant Permission
+            {permission?.canAskAgain ? "Grant Permission" : "Open Settings"}
           </Text>
         </Pressable>
         <Pressable

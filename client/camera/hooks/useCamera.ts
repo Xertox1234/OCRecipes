@@ -30,6 +30,7 @@ export interface UseCameraReturn {
  * - Different barcodes are processed immediately
  * - Same barcode within debounceMs is silently ignored
  * - Same barcode after debounceMs fires callback with isRepeat=true
+ * - isScanning is true for debounceMs after the most recent accepted scan
  */
 /** Maximum entries retained in the batch-mode scanned barcodes Map. */
 const BATCH_MAP_MAX_SIZE = 200;
@@ -99,6 +100,18 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
         scannedBarcodesRef.current.set(result.data, now);
         setLastScannedData(result.data);
         setIsScanning(true);
+
+        // Reflect the debounce window: isScanning stays true while scans
+        // keep landing and resets debounceMs after the last accepted scan.
+        // scanTimeoutRef is shared with single-scan mode, which is safe
+        // because no call site toggles `batch` at runtime, and both the
+        // unmount cleanup and resetScanning already clear it.
+        if (scanTimeoutRef.current) {
+          clearTimeout(scanTimeoutRef.current);
+        }
+        scanTimeoutRef.current = setTimeout(() => {
+          setIsScanning(false);
+        }, debounceMs);
 
         onBarcodeScanned?.(result, isRepeat);
       } else {

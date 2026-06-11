@@ -288,6 +288,129 @@ describe("useCamera — batch mode", () => {
     );
   });
 
+  it("resets isScanning after the debounce window elapses (L19 fix)", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+    expect(result.current.isScanning).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(result.current.isScanning).toBe(false);
+  });
+
+  it("extends the isScanning window on each accepted scan", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+    // A different barcode 1s later restarts the window.
+    act(() => {
+      vi.advanceTimersByTime(1000);
+      result.current.handleBarcodeScanned({
+        data: "9876543210987",
+        type: "ean13",
+      });
+    });
+
+    // 1s after the second scan: the first scan's window (would end now) was
+    // superseded — still scanning.
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(result.current.isScanning).toBe(true);
+
+    // 2s after the second scan: window elapsed.
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(result.current.isScanning).toBe(false);
+  });
+
+  it("does not reset isScanning from a debounce-ignored scan", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+    // Ignored repeat (within window) must not clear or restart the timer.
+    act(() => {
+      vi.advanceTimersByTime(500);
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+    expect(result.current.isScanning).toBe(true);
+
+    // Window measured from the ACCEPTED scan (t=0), so it ends at t=2000.
+    act(() => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(result.current.isScanning).toBe(false);
+  });
+
+  it("clears isScanning immediately on resetScanning", () => {
+    const onBarcodeScanned = vi.fn();
+    const { result } = renderHook(() =>
+      useCamera({ onBarcodeScanned, batch: true }),
+    );
+
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "1234567890123",
+        type: "ean13",
+      });
+    });
+    expect(result.current.isScanning).toBe(true);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+      result.current.resetScanning();
+    });
+    expect(result.current.isScanning).toBe(false);
+
+    // Prove the first scan's timer was actually cleared: scan again, then
+    // advance to the instant the stale timer (t=2000) would have fired —
+    // an uncleared timer would flip isScanning false here.
+    act(() => {
+      result.current.handleBarcodeScanned({
+        data: "9876543210987",
+        type: "ean13",
+      });
+      vi.advanceTimersByTime(1000);
+    });
+    expect(result.current.isScanning).toBe(true);
+
+    // The second scan's own window (t=1000..3000) elapses normally.
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(result.current.isScanning).toBe(false);
+  });
+
   it("clears the batch barcode map on resetScanning", () => {
     const onBarcodeScanned = vi.fn();
     const { result } = renderHook(() =>
