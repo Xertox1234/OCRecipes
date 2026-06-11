@@ -18,6 +18,8 @@ import {
   type SearchIndexableCommunityRecipe,
 } from "../lib/search-index";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
+import { deleteImage } from "../lib/image-store";
+import { fireAndForget } from "../lib/fire-and-forget";
 
 // ============================================================================
 // COMMUNITY RECIPES
@@ -164,10 +166,23 @@ export async function updateCommunityRecipeImageUrl( // idor-safe: internal back
   recipeId: number,
   imageUrl: string,
 ): Promise<void> {
+  const [existing] = await db
+    .select({ imageUrl: communityRecipes.imageUrl })
+    .from(communityRecipes)
+    .where(eq(communityRecipes.id, recipeId));
   await db
     .update(communityRecipes)
     .set({ imageUrl, updatedAt: new Date() })
     .where(eq(communityRecipes.id, recipeId));
+  // The replaced object is orphaned (durable, billed) — clean it up
+  // fire-and-forget. In practice this patcher fills a NULL imageUrl, so the
+  // delete is usually a no-op; the "recipe" kind scopes it to recipe-images/.
+  if (existing?.imageUrl && existing.imageUrl !== imageUrl) {
+    fireAndForget(
+      "community-recipe-image-replace-cleanup",
+      deleteImage(existing.imageUrl, "recipe"),
+    );
+  }
 }
 
 /**
@@ -320,12 +335,15 @@ export async function deleteCommunityRecipe(
       )
     : eq(communityRecipes.authorId, authorId);
 
-  const deleted = await db.transaction(async (tx) => {
+  const deletedRow = await db.transaction(async (tx) => {
     const result = await tx
       .delete(communityRecipes)
       .where(and(eq(communityRecipes.id, recipeId), ownershipCondition))
-      .returning({ id: communityRecipes.id });
-    if (result.length === 0) return false;
+      .returning({
+        id: communityRecipes.id,
+        imageUrl: communityRecipes.imageUrl,
+      });
+    if (result.length === 0) return null;
 
     // Clean up junction rows that referenced this recipe
     await Promise.all([
@@ -354,13 +372,22 @@ export async function deleteCommunityRecipe(
           ),
         ),
     ]);
-    return true;
+    return result[0];
   });
 
   // Update search index AFTER transaction commits — if the tx rolls back,
   // we don't want the index to forget a recipe that still exists in the DB.
-  if (deleted) removeFromIndex(`community:${recipeId}`);
-  return deleted;
+  if (deletedRow) {
+    removeFromIndex(`community:${recipeId}`);
+    // Delete the stored image object AFTER the tx commits (rollback safety)
+    // and fire-and-forget — an object-store failure must not break the
+    // deletion. The "recipe" kind scopes the delete to recipe-images/ keys.
+    fireAndForget(
+      "community-recipe-image-cleanup",
+      deleteImage(deletedRow.imageUrl, "recipe"),
+    );
+  }
+  return deletedRow !== null;
 }
 
 export async function getUserRecipes(

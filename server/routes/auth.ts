@@ -12,6 +12,7 @@ import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { detectImageMimeType } from "../lib/image-mime";
 import { saveAvatar, deleteImage } from "../lib/image-store";
+import { fireAndForget } from "../lib/fire-and-forget";
 import { handleRouteError } from "./_helpers";
 import {
   registerLimiter,
@@ -258,11 +259,15 @@ export function register(app: Express): void {
         // Invalidate token cache so any in-flight requests are rejected
         invalidateTokenVersionCache(req.userId);
 
-        // Clean up avatar after successful deletion (best-effort; account is
-        // already gone, so a storage cleanup failure must not 500 the response)
-        await deleteImage(user.avatarUrl).catch(() => {});
-
         res.json({ success: true });
+
+        // Clean up avatar after responding (fire-and-forget; account is
+        // already gone, so a storage cleanup failure must not affect the
+        // response or add ~50-300ms of R2 latency to it)
+        fireAndForget(
+          "account-deletion-avatar-cleanup",
+          deleteImage(user.avatarUrl, "avatar"),
+        );
       } catch (error) {
         handleRouteError(res, error, "delete account");
       }
@@ -312,15 +317,21 @@ export function register(app: Express): void {
 
         if (!user) {
           // Best-effort rollback; the request already fails 404, so a cleanup
-          // failure must not turn it into a 500.
-          await deleteImage(avatarUrl).catch(() => {}); // roll back the just-uploaded object
+          // failure must not turn it into a 500. Stays awaited: the rollback
+          // should complete before the failure response is finalized.
+          await deleteImage(avatarUrl, "avatar").catch(() => {}); // roll back the just-uploaded object
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
-        // Best-effort cleanup; a storage failure here must not 500 a request
-        // whose updateUser already succeeded.
-        await deleteImage(currentUser?.avatarUrl).catch(() => {});
         res.json({ avatarUrl: user.avatarUrl });
+
+        // Clean up the old avatar after responding (fire-and-forget; a
+        // storage failure must not affect a request whose updateUser already
+        // succeeded, nor add R2 latency to the response).
+        fireAndForget(
+          "old-avatar-cleanup",
+          deleteImage(currentUser?.avatarUrl, "avatar"),
+        );
       } catch (error) {
         handleRouteError(res, error, "upload avatar");
       }
@@ -346,11 +357,15 @@ export function register(app: Express): void {
           return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
         }
 
-        // Best-effort cleanup after the DB is cleared; a storage failure here
-        // must not 500 a request whose updateUser already succeeded.
-        await deleteImage(currentUser?.avatarUrl).catch(() => {});
-
         res.json({ success: true });
+
+        // Best-effort cleanup after responding, with the DB already cleared;
+        // a storage failure must not affect a request whose updateUser
+        // already succeeded, nor add R2 latency to the response.
+        fireAndForget(
+          "avatar-delete-cleanup",
+          deleteImage(currentUser?.avatarUrl, "avatar"),
+        );
       } catch (error) {
         handleRouteError(res, error, "delete avatar");
       }

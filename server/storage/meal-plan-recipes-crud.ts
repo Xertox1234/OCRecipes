@@ -18,6 +18,8 @@ import {
   mealPlanToSearchable,
 } from "../lib/search-index";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
+import { deleteImage } from "../lib/image-store";
+import { fireAndForget } from "../lib/fire-and-forget";
 
 // ============================================================================
 // MEAL PLAN RECIPES (CRUD)
@@ -229,6 +231,19 @@ export async function updateMealPlanRecipe(
   const ingredientNames = ings.map((i) => i.name);
   const allergens = deriveRecipeAllergens(ingredientNames);
 
+  // Capture the current imageUrl when it's being replaced so the old stored
+  // object can be cleaned up — post-R2 these are durable, billed objects.
+  let previousImageUrl: string | null = null;
+  if (updates.imageUrl !== undefined) {
+    const [existing] = await db
+      .select({ imageUrl: mealPlanRecipes.imageUrl })
+      .from(mealPlanRecipes)
+      .where(
+        and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)),
+      );
+    previousImageUrl = existing?.imageUrl ?? null;
+  }
+
   const [recipe] = await db
     .update(mealPlanRecipes)
     .set({ ...updates, allergens, updatedAt: new Date() })
@@ -236,6 +251,15 @@ export async function updateMealPlanRecipe(
     .returning();
   if (recipe) {
     addToIndex(mealPlanToSearchable(recipe, ingredientNames));
+    // Fire-and-forget: object-store failure must not fail the update. The
+    // "recipe" kind scopes the delete to recipe-images/ keys (imageUrl is
+    // client-suppliable — never delete outside that prefix).
+    if (previousImageUrl && previousImageUrl !== recipe.imageUrl) {
+      fireAndForget(
+        "meal-plan-recipe-image-replace-cleanup",
+        deleteImage(previousImageUrl, "recipe"),
+      );
+    }
   }
   return recipe || undefined;
 }
@@ -244,14 +268,17 @@ export async function deleteMealPlanRecipe(
   id: number,
   userId: string,
 ): Promise<boolean> {
-  const deleted = await db.transaction(async (tx) => {
+  const deletedRow = await db.transaction(async (tx) => {
     const result = await tx
       .delete(mealPlanRecipes)
       .where(
         and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)),
       )
-      .returning({ id: mealPlanRecipes.id });
-    if (result.length === 0) return false;
+      .returning({
+        id: mealPlanRecipes.id,
+        imageUrl: mealPlanRecipes.imageUrl,
+      });
+    if (result.length === 0) return null;
 
     // Clean up junction rows that referenced this recipe
     await Promise.all([
@@ -272,11 +299,21 @@ export async function deleteMealPlanRecipe(
           ),
         ),
     ]);
-    return true;
+    return result[0];
   });
 
   // Update search index AFTER transaction commits — if the tx rolls back,
   // we don't want the index to forget a recipe that still exists in the DB.
-  if (deleted) removeFromIndex(`personal:${id}`);
-  return deleted;
+  if (deletedRow) {
+    removeFromIndex(`personal:${id}`);
+    // Delete the stored image object AFTER the tx commits (rollback safety)
+    // and fire-and-forget — an object-store failure must not break the
+    // deletion. The "recipe" kind scopes the delete to recipe-images/ keys
+    // (imageUrl is client-suppliable — never delete outside that prefix).
+    fireAndForget(
+      "meal-plan-recipe-image-cleanup",
+      deleteImage(deletedRow.imageUrl, "recipe"),
+    );
+  }
+  return deletedRow !== null;
 }
