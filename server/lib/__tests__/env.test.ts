@@ -82,3 +82,24 @@ describe("validateEnv R2 production guard", () => {
     expect(() => validateEnv()).not.toThrow();
   });
 });
+
+describe("validateEnv aggregated missing-vars report", () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE };
+    process.env.NODE_ENV = "development";
+    delete process.env.RECEIPT_VALIDATION_STUB;
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  it("lists ALL missing required vars in a single error", async () => {
+    delete process.env.DATABASE_URL;
+    delete process.env.JWT_SECRET;
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).toThrow(
+      /DATABASE_URL[\s\S]*JWT_SECRET|JWT_SECRET[\s\S]*DATABASE_URL/,
+    );
+  });
+});

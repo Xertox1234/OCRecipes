@@ -27,7 +27,6 @@ import {
   profileUpdateSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
-import { logger, toError } from "../lib/logger";
 import { isUniqueViolation } from "../lib/db-errors";
 import type { MeasurementUnit } from "@shared/lib/units";
 
@@ -158,8 +157,7 @@ export function register(app: Express): void {
 
         res.json({ success: true });
       } catch (error) {
-        logger.error({ err: toError(error) }, "logout error");
-        sendError(res, 500, "Failed to logout", ErrorCode.INTERNAL_ERROR);
+        handleRouteError(res, error, "logout");
       }
     },
   );
@@ -169,12 +167,20 @@ export function register(app: Express): void {
     requireAuth,
     crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
-      const user = await storage.getUser(req.userId);
-      if (!user) {
-        return sendError(res, 401, "User not found", ErrorCode.UNAUTHORIZED);
-      }
+      // A bare async handler would also be safe (Express 5 auto-forwards
+      // rejected promises to the global error middleware), but that path
+      // returns { error: "Internal Server Error" } without a `code` field.
+      // Catch explicitly so 500s here use the standard sendError envelope.
+      try {
+        const user = await storage.getUser(req.userId);
+        if (!user) {
+          return sendError(res, 401, "User not found", ErrorCode.UNAUTHORIZED);
+        }
 
-      res.json(serializeUser(user));
+        res.json(serializeUser(user));
+      } catch (error) {
+        handleRouteError(res, error, "fetch current user");
+      }
     },
   );
 
@@ -314,13 +320,7 @@ export function register(app: Express): void {
         await deleteImage(currentUser?.avatarUrl).catch(() => {});
         res.json({ avatarUrl: user.avatarUrl });
       } catch (error) {
-        logger.error({ err: toError(error) }, "avatar upload error");
-        sendError(
-          res,
-          500,
-          "Failed to upload avatar",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "upload avatar");
       }
     },
   );
@@ -350,13 +350,7 @@ export function register(app: Express): void {
 
         res.json({ success: true });
       } catch (error) {
-        logger.error({ err: toError(error) }, "avatar delete error");
-        sendError(
-          res,
-          500,
-          "Failed to delete avatar",
-          ErrorCode.INTERNAL_ERROR,
-        );
+        handleRouteError(res, error, "delete avatar");
       }
     },
   );

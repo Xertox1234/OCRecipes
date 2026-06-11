@@ -1,4 +1,6 @@
-import "dotenv/config";
+// MUST stay the first import: validates all env vars (aggregated report)
+// before ./routes / ./db evaluate — see server/lib/env-boot.ts.
+import "./lib/env-boot";
 import express from "express";
 import helmet from "helmet";
 import type { Request, Response, NextFunction } from "express";
@@ -9,7 +11,6 @@ import * as path from "path";
 import { pool } from "./db";
 import { startCacheCleanupJob } from "./storage/cache";
 import { startPromotionJob } from "./services/canonical-promotion";
-import { validateEnv } from "./lib/env";
 import { logger, rootLogger, toError } from "./lib/logger";
 import { requestContextMiddleware } from "./lib/request-context";
 import {
@@ -17,9 +18,6 @@ import {
   assertExecutionAllowed as assertRetentionAllowed,
 } from "./scripts/cleanup-retention";
 import crypto from "node:crypto";
-
-// Validate all environment variables before anything else
-validateEnv();
 
 process.on("uncaughtException", (error) => {
   logger.fatal({ err: toError(error) }, "uncaught exception");
