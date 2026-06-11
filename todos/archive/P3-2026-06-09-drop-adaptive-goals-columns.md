@@ -1,6 +1,6 @@
 ---
 title: "Drop orphaned adaptive-goals columns (adaptiveGoalsEnabled, lastGoalAdjustmentAt)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-09
 updated: 2026-06-09
@@ -27,13 +27,13 @@ still actively written by `server/routes/goals.ts`.
 
 ## Acceptance Criteria
 
-- [ ] Confirm zero production code writes or reads either column (re-verify with LSP `findReferences` — they should appear only in the 3 sites below).
-- [ ] Null-data check: query the prod/dev DB for any rows where `adaptive_goals_enabled IS NOT false` OR `last_goal_adjustment_at IS NOT NULL`; document the count before dropping.
-- [ ] Remove `adaptiveGoalsEnabled` and `lastGoalAdjustmentAt` from `shared/schema.ts` (the `users` table).
-- [ ] Remove both from the `UpdatableUserFields` union in `server/storage/users.ts`.
-- [ ] Remove both from the GDPR `exportUserColumns` map in `server/storage/export.ts`.
-- [ ] Generate/apply the Drizzle migration that `DROP COLUMN`s `adaptive_goals_enabled` and `last_goal_adjustment_at`.
-- [ ] `npm run check:types` clean; relevant storage/export tests pass; GDPR export still succeeds without the two fields.
+- [x] Confirm zero production code writes or reads either column (re-verify with LSP `findReferences` — they should appear only in the 3 sites below).
+- [x] Null-data check: query the prod/dev DB for any rows where `adaptive_goals_enabled IS NOT false` OR `last_goal_adjustment_at IS NOT NULL`; document the count before dropping.
+- [x] Remove `adaptiveGoalsEnabled` and `lastGoalAdjustmentAt` from `shared/schema.ts` (the `users` table).
+- [x] Remove both from the `UpdatableUserFields` union in `server/storage/users.ts`.
+- [x] Remove both from the GDPR `exportUserColumns` map in `server/storage/export.ts`.
+- [x] Generate/apply the Drizzle migration that `DROP COLUMN`s `adaptive_goals_enabled` and `last_goal_adjustment_at`.
+- [x] `npm run check:types` clean; relevant storage/export tests pass; GDPR export still succeeds without the two fields.
 
 ## Implementation Notes
 
@@ -61,3 +61,10 @@ Drizzle is stateless `push` in dev (see project memory `reference_dev_db_access`
 ### 2026-06-09
 
 - Created from cleanup audit finding L6 (deferred at triage; user chose P3).
+
+### 2026-06-10
+
+- Implemented. Reference sweep found 4 code sites (not 3 — `server/__tests__/factories/user.ts` factory defaults were also wired); all removed. LSP was non-functional in the executor worktree, so verification used an exhaustive all-file-type sweep (camelCase + snake_case), independently confirmed by the researcher.
+- Null-data check (dev DB, 4853 users): 0 rows with `adaptive_goals_enabled` ≠ false, 0 rows with non-NULL `last_goal_adjustment_at`.
+- Migration `migrations/0007_drop_adaptive_goals_columns.sql` (`DROP COLUMN IF EXISTS`) applied to dev. PROD NOT YET APPLIED — Railway CLI unlinked in this session; apply at a deploy window AFTER the new bundle deploys (ordering note in the migration header).
+- Also updated `docs/DATABASE.md` and superseded the duplicate AC in `todos/P3-2026-06-06-drop-dead-health-user-columns.md`.

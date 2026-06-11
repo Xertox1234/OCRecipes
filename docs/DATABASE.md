@@ -27,8 +27,6 @@ CREATE TABLE users (
   gender TEXT,
   goal_weight DECIMAL(6,2),
   goals_calculated_at TIMESTAMP,
-  adaptive_goals_enabled BOOLEAN DEFAULT FALSE,
-  last_goal_adjustment_at TIMESTAMP,
   onboarding_completed BOOLEAN DEFAULT FALSE,
   subscription_tier TEXT DEFAULT 'free',
   subscription_expires_at TIMESTAMP,
@@ -54,8 +52,6 @@ CREATE TABLE users (
 | gender                  | TEXT         | nullable                | `"male"`, `"female"`, or `"other"`                   |
 | goal_weight             | DECIMAL(6,2) | nullable                | Target weight in kg                                  |
 | goals_calculated_at     | TIMESTAMP    | nullable                | When goals were last auto-calculated                 |
-| adaptive_goals_enabled  | BOOLEAN      | DEFAULT FALSE           | Whether adaptive goal adjustment is enabled          |
-| last_goal_adjustment_at | TIMESTAMP    | nullable                | When goals were last adjusted by the system          |
 | onboarding_completed    | BOOLEAN      | DEFAULT FALSE           | Onboarding status                                    |
 | subscription_tier       | TEXT         | DEFAULT 'free'          | `"free"` or `"premium"`                              |
 | subscription_expires_at | TIMESTAMP    | nullable                | Premium expiry (null = no expiry)                    |

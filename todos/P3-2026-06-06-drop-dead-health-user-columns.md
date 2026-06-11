@@ -32,14 +32,13 @@ retiring the GLP-1 companion) or keep that awareness.
 
 ## Acceptance Criteria
 
-- [ ] Decide: drop `adaptiveGoalsEnabled` + `lastGoalAdjustmentAt` from `shared/schema.ts` (and the update allowlist in `server/storage/users.ts`, the export in `server/storage/export.ts`, and the factory default in `server/__tests__/factories/user.ts`).
+- [x] ~~Decide: drop `adaptiveGoalsEnabled` + `lastGoalAdjustmentAt`~~ — SUPERSEDED: done by `todos/archive/P3-2026-06-09-drop-adaptive-goals-columns.md` (migration `migrations/0007_drop_adaptive_goals_columns.sql`, 2026-06-10).
 - [ ] Decide on GLP-1: either (a) remove `glp1Mode`/`glp1Medication`/`glp1StartDate` + the coach-context-builder branch that reads them, or (b) keep the coach's GLP-1 awareness as an intentional retained behavior — and document which.
-- [ ] If dropping columns: `npm run db:push` against the dev DB; verify no remaining references via grep.
+- [ ] If dropping columns: hand-written `IF EXISTS` migration in `migrations/` applied via psql (dev now, prod at a deploy window — see `migrations/0007_drop_adaptive_goals_columns.sql` for the pattern); verify no remaining references via grep.
 
 ## Implementation Notes
 
-- No prod DB — column drops are safe (stateless Drizzle `push`).
-- The `lastGoalAdjustmentAt`/`adaptiveGoalsEnabled` references are at: `shared/schema.ts`, `server/storage/users.ts`, `server/storage/export.ts`, `server/__tests__/factories/user.ts`.
+- ~~No prod DB~~ STALE (2026-06-10): prod DB now exists on Railway (`api.ocrecipes.com`) — any further column drops need an `IF EXISTS` migration in `migrations/` applied at a deploy window, not blind `db:push` (see `migrations/0007_drop_adaptive_goals_columns.sql` for the pattern).
 - The GLP-1 columns are read in `server/services/coach-context-builder.ts` (and mocked in its tests + `carousel-builder.test.ts`).
 
 ## Dependencies

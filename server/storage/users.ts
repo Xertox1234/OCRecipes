@@ -90,8 +90,6 @@ export type UpdatableUserFields = Pick<
   | "dailyFatGoal"
   | "goalWeight"
   | "goalsCalculatedAt"
-  | "adaptiveGoalsEnabled"
-  | "lastGoalAdjustmentAt"
   | "onboardingCompleted"
   | "measurementUnit"
   | "timezone"

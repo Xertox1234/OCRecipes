@@ -47,10 +47,6 @@ export const users = pgTable(
     gender: text("gender"),
     goalWeight: decimal("goal_weight", { precision: 6, scale: 2 }),
     goalsCalculatedAt: timestamp("goals_calculated_at", { withTimezone: true }),
-    adaptiveGoalsEnabled: boolean("adaptive_goals_enabled").default(false),
-    lastGoalAdjustmentAt: timestamp("last_goal_adjustment_at", {
-      withTimezone: true,
-    }),
     onboardingCompleted: boolean("onboarding_completed").default(false),
     measurementUnit: text("measurement_unit")
       .$type<MeasurementUnit>()

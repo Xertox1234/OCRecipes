@@ -63,8 +63,6 @@ export const exportUserColumns = {
   gender: users.gender,
   goalWeight: users.goalWeight,
   goalsCalculatedAt: users.goalsCalculatedAt,
-  adaptiveGoalsEnabled: users.adaptiveGoalsEnabled,
-  lastGoalAdjustmentAt: users.lastGoalAdjustmentAt,
   onboardingCompleted: users.onboardingCompleted,
   subscriptionTier: users.subscriptionTier,
   subscriptionExpiresAt: users.subscriptionExpiresAt,

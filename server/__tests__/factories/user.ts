@@ -16,8 +16,6 @@ const userDefaults: User = {
   gender: null,
   goalWeight: null,
   goalsCalculatedAt: null,
-  adaptiveGoalsEnabled: false,
-  lastGoalAdjustmentAt: null,
   onboardingCompleted: false,
   measurementUnit: "metric",
   tokenVersion: 0,
