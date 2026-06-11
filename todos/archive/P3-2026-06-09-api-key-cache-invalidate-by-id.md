@@ -1,6 +1,6 @@
 ---
 title: "API-key cache: targeted invalidate-by-id on revoke/tier-change (avoid full flush)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-09
 updated: 2026-06-09

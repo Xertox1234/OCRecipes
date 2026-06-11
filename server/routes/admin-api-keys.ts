@@ -9,7 +9,7 @@ import { API_TIERS } from "@shared/constants/api-tiers";
 import { crudRateLimit } from "./_rate-limiters";
 import { handleRouteError } from "./_helpers";
 import { isAdmin } from "./_admin";
-import { clearApiKeyCache } from "../middleware/api-key-auth";
+import { invalidateApiKeyCacheById } from "../middleware/api-key-auth";
 
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),
@@ -126,7 +126,7 @@ export function register(app: Express): void {
         }
 
         await storage.revokeApiKey(id);
-        clearApiKeyCache();
+        invalidateApiKeyCacheById(id);
         logger.info(
           { userId: req.userId, action: "revoke_api_key", keyId: id },
           "admin operation",
@@ -174,7 +174,7 @@ export function register(app: Express): void {
         }
 
         await storage.updateApiKeyTier(id, parsed.data.tier);
-        clearApiKeyCache();
+        invalidateApiKeyCacheById(id);
         logger.info(
           {
             userId: req.userId,

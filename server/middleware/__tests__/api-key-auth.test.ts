@@ -4,7 +4,11 @@ import request from "supertest";
 import { storage } from "../../storage";
 
 // Must import AFTER mocks
-import { requireApiKey, clearApiKeyCache } from "../api-key-auth";
+import {
+  requireApiKey,
+  clearApiKeyCache,
+  invalidateApiKeyCacheById,
+} from "../api-key-auth";
 
 // We need bcrypt for the hash comparison. Create a real hash for testing.
 import bcrypt from "bcrypt";
@@ -141,5 +145,69 @@ describe("API Key Auth Middleware", () => {
     // Second request — cache hit
     await request(app).get("/test").set("X-API-Key", TEST_KEY);
     expect(storage.getApiKeyByPrefix).toHaveBeenCalledTimes(1); // still 1
+  });
+
+  describe("invalidateApiKeyCacheById", () => {
+    const TEST_KEY_B = "ocr_live_fedcba9876543210fedcba9876543210";
+    const TEST_PREFIX_B = TEST_KEY_B.substring(0, 16);
+    let testKeyHashB: string;
+
+    beforeAll(async () => {
+      testKeyHashB = await bcrypt.hash(TEST_KEY_B, 10);
+    });
+
+    it("evicts only the targeted key — unrelated cached key still authenticates from cache", async () => {
+      const keyRowA = createMockApiKey({
+        id: 1,
+        keyPrefix: TEST_PREFIX,
+        keyHash: testKeyHash,
+        name: "Key A",
+      });
+      const keyRowB = createMockApiKey({
+        id: 2,
+        keyPrefix: TEST_PREFIX_B,
+        keyHash: testKeyHashB,
+        name: "Key B",
+      });
+      vi.mocked(storage.getApiKeyByPrefix).mockImplementation(
+        async (prefix: string) => (prefix === TEST_PREFIX ? keyRowA : keyRowB),
+      );
+
+      // Prime the cache for both keys
+      const primeA = await request(app).get("/test").set("X-API-Key", TEST_KEY);
+      expect(primeA.status).toBe(200);
+      const primeB = await request(app)
+        .get("/test")
+        .set("X-API-Key", TEST_KEY_B);
+      expect(primeB.status).toBe(200);
+      expect(storage.getApiKeyByPrefix).toHaveBeenCalledTimes(2);
+
+      // Revoke key A in the DB, then targeted-evict only its cache entry
+      const revokedRowA = createMockApiKey({
+        id: 1,
+        keyPrefix: TEST_PREFIX,
+        keyHash: testKeyHash,
+        name: "Key A",
+        status: "revoked",
+        revokedAt: new Date(),
+      });
+      vi.mocked(storage.getApiKeyByPrefix).mockImplementation(
+        async (prefix: string) =>
+          prefix === TEST_PREFIX ? revokedRowA : keyRowB,
+      );
+      invalidateApiKeyCacheById(1);
+
+      // Unrelated key B is still served from cache — no new DB lookup
+      const resB = await request(app).get("/test").set("X-API-Key", TEST_KEY_B);
+      expect(resB.status).toBe(200);
+      expect(resB.body.apiKeyId).toBe(2);
+      expect(storage.getApiKeyByPrefix).toHaveBeenCalledTimes(2); // still 2
+
+      // Revoked key A was evicted — its very next request re-validates and is rejected
+      const resA = await request(app).get("/test").set("X-API-Key", TEST_KEY);
+      expect(resA.status).toBe(401);
+      expect(resA.body.code).toBe("API_KEY_REVOKED");
+      expect(storage.getApiKeyByPrefix).toHaveBeenCalledTimes(3);
+    });
   });
 });

@@ -59,9 +59,26 @@ function setCachedApiKey(
   });
 }
 
-/** Clear all cached keys (call on revocation/tier change; also used by tests) */
+/** Clear all cached keys (blunt fallback; also used by tests) */
 export function clearApiKeyCache(): void {
   apiKeyCache.clear();
+}
+
+/**
+ * Targeted eviction: delete the cached entry for a single API key id.
+ * Used on revoke/tier-change so other live keys keep their cache entries
+ * (a full flush forces every key to re-validate via DB + bcrypt).
+ * O(n) scan over ≤ MAX_CACHED_KEYS entries — fine for a rare admin op.
+ * Per-process only (same as the full flush): if the API ever runs multiple
+ * instances, revoke/tier-change needs a shared signal; until then the 60s
+ * TTL bounds staleness on other instances.
+ */
+export function invalidateApiKeyCacheById(id: number): void {
+  for (const [hash, entry] of apiKeyCache) {
+    if (entry.id === id) {
+      apiKeyCache.delete(hash);
+    }
+  }
 }
 
 // Periodic sweep to remove expired entries (every 5 minutes)
