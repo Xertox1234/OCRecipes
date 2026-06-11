@@ -342,6 +342,8 @@ When auditing a route file or service, check every item:
 - [ ] Per-user count limits on collection creation endpoints
 - [ ] Monthly usage caps checked before expensive operations
 - [ ] `COUNT(*)` for usage checks (not fetching all rows)
+- [ ] Production proxy posture: `trust proxy` set to the NUMERIC hop count (never `true` — leftmost-XFF spoofable) and IP-keyed limiters actually resolve client IPs behind the current topology (Railway/CDN). Custom keyGenerators suppress express-rate-limit's `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` warning, so a collapsed-to-one-bucket limiter is SILENT — verify by reading `req.ip` consumers, not logs. Client-IP headers (X-Real-IP/CF-Connecting-IP) trusted only behind a platform gate that overwrites them (`RAILWAY_ENVIRONMENT_NAME`). IP keys go through v8's `ipKeyGenerator` helper (IPv6 /56 bucketing — raw `req.ip` keys are cyclable within a delegated block). (Ref: audit 2026-06-10-security S1/S3; `server/routes/_rate-limiters.ts`)
+- [ ] CORS allowlist is env-scoped: localhost + dev-tunnel origin patterns sit inside the `NODE_ENV !== "production"` gate; reflected ACAO is accompanied by `Vary: Origin` (shared-cache poisoning behind an edge/CDN). (Ref: audit 2026-06-10-security S2; `server/index.ts` setupCors)
 
 ### Data Protection
 
