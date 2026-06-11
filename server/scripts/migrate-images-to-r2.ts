@@ -9,10 +9,14 @@
  * Usage:
  *   npx tsx server/scripts/migrate-images-to-r2.ts            # apply
  *   npx tsx server/scripts/migrate-images-to-r2.ts --dry-run  # preview only
+ *   MIGRATE_CONCURRENCY=8 npx tsx server/scripts/migrate-images-to-r2.ts
+ *     # bounded per-row upload concurrency (default 5, clamped to [1, 10])
  */
 import "dotenv/config";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import pLimit from "p-limit";
 import { db, pool } from "../db";
 import { communityRecipes, mealPlanRecipes, users } from "@shared/schema";
 import { eq, like } from "drizzle-orm";
@@ -24,6 +28,16 @@ import {
 
 const UPLOADS_ROOT = path.resolve(process.cwd(), "uploads");
 const DRY_RUN = process.argv.includes("--dry-run");
+
+/**
+ * Bounded concurrency for per-row uploads (mirrors SEED_CONCURRENCY in
+ * seed-recipes.ts). Clamped to [1, 10] to guard against negative/absurd
+ * inputs — p-limit throws on non-positive concurrency.
+ */
+const MIGRATE_CONCURRENCY = Math.max(
+  1,
+  Math.min(10, Number(process.env.MIGRATE_CONCURRENCY) || 5),
+);
 
 // Fail loudly on unrecognized flags — a typo like `--dryrun` would
 // otherwise silently APPLY the migration.
@@ -55,9 +69,19 @@ type UploadResult =
   | { status: "wouldMigrate" }
   | { status: "missing" };
 
+/**
+ * Upload one row's image with a DETERMINISTIC key (`<keyStem>.<ext>`) so
+ * re-runs are idempotent: if the upload succeeded but the DB UPDATE failed,
+ * the retry PUTs the same key and overwrites instead of orphaning the first
+ * object (runtime saveRecipeImage/saveAvatar keep their random keys).
+ *
+ * `keyStemFor` receives the file bytes so avatar stems can mix in a content
+ * hash (see avatarKeyStem); recipe stems ignore the argument.
+ */
 async function uploadOne(
   relativeUrl: string,
   kind: "recipe" | "avatar",
+  keyStemFor: (buffer: Buffer) => string,
 ): Promise<UploadResult> {
   const diskPath = diskPathFor(relativeUrl);
   if (!diskPath || !fs.existsSync(diskPath)) {
@@ -69,18 +93,40 @@ async function uploadOne(
     return { status: "wouldMigrate" };
   }
   const buffer = await fs.promises.readFile(diskPath);
+  // Legacy disk recipe images can be jpg/webp — pass the real extension
+  // so the R2 object isn't stored with an image/png ContentType.
+  const ext = extOf(diskPath);
+  const filename = `${keyStemFor(buffer)}.${ext}`;
   if (kind === "recipe") {
-    // Legacy disk recipe images can be jpg/webp — pass the real extension
-    // so the R2 object isn't stored with an image/png ContentType.
     return {
       status: "uploaded",
-      url: await saveRecipeImage(buffer, extOf(diskPath)),
+      url: await saveRecipeImage(buffer, ext, filename),
     };
   }
   return {
     status: "uploaded",
-    url: await saveAvatar(buffer, extOf(diskPath)),
+    url: await saveAvatar(buffer, ext, filename),
   };
+}
+
+function sha256Hex(input: string | Buffer): string {
+  return crypto.createHash("sha256").update(input).digest("hex");
+}
+
+/**
+ * Deterministic avatar key stem that is NOT forward-computable from the user
+ * id alone: avatar keys live on a public CDN and must not be guessable (see
+ * saveAvatar) — and user ids ARE exposed cross-user (community recipes return
+ * `authorId`), so a bare hash of the id would let anyone derive another
+ * user's avatar URL. Mixing in the image content hash keeps the stem stable
+ * across re-runs (same disk file → same key) while requiring the avatar bytes
+ * themselves to compute it; including the user id prevents two users with
+ * identical images from sharing one object (whose deletion would break the
+ * other's URL).
+ */
+function avatarKeyStem(userId: string, buffer: Buffer): string {
+  const digest = sha256Hex(`${userId}:${sha256Hex(buffer)}`).slice(0, 32);
+  return `avatar-migrated-${digest}`;
 }
 
 type MigrationCounts = {
@@ -99,33 +145,44 @@ async function migrateRecipeTable(
     .from(table)
     .where(like(table.imageUrl, "/api/recipe-images/%"));
   console.log(`\n${label}: ${rows.length} row(s) to migrate`);
+  const limit = pLimit(MIGRATE_CONCURRENCY);
+  // The try/catch lives INSIDE each limited task so one row's failure is
+  // isolated and cannot reject the surrounding Promise.all.
+  const outcomes = await Promise.all(
+    rows.map((row) =>
+      limit(async (): Promise<keyof MigrationCounts> => {
+        try {
+          // `label` is part of the deterministic key — it must stay stable
+          // across runs or re-run idempotency breaks (re-uploads under new
+          // keys, orphaning the old objects).
+          const result = await uploadOne(
+            row.imageUrl!,
+            "recipe",
+            () => `recipe-migrated-${label}-${row.id}`,
+          );
+          if (result.status === "uploaded") {
+            await db
+              .update(table)
+              .set({ imageUrl: result.url })
+              .where(eq(table.id, row.id));
+            console.log(`  [${row.id}] -> ${result.url}`);
+            return "migrated";
+          }
+          return result.status === "wouldMigrate" ? "wouldMigrate" : "missing";
+        } catch (err) {
+          console.error(`  [${row.id}] FAILED:`, err);
+          return "failed";
+        }
+      }),
+    ),
+  );
   const counts: MigrationCounts = {
     migrated: 0,
     wouldMigrate: 0,
     missing: 0,
     failed: 0,
   };
-  for (const row of rows) {
-    try {
-      const result = await uploadOne(row.imageUrl!, "recipe");
-      if (result.status === "uploaded") {
-        await db
-          .update(table)
-          .set({ imageUrl: result.url })
-          .where(eq(table.id, row.id));
-        counts.migrated++;
-        console.log(`  [${row.id}] -> ${result.url}`);
-      } else if (result.status === "wouldMigrate") {
-        counts.wouldMigrate++;
-      } else {
-        counts.missing++;
-      }
-    } catch (err) {
-      counts.failed++;
-      console.error(`  [${row.id}] FAILED:`, err);
-      continue;
-    }
-  }
+  for (const outcome of outcomes) counts[outcome]++;
   console.log(
     `${label}: migrated ${counts.migrated}, wouldMigrate ${counts.wouldMigrate}, missing ${counts.missing}, failed ${counts.failed}`,
   );
@@ -138,33 +195,39 @@ async function migrateAvatars() {
     .from(users)
     .where(like(users.avatarUrl, "/api/avatars/%"));
   console.log(`\nusers.avatarUrl: ${rows.length} row(s) to migrate`);
+  const limit = pLimit(MIGRATE_CONCURRENCY);
+  // The try/catch lives INSIDE each limited task so one row's failure is
+  // isolated and cannot reject the surrounding Promise.all.
+  const outcomes = await Promise.all(
+    rows.map((row) =>
+      limit(async (): Promise<keyof MigrationCounts> => {
+        try {
+          const result = await uploadOne(row.avatarUrl!, "avatar", (buffer) =>
+            avatarKeyStem(row.id, buffer),
+          );
+          if (result.status === "uploaded") {
+            await db
+              .update(users)
+              .set({ avatarUrl: result.url })
+              .where(eq(users.id, row.id));
+            console.log(`  [${row.id}] -> ${result.url}`);
+            return "migrated";
+          }
+          return result.status === "wouldMigrate" ? "wouldMigrate" : "missing";
+        } catch (err) {
+          console.error(`  [${row.id}] FAILED:`, err);
+          return "failed";
+        }
+      }),
+    ),
+  );
   const counts: MigrationCounts = {
     migrated: 0,
     wouldMigrate: 0,
     missing: 0,
     failed: 0,
   };
-  for (const row of rows) {
-    try {
-      const result = await uploadOne(row.avatarUrl!, "avatar");
-      if (result.status === "uploaded") {
-        await db
-          .update(users)
-          .set({ avatarUrl: result.url })
-          .where(eq(users.id, row.id));
-        counts.migrated++;
-        console.log(`  [${row.id}] -> ${result.url}`);
-      } else if (result.status === "wouldMigrate") {
-        counts.wouldMigrate++;
-      } else {
-        counts.missing++;
-      }
-    } catch (err) {
-      counts.failed++;
-      console.error(`  [${row.id}] FAILED:`, err);
-      continue;
-    }
-  }
+  for (const outcome of outcomes) counts[outcome]++;
   console.log(
     `users.avatarUrl: migrated ${counts.migrated}, wouldMigrate ${counts.wouldMigrate}, missing ${counts.missing}, failed ${counts.failed}`,
   );

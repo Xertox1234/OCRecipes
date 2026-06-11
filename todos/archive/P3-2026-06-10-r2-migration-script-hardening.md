@@ -3,7 +3,7 @@
 ---
 
 title: "R2 backfill script: bounded concurrency + idempotent re-runs (uploaded-key record)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-10
 updated: 2026-06-10
@@ -36,13 +36,13 @@ so a value left in `.env` can't silently re-enable them.
 
 ## Acceptance Criteria
 
-- [ ] Bounded-concurrency pool (e.g. 5, mirroring SEED_CONCURRENCY) for per-row uploads, preserving per-row try/catch failure isolation
-- [ ] Re-run idempotency: record uploaded keys (or derive deterministic keys from row id/content hash) so a failed UPDATE doesn't orphan the first object on retry
-- [ ] Deprecated scripts print a loud override-active warning when ALLOW_DEPRECATED_DISK_MIGRATION=1
+- [x] Bounded-concurrency pool (e.g. 5, mirroring SEED_CONCURRENCY) for per-row uploads, preserving per-row try/catch failure isolation
+- [x] Re-run idempotency: record uploaded keys (or derive deterministic keys from row id/content hash) so a failed UPDATE doesn't orphan the first object on retry
+- [x] Deprecated scripts print a loud override-active warning when ALLOW_DEPRECATED_DISK_MIGRATION=1
 
 ## Implementation Notes
 
-- Deterministic key option per AWS SDK guidance: derive from the DB row id (e.g. `recipe-row-<id>.<ext>`) instead of `crypto.randomUUID()` *within the migration script only* — the runtime `saveRecipeImage` random key is correct for live traffic.
+- Deterministic key option per AWS SDK guidance: derive from the DB row id (e.g. `recipe-row-<id>.<ext>`) instead of `crypto.randomUUID()` _within the migration script only_ — the runtime `saveRecipeImage` random key is correct for live traffic.
 
 ## Dependencies
 

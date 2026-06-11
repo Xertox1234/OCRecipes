@@ -43,6 +43,29 @@ async function main() {
     process.exit(1);
   }
 
+  // The override must never run against production — it rewrites rows to
+  // ephemeral disk paths (silent image loss on the next redeploy).
+  if (process.env.NODE_ENV === "production") {
+    console.error(
+      "REFUSING: ALLOW_DEPRECATED_DISK_MIGRATION=1 is set but NODE_ENV is " +
+        '"production". This deprecated disk migration must not run in production.',
+    );
+    process.exit(1);
+  }
+
+  // Loud banner so a value left behind in .env can't silently re-enable
+  // this deprecated script.
+  console.warn(
+    "\n" +
+      "############################################################\n" +
+      "# WARNING: OVERRIDE ACTIVE                                 #\n" +
+      "# ALLOW_DEPRECATED_DISK_MIGRATION=1 — running a DEPRECATED #\n" +
+      "# disk migration that writes local-disk URLs. If you did   #\n" +
+      "# not set this intentionally for THIS run, abort now and   #\n" +
+      "# remove the variable from your .env.                      #\n" +
+      "############################################################\n",
+  );
+
   console.log("=== Migrate Base64 Recipe Images to Disk ===\n");
 
   // Ensure output directory exists

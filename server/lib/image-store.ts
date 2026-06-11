@@ -82,6 +82,22 @@ function assertSize(buffer: Buffer): void {
   }
 }
 
+/**
+ * Filename overrides are interpolated into R2 keys and disk paths — reject
+ * anything that could escape the prefix (`/`, `\`) or traverse (`..`) so a
+ * future caller can't turn the override into a key-injection/path-traversal
+ * vector. Single-segment safe charset only.
+ */
+function assertSafeFilenameOverride(filename: string): void {
+  if (
+    !/^[A-Za-z0-9._-]+$/.test(filename) ||
+    filename.includes("..") ||
+    /^\.+$/.test(filename)
+  ) {
+    throw new Error(`Unsafe filename override: ${filename}`);
+  }
+}
+
 function publicUrl(cfg: R2Config, key: string): string {
   return `${cfg.publicBaseUrl.replace(/\/$/, "")}/${key}`;
 }
@@ -118,28 +134,42 @@ async function putToR2(
  * Persist a recipe image. Returns the stored URL.
  * AI-generated images are PNG (the default); pass `ext` when migrating
  * legacy disk images so JPEG/WebP bytes aren't stored as `image/png`.
+ *
+ * `filenameOverride` is for one-shot migration scripts ONLY: a deterministic
+ * filename makes re-runs idempotent (same-key PUT overwrites instead of
+ * orphaning the prior object). Runtime traffic must keep the random default.
  */
 export async function saveRecipeImage(
   buffer: Buffer,
   ext: Ext = "png",
+  filenameOverride?: string,
 ): Promise<string> {
   assertSize(buffer);
-  const filename = `recipe-${crypto.randomUUID()}.${ext}`;
+  if (filenameOverride) assertSafeFilenameOverride(filenameOverride);
+  const filename = filenameOverride ?? `recipe-${crypto.randomUUID()}.${ext}`;
   const cfg = readR2Config();
   if (cfg) return putToR2(cfg, `recipe-images/${filename}`, buffer, ext);
   return putToDisk("recipe-images", filename, buffer);
 }
 
-/** Persist a user avatar. Returns the stored URL. */
+/**
+ * Persist a user avatar. Returns the stored URL.
+ *
+ * `filenameOverride` is for one-shot migration scripts ONLY (idempotent
+ * re-runs); it must be non-reversible (e.g. hash-derived) — see the key
+ * comment below. Runtime traffic must keep the random default.
+ */
 export async function saveAvatar(
   buffer: Buffer,
   ext: "jpg" | "png" | "webp",
+  filenameOverride?: string,
 ): Promise<string> {
   assertSize(buffer);
+  if (filenameOverride) assertSafeFilenameOverride(filenameOverride);
   // Random key (not userId + timestamp): avatar URLs live on a public CDN,
   // so the key must not leak the user's UUID or be guessable, and two
   // same-millisecond uploads must not silently overwrite each other.
-  const filename = `${crypto.randomUUID()}.${ext}`;
+  const filename = filenameOverride ?? `${crypto.randomUUID()}.${ext}`;
   const cfg = readR2Config();
   if (cfg) return putToR2(cfg, `avatars/${filename}`, buffer, ext);
   return putToDisk("avatars", filename, buffer);
