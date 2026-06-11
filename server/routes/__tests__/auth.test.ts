@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
@@ -1018,8 +1018,55 @@ describe("_helpers utility functions", () => {
   });
 
   describe("ipKeyGenerator", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("prefers the X-Real-IP header on Railway (edge proxy overwrites it)", () => {
+      vi.stubEnv("RAILWAY_ENVIRONMENT_NAME", "production");
+      const req = mockExpressReq({
+        headers: { "x-real-ip": "203.0.113.7" },
+        ip: "192.168.1.1",
+        socket: { remoteAddress: "10.0.0.1" } as express.Request["socket"],
+      });
+      expect(ipKeyGenerator(req)).toBe("203.0.113.7");
+    });
+
+    it("normalizes an IPv6 X-Real-IP to its /56 bucket on Railway", () => {
+      vi.stubEnv("RAILWAY_ENVIRONMENT_NAME", "production");
+      const reqFor = (realIp: string) =>
+        mockExpressReq({
+          headers: { "x-real-ip": realIp },
+          ip: "",
+          socket: { remoteAddress: "" } as express.Request["socket"],
+        });
+      expect(ipKeyGenerator(reqFor("2001:db8:abcd:1200::1"))).toBe(
+        ipKeyGenerator(reqFor("2001:db8:abcd:12ff::9")),
+      );
+    });
+
+    it("ignores X-Real-IP off Railway (client-suppliable there)", () => {
+      const req = mockExpressReq({
+        headers: { "x-real-ip": "203.0.113.7" },
+        ip: "192.168.1.1",
+        socket: { remoteAddress: "10.0.0.1" } as express.Request["socket"],
+      });
+      expect(ipKeyGenerator(req)).toBe("192.168.1.1");
+    });
+
+    it("ignores a non-string X-Real-IP header value on Railway", () => {
+      vi.stubEnv("RAILWAY_ENVIRONMENT_NAME", "production");
+      const req = mockExpressReq({
+        headers: { "x-real-ip": ["203.0.113.7", "203.0.113.8"] },
+        ip: "192.168.1.1",
+        socket: { remoteAddress: "10.0.0.1" } as express.Request["socket"],
+      });
+      expect(ipKeyGenerator(req)).toBe("192.168.1.1");
+    });
+
     it("returns req.ip when available", () => {
       const req = mockExpressReq({
+        headers: {},
         ip: "192.168.1.1",
         socket: { remoteAddress: "10.0.0.1" } as express.Request["socket"],
       });
@@ -1028,6 +1075,7 @@ describe("_helpers utility functions", () => {
 
     it("falls back to socket.remoteAddress when ip is missing", () => {
       const req = mockExpressReq({
+        headers: {},
         ip: "",
         socket: { remoteAddress: "10.0.0.1" } as express.Request["socket"],
       });
@@ -1036,10 +1084,34 @@ describe("_helpers utility functions", () => {
 
     it("returns 'unknown' when both ip and remoteAddress are missing", () => {
       const req = mockExpressReq({
+        headers: {},
         ip: "",
         socket: { remoteAddress: "" } as express.Request["socket"],
       });
       expect(ipKeyGenerator(req)).toBe("unknown");
+    });
+
+    it("buckets IPv6 addresses in the same /56 to one rate-limit key", () => {
+      const reqFor = (ip: string) =>
+        mockExpressReq({
+          headers: {},
+          ip,
+          socket: { remoteAddress: "" } as express.Request["socket"],
+        });
+      const sameSubnetA = ipKeyGenerator(reqFor("2001:db8:abcd:1200::1"));
+      const sameSubnetB = ipKeyGenerator(reqFor("2001:db8:abcd:12ff::9"));
+      const otherSubnet = ipKeyGenerator(reqFor("2001:db8:abcd:1300::1"));
+      expect(sameSubnetA).toBe(sameSubnetB);
+      expect(sameSubnetA).not.toBe(otherSubnet);
+    });
+
+    it("passes IPv4 addresses through unchanged", () => {
+      const req = mockExpressReq({
+        headers: {},
+        ip: "198.51.100.23",
+        socket: { remoteAddress: "" } as express.Request["socket"],
+      });
+      expect(ipKeyGenerator(req)).toBe("198.51.100.23");
     });
   });
 

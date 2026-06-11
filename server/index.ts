@@ -34,6 +34,13 @@ process.on("unhandledRejection", (reason) => {
 
 const app = express();
 
+// Deployed behind Railway's edge proxy: trust exactly one hop so req.ip is
+// read from X-Forwarded-For instead of resolving to the proxy address (which
+// collapses every IP-keyed rate limiter into one global bucket). Never set
+// this to `true` — that trusts the leftmost, client-spoofable XFF entry and
+// lets attackers choose their own rate-limit bucket.
+app.set("trust proxy", 1);
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -42,11 +49,16 @@ declare module "http" {
 
 function setupCors(app: express.Application) {
   const ALLOWED_ORIGIN_PATTERNS = [
-    /^https?:\/\/localhost(:\d+)?$/,
     /^exp:\/\/.+$/,
-    // Dev tunnels — only allowed outside production
+    // Dev origins — only allowed outside production. localhost included: a
+    // hostile page served on a victim's machine must not be able to make
+    // credentialed CORS requests against the prod API.
     ...(process.env.NODE_ENV !== "production"
-      ? [/^https:\/\/.+\.loca\.lt$/, /^https:\/\/.+\.ngrok\.io$/]
+      ? [
+          /^https?:\/\/localhost(:\d+)?$/,
+          /^https:\/\/.+\.loca\.lt$/,
+          /^https:\/\/.+\.ngrok\.io$/,
+        ]
       : []),
   ];
 
@@ -69,6 +81,9 @@ function setupCors(app: express.Application) {
       if (origin) {
         res.header("Access-Control-Allow-Origin", origin);
         res.header("Access-Control-Allow-Credentials", "true");
+        // Reflected ACAO must vary by Origin, or a shared cache (Railway
+        // edge / CDN) could serve one origin's grant to another.
+        res.header("Vary", "Origin");
       }
       res.header(
         "Access-Control-Allow-Methods",
