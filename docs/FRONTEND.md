@@ -36,27 +36,19 @@ client/
 │   ├── TextInput.tsx
 │   ├── ThemedText.tsx
 │   ├── ThemedView.tsx
-│   ├── AdaptiveGoalCard.tsx
-│   ├── AppetiteTracker.tsx
 │   ├── CalorieBudgetBar.tsx
 │   ├── ChatBubble.tsx
 │   ├── CuisineTag.tsx
-│   ├── FastingSetupModal.tsx
-│   ├── FastingStreakBadge.tsx
-│   ├── FastingTimer.tsx
 │   ├── GroceryListPickerModal.tsx
-│   ├── HealthKitSyncIndicator.tsx
 │   ├── HighProteinSuggestions.tsx
 │   ├── HistoryItemActions.tsx
 │   ├── HomeRecipeCard.tsx
 │   ├── MealSuggestionsModal.tsx
-│   ├── MedicationLogCard.tsx
 │   ├── MicronutrientBar.tsx
 │   ├── MicronutrientSummary.tsx
 │   ├── ParsedFoodPreview.tsx
 │   ├── UpgradeModal.tsx
 │   ├── VoiceLogButton.tsx
-│   ├── WeightChart.tsx
 │   ├── *-utils.ts          # Co-located pure logic (tested via Vitest)
 │   └── recipe-builder/     # Bottom-sheet recipe builder (7 components)
 ├── constants/
@@ -72,7 +64,6 @@ client/
 │   └── ToastContext.tsx     # Toast notification system
 ├── hooks/                  # Custom React hooks (50+)
 │   ├── useAccessibility.ts  # Accessibility helpers
-│   ├── useAdaptiveGoals.ts  # Adaptive goal suggestions
 │   ├── useAllergenCheck.ts  # Allergen detection helpers
 │   ├── useAuth.ts           # Auth state hook
 │   ├── useAvatarUpload.ts   # Avatar image upload
@@ -84,25 +75,21 @@ client/
 │   ├── useColorScheme.ts    # System color scheme
 │   ├── useCookbooks.ts      # Cookbook CRUD & recipe management
 │   ├── useCookSession.ts    # Cook session capture & review
-│   ├── useDailyBudget.ts    # Daily calorie budget (intake - exercise)
+│   ├── useDailyBudget.ts    # Daily calorie budget (goal - intake)
 │   ├── useDietaryProfileForm.ts # Dietary profile form state
 │   ├── useDiscardItem.ts    # Item deletion with confirmation
-│   ├── useFasting.ts        # Fasting schedule, start/end, history
-│   ├── useFastingTimer.ts   # Fasting timer countdown logic
 │   ├── useFavouriteRecipes.ts # Favourite recipe management
 │   ├── useFavourites.ts     # Favourite scanned items
 │   ├── useFoodParse.ts      # Natural language food parsing
 │   ├── useGenerateMealPlan.ts # AI meal plan generation
 │   ├── useGroceryList.ts    # Grocery list CRUD
 │   ├── useHaptics.ts        # Haptic feedback
-│   ├── useHealthKit.ts      # HealthKit sync settings
 │   ├── useHistoryData.ts    # Scan history data
 │   ├── useHomeActions.ts    # Home screen action handlers
 │   ├── useLibraryCounts.ts  # Library item counts
 │   ├── useMealPlan.ts       # Meal plan items
 │   ├── useMealPlanRecipes.ts # Meal plan recipe CRUD
 │   ├── useMealSuggestions.ts # AI meal suggestions
-│   ├── useMedication.ts     # GLP-1 medication logs & insights
 │   ├── useMenuScan.ts       # Menu scanning & history
 │   ├── useMicronutrients.ts # Micronutrient data & daily summary
 │   ├── useNetworkStatus.ts  # Network connectivity status
@@ -122,12 +109,10 @@ client/
 │   ├── useScreenOptions.ts  # Navigation options
 │   ├── useSpeechToText.ts   # On-device streaming speech-to-text
 │   ├── useSuggestionInstructions.ts # AI suggestion drill-down
-│   ├── useTheme.ts          # Theme hook
-│   └── useWeightLogs.ts     # Weight tracking & trends
+│   └── useTheme.ts          # Theme hook
 ├── lib/
 │   ├── api-error.ts         # API error handling utilities
 │   ├── format.ts            # Number/date formatting utilities
-│   ├── healthkit.ts         # HealthKit integration helpers
 │   ├── image-compression.ts # Image compression utils
 │   ├── ingredient-parser.ts # Ingredient text parsing
 │   ├── macro-colors.ts      # Macro nutrient color mapping
@@ -183,13 +168,9 @@ client/
 │   ├── ReceiptCaptureScreen.tsx
 │   ├── ReceiptReviewScreen.tsx
 │   ├── SubstitutionResultScreen.tsx
-│   ├── FastingScreen.tsx
 │   ├── FeaturedRecipeDetailScreen.tsx
-│   ├── GLP1CompanionScreen.tsx
-│   ├── HealthKitSettingsScreen.tsx
 │   ├── MenuScanResultScreen.tsx
 │   ├── QuickLogScreen.tsx
-│   ├── WeightTrackingScreen.tsx
 │   ├── onboarding/
 │   │   ├── WelcomeScreen.tsx
 │   │   ├── AllergiesScreen.tsx
@@ -234,8 +215,7 @@ RootStackNavigator
 └── Main (authenticated)
     ├── MainTabNavigator (4 tabs + ScanFAB)
     │   ├── HomeTab → HomeStackNavigator
-    │   │   ├── HomeScreen (dashboard)
-    │   │   └── FastingScreen
+    │   │   └── HomeScreen (dashboard)
     │   ├── MealPlanTab → MealPlanStackNavigator
     │   │   ├── MealPlanHomeScreen
     │   │   ├── RecipeBrowserScreen
@@ -259,10 +239,7 @@ RootStackNavigator
     │       ├── SavedItemsScreen
     │       ├── HistoryScreen (scan history)
     │       ├── ItemDetailScreen
-    │       ├── WeightTrackingScreen
-    │       ├── DailyNutritionDetailScreen
-    │       ├── HealthKitSettingsScreen
-    │       └── GLP1CompanionScreen
+    │       └── DailyNutritionDetailScreen
     ├── ScanScreen (fullScreenModal, opened via ScanFAB)
     ├── NutritionDetailScreen (modal)
     ├── PhotoIntentScreen (modal)

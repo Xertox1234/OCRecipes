@@ -30,19 +30,15 @@ You are a specialized agent for database design, Drizzle ORM queries, storage mo
 
 **Grocery & pantry:** `groceryLists`, `groceryListItems`, `pantryItems`
 
-**Exercise & activity:** `exerciseLibrary`, `exerciseLogs`
-
-**Health tracking:** `weightLogs`, `healthKitSync`, `fastingSchedules`, `fastingLogs`, `medicationLogs`, `goalAdjustmentLogs`
-
 **Chat:** `chatConversations`, `chatMessages`
 
 **Other:** `menuScans`, `transactions` (subscriptions)
 
 ### Storage Modules (`server/storage/`)
 
-20 domain-split files composed via `server/storage/index.ts`:
+Domain-split files composed via `server/storage/index.ts` (27 as of 2026-06):
 
-`api-keys`, `batch`, `cache`, `carousel`, `chat`, `community`, `cookbooks`, `fasting`, `helpers`, `meal-plans`, `medication`, `menu`, `nutrition`, `profile-hub`, `receipt`, `reformulation`, `sessions`, `users`
+`api-keys`, `batch`, `cache`, `canonical-recipes`, `carousel`, `chat`, `coach-notebook`, `community`, `cookbooks`, `export`, `favourite-recipes`, `grocery-lists`, `helpers`, `meal-plans`, `menu`, `nutrition`, `pantry`, `profile-hub`, `push-tokens`, `receipt`, `recipe-from-chat`, `reformulation`, `reminders`, `sessions`, `taste-picks`, `users`, `verification`
 
 ### Stack
 
@@ -86,19 +82,19 @@ Mutation methods must include `userId` in WHERE — not rely on route-level chec
 
 ```typescript
 // ✅ Storage enforces ownership
-async endFastingLog(id: number, userId: string): Promise<FastingLog | undefined> {
-  const [updated] = await db.update(fastingLogs)
+async updatePantryItem(id: number, userId: string): Promise<PantryItem | undefined> {
+  const [updated] = await db.update(pantryItems)
     .set({ ... })
-    .where(and(eq(fastingLogs.id, id), eq(fastingLogs.userId, userId)))
+    .where(and(eq(pantryItems.id, id), eq(pantryItems.userId, userId)))
     .returning();
   return updated || undefined;
 }
 
 // ❌ Storage trusts caller
-async endFastingLog(id: number): Promise<FastingLog | undefined> {
-  const [updated] = await db.update(fastingLogs)
+async updatePantryItem(id: number): Promise<PantryItem | undefined> {
+  const [updated] = await db.update(pantryItems)
     .set({ ... })
-    .where(eq(fastingLogs.id, id))  // No userId check!
+    .where(eq(pantryItems.id, id))  // No userId check!
     .returning();
   return updated || undefined;
 }
@@ -418,7 +414,7 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 24. **Ownership verification outside the tx on limit-checked inserts** - `createChatMessageWithLimitCheck(userId, conversationId, …)` must verify `conversations.userId = userId` INSIDE the tx (after advisory-lock, before quota queries). Pre-checking ownership in the route is defense-in-depth but not sufficient — if storage is called from a new route that forgot the pre-check, the IDOR footgun fires silently. Return `null` when ownership fails, same as limit-reached (Ref: audit 2026-04-18 H11)
 25. **`onConflictDoNothing` on cache tables causes expired-entry skip + `!` crash** — Cache tables with a TTL must use `onConflictDoUpdate` with `set: { data, expiresAt }` to refresh expired entries. `onConflictDoNothing` silently skips the insert when an expired row exists with the same key; the subsequent `getCache` call filters it out as expired (returning `undefined`); any `!` non-null assertion on the result then crashes. Rule: if a table has a unique key AND a TTL column, always use `onConflictDoUpdate` — not `onConflictDoNothing`. `onConflictDoNothing` is correct only for true idempotent inserts where the first write wins and the row never expires (e.g., `favourites`, `dismissals`) (Ref: audit 2026-04-28 H3)
 26. **`onConflictDoNothing({ target })` on a partial unique index silently inserts duplicates** — Drizzle's `{ target: [col] }` generates `ON CONFLICT (col) DO NOTHING`. PostgreSQL cannot match a partial index (one with a `WHERE` predicate) via column list; the conflict clause is ignored and the insert proceeds — potentially inserting a duplicate or throwing a constraint-violation error. Rule: when inserting into a table whose unique index was built with `.where(sql\`col IS NOT NULL\`)`, use `onConflictDoNothing()`with NO args. Grep marker: look for`uniqueIndex(...).where(sql\`...\`)`in`shared/schema.ts`to find all partial indexes. Affected tables:`coachNotebook` (`dedupeKey IS NOT NULL`), `communityRecipes` (`sourceMessageId IS NOT NULL`), `chatMessages` (`turnKey IS NOT NULL`) (Ref: audit 2026-05-09 C1)
-27. **Postgres error-code detection that doesn't unwrap `err.cause`** — Flag any `catch` that does `err.code === "23505"` (or `err.message.includes("unique" | "23505")`) to detect a constraint violation. drizzle-orm **0.44+** wraps driver errors in `DrizzleQueryError` (message `"Failed query: …"`, original pg error on `err.cause`), so these checks silently stop matching after the ORM bump and `tsc` can't catch it (catch errors are `unknown`). Rule: check **both** `err.code` and `err.cause?.code`, never the message text. Grep marker: `code === "235` and `message?.includes`. Affected today: `auth.ts`, `nutrition.ts`, `favourite-recipes.ts`, `recipe-catalog.ts`, `meal-plan.ts`, `fasting.ts` (Ref: `docs/solutions/conventions/detect-pg-error-code-via-cause-not-message-2026-05-23.md`)
+27. **Postgres error-code detection that doesn't unwrap `err.cause`** — Flag any `catch` that does `err.code === "23505"` (or `err.message.includes("unique" | "23505")`) to detect a constraint violation. drizzle-orm **0.44+** wraps driver errors in `DrizzleQueryError` (message `"Failed query: …"`, original pg error on `err.cause`), so these checks silently stop matching after the ORM bump and `tsc` can't catch it (catch errors are `unknown`). Rule: check **both** `err.code` and `err.cause?.code`, never the message text. Grep marker: `code === "235` and `message?.includes`. Affected today: `auth.ts`, `nutrition.ts`, `favourite-recipes.ts`, `recipe-catalog.ts`, `meal-plan.ts` (Ref: `docs/solutions/conventions/detect-pg-error-code-via-cause-not-message-2026-05-23.md`)
 
 ---
 

@@ -410,12 +410,12 @@ Reference: `client/components/coach/CoachChat.tsx`.
 When a timer fires every N seconds but the derived value only changes at a coarser boundary (e.g., hourly), use a floored bucket as the `useMemo` dependency:
 
 ```typescript
-// ❌ BAD — recomputes every 30s even though fasting phase changes hourly
-const currentPhase = useMemo(() => getFastingPhase(elapsedMinutes), [elapsedMinutes]);
+// ❌ BAD — recomputes every 30s even though the derived phase changes hourly
+const currentPhase = useMemo(() => getElapsedPhase(elapsedMinutes), [elapsedMinutes]);
 
 // ✅ GOOD — stable for up to 60 minutes
 const phaseHourBucket = Math.floor(elapsedMinutes / 60);
-const currentPhase = useMemo(() => getFastingPhase(elapsedMinutes), [phaseHourBucket]);
+const currentPhase = useMemo(() => getElapsedPhase(elapsedMinutes), [phaseHourBucket]);
 
 // Also works for React.memo sub-components receiving timer-derived data
 <MilestoneMarkers

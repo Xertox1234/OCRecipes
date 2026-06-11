@@ -88,10 +88,6 @@ Badge tier system (Newcomer → Platinum) displayed on ProfileScreen and via Ver
 
 ### Health & Tracking
 
-- **Apple HealthKit Sync** — Weight sync and step tracking integration (`server/services/healthkit-sync.ts`, `server/routes/healthkit.ts`)
-- **Weight Tracking** — Weight logging with trend analysis and HealthKit integration (`server/routes/weight.ts`)
-- **Fasting Tracking** — Intermittent fasting with schedules and statistics (`server/routes/fasting.ts`, `server/services/fasting-stats.ts`)
-- **Medication Logging** — Medication tracking with GLP-1 medication insights (`server/routes/medication.ts`, `server/services/glp1-insights.ts`)
 - **Beverage Follow-ups** — Beverage-specific logging flow (`server/routes/beverages.ts`)
 
 ### Planning & Shopping

@@ -1,6 +1,6 @@
 ---
 title: "Update docs that still reference removed health features"
-status: backlog
+status: done
 priority: low
 created: 2026-06-06
 updated: 2026-06-06

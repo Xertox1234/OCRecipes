@@ -45,9 +45,9 @@ app.get("/api/items/:id", requireAuth, async (req, res) => {
 
 ```typescript
 // ✅ Storage enforces ownership independently
-async endFastingLog(id: number, userId: string) {
-  return db.update(fastingLogs).set({ ... })
-    .where(and(eq(fastingLogs.id, id), eq(fastingLogs.userId, userId)))
+async updatePantryItem(id: number, userId: string) {
+  return db.update(pantryItems).set({ ... })
+    .where(and(eq(pantryItems.id, id), eq(pantryItems.userId, userId)))
     .returning();
 }
 ```

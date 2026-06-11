@@ -217,12 +217,11 @@ Route handlers should call one service or one storage function. Extract to `serv
 ```typescript
 // ❌ BAD — too much orchestration in route handler
 app.get("/api/profile/widgets", requireAuth, async (req, res) => {
-  const [user, summary, schedule, fast, weight] = await Promise.all([
+  const [user, summary, pantryCount, groceryLists] = await Promise.all([
     storage.getUser(req.userId),
     storage.getDailySummary(req.userId, date),
-    storage.getFastingSchedule(req.userId),
-    storage.getActiveFastingLog(req.userId),
-    storage.getLatestWeight(req.userId),
+    storage.getPantryItemCount(req.userId),
+    storage.getGroceryLists(req.userId),
   ]);
   const remaining = calorieGoal - foodCalories;  // business logic in route
   res.json({ remaining, ... });
@@ -453,7 +452,7 @@ Audit M10 2026-04-26.
 - **Services:** `import { createServiceLogger, toError } from "../lib/logger"` + `const log = createServiceLogger("service-name")` where the name matches the filename
 - Always serialize errors with `toError(err)` — never pass raw `err` (may not be an `Error` instance)
 - Zod validation failures log at `warn` level with `zodErrors: parsed.error.flatten()`
-- Message style: lowercase, concise. Proper nouns stay capitalized (DALL-E, HealthKit, Spoonacular)
+- Message style: lowercase, concise. Proper nouns stay capitalized (DALL-E, OpenAI, Spoonacular)
 
 ---
 
