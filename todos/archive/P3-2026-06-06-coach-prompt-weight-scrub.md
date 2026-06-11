@@ -1,6 +1,6 @@
 ---
 title: "Scrub residual weight references from the nutrition-coach prompt"
-status: backlog
+status: done
 priority: low
 created: 2026-06-06
 updated: 2026-06-06
@@ -31,11 +31,11 @@ coach output by instructing it to use absent data.
 
 ## Acceptance Criteria
 
-- [ ] Remove the dangling instruction at `nutrition-coach.ts:151` ("Weight trend direction (losing/gaining/stable) is more important than the exact number — use it to frame whether the user is on track.")
-- [ ] Remove "current weight" / "weight trend" clauses from the refusal-template opener `:69` (clause [1]) and the citable-numbers list `:143`.
-- [ ] Re-anchor the few-shot example responses at `:94`, `:97`, `:175` away from "weight trending down" to today's intake (carefully — these are tuned safety examples; preserve the three-clause refusal structure).
-- [ ] Confirm the GLP-1 / extreme-fasting refusal examples and the `extreme_fasting` intent behavior are unchanged.
-- [ ] `grep -ni "weight" server/services/nutrition-coach.ts` returns only the false-positive at `:152` ("**Weight** recent entries..." — a verb about notebook recency).
+- [x] Remove the dangling instruction at `nutrition-coach.ts:151` ("Weight trend direction (losing/gaining/stable) is more important than the exact number — use it to frame whether the user is on track.")
+- [x] Remove "current weight" / "weight trend" clauses from the refusal-template opener `:69` (clause [1]) and the citable-numbers list `:143`.
+- [x] Re-anchor the few-shot example responses at `:94`, `:97`, `:175` away from "weight trending down" to today's intake (carefully — these are tuned safety examples; preserve the three-clause refusal structure).
+- [x] Confirm the GLP-1 / extreme-fasting refusal examples and the `extreme_fasting` intent behavior are unchanged.
+- [x] `grep -ni "weight" server/services/nutrition-coach.ts` returns only the false-positive at `:152` ("**Weight** recent entries..." — a verb about notebook recency).
 
 ## Implementation Notes
 
@@ -56,3 +56,7 @@ coach output by instructing it to use absent data.
 ### 2026-06-06
 
 - Initial creation — deferred from the #384 review (user merged as-is).
+
+### 2026-06-10
+
+- Implemented by /todo executor. Scrubbed all weight-data references from the prompt: clause [1] opener, citable-numbers list, dangling weight-trend instruction, and fabricated body-weight figures (90kg/80kg/82kg) in few-shot examples; re-anchored `:94`/`:97`/`:175` to today's intake. Reworded jailbreak/GLP-1 example user messages still route to `safety_refusal` (verified against `SAFETY_PATTERNS`: `you are now \w+bot`, `ozempic`). Three-clause refusal structure preserved, no clause markers in examples. Criterion 4's "unchanged" interpreted as behavior/structure (criterion 3 explicitly edits the GLP-1 response); `coach-intent-classifier.ts` untouched, 72-hour-fast example byte-identical. Also fixed two stale weight JSDoc mentions in `coach-pro-chat.ts` and a stale "weight trend" eval-case description in `evals/datasets/coach-cases.json`. Acceptance grep passes (only the "Weight recent entries" verb false-positive remains).

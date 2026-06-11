@@ -184,7 +184,7 @@ export interface CoachChatParams {
 /**
  * Day bucket string — e.g. `"2026-04-18"` — in the given IANA timezone.
  * Used to expire cached coach answers whose prompt includes today's numeric
- * context (goals, intake, weight). Defaults to UTC so callers that don't
+ * context (goals, intake). Defaults to UTC so callers that don't
  * have a user timezone remain backward-compatible.
  */
 function getDayBucketInTz(d: Date = new Date(), tz: string = "UTC"): string {
@@ -205,7 +205,7 @@ function getDayBucketInTz(d: Date = new Date(), tz: string = "UTC"): string {
  *  - isCoachPro — Pro and non-Pro prompts diverge (tools, notebook); a cached
  *    non-Pro answer must never be replayed to a Pro user (H4 — 2026-04-18)
  *  - dayBucket — keeps universal first-turn answers from crossing UTC days
- *  - contextHash — captures goals, intake, weight trend, dietary profile, and
+ *  - contextHash — captures goals, intake, dietary profile, and
  *    hour bucket so same-day context changes invalidate cached answers
  *  - intent — the deterministic intent classification; different intents pick
  *    different prompt bundles, so cached answers must not cross intents
