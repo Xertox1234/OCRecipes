@@ -15,6 +15,7 @@ module.exports = defineConfig([
       "server_dist/*",
       ".claude/worktrees/**",
       ".worktrees/**",
+      ".stryker-tmp/**",
     ],
   },
   {
