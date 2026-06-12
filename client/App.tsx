@@ -13,8 +13,9 @@ import {
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
 
-import { QueryClientProvider, onlineManager } from "@tanstack/react-query";
-import { queryClient } from "@/lib/query-client";
+import { onlineManager } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { queryClient, asyncStoragePersister } from "@/lib/query-client";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import * as Notifications from "expo-notifications";
 
@@ -113,7 +114,13 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ErrorBoundary onError={(err) => reportError(err, "ErrorBoundary")}>
-        <QueryClientProvider client={queryClient}>
+        <PersistQueryClientProvider
+          client={queryClient}
+          persistOptions={{
+            persister: asyncStoragePersister,
+            maxAge: 24 * 60 * 60 * 1000,
+          }}
+        >
           <AuthProvider>
             <PremiumProvider>
               <ThemeProvider>
@@ -121,7 +128,7 @@ export default function App() {
               </ThemeProvider>
             </PremiumProvider>
           </AuthProvider>
-        </QueryClientProvider>
+        </PersistQueryClientProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
   );

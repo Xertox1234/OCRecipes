@@ -5,6 +5,8 @@ import {
   onlineManager,
   focusManager,
 } from "@tanstack/react-query";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import { AppState, Platform } from "react-native";
 import { tokenStorage } from "./token-storage";
@@ -418,4 +420,10 @@ focusManager.setEventListener((handleFocus) => {
     }
   });
   return () => subscription.remove();
+});
+
+export const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: "@ocrecipes_query_cache",
+  throttleTime: 1000,
 });

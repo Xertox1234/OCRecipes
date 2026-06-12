@@ -18,6 +18,7 @@ interface AuthState {
 }
 
 const AUTH_STORAGE_KEY = "@ocrecipes_auth";
+const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
 
 export function useAuth() {
   const [state, setState] = useState<AuthState>({
@@ -177,6 +178,7 @@ export function useAuth() {
     // Clear cached query data so the next sign-in can't read the previous
     // session's data. Guarded so a throw can't skip the setState logout below.
     try {
+      await AsyncStorage.removeItem(QUERY_CACHE_KEY);
       queryClient.clear();
     } catch {}
     setState({ user: null, isLoading: false, isAuthenticated: false });
@@ -206,6 +208,7 @@ export function useAuth() {
     // Guarded: a throw here (unlikely) must not skip the setState below — that
     // is the actual logout, and the function is contractually non-throwing.
     try {
+      await AsyncStorage.removeItem(QUERY_CACHE_KEY);
       queryClient.clear();
     } catch {}
     setState({ user: null, isLoading: false, isAuthenticated: false });
@@ -240,6 +243,7 @@ export function useAuth() {
     // whoever signs in next on this device. Guarded so it can't skip the
     // setState below (same non-throwing contract as the storage clears above).
     try {
+      await AsyncStorage.removeItem(QUERY_CACHE_KEY);
       queryClient.clear();
     } catch {}
     setState({ user: null, isLoading: false, isAuthenticated: false });
