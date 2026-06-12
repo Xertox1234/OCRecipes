@@ -84,10 +84,40 @@ describe("image-store", () => {
   it("deleteImage sends a DeleteObjectCommand for an R2 URL", async () => {
     setR2Env(true);
     const { deleteImage } = await load();
-    await deleteImage("https://img.example.com/avatars/user-42-1.jpg");
+    await deleteImage(
+      "https://img.example.com/avatars/user-42-1.jpg",
+      "avatar",
+    );
     const cmd = sendMock.mock.calls[0][0];
     expect(cmd.__cmd).toBe("Delete");
     expect(cmd.input.Key).toBe("avatars/user-42-1.jpg");
+  });
+
+  it("deleteImage deletes a recipe-images R2 object for kind=recipe", async () => {
+    setR2Env(true);
+    const { deleteImage } = await load();
+    await deleteImage(
+      "https://img.example.com/recipe-images/recipe-abc.png",
+      "recipe",
+    );
+    const cmd = sendMock.mock.calls[0][0];
+    expect(cmd.__cmd).toBe("Delete");
+    expect(cmd.input.Key).toBe("recipe-images/recipe-abc.png");
+  });
+
+  it("deleteImage refuses an R2 key outside the kind's prefix (no delete)", async () => {
+    setR2Env(true);
+    const { deleteImage } = await load();
+    // avatar object passed with kind=recipe — must not be deleted (IDOR guard)
+    await deleteImage("https://img.example.com/avatars/victim.jpg", "recipe");
+    // recipe object passed with kind=avatar — must not be deleted
+    await deleteImage(
+      "https://img.example.com/recipe-images/recipe-abc.png",
+      "avatar",
+    );
+    // arbitrary bucket key derivable from the URL — must not be deleted
+    await deleteImage("https://img.example.com/other/whatever.bin", "recipe");
+    expect(sendMock).not.toHaveBeenCalled();
   });
 
   it("rejects oversized recipe images", async () => {
@@ -120,11 +150,23 @@ describe("image-store", () => {
       .spyOn(fsp.default.promises, "unlink")
       .mockResolvedValue(undefined);
     const { deleteImage } = await load();
-    await deleteImage("/api/avatars/user-42-1.jpg");
+    await deleteImage("/api/avatars/user-42-1.jpg", "avatar");
     expect(unlinkSpy).toHaveBeenCalledTimes(1);
     const calledPath = unlinkSpy.mock.calls[0][0] as string;
     expect(calledPath).toMatch(/uploads\/avatars\/user-42-1\.jpg$/);
     expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("deleteImage refuses a legacy disk path outside the kind's prefix", async () => {
+    setR2Env(false);
+    const fsp = await import("node:fs");
+    const unlinkSpy = vi
+      .spyOn(fsp.default.promises, "unlink")
+      .mockResolvedValue(undefined);
+    const { deleteImage } = await load();
+    await deleteImage("/api/avatars/victim.jpg", "recipe");
+    await deleteImage("/api/recipe-images/recipe-abc.png", "avatar");
+    expect(unlinkSpy).not.toHaveBeenCalled();
   });
 
   it("deleteImage strips path traversal from a legacy disk URL (basename)", async () => {
@@ -134,7 +176,7 @@ describe("image-store", () => {
       .spyOn(fsp.default.promises, "unlink")
       .mockResolvedValue(undefined);
     const { deleteImage } = await load();
-    await deleteImage("/api/avatars/../../etc/passwd");
+    await deleteImage("/api/avatars/../../etc/passwd", "avatar");
     expect(unlinkSpy).toHaveBeenCalledTimes(1);
     const calledPath = unlinkSpy.mock.calls[0][0] as string;
     expect(calledPath).not.toContain("..");
@@ -145,7 +187,7 @@ describe("image-store", () => {
   it("deleteImage is a no-op for an unrecognized URL", async () => {
     setR2Env(true);
     const { deleteImage } = await load();
-    await deleteImage("https://other.cdn.com/img.jpg");
+    await deleteImage("https://other.cdn.com/img.jpg", "avatar");
     expect(sendMock).not.toHaveBeenCalled();
   });
 

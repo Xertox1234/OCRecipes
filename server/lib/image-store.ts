@@ -175,33 +175,49 @@ export async function saveAvatar(
   return putToDisk("avatars", filename, buffer);
 }
 
+/** Kind of stored image — maps to the key prefix the delete is scoped to. */
+export type ImageKind = "avatar" | "recipe";
+
+const KIND_PREFIX: Record<ImageKind, string> = {
+  avatar: "avatars",
+  recipe: "recipe-images",
+};
+
 /**
  * Delete a previously stored image by its stored URL. No-op on null/unknown.
  * Handles both R2 absolute URLs and legacy relative disk paths.
+ *
+ * `kind` scopes the deletion to the matching key prefix (`avatars/` or
+ * `recipe-images/`). The AWS SDK provides no key-prefix enforcement, and
+ * some image URLs (meal-plan recipes) are client-suppliable — without this
+ * guard, a crafted URL could delete an arbitrary bucket object (IDOR).
+ * A URL whose derived key does not start with the expected prefix is a
+ * silent no-op, consistent with the unknown-URL behavior.
  */
 export async function deleteImage(
   url: string | null | undefined,
+  kind: ImageKind,
 ): Promise<void> {
   if (!url) return;
+  const prefix = KIND_PREFIX[kind];
   const cfg = readR2Config();
   if (cfg) {
     const normalizedBase = cfg.publicBaseUrl.replace(/\/$/, "");
     if (url.startsWith(normalizedBase + "/")) {
       const key = url.slice(normalizedBase.length + 1);
+      // Prefix guard: only delete objects of the expected kind.
+      if (!key.startsWith(`${prefix}/`)) return;
       await client(cfg).send(
         new DeleteObjectCommand({ Bucket: cfg.bucket, Key: key }),
       );
       return;
     }
   }
-  // Legacy disk paths: /api/avatars/<f> or /api/recipe-images/<f>
-  for (const prefix of ["avatars", "recipe-images"]) {
-    if (url.startsWith(`/api/${prefix}/`)) {
-      const safe = path.basename(url); // prevents traversal
-      await fs.promises
-        .unlink(path.join(UPLOADS_ROOT, prefix, safe))
-        .catch(() => {});
-      return;
-    }
+  // Legacy disk path for this kind: /api/<prefix>/<f>
+  if (url.startsWith(`/api/${prefix}/`)) {
+    const safe = path.basename(url); // prevents traversal
+    await fs.promises
+      .unlink(path.join(UPLOADS_ROOT, prefix, safe))
+      .catch(() => {});
   }
 }

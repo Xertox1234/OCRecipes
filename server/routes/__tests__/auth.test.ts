@@ -550,7 +550,10 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(200);
       // The deleted user's own avatar is cleaned up via image-store.
-      expect(mockDeleteImage).toHaveBeenCalledWith("/api/avatars/1-123.jpg");
+      expect(mockDeleteImage).toHaveBeenCalledWith(
+        "/api/avatars/1-123.jpg",
+        "avatar",
+      );
     });
   });
 
@@ -671,6 +674,7 @@ describe("Auth Routes", () => {
       // The just-saved avatar must be rolled back via image-store.
       expect(mockDeleteImage).toHaveBeenCalledWith(
         "/api/avatars/1-rollback.jpg",
+        "avatar",
       );
     });
 
@@ -750,6 +754,7 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(200);
       expect(mockDeleteImage).toHaveBeenCalledWith(
         "/api/avatars/../../etc/passwd",
+        "avatar",
       );
     });
   });
@@ -824,7 +829,10 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(200);
       // Old avatar should have been deleted via image-store after the update.
-      expect(mockDeleteImage).toHaveBeenCalledWith("/api/avatars/1-old.jpg");
+      expect(mockDeleteImage).toHaveBeenCalledWith(
+        "/api/avatars/1-old.jpg",
+        "avatar",
+      );
       // Cleanup must run AFTER the DB pointer is updated, so a delete failure
       // can never strand the user with a missing avatar still referenced.
       expect(mockDeleteImage.mock.invocationCallOrder[0]).toBeGreaterThan(
@@ -857,6 +865,7 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(200);
       expect(mockDeleteImage).toHaveBeenCalledWith(
         "https://external.com/avatar.jpg",
+        "avatar",
       );
     });
   });
@@ -894,7 +903,7 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       // deleteImage receives null and no-ops (no file is touched).
-      expect(mockDeleteImage).toHaveBeenCalledWith(null);
+      expect(mockDeleteImage).toHaveBeenCalledWith(null, "avatar");
     });
   });
 });
