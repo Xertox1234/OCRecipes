@@ -675,6 +675,19 @@ export default function HistoryScreen() {
     }
   }, [isError]);
 
+  const isFirstRenderOffline = useRef(true);
+  useEffect(() => {
+    if (isFirstRenderOffline.current) {
+      isFirstRenderOffline.current = false;
+      return;
+    }
+    if (isOffline) {
+      AccessibilityInfo.announceForAccessibility(
+        "You're offline. Deletions will sync when you reconnect.",
+      );
+    }
+  }, [isOffline]);
+
   // Memoised extraData so FlatList re-renders items when expand or mutation
   // state changes, even though renderItem itself is not recreated.
   const extraData = useMemo(

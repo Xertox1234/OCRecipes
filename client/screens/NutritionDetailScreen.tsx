@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -195,6 +195,19 @@ export default function NutritionDetailScreen() {
   const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
 
   const { barcode, imageUri, itemId } = route.params || {};
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (isOffline) {
+      AccessibilityInfo.announceForAccessibility(
+        "You're offline. This will sync when you reconnect.",
+      );
+    }
+  }, [isOffline]);
 
   const {
     nutrition,
@@ -642,7 +655,7 @@ export default function NutritionDetailScreen() {
             <Button
               onPress={handleAddToLog}
               loading={addToLogMutation.isPending}
-              disabled={isOffline || addToLogMutation.isPending}
+              disabled={isOffline}
               accessibilityLabel={`Add ${nutrition?.productName || "item"} to today's food log`}
               accessibilityHint="Saves this item to your daily nutrition tracking"
               style={[styles.addButton, { backgroundColor: theme.success }]}

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   StyleSheet,
   View,
@@ -64,6 +64,20 @@ export default function QuickLogScreen() {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { isPremium } = usePremiumContext();
   const { isOffline, offlineLabel } = useOfflineGuard();
+
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    if (isOffline) {
+      AccessibilityInfo.announceForAccessibility(
+        "You're offline. This will sync when you reconnect.",
+      );
+    }
+  }, [isOffline]);
+
   const [tip] = useState(randomTip);
   const [showCheckmark, setShowCheckmark] = useState(false);
 
