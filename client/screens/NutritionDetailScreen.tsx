@@ -27,6 +27,7 @@ import { MicronutrientSection } from "@/components/MicronutrientSection";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
 import { useNutritionLookup } from "@/hooks/useNutritionLookup";
+import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
 
 type RouteParams = {
@@ -189,6 +190,7 @@ export default function NutritionDetailScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
+  const { isOffline, offlineLabel } = useOfflineGuard();
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
   const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
 
@@ -640,12 +642,25 @@ export default function NutritionDetailScreen() {
             <Button
               onPress={handleAddToLog}
               loading={addToLogMutation.isPending}
+              disabled={isOffline || addToLogMutation.isPending}
               accessibilityLabel={`Add ${nutrition?.productName || "item"} to today's food log`}
               accessibilityHint="Saves this item to your daily nutrition tracking"
               style={[styles.addButton, { backgroundColor: theme.success }]}
             >
-              Add to Today
+              {offlineLabel("Add to Today")}
             </Button>
+            {isOffline && (
+              <ThemedText
+                type="small"
+                style={{
+                  color: theme.textSecondary,
+                  textAlign: "center",
+                  marginTop: Spacing.xs,
+                }}
+              >
+                You&apos;re offline. This will sync when you reconnect.
+              </ThemedText>
+            )}
           </View>
         ) : null}
       </ScrollView>
