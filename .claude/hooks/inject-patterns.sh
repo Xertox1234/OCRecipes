@@ -151,8 +151,49 @@ if [ -n "$DOMAINS" ]; then
       # Match the domain's tag on each file's `tags:` frontmatter line. The pattern
       # carries its own word boundaries (see domain_tag_pattern), so no grep -w.
       # _manifests/ files have no `tags:` line and are filtered out anyway.
+      # Sort by the trailing YYYY-MM-DD date in each filename so newer solutions
+      # surface first regardless of alphabetical slug order. Files whose name does
+      # not match the date pattern are dropped by cut (acceptable; all solution
+      # files follow the <slug>-YYYY-MM-DD.md convention).
       MATCHES=$(grep -rl --include='*.md' -E "^tags:.*${TAG_PATTERN}" \
-        "$SOLUTIONS_DIR" 2>/dev/null | grep -v '/_manifests/' | sort -r | head -n "$SOLUTIONS_PER_DOMAIN" || true)
+        "$SOLUTIONS_DIR" 2>/dev/null | grep -v '/_manifests/' \
+        | sed "s|.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)\.md\$|\1 &|" \
+        | sort -r \
+        | cut -d' ' -f2- \
+        | head -n "$SOLUTIONS_PER_DOMAIN" || true)
+      # Promote solutions whose applies_to: globs match the file being edited —
+      # they are the most contextually relevant and should surface within the cap.
+      # FILE_PATH may be absolute; strip PROJECT_ROOT prefix for relative matching
+      # against the repo-relative globs stored in applies_to:. In bash 3.2, * in
+      # [[ ]] patterns matches any string including /, so ** patterns work for
+      # nested paths without needing shopt -s globstar.
+      if [ -n "$MATCHES" ]; then
+        _FILE_REL="${FILE_PATH#$PROJECT_ROOT/}"
+        _NL=$'\n'
+        _PRIORITY=""
+        _FALLBACK=""
+        while IFS= read -r _sol; do
+          [ -n "$_sol" ] || continue
+          # Extract quoted glob patterns from the applies_to: YAML list.
+          _PATS=$(grep -m1 '^applies_to:' "$_sol" 2>/dev/null \
+            | grep -oE '"[^"]+"' | tr -d '"' || true)
+          _MATCHED=false
+          if [ -n "$_PATS" ]; then
+            while IFS= read -r _pat; do
+              [ -n "$_pat" ] || continue
+              # shellcheck disable=SC2254
+              [[ "$_FILE_REL" == $_pat ]] && { _MATCHED=true; break; }
+            done <<< "$_PATS"
+          fi
+          if [ "$_MATCHED" = true ]; then
+            _PRIORITY="${_PRIORITY:+$_PRIORITY$_NL}$_sol"
+          else
+            _FALLBACK="${_FALLBACK:+$_FALLBACK$_NL}$_sol"
+          fi
+        done <<< "$MATCHES"
+        MATCHES=$(printf '%s\n%s\n' "$_PRIORITY" "$_FALLBACK" \
+          | grep -v '^$' | head -n "$SOLUTIONS_PER_DOMAIN")
+      fi
       if [ -n "$MATCHES" ]; then
         printf '\n[SOLUTIONS — %s (Read the file for the full body)]\n' "$DOMAIN" >> "$TMPFILE"
         while IFS= read -r SOL_FILE; do
