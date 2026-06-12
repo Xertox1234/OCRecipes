@@ -195,6 +195,21 @@ export function register(app: Express): void {
     pantryRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
+        const idempotencyKey = req.headers["x-idempotency-key"] as
+          | string
+          | undefined;
+
+        // Idempotency check: if key present and we've seen it, return existing item
+        if (idempotencyKey) {
+          const existing = await storage.getScannedItemByIdempotencyKey(
+            req.userId!,
+            idempotencyKey,
+          );
+          if (existing) {
+            return res.status(200).json(existing);
+          }
+        }
+
         const validated = scannedItemInputSchema.parse({
           ...req.body,
           userId: req.userId,
@@ -215,6 +230,7 @@ export function register(app: Express): void {
           sugar: validated.sugar,
           sodium: validated.sodium,
           imageUrl: validated.imageUrl,
+          idempotencyKey: idempotencyKey ?? null,
         });
 
         res.status(201).json(item);

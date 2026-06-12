@@ -24,6 +24,7 @@ vi.mock("../../storage", () => ({
     getPlannedNutritionSummary: vi.fn(),
     getVerification: vi.fn().mockResolvedValue(null),
     createScannedItemWithLog: vi.fn(),
+    getScannedItemByIdempotencyKey: vi.fn(),
   },
 }));
 
@@ -375,6 +376,61 @@ describe("Nutrition Routes", () => {
         });
 
       expect(res.status).toBe(500);
+    });
+  });
+
+  describe("POST /api/scanned-items — idempotency", () => {
+    it("returns existing item when X-Idempotency-Key matches a prior request", async () => {
+      const existingItem = createMockScannedItem({
+        id: 99,
+        idempotencyKey: "test-uuid-1",
+      });
+      vi.mocked(storage.getScannedItemByIdempotencyKey).mockResolvedValue(
+        existingItem,
+      );
+
+      const res = await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .set("X-Idempotency-Key", "test-uuid-1")
+        .send({ productName: "Apple", calories: 52 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(99);
+      expect(storage.createScannedItemWithLog).not.toHaveBeenCalled();
+    });
+
+    it("creates a new item and stores the key when no prior match exists", async () => {
+      vi.mocked(storage.getScannedItemByIdempotencyKey).mockResolvedValue(null);
+      const newItem = createMockScannedItem({
+        id: 100,
+        idempotencyKey: "test-uuid-2",
+      });
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(newItem);
+
+      const res = await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .set("X-Idempotency-Key", "test-uuid-2")
+        .send({ productName: "Banana", calories: 89 });
+
+      expect(res.status).toBe(201);
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({ idempotencyKey: "test-uuid-2" }),
+      );
+    });
+
+    it("creates normally when no X-Idempotency-Key header is present", async () => {
+      const newItem = createMockScannedItem({ id: 101 });
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(newItem);
+
+      const res = await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .send({ productName: "Cherry", calories: 63 });
+
+      expect(res.status).toBe(201);
+      expect(storage.getScannedItemByIdempotencyKey).not.toHaveBeenCalled();
     });
   });
 
