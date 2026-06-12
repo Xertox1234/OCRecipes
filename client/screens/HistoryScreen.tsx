@@ -36,6 +36,7 @@ import { GroceryListPickerModal } from "@/components/GroceryListPickerModal";
 import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useHistoryData } from "@/hooks/useHistoryData";
+import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import {
   Spacing,
   BorderRadius,
@@ -609,6 +610,8 @@ export default function HistoryScreen() {
   const tabBarHeight = React.useContext(BottomTabBarHeightContext) ?? 0;
   const { theme } = useTheme();
 
+  const { isOffline } = useOfflineGuard();
+
   const {
     // State
     expandedItemId,
@@ -671,6 +674,19 @@ export default function HistoryScreen() {
       );
     }
   }, [isError]);
+
+  const isFirstRenderOffline = useRef(true);
+  useEffect(() => {
+    if (isFirstRenderOffline.current) {
+      isFirstRenderOffline.current = false;
+      return;
+    }
+    if (isOffline) {
+      AccessibilityInfo.announceForAccessibility(
+        "You're offline. Deletions will sync when you reconnect.",
+      );
+    }
+  }, [isOffline]);
 
   // Memoised extraData so FlatList re-renders items when expand or mutation
   // state changes, even though renderItem itself is not recreated.
@@ -779,6 +795,18 @@ export default function HistoryScreen() {
 
   return (
     <>
+      {isOffline && (
+        <ThemedText
+          type="small"
+          style={{
+            color: theme.textSecondary,
+            textAlign: "center",
+            paddingVertical: Spacing.sm,
+          }}
+        >
+          You&apos;re offline. Deletions will sync when you reconnect.
+        </ThemedText>
+      )}
       <FlatList
         {...FLATLIST_DEFAULTS}
         style={{ flex: 1, backgroundColor: theme.backgroundRoot }}

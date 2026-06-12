@@ -13,6 +13,8 @@ interface ParsedFoodPreviewProps {
   onRemoveItem: (index: number) => void;
   onLogAll: () => void;
   isLogging: boolean;
+  logAllLabel?: string;
+  logAllDisabled?: boolean;
 }
 
 export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
@@ -20,6 +22,8 @@ export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
   onRemoveItem,
   onLogAll,
   isLogging,
+  logAllLabel,
+  logAllDisabled = false,
 }: ParsedFoodPreviewProps) {
   const { theme } = useTheme();
 
@@ -63,21 +67,21 @@ export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
       ))}
       <Pressable
         onPress={onLogAll}
-        disabled={isLogging}
+        disabled={isLogging || logAllDisabled}
         accessibilityLabel="Log all parsed items"
         accessibilityRole="button"
-        accessibilityState={{ disabled: isLogging }}
+        accessibilityState={{ disabled: isLogging || logAllDisabled }}
         style={({ pressed }) => [
           styles.logAllButton,
           {
             backgroundColor: theme.link,
-            opacity: pressed || isLogging ? 0.7 : 1,
+            opacity: pressed || isLogging || logAllDisabled ? 0.7 : 1,
           },
         ]}
       >
         <Feather name="check" size={18} color={theme.buttonText} />
         <ThemedText style={[styles.logAllText, { color: theme.buttonText }]}>
-          Log All ({items.length})
+          {logAllLabel ?? `Log All (${items.length})`}
         </ThemedText>
       </Pressable>
     </Card>
