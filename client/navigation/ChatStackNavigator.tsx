@@ -1,5 +1,11 @@
 import React from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import ChatListScreen from "@/screens/ChatListScreen";
@@ -20,26 +26,51 @@ const Stack = createNativeStackNavigator<ChatStackParamList>();
 
 export default function ChatStackNavigator() {
   const screenOptions = useScreenOptions();
-  const { isLoading: isPremiumLoading } = usePremiumContext();
+  const { isPremiumResolved, isError, refreshSubscription } =
+    usePremiumContext();
   const isCoachPro = usePremiumFeature("coachPro");
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
 
-  // Don't mount the navigator until premium status is resolved — initialRouteName
-  // is only evaluated once at mount time, so rendering with the default free-tier
-  // value (coachPro: false) would permanently route Pro users to ChatList.
-  if (isPremiumLoading) {
+  const safeAreaStyle = {
+    backgroundColor: theme.backgroundDefault,
+    paddingTop: insets.top,
+    paddingBottom: insets.bottom,
+  };
+
+  // Don't mount the navigator until premium status is genuinely resolved —
+  // initialRouteName is evaluated only once at mount time, so rendering with
+  // the default free-tier value (coachPro: false) would permanently route Pro
+  // users to ChatList for the session.
+  //
+  // We gate on isPremiumResolved (subscriptionData !== undefined) rather than
+  // !isLoading, because a hard query error leaves isLoading=false while
+  // features still default to free — causing the same lock-in bug. The error
+  // branch below lets users manually retry; automatic recovery happens when
+  // the app goes offline→online (NetInfo wires refetchOnReconnect).
+  if (isError && !isPremiumResolved) {
     return (
-      <View
-        style={[
-          styles.loadingContainer,
-          {
-            backgroundColor: theme.backgroundDefault,
-            paddingTop: insets.top,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
+      <View style={[styles.loadingContainer, safeAreaStyle]}>
+        <Text style={[styles.errorText, { color: theme.textSecondary }]}>
+          Could not load your subscription status.
+        </Text>
+        <Pressable
+          onPress={refreshSubscription}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading Coach"
+        >
+          <Text style={[styles.retryText, { color: theme.link }]}>
+            Tap to retry
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (!isPremiumResolved) {
+    return (
+      <View style={[styles.loadingContainer, safeAreaStyle]}>
         <ActivityIndicator size="large" color={theme.textSecondary} />
       </View>
     );
@@ -74,5 +105,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+  },
+  errorText: {
+    fontSize: 15,
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  retryText: {
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
