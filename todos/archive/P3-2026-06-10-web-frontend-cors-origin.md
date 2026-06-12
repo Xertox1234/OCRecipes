@@ -1,6 +1,6 @@
 ---
 title: "Allowlist the web frontend's CORS origin before web launch"
-status: backlog
+status: done
 priority: low
 created: 2026-06-10
 updated: 2026-06-10
