@@ -241,7 +241,7 @@ export default function QuickLogScreen() {
           onLogAll={session.submitLog}
           isLogging={session.isSubmitting}
           logAllDisabled={isOffline}
-          logAllLabel={offlineLabel(`Log All (${session.parsedItems.length})`)}
+          logAllLabel={isOffline ? offlineLabel("Log All") : undefined}
         />
         {isOffline && session.parsedItems.length > 0 && (
           <ThemedText
