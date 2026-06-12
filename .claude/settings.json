@@ -79,6 +79,10 @@
       },
       {
         "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/drift-detect.sh", "timeout": 10, "statusMessage": "Checking for external HEAD drift..." }]
+      },
+      {
+        "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "bash .claude/hooks/batch-size-guard.sh", "timeout": 10, "statusMessage": "" }]
       },
       {
@@ -137,6 +141,10 @@
             "statusMessage": ""
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/drift-detect-update.sh", "timeout": 10, "statusMessage": "" }]
       },
       {
         "matcher": "Bash",

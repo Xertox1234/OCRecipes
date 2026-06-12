@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# PreToolUse(Bash) — detect when HEAD has advanced externally between Claude's git ops.
+#
+# When the user edits, commits, or rebases the same checkout in a parallel terminal
+# while Claude works, HEAD moves without Claude knowing. This hook compares current
+# HEAD to the last SHA Claude recorded (drift-detect-update.sh writes it after every
+# HEAD-moving git op). If they differ, HEAD drifted externally — emit a warning.
+#
+# Design principles:
+#   - WARN, never block (permissionDecision is never emitted here).
+#   - Fires only on actual drift — silent on the no-drift path.
+#   - First op: no baseline file → record current HEAD and exit silently.
+#   - Keyed by session_id from the hook JSON (not $PPID — that differs across processes).
+#   - Fails open on any parse / git error.
+#
+# Fires on: git commit, git push (any form).
+# Companion: drift-detect-update.sh (PostToolUse) records HEAD after every Claude HEAD-mover.
+# Tests: .claude/hooks/test-drift-detect.sh
+set -uo pipefail
+
+command -v jq >/dev/null 2>&1 || exit 0
+
+INPUT=$(cat)
+TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
+[ "$TOOL" = "Bash" ] || exit 0
+CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
+
+# Match git commit or git push (possibly prefixed by env-var assignments or git -c flags).
+GIT_COMMIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push)([[:space:]]|$)'
+COMPOUND_RE='(&&|\|\||;)[[:space:]]*git[[:space:]]+(commit|push)([[:space:]]|$)'
+
+if ! [[ "$CMD" =~ $GIT_COMMIT_RE ]] && ! printf '%s' "$CMD" | grep -qE "$COMPOUND_RE"; then
+  exit 0
+fi
+
+# Ensure we're inside a git repo.
+git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+
+SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+if [ -z "$SESSION" ]; then
+  # No session_id available — can't key the baseline safely; skip detection.
+  exit 0
+fi
+
+BASELINE_FILE="/tmp/claude-drift-detect-${SESSION}"
+
+CURRENT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+[ -n "$CURRENT_SHA" ] || exit 0
+
+if [ ! -f "$BASELINE_FILE" ]; then
+  # First git op this session — record baseline and exit silently.
+  printf '%s' "$CURRENT_SHA" > "$BASELINE_FILE"
+  exit 0
+fi
+
+STORED_SHA=$(cat "$BASELINE_FILE" 2>/dev/null || echo "")
+
+if [ -z "$STORED_SHA" ] || [ "$STORED_SHA" = "$CURRENT_SHA" ]; then
+  # No drift — stay silent.
+  exit 0
+fi
+
+# HEAD moved without Claude recording it — external drift detected.
+MSG="Drift detected: repo HEAD moved externally since Claude's last git op. Stored: ${STORED_SHA} → Current: ${CURRENT_SHA}. Likely cause: parallel-terminal commit, rebase, or push by the user. Re-check \`git log --oneline -5\` and \`git status\` to reconcile before proceeding."
+
+jq -n --arg m "$MSG" '{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": $m
+  }
+}'
+exit 0

@@ -1,6 +1,6 @@
 ---
 title: "Guard against parallel-terminal git state drift during Claude sessions"
-status: backlog
+status: done
 priority: low
 created: 2026-06-05
 updated: 2026-06-05
