@@ -28,6 +28,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useQuickLogSession } from "@/hooks/useQuickLogSession";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import {
   Spacing,
   BorderRadius,
@@ -62,6 +63,7 @@ export default function QuickLogScreen() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { isPremium } = usePremiumContext();
+  const { isOffline, offlineLabel } = useOfflineGuard();
   const [tip] = useState(randomTip);
   const [showCheckmark, setShowCheckmark] = useState(false);
 
@@ -224,7 +226,21 @@ export default function QuickLogScreen() {
           onRemoveItem={session.removeItem}
           onLogAll={session.submitLog}
           isLogging={session.isSubmitting}
+          logAllDisabled={isOffline}
+          logAllLabel={offlineLabel(`Log All (${session.parsedItems.length})`)}
         />
+        {isOffline && session.parsedItems.length > 0 && (
+          <ThemedText
+            type="small"
+            style={{
+              color: theme.textSecondary,
+              textAlign: "center",
+              marginTop: Spacing.xs,
+            }}
+          >
+            You&apos;re offline. This will sync when you reconnect.
+          </ThemedText>
+        )}
 
         {session.parsedItems.length === 0 && !session.isParsing && (
           <View style={styles.helpSection}>
