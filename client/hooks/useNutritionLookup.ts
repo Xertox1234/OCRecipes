@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { AccessibilityInfo, Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  useQuery,
+  onlineManager,
+} from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 
 import { useHaptics } from "@/hooks/useHaptics";
@@ -21,6 +26,8 @@ import {
   type NutritionPer100g,
   type ServingSizeInfo,
 } from "@/lib/serving-size-utils";
+import { enqueue } from "@/lib/offline-queue";
+import type { ScannedItemResponse } from "@/types/api";
 
 interface NutritionData {
   id?: number;
@@ -424,18 +431,32 @@ export function useNutritionLookup(params: {
     fetchBarcodeData,
   ]);
 
-  const addToLogMutation = useMutation({
+  const addToLogMutation = useMutation<ScannedItemResponse | undefined, Error>({
     mutationFn: async () => {
-      if (!nutrition) return;
+      if (!nutrition) return undefined;
+
+      if (!onlineManager.isOnline()) {
+        await enqueue({
+          endpoint: "/api/scanned-items",
+          method: "POST",
+          body: {
+            ...nutrition,
+            servings: servingQuantity,
+            userId: user?.id,
+          },
+        });
+        return undefined; // queued — server confirmation deferred
+      }
 
       const response = await apiRequest("POST", "/api/scanned-items", {
         ...nutrition,
         servings: servingQuantity,
         userId: user?.id,
       });
-      return response.json();
+      return response.json() as Promise<ScannedItemResponse>;
     },
     onSuccess: () => {
+      // data is undefined when the mutation was queued offline — navigation still proceeds
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       haptics.notification(Haptics.NotificationFeedbackType.Success);

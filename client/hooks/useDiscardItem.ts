@@ -1,5 +1,10 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  onlineManager,
+} from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { enqueue } from "@/lib/offline-queue";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import type { ScannedItemResponse, PaginatedResponse } from "@/types/api";
 
@@ -12,6 +17,14 @@ export function useDiscardItem() {
 
   return useMutation({
     mutationFn: async (itemId: number) => {
+      if (!onlineManager.isOnline()) {
+        await enqueue({
+          endpoint: `/api/scanned-items/${itemId}`,
+          method: "DELETE",
+          body: undefined,
+        });
+        return; // queued — optimistic update already removed item from cache
+      }
       await apiRequest("DELETE", `/api/scanned-items/${itemId}`);
     },
     onMutate: async (itemId: number) => {

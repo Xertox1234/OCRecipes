@@ -13,7 +13,7 @@ import {
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
 
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, onlineManager } from "@tanstack/react-query";
 import { queryClient } from "@/lib/query-client";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import * as Notifications from "expo-notifications";
@@ -30,11 +30,24 @@ import { BatchScanProvider } from "@/context/BatchScanContext";
 import { OfflineBanner } from "@/components/OfflineBanner";
 import { QueryErrorToastBridge } from "@/components/QueryErrorToastBridge";
 import { SessionExpiryBridge } from "@/components/SessionExpiryBridge";
+import { OfflineQueueBridge } from "@/components/OfflineQueueBridge";
+import { initOfflineQueue } from "@/lib/offline-queue";
+import { drainQueue } from "@/lib/offline-queue-drain";
 import { setupNotificationChannel } from "@/lib/notifications";
 import { initReporter, reportError } from "@/lib/reporter";
 import { logger } from "@/lib/logger";
 
 initReporter();
+
+// Eager init — must be ready before any mutation surface mounts
+void initOfflineQueue();
+
+// Wire drain to fire on every reconnect event
+onlineManager.subscribe((isOnline) => {
+  if (isOnline) {
+    void drainQueue();
+  }
+});
 
 function AppContent() {
   const { isDark } = useThemePreference();
@@ -52,6 +65,7 @@ function AppContent() {
             <OfflineBanner />
             <QueryErrorToastBridge />
             <SessionExpiryBridge />
+            <OfflineQueueBridge />
           </ToastProvider>
         </BottomSheetModalProvider>
         <StatusBar style={isDark ? "light" : "dark"} />

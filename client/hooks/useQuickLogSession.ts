@@ -1,10 +1,16 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  onlineManager,
+} from "@tanstack/react-query";
 import * as Haptics from "expo-haptics";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { useParseFoodText, type ParsedFoodItem } from "@/hooks/useFoodParse";
 import { apiRequest } from "@/lib/query-client";
+import { enqueue } from "@/lib/offline-queue";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import type { ScannedItem } from "@shared/schema";
 
@@ -166,9 +172,40 @@ export function useQuickLogSession({
     [haptics],
   );
 
-  const logAllMutation = useMutation({
+  const logAllMutation = useMutation<
+    ScannedItemResponse[] | undefined,
+    PartialLogError,
+    ParsedFoodItem[]
+  >({
     mutationFn: async (items: ParsedFoodItem[]) => {
       setCapWarning(null);
+
+      if (!onlineManager.isOnline()) {
+        // Enqueue each item individually so they replay in savedAt order on reconnect
+        const capped = items.slice(0, MAX_LOG_ITEMS);
+        if (items.length > MAX_LOG_ITEMS) {
+          setCapWarning(
+            `Only the first ${MAX_LOG_ITEMS} items were logged. Please log the rest separately.`,
+          );
+        }
+        for (const item of capped) {
+          await enqueue({
+            endpoint: "/api/scanned-items",
+            method: "POST",
+            body: {
+              productName: `${item.quantity} ${item.unit} ${item.name}`,
+              sourceType: item.sourceType ?? "voice",
+              calories: item.calories?.toString(),
+              protein: item.protein?.toString(),
+              carbs: item.carbs?.toString(),
+              fat: item.fat?.toString(),
+              servingSize: item.servingSize,
+            },
+          });
+        }
+        return undefined; // queued — server confirmation deferred
+      }
+
       const capped = items.slice(0, MAX_LOG_ITEMS);
       if (items.length > MAX_LOG_ITEMS) {
         setCapWarning(
@@ -202,7 +239,7 @@ export function useQuickLogSession({
         (r) => (r as PromiseFulfilledResult<ScannedItemResponse>).value,
       );
     },
-    onSuccess: (_data: ScannedItemResponse[], items) => {
+    onSuccess: (data, items) => {
       const loggedItems = items.slice(0, MAX_LOG_ITEMS);
       const summary: LogSummary = {
         itemCount: loggedItems.length,
@@ -212,11 +249,19 @@ export function useQuickLogSession({
         ),
         firstName: loggedItems[0]?.name ?? "Food",
       };
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      void queryClient.invalidateQueries({
-        queryKey: QUERY_KEYS.frequentItems,
-      });
+      if (data !== undefined) {
+        // Online success — invalidate so the UI refreshes with server data
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.dailySummary,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.scannedItems,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.frequentItems,
+        });
+      }
+      // Offline path: drain will invalidate after replay — no invalidation here
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       setParsedItems([]);
       setInputText("");
@@ -227,7 +272,7 @@ export function useQuickLogSession({
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       // Keep only the items that failed so a retry won't re-submit already-persisted ones.
       // Index stability holds because parsedItems is frozen while the mutation is in-flight.
-      const failedIndices = (error as PartialLogError).failedIndices ?? [];
+      const failedIndices = error.failedIndices ?? [];
       if (failedIndices.length > 0) {
         const failedSet = new Set(failedIndices);
         setParsedItems((prev) => prev.filter((_, i) => failedSet.has(i)));

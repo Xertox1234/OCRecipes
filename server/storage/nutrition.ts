@@ -337,6 +337,23 @@ export async function createScannedItemWithLog(
   });
 }
 
+export async function getScannedItemByIdempotencyKey(
+  userId: string,
+  idempotencyKey: string,
+): Promise<ScannedItem | null> {
+  const [item] = await db
+    .select()
+    .from(scannedItems)
+    .where(
+      and(
+        eq(scannedItems.userId, userId),
+        eq(scannedItems.idempotencyKey, idempotencyKey),
+      ),
+    )
+    .limit(1);
+  return item ?? null;
+}
+
 export async function getDailySummary(
   userId: string,
   date: Date,
