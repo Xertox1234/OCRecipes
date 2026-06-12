@@ -27,6 +27,11 @@ let isDraining = false;
 const MAX_ATTEMPTS = 4;
 const RETRY_DELAYS_MS = [0, 2000, 4000, 8000];
 
+// Tracks server-error attempts separately from total attempts so that
+// network-layer TypeErrors (device still offline) do not consume the retry
+// budget. Reset when the item is successfully drained or permanently evicted.
+const serverAttempts = new Map<string, number>();
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -37,7 +42,10 @@ async function attemptDrain(item: QueuedMutation): Promise<void> {
     // Increment before the request — survives force-quit mid-drain
     await incrementAttempts(item.id);
     const current = loadQueue().find((i) => i.id === item.id);
-    if (!current) return; // dequeued externally
+    if (!current) {
+      serverAttempts.delete(item.id); // item dequeued externally — clean up
+      return;
+    }
 
     const delayMs = RETRY_DELAYS_MS[Math.max(0, current.attempts - 1)] ?? 8000;
     if (delayMs > 0) await wait(delayMs);
@@ -50,6 +58,7 @@ async function attemptDrain(item: QueuedMutation): Promise<void> {
     try {
       await apiRequest(current.method, current.endpoint, current.body, init);
       await dequeue(current.id);
+      serverAttempts.delete(current.id);
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       void queryClient.invalidateQueries({
@@ -57,13 +66,25 @@ async function attemptDrain(item: QueuedMutation): Promise<void> {
       });
       done = true;
     } catch (error) {
+      const isNetworkError =
+        error instanceof TypeError ||
+        (error instanceof Error &&
+          /network request failed/i.test(error.message));
+      if (isNetworkError) {
+        // Device is still offline — do not consume a retry budget slot.
+        // Leave the item in the queue; the next reconnect event will retry.
+        return;
+      }
       const is4xx = error instanceof Error && /^4\d\d:/.test(error.message);
-      if (is4xx || current.attempts >= MAX_ATTEMPTS) {
+      const svrCount = (serverAttempts.get(current.id) ?? 0) + 1;
+      serverAttempts.set(current.id, svrCount);
+      if (is4xx || svrCount >= MAX_ATTEMPTS) {
         await dequeue(current.id);
+        serverAttempts.delete(current.id);
         emitDrainError();
         done = true;
       }
-      // 5xx with remaining attempts: loop
+      // 5xx with remaining server attempts: loop
     }
   }
 }
