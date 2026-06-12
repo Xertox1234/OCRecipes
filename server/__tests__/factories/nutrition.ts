@@ -30,6 +30,7 @@ const scannedItemDefaults: ScannedItem = {
   analysisIntent: null,
   scannedAt: new Date("2024-01-01"),
   discardedAt: null,
+  idempotencyKey: null,
 };
 
 export function createMockScannedItem(

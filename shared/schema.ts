@@ -198,6 +198,7 @@ export const scannedItems = pgTable(
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
     discardedAt: timestamp("discarded_at", { withTimezone: true }),
+    idempotencyKey: text("idempotency_key"),
   },
   (table) => [
     index("scanned_items_user_active_idx")
@@ -208,6 +209,9 @@ export const scannedItems = pgTable(
     check("scanned_items_protein_gte0", sql`${table.protein} >= 0`),
     check("scanned_items_carbs_gte0", sql`${table.carbs} >= 0`),
     check("scanned_items_fat_gte0", sql`${table.fat} >= 0`),
+    uniqueIndex("scanned_items_idempotency_key_idx")
+      .on(table.userId, table.idempotencyKey)
+      .where(sql`idempotency_key IS NOT NULL`),
   ],
 );
 
