@@ -256,6 +256,33 @@ export function compileToRegExp(m: Matcher): RegExp {
   }
 }
 
+// Compile a matcher to the bash `[[ "$f" == GLOB ]]` condition strings used by
+// the generated domain-map.sh. Two forms per matcher — an absolute glob (leading
+// wildcard + slash) and a relative glob — so callers with either path form match
+// without normalising first. (Line comments here on purpose: a literal `*` `/`
+// pair inside a block comment would close it prematurely.)
+export function compileToBashConditions(m: Matcher): string[] {
+  switch (m.kind) {
+    case "recursive-dir":
+      return [`*/${m.dir}/*`, `${m.dir}/*`];
+    case "exact-file":
+      return [`*/${m.path}`, m.path];
+    case "file-prefix":
+      return [`*/${m.dir}/${m.prefix}*`, `${m.dir}/${m.prefix}*`];
+    case "test-file":
+      return [
+        "*/__tests__/*",
+        "__tests__/*",
+        "*.test.ts",
+        "*.test.tsx",
+        "*.spec.ts",
+        "*.spec.tsx",
+      ];
+    case "config-file":
+      return m.basenames.flatMap((b) => [`*/${b}.*`, `${b}.*`]);
+  }
+}
+
 /**
  * Rules-domains for a path: the union of `rule.domains` across matching rules,
  * plus the ai-prompting special case for LLM-touching services. NEVER includes

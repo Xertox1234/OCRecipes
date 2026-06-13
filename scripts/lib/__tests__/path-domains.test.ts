@@ -5,6 +5,9 @@ import {
   RULES_DOMAINS,
   rulesDomainsForPath,
   routingLabelsForPath,
+  compileToRegExp,
+  compileToBashConditions,
+  PATH_TO_DOMAINS,
 } from "../path-domains";
 
 describe("RULES_DOMAINS invariant", () => {
@@ -116,5 +119,69 @@ describe("routingLabelsForPath", () => {
       "hooks",
       "react-native",
     ]);
+  });
+});
+
+// Model bash `[[ "$f" == GLOB ]]`: `*` matches any run (incl. '/'); all else literal.
+function bashGlobToRegExp(glob: string): RegExp {
+  const re = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${re}$`);
+}
+
+const PARITY_CORPUS = [
+  "server/routes/x.ts",
+  "x/server/routes/x.ts",
+  "server/routes/__tests__/x.test.ts",
+  "server/storage/__tests__/y.test.ts",
+  "shared/schema.ts",
+  "abs/shared/schema.ts",
+  "migrations/1.sql",
+  "server/middleware/auth.ts",
+  "server/services/recipe-chat.ts",
+  "client/screens/HomeScreen.tsx",
+  "client/screens/ScanScreen.tsx",
+  "client/components/camera/CameraView.tsx",
+  "client/navigation/Root.tsx",
+  "client/hooks/useX.ts",
+  "client/context/X.tsx",
+  "client/lib/x.ts",
+  "client/constants/theme.ts",
+  "design_guidelines.md",
+  "evals/r.ts",
+  "a/__tests__/b.test.ts",
+  "x.test.tsx",
+  "y.spec.ts",
+  ".github/workflows/ci.yml",
+  "vitest.config.ts",
+  "eslint.config.js",
+  "README.md",
+];
+
+describe("regex<->bash-glob parity", () => {
+  it.each(PARITY_CORPUS)("rule-match set matches for %s", (p) => {
+    PATH_TO_DOMAINS.forEach((rule) => {
+      const tsMatch = compileToRegExp(rule.match).test(p);
+      const shMatch = compileToBashConditions(rule.match).some((g) =>
+        bashGlobToRegExp(g).test(p),
+      );
+      // Documented asymmetry (D14): for the two historically-anchored server
+      // dirs, TS excludes __tests__ descendants while the shell includes them.
+      const isTestExcludingServerDir =
+        rule.match.kind === "recursive-dir" &&
+        (rule.match.dir === "server/routes" ||
+          rule.match.dir === "server/storage");
+      if (shMatch === tsMatch) {
+        expect(shMatch).toBe(tsMatch); // symmetric (the common case)
+      } else {
+        // The ONLY permitted mismatch: TS excludes a __tests__ descendant under
+        // the two anchored server dirs, while the generated shell includes it.
+        expect(
+          isTestExcludingServerDir &&
+            p.includes("/__tests__/") &&
+            shMatch &&
+            !tsMatch,
+        ).toBe(true);
+      }
+    });
   });
 });
