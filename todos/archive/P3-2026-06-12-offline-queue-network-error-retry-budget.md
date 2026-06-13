@@ -1,6 +1,6 @@
 ---
 title: "Network TypeError counts against offline queue retry budget"
-status: backlog
+status: done
 priority: low
 created: 2026-06-12
 updated: 2026-06-12

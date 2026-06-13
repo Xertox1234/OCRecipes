@@ -190,4 +190,101 @@ describe("offline-queue-drain", () => {
 
     expect(apiRequest).toHaveBeenCalledOnce();
   });
+
+  it("4 consecutive TypeError failures do not evict the item", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { drainQueue } = await importDrain();
+
+    const item = {
+      id: "ne-1",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: {},
+      attempts: 0,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+      if (item.id === id) item.attempts++;
+    });
+    vi.mocked(apiRequest).mockRejectedValue(
+      new TypeError("Network request failed"),
+    );
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    // Each drainQueue call: TypeError fires → early return, isDraining unlocked.
+    // 4 separate invocations simulate 4 reconnect attempts on a flappy connection.
+    // Attempts 2-4 accumulate retry delays (2s, 4s, 8s) — advance fake timers.
+    for (let i = 0; i < 4; i++) {
+      const p = drainQueue();
+      await vi.runAllTimersAsync();
+      await p;
+    }
+
+    // Despite raw attempts reaching MAX_ATTEMPTS, dequeue must NOT be called
+    // because all failures were network-layer TypeErrors.
+    expect(dequeue).not.toHaveBeenCalled();
+  });
+
+  it("mixed TypeError + 5xx failures count only 5xx against the retry budget", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+
+    const item = {
+      id: "mix-1",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: {},
+      attempts: 0,
+      savedAt: 1000,
+    };
+
+    // Call sequence across all drainQueue invocations:
+    // invocation 1 → TypeError (budget: 0 server attempts)
+    // invocation 2 → TypeError (budget: 0 server attempts)
+    // invocation 3 → loops: 5xx, 5xx, 5xx, 5xx → evict on 4th server error
+    // If TypeErrors wrongly consumed budget, eviction would fire at svrCount=2.
+    let callCount = 0;
+    vi.mocked(apiRequest).mockImplementation(async () => {
+      callCount++;
+      if (callCount <= 2) throw new TypeError("Network request failed");
+      throw new Error("500: Internal Server Error");
+    });
+    vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+      if (item.id === id) item.attempts++;
+    });
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    const errorListener = vi.fn();
+    subscribeToQueueDrainErrors(errorListener);
+
+    // TypeError invocations: attempts accumulate, causing retry delays on each
+    // subsequent call — advance fake timers so the wait() resolves.
+    let p = drainQueue(); // TypeError #1 — no eviction
+    await vi.runAllTimersAsync();
+    await p;
+    expect(dequeue).not.toHaveBeenCalled();
+
+    p = drainQueue(); // TypeError #2 — no eviction
+    await vi.runAllTimersAsync();
+    await p;
+    expect(dequeue).not.toHaveBeenCalled();
+
+    // Third invocation loops through 4 x 5xx (each loop iteration has a retry
+    // delay — advance all timers until the drain completes).
+    p = drainQueue();
+    await vi.runAllTimersAsync();
+    await p;
+
+    // Only after 4 server-side (5xx) attempts should the item be evicted.
+    expect(dequeue).toHaveBeenCalledWith("mix-1");
+    expect(errorListener).toHaveBeenCalledOnce();
+  });
 });
