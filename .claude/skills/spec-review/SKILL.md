@@ -106,14 +106,13 @@ Use the prior-spec sample to decide what level of precision is normal for this c
 
 ### 3. Map the affected domains
 
-Convert whatever touched paths, components, modules, or behavioral surfaces the document mentions into repo domains using `.github/copilot-instructions.md`:
+Convert the document's touched paths into repo **rules-domains** from the single source of truth rather than a hand-maintained list. For a concrete set of files:
 
-- `server/routes/**` -> `api`, `security`, `architecture`
-- `server/storage/**` -> `database`, `security`, `architecture`
-- `server/services/**` -> `architecture`, plus `ai-prompting` for LLM-touching services
-- `client/screens/**`, `client/components/**` -> `react-native`, `design-system`, `accessibility`, sometimes `performance`
-- `client/hooks/**`, `client/context/**`, `client/lib/**` -> `hooks`, `client-state`, `typescript`
-- tests and evals -> `testing`
+```bash
+npx tsx scripts/lib/path-domains.ts <file1> <file2> ...
+```
+
+This prints the rules-domains union (routing-only labels such as `camera` are excluded — spec-review needs rules-domains, since Step 4 reads `docs/rules/<domain>.md`). The mapping is defined once in `scripts/lib/path-domains.ts` and is also rendered into the "Path → domain mapping" table in `.github/copilot-instructions.md`; consult that table when you only have path patterns rather than concrete files.
 
 Always include `typescript` for `.ts` and `.tsx` surfaces.
 
