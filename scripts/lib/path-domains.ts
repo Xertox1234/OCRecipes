@@ -147,7 +147,10 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
   },
   {
     match: { kind: "file-prefix", dir: "client/screens", prefix: "Scan" },
-    domains: ["react-native", "design-system", "accessibility"],
+    // Routing-only: the parent `client/screens/**` rule already supplies the
+    // rules-domains. Empty domains keeps this row out of the generated doc/shell;
+    // it contributes only the `camera` routing label (via routingLabelsForPath).
+    domains: [],
     routingLabels: ["camera"],
     description: "`client/screens/Scan*`",
   },
@@ -158,7 +161,8 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
   },
   {
     match: { kind: "recursive-dir", dir: "client/components/camera" },
-    domains: ["react-native", "design-system", "accessibility", "performance"],
+    // Routing-only: parent `client/components/**` supplies the rules-domains.
+    domains: [],
     routingLabels: ["camera"],
     description: "`client/components/camera/**`",
   },

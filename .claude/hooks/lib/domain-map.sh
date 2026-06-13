@@ -31,9 +31,7 @@ apply_domain_map() {
   [[ "$f" == */server/middleware/* || "$f" == server/middleware/* ]] && { _add security; _add api; }
   [[ "$f" == */server/services/* || "$f" == server/services/* ]] && { _add architecture; }
   [[ "$f" == */client/screens/* || "$f" == client/screens/* ]] && { _add react-native; _add design-system; _add accessibility; }
-  [[ "$f" == */client/screens/Scan* || "$f" == client/screens/Scan* ]] && { _add react-native; _add design-system; _add accessibility; }
   [[ "$f" == */client/components/* || "$f" == client/components/* ]] && { _add react-native; _add design-system; _add accessibility; _add performance; }
-  [[ "$f" == */client/components/camera/* || "$f" == client/components/camera/* ]] && { _add react-native; _add design-system; _add accessibility; _add performance; }
   [[ "$f" == */client/navigation/* || "$f" == client/navigation/* ]] && { _add react-native; _add accessibility; }
   [[ "$f" == */client/hooks/* || "$f" == client/hooks/* ]] && { _add hooks; _add client-state; _add react-native; _add accessibility; }
   [[ "$f" == */client/context/* || "$f" == client/context/* ]] && { _add client-state; }

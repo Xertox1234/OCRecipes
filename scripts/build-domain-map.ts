@@ -54,6 +54,9 @@ export function generateDomainMap(): string {
 
   const body: string[] = ["apply_domain_map() {", '  local f="$1"', ""];
   for (const rule of PATH_TO_DOMAINS) {
+    // Skip routing-only rules (empty domains, e.g. the camera label) — they
+    // would emit a duplicate `_add` block identical to their parent rule.
+    if (rule.domains.length === 0) continue;
     body.push(bashLine(compileToBashConditions(rule.match), rule.domains));
   }
   // LLM-touching services -> ai-prompting (explicit Set, both path forms).

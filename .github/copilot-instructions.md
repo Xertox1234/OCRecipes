@@ -19,9 +19,7 @@ When editing a file, identify its domain(s) using the table below. The correspon
 | `server/middleware/**` | security, api |
 | `server/services/**` (base — architecture only) | architecture |
 | `client/screens/**` | react-native, design-system, accessibility |
-| `client/screens/Scan*` | react-native, design-system, accessibility |
 | `client/components/**` | react-native, design-system, accessibility, performance |
-| `client/components/camera/**` | react-native, design-system, accessibility, performance |
 | `client/navigation/**` | react-native, accessibility |
 | `client/hooks/**` | hooks, client-state, react-native, accessibility |
 | `client/context/**` | client-state |

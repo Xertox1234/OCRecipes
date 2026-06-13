@@ -120,4 +120,13 @@ describe("build-copilot-instructions", () => {
     expect(doc).toContain("LLM_TOUCHING_SERVICES");
     expect(doc).toContain("architecture, ai-prompting");
   });
+
+  it("does not render routing-only (camera) rows that duplicate their parents", () => {
+    const doc = generateInstructions();
+    expect(doc).not.toContain("`client/screens/Scan*`");
+    expect(doc).not.toContain("`client/components/camera/**`");
+    // The parent rules ARE still rendered.
+    expect(doc).toContain("`client/screens/**`");
+    expect(doc).toContain("`client/components/**`");
+  });
 });

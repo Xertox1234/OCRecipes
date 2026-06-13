@@ -31,9 +31,12 @@ Output must be PR-based and human-reviewed. No auto-merge. No direct commits to 
 
 export function generateInstructions(): string {
   const tableHeader = "| Path pattern | Domains |\n| --- | --- |";
-  const tableBody = PATH_TO_DOMAINS.map(
-    (row) => `| ${row.description} | ${row.domains.join(", ")} |`,
-  ).join("\n");
+  const tableBody = PATH_TO_DOMAINS
+    // Skip routing-only rules (empty domains, e.g. the camera label) — they add
+    // no rules-domains beyond their parent rule and would render as duplicate rows.
+    .filter((row) => row.domains.length > 0)
+    .map((row) => `| ${row.description} | ${row.domains.join(", ")} |`)
+    .join("\n");
   // LLM-touching services row is added manually since it isn't a regex
   // rule in PATH_TO_DOMAINS (it's a Set lookup against basenames).
   const llmRow = `| \`server/services/<llm-touching>.ts\` (see LLM_TOUCHING_SERVICES) | architecture, ai-prompting |`;

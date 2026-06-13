@@ -244,3 +244,27 @@ describe("LLM_TOUCHING_SERVICES drift detection", () => {
     expect(empirical.length).toBeGreaterThan(0); // sanity — we have LLM services
   });
 });
+
+describe("routing-only rules (camera)", () => {
+  it("camera rules carry empty domains so they don't render in doc/shell", () => {
+    const cameraRules = PATH_TO_DOMAINS.filter((r) =>
+      r.routingLabels?.includes("camera"),
+    );
+    expect(cameraRules.length).toBeGreaterThan(0);
+    for (const r of cameraRules) {
+      // The parent client/screens|components rule supplies the rules-domains;
+      // these contribute ONLY the camera routing label.
+      expect(r.domains).toEqual([]);
+    }
+  });
+
+  it("every rule contributes something (rules-domains or routing labels)", () => {
+    for (const r of PATH_TO_DOMAINS) {
+      const contributes =
+        r.domains.length > 0 || (r.routingLabels?.length ?? 0) > 0;
+      expect(contributes, `rule "${r.description}" contributes nothing`).toBe(
+        true,
+      );
+    }
+  });
+});
