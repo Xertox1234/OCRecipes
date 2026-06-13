@@ -44,6 +44,23 @@ const envSchema = z.object({
     .optional(),
 
   EXPO_PUBLIC_DOMAIN: z.string().optional(),
+  // Web frontend origin for CORS allowlist (set at web launch; omit until then)
+  // Must be the bare origin with no trailing slash, e.g. https://ocrecipes.app
+  WEB_ORIGIN: z
+    .string()
+    .url()
+    .startsWith("https://", {
+      message:
+        "WEB_ORIGIN must use HTTPS — a plain-HTTP web origin would allow " +
+        "the browser's mixed-content blocker to reject API responses",
+    })
+    .refine((v) => !v.endsWith("/"), {
+      message:
+        "WEB_ORIGIN must not have a trailing slash — browsers send " +
+        "'Origin: https://example.com' (no slash) and the exact-match " +
+        "check would silently fail, locking the web frontend out of CORS",
+    })
+    .optional(),
   EXPO_ACCESS_TOKEN: z.string().optional(),
 
   // Apple IAP (optional — receipt validation uses stub mode without these)

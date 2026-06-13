@@ -61,15 +61,28 @@ function setupCors(app: express.Application) {
   ];
 
   const publicDomain = process.env.EXPO_PUBLIC_DOMAIN;
+  // Web frontend origin (e.g. https://ocrecipes.app). Set at web launch.
+  // Use Bearer auth on the web client — Access-Control-Allow-Credentials can
+  // be dropped once the web client is confirmed Bearer-only (no cookies). If
+  // cookie/session auth is ever adopted, a fresh CORS + CSRF security pass is
+  // required (see Risks in todos/P3-2026-06-10-web-frontend-cors-origin.md).
+  // Set the bare origin with no trailing slash, e.g. https://ocrecipes.app
+  const webOrigin = process.env.WEB_ORIGIN;
 
   function isAllowedOrigin(origin: string | undefined): boolean {
     if (!origin) return true; // Allow requests with no origin (mobile apps, curl)
     if (publicDomain && origin === publicDomain) return true;
+    if (webOrigin && origin === webOrigin) return true;
     return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
   }
 
   app.use((req, res, next) => {
     const origin = req.header("origin");
+
+    // Vary unconditionally so shared caches (Railway edge / CDN) never serve
+    // one origin's ACAO grant to a different origin, even for no-origin
+    // responses (mobile/curl) that carry no ACAO header.
+    res.vary("Origin");
 
     if (isAllowedOrigin(origin)) {
       // Only reflect a specific origin when credentials are enabled.
@@ -79,9 +92,6 @@ function setupCors(app: express.Application) {
       if (origin) {
         res.header("Access-Control-Allow-Origin", origin);
         res.header("Access-Control-Allow-Credentials", "true");
-        // Reflected ACAO must vary by Origin, or a shared cache (Railway
-        // edge / CDN) could serve one origin's grant to another.
-        res.header("Vary", "Origin");
       }
       res.header(
         "Access-Control-Allow-Methods",
