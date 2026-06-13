@@ -1,24 +1,31 @@
 name: Copilot Instructions Drift Check
 
-# `docs/rules/**` feeds `scripts/build-copilot-instructions.ts`, which writes
-# `.github/copilot-instructions.md`. Without this dedicated workflow a docs-only
-# push that edits a rules file would be skipped by `ci.yml`'s `paths-ignore`
-# and the generated instructions file could go stale undetected.
+# `scripts/lib/path-domains.ts` (and `docs/rules/**`) feed two generators:
+# `build-copilot-instructions.ts` -> `.github/copilot-instructions.md`, and
+# `build-domain-map.ts` -> `.claude/hooks/lib/domain-map.sh`. Without this
+# dedicated workflow a docs-only push that edits a source file would be skipped
+# by `ci.yml`'s `paths-ignore` and a generated artifact could go stale undetected.
 on:
   push:
     branches: [main]
     paths:
       - "docs/rules/**"
       - "scripts/build-copilot-instructions.ts"
+      - "scripts/build-domain-map.ts"
+      - "scripts/lib/path-domains.ts"
       - "scripts/delegate-copilot-issue.ts"
       - ".github/copilot-instructions.md"
+      - ".claude/hooks/lib/domain-map.sh"
   pull_request:
     branches: ["**"]
     paths:
       - "docs/rules/**"
       - "scripts/build-copilot-instructions.ts"
+      - "scripts/build-domain-map.ts"
+      - "scripts/lib/path-domains.ts"
       - "scripts/delegate-copilot-issue.ts"
       - ".github/copilot-instructions.md"
+      - ".claude/hooks/lib/domain-map.sh"
 
 concurrency:
   group: copilot-instructions-${{ github.ref }}
@@ -26,7 +33,7 @@ concurrency:
 
 jobs:
   check:
-    name: Verify .github/copilot-instructions.md is current
+    name: Verify generated artifacts are current
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,5 +46,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify generated Copilot instructions match docs/rules sources
-        run: npm run build:copilot-instructions:check
+      - name: Verify generated Copilot instructions + domain-map.sh match sources
+        run: npm run build:generated:check
+
+      - name: Shellcheck the generated domain-map.sh
+        run: shellcheck .claude/hooks/lib/domain-map.sh
