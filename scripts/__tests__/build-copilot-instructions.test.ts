@@ -86,4 +86,38 @@ describe("build-copilot-instructions", () => {
     expect(status).toBe(0);
     expect(fs.readFileSync(target, "utf8")).toEqual(generateInstructions());
   });
+
+  it("renders the rows added by the path-domain reconciliation", () => {
+    const doc = generateInstructions();
+    for (const row of [
+      "`shared/schema.ts`",
+      "`migrations/**`",
+      "`server/middleware/**`",
+      "`client/navigation/**`",
+      "`client/constants/theme.ts`",
+      "`design_guidelines.md`",
+    ]) {
+      expect(doc).toContain(row);
+    }
+  });
+
+  it("never lists camera as a domain (routing-only label)", () => {
+    // `camera` may appear as a PATH description (client/components/camera/**),
+    // but must never appear in the Domains column of any table row — it has no
+    // docs/rules/camera.md file.
+    const domainCells = generateInstructions()
+      .split("\n")
+      .filter((line) => line.startsWith("| `"))
+      .map((line) => line.split("|").map((c) => c.trim())[2] ?? "");
+    expect(domainCells.length).toBeGreaterThan(0);
+    for (const cell of domainCells) {
+      expect(cell).not.toContain("camera");
+    }
+  });
+
+  it("keeps the manual LLM-touching row", () => {
+    const doc = generateInstructions();
+    expect(doc).toContain("LLM_TOUCHING_SERVICES");
+    expect(doc).toContain("architecture, ai-prompting");
+  });
 });

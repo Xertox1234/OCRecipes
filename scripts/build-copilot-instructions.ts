@@ -1,14 +1,14 @@
 #!/usr/bin/env tsx
 import * as fs from "fs";
 import * as path from "path";
-import { PATH_TO_DOMAINS } from "./delegate-copilot-issue";
+import { PATH_TO_DOMAINS } from "./lib/path-domains";
 
-// Single source of truth: PATH_TO_DOMAINS is defined in
-// delegate-copilot-issue.ts (typed, testable). This script consumes the
-// rule descriptions and domains directly so the generated markdown table
-// cannot drift from the script's detection logic. The synthetic
-// "LLM-touching" row below isn't in PATH_TO_DOMAINS (it's a Set lookup,
-// not a regex rule) so we render it as a manual row appended to the table.
+// Single source of truth: PATH_TO_DOMAINS is defined in scripts/lib/path-domains.ts
+// (typed, testable). This script consumes the rule descriptions and domains
+// directly so the generated markdown table cannot drift from the detection
+// logic. The synthetic "LLM-touching" row below isn't a PATH_TO_DOMAINS rule
+// (it's a Set lookup, not a regex rule) so we render it as a manual row appended
+// to the table.
 
 const STACK_ORIENTATION = `OCRecipes is an Expo + React Native mobile app (Expo SDK 54, React 19, React Native 0.81) with an Express 5 + TypeScript backend. Database is PostgreSQL via Drizzle ORM. Authentication uses JWT bearer tokens (\`Authorization: Bearer ...\`, never cookies). Server state is managed with TanStack Query v5 on the client. AI features (coach chat, recipe generation, photo analysis, etc.) use OpenAI via a shared service layer.`;
 
