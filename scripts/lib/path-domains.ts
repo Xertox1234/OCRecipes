@@ -217,3 +217,78 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     description: "`vitest.config.*`, `eslint.config.*`",
   },
 ];
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// recursive-dir rules whose historical TS form was an anchored direct-child
+// pattern (`^server/routes/[^/]+\.ts$`). They must keep EXCLUDING __tests__
+// subdirectory files in TS so a test file under them maps to ["testing"] only.
+// The generated shell does NOT exclude (it already matched descendants) — this
+// asymmetry is intentional and pinned by the parity test.
+const TS_TEST_EXCLUDING_DIRS: ReadonlySet<string> = new Set([
+  "server/routes",
+  "server/storage",
+]);
+
+/** Compile a matcher to the RegExp used for TS path matching. */
+export function compileToRegExp(m: Matcher): RegExp {
+  switch (m.kind) {
+    case "recursive-dir": {
+      const dir = escapeRe(m.dir);
+      if (TS_TEST_EXCLUDING_DIRS.has(m.dir)) {
+        // Match the dir prefix, but not when a __tests__/ segment follows.
+        return new RegExp(`(^|/)${dir}/(?!.*__tests__/)`);
+      }
+      return new RegExp(`(^|/)${dir}/`);
+    }
+    case "exact-file":
+      return new RegExp(`(^|/)${escapeRe(m.path)}$`);
+    case "file-prefix":
+      return new RegExp(`(^|/)${escapeRe(m.dir)}/${escapeRe(m.prefix)}[^/]*$`);
+    case "test-file":
+      return /\/__tests__\/|\.test\.tsx?$|\.spec\.tsx?$/;
+    case "config-file":
+      return new RegExp(
+        `^(${m.basenames.map((b) => `${escapeRe(b)}\\.[^/]+`).join("|")})$`,
+      );
+  }
+}
+
+/**
+ * Rules-domains for a path: the union of `rule.domains` across matching rules,
+ * plus the ai-prompting special case for LLM-touching services. NEVER includes
+ * routing-only labels (camera). Consumed by the Copilot doc, the generated
+ * shell, and spec-review.
+ */
+export function rulesDomainsForPath(filePath: string): RulesDomain[] {
+  const matched = new Set<RulesDomain>();
+  for (const rule of PATH_TO_DOMAINS) {
+    if (compileToRegExp(rule.match).test(filePath)) {
+      for (const d of rule.domains) matched.add(d);
+    }
+  }
+  if (filePath.startsWith("server/services/")) {
+    const basename = filePath.slice("server/services/".length);
+    if (!basename.includes("/") && LLM_TOUCHING_SERVICES.has(basename)) {
+      matched.add("ai-prompting");
+    }
+  }
+  return [...matched];
+}
+
+/**
+ * Routing labels for a path: rules-domains PLUS any routing-only labels (camera)
+ * from matching rules. Consumed by codify Step 1 for specialist-agent routing.
+ */
+export function routingLabelsForPath(filePath: string): RoutingLabel[] {
+  const matched = new Set<RoutingLabel>(rulesDomainsForPath(filePath));
+  for (const rule of PATH_TO_DOMAINS) {
+    if (!rule.routingLabels) continue;
+    if (compileToRegExp(rule.match).test(filePath)) {
+      for (const r of rule.routingLabels) matched.add(r);
+    }
+  }
+  return [...matched];
+}
