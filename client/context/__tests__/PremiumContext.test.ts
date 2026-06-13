@@ -30,12 +30,32 @@ vi.mock("@/context/AuthContext", () => ({
 function renderPremium(values: {
   subscription?: SubscriptionStatus;
   scanCount?: { count: number };
+  /** When true, seed the subscription query with an error and no data. */
+  subscriptionError?: boolean;
 }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
   if (values.subscription !== undefined) {
     queryClient.setQueryData(["/api/subscription/status"], values.subscription);
+  }
+  if (values.subscriptionError) {
+    // Simulate a hard query error with no cached data: isLoading=false,
+    // subscriptionData=undefined — the exact condition that exposes the
+    // premium-gate cold-start bug.
+    queryClient
+      .getQueryCache()
+      .build(queryClient, {
+        queryKey: ["/api/subscription/status"],
+      })
+      .setState({
+        status: "error",
+        error: new Error("network failure"),
+        data: undefined,
+        dataUpdatedAt: 0,
+        errorUpdatedAt: Date.now(),
+        fetchStatus: "idle",
+      });
   }
   if (values.scanCount !== undefined) {
     queryClient.setQueryData(
@@ -325,5 +345,116 @@ describe("Subscription expiry edge cases", () => {
     const isPremium =
       subscriptionData.tier === "premium" && subscriptionData.isActive;
     expect(isPremium).toBe(true);
+  });
+});
+
+// Regression tests for the premium-gate cold-start bug.
+//
+// ChatStackNavigator gates initialRouteName on isPremiumResolved — a value
+// that stays false until the subscription query has succeeded at least once.
+// This is stricter than !isLoading: on a hard query error isLoading becomes
+// false while subscriptionData remains undefined (features fall back to free),
+// which would lock a Pro user onto the free ChatList route for the session.
+describe("isPremiumResolved — cold-start gate invariant", () => {
+  it("is false while the subscription query is still pending (cold start)", () => {
+    // No seed → query is pending, data is undefined
+    const { result } = renderPremium({});
+    expect(result.current.isPremiumResolved).toBe(false);
+  });
+
+  it("is true once the subscription query resolves successfully as premium", async () => {
+    const { result } = renderPremium({
+      subscription: {
+        tier: "premium",
+        expiresAt: new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+        features: TIER_FEATURES.premium,
+        isActive: true,
+        streakUnlocks: [],
+      },
+    });
+    await waitFor(() => expect(result.current.isPremiumResolved).toBe(true));
+    // And the navigator would mount with isCoachPro=true → CoachPro route
+    expect(result.current.features.coachPro).toBe(true);
+  });
+
+  it("is true once the subscription query resolves successfully as free", async () => {
+    // A free user is not "unknown" — isPremiumResolved=true, isCoachPro=false
+    const { result } = renderPremium({
+      subscription: {
+        tier: "free",
+        expiresAt: null,
+        features: TIER_FEATURES.free,
+        isActive: true,
+        streakUnlocks: [],
+      },
+    });
+    await waitFor(() => expect(result.current.isPremiumResolved).toBe(true));
+    expect(result.current.features.coachPro).toBe(false);
+  });
+
+  it("is false after a hard subscription query error with no cached data", () => {
+    // This is the bug path: subscription query errors, subscriptionData stays
+    // undefined, and features fall back to free defaults. Without the
+    // isPremiumResolved guard the navigator would see isCoachPro=false and
+    // lock a Pro user onto ChatList for the session.
+    const { result } = renderPremium({ subscriptionError: true });
+    // isPremiumResolved must stay false — the gate must NOT open
+    expect(result.current.isPremiumResolved).toBe(false);
+    // features default to free while status is unknown
+    expect(result.current.features.coachPro).toBe(false);
+  });
+
+  it("flips to true when a subsequent successful fetch follows an error (recovery path)", async () => {
+    // Verify the gate is not permanently bricked: after an error, seeding the
+    // cache with a successful subscription resolves isPremiumResolved to true.
+    // In production this happens when refreshSubscription() is called (e.g.
+    // the user taps Retry) and the query succeeds.
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
+    // Start in error state (no cached data)
+    queryClient
+      .getQueryCache()
+      .build(queryClient, {
+        queryKey: ["/api/subscription/status"],
+      })
+      .setState({
+        status: "error",
+        error: new Error("network failure"),
+        data: undefined,
+        dataUpdatedAt: 0,
+        errorUpdatedAt: Date.now(),
+        fetchStatus: "idle",
+      });
+
+    function Wrapper({ children }: { children: React.ReactNode }) {
+      return React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(PremiumProvider, null, children),
+      );
+    }
+    const { result } = renderHook(() => usePremiumContext(), {
+      wrapper: Wrapper,
+    });
+
+    // Initially not resolved (errored, no data)
+    expect(result.current.isPremiumResolved).toBe(false);
+
+    // Simulate retry success: inject subscription data into the cache
+    const premiumData: SubscriptionStatus = {
+      tier: "premium",
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      features: TIER_FEATURES.premium,
+      isActive: true,
+      streakUnlocks: [],
+    };
+    queryClient.setQueryData(["/api/subscription/status"], premiumData);
+
+    // isPremiumResolved must flip to true — the gate opens, CoachPro route mounts
+    await waitFor(() => expect(result.current.isPremiumResolved).toBe(true));
+    expect(result.current.features.coachPro).toBe(true);
   });
 });

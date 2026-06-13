@@ -34,6 +34,15 @@ interface PremiumContextType {
   streakUnlocks: PremiumFeatureKey[];
   isPremium: boolean;
   isLoading: boolean;
+  /**
+   * True once the subscription status query has resolved successfully at least
+   * once (i.e. `subscriptionData` is defined). Remains false while loading or
+   * when the query has only errored (no cached data). Use this in mount-once
+   * contexts (e.g. navigator `initialRouteName`) to distinguish "genuinely
+   * resolved as free" from "still unknown" — unlike `isLoading`, it does not
+   * flip to false prematurely on a query error.
+   */
+  isPremiumResolved: boolean;
   isError: boolean;
   error: Error | null;
   dailyScanCount: number;
@@ -110,6 +119,11 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
   const tier = subscriptionData?.tier ?? "free";
   const features = subscriptionData?.features ?? DEFAULT_FEATURES;
   const streakUnlocks = subscriptionData?.streakUnlocks ?? EMPTY_STREAK_UNLOCKS;
+  // True once subscription data has been fetched at least once successfully.
+  // Remains false while loading or after a query error with no cached data.
+  // Use this (not isLoading) in mount-once contexts like navigator initialRouteName
+  // so a hard error never prematurely "resolves" premium status as free.
+  const isPremiumResolved = subscriptionData !== undefined;
   const isPremium = tier === "premium" && (subscriptionData?.isActive ?? false);
   const dailyScanCount = scanCountData?.count ?? 0;
   const canScanToday = isPremium || dailyScanCount < features.maxDailyScans;
@@ -163,6 +177,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
       isPremium,
       isLoading:
         isSubscriptionLoading || isScanCountLoading || isRecipeGenLoading,
+      isPremiumResolved,
       isError,
       error,
       dailyScanCount,
@@ -186,6 +201,7 @@ export function PremiumProvider({ children }: { children: ReactNode }) {
       isSubscriptionLoading,
       isScanCountLoading,
       isRecipeGenLoading,
+      isPremiumResolved,
       isError,
       error,
       dailyScanCount,
