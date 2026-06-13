@@ -383,6 +383,7 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 - [ ] Narrow `SearchIndexable*` / `Cacheable*` Pick types declared next to the loader (or in `server/lib/` if cross-cutting)
 - [ ] Singleton cache `init()` functions use a shared `initPromise` guard — not just `if (initialized) return`
 - [ ] Concurrent-safe init resets primitive state on failure so retry starts clean
+- [ ] Manual `pool.connect()` + explicit `BEGIN` keeps `ROLLBACK`/`COMMIT` cleanup in `finally` (wrapped in its own try/catch) — never only on the success path, else a thrown query releases a poisoned in-transaction connection back to the pool
 
 ---
 
