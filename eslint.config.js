@@ -29,6 +29,7 @@ module.exports = defineConfig([
           ignore: [
             "react-native-vision-camera-ocr-plus",
             "@sentry/react-native",
+            "@modelcontextprotocol/sdk",
           ],
         },
       ],
