@@ -281,6 +281,7 @@ describe("ServiceName", () => {
 - [ ] Server logic that doesn't need DB extracted into pure functions
 - [ ] Functions at module scope when they don't depend on props/state
 - [ ] No React Native imports in test files (use extracted utils)
+- [ ] Modules imported by tests build DB pools / SDK clients lazily (factory or injectable default param) — a module-level `new Pool()`/`new OpenAI()` connects at vitest _collection_ time and fails CI (which has no DB/key)
 
 ### Mocking
 

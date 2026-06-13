@@ -12,14 +12,20 @@ When editing a file, identify its domain(s) using the table below. The correspon
 
 | Path pattern | Domains |
 | --- | --- |
-| `server/routes/**/*.ts` (non-auth blocked separately) | api, security, architecture |
-| `server/storage/**/*.ts` (non-auth blocked separately) | database, security, architecture |
-| `server/services/**/*.ts` (base — architecture only) | architecture |
+| `server/routes/**` (non-auth blocked separately) | api, security, architecture |
+| `server/storage/**` (non-auth blocked separately) | database, security, architecture |
+| `shared/schema.ts` | database, security, architecture |
+| `migrations/**` | database, security, architecture |
+| `server/middleware/**` | security, api |
+| `server/services/**` (base — architecture only) | architecture |
 | `client/screens/**` | react-native, design-system, accessibility |
 | `client/components/**` | react-native, design-system, accessibility, performance |
-| `client/hooks/**` | hooks, client-state |
+| `client/navigation/**` | react-native, accessibility |
+| `client/hooks/**` | hooks, client-state, react-native, accessibility |
 | `client/context/**` | client-state |
 | `client/lib/**` | typescript, client-state |
+| `client/constants/theme.ts` | design-system |
+| `design_guidelines.md` | design-system |
 | `evals/**` | ai-prompting, testing |
 | `__tests__/**`, `*.test.ts(x)`, `*.spec.ts(x)` | testing |
 | `.github/workflows/**` | architecture, testing |

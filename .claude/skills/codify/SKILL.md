@@ -13,24 +13,21 @@ Run:
 git diff main...HEAD --stat
 ```
 
-Build a list of changed file domains using this table (read top-to-bottom, first match per path wins):
+Then derive the domain/routing labels for the changed files from the single
+source of truth — do **not** maintain an inline mapping table (it drifts):
 
-| Changed path matches                                                                                                                                | Domain label(s)                        |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| `server/middleware/auth*`, `server/middleware/rate*`                                                                                                | `security`                             |
-| `server/routes/*`                                                                                                                                   | `api`, `security`, `architecture`      |
-| `server/storage/*`, `shared/schema.ts`, `migrations/*`                                                                                              | `database`, `security`, `architecture` |
-| `server/services/photo-analysis.ts`, `server/services/nutrition-coach.ts`, `server/services/recipe-chat.ts`, `server/services/recipe-generation.ts` | `architecture`, `ai-prompting`         |
-| `server/services/*`                                                                                                                                 | `architecture`                         |
-| `server/db/*`                                                                                                                                       | `performance`, `database`              |
-| `**/*.test.*`, `**/*.spec.*`                                                                                                                        | `testing`                              |
-| `client/screens/Scan*`, `client/components/camera/*`                                                                                                | `camera`                               |
-| `client/hooks/*`                                                                                                                                    | `hooks`                                |
-| `client/stores/*`, `client/context/*`                                                                                                               | `client-state`                         |
-| `client/components/*`, `client/screens/*`                                                                                                           | `react-native`                         |
-| `**/*.ts`, `**/*.tsx`                                                                                                                               | `typescript`                           |
+```bash
+git diff main...HEAD --name-only | xargs npx tsx scripts/lib/path-domains.ts --routing
+```
 
-Combine all matched labels. If the diff is empty, output "Nothing to codify — no changes on this branch." and stop.
+This prints the comma-separated union of **routing labels** (rules-domains plus
+routing-only labels such as `camera`, used by Step 2 to pick specialist agents)
+across all changed files. The mapping is defined once in
+`scripts/lib/path-domains.ts` — the same source the generated
+`.github/copilot-instructions.md` and `.claude/hooks/lib/domain-map.sh` derive
+from. **In addition, include `typescript` whenever any changed file is a `.ts`
+or `.tsx` file** (a cross-cutting policy the CLI does not add). If the diff is
+empty, output "Nothing to codify — no changes on this branch." and stop.
 
 ## Step 2 — Map domains to specialist review agents
 
