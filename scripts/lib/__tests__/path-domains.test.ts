@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { execSync } from "node:child_process";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -7,6 +8,7 @@ import {
   routingLabelsForPath,
   compileToRegExp,
   compileToBashConditions,
+  runCli,
   PATH_TO_DOMAINS,
 } from "../path-domains";
 
@@ -183,5 +185,62 @@ describe("regex<->bash-glob parity", () => {
         ).toBe(true);
       }
     });
+  });
+});
+
+describe("runCli", () => {
+  it("prints the sorted rules-domains union for the given files", () => {
+    const out: string[] = [];
+    const code = runCli(["server/routes/x.ts", "client/hooks/useX.ts"], (s) =>
+      out.push(s),
+    );
+    expect(code).toBe(0);
+    // hooks contributes its D6 union (rn + a11y) alongside routes' domains.
+    expect(out.join("")).toBe(
+      "accessibility, api, architecture, client-state, hooks, react-native, security",
+    );
+  });
+
+  it("--routing includes the camera routing label", () => {
+    const out: string[] = [];
+    runCli(["--routing", "client/screens/ScanScreen.tsx"], (s) => out.push(s));
+    expect(out.join("")).toBe(
+      "accessibility, camera, design-system, react-native",
+    );
+  });
+
+  it("prints nothing for unmapped files", () => {
+    const out: string[] = [];
+    expect(runCli(["README.md"], (s) => out.push(s))).toBe(0);
+    expect(out.join("")).toBe("");
+  });
+});
+
+describe("LLM_TOUCHING_SERVICES drift detection", () => {
+  it("matches the empirical grep result", () => {
+    // Re-run the grep that seeded the constant. If a new service imports an LLM
+    // client without being added to LLM_TOUCHING_SERVICES, this test fails and
+    // forces the developer to update the constant. (Relocated from
+    // delegate-copilot-issue.test.ts when PATH_TO_DOMAINS moved here.)
+    const result = execSync(
+      `grep -l "openai\\|OpenAI\\|gpt-\\|completions\\|anthropic" server/services/*.ts || true`,
+      { encoding: "utf8" },
+    );
+    const empirical = result
+      .split("\n")
+      .filter(Boolean)
+      .filter((p: string) => !p.includes("/__tests__/"))
+      .map((p: string) => p.replace(/^server\/services\//, ""))
+      .sort();
+
+    const nonAiPromptingServices = empirical.filter(
+      (basename: string) =>
+        !rulesDomainsForPath(`server/services/${basename}`).includes(
+          "ai-prompting",
+        ),
+    );
+
+    expect(nonAiPromptingServices).toEqual([]);
+    expect(empirical.length).toBeGreaterThan(0); // sanity — we have LLM services
   });
 });

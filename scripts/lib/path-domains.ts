@@ -319,3 +319,30 @@ export function routingLabelsForPath(filePath: string): RoutingLabel[] {
   }
   return [...matched];
 }
+
+/**
+ * CLI: print the sorted, comma-joined union of domains across the given file
+ * paths. `--routing` switches from rules-domains to routing labels (adds camera).
+ * Consumed by .claude/skills/codify (--routing) and spec-review (no flag).
+ * `write` is injectable for testing; defaults to stdout.
+ */
+export function runCli(
+  argv: readonly string[],
+  write: (s: string) => void = (s) => process.stdout.write(s),
+): number {
+  const routing = argv.includes("--routing");
+  const files = argv.filter((a) => !a.startsWith("--"));
+  const union = new Set<string>();
+  for (const f of files) {
+    const labels = routing ? routingLabelsForPath(f) : rulesDomainsForPath(f);
+    for (const l of labels) union.add(l);
+  }
+  const sorted = [...union].sort();
+  if (sorted.length > 0) write(sorted.join(", "));
+  return 0;
+}
+
+// Direct-invocation guard (matches the repo idiom in build-copilot-instructions.ts).
+if (process.argv[1]?.endsWith("path-domains.ts")) {
+  process.exitCode = runCli(process.argv.slice(2));
+}
