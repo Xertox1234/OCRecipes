@@ -1,0 +1,219 @@
+#!/usr/bin/env tsx
+// Single source of truth for the file-path -> domain mapping.
+//
+// Four artifacts derive from this module so they can never drift apart:
+//   1. scripts/build-copilot-instructions.ts  -> .github/copilot-instructions.md
+//   2. scripts/build-domain-map.ts            -> .claude/hooks/lib/domain-map.sh
+//   3. .claude/skills/codify/SKILL.md  Step 1 (via the CLI below, --routing)
+//   4. .claude/skills/spec-review/SKILL.md Step 3 (via the CLI below)
+//
+// Each rule's matcher is a structured descriptor that compiles three ways:
+// an anchored RegExp (for TS matching), a bash [[ glob ]] condition pair (for
+// the generated shell), and a human description (for the Copilot doc table).
+
+/** A rules-domain has a docs/rules/<domain>.md file and is binding for matching files. */
+export type RulesDomain =
+  | "accessibility"
+  | "ai-prompting"
+  | "api"
+  | "architecture"
+  | "client-state"
+  | "database"
+  | "design-system"
+  | "hooks"
+  | "performance"
+  | "react-native"
+  | "security"
+  | "testing"
+  | "typescript";
+
+/** Routing-only labels have NO rules file; they only steer codify agent selection. */
+export type RoutingOnlyLabel = "camera";
+
+/** Anything codify Step 1 can emit. */
+export type RoutingLabel = RulesDomain | RoutingOnlyLabel;
+
+/**
+ * Matcher descriptor vocabulary. Each variant compiles to a RegExp
+ * (compileToRegExp), a bash [[ glob ]] condition list (compileToBashConditions),
+ * and is described by the rule's `description` field.
+ */
+export type Matcher =
+  // Any descendant of a directory: matches `dir/a.ts` and `dir/sub/b.ts`.
+  | { readonly kind: "recursive-dir"; readonly dir: string }
+  // A specific file at a specific repo-relative path.
+  | { readonly kind: "exact-file"; readonly path: string }
+  // A basename-prefix within a single directory (e.g. client/screens/Scan*).
+  | {
+      readonly kind: "file-prefix";
+      readonly dir: string;
+      readonly prefix: string;
+    }
+  // Test files anywhere: __tests__/ dir OR *.test.ts(x) OR *.spec.ts(x).
+  | { readonly kind: "test-file" }
+  // Config files by basename glob at repo root (vitest.config.*, eslint.config.*).
+  | { readonly kind: "config-file"; readonly basenames: readonly string[] };
+
+export interface PathDomainRule {
+  readonly match: Matcher;
+  readonly domains: readonly RulesDomain[];
+  /** routing-only labels added on top of `domains` for codify Step 1. */
+  readonly routingLabels?: readonly RoutingOnlyLabel[];
+  /** Human-readable description rendered into the Copilot doc table. */
+  readonly description: string;
+}
+
+/** The 13 rules-domains, each with a docs/rules/<domain>.md file. */
+export const RULES_DOMAINS = [
+  "accessibility",
+  "ai-prompting",
+  "api",
+  "architecture",
+  "client-state",
+  "database",
+  "design-system",
+  "hooks",
+  "performance",
+  "react-native",
+  "security",
+  "testing",
+  "typescript",
+] as const satisfies readonly RulesDomain[];
+
+// 18 LLM-touching service basenames (under server/services/) that import an LLM
+// client. Empirically derived via:
+//   grep -l "openai\|OpenAI\|gpt-\|completions\|anthropic" server/services/*.ts | grep -v __tests__
+// A drift-detection test (scripts/lib/__tests__/path-domains.test.ts) re-runs
+// the grep and fails if a new LLM-touching service is added without being listed.
+export const LLM_TOUCHING_SERVICES: ReadonlySet<string> = new Set([
+  "canonical-enrichment.ts",
+  "coach-pro-chat.ts",
+  "coach-tools.ts",
+  "cooking-session.ts",
+  "food-nlp.ts",
+  "front-label-analysis.ts",
+  "ingredient-substitution.ts",
+  "meal-suggestions.ts",
+  "menu-analysis.ts",
+  "notebook-extraction.ts",
+  "nutrition-coach.ts",
+  "pantry-meal-plan.ts",
+  "photo-analysis.ts",
+  "receipt-analysis.ts",
+  "recipe-chat.ts",
+  "recipe-generation.ts",
+  "suggestion-generation.ts",
+  "voice-transcription.ts",
+]);
+
+// The reconciled superset rule table. Order is preserved for deterministic doc
+// rendering. `domains` are rules-domains (rendered into the doc + shell);
+// `routingLabels` (e.g. camera) surface only via routingLabelsForPath.
+export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
+  {
+    match: { kind: "recursive-dir", dir: "server/routes" },
+    domains: ["api", "security", "architecture"],
+    description: "`server/routes/**` (non-auth blocked separately)",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "server/storage" },
+    domains: ["database", "security", "architecture"],
+    description: "`server/storage/**` (non-auth blocked separately)",
+  },
+  {
+    match: { kind: "exact-file", path: "shared/schema.ts" },
+    domains: ["database", "security", "architecture"],
+    description: "`shared/schema.ts`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "migrations" },
+    domains: ["database", "security", "architecture"],
+    description: "`migrations/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "server/middleware" },
+    domains: ["security", "api"],
+    description: "`server/middleware/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "server/services" },
+    domains: ["architecture"],
+    description: "`server/services/**` (base — architecture only)",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "client/screens" },
+    domains: ["react-native", "design-system", "accessibility"],
+    description: "`client/screens/**`",
+  },
+  {
+    match: { kind: "file-prefix", dir: "client/screens", prefix: "Scan" },
+    domains: ["react-native", "design-system", "accessibility"],
+    routingLabels: ["camera"],
+    description: "`client/screens/Scan*`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "client/components" },
+    domains: ["react-native", "design-system", "accessibility", "performance"],
+    description: "`client/components/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "client/components/camera" },
+    domains: ["react-native", "design-system", "accessibility", "performance"],
+    routingLabels: ["camera"],
+    description: "`client/components/camera/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "client/navigation" },
+    domains: ["react-native", "accessibility"],
+    description: "`client/navigation/**`",
+  },
+  {
+    // D6: union of all sources — keeps the shell's react-native + accessibility.
+    match: { kind: "recursive-dir", dir: "client/hooks" },
+    domains: ["hooks", "client-state", "react-native", "accessibility"],
+    description: "`client/hooks/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "client/context" },
+    domains: ["client-state"],
+    description: "`client/context/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "client/lib" },
+    domains: ["typescript", "client-state"],
+    description: "`client/lib/**`",
+  },
+  {
+    match: { kind: "exact-file", path: "client/constants/theme.ts" },
+    domains: ["design-system"],
+    description: "`client/constants/theme.ts`",
+  },
+  {
+    match: { kind: "exact-file", path: "design_guidelines.md" },
+    domains: ["design-system"],
+    description: "`design_guidelines.md`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "evals" },
+    domains: ["ai-prompting", "testing"],
+    description: "`evals/**`",
+  },
+  {
+    match: { kind: "test-file" },
+    domains: ["testing"],
+    description: "`__tests__/**`, `*.test.ts(x)`, `*.spec.ts(x)`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: ".github/workflows" },
+    domains: ["architecture", "testing"],
+    description: "`.github/workflows/**`",
+  },
+  {
+    match: {
+      kind: "config-file",
+      basenames: ["vitest.config", "eslint.config"],
+    },
+    domains: ["testing", "typescript"],
+    description: "`vitest.config.*`, `eslint.config.*`",
+  },
+];
