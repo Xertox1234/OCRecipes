@@ -117,13 +117,23 @@ export function parseSolution(
   const fileName = basename(sourcePath);
   const slug = deriveSlug(fileName);
 
-  const parsed = matter(raw);
-  const fm = FrontmatterSchema.safeParse(parsed.data);
-  const data = fm.success ? fm.data : {};
-  if (!fm.success) {
-    warnings.push(
-      "frontmatter failed schema validation; using best-effort values",
-    );
+  let data: z.infer<typeof FrontmatterSchema> = {};
+  let content = raw;
+  try {
+    const parsed = matter(raw);
+    content = parsed.content;
+    const fm = FrontmatterSchema.safeParse(parsed.data);
+    if (fm.success) {
+      data = fm.data;
+    } else {
+      warnings.push(
+        "frontmatter failed schema validation; using best-effort values",
+      );
+    }
+  } catch (e) {
+    const msg = (e as Error).message.split("\n")[0];
+    warnings.push(`frontmatter parse error (${msg}); treated as body-only`);
+    content = raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
   }
 
   const rawCategory = sourcePath.split("/")[0];
@@ -177,8 +187,8 @@ export function parseSolution(
     appliesTo: data.applies_to ?? [],
     created,
     lastUpdated: toISODate(data.last_updated),
-    body: parsed.content.trim(),
-    sections: splitSections(parsed.content),
+    body: content.trim(),
+    sections: splitSections(content),
     contentHash: computeContentHash(raw),
     warnings,
   };

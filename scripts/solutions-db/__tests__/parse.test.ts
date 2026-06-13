@@ -106,4 +106,19 @@ describe("parseSolution", () => {
     );
     expect(r.warnings).toContain("tags missing"); // tags degraded to absent
   });
+
+  it("does not throw on malformed YAML frontmatter; falls back to body-only with a warning", () => {
+    const raw = `---\ntitle: "Y"\ntags: [z]\nmodule: client\nsymptoms:\n  - *.tsx files break\n---\n\n## Problem\np\n`;
+    const r = parseSolution(
+      raw,
+      "logic-errors/bad-yaml-2026-06-01.md",
+      "2026-06-01",
+    );
+    expect(r.track).toBe("bug");
+    expect(r.warnings.some((w) => w.includes("frontmatter parse error"))).toBe(
+      true,
+    );
+    expect(r.title).toBe("bad-yaml"); // body-only fallback derives title from slug
+    expect(r.sections["Problem"]).toBe("p");
+  });
 });
