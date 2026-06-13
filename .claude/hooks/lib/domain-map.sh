@@ -1,93 +1,48 @@
 #!/usr/bin/env bash
+# GENERATED FILE — do not edit by hand.
+# Regenerate with: npm run build:domain-map
+# Source of truth: scripts/lib/path-domains.ts (rules-domains only; routing-only
+# labels such as 'camera' are intentionally NOT emitted here).
+#
 # Shared path-to-domain mapping, currently consumed by inject-patterns.sh.
 # Source this file — do NOT execute directly. (Consumer-agnostic: define your
 # own _add() adapter before sourcing, so additional consumers can reuse it.)
 #
 # USAGE:
 #   Define _add() as an adapter for your accumulator before sourcing, then call
-#   apply_domain_map for each file path:
-#
-#     _add() { add_domain "$1"; }        # inject-patterns.sh
-#     _add() { add_pattern "$1"; }       # (example: an alternate accumulator)
-#     source ".../lib/domain-map.sh"
-#     apply_domain_map "$FILE_PATH"      # single file (inject-patterns)
-#     while IFS= read -r f; do apply_domain_map "$f"; done <<< "$FILES"
+#   apply_domain_map for each file path.
 #
 # DESIGN NOTES:
 #   - Uses independent [[...]] blocks so multiple domains can match one file.
-#   - Matches both absolute (*/) and relative (no leading /) paths so callers
+#   - Matches both absolute (leading wildcard) and relative paths so callers
 #     that have either form don't need to normalise first.
-#   - Typescript handling is intentionally EXCLUDED. Each consumer applies its
-#     own policy:
-#       inject-patterns: adds typescript only when no other domain matched
-#       (a consumer that wants typescript on every .ts/.tsx adds it unconditionally)
-#   - vitest.config.* and eslint.config.* map to testing+typescript here because
-#     all three consumers share that policy.
+#   - Typescript handling is intentionally EXCLUDED as a blanket .ts policy; each
+#     consumer applies its own (inject-patterns adds typescript only when no
+#     other domain matched). Per-rule typescript (config files, client/lib) is
+#     part of the canonical mapping and IS emitted below.
 
 apply_domain_map() {
   local f="$1"
 
-  [[ "$f" == */server/routes/* || "$f" == server/routes/* ]] && \
-    { _add api; _add security; _add architecture; }
-
-  [[ "$f" == */server/storage/* || "$f" == server/storage/* || \
-     "$f" == */shared/schema.ts  || "$f" == shared/schema.ts  || \
-     "$f" == */migrations/*      || "$f" == migrations/* ]] && \
-    { _add database; _add security; _add architecture; }
-
-  [[ "$f" == */server/middleware/* || "$f" == server/middleware/* ]] && \
-    { _add security; _add api; }
-
-  [[ "$f" == */server/services/photo-analysis.ts    || \
-     "$f" == */server/services/nutrition-coach.ts   || \
-     "$f" == */server/services/recipe-chat.ts       || \
-     "$f" == */server/services/recipe-generation.ts || \
-     "$f" == server/services/photo-analysis.ts      || \
-     "$f" == server/services/nutrition-coach.ts     || \
-     "$f" == server/services/recipe-chat.ts         || \
-     "$f" == server/services/recipe-generation.ts ]] && \
-    _add ai-prompting
-
-  [[ "$f" == */evals/* || "$f" == evals/* ]] && \
-    { _add ai-prompting; _add testing; }
-
-  # All server/services get architecture (including the AI ones above, deduped)
-  [[ "$f" == */server/services/* || "$f" == server/services/* ]] && \
-    _add architecture
-
-  [[ "$f" == */client/screens/*    || "$f" == client/screens/*    || \
-     "$f" == */client/components/* || "$f" == client/components/* ]] && \
-    { _add react-native; _add design-system; _add accessibility; }
-
-  [[ "$f" == */client/components/* || "$f" == client/components/* ]] && \
-    _add performance
-
-  # Navigation files: react-native + accessibility only (no design-system —
-  # they define route configs, not UI components)
-  [[ "$f" == */client/navigation/* || "$f" == client/navigation/* ]] && \
-    { _add react-native; _add accessibility; }
-
-  [[ "$f" == */client/hooks/* || "$f" == client/hooks/* ]] && \
-    { _add hooks; _add client-state; _add react-native; _add accessibility; }
-
-  [[ "$f" == */client/context/* || "$f" == client/context/* || \
-     "$f" == */client/lib/*     || "$f" == client/lib/* ]] && \
-    _add client-state
-
-  [[ "$f" == */client/constants/theme.ts || "$f" == client/constants/theme.ts || \
-     "$f" == */design_guidelines.md      || "$f" == design_guidelines.md ]] && \
-    _add design-system
-
-  [[ "$f" == */.github/workflows/* || "$f" == .github/workflows/* ]] && \
-    { _add architecture; _add testing; }
-
-  [[ "$f" == */vitest.config.* || "$f" == vitest.config.* || \
-     "$f" == */eslint.config.* || "$f" == eslint.config.* ]] && \
-    { _add testing; _add typescript; }
-
-  # Test files accumulate testing regardless of enclosing directory
-  [[ "$f" == */__tests__/* || "$f" == __tests__/* || \
-     "$f" == *.test.ts     || "$f" == *.test.tsx  || \
-     "$f" == *.spec.ts     || "$f" == *.spec.tsx ]] && \
-    _add testing
+  [[ "$f" == */server/routes/* || "$f" == server/routes/* ]] && { _add api; _add security; _add architecture; }
+  [[ "$f" == */server/storage/* || "$f" == server/storage/* ]] && { _add database; _add security; _add architecture; }
+  [[ "$f" == */shared/schema.ts || "$f" == shared/schema.ts ]] && { _add database; _add security; _add architecture; }
+  [[ "$f" == */migrations/* || "$f" == migrations/* ]] && { _add database; _add security; _add architecture; }
+  [[ "$f" == */server/middleware/* || "$f" == server/middleware/* ]] && { _add security; _add api; }
+  [[ "$f" == */server/services/* || "$f" == server/services/* ]] && { _add architecture; }
+  [[ "$f" == */client/screens/* || "$f" == client/screens/* ]] && { _add react-native; _add design-system; _add accessibility; }
+  [[ "$f" == */client/screens/Scan* || "$f" == client/screens/Scan* ]] && { _add react-native; _add design-system; _add accessibility; }
+  [[ "$f" == */client/components/* || "$f" == client/components/* ]] && { _add react-native; _add design-system; _add accessibility; _add performance; }
+  [[ "$f" == */client/components/camera/* || "$f" == client/components/camera/* ]] && { _add react-native; _add design-system; _add accessibility; _add performance; }
+  [[ "$f" == */client/navigation/* || "$f" == client/navigation/* ]] && { _add react-native; _add accessibility; }
+  [[ "$f" == */client/hooks/* || "$f" == client/hooks/* ]] && { _add hooks; _add client-state; _add react-native; _add accessibility; }
+  [[ "$f" == */client/context/* || "$f" == client/context/* ]] && { _add client-state; }
+  [[ "$f" == */client/lib/* || "$f" == client/lib/* ]] && { _add typescript; _add client-state; }
+  [[ "$f" == */client/constants/theme.ts || "$f" == client/constants/theme.ts ]] && { _add design-system; }
+  [[ "$f" == */design_guidelines.md || "$f" == design_guidelines.md ]] && { _add design-system; }
+  [[ "$f" == */evals/* || "$f" == evals/* ]] && { _add ai-prompting; _add testing; }
+  [[ "$f" == */__tests__/* || "$f" == __tests__/* || "$f" == *.test.ts || "$f" == *.test.tsx || "$f" == *.spec.ts || "$f" == *.spec.tsx ]] && { _add testing; }
+  [[ "$f" == */.github/workflows/* || "$f" == .github/workflows/* ]] && { _add architecture; _add testing; }
+  [[ "$f" == */vitest.config.* || "$f" == vitest.config.* || "$f" == */eslint.config.* || "$f" == eslint.config.* ]] && { _add testing; _add typescript; }
+  [[ "$f" == */server/services/canonical-enrichment.ts || "$f" == server/services/canonical-enrichment.ts || "$f" == */server/services/coach-pro-chat.ts || "$f" == server/services/coach-pro-chat.ts || "$f" == */server/services/coach-tools.ts || "$f" == server/services/coach-tools.ts || "$f" == */server/services/cooking-session.ts || "$f" == server/services/cooking-session.ts || "$f" == */server/services/food-nlp.ts || "$f" == server/services/food-nlp.ts || "$f" == */server/services/front-label-analysis.ts || "$f" == server/services/front-label-analysis.ts || "$f" == */server/services/ingredient-substitution.ts || "$f" == server/services/ingredient-substitution.ts || "$f" == */server/services/meal-suggestions.ts || "$f" == server/services/meal-suggestions.ts || "$f" == */server/services/menu-analysis.ts || "$f" == server/services/menu-analysis.ts || "$f" == */server/services/notebook-extraction.ts || "$f" == server/services/notebook-extraction.ts || "$f" == */server/services/nutrition-coach.ts || "$f" == server/services/nutrition-coach.ts || "$f" == */server/services/pantry-meal-plan.ts || "$f" == server/services/pantry-meal-plan.ts || "$f" == */server/services/photo-analysis.ts || "$f" == server/services/photo-analysis.ts || "$f" == */server/services/receipt-analysis.ts || "$f" == server/services/receipt-analysis.ts || "$f" == */server/services/recipe-chat.ts || "$f" == server/services/recipe-chat.ts || "$f" == */server/services/recipe-generation.ts || "$f" == server/services/recipe-generation.ts || "$f" == */server/services/suggestion-generation.ts || "$f" == server/services/suggestion-generation.ts || "$f" == */server/services/voice-transcription.ts || "$f" == server/services/voice-transcription.ts ]] && { _add ai-prompting; }
 }
