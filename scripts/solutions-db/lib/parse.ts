@@ -112,6 +112,24 @@ export function splitSections(body: string): Record<string, string> {
   return out;
 }
 
+function asDateish(v: unknown): string | Date | undefined {
+  return typeof v === "string" || v instanceof Date ? v : undefined;
+}
+
+const KNOWN_FM_KEYS = new Set([
+  "title",
+  "track",
+  "category",
+  "module",
+  "severity",
+  "tags",
+  "symptoms",
+  "applies_to",
+  "created",
+  "last_updated",
+]);
+const VARIANT_FM_KEYS = new Set(["date", "updated"]);
+
 function sortedKeys(o: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(o).sort()) out[k] = o[k];
@@ -196,10 +214,29 @@ export function parseSolution(
     warnings.push("title missing — derived from filename slug");
   }
 
-  const createdFromFm = toISODate(data.created);
+  const fm = data as Record<string, unknown>;
+
+  const createdFromFm =
+    toISODate(data.created) ?? toISODate(asDateish(fm.date));
   const created = createdFromFm ?? dateFromFileName(fileName) ?? mtimeISO;
-  if (!createdFromFm)
+  if (!toISODate(data.created) && toISODate(asDateish(fm.date))) {
+    warnings.push("created derived from `date:` variant key");
+  } else if (!createdFromFm) {
     warnings.push("created missing — derived from filename/mtime");
+  }
+
+  const lastUpdated =
+    toISODate(data.last_updated) ?? toISODate(asDateish(fm.updated));
+  if (!toISODate(data.last_updated) && toISODate(asDateish(fm.updated))) {
+    warnings.push("last_updated derived from `updated:` variant key");
+  }
+
+  const extraFields: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fm)) {
+    if (v === undefined) continue;
+    if (KNOWN_FM_KEYS.has(k) || VARIANT_FM_KEYS.has(k)) continue;
+    extraFields[k] = v;
+  }
 
   const moduleName = data.module ?? null;
   if (!moduleName) {
@@ -224,8 +261,8 @@ export function parseSolution(
     symptoms: data.symptoms ?? [],
     appliesTo: data.applies_to ?? [],
     created,
-    lastUpdated: toISODate(data.last_updated),
-    extraFields: {},
+    lastUpdated,
+    extraFields,
     body: content.trim(),
   };
 
