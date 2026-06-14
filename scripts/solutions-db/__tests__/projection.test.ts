@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  canonicalProjection,
-  computeContentHash,
-  type ProjectionInput,
-} from "../lib/parse";
+import { computeContentHash, type ProjectionInput } from "../lib/parse";
 
 const base: ProjectionInput = {
   title: "T",
