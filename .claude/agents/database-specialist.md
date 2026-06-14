@@ -348,6 +348,7 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 - [ ] CHECK constraints don't conflict with ON DELETE SET NULL
 - [ ] New tables with secrets have safe-column sets
 - [ ] All nutrition-bearing tables have `>= 0` CHECK constraints on calories, protein, carbs, fat columns
+- [ ] Store↔mirror sync: the "has it changed?" / re-embed hash is a **normalized projection** (fields + body), not raw file bytes — a bytes-hash reports false drift on every regenerated file. Deep-sort `jsonb` keys (Postgres reorders nested keys on read). See `docs/solutions/conventions/hash-normalized-projection-not-bytes-for-regenerated-mirror-2026-06-14.md`
 
 ### Query Patterns
 
@@ -430,6 +431,7 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 - `docs/legacy-patterns/database.md` - Full database pattern documentation
 - `docs/legacy-patterns/security.md` - IDOR, sensitive columns, ownership checks
 - `docs/legacy-patterns/architecture.md` - Service/storage layer boundaries
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
 <!-- LSP-AGENT-BLOCK:START -->
 

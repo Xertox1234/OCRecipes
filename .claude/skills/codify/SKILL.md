@@ -130,23 +130,27 @@ Write one file per finding at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`
 
 Kebab-case the finding's intended title; cap at ~60 characters. Avoid generic words like `error`, `bug`, `fix` that don't aid disambiguation.
 
-### 6b. Overlap-check (advisory, within-category only)
+### 6b. Overlap-check (advisory, semantic)
 
-Scope the search to the target category directory. Full-corpus Jaccard scans caused the agent slowdown documented in `docs/solutions/_manifests/2026-05-13-learnings.md` — do not repeat it. Cross-category overlap is handled by `## See Also` links, not by reclassifying the file.
+Run the built-in near-duplicate check before writing:
 
 ```bash
-# Search ONLY the target category, not all of docs/solutions/
-rg -l "^title:" "docs/solutions/<category>/" | head -50
+npm run solutions:db:add -- <draft-file> --dry-run
 ```
 
-For each candidate, `head -n 20` the frontmatter and compute:
+This embeds the draft and reports `near-duplicate: <path> (cosine …)` for any existing solution at cosine ≥ 0.88. The semantic check catches paraphrased duplicates that lexical Jaccard misses — and avoids the full-corpus scan that caused the agent slowdown documented in `docs/solutions/_manifests/2026-05-13-learnings.md`. Cross-category overlap is still handled by `## See Also` links, not by reclassifying the file.
 
-- **Title Jaccard** — bag-of-words overlap between candidate `title:` and the new title.
-- **Tag Jaccard** — overlap between candidate `tags:` and the new tags.
+**Advisory only — proceed regardless.** Surfacing the duplicate lets the user manually merge or set `last_updated:` on the existing file if they choose. (Steps 1-3 of the Phase 2 refactor recorded 0 merges across 366 files using a similar rubric; strict-block-on-overlap would have added friction with no benefit.)
 
-If **both ≥ 0.7**, print `near-duplicate: <path>` to stdout before writing. **Advisory only — write the new file anyway.** Surfacing the duplicate lets the user manually merge or set `last_updated:` on the existing file if they choose. (Steps 1-3 of the Phase 2 refactor recorded 0 merges across 366 files using a similar rubric; strict-block-on-overlap would have added friction with no benefit.)
+### 6c. Write the file, then register it in the DB
 
-### 6c. Write the file
+Compose the solution markdown and write it to `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Then run:
+
+```bash
+npm run solutions:db:add -- docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md
+```
+
+This inserts/embeds the row into the canonical DB and re-exports the file in canonical form. The DB is the source of truth; the file is its regenerated mirror.
 
 Frontmatter — match `docs/solutions/README.md` schema exactly. Required fields per track:
 
@@ -185,14 +189,14 @@ Cross-link convention for `## See Also`:
 
 ## Step 7 — Commit
 
-Stage each new solution file explicitly (and any agent files you also updated). Do not `git add` the whole directory.
+Solution content now lives in the DB and `docs/solutions/` is gitignored — there is nothing to `git add` there. Only stage `.claude/agents/*.md` files that were also updated in Step 6.
 
 ```bash
-# Example — substitute the actual files you wrote:
-git add docs/solutions/conventions/<slug-1>-YYYY-MM-DD.md \
-        docs/solutions/runtime-errors/<slug-2>-YYYY-MM-DD.md \
-        .claude/agents/security-auditor.md
+# Example — substitute the actual agent files you updated (if any):
+git add .claude/agents/security-auditor.md
 git commit -m "docs(solutions): codify findings from $(git branch --show-current)"
 ```
+
+If no agent files were updated (only solution files were written), there is no commit — the solution persists by living in the DB and its `docs/solutions/` mirror.
 
 Use `docs(solutions):` as the conventional-commit type — matches Step 2-3 commits from the Phase 2 refactor (e.g. `88c16a6e`, `247eacd9`). The pre-commit hook runs `lint-staged` only (ESLint fix + Prettier on staged files); the full lint/type/test gate is enforced by CI on push.

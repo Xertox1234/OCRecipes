@@ -122,3 +122,118 @@ describe("parseSolution", () => {
     expect(r.sections["Problem"]).toBe("p");
   });
 });
+
+describe("parseSolution — variant keys + extra_fields", () => {
+  const withVariants = `---
+title: Reverse proxy collapsed rate limiters
+date: 2026-06-10
+category: logic-errors
+tags: [security, rate-limiting]
+severity: high
+source: 2026-06-10 security audit (S1/S2/S3)
+---
+
+## Problem
+Body.
+`;
+
+  it("maps date -> created and records a warning", () => {
+    const r = parseSolution(
+      withVariants,
+      "logic-errors/rev-proxy-2026-06-10.md",
+      "2026-06-11",
+    );
+    expect(r.created).toBe("2026-06-10");
+    expect(r.warnings).toContain("created derived from `date:` variant key");
+  });
+
+  it("routes unknown keys (source) into extraFields verbatim", () => {
+    const r = parseSolution(
+      withVariants,
+      "logic-errors/rev-proxy-2026-06-10.md",
+      "2026-06-11",
+    );
+    expect(r.extraFields).toEqual({
+      source: "2026-06-10 security audit (S1/S2/S3)",
+    });
+  });
+
+  it("maps updated -> last_updated and records a warning", () => {
+    const raw = `---
+title: T
+track: bug
+category: logic-errors
+tags: [zod]
+created: 2026-05-29
+updated: 2026-05-31
+severity: medium
+---
+
+## Problem
+B.
+`;
+    const r = parseSolution(
+      raw,
+      "logic-errors/zod-2026-05-29.md",
+      "2026-05-29",
+    );
+    expect(r.lastUpdated).toBe("2026-05-31");
+    expect(r.warnings).toContain(
+      "last_updated derived from `updated:` variant key",
+    );
+    expect(r.extraFields).toEqual({});
+  });
+});
+
+describe("parseSolution — numeric tags are coerced, not dropped", () => {
+  const raw = `---
+title: Graceful 404 handling
+track: knowledge
+category: design-patterns
+tags: [api, fetch, 404, error-handling]
+symptoms: [503, "raw fetch returns ok:false"]
+---
+
+## When this applies
+Body.
+`;
+  it("coerces numeric tags to strings (does not drop the array)", () => {
+    const r = parseSolution(
+      raw,
+      "design-patterns/graceful-404-2026-05-13.md",
+      "2026-05-13",
+    );
+    expect(r.tags).toEqual(["api", "fetch", "404", "error-handling"]);
+    expect(r.warnings).not.toContain("tags missing");
+  });
+  it("coerces numeric symptoms to strings", () => {
+    const r = parseSolution(
+      raw,
+      "design-patterns/graceful-404-2026-05-13.md",
+      "2026-05-13",
+    );
+    expect(r.symptoms).toEqual(["503", "raw fetch returns ok:false"]);
+  });
+
+  it("coerces YAML null/boolean scalar tags to strings (e.g. a `null` tag)", () => {
+    // Bare `null` is a YAML null and `true` a YAML boolean — not strings. Without
+    // z.null()/z.boolean() in the union, one such element drops the WHOLE tags array.
+    const withScalars = `---
+title: ADD COLUMN default leaves rows NULL
+track: bug
+category: runtime-errors
+tags: [drizzle, migration, default, null, true]
+---
+
+## Problem
+Body.
+`;
+    const r = parseSolution(
+      withScalars,
+      "runtime-errors/add-column-2026-05-13.md",
+      "2026-05-13",
+    );
+    expect(r.tags).toEqual(["drizzle", "migration", "default", "null", "true"]);
+    expect(r.warnings).not.toContain("tags missing");
+  });
+});

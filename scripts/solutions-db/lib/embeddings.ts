@@ -40,7 +40,11 @@ export async function embedBatch(
       model: EMBED_MODEL,
       input: chunk,
     });
-    for (const d of res.data) out.push(d.embedding as number[]);
+    // d.index is 0-based WITHIN this request — place each embedding at its input
+    // position; never rely on res.data being returned in input order.
+    const chunkOut: number[][] = new Array<number[]>(chunk.length);
+    for (const d of res.data) chunkOut[d.index] = d.embedding as number[];
+    out.push(...chunkOut);
   }
   return out;
 }

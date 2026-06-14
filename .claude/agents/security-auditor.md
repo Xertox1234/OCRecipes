@@ -396,6 +396,7 @@ When auditing a route file or service, check every item:
 - `server/middleware/auth.ts` - JWT verification with issuer/audience
 - `server/services/recipe-import.ts` - SSRF protection (safeFetch, isBlockedUrl)
 - `shared/constants/error-codes.ts` - ErrorCode constants
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
 <!-- LSP-AGENT-BLOCK:START -->
 

@@ -13,6 +13,21 @@ export type Category =
   | "design-patterns"
   | "best-practices";
 
+export interface ProjectionInput {
+  title: string;
+  track: Track;
+  category: Category;
+  module: string | null;
+  severity: string | null;
+  tags: string[];
+  symptoms: string[];
+  appliesTo: string[];
+  created: string;
+  lastUpdated: string | null;
+  extraFields: Record<string, unknown>;
+  body: string;
+}
+
 export interface ParsedSolution {
   sourcePath: string;
   slug: string;
@@ -30,6 +45,7 @@ export interface ParsedSolution {
   sections: Record<string, string>;
   contentHash: string;
   warnings: string[];
+  extraFields: Record<string, unknown>;
 }
 
 const BUG_CATS = new Set<Category>([
@@ -50,10 +66,24 @@ const FrontmatterSchema = z
     title: z.string().optional().catch(undefined),
     track: z.enum(["bug", "knowledge"]).optional().catch(undefined),
     category: z.string().optional().catch(undefined),
-    tags: z.array(z.string()).optional().catch(undefined),
+    tags: z
+      .array(
+        z
+          .union([z.string(), z.number(), z.boolean(), z.null()])
+          .transform((v) => String(v)),
+      )
+      .optional()
+      .catch(undefined),
     module: z.string().optional().catch(undefined),
     applies_to: z.array(z.string()).optional().catch(undefined),
-    symptoms: z.array(z.string()).optional().catch(undefined),
+    symptoms: z
+      .array(
+        z
+          .union([z.string(), z.number(), z.boolean(), z.null()])
+          .transform((v) => String(v)),
+      )
+      .optional()
+      .catch(undefined),
     created: z.union([z.string(), z.date()]).optional().catch(undefined),
     last_updated: z.union([z.string(), z.date()]).optional().catch(undefined),
     severity: z.string().optional().catch(undefined),
@@ -96,8 +126,55 @@ export function splitSections(body: string): Record<string, string> {
   return out;
 }
 
-export function computeContentHash(raw: string): string {
-  return createHash("sha256").update(raw.trim()).digest("hex");
+function asDateish(v: unknown): string | Date | undefined {
+  return typeof v === "string" || v instanceof Date ? v : undefined;
+}
+
+const KNOWN_FM_KEYS = new Set([
+  "title",
+  "track",
+  "category",
+  "module",
+  "severity",
+  "tags",
+  "symptoms",
+  "applies_to",
+  "created",
+  "last_updated",
+]);
+const VARIANT_FM_KEYS = new Set(["date", "updated"]);
+
+function deepSortKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(deepSortKeys);
+  if (v && typeof v === "object") {
+    const src = v as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(src).sort()) out[k] = deepSortKeys(src[k]);
+    return out;
+  }
+  return v;
+}
+
+/** Deterministic, serialization-independent projection. Hash this, not the raw bytes. */
+export function canonicalProjection(p: ProjectionInput): string {
+  const fields = {
+    title: p.title,
+    track: p.track,
+    category: p.category,
+    module: p.module ?? null,
+    severity: p.severity ?? null,
+    tags: p.tags,
+    symptoms: p.symptoms,
+    applies_to: p.appliesTo,
+    created: p.created,
+    last_updated: p.lastUpdated ?? null,
+    extra: deepSortKeys(p.extraFields),
+  };
+  return JSON.stringify(fields) + "\n" + p.body.trim();
+}
+
+export function computeContentHash(p: ProjectionInput): string {
+  return createHash("sha256").update(canonicalProjection(p)).digest("hex");
 }
 
 /**
@@ -156,10 +233,29 @@ export function parseSolution(
     warnings.push("title missing — derived from filename slug");
   }
 
-  const createdFromFm = toISODate(data.created);
+  const fm = data as Record<string, unknown>;
+
+  const createdFromFm =
+    toISODate(data.created) ?? toISODate(asDateish(fm.date));
   const created = createdFromFm ?? dateFromFileName(fileName) ?? mtimeISO;
-  if (!createdFromFm)
+  if (!toISODate(data.created) && toISODate(asDateish(fm.date))) {
+    warnings.push("created derived from `date:` variant key");
+  } else if (!createdFromFm) {
     warnings.push("created missing — derived from filename/mtime");
+  }
+
+  const lastUpdated =
+    toISODate(data.last_updated) ?? toISODate(asDateish(fm.updated));
+  if (!toISODate(data.last_updated) && toISODate(asDateish(fm.updated))) {
+    warnings.push("last_updated derived from `updated:` variant key");
+  }
+
+  const extraFields: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fm)) {
+    if (v === undefined) continue;
+    if (KNOWN_FM_KEYS.has(k) || VARIANT_FM_KEYS.has(k)) continue;
+    extraFields[k] = v;
+  }
 
   const moduleName = data.module ?? null;
   if (!moduleName) {
@@ -174,9 +270,7 @@ export function parseSolution(
     warnings.push("tags missing");
   }
 
-  return {
-    sourcePath,
-    slug,
+  const projection: ProjectionInput = {
     title,
     track,
     category,
@@ -186,10 +280,28 @@ export function parseSolution(
     symptoms: data.symptoms ?? [],
     appliesTo: data.applies_to ?? [],
     created,
-    lastUpdated: toISODate(data.last_updated),
+    lastUpdated,
+    extraFields,
     body: content.trim(),
+  };
+
+  return {
+    sourcePath,
+    slug,
+    title,
+    track,
+    category,
+    module: moduleName,
+    severity,
+    tags,
+    symptoms: projection.symptoms,
+    appliesTo: projection.appliesTo,
+    created,
+    lastUpdated: projection.lastUpdated,
+    body: projection.body,
     sections: splitSections(content),
-    contentHash: computeContentHash(raw),
+    contentHash: computeContentHash(projection),
     warnings,
+    extraFields: projection.extraFields,
   };
 }

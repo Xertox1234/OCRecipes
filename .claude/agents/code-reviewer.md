@@ -530,6 +530,7 @@ if (response.status === 401) {
 - `client/screens/ScanScreen.tsx` - Camera implementation reference
 - `client/lib/token-storage.ts` - In-memory cache example
 - `client/types/navigation.ts` - Navigation typing patterns
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
 ---
 

@@ -76,7 +76,7 @@ Establish a green baseline before touching any code.
 
    > **Important:** Shell state does not persist between tool calls — each Bash call runs in a fresh shell. Record the literal output of this command (e.g. `/Users/yourname/projects/OCRecipes`) and substitute it wherever `<MAIN_CHECKOUT>` appears in the spawn prompts below and in the executor's instructions. Do not re-run this command in later phases; use the saved value.
 
-   Store as `MAIN_CHECKOUT` (e.g., `/Users/williamtower/projects/OCRecipes`). Pass it to every executor spawn in Phase 4 via the `Main checkout:` line in the prompt. Executors use it to write gitignored artifacts (`docs/solutions/...`) to the main checkout rather than to their own worktree (where `git worktree remove` would destroy them — same gitignore/worktree pitfall the `/audit` skill fixed).
+   Store as `MAIN_CHECKOUT` (e.g., `/Users/williamtower/projects/OCRecipes`). Pass it to every executor spawn in Phase 4 via the `Main checkout:` line in the prompt. Executors use it to write gitignored artifacts (`docs/solutions/...`) to the main checkout rather than to their own worktree (where `git worktree remove` would destroy them — same gitignore/worktree pitfall the `/audit` skill fixed); after writing each solution file the executor runs `npm run solutions:db:add -- <that-file>` so the canonical DB and its mirror are updated (see `/codify`).
 
 4. **Verify executor agent**: Confirm the file `.claude/agents/todo-executor.md` exists by running:
 

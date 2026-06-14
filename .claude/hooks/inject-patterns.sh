@@ -77,6 +77,100 @@ domain_tag_pattern() {
   esac
 }
 
+# Emit "source_rel<TAB>title" lines for a domain from the markdown files (today's logic).
+solutions_from_markdown() {
+  local domain="$1" tag_pattern="$2"
+  [ -d "$SOLUTIONS_DIR" ] || return 0
+  local matches
+  matches=$(grep -rl --include='*.md' -E "^tags:.*${tag_pattern}" \
+    "$SOLUTIONS_DIR" 2>/dev/null | grep -v '/_manifests/' \
+    | sed "s|.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)\.md\$|\1 &|" \
+    | sort -r | cut -d' ' -f2- | head -n "$SOLUTIONS_PER_DOMAIN" || true)
+  [ -n "$matches" ] || return 0
+  local priority="" fallback="" nl=$'\n'
+  while IFS= read -r sol; do
+    [ -n "$sol" ] || continue
+    local pats matched=false
+    # applies_to is inline flow style (mirror is canonical): strip `applies_to: [ ... ]`,
+    # split on commas, trim surrounding spaces and optional quotes. Tolerates quoted too.
+    pats=$(grep -m1 '^applies_to:' "$sol" 2>/dev/null \
+      | sed -E 's/^applies_to:[[:space:]]*\[?//; s/\][[:space:]]*$//' \
+      | tr ',' '\n' \
+      | sed -E "s/^[[:space:]]*[\"']?//; s/[\"']?[[:space:]]*\$//" \
+      | grep -v '^[[:space:]]*$' || true)
+    if [ -n "$pats" ]; then
+      while IFS= read -r pat; do
+        [ -n "$pat" ] || continue
+        # shellcheck disable=SC2254
+        [[ "$_FILE_REL" == $pat ]] && { matched=true; break; }
+      done <<< "$pats"
+    fi
+    if [ "$matched" = true ]; then priority="${priority:+$priority$nl}$sol"; else fallback="${fallback:+$fallback$nl}$sol"; fi
+  done <<< "$matches"
+  matches=$(printf '%s\n%s\n' "$priority" "$fallback" | grep -v '^$' | head -n "$SOLUTIONS_PER_DOMAIN")
+  while IFS= read -r sol_file; do
+    [ -n "$sol_file" ] || continue
+    local rel title
+    rel="${sol_file#"$PROJECT_ROOT"/}"
+    rel="${rel#docs/solutions/}"
+    # Strip a YAML scalar wrapper: double-quoted, OR single-quoted (with '' → ' unescape),
+    # so single-quoted titles match the DB path's properly-parsed title (Gate C equivalence).
+    title=$(grep -m1 -E '^title:' "$sol_file" 2>/dev/null | sed -E "s/^title:[[:space:]]*//; s/^\"//; s/\"\$//; s/^'//; s/'\$//; s/''/'/g" || true)
+    printf '%s\t%s\n' "$rel" "${title:-untitled}"
+  done <<< "$matches"
+}
+
+# Emit "source_rel<TAB>title" lines for a domain from the DB. Returns non-zero on psql failure.
+solutions_from_db() {
+  local domain="$1"
+  [ -n "${SOLUTIONS_DB_READONLY_URL:-}" ] || return 1
+  # Mirror the markdown path's tag matching EXACTLY: it greps each file's `tags:` line
+  # with the ERE from domain_tag_pattern (`\b<domain>\b`, or `\bai(-[a-z]+)?\b` for
+  # ai-prompting). Word boundaries make it match the domain as a hyphen/comma-delimited
+  # token inside compound tags too (e.g. `\bapi\b` matches `paid-api`). Replicate that
+  # per array element with the same regex, translating ERE `\b` → Postgres `\y`. (Exact
+  # array membership would UNDER-match compound tags and diverge from markdown.)
+  local pg_pattern
+  pg_pattern=$(domain_tag_pattern "$domain")   # e.g. \bapi\b  or  \bai(-[a-z]+)?\b
+  pg_pattern="${pg_pattern//\\b/\\y}"           # ERE \b → Postgres \y word boundary
+  pg_pattern="${pg_pattern//\'/\'\'}"           # SQL-escape any single quotes (none today; defensive)
+  local where="EXISTS (SELECT 1 FROM unnest(tags) t WHERE t ~ '${pg_pattern}')"
+  local rows
+  rows=$(psql "$SOLUTIONS_DB_READONLY_URL" -tAF$'\t' -c \
+    "SELECT source_path, title, array_to_string(applies_to,'|') FROM solutions WHERE ${where} LIMIT 200;" \
+    2>/dev/null) || return 1
+  [ -n "$rows" ] || return 0
+  # Date-sort by the YYYY-MM-DD embedded in source_path (mirrors the markdown path's filename sort).
+  local sorted
+  # Cap to the newest SOLUTIONS_PER_DOMAIN by date BEFORE promotion — the markdown path
+  # head's its match list before splitting priority/fallback, so applies_to promotion only
+  # REORDERS within the date-top-N; it never pulls in an (N+1)th file. Capping here mirrors
+  # that. (Capping after promotion would surface applies_to matches from the whole corpus.)
+  sorted=$(printf '%s\n' "$rows" | awk -F'\t' '{
+    if (match($1, /[0-9]{4}-[0-9]{2}-[0-9]{2}\.md$/)) d=substr($1, RSTART, 10); else d="0000-00-00";
+    print d "\t" $0 }' | sort -rk1,1 | cut -f2- | head -n "$SOLUTIONS_PER_DOMAIN")
+  local priority="" fallback="" nl=$'\n' tab=$'\t'
+  while IFS=$'\t' read -r sp title pats; do
+    [ -n "$sp" ] || continue
+    local matched=false pat patarr=()
+    if [ -n "$pats" ]; then
+      IFS='|' read -ra patarr <<< "$pats"   # IFS scoped to this read only — no leak
+      for pat in "${patarr[@]}"; do
+        [ -n "$pat" ] || continue
+        # shellcheck disable=SC2254
+        [[ "$_FILE_REL" == $pat ]] && { matched=true; break; }
+      done
+    fi
+    local rel="${sp#docs/solutions/}"
+    if [ "$matched" = true ]; then priority="${priority:+$priority$nl}${rel}${tab}${title}"; else fallback="${fallback:+$fallback$nl}${rel}${tab}${title}"; fi
+  done <<< "$sorted"
+  # `; return 0` is load-bearing under `set -o pipefail`: when the result is empty, `grep -v`
+  # exits 1, which would make this function return non-zero and wrongly trigger the markdown
+  # fallback for a LEGITIMATELY-empty DB result. psql failure is already caught above; here a
+  # successful-but-empty query must return 0 (= "no refs", don't fall back).
+  printf '%s\n%s\n' "$priority" "$fallback" | grep -v '^$' | head -n "$SOLUTIONS_PER_DOMAIN"; return 0
+}
+
 # Emission priority (lower = emitted earlier = fills the inline budget first). When a
 # multi-domain edit overflows the inline cap, the LOWEST-priority domains are the ones
 # that spill to the temp file — instead of the truncation victim being decided by accident
@@ -115,6 +209,10 @@ DEDUP=1
 { [ -z "$SESSION" ] || [ "${PATTERN_INJECT_NO_DEDUP:-0}" = "1" ]; } && DEDUP=0
 DEDUP_STATE="/tmp/ocrecipes-pattern-inject-${SESSION}"
 
+# Repo-relative path of the edited file — used by both solution-source functions for
+# applies_to: glob matching. FILE_PATH may be absolute; strip the PROJECT_ROOT prefix.
+_FILE_REL="${FILE_PATH#"$PROJECT_ROOT"/}"
+
 # Domain section (skipped if no domains matched — preamble still emitted above)
 if [ -n "$DOMAINS" ]; then
   IFS=',' read -ra DOMAIN_LIST <<< "$DOMAINS"
@@ -139,71 +237,26 @@ if [ -n "$DOMAINS" ]; then
       cat "$RULES_FILE" >> "$TMPFILE"
     fi
 
-    # Inject the most relevant docs/solutions/ files for this domain.
-    # Matching rule: a solution file matches a domain if the domain's tag appears
-    # in its YAML `tags:` frontmatter line (whole-word match). This is the simplest
-    # concrete rule the schema supports — `tags` is required on every solution file.
-    # Newest-first (filenames carry a YYYY-MM-DD suffix, so reverse-lex = recent),
-    # capped at SOLUTIONS_PER_DOMAIN to bound output. Path + title only — Read the
-    # file for the body, mirroring the previous TOC-not-excerpt philosophy.
-    if [ -d "$SOLUTIONS_DIR" ]; then
-      TAG_PATTERN=$(domain_tag_pattern "$DOMAIN")
-      # Match the domain's tag on each file's `tags:` frontmatter line. The pattern
-      # carries its own word boundaries (see domain_tag_pattern), so no grep -w.
-      # _manifests/ files have no `tags:` line and are filtered out anyway.
-      # Sort by the trailing YYYY-MM-DD date in each filename so newer solutions
-      # surface first regardless of alphabetical slug order. Files whose name does
-      # not match the date pattern are dropped by cut (acceptable; all solution
-      # files follow the <slug>-YYYY-MM-DD.md convention).
-      MATCHES=$(grep -rl --include='*.md' -E "^tags:.*${TAG_PATTERN}" \
-        "$SOLUTIONS_DIR" 2>/dev/null | grep -v '/_manifests/' \
-        | sed "s|.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)\.md\$|\1 &|" \
-        | sort -r \
-        | cut -d' ' -f2- \
-        | head -n "$SOLUTIONS_PER_DOMAIN" || true)
-      # Promote solutions whose applies_to: globs match the file being edited —
-      # they are the most contextually relevant and should surface within the cap.
-      # FILE_PATH may be absolute; strip PROJECT_ROOT prefix for relative matching
-      # against the repo-relative globs stored in applies_to:. In bash 3.2, * in
-      # [[ ]] patterns matches any string including /, so ** patterns work for
-      # nested paths without needing shopt -s globstar.
-      if [ -n "$MATCHES" ]; then
-        _FILE_REL="${FILE_PATH#$PROJECT_ROOT/}"
-        _NL=$'\n'
-        _PRIORITY=""
-        _FALLBACK=""
-        while IFS= read -r _sol; do
-          [ -n "$_sol" ] || continue
-          # Extract quoted glob patterns from the applies_to: YAML list.
-          _PATS=$(grep -m1 '^applies_to:' "$_sol" 2>/dev/null \
-            | grep -oE '"[^"]+"' | tr -d '"' || true)
-          _MATCHED=false
-          if [ -n "$_PATS" ]; then
-            while IFS= read -r _pat; do
-              [ -n "$_pat" ] || continue
-              # shellcheck disable=SC2254
-              [[ "$_FILE_REL" == $_pat ]] && { _MATCHED=true; break; }
-            done <<< "$_PATS"
-          fi
-          if [ "$_MATCHED" = true ]; then
-            _PRIORITY="${_PRIORITY:+$_PRIORITY$_NL}$_sol"
-          else
-            _FALLBACK="${_FALLBACK:+$_FALLBACK$_NL}$_sol"
-          fi
-        done <<< "$MATCHES"
-        MATCHES=$(printf '%s\n%s\n' "$_PRIORITY" "$_FALLBACK" \
-          | grep -v '^$' | head -n "$SOLUTIONS_PER_DOMAIN")
-      fi
-      if [ -n "$MATCHES" ]; then
-        printf '\n[SOLUTIONS — %s (Read the file for the full body)]\n' "$DOMAIN" >> "$TMPFILE"
-        while IFS= read -r SOL_FILE; do
-          [ -n "$SOL_FILE" ] || continue
-          SOL_REL="${SOL_FILE#"$PROJECT_ROOT"/}"
-          SOL_TITLE=$(grep -m1 -E '^title:' "$SOL_FILE" 2>/dev/null \
-            | sed -E 's/^title:[[:space:]]*//; s/^"//; s/"$//' || true)
-          printf -- '- %s — %s\n' "$SOL_REL" "${SOL_TITLE:-untitled}" >> "$TMPFILE"
-        done <<< "$MATCHES"
-      fi
+    # Inject the most relevant docs/solutions/ files for this domain (path + title only —
+    # Read the file for the body). Source is the DB by default, with a markdown fallback.
+    # Matching rule (both sources): a solution matches a domain if the domain's tag is in
+    # the solution's `tags`, newest-first by the YYYY-MM-DD in the filename, capped at
+    # SOLUTIONS_PER_DOMAIN. Solutions whose applies_to: globs match the edited file are
+    # promoted ahead of the rest. See solutions_from_db / solutions_from_markdown.
+    TAG_PATTERN=$(domain_tag_pattern "$DOMAIN")
+    # DB path when enabled AND the query succeeds (exit 0 — even if empty, which means
+    # "legitimately no refs"). Otherwise (markdown mode OR psql failure) use the mirror.
+    if [ "${PATTERN_INJECT_SOURCE:-db}" != "markdown" ] && SOLUTION_LINES=$(solutions_from_db "$DOMAIN"); then
+      :
+    else
+      SOLUTION_LINES=$(solutions_from_markdown "$DOMAIN" "$TAG_PATTERN")
+    fi
+    if [ -n "$SOLUTION_LINES" ]; then
+      printf '\n[SOLUTIONS — %s (Read the file for the full body)]\n' "$DOMAIN" >> "$TMPFILE"
+      while IFS=$'\t' read -r rel title; do
+        [ -n "$rel" ] || continue
+        printf -- '- docs/solutions/%s — %s\n' "$rel" "${title:-untitled}" >> "$TMPFILE"
+      done <<< "$SOLUTION_LINES"
     fi
 
     # Record this domain as injected so later edits in the session get the one-line pointer.

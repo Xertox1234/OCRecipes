@@ -35,8 +35,12 @@ CREATE TABLE IF NOT EXISTS solutions (
   tsv             tsvector GENERATED ALWAYS AS
                     (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(body,''))) STORED,
   warnings        text[] NOT NULL DEFAULT '{}',
+  extra_fields    jsonb NOT NULL DEFAULT '{}'::jsonb,
   ingested_at     timestamptz NOT NULL DEFAULT now()
 );
+
+-- SP2: ensure extra_fields exists on a pre-SP2 table (no-op on a fresh CREATE above).
+ALTER TABLE solutions ADD COLUMN IF NOT EXISTS extra_fields jsonb NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE INDEX IF NOT EXISTS solutions_embedding_hnsw ON solutions USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS solutions_tsv_gin       ON solutions USING gin (tsv);

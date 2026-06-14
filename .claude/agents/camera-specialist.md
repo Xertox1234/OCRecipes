@@ -225,5 +225,6 @@ When reviewing or writing camera code, verify:
 - `docs/legacy-patterns/hooks.md` - TanStack Query patterns for upload mutations
 - `docs/legacy-patterns/security.md` - File upload magic-byte validation on server
 - Project memory: VisionCamera v5 (pinned 5.0.11) since PR #340; all OCR is snapshot-based (PR #341)
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
 **VisionCamera v5 lifecycle checks (2026-06-10 audit):** prefer declarative session props (`torchMode`) over imperative controller calls — the framework re-applies them across session restarts (`isActive` false→true), where an imperative effect leaves hardware state stale; gate `torchMode` on `device.hasTorch` (the lib's torch updater is an uncaught floating promise on torch-less devices; `undefined` skips it). v5 has NO `Camera.getCameraPermissionStatus()` — persisted permission state comes from `useCameraPermission().canRequestPermission`.

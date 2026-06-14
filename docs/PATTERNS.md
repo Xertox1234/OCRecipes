@@ -2,15 +2,16 @@
 
 This document is the entry point for OCRecipes' codified knowledge. Follow these patterns and conventions for consistency across features.
 
-As of the Phase 2 pattern-codification refactor (2026-05), the monolithic `docs/patterns/*.md` files have been decomposed into one-file-per-solution under `docs/solutions/`. Knowledge now lives as small, frontmatter-indexed files the write-time hook can grep and inject selectively.
+As of the Phase 2 pattern-codification refactor (2026-05), the monolithic `docs/patterns/*.md` files have been decomposed into one-file-per-solution. As of SP2 (2026-06), the canonical store for solutions is the **`ocrecipes_solutions` Postgres DB**, which supports semantic and structured search via the MCP server (`search_solutions`, `get_solution`, `related_solutions`). New solutions are authored with `/codify` (which writes the DB via `npm run solutions:db:add`). The `docs/solutions/*.md` tree is a regenerated read-only mirror — gitignored, for offline/grep fallback only.
 
 ## Where knowledge lives
 
-| Source                      | What it holds                                                                                                                                                        |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `docs/solutions/`           | One file per solution — bug post-mortems and reusable knowledge. **Primary source. Start here.**                                                                     |
-| `docs/rules/<domain>.md`    | Binding, short "always do X / never do Y" rules per domain. Auto-injected at write time.                                                                             |
-| `docs/legacy-patterns/*.md` | The 16 retired monolithic pattern files. Frozen archive — kept because audits and specialist agents deep-link to specific named sections. Not a codification target. |
+| Source                       | What it holds                                                                                                                                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`ocrecipes_solutions` DB** | Canonical solutions store — bug post-mortems and reusable knowledge. Query via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. **Start here.** |
+| `docs/solutions/*.md`        | Regenerated read-only mirror of the DB. Gitignored. Fallback for offline/grep use only — never the source of truth. Author new solutions via `npm run solutions:db:add`.     |
+| `docs/rules/<domain>.md`     | Binding, short "always do X / never do Y" rules per domain. Auto-injected at write time (from disk).                                                                         |
+| `docs/legacy-patterns/*.md`  | The 16 retired monolithic pattern files. Frozen archive — kept because audits and specialist agents deep-link to specific named sections. Not a codification target.         |
 
 ## Solution categories (`docs/solutions/`)
 
@@ -58,5 +59,5 @@ Each retired `docs/patterns/<domain>.md` monolith maps to the binding `docs/rule
 | Agents        | _(no rules file — see solutions)_       | [legacy-patterns/agents.md](legacy-patterns/agents.md)               |
 | Documentation | _(no rules file — see solutions)_       | [legacy-patterns/documentation.md](legacy-patterns/documentation.md) |
 
-**Before implementing:** Check `docs/solutions/` (by symptom or category) and the relevant `docs/rules/<domain>.md`.
-**After implementing:** Codify new reusable knowledge as a solution file — see `.claude/skills/codify/SKILL.md`.
+**Before implementing:** Query the solutions DB via `search_solutions` (or grep `docs/solutions/` if offline) and check the relevant `docs/rules/<domain>.md`.
+**After implementing:** Codify new reusable knowledge via `/codify` (`npm run solutions:db:add`) — see `.claude/skills/codify/SKILL.md`.

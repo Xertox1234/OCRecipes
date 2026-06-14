@@ -231,6 +231,7 @@ if (state.status === "success") {
 9. **`if (!res.ok)` after `await apiRequest(...)`** — `apiRequest` throws on non-2xx via `throwIfResNotOk`, so the guard is unreachable dead code. Wrap the call in `try/catch` instead. (See `docs/legacy-patterns/client-state.md` § "apiRequest Throws on Non-2xx".)
 10. **`indexOf("## Heading")` for markdown anchor matching** — Matches mid-sentence prose mentions, not just real headings. Use a line-anchored matcher (`startsWith(heading + "\n")` or `\n${heading}\n`) or a multiline regex (`/^## Heading$/m`). See `docs/legacy-patterns/typescript.md` "Line-Anchored Heading Matching in Markdown Manipulation."
 11. **Bypass / exemption Set keyed off display strings** — When code in two places agrees on "the same item" via human-readable text (reason messages, labels), the bypass silently breaks the next time someone edits the wording. Promote the identifier to a stable union/enum key and look up via that key. See `docs/legacy-patterns/typescript.md` "Stable Identifier Keys for Bypass / Exemption Sets."
+12. **`z.array(z.string()).catch()` over a YAML / author-typed list** — one scalar element (YAML coerces `404`→number, bare `null`→null, `true`/`false`→bool) fails the **whole** array, and `.catch()` then silently drops it to empty. Coerce elements: `z.array(z.union([z.string(), z.number(), z.boolean(), z.null()]).transform(String))`. See `docs/solutions/logic-errors/zod-array-string-drops-yaml-scalar-tags-2026-06-14.md`.
 
 ---
 

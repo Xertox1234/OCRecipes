@@ -157,6 +157,33 @@ npm run db:push
 
 > **Note:** The `pg_trgm` extension is required for GIN trigram indexes used by recipe search. It must be enabled before `db:push` or the index creation will fail.
 
+### 4. Solutions DB Setup
+
+The inject hook and MCP server use a separate `ocrecipes_solutions` Postgres database for the codified knowledge base. This is optional — if absent, the hook falls back to the gitignored `docs/solutions/*.md` mirror automatically (`PATTERN_INJECT_SOURCE=markdown` forces the fallback explicitly).
+
+```bash
+# First-time setup
+createdb ocrecipes_solutions
+npm run solutions:db:init    # create schema + pgvector extension
+npm run solutions:db:ingest  # populate from docs/solutions/*.md mirror
+```
+
+Two env vars are needed for the inject hook and MCP server (add to your `.env`):
+
+```bash
+# Owner/read-write URL (used by solutions:db:ingest, :add, :init, :export, :parity).
+# No user → connects as the DB owner, which has full write access.
+SOLUTIONS_DATABASE_URL=postgresql://localhost/ocrecipes_solutions
+
+# SELECT-only role used by the MCP server and inject hook. The role-bearing URL is
+# REQUIRED — a userless URL would connect as the owner and defeat the read-only boundary.
+SOLUTIONS_DB_READONLY_URL=postgresql://solutions_ro:solutions_ro@localhost/ocrecipes_solutions
+```
+
+The two URLs are NOT interchangeable: ingest/export/add/parity use the owner URL (`SOLUTIONS_DATABASE_URL`); the MCP server and inject hook use the SELECT-only `solutions_ro` role (`SOLUTIONS_DB_READONLY_URL`).
+
+If `SOLUTIONS_DB_READONLY_URL` is absent from the environment, the inject hook and MCP server degrade gracefully to the markdown mirror — no setup is required to develop locally.
+
 ## Port Configuration
 
 | Service         | Port | Notes                      |
