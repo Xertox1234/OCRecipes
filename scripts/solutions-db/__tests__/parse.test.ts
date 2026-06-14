@@ -184,3 +184,34 @@ B.
     expect(r.extraFields).toEqual({});
   });
 });
+
+describe("parseSolution — numeric tags are coerced, not dropped", () => {
+  const raw = `---
+title: Graceful 404 handling
+track: knowledge
+category: design-patterns
+tags: [api, fetch, 404, error-handling]
+symptoms: [503, "raw fetch returns ok:false"]
+---
+
+## When this applies
+Body.
+`;
+  it("coerces numeric tags to strings (does not drop the array)", () => {
+    const r = parseSolution(
+      raw,
+      "design-patterns/graceful-404-2026-05-13.md",
+      "2026-05-13",
+    );
+    expect(r.tags).toEqual(["api", "fetch", "404", "error-handling"]);
+    expect(r.warnings).not.toContain("tags missing");
+  });
+  it("coerces numeric symptoms to strings", () => {
+    const r = parseSolution(
+      raw,
+      "design-patterns/graceful-404-2026-05-13.md",
+      "2026-05-13",
+    );
+    expect(r.symptoms).toEqual(["503", "raw fetch returns ok:false"]);
+  });
+});
