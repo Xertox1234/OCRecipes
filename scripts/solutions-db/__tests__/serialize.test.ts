@@ -48,4 +48,18 @@ describe("serializeSolution round-trip", () => {
       computeContentHash(p),
     );
   });
+
+  it("emits INLINE flow-style tags (grep-readable for the markdown fallback)", () => {
+    const md = serializeSolution({ ...proj, tags: ["api", "404"] });
+    // must be `tags: [api, '404']` on one line — NOT block `tags:\n  - api`
+    expect(md).toMatch(/^tags: \[/m);
+    expect(md).not.toMatch(/^tags:\s*$/m);
+  });
+
+  it("round-trips numeric-coerced tags (the quoted '404' case)", () => {
+    const p = { ...proj, tags: ["api", "404"] };
+    expect(roundTripHash(p, "logic-errors/x-2026-06-12.md")).toBe(
+      computeContentHash(p),
+    );
+  });
 });

@@ -21,5 +21,11 @@ export function serializeSolution(p: ProjectionInput): string {
   fm.created = p.created;
   if (p.lastUpdated) fm.last_updated = p.lastUpdated;
   for (const k of Object.keys(p.extraFields).sort()) fm[k] = p.extraFields[k];
-  return matter.stringify("\n" + p.body.trim() + "\n", fm);
+  // flowLevel:1 → block mapping + INLINE flow arrays (tags: [a, b]) so the
+  // markdown-fallback grep (`^tags:.*pat`) stays readable. gray-matter forwards
+  // this to js-yaml.dump; the option isn't in its public type, hence the cast.
+  const opts = { flowLevel: 1 } as unknown as Parameters<
+    typeof matter.stringify
+  >[2];
+  return matter.stringify("\n" + p.body.trim() + "\n", fm, opts);
 }
