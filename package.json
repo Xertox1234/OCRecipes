@@ -45,6 +45,7 @@
     "ios": "expo run:ios",
     "seed:recipes": "tsx server/scripts/seed-recipes.ts",
     "solutions:db:init": "psql \"$SOLUTIONS_DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/solutions-db/schema.sql",
+    "solutions:db:add": "tsx scripts/solutions-db/add.ts",
     "solutions:db:ingest": "tsx scripts/solutions-db/ingest.ts",
     "solutions:db:dedup": "tsx scripts/solutions-db/dedup-report.ts",
     "solutions:db:check": "tsx scripts/solutions-db/integration-check.ts",
