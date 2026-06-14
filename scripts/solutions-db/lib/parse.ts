@@ -67,13 +67,21 @@ const FrontmatterSchema = z
     track: z.enum(["bug", "knowledge"]).optional().catch(undefined),
     category: z.string().optional().catch(undefined),
     tags: z
-      .array(z.union([z.string(), z.number()]).transform((v) => String(v)))
+      .array(
+        z
+          .union([z.string(), z.number(), z.boolean(), z.null()])
+          .transform((v) => String(v)),
+      )
       .optional()
       .catch(undefined),
     module: z.string().optional().catch(undefined),
     applies_to: z.array(z.string()).optional().catch(undefined),
     symptoms: z
-      .array(z.union([z.string(), z.number()]).transform((v) => String(v)))
+      .array(
+        z
+          .union([z.string(), z.number(), z.boolean(), z.null()])
+          .transform((v) => String(v)),
+      )
       .optional()
       .catch(undefined),
     created: z.union([z.string(), z.date()]).optional().catch(undefined),

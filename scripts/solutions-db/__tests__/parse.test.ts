@@ -214,4 +214,26 @@ Body.
     );
     expect(r.symptoms).toEqual(["503", "raw fetch returns ok:false"]);
   });
+
+  it("coerces YAML null/boolean scalar tags to strings (e.g. a `null` tag)", () => {
+    // Bare `null` is a YAML null and `true` a YAML boolean — not strings. Without
+    // z.null()/z.boolean() in the union, one such element drops the WHOLE tags array.
+    const withScalars = `---
+title: ADD COLUMN default leaves rows NULL
+track: bug
+category: runtime-errors
+tags: [drizzle, migration, default, null, true]
+---
+
+## Problem
+Body.
+`;
+    const r = parseSolution(
+      withScalars,
+      "runtime-errors/add-column-2026-05-13.md",
+      "2026-05-13",
+    );
+    expect(r.tags).toEqual(["drizzle", "migration", "default", "null", "true"]);
+    expect(r.warnings).not.toContain("tags missing");
+  });
 });
