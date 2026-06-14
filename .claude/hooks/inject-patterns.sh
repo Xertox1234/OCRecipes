@@ -107,7 +107,9 @@ solutions_from_markdown() {
     local rel title
     rel="${sol_file#"$PROJECT_ROOT"/}"
     rel="${rel#docs/solutions/}"
-    title=$(grep -m1 -E '^title:' "$sol_file" 2>/dev/null | sed -E 's/^title:[[:space:]]*//; s/^"//; s/"$//' || true)
+    # Strip a YAML scalar wrapper: double-quoted, OR single-quoted (with '' → ' unescape),
+    # so single-quoted titles match the DB path's properly-parsed title (Gate C equivalence).
+    title=$(grep -m1 -E '^title:' "$sol_file" 2>/dev/null | sed -E "s/^title:[[:space:]]*//; s/^\"//; s/\"\$//; s/^'//; s/'\$//; s/''/'/g" || true)
     printf '%s\t%s\n' "$rel" "${title:-untitled}"
   done <<< "$matches"
 }
