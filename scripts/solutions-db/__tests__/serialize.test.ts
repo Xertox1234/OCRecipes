@@ -62,4 +62,19 @@ describe("serializeSolution round-trip", () => {
       computeContentHash(p),
     );
   });
+
+  it("round-trips with all optional fields empty/null (omit path)", () => {
+    const p = {
+      ...proj,
+      module: null,
+      severity: null,
+      lastUpdated: null,
+      symptoms: [],
+      appliesTo: [],
+      extraFields: {},
+    };
+    expect(roundTripHash(p, "logic-errors/x-2026-06-12.md")).toBe(
+      computeContentHash(p),
+    );
+  });
 });

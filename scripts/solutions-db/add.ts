@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { readFileSync, writeFileSync, statSync } from "node:fs";
-import { join, relative, isAbsolute } from "node:path";
+import { join, relative, isAbsolute, resolve } from "node:path";
 import { createPool, toVectorLiteral } from "./lib/db";
 import { SOLUTIONS_ROOT } from "./lib/files";
 import { parseSolution } from "./lib/parse";
@@ -73,6 +73,10 @@ async function main() {
       [sourcePath],
     )
   ).rows[0];
+  if (!resolve(abs).startsWith(resolve(SOLUTIONS_ROOT) + "/")) {
+    console.error(`refusing to write outside solutions root: ${sourcePath}`);
+    process.exit(1);
+  }
   writeFileSync(
     abs,
     serializeSolution({

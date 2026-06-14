@@ -144,10 +144,15 @@ const KNOWN_FM_KEYS = new Set([
 ]);
 const VARIANT_FM_KEYS = new Set(["date", "updated"]);
 
-function sortedKeys(o: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const k of Object.keys(o).sort()) out[k] = o[k];
-  return out;
+function deepSortKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(deepSortKeys);
+  if (v && typeof v === "object") {
+    const src = v as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(src).sort()) out[k] = deepSortKeys(src[k]);
+    return out;
+  }
+  return v;
 }
 
 /** Deterministic, serialization-independent projection. Hash this, not the raw bytes. */
@@ -163,7 +168,7 @@ export function canonicalProjection(p: ProjectionInput): string {
     applies_to: p.appliesTo,
     created: p.created,
     last_updated: p.lastUpdated ?? null,
-    extra: sortedKeys(p.extraFields),
+    extra: deepSortKeys(p.extraFields),
   };
   return JSON.stringify(fields) + "\n" + p.body.trim();
 }

@@ -171,12 +171,16 @@ npm run solutions:db:ingest  # populate from docs/solutions/*.md mirror
 Two env vars are needed for the inject hook and MCP server (add to your `.env`):
 
 ```bash
-# Read-write (used by solutions:db:add, solutions:db:ingest, solutions:db:init)
+# Owner/read-write URL (used by solutions:db:ingest, :add, :init, :export, :parity).
+# No user → connects as the DB owner, which has full write access.
 SOLUTIONS_DATABASE_URL=postgresql://localhost/ocrecipes_solutions
 
-# Read-only URL exposed to the MCP server and inject hook
-SOLUTIONS_DB_READONLY_URL=postgresql://localhost/ocrecipes_solutions
+# SELECT-only role used by the MCP server and inject hook. The role-bearing URL is
+# REQUIRED — a userless URL would connect as the owner and defeat the read-only boundary.
+SOLUTIONS_DB_READONLY_URL=postgresql://solutions_ro:solutions_ro@localhost/ocrecipes_solutions
 ```
+
+The two URLs are NOT interchangeable: ingest/export/add/parity use the owner URL (`SOLUTIONS_DATABASE_URL`); the MCP server and inject hook use the SELECT-only `solutions_ro` role (`SOLUTIONS_DB_READONLY_URL`).
 
 If `SOLUTIONS_DB_READONLY_URL` is absent from the environment, the inject hook and MCP server degrade gracefully to the markdown mirror — no setup is required to develop locally.
 

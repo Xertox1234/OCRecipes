@@ -91,7 +91,13 @@ solutions_from_markdown() {
   while IFS= read -r sol; do
     [ -n "$sol" ] || continue
     local pats matched=false
-    pats=$(grep -m1 '^applies_to:' "$sol" 2>/dev/null | grep -oE '"[^"]+"' | tr -d '"' || true)
+    # applies_to is inline flow style (mirror is canonical): strip `applies_to: [ ... ]`,
+    # split on commas, trim surrounding spaces and optional quotes. Tolerates quoted too.
+    pats=$(grep -m1 '^applies_to:' "$sol" 2>/dev/null \
+      | sed -E 's/^applies_to:[[:space:]]*\[?//; s/\][[:space:]]*$//' \
+      | tr ',' '\n' \
+      | sed -E "s/^[[:space:]]*[\"']?//; s/[\"']?[[:space:]]*\$//" \
+      | grep -v '^[[:space:]]*$' || true)
     if [ -n "$pats" ]; then
       while IFS= read -r pat; do
         [ -n "$pat" ] || continue

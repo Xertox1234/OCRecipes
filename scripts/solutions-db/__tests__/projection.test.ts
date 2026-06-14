@@ -43,4 +43,9 @@ describe("canonicalProjection / computeContentHash", () => {
   it("returns a 64-char hex digest", () => {
     expect(computeContentHash(base)).toMatch(/^[a-f0-9]{64}$/);
   });
+  it("deep-sorts nested extra_fields object keys (jsonb reorder safety)", () => {
+    const a = { ...base, extraFields: { meta: { b: 2, a: 1 } } };
+    const b = { ...base, extraFields: { meta: { a: 1, b: 2 } } };
+    expect(computeContentHash(a)).toBe(computeContentHash(b));
+  });
 });

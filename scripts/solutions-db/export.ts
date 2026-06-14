@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { writeFileSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { createPool } from "./lib/db";
 import { SOLUTIONS_ROOT } from "./lib/files";
 import { serializeSolution } from "./lib/serialize";
@@ -76,6 +76,12 @@ async function main() {
   for (const r of rows) {
     const md = serializeSolution(rowToProjection(r));
     const abs = join(SOLUTIONS_ROOT, r.source_path as string);
+    if (!resolve(abs).startsWith(resolve(SOLUTIONS_ROOT) + "/")) {
+      console.error(
+        `refusing to write outside solutions root: ${r.source_path}`,
+      );
+      continue;
+    }
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, md, "utf8");
   }
