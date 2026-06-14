@@ -284,6 +284,7 @@ When reviewing or writing AI service code, verify:
 - [ ] `checkAiConfigured()` guard at start of route handler
 - [ ] No user input directly interpolated into prompts without sanitization
 - [ ] DB-stored user content (community-recipe ingredient/instruction text, URL-imported recipes, pantry items) is sanitized at **prompt-construction** time — the write path (`recipe-normalization.ts`, storage inserts) does NOT sanitize, so the prompt is the only gate. Especially for enrichment whose output is persisted and shown to other users (stored injection, e.g. `canonical-enrichment.ts`). Don't assume server-sourced rows are clean.
+- [ ] Batch embedding / vector calls map results by the response **`index`**, not array position — OpenAI's `data` is not order-guaranteed, so positional mapping silently attaches vectors to the wrong rows (invisible to any content/parity gate). See `docs/solutions/logic-errors/openai-batch-embeddings-map-by-response-index-2026-06-14.md`
 
 ### Model & Cost
 

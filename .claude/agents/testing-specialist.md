@@ -274,6 +274,7 @@ describe("ServiceName", () => {
 - [ ] No `as never` casts (use typed factories)
 - [ ] Assertions are specific (`toEqual` over `toBeTruthy`)
 - [ ] `beforeEach` clears mocks with `vi.clearAllMocks()`
+- [ ] A correctness gate's two sides are **independent readers**, not two derivations of the same function — a parity/round-trip check over one shared parser/serializer is blind to that function's own bugs; treat any residual diff from an independent-reader gate as a finding. See `docs/solutions/conventions/gate-over-two-derivations-of-same-function-is-blind-2026-06-14.md`
 
 ### Testability
 
