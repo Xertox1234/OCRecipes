@@ -465,6 +465,7 @@ Audit M10 2026-04-26.
 - `server/routes.ts` — registration order (public API first, internal routes after)
 - `server/routes/_helpers.ts` — `handleRouteError`, `sendError`, `checkPremiumFeature`, `ipKeyGenerator`
 - `server/lib/logger.ts` — pino instance, `createServiceLogger`, `toError`
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
 ## Dead-Code / Orphaned-Export Verification
 

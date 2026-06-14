@@ -469,6 +469,7 @@ Reference: `shared/constants/allergens.ts` — `keywordPatternCache`.
 - `server/middleware/auth.ts` — `tokenVersionCache` (in-memory TTL Map reference)
 - `client/components/coach/CoachChat.tsx` — streaming-UI memoization (`handleChangeText`, `micAdornment`)
 - `client/screens/meal-plan/RecipeBrowserScreen.tsx` — `favouriteIdSet` subscription-lifting example
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
 <!-- LSP-AGENT-BLOCK:START -->
 

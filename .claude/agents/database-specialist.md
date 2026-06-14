@@ -430,6 +430,7 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 - `docs/legacy-patterns/database.md` - Full database pattern documentation
 - `docs/legacy-patterns/security.md` - IDOR, sensitive columns, ownership checks
 - `docs/legacy-patterns/architecture.md` - Service/storage layer boundaries
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
 <!-- LSP-AGENT-BLOCK:START -->
 

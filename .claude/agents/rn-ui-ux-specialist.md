@@ -300,6 +300,7 @@ When reviewing or writing UI code, verify:
 - `docs/legacy-patterns/performance.md` - Memoization, FlatList, delay capping
 - `docs/legacy-patterns/design-system.md` - Colors, opacity, semantic values
 - `docs/legacy-patterns/hooks.md` - TanStack Query patterns
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
 ### Decorative Badges and Status Indicators
 

@@ -59,9 +59,9 @@ Check whether this todo is eligible for execution:
 
 For non-lightweight todos, **extract the affected source files** from the todo's Implementation Notes and Acceptance Criteria (any file references — fully-qualified paths (`server/routes/cooking.ts`), bare filenames (`` `cooking.ts` ``), and paths with line ranges (`path/to/file.ts:123-145`); extract paths exactly as they appear). Every step below keys off this list.
 
-### Step 3a — Verified-solution read-back (`docs/solutions/`)
+### Step 3a — Verified-solution read-back (solutions DB)
 
-The codify step (Step 9) writes verified fixes and conventions into `docs/solutions/`; this step reads them back **first — before the researcher** — so you reuse a known solution instead of re-deriving it, and on a tight match skip the researcher fan-out entirely. Nearly every solution declares an `applies_to:` glob list — use it as the primary match key against the affected files.
+Codified knowledge lives in the **solutions DB** (`ocrecipes_solutions`); the `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth). The codify step (Step 9) authors new solutions via `npm run solutions:db:add`; this step reads them back **first — before the researcher** via MCP tools `search_solutions` (semantic), `get_solution`, and `related_solutions` — so you reuse a known solution instead of re-deriving it, and on a tight match skip the researcher fan-out entirely. When the MCP server is unavailable, fall back to grepping the `docs/solutions/` mirror. Nearly every solution declares an `applies_to:` glob list — use it as the primary match key against the affected files.
 
 1. **Stage 1 — candidate set (cheap grep).** For each affected file, derive its two-segment directory prefix (`server/storage/cookbooks.ts` → `server/storage`; `client/hooks/useFoo.ts` → `client/hooks`) and its top segment (`server`, `client`, `shared`). Union **two** greps per affected file over `^applies_to:` lines, excluding `_manifests/`:
 
@@ -338,7 +338,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 **Codify if any one is true:**
 
-- The solution required a workaround or constraint not currently captured in `docs/solutions/` or `docs/rules/`
+- The solution required a workaround or constraint not currently captured in the solutions DB (`ocrecipes_solutions`) or `docs/rules/`
 - The implementation revealed a library gotcha or platform-specific behavior
 - `review_output` contained a CRITICAL or WARNING finding that reveals a reusable rule
 
@@ -349,7 +349,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 **If codifying:**
 
-**Where the artifacts live.** Solution files (`docs/solutions/`) are gitignored, so they have no branch to ride and cannot be committed. They live in the **main checkout** — read the literal absolute path from the spawn prompt's `Main checkout:` line — so `git worktree remove` at orchestrator Phase 5 does not destroy them. Agent files (`.claude/agents/*.md`) and rules files (`docs/rules/*.md`) are tracked and live in the worktree like any other code change, riding the todo branch.
+**Where the artifacts live.** Codified knowledge lives in the **solutions DB** (`ocrecipes_solutions`) — the canonical store. The `docs/solutions/*.md` tree is a regenerated read-only mirror (gitignored, fallback only — never the source of truth). New solutions are authored via `npm run solutions:db:add` (see `/codify` skill) targeting the DB, not by writing markdown files directly. Agent files (`.claude/agents/*.md`) and rules files (`docs/rules/*.md`) are tracked and live in the worktree like any other code change, riding the todo branch.
 
 > **Important:** Shell state does not persist between Bash tool calls — each call runs in a fresh shell, so a `MAIN_CHECKOUT=...` export in one call is empty in the next. Wherever `$MAIN_CHECKOUT` appears in the steps below, substitute the literal path you read from the spawn prompt (e.g. `/Users/yourname/projects/OCRecipes/docs/solutions/...`). Do not rely on a shell variable or re-derive the path with `git rev-parse` from inside the worktree — the orchestrator already captured it.
 
@@ -413,7 +413,7 @@ On any check failure, **delete the file** (`rm "$MAIN_CHECKOUT/docs/solutions/<.
 
 Skip 6b entirely if no solution file was created or updated (codify only touched agent/rules files).
 
-7. **Solutions persist by location, not by commit.** A solution file lives at `"$MAIN_CHECKOUT/docs/solutions/..."` and `docs/solutions/` is gitignored — `git add` would silently no-op on it. Do **not** stage the solution file. Only tracked codification targets (`.claude/agents/*.md`, `docs/rules/*.md`) get staged and committed:
+7. **Solutions persist in the DB, not by commit.** New solutions are written to the `ocrecipes_solutions` DB (the canonical store) via `npm run solutions:db:add` — the `docs/solutions/` mirror is regenerated separately and is gitignored. Do **not** attempt to stage any `docs/solutions/` file (`git add` would silently no-op on it). Only tracked codification targets (`.claude/agents/*.md`, `docs/rules/*.md`) get staged and committed:
 
    ```bash
    # Stage only tracked codification targets — never the solution file.
@@ -430,7 +430,7 @@ Skip 6b entirely if no solution file was created or updated (codify only touched
    fi
    ```
 
-   If only a solution file was codified (no tracked targets), there is no commit — the codification persists by living in `$MAIN_CHECKOUT/docs/solutions/...` outside the worktree's lifecycle. Skipping the empty commit avoids a misleading "nothing to commit" failure.
+   If only a solution was codified to the DB (no tracked agent/rules targets), there is no commit — the codification persists in `ocrecipes_solutions` independently of the worktree's lifecycle. Skipping the empty commit avoids a misleading "nothing to commit" failure.
 
    If `kimi-write` exits non-zero for any target, log "codification skipped — kimi-write failed" for that target and continue to Step 10. Codification failure is non-blocking.
 

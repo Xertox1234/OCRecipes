@@ -323,7 +323,7 @@ describe("ServiceName", () => {
 
 - `server/__tests__/factories/` - All typed mock factories
 - `test/setup.ts` - Global Vitest setup: `vi.clearAllMocks()` in `beforeEach`, `JWT_SECRET` default, `__DEV__` global, production-DB guard. Wired via `setupFiles` in `vitest.config.ts`.
-- `docs/rules/testing.md` + `docs/solutions/` - Current testing rules and codified solutions (the live knowledge base)
+- `docs/rules/testing.md` — current testing rules (injected from disk); codified solutions live in the **solutions DB** (`ocrecipes_solutions`) — query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 - `docs/legacy-patterns/testing.md` - Frozen archive of retired testing patterns (kept for deep-linked named sections only)
 - `.husky/pre-commit` - Pre-commit hook pipeline (`lint-staged` only)
 - `eslint.config.js` - ESLint rules including `as never` ban

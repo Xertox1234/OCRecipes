@@ -234,3 +234,4 @@ The barcode verification pipeline builds a verified product database intended to
 - `server/routes/public-api.ts` — Verified product public API
 - `server/lib/ai-safety.ts` — Dangerous dietary advice detection
 - `shared/schema.ts` — nutritionCache, micronutrientCache tables
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).

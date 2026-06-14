@@ -157,6 +157,29 @@ npm run db:push
 
 > **Note:** The `pg_trgm` extension is required for GIN trigram indexes used by recipe search. It must be enabled before `db:push` or the index creation will fail.
 
+### 4. Solutions DB Setup
+
+The inject hook and MCP server use a separate `ocrecipes_solutions` Postgres database for the codified knowledge base. This is optional — if absent, the hook falls back to the gitignored `docs/solutions/*.md` mirror automatically (`PATTERN_INJECT_SOURCE=markdown` forces the fallback explicitly).
+
+```bash
+# First-time setup
+createdb ocrecipes_solutions
+npm run solutions:db:init    # create schema + pgvector extension
+npm run solutions:db:ingest  # populate from docs/solutions/*.md mirror
+```
+
+Two env vars are needed for the inject hook and MCP server (add to your `.env`):
+
+```bash
+# Read-write (used by solutions:db:add, solutions:db:ingest, solutions:db:init)
+SOLUTIONS_DATABASE_URL=postgresql://localhost/ocrecipes_solutions
+
+# Read-only URL exposed to the MCP server and inject hook
+SOLUTIONS_DB_READONLY_URL=postgresql://localhost/ocrecipes_solutions
+```
+
+If `SOLUTIONS_DB_READONLY_URL` is absent from the environment, the inject hook and MCP server degrade gracefully to the markdown mirror — no setup is required to develop locally.
+
 ## Port Configuration
 
 | Service         | Port | Notes                      |

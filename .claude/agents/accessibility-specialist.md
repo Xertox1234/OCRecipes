@@ -347,6 +347,7 @@ The script checks all `TextInput`s for `accessibilityLabel` but does not verify 
 - `client/constants/theme.ts` — WCAG contrast ratio comments to update after palette changes
 - `scripts/check-accessibility.js` — pre-commit script (with documented gaps above)
 - WCAG 2.1 Level AA: 1.4.3 (contrast ≥ 4.5:1), 2.5.5 (touch targets ≥ 44×44pt), 4.1.2 (role/state/name)
+- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
 **Conditional status nodes (offline banners, inline error notes, async status text):** Any node that appears/disappears based on a runtime state transition MUST have a paired `useEffect` that calls `AccessibilityInfo.announceForAccessibility` when the condition becomes true. Use an `isFirstRender` ref to suppress the mount-time fire. Do NOT add `accessibilityLiveRegion` to the same node — pairing both causes double TalkBack announcements. See `docs/solutions/best-practices/announceForAccessibility-isFirstRender-conditional-status-2026-06-12.md`.
 
