@@ -13,6 +13,21 @@ export type Category =
   | "design-patterns"
   | "best-practices";
 
+export interface ProjectionInput {
+  title: string;
+  track: Track;
+  category: Category;
+  module: string | null;
+  severity: string | null;
+  tags: string[];
+  symptoms: string[];
+  appliesTo: string[];
+  created: string;
+  lastUpdated: string | null;
+  extraFields: Record<string, unknown>;
+  body: string;
+}
+
 export interface ParsedSolution {
   sourcePath: string;
   slug: string;
@@ -30,6 +45,7 @@ export interface ParsedSolution {
   sections: Record<string, string>;
   contentHash: string;
   warnings: string[];
+  extraFields: Record<string, unknown>;
 }
 
 const BUG_CATS = new Set<Category>([
@@ -96,8 +112,32 @@ export function splitSections(body: string): Record<string, string> {
   return out;
 }
 
-export function computeContentHash(raw: string): string {
-  return createHash("sha256").update(raw.trim()).digest("hex");
+function sortedKeys(o: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(o).sort()) out[k] = o[k];
+  return out;
+}
+
+/** Deterministic, serialization-independent projection. Hash this, not the raw bytes. */
+export function canonicalProjection(p: ProjectionInput): string {
+  const fields = {
+    title: p.title,
+    track: p.track,
+    category: p.category,
+    module: p.module ?? null,
+    severity: p.severity ?? null,
+    tags: p.tags,
+    symptoms: p.symptoms,
+    applies_to: p.appliesTo,
+    created: p.created,
+    last_updated: p.lastUpdated ?? null,
+    extra: sortedKeys(p.extraFields),
+  };
+  return JSON.stringify(fields) + "\n" + p.body.trim();
+}
+
+export function computeContentHash(p: ProjectionInput): string {
+  return createHash("sha256").update(canonicalProjection(p)).digest("hex");
 }
 
 /**
@@ -174,9 +214,7 @@ export function parseSolution(
     warnings.push("tags missing");
   }
 
-  return {
-    sourcePath,
-    slug,
+  const projection: ProjectionInput = {
     title,
     track,
     category,
@@ -187,9 +225,27 @@ export function parseSolution(
     appliesTo: data.applies_to ?? [],
     created,
     lastUpdated: toISODate(data.last_updated),
+    extraFields: {},
     body: content.trim(),
+  };
+
+  return {
+    sourcePath,
+    slug,
+    title,
+    track,
+    category,
+    module: moduleName,
+    severity,
+    tags,
+    symptoms: projection.symptoms,
+    appliesTo: projection.appliesTo,
+    created,
+    lastUpdated: projection.lastUpdated,
+    body: projection.body,
     sections: splitSections(content),
-    contentHash: computeContentHash(raw),
+    contentHash: computeContentHash(projection),
     warnings,
+    extraFields: projection.extraFields,
   };
 }
