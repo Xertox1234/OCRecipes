@@ -101,9 +101,11 @@ describe("setupTestTransaction — savepoint isolation", () => {
       .randomUUID()
       .slice(0, 8)}`;
     try {
-      await tx
-        .insert(schema.users)
-        .values({ username, password: "placeholder" });
+      await tx.insert(schema.users).values({
+        username,
+        email: `${username}@test.invalid`,
+        password: "placeholder",
+      });
     } finally {
       await rollbackTestTransaction();
     }

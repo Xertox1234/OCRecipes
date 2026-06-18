@@ -10,6 +10,7 @@ interface AuthContextType {
   register: (
     username: string,
     password: string,
+    email: string,
     ageConfirmed: boolean,
   ) => Promise<User>;
   logout: () => Promise<void>;

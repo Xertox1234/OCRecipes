@@ -6,6 +6,7 @@ describe("validateAuthForm", () => {
   const validRegister = {
     mode: "register" as const,
     username: "chef_tony",
+    email: "chef@example.com",
     password: "Recipe123",
     confirmPassword: "Recipe123",
     ageConfirmed: true,
@@ -25,6 +26,7 @@ describe("validateAuthForm", () => {
         password: "x",
         confirmPassword: "",
         ageConfirmed: false,
+        email: "",
       }),
     ).toBeNull();
   });
@@ -56,6 +58,31 @@ describe("validateAuthForm", () => {
     expect(
       validateAuthForm({ ...validRegister, username: "a".repeat(31) }),
     ).toMatch(/30/);
+  });
+
+  it("rejects a register with a missing email", () => {
+    expect(validateAuthForm({ ...validRegister, email: "" })).toBe(
+      "Please enter your email address",
+    );
+  });
+
+  it("rejects a register with a malformed email", () => {
+    expect(validateAuthForm({ ...validRegister, email: "not-an-email" })).toBe(
+      "Please enter a valid email address",
+    );
+  });
+
+  it("ignores email in login mode", () => {
+    expect(
+      validateAuthForm({
+        mode: "login",
+        username: "chef_tony",
+        password: "x",
+        confirmPassword: "",
+        ageConfirmed: false,
+        email: "",
+      }),
+    ).toBeNull();
   });
 
   it("rejects a password shorter than 8 characters", () => {

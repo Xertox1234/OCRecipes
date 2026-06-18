@@ -55,7 +55,11 @@ describe("Schema Validation", () => {
 
   describe("insertUserSchema", () => {
     it("validates valid user with username and password", () => {
-      const user = { username: "testuser", password: "securepass123" };
+      const user = {
+        username: "testuser",
+        email: "testuser@example.com",
+        password: "securepass123",
+      };
       const result = insertUserSchema.safeParse(user);
       expect(result.success).toBe(true);
     });
@@ -75,15 +79,17 @@ describe("Schema Validation", () => {
     it("strips extra fields not in schema", () => {
       const user = {
         username: "testuser",
+        email: "testuser@example.com",
         password: "securepass123",
         displayName: "Test User",
       };
       const result = insertUserSchema.safeParse(user);
       expect(result.success).toBe(true);
-      // displayName should be stripped since schema only picks username and password
+      // displayName is stripped — schema picks only username, email, and password
       if (result.success) {
         expect(result.data).toEqual({
           username: "testuser",
+          email: "testuser@example.com",
           password: "securepass123",
         });
       }

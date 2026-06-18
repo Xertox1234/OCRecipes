@@ -240,6 +240,7 @@ async function ensureDemoUser(): Promise<string> {
     .insert(users)
     .values({
       username: "demo",
+      email: "demo@ocrecipes.test",
       password: hashedPassword,
       displayName: "Demo Chef",
       onboardingCompleted: true,

@@ -29,6 +29,7 @@ vi.mock("../../db", () => ({
 const {
   getUser,
   getUserByUsername,
+  getUserByEmail,
   createUser,
   updateUser,
   getUserTimezones,
@@ -94,19 +95,36 @@ describe("users storage", () => {
     });
   });
 
+  describe("getUserByEmail", () => {
+    it("returns the user (without password) when found by email", async () => {
+      const result = await getUserByEmail(testUser.email);
+      expect(result).toBeDefined();
+      expect(result!.id).toBe(testUser.id);
+      expect(result).not.toHaveProperty("password");
+    });
+
+    it("returns undefined for a non-existent email", async () => {
+      const result = await getUserByEmail("nonexistent@test.invalid");
+      expect(result).toBeUndefined();
+    });
+  });
+
   describe("createUser", () => {
     it("creates and returns a new user", async () => {
       const newUser = await createUser({
         username: "fresh_user_123",
+        email: "fresh_user_123@test.invalid",
         password: "hashed_pw",
       });
       expect(newUser).toBeDefined();
       expect(newUser.username).toBe("fresh_user_123");
+      expect(newUser.email).toBe("fresh_user_123@test.invalid");
       expect(newUser.password).toBe("hashed_pw");
       expect(newUser.id).toBeDefined();
       // Defaults
       expect(newUser.subscriptionTier).toBe("free");
       expect(newUser.onboardingCompleted).toBe(false);
+      expect(newUser.emailVerified).toBe(false);
     });
   });
 

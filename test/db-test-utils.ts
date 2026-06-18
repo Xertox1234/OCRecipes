@@ -192,6 +192,7 @@ export async function createTestUser(
   userSeq++;
   const defaults: schema.InsertUser = {
     username: `testuser_${userSeq}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
+    email: `testuser_${userSeq}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}@test.invalid`,
     password: "hashed_password_placeholder",
     ...overrides,
   };

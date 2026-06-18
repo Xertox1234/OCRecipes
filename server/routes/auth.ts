@@ -13,7 +13,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { detectImageMimeType } from "../lib/image-mime";
 import { saveAvatar, deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { handleRouteError } from "./_helpers";
+import { handleRouteError, formatZodError } from "./_helpers";
 import {
   registerLimiter,
   loginLimiter,
@@ -29,12 +29,14 @@ import {
   profileUpdateSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
-import { isUniqueViolation } from "../lib/db-errors";
+import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import type { MeasurementUnit } from "@shared/lib/units";
 
 function serializeUser(user: {
   id: string;
   username: string;
+  email: string;
+  emailVerified: boolean;
   displayName: string | null;
   avatarUrl: string | null;
   dailyCalorieGoal: number | null;
@@ -45,6 +47,8 @@ function serializeUser(user: {
   return {
     id: user.id,
     username: user.username,
+    email: user.email,
+    emailVerified: user.emailVerified,
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
     dailyCalorieGoal: user.dailyCalorieGoal,
@@ -60,7 +64,17 @@ export function register(app: Express): void {
     registerLimiter,
     async (req: Request, res: Response) => {
       try {
-        const validated = registerSchema.parse(req.body);
+        const parsed = registerSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const validated = parsed.data;
 
         const existingUser = await storage.getUserByUsername(
           validated.username,
@@ -74,20 +88,36 @@ export function register(app: Express): void {
           );
         }
 
+        const existingEmail = await storage.getUserByEmail(validated.email);
+        if (existingEmail) {
+          return sendError(
+            res,
+            409,
+            "Email already registered",
+            ErrorCode.CONFLICT,
+          );
+        }
+
         const hashedPassword = await bcrypt.hash(validated.password, 12);
         let user;
         try {
           user = await storage.createUser({
             username: validated.username,
             password: hashedPassword,
+            email: validated.email,
           });
         } catch (err) {
-          // Catch unique constraint violation from concurrent registrations
+          // Catch unique constraint violation from concurrent registrations.
+          // The table has two unique columns (username, email) — map the 23505
+          // to the right per-field message via the violated constraint name.
           if (isUniqueViolation(err)) {
+            const constraint = uniqueViolationConstraint(err);
             return sendError(
               res,
               409,
-              "Username already exists",
+              constraint?.includes("email")
+                ? "Email already registered"
+                : "Username already exists",
               ErrorCode.CONFLICT,
             );
           }

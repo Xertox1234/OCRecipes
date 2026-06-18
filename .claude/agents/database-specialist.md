@@ -63,6 +63,13 @@ const StatusSchema = z.enum(["pending", "approved", "rejected"]);
 const statusEnum = pgEnum("transaction_status", ["pending", "approved"]);
 ```
 
+### Adding a Unique / NOT NULL Column Has a Wide Blast Radius
+
+Two recurring traps when a table gains a column — flag both in review:
+
+- **A 2nd unique column breaks every hardcoded `23505` message.** `isUniqueViolation(err)` is a boolean — it can't say which constraint fired. A catch that returns one field's message ("Username already exists") is now wrong for the other column's insert race. Branch on the constraint name (`err.constraint ?? err.cause?.constraint`) and add a race test per unique column. See `logic-errors/multi-unique-column-23505-needs-constraint-name`.
+- **A `NOT NULL` column ripples far beyond the schema line.** It must also be added to every `createInsertSchema(...).pick({...})` (the picked Insert type does NOT auto-update), every user-insert fixture (`createTestUser`, `createMockUser` — a UNIQUE column needs a unique value per call), every schema-parse test, and the migration (`NOT NULL` can't be added to a non-empty table — delete-then-push, or nullable→backfill→flip). Verify with full `check:types` + `test:run`, not targeted suites. See `best-practices/adding-not-null-column-to-shared-table-blast-radius`.
+
 ### Storage Return Types: `undefined` for "Not Found"
 
 Drizzle's `result[0]` yields `undefined`, not `null`:

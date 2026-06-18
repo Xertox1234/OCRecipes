@@ -53,6 +53,7 @@ async function createCommittedUser(): Promise<string> {
     .insert(users)
     .values({
       username: `concurrent_${crypto.randomUUID()}`,
+      email: `concurrent_${crypto.randomUUID()}@test.invalid`,
       password: "hashed_password_placeholder",
     })
     .returning({ id: users.id });

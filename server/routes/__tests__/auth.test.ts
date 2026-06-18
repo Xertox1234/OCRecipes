@@ -27,6 +27,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getUserByUsername: vi.fn(),
+    getUserByEmail: vi.fn(),
     getUserByUsernameForAuth: vi.fn(),
     getUserForAuth: vi.fn(),
     createUser: vi.fn(),
@@ -83,6 +84,8 @@ describe("Auth Routes", () => {
 
   beforeEach(() => {
     app = createApp();
+    // Default: no email collision; the duplicate-email test overrides this.
+    vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
   });
 
   describe("POST /api/auth/register", () => {
@@ -93,6 +96,7 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
         password: "password123",
+        email: "newuser@example.com",
         ageConfirmed: true,
       });
 
@@ -109,6 +113,7 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "testuser",
         password: "password123",
+        email: "newuser@example.com",
         ageConfirmed: true,
       });
 
@@ -129,11 +134,33 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "raceuser",
         password: "password123",
+        email: "raceuser@example.com",
         ageConfirmed: true,
       });
 
       expect(res.status).toBe(409);
       expect(res.body.error).toBe("Username already exists");
+    });
+
+    it("returns 409 'Email already registered' when createUser loses an email-unique race", async () => {
+      // Both pre-checks pass, but a concurrent insert wins on the email index.
+      // The catch must map the 23505 to the EMAIL message via the constraint name.
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      const wrapped = Object.assign(
+        new Error("Failed query: insert into users ..."),
+        { cause: { code: "23505", constraint: "users_email_unique" } },
+      );
+      vi.mocked(storage.createUser).mockRejectedValue(wrapped);
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "raceuser2",
+        password: "password123",
+        email: "race@example.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("Email already registered");
     });
 
     it("returns 400 for short username", async () => {
@@ -194,6 +221,79 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("ageConfirmed");
+    });
+
+    it("persists the normalized (trimmed + lowercased) email", async () => {
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockResolvedValue(mockUser);
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+        email: "  NewUser@Example.COM ",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(201);
+      expect(storage.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: "newuser@example.com" }),
+      );
+    });
+
+    it("returns 400 when ageConfirmed is missing even with a valid email", async () => {
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+        email: "newuser@example.com",
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("ageConfirmed");
+    });
+
+    it("returns 400 for an invalid email", async () => {
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+        email: "not-an-email",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("valid email");
+    });
+
+    it("returns 409 if the email is already registered", async () => {
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(mockUser);
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+        email: "taken@example.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("Email already registered");
+    });
+
+    it("returns email and emailVerified in the auth response", async () => {
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockResolvedValue(mockUser);
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+        email: "newuser@example.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.user).toMatchObject({
+        email: "testuser@example.com",
+        emailVerified: false,
+      });
     });
   });
 
@@ -565,6 +665,7 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "newuser",
         password: "password123",
+        email: "newuser@example.com",
         ageConfirmed: true,
       });
 

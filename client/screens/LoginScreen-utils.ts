@@ -30,6 +30,8 @@ export type AuthMode = "login" | "register";
 const USERNAME_PATTERN = /^[a-zA-Z0-9_]+$/;
 // Mirrors registerSchema.password complexity: at least one letter AND one digit.
 const PASSWORD_COMPLEXITY = /(?=.*[a-zA-Z])(?=.*\d)/;
+// Pragmatic client mirror of registerSchema.email (server re-validates, zero trust).
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const USERNAME_MIN = 3;
 const USERNAME_MAX = 30;
@@ -41,6 +43,7 @@ export interface AuthFormInput {
   password: string;
   confirmPassword: string;
   ageConfirmed: boolean;
+  email: string;
 }
 
 /**
@@ -67,6 +70,13 @@ export function validateAuthForm(input: AuthFormInput): string | null {
   if (!USERNAME_PATTERN.test(username)) {
     // Name the email trap explicitly — it is by far the most common cause.
     return "Username can only contain letters, numbers, and underscores (it can't be an email address)";
+  }
+  const email = input.email.trim();
+  if (!email) {
+    return "Please enter your email address";
+  }
+  if (!EMAIL_PATTERN.test(email)) {
+    return "Please enter a valid email address";
   }
   if (input.password.length < PASSWORD_MIN) {
     return `Password must be at least ${PASSWORD_MIN} characters`;

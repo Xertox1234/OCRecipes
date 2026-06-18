@@ -47,6 +47,7 @@ export const storage = {
   // Users & profiles
   getUser: users.getUser,
   getUserByUsername: users.getUserByUsername,
+  getUserByEmail: users.getUserByEmail,
   getUserForAuth: users.getUserForAuth,
   getUserByUsernameForAuth: users.getUserByUsernameForAuth,
   createUser: users.createUser,

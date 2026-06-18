@@ -31,6 +31,8 @@ export const users = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     username: text("username").notNull().unique(),
+    email: text("email").notNull().unique(),
+    emailVerified: boolean("email_verified").default(false).notNull(),
     password: text("password").notNull(),
     displayName: text("display_name"),
     avatarUrl: text("avatar_url"),
@@ -1088,6 +1090,7 @@ export type InsertReceiptScan = typeof receiptScans.$inferInsert;
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
+  email: true,
   password: true,
 });
 
