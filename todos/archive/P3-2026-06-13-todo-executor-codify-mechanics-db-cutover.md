@@ -1,6 +1,6 @@
 ---
 title: "Reconcile todo-executor Step 9 codify mechanics to solutions:db:add"
-status: backlog
+status: done
 priority: low
 created: 2026-06-13
 updated: 2026-06-13
