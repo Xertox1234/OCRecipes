@@ -13,7 +13,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { detectImageMimeType } from "../lib/image-mime";
 import { saveAvatar, deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { handleRouteError } from "./_helpers";
+import { handleRouteError, formatZodError } from "./_helpers";
 import {
   registerLimiter,
   loginLimiter,
@@ -60,7 +60,17 @@ export function register(app: Express): void {
     registerLimiter,
     async (req: Request, res: Response) => {
       try {
-        const validated = registerSchema.parse(req.body);
+        const parsed = registerSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const validated = parsed.data;
 
         const existingUser = await storage.getUserByUsername(
           validated.username,
@@ -80,6 +90,7 @@ export function register(app: Express): void {
           user = await storage.createUser({
             username: validated.username,
             password: hashedPassword,
+            email: validated.email,
           });
         } catch (err) {
           // Catch unique constraint violation from concurrent registrations

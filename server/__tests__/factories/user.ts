@@ -3,6 +3,8 @@ import type { User, UserProfile } from "@shared/schema";
 const userDefaults: User = {
   id: "1",
   username: "testuser",
+  email: "testuser@example.com",
+  emailVerified: false,
   password: "$2b$10$hashedpassword",
   displayName: null,
   avatarUrl: null,

@@ -98,15 +98,18 @@ describe("users storage", () => {
     it("creates and returns a new user", async () => {
       const newUser = await createUser({
         username: "fresh_user_123",
+        email: "fresh_user_123@test.invalid",
         password: "hashed_pw",
       });
       expect(newUser).toBeDefined();
       expect(newUser.username).toBe("fresh_user_123");
+      expect(newUser.email).toBe("fresh_user_123@test.invalid");
       expect(newUser.password).toBe("hashed_pw");
       expect(newUser.id).toBeDefined();
       // Defaults
       expect(newUser.subscriptionTier).toBe("free");
       expect(newUser.onboardingCompleted).toBe(false);
+      expect(newUser.emailVerified).toBe(false);
     });
   });
 

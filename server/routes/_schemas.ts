@@ -42,6 +42,12 @@ export const registerSchema = z.object({
       /(?=.*[a-zA-Z])(?=.*\d)/,
       "Password must contain at least one letter and one number",
     ),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("Please enter a valid email address")
+    .max(254),
   // COPPA 13+ age attestation — legal attestation at registration time,
   // not persisted to the DB. z.literal(true) rejects false/undefined/missing.
   ageConfirmed: z.literal(true, {
