@@ -98,3 +98,16 @@ migration)** and the auth route, and should get its own brainstorm + review.
 - Initial creation. Product decision captured during the P1 email-as-username
   fix session (PR #399). Needs brainstorming on required/unique/verification
   before implementation.
+
+### 2026-06-18 (IMPLEMENTED — branch feat/signup-email-field)
+
+- Brainstormed → spec (`docs/superpowers/specs/2026-06-18-signup-email-field-design.md`)
+  → plan (`docs/superpowers/plans/2026-06-18-signup-email-field.md`) → implemented
+  directly (auth = NEVER-delegate).
+- Decisions: email **required + unique + normalized** (trim/lowercase); added
+  forward-compat `emailVerified` column (ungated); conflict UI stays generic
+  (no enumeration); register body validation switched `.parse()` → `safeParse`.
+- Verification deferred to [[P2-2026-06-18-email-verification-resend]] (Resend).
+- Dev DB migrated (Path A: dropped disposable test rows → `db:push`); demo
+  account recreated with email. **Prod migration is post-merge, gated.**
+- 4 commits; auth (97) + storage (668) + client (31) suites green; check:types clean.
