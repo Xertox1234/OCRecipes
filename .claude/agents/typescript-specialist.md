@@ -190,6 +190,14 @@ db.select().from(users).orderBy(sql.identifier(orderCol));
 
 ---
 
+## `createInsertSchema(table).pick()` Decouples the Insert Type From the Table
+
+`InsertX = z.infer<typeof insertXSchema>` where `insertXSchema = createInsertSchema(x).pick({...})` does **NOT** auto-update when a column is added to the table — `.pick()` is an explicit allowlist. Contrast the same table's `$inferSelect` (auto-updates; NOT NULL = required) and raw `db.insert(x).values()` `$inferInsert` (auto-updates). So adding a `NOT NULL` column silently leaves it absent from the picked Insert type, and inserters can't carry it.
+
+**Flag:** any new table column whose `createInsertSchema(...).pick({...})` was not also updated. A diagnostic that looks self-contradictory (one line says the insert type lacks the field, another says it's required) is the decoupling, NOT a cold-LSP false positive — verify against a fresh `tsc`, don't dismiss. See solution `best-practices/adding-not-null-column-to-shared-table-blast-radius`.
+
+---
+
 ## Discriminated Unions Over Optional Fields
 
 When state has mutually-exclusive shapes, use a discriminated union:

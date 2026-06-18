@@ -147,6 +147,8 @@ vi.mocked(storage.getUser).mockResolvedValue({
 
 **Available factory files:** `user.ts`, `nutrition.ts`, `recipes.ts`, `grocery.ts`, `chat.ts`, `health.ts`, `subscription.ts`, `scan.ts`, `verification.ts`, `cache.ts`, `saved-item.ts`, `favourite-recipes.ts`, `reminders.ts` — all re-exported from `server/__tests__/factories/index.ts`.
 
+**Schema / required-field changes ripple into fixtures AND verification scope.** Adding a required column to a model forces updating BOTH the mocked factory (`createMockUser` returns `$inferSelect` → compile-forced) and the real-DB factory (`test/db-test-utils.ts` `createTestUser` — a UNIQUE column needs a unique value per call), plus every schema-parse test (`_helpers.test.ts`, `shared/__tests__/schema.test.ts`). Such a change MUST be verified with full `npm run check:types` + `npm run test:run` — targeted suites have blind spots here: schema-parse tests and shared-DB fixtures fail in suites you didn't think to run, and CI shards catch them late. See `best-practices/adding-not-null-column-to-shared-table-blast-radius`.
+
 **Adding a factory:** When a new table is added to `shared/schema.ts`, create a factory in the appropriate domain file with all required fields filled.
 
 ### `vi.resetModules` for Env-Dependent Modules
