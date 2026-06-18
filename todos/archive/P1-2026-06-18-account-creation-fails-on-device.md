@@ -1,6 +1,6 @@
 ---
 title: "Account creation fails in on-device iOS build against prod (api.ocrecipes.com)"
-status: backlog
+status: done
 priority: high
 created: 2026-06-18
 updated: 2026-06-18
@@ -166,3 +166,12 @@ relabeling/explaining the field. Separate design decision.
 
 **Housekeeping:** one stray diagnostic account `diagtest_58414261` (pw `DiagTest123`)
 was created in prod during reproduction; delete if undesired.
+
+### 2026-06-18 — RESOLVED + verified on device
+
+- PR #399 merged to `main` (squash `225462ba`); CI green 8/8; security + code review clean.
+- **On-device verification:** user created account `williamtower` on the CURRENT build →
+  Railway logged `POST /api/auth/register → 201` (UA `OCRecipes/4 CFNetwork/...`,
+  17:08 UTC) → app advanced to the new-user onboarding flow. AC #4 met with hard evidence.
+- All acceptance criteria ✅. Follow-up captured: `P2-2026-06-18-signup-email-field.md`
+  (user wants a dedicated email field — separate feature, depends on this merge).
