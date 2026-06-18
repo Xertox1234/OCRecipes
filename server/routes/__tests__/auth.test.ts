@@ -142,6 +142,27 @@ describe("Auth Routes", () => {
       expect(res.body.error).toBe("Username already exists");
     });
 
+    it("returns 409 'Email already registered' when createUser loses an email-unique race", async () => {
+      // Both pre-checks pass, but a concurrent insert wins on the email index.
+      // The catch must map the 23505 to the EMAIL message via the constraint name.
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      const wrapped = Object.assign(
+        new Error("Failed query: insert into users ..."),
+        { cause: { code: "23505", constraint: "users_email_unique" } },
+      );
+      vi.mocked(storage.createUser).mockRejectedValue(wrapped);
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "raceuser2",
+        password: "password123",
+        email: "race@example.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("Email already registered");
+    });
+
     it("returns 400 for short username", async () => {
       const res = await request(app).post("/api/auth/register").send({
         username: "ab",

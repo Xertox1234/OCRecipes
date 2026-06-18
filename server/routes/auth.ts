@@ -29,7 +29,7 @@ import {
   profileUpdateSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
-import { isUniqueViolation } from "../lib/db-errors";
+import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
 import type { MeasurementUnit } from "@shared/lib/units";
 
 function serializeUser(user: {
@@ -107,12 +107,17 @@ export function register(app: Express): void {
             email: validated.email,
           });
         } catch (err) {
-          // Catch unique constraint violation from concurrent registrations
+          // Catch unique constraint violation from concurrent registrations.
+          // The table has two unique columns (username, email) — map the 23505
+          // to the right per-field message via the violated constraint name.
           if (isUniqueViolation(err)) {
+            const constraint = uniqueViolationConstraint(err);
             return sendError(
               res,
               409,
-              "Username already exists",
+              constraint?.includes("email")
+                ? "Email already registered"
+                : "Username already exists",
               ErrorCode.CONFLICT,
             );
           }
