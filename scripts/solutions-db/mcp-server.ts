@@ -11,6 +11,10 @@ import { createPool, toVectorLiteral } from "./lib/db";
 import { embedBatch } from "./lib/embeddings";
 import { isReadOnlyQuery } from "./lib/sql-guard";
 import { matchesAnyGlob } from "./lib/globs";
+import {
+  buildSearchQuery,
+  buildDuplicatesCategoryClause,
+} from "./lib/query-builder";
 
 if (!process.env.SOLUTIONS_DB_READONLY_URL) {
   console.error("SOLUTIONS_DB_READONLY_URL not set");
@@ -44,38 +48,18 @@ server.registerTool(
   },
   async (args) => {
     const vec = await embedQuery(args.query);
-    const where = ["embedding IS NOT NULL"];
-    const params: unknown[] = [toVectorLiteral(vec)];
-    let i = 2;
-    if (args.track) {
-      where.push(`track = $${i++}`);
-      params.push(args.track);
-    }
-    if (args.category) {
-      where.push(`category = $${i++}`);
-      params.push(args.category);
-    }
-    if (args.module) {
-      where.push(`module = $${i++}`);
-      params.push(args.module);
-    }
-    if (args.severity) {
-      where.push(`severity = $${i++}`);
-      params.push(args.severity);
-    }
-    if (args.tags?.length) {
-      where.push(`tags && $${i++}`);
-      params.push(args.tags);
-    }
-    const kIdx = i;
-    params.push(args.k);
-    const r = await pool.query(
-      `SELECT source_path, slug, title, category, track,
-              1 - (embedding <=> $1::vector) AS similarity, left(body, 300) AS snippet
-         FROM solutions WHERE ${where.join(" AND ")}
-         ORDER BY embedding <=> $1::vector LIMIT $${kIdx}`,
-      params,
+    const { sql, params } = buildSearchQuery(
+      toVectorLiteral(vec),
+      {
+        track: args.track,
+        category: args.category,
+        module: args.module,
+        severity: args.severity,
+        tags: args.tags,
+      },
+      args.k,
     );
+    const r = await pool.query(sql, params);
     return text(r.rows);
   },
 );
@@ -145,12 +129,9 @@ server.registerTool(
     },
   },
   async ({ threshold, category }) => {
-    const params: unknown[] = [1 - threshold];
-    let catClause = "";
-    if (category) {
-      catClause = "AND a.category = $2 AND b.category = $2";
-      params.push(category);
-    }
+    const { catClause, params: catParams } =
+      buildDuplicatesCategoryClause(category);
+    const params: unknown[] = [1 - threshold, ...catParams];
     const r = await pool.query(
       `SELECT a.source_path AS a, b.source_path AS b, 1 - (a.embedding <=> b.embedding) AS sim
          FROM solutions a JOIN solutions b ON a.id < b.id

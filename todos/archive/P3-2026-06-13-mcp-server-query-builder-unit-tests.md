@@ -1,6 +1,6 @@
 ---
 title: "Extract and unit-test the solutions-db MCP server query/param builder"
-status: backlog
+status: done
 priority: low
 created: 2026-06-13
 updated: 2026-06-13
