@@ -147,10 +147,16 @@ export function useAuth() {
   }, []);
 
   const register = useCallback(
-    async (username: string, password: string, ageConfirmed: boolean) => {
+    async (
+      username: string,
+      password: string,
+      email: string,
+      ageConfirmed: boolean,
+    ) => {
       const response = await apiRequest("POST", "/api/auth/register", {
         username,
         password,
+        email,
         // COPPA 13+ age attestation — caller forwards user's actual checkbox
         // state; server enforces with `z.literal(true)` (zero trust on client).
         ageConfirmed,

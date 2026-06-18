@@ -41,6 +41,7 @@ export default function LoginScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [email, setEmail] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -78,6 +79,7 @@ export default function LoginScreen() {
       password,
       confirmPassword,
       ageConfirmed,
+      email,
     });
     if (validationError) {
       setError(validationError);
@@ -90,7 +92,7 @@ export default function LoginScreen() {
       if (mode === "login") {
         await login(username.trim(), password);
       } else {
-        await register(username.trim(), password, ageConfirmed);
+        await register(username.trim(), password, email.trim(), ageConfirmed);
       }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
@@ -166,6 +168,23 @@ export default function LoginScreen() {
             accessibilityLabel="Username"
             accessibilityHint="Enter your username"
           />
+
+          {mode === "register" ? (
+            <TextInput
+              leftIcon="mail"
+              placeholder="Email"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="emailAddress"
+              autoComplete="email"
+              testID="input-email"
+              accessibilityLabel="Email"
+              accessibilityHint="Enter your email address"
+            />
+          ) : null}
 
           <TextInput
             leftIcon="lock"

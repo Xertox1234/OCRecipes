@@ -398,7 +398,12 @@ describe("useAuth", () => {
       });
 
       await act(async () => {
-        await result.current.register("newuser", "password456", true);
+        await result.current.register(
+          "newuser",
+          "password456",
+          "new@example.com",
+          true,
+        );
       });
 
       expect(mockApiRequest).toHaveBeenCalledWith(
@@ -407,6 +412,7 @@ describe("useAuth", () => {
         {
           username: "newuser",
           password: "password456",
+          email: "new@example.com",
           ageConfirmed: true,
         },
       );
@@ -668,7 +674,12 @@ describe("useAuth", () => {
 
       await expect(
         act(async () => {
-          await result.current.register("taken", "password", true);
+          await result.current.register(
+            "taken",
+            "password",
+            "taken@example.com",
+            true,
+          );
         }),
       ).rejects.toThrow("Username already exists");
 

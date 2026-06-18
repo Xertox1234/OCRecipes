@@ -7,7 +7,7 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import LoginScreen from "../LoginScreen";
 
@@ -78,6 +78,9 @@ describe("LoginScreen — auth-failure error copy (H6)", () => {
     fireEvent.change(screen.getByLabelText("Confirm password"), {
       target: { value: "secret123" },
     });
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "demo@example.com" },
+    });
     fireEvent.click(
       screen.getByLabelText("I confirm I am 13 years of age or older"),
     );
@@ -122,5 +125,54 @@ describe("LoginScreen — client-side validation pre-flight", () => {
       await screen.findByText(/letters, numbers, and underscores/i),
     ).toBeTruthy();
     expect(mockRegister).not.toHaveBeenCalled();
+  });
+});
+
+describe("LoginScreen — email field", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows the email field only in register mode", () => {
+    renderComponent(<LoginScreen />);
+    // Login mode: no email field.
+    expect(screen.queryByLabelText("Email")).toBeNull();
+    // Switch to register mode.
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    expect(screen.getByLabelText("Email")).toBeTruthy();
+  });
+
+  it("threads the entered email and live ageConfirmed into register", async () => {
+    mockRegister.mockResolvedValue(undefined);
+    renderComponent(<LoginScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "chef_tony" },
+    });
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "chef@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "Recipe123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "Recipe123" },
+    });
+    fireEvent.click(
+      screen.getByLabelText("I confirm I am 13 years of age or older"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+
+    // Verifies email threading AND that ageConfirmed is the live checkbox
+    // value (true), never a hardcoded literal.
+    await waitFor(() =>
+      expect(mockRegister).toHaveBeenCalledWith(
+        "chef_tony",
+        "Recipe123",
+        "chef@example.com",
+        true,
+      ),
+    );
   });
 });
