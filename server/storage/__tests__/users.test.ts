@@ -29,6 +29,7 @@ vi.mock("../../db", () => ({
 const {
   getUser,
   getUserByUsername,
+  getUserByEmail,
   createUser,
   updateUser,
   getUserTimezones,
@@ -90,6 +91,20 @@ describe("users storage", () => {
 
     it("returns undefined for a non-existent username", async () => {
       const result = await getUserByUsername("nonexistent_user_xyz");
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("getUserByEmail", () => {
+    it("returns the user (without password) when found by email", async () => {
+      const result = await getUserByEmail(testUser.email);
+      expect(result).toBeDefined();
+      expect(result!.id).toBe(testUser.id);
+      expect(result).not.toHaveProperty("password");
+    });
+
+    it("returns undefined for a non-existent email", async () => {
+      const result = await getUserByEmail("nonexistent@test.invalid");
       expect(result).toBeUndefined();
     });
   });

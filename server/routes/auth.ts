@@ -84,6 +84,16 @@ export function register(app: Express): void {
           );
         }
 
+        const existingEmail = await storage.getUserByEmail(validated.email);
+        if (existingEmail) {
+          return sendError(
+            res,
+            409,
+            "Email already registered",
+            ErrorCode.CONFLICT,
+          );
+        }
+
         const hashedPassword = await bcrypt.hash(validated.password, 12);
         let user;
         try {

@@ -51,6 +51,16 @@ export async function getUserByUsername(
   return user || undefined;
 }
 
+export async function getUserByEmail(
+  email: string,
+): Promise<SafeUser | undefined> {
+  const [user] = await db
+    .select(safeUserColumns)
+    .from(users)
+    .where(eq(users.email, email));
+  return user || undefined;
+}
+
 /** Full user row including password hash — only for login/delete-account flows */
 export async function getUserForAuth(id: string): Promise<User | undefined> {
   const [user] = await db.select().from(users).where(eq(users.id, id));

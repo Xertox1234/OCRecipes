@@ -27,6 +27,7 @@ import {
 vi.mock("../../storage", () => ({
   storage: {
     getUserByUsername: vi.fn(),
+    getUserByEmail: vi.fn(),
     getUserByUsernameForAuth: vi.fn(),
     getUserForAuth: vi.fn(),
     createUser: vi.fn(),
@@ -83,6 +84,8 @@ describe("Auth Routes", () => {
 
   beforeEach(() => {
     app = createApp();
+    // Default: no email collision; the duplicate-email test overrides this.
+    vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
   });
 
   describe("POST /api/auth/register", () => {
@@ -237,6 +240,21 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain("valid email");
+    });
+
+    it("returns 409 if the email is already registered", async () => {
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(mockUser);
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+        email: "taken@example.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe("Email already registered");
     });
   });
 
