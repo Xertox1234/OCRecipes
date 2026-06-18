@@ -244,6 +244,7 @@ describe("Route Helpers", () => {
       const result = registerSchema.safeParse({
         username: "testuser",
         password: "securepass123",
+        email: "testuser@example.com",
         ageConfirmed: true,
       });
       expect(result.success).toBe(true);
@@ -271,6 +272,7 @@ describe("Route Helpers", () => {
       const result = registerSchema.safeParse({
         username: "test_user_1",
         password: "securepass123",
+        email: "test_user_1@example.com",
         ageConfirmed: true,
       });
       expect(result.success).toBe(true);
