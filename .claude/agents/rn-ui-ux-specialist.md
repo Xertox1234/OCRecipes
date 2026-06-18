@@ -121,6 +121,19 @@ import InlineError from "@/components/InlineError";
 {errors.email && <InlineError message={errors.email} />}
 ```
 
+**Mirror strict server validation client-side.** When a form POSTs to a strict
+server Zod schema (e.g. `registerSchema`: username `^[a-zA-Z0-9_]+$`, password
+≥8 + letter+digit), mirror the key rules in a pure, unit-tested `*-utils.ts`
+validator and show actionable copy BEFORE submitting — do not rely on "server
+400 + a generic `catch`". The canonical trap: users type an **email into a
+"Username" field**, the server 400s, and a swallowed error shows only
+"Registration failed", hard-blocking signup (and burning the IP rate limit on
+each retry). Two guardrails: keep **login lenient** client-side (strict rules
+would lock out existing/short accounts and risk an enumeration oracle — the
+server is the authority), and map caught errors via `ApiError.code`, never
+`error.message` (`no-error-message-in-ui`). See
+`docs/solutions/logic-errors/client-mirror-server-validation-signup-email-trap-2026-06-18.md`.
+
 ### Bottom Sheets & Modals
 
 ```typescript
