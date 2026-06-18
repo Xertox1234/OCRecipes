@@ -109,3 +109,60 @@ the actual error first (systematic-debugging Phase 1: gather evidence before fix
 - Initial creation. Discovered during first on-device `preview` build testing against
   `api.ocrecipes.com`; app reaches the backend but account creation fails. Not yet
   reproduced/diagnosed — hypotheses ranked, prod DB schema is the prime suspect.
+
+### 2026-06-18 — DIAGNOSED + FIXED (root cause: email-as-username, masked by generic error)
+
+**Prime suspect (DB schema not pushed) was WRONG.** A valid payload sent directly to
+prod returned `201 Created` with a real user + JWT — the `users` table, `createUser`,
+defaults, and token issuance all work in prod. No `db:push` was needed.
+
+**Evidence chain (systematic-debugging Phase 1):**
+
+- `curl` valid payload → **201** (server-side signup healthy). Empty body → clean
+  `400 VALIDATION_ERROR`. Health `200`.
+- `EXPO_PUBLIC_DOMAIN=https://api.ocrecipes.com` is baked into the `preview` profile,
+  and the installed build is `preview` (commit `012b56a5`) — so connectivity/localhost
+  fallback is disconfirmed.
+- Railway HTTP logs caught the **live device request**:
+  `POST /api/auth/register → 400`, UA `OCRecipes/4 CFNetwork/...`, `responseTime: 0`
+  (failed at the Zod layer, before any DB/bcrypt work). So: a validation rejection, not
+  500/429/network.
+- User confirmed: password was valid, but **they used an email address as the username**.
+- Reproduced exactly:
+  `{"error":"username: Username can only contain letters, numbers, and underscores","code":"VALIDATION_ERROR"}`.
+
+**Root cause:** The server's `registerSchema` requires the username to match
+`^[a-zA-Z0-9_]+$` (no `@`/`.`), but `LoginScreen` did **no** client-side format check and
+its `catch {}` discarded the server's specific 400, showing only the generic
+"Registration failed. Please try again." The user had no way to learn the rule. (Secondary:
+each failed attempt counts against the 5/hour register rate limit → eventual masked 429.)
+
+**Fix (client-only; NO server/DB change):**
+
+- New `client/screens/LoginScreen-utils.ts`:
+  - `validateAuthForm` — client-side pre-flight mirroring `registerSchema` (username
+    3–30 + charset with an explicit "can't be an email" hint, password ≥8 + letter+digit,
+    match, age). Catches the email case before any network call (also protects the rate limit).
+  - `getAuthErrorMessage` — maps caught errors to STATIC copy via `ApiError.code`
+    (adds a helpful `RATE_LIMITED` message); never renders `error.message`, honoring the
+    `ocrecipes/no-error-message-in-ui` security rule (no internals/enumeration leak).
+- Wired both into `LoginScreen.handleSubmit`.
+- Tests: `LoginScreen-utils.test.ts` (15) + a render regression in `LoginScreen.test.tsx`
+  (email username blocked, `register` never called). 18/18 pass; eslint clean (incl. the
+  security rule); existing H6 static-copy tests still pass.
+
+**Status of acceptance criteria:**
+
+- Reproduced w/ status+body ✅ · Root cause from evidence ✅ · Fix at root cause ✅ ·
+  Operational doc (cause was code/UX, not DB) ✅.
+- On-device "new account can be created" — the **code** fix is test-verified but needs a
+  **new build** to reach the device. Immediate unblock with the CURRENT build: use a
+  non-email username (letters/numbers/underscore), which the server already accepts
+  (proven by the 201).
+
+**Open product question (NOT actioned — minimal change):** users instinctively type an
+email into "Username". Consider either accepting email as the login identifier or
+relabeling/explaining the field. Separate design decision.
+
+**Housekeeping:** one stray diagnostic account `diagtest_58414261` (pw `DiagTest123`)
+was created in prod during reproduction; delete if undesired.
