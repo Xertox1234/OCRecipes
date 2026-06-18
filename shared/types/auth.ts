@@ -8,6 +8,8 @@ import type { SubscriptionTier } from "@shared/types/premium";
 export interface User {
   id: string;
   username: string;
+  email?: string;
+  emailVerified?: boolean;
   displayName?: string;
   avatarUrl?: string | null;
   dailyCalorieGoal?: number;

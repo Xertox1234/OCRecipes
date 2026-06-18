@@ -35,6 +35,8 @@ import type { MeasurementUnit } from "@shared/lib/units";
 function serializeUser(user: {
   id: string;
   username: string;
+  email: string;
+  emailVerified: boolean;
   displayName: string | null;
   avatarUrl: string | null;
   dailyCalorieGoal: number | null;
@@ -45,6 +47,8 @@ function serializeUser(user: {
   return {
     id: user.id,
     username: user.username,
+    email: user.email,
+    emailVerified: user.emailVerified,
     displayName: user.displayName,
     avatarUrl: user.avatarUrl,
     dailyCalorieGoal: user.dailyCalorieGoal,

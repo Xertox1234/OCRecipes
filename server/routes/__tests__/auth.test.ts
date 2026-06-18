@@ -256,6 +256,24 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(409);
       expect(res.body.error).toBe("Email already registered");
     });
+
+    it("returns email and emailVerified in the auth response", async () => {
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockResolvedValue(mockUser);
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newuser",
+        password: "password123",
+        email: "newuser@example.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.user).toMatchObject({
+        email: "testuser@example.com",
+        emailVerified: false,
+      });
+    });
   });
 
   describe("POST /api/auth/login", () => {
