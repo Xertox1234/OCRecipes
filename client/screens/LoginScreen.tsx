@@ -22,6 +22,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { Spacing, withOpacity } from "@/constants/theme";
+import { validateAuthForm, getAuthErrorMessage } from "./LoginScreen-utils";
 
 const TERMS_URL = "https://ocrecipes.app/terms";
 const PRIVACY_URL = "https://ocrecipes.app/privacy";
@@ -71,20 +72,15 @@ export default function LoginScreen() {
   const handleSubmit = async () => {
     setError("");
 
-    if (!username.trim() || !password.trim()) {
-      setError("Please fill in all fields");
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-
-    if (mode === "register" && password !== confirmPassword) {
-      setError("Passwords do not match");
-      haptics.notification(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-
-    if (mode === "register" && !ageConfirmed) {
-      setError("You must confirm you are 13 years of age or older");
+    const validationError = validateAuthForm({
+      mode,
+      username,
+      password,
+      confirmPassword,
+      ageConfirmed,
+    });
+    if (validationError) {
+      setError(validationError);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
       return;
     }
@@ -97,12 +93,8 @@ export default function LoginScreen() {
         await register(username.trim(), password, ageConfirmed);
       }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      setError(
-        mode === "login"
-          ? "Incorrect username or password. Please try again."
-          : "Registration failed. Please try again.",
-      );
+    } catch (err) {
+      setError(getAuthErrorMessage(err, mode));
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsLoading(false);
