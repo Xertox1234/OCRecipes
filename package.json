@@ -52,6 +52,7 @@
     "solutions:db:parity": "tsx scripts/solutions-db/parity-check.ts",
     "solutions:db:export": "tsx scripts/solutions-db/export.ts",
     "solutions:db:hook-check": "tsx scripts/solutions-db/hook-equivalence-check.ts",
+    "solutions:db:recent": "tsx scripts/solutions-db/recent.ts",
     "cleanup:seeds": "tsx server/scripts/cleanup-seed-recipes.ts",
     "cleanup:retention": "tsx server/scripts/cleanup-retention.ts",
     "migrate:images-r2": "tsx server/scripts/migrate-images-to-r2.ts",
