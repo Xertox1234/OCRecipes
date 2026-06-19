@@ -4,6 +4,7 @@ import { JwtPayload } from "jsonwebtoken";
 export interface AccessTokenPayload extends JwtPayload {
   sub: string; // User ID
   tokenVersion: number; // Token version for revocation
+  emailVerified?: boolean; // present on tokens minted after the verification feature shipped
 }
 
 // Type guard for payload validation

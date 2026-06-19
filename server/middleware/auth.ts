@@ -4,6 +4,7 @@ import { isAccessTokenPayload } from "../lib/jwt-types";
 import { storage } from "../storage";
 import { sendError } from "../lib/api-errors";
 import { setRequestUserId } from "../lib/request-context";
+import { emailVerificationEnabled } from "../lib/email-config";
 
 // Extend Express Request type.
 // userId is declared as non-optional because all routes that access it
@@ -115,6 +116,15 @@ export async function requireAuth(
       return;
     }
 
+    // Defense-in-depth (spec §5): the real gate is login/register withholding
+    // tokens from unverified users, so this rarely fires. Gated on
+    // emailVerificationEnabled() to preserve fail-open. A claimless (pre-feature)
+    // token passes here — the one-time backfill is what verifies those users.
+    if (emailVerificationEnabled() && payload.emailVerified === false) {
+      sendError(res, 403, "Email not verified", "EMAIL_NOT_VERIFIED");
+      return;
+    }
+
     // Check tokenVersion — use cache to avoid DB hit on every request
     const cachedVersion = getCachedTokenVersion(payload.sub);
     if (cachedVersion !== undefined) {
@@ -150,8 +160,12 @@ export async function requireAuth(
   }
 }
 
-export function generateToken(userId: string, tokenVersion: number): string {
-  return jwt.sign({ sub: userId, tokenVersion }, jwtSecret, {
+export function generateToken(
+  userId: string,
+  tokenVersion: number,
+  emailVerified: boolean,
+): string {
+  return jwt.sign({ sub: userId, tokenVersion, emailVerified }, jwtSecret, {
     expiresIn: "7d",
     issuer: JWT_ISSUER,
     audience: JWT_AUDIENCE,
