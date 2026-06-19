@@ -37,6 +37,15 @@
             "statusMessage": "Priming LSP warm-up directive..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/session-recent-issues.sh",
+            "timeout": 20
+          }
+        ]
       }
     ],
     "PreToolUse": [
