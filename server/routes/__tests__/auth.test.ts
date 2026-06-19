@@ -18,6 +18,7 @@ import {
   checkPremiumFeature,
 } from "../_helpers";
 import { createMockUser } from "../../__tests__/factories";
+import { emailVerificationEnabled } from "../../lib/email-config";
 import {
   mockExpressReq,
   mockExpressRes,
@@ -37,12 +38,26 @@ vi.mock("../../storage", () => ({
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
     deleteUser: vi.fn(),
+    markEmailVerified: vi.fn(),
   },
 }));
 
 vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
+
+vi.mock("../../lib/email-config", () => ({
+  emailVerificationEnabled: vi.fn(),
+}));
+
+// CRITICAL: these mocks MUST return resolved promises. The register handler
+// calls `fireAndForget(label, sendVerificationEmail(...))`, and fireAndForget
+// does `promise.catch(...)`. A bare vi.fn() returns undefined → undefined.catch()
+// throws synchronously inside the handler try → 500 (not the 200 we assert).
+vi.mock("../../services/email", () => ({
+  sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
+  sendSignupAttemptNotice: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../../lib/image-mime", () => ({
   detectImageMimeType: vi.fn(),
@@ -86,6 +101,10 @@ describe("Auth Routes", () => {
     app = createApp();
     // Default: no email collision; the duplicate-email test overrides this.
     vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+    // Default the gate OFF (fail-open) so existing tests keep old behavior;
+    // ON-path tests opt in explicitly. No global resetMocks, so this is the
+    // guard against a prior test's mockReturnValue(true) leaking forward.
+    vi.mocked(emailVerificationEnabled).mockReturnValue(false);
   });
 
   describe("POST /api/auth/register", () => {
@@ -353,6 +372,38 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/login").send({});
 
       expect(res.status).toBe(400);
+    });
+
+    it("blocks login with 403 EMAIL_NOT_VERIFIED when unverified + verification ON", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("password123", 10);
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+        createMockUser({ emailVerified: false, password: hash }),
+      );
+
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: "testuser", password: "password123" });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("EMAIL_NOT_VERIFIED");
+      expect(res.body.token).toBeUndefined();
+    });
+
+    it("allows unverified login when verification OFF (fail-open)", async () => {
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("password123", 10);
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+        createMockUser({ emailVerified: false, password: hash }),
+      );
+
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: "testuser", password: "password123" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.token).toBe("mock-jwt-token");
     });
   });
 

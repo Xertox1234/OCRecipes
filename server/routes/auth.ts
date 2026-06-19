@@ -14,6 +14,7 @@ import { detectImageMimeType } from "../lib/image-mime";
 import { saveAvatar, deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { handleRouteError, formatZodError } from "./_helpers";
+import { emailVerificationEnabled } from "../lib/email-config";
 import {
   registerLimiter,
   loginLimiter,
@@ -164,7 +165,21 @@ export function register(app: Express): void {
           );
         }
 
-        const token = generateToken(user.id.toString(), user.tokenVersion);
+        if (emailVerificationEnabled() && !user.emailVerified) {
+          // Reachable only AFTER correct credentials → not an enumeration oracle.
+          return sendError(
+            res,
+            403,
+            "Email not verified",
+            ErrorCode.EMAIL_NOT_VERIFIED,
+          );
+        }
+
+        const token = generateToken(
+          user.id.toString(),
+          user.tokenVersion,
+          user.emailVerified,
+        );
 
         res.json({ user: serializeUser(user), token });
       } catch (error) {
