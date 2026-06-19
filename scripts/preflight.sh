@@ -57,6 +57,15 @@ run node scripts/check-hardcoded-colors.js || exit 1
 run node scripts/check-idor-storage.js || exit 1
 run node scripts/check-jsdom-pragma.js || exit 1
 
+# Hook unit tests. CI's "Lint · Types · Patterns" job runs the `.claude/hooks/test-*.sh`
+# suite; mirror it so a broken hook test is caught locally, not only in CI (a failing hook
+# test is a "PR run failed" category the gate would otherwise miss). Loop over every test
+# present so newly-added hook tests are picked up automatically (no drift).
+for t in .claude/hooks/test-*.sh; do
+  [ -f "$t" ] || continue
+  run bash "$t" || exit 1
+done
+
 # Tests + coverage need the dev DB. CI runs db:push first; mirror it unless opted out.
 # NOTE: db:push mutates the local dev DB schema (stateless Drizzle push — idempotent).
 if [ -z "${PREFLIGHT_SKIP_DB_PUSH:-}" ]; then

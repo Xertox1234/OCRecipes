@@ -31,7 +31,7 @@ SOLUTIONS_PER_DOMAIN=4
 # recent bug-track ref just outside the natural top-N can be swapped into the LAST slot. The
 # logic MUST be byte-for-byte identical in both call sites (enforced by solutions:db:hook-check).
 reserve_bug_slot() {
-  local cap="$1" line rel nl=$'\n'
+  local cap="$1" line rel
   local -a all=() top=() rest=()
   while IFS= read -r line; do [ -n "$line" ] && all+=("$line"); done
   # Split into the natural top-$cap and the remainder.

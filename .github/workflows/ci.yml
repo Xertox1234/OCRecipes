@@ -67,6 +67,8 @@ jobs:
         run: bash .claude/hooks/test-pr-verify.sh
       - name: PR preflight guard hook test
         run: bash .claude/hooks/test-pr-preflight-guard.sh
+      - name: Session recent-issues hook test
+        run: bash .claude/hooks/test-session-recent-issues.sh
 
   test:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})

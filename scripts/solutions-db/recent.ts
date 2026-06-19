@@ -1,42 +1,7 @@
 import "dotenv/config";
 import { createPool } from "./lib/db";
-import { buildRecentQuery, type RecentFilters } from "./lib/query-builder";
-
-function fail(msg: string): never {
-  console.error(msg);
-  process.exit(1);
-}
-
-function parseArgs(argv: string[]): { filters: RecentFilters; k: number } {
-  const args = argv.filter((a) => a !== "--");
-  const get = (flag: string): string | undefined => {
-    const idx = args.indexOf(flag);
-    return idx >= 0 ? args[idx + 1] : undefined;
-  };
-  const filters: RecentFilters = {};
-  const days = get("--days");
-  if (days !== undefined) {
-    const n = Number(days);
-    if (!Number.isFinite(n)) fail(`--days must be a number (got "${days}")`);
-    filters.days = n;
-  }
-  const track = get("--track");
-  if (track !== undefined) {
-    if (track !== "bug" && track !== "knowledge")
-      fail(`--track must be "bug" or "knowledge" (got "${track}")`);
-    filters.track = track;
-  }
-  const category = get("--category");
-  if (category) filters.category = category;
-  const limit = get("--limit");
-  let k = 20;
-  if (limit !== undefined) {
-    const n = Number(limit);
-    if (!Number.isFinite(n)) fail(`--limit must be a number (got "${limit}")`);
-    k = n;
-  }
-  return { filters, k };
-}
+import { buildRecentQuery } from "./lib/query-builder";
+import { parseRecentArgs } from "./lib/recent-args";
 
 function fmtDate(d: unknown): string {
   if (d instanceof Date) return d.toISOString().slice(0, 10);
@@ -49,7 +14,14 @@ async function main() {
     console.error("SOLUTIONS_DB_READONLY_URL not set");
     process.exit(1);
   }
-  const { filters, k } = parseArgs(process.argv.slice(2));
+  const { filters, k } = ((): ReturnType<typeof parseRecentArgs> => {
+    try {
+      return parseRecentArgs(process.argv.slice(2));
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      process.exit(1);
+    }
+  })();
   const { sql, params } = buildRecentQuery(filters, k);
   const pool = createPool(url);
   try {

@@ -65,4 +65,14 @@ rm -f /tmp/ocrecipes-preflight-pass
 OUT=$(SKIP_PR_PREFLIGHT=1 run_hook_tool "mcp__github__create_pull_request")
 assert_empty "mcp create bypass env allows" "" "$OUT"
 
+# 11. A shell separator INSIDE a quoted arg (echo/grep text) must pass through — not deny.
+rm -f /tmp/ocrecipes-preflight-pass
+OUT=$(run_hook 'echo "see (gh pr create vs the mcp tool)"')
+assert_empty "separator-in-quoted-string passes through" "" "$OUT"
+
+# 12. ...but an UNQUOTED `gh pr create` after a separator still denies (regression guard).
+rm -f /tmp/ocrecipes-preflight-pass
+OUT=$(run_hook 'true; gh pr create --title x')
+assert_contains "unquoted separator+create still denies" '"permissionDecision": "deny"' "$OUT"
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
