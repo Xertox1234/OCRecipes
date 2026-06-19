@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
+import bcrypt from "bcrypt";
 
 import { storage } from "../../storage";
 import { detectImageMimeType } from "../../lib/image-mime";
@@ -359,6 +360,31 @@ describe("Auth Routes", () => {
       expect(storage.createUser).not.toHaveBeenCalled();
       expect(sendVerificationEmail).toHaveBeenCalled();
       expect(sendSignupAttemptNotice).not.toHaveBeenCalled();
+    });
+
+    it("ON existing-email path runs bcrypt too (constant-time anti-enumeration)", async () => {
+      // Deterministic proxy for the timing defense: the existing-email branch
+      // must pay the same bcrypt cost as the new-account branch, else response
+      // latency leaks that the email already exists. A future "optimization"
+      // that skips the hash on this branch reintroduces the oracle and fails here.
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "old3", emailVerified: false }),
+      );
+      const hashSpy = vi.spyOn(bcrypt, "hash");
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "timing",
+        password: "pw12pw12",
+        email: "dup3@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(storage.createUser).not.toHaveBeenCalled();
+      expect(hashSpy).toHaveBeenCalled();
+      hashSpy.mockRestore();
     });
 
     it("existing VERIFIED email → identical neutral 200, owner notice, no createUser", async () => {

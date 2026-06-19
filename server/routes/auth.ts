@@ -104,6 +104,17 @@ export function register(app: Express): void {
           );
         }
 
+        // Constant-time anti-enumeration: when verification is ON, pay the
+        // bcrypt cost BEFORE the email-existence check so the existing-email
+        // and new-account branches take the same wall-clock (~250ms bcrypt
+        // dominates). Otherwise response latency leaks whether the email is
+        // already registered — defeating the neutral 200 below. The OFF path
+        // keeps its fast 409 (not anti-enumerating anyway), hashing only when
+        // it actually creates an account.
+        const precomputedHash = verificationOn
+          ? await bcrypt.hash(password, 12)
+          : null;
+
         const existingEmail = await storage.getUserByEmail(email);
         if (existingEmail) {
           if (!verificationOn) {
@@ -135,7 +146,8 @@ export function register(app: Express): void {
           return sendVerificationPending(res);
         }
 
-        const hashedPassword = await bcrypt.hash(password, 12);
+        const hashedPassword =
+          precomputedHash ?? (await bcrypt.hash(password, 12));
         let user;
         try {
           user = await storage.createUser({
