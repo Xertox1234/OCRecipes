@@ -118,6 +118,23 @@ export async function updateUser(
 }
 
 /**
+ * Idempotently mark a user's email as verified. Returns the updated SafeUser,
+ * or undefined if no user matches. `emailVerified` is intentionally NOT in
+ * UpdatableUserFields (the general update whitelist) — verification is a
+ * dedicated, single-purpose mutation, not a client-settable profile field.
+ */
+export async function markEmailVerified(
+  id: string,
+): Promise<SafeUser | undefined> {
+  const [user] = await db
+    .update(users)
+    .set({ emailVerified: true })
+    .where(eq(users.id, id))
+    .returning(safeUserColumns);
+  return user || undefined;
+}
+
+/**
  * Atomically update user goals AND upsert profile data in a single transaction.
  * Prevents partial writes where one table is updated but the other fails.
  */
