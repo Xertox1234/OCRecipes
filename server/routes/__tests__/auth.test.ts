@@ -20,6 +20,10 @@ import {
 import { createMockUser } from "../../__tests__/factories";
 import { emailVerificationEnabled } from "../../lib/email-config";
 import {
+  sendVerificationEmail,
+  sendSignupAttemptNotice,
+} from "../../services/email";
+import {
   mockExpressReq,
   mockExpressRes,
 } from "../../__tests__/utils/express-mocks";
@@ -313,6 +317,104 @@ describe("Auth Routes", () => {
         email: "testuser@example.com",
         emailVerified: false,
       });
+    });
+
+    it("new email → neutral check-inbox, no token, verification email sent", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockResolvedValue(
+        createMockUser({ id: "new1", email: "new@x.com" }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newbie",
+        password: "pw12pw12",
+        email: "new@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.token).toBeUndefined();
+      expect(res.body.status).toBe("verification_pending");
+      expect(sendVerificationEmail).toHaveBeenCalled();
+    });
+
+    it("existing UNVERIFIED email → identical neutral 200, resend (not notice), no createUser", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "old1", emailVerified: false }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "other",
+        password: "pw12pw12",
+        email: "dup@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verification_pending");
+      expect(storage.createUser).not.toHaveBeenCalled();
+      expect(sendVerificationEmail).toHaveBeenCalled();
+      expect(sendSignupAttemptNotice).not.toHaveBeenCalled();
+    });
+
+    it("existing VERIFIED email → identical neutral 200, owner notice, no createUser", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "old2", emailVerified: true }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "other2",
+        password: "pw12pw12",
+        email: "taken@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verification_pending");
+      expect(storage.createUser).not.toHaveBeenCalled();
+      expect(sendSignupAttemptNotice).toHaveBeenCalled();
+      expect(sendVerificationEmail).not.toHaveBeenCalled();
+    });
+
+    it("username taken → 409 (checked before email) even when verification ON", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(
+        createMockUser({ id: "u" }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "taken",
+        password: "pw12pw12",
+        email: "x@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+    });
+
+    it("verification OFF → old behavior: auto-login with token", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(false);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockResolvedValue(
+        createMockUser({ id: "n2" }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newb2",
+        password: "pw12pw12",
+        email: "n2@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.token).toBeTruthy();
     });
   });
 
