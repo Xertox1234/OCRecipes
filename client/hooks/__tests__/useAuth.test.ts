@@ -420,6 +420,32 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(true);
       expect(result.current.user).toEqual(fakeUser);
     });
+
+    it("does NOT authenticate when the server returns verification_pending (no token)", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ status: "verification_pending" }),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => {
+        expect(result.current.isLoading).toBe(false);
+      });
+
+      let res: { status: string } | undefined;
+      await act(async () => {
+        res = await result.current.register(
+          "newuser",
+          "password456",
+          "new@example.com",
+          true,
+        );
+      });
+
+      expect(res).toEqual({ status: "verification_pending" });
+      expect(mockTokenStorage.set).not.toHaveBeenCalled();
+      expect(result.current.isAuthenticated).toBe(false);
+    });
   });
 
   describe("logout", () => {

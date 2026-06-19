@@ -26,5 +26,10 @@ export interface AuthResponse {
 
 export interface ApiError {
   error: string;
-  code?: "TOKEN_EXPIRED" | "TOKEN_INVALID" | "TOKEN_REVOKED" | "NO_TOKEN";
+  code?:
+    | "TOKEN_EXPIRED"
+    | "TOKEN_INVALID"
+    | "TOKEN_REVOKED"
+    | "NO_TOKEN"
+    | "EMAIL_NOT_VERIFIED";
 }

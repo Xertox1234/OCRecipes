@@ -12,7 +12,9 @@ interface AuthContextType {
     password: string,
     email: string,
     ageConfirmed: boolean,
-  ) => Promise<User>;
+  ) => Promise<
+    { status: "authenticated"; user: User } | { status: "verification_pending" }
+  >;
   logout: () => Promise<void>;
   expireSession: () => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
