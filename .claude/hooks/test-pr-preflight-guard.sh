@@ -10,6 +10,10 @@ run_hook() { # $1=command  → stdout of hook
   printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$1" '$c')" | bash "$HOOK"
 }
 
+run_hook_tool() { # $1=tool_name  → stdout of hook (the tool call itself is the PR-create)
+  printf '{"tool_name":%s,"tool_input":{"title":"x","body":"y"}}' "$(jq -Rn --arg t "$1" '$t')" | bash "$HOOK"
+}
+
 HEAD=$(git rev-parse HEAD 2>/dev/null || echo deadbeef)
 
 # 1. Non-create gh commands pass through (no deny).
@@ -40,5 +44,25 @@ assert_empty "phrase inside commit message passes through" "" "$OUT"
 rm -f /tmp/ocrecipes-preflight-pass
 OUT=$(run_hook 'cd /tmp && gh pr create --title x --body y')
 assert_contains "chained gh pr create still denies" '"permissionDecision": "deny"' "$OUT"
+
+# 7. MCP create_pull_request with NO stamp → deny (the default /todo PR-create path).
+rm -f /tmp/ocrecipes-preflight-pass
+OUT=$(run_hook_tool "mcp__github__create_pull_request")
+assert_contains "mcp create with no stamp denies" '"permissionDecision": "deny"' "$OUT"
+
+# 8. MCP create_pull_request with a FRESH stamp (== HEAD) → allow.
+echo "$HEAD" > /tmp/ocrecipes-preflight-pass
+OUT=$(run_hook_tool "mcp__github__create_pull_request")
+assert_empty "mcp create with fresh stamp allows" "" "$OUT"
+rm -f /tmp/ocrecipes-preflight-pass
+
+# 9. A non-create github MCP tool passes through (only create_pull_request is gated).
+OUT=$(run_hook_tool "mcp__github__list_pull_requests")
+assert_empty "other github mcp tool passes through" "" "$OUT"
+
+# 10. MCP create with bypass env → allow.
+rm -f /tmp/ocrecipes-preflight-pass
+OUT=$(SKIP_PR_PREFLIGHT=1 run_hook_tool "mcp__github__create_pull_request")
+assert_empty "mcp create bypass env allows" "" "$OUT"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
