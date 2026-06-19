@@ -34,6 +34,10 @@ export function verifyVerificationToken(
 ): VerificationTokenPayload | null {
   try {
     const payload = jwt.verify(token, jwtSecret, {
+      // Pin the algorithm on this net-new verifier — never honor the token's
+      // own `alg` header (defense against algorithm-confusion). We always sign
+      // HS256 with a symmetric secret.
+      algorithms: ["HS256"],
       audience: VERIFY_AUDIENCE,
       issuer: VERIFY_ISSUER,
     });

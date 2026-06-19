@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { AccessibilityInfo, StyleSheet, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { ThemedView } from "@/components/ThemedView";
@@ -29,6 +29,11 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
   const [email, setEmail] = useState(route.params?.email ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // A verification email was actually sent for this address only when we arrived
+  // from registration (email param present) or after a successful resend. The
+  // login → EMAIL_NOT_VERIFIED entry passes no email param and sent nothing, so
+  // the "we've sent a link" copy must NOT claim a send on that path.
+  const [linkSent, setLinkSent] = useState(Boolean(route.params?.email));
 
   // Confirm flow: a deep link delivered a token → verify it on mount.
   useEffect(() => {
@@ -37,9 +42,21 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
     (async () => {
       try {
         await verifyEmailRequest(tokenParam);
-        if (!cancelled) setStatus("confirmed");
+        if (!cancelled) {
+          setStatus("confirmed");
+          // Async state transition → announce for screen readers (both
+          // platforms; no live region present, so no double-announce risk).
+          AccessibilityInfo.announceForAccessibility(
+            "Your email is verified. You can now sign in.",
+          );
+        }
       } catch {
-        if (!cancelled) setStatus("failed");
+        if (!cancelled) {
+          setStatus("failed");
+          AccessibilityInfo.announceForAccessibility(
+            "That verification link is invalid or expired.",
+          );
+        }
       }
     })();
     return () => {
@@ -57,7 +74,11 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
     try {
       await resendVerificationRequest(email);
       setError("");
+      setLinkSent(true);
       setStatus("pending");
+      AccessibilityInfo.announceForAccessibility(
+        "A new verification link has been sent.",
+      );
     } catch {
       // Resend is always neutral server-side; only a network error lands here.
       setError("Couldn't resend right now. Please try again shortly.");
@@ -107,10 +128,13 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
           </>
         ) : (
           <>
-            <ThemedText type="h2">Check your inbox</ThemedText>
+            <ThemedText type="h2">
+              {linkSent ? "Check your inbox" : "Verify your email"}
+            </ThemedText>
             <ThemedText type="body" style={{ color: theme.textSecondary }}>
-              We&apos;ve sent a verification link{email ? ` to ${email}` : ""}.
-              Click it to finish setting up your account.
+              {linkSent
+                ? `We've sent a verification link${email ? ` to ${email}` : ""}. Click it to finish setting up your account.`
+                : "Your email isn't verified yet. Enter it below and we'll send you a verification link."}
             </ThemedText>
             <TextInput
               leftIcon="mail"
