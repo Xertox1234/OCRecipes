@@ -39,7 +39,9 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (!tokenParam) return;
     let cancelled = false;
-    (async () => {
+    // void: the IIFE's promise is intentionally fire-and-forget (the cleanup
+    // flag handles unmount); satisfies @typescript-eslint/no-floating-promises.
+    void (async () => {
       try {
         await verifyEmailRequest(tokenParam);
         if (!cancelled) {
