@@ -41,6 +41,8 @@ export const linking: LinkingOptions<RootStackParamList> = {
       AllConversations: "conversation-list",
       NutritionDetail: "nutrition/:barcode",
       Scan: "scan",
+      // ?token=… maps to route.params.token automatically (no positional param).
+      VerifyEmail: "verify-email",
     },
   },
 };

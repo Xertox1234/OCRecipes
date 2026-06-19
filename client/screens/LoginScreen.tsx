@@ -23,6 +23,10 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { Spacing, withOpacity } from "@/constants/theme";
 import { validateAuthForm, getAuthErrorMessage } from "./LoginScreen-utils";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { ApiError } from "@/lib/api-error";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 const TERMS_URL = "https://ocrecipes.app/terms";
 const PRIVACY_URL = "https://ocrecipes.app/privacy";
@@ -36,6 +40,8 @@ export default function LoginScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { login, register } = useAuthContext();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
@@ -91,11 +97,28 @@ export default function LoginScreen() {
     try {
       if (mode === "login") {
         await login(username.trim(), password);
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
       } else {
-        await register(username.trim(), password, email.trim(), ageConfirmed);
+        const result = await register(
+          username.trim(),
+          password,
+          email.trim(),
+          ageConfirmed,
+        );
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
+        if (result.status === "verification_pending") {
+          // Account created but email not verified → route to the verify screen
+          // (the user is NOT authenticated yet; no token was issued).
+          navigation.navigate("VerifyEmail", { email: email.trim() });
+        }
       }
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
+      if (err instanceof ApiError && err.code === "EMAIL_NOT_VERIFIED") {
+        // Valid credentials, unverified email → route to the verify screen.
+        // The login path has no email to prefill.
+        navigation.navigate("VerifyEmail", {});
+        return;
+      }
       setError(getAuthErrorMessage(err, mode));
       haptics.notification(Haptics.NotificationFeedbackType.Error);
     } finally {
