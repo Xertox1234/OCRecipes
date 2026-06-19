@@ -31,6 +31,7 @@ import {
   accountDeletionLimiter,
   crudRateLimit,
   verifyEmailLimiter,
+  resendVerificationLimiter,
 } from "./_rate-limiters";
 import {
   loginSchema,
@@ -38,6 +39,7 @@ import {
   deleteAccountSchema,
   profileUpdateSchema,
   verifyEmailSchema,
+  resendVerificationSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
@@ -299,6 +301,43 @@ export function register(app: Express): void {
         res.status(200).json({ status: "verified" });
       } catch (error) {
         handleRouteError(res, error, "verify email");
+      }
+    },
+  );
+
+  app.post(
+    "/api/auth/resend-verification",
+    resendVerificationLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const parsed = resendVerificationSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const { email } = parsed.data;
+        // Always neutral (anti-enumeration). Only actually send for an existing,
+        // still-unverified account; the per-recipient throttle in email.ts caps
+        // abuse. The lookup + return cost is identical whether or not the account
+        // exists, so response timing is not an oracle either.
+        const user = await storage.getUserByEmail(email);
+        if (user && !user.emailVerified) {
+          fireAndForget(
+            "resend-verification",
+            sendVerificationEmail(email, signVerificationToken(user.id, email)),
+          );
+        }
+        res.status(200).json({
+          status: "verification_pending",
+          message: "If that account needs verification, we've sent a new link.",
+        });
+      } catch (error) {
+        handleRouteError(res, error, "resend verification");
       }
     },
   );

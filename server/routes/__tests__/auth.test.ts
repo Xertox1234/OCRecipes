@@ -564,6 +564,47 @@ describe("Auth Routes", () => {
     });
   });
 
+  describe("POST /api/auth/resend-verification", () => {
+    it("always neutral 200; sends only when account exists + unverified", async () => {
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "u9", emailVerified: false }),
+      );
+
+      const res = await request(app)
+        .post("/api/auth/resend-verification")
+        .send({ email: "u9@x.com" });
+
+      expect(res.status).toBe(200);
+      expect(sendVerificationEmail).toHaveBeenCalled();
+    });
+
+    it("neutral 200 even when the email has no account (no oracle)", async () => {
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/auth/resend-verification")
+        .send({ email: "ghost@x.com" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verification_pending");
+      expect(sendVerificationEmail).not.toHaveBeenCalled();
+    });
+
+    it("neutral 200 when the account is already verified (no send)", async () => {
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "u10", emailVerified: true }),
+      );
+
+      const res = await request(app)
+        .post("/api/auth/resend-verification")
+        .send({ email: "done@x.com" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verification_pending");
+      expect(sendVerificationEmail).not.toHaveBeenCalled();
+    });
+  });
+
   describe("POST /api/auth/logout", () => {
     it("increments token version atomically and returns success", async () => {
       vi.mocked(storage.incrementTokenVersion).mockResolvedValue(
