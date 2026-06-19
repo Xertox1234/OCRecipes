@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
+import bcrypt from "bcrypt";
 
 import { storage } from "../../storage";
 import { detectImageMimeType } from "../../lib/image-mime";
@@ -18,6 +19,12 @@ import {
   checkPremiumFeature,
 } from "../_helpers";
 import { createMockUser } from "../../__tests__/factories";
+import { emailVerificationEnabled } from "../../lib/email-config";
+import {
+  sendVerificationEmail,
+  sendSignupAttemptNotice,
+} from "../../services/email";
+import { signVerificationToken } from "../../lib/verification-token";
 import {
   mockExpressReq,
   mockExpressRes,
@@ -37,12 +44,26 @@ vi.mock("../../storage", () => ({
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
     deleteUser: vi.fn(),
+    markEmailVerified: vi.fn(),
   },
 }));
 
 vi.mock("../../middleware/auth");
 
 vi.mock("express-rate-limit");
+
+vi.mock("../../lib/email-config", () => ({
+  emailVerificationEnabled: vi.fn(),
+}));
+
+// CRITICAL: these mocks MUST return resolved promises. The register handler
+// calls `fireAndForget(label, sendVerificationEmail(...))`, and fireAndForget
+// does `promise.catch(...)`. A bare vi.fn() returns undefined → undefined.catch()
+// throws synchronously inside the handler try → 500 (not the 200 we assert).
+vi.mock("../../services/email", () => ({
+  sendVerificationEmail: vi.fn().mockResolvedValue(undefined),
+  sendSignupAttemptNotice: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock("../../lib/image-mime", () => ({
   detectImageMimeType: vi.fn(),
@@ -86,6 +107,10 @@ describe("Auth Routes", () => {
     app = createApp();
     // Default: no email collision; the duplicate-email test overrides this.
     vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+    // Default the gate OFF (fail-open) so existing tests keep old behavior;
+    // ON-path tests opt in explicitly. No global resetMocks, so this is the
+    // guard against a prior test's mockReturnValue(true) leaking forward.
+    vi.mocked(emailVerificationEnabled).mockReturnValue(false);
   });
 
   describe("POST /api/auth/register", () => {
@@ -295,6 +320,129 @@ describe("Auth Routes", () => {
         emailVerified: false,
       });
     });
+
+    it("new email → neutral check-inbox, no token, verification email sent", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockResolvedValue(
+        createMockUser({ id: "new1", email: "new@x.com" }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newbie",
+        password: "pw12pw12",
+        email: "new@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.token).toBeUndefined();
+      expect(res.body.status).toBe("verification_pending");
+      expect(sendVerificationEmail).toHaveBeenCalled();
+    });
+
+    it("existing UNVERIFIED email → identical neutral 200, resend (not notice), no createUser", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "old1", emailVerified: false }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "other",
+        password: "pw12pw12",
+        email: "dup@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verification_pending");
+      expect(storage.createUser).not.toHaveBeenCalled();
+      expect(sendVerificationEmail).toHaveBeenCalled();
+      expect(sendSignupAttemptNotice).not.toHaveBeenCalled();
+    });
+
+    it("ON existing-email path runs bcrypt too (constant-time anti-enumeration)", async () => {
+      // Deterministic proxy for the timing defense: the existing-email branch
+      // must pay the same bcrypt cost as the new-account branch, else response
+      // latency leaks that the email already exists. A future "optimization"
+      // that skips the hash on this branch reintroduces the oracle and fails here.
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "old3", emailVerified: false }),
+      );
+      const hashSpy = vi.spyOn(bcrypt, "hash");
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "timing",
+        password: "pw12pw12",
+        email: "dup3@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(storage.createUser).not.toHaveBeenCalled();
+      expect(hashSpy).toHaveBeenCalled();
+      hashSpy.mockRestore();
+    });
+
+    it("existing VERIFIED email → identical neutral 200, owner notice, no createUser", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "old2", emailVerified: true }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "other2",
+        password: "pw12pw12",
+        email: "taken@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verification_pending");
+      expect(storage.createUser).not.toHaveBeenCalled();
+      expect(sendSignupAttemptNotice).toHaveBeenCalled();
+      expect(sendVerificationEmail).not.toHaveBeenCalled();
+    });
+
+    it("username taken → 409 (checked before email) even when verification ON", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(
+        createMockUser({ id: "u" }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "taken",
+        password: "pw12pw12",
+        email: "x@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+    });
+
+    it("verification OFF → old behavior: auto-login with token", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(false);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockResolvedValue(
+        createMockUser({ id: "n2" }),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "newb2",
+        password: "pw12pw12",
+        email: "n2@x.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(201);
+      expect(res.body.token).toBeTruthy();
+    });
   });
 
   describe("POST /api/auth/login", () => {
@@ -353,6 +501,107 @@ describe("Auth Routes", () => {
       const res = await request(app).post("/api/auth/login").send({});
 
       expect(res.status).toBe(400);
+    });
+
+    it("blocks login with 403 EMAIL_NOT_VERIFIED when unverified + verification ON", async () => {
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("password123", 10);
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+        createMockUser({ emailVerified: false, password: hash }),
+      );
+
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: "testuser", password: "password123" });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe("EMAIL_NOT_VERIFIED");
+      expect(res.body.token).toBeUndefined();
+    });
+
+    it("allows unverified login when verification OFF (fail-open)", async () => {
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("password123", 10);
+      vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(
+        createMockUser({ emailVerified: false, password: hash }),
+      );
+
+      const res = await request(app)
+        .post("/api/auth/login")
+        .send({ username: "testuser", password: "password123" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.token).toBe("mock-jwt-token");
+    });
+  });
+
+  describe("POST /api/auth/verify-email", () => {
+    it("verifies a valid token, flips emailVerified, issues NO token", async () => {
+      vi.mocked(storage.markEmailVerified).mockResolvedValue(
+        createMockUser({ emailVerified: true }),
+      );
+      const token = signVerificationToken("u1", "a@b.com");
+
+      const res = await request(app)
+        .post("/api/auth/verify-email")
+        .send({ token });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verified");
+      // Verifying proves email ownership, NOT password possession — no access
+      // token is minted here (issuing one would be an auth bypass).
+      expect(res.body.token).toBeUndefined();
+      expect(storage.markEmailVerified).toHaveBeenCalledWith("u1");
+    });
+
+    it("rejects a garbage token with 400", async () => {
+      const res = await request(app)
+        .post("/api/auth/verify-email")
+        .send({ token: "not-a-jwt" });
+
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe("POST /api/auth/resend-verification", () => {
+    it("always neutral 200; sends only when account exists + unverified", async () => {
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "u9", emailVerified: false }),
+      );
+
+      const res = await request(app)
+        .post("/api/auth/resend-verification")
+        .send({ email: "u9@x.com" });
+
+      expect(res.status).toBe(200);
+      expect(sendVerificationEmail).toHaveBeenCalled();
+    });
+
+    it("neutral 200 even when the email has no account (no oracle)", async () => {
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/auth/resend-verification")
+        .send({ email: "ghost@x.com" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verification_pending");
+      expect(sendVerificationEmail).not.toHaveBeenCalled();
+    });
+
+    it("neutral 200 when the account is already verified (no send)", async () => {
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "u10", emailVerified: true }),
+      );
+
+      const res = await request(app)
+        .post("/api/auth/resend-verification")
+        .send({ email: "done@x.com" });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verification_pending");
+      expect(sendVerificationEmail).not.toHaveBeenCalled();
     });
   });
 

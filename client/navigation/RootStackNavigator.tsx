@@ -5,6 +5,7 @@ import { Feather } from "@expo/vector-icons";
 
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import LoginScreen from "@/screens/LoginScreen";
+import VerifyEmailScreen from "@/screens/VerifyEmailScreen";
 import ScanScreen from "@/screens/ScanScreen";
 import NutritionDetailScreen from "@/screens/NutritionDetailScreen";
 import PhotoIntentScreen from "@/screens/PhotoIntentScreen";
@@ -51,6 +52,7 @@ import NotebookEntryScreen from "@/screens/NotebookEntryScreen";
 
 export type RootStackParamList = {
   Login: undefined;
+  VerifyEmail: { token?: string; email?: string } | undefined;
   Onboarding: undefined;
   Main: undefined;
   Scan:
@@ -175,11 +177,18 @@ export default function RootStackNavigator() {
       UNSTABLE_routeNamesChangeBehavior="lastUnhandled"
     >
       {!isAuthenticated ? (
-        <Stack.Screen
-          name="Login"
-          component={LoginScreen}
-          options={{ headerShown: false }}
-        />
+        <>
+          <Stack.Screen
+            name="Login"
+            component={LoginScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="VerifyEmail"
+            component={VerifyEmailScreen}
+            options={{ headerShown: false }}
+          />
+        </>
       ) : needsOnboarding ? (
         <Stack.Screen
           name="Onboarding"

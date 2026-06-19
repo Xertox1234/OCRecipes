@@ -242,6 +242,9 @@ async function ensureDemoUser(): Promise<string> {
       username: "demo",
       email: "demo@ocrecipes.test",
       password: hashedPassword,
+      // Belt-and-suspenders with fail-open: even if RESEND_API_KEY is set in a
+      // dev/test env, demo/demo123 must never be gated behind verification.
+      emailVerified: true,
       displayName: "Demo Chef",
       onboardingCompleted: true,
       subscriptionTier: "premium",

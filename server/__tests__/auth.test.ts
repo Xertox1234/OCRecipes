@@ -206,7 +206,7 @@ describe("Auth Middleware", () => {
     it("calls next and sets userId for a valid token whose version matches", async () => {
       const userId = nextUserId();
       mockGetUser.mockResolvedValue(userRow(userId, 0));
-      const req = makeReq(`Bearer ${generateToken(userId, 0)}`);
+      const req = makeReq(`Bearer ${generateToken(userId, 0, true)}`);
       const res = makeRes();
       const { next, promise } = callAuth(req, res);
       await promise;
@@ -222,7 +222,7 @@ describe("Auth Middleware", () => {
       mockGetUser.mockResolvedValue(undefined);
       const res = makeRes();
       const { next, promise } = callAuth(
-        makeReq(`Bearer ${generateToken(userId, 0)}`),
+        makeReq(`Bearer ${generateToken(userId, 0, true)}`),
         res,
       );
       await promise;
@@ -240,7 +240,7 @@ describe("Auth Middleware", () => {
       mockGetUser.mockResolvedValue(userRow(userId, 1));
       const res = makeRes();
       const { next, promise } = callAuth(
-        makeReq(`Bearer ${generateToken(userId, 0)}`),
+        makeReq(`Bearer ${generateToken(userId, 0, true)}`),
         res,
       );
       await promise;
@@ -258,7 +258,7 @@ describe("Auth Middleware", () => {
     it("serves the second request from cache without a second DB lookup", async () => {
       const userId = nextUserId();
       mockGetUser.mockResolvedValue(userRow(userId, 0));
-      const token = generateToken(userId, 0);
+      const token = generateToken(userId, 0, true);
 
       const first = callAuth(makeReq(`Bearer ${token}`), makeRes());
       await first.promise;
@@ -277,7 +277,7 @@ describe("Auth Middleware", () => {
 
       // Prime the cache with version 0.
       const prime = callAuth(
-        makeReq(`Bearer ${generateToken(userId, 0)}`),
+        makeReq(`Bearer ${generateToken(userId, 0, true)}`),
         makeRes(),
       );
       await prime.promise;
@@ -286,7 +286,7 @@ describe("Auth Middleware", () => {
       // A token claiming version 1 is rejected against the cached 0 — no new DB hit.
       const res = makeRes();
       const { next, promise } = callAuth(
-        makeReq(`Bearer ${generateToken(userId, 1)}`),
+        makeReq(`Bearer ${generateToken(userId, 1, true)}`),
         res,
       );
       await promise;
@@ -303,7 +303,7 @@ describe("Auth Middleware", () => {
     it("invalidateTokenVersionCache forces a fresh DB lookup", async () => {
       const userId = nextUserId();
       mockGetUser.mockResolvedValue(userRow(userId, 0));
-      const token = generateToken(userId, 0);
+      const token = generateToken(userId, 0, true);
 
       await callAuth(makeReq(`Bearer ${token}`), makeRes()).promise;
       expect(mockGetUser).toHaveBeenCalledTimes(1);
@@ -318,7 +318,7 @@ describe("Auth Middleware", () => {
   describe("generateToken", () => {
     it("signs a verifiable token with sub, tokenVersion, issuer and audience", () => {
       const userId = nextUserId();
-      const token = generateToken(userId, 0);
+      const token = generateToken(userId, 0, true);
 
       const decoded = jwt.verify(token, JWT_SECRET, {
         issuer: JWT_ISSUER,
@@ -330,7 +330,7 @@ describe("Auth Middleware", () => {
     });
 
     it("sets a 7 day expiration", () => {
-      const token = generateToken(nextUserId(), 0);
+      const token = generateToken(nextUserId(), 0, true);
       const decoded = jwt.decode(token) as jwt.JwtPayload;
 
       const now = Math.floor(Date.now() / 1000);
@@ -340,7 +340,7 @@ describe("Auth Middleware", () => {
     });
 
     it("embeds the provided tokenVersion", () => {
-      const token = generateToken(nextUserId(), 5);
+      const token = generateToken(nextUserId(), 5, true);
       const decoded = jwt.decode(token) as jwt.JwtPayload;
       expect(decoded.tokenVersion).toBe(5);
     });

@@ -115,6 +115,14 @@ export async function requireAuth(
       return;
     }
 
+    // NOTE: requireAuth does NOT gate on payload.emailVerified. The real gate is
+    // the login endpoint withholding tokens from unverified users (when ON), so a
+    // runtime claim-check here catches zero real threats — and would actively
+    // strand users whose tokens were minted in the gate-OFF window (stale
+    // `emailVerified: false` claim, DB grandfathered by the backfill but the
+    // in-flight token can't be). The token still carries the claim for any future
+    // token path (e.g. refresh tokens) that wants it.
+
     // Check tokenVersion — use cache to avoid DB hit on every request
     const cachedVersion = getCachedTokenVersion(payload.sub);
     if (cachedVersion !== undefined) {
@@ -150,8 +158,12 @@ export async function requireAuth(
   }
 }
 
-export function generateToken(userId: string, tokenVersion: number): string {
-  return jwt.sign({ sub: userId, tokenVersion }, jwtSecret, {
+export function generateToken(
+  userId: string,
+  tokenVersion: number,
+  emailVerified: boolean,
+): string {
+  return jwt.sign({ sub: userId, tokenVersion, emailVerified }, jwtSecret, {
     expiresIn: "7d",
     issuer: JWT_ISSUER,
     audience: JWT_AUDIENCE,

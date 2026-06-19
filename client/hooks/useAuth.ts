@@ -152,7 +152,10 @@ export function useAuth() {
       password: string,
       email: string,
       ageConfirmed: boolean,
-    ) => {
+    ): Promise<
+      | { status: "authenticated"; user: User }
+      | { status: "verification_pending" }
+    > => {
       const response = await apiRequest("POST", "/api/auth/register", {
         username,
         password,
@@ -161,13 +164,20 @@ export function useAuth() {
         // state; server enforces with `z.literal(true)` (zero trust on client).
         ageConfirmed,
       });
-      const { user, token } = await response.json();
-      await tokenStorage.set(token);
-      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
-      setState({ user, isLoading: false, isAuthenticated: true });
-      // Register push token after registration (fire-and-forget, non-fatal)
-      registerPushToken().catch(() => {});
-      return user;
+      const data = await response.json();
+      // Verification OFF (fail-open) → server returns a token → auto-login,
+      // preserving the pre-feature behavior.
+      if (data.token) {
+        await tokenStorage.set(data.token);
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
+        setState({ user: data.user, isLoading: false, isAuthenticated: true });
+        // Register push token after registration (fire-and-forget, non-fatal)
+        registerPushToken().catch(() => {});
+        return { status: "authenticated", user: data.user };
+      }
+      // Verification ON → no token issued; the caller routes to the verify
+      // screen. The user is NOT authenticated yet.
+      return { status: "verification_pending" };
     },
     [],
   );

@@ -57,6 +57,21 @@ export const registerSchema = z.object({
   }),
 });
 
+// Email verification: the token is a stateless JWT (URL-delivered, can be long).
+export const verifyEmailSchema = z.object({
+  token: z.string().min(1, "Token is required").max(2000),
+});
+
+// Resend verification: email is normalized identically to registerSchema.
+export const resendVerificationSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("Please enter a valid email address")
+    .max(254),
+});
+
 // Account deletion validation schema
 export const deleteAccountSchema = z.object({
   password: z.string().min(1, "Password is required"),

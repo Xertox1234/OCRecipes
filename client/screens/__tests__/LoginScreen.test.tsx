@@ -10,14 +10,22 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import LoginScreen from "../LoginScreen";
+import { ApiError } from "@/lib/api-error";
 
-const { mockLogin, mockRegister } = vi.hoisted(() => ({
+const { mockLogin, mockRegister, mockNavigate } = vi.hoisted(() => ({
   mockLogin: vi.fn(),
   mockRegister: vi.fn(),
+  mockNavigate: vi.fn(),
 }));
 
 vi.mock("@/context/AuthContext", () => ({
   useAuthContext: () => ({ login: mockLogin, register: mockRegister }),
+}));
+
+// render-component provides no NavigationContainer; LoginScreen now calls
+// useNavigation, so stub it with a spy we can assert against.
+vi.mock("@react-navigation/native", () => ({
+  useNavigation: () => ({ navigate: mockNavigate }),
 }));
 
 // react-native-keyboard-controller ships untransformed native source — passthrough.
@@ -143,7 +151,11 @@ describe("LoginScreen — email field", () => {
   });
 
   it("threads the entered email and live ageConfirmed into register", async () => {
-    mockRegister.mockResolvedValue(undefined);
+    // Fail-open auto-login shape (register returns a token → authenticated).
+    mockRegister.mockResolvedValue({
+      status: "authenticated",
+      user: { id: "1", username: "chef_tony" },
+    });
     renderComponent(<LoginScreen />);
 
     fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
@@ -173,6 +185,54 @@ describe("LoginScreen — email field", () => {
         "chef@example.com",
         true,
       ),
+    );
+  });
+
+  it("navigates to VerifyEmail after a verification-pending registration", async () => {
+    mockRegister.mockResolvedValue({ status: "verification_pending" });
+    renderComponent(<LoginScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "newchef" },
+    });
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "new@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "Recipe123" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "Recipe123" },
+    });
+    fireEvent.click(
+      screen.getByLabelText("I confirm I am 13 years of age or older"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith("VerifyEmail", {
+        email: "new@example.com",
+      }),
+    );
+  });
+
+  it("navigates to VerifyEmail when login returns EMAIL_NOT_VERIFIED", async () => {
+    mockLogin.mockRejectedValue(
+      new ApiError("403: email not verified", "EMAIL_NOT_VERIFIED"),
+    );
+    renderComponent(<LoginScreen />);
+
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "demo" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "Recipe123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
+
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith("VerifyEmail", {}),
     );
   });
 });

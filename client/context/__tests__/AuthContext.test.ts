@@ -81,14 +81,20 @@ describe("AuthContext", () => {
   describe("auth interface", () => {
     it("should expose all expected methods", () => {
       // Shape-only smoke test: asserts the interface exposes the named
-      // methods. Casts on `login`/`register` returns are necessary because
-      // this test never constructs or inspects a real `User`.
+      // methods. The cast on `login`'s return is necessary because this test
+      // never constructs or inspects a real `User`. `register` returns the
+      // discriminated verification result, so no cast is needed there.
       const authInterface = {
         user: null,
         isLoading: false,
         isAuthenticated: false,
         login: async (_u: string, _p: string) => ({}) as unknown as User,
-        register: async (_u: string, _p: string) => ({}) as unknown as User,
+        register: async (
+          _u: string,
+          _p: string,
+        ): Promise<{ status: "verification_pending" }> => ({
+          status: "verification_pending",
+        }),
         logout: async () => {},
         deleteAccount: async (_p: string) => {},
         updateUser: async (_updates: Record<string, unknown>) => undefined,

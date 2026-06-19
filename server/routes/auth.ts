@@ -14,6 +14,15 @@ import { detectImageMimeType } from "../lib/image-mime";
 import { saveAvatar, deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { handleRouteError, formatZodError } from "./_helpers";
+import { emailVerificationEnabled } from "../lib/email-config";
+import {
+  signVerificationToken,
+  verifyVerificationToken,
+} from "../lib/verification-token";
+import {
+  sendVerificationEmail,
+  sendSignupAttemptNotice,
+} from "../services/email";
 import {
   registerLimiter,
   loginLimiter,
@@ -21,12 +30,16 @@ import {
   avatarRateLimit,
   accountDeletionLimiter,
   crudRateLimit,
+  verifyEmailLimiter,
+  resendVerificationLimiter,
 } from "./_rate-limiters";
 import {
   loginSchema,
   registerSchema,
   deleteAccountSchema,
   profileUpdateSchema,
+  verifyEmailSchema,
+  resendVerificationSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
@@ -58,6 +71,15 @@ function serializeUser(user: {
   };
 }
 
+function sendVerificationPending(res: Response): void {
+  // Content-free neutral response — identical for new / existing-unverified /
+  // existing-verified signups so the registrant cannot enumerate emails.
+  res.status(200).json({
+    status: "verification_pending",
+    message: "Check your inbox to verify your email.",
+  });
+}
+
 export function register(app: Express): void {
   app.post(
     "/api/auth/register",
@@ -74,11 +96,12 @@ export function register(app: Express): void {
           );
           return;
         }
-        const validated = parsed.data;
+        const { username, password, email } = parsed.data;
+        const verificationOn = emailVerificationEnabled();
 
-        const existingUser = await storage.getUserByUsername(
-          validated.username,
-        );
+        // Username uniqueness FIRST — keeps the existing 409. This is the only
+        // signup response that is NOT the neutral check-inbox (spec §6a).
+        const existingUser = await storage.getUserByUsername(username);
         if (existingUser) {
           return sendError(
             res,
@@ -88,45 +111,98 @@ export function register(app: Express): void {
           );
         }
 
-        const existingEmail = await storage.getUserByEmail(validated.email);
-        if (existingEmail) {
-          return sendError(
-            res,
-            409,
-            "Email already registered",
-            ErrorCode.CONFLICT,
-          );
-        }
+        // Constant-time anti-enumeration: when verification is ON, pay the
+        // bcrypt cost BEFORE the email-existence check so the existing-email
+        // and new-account branches take the same wall-clock (~250ms bcrypt
+        // dominates). Otherwise response latency leaks whether the email is
+        // already registered — defeating the neutral 200 below. The OFF path
+        // keeps its fast 409 (not anti-enumerating anyway), hashing only when
+        // it actually creates an account.
+        const precomputedHash = verificationOn
+          ? await bcrypt.hash(password, 12)
+          : null;
 
-        const hashedPassword = await bcrypt.hash(validated.password, 12);
-        let user;
-        try {
-          user = await storage.createUser({
-            username: validated.username,
-            password: hashedPassword,
-            email: validated.email,
-          });
-        } catch (err) {
-          // Catch unique constraint violation from concurrent registrations.
-          // The table has two unique columns (username, email) — map the 23505
-          // to the right per-field message via the violated constraint name.
-          if (isUniqueViolation(err)) {
-            const constraint = uniqueViolationConstraint(err);
+        const existingEmail = await storage.getUserByEmail(email);
+        if (existingEmail) {
+          if (!verificationOn) {
+            // Fail-open: pre-feature behavior (explicit 409, no anti-enum).
             return sendError(
               res,
               409,
-              constraint?.includes("email")
-                ? "Email already registered"
-                : "Username already exists",
+              "Email already registered",
+              ErrorCode.CONFLICT,
+            );
+          }
+          // Verification ON: anti-enumeration. Same neutral response either way;
+          // NEVER create an account and NEVER touch the existing password.
+          if (!existingEmail.emailVerified) {
+            // Unverified retry → help them finish, don't alarm them.
+            fireAndForget(
+              "resend-verification-on-reregister",
+              sendVerificationEmail(
+                email,
+                signVerificationToken(existingEmail.id, email),
+              ),
+            );
+          } else {
+            fireAndForget(
+              "signup-attempt-notice",
+              sendSignupAttemptNotice(email),
+            );
+          }
+          return sendVerificationPending(res);
+        }
+
+        const hashedPassword =
+          precomputedHash ?? (await bcrypt.hash(password, 12));
+        let user;
+        try {
+          user = await storage.createUser({
+            username,
+            password: hashedPassword,
+            email,
+          });
+        } catch (err) {
+          // Catch unique-violation from a concurrent registration (unchanged).
+          if (isUniqueViolation(err)) {
+            const constraint = uniqueViolationConstraint(err);
+            if (constraint?.includes("email")) {
+              // Email-constraint race: ON → neutral (no existence leak);
+              // OFF → original explicit message.
+              return verificationOn
+                ? sendVerificationPending(res)
+                : sendError(
+                    res,
+                    409,
+                    "Email already registered",
+                    ErrorCode.CONFLICT,
+                  );
+            }
+            return sendError(
+              res,
+              409,
+              "Username already exists",
               ErrorCode.CONFLICT,
             );
           }
           throw err;
         }
 
-        const token = generateToken(user.id.toString(), user.tokenVersion);
+        if (verificationOn) {
+          fireAndForget(
+            "send-verification-email",
+            sendVerificationEmail(email, signVerificationToken(user.id, email)),
+          );
+          return sendVerificationPending(res);
+        }
 
-        res.status(201).json({ user: serializeUser(user), token });
+        // Fail-open: pre-feature auto-login (201 + token).
+        const token = generateToken(
+          user.id.toString(),
+          user.tokenVersion,
+          user.emailVerified,
+        );
+        return res.status(201).json({ user: serializeUser(user), token });
       } catch (error) {
         handleRouteError(res, error, "create account");
       }
@@ -164,11 +240,104 @@ export function register(app: Express): void {
           );
         }
 
-        const token = generateToken(user.id.toString(), user.tokenVersion);
+        if (emailVerificationEnabled() && !user.emailVerified) {
+          // Reachable only AFTER correct credentials → not an enumeration oracle.
+          return sendError(
+            res,
+            403,
+            "Email not verified",
+            ErrorCode.EMAIL_NOT_VERIFIED,
+          );
+        }
+
+        const token = generateToken(
+          user.id.toString(),
+          user.tokenVersion,
+          user.emailVerified,
+        );
 
         res.json({ user: serializeUser(user), token });
       } catch (error) {
         handleRouteError(res, error, "log in");
+      }
+    },
+  );
+
+  app.post(
+    "/api/auth/verify-email",
+    verifyEmailLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const parsed = verifyEmailSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const payload = verifyVerificationToken(parsed.data.token);
+        if (!payload) {
+          return sendError(
+            res,
+            400,
+            "Invalid or expired verification link",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        // Idempotent (already-verified is a harmless no-op). NO access token is
+        // issued — verification proves email ownership, not password possession.
+        const user = await storage.markEmailVerified(payload.sub);
+        if (!user) {
+          return sendError(
+            res,
+            400,
+            "Invalid or expired verification link",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        res.status(200).json({ status: "verified" });
+      } catch (error) {
+        handleRouteError(res, error, "verify email");
+      }
+    },
+  );
+
+  app.post(
+    "/api/auth/resend-verification",
+    resendVerificationLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const parsed = resendVerificationSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const { email } = parsed.data;
+        // Always neutral (anti-enumeration). Only actually send for an existing,
+        // still-unverified account; the per-recipient throttle in email.ts caps
+        // abuse. The lookup + return cost is identical whether or not the account
+        // exists, so response timing is not an oracle either.
+        const user = await storage.getUserByEmail(email);
+        if (user && !user.emailVerified) {
+          fireAndForget(
+            "resend-verification",
+            sendVerificationEmail(email, signVerificationToken(user.id, email)),
+          );
+        }
+        res.status(200).json({
+          status: "verification_pending",
+          message: "If that account needs verification, we've sent a new link.",
+        });
+      } catch (error) {
+        handleRouteError(res, error, "resend verification");
       }
     },
   );

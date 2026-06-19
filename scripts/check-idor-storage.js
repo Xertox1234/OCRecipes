@@ -43,6 +43,10 @@ const ALLOWLIST = new Set([
   "updateUser",
   "incrementTokenVersion",
   "deleteUser",
+  // Email verification - id is the user's own PK taken from a verified,
+  // audience-partitioned token's `sub` (not req.userId); only flips
+  // email_verified=true, idempotent, exposes/escalates nothing.
+  "markEmailVerified",
   // Cache operations - system-level, not user-scoped data
   "incrementSuggestionCacheHit",
   "incrementInstructionCacheHit",

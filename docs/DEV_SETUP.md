@@ -139,6 +139,51 @@ GOOGLE_SERVICE_ACCOUNT_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE K
 ADMIN_USER_IDS=1,2
 ```
 
+#### Email Verification (Resend)
+
+Email verification is OFF unless `RESEND_API_KEY` is set (fail-open). When unset,
+login/register behave exactly as before — dev, `demo/demo123`, and prod-before-DNS
+are never locked out. Secrets — no `EXPO_PUBLIC_` prefix:
+
+```bash
+# Resend API key. Absent → verification disabled. Present → hard gate ON.
+RESEND_API_KEY=re_...
+
+# From address on a verified Resend sending domain.
+EMAIL_FROM="OCRecipes <noreply@ocrecipes.app>"
+
+# Optional; defaults to https://ocrecipes.app. The verification link is
+# ${EMAIL_VERIFY_BASE_URL}/verify-email?token=…
+EMAIL_VERIFY_BASE_URL=https://ocrecipes.app
+```
+
+**Turning the gate ON in prod (sequenced — see the email-verification spec §9):**
+
+1. Deploy the feature with `RESEND_API_KEY` UNSET → the gate stays off; nothing
+   changes for users.
+2. Configure Resend; verify the sending domain's SPF / DKIM / DMARC. **Also
+   confirm the `https://ocrecipes.app/verify-email` universal link opens the
+   APP, not the website** — the iOS `apple-app-site-association` (AASA) and
+   Android `assetlinks.json` served at the domain must cover the `/verify-email`
+   path, and the app's `associatedDomains` / intent filters must be set (native
+   config lives in the gitignored `ios/` / `android/`). If they don't, the email
+   link opens a browser instead of `VerifyEmailScreen`, and the only path to
+   verify is the in-app resend.
+3. **Immediately before flipping**, backfill existing users so they aren't locked
+   out (point-in-time — re-run right before step 4 to catch any signups during
+   the gate-off window):
+
+   ```bash
+   railway run --service Postgres -- sh -c 'psql "$DATABASE_PUBLIC_URL" -c "UPDATE users SET email_verified = true WHERE email_verified = false;"'
+   ```
+
+4. Set `RESEND_API_KEY` in the Railway service env → the gate is now ON. New
+   signups must verify; existing users are grandfathered by step 3.
+
+> Accepted cost once ON: login availability is coupled to Resend uptime; a failed
+> send strands a new user until a resend succeeds. Verify the in-app resend path
+> works end to end before flipping.
+
 ### 3. Database Setup
 
 ```bash
