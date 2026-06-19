@@ -24,6 +24,43 @@ RULES_DIR="$PROJECT_ROOT/docs/rules"
 # leaving headroom for the full rules files under the 9000-byte spill threshold.
 SOLUTIONS_PER_DOMAIN=4
 
+# Cap a newest-first `rel<TAB>title` candidate list to $1 lines, but guarantee at least one
+# bug-track line (category dir = logic-errors|runtime-errors|code-quality|performance-issues)
+# survives the cap when the candidates contain one. Keeps the original order otherwise.
+# Both emitters feed an OVER-cap (SOLUTIONS_PER_DOMAIN + 4) candidate list through this so a
+# recent bug-track ref just outside the natural top-N can be swapped into the LAST slot. The
+# logic MUST be byte-for-byte identical in both call sites (enforced by solutions:db:hook-check).
+reserve_bug_slot() {
+  local cap="$1" line rel nl=$'\n'
+  local -a all=() top=() rest=()
+  while IFS= read -r line; do [ -n "$line" ] && all+=("$line"); done
+  # Split into the natural top-$cap and the remainder.
+  local idx=0
+  for line in "${all[@]}"; do
+    if [ "$idx" -lt "$cap" ]; then top+=("$line"); else rest+=("$line"); fi
+    idx=$((idx+1))
+  done
+  # Does the natural top already contain a bug-track line?
+  local has_bug=false
+  for line in "${top[@]}"; do
+    rel="${line%%	*}"
+    case "$rel" in logic-errors/*|runtime-errors/*|code-quality/*|performance-issues/*) has_bug=true; break;; esac
+  done
+  if [ "$has_bug" = false ] && [ "${#rest[@]}" -gt 0 ]; then
+    # Find the newest bug-track line in the remainder; if present, swap it for the LAST top line.
+    local bug=""
+    for line in "${rest[@]}"; do
+      rel="${line%%	*}"
+      case "$rel" in logic-errors/*|runtime-errors/*|code-quality/*|performance-issues/*) bug="$line"; break;; esac
+    done
+    if [ -n "$bug" ] && [ "${#top[@]}" -gt 0 ]; then
+      top[$(( ${#top[@]} - 1 ))]="$bug"
+    fi
+  fi
+  # Guard the expansion: "${top[@]}" on an empty array errors under `set -u` in bash 3.2.
+  [ "${#top[@]}" -gt 0 ] && printf '%s\n' "${top[@]}"
+}
+
 # Map file path to domains
 DOMAINS=""
 add_domain() {
@@ -82,10 +119,13 @@ solutions_from_markdown() {
   local domain="$1" tag_pattern="$2"
   [ -d "$SOLUTIONS_DIR" ] || return 0
   local matches
+  # Widen CAP#1 by +4 so a bug-track ref just outside the natural top-N is a reservation
+  # candidate (reserve_bug_slot caps back to SOLUTIONS_PER_DOMAIN at the end). Must match the
+  # DB path's widened date-cap exactly to preserve equivalence.
   matches=$(grep -rl --include='*.md' -E "^tags:.*${tag_pattern}" \
     "$SOLUTIONS_DIR" 2>/dev/null | grep -v '/_manifests/' \
     | sed "s|.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)\.md\$|\1 &|" \
-    | sort -r | cut -d' ' -f2- | head -n "$SOLUTIONS_PER_DOMAIN" || true)
+    | sort -r | cut -d' ' -f2- | head -n "$((SOLUTIONS_PER_DOMAIN + 4))" || true)
   [ -n "$matches" ] || return 0
   local priority="" fallback="" nl=$'\n'
   while IFS= read -r sol; do
@@ -107,7 +147,12 @@ solutions_from_markdown() {
     fi
     if [ "$matched" = true ]; then priority="${priority:+$priority$nl}$sol"; else fallback="${fallback:+$fallback$nl}$sol"; fi
   done <<< "$matches"
-  matches=$(printf '%s\n%s\n' "$priority" "$fallback" | grep -v '^$' | head -n "$SOLUTIONS_PER_DOMAIN")
+  # Widen CAP#2 by +4 too (mirrors CAP#1): build the OVER-cap candidate list, then reserve.
+  matches=$(printf '%s\n%s\n' "$priority" "$fallback" | grep -v '^$' | head -n "$((SOLUTIONS_PER_DOMAIN + 4))")
+  # Emit the over-cap `rel<TAB>title` candidates (newest/priority-first), then pipe the WHOLE
+  # loop straight into reserve_bug_slot — capping back to SOLUTIONS_PER_DOMAIN with a guaranteed
+  # bug slot. Piping the loop (not a captured $(...)) preserves the trailing newline so the
+  # helper's `read` sees every candidate line.
   while IFS= read -r sol_file; do
     [ -n "$sol_file" ] || continue
     local rel title
@@ -117,7 +162,7 @@ solutions_from_markdown() {
     # so single-quoted titles match the DB path's properly-parsed title (Gate C equivalence).
     title=$(grep -m1 -E '^title:' "$sol_file" 2>/dev/null | sed -E "s/^title:[[:space:]]*//; s/^\"//; s/\"\$//; s/^'//; s/'\$//; s/''/'/g" || true)
     printf '%s\t%s\n' "$rel" "${title:-untitled}"
-  done <<< "$matches"
+  done <<< "$matches" | reserve_bug_slot "$SOLUTIONS_PER_DOMAIN"
 }
 
 # Emit "source_rel<TAB>title" lines for a domain from the DB. Returns non-zero on psql failure.
@@ -146,9 +191,11 @@ solutions_from_db() {
   # head's its match list before splitting priority/fallback, so applies_to promotion only
   # REORDERS within the date-top-N; it never pulls in an (N+1)th file. Capping here mirrors
   # that. (Capping after promotion would surface applies_to matches from the whole corpus.)
+  # Widen CAP#1 (date-cap) by +4 — mirrors the markdown path's widened CAP#1 — so bug-track
+  # candidates just outside the natural top-N are in scope before reservation.
   sorted=$(printf '%s\n' "$rows" | awk -F'\t' '{
     if (match($1, /[0-9]{4}-[0-9]{2}-[0-9]{2}\.md$/)) d=substr($1, RSTART, 10); else d="0000-00-00";
-    print d "\t" $0 }' | sort -rk1,1 | cut -f2- | head -n "$SOLUTIONS_PER_DOMAIN")
+    print d "\t" $0 }' | sort -rk1,1 | cut -f2- | head -n "$((SOLUTIONS_PER_DOMAIN + 4))")
   local priority="" fallback="" nl=$'\n' tab=$'\t'
   while IFS=$'\t' read -r sp title pats; do
     [ -n "$sp" ] || continue
@@ -165,10 +212,13 @@ solutions_from_db() {
     if [ "$matched" = true ]; then priority="${priority:+$priority$nl}${rel}${tab}${title}"; else fallback="${fallback:+$fallback$nl}${rel}${tab}${title}"; fi
   done <<< "$sorted"
   # `; return 0` is load-bearing under `set -o pipefail`: when the result is empty, `grep -v`
-  # exits 1, which would make this function return non-zero and wrongly trigger the markdown
-  # fallback for a LEGITIMATELY-empty DB result. psql failure is already caught above; here a
-  # successful-but-empty query must return 0 (= "no refs", don't fall back).
-  printf '%s\n%s\n' "$priority" "$fallback" | grep -v '^$' | head -n "$SOLUTIONS_PER_DOMAIN"; return 0
+  # (or reserve_bug_slot, which also exits non-zero on empty output) exits 1, which would make
+  # this function return non-zero and wrongly trigger the markdown fallback for a LEGITIMATELY-
+  # empty DB result. psql failure is already caught above; here a successful-but-empty query must
+  # return 0 (= "no refs", don't fall back). Widen CAP#2 by +4 (mirrors the markdown path) and
+  # pipe the over-cap candidate list through reserve_bug_slot to cap back with a guaranteed bug
+  # slot — identical reservation logic to solutions_from_markdown (Gate C equivalence).
+  printf '%s\n%s\n' "$priority" "$fallback" | grep -v '^$' | head -n "$((SOLUTIONS_PER_DOMAIN + 4))" | reserve_bug_slot "$SOLUTIONS_PER_DOMAIN"; return 0
 }
 
 # Emission priority (lower = emitted earlier = fills the inline budget first). When a
