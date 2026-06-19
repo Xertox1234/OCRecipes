@@ -65,6 +65,8 @@ jobs:
         run: bash .claude/hooks/test-batch-size-guard.sh
       - name: PR-verify hook tests
         run: bash .claude/hooks/test-pr-verify.sh
+      - name: PR preflight guard hook test
+        run: bash .claude/hooks/test-pr-preflight-guard.sh
 
   test:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
