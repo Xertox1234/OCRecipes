@@ -65,7 +65,9 @@
     "eval:photo": "npx tsx evals/runner-photo-analysis.ts",
     "eval:all": "npm run eval:coach && npm run eval:recipe-chat && npm run eval:meal-suggestions && npm run eval:recipe-generation",
     "generate:icons": "npx tsx scripts/generate-ingredient-icons.ts",
-    "lsp:check-agent-block": "bash scripts/check-lsp-agent-block.sh"
+    "lsp:check-agent-block": "bash scripts/check-lsp-agent-block.sh",
+    "preflight": "bash scripts/preflight.sh",
+    "preflight:fast": "bash scripts/preflight.sh --fast"
   },
   "dependencies": {
     "@apple/app-store-server-library": "^2.0.0",
