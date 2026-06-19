@@ -15,7 +15,10 @@ import { saveAvatar, deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { handleRouteError, formatZodError } from "./_helpers";
 import { emailVerificationEnabled } from "../lib/email-config";
-import { signVerificationToken } from "../lib/verification-token";
+import {
+  signVerificationToken,
+  verifyVerificationToken,
+} from "../lib/verification-token";
 import {
   sendVerificationEmail,
   sendSignupAttemptNotice,
@@ -27,12 +30,14 @@ import {
   avatarRateLimit,
   accountDeletionLimiter,
   crudRateLimit,
+  verifyEmailLimiter,
 } from "./_rate-limiters";
 import {
   loginSchema,
   registerSchema,
   deleteAccountSchema,
   profileUpdateSchema,
+  verifyEmailSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
@@ -252,6 +257,48 @@ export function register(app: Express): void {
         res.json({ user: serializeUser(user), token });
       } catch (error) {
         handleRouteError(res, error, "log in");
+      }
+    },
+  );
+
+  app.post(
+    "/api/auth/verify-email",
+    verifyEmailLimiter,
+    async (req: Request, res: Response) => {
+      try {
+        const parsed = verifyEmailSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const payload = verifyVerificationToken(parsed.data.token);
+        if (!payload) {
+          return sendError(
+            res,
+            400,
+            "Invalid or expired verification link",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        // Idempotent (already-verified is a harmless no-op). NO access token is
+        // issued — verification proves email ownership, not password possession.
+        const user = await storage.markEmailVerified(payload.sub);
+        if (!user) {
+          return sendError(
+            res,
+            400,
+            "Invalid or expired verification link",
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+        res.status(200).json({ status: "verified" });
+      } catch (error) {
+        handleRouteError(res, error, "verify email");
       }
     },
   );

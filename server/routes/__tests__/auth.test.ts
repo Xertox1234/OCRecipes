@@ -24,6 +24,7 @@ import {
   sendVerificationEmail,
   sendSignupAttemptNotice,
 } from "../../services/email";
+import { signVerificationToken } from "../../lib/verification-token";
 import {
   mockExpressReq,
   mockExpressRes,
@@ -532,6 +533,34 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(200);
       expect(res.body.token).toBe("mock-jwt-token");
+    });
+  });
+
+  describe("POST /api/auth/verify-email", () => {
+    it("verifies a valid token, flips emailVerified, issues NO token", async () => {
+      vi.mocked(storage.markEmailVerified).mockResolvedValue(
+        createMockUser({ emailVerified: true }),
+      );
+      const token = signVerificationToken("u1", "a@b.com");
+
+      const res = await request(app)
+        .post("/api/auth/verify-email")
+        .send({ token });
+
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe("verified");
+      // Verifying proves email ownership, NOT password possession — no access
+      // token is minted here (issuing one would be an auth bypass).
+      expect(res.body.token).toBeUndefined();
+      expect(storage.markEmailVerified).toHaveBeenCalledWith("u1");
+    });
+
+    it("rejects a garbage token with 400", async () => {
+      const res = await request(app)
+        .post("/api/auth/verify-email")
+        .send({ token: "not-a-jwt" });
+
+      expect(res.status).toBe(400);
     });
   });
 

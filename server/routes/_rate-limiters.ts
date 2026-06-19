@@ -120,6 +120,23 @@ export const registerLimiter = createRateLimiter({
   keyByUser: false,
 });
 
+// Unauthenticated; does a JWT-verify + DB write per call — IP-keyed guard.
+export const verifyEmailLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Too many verification attempts, please try again later",
+  keyByUser: false,
+});
+
+// Unauthenticated; triggers an outbound email — IP-keyed guard. The per-recipient
+// cap in services/email.ts is the second layer (this IP key is rotatable).
+export const resendVerificationLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: "Too many resend requests, please try again later",
+  keyByUser: false,
+});
+
 export const accountDeletionLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 5,
