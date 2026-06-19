@@ -37,6 +37,15 @@
             "statusMessage": "Priming LSP warm-up directive..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/session-recent-issues.sh",
+            "timeout": 20
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -85,6 +94,8 @@
         "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "bash .claude/hooks/batch-size-guard.sh", "timeout": 10, "statusMessage": "" }]
       },
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-preflight-guard.sh", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
+      { "matcher": "mcp__github__create_pull_request", "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-preflight-guard.sh", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
       {
         "matcher": "Edit",
         "hooks": [

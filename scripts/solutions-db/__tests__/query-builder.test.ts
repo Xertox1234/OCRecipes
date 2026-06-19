@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildSearchQuery,
   buildDuplicatesCategoryClause,
+  buildRecentQuery,
 } from "../lib/query-builder";
 
 // Hand-written expectations only — never re-derive the running `$n` index with
@@ -132,5 +133,42 @@ describe("buildDuplicatesCategoryClause", () => {
     const { catClause, params } = buildDuplicatesCategoryClause("logic-errors");
     expect(catClause).toBe("AND a.category = $2 AND b.category = $2");
     expect(params).toEqual(["logic-errors"]);
+  });
+});
+
+describe("buildRecentQuery", () => {
+  it("no filters: orders by created DESC and puts k at $1", () => {
+    const { sql, params } = buildRecentQuery({}, 20);
+    expect(sql).toContain("ORDER BY created DESC");
+    expect(sql).toContain("ORDER BY created DESC, source_path DESC");
+    expect(sql).not.toContain("WHERE");
+    expect(sql).toContain("LIMIT $1");
+    expect(params).toEqual([20]);
+  });
+
+  it("days filter goes to $1 (interval-from-today) and k to $2", () => {
+    const { sql, params } = buildRecentQuery({ days: 14 }, 10);
+    expect(sql).toContain("created >= (CURRENT_DATE - $1::int)");
+    expect(sql).toContain("LIMIT $2");
+    expect(params).toEqual([14, 10]);
+  });
+
+  it("track filter goes to $1 and k to $2", () => {
+    const { sql, params } = buildRecentQuery({ track: "bug" }, 5);
+    expect(sql).toContain("track = $1");
+    expect(sql).toContain("LIMIT $2");
+    expect(params).toEqual(["bug", 5]);
+  });
+
+  it("days + track + category index in order ($1,$2,$3) with k at $4", () => {
+    const { sql, params } = buildRecentQuery(
+      { days: 30, track: "bug", category: "runtime-errors" },
+      8,
+    );
+    expect(sql).toContain("created >= (CURRENT_DATE - $1::int)");
+    expect(sql).toContain("track = $2");
+    expect(sql).toContain("category = $3");
+    expect(sql).toContain("LIMIT $4");
+    expect(params).toEqual([30, "bug", "runtime-errors", 8]);
   });
 });

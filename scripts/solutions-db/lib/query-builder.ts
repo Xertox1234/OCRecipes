@@ -86,3 +86,43 @@ export function buildDuplicatesCategoryClause(
     params: [category],
   };
 }
+
+/** Optional filters for `buildRecentQuery`, in placeholder order (days, track, category). */
+export interface RecentFilters {
+  track?: "bug" | "knowledge";
+  category?: string;
+  days?: number;
+}
+
+/**
+ * Build the recency-ordered SELECT for the `recent` CLI + `recent_solutions` MCP tool.
+ * Pure metadata — no embedding. Optional filters take `$1..$n` in fixed order
+ * (days, track, category); `LIMIT` takes the next free index. Ordered newest-first by the
+ * `created` date, with `source_path` as a stable tiebreak within a day.
+ */
+export function buildRecentQuery(
+  filters: RecentFilters,
+  k: number,
+): BuiltQuery {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  let i = 1;
+  if (filters.days != null) {
+    where.push(`created >= (CURRENT_DATE - $${i++}::int)`);
+    params.push(filters.days);
+  }
+  if (filters.track) {
+    where.push(`track = $${i++}`);
+    params.push(filters.track);
+  }
+  if (filters.category) {
+    where.push(`category = $${i++}`);
+    params.push(filters.category);
+  }
+  const kIdx = i;
+  params.push(k);
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")} ` : "";
+  const sql = `SELECT source_path, title, track, category, severity, created
+         FROM solutions ${whereSql}ORDER BY created DESC, source_path DESC LIMIT $${kIdx}`;
+  return { sql, params };
+}

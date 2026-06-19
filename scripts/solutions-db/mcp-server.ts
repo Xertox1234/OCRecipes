@@ -14,6 +14,7 @@ import { matchesAnyGlob } from "./lib/globs";
 import {
   buildSearchQuery,
   buildDuplicatesCategoryClause,
+  buildRecentQuery,
 } from "./lib/query-builder";
 
 if (!process.env.SOLUTIONS_DB_READONLY_URL) {
@@ -176,6 +177,28 @@ server.registerTool(
       )
     ).rows;
     return text({ ...totals, byCategory, byTrack, bySeverity });
+  },
+);
+
+server.registerTool(
+  "recent_solutions",
+  {
+    description:
+      "Most recently codified solutions by created date (pure metadata, no embedding). Filters: days, track, category.",
+    inputSchema: {
+      k: z.number().int().positive().max(50).default(20),
+      days: z.number().int().positive().optional(),
+      track: z.enum(["bug", "knowledge"]).optional(),
+      category: z.string().optional(),
+    },
+  },
+  async (args) => {
+    const { sql, params } = buildRecentQuery(
+      { days: args.days, track: args.track, category: args.category },
+      args.k,
+    );
+    const r = await pool.query(sql, params);
+    return text(r.rows);
   },
 );
 

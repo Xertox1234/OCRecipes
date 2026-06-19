@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Pre-push gate. Picks the preflight depth by whether the branch already has an open PR:
+#   open PR  → full preflight (incl. coverage) — every PR-updating push is CI-verified locally.
+#   no PR    → preflight:fast (WIP iteration stays fast).
+# Coverage on the FIRST (pre-PR) push is enforced separately by the gh-pr-create guard.
+# Bypass (emergencies only): git push --no-verify
+
+# Husky runs hooks as `sh -e`; re-exec under bash for arrays/[[ ]]/$'...'. (Copied from .husky/pre-commit.)
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec bash "$0" "$@"
+fi
+set +e
+
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+
+MODE="fast"
+if command -v gh >/dev/null 2>&1; then
+  if gh pr view "$BRANCH" --json number --jq .number >/dev/null 2>&1; then
+    MODE="full"
+  fi
+else
+  echo "[pre-push] gh not found — running fast gate; coverage is enforced at gh pr create." >&2
+fi
+
+if [ "$MODE" = "full" ]; then
+  echo "[pre-push] open PR detected for '$BRANCH' — running full preflight (incl. coverage)…"
+  npm run preflight || { echo "[pre-push] full preflight failed — push aborted (bypass: --no-verify)."; exit 1; }
+else
+  echo "[pre-push] no open PR for '$BRANCH' — running fast gate…"
+  npm run preflight:fast || { echo "[pre-push] fast gate failed — push aborted (bypass: --no-verify)."; exit 1; }
+fi
+exit 0
