@@ -1,6 +1,6 @@
 ---
 title: "Make /codify handle the post-merge case (empty main...HEAD after squash)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-19
 updated: 2026-06-19
