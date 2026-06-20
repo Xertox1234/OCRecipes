@@ -171,10 +171,18 @@ EMAIL_VERIFY_BASE_URL=https://ocrecipes.app
    verify is the in-app resend.
 3. **Immediately before flipping**, backfill existing users so they aren't locked
    out (point-in-time — re-run right before step 4 to catch any signups during
-   the gate-off window):
+   the gate-off window). Use the guarded script
+   (`server/scripts/backfill-email-verified.ts`) rather than a raw `psql`
+   one-liner: it runs the idempotent
+   `UPDATE users SET email_verified = true WHERE email_verified = false`, prints
+   the affected row count and the target DB, refuses to run without the
+   `--allow-prod-backfill` opt-in, and warns if `RESEND_API_KEY` is already set
+   (i.e. the flip already happened — the backfill is now late). The internal
+   Railway DB host won't resolve from a laptop, so point `DATABASE_URL` at the
+   public URL:
 
    ```bash
-   railway run --service Postgres -- sh -c 'psql "$DATABASE_PUBLIC_URL" -c "UPDATE users SET email_verified = true WHERE email_verified = false;"'
+   railway run --service Postgres -- sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" npx tsx server/scripts/backfill-email-verified.ts --allow-prod-backfill'
    ```
 
 4. Set `RESEND_API_KEY` in the Railway service env → the gate is now ON. New

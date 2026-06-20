@@ -1,6 +1,6 @@
 ---
 title: "One-shot guarded backfill script for the email-verification gate-on flip"
-status: backlog
+status: done
 priority: low
 created: 2026-06-19
 updated: 2026-06-19
