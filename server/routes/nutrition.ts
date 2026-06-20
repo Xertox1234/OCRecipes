@@ -3,6 +3,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
+import { isUniqueViolation } from "../lib/db-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { insertScannedItemSchema } from "@shared/schema";
 import { logger, toError } from "../lib/logger";
@@ -195,9 +196,17 @@ export function register(app: Express): void {
     pantryRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const idempotencyKey = req.headers["x-idempotency-key"] as
-          | string
-          | undefined;
+        const rawIdempotencyKey = req.headers["x-idempotency-key"];
+        // Bound the client-supplied key: accept only a sane-length string (the
+        // client always sends a crypto.randomUUID()). Ignore an over-long or
+        // non-string value rather than persisting arbitrary text or failing the
+        // save (L1). The previous `as string` also wrongly assumed never-an-array.
+        const idempotencyKey =
+          typeof rawIdempotencyKey === "string" &&
+          rawIdempotencyKey.length > 0 &&
+          rawIdempotencyKey.length <= 200
+            ? rawIdempotencyKey
+            : undefined;
 
         // Idempotency check: if key present and we've seen it, return existing item
         if (idempotencyKey) {
@@ -216,24 +225,42 @@ export function register(app: Express): void {
         });
 
         // No logOverrides needed — defaults to source: "scan", mealType: null
-        const item = await storage.createScannedItemWithLog({
-          userId: validated.userId,
-          barcode: validated.barcode,
-          productName: validated.productName,
-          brandName: validated.brandName,
-          servingSize: validated.servingSize,
-          calories: validated.calories,
-          protein: validated.protein,
-          carbs: validated.carbs,
-          fat: validated.fat,
-          fiber: validated.fiber,
-          sugar: validated.sugar,
-          sodium: validated.sodium,
-          imageUrl: validated.imageUrl,
-          idempotencyKey: idempotencyKey ?? null,
-        });
-
-        res.status(201).json(item);
+        try {
+          const item = await storage.createScannedItemWithLog({
+            userId: validated.userId,
+            barcode: validated.barcode,
+            productName: validated.productName,
+            brandName: validated.brandName,
+            servingSize: validated.servingSize,
+            calories: validated.calories,
+            protein: validated.protein,
+            carbs: validated.carbs,
+            fat: validated.fat,
+            fiber: validated.fiber,
+            sugar: validated.sugar,
+            sodium: validated.sodium,
+            imageUrl: validated.imageUrl,
+            idempotencyKey: idempotencyKey ?? null,
+          });
+          return res.status(201).json(item);
+        } catch (error) {
+          // Concurrent double-submit with the same idempotency key: both requests
+          // pass the existence check above, then the losing insert hits the
+          // (userId, idempotencyKey) unique index (23505). The intent was
+          // idempotency, so return the row the winning request created (200)
+          // instead of a 500 (M3) — the same isUniqueViolation guard register() uses.
+          if (idempotencyKey && isUniqueViolation(error)) {
+            const existing = await storage.getScannedItemByIdempotencyKey(
+              req.userId!,
+              idempotencyKey,
+            );
+            if (existing) return res.status(200).json(existing);
+          }
+          // Not a unique violation, or the re-fetch missed (winning row deleted
+          // mid-race) → fall through to the outer handler (500, or the typed
+          // status handleRouteError maps a ZodError to).
+          throw error;
+        }
       } catch (error) {
         handleRouteError(res, error, "save item");
       }

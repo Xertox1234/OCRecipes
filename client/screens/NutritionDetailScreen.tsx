@@ -656,7 +656,9 @@ export default function NutritionDetailScreen() {
               onPress={handleAddToLog}
               loading={addToLogMutation.isPending}
               disabled={isOffline}
-              accessibilityLabel={`Add ${nutrition?.productName || "item"} to today's food log`}
+              accessibilityLabel={offlineLabel(
+                `Add ${nutrition?.productName || "item"} to today's food log`,
+              )}
               accessibilityHint="Saves this item to your daily nutrition tracking"
               style={[styles.addButton, { backgroundColor: theme.success }]}
             >

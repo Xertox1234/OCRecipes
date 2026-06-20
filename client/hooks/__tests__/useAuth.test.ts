@@ -13,6 +13,7 @@ const {
   mockFetch,
   mockQueryClient,
   mockNotifySessionExpired,
+  mockClearOfflineQueue,
 } = vi.hoisted(() => {
   const mockAsyncStorage: Record<string, string> = {};
   return {
@@ -28,6 +29,7 @@ const {
     mockFetch: vi.fn(),
     mockQueryClient: { clear: vi.fn() },
     mockNotifySessionExpired: vi.fn(),
+    mockClearOfflineQueue: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -60,6 +62,10 @@ vi.mock("@/lib/query-client", () => ({
 
 vi.mock("@/lib/push-token-registration", () => ({
   registerPushToken: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@/lib/offline-queue", () => ({
+  clearOfflineQueue: () => mockClearOfflineQueue(),
 }));
 
 const originalFetch = globalThis.fetch;
@@ -477,6 +483,10 @@ describe("useAuth", () => {
       // Clears the TanStack Query cache so a subsequent sign-in can't read the
       // previous session's stale data (cross-session privacy).
       expect(mockQueryClient.clear).toHaveBeenCalled();
+      // Clears the durable offline mutation queue too, so the previous session's
+      // queued writes can't replay under the next user (the queue key is global
+      // and the drain attaches the current bearer token).
+      expect(mockClearOfflineQueue).toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
     });
@@ -555,8 +565,11 @@ describe("useAuth", () => {
         },
       );
       // Permanent deletion → the previous user's cached data must not survive
-      // for whoever signs in next on this device.
+      // for whoever signs in next on this device — neither the query cache nor
+      // the offline write queue (a queued write would resurrect "erased" data
+      // under the new user).
       expect(mockQueryClient.clear).toHaveBeenCalled();
+      expect(mockClearOfflineQueue).toHaveBeenCalled();
       expect(mockTokenStorage.clear).toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
     });
@@ -583,6 +596,9 @@ describe("useAuth", () => {
       expect(mockTokenStorage.clear).toHaveBeenCalled();
       expect(mockAsyncStorage["@ocrecipes_auth"]).toBeUndefined();
       expect(mockQueryClient.clear).toHaveBeenCalled();
+      // ...including the offline write queue, so an expired session's queued
+      // mutations can't replay under whoever signs in next.
+      expect(mockClearOfflineQueue).toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
       // ...but NO server round-trip. The token is already dead — POSTing logout

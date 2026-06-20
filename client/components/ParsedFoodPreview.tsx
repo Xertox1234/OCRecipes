@@ -68,7 +68,7 @@ export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
       <Pressable
         onPress={onLogAll}
         disabled={isLogging || logAllDisabled}
-        accessibilityLabel="Log all parsed items"
+        accessibilityLabel={logAllLabel ?? "Log all parsed items"}
         accessibilityRole="button"
         accessibilityState={{ disabled: isLogging || logAllDisabled }}
         style={({ pressed }) => [

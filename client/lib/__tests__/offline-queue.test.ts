@@ -105,4 +105,84 @@ describe("offline-queue", () => {
     expect(loadQueue()[0].attempts).toBe(1);
     expect(AsyncStorage.setItem).toHaveBeenCalled();
   });
+
+  it("treats a valid-JSON-but-non-array payload as empty without crashing (M2)", async () => {
+    const { initOfflineQueue, loadQueue } = await importModule();
+    // "5" parses fine but is not an array — the old `as QueuedMutation[]` cast
+    // let it through and clearStale()'s queue.filter() threw at startup.
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue("5");
+    await expect(initOfflineQueue()).resolves.toBeUndefined();
+    expect(loadQueue()).toHaveLength(0);
+  });
+
+  it("drops malformed items but keeps valid ones on load (M2 per-item)", async () => {
+    const { initOfflineQueue, loadQueue } = await importModule();
+    const now = Date.now();
+    const mixed = [
+      {
+        id: "good",
+        endpoint: "/api/x",
+        method: "POST",
+        body: {},
+        attempts: 0,
+        savedAt: now,
+      },
+      {
+        id: 123,
+        endpoint: "/api/x",
+        method: "POST",
+        body: {},
+        attempts: 0,
+        savedAt: now,
+      }, // bad id type (version skew)
+      { endpoint: "/api/x", method: "POST" }, // missing fields
+      null,
+      "not-an-object",
+    ];
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue(JSON.stringify(mixed));
+    await initOfflineQueue();
+    const q = loadQueue();
+    expect(q).toHaveLength(1);
+    expect(q[0].id).toBe("good");
+  });
+
+  it("does not clobber an item enqueued while the persisted load is in flight (L2)", async () => {
+    const { initOfflineQueue, enqueue, loadQueue } = await importModule();
+    let resolveGet: (v: string | null) => void = () => {};
+    vi.mocked(AsyncStorage.getItem).mockReturnValueOnce(
+      new Promise<string | null>((resolve) => {
+        resolveGet = resolve;
+      }),
+    );
+    const persisted = [
+      {
+        id: "persisted",
+        endpoint: "/api/x",
+        method: "POST",
+        body: {},
+        attempts: 0,
+        savedAt: Date.now(),
+      },
+    ];
+    const initPromise = initOfflineQueue();
+    // An enqueue lands during the getItem await window (before init assigns queue).
+    await enqueue({
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: { name: "during-load" },
+    });
+    resolveGet(JSON.stringify(persisted));
+    await initPromise;
+    const q = loadQueue();
+    expect(q).toHaveLength(2);
+    expect(q.some((i) => i.id === "persisted")).toBe(true);
+    expect(
+      q.some((i) => (i.body as { name?: string }).name === "during-load"),
+    ).toBe(true);
+    // Durability: the merged set must be persisted unconditionally (not left
+    // memory-only) so a later force-quit can't lose the persisted-older entry.
+    const lastWrite = vi.mocked(AsyncStorage.setItem).mock.calls.at(-1)?.[1];
+    expect(lastWrite).toContain("persisted");
+    expect(lastWrite).toContain("during-load");
+  });
 });

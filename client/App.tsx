@@ -13,7 +13,10 @@ import {
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
 
-import { onlineManager } from "@tanstack/react-query";
+import {
+  onlineManager,
+  defaultShouldDehydrateQuery,
+} from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { queryClient, asyncStoragePersister } from "@/lib/query-client";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
@@ -34,16 +37,41 @@ import { SessionExpiryBridge } from "@/components/SessionExpiryBridge";
 import { OfflineQueueBridge } from "@/components/OfflineQueueBridge";
 import { initOfflineQueue } from "@/lib/offline-queue";
 import { drainQueue } from "@/lib/offline-queue-drain";
+import { QUERY_KEYS } from "@/lib/query-keys";
 import { setupNotificationChannel } from "@/lib/notifications";
 import { initReporter, reportError } from "@/lib/reporter";
 import { logger } from "@/lib/logger";
 
 initReporter();
 
-// Eager init — must be ready before any mutation surface mounts
-void initOfflineQueue();
+// Persist ONLY the small, offline-critical reads (food log + daily summary +
+// frequent items + dietary profile — the centralized QUERY_KEYS). Large/ephemeral
+// payloads (recipe browse/search, chat histories, carousel — all ad-hoc keys) are
+// excluded so the single AsyncStorage cache row can't blow the Android
+// CursorWindow ~2MB limit (M5). Pairs with defaultShouldDehydrateQuery to keep
+// the library's success-only default.
+// Invariant: every QUERY_KEYS value is a tuple, so we match on its first element
+// (`k[0]`). A future plain-string key would need its own handling here.
+const PERSISTED_QUERY_KEYS = new Set<unknown>(
+  Object.values(QUERY_KEYS).map((k) => k[0]),
+);
 
-// Wire drain to fire on every reconnect event
+// Bump when a persisted query's data SHAPE changes incompatibly, so a stale
+// old-shape cache is discarded on restore instead of served as fresh (M6).
+const PERSIST_BUSTER = "1";
+
+// Eager init — must be ready before any mutation surface mounts. After the
+// persisted queue loads, drain once if already online (M7): onlineManager only
+// notifies its subscriber on connectivity *transitions*, so a cold start while
+// online synthesizes no event — a queue from a prior session (offline-log →
+// force-quit → reopen-online) would otherwise sit unsynced until the next blip.
+// drainQueue's isDraining guard makes the cold-start drain and any near-coincident
+// transition drain safe to both fire.
+void initOfflineQueue().then(() => {
+  if (onlineManager.isOnline()) void drainQueue();
+});
+
+// Wire drain to fire on every subsequent reconnect transition.
 onlineManager.subscribe((isOnline) => {
   if (isOnline) {
     void drainQueue();
@@ -119,6 +147,12 @@ export default function App() {
           persistOptions={{
             persister: asyncStoragePersister,
             maxAge: 24 * 60 * 60 * 1000,
+            buster: PERSIST_BUSTER,
+            dehydrateOptions: {
+              shouldDehydrateQuery: (query) =>
+                defaultShouldDehydrateQuery(query) &&
+                PERSISTED_QUERY_KEYS.has(query.queryKey[0]),
+            },
           }}
         >
           <AuthProvider>

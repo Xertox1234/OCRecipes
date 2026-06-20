@@ -122,6 +122,8 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               autoCapitalize="none"
               autoCorrect={false}
               testID="input-resend-email"
+              error={!!error}
+              errorMessage={error || undefined}
             />
             <InlineError message={error} />
             <Button onPress={onResend} loading={busy} style={styles.button}>
@@ -147,6 +149,8 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               autoCapitalize="none"
               autoCorrect={false}
               testID="input-resend-email"
+              error={!!error}
+              errorMessage={error || undefined}
             />
             <InlineError message={error} />
             <Button onPress={onResend} loading={busy} style={styles.button}>

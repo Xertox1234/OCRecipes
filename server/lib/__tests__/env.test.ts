@@ -1,5 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
+// Capture logger.warn so the optional-feature warnings can be asserted. env.ts is
+// the only consumer of "./logger" in this import graph (image-store does not use it).
+const { mockWarn } = vi.hoisted(() => ({ mockWarn: vi.fn() }));
+vi.mock("../logger", () => {
+  const l = {
+    warn: mockWarn,
+    info: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+    fatal: vi.fn(),
+  };
+  return {
+    rootLogger: l,
+    logger: l,
+    createServiceLogger: () => l,
+    toError: (e: unknown) => e,
+  };
+});
+
 const BASE = {
   DATABASE_URL: "postgres://localhost/test",
   JWT_SECRET: "x".repeat(32),
@@ -101,5 +121,53 @@ describe("validateEnv aggregated missing-vars report", () => {
     expect(() => validateEnv()).toThrow(
       /DATABASE_URL[\s\S]*JWT_SECRET|JWT_SECRET[\s\S]*DATABASE_URL/,
     );
+  });
+});
+
+describe("validateEnv email verification (Resend)", () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE };
+    process.env.NODE_ENV = "development";
+    delete process.env.RECEIPT_VALIDATION_STUB;
+    delete process.env.RESEND_API_KEY;
+    delete process.env.EMAIL_VERIFY_BASE_URL;
+    mockWarn.mockClear();
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  it("warns (does not throw) when RESEND_API_KEY is unset — the fail-open gate must not be silent (M8)", async () => {
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
+    const warnedAboutResend = mockWarn.mock.calls.some((c) =>
+      String(c[1]).includes("RESEND_API_KEY"),
+    );
+    expect(warnedAboutResend).toBe(true);
+  });
+
+  it("does not warn about RESEND_API_KEY when it is set", async () => {
+    process.env.RESEND_API_KEY = "re_test_key";
+    const { validateEnv } = await load();
+    validateEnv();
+    const warnedAboutResend = mockWarn.mock.calls.some((c) =>
+      String(c[1]).includes("RESEND_API_KEY"),
+    );
+    expect(warnedAboutResend).toBe(false);
+  });
+
+  it("throws when EMAIL_VERIFY_BASE_URL has a trailing slash (L12 — would yield //verify-email)", async () => {
+    process.env.EMAIL_VERIFY_BASE_URL = "https://ocrecipes.app/";
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).toThrow(
+      /EMAIL_VERIFY_BASE_URL.*trailing slash/i,
+    );
+  });
+
+  it("accepts EMAIL_VERIFY_BASE_URL without a trailing slash", async () => {
+    process.env.EMAIL_VERIFY_BASE_URL = "https://ocrecipes.app";
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
   });
 });
