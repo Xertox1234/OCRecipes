@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback } from "react";
 import {
   StyleSheet,
   View,
@@ -65,18 +65,10 @@ export default function QuickLogScreen() {
   const { isPremium } = usePremiumContext();
   const { isOffline, offlineLabel } = useOfflineGuard();
 
-  const isFirstRender = useRef(true);
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    if (isOffline) {
-      AccessibilityInfo.announceForAccessibility(
-        "You're offline. This will sync when you reconnect.",
-      );
-    }
-  }, [isOffline]);
+  // Offline transitions are announced by the always-mounted global OfflineBanner
+  // (client/components/OfflineBanner.tsx) — iOS via announceForAccessibility,
+  // Android via its assertive live-region alert. A per-screen announce here would
+  // double-announce, so none is added.
 
   const [tip] = useState(randomTip);
   const [showCheckmark, setShowCheckmark] = useState(false);

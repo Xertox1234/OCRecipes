@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -196,18 +196,10 @@ export default function NutritionDetailScreen() {
 
   const { barcode, imageUri, itemId } = route.params || {};
 
-  const isFirstRender = useRef(true);
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
-    if (isOffline) {
-      AccessibilityInfo.announceForAccessibility(
-        "You're offline. This will sync when you reconnect.",
-      );
-    }
-  }, [isOffline]);
+  // Offline transitions are announced by the always-mounted global OfflineBanner
+  // (client/components/OfflineBanner.tsx) — iOS via announceForAccessibility,
+  // Android via its assertive live-region alert. A per-screen announce here would
+  // double-announce, so none is added.
 
   const {
     nutrition,

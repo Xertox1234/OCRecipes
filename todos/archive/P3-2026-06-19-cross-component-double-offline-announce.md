@@ -1,6 +1,6 @@
 ---
 title: "Reconcile per-screen offline announce with the always-mounted global OfflineBanner"
-status: backlog
+status: done
 priority: low
 created: 2026-06-19
 updated: 2026-06-19
