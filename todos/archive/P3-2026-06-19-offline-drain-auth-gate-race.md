@@ -1,6 +1,6 @@
 ---
 title: "Gate offline queue drain on auth to close residual cross-user replay race"
-status: backlog
+status: done
 priority: low
 created: 2026-06-19
 updated: 2026-06-19
