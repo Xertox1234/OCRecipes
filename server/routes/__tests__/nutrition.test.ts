@@ -432,6 +432,49 @@ describe("Nutrition Routes", () => {
       expect(res.status).toBe(201);
       expect(storage.getScannedItemByIdempotencyKey).not.toHaveBeenCalled();
     });
+
+    it("returns the existing item (200) when a concurrent insert loses the unique race (M3)", async () => {
+      // Existence check passes (no row yet), then the insert loses the race and
+      // hits the (userId, idempotencyKey) unique index → 23505. The handler must
+      // re-fetch and return the winning row (200), not surface a 500.
+      vi.mocked(storage.getScannedItemByIdempotencyKey)
+        .mockResolvedValueOnce(null) // initial existence check
+        .mockResolvedValueOnce(
+          createMockScannedItem({ id: 200, idempotencyKey: "race-uuid" }),
+        ); // re-fetch in the catch
+      const dupError = Object.assign(new Error("duplicate key value"), {
+        code: "23505",
+      });
+      vi.mocked(storage.createScannedItemWithLog).mockRejectedValue(dupError);
+
+      const res = await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .set("X-Idempotency-Key", "race-uuid")
+        .send({ productName: "Date", calories: 20 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(200);
+      expect(storage.getScannedItemByIdempotencyKey).toHaveBeenCalledTimes(2);
+    });
+
+    it("ignores an over-long X-Idempotency-Key rather than persisting it (L1)", async () => {
+      const newItem = createMockScannedItem({ id: 201 });
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(newItem);
+
+      const res = await request(app)
+        .post("/api/scanned-items")
+        .set("Authorization", "Bearer token")
+        .set("X-Idempotency-Key", "x".repeat(201))
+        .send({ productName: "Fig", calories: 30 });
+
+      expect(res.status).toBe(201);
+      // Over-long key ignored: no dedup lookup, and null stored (not the giant value).
+      expect(storage.getScannedItemByIdempotencyKey).not.toHaveBeenCalled();
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({ idempotencyKey: null }),
+      );
+    });
   });
 
   describe("DELETE /api/scanned-items/:id", () => {

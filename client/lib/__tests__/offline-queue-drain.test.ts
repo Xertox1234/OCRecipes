@@ -32,7 +32,7 @@ describe("offline-queue-drain", () => {
     vi.useRealTimers();
   });
 
-  it("drains items in savedAt ascending order", async () => {
+  it("drains items in savedAt ascending order (oldest first)", async () => {
     const { loadQueue, incrementAttempts, dequeue } = await import(
       "@/lib/offline-queue"
     );
@@ -44,7 +44,7 @@ describe("offline-queue-drain", () => {
         id: "b",
         endpoint: "/api/scanned-items",
         method: "POST",
-        body: {},
+        body: { tag: "newer" },
         attempts: 0,
         savedAt: 2000,
       },
@@ -52,7 +52,7 @@ describe("offline-queue-drain", () => {
         id: "a",
         endpoint: "/api/scanned-items",
         method: "POST",
-        body: {},
+        body: { tag: "older" },
         attempts: 0,
         savedAt: 1000,
       },
@@ -67,9 +67,133 @@ describe("offline-queue-drain", () => {
 
     await drainQueue();
 
-    const calls = vi.mocked(apiRequest).mock.calls.map((c) => c[0]);
-    // Both called — order verified by the fact that "a" (savedAt:1000) is processed first
-    expect(calls).toHaveLength(2);
+    // Assert the actual processing ORDER via a distinguishing body field: the
+    // older item (savedAt 1000) must be sent before the newer one (savedAt 2000).
+    // (The prior assertion only checked call COUNT, so the sort was untested — L3.)
+    const tags = vi
+      .mocked(apiRequest)
+      .mock.calls.map((c) => (c[2] as { tag: string }).tag);
+    expect(tags).toEqual(["older", "newer"]);
+  });
+
+  it("treats a 404 on a replayed DELETE as idempotent success, not a discard error (M1)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest, queryClient } = await import("@/lib/query-client");
+    const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+
+    const item = {
+      id: "del-1",
+      endpoint: "/api/scanned-items/42",
+      method: "DELETE",
+      body: undefined,
+      attempts: 0,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockResolvedValue(undefined);
+    // The original DELETE committed server-side but its response was lost; the
+    // replay finds the row already gone → 404. That is success for a DELETE.
+    vi.mocked(apiRequest).mockRejectedValue(new Error("404: Not Found"));
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    const errorListener = vi.fn();
+    subscribeToQueueDrainErrors(errorListener);
+
+    await drainQueue();
+
+    expect(dequeue).toHaveBeenCalledWith("del-1");
+    expect(errorListener).not.toHaveBeenCalled();
+    // It synced (row gone) → affected lists invalidated.
+    expect(queryClient.invalidateQueries).toHaveBeenCalled();
+  });
+
+  it("still treats a 404 on a POST as a failure (only DELETE is idempotent on 404)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+
+    const item = {
+      id: "post-404",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: {},
+      attempts: 0,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockResolvedValue(undefined);
+    vi.mocked(apiRequest).mockRejectedValue(new Error("404: Not Found"));
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    const errorListener = vi.fn();
+    subscribeToQueueDrainErrors(errorListener);
+
+    await drainQueue();
+
+    expect(dequeue).toHaveBeenCalledWith("post-404");
+    expect(errorListener).toHaveBeenCalledOnce();
+    // Discarded, not synced → no invalidation (symmetric with the 4xx case).
+    const { queryClient } = await import("@/lib/query-client");
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("invalidates affected queries once after the whole drain, not per item (L7)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest, queryClient } = await import("@/lib/query-client");
+    const { drainQueue } = await importDrain();
+
+    const items = [1, 2, 3].map((n) => ({
+      id: `i${n}`,
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: {},
+      attempts: 0,
+      savedAt: 1000 + n,
+    }));
+    vi.mocked(loadQueue).mockReturnValue(items);
+    vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+      const it = items.find((i) => i.id === id);
+      if (it) it.attempts++;
+    });
+    vi.mocked(apiRequest).mockResolvedValue(new Response());
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    await drainQueue();
+
+    // 3 items synced, but the 3 affected keys are invalidated ONCE each (3 total),
+    // not once per item (which would have been 3 × 3 = 9 — a reconnect refetch storm).
+    expect(queryClient.invalidateQueries).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not invalidate when nothing synced (item discarded on 4xx)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest, queryClient } = await import("@/lib/query-client");
+    const { drainQueue } = await importDrain();
+
+    const item = {
+      id: "bad",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: {},
+      attempts: 0,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockResolvedValue(undefined);
+    vi.mocked(apiRequest).mockRejectedValue(new Error("400: Bad Request"));
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    await drainQueue();
+
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
   });
 
   it("increments attempts BEFORE making the apiRequest call", async () => {

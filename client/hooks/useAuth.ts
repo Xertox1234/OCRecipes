@@ -10,6 +10,7 @@ import {
 import { tokenStorage } from "@/lib/token-storage";
 import { User } from "@shared/types/auth";
 import { registerPushToken } from "@/lib/push-token-registration";
+import { clearOfflineQueue } from "@/lib/offline-queue";
 
 interface AuthState {
   user: User | null;
@@ -191,9 +192,14 @@ export function useAuth() {
     } catch {}
     await tokenStorage.clear();
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-    // Clear cached query data so the next sign-in can't read the previous
-    // session's data. Guarded so a throw can't skip the setState logout below.
+    // Clear cached query data AND the durable offline mutation queue so the next
+    // sign-in can't read the previous session's data OR replay its queued writes
+    // (the queue key is global and the drain attaches the *current* bearer token).
+    // Guarded so a throw can't skip the setState logout below. Clear the offline
+    // queue FIRST so the privacy-critical replay fix always runs even if a later
+    // removeItem rejects (clearOfflineQueue swallows its own errors, can't throw).
     try {
+      await clearOfflineQueue();
       await AsyncStorage.removeItem(QUERY_CACHE_KEY);
       queryClient.clear();
     } catch {}
@@ -223,7 +229,12 @@ export function useAuth() {
     } catch {}
     // Guarded: a throw here (unlikely) must not skip the setState below — that
     // is the actual logout, and the function is contractually non-throwing.
+    // Also clear the durable offline mutation queue so an expired session's
+    // queued writes can't replay under whoever signs in next (queue key is
+    // global; the drain attaches the current bearer token at replay time).
+    // Queue clear first so it always runs even if a later removeItem rejects.
     try {
+      await clearOfflineQueue();
       await AsyncStorage.removeItem(QUERY_CACHE_KEY);
       queryClient.clear();
     } catch {}
@@ -255,10 +266,14 @@ export function useAuth() {
     try {
       await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
     } catch {}
-    // Drop the deleted account's cached query data so it can't be read by
-    // whoever signs in next on this device. Guarded so it can't skip the
-    // setState below (same non-throwing contract as the storage clears above).
+    // Drop the deleted account's cached query data AND its queued offline writes
+    // so neither can be read nor replayed by whoever signs in next on this device
+    // (a queued write would otherwise resurrect the "erased" data under the new
+    // user, authenticated as them). Guarded so it can't skip the setState below
+    // (same non-throwing contract as the storage clears above). Queue clear
+    // first so it always runs even if a later removeItem rejects.
     try {
+      await clearOfflineQueue();
       await AsyncStorage.removeItem(QUERY_CACHE_KEY);
       queryClient.clear();
     } catch {}

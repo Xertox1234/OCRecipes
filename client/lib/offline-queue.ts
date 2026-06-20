@@ -21,13 +21,51 @@ async function persist(): Promise<void> {
   );
 }
 
+// Per-item shape guard for persisted entries. A valid-JSON-but-non-array blob
+// (e.g. "5", {}) or a schema-skewed item from an older app version must NOT crash
+// startup (clearStale → queue.filter) or feed a malformed mutation into the drain.
+function isQueuedMutation(value: unknown): value is QueuedMutation {
+  if (typeof value !== "object" || value === null) return false;
+  const o = value as Record<string, unknown>;
+  return (
+    typeof o.id === "string" &&
+    typeof o.endpoint === "string" &&
+    typeof o.method === "string" &&
+    typeof o.attempts === "number" &&
+    typeof o.savedAt === "number"
+  );
+}
+
+function parseQueue(raw: string | null): QueuedMutation[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  // Lenient per-item: drop entries that don't match the current shape; keep good
+  // ones (version skew shouldn't discard a whole queue of valid pending writes).
+  return parsed.filter(isQueuedMutation);
+}
+
 export async function initOfflineQueue(): Promise<void> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY).catch(() => null);
-  try {
-    queue = raw ? (JSON.parse(raw) as QueuedMutation[]) : [];
-  } catch {
-    queue = [];
-  }
+  // Merge persisted entries with anything enqueued during the getItem await
+  // window (L2: don't clobber an enqueue that landed mid-load). IDs are unique
+  // UUIDs so the two sets are disjoint; persisted (older) first, then cap depth.
+  const merged = [...parseQueue(raw), ...queue];
+  queue =
+    merged.length > MAX_DEPTH
+      ? merged.slice(merged.length - MAX_DEPTH)
+      : merged;
+  // Persist the merged set UNCONDITIONALLY before clearStale: a mid-load enqueue
+  // already clobbered storage to just its own entry (its persist() ran while
+  // getItem was awaiting), so without this write the merged result lives only in
+  // memory and the persisted-older entries are lost on the next force-quit.
+  // clearStale persists only when it actually filters, so it can't be relied on.
+  await persist();
   await clearStale();
 }
 

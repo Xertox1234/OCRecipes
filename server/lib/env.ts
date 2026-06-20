@@ -63,6 +63,25 @@ const envSchema = z.object({
     .optional(),
   EXPO_ACCESS_TOKEN: z.string().optional(),
 
+  // Email verification via Resend (optional — when RESEND_API_KEY is unset the
+  // whole verification gate is DISABLED and new users auto-login; see the
+  // startup warning below so the fail-open posture is never silent in prod).
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  // Base URL for the verification link. Bare origin, NO trailing slash — it is
+  // concatenated as `${EMAIL_VERIFY_BASE_URL}/verify-email`, so a slash yields a
+  // broken `//verify-email`. Allows http (dev localhost), unlike WEB_ORIGIN.
+  EMAIL_VERIFY_BASE_URL: z
+    .string()
+    .url()
+    .refine((v) => !v.endsWith("/"), {
+      message:
+        "EMAIL_VERIFY_BASE_URL must not have a trailing slash — it is " +
+        "concatenated with '/verify-email', so a slash produces a broken " +
+        "'//verify-email' link in the verification email",
+    })
+    .optional(),
+
   // Apple IAP (optional — receipt validation uses stub mode without these)
   APPLE_ISSUER_ID: z.string().optional(),
   APPLE_KEY_ID: z.string().optional(),
@@ -136,6 +155,13 @@ export function validateEnv(): Env {
   if (!validated.EXPO_ACCESS_TOKEN) {
     warnings.push(
       "EXPO_ACCESS_TOKEN not set — server-driven push notifications disabled",
+    );
+  }
+  if (!validated.RESEND_API_KEY) {
+    warnings.push(
+      "RESEND_API_KEY not set — email verification DISABLED (new users " +
+        "auto-login without verifying their email; the anti-enumeration + " +
+        "verification gate in auth.ts is inert)",
     );
   }
   if (
