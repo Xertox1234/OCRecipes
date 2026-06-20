@@ -29,11 +29,13 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
   const [email, setEmail] = useState(route.params?.email ?? "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  // A verification email was actually sent for this address only when we arrived
-  // from registration (email param present) or after a successful resend. The
-  // login → EMAIL_NOT_VERIFIED entry passes no email param and sent nothing, so
-  // the "we've sent a link" copy must NOT claim a send on that path.
-  const [linkSent, setLinkSent] = useState(Boolean(route.params?.email));
+  // A verification email was actually sent only when a caller explicitly says so
+  // via the `sent` param (the register path) or after a successful resend. We do
+  // NOT infer a send from the presence of `email` — that's a proxy, not a fact:
+  // a future caller could route here with an email but no send and re-introduce
+  // the misleading "we've sent a link" copy. The login → EMAIL_NOT_VERIFIED entry
+  // omits `sent`, so the copy must NOT claim a send on that path.
+  const [linkSent, setLinkSent] = useState(route.params?.sent ?? false);
 
   // Confirm flow: a deep link delivered a token → verify it on mount.
   useEffect(() => {

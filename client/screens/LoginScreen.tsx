@@ -122,8 +122,12 @@ export default function LoginScreen() {
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         if (result.status === "verification_pending") {
           // Account created but email not verified → route to the verify screen
-          // (the user is NOT authenticated yet; no token was issued).
-          navigation.navigate("VerifyEmail", { email: email.trim() });
+          // (the user is NOT authenticated yet; no token was issued). The server
+          // sent a verification email on register, so signal that explicitly.
+          navigation.navigate("VerifyEmail", {
+            email: email.trim(),
+            sent: true,
+          });
         }
       }
     } catch (err) {
