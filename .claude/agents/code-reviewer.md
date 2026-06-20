@@ -88,6 +88,8 @@ if (!JWT_SECRET) {
 - [ ] Premium-gated queries use `enabled` parameter to avoid unnecessary 403 calls
 - [ ] React Context used for auth and onboarding state only
 - [ ] Authorization header includes token from tokenStorage
+- [ ] **Auth teardown clears ALL persisted client state** — every teardown path (`logout`, `expireSession`, `deleteAccount`) must clear the token, the query cache (`queryClient.clear()` + remove its key), AND any durable replayed-later write store (offline mutation queue, draft/pending-upload list). A global (non-user-namespaced) queue whose drain attaches the _current_ bearer token replays user A's writes under user B after a logout+relogin — a cross-account WRITE contamination. Treat a `clear*` helper with **zero callers** as a red flag, not dead code. (Ref: audit 2026-06-19 H1, `docs/solutions/logic-errors/durable-write-queue-not-cleared-on-auth-teardown-cross-account-replay-2026-06-19.md`)
+- [ ] **A fix touching a persistence path verifies the DURABLE side** — when a change writes to AsyncStorage / a persisted cache / a durable queue, confirm the fix and its test assert the _persisted_ result, not just the in-memory state. A test that mocks `setItem` and only checks the in-memory array can pass while the fix silently relocates a data-loss bug from memory to storage. (Ref: audit 2026-06-19 L2, offline-queue merge-on-init persist gap)
 
 **Pattern Reference:**
 
