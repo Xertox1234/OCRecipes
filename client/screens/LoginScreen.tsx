@@ -22,7 +22,11 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { Spacing, withOpacity } from "@/constants/theme";
-import { validateAuthForm, getAuthErrorMessage } from "./LoginScreen-utils";
+import {
+  validateAuthForm,
+  validateAuthFormFields,
+  getAuthErrorMessage,
+} from "./LoginScreen-utils";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { ApiError } from "@/lib/api-error";
@@ -51,6 +55,10 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  // Field-attributed error for the email input only (sets its aria-invalid).
+  // Set on submit, mirroring `error`'s lifecycle — never validated live as the
+  // user types. Stays null in login mode (no email field shown).
+  const [emailError, setEmailError] = useState<string | null>(null);
   // COPPA 13+ age attestation — gated by checkbox; server enforces ageConfirmed:true
   const [ageConfirmed, setAgeConfirmed] = useState(false);
 
@@ -78,15 +86,21 @@ export default function LoginScreen() {
 
   const handleSubmit = async () => {
     setError("");
+    setEmailError(null);
 
-    const validationError = validateAuthForm({
+    const formInput = {
       mode,
       username,
       password,
       confirmPassword,
       ageConfirmed,
       email,
-    });
+    };
+    // Attribute the email-specific failure to the email input (aria-invalid),
+    // while the form-level banner still shows the first failing rule overall.
+    setEmailError(validateAuthFormFields(formInput).email);
+
+    const validationError = validateAuthForm(formInput);
     if (validationError) {
       setError(validationError);
       haptics.notification(Haptics.NotificationFeedbackType.Error);
@@ -129,6 +143,7 @@ export default function LoginScreen() {
   const toggleMode = () => {
     setMode(mode === "login" ? "register" : "login");
     setError("");
+    setEmailError(null);
     setConfirmPassword("");
     setAgeConfirmed(false);
   };
@@ -206,6 +221,8 @@ export default function LoginScreen() {
               testID="input-email"
               accessibilityLabel="Email"
               accessibilityHint="Enter your email address"
+              error={!!emailError}
+              errorMessage={emailError ?? undefined}
             />
           ) : null}
 

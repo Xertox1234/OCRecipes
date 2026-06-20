@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { ApiError } from "@/lib/api-error";
-import { validateAuthForm, getAuthErrorMessage } from "../LoginScreen-utils";
+import {
+  validateAuthForm,
+  validateAuthFormFields,
+  getAuthErrorMessage,
+} from "../LoginScreen-utils";
 
 describe("validateAuthForm", () => {
   const validRegister = {
@@ -125,6 +129,58 @@ describe("validateAuthForm", () => {
     expect(validateAuthForm({ ...validRegister, ageConfirmed: false })).toMatch(
       /13 years/i,
     );
+  });
+});
+
+describe("validateAuthFormFields", () => {
+  const validRegister = {
+    mode: "register" as const,
+    username: "chef_tony",
+    email: "chef@example.com",
+    password: "Recipe123",
+    confirmPassword: "Recipe123",
+    ageConfirmed: true,
+  };
+
+  it("returns no email error for a valid register email", () => {
+    expect(validateAuthFormFields(validRegister)).toEqual({ email: null });
+  });
+
+  it("attributes a missing email to the email field", () => {
+    expect(validateAuthFormFields({ ...validRegister, email: "" })).toEqual({
+      email: "Please enter your email address",
+    });
+  });
+
+  it("attributes a malformed email to the email field", () => {
+    expect(
+      validateAuthFormFields({ ...validRegister, email: "not-an-email" }),
+    ).toEqual({ email: "Please enter a valid email address" });
+  });
+
+  it("never produces an email error in login mode, even with a bad email (lenient, no enumeration oracle)", () => {
+    // The email field is not shown in login mode; field validation must stay
+    // inert there so login validation does not become strict.
+    expect(
+      validateAuthFormFields({
+        mode: "login",
+        username: "user@example.com",
+        password: "x",
+        confirmPassword: "",
+        ageConfirmed: false,
+        email: "not-an-email",
+      }),
+    ).toEqual({ email: null });
+  });
+
+  it("does not flag the email field when a non-email field is the failure", () => {
+    // A valid email but mismatched passwords → email is NOT attributed an error.
+    expect(
+      validateAuthFormFields({
+        ...validRegister,
+        confirmPassword: "Recipe124",
+      }),
+    ).toEqual({ email: null });
   });
 });
 

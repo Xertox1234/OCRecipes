@@ -1,6 +1,6 @@
 ---
 title: "Field-level validation on LoginScreen so the email input can set aria-invalid"
-status: backlog
+status: done
 priority: low
 created: 2026-06-19
 updated: 2026-06-19
