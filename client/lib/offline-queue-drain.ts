@@ -7,6 +7,7 @@ import {
   type QueuedMutation,
 } from "@/lib/offline-queue";
 import { QUERY_KEYS } from "@/lib/query-keys";
+import { tokenStorage } from "@/lib/token-storage";
 
 type DrainErrorListener = (message: string) => void;
 const drainErrorListeners = new Set<DrainErrorListener>();
@@ -44,6 +45,10 @@ function wait(ms: number): Promise<void> {
 async function attemptDrain(item: QueuedMutation): Promise<boolean> {
   let done = false;
   let synced = false;
+  // Capture the token of the user who is draining (defense-in-depth #2). If a
+  // logout + relogin straddles a backoff `wait` below, the token changes
+  // underneath us; we abort rather than replay this item under the new user.
+  const tokenAtStart = await tokenStorage.get();
   while (!done) {
     // Increment before the request — survives force-quit mid-drain
     await incrementAttempts(item.id);
@@ -55,6 +60,21 @@ async function attemptDrain(item: QueuedMutation): Promise<boolean> {
 
     const delayMs = RETRY_DELAYS_MS[Math.max(0, current.attempts - 1)] ?? 8000;
     if (delayMs > 0) await wait(delayMs);
+
+    // Re-validate AFTER the backoff wait, right before dispatch (defense-in-
+    // depth #2). The wait can be straddled by a teardown + relogin: apiRequest
+    // reads tokenStorage at dispatch time, so without this re-check we would
+    // POST this captured body under the NEW user's token. Abort the item if it
+    // was cleared from the queue (e.g. clearOfflineQueue on logout), the token
+    // changed underneath us, OR there is no token at all — never dispatch a
+    // captured write with a null/missing bearer (a session-expiry that races
+    // the drain would otherwise POST unauthenticated and falsely evict on 401).
+    const stillQueued = loadQueue().find((i) => i.id === item.id);
+    const tokenNow = await tokenStorage.get();
+    if (!stillQueued || !tokenNow || tokenNow !== tokenAtStart) {
+      serverAttempts.delete(item.id);
+      return false;
+    }
 
     const init: RequestInit = {};
     if (current.method === "POST") {
@@ -111,9 +131,21 @@ async function attemptDrain(item: QueuedMutation): Promise<boolean> {
 
 export async function drainQueue(): Promise<void> {
   if (isDraining) return;
+  // Set the concurrency lock SYNCHRONOUSLY, before the first `await` below.
+  // The auth gate reads tokenStorage (async); if the lock were set after that
+  // await, two near-simultaneous reconnect events could both pass the
+  // `isDraining` check before either set the flag, defeating the single-drain
+  // guard. Lock first, then gate inside try/finally so the lock always releases.
   isDraining = true;
   let anySynced = false;
   try {
+    // Auth gate (defense-in-depth #1): never drain while unauthenticated. The
+    // queue is a global, non-namespaced singleton and apiRequest attaches the
+    // CURRENT bearer token at dispatch time, so draining with no session (or as
+    // a different user) would replay the prior user's captured writes under
+    // whoever is logged in next. H1 clears the queue on teardown; this closes
+    // the window where a drain begins after logout but before the next login.
+    if (!(await tokenStorage.get())) return;
     const sorted = [...loadQueue()].sort((a, b) => a.savedAt - b.savedAt);
     for (const item of sorted) {
       const exists = loadQueue().find((i) => i.id === item.id);

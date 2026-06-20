@@ -20,12 +20,26 @@ vi.mock("@/lib/query-keys", () => ({
   },
 }));
 
+// Mock token storage so the auth gate can be driven deterministically. The drain
+// reads tokenStorage.get() (a) to gate the whole drain and (b) inside attemptDrain
+// to detect a logout+relogin that straddles a retry backoff.
+vi.mock("@/lib/token-storage", () => ({
+  tokenStorage: {
+    get: vi.fn(),
+  },
+}));
+
 const importDrain = () => import("../offline-queue-drain");
 
 describe("offline-queue-drain", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.useFakeTimers();
+    // Default: an authenticated user (token-A). Individual tests override this
+    // to exercise the unauthenticated and cross-user-straddle paths. vi.mocked()
+    // resolves the module mock declared above (reset by vi.resetModules()).
+    const { tokenStorage } = await import("@/lib/token-storage");
+    vi.mocked(tokenStorage.get).mockResolvedValue("token-A");
   });
 
   afterEach(() => {
@@ -472,5 +486,132 @@ describe("offline-queue-drain", () => {
     // Only after 4 server-side (5xx) attempts should the item be evicted.
     expect(dequeue).toHaveBeenCalledWith("mix-1");
     expect(errorListener).toHaveBeenCalledOnce();
+  });
+
+  it("does not drain (no apiRequest) when unauthenticated (auth gate)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { tokenStorage } = await import("@/lib/token-storage");
+    const { drainQueue } = await importDrain();
+
+    // No session token → the drain must early-return before touching the queue.
+    vi.mocked(tokenStorage.get).mockResolvedValue(null);
+
+    const item = {
+      id: "no-auth",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: { tag: "A-write" },
+      attempts: 0,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockResolvedValue(undefined);
+    vi.mocked(apiRequest).mockResolvedValue(new Response());
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    await drainQueue();
+
+    // Nothing is dispatched and nothing is dequeued — the queue is left intact
+    // for the next authenticated reconnect.
+    expect(apiRequest).not.toHaveBeenCalled();
+    expect(dequeue).not.toHaveBeenCalled();
+
+    // The early-return must still release the isDraining lock: a subsequent
+    // authenticated reconnect drains normally. (Pins that the auth gate sits
+    // inside the try/finally, not before the lock — see drainQueue.)
+    vi.mocked(tokenStorage.get).mockResolvedValue("token-A");
+    await drainQueue();
+    expect(apiRequest).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT replay an in-flight item under a new user's token when logout+relogin straddles the backoff wait (cross-user replay race)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { tokenStorage } = await import("@/lib/token-storage");
+    const { drainQueue } = await importDrain();
+
+    // Item enqueued by user A, already on a retry iteration (attempts: 1, a prior
+    // 5xx) so the next incrementAttempts → 2 → RETRY_DELAYS_MS[1] = 2000ms wait,
+    // i.e. the drain parks in a backoff `wait` before dispatch.
+    const item = {
+      id: "race-1",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: { tag: "A-captured-write" },
+      attempts: 1,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+      if (item.id === id) item.attempts++;
+    });
+    vi.mocked(apiRequest).mockResolvedValue(new Response());
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    // Token sequence (deterministic, no real timing):
+    //   1) drainQueue top-level gate           → token-A (authenticated, proceed)
+    //   2) attemptDrain tokenAtStart capture    → token-A (the draining user)
+    //   3) post-wait re-check (after relogin)   → token-B (the NEW user)
+    // The straddle: A logs out and B logs in WHILE the 2s backoff wait is parked.
+    vi.mocked(tokenStorage.get)
+      .mockResolvedValueOnce("token-A")
+      .mockResolvedValueOnce("token-A")
+      .mockResolvedValue("token-B");
+
+    const p = drainQueue();
+    await vi.runAllTimersAsync();
+    await p;
+
+    // The in-flight item must NOT be POSTed: it would otherwise land under B's
+    // bearer token (apiRequest reads tokenStorage at dispatch time). The abort
+    // leaves it queued and never dispatches.
+    expect(apiRequest).not.toHaveBeenCalled();
+    expect(dequeue).not.toHaveBeenCalled();
+  });
+
+  it("aborts an in-flight item cleared from the queue during the backoff wait (clearOfflineQueue on teardown)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { drainQueue } = await importDrain();
+
+    const item = {
+      id: "cleared-1",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: { tag: "A-captured-write" },
+      attempts: 1,
+      savedAt: 1000,
+    };
+    // The item is visible up to and including the top of the attemptDrain loop;
+    // after the backoff wait, clearOfflineQueue has emptied the queue, so the
+    // post-wait membership re-check finds nothing and aborts before dispatch.
+    // loadQueue call order: (1) drainQueue sort, (2) drainQueue `exists` find,
+    // (3) attemptDrain top-of-loop `current` find, (4) post-wait re-check.
+    vi.mocked(loadQueue)
+      .mockReturnValueOnce([item]) // (1) drainQueue sort
+      .mockReturnValueOnce([item]) // (2) drainQueue exists find
+      .mockReturnValueOnce([item]) // (3) attemptDrain top-of-loop find
+      .mockReturnValue([]); // (4+) post-wait re-check → queue cleared
+    vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+      if (item.id === id) item.attempts++;
+    });
+    vi.mocked(apiRequest).mockResolvedValue(new Response());
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    const p = drainQueue();
+    await vi.runAllTimersAsync();
+    await p;
+
+    // Not dispatched, and not explicitly dequeued either — the item was already
+    // removed by clearOfflineQueue, so the abort path must not double-clear.
+    expect(apiRequest).not.toHaveBeenCalled();
+    expect(dequeue).not.toHaveBeenCalled();
   });
 });
