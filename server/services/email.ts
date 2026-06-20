@@ -14,14 +14,34 @@ const EMAIL_FROM =
 // outbound mail (notice + verification), regardless of entry point.
 const RECIPIENT_WINDOW_MS = 60 * 60 * 1000;
 const MAX_PER_RECIPIENT = 5;
+// Sweep fully-expired keys once the map grows past this many recipients. A
+// recipient touched once and never again (the enumeration case) is otherwise
+// never revisited, so delete-on-empty alone cannot bound the key set — the sweep
+// is what evicts those stale keys. Expiry-based only: an active key is never
+// evicted, so the per-recipient cap is unchanged.
+const RECIPIENT_SWEEP_THRESHOLD = 1000;
 const recipientSends = new Map<string, number[]>();
+
+function sweepExpired(now: number): void {
+  for (const [key, times] of recipientSends) {
+    if (times.every((t) => now - t >= RECIPIENT_WINDOW_MS)) {
+      recipientSends.delete(key);
+    }
+  }
+}
 
 function canSendTo(email: string): boolean {
   const now = Date.now();
+  if (recipientSends.size > RECIPIENT_SWEEP_THRESHOLD) sweepExpired(now);
   const key = email.toLowerCase();
   const times = (recipientSends.get(key) ?? []).filter(
     (t) => now - t < RECIPIENT_WINDOW_MS,
   );
+  if (times.length === 0) {
+    // Window fully expired (or no prior sends) — drop the stale key rather than
+    // leaving an empty array behind, then re-add below only if we send.
+    recipientSends.delete(key);
+  }
   if (times.length >= MAX_PER_RECIPIENT) {
     recipientSends.set(key, times);
     return false;
@@ -75,3 +95,10 @@ export async function sendSignupAttemptNotice(to: string): Promise<void> {
   if (error)
     logger.error({ err: toError(error) }, "signup-attempt notice failed");
 }
+
+/** Test-only internals — never import from production code. */
+export const _testInternals = {
+  recipientSends,
+  RECIPIENT_WINDOW_MS,
+  RECIPIENT_SWEEP_THRESHOLD,
+};

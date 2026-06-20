@@ -1,6 +1,6 @@
 ---
 title: "Bound the per-recipient email throttle Map (unbounded key set)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-18
 updated: 2026-06-18
