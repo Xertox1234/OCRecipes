@@ -52,7 +52,21 @@ import NotebookEntryScreen from "@/screens/NotebookEntryScreen";
 
 export type RootStackParamList = {
   Login: undefined;
-  VerifyEmail: { token?: string; email?: string } | undefined;
+  VerifyEmail:
+    | {
+        token?: string;
+        email?: string;
+        /**
+         * Explicit signal that a verification email was actually sent for this
+         * entry — drives the "we've sent a link" copy. Never infer a send from
+         * the presence of `email` (a future caller could pass an email without
+         * sending). The register path sets `true`; the login → EMAIL_NOT_VERIFIED
+         * path omits it (no send happened). A successful in-screen resend flips
+         * the copy via `setLinkSent(true)`, not via this param.
+         */
+        sent?: boolean;
+      }
+    | undefined;
   Onboarding: undefined;
   Main: undefined;
   Scan:

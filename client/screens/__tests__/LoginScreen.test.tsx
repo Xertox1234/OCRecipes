@@ -213,6 +213,8 @@ describe("LoginScreen — email field", () => {
     await waitFor(() =>
       expect(mockNavigate).toHaveBeenCalledWith("VerifyEmail", {
         email: "new@example.com",
+        // Register triggers a server-side send, so the explicit sent flag is set.
+        sent: true,
       }),
     );
   });

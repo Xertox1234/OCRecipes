@@ -132,13 +132,23 @@ describe("VerifyEmailScreen — linkSent copy switch", () => {
     vi.clearAllMocks();
   });
 
-  it("shows 'Check your inbox' copy when arriving with an email param", () => {
-    renderScreen({ email: "chef@example.com" });
+  it("shows 'Check your inbox' copy when arriving with an explicit sent flag", () => {
+    renderScreen({ email: "chef@example.com", sent: true });
 
     expect(screen.getByText("Check your inbox")).toBeTruthy();
     expect(
       screen.getByText(/We've sent a verification link to chef@example.com/),
     ).toBeTruthy();
+  });
+
+  // Regression guard: the sent copy is driven by the explicit `sent` flag, NOT
+  // by the presence of `email`. A future caller routing here with an email but
+  // no send must not re-introduce the misleading "we've sent a link" copy.
+  it("shows 'Verify your email' copy when an email is present but sent is not set", () => {
+    renderScreen({ email: "chef@example.com" });
+
+    expect(screen.getByText("Verify your email")).toBeTruthy();
+    expect(screen.getByText(/isn't verified yet/)).toBeTruthy();
   });
 
   it("shows 'Verify your email' copy when arriving with no params", () => {
