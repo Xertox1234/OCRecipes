@@ -57,6 +57,7 @@
     "cleanup:retention": "tsx server/scripts/cleanup-retention.ts",
     "migrate:images-r2": "tsx server/scripts/migrate-images-to-r2.ts",
     "backfill:community-nutrition": "tsx server/scripts/backfill-community-nutrition.ts",
+    "backfill:email-verified": "tsx server/scripts/backfill-email-verified.ts",
     "e2e": "maestro test e2e/flows/",
     "e2e:smoke": "maestro test --tags smoke e2e/flows/",
     "eval:coach": "npx tsx evals/runner.ts",
