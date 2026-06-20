@@ -675,18 +675,10 @@ export default function HistoryScreen() {
     }
   }, [isError]);
 
-  const isFirstRenderOffline = useRef(true);
-  useEffect(() => {
-    if (isFirstRenderOffline.current) {
-      isFirstRenderOffline.current = false;
-      return;
-    }
-    if (isOffline) {
-      AccessibilityInfo.announceForAccessibility(
-        "You're offline. Deletions will sync when you reconnect.",
-      );
-    }
-  }, [isOffline]);
+  // Offline transitions are announced by the always-mounted global OfflineBanner
+  // (client/components/OfflineBanner.tsx) — iOS via announceForAccessibility,
+  // Android via its assertive live-region alert. A per-screen announce here would
+  // double-announce, so none is added.
 
   // Memoised extraData so FlatList re-renders items when expand or mutation
   // state changes, even though renderItem itself is not recreated.
