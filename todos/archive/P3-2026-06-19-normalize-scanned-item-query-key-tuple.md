@@ -1,6 +1,6 @@
 ---
 title: "Normalize the single scanned-item query key to the tuple form for persist-allowlist consistency"
-status: backlog
+status: done
 priority: low
 created: 2026-06-19
 updated: 2026-06-19
@@ -14,7 +14,7 @@ github_issue:
 ## Summary
 
 `ItemDetailScreen` keys a single scanned item with a template-literal string
-(`` [`/api/scanned-items/${itemId}`] ``), whereas the list/lookup reads use the
+(``[`/api/scanned-items/${itemId}`]``), whereas the list/lookup reads use the
 tuple form (`["/api/scanned-items", itemId]`). Only the tuple form collapses to an
 allowlisted `queryKey[0]` (`/api/scanned-items`), so the single-item read is
 silently EXCLUDED from the offline persist allowlist added in PR #406 (M5).

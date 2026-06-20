@@ -140,7 +140,14 @@ export default function ItemDetailScreen() {
     isLoading,
     error,
   } = useQuery<ScannedItemResponse>({
-    queryKey: [`/api/scanned-items/${itemId}`],
+    // Tuple key (matching useNutritionLookup's existingItem read) so this
+    // single-item read collapses to queryKey[0] === "/api/scanned-items":
+    // it now (a) joins the prefix-invalidation family keyed on
+    // QUERY_KEYS.scannedItems, and (b) is covered by the M5 offline persist
+    // allowlist — intentionally persisted, consistent with the sibling query
+    // that already caches this resource. The default queryFn joins the key
+    // with "/", yielding the same URL as the prior string key.
+    queryKey: ["/api/scanned-items", itemId],
   });
 
   if (isLoading) {
