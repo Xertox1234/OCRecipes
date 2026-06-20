@@ -1,6 +1,6 @@
 ---
 title: "Normalize the single scanned-item query key to the tuple form for persist-allowlist consistency"
-status: backlog
+status: done
 priority: low
 created: 2026-06-19
 updated: 2026-06-19
