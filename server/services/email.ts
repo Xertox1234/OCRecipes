@@ -51,9 +51,16 @@ function canSendTo(email: string): boolean {
   return true;
 }
 
+// Lazy singleton: the SDK client (and its internal HTTP client) is built once on
+// first use and reused for all subsequent sends. The key is captured at first
+// construction, so rotating RESEND_API_KEY requires a process restart to take
+// effect — fine under the deploy-restarts-the-process model. emailVerificationEnabled()
+// still live-reads the env on every send, so the on/off gate stays current.
+let _resend: Resend | null = null;
 function client(): Resend | null {
   const key = process.env.RESEND_API_KEY;
-  return key ? new Resend(key) : null;
+  if (!key) return null;
+  return (_resend ??= new Resend(key));
 }
 
 export async function sendVerificationEmail(
