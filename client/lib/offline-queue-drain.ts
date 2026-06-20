@@ -1,4 +1,5 @@
 import { apiRequest, queryClient } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
 import {
   loadQueue,
   dequeue,
@@ -67,28 +68,33 @@ async function attemptDrain(item: QueuedMutation): Promise<boolean> {
       synced = true;
       done = true;
     } catch (error) {
-      const isNetworkError =
-        error instanceof TypeError ||
-        (error instanceof Error &&
-          /network request failed/i.test(error.message));
-      if (isNetworkError) {
+      // React Native's fetch throws a native `TypeError` when the request never
+      // leaves the device (still offline). This typed check replaces the former
+      // `/network request failed/i` message regex (the device-offline path
+      // always surfaces as a TypeError, never an ApiError with a status).
+      if (error instanceof TypeError) {
         // Device is still offline — do not consume a retry budget slot.
         // Leave the item in the queue; the next reconnect event will retry.
         return false;
       }
+      // From here the error reached the server: it is an `ApiError` carrying a
+      // numeric `status`. Branch on the status class instead of regexing the
+      // message. A non-ApiError (or one without a status) is treated as a
+      // server-side failure so it still consumes the retry budget and the
+      // `while (!done)` loop stays bounded.
+      const status = error instanceof ApiError ? error.status : undefined;
       // A replayed DELETE whose original response was lost returns 404 (the row
       // is already gone). That is the idempotent-success case the queue exists
       // for — treat it as a successful sync, NOT a failure (M1: otherwise the
       // drain discarded an already-completed delete and toasted a false error).
-      const is404 = error instanceof Error && /^404:/.test(error.message);
-      if (is404 && current.method === "DELETE") {
+      if (status === 404 && current.method === "DELETE") {
         await dequeue(current.id);
         serverAttempts.delete(current.id);
         synced = true;
         done = true;
         break;
       }
-      const is4xx = error instanceof Error && /^4\d\d:/.test(error.message);
+      const is4xx = status !== undefined && status >= 400 && status < 500;
       const svrCount = (serverAttempts.get(current.id) ?? 0) + 1;
       serverAttempts.set(current.id, svrCount);
       if (is4xx || svrCount >= MAX_ATTEMPTS) {

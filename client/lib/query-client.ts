@@ -58,8 +58,10 @@ async function throwIfResNotOk(res: Response) {
       // Non-JSON error body — no machine-readable code to extract.
     }
     // Message keeps the `${status}: ${text}` shape so the 4xx retry guard
-    // and existing message-based callers stay valid.
-    throw new ApiError(`${res.status}: ${text}`, code);
+    // and existing message-based callers stay valid. The numeric `status` is
+    // also attached so callers can branch on the status class (4xx vs 5xx)
+    // without regexing the message (see offline-queue-drain.ts).
+    throw new ApiError(`${res.status}: ${text}`, code, res.status);
   }
 }
 
