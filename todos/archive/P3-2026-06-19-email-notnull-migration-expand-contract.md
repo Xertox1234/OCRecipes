@@ -1,6 +1,6 @@
 ---
 title: "Make users.email NOT NULL migration-safe (expand/contract) for populated tables"
-status: backlog
+status: done
 priority: low
 created: 2026-06-19
 updated: 2026-06-19
