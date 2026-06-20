@@ -5,19 +5,61 @@ description: Use at the end of any session to extract and preserve patterns, lea
 
 You are running the codify workflow. Codify patterns, learnings, and agent rules from the current branch's implementation work. **Never skip steps.**
 
-## Step 1 — Assess the branch diff
+## Step 1 — Resolve the diff range, then assess it
 
-Run:
+`/codify` codifies a **diff range**. Resolve it **once**, here, then every
+downstream command (the path-domains feed in this step, the Step 3 review
+dispatch and confirm-check) references **the resolved range** — never a literal
+`main...HEAD`. The resolved range is a value you **carry in context**, not a
+shell variable (shell vars do not persist between Bash calls — see the note in
+Step 3, same as `review_output`).
+
+Pick the range by this precedence (first match wins):
+
+1. **Explicit argument.** If the caller invoked `/codify <sha>` or
+   `/codify <range>` (e.g. `d2f29da2^ d2f29da2`, `abc123..def456`) or
+   `/codify --since <ref>` (resolves to `<ref>..HEAD`), use that. An explicit
+   argument **overrides** the `main...HEAD` default — this is the named-range
+   escape hatch. Skip to "Assess the resolved range" below.
+2. **Live feature branch.** Otherwise run `git diff main...HEAD --stat`. If it is
+   **non-empty**, the resolved range is `main...HEAD` (the normal on-branch flow).
+3. **Post-merge fallback (default branch, empty `main...HEAD`).** If
+   `main...HEAD` is empty **and** you are on the default branch
+   (`git branch --show-current` is `main` or `master`), the branch was just
+   squash/merged and `HEAD` is the merge/squash commit. Resolve the range to
+   `HEAD^ HEAD` (the
+   most-recently-merged change). **Confirm before codifying — do not jump
+   silently** (per the todo's Risks note): echo HEAD's subject so the unit is
+   visible, and treat it as the codify target only if it is the intended
+   just-merged work (it matches the session's merged PR when known, or is
+   otherwise recent):
+
+   ```bash
+   git log -1 --format='%h %s' HEAD   # the unit about to be codified — confirm this is the just-merged change
+   ```
+
+   If it is **not** the intended commit, ask the caller for an explicit
+   `<sha>` / `<range>` (path 1) instead of codifying the wrong commit.
+
+**Nothing-to-codify early-exit.** Output "Nothing to codify — no changes on this
+branch." and stop **only when BOTH** are genuinely empty: `main...HEAD` is empty
+**and** the fallback range is also empty (no explicit arg, and either not on the
+default branch or `HEAD^ HEAD` produces no diff — e.g. an empty/root commit).
+
+### Assess the resolved range
+
+Display the diff stat for the resolved range:
 
 ```bash
-git diff main...HEAD --stat
+git diff <resolved-range> --stat   # e.g. main...HEAD, HEAD^ HEAD, or the explicit <sha>/<range>
 ```
 
 Then derive the domain/routing labels for the changed files from the single
-source of truth — do **not** maintain an inline mapping table (it drifts):
+source of truth — do **not** maintain an inline mapping table (it drifts). Feed
+the **resolved range** into `--name-only`:
 
 ```bash
-git diff main...HEAD --name-only | xargs npx tsx scripts/lib/path-domains.ts --routing
+git diff <resolved-range> --name-only | xargs npx tsx scripts/lib/path-domains.ts --routing
 ```
 
 This prints the comma-separated union of **routing labels** (rules-domains plus
@@ -26,8 +68,7 @@ across all changed files. The mapping is defined once in
 `scripts/lib/path-domains.ts` — the same source the generated
 `.github/copilot-instructions.md` and `.claude/hooks/lib/domain-map.sh` derive
 from. **In addition, include `typescript` whenever any changed file is a `.ts`
-or `.tsx` file** (a cross-cutting policy the CLI does not add). If the diff is
-empty, output "Nothing to codify — no changes on this branch." and stop.
+or `.tsx` file** (a cross-cutting policy the CLI does not add).
 
 ## Step 2 — Map domains to specialist review agents
 
@@ -56,16 +97,18 @@ Review uses the model in `docs/AI_WORKFLOW.md` → Review Policy. You are the or
 
 **First, reuse existing review signal.** If reviewers already ran earlier in this session (e.g. the todo-executor's Step 6, or a manual review), their findings are your `review_output` — do not re-review. Skip the dispatch below and go to Step 4.
 
-Otherwise, confirm there is a diff to review:
+Otherwise, confirm there is a diff to review — using **the resolved range from
+Step 1** (`main...HEAD`, `HEAD^ HEAD`, or the explicit `<sha>`/`<range>`), not a
+literal `main...HEAD`:
 
 ```bash
-git diff main...HEAD --stat
+git diff <resolved-range> --stat
 ```
 
 If the diff is empty, set `review_output=""` and proceed to Step 4. Otherwise:
 
 1. **Always include `code-reviewer`** (cross-cutting baseline). Then add the relevant domain specialists for the branch — you already have the touched **domain labels** from Step 1 and their **specialist agents** from the Step 2 mapping — typically **2–3 specialists** on top (a branch usually spans more domains than a single todo). Use content as well as paths (a JWT/ownership change → add `security-auditor` even if Step 1 didn't tag it).
-2. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the Review-Policy dispatch prompt with `git diff main...HEAD` as the diff command and the branch name as the context label. **Working-tree safety:** capture `WORKTREE=$(git rev-parse --show-toplevel)` + the current branch/HEAD in your own cwd and require each reviewer to use `git -C "$WORKTREE"` (not `cd`) + a tree check at the start of its prompt (per Review Policy → "Working-tree safety") — a reviewer must be on this branch in this tree or it diffs the wrong `main...HEAD`. Each reviews ONLY the branch changes through its lens and returns `[CRITICAL]/[WARNING]/[SUGGESTION] file:line — description`, or `No findings`.
+2. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the Review-Policy dispatch prompt with `git diff <resolved-range>` as the diff command (the **same resolved range from Step 1** — on the post-merge path this is `HEAD^ HEAD`, **not** `main...HEAD`, or the dispatched reviewers diff an empty range and falsely return "No findings") and the branch name as the context label. **Working-tree safety:** capture `WORKTREE=$(git rev-parse --show-toplevel)` + the current branch/HEAD in your own cwd and require each reviewer to use `git -C "$WORKTREE"` (not `cd`) + a tree check at the start of its prompt (per Review Policy → "Working-tree safety") — a reviewer must be on this branch in this tree or it diffs the wrong range. Each reviews ONLY the changes in the resolved range through its lens and returns `[CRITICAL]/[WARNING]/[SUGGESTION] file:line — description`, or `No findings`.
 3. **Merge** all reviewers' findings (dedupe overlaps), noting which agent reported each.
 
 **Store the merged findings in working context as `review_output`.** Shell variables do not persist between Bash invocations — keep this in your context.
