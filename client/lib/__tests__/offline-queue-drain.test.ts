@@ -82,6 +82,10 @@ describe("offline-queue-drain", () => {
     );
     const { apiRequest, queryClient } = await import("@/lib/query-client");
     const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+    // Import ApiError dynamically AFTER beforeEach's vi.resetModules() so it
+    // shares the drain module's class identity — a top-level static import
+    // would bind a stale generation and `instanceof ApiError` would fail.
+    const { ApiError } = await import("@/lib/api-error");
 
     const item = {
       id: "del-1",
@@ -95,7 +99,9 @@ describe("offline-queue-drain", () => {
     vi.mocked(incrementAttempts).mockResolvedValue(undefined);
     // The original DELETE committed server-side but its response was lost; the
     // replay finds the row already gone → 404. That is success for a DELETE.
-    vi.mocked(apiRequest).mockRejectedValue(new Error("404: Not Found"));
+    vi.mocked(apiRequest).mockRejectedValue(
+      new ApiError("404: Not Found", undefined, 404),
+    );
     vi.mocked(dequeue).mockResolvedValue(undefined);
 
     const errorListener = vi.fn();
@@ -115,6 +121,8 @@ describe("offline-queue-drain", () => {
     );
     const { apiRequest } = await import("@/lib/query-client");
     const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+    // Dynamic import for class-identity parity with the drain (see DELETE-404 test).
+    const { ApiError } = await import("@/lib/api-error");
 
     const item = {
       id: "post-404",
@@ -126,7 +134,9 @@ describe("offline-queue-drain", () => {
     };
     vi.mocked(loadQueue).mockReturnValue([item]);
     vi.mocked(incrementAttempts).mockResolvedValue(undefined);
-    vi.mocked(apiRequest).mockRejectedValue(new Error("404: Not Found"));
+    vi.mocked(apiRequest).mockRejectedValue(
+      new ApiError("404: Not Found", undefined, 404),
+    );
     vi.mocked(dequeue).mockResolvedValue(undefined);
 
     const errorListener = vi.fn();
@@ -177,6 +187,8 @@ describe("offline-queue-drain", () => {
     );
     const { apiRequest, queryClient } = await import("@/lib/query-client");
     const { drainQueue } = await importDrain();
+    // Dynamic import for class-identity parity with the drain (see DELETE-404 test).
+    const { ApiError } = await import("@/lib/api-error");
 
     const item = {
       id: "bad",
@@ -188,12 +200,53 @@ describe("offline-queue-drain", () => {
     };
     vi.mocked(loadQueue).mockReturnValue([item]);
     vi.mocked(incrementAttempts).mockResolvedValue(undefined);
-    vi.mocked(apiRequest).mockRejectedValue(new Error("400: Bad Request"));
+    vi.mocked(apiRequest).mockRejectedValue(
+      new ApiError("400: Bad Request", undefined, 400),
+    );
     vi.mocked(dequeue).mockResolvedValue(undefined);
 
     await drainQueue();
 
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it("treats an unknown (non-ApiError, statusless) error as a server failure and evicts after MAX_ATTEMPTS", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+
+    const item = {
+      id: "unknown-err",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: {},
+      attempts: 0,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+      if (item.id === id) item.attempts++;
+    });
+    // A plain Error has no numeric `.status`, so it is neither a network
+    // TypeError nor a classified 4xx — it must fall into the server-retry
+    // budget so the `while (!done)` loop stays bounded and the item is
+    // eventually evicted, not retried forever.
+    vi.mocked(apiRequest).mockRejectedValue(new Error("unexpected failure"));
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    const errorListener = vi.fn();
+    subscribeToQueueDrainErrors(errorListener);
+
+    // The loop accumulates retry delays across the 4 server attempts — advance
+    // fake timers so each wait() resolves.
+    const p = drainQueue();
+    await vi.runAllTimersAsync();
+    await p;
+
+    expect(dequeue).toHaveBeenCalledWith("unknown-err");
+    expect(errorListener).toHaveBeenCalledOnce();
   });
 
   it("increments attempts BEFORE making the apiRequest call", async () => {
@@ -258,6 +311,8 @@ describe("offline-queue-drain", () => {
     );
     const { apiRequest } = await import("@/lib/query-client");
     const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+    // Dynamic import for class-identity parity with the drain (see DELETE-404 test).
+    const { ApiError } = await import("@/lib/api-error");
 
     const item = {
       id: "y",
@@ -269,7 +324,9 @@ describe("offline-queue-drain", () => {
     };
     vi.mocked(loadQueue).mockReturnValue([item]);
     vi.mocked(incrementAttempts).mockResolvedValue(undefined);
-    vi.mocked(apiRequest).mockRejectedValue(new Error("400: Bad Request"));
+    vi.mocked(apiRequest).mockRejectedValue(
+      new ApiError("400: Bad Request", undefined, 400),
+    );
     vi.mocked(dequeue).mockResolvedValue(undefined);
 
     const errorListener = vi.fn();
@@ -359,6 +416,8 @@ describe("offline-queue-drain", () => {
     );
     const { apiRequest } = await import("@/lib/query-client");
     const { drainQueue, subscribeToQueueDrainErrors } = await importDrain();
+    // Dynamic import for class-identity parity with the drain (see DELETE-404 test).
+    const { ApiError } = await import("@/lib/api-error");
 
     const item = {
       id: "mix-1",
@@ -378,11 +437,14 @@ describe("offline-queue-drain", () => {
     vi.mocked(apiRequest).mockImplementation(async () => {
       callCount++;
       if (callCount <= 2) throw new TypeError("Network request failed");
-      throw new Error("500: Internal Server Error");
+      throw new ApiError("500: Internal Server Error", undefined, 500);
     });
     vi.mocked(incrementAttempts).mockImplementation(async (id) => {
       if (item.id === id) item.attempts++;
     });
+    // NOTE: the SAME mutable `item` reference is returned each call — the drain
+    // loop reads its mutated `attempts` back via loadQueue().find(). Do not
+    // switch this to a shallow copy ([{ ...item }]) or attempts freeze at 0.
     vi.mocked(loadQueue).mockReturnValue([item]);
     vi.mocked(dequeue).mockResolvedValue(undefined);
 
