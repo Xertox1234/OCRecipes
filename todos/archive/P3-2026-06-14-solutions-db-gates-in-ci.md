@@ -1,6 +1,6 @@
 ---
 title: "Run solutions-db gates (parity / round-trip / hook-equivalence) in CI"
-status: backlog
+status: done
 priority: low
 created: 2026-06-14
 updated: 2026-06-14
@@ -77,3 +77,23 @@ still validate all three gates.
 - Initial creation — deferred from the PR #398 (SP2) review; the three operator gates that prove
   the DB↔mirror invariant do not run in CI, so regressions to the hash/serialize/hook code could
   pass CI undetected. Stub-embedder insight noted to make CI gating feasible without an API key.
+
+### 2026-06-20
+
+- **Decision (AC#4): chose the CI Postgres-service job, not the local pre-merge ritual.** A
+  `pgvector/pgvector:pg16` service is already the established pattern in `ci.yml` (the test/coverage
+  jobs run a `postgres:16` service), so the marginal cost is one more parallel job — the automated
+  gate beats a documented-but-skippable manual ritual. The local ritual is documented in
+  `DEV_SETUP.md` as a reproduction aid, but the enforced gate is the CI job.
+- **Corpus resolution: committed fixture subset.** `docs/solutions/` is gitignored so CI has no
+  corpus. Committed 11 real corpus files to `scripts/solutions-db/__fixtures__/solutions/`, chosen to
+  span the inject-hook probe domains (api/database/security/react-native/accessibility/ai-prompting/
+  testing/typescript), include both tracks, and put 5 files in the `database` domain so the hook's
+  `SOLUTIONS_PER_DOMAIN`=4 cap + `reserve_bug_slot` are exercised. The CI job copies them into
+  `docs/solutions/` before ingest. Using real files (not synthetic) guarantees they parse/round-trip
+  cleanly and that hook-equivalence is non-vacuous (every probe matched ≥1 ref in local verification).
+- **Stub embedder:** `SOLUTIONS_EMBED_STUB=1` branch in `getClient()` (not `embedBatch` — the default
+  param evaluates `getClient()` before the body, so a body-level branch would throw on the missing
+  key first). Returns a deterministic length-`EMBED_DIMS` hashed vector per input with the per-request
+  `index` preserved. New unit tests cover it; verified end-to-end against a scratch DB (all 3 gates
+  green; negative test confirmed parity exits 1 on a corrupted hash).
