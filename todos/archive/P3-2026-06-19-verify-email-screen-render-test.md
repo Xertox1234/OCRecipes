@@ -1,6 +1,6 @@
 ---
 title: "Add a render test for VerifyEmailScreen's state machine"
-status: backlog
+status: done
 priority: low
 created: 2026-06-19
 updated: 2026-06-19
