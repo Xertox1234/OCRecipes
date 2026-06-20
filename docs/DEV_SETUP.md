@@ -229,6 +229,37 @@ The two URLs are NOT interchangeable: ingest/export/add/parity use the owner URL
 
 If `SOLUTIONS_DB_READONLY_URL` is absent from the environment, the inject hook and MCP server degrade gracefully to the markdown mirror — no setup is required to develop locally.
 
+#### Solutions-DB correctness gates in CI
+
+Three gates prove the DB↔mirror invariant and the inject-hook cut-over hold:
+
+- `npm run solutions:db:parity` — DB `content_hash` == disk `content_hash` for every solution.
+- `npm run solutions:db:export -- --verify` — full-corpus serialize→reparse→stored-hash round-trip.
+- `npm run solutions:db:hook-check` — the DB-backed inject hook emits the same refs as the
+  markdown-fallback path.
+
+They run automatically in the **`Solutions-DB gates`** CI job (`.github/workflows/ci.yml`). Because
+the real `docs/solutions/` tree is gitignored, the job materializes a small committed **fixture
+corpus** (`scripts/solutions-db/__fixtures__/solutions/` — real corpus files chosen to span the
+inject-hook probe domains) into `docs/solutions/`, then ingests and gates against it.
+
+**Stub embedder (no OpenAI key in CI).** The gates do not need real embeddings — parity only
+asserts `nullEmbeddings=0`, and round-trip / hook-equivalence ignore vectors entirely. Setting
+`SOLUTIONS_EMBED_STUB=1` makes `getClient()` (in `scripts/solutions-db/lib/embeddings.ts`) return a
+deterministic, key-free stub embedder: a per-input hashed vector of length `EMBED_DIMS`. The branch
+is **env-gated and only fires when the var is set**, so the real ingest path (which constructs the
+OpenAI client) is untouched. To reproduce the CI gate run locally against a scratch DB:
+
+```bash
+createdb ocrecipes_solutions_citest
+SOLUTIONS_DATABASE_URL=postgresql://localhost/ocrecipes_solutions_citest \
+SOLUTIONS_DB_READONLY_URL=postgresql://solutions_ro:solutions_ro@localhost/ocrecipes_solutions_citest \
+SOLUTIONS_EMBED_STUB=1 npm run solutions:db:init   # then ingest + the three gates
+```
+
+> Do **not** run the ingest against your real `docs/solutions/` while a scratch corpus is staged —
+> point the URLs at a throwaway DB and copy fixtures into a temp checkout to avoid polluting live data.
+
 ## Port Configuration
 
 | Service         | Port | Notes                      |

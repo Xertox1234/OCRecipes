@@ -5,9 +5,53 @@ export const EMBED_DIMS = 1536;
 export const MAX_EMBED_CHARS = 32_000; // ~8K tokens, under the 8191 per-input cap
 export const EMBED_INPUT_CHUNK = 100; // ~100K tokens/request, under the ~300K cap
 
-let _client: OpenAI | null = null;
-export function getClient(): OpenAI {
+/** Cheap deterministic length-EMBED_DIMS vector from a string (DJB2-seeded LCG, range [-0.5, 0.5)). */
+export function stubVector(text: string): number[] {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++)
+    h = ((h << 5) + h + text.charCodeAt(i)) >>> 0;
+  const vec = new Array<number>(EMBED_DIMS);
+  for (let i = 0; i < EMBED_DIMS; i++) {
+    h = (h * 1103515245 + 12345) >>> 0;
+    // Divide by 2^32 (not 0xffffffff) so the range is truly half-open [-0.5, 0.5):
+    // h maxes at 0xffffffff, and 0xffffffff / 0x100000000 < 1, so the value never reaches 0.5.
+    vec[i] = h / 0x100000000 - 0.5;
+  }
+  return vec;
+}
+
+/**
+ * Deterministic, key-free embedder for the CI gates (parity / round-trip / hook-equivalence).
+ * Gated behind SOLUTIONS_EMBED_STUB=1 so it NEVER fires on the real ingest path. It must live in
+ * getClient (not embedBatch): embedBatch's `client` default param evaluates getClient() at call
+ * time, and upsertSolutions calls embedBatch with NO client — so a body-level stub branch would be
+ * reached only AFTER getClient() already threw "AI_INTEGRATIONS_OPENAI_API_KEY not set". Each item
+ * carries the per-request `index` so embedBatch's index-based mapping is exercised exactly as for a
+ * real OpenAI response. Only `embeddings.create` is implemented — the sole method embedBatch calls.
+ */
+function makeStubClient(): Pick<OpenAI, "embeddings"> {
+  return {
+    embeddings: {
+      create: ({ input }: { input: string | string[] }) => {
+        const inputs = Array.isArray(input) ? input : [input];
+        return Promise.resolve({
+          data: inputs.map((text, i) => ({
+            index: i,
+            embedding: stubVector(String(text)),
+          })),
+        });
+      },
+    },
+  } as unknown as Pick<OpenAI, "embeddings">;
+}
+
+let _client: Pick<OpenAI, "embeddings"> | null = null;
+export function getClient(): Pick<OpenAI, "embeddings"> {
   if (!_client) {
+    if (process.env.SOLUTIONS_EMBED_STUB === "1") {
+      _client = makeStubClient();
+      return _client;
+    }
     const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
     if (!apiKey) throw new Error("AI_INTEGRATIONS_OPENAI_API_KEY not set");
     _client = new OpenAI({
