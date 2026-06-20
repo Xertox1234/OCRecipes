@@ -217,6 +217,62 @@ describe("LoginScreen — email field", () => {
     );
   });
 
+  // AC: the email input is marked invalid ONLY when the email field itself is
+  // the failure — not when a different field (e.g. mismatched passwords) fails.
+  // The TextInput surfaces its error via the merged accessibility hint
+  // (aria-hint in the jsdom shim), so we assert on that.
+  it("marks the email input invalid only when the email itself is invalid", async () => {
+    renderComponent(<LoginScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Switch to sign up" }));
+
+    const fillExcept = (email: string, confirm: string) => {
+      fireEvent.change(screen.getByLabelText("Username"), {
+        target: { value: "chef_tony" },
+      });
+      fireEvent.change(screen.getByLabelText("Email"), {
+        target: { value: email },
+      });
+      fireEvent.change(screen.getByLabelText("Password"), {
+        target: { value: "Recipe123" },
+      });
+      fireEvent.change(screen.getByLabelText("Confirm password"), {
+        target: { value: confirm },
+      });
+      fireEvent.click(
+        screen.getByLabelText("I confirm I am 13 years of age or older"),
+      );
+    };
+
+    // A non-email failure (mismatched passwords) must NOT mark email invalid.
+    fillExcept("chef@example.com", "Recipe124");
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+    await screen.findByText("Passwords do not match");
+    expect(
+      screen.getByLabelText("Email").getAttribute("aria-invalid"),
+    ).toBeNull();
+    expect(screen.getByLabelText("Email").getAttribute("aria-hint")).toBe(
+      "Enter your email address",
+    );
+
+    // A bad email DOES mark the email input invalid (aria-invalid + merged hint).
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "Recipe123" },
+    });
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "not-an-email" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Account" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Email").getAttribute("aria-invalid")).toBe(
+        "true",
+      ),
+    );
+    expect(screen.getByLabelText("Email").getAttribute("aria-hint")).toBe(
+      "Enter your email address. Please enter a valid email address",
+    );
+    expect(mockRegister).not.toHaveBeenCalled();
+  });
+
   it("navigates to VerifyEmail when login returns EMAIL_NOT_VERIFIED", async () => {
     mockLogin.mockRejectedValue(
       new ApiError("403: email not verified", "EMAIL_NOT_VERIFIED"),

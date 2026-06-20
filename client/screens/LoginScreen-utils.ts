@@ -94,6 +94,38 @@ export function validateAuthForm(input: AuthFormInput): string | null {
 }
 
 /**
+ * Per-field validation errors. Currently only the email field is attributed,
+ * which is all the email `TextInput` needs to set `aria-invalid` on itself
+ * (the form-level banner still uses `validateAuthForm`). `email` is `null` when
+ * the email field is valid or not applicable to the current mode.
+ */
+export interface AuthFieldErrors {
+  email: string | null;
+}
+
+/**
+ * Field-attributed validation, used to set `error`/`errorMessage` (and thus
+ * `aria-invalid`) on individual inputs. Login stays LENIENT — in login mode the
+ * email field is not shown, so this never produces an email error and never
+ * introduces a username-enumeration oracle. The email rules MIRROR the
+ * email checks in `validateAuthForm` above (KEEP IN SYNC, same `EMAIL_PATTERN`).
+ */
+export function validateAuthFormFields(input: AuthFormInput): AuthFieldErrors {
+  if (input.mode === "login") {
+    return { email: null };
+  }
+
+  const email = input.email.trim();
+  if (!email) {
+    return { email: "Please enter your email address" };
+  }
+  if (!EMAIL_PATTERN.test(email)) {
+    return { email: "Please enter a valid email address" };
+  }
+  return { email: null };
+}
+
+/**
  * Maps a caught auth error to STATIC, mode-specific copy. Never reads
  * `error.message` (raw server body) — branches on `ApiError.code` only, per
  * the `no-error-message-in-ui` rule. Surfaces a helpful message for the
