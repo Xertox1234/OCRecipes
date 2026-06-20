@@ -15,7 +15,10 @@ vi.mock("resend", () => ({
 
 describe("email service", () => {
   beforeEach(() => {
-    mockSend.mockClear();
+    // Reset implementation (not just call history) so a test's `mockResolvedValue`
+    // default cannot leak into the next test; re-seed the success baseline.
+    mockSend.mockReset();
+    mockSend.mockResolvedValue({ data: { id: "mock" }, error: null });
     vi.resetModules();
   });
   afterEach(() => {
@@ -104,5 +107,121 @@ describe("email service", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe("timeout + 429-aware retry/backoff", () => {
+    it("times out a hung send, retries, and succeeds on a later attempt", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      vi.useFakeTimers();
+      try {
+        // First attempt: a send that never resolves — must be cut off by the
+        // per-attempt timeout. Second attempt: resolves cleanly.
+        mockSend
+          .mockReturnValueOnce(new Promise(() => {})) // hangs forever
+          .mockResolvedValueOnce({ data: { id: "ok" }, error: null });
+
+        const { sendVerificationEmail } = await import("../email");
+        const done = sendVerificationEmail("hung@example.com", "t");
+
+        // Advance past the 8s per-attempt timeout + the transient backoff so the
+        // hung first attempt is abandoned and the retry runs.
+        await vi.advanceTimersByTimeAsync(8_000); // timeout fires
+        await vi.advanceTimersByTimeAsync(500); // transient backoff
+        await done;
+
+        expect(mockSend).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("backs off distinctly for a 429 vs a network failure before retrying", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      vi.useFakeTimers();
+      try {
+        const { sendVerificationEmail } = await import("../email");
+
+        // --- 429 (rate_limit_exceeded): first attempt rate-limited, then ok ---
+        mockSend
+          .mockResolvedValueOnce({
+            data: null,
+            error: {
+              message: "Too many requests",
+              name: "rate_limit_exceeded",
+              statusCode: 429,
+            },
+          })
+          .mockResolvedValueOnce({ data: { id: "ok" }, error: null });
+
+        const rateLimited = sendVerificationEmail("rl@example.com", "t");
+        // The 429 backoff base is 1000ms. Advancing only 999ms must NOT yet have
+        // triggered the retry — distinctly longer than the network path below.
+        await vi.advanceTimersByTimeAsync(999);
+        expect(mockSend).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(1); // cross the 1000ms boundary
+        await rateLimited;
+        expect(mockSend).toHaveBeenCalledTimes(2);
+
+        mockSend.mockClear();
+
+        // --- Network failure (rejected promise): first attempt throws, then ok ---
+        mockSend
+          .mockRejectedValueOnce(new Error("ECONNRESET"))
+          .mockResolvedValueOnce({ data: { id: "ok" }, error: null });
+
+        const network = sendVerificationEmail("net@example.com", "t");
+        // The transient backoff base is 500ms — the retry fires by 500ms, well
+        // before the 429 path's 1000ms, proving the two back off distinctly.
+        await vi.advanceTimersByTimeAsync(500);
+        await network;
+        expect(mockSend).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("gives up after bounded retries and does not throw", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      vi.useFakeTimers();
+      try {
+        // Every attempt rate-limited — 3 sends total (initial + 2 retries).
+        mockSend.mockResolvedValue({
+          data: null,
+          error: {
+            message: "Too many requests",
+            name: "rate_limit_exceeded",
+            statusCode: 429,
+          },
+        });
+
+        const { sendVerificationEmail } = await import("../email");
+        const done = sendVerificationEmail("exhaust@example.com", "t");
+        // Run all backoffs (1000ms, then 2000ms) to completion.
+        await vi.advanceTimersByTimeAsync(5_000);
+        await expect(done).resolves.toBeUndefined();
+
+        expect(mockSend).toHaveBeenCalledTimes(3);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("does not retry a terminal validation error", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      mockSend.mockResolvedValueOnce({
+        data: null,
+        error: {
+          message: "Invalid `from` address",
+          name: "validation_error",
+          statusCode: 422,
+        },
+      });
+
+      const { sendVerificationEmail } = await import("../email");
+      await sendVerificationEmail("bad@example.com", "t");
+
+      // A terminal error is not retried — exactly one send attempt.
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
   });
 });
