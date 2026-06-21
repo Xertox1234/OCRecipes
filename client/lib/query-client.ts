@@ -165,6 +165,14 @@ export async function apiRequest(
   route: string,
   data?: unknown | undefined,
   init?: RequestInit,
+  // Optional explicit bearer override. When OMITTED (`undefined`) the token is
+  // read from `tokenStorage` at dispatch time — the default for all ~50 callers,
+  // unchanged. When PROVIDED (a `string` to pin, or `null` to pin "no auth"),
+  // that value is used verbatim and storage is never consulted. The offline
+  // queue drain passes the token it already validated post-backoff so the
+  // request dispatches under the exact bearer the re-check approved, closing the
+  // microtask TOCTOU between that re-check and this dispatch-time read.
+  authToken?: string | null,
 ): Promise<Response> {
   const baseUrl = getApiUrl();
   const url = new URL(route, baseUrl);
@@ -174,7 +182,7 @@ export async function apiRequest(
     headers["Content-Type"] = "application/json";
   }
 
-  const token = await tokenStorage.get();
+  const token = authToken !== undefined ? authToken : await tokenStorage.get();
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
