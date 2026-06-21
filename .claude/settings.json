@@ -166,11 +166,15 @@
         "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-verify.sh", "timeout": 15, "statusMessage": "Verifying PR state..." }]
       },
       {
+        "matcher": "mcp__github__create_pull_request",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-verify.sh", "timeout": 15, "statusMessage": "Verifying PR state..." }]
+      },
+      {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "file=$(jq -r '.tool_input.file_path // empty'); case \"$file\" in *.ts|*.tsx|*.js|*.jsx|*.cjs|*.mjs) ESLINT_NO_TYPE_AWARE=1 npx eslint --no-warn-ignored --fix \"$file\" ;; esac",
+            "command": "bash .claude/hooks/eslint-fix.sh",
             "timeout": 60,
             "statusMessage": "eslint --fix on changed file..."
           }

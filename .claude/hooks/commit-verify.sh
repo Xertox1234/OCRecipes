@@ -20,12 +20,12 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 STAGED=$(git diff --cached --name-only 2>/dev/null || true)
 HEAD_LINE=$(git log --oneline -1 2>/dev/null || echo "(no commits yet)")
 
-if [ -n "$STAGED" ]; then
-  FILES_LIST=$(printf '%s' "$STAGED" | tr '\n' ' ')
-  MSG="git commit may have been silently blocked — staged changes still remain after the command: ${FILES_LIST}. Current HEAD: ${HEAD_LINE}. If you used a pathspec commit this is expected; otherwise check pre-commit hook output and re-attempt."
-else
-  MSG="Commit verified: staged changes cleared. HEAD is now: ${HEAD_LINE}."
-fi
+# Clean success (no staged changes remain) is the common case — stay silent to
+# avoid a per-commit context message. Only speak on the anomaly worth flagging.
+[ -n "$STAGED" ] || exit 0
+
+FILES_LIST=$(printf '%s' "$STAGED" | tr '\n' ' ')
+MSG="git commit may have been silently blocked — staged changes still remain after the command: ${FILES_LIST}. Current HEAD: ${HEAD_LINE}. If you used a pathspec commit this is expected; otherwise check pre-commit hook output and re-attempt."
 
 jq -n --arg m "$MSG" '{
   "hookSpecificOutput": {

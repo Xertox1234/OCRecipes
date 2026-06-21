@@ -27,6 +27,11 @@ PATTERN=$(printf '%s' "$CMD" \
 printf '%s' "$PATTERN" | grep -Eq '[][().*+?^$\\|{}]' && exit 0
 # Must look like a code identifier (camelCase / PascalCase / snake_case).
 printf '%s' "$PATTERN" | grep -Eq '([a-z][A-Z]|_|^[A-Z][a-z])' || exit 0
+# Skip SCREAMING_SNAKE env-vars / constants (DATABASE_URL, JWT_SECRET): these are
+# string searches where grep is correct and the LSP adds nothing.
+printf '%s' "$PATTERN" | grep -Eq '^[A-Z0-9_]+$' && exit 0
+# Skip dunder directory / convention names (__tests__): not navigable symbols.
+printf '%s' "$PATTERN" | grep -Eq '^__|__$' && exit 0
 # Must target TypeScript or be repo-wide (-r / no path).
 printf '%s' "$CMD" | grep -Eq '\.tsx?|include=[^ ]*ts|-g [^ ]*ts|(^|[[:space:]])-r([[:space:]]|$)|-rn?' || exit 0
 

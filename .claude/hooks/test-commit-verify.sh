@@ -63,9 +63,9 @@ assert_contains "blocked commit: lists staged file" "staged.ts" "$OUT"
 # Clear staged files (simulate a clean commit)
 git -C "$TMPDIR_REPO" commit -q -m "add staged" 2>/dev/null || true
 
-# Test 2: no staged files → confirm commit succeeded
+# Test 2: no staged files → silent (clean success must not add per-commit noise)
 OUT=$(run_hook "git commit -m 'test'")
-assert_contains "clean commit: emits Commit verified" "Commit verified" "$OUT"
+assert_silent "clean commit is silent" "$OUT"
 
 # Test 3: non-commit command → silence
 OUT=$(run_hook "git status")

@@ -88,6 +88,26 @@ assert_contains "gh pr close triggers pr-verify" "PR state verified" "$OUT"
 OUT=$(run_hook "gh pr edit 42 --title 'updated title'" "success")
 assert_contains "gh pr edit triggers pr-verify" "PR state verified" "$OUT"
 
+# Run the hook against an MCP tool call (no .tool_input.command).
+run_hook_mcp() {
+  local tool="$1" gh_mode="${2:-success}"
+  local input stubdir out
+  input=$(jq -n --arg t "$tool" '{"tool_name":$t,"tool_input":{"title":"foo"},"tool_response":{"number":42}}')
+  stubdir=$(make_stub_gh "$gh_mode")
+  out=$(echo "$input" | PATH="$stubdir:$PATH" bash "$HOOK" 2>/dev/null)
+  rm -rf "$stubdir"
+  printf '%s' "$out"
+}
+
+# Test 7: MCP create_pull_request → verified message (resolves via gh pr view)
+OUT=$(run_hook_mcp "mcp__github__create_pull_request" "success")
+assert_contains "MCP create_pull_request triggers pr-verify" "PR state verified" "$OUT"
+assert_contains "MCP create_pull_request: PR number present" "42" "$OUT"
+
+# Test 8: a non-PR MCP tool → silence
+OUT=$(run_hook_mcp "mcp__github__get_me" "success")
+assert_silent "other MCP tool does not trigger pr-verify" "$OUT"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
