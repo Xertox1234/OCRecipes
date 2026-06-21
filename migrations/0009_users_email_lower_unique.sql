@@ -1,0 +1,37 @@
+-- DB-enforce case-insensitive email uniqueness on the users table.
+--
+-- PR #400 added `users.email text NOT NULL UNIQUE` (the byte-exact
+-- users_email_unique constraint). Case-insensitive uniqueness currently holds
+-- only by CONVENTION — every write path lowercases first (registerSchema, the
+-- seed script). A future write/lookup path that forgets to normalize could
+-- silently create foo@x / Foo@x duplicates. This functional unique index moves
+-- the invariant from convention to the database.
+--
+-- DECISION (keep both indexes): the existing byte-exact users_email_unique is
+-- KEPT, not replaced. It backs the `WHERE email = $1` equality lookup in
+-- getUserByEmail + the register pre-check (a lower(email) index can't serve that
+-- query shape, and those callers already pass normalized values). The functional
+-- index adds only the case-insensitive uniqueness guarantee.
+--
+-- PRE-APPLY CHECK — a unique index fails to build if case-collisions exist.
+-- Run against the target DB first; it must return 0 rows:
+--
+--   SELECT lower(email), count(*) FROM users
+--   GROUP BY lower(email) HAVING count(*) > 1;
+--
+-- (Verified 0 rows on dev, 2026-06-20.)
+--
+-- ORDERING: order-independent w.r.t. the deploy. Adding an index does not break
+-- the old server bundle, and the old bundle already normalizes on write so it
+-- cannot insert a row this index would reject. Apply before or after the deploy.
+--
+-- Idempotent (IF NOT EXISTS): safe to re-run. Plain (non-CONCURRENTLY) build is
+-- fine for the tiny pre-launch users table; switch to CONCURRENTLY if the table
+-- grows large before this is applied to a live, write-heavy prod. NOTE when
+-- switching: CREATE INDEX CONCURRENTLY cannot run inside a transaction block AND
+-- (on Postgres < 15) cannot combine with IF NOT EXISTS — drop the IF NOT EXISTS
+-- clause and ensure the statement runs outside a txn.
+--
+-- Apply with:  psql "$DATABASE_URL" -f migrations/0009_users_email_lower_unique.sql
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_unique ON users (lower(email));
