@@ -21,6 +21,7 @@
     "lint:suppress:check": "ESLINT_NO_TYPE_AWARE= eslint . --prune-suppressions && git diff --exit-code -- eslint-suppressions.json",
     "lint:a11y": "node scripts/check-accessibility.js",
     "check:types": "tsc --noEmit",
+    "check:types:incremental": "mkdir -p node_modules/.cache && tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc-precommit.tsbuildinfo",
     "ci:failed-logs": "bash scripts/ci-failed-logs.sh",
     "copilot:delegate:dry-run": "tsx scripts/delegate-copilot-issue.ts --dry-run",
     "copilot:delegate": "tsx scripts/delegate-copilot-issue.ts --live",
