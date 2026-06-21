@@ -95,3 +95,12 @@ ships.
   available and wants email verification as a security measure, scoped as a
   **separate** change (decomposition decision). The field-only change adds the
   forward-compatible `emailVerified` column so this needs no second DDL.
+
+### 2026-06-20 (archived — core shipped in PR #403)
+
+- The email-verification subsystem is implemented on main: `server/services/email.ts`
+  (Resend send, key-guarded no-op), `POST /api/auth/verify-email` in
+  `server/routes/auth.ts`, `server/lib/verification-token.ts` (issue/verify), and
+  `storage.markEmailVerified`. The signup-email-field prerequisite is archived.
+  Remaining gate-flip ops (backfill / NOT NULL) are tracked in their own P3s.
+  User decision during a `/todo` run: **archive** this build-out todo as shipped.

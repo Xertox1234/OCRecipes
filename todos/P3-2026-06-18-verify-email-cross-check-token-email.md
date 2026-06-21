@@ -1,9 +1,9 @@
 ---
 title: "Cross-check verification token email vs user email when an email-change feature lands"
-status: backlog
+status: blocked
 priority: low
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-06-20
 assignee:
 labels: [deferred, security, api]
 github_issue:
@@ -56,3 +56,12 @@ wrongly clear the unverified state of whatever address is current.
 ## Risks
 
 - None today (email is immutable). This is a forward-compat guard.
+
+## Updates
+
+### 2026-06-20 (blocked — dormant until an email-change feature exists)
+
+- Set `status: blocked`. This todo's own AC is conditional ("**When** an
+  email-change feature is added…") and no email-change endpoint exists, so there
+  is nothing to implement now — an executor could only report "blocked." Re-open
+  to `backlog` and pair with the email-change work if/when it lands.

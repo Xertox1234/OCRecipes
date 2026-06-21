@@ -33,8 +33,11 @@ retiring the GLP-1 companion) or keep that awareness.
 ## Acceptance Criteria
 
 - [x] ~~Decide: drop `adaptiveGoalsEnabled` + `lastGoalAdjustmentAt`~~ — SUPERSEDED: done by `todos/archive/P3-2026-06-09-drop-adaptive-goals-columns.md` (migration `migrations/0007_drop_adaptive_goals_columns.sql`, 2026-06-10).
-- [ ] Decide on GLP-1: either (a) remove `glp1Mode`/`glp1Medication`/`glp1StartDate` + the coach-context-builder branch that reads them, or (b) keep the coach's GLP-1 awareness as an intentional retained behavior — and document which.
-- [ ] If dropping columns: hand-written `IF EXISTS` migration in `migrations/` applied via psql (dev now, prod at a deploy window — see `migrations/0007_drop_adaptive_goals_columns.sql` for the pattern); verify no remaining references via grep.
+- [x] Decide on GLP-1 — **DECIDED 2026-06-20: KEEP (option b).** The coach's
+      GLP-1-tailored awareness (`server/services/coach-context-builder.ts` reading
+      `glp1Mode`/`glp1Medication`/`glp1StartDate`) is an **intentional retained
+      behavior**; the 3 columns stay. No code change.
+- [x] ~~If dropping columns: hand-written migration~~ — N/A, columns kept (see above).
 
 ## Implementation Notes
 
@@ -54,3 +57,11 @@ retiring the GLP-1 companion) or keep that awareness.
 ### 2026-06-06
 
 - Initial creation — deferred from #384 (boundary held `users` columns; this is the cleanup pass).
+
+### 2026-06-20 (resolved — GLP-1 awareness KEPT; todo closed)
+
+- User decision during a `/todo` run: **keep** the coach's GLP-1 awareness as an
+  intentional retained behavior (option b). The `glp1Mode`/`glp1Medication`/
+  `glp1StartDate` columns and the `coach-context-builder.ts` branch reading them
+  stay. The adaptive-goals columns were already dropped earlier (superseded AC,
+  migration `0007`). Nothing left to do — archiving.
