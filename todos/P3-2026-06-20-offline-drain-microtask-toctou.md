@@ -1,6 +1,6 @@
 ---
 title: "Close residual microtask-gap TOCTOU in offline-queue drain by pinning the bearer token"
-status: backlog
+status: blocked
 priority: low
 created: 2026-06-20
 updated: 2026-06-20
@@ -70,3 +70,15 @@ closes the practical race.
 
 - Initial creation — deferred SUGGESTION from the PR #413 security review,
   surfaced in the 2026-06-20 `/todo` batch summary.
+
+### 2026-06-20 (blocked — already implemented in OPEN PR #417)
+
+- Set `status: blocked`. A prior `/todo` session already implemented this exact
+  fix in OPEN PR #417 ("fix: pin captured bearer through apiRequest to close
+  offline-drain microtask TOCTOU"): `apiRequest` gains an optional
+  `authToken?: string | null` (defaults to `tokenStorage.get()`; pinned value
+  used verbatim when provided), and `attemptDrain` passes the post-wait-validated
+  token. CI is green on every correctness gate (Lint·Types·Patterns, all 3 test
+  shards, Coverage, CodeQL, Mutation); only the "Solutions-DB gates" check fails
+  and the branch is stale-behind-main (cut at 309797a0). Do NOT re-implement —
+  review/land PR #417 instead. **Archive this todo when #417 merges.**
