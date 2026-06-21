@@ -4,15 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags:
-  [
-    accessibility,
-    react-native,
-    voiceover,
-    talkback,
-    inline-error,
-    announceForAccessibility,
-  ]
+tags: [accessibility, react-native, voiceover, talkback, inline-error, announceForAccessibility]
 symptoms:
   [
     VoiceOver reads the error message twice in rapid succession after a mutation fails,
