@@ -65,6 +65,17 @@ export const users = pgTable(
       .notNull(),
   },
   (table) => ({
+    // DB-enforced case-insensitive email uniqueness. The column-level
+    // `.unique()` above (users_email_unique) is byte-exact and only holds
+    // case-insensitivity by convention (every write path lowercases first). This
+    // functional index makes the invariant the database's job, so a future write
+    // path that forgets to normalize can't create foo@x / Foo@x duplicates. The
+    // plain unique is intentionally KEPT — it backs the `WHERE email = $1`
+    // equality lookup in getUserByEmail/register; a lower(email) index can't
+    // serve that query shape.
+    emailLowerUnique: uniqueIndex("users_email_lower_unique").on(
+      sql`lower(${table.email})`,
+    ),
     dailyCalorieGoalNonNeg: check(
       "users_daily_calorie_goal_gte0",
       sql`${table.dailyCalorieGoal} >= 0`,

@@ -19,6 +19,10 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 import { users, userProfiles } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import {
+  isUniqueViolation,
+  uniqueViolationConstraint,
+} from "../../lib/db-errors";
 
 vi.mock("../../db", () => ({
   get db() {
@@ -125,6 +129,38 @@ describe("users storage", () => {
       expect(newUser.subscriptionTier).toBe("free");
       expect(newUser.onboardingCompleted).toBe(false);
       expect(newUser.emailVerified).toBe(false);
+    });
+
+    it("rejects a case-variant duplicate email via the lower(email) functional unique index", async () => {
+      // DB-enforced case-insensitive uniqueness. `createUser` does NOT normalize
+      // (storage has no .toLowerCase() — normalization lives in registerSchema),
+      // and the byte-exact users_email_unique would accept "Foo@Bar.com" and
+      // "foo@bar.com" as two distinct rows. The functional unique index on
+      // lower(email) rejects the second — this is the latent footgun the index
+      // closes (a future write path that forgets to lowercase). drizzle-orm 0.44+
+      // wraps the pg error, so assert the unwrapped 23505 via the shared helper
+      // rather than matching message text (see api-keys.test.ts precedent).
+      await createUser({
+        username: "case_dup_a",
+        email: "Foo@Bar.com",
+        password: "hashed_pw",
+      });
+      const error = await createUser({
+        username: "case_dup_b",
+        email: "foo@bar.com",
+        password: "hashed_pw",
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(error).not.toBeNull();
+      expect(isUniqueViolation(error)).toBe(true);
+      // Pin the constraint NAME, not just the 23505 code: the register
+      // anti-enumeration branch routes on `constraint?.includes("email")`
+      // (server/routes/auth.ts), so a future rename that drops "email" would
+      // silently break the neutral-response path while a code-only assertion
+      // stayed green.
+      expect(uniqueViolationConstraint(error)).toContain("email");
     });
   });
 
