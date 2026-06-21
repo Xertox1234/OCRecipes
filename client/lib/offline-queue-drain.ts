@@ -82,7 +82,17 @@ async function attemptDrain(item: QueuedMutation): Promise<boolean> {
     }
 
     try {
-      await apiRequest(current.method, current.endpoint, current.body, init);
+      // Pin the token validated by the post-wait re-check above (tokenNow ===
+      // tokenAtStart) as an explicit bearer. Without this, apiRequest re-reads
+      // tokenStorage at dispatch time, leaving a microtask TOCTOU between the
+      // re-check and that read where a logout+relogin could repoint the bearer.
+      await apiRequest(
+        current.method,
+        current.endpoint,
+        current.body,
+        init,
+        tokenAtStart,
+      );
       await dequeue(current.id);
       serverAttempts.delete(current.id);
       synced = true;

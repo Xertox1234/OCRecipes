@@ -574,6 +574,50 @@ describe("offline-queue-drain", () => {
     expect(dequeue).not.toHaveBeenCalled();
   });
 
+  it("pins the captured token as apiRequest's bearer override so a dispatch-time storage mutation can't repoint it (microtask TOCTOU)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { tokenStorage } = await import("@/lib/token-storage");
+    const { drainQueue } = await importDrain();
+
+    const item = {
+      id: "pin-1",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: { tag: "A-write" },
+      attempts: 0,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+      if (item.id === id) item.attempts++;
+    });
+    vi.mocked(apiRequest).mockResolvedValue(new Response());
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    // Token reads in order: (1) drainQueue gate, (2) tokenAtStart capture,
+    // (3) post-wait re-check — all token-A (same user, re-check passes). The
+    // 4th read models the token mutating to token-B in the microtask gap AFTER
+    // the re-check but before dispatch. The drain must already have pinned A and
+    // forward it to apiRequest as the explicit bearer (5th arg) — never let
+    // apiRequest re-read storage at dispatch time (which would see B). The
+    // companion api-request-pinned-token test proves apiRequest honors the pin.
+    vi.mocked(tokenStorage.get)
+      .mockResolvedValueOnce("token-A")
+      .mockResolvedValueOnce("token-A")
+      .mockResolvedValueOnce("token-A")
+      .mockResolvedValue("token-B");
+
+    await drainQueue();
+
+    expect(apiRequest).toHaveBeenCalledOnce();
+    // 5th positional arg (index 4) is the pinned bearer; it must be the captured
+    // token-A, not the post-re-check token-B.
+    expect(vi.mocked(apiRequest).mock.calls[0][4]).toBe("token-A");
+  });
+
   it("aborts an in-flight item cleared from the queue during the backoff wait (clearOfflineQueue on teardown)", async () => {
     const { loadQueue, incrementAttempts, dequeue } = await import(
       "@/lib/offline-queue"
