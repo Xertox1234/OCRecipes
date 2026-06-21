@@ -113,6 +113,13 @@ export const userProfiles = pgTable("user_profiles", {
     .notNull(),
   cookingSkillLevel: text("cooking_skill_level"),
   cookingTimeAvailable: text("cooking_time_available"),
+  // GLP-1 user profile fields — INTENTIONALLY RETAINED (product decision
+  // 2026-06-20, todo P3-2026-06-06): keep the app's GLP-1 awareness rather than
+  // strip it post-#384. The live coach GLP-1 behavior is the `medication_glp1`
+  // SAFETY pattern in server/services/coach-intent-classifier.ts (routes GLP-1 /
+  // metabolic-med questions to safety_refusal). These columns are currently
+  // write-only (the profile update whitelist) — not read to tailor coaching — so
+  // do NOT auto-drop them in a future dead-column sweep without revisiting this.
   glp1Mode: boolean("glp1_mode").default(false),
   glp1Medication: text("glp1_medication"),
   glp1StartDate: timestamp("glp1_start_date", { withTimezone: true }),
