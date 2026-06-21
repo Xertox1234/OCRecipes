@@ -703,6 +703,10 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: Spacing.sm,
     marginTop: 2,
+    // WCAG 2.5.5 AAA: lift the tap target to ≥44pt. alignSelf: flex-start keeps
+    // the width hugging the label; minHeight raises height only.
+    minHeight: 44,
+    justifyContent: "center",
   },
   retryText: { fontSize: 12 },
   historyError: {
