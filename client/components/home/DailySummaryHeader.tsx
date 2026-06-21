@@ -143,6 +143,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Spacing.xs,
     marginTop: Spacing.xs,
+    // WCAG 2.5.5 AAA: raise the tappable row to ≥44pt. The row is tightly
+    // padded, so minHeight (not hitSlop, which RN clips to parent bounds) is
+    // the reliable lift.
+    minHeight: 44,
   },
   calorieText: {
     fontSize: 14,

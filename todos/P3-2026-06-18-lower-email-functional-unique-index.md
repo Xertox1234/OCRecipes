@@ -1,9 +1,9 @@
 ---
 title: "DB-enforce case-insensitive email uniqueness (lower(email) functional unique index)"
-status: backlog
+status: blocked
 priority: low
 created: 2026-06-18
-updated: 2026-06-18
+updated: 2026-06-20
 assignee:
 labels: [deferred, database, auth]
 github_issue:
@@ -67,3 +67,12 @@ the invariant from convention to the database.
 ### 2026-06-18
 
 - Created from the database-specialist review of PR #400 (latent hardening note).
+
+### 2026-06-20 (blocked — implemented in OPEN PR #418)
+
+- Set `status: blocked`. PR #418 ("feat(db): DB-enforce case-insensitive email
+  uniqueness via lower(email) unique index") is OPEN and implements exactly this
+  todo (verified: no `lower(email)` index exists in `shared/schema.ts` or
+  `migrations/` on main; PR #418 carries the schema change + hand migration).
+  Do NOT dispatch an executor for this — it would create a conflicting duplicate
+  PR. **Archive this todo when PR #418 merges.**

@@ -83,3 +83,17 @@ production-reachable (shipped artifact) AND attacker-reachable?
 - Initial creation — alert count jumped 3 → 21 (9 high) during the 2026-06-20
   `/todo` batch; the 9 high have not been triaged against the reachability
   framework. Surfaced in that batch's Phase 5 summary.
+
+### 2026-06-20 (DONE — triaged and folded into the canonical watchpoint; archiving)
+
+- The 8 **high** alerts (the count had drifted from 21/9-high to live **19 open:
+  8 high, 6 moderate, 5 low** by triage time — PR #404 `multer` bump shifted it)
+  were triaged against the reachability framework and recorded in the canonical
+  home, `P3-2026-06-01-dependabot-triage-3-medium-transitive.md` → Updates
+  2026-06-20. **Verdict: no high alert is both production-reachable and
+  attacker-reachable** — `undici` ×4 (WS-client/SOCKS5 surfaces unused),
+  `form-data` (test/type-only + JSON-only Apple lib), `ws` ×2 (dev tooling only;
+  `openai`'s `ws@8.21.0` is out of range), `vite` (vitest-only, no dev server).
+  Nothing escalates out of P3; pre-launch re-triage gate carried in the canonical
+  todo. This todo did its job (forced the high-tier triage) and is now redundant —
+  archived to avoid two diverging homes.

@@ -1,6 +1,6 @@
 ---
 title: "Close residual microtask-gap TOCTOU in offline-queue drain by pinning the bearer token"
-status: backlog
+status: done
 priority: low
 created: 2026-06-20
 updated: 2026-06-20
@@ -85,4 +85,12 @@ closes the practical race.
   session-expiry signal) + a new drain test asserting the 5th-arg pinning.
 - Reviewed by `code-reviewer` + `security-auditor` (both PASS, no blocking
   issues). The 401-session-expiry contract test was added per their shared note.
-- Branch `todo/offline-drain-token-pin`; PR opened without auto-merge (auth).
+- Branch `todo/offline-drain-token-pin`; PR #417 opened without auto-merge (auth).
+
+### 2026-06-20 (branch synced with main; archived as done)
+
+- A later `/todo` run found PR #417 already open and merged current `main` into
+  the stale branch (cut at 309797a0, behind PR #404 + later todo housekeeping),
+  resolving this todo to `status: done` here. Re-ran CI to clear the previously
+  red "Solutions-DB gates" check (a staleness artifact — the branch touched no
+  solutions/scripts/`.github`). PR #417 left for human review before merge.

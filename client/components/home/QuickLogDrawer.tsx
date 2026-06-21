@@ -454,6 +454,16 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     borderWidth: 1,
     maxWidth: 120,
+    // WCAG 2.5.5 AAA: lift the chip to a ≥44×44pt target on BOTH axes.
+    // minHeight (not hitSlop) is used because the chips sit in a flex-wrap row
+    // with a 4pt gap — a hitSlop would overlap adjacent chips and cause
+    // mis-taps. minHeight is vertical only, so horizontal wrapping is
+    // unaffected. minWidth covers the horizontal axis for short labels (e.g.
+    // "Egg"), which otherwise render ~36pt wide; it floors against the existing
+    // maxWidth: 120 without breaking wrapping.
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: "center",
   },
   chipText: {
     fontSize: 12,
