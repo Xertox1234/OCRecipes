@@ -564,6 +564,54 @@ describe("Auth Routes", () => {
     });
   });
 
+  describe("GET /verify-email (browser landing)", () => {
+    it("verifies a valid token and renders an HTML success page", async () => {
+      vi.mocked(storage.markEmailVerified).mockResolvedValue(
+        createMockUser({ emailVerified: true }),
+      );
+      const token = signVerificationToken("u1", "a@b.com");
+
+      const res = await request(app).get("/verify-email").query({ token });
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/text\/html/);
+      expect(res.text).toMatch(/verified/i);
+      expect(storage.markEmailVerified).toHaveBeenCalledWith("u1");
+    });
+
+    it("renders a 400 HTML page for a garbage token without touching storage", async () => {
+      const res = await request(app)
+        .get("/verify-email")
+        .query({ token: "not-a-jwt" });
+
+      expect(res.status).toBe(400);
+      expect(res.headers["content-type"]).toMatch(/text\/html/);
+      expect(res.text).toMatch(/expired|invalid/i);
+      expect(storage.markEmailVerified).not.toHaveBeenCalled();
+    });
+
+    it("renders a 400 HTML page when the token query param is missing", async () => {
+      const res = await request(app).get("/verify-email");
+
+      expect(res.status).toBe(400);
+      expect(res.headers["content-type"]).toMatch(/text\/html/);
+      expect(res.text).toMatch(/expired|invalid/i);
+      expect(storage.markEmailVerified).not.toHaveBeenCalled();
+    });
+
+    it("renders a 500 HTML page if verification throws unexpectedly", async () => {
+      vi.mocked(storage.markEmailVerified).mockRejectedValue(
+        new Error("db down"),
+      );
+      const token = signVerificationToken("u1", "a@b.com");
+
+      const res = await request(app).get("/verify-email").query({ token });
+
+      expect(res.status).toBe(500);
+      expect(res.headers["content-type"]).toMatch(/text\/html/);
+    });
+  });
+
   describe("POST /api/auth/resend-verification", () => {
     it("always neutral 200; sends only when account exists + unverified", async () => {
       vi.mocked(storage.getUserByEmail).mockResolvedValue(
