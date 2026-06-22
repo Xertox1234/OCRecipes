@@ -61,3 +61,14 @@ eas update --branch preview --platform ios --message "..."
 ### 2026-06-21
 
 - Split out from `P3-2026-06-21-eas-update-web-platform` so the script work is tracked on its own.
+
+### 2026-06-22 (soft dependency resolved — ready to pick up)
+
+- The sibling `P3-2026-06-21-eas-update-web-platform` MERGED (PR #426): `app.json`
+  now sets `platforms: ["ios","android"]`, so `eas update --platform all` excludes
+  web (config-verified). That work touched **only `app.json`** (option (a), no
+  `package.json` change), so the anticipated `package.json` contention with this
+  todo never materialized. This todo is now **fully unblocked** and independent —
+  ready for the next `/todo` run. The scripts can still use explicit
+  `--platform ios`/`--platform android`, or rely on the now-fixed `--platform all`
+  once a human confirms it end-to-end (see `reference_eas_update_ota` GOTCHA 2).
