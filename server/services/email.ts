@@ -1,7 +1,7 @@
 import { Resend } from "resend";
 import type { CreateEmailOptions, ErrorResponse } from "resend";
 import { emailVerificationEnabled } from "../lib/email-config";
-import { createServiceLogger, toError } from "../lib/logger";
+import { createServiceLogger } from "../lib/logger";
 
 const logger = createServiceLogger("email");
 
@@ -174,7 +174,10 @@ export async function sendVerificationEmail(
 <p><a href="${url}">Verify my email</a></p>
 <p>This link expires in 24 hours. If you didn't create an account, you can ignore this email.</p>`,
   });
-  if (error) logger.error({ err: toError(error) }, "verification email failed");
+  // Log the Resend ErrorResponse fields directly ({name, message, statusCode}).
+  // It is NOT a JS Error, so `toError(error)` would flatten it to the useless
+  // string "[object Object]" and eat the real reason.
+  if (error) logger.error({ resendError: error }, "verification email failed");
 }
 
 export async function sendSignupAttemptNotice(to: string): Promise<void> {
@@ -192,7 +195,7 @@ export async function sendSignupAttemptNotice(to: string): Promise<void> {
 <p>If this was you, simply <a href="${APP_URL}">log in</a> instead. If it wasn't, no action is needed — no account was created.</p>`,
   });
   if (error)
-    logger.error({ err: toError(error) }, "signup-attempt notice failed");
+    logger.error({ resendError: error }, "signup-attempt notice failed");
 }
 
 /** Test-only internals — never import from production code. */

@@ -52,6 +52,8 @@ const handleScan = async (barcode: string) => {
 
 **At system boundaries only.** Don't add try-catch around internal calls where the framework already guarantees the contract.
 
+**Never log a non-`Error` object through an Error-coercion helper.** Many SDKs (Resend, Stripe, AWS) **return** errors as a plain object `{ message, name, statusCode }` rather than throwing. Passing that through `toError(value)` (`new Error(String(value))`) flattens it to the useless string `"[object Object]"`, silently destroying the real reason. For a `{ data, error }`-returning SDK call, log the error object's fields directly — `logger.error({ resendError: error }, "…")` — so the serializer keeps `message`/`name`/`statusCode`. Reserve `toError(...)` for values that were genuinely thrown. (See solutions-db `code-quality/non-error-sdk-object-flattened-by-error-coercion-helper`.)
+
 ---
 
 ## Camera & Image Picker Error Cases
