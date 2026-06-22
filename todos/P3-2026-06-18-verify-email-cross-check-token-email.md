@@ -65,3 +65,16 @@ wrongly clear the unverified state of whatever address is current.
   email-change feature is added…") and no email-change endpoint exists, so there
   is nothing to implement now — an executor could only report "blocked." Re-open
   to `backlog` and pair with the email-change work if/when it lands.
+
+### 2026-06-22 (re-verified blocked via `/todo`)
+
+- Re-checked the blocking condition: a sweep of `server/routes/`,
+  `server/services/`, and `client/` found **no** email-change feature
+  (`newEmail`/`changeEmail`/`updateEmail`/PATCH-PUT email), and
+  `applyVerificationToken` (`server/routes/auth.ts:94`) still marks via
+  `markEmailVerified(payload.sub)`, ignoring `payload.email`. Block holds —
+  staying deferred per user decision.
+- Implementation caveat for whoever picks this up: the schema has a
+  `lower(email)` unique index, so the cross-check must compare
+  **normalization-aware** (case-insensitive), not a bare
+  `user.email === payload.email`, or it will reject legitimate current tokens.
