@@ -13,12 +13,25 @@ vi.mock("resend", () => ({
   },
 }));
 
+// Spy on the service logger so we can assert the failure path logs the real
+// Resend error fields (the `mock`-prefix exempts it from vi.mock's hoist guard).
+const mockLoggerError = vi.fn();
+vi.mock("../../lib/logger", () => ({
+  createServiceLogger: () => ({
+    error: mockLoggerError,
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
 describe("email service", () => {
   beforeEach(() => {
     // Reset implementation (not just call history) so a test's `mockResolvedValue`
     // default cannot leak into the next test; re-seed the success baseline.
     mockSend.mockReset();
     mockSend.mockResolvedValue({ data: { id: "mock" }, error: null });
+    mockLoggerError.mockClear();
     vi.resetModules();
   });
   afterEach(() => {
@@ -222,6 +235,34 @@ describe("email service", () => {
 
       // A terminal error is not retried — exactly one send attempt.
       expect(mockSend).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("error logging", () => {
+    it("logs the structured Resend error fields (not [object Object]) on send failure", async () => {
+      vi.stubEnv("RESEND_API_KEY", "re_test");
+      mockSend.mockResolvedValue({
+        data: null,
+        error: {
+          message: "The ocrecipes.com domain is not verified.",
+          name: "validation_error",
+          statusCode: 403,
+        },
+      });
+
+      const { sendVerificationEmail } = await import("../email");
+      await sendVerificationEmail("a@b.com", "tok");
+
+      expect(mockLoggerError).toHaveBeenCalledTimes(1);
+      const [logObj, msg] = mockLoggerError.mock.calls[0];
+      expect(msg).toBe("verification email failed");
+      // The real Resend reason must survive into the log — the old
+      // `toError(error)` flattened this object to the string "[object Object]".
+      expect(logObj.resendError).toMatchObject({
+        name: "validation_error",
+        message: "The ocrecipes.com domain is not verified.",
+        statusCode: 403,
+      });
     });
   });
 });
