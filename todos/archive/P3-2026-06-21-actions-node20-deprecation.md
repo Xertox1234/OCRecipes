@@ -3,7 +3,7 @@
 ---
 
 title: "Clear GitHub Actions Node 20 deprecation warning (checkout/setup-node)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-21
 updated: 2026-06-21
