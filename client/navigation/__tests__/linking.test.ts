@@ -42,6 +42,13 @@ describe("linking config", () => {
     expect(linking.config!.screens.AllConversations).toBe("conversation-list");
   });
 
+  it("configures Login as a path string so ocrecipes://login routes to sign-in", () => {
+    // Drives the verify-email landing's "Open OCRecipes" success CTA
+    // (ocrecipes://login) straight to the Login screen instead of foregrounding
+    // the app onto the dead-end "Check your inbox" screen.
+    expect(linking.config!.screens.Login).toBe("login");
+  });
+
   it("returns 0 when recipeId parse receives a non-numeric string", () => {
     // Cast: see above — narrow union to the object variant for `.parse`.
     const recipeDetail = linking.config!.screens
