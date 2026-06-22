@@ -12,7 +12,7 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_DOMAIN": "https://api.ocrecipes.com",
-        "EXPO_PUBLIC_SENTRY_DSN": "https://e9bbc06fa2f31e435b8abdae9928694b@o4510684193423360.ingest.us.sentry.io/4511498696785920",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://bf62b005c5085c50b08ad690c613ded4@o4511605735489536.ingest.us.sentry.io/4511605740142592",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     },
@@ -20,7 +20,7 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_DOMAIN": "https://api.ocrecipes.com",
-        "EXPO_PUBLIC_SENTRY_DSN": "https://e9bbc06fa2f31e435b8abdae9928694b@o4510684193423360.ingest.us.sentry.io/4511498696785920",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://bf62b005c5085c50b08ad690c613ded4@o4511605735489536.ingest.us.sentry.io/4511605740142592",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
       }
     }
