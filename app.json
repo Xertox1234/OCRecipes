@@ -31,10 +31,7 @@
         "android.permission.RECORD_AUDIO"
       ]
     },
-    "web": {
-      "output": "single",
-      "favicon": "./assets/images/favicon.png"
-    },
+    "platforms": ["ios", "android"],
     "plugins": [
       "@sentry/react-native/expo",
       [

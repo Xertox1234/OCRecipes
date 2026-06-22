@@ -1,6 +1,6 @@
 ---
 title: "Resolve eas update --platform all web-export failure (react-native-web missing)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-21
 updated: 2026-06-21
