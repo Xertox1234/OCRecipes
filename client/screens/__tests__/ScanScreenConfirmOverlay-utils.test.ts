@@ -7,7 +7,7 @@ import {
   buildSuccessToastMessage,
   canLog,
   applyDismiss,
-  getBehindOverlayImportantForAccessibility,
+  getScanOverlayA11y,
   type ConfirmCardState,
 } from "../ScanScreenConfirmOverlay-utils";
 
@@ -257,19 +257,38 @@ describe("ScanScreenConfirmOverlay-utils", () => {
     });
   });
 
-  describe("getBehindOverlayImportantForAccessibility", () => {
-    // Android-only focus trap: when the confirm overlay is visible, the camera
-    // UI behind it must leave the TalkBack tree (accessibilityViewIsModal is
-    // iOS-only, so it does not trap focus on Android). iOS is unaffected — RN
-    // ignores importantForAccessibility there.
-    it("hides behind-overlay content from TalkBack when the confirm card is visible", () => {
-      expect(getBehindOverlayImportantForAccessibility(true)).toBe(
-        "no-hide-descendants",
-      );
+  describe("getScanOverlayA11y", () => {
+    // Android-only focus trap (accessibilityViewIsModal is iOS-only, so it does
+    // not trap on Android; iOS is unaffected — RN ignores importantForAccessibility).
+    // Full truth table over (confirmCardVisible, productChipVisible) — locks in
+    // the supersession rule: static UI hides when EITHER overlay is active, but
+    // ProductChip hides ONLY when the confirm card supersedes it.
+    it("keeps everything reachable when no overlay is active", () => {
+      expect(getScanOverlayA11y(false, false)).toEqual({
+        staticUI: "auto",
+        productChip: "auto",
+      });
     });
 
-    it("restores behind-overlay content when no confirm card is shown", () => {
-      expect(getBehindOverlayImportantForAccessibility(false)).toBe("auto");
+    it("hides static UI but keeps ProductChip reachable when the chip is the active overlay", () => {
+      expect(getScanOverlayA11y(false, true)).toEqual({
+        staticUI: "no-hide-descendants",
+        productChip: "auto",
+      });
+    });
+
+    it("hides both static UI and ProductChip when the confirm card supersedes the chip", () => {
+      expect(getScanOverlayA11y(true, true)).toEqual({
+        staticUI: "no-hide-descendants",
+        productChip: "no-hide-descendants",
+      });
+    });
+
+    it("hides static UI and ProductChip when only the confirm card is active", () => {
+      expect(getScanOverlayA11y(true, false)).toEqual({
+        staticUI: "no-hide-descendants",
+        productChip: "no-hide-descendants",
+      });
     });
   });
 });
