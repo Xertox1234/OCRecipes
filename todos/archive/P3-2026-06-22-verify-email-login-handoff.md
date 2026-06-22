@@ -33,11 +33,11 @@ blocker, so deferred.
 
 ## Acceptance Criteria
 
-- [ ] After verifying, the user has an obvious one-tap path to the login screen
+- [x] After verifying, the user has an obvious one-tap path to the login screen
       (no manual back-navigation required).
-- [ ] No session token is auto-issued by the verify flow (preserve the security
+- [x] No session token is auto-issued by the verify flow (preserve the security
       property — verify ≠ login).
-- [ ] Works whether the link is opened on the same device (app installed) or a
+- [x] Works whether the link is opened on the same device (app installed) or a
       different one (browser only).
 
 ## Implementation Notes
