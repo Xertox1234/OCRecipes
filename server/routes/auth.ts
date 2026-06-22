@@ -23,6 +23,8 @@ import {
   sendVerificationEmail,
   sendSignupAttemptNotice,
 } from "../services/email";
+import { renderVerifyEmailPage } from "../lib/verify-email-page";
+import { createServiceLogger, toError } from "../lib/logger";
 import {
   registerLimiter,
   loginLimiter,
@@ -78,6 +80,22 @@ function sendVerificationPending(res: Response): void {
     status: "verification_pending",
     message: "Check your inbox to verify your email.",
   });
+}
+
+const logger = createServiceLogger("auth");
+
+/**
+ * Verify an email-verification token and flip the account to verified. Shared by
+ * the POST API (in-app deep-link path) and the GET browser landing so the two
+ * entry points can never drift. Returns whether verification succeeded — false
+ * for a bad/expired token OR an unknown user. Idempotent: re-verifying an
+ * already-verified account is a harmless success.
+ */
+async function applyVerificationToken(token: string): Promise<boolean> {
+  const payload = verifyVerificationToken(token);
+  if (!payload) return false;
+  const user = await storage.markEmailVerified(payload.sub);
+  return Boolean(user);
 }
 
 export function register(app: Express): void {
@@ -278,19 +296,10 @@ export function register(app: Express): void {
           );
           return;
         }
-        const payload = verifyVerificationToken(parsed.data.token);
-        if (!payload) {
-          return sendError(
-            res,
-            400,
-            "Invalid or expired verification link",
-            ErrorCode.VALIDATION_ERROR,
-          );
-        }
         // Idempotent (already-verified is a harmless no-op). NO access token is
         // issued — verification proves email ownership, not password possession.
-        const user = await storage.markEmailVerified(payload.sub);
-        if (!user) {
+        const ok = await applyVerificationToken(parsed.data.token);
+        if (!ok) {
           return sendError(
             res,
             400,
@@ -301,6 +310,41 @@ export function register(app: Express): void {
         res.status(200).json({ status: "verified" });
       } catch (error) {
         handleRouteError(res, error, "verify email");
+      }
+    },
+  );
+
+  // Browser landing for the verification email link (built in services/email.ts
+  // as `${EMAIL_VERIFY_BASE_URL}/verify-email?token=…`). A server-rendered HTML
+  // page works in ANY mail client / browser with no app install, AASA
+  // universal-link, or deployed web frontend — see lib/verify-email-page.ts.
+  // Reuses applyVerificationToken so it can never drift from the POST API above.
+  // Safe to verify on GET (no confirm step): the token is a stateless JWT and
+  // markEmailVerified is idempotent, so a mail scanner pre-fetching the link
+  // merely verifies the address early (the intended outcome anyway).
+  //
+  // SECURITY INVARIANT — this route MUST stay OUTSIDE the `/api` prefix. The
+  // token rides in the query string, and pino-http's `autoLogging.ignore`
+  // (server/index.ts) skips every URL that doesn't start with `/api`, so the
+  // live 24h token never lands in access logs. Moving this under `/api/...`
+  // would write that token to logs as a usable credential.
+  app.get(
+    "/verify-email",
+    verifyEmailLimiter,
+    async (req: Request, res: Response) => {
+      const token = typeof req.query.token === "string" ? req.query.token : "";
+      try {
+        const ok = token.length > 0 && (await applyVerificationToken(token));
+        res
+          .status(ok ? 200 : 400)
+          .type("html")
+          .send(renderVerifyEmailPage(ok ? "success" : "invalid"));
+      } catch (error) {
+        // Deliberate deviation from the handleRouteError rule: this route serves
+        // browser-facing HTML, not a JSON API — a JSON error envelope would be
+        // unreadable to the user. Render an HTML error page (500) instead.
+        logger.error({ err: toError(error) }, "verify-email landing failed");
+        res.status(500).type("html").send(renderVerifyEmailPage("error"));
       }
     },
   );
