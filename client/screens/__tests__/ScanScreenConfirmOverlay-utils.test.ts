@@ -7,6 +7,7 @@ import {
   buildSuccessToastMessage,
   canLog,
   applyDismiss,
+  getBehindOverlayImportantForAccessibility,
   type ConfirmCardState,
 } from "../ScanScreenConfirmOverlay-utils";
 
@@ -253,6 +254,22 @@ describe("ScanScreenConfirmOverlay-utils", () => {
         return prev ? { ...prev, isLogging: false } : null;
       }
       expect(applyLoggingReset(null)).toBeNull();
+    });
+  });
+
+  describe("getBehindOverlayImportantForAccessibility", () => {
+    // Android-only focus trap: when the confirm overlay is visible, the camera
+    // UI behind it must leave the TalkBack tree (accessibilityViewIsModal is
+    // iOS-only, so it does not trap focus on Android). iOS is unaffected — RN
+    // ignores importantForAccessibility there.
+    it("hides behind-overlay content from TalkBack when the confirm card is visible", () => {
+      expect(getBehindOverlayImportantForAccessibility(true)).toBe(
+        "no-hide-descendants",
+      );
+    });
+
+    it("restores behind-overlay content when no confirm card is shown", () => {
+      expect(getBehindOverlayImportantForAccessibility(false)).toBe("auto");
     });
   });
 });

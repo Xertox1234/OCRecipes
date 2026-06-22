@@ -77,3 +77,21 @@ export function canLog(card: ConfirmCardState): boolean {
 export function applyDismiss(_prev: ConfirmCardState | null): null {
   return null;
 }
+
+/**
+ * Android TalkBack focus trap for the camera UI behind the confirm overlay.
+ *
+ * `accessibilityViewIsModal` (set on the confirm overlay) is iOS-only, so on
+ * Android the camera/controls behind the overlay stay TalkBack-navigable.
+ * Returning `"no-hide-descendants"` while the overlay is visible removes that
+ * behind-content from the Android a11y tree; `"auto"` restores it. The value is
+ * applied to each behind-overlay surface (camera controls, coach hint, scan
+ * count, product chip) and is a no-op on iOS (RN ignores
+ * `importantForAccessibility` there), so the existing iOS
+ * `accessibilityViewIsModal` trapping is unchanged.
+ */
+export function getBehindOverlayImportantForAccessibility(
+  confirmCardVisible: boolean,
+): "auto" | "no-hide-descendants" {
+  return confirmCardVisible ? "no-hide-descendants" : "auto";
+}

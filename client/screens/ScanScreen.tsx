@@ -44,6 +44,7 @@ import { CoachHint } from "@/camera/components/CoachHint";
 import { ScanReticle } from "@/camera/components/ScanReticle";
 import { StepPill } from "@/camera/components/StepPill";
 import { ProductChip } from "@/camera/components/ProductChip";
+import { getProductChipVariant } from "@/camera/components/ProductChip-utils";
 import { ScanFlashOverlay } from "@/camera/components/ScanFlashOverlay";
 import { ScanSonarRing } from "@/camera/components/ScanSonarRing";
 import { getCoachMessage } from "@/camera/components/CoachHint-utils";
@@ -63,6 +64,7 @@ import {
   buildScannedItemPayload,
   buildSuccessToastMessage,
   canLog,
+  getBehindOverlayImportantForAccessibility,
   type ConfirmCardState,
 } from "@/screens/ScanScreenConfirmOverlay-utils";
 import { ThemedText } from "@/components/ThemedText";
@@ -502,6 +504,23 @@ export default function ScanScreen() {
 
   const coachMessage = getCoachMessage(scanPhase, elapsedSeconds);
 
+  // `accessibilityViewIsModal` (on the confirm overlay AND on ProductChip) traps
+  // focus on iOS only — on Android it is a no-op, so the camera UI behind an
+  // active overlay stays TalkBack-navigable. Mirror the iOS trapping on Android
+  // with `importantForAccessibility` (ignored on iOS, so the iOS path is
+  // unchanged). Two values are needed:
+  //  - the static camera UI (top bar, coach hint, controls, scan count) sits
+  //    behind BOTH overlays, so hide it whenever EITHER is active.
+  //  - ProductChip is itself an overlay; hide it only when the confirm card
+  //    supersedes it, otherwise it must stay reachable when it is the active one.
+  const productChipVisible = getProductChipVariant(scanPhase) !== null;
+  const behindOverlayImportantForA11y =
+    getBehindOverlayImportantForAccessibility(
+      !!confirmCard || productChipVisible,
+    );
+  const productChipImportantForA11y =
+    getBehindOverlayImportantForAccessibility(!!confirmCard);
+
   return (
     <View style={styles.root} accessibilityViewIsModal>
       <CameraView
@@ -531,7 +550,10 @@ export default function ScanScreen() {
       <ScanFlashOverlay triggerCount={flashCount} />
 
       {/* Top overlay */}
-      <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
+      <View
+        style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}
+        importantForAccessibility={behindOverlayImportantForA11y}
+      >
         <TouchableOpacity
           style={styles.closeBtn}
           onPress={() => navigation.goBack()}
@@ -544,12 +566,18 @@ export default function ScanScreen() {
       </View>
 
       {/* Coach hint */}
-      <View style={styles.coachContainer}>
+      <View
+        style={styles.coachContainer}
+        importantForAccessibility={behindOverlayImportantForA11y}
+      >
         <CoachHint message={coachMessage} />
       </View>
 
       {/* Bottom controls */}
-      <View style={[styles.controls, { paddingBottom: insets.bottom + 16 }]}>
+      <View
+        style={[styles.controls, { paddingBottom: insets.bottom + 16 }]}
+        importantForAccessibility={behindOverlayImportantForA11y}
+      >
         <TouchableOpacity
           style={styles.iconBtn}
           onPress={() => setTorchEnabled((t) => !t)}
@@ -572,7 +600,10 @@ export default function ScanScreen() {
 
       {/* Scan count badge (free tier) */}
       {!isPremium && remainingScans !== null && (
-        <View style={styles.scanCount}>
+        <View
+          style={styles.scanCount}
+          importantForAccessibility={behindOverlayImportantForA11y}
+        >
           <Text style={styles.scanCountText}>
             {remainingScans > 0
               ? `${remainingScans} scans remaining`
@@ -595,6 +626,7 @@ export default function ScanScreen() {
 
       {/* Product chip */}
       <ProductChip
+        importantForAccessibility={productChipImportantForA11y}
         phase={scanPhase}
         onConfirm={() => dispatch({ type: "CONFIRM_PRODUCT" })}
         onAddNutritionPhoto={() => dispatch({ type: "ADD_NUTRITION_PHOTO" })}

@@ -8,6 +8,7 @@ import {
   Text,
   TouchableOpacity,
   Image,
+  type ViewProps,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -37,6 +38,13 @@ interface Props {
   onEditStep3: () => void;
   onSmartPhotoConfirm: () => void;
   onRetry: () => void;
+  /**
+   * Forwarded to the chip's root view. ScanScreen sets this to
+   * `"no-hide-descendants"` while the confirm overlay is up so the chip leaves
+   * the Android TalkBack tree (the chip's own `accessibilityViewIsModal` only
+   * traps focus on iOS). No-op on iOS.
+   */
+  importantForAccessibility?: ViewProps["importantForAccessibility"];
 }
 
 export function ProductChip({
@@ -49,6 +57,7 @@ export function ProductChip({
   onEditStep3,
   onSmartPhotoConfirm,
   onRetry,
+  importantForAccessibility,
 }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(200);
@@ -96,6 +105,7 @@ export function ProductChip({
       style={[styles.chip, { paddingBottom: 20 + insets.bottom }, animStyle]}
       accessibilityViewIsModal
       accessibilityLiveRegion="polite"
+      importantForAccessibility={importantForAccessibility}
     >
       {/* Product info row */}
       <View style={styles.productRow}>
