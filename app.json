@@ -68,6 +68,10 @@
         "projectId": "94fa8c8a-5f2e-4a4e-a781-25985a8c7bf5"
       }
     },
-    "owner": "xertox1234"
+    "owner": "xertox1234",
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/94fa8c8a-5f2e-4a4e-a781-25985a8c7bf5"
+    }
   }
 }

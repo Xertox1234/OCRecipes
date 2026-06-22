@@ -6,7 +6,8 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "development"
     },
     "preview": {
       "distribution": "internal",
@@ -15,7 +16,8 @@
         "EXPO_PUBLIC_SENTRY_DSN": "https://bf62b005c5085c50b08ad690c613ded4@o4511605735489536.ingest.us.sentry.io/4511605740142592",
         "SENTRY_ORG": "ocrecipes-wx",
         "SENTRY_PROJECT": "ocrecipes-mobile"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "autoIncrement": true,
@@ -25,7 +27,8 @@
         "SENTRY_ORG": "ocrecipes-wx",
         "SENTRY_PROJECT": "ocrecipes-mobile",
         "SENTRY_DISABLE_AUTO_UPLOAD": "true"
-      }
+      },
+      "channel": "production"
     }
   }
 }
