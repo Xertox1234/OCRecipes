@@ -1,12 +1,12 @@
 ---
 title: "Add Android/TalkBack focus trap to in-screen overlays (accessibilityViewIsModal is iOS-only)"
-status: review
+status: done
 priority: low
 created: 2026-06-22
 updated: 2026-06-22
 assignee:
 labels: [deferred, accessibility]
-github_issue:
+github_issue: "https://github.com/Xertox1234/OCRecipes/pull/428"
 ---
 
 # Add Android/TalkBack focus trap to in-screen overlays (accessibilityViewIsModal is iOS-only)
@@ -71,3 +71,9 @@ Implemented in ScanScreen via a per-element approach (NOT a wrapper — a wrappe
 ### 2026-06-22 (post-review refactor)
 
 Addressed a PR #428 self-review finding: the supersession logic (static-UI-hides-when-either vs ProductChip-hides-only-when-superseded) was only expressed inline in JSX and untested — a future "simplify to one value" could regress it silently. Refactored the single-value helper into `getScanOverlayA11y(confirmCardVisible, productChipVisible) → { staticUI, productChip }`, which captures the whole decision in one unit, and added a 4-row truth-table test. This also fixed the misleading `confirmCardVisible` param name on the old helper's static-UI call site. No behavior change.
+
+### 2026-06-22 (merged — done)
+
+Merged via PR #428 (squash → `main` @ bef3885d), all 9 CI checks green. Pattern codified to the solutions DB (`conventions/in-screen-overlay-needs-android-focus-trap-2026-06-22`) and as review rules in `accessibility-specialist` + `rn-ui-ux-specialist`.
+
+Honest status on the one device-dependent AC: merged on the strength of reasoning + the helper's truth-table test + two code reviews + advisor adjudication — **on-device TalkBack/VoiceOver was not run**. If a device spot-check later surfaces a focus-order issue (e.g. the ProductChip slide-out timing window noted in Risks), open a fresh todo; closing this one rather than letting it linger in review.
