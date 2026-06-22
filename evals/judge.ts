@@ -1,4 +1,4 @@
-import { judgeGeneric, DEFAULT_JUDGE_MODEL } from "./lib/judge-generic";
+import { DEFAULT_JUDGE_MODEL } from "./lib/judge-generic";
 import { sanitizeUserInput } from "../server/lib/ai-safety";
 
 export { DEFAULT_JUDGE_MODEL };

@@ -3,7 +3,7 @@
 ---
 
 title: "Clear pre-existing ESLint warn-level findings surfaced in CI"
-status: backlog
+status: done
 priority: low
 created: 2026-06-21
 updated: 2026-06-21

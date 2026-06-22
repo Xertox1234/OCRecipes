@@ -7,6 +7,7 @@
  * Note: Vitest/Vite resolution ignores .ios.tsx extensions by default, so
  * importing "../CameraView" resolves to CameraView.tsx (Android/default variant).
  */
+import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { CameraView } from "../CameraView";
@@ -19,7 +20,6 @@ import { useCameraDevice } from "react-native-vision-camera";
 // CameraView SUT imports.
 vi.mock("react-native-vision-camera", () => {
   const Camera = vi.fn(({ testID }: { testID?: string }) => {
-    const React = require("react");
     return React.createElement("div", { "data-testid": testID ?? "camera" });
   });
   (Camera as unknown as { displayName: string }).displayName = "Camera";

@@ -76,7 +76,6 @@ import {
 import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
-import type { ContentType } from "@shared/constants/classification";
 
 const LOCK_THRESHOLD = 0.85; // confidence ≥ 0.85 ≈ 6+ stable frames (frameCount/7)
 
