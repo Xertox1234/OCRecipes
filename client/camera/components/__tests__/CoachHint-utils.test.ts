@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { getCoachMessage } from "../CoachHint-utils";
-import type { ScanPhase } from "../../types/scan-phase";
 
 const BOUNDS = { x: 0.4, y: 0.45, width: 0.2, height: 0.1 };
 

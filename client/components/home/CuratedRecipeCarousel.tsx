@@ -14,7 +14,6 @@ import { FallbackImage } from "@/components/FallbackImage";
 import { CuratedBadge } from "@/components/CuratedBadge";
 import { CarouselSkeleton } from "./CarouselSkeleton";
 import { CarouselError } from "./CarouselError";
-import { CARD_WIDTH } from "./CarouselRecipeCard";
 import { useTheme } from "@/hooks/useTheme";
 import { useCuratedRecipes } from "@/hooks/useCuratedRecipes";
 import {

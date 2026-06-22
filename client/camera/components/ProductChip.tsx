@@ -80,6 +80,7 @@ export function ProductChip({
       });
     }
     prevVariantRef.current = variant;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY is a stable useSharedValue ref
   }, [variant]);
 
   const animStyle = useAnimatedStyle(() => ({

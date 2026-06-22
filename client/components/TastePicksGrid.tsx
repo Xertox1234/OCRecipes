@@ -3,7 +3,7 @@ import { View, FlatList, Pressable, Image, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import type { RecipeCandidate } from "@shared/types/taste-picks";
 
