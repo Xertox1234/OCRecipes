@@ -354,6 +354,7 @@ When auditing a route file or service, check every item:
 - [ ] Token versioning checked after JWT verification
 - [ ] Update functions use Pick type whitelist
 - [ ] External error/telemetry reporters (Sentry et al.) pin `sendDefaultPii: false` explicitly AND scrub `Authorization`/token headers in a `beforeSend` hook — the SDK default is safe but unpinned, and a future error message or query-param URL could carry a bearer JWT off-device. (Ref: audit 2026-06-02 S1; `client/lib/reporter.ts`)
+- [ ] A route that reads a secret from the **URL query string** (verification/reset/magic-link/signed-URL token) must NOT sit on a path the request logger records — or the live token is written to access logs. Here `pino-http` `autoLogging.ignore` skips non-`/api` URLs and the serializers log `req.url`, so such routes must stay **outside `/api`** (e.g. `GET /verify-email`). Flag any token-in-query route mounted under `/api`, and any move of such a route under `/api`. (Ref: conventions `token-bearing-url-route-must-avoid-request-url-logging`; `server/index.ts`, `server/routes/auth.ts`)
 
 ### Error Handling
 
