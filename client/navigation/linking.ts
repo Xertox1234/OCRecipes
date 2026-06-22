@@ -41,6 +41,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
       AllConversations: "conversation-list",
       NutritionDetail: "nutrition/:barcode",
       Scan: "scan",
+      // Drives the verify-email landing's success CTA (ocrecipes://login) to the
+      // sign-in screen — pure navigation, no auth side effect.
+      Login: "login",
       // ?token=… maps to route.params.token automatically (no positional param).
       VerifyEmail: "verify-email",
     },

@@ -158,6 +158,16 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
             <Button onPress={onResend} loading={busy} style={styles.button}>
               Resend email
             </Button>
+            {/* Escape hatch for the verify-in-browser → return-to-app flow: the
+                user lands here after signup and (if they verified elsewhere) has
+                no other path to Login. Pure navigation — never auto-authenticates. */}
+            <Button
+              variant="ghost"
+              onPress={() => navigation.navigate("Login")}
+              style={styles.button}
+            >
+              Back to sign in
+            </Button>
           </>
         )}
       </View>

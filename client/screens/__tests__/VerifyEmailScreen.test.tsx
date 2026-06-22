@@ -159,6 +159,39 @@ describe("VerifyEmailScreen — linkSent copy switch", () => {
   });
 });
 
+describe("VerifyEmailScreen — pending-state sign-in handoff", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // The dead-end this fixes: after signup the screen sits on the "Check your
+  // inbox" (linkSent) pending state. A user who verified in the *browser* and
+  // returns to the app needs an obvious path to Login — there was none.
+  it("navigates to Login from the 'Check your inbox' pending state", () => {
+    const { navigate } = renderScreen({
+      email: "chef@example.com",
+      sent: true,
+    });
+
+    expect(screen.getByText("Check your inbox")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    expect(navigate).toHaveBeenCalledWith("Login");
+  });
+
+  // Also reachable on the login → EMAIL_NOT_VERIFIED → verify-elsewhere path
+  // (AC3: "works either way") — the neutral "Back to sign in" label reads fine
+  // in the not-sent sub-state too, so the escape hatch is never hidden.
+  it("navigates to Login from the not-yet-sent pending state", () => {
+    const { navigate } = renderScreen(undefined);
+
+    expect(screen.getByText("Verify your email")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    expect(navigate).toHaveBeenCalledWith("Login");
+  });
+});
+
 describe("VerifyEmailScreen — onResend validation", () => {
   let announceSpy: ReturnType<typeof vi.spyOn>;
 

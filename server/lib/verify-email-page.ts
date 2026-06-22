@@ -8,9 +8,9 @@
  * no deployed web frontend. Inline CSS only — no external assets — so it renders
  * identically regardless of network/CDN state.
  *
- * SECURITY: interpolates ZERO request input. Only static copy and a fixed
- * `ocrecipes://` deep link are rendered, so the attacker-controllable `?token=`
- * query string is never reflected into the HTML (no reflected-XSS surface).
+ * SECURITY: interpolates ZERO request input. Only static copy and fixed,
+ * state-keyed `ocrecipes://` deep links are rendered, so the attacker-controllable
+ * `?token=` query string is never reflected into the HTML (no reflected-XSS surface).
  */
 export type VerifyEmailState = "success" | "invalid" | "error";
 
@@ -44,9 +44,24 @@ const ACCENT: Record<VerifyEmailState, string> = {
   error: "#6b7280",
 };
 
+// Per-state CTA target. `success` hands the verified user straight to the in-app
+// sign-in screen (ocrecipes://login) instead of the bare scheme, which would just
+// foreground the app onto the "Check your inbox" dead-end. This is pure
+// navigation — verifying proves address ownership, NOT password possession, so no
+// session token is issued here. `invalid`/`error` keep the bare scheme so the app
+// opens on its last screen (the resend form). All values are static, keyed by the
+// server-determined state — never request input — so the zero-reflection property
+// above holds.
+const CTA_HREF: Record<VerifyEmailState, string> = {
+  success: "ocrecipes://login",
+  invalid: "ocrecipes://",
+  error: "ocrecipes://",
+};
+
 export function renderVerifyEmailPage(state: VerifyEmailState): string {
   const c = COPY[state];
   const accent = ACCENT[state];
+  const ctaHref = CTA_HREF[state];
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -75,7 +90,7 @@ export function renderVerifyEmailPage(state: VerifyEmailState): string {
     <div class="icon" aria-hidden="true">${c.icon}</div>
     <h1>${c.heading}</h1>
     <p>${c.body}</p>
-    <a class="btn" href="ocrecipes://">Open OCRecipes</a>
+    <a class="btn" href="${ctaHref}">Open OCRecipes</a>
   </main>
 </body>
 </html>`;
