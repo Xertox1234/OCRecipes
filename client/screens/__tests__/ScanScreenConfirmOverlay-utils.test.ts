@@ -7,6 +7,7 @@ import {
   buildSuccessToastMessage,
   canLog,
   applyDismiss,
+  getScanOverlayA11y,
   type ConfirmCardState,
 } from "../ScanScreenConfirmOverlay-utils";
 
@@ -253,6 +254,41 @@ describe("ScanScreenConfirmOverlay-utils", () => {
         return prev ? { ...prev, isLogging: false } : null;
       }
       expect(applyLoggingReset(null)).toBeNull();
+    });
+  });
+
+  describe("getScanOverlayA11y", () => {
+    // Android-only focus trap (accessibilityViewIsModal is iOS-only, so it does
+    // not trap on Android; iOS is unaffected — RN ignores importantForAccessibility).
+    // Full truth table over (confirmCardVisible, productChipVisible) — locks in
+    // the supersession rule: static UI hides when EITHER overlay is active, but
+    // ProductChip hides ONLY when the confirm card supersedes it.
+    it("keeps everything reachable when no overlay is active", () => {
+      expect(getScanOverlayA11y(false, false)).toEqual({
+        staticUI: "auto",
+        productChip: "auto",
+      });
+    });
+
+    it("hides static UI but keeps ProductChip reachable when the chip is the active overlay", () => {
+      expect(getScanOverlayA11y(false, true)).toEqual({
+        staticUI: "no-hide-descendants",
+        productChip: "auto",
+      });
+    });
+
+    it("hides both static UI and ProductChip when the confirm card supersedes the chip", () => {
+      expect(getScanOverlayA11y(true, true)).toEqual({
+        staticUI: "no-hide-descendants",
+        productChip: "no-hide-descendants",
+      });
+    });
+
+    it("hides static UI and ProductChip when only the confirm card is active", () => {
+      expect(getScanOverlayA11y(true, false)).toEqual({
+        staticUI: "no-hide-descendants",
+        productChip: "no-hide-descendants",
+      });
     });
   });
 });

@@ -44,6 +44,7 @@ import { CoachHint } from "@/camera/components/CoachHint";
 import { ScanReticle } from "@/camera/components/ScanReticle";
 import { StepPill } from "@/camera/components/StepPill";
 import { ProductChip } from "@/camera/components/ProductChip";
+import { getProductChipVariant } from "@/camera/components/ProductChip-utils";
 import { ScanFlashOverlay } from "@/camera/components/ScanFlashOverlay";
 import { ScanSonarRing } from "@/camera/components/ScanSonarRing";
 import { getCoachMessage } from "@/camera/components/CoachHint-utils";
@@ -63,6 +64,7 @@ import {
   buildScannedItemPayload,
   buildSuccessToastMessage,
   canLog,
+  getScanOverlayA11y,
   type ConfirmCardState,
 } from "@/screens/ScanScreenConfirmOverlay-utils";
 import { ThemedText } from "@/components/ThemedText";
@@ -502,6 +504,11 @@ export default function ScanScreen() {
 
   const coachMessage = getCoachMessage(scanPhase, elapsedSeconds);
 
+  // Android TalkBack focus trap for the overlays (no-op on iOS). The static
+  // camera UI and ProductChip need different values — see getScanOverlayA11y.
+  const productChipVisible = getProductChipVariant(scanPhase) !== null;
+  const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
+
   return (
     <View style={styles.root} accessibilityViewIsModal>
       <CameraView
@@ -531,7 +538,10 @@ export default function ScanScreen() {
       <ScanFlashOverlay triggerCount={flashCount} />
 
       {/* Top overlay */}
-      <View style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}>
+      <View
+        style={[styles.topOverlay, { paddingTop: insets.top + 8 }]}
+        importantForAccessibility={overlayA11y.staticUI}
+      >
         <TouchableOpacity
           style={styles.closeBtn}
           onPress={() => navigation.goBack()}
@@ -544,12 +554,18 @@ export default function ScanScreen() {
       </View>
 
       {/* Coach hint */}
-      <View style={styles.coachContainer}>
+      <View
+        style={styles.coachContainer}
+        importantForAccessibility={overlayA11y.staticUI}
+      >
         <CoachHint message={coachMessage} />
       </View>
 
       {/* Bottom controls */}
-      <View style={[styles.controls, { paddingBottom: insets.bottom + 16 }]}>
+      <View
+        style={[styles.controls, { paddingBottom: insets.bottom + 16 }]}
+        importantForAccessibility={overlayA11y.staticUI}
+      >
         <TouchableOpacity
           style={styles.iconBtn}
           onPress={() => setTorchEnabled((t) => !t)}
@@ -572,7 +588,10 @@ export default function ScanScreen() {
 
       {/* Scan count badge (free tier) */}
       {!isPremium && remainingScans !== null && (
-        <View style={styles.scanCount}>
+        <View
+          style={styles.scanCount}
+          importantForAccessibility={overlayA11y.staticUI}
+        >
           <Text style={styles.scanCountText}>
             {remainingScans > 0
               ? `${remainingScans} scans remaining`
@@ -595,6 +614,7 @@ export default function ScanScreen() {
 
       {/* Product chip */}
       <ProductChip
+        importantForAccessibility={overlayA11y.productChip}
         phase={scanPhase}
         onConfirm={() => dispatch({ type: "CONFIRM_PRODUCT" })}
         onAddNutritionPhoto={() => dispatch({ type: "ADD_NUTRITION_PHOTO" })}
