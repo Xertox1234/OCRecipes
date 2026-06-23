@@ -188,7 +188,7 @@ export default function RecipeAIGenerateScreen() {
           style={[
             styles.generateButton,
             {
-              backgroundColor: theme.link,
+              backgroundColor: theme.accentSolid,
               borderRadius: BorderRadius.sm,
               opacity: isDisabled ? 0.5 : 1,
             },

@@ -152,7 +152,7 @@ export function CoachChatBase({
                 styles.sendBtn,
                 {
                   backgroundColor: canSend
-                    ? theme.link
+                    ? theme.accentSolid
                     : withOpacity(theme.link, 0.3),
                 },
               ]}

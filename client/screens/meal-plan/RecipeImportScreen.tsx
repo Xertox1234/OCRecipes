@@ -159,7 +159,7 @@ export default function RecipeImportScreen() {
                 styles.actionButton,
                 {
                   backgroundColor: url.trim()
-                    ? theme.link
+                    ? theme.accentSolid
                     : withOpacity(theme.link, 0.3),
                 },
               ]}
@@ -204,7 +204,10 @@ export default function RecipeImportScreen() {
             </ThemedText>
             <Pressable
               onPress={handleTryAgain}
-              style={[styles.actionButton, { backgroundColor: theme.link }]}
+              style={[
+                styles.actionButton,
+                { backgroundColor: theme.accentSolid },
+              ]}
               accessibilityRole="button"
               accessibilityLabel="Try again"
             >

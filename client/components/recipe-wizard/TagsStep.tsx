@@ -108,7 +108,7 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
                 style={[
                   styles.chip,
                   isActive
-                    ? { backgroundColor: theme.link }
+                    ? { backgroundColor: theme.accentSolid }
                     : {
                         backgroundColor: theme.backgroundSecondary,
                         borderWidth: 1,

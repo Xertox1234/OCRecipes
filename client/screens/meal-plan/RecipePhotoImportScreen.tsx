@@ -360,7 +360,10 @@ export default function RecipePhotoImportScreen() {
             {/* Actions */}
             <Pressable
               onPress={handleSave}
-              style={[styles.actionButton, { backgroundColor: theme.link }]}
+              style={[
+                styles.actionButton,
+                { backgroundColor: theme.accentSolid },
+              ]}
               accessibilityRole="button"
               accessibilityLabel="Review and save recipe"
             >
@@ -394,7 +397,10 @@ export default function RecipePhotoImportScreen() {
             </ThemedText>
             <Pressable
               onPress={handleTryAgain}
-              style={[styles.actionButton, { backgroundColor: theme.link }]}
+              style={[
+                styles.actionButton,
+                { backgroundColor: theme.accentSolid },
+              ]}
               accessibilityRole="button"
               accessibilityLabel="Try again"
             >

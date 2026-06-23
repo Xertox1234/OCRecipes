@@ -114,7 +114,7 @@ const SuggestionCard = React.memo(function SuggestionCard({
         style={({ pressed }) => [
           styles.pickButton,
           {
-            backgroundColor: theme.link,
+            backgroundColor: theme.accentSolid,
             opacity: pressed ? 0.85 : 1,
           },
         ]}
@@ -235,7 +235,7 @@ const PopularPickCard = React.memo(function PopularPickCard({
         style={({ pressed }) => [
           styles.pickButton,
           {
-            backgroundColor: theme.link,
+            backgroundColor: theme.accentSolid,
             opacity: pressed ? 0.85 : 1,
           },
         ]}

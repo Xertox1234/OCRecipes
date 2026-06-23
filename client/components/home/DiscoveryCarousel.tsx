@@ -86,7 +86,7 @@ export function DiscoveryCarousel({
             style={[
               styles.dot,
               i === clampedIndex
-                ? [styles.dotActive, { backgroundColor: theme.link }]
+                ? [styles.dotActive, { backgroundColor: theme.accentSolid }]
                 : { backgroundColor: withOpacity(theme.text, 0.15) },
             ]}
           />

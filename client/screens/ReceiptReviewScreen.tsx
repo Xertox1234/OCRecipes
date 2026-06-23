@@ -348,7 +348,7 @@ export default function ReceiptReviewScreen() {
         </ThemedText>
         <Pressable
           onPress={() => navigation.goBack()}
-          style={[styles.retryButton, { backgroundColor: theme.link }]}
+          style={[styles.retryButton, { backgroundColor: theme.accentSolid }]}
           accessibilityRole="button"
           accessibilityLabel="Try again"
         >
@@ -380,7 +380,7 @@ export default function ReceiptReviewScreen() {
         </ThemedText>
         <Pressable
           onPress={() => navigation.replace("ReceiptMealPlan", {})}
-          style={[styles.retryButton, { backgroundColor: theme.link }]}
+          style={[styles.retryButton, { backgroundColor: theme.accentSolid }]}
           accessibilityRole="button"
           accessibilityLabel="Generate meal plan"
         >
@@ -422,7 +422,7 @@ export default function ReceiptReviewScreen() {
         </ThemedText>
         <Pressable
           onPress={() => navigation.goBack()}
-          style={[styles.retryButton, { backgroundColor: theme.link }]}
+          style={[styles.retryButton, { backgroundColor: theme.accentSolid }]}
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
@@ -469,7 +469,7 @@ export default function ReceiptReviewScreen() {
       {showUpdatedToast && (
         <Animated.View
           entering={FadeInUp}
-          style={[styles.toast, { backgroundColor: theme.link }]}
+          style={[styles.toast, { backgroundColor: theme.accentSolid }]}
           accessibilityLiveRegion="polite"
         >
           <ThemedText style={styles.toastText}>
@@ -495,7 +495,7 @@ export default function ReceiptReviewScreen() {
           style={[
             styles.confirmButton,
             {
-              backgroundColor: theme.link,
+              backgroundColor: theme.accentSolid,
               opacity: confirmMutation.isPending ? 0.6 : 1,
             },
           ]}

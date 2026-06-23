@@ -59,7 +59,7 @@ export function ProgressBar({
           {
             width: `${percentage}%`,
             borderRadius,
-            backgroundColor: color ?? theme.link,
+            backgroundColor: color ?? theme.accentSolid,
           },
         ]}
       />

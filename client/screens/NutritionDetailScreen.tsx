@@ -399,7 +399,7 @@ export default function NutritionDetailScreen() {
                 style={({ pressed }) => [
                   styles.manualSearchButton,
                   {
-                    backgroundColor: theme.link,
+                    backgroundColor: theme.accentSolid,
                     opacity: isSearching || !manualSearchQuery.trim() ? 0.5 : 1,
                   },
                   pressed && { opacity: 0.7 },

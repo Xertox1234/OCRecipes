@@ -50,7 +50,9 @@ const RecipeCard = React.memo(function RecipeCard({
           resizeMode="cover"
         />
         {selected && (
-          <View style={[styles.checkmark, { backgroundColor: theme.link }]}>
+          <View
+            style={[styles.checkmark, { backgroundColor: theme.accentSolid }]}
+          >
             <Feather name="check" size={10} color={theme.buttonText} />
           </View>
         )}

@@ -12,6 +12,12 @@ export const Colors = {
     // Links - terracotta accent (WCAG AA: 5.1:1 on #FAF6F0, 5.5:1 on #FFFFFF)
     link: "#B5451C",
     linkPressed: "#8A3415",
+    // Solid accent FILL for interactive surfaces (buttons, FAB, chips, badges)
+    // that carry white content. Decoupled from `link`: in dark mode `link` must
+    // stay light enough to read as TEXT on a dark surface, which makes it too
+    // light to sit under white text as a fill. #B5451C = 5.43:1 vs white in BOTH
+    // modes (AA pass). Use `link` for text/icons/tints, `accentSolid` for fills.
+    accentSolid: "#B5451C",
     // Backgrounds - warm parchment/cream tones
     backgroundRoot: "#FAF6F0",
     backgroundDefault: "#FAF6F0",
@@ -51,6 +57,10 @@ export const Colors = {
     // Links - warm coral (WCAG AA: 5.5:1 on #1E1814)
     link: "#E07050",
     linkPressed: "#C4521A",
+    // Solid accent FILL (white content) — kept dark for AA with white text:
+    // 5.43:1 vs #FFFFFF. Distinct from `link` (#E07050), which is the on-dark
+    // TEXT color and only 3.18:1 as a fill under white. Same hex as light mode.
+    accentSolid: "#B5451C",
     // Backgrounds - deep charcoal-brown (cast iron, slate)
     backgroundRoot: "#1E1814",
     backgroundDefault: "#1E1814",

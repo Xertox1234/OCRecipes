@@ -33,7 +33,7 @@ export function CoachStatusRow({ statusText }: CoachStatusRowProps) {
 
   return (
     <View style={styles.row}>
-      <View style={[styles.dot, { backgroundColor: theme.link }]} />
+      <View style={[styles.dot, { backgroundColor: theme.accentSolid }]} />
       <Text
         style={[styles.text, { color: theme.textSecondary }]}
         accessibilityLabel={statusText}

@@ -461,7 +461,10 @@ export function BeveragePickerSheet({
                     ? "Continue with selected additions"
                     : "Skip additions"
                 }
-                style={[styles.skipButton, { backgroundColor: theme.link }]}
+                style={[
+                  styles.skipButton,
+                  { backgroundColor: theme.accentSolid },
+                ]}
               >
                 <ThemedText
                   type="body"
@@ -569,7 +572,7 @@ export function BeveragePickerSheet({
                   styles.customSubmit,
                   {
                     backgroundColor: customInput.trim()
-                      ? theme.link
+                      ? theme.accentSolid
                       : withOpacity(theme.text, 0.1),
                   },
                 ]}

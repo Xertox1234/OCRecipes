@@ -79,7 +79,7 @@ const InstructionRowView = React.memo(function InstructionRowView({
     >
       {/* Step number badge */}
       <View
-        style={[styles.badge, { backgroundColor: theme.link }]}
+        style={[styles.badge, { backgroundColor: theme.accentSolid }]}
         accessibilityLabel={`Step ${index + 1}`}
       >
         <Text style={[styles.badgeText, { color: theme.buttonText }]}>

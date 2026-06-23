@@ -78,7 +78,7 @@ export function EmptyState({
           style={({ pressed }) => [
             styles.actionButton,
             {
-              backgroundColor: theme.link,
+              backgroundColor: theme.accentSolid,
               opacity: pressed ? 0.8 : 1,
             },
           ]}

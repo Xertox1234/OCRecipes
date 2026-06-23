@@ -74,7 +74,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
           style={({ pressed }) => [
             styles.button,
             {
-              backgroundColor: theme.link,
+              backgroundColor: theme.accentSolid,
               opacity: pressed ? 0.9 : 1,
               transform: reducedMotion
                 ? undefined

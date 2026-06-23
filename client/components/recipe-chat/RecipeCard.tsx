@@ -271,7 +271,7 @@ function RecipeCardInner({
           style={[
             styles.saveButton,
             isSaved
-              ? { backgroundColor: theme.link }
+              ? { backgroundColor: theme.accentSolid }
               : {
                   borderColor: theme.link,
                   borderWidth: 1.5,

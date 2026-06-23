@@ -273,7 +273,7 @@ export default function ChatListScreen() {
         </View>
         <Pressable
           onPress={handleNewChat}
-          style={[styles.newChatButton, { backgroundColor: theme.link }]}
+          style={[styles.newChatButton, { backgroundColor: theme.accentSolid }]}
           accessibilityRole="button"
           accessibilityLabel="Start new chat"
           disabled={isCreatingChat}
@@ -368,7 +368,10 @@ export default function ChatListScreen() {
               </ThemedText>
               <Pressable
                 onPress={handleNewChat}
-                style={[styles.emptyButton, { backgroundColor: theme.link }]}
+                style={[
+                  styles.emptyButton,
+                  { backgroundColor: theme.accentSolid },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Start your first chat"
                 disabled={isCreatingChat}

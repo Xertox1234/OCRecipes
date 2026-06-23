@@ -175,7 +175,7 @@ export default function TasteProfileScreen() {
             {
               backgroundColor:
                 selectedIds.size > 0
-                  ? theme.link
+                  ? theme.accentSolid
                   : withOpacity(theme.link, 0.12),
             },
           ]}

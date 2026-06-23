@@ -37,7 +37,7 @@ export function RecipeInstructions({
           accessibilityLabel={`Step ${i + 1} of ${instructions.length}: ${step}`}
         >
           <View
-            style={[styles.stepCircle, { backgroundColor: theme.link }]}
+            style={[styles.stepCircle, { backgroundColor: theme.accentSolid }]}
             accessible={false}
           >
             <ThemedText style={styles.stepNumber}>{i + 1}</ThemedText>

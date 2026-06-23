@@ -260,7 +260,7 @@ export function CookbookPickerModal({
               style={[
                 styles.createButton,
                 {
-                  backgroundColor: theme.link,
+                  backgroundColor: theme.accentSolid,
                   opacity: isCreating ? 0.6 : 1,
                 },
               ]}

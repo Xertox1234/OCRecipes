@@ -243,7 +243,7 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
           />
         </Pressable>
       )}
-      <View style={[styles.addButton, { backgroundColor: theme.link }]}>
+      <View style={[styles.addButton, { backgroundColor: theme.accentSolid }]}>
         {adding ? (
           <ActivityIndicator size="small" color={theme.buttonText} />
         ) : (
@@ -765,7 +765,10 @@ export default function RecipeBrowserScreen() {
             <Feather name="sliders" size={16} color={theme.link} />
             {activeFilterCount > 0 && (
               <View
-                style={[styles.filterBadge, { backgroundColor: theme.link }]}
+                style={[
+                  styles.filterBadge,
+                  { backgroundColor: theme.accentSolid },
+                ]}
               >
                 <ThemedText
                   style={[styles.filterBadgeText, { color: theme.buttonText }]}

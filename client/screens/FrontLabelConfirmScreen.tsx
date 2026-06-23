@@ -217,7 +217,7 @@ export default function FrontLabelConfirmScreen() {
         {showUpdatedToast && (
           <Animated.View
             entering={FadeInUp}
-            style={[styles.toast, { backgroundColor: theme.link }]}
+            style={[styles.toast, { backgroundColor: theme.accentSolid }]}
             accessibilityLiveRegion="polite"
           >
             <ThemedText style={styles.toastText}>

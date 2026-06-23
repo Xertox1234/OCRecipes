@@ -89,7 +89,9 @@ const CoachStreamingFooter = React.memo(function CoachStreamingFooter({
       accessibilityRole="text"
       accessibilityLabel="NutriCoach is thinking"
     >
-      <View style={[styles.typingAvatarDot, { backgroundColor: theme.link }]} />
+      <View
+        style={[styles.typingAvatarDot, { backgroundColor: theme.accentSolid }]}
+      />
       <View style={styles.typingIndicator}>
         <ActivityIndicator size="small" color={theme.textSecondary} />
       </View>
@@ -545,7 +547,7 @@ export default function ChatScreen() {
               {
                 backgroundColor:
                   inputText.trim() && !isStreaming
-                    ? theme.link
+                    ? theme.accentSolid
                     : withOpacity(theme.link, 0.3),
               },
             ]}

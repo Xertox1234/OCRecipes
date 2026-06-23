@@ -233,7 +233,10 @@ export default function CookbookListScreen() {
                   haptics.impact();
                   void refetch();
                 }}
-                style={[styles.createButton, { backgroundColor: theme.link }]}
+                style={[
+                  styles.createButton,
+                  { backgroundColor: theme.accentSolid },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Retry loading cookbooks"
               >
@@ -263,7 +266,10 @@ export default function CookbookListScreen() {
                   haptics.impact();
                   navigation.navigate("CookbookCreate");
                 }}
-                style={[styles.createButton, { backgroundColor: theme.link }]}
+                style={[
+                  styles.createButton,
+                  { backgroundColor: theme.accentSolid },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Create cookbook"
               >

@@ -186,7 +186,7 @@ export default function NotebookScreen() {
         <View style={styles.headerActions}>
           <Pressable
             onPress={() => navigation.navigate("NotebookEntry", {})}
-            style={[styles.newBtn, { backgroundColor: theme.link }]}
+            style={[styles.newBtn, { backgroundColor: theme.accentSolid }]}
             hitSlop={{ top: 7, bottom: 7 }}
             accessibilityRole="button"
             accessibilityLabel="Create new notebook entry"
@@ -218,7 +218,7 @@ export default function NotebookScreen() {
               styles.filterChip,
               {
                 backgroundColor:
-                  filter === f ? theme.link : theme.backgroundSecondary,
+                  filter === f ? theme.accentSolid : theme.backgroundSecondary,
               },
             ]}
             hitSlop={{ top: 7, bottom: 7 }}

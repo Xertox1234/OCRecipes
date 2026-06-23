@@ -178,7 +178,7 @@ export default function TastePicksScreen() {
             styles.chip,
             {
               backgroundColor: chipActive
-                ? theme.link
+                ? theme.accentSolid
                 : withOpacity(theme.link, 0.12),
             },
           ]}

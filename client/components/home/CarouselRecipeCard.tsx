@@ -159,7 +159,7 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
             <View
               style={[
                 styles.remixBadge,
-                { backgroundColor: withOpacity(theme.link, 0.9) },
+                { backgroundColor: withOpacity(theme.accentSolid, 0.9) },
               ]}
               accessibilityLabel="Remixed recipe"
             >

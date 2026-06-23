@@ -125,7 +125,7 @@ function GroceryItemRow({
             borderColor: item.isChecked
               ? theme.link
               : withOpacity(theme.text, 0.3),
-            backgroundColor: item.isChecked ? theme.link : "transparent",
+            backgroundColor: item.isChecked ? theme.accentSolid : "transparent",
           },
         ]}
       >
@@ -510,7 +510,7 @@ export default function GroceryListScreen() {
                 style={[
                   styles.addItemButton,
                   {
-                    backgroundColor: theme.link,
+                    backgroundColor: theme.accentSolid,
                     opacity:
                       !newItemName.trim() || addItemMutation.isPending
                         ? 0.4
@@ -555,7 +555,10 @@ export default function GroceryListScreen() {
           </ThemedText>
           <Pressable
             onPress={handleAddToPantry}
-            style={[styles.pantrySnackbarBtn, { backgroundColor: theme.link }]}
+            style={[
+              styles.pantrySnackbarBtn,
+              { backgroundColor: theme.accentSolid },
+            ]}
             accessibilityRole="button"
             accessibilityLabel={`Add ${pantryPromptItem.name} to pantry`}
           >

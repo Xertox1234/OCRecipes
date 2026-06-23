@@ -139,7 +139,7 @@ const DateStripItem = React.memo(function DateStripItem({
         styles.dateStripItem,
         {
           backgroundColor: isSelected
-            ? theme.link
+            ? theme.accentSolid
             : withOpacity(theme.text, 0.05),
         },
       ]}
@@ -164,7 +164,9 @@ const DateStripItem = React.memo(function DateStripItem({
         {dayNum}
       </ThemedText>
       {hasItems && !isSelected && (
-        <View style={[styles.dateStripDot, { backgroundColor: theme.link }]} />
+        <View
+          style={[styles.dateStripDot, { backgroundColor: theme.accentSolid }]}
+        />
       )}
     </Pressable>
   );

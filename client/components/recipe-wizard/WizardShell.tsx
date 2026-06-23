@@ -335,7 +335,7 @@ export default function WizardShell({
                 {
                   backgroundColor:
                     i < currentStep
-                      ? theme.link
+                      ? theme.accentSolid
                       : withOpacity(theme.link, 0.12),
                 },
               ]}
@@ -415,7 +415,7 @@ export default function WizardShell({
           style={[
             styles.navButton,
             styles.nextButton,
-            { backgroundColor: theme.link },
+            { backgroundColor: theme.accentSolid },
             currentStep === STEP_TITLE && styles.fullWidth,
             createMutation.isPending && { opacity: 0.6 },
           ]}

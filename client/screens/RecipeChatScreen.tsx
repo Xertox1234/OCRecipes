@@ -442,7 +442,7 @@ export default function RecipeChatScreen() {
               style={[
                 styles.messageBubble,
                 isUser
-                  ? [styles.userBubble, { backgroundColor: theme.link }]
+                  ? [styles.userBubble, { backgroundColor: theme.accentSolid }]
                   : isError
                     ? [
                         styles.assistantBubble,
@@ -720,7 +720,7 @@ export default function RecipeChatScreen() {
             {
               backgroundColor:
                 inputText.trim() && !isStreaming
-                  ? theme.link
+                  ? theme.accentSolid
                   : withOpacity(theme.link, 0.3),
             },
           ]}

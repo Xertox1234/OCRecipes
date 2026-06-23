@@ -74,7 +74,7 @@ export const ParsedFoodPreview = React.memo(function ParsedFoodPreview({
         style={({ pressed }) => [
           styles.logAllButton,
           {
-            backgroundColor: theme.link,
+            backgroundColor: theme.accentSolid,
             opacity: pressed || isLogging || logAllDisabled ? 0.7 : 1,
           },
         ]}

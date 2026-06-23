@@ -113,7 +113,7 @@ export function ScanFAB() {
           Shadows.large,
           animatedStyle,
           {
-            backgroundColor: theme.link,
+            backgroundColor: theme.accentSolid,
             bottom: TAB_BAR_HEIGHT + Spacing.lg,
           },
         ]}

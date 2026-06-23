@@ -90,7 +90,10 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
           {/* Difficulty badge */}
           {recipe.difficulty ? (
             <View
-              style={[styles.difficultyBadge, { backgroundColor: theme.link }]}
+              style={[
+                styles.difficultyBadge,
+                { backgroundColor: theme.accentSolid },
+              ]}
             >
               <ThemedText
                 maxScale={MAX_FONT_SCALE_CONSTRAINED}
@@ -182,7 +185,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: Spacing.sm,
     left: Spacing.sm,
-    backgroundColor: "transparent", // overridden dynamically with theme.link
+    backgroundColor: "transparent", // overridden dynamically with theme.accentSolid
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.chip,

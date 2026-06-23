@@ -186,7 +186,10 @@ export default function ReceiptCaptureScreen() {
               void Linking.openSettings();
             }
           }}
-          style={[styles.permissionButton, { backgroundColor: theme.link }]}
+          style={[
+            styles.permissionButton,
+            { backgroundColor: theme.accentSolid },
+          ]}
           accessibilityRole="button"
           accessibilityLabel={
             permission?.canAskAgain
@@ -336,7 +339,10 @@ export default function ReceiptCaptureScreen() {
             )}
             <Pressable
               onPress={handleDone}
-              style={[styles.doneButton, { backgroundColor: theme.link }]}
+              style={[
+                styles.doneButton,
+                { backgroundColor: theme.accentSolid },
+              ]}
               accessibilityRole="button"
               accessibilityLabel={`Done with ${photos.length} photo${photos.length > 1 ? "s" : ""}`}
             >

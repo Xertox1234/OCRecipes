@@ -385,7 +385,7 @@ function SimpleEntrySheetInner({
             styles.addButton,
             {
               backgroundColor: canAdd
-                ? theme.link
+                ? theme.accentSolid
                 : withOpacity(theme.text, 0.1),
             },
           ]}

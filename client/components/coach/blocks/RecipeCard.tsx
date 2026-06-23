@@ -30,7 +30,7 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
       </View>
       <View style={styles.actions}>
         <Pressable
-          style={[styles.primaryBtn, { backgroundColor: theme.link }]}
+          style={[styles.primaryBtn, { backgroundColor: theme.accentSolid }]}
           onPress={() =>
             onAction?.({
               type: "navigate",
