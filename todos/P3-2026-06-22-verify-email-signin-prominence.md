@@ -1,6 +1,6 @@
 ---
 title: "Promote the 'Back to sign in' affordance when VerifyEmailScreen is in the linkSent state"
-status: backlog
+status: review
 priority: low
 created: 2026-06-22
 updated: 2026-06-22
@@ -107,3 +107,11 @@ the linkSent case.
   `main`) and verify the `linkSent` primary button renders AA-clean — do NOT
   re-implement from scratch (a fresh `/todo` executor would, since it forks from
   `main` and won't know about `cfd8afa7`).
+
+### 2026-06-22 (in review — PR #430)
+
+- Opened PR #430 from a fresh branch `fix/verify-email-linksent-prominence` off
+  the post-#429 `main`, carrying ONLY the `VerifyEmailScreen.tsx` variant swap
+  (the `cfd8afa7` branch's stale `status: blocked` todo-edit was deliberately
+  dropped). The superseded `todo/P3-…` branch was deleted from origin. Set
+  `status: review`; archive on merge.
