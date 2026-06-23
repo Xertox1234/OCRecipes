@@ -19,6 +19,7 @@ import Animated, {
 } from "react-native-reanimated";
 import type { ScanPhase } from "../types/scan-phase";
 import {
+  getChipAnnounceText,
   getProductChipVariant,
   getSmartConfirmLabel,
 } from "./ProductChip-utils";
@@ -75,16 +76,9 @@ export function ProductChip({
       // Announce only on null→non-null transition (chip sliding in for the first time or after hide).
       // accessibilityLiveRegion on the container handles Android; gate iOS here to avoid double-announce.
       if (prevVariantRef.current === null && Platform.OS === "ios") {
-        const announceText: Record<NonNullable<typeof variant>, string> = {
-          barcode_lock: "Product found, tap to view details",
-          step2_review: "Nutrition label scanned, review values",
-          step2_confirmed: "Nutrition values confirmed",
-          step3_review: "Front label scanned, review values",
-          session_complete: "Scan complete",
-          smart_photo: "Photo analyzed, tap to confirm",
-          smart_error: "Couldn't identify this food, try again",
-        };
-        AccessibilityInfo.announceForAccessibility(announceText[variant]);
+        AccessibilityInfo.announceForAccessibility(
+          getChipAnnounceText(variant, phase),
+        );
       }
     } else {
       translateY.value = withSpring(200, CHIP_SPRING, () => {
@@ -92,7 +86,7 @@ export function ProductChip({
       });
     }
     prevVariantRef.current = variant;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY is a stable useSharedValue ref
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY is a stable useSharedValue ref; `phase` is read only to build the announce string on the null→non-null variant transition and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers it).
   }, [variant]);
 
   const animStyle = useAnimatedStyle(() => ({

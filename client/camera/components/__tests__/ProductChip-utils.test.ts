@@ -1,10 +1,12 @@
 // client/camera/components/__tests__/ProductChip-utils.test.ts
 import { describe, it, expect } from "vitest";
 import {
+  getChipAnnounceText,
   getProductChipVariant,
   getSmartConfirmLabel,
 } from "../ProductChip-utils";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
+import type { ScanPhase } from "../../types/scan-phase";
 
 const BOUNDS = { x: 0.4, y: 0.45, width: 0.2, height: 0.1 };
 
@@ -151,5 +153,78 @@ describe("getSmartConfirmLabel", () => {
       "Food detected",
     );
     expect(getSmartConfirmLabel({ foods: [] })).toBe("Food detected");
+  });
+});
+
+describe("getChipAnnounceText", () => {
+  const food = (name: string): PhotoAnalysisResponse["foods"][number] => ({
+    name,
+    quantity: "1 serving",
+    confidence: 0.9,
+    needsClarification: false,
+    nutrition: null,
+  });
+
+  const smartConfirmed = (
+    classification: Pick<PhotoAnalysisResponse, "foods" | "contentType">,
+  ): ScanPhase => ({
+    type: "SMART_CONFIRMED",
+    imageUri: "x",
+    classification: classification as PhotoAnalysisResponse,
+  });
+
+  // Non-smart_photo variants never read `phase`, so an IDLE placeholder is fine.
+  const idle: ScanPhase = { type: "IDLE" };
+
+  it("derives the smart_photo announce from the content-type label when foods are empty", () => {
+    expect(
+      getChipAnnounceText(
+        "smart_photo",
+        smartConfirmed({ foods: [], contentType: "restaurant_menu" }),
+      ),
+    ).toBe("Restaurant menu detected, tap to confirm");
+    expect(
+      getChipAnnounceText(
+        "smart_photo",
+        smartConfirmed({ foods: [], contentType: "grocery_receipt" }),
+      ),
+    ).toBe("Grocery receipt detected, tap to confirm");
+  });
+
+  it("announces the food name for a food-bearing smart_photo classification", () => {
+    expect(
+      getChipAnnounceText(
+        "smart_photo",
+        smartConfirmed({
+          foods: [food("Grilled chicken")],
+          contentType: "prepared_meal",
+        }),
+      ),
+    ).toBe("Grilled chicken, tap to confirm");
+  });
+
+  it("keeps the static announce strings for all other variants", () => {
+    expect(getChipAnnounceText("barcode_lock", idle)).toBe(
+      "Product found, tap to view details",
+    );
+    expect(getChipAnnounceText("step2_review", idle)).toBe(
+      "Nutrition label scanned, review values",
+    );
+    expect(getChipAnnounceText("step2_confirmed", idle)).toBe(
+      "Nutrition values confirmed",
+    );
+    expect(getChipAnnounceText("step3_review", idle)).toBe(
+      "Front label scanned, review values",
+    );
+    expect(getChipAnnounceText("session_complete", idle)).toBe("Scan complete");
+    expect(getChipAnnounceText("smart_error", idle)).toBe(
+      "Couldn't identify this food, try again",
+    );
+  });
+
+  it("falls back to the generic smart_photo string when the phase is not SMART_CONFIRMED", () => {
+    expect(getChipAnnounceText("smart_photo", idle)).toBe(
+      "Photo analyzed, tap to confirm",
+    );
   });
 });

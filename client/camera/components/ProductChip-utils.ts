@@ -57,3 +57,43 @@ export function getSmartConfirmLabel(
   // production UX state.
   return "Food detected";
 }
+
+/**
+ * iOS VoiceOver announcement string for a chip variant when it first slides in.
+ *
+ * Android announces the rendered chip text via `accessibilityLiveRegion`; iOS
+ * suppresses that live region (to avoid a double-announce) and fires this string
+ * imperatively via `AccessibilityInfo.announceForAccessibility`. The
+ * `smart_photo` variant derives its announcement from
+ * `getSmartConfirmLabel(phase.classification)` so the spoken text matches the
+ * visible content-type-specific label (e.g. "Restaurant menu detected, tap to
+ * confirm") instead of a generic "Photo analyzed". All other variants use a
+ * fixed string.
+ */
+export function getChipAnnounceText(
+  variant: NonNullable<ProductChipVariant>,
+  phase: ScanPhase,
+): string {
+  if (variant === "smart_photo" && phase.type === "SMART_CONFIRMED") {
+    return `${getSmartConfirmLabel(phase.classification)}, tap to confirm`;
+  }
+  switch (variant) {
+    case "barcode_lock":
+      return "Product found, tap to view details";
+    case "step2_review":
+      return "Nutrition label scanned, review values";
+    case "step2_confirmed":
+      return "Nutrition values confirmed";
+    case "step3_review":
+      return "Front label scanned, review values";
+    case "session_complete":
+      return "Scan complete";
+    case "smart_error":
+      return "Couldn't identify this food, try again";
+    case "smart_photo":
+      // Defensive: variant === "smart_photo" without a SMART_CONFIRMED phase is
+      // not reachable (the variant is derived from that phase), but keep a
+      // sensible fallback rather than throwing.
+      return "Photo analyzed, tap to confirm";
+  }
+}
