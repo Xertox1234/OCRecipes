@@ -548,7 +548,7 @@ export default function ChatScreen() {
                 backgroundColor:
                   inputText.trim() && !isStreaming
                     ? theme.accentSolid
-                    : withOpacity(theme.link, 0.3),
+                    : withOpacity(theme.text, 0.12),
               },
             ]}
             accessibilityRole="button"
@@ -556,9 +556,15 @@ export default function ChatScreen() {
             accessibilityState={{ disabled: !inputText.trim() || isStreaming }}
           >
             {isStreaming ? (
-              <ActivityIndicator color={theme.buttonText} size="small" />
+              <ActivityIndicator color={theme.textSecondary} size="small" />
             ) : (
-              <Feather name="send" size={18} color={theme.buttonText} />
+              <Feather
+                name="send"
+                size={18}
+                color={
+                  inputText.trim() ? theme.buttonText : theme.textSecondary
+                }
+              />
             )}
           </AnimatedPressable>
         </View>

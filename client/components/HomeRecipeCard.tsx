@@ -58,9 +58,12 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
     () => withOpacity(theme.error, 0.9),
     [theme.error],
   );
+  // Near-opaque (0.9) badge fill under a white icon — uses accentSolid (not
+  // link) so the glyph clears contrast; 0.9 lets a little card image bleed
+  // through. This is the one withOpacity exception to "tints stay on link".
   const remixBadgeColor = useMemo(
     () => withOpacity(theme.accentSolid, 0.9),
-    [theme.link],
+    [theme.accentSolid],
   );
   const fallbackStyle = useMemo(
     () => ({ backgroundColor: theme.backgroundSecondary }),

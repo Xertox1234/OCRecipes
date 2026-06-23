@@ -153,7 +153,7 @@ export function CoachChatBase({
                 {
                   backgroundColor: canSend
                     ? theme.accentSolid
-                    : withOpacity(theme.link, 0.3),
+                    : withOpacity(theme.text, 0.12),
                 },
               ]}
               onPress={onSend}
@@ -162,7 +162,11 @@ export function CoachChatBase({
               accessibilityLabel="Send message"
               accessibilityState={{ disabled: !canSend }}
             >
-              <Feather name="send" size={16} color={theme.buttonText} />
+              <Feather
+                name="send"
+                size={16}
+                color={canSend ? theme.buttonText : theme.textSecondary}
+              />
             </Pressable>
           ) : (
             (inputAdornment ?? null)

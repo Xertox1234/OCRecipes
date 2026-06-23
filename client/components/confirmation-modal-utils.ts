@@ -1,6 +1,5 @@
 interface ThemeColors {
   error: string;
-  link: string;
   accentSolid: string;
   buttonText: string;
   backgroundSecondary: string;
