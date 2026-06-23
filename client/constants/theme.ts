@@ -15,7 +15,7 @@ export const Colors = {
     // Solid accent FILL for interactive surfaces (buttons, FAB, chips, badges)
     // that carry white content. Decoupled from `link`: in dark mode `link` must
     // stay light enough to read as TEXT on a dark surface, which makes it too
-    // light to sit under white text as a fill. #B5451C = 5.43:1 vs white in BOTH
+    // light to sit under white text as a fill. #B5451C = 5.48:1 vs white in BOTH
     // modes (AA pass). Use `link` for text/icons/tints, `accentSolid` for fills.
     accentSolid: "#B5451C",
     // Backgrounds - warm parchment/cream tones
@@ -58,7 +58,7 @@ export const Colors = {
     link: "#E07050",
     linkPressed: "#C4521A",
     // Solid accent FILL (white content) — kept dark for AA with white text:
-    // 5.43:1 vs #FFFFFF. Distinct from `link` (#E07050), which is the on-dark
+    // 5.48:1 vs #FFFFFF. Distinct from `link` (#E07050), which is the on-dark
     // TEXT color and only 3.18:1 as a fill under white. Same hex as light mode.
     accentSolid: "#B5451C",
     // Backgrounds - deep charcoal-brown (cast iron, slate)

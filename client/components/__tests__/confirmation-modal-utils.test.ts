@@ -38,7 +38,7 @@ describe("getConfirmButtonStyle", () => {
 
   it("returns accentSolid (not link) for non-destructive in dark mode", () => {
     // Regression guard for the dark-mode AA fix: the confirm button fill must be
-    // accentSolid (#B5451C, 5.43:1 on white) — NOT link (#E07050, 3.18:1 fail).
+    // accentSolid (#B5451C, 5.48:1 on white) — NOT link (#E07050, 3.18:1 fail).
     const result = getConfirmButtonStyle(false, darkTheme);
     expect(result.backgroundColor).toBe("#B5451C");
     expect(result.backgroundColor).not.toBe(darkTheme.link);
