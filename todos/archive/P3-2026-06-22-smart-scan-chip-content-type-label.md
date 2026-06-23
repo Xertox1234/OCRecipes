@@ -1,6 +1,6 @@
 ---
 title: "Smart-scan confirmation chip shows 'Food detected' for non-food content types"
-status: backlog
+status: done
 priority: low
 created: 2026-06-22
 updated: 2026-06-22

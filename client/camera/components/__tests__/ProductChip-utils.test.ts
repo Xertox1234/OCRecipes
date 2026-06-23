@@ -1,6 +1,10 @@
 // client/camera/components/__tests__/ProductChip-utils.test.ts
 import { describe, it, expect } from "vitest";
-import { getProductChipVariant } from "../ProductChip-utils";
+import {
+  getProductChipVariant,
+  getSmartConfirmLabel,
+} from "../ProductChip-utils";
+import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 
 const BOUNDS = { x: 0.4, y: 0.45, width: 0.2, height: 0.1 };
 
@@ -100,5 +104,52 @@ describe("getProductChipVariant", () => {
     expect(
       getProductChipVariant({ type: "SESSION_COMPLETE", barcode: "123" }),
     ).toBe("session_complete");
+  });
+});
+
+describe("getSmartConfirmLabel", () => {
+  const food = (name: string): PhotoAnalysisResponse["foods"][number] => ({
+    name,
+    quantity: "1 serving",
+    confidence: 0.9,
+    needsClarification: false,
+    nutrition: null,
+  });
+
+  it("returns the first food name when foods are present", () => {
+    expect(
+      getSmartConfirmLabel({
+        foods: [food("Grilled chicken"), food("Rice")],
+        contentType: "prepared_meal",
+      }),
+    ).toBe("Grilled chicken");
+  });
+
+  it("ignores contentType when a food name exists", () => {
+    expect(
+      getSmartConfirmLabel({
+        foods: [food("Spaghetti")],
+        contentType: "restaurant_menu",
+      }),
+    ).toBe("Spaghetti");
+  });
+
+  it("derives a content-type label when foods are empty", () => {
+    expect(
+      getSmartConfirmLabel({ foods: [], contentType: "restaurant_menu" }),
+    ).toBe("Restaurant menu detected");
+    expect(
+      getSmartConfirmLabel({ foods: [], contentType: "grocery_receipt" }),
+    ).toBe("Grocery receipt detected");
+    expect(
+      getSmartConfirmLabel({ foods: [], contentType: "raw_ingredients" }),
+    ).toBe("Ingredients detected");
+  });
+
+  it("falls back to 'Food detected' when no foods and no contentType", () => {
+    expect(getSmartConfirmLabel({ foods: [], contentType: undefined })).toBe(
+      "Food detected",
+    );
+    expect(getSmartConfirmLabel({ foods: [] })).toBe("Food detected");
   });
 });

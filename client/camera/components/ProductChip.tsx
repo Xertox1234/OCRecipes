@@ -18,7 +18,10 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import type { ScanPhase } from "../types/scan-phase";
-import { getProductChipVariant } from "./ProductChip-utils";
+import {
+  getProductChipVariant,
+  getSmartConfirmLabel,
+} from "./ProductChip-utils";
 
 const CHIP_SPRING = { damping: 18, stiffness: 280 };
 
@@ -226,7 +229,7 @@ export function ProductChip({
         <>
           <View style={styles.classificationRow}>
             <Text style={styles.classificationName}>
-              {phase.classification.foods[0]?.name ?? "Food detected"}
+              {getSmartConfirmLabel(phase.classification)}
             </Text>
             <Text style={styles.classificationConfidence}>
               {confidenceLabel(phase.classification.overallConfidence)}
