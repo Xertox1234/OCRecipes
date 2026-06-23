@@ -34,6 +34,18 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
 - Deep-link URL scheme: `ocrecipes://` (distinct from the Xcode build scheme)
 - Test account for auth-gated screens: `demo` / `demo123`
 
+## Prerequisites
+
+- **XcodeBuildMCP UI-automation tools must be enabled** (`tap`, `type_text`, `swipe`) for any
+  step that _interacts_ with the app: logging in, tapping through to a screen with no deep link,
+  or dismissing a system modal. They are **off by default** — only capture tools (`screenshot`,
+  `snapshot_ui`) plus build/launch/session tools are enabled. Turn the UI-automation group on
+  (user config + Claude restart): https://xcodebuildmcp.com/docs/configuration. Without them,
+  the skill can still set defaults, launch, deep-link, screenshot, and snapshot — so it works
+  **capture-only** for a target reachable without interaction (an already-authenticated
+  deep-link screen, or the login screen itself).
+- Auth-gated screens need the backend up (`npm run server:dev`) and Metro running.
+
 ## Tools
 
 This skill drives the **XcodeBuildMCP** server plus one `xcrun simctl` Bash command. The
@@ -58,8 +70,12 @@ before calling them.
 
 - `mcp__XcodeBuildMCP__boot_sim`, then `mcp__XcodeBuildMCP__open_sim` (both idempotent).
 - Try `mcp__XcodeBuildMCP__launch_app_sim`.
-  - If it launches, you are done here. JS/UI edits are picked up via Metro fast-refresh — **no
-    rebuild needed** for the debug build attached to `expo run:ios`.
+  - If it launches straight into the app, you are done here. JS/UI edits are picked up via Metro
+    fast-refresh — **no rebuild needed** for the debug build attached to `expo run:ios`.
+  - **Dev-client build:** if launch lands on the expo-dev-client _launcher_ (a "Development
+    servers" list, not your app), connect it to Metro with one Bash call —
+    `xcrun simctl openurl booted "ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"` —
+    then wait for the JS bundle to finish building (watch the Metro log) before navigating.
   - If the app is not installed, OR you changed native code/modules, run
     `mcp__XcodeBuildMCP__build_run_sim`. **Tell the user this is the slow (~minutes) native
     build path** so it is never a surprise. (A release/standalone build also won't pull new JS
@@ -77,7 +93,11 @@ before calling them.
   elementRefs, then `mcp__XcodeBuildMCP__tap` through to the target screen.
 - **If it lands on the login screen** (JWT not persisted across relaunch): log in with `demo`
   / `demo123` (snapshot_ui → tap the username/password fields → type → submit), then re-run
-  the deep link.
+  the deep link. (Needs the UI-automation tools from Prerequisites.)
+- **System modal overlay:** a SpringBoard alert (e.g. an Apple-ID re-verify prompt) can sit on
+  top of the app. While present, `snapshot_ui` returns only the modal's elements — the app is
+  hidden from the accessibility tree — so dismiss it first by tapping its button (e.g. "Not
+  Now"). This also needs the UI-automation tools.
 
 ### 4. Capture
 
