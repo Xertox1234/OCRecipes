@@ -1,7 +1,9 @@
 import type { ContentType } from "@shared/constants/classification";
 import type { PhotoIntent } from "@shared/constants/preparation";
-import type { PremiumFeatureKey } from "@shared/types/premium";
+import type { PremiumFeatureKey, PremiumFeatures } from "@shared/types/premium";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
+import { logger } from "@/lib/logger";
 
 /** Screen routing target for auto-classification results */
 export type ClassificationRoute =
@@ -85,6 +87,98 @@ export function getRouteForContentType(
     case "non_food":
       return null;
   }
+}
+
+/**
+ * Compute on-device OCR text for the smart-scan menu path so MenuScanResult can
+ * render an instant local skeleton while the AI analysis loads (the OCR race-swap
+ * that MenuScanResultScreen performs from `localOCRText`). OCR is gated to
+ * `restaurant_menu` — its only consumer — so non-menu scans never pay the
+ * recognition cost. Failure is non-fatal: log and return undefined so the caller
+ * navigates without a preview and the server analysis still runs (mirrors the
+ * label-mode OCR handling in ScanScreen.onShutterPress).
+ */
+export async function resolveMenuLocalOCRText(
+  contentType: ContentType,
+  imageUri: string,
+  recognizeText: (uri: string) => Promise<{ text: string }>,
+): Promise<string | undefined> {
+  if (contentType !== "restaurant_menu") return undefined;
+  try {
+    const result = await recognizeText(imageUri);
+    return result.text || undefined;
+  } catch (err) {
+    logger.error(
+      "[ScanScreen smart menu OCR] recognition failed; navigating without preview",
+      err,
+    );
+    return undefined;
+  }
+}
+
+/** A side effect the smart-scan confirm handler should perform. */
+export type SmartConfirmAction =
+  | { kind: "navigate"; route: ClassificationRoute }
+  | { kind: "reset" }
+  | { kind: "abort" };
+
+/**
+ * Resolve what a smart-scan confirm tap should do: premium-gate the content type,
+ * compute the menu OCR head-start, re-check liveness across the OCR await, and
+ * pick the destination route. Extracted from `ScanScreen.onSmartPhotoConfirm` so
+ * the gate / OCR-gating / liveness-abort / routing branches are unit-testable with
+ * the OCR fn and liveness signal injected — the component keeps only the
+ * synchronous re-entrancy guard and the dispatch/navigate side effects.
+ *
+ * `isStillLive` is read AFTER the OCR await: on-device OCR can take ~1s, during
+ * which the user may leave the scan screen (blur → RESET). Returning `abort`
+ * prevents navigating onto a screen they already dismissed. Gate-block and the
+ * no-contentType fallback return before the await (no liveness check needed).
+ */
+export async function resolveSmartConfirmAction({
+  classification,
+  imageUri,
+  features,
+  recognizeText,
+  isStillLive,
+}: {
+  classification: Pick<
+    PhotoAnalysisResponse,
+    "contentType" | "resolvedIntent" | "barcode"
+  >;
+  imageUri: string;
+  features: PremiumFeatures;
+  recognizeText: (uri: string) => Promise<{ text: string }>;
+  isStillLive: () => boolean;
+}): Promise<SmartConfirmAction> {
+  const contentType = classification.contentType;
+  if (!contentType) {
+    return {
+      kind: "navigate",
+      route: {
+        screen: "PhotoAnalysis",
+        params: { imageUri, intent: classification.resolvedIntent ?? "log" },
+      },
+    };
+  }
+  const gate = getPremiumGate(contentType);
+  if (gate && !features[gate.feature]) {
+    return { kind: "reset" };
+  }
+  const localOCRText = await resolveMenuLocalOCRText(
+    contentType,
+    imageUri,
+    recognizeText,
+  );
+  if (!isStillLive()) return { kind: "abort" };
+  const route = getRouteForContentType(
+    contentType,
+    imageUri,
+    classification.resolvedIntent ?? null,
+    classification.barcode ?? null,
+    localOCRText,
+  );
+  return route ? { kind: "navigate", route } : { kind: "reset" };
 }
 
 /** Whether the confidence is high enough to auto-route without confirmation */

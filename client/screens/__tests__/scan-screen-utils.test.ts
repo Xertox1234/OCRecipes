@@ -1,11 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   getRouteForContentType,
   shouldAutoRoute,
   getConfirmationMessage,
   getContentTypeLabel,
   getPremiumGate,
+  resolveMenuLocalOCRText,
+  resolveSmartConfirmAction,
 } from "../scan-screen-utils";
+import { logger } from "@/lib/logger";
+import { TIER_FEATURES } from "@shared/types/premium";
 
 describe("scan-screen-utils", () => {
   describe("getRouteForContentType", () => {
@@ -215,6 +219,207 @@ describe("scan-screen-utils", () => {
       expect(getPremiumGate("nutrition_label")).toBeNull();
       expect(getPremiumGate("non_food")).toBeNull();
       expect(getPremiumGate("has_barcode")).toBeNull();
+    });
+  });
+
+  describe("resolveMenuLocalOCRText", () => {
+    it("returns recognized text for restaurant_menu", async () => {
+      const recognize = vi
+        .fn()
+        .mockResolvedValue({ text: "Burger $10\nFries $4" });
+      const result = await resolveMenuLocalOCRText(
+        "restaurant_menu",
+        "/tmp/menu.jpg",
+        recognize,
+      );
+      expect(recognize).toHaveBeenCalledWith("/tmp/menu.jpg");
+      expect(result).toBe("Burger $10\nFries $4");
+    });
+
+    it("skips OCR and returns undefined for non-menu content", async () => {
+      const recognize = vi.fn();
+      const result = await resolveMenuLocalOCRText(
+        "prepared_meal",
+        "/tmp/meal.jpg",
+        recognize,
+      );
+      expect(recognize).not.toHaveBeenCalled();
+      expect(result).toBeUndefined();
+    });
+
+    it("returns undefined when OCR yields empty text", async () => {
+      const recognize = vi.fn().mockResolvedValue({ text: "" });
+      const result = await resolveMenuLocalOCRText(
+        "restaurant_menu",
+        "/tmp/menu.jpg",
+        recognize,
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it("returns undefined and logs when OCR throws (non-fatal)", async () => {
+      const errorSpy = vi
+        .spyOn(logger, "error")
+        .mockImplementation(() => undefined);
+      const recognize = vi.fn().mockRejectedValue(new Error("mlkit boom"));
+      const result = await resolveMenuLocalOCRText(
+        "restaurant_menu",
+        "/tmp/menu.jpg",
+        recognize,
+      );
+      expect(result).toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledOnce();
+      errorSpy.mockRestore();
+    });
+  });
+
+  describe("resolveSmartConfirmAction", () => {
+    const menuAllowed = { ...TIER_FEATURES.free, menuScanner: true };
+    const menuBlocked = { ...TIER_FEATURES.free, menuScanner: false };
+    const live = () => true;
+
+    it("navigates to PhotoAnalysis (no OCR) when contentType is absent", async () => {
+      const recognize = vi.fn();
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: undefined,
+          resolvedIntent: "log",
+          barcode: null,
+        },
+        imageUri: "/tmp/x.jpg",
+        features: menuAllowed,
+        recognizeText: recognize,
+        isStillLive: live,
+      });
+      expect(recognize).not.toHaveBeenCalled();
+      expect(action).toEqual({
+        kind: "navigate",
+        route: {
+          screen: "PhotoAnalysis",
+          params: { imageUri: "/tmp/x.jpg", intent: "log" },
+        },
+      });
+    });
+
+    it("resets (no OCR) when the content type's premium feature is off", async () => {
+      const recognize = vi.fn();
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: "restaurant_menu",
+          resolvedIntent: null,
+          barcode: null,
+        },
+        imageUri: "/tmp/menu.jpg",
+        features: menuBlocked,
+        recognizeText: recognize,
+        isStillLive: live,
+      });
+      expect(recognize).not.toHaveBeenCalled();
+      expect(action).toEqual({ kind: "reset" });
+    });
+
+    it("computes OCR and navigates to MenuScanResult with localOCRText for an allowed menu", async () => {
+      const recognize = vi.fn().mockResolvedValue({ text: "Burger $10" });
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: "restaurant_menu",
+          resolvedIntent: null,
+          barcode: null,
+        },
+        imageUri: "/tmp/menu.jpg",
+        features: menuAllowed,
+        recognizeText: recognize,
+        isStillLive: live,
+      });
+      expect(recognize).toHaveBeenCalledWith("/tmp/menu.jpg");
+      expect(action).toEqual({
+        kind: "navigate",
+        route: {
+          screen: "MenuScanResult",
+          params: { imageUri: "/tmp/menu.jpg", localOCRText: "Burger $10" },
+        },
+      });
+    });
+
+    it("aborts (no navigation) when the user left the screen during OCR", async () => {
+      const recognize = vi.fn().mockResolvedValue({ text: "Burger $10" });
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: "restaurant_menu",
+          resolvedIntent: null,
+          barcode: null,
+        },
+        imageUri: "/tmp/menu.jpg",
+        features: menuAllowed,
+        recognizeText: recognize,
+        isStillLive: () => false,
+      });
+      expect(recognize).toHaveBeenCalled();
+      expect(action).toEqual({ kind: "abort" });
+    });
+
+    it("navigates a non-menu type without invoking OCR", async () => {
+      const recognize = vi.fn();
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: "prepared_meal",
+          resolvedIntent: "log",
+          barcode: null,
+        },
+        imageUri: "/tmp/meal.jpg",
+        features: menuAllowed,
+        recognizeText: recognize,
+        isStillLive: live,
+      });
+      expect(recognize).not.toHaveBeenCalled();
+      expect(action).toEqual({
+        kind: "navigate",
+        route: {
+          screen: "PhotoAnalysis",
+          params: { imageUri: "/tmp/meal.jpg", intent: "log" },
+        },
+      });
+    });
+
+    it("resets when the route resolves to null (has_barcode without a barcode)", async () => {
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: "has_barcode",
+          resolvedIntent: null,
+          barcode: null,
+        },
+        imageUri: "/tmp/x.jpg",
+        features: menuAllowed,
+        recognizeText: vi.fn(),
+        isStillLive: live,
+      });
+      expect(action).toEqual({ kind: "reset" });
+    });
+
+    it("navigates without localOCRText when menu OCR throws (non-fatal)", async () => {
+      const errorSpy = vi
+        .spyOn(logger, "error")
+        .mockImplementation(() => undefined);
+      const recognize = vi.fn().mockRejectedValue(new Error("boom"));
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: "restaurant_menu",
+          resolvedIntent: null,
+          barcode: null,
+        },
+        imageUri: "/tmp/menu.jpg",
+        features: menuAllowed,
+        recognizeText: recognize,
+        isStillLive: live,
+      });
+      expect(action).toEqual({
+        kind: "navigate",
+        route: {
+          screen: "MenuScanResult",
+          params: { imageUri: "/tmp/menu.jpg", localOCRText: undefined },
+        },
+      });
+      errorSpy.mockRestore();
     });
   });
 });
