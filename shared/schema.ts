@@ -23,6 +23,11 @@ import type { DerivedRecipeAllergen } from "./constants/allergens";
 import type { MealSuggestion } from "./types/meal-suggestions";
 import type { ReminderMutes, ReminderType } from "./types/reminders";
 import type { MeasurementUnit } from "./lib/units";
+import type {
+  ConsensusNutritionData,
+  VerificationNutrition,
+} from "./types/verification";
+import type { FrontLabelData } from "./types/front-label";
 
 export const users = pgTable(
   "users",
@@ -1624,9 +1629,11 @@ export const barcodeVerifications = pgTable(
     verificationLevel: text("verification_level")
       .default("unverified")
       .notNull(),
-    consensusNutritionData: jsonb("consensus_nutrition_data"),
+    consensusNutritionData: jsonb(
+      "consensus_nutrition_data",
+    ).$type<ConsensusNutritionData>(),
     verificationCount: integer("verification_count").default(0).notNull(),
-    frontLabelData: jsonb("front_label_data"),
+    frontLabelData: jsonb("front_label_data").$type<FrontLabelData>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .default(sql`CURRENT_TIMESTAMP`)
       .notNull(),
@@ -1653,7 +1660,9 @@ export const verificationHistory = pgTable(
     userId: varchar("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
-    extractedNutrition: jsonb("extracted_nutrition").notNull(),
+    extractedNutrition: jsonb("extracted_nutrition")
+      .$type<VerificationNutrition>()
+      .notNull(),
     ocrConfidence: decimal("ocr_confidence", {
       precision: 3,
       scale: 2,
@@ -1691,7 +1700,8 @@ export const reformulationFlags = pgTable(
       .notNull(),
     status: text("status").default("flagged").notNull(), // flagged | resolved
     divergentScanCount: integer("divergent_scan_count").default(0).notNull(),
-    previousConsensus: jsonb("previous_consensus"), // snapshot of old consensus for audit
+    previousConsensus:
+      jsonb("previous_consensus").$type<ConsensusNutritionData>(), // snapshot of old consensus for audit
     previousVerificationLevel: text("previous_verification_level"),
     previousVerificationCount: integer("previous_verification_count"),
     detectedAt: timestamp("detected_at", { withTimezone: true })

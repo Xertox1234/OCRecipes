@@ -261,10 +261,7 @@ export async function submitVerification(
       .values({
         barcode,
         userId,
-        extractedNutrition: extractedNutrition as unknown as Record<
-          string,
-          unknown
-        >,
+        extractedNutrition,
         ocrConfidence: ocrConfidence.toFixed(2),
         isMatch,
       })
@@ -325,10 +322,7 @@ export async function submitVerification(
       .set({
         verificationLevel: newLevel,
         verificationCount: matchingCount,
-        consensusNutritionData: consensusData as unknown as Record<
-          string,
-          unknown
-        > | null,
+        consensusNutritionData: consensusData,
         updatedAt: new Date(),
       })
       .where(eq(barcodeVerifications.barcode, barcode));
@@ -373,7 +367,7 @@ export async function confirmFrontLabelData(
     await tx
       .update(barcodeVerifications)
       .set({
-        frontLabelData: data as unknown as Record<string, unknown>,
+        frontLabelData: data,
         updatedAt: new Date(),
       })
       .where(eq(barcodeVerifications.barcode, barcode));

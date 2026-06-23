@@ -28,7 +28,12 @@ const verificationHistoryDefaults: VerificationHistoryEntry = {
   id: 1,
   barcode: "0123456789",
   userId: "1",
-  extractedNutrition: {},
+  extractedNutrition: {
+    calories: 200,
+    protein: 10,
+    totalCarbs: 25,
+    totalFat: 8,
+  },
   ocrConfidence: "0.95",
   isMatch: null,
   frontLabelScanned: false,

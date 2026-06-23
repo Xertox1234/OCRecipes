@@ -65,10 +65,7 @@ export async function flagReformulation(
       barcode,
       status: "flagged",
       divergentScanCount,
-      previousConsensus: previousConsensus as unknown as Record<
-        string,
-        unknown
-      > | null,
+      previousConsensus,
       previousVerificationLevel: previousLevel,
       previousVerificationCount: previousCount,
     });

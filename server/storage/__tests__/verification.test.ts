@@ -236,15 +236,10 @@ describe("verification storage", () => {
       const userB = await createTestUser(tx);
 
       // Insert two history rows manually with distinct timestamps.
-      // Cast: jsonb column infers as `Record<string, unknown>` from Drizzle —
-      // bridge our domain `VerificationNutrition` shape into the column type.
       await tx.insert(verificationHistory).values({
         barcode,
         userId: testUser.id,
-        extractedNutrition: makeNutrition() as unknown as Record<
-          string,
-          unknown
-        >,
+        extractedNutrition: makeNutrition(),
         ocrConfidence: "0.90",
         isMatch: true,
         createdAt: new Date("2026-01-01T00:00:00Z"),
@@ -252,10 +247,7 @@ describe("verification storage", () => {
       await tx.insert(verificationHistory).values({
         barcode,
         userId: userB.id,
-        extractedNutrition: makeNutrition() as unknown as Record<
-          string,
-          unknown
-        >,
+        extractedNutrition: makeNutrition(),
         ocrConfidence: "0.95",
         isMatch: true,
         createdAt: new Date("2026-02-01T00:00:00Z"),
@@ -571,11 +563,9 @@ describe("verification storage", () => {
       await confirmFrontLabelData(barcode, testUser.id, second);
 
       const verification = await getVerification(barcode);
-      // Cast: jsonb column infers as `unknown` from Drizzle — narrow back to
-      // the domain `FrontLabelData` shape to read `.brand`.
-      expect(
-        (verification!.frontLabelData as unknown as FrontLabelData).brand,
-      ).toBe("Second");
+      // frontLabelData is now typed FrontLabelData | null via the column's
+      // .$type<>() annotation — no cast needed to read .brand.
+      expect(verification!.frontLabelData?.brand).toBe("Second");
     });
   });
 
@@ -719,15 +709,10 @@ describe("verification storage", () => {
     // we can control the date sequence without depending on transaction
     // timestamps.
     async function seedHistoryOnDay(barcode: string, day: Date): Promise<void> {
-      // Cast: jsonb column infers as `Record<string, unknown>` from Drizzle —
-      // bridge our domain `VerificationNutrition` shape into the column type.
       await tx.insert(verificationHistory).values({
         barcode,
         userId: testUser.id,
-        extractedNutrition: makeNutrition() as unknown as Record<
-          string,
-          unknown
-        >,
+        extractedNutrition: makeNutrition(),
         ocrConfidence: "0.95",
         isMatch: true,
         createdAt: day,
