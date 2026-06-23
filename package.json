@@ -44,6 +44,8 @@
     "prepare": "husky",
     "android": "expo run:android",
     "ios": "expo run:ios",
+    "update:preview": "CI=1 EXPO_PUBLIC_DOMAIN=https://api.ocrecipes.com EXPO_PUBLIC_SENTRY_DSN=https://bf62b005c5085c50b08ad690c613ded4@o4511605735489536.ingest.us.sentry.io/4511605740142592 sh -c 'case \"$*\" in *--message*) ;; *) echo \"error: --message is required. Usage: npm run update:preview -- --message \\\"your message\\\"\" >&2; exit 1 ;; esac; case \"$*\" in *--platform*) echo \"error: do not pass --platform; this script always publishes both native targets via --platform all\" >&2; exit 1 ;; esac; exec eas update --branch preview --platform all \"$@\"' --",
+    "update:production": "CI=1 EXPO_PUBLIC_DOMAIN=https://api.ocrecipes.com EXPO_PUBLIC_SENTRY_DSN=https://bf62b005c5085c50b08ad690c613ded4@o4511605735489536.ingest.us.sentry.io/4511605740142592 sh -c 'case \"$*\" in *--message*) ;; *) echo \"error: --message is required. Usage: npm run update:production -- --message \\\"your message\\\"\" >&2; exit 1 ;; esac; case \"$*\" in *--platform*) echo \"error: do not pass --platform; this script always publishes both native targets via --platform all\" >&2; exit 1 ;; esac; exec eas update --branch production --platform all \"$@\"' --",
     "seed:recipes": "tsx server/scripts/seed-recipes.ts",
     "solutions:db:init": "psql \"$SOLUTIONS_DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/solutions-db/schema.sql",
     "solutions:db:add": "tsx scripts/solutions-db/add.ts",
