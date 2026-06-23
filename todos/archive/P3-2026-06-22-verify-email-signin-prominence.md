@@ -1,6 +1,6 @@
 ---
 title: "Promote the 'Back to sign in' affordance when VerifyEmailScreen is in the linkSent state"
-status: review
+status: done
 priority: low
 created: 2026-06-22
 updated: 2026-06-22
@@ -115,3 +115,9 @@ the linkSent case.
   (the `cfd8afa7` branch's stale `status: blocked` todo-edit was deliberately
   dropped). The superseded `todo/P3-…` branch was deleted from origin. Set
   `status: review`; archive on merge.
+
+### 2026-06-22 (done — PR #430 merged)
+
+- PR #430 squash-merged to `main` @ `cb0f296a`; CI green. The `linkSent` variant
+  swap is live in `VerifyEmailScreen.tsx` (Resend → ghost, Back to sign in →
+  primary) and AA-clean via `accentSolid`. Archived.
