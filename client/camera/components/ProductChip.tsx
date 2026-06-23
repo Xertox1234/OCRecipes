@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   Platform,
   StyleSheet,
   View,
@@ -43,6 +44,12 @@ interface Props {
   onSmartPhotoConfirm: () => void;
   onRetry: () => void;
   /**
+   * True while the smart-photo confirm handler is awaiting on-device OCR (menu
+   * path). Drives a visible pending state on the smart-photo confirm button —
+   * the parent's `isConfirmingRef` is a ref and can't trigger this re-render.
+   */
+  isSmartConfirming?: boolean;
+  /**
    * Forwarded to the chip's root view. ScanScreen sets this to
    * `"no-hide-descendants"` while the confirm overlay is up so the chip leaves
    * the Android TalkBack tree (the chip's own `accessibilityViewIsModal` only
@@ -62,12 +69,14 @@ export function ProductChip({
   onSmartPhotoConfirm,
   onRetry,
   importantForAccessibility,
+  isSmartConfirming = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(200);
   const variant = getProductChipVariant(phase);
   const [shouldRender, setShouldRender] = useState(variant !== null);
   const prevVariantRef = useRef<typeof variant>(null);
+  const prevSmartConfirmingRef = useRef(false);
 
   useEffect(() => {
     if (variant !== null) {
@@ -88,6 +97,23 @@ export function ProductChip({
     prevVariantRef.current = variant;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY is a stable useSharedValue ref; `phase` is read only to build the announce string on the null→non-null variant transition and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers it).
   }, [variant]);
+
+  // Announce the smart-confirm pending state on iOS. accessibilityState.busy
+  // does NOT post a VoiceOver announcement on iOS, and accessibilityLiveRegion
+  // is Android-only — so the on-device OCR wait would otherwise be silent for
+  // VoiceOver users. Fire only on the false→true edge (not on mount, and not
+  // when it clears) and gate to iOS to avoid double-announce with the Android
+  // live region.
+  useEffect(() => {
+    if (
+      isSmartConfirming &&
+      !prevSmartConfirmingRef.current &&
+      Platform.OS === "ios"
+    ) {
+      AccessibilityInfo.announceForAccessibility("Analyzing photo…");
+    }
+    prevSmartConfirmingRef.current = isSmartConfirming;
+  }, [isSmartConfirming]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -230,12 +256,23 @@ export function ProductChip({
             </Text>
           </View>
           <TouchableOpacity
-            style={styles.btnPrimary}
+            style={[styles.btnPrimary, isSmartConfirming && styles.btnPending]}
             onPress={onSmartPhotoConfirm}
+            disabled={isSmartConfirming}
             accessibilityLabel="Confirm smart photo analysis"
             accessibilityRole="button"
+            // TouchableOpacity does not auto-propagate `disabled` to
+            // accessibilityState (unlike Pressable) — set it explicitly.
+            accessibilityState={{
+              busy: isSmartConfirming,
+              disabled: isSmartConfirming,
+            }}
           >
-            <Text style={styles.btnPrimaryText}>Looks right →</Text>
+            {isSmartConfirming ? (
+              <ActivityIndicator size="small" color="#000" />
+            ) : (
+              <Text style={styles.btnPrimaryText}>Looks right →</Text>
+            )}
           </TouchableOpacity>
         </>
       )}
@@ -307,6 +344,9 @@ const styles = StyleSheet.create({
     color: "#000", // hardcoded — camera overlay
     fontWeight: "700",
     fontSize: 15,
+  },
+  btnPending: {
+    opacity: 0.6,
   },
   btnSecondary: {
     backgroundColor: "rgba(255,255,255,0.1)",
