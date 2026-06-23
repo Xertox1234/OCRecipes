@@ -53,11 +53,7 @@ import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { logger } from "@/lib/logger";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
-import {
-  getPremiumGate,
-  getRouteForContentType,
-  resolveMenuLocalOCRText,
-} from "@/screens/scan-screen-utils";
+import { resolveSmartConfirmAction } from "@/screens/scan-screen-utils";
 import {
   buildLoadingConfirmCard,
   buildLoadedConfirmCard,
@@ -660,44 +656,19 @@ export default function ScanScreen() {
           isConfirmingRef.current = true;
           try {
             const { classification, imageUri } = scanPhase;
-            const contentType = classification.contentType;
-            if (!contentType) {
-              navigation.navigate("PhotoAnalysis", {
-                imageUri,
-                intent: classification.resolvedIntent ?? "log",
-              });
-              return;
-            }
-            // Gate on the SPECIFIC feature flag (not blanket isPremium), mirroring
-            // the manual picker (isIntentOptionLocked). features[gate.feature]
-            // already reflects the user's tier, so this future-proofs a partial-
-            // premium tier where isPremium is true but a single feature is off.
-            const gate = getPremiumGate(contentType);
-            if (gate && !features[gate.feature]) {
-              dispatch({ type: "RESET" });
-              return;
-            }
-            // Menus: compute on-device OCR so MenuScanResult renders an instant
-            // local skeleton while the AI analysis loads (no-op for other types).
-            const localOCRText = await resolveMenuLocalOCRText(
-              contentType,
+            const action = await resolveSmartConfirmAction({
+              classification,
               imageUri,
-              recognizeTextFromPhoto,
-            );
-            // Liveness re-check: the OCR await above can take ~1s on a dense menu.
-            // If the user left the scan screen during that window, the blur effect
-            // (line 153) dispatched RESET, so the phase is no longer SMART_CONFIRMED.
-            // Read the mirrored ref (not the stale closure) and bail rather than
-            // navigate onto a screen the user already dismissed.
-            if (scanPhaseRef.current.type !== "SMART_CONFIRMED") return;
-            const route = getRouteForContentType(
-              contentType,
-              imageUri,
-              classification.resolvedIntent ?? null,
-              classification.barcode ?? null,
-              localOCRText,
-            );
-            if (route) {
+              features,
+              recognizeText: recognizeTextFromPhoto,
+              // Liveness across the OCR await: navigation.isFocused() is real-time
+              // (not subject to React state-mirror timing); paired with the phase
+              // ref it bails if the user left the scan screen during recognition.
+              isStillLive: () =>
+                navigation.isFocused() &&
+                scanPhaseRef.current.type === "SMART_CONFIRMED",
+            });
+            if (action.kind === "navigate") {
               // navigate accepts a variable screen name from a discriminated union;
               // cast the whole function signature to avoid React Navigation's strict
               // per-screen overloads while keeping params typed via ClassificationRoute.
@@ -707,12 +678,13 @@ export default function ScanScreen() {
                   params?: Record<string, unknown>,
                 ) => void
               )(
-                route.screen,
-                route.params as Record<string, unknown> | undefined,
+                action.route.screen,
+                action.route.params as Record<string, unknown> | undefined,
               );
-            } else {
+            } else if (action.kind === "reset") {
               dispatch({ type: "RESET" });
             }
+            // action.kind === "abort": user left during OCR — do nothing.
           } finally {
             isConfirmingRef.current = false;
           }
