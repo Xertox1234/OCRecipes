@@ -1,6 +1,6 @@
 ---
 title: "Create EAS Update publish scripts (npm run update:preview / update:production)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-21
 updated: 2026-06-21
