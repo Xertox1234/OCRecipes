@@ -422,7 +422,7 @@ export function RecipeGenerationModal({
                   styles.toggleTrack,
                   {
                     backgroundColor: shareToPublic
-                      ? accentColor
+                      ? theme.accentSolid
                       : theme.backgroundTertiary,
                   },
                 ]}
@@ -466,7 +466,7 @@ export function RecipeGenerationModal({
               {
                 backgroundColor: isGenerating
                   ? theme.backgroundSecondary
-                  : accentColor,
+                  : theme.accentSolid,
               },
             ]}
             accessibilityLabel="Generate recipe"

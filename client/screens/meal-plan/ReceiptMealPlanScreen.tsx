@@ -204,7 +204,7 @@ export default function ReceiptMealPlanScreen() {
                         ? theme.accentSolid
                         : withOpacity(theme.text, 0.06),
                       borderColor: isSelected
-                        ? theme.link
+                        ? theme.accentSolid
                         : withOpacity(theme.text, 0.12),
                     },
                   ]}

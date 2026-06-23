@@ -59,7 +59,7 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
     [theme.error],
   );
   const remixBadgeColor = useMemo(
-    () => withOpacity(theme.link, 0.9),
+    () => withOpacity(theme.accentSolid, 0.9),
     [theme.link],
   );
   const fallbackStyle = useMemo(

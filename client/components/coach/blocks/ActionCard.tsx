@@ -79,7 +79,7 @@ const ActionCard = React.memo(function ActionCard({
       ? theme.success
       : state === "error"
         ? theme.error
-        : theme.link;
+        : theme.accentSolid;
 
   return (
     <View

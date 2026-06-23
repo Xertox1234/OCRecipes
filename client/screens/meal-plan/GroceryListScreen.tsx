@@ -123,7 +123,7 @@ function GroceryItemRow({
           styles.checkbox,
           {
             borderColor: item.isChecked
-              ? theme.link
+              ? theme.accentSolid
               : withOpacity(theme.text, 0.3),
             backgroundColor: item.isChecked ? theme.accentSolid : "transparent",
           },

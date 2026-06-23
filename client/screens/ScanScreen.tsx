@@ -791,7 +791,7 @@ export default function ScanScreen() {
                     {
                       backgroundColor: confirmCard.isError
                         ? withOpacity(theme.link, 0.4)
-                        : theme.link,
+                        : theme.accentSolid,
                       opacity: pressed || confirmCard.isLogging ? 0.7 : 1,
                     },
                   ]}
