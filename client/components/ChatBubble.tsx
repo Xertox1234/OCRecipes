@@ -45,7 +45,9 @@ export function ChatBubble({
         accessibilityRole="text"
         accessibilityLabel={`You: ${content}`}
       >
-        <View style={[styles.userBubble, { backgroundColor: theme.link }]}>
+        <View
+          style={[styles.userBubble, { backgroundColor: theme.accentSolid }]}
+        >
           <ThemedText
             type="body"
             style={[styles.userBubbleText, { color: theme.buttonText }]}
@@ -66,7 +68,9 @@ export function ChatBubble({
       accessibilityRole="text"
       accessibilityLabel={`NutriCoach: ${content}`}
     >
-      <View style={[styles.avatarDot, { backgroundColor: theme.link }]} />
+      <View
+        style={[styles.avatarDot, { backgroundColor: theme.accentSolid }]}
+      />
       <View style={styles.assistantContent}>
         <MarkdownText
           style={{ ...styles.assistantBubbleText, color: theme.text }}

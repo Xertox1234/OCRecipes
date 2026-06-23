@@ -259,7 +259,7 @@ export default function DailyNutritionDetailScreen() {
           accessibilityLabel="Retry loading nutrition data"
           style={({ pressed }) => [
             styles.retryButton,
-            { backgroundColor: theme.link, opacity: pressed ? 0.8 : 1 },
+            { backgroundColor: theme.accentSolid, opacity: pressed ? 0.8 : 1 },
           ]}
         >
           <Feather

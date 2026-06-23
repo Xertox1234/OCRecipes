@@ -58,9 +58,12 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
     () => withOpacity(theme.error, 0.9),
     [theme.error],
   );
+  // Near-opaque (0.9) badge fill under a white icon — uses accentSolid (not
+  // link) so the glyph clears contrast; 0.9 lets a little card image bleed
+  // through. This is the one withOpacity exception to "tints stay on link".
   const remixBadgeColor = useMemo(
-    () => withOpacity(theme.link, 0.9),
-    [theme.link],
+    () => withOpacity(theme.accentSolid, 0.9),
+    [theme.accentSolid],
   );
   const fallbackStyle = useMemo(
     () => ({ backgroundColor: theme.backgroundSecondary }),
@@ -90,7 +93,10 @@ export const HomeRecipeCard = React.memo(function HomeRecipeCard({
           {/* Difficulty badge */}
           {recipe.difficulty ? (
             <View
-              style={[styles.difficultyBadge, { backgroundColor: theme.link }]}
+              style={[
+                styles.difficultyBadge,
+                { backgroundColor: theme.accentSolid },
+              ]}
             >
               <ThemedText
                 maxScale={MAX_FONT_SCALE_CONSTRAINED}
@@ -182,7 +188,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     bottom: Spacing.sm,
     left: Spacing.sm,
-    backgroundColor: "transparent", // overridden dynamically with theme.link
+    backgroundColor: "transparent", // overridden dynamically with theme.accentSolid
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.chip,

@@ -213,7 +213,10 @@ export default function BatchScanScreen() {
               void Linking.openSettings();
             }
           }}
-          style={[styles.permissionButton, { backgroundColor: theme.link }]}
+          style={[
+            styles.permissionButton,
+            { backgroundColor: theme.accentSolid },
+          ]}
           accessibilityRole="button"
           accessibilityLabel={
             permission?.canAskAgain
@@ -320,7 +323,7 @@ export default function BatchScanScreen() {
             styles.doneButton,
             {
               bottom: insets.bottom + Spacing.xl,
-              backgroundColor: theme.link,
+              backgroundColor: theme.accentSolid,
             },
           ]}
           accessibilityRole="button"

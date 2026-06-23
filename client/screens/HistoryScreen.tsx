@@ -173,7 +173,7 @@ const HistoryItem = React.memo(function HistoryItem({
           leftAction={{
             icon: item.isFavourited ? "heart" : "heart",
             label: item.isFavourited ? "Unfavorite" : "Favorite",
-            backgroundColor: theme.link,
+            backgroundColor: theme.accentSolid,
             onAction: () => onFavourite(item.id),
           }}
         >
@@ -419,7 +419,7 @@ const DashboardHeader = React.memo(function DashboardHeader({
         {/* Calories card */}
         <Card
           elevation={1}
-          style={[styles.statCard, { backgroundColor: theme.link }]}
+          style={[styles.statCard, { backgroundColor: theme.accentSolid }]}
         >
           <View
             accessible={true}

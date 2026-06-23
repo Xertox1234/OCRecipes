@@ -66,7 +66,7 @@ const MealPlanCard = React.memo(function MealPlanCard({
 
       {expanded && (
         <Pressable
-          style={[styles.addBtn, { backgroundColor: theme.link }]}
+          style={[styles.addBtn, { backgroundColor: theme.accentSolid }]}
           onPress={() =>
             onAction?.({ type: "add_meal_plan", plan: block.days })
           }

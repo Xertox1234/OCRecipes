@@ -192,7 +192,7 @@ export default function QuickLogScreen() {
               style={({ pressed }) => [
                 styles.parseButton,
                 {
-                  backgroundColor: theme.link,
+                  backgroundColor: theme.accentSolid,
                   opacity:
                     pressed || session.isParsing || !session.inputText.trim()
                       ? 0.6

@@ -79,7 +79,7 @@ export function Button({
     switch (variant) {
       case "primary":
         return {
-          backgroundColor: theme.link,
+          backgroundColor: theme.accentSolid,
           textColor: theme.buttonText,
         };
       case "secondary":
@@ -101,7 +101,7 @@ export function Button({
         };
       default:
         return {
-          backgroundColor: theme.link,
+          backgroundColor: theme.accentSolid,
           textColor: theme.buttonText,
         };
     }

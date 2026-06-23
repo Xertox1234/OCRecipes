@@ -105,7 +105,7 @@ export const CalorieBudgetBar = React.memo(function CalorieBudgetBar({
             styles.barFill,
             {
               width: `${progress * 100}%`,
-              backgroundColor: remaining >= 0 ? theme.link : theme.error,
+              backgroundColor: remaining >= 0 ? theme.accentSolid : theme.error,
             },
           ]}
         />

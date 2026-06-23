@@ -369,7 +369,7 @@ export function QuickLogDrawer({ action }: QuickLogDrawerProps) {
                   style={({ pressed }) => [
                     styles.logAllButton,
                     {
-                      backgroundColor: theme.link,
+                      backgroundColor: theme.accentSolid,
                       opacity: pressed || session.isSubmitting ? 0.7 : 1,
                     },
                   ]}

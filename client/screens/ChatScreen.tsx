@@ -89,7 +89,9 @@ const CoachStreamingFooter = React.memo(function CoachStreamingFooter({
       accessibilityRole="text"
       accessibilityLabel="NutriCoach is thinking"
     >
-      <View style={[styles.typingAvatarDot, { backgroundColor: theme.link }]} />
+      <View
+        style={[styles.typingAvatarDot, { backgroundColor: theme.accentSolid }]}
+      />
       <View style={styles.typingIndicator}>
         <ActivityIndicator size="small" color={theme.textSecondary} />
       </View>
@@ -545,8 +547,8 @@ export default function ChatScreen() {
               {
                 backgroundColor:
                   inputText.trim() && !isStreaming
-                    ? theme.link
-                    : withOpacity(theme.link, 0.3),
+                    ? theme.accentSolid
+                    : withOpacity(theme.text, 0.12),
               },
             ]}
             accessibilityRole="button"
@@ -554,9 +556,15 @@ export default function ChatScreen() {
             accessibilityState={{ disabled: !inputText.trim() || isStreaming }}
           >
             {isStreaming ? (
-              <ActivityIndicator color={theme.buttonText} size="small" />
+              <ActivityIndicator color={theme.textSecondary} size="small" />
             ) : (
-              <Feather name="send" size={18} color={theme.buttonText} />
+              <Feather
+                name="send"
+                size={18}
+                color={
+                  inputText.trim() ? theme.buttonText : theme.textSecondary
+                }
+              />
             )}
           </AnimatedPressable>
         </View>

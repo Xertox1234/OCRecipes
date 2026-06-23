@@ -72,7 +72,9 @@ export function Chip({
   const getVariantStyles = () => {
     if (variant === "tab") {
       return {
-        backgroundColor: selected ? theme.link : withOpacity(theme.text, 0.06),
+        backgroundColor: selected
+          ? theme.accentSolid
+          : withOpacity(theme.text, 0.06),
         borderWidth: 0,
         borderColor: "transparent",
         textColor: selected ? theme.buttonText : theme.text,

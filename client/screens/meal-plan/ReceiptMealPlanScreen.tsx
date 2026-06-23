@@ -201,10 +201,10 @@ export default function ReceiptMealPlanScreen() {
                     styles.dayOption,
                     {
                       backgroundColor: isSelected
-                        ? theme.link
+                        ? theme.accentSolid
                         : withOpacity(theme.text, 0.06),
                       borderColor: isSelected
-                        ? theme.link
+                        ? theme.accentSolid
                         : withOpacity(theme.text, 0.12),
                     },
                   ]}
@@ -249,7 +249,10 @@ export default function ReceiptMealPlanScreen() {
 
           <Pressable
             onPress={handleGenerate}
-            style={[styles.generateButton, { backgroundColor: theme.link }]}
+            style={[
+              styles.generateButton,
+              { backgroundColor: theme.accentSolid },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Generate meal plan"
           >
@@ -364,7 +367,7 @@ export default function ReceiptMealPlanScreen() {
           style={[
             styles.saveButton,
             {
-              backgroundColor: theme.link,
+              backgroundColor: theme.accentSolid,
               opacity: saveMutation.isPending || totalMealCount === 0 ? 0.6 : 1,
             },
           ]}

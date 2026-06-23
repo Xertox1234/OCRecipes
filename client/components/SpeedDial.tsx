@@ -110,7 +110,7 @@ export function SpeedDial({ actions, onClose }: SpeedDialProps) {
                   styles.miniFab,
                   Shadows.medium,
                   {
-                    backgroundColor: theme.link,
+                    backgroundColor: theme.accentSolid,
                     opacity: pressed ? 0.8 : 1,
                   },
                 ]}

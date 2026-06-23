@@ -299,6 +299,17 @@ When any background color changes (`backgroundRoot`, `backgroundDefault`, `backg
 
 Contrast tool: https://webaim.org/resources/contrastchecker/ — enter hex foreground + hex background.
 
+### Accent token roles: foreground vs fill (dark-mode AA)
+
+A foreground-tuned accent (e.g. `theme.link`, kept LIGHT so it reads as text/icon on a dark surface) **cannot** also back white content as a solid `backgroundColor` in dark mode — white on `link #E07050` = 3.18:1 (fail), even though the same token passes as text (5.52:1). Solid fills under white content use the separate fill token `theme.accentSolid` (#B5451C = 5.48:1 in both modes). Review rules:
+
+- **Flag** any solid `backgroundColor` resolving to `theme.link` (or another foreground accent) under white text/icons — including via an intermediate variable (`const x = theme.link`), a color prop (`fillColor={theme.link}`), or a ternary branch. It must be `theme.accentSolid`.
+- **Inverse-flag** `theme.accentSolid` used as `color:`/`borderColor:`/`tintColor:` — as text it is only 3.23:1 (a new failure). `accentSolid` is fills-only.
+- On a token-migration diff, audit indirection (vars, color props, BOTH ternary branches, near-opaque `withOpacity(…, ≥0.85)`) — a literal grep silently misses these; three real AA-failing CTAs survived the first sweep here.
+- When an a11y color change darkens an "active" fill, **flag** any enabled/disabled or selected distinction that then rests on background lightness alone — require an orthogonal cue (hue + icon contrast). Disabled controls are WCAG 1.4.3-exempt, so a muted-on-neutral disabled state is fine.
+
+Solutions DB: `dark-mode-accent-token-foreground-vs-fill-split`, `token-migration-sweep-misses-variable-and-prop-indirection`, `restore-state-affordance-when-aa-fix-collapses-luminance-cue`.
+
 ---
 
 ## Gaps in `check-accessibility.js` Pre-Commit Script

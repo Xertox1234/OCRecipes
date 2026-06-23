@@ -372,7 +372,7 @@ export default function BatchSummaryScreen() {
         style={[
           styles.confirmButton,
           {
-            backgroundColor: canConfirm ? theme.link : theme.border,
+            backgroundColor: canConfirm ? theme.accentSolid : theme.border,
           },
         ]}
         accessibilityRole="button"

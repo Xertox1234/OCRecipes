@@ -184,7 +184,10 @@ export default function GroceryListsScreen() {
                   haptics.impact();
                   void refetch();
                 }}
-                style={[styles.generateButton, { backgroundColor: theme.link }]}
+                style={[
+                  styles.generateButton,
+                  { backgroundColor: theme.accentSolid },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Retry loading grocery lists"
               >
@@ -283,7 +286,7 @@ export default function GroceryListsScreen() {
                   style={[
                     styles.generateButton,
                     {
-                      backgroundColor: theme.link,
+                      backgroundColor: theme.accentSolid,
                       opacity: isCreatingList ? 0.6 : 1,
                     },
                   ]}
@@ -309,7 +312,10 @@ export default function GroceryListsScreen() {
           }}
           style={[
             styles.fab,
-            { backgroundColor: theme.link, bottom: tabBarHeight + Spacing.md },
+            {
+              backgroundColor: theme.accentSolid,
+              bottom: tabBarHeight + Spacing.md,
+            },
           ]}
           accessibilityRole="button"
           accessibilityLabel="Generate new grocery list"

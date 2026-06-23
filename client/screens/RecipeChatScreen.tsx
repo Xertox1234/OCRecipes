@@ -442,7 +442,7 @@ export default function RecipeChatScreen() {
               style={[
                 styles.messageBubble,
                 isUser
-                  ? [styles.userBubble, { backgroundColor: theme.link }]
+                  ? [styles.userBubble, { backgroundColor: theme.accentSolid }]
                   : isError
                     ? [
                         styles.assistantBubble,
@@ -720,8 +720,8 @@ export default function RecipeChatScreen() {
             {
               backgroundColor:
                 inputText.trim() && !isStreaming
-                  ? theme.link
-                  : withOpacity(theme.link, 0.3),
+                  ? theme.accentSolid
+                  : withOpacity(theme.text, 0.12),
             },
           ]}
           accessibilityRole="button"
@@ -729,9 +729,13 @@ export default function RecipeChatScreen() {
           accessibilityState={{ disabled: !inputText.trim() || isStreaming }}
         >
           {isStreaming ? (
-            <ActivityIndicator size="small" color={theme.buttonText} />
+            <ActivityIndicator size="small" color={theme.textSecondary} />
           ) : (
-            <Feather name="send" size={18} color={theme.buttonText} />
+            <Feather
+              name="send"
+              size={18}
+              color={inputText.trim() ? theme.buttonText : theme.textSecondary}
+            />
           )}
         </Pressable>
       </View>

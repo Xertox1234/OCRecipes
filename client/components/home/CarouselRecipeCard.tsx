@@ -159,7 +159,9 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
             <View
               style={[
                 styles.remixBadge,
-                { backgroundColor: withOpacity(theme.link, 0.9) },
+                // Near-opaque (0.9) fill under a white icon — accentSolid (not
+                // link) so the glyph clears contrast; the one withOpacity exception.
+                { backgroundColor: withOpacity(theme.accentSolid, 0.9) },
               ]}
               accessibilityLabel="Remixed recipe"
             >

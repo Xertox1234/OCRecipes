@@ -74,7 +74,7 @@ export const ServingControls = React.memo(function ServingControls({
                   styles.servingChip,
                   {
                     backgroundColor: isActive
-                      ? theme.link
+                      ? theme.accentSolid
                       : withOpacity(theme.text, 0.06),
                   },
                   pressed && { opacity: 0.7 },
@@ -107,7 +107,7 @@ export const ServingControls = React.memo(function ServingControls({
               styles.servingChip,
               {
                 backgroundColor: showCustomInput
-                  ? theme.link
+                  ? theme.accentSolid
                   : withOpacity(theme.text, 0.06),
               },
               pressed && { opacity: 0.7 },

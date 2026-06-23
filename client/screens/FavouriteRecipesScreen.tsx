@@ -210,7 +210,10 @@ export default function FavouriteRecipesScreen() {
                   haptics.impact();
                   void refetch();
                 }}
-                style={[styles.retryButton, { backgroundColor: theme.link }]}
+                style={[
+                  styles.retryButton,
+                  { backgroundColor: theme.accentSolid },
+                ]}
                 accessibilityRole="button"
                 accessibilityLabel="Retry loading favourites"
               >

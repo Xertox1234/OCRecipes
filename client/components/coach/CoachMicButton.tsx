@@ -78,7 +78,7 @@ export default function CoachMicButton({
         <Pressable
           style={[
             styles.button,
-            { backgroundColor: isListening ? theme.error : theme.link },
+            { backgroundColor: isListening ? theme.error : theme.accentSolid },
           ]}
           onPress={onPress}
           accessibilityRole="togglebutton"

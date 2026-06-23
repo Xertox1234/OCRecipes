@@ -39,7 +39,7 @@ export function OnboardingProgressBar({
         <ProgressSegment
           key={i}
           filled={i <= currentStep}
-          filledColor={theme.link}
+          filledColor={theme.accentSolid}
           unfilledColor={theme.backgroundTertiary}
         />
       ))}

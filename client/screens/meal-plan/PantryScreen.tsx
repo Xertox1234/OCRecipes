@@ -232,7 +232,10 @@ export default function PantryScreen() {
           </ThemedText>
           <Pressable
             onPress={() => setShowUpgradeModal(true)}
-            style={[styles.upgradeButton, { backgroundColor: theme.link }]}
+            style={[
+              styles.upgradeButton,
+              { backgroundColor: theme.accentSolid },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Upgrade to premium"
           >
@@ -426,7 +429,7 @@ export default function PantryScreen() {
               style={[
                 styles.addButton,
                 {
-                  backgroundColor: theme.link,
+                  backgroundColor: theme.accentSolid,
                   opacity:
                     !newItemName.trim() || createMutation.isPending ? 0.4 : 1,
                 },

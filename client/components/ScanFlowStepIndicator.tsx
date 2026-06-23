@@ -40,7 +40,7 @@ export function ScanFlowStepIndicator({
         <StepSegment
           key={i}
           active={i < currentStep}
-          activeColor={theme.link}
+          activeColor={theme.accentSolid}
           inactiveColor={theme.backgroundTertiary}
         />
       ))}

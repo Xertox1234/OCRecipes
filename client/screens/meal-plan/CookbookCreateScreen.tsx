@@ -242,7 +242,7 @@ export default function CookbookCreateScreen() {
             styles.submitButton,
             {
               backgroundColor: canSubmit
-                ? theme.link
+                ? theme.accentSolid
                 : withOpacity(theme.link, 0.3),
             },
           ]}
