@@ -131,6 +131,8 @@ export default function PhotoIntentScreen() {
       navigation.navigate("CookSessionCapture", { initialPhotoUri: imageUri });
     } else if (option.intent === "label") {
       navigation.navigate("LabelAnalysis", { imageUri });
+    } else if (option.intent === "menu") {
+      navigation.navigate("MenuScanResult", { imageUri });
     } else {
       navigation.navigate("PhotoAnalysis", {
         imageUri,

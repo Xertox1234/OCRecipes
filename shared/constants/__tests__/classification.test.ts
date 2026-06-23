@@ -131,8 +131,8 @@ describe("classification constants", () => {
       expect(CONTENT_TYPE_TO_INTENT.nutrition_label).toBe("label");
     });
 
-    it("maps restaurant_menu to menu", () => {
-      expect(CONTENT_TYPE_TO_INTENT.restaurant_menu).toBe("menu");
+    it("maps restaurant_menu to null (handled by the dedicated menu-scan pipeline, not photo logging)", () => {
+      expect(CONTENT_TYPE_TO_INTENT.restaurant_menu).toBeNull();
     });
 
     it("maps raw_ingredients to recipe", () => {

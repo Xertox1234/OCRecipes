@@ -35,16 +35,16 @@ describe("scan-screen-utils", () => {
       });
     });
 
-    it("routes restaurant_menu to PhotoAnalysis with menu intent", () => {
+    it("routes restaurant_menu to the dedicated MenuScanResult screen", () => {
       const route = getRouteForContentType(
         "restaurant_menu",
         "/tmp/menu.jpg",
-        "menu",
+        null,
         null,
       );
       expect(route).toEqual({
-        screen: "PhotoAnalysis",
-        params: { imageUri: "/tmp/menu.jpg", intent: "menu" },
+        screen: "MenuScanResult",
+        params: { imageUri: "/tmp/menu.jpg" },
       });
     });
 

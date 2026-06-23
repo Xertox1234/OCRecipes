@@ -62,8 +62,8 @@ export function getRouteForContentType(
       };
     case "restaurant_menu":
       return {
-        screen: "PhotoAnalysis",
-        params: { imageUri, intent: "menu" },
+        screen: "MenuScanResult",
+        params: { imageUri },
       };
     case "raw_ingredients":
       return {

@@ -126,16 +126,11 @@ export function register(app: Express): void {
 
         // Parse intent from multipart form parameters (default: "log")
         // Supports "auto" for smart scan classification
+        // "menu" is intentionally NOT accepted here — restaurant menus are
+        // parsed by the dedicated /api/menu/scan pipeline, not photo logging.
+        // A stray intent=menu falls back to "log" via .catch (not a 500).
         const intentSchema = z
-          .enum([
-            "auto",
-            "log",
-            "calories",
-            "identify",
-            "recipe",
-            "menu",
-            "label",
-          ])
+          .enum(["auto", "log", "calories", "identify", "recipe", "label"])
           .catch("log");
         const intentRaw = intentSchema.parse(
           req.body?.intent ?? "log",

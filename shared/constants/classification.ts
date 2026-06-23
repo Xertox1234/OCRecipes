@@ -27,12 +27,16 @@ export type PhotoIntentOrAuto = PhotoIntent | "auto";
 
 /**
  * Mapping from content type to the resolved PhotoIntent used for analysis.
- * Content types that don't map to a PhotoIntent (receipts, non_food) resolve to null.
+ * Content types that don't map to a photo-logging PhotoIntent resolve to null:
+ * receipts and non_food (no analysis), and restaurant_menu (parsed by the
+ * dedicated menu-scan pipeline `analyzeMenuPhoto` / `/api/menu/scan`, so the
+ * auto-classify path returns classification-only and the client routes the
+ * menu to MenuScanResultScreen).
  */
 export const CONTENT_TYPE_TO_INTENT: Record<ContentType, PhotoIntent | null> = {
   prepared_meal: "log",
   nutrition_label: "label",
-  restaurant_menu: "menu",
+  restaurant_menu: null,
   raw_ingredients: "recipe",
   grocery_receipt: null,
   restaurant_receipt: null,
