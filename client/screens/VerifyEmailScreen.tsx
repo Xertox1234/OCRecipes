@@ -155,14 +155,27 @@ export default function VerifyEmailScreen({ route, navigation }: Props) {
               errorMessage={error || undefined}
             />
             <InlineError message={error} />
-            <Button onPress={onResend} loading={busy} style={styles.button}>
+            {/* Prominence follows intent within the pending state. In the
+                not-sent sub-state ("Verify your email") resending is the primary
+                action, so Resend is the solid primary and Back-to-sign-in is the
+                ghost escape hatch. Once linkSent flips ("Check your inbox") the
+                user has already sent the link and may have just verified in the
+                browser, so returning to Login is the likely intent — the two
+                variants swap. Both variants are already on this screen and
+                contrast-verified, so the swap adds no new color combination. */}
+            <Button
+              variant={linkSent ? "ghost" : "primary"}
+              onPress={onResend}
+              loading={busy}
+              style={styles.button}
+            >
               Resend email
             </Button>
             {/* Escape hatch for the verify-in-browser → return-to-app flow: the
                 user lands here after signup and (if they verified elsewhere) has
                 no other path to Login. Pure navigation — never auto-authenticates. */}
             <Button
-              variant="ghost"
+              variant={linkSent ? "primary" : "ghost"}
               onPress={() => navigation.navigate("Login")}
               style={styles.button}
             >
