@@ -1,6 +1,6 @@
 ---
 title: "Promote the 'Back to sign in' affordance when VerifyEmailScreen is in the linkSent state"
-status: blocked
+status: backlog
 priority: low
 created: 2026-06-22
 updated: 2026-06-22
@@ -94,3 +94,16 @@ the linkSent case.
 - **Unblock condition:** once `theme.accentSolid` lands and the primary button uses
   it (AA-safe with white), re-open this to `backlog` and merge `cfd8afa7` — the
   swap will be unambiguously AA-passing in both sub-states.
+
+### 2026-06-22 (unblocked — accentSolid landed via #429)
+
+- Dependency satisfied: PR #429 (the `link` → `accentSolid` token split) merged to
+  `main` @ `a1a3fe3c`. The primary `Button` variant now uses `accentSolid`
+  (#B5451C, 5.48:1 vs white in dark mode), so the variant swap's "Back to sign in =
+  solid primary in `linkSent`" is now AA-passing. Set `status: backlog`.
+- **Implementation already exists** on branch
+  `todo/P3-2026-06-22-verify-email-signin-prominence` @ `cfd8afa7` (pushed, no PR).
+  Whoever picks this up should open a PR for that branch (rebased on the new
+  `main`) and verify the `linkSent` primary button renders AA-clean — do NOT
+  re-implement from scratch (a fresh `/todo` executor would, since it forks from
+  `main` and won't know about `cfd8afa7`).
