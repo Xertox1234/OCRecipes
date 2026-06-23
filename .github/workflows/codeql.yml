@@ -4,11 +4,12 @@ name: CodeQL
 # Security tab — code scanning is free on public repos, so no GitHub Advanced
 # Security toggle is required here.
 #
-# This check is intentionally NOT one of main's required status checks (see branch
-# protection). That alone makes it non-blocking: a finding or setup failure shows a
-# visible red X on the PR without gating the merge while noise is triaged. We avoid
-# `continue-on-error: true` on purpose — it would mask genuine setup/upload errors as
-# a green check. Promote to a required check once the initial findings are triaged.
+# The `Analyze (javascript-typescript)` job IS a required status check on main (added
+# 2026-06-23) — if the CodeQL scan fails to run or upload (e.g. a broken codeql-action
+# bump), the red X BLOCKS the merge / auto-merge. This gates on the scan RUNNING
+# successfully, not on zero findings: code-scanning alerts still surface as non-blocking
+# results in the Security tab. We avoid `continue-on-error: true` on purpose — it would
+# mask genuine setup/upload errors as a green check.
 
 on:
   push:
