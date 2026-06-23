@@ -439,8 +439,20 @@ export function getPromptForIntent(intent: PhotoIntent): {
       return { prompt: LABEL_PROMPT, maxTokens: 800 };
     case "log":
     case "calories":
-    default:
       return { prompt: LOG_PROMPT, maxTokens: 500 };
+    case "menu":
+      // Menu photos are parsed by analyzeMenuPhoto (/api/menu/scan), not the
+      // food-logging pipeline. Reaching here means an internal caller routed a
+      // menu intent through analyzePhoto by mistake — fail loud, not silent.
+      throw new Error(
+        "menu intent is handled by analyzeMenuPhoto, not getPromptForIntent",
+      );
+    default: {
+      // Exhaustiveness guard: adding a PhotoIntent without a case here is a
+      // compile error, so prompt selection can never silently fall through again.
+      const _exhaustive: never = intent;
+      throw new Error(`unhandled photo intent: ${String(_exhaustive)}`);
+    }
   }
 }
 

@@ -5,6 +5,7 @@ import {
   analyzeLabelPhoto,
   analyzeRecipePhoto,
   classifyAndAnalyze,
+  getPromptForIntent,
 } from "../photo-analysis";
 import { openai } from "../../lib/openai";
 import { createMockChatCompletion } from "../../__tests__/factories";
@@ -568,6 +569,22 @@ describe("Recipe Photo Analysis Schema", () => {
       expect(result.data.ingredients).toHaveLength(5);
       expect(result.data.title).toBe("Grandma's Tomato Soup");
     }
+  });
+});
+
+describe("getPromptForIntent", () => {
+  it("returns intent-specific prompts for the logging-pipeline intents", () => {
+    expect(getPromptForIntent("identify").maxTokens).toBe(300);
+    expect(getPromptForIntent("recipe").maxTokens).toBe(300);
+    expect(getPromptForIntent("label").maxTokens).toBe(800);
+    expect(getPromptForIntent("log").maxTokens).toBe(500);
+    expect(getPromptForIntent("calories").maxTokens).toBe(500);
+  });
+
+  it("throws for the menu intent — menus are parsed by analyzeMenuPhoto, not the logging pipeline", () => {
+    expect(() => getPromptForIntent("menu")).toThrow(
+      "menu intent is handled by analyzeMenuPhoto",
+    );
   });
 });
 
