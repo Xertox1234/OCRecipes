@@ -338,6 +338,11 @@ if (cacheId) {
 - `client/components/InlineError.tsx` — canonical cross-platform error announcement (`accessibilityRole="alert"`, `accessibilityLiveRegion="assertive"`, iOS `announceForAccessibility`)
 - `scripts/check-accessibility.js` — pre-commit script catches 3 categories; this checklist catches the 7 the script misses (custom wrappers, `onLongPress`-only, role/state correctness, decorative children, missing `accessibilityViewIsModal`, touch targets, missing `aria-invalid`)
 
+### 15. Dependency & Lockfile Changes
+
+- [ ] **Judge `package-lock.json` churn semantically, never by `git diff` line count.** A one-line `package.json` edit can render as a tens-of-thousands-of-line Myers diff that is a pure rendering artifact (the files may differ by one line). Parse both lockfiles and compare the `packages` map **by path** (added/removed/version-changed); confirm no unintended packages (RN/Metro/Expo) moved. See `docs/solutions/conventions/verify-lockfile-churn-semantically-not-by-diff-line-count-2026-06-23.md`
+- [ ] **A `peerDependency` showing `invalid` in `npm ls` is fixed at the root hoist, not with `overrides`.** Overrides control version, not placement, and can't inject a nested copy for a peer edge. If a tool is invoked as a bare-name CLI from an npm script (e.g. `esbuild …`), it must be declared as a direct `devDependency` — never rely on a transitive hoisting it to root. See `docs/solutions/code-quality/peer-dependency-resolves-stale-root-hoisted-transitive-2026-06-23.md`
+
 ---
 
 ## Review Process

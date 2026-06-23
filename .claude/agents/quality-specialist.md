@@ -265,6 +265,16 @@ If you see a generated file change in a PR diff without a matching change in the
 
 ---
 
+## Dependency & Lockfile Hygiene
+
+Two rules when a change touches `package.json` / `package-lock.json`:
+
+1. **Verify lockfile churn semantically, never by `git diff` line count.** A one-line manifest edit can render as a tens-of-thousands-of-line Myers diff that's a pure rendering artifact (the files may differ by a single line). Parse both lockfiles and diff the `packages` map **by path** (added / removed / version-changed); assert no unintended packages — especially the RN/Metro/Expo toolchain — moved before approving. A large `--stat` is not evidence of churn; a per-path parse is. See `docs/solutions/conventions/verify-lockfile-churn-semantically-not-by-diff-line-count-2026-06-23.md`.
+
+2. **Fix a mis-resolved `peerDependency` at the root hoist, not with `overrides`.** A peer dep is resolved by ordinary module resolution — it takes whatever is hoisted to root — so an `invalid` peer in `npm ls` means the wrong copy is at root. `overrides` control version, not placement, and can't inject a nested copy for a peer edge. The fix is to **declare the package directly** (claims the root slot deterministically). Corollary: any tool invoked as a bare-name CLI from an npm `script` (e.g. `esbuild server/index.ts`) must be a direct `devDependency`, never relied on via a transitive hoist. See `docs/solutions/code-quality/peer-dependency-resolves-stale-root-hoisted-transitive-2026-06-23.md`.
+
+---
+
 ## Minimal Changes Principle
 
 The project rule: when removing UI elements, remove ONLY rendering — don't delete underlying functionality unless explicitly asked.
