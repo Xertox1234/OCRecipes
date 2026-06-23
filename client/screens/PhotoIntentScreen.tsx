@@ -20,6 +20,7 @@ import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { PhotoIntent } from "@shared/constants/preparation";
+import { isIntentOptionLocked } from "./photo-intent-utils";
 
 type PhotoIntentScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -109,10 +110,9 @@ export default function PhotoIntentScreen() {
 
   // Single source of truth for the lock — used by both the badge rendering
   // and the tap handler so a locked affordance also gates the interaction.
+  // Logic lives in ./photo-intent-utils (pure + unit-tested).
   const isOptionLocked = (option: IntentOption) =>
-    option.intent === "cook"
-      ? !!option.requiresPremium && !features.cookAndTrack
-      : !!option.requiresPremium && !isRecipeAvailable;
+    isIntentOptionLocked(option, features, isRecipeAvailable);
 
   const handleSelectIntent = (option: IntentOption) => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Light);
