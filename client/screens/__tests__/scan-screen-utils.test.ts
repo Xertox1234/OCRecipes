@@ -44,7 +44,24 @@ describe("scan-screen-utils", () => {
       );
       expect(route).toEqual({
         screen: "MenuScanResult",
-        params: { imageUri: "/tmp/menu.jpg" },
+        params: { imageUri: "/tmp/menu.jpg", localOCRText: undefined },
+      });
+    });
+
+    it("forwards localOCRText to MenuScanResult when provided", () => {
+      const route = getRouteForContentType(
+        "restaurant_menu",
+        "/tmp/menu.jpg",
+        null,
+        null,
+        "Burger $10\nFries $4",
+      );
+      expect(route).toEqual({
+        screen: "MenuScanResult",
+        params: {
+          imageUri: "/tmp/menu.jpg",
+          localOCRText: "Burger $10\nFries $4",
+        },
       });
     });
 

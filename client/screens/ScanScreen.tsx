@@ -88,7 +88,7 @@ export default function ScanScreen() {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { isPremium, remainingScans } = usePremiumCamera();
-  const { refreshScanCount } = usePremiumContext();
+  const { refreshScanCount, features } = usePremiumContext();
   const queryClient = useQueryClient();
 
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -660,8 +660,12 @@ export default function ScanScreen() {
             });
             return;
           }
+          // Gate on the SPECIFIC feature flag (not blanket isPremium), mirroring
+          // the manual picker (isIntentOptionLocked). features[gate.feature]
+          // already reflects the user's tier, so this future-proofs a partial-
+          // premium tier where isPremium is true but a single feature is off.
           const gate = getPremiumGate(contentType);
-          if (gate && !isPremium) {
+          if (gate && !features[gate.feature]) {
             dispatch({ type: "RESET" });
             return;
           }
