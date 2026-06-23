@@ -1,6 +1,6 @@
 ---
 title: "Menu activation follow-ups: per-feature smart-scan gate + forward localOCRText"
-status: backlog
+status: done
 priority: low
 created: 2026-06-22
 updated: 2026-06-22

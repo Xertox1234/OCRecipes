@@ -1,5 +1,6 @@
 import type { ContentType } from "@shared/constants/classification";
 import type { PhotoIntent } from "@shared/constants/preparation";
+import type { PremiumFeatureKey } from "@shared/types/premium";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 /** Screen routing target for auto-classification results */
@@ -31,7 +32,7 @@ const CONTENT_TYPE_LABELS: Record<ContentType, string> = {
 
 /** Premium feature gates for content types that require subscription */
 const PREMIUM_GATES: Partial<
-  Record<ContentType, { feature: string; label: string }>
+  Record<ContentType, { feature: PremiumFeatureKey; label: string }>
 > = {
   restaurant_menu: { feature: "menuScanner", label: "Menu scanning" },
   raw_ingredients: { feature: "cookAndTrack", label: "Cook & Track" },
@@ -48,6 +49,7 @@ export function getRouteForContentType(
   imageUri: string,
   resolvedIntent: PhotoIntent | null,
   barcode: string | null,
+  localOCRText?: string,
 ): ClassificationRoute | null {
   switch (contentType) {
     case "prepared_meal":
@@ -63,7 +65,7 @@ export function getRouteForContentType(
     case "restaurant_menu":
       return {
         screen: "MenuScanResult",
-        params: { imageUri },
+        params: { imageUri, localOCRText },
       };
     case "raw_ingredients":
       return {
@@ -104,6 +106,6 @@ export function getContentTypeLabel(contentType: ContentType): string {
 /** Check if a content type requires a premium subscription */
 export function getPremiumGate(
   contentType: ContentType,
-): { feature: string; label: string } | null {
+): { feature: PremiumFeatureKey; label: string } | null {
   return PREMIUM_GATES[contentType] ?? null;
 }
