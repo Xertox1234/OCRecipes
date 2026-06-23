@@ -38,11 +38,14 @@ const navigateActionSchema = z.object({
 });
 
 /** Per-screen param schemas for navigate actions requiring specific params. */
+// `satisfies` pins the keys to real NAVIGABLE_SCREENS members, so a misspelled
+// screen name is a compile error; the Record<string, …> annotation is kept so
+// the `screenParamSchemas[val.screen]` lookup still accepts any screen union.
 const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   NutritionDetail: z.object({ barcode: z.string() }),
   FeaturedRecipeDetail: z.object({ recipeId: z.number() }),
   RecipeChat: z.object({ conversationId: z.number() }),
-};
+} satisfies Partial<Record<(typeof NAVIGABLE_SCREENS)[number], z.ZodType>>;
 
 const GOAL_TYPES = ["calories", "protein", "carbs", "fat", "weight"] as const;
 

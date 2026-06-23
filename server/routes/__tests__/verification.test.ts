@@ -309,7 +309,14 @@ describe("Verification Routes", () => {
           carbs: 25,
           fat: 8,
         },
-        frontLabelData: { brand: "Test" },
+        frontLabelData: {
+          brand: "Test",
+          productName: "Test Product",
+          netWeight: "100g",
+          claims: [],
+          scannedByUserId: "1",
+          scannedAt: "2026-03-15T10:00:00Z",
+        },
         createdAt: new Date(),
         updatedAt: new Date(),
       });

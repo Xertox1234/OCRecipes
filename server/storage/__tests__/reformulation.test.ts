@@ -256,10 +256,7 @@ describe("reformulation storage", () => {
       await seedBarcodeVerification(barcode, {
         verificationLevel: "verified",
         verificationCount: 7,
-        consensusNutritionData: makeConsensus() as unknown as Record<
-          string,
-          unknown
-        >,
+        consensusNutritionData: makeConsensus(),
       });
 
       await flagReformulation(barcode, 5, makeConsensus(), "verified", 7);
@@ -282,14 +279,24 @@ describe("reformulation storage", () => {
         {
           barcode,
           userId: testUser.id,
-          extractedNutrition: { calories: 200 },
+          extractedNutrition: {
+            calories: 200,
+            protein: 10,
+            totalCarbs: 25,
+            totalFat: 8,
+          },
           ocrConfidence: "0.95",
           isMatch: true,
         },
         {
           barcode,
           userId: otherUser.id,
-          extractedNutrition: { calories: 210 },
+          extractedNutrition: {
+            calories: 210,
+            protein: 10,
+            totalCarbs: 25,
+            totalFat: 8,
+          },
           ocrConfidence: "0.90",
           isMatch: null,
         },
