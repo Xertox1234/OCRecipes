@@ -1,9 +1,9 @@
 ---
-title: "Track esbuild/vite lockfile mis-resolution (esbuild@0.18.20) — blocked on drizzle-kit + drizzle-orm 1.0"
-status: blocked
+title: "RESOLVED: esbuild/vite root-hoist mis-resolution — fixed by declaring esbuild as a direct devDependency"
+status: done
 priority: low
 created: 2026-06-01
-updated: 2026-06-22
+updated: 2026-06-23
 assignee:
 labels: [deferred, dependencies]
 github_issue:
@@ -29,7 +29,7 @@ What remains is the resolution defect (`npm ls`, re-verified 2026-06-22):
 
 ## Acceptance Criteria
 
-- [ ] **esbuild — blocked on upstream:** the `vite@8`→`esbuild@0.18.20` mis-resolution can't be cleanly fixed yet. `drizzle-kit@0.31.10` is the latest stable and **still** declares `@esbuild-kit/esm-loader: ^2.5.5`, so there's no newer stable release to bump to. The `@esbuild-kit` removal landed only in the `drizzle-kit@1.0.0-beta/rc` line (now `jiti@^2.6.1` + `esbuild@^0.25.10`). **Revisit when `drizzle-kit` 1.0 ships stable _and_ `drizzle-orm` 1.0 ships stable, adopted together** — drizzle-kit 1.0 has a **runtime** coupling: it `import`s `drizzle-orm/_relations`, an internal subpath that exists only in the unreleased drizzle-orm 1.0 line (our `drizzle-orm@0.45.2` lacks it → `drizzle-kit --version` itself crashes `ERR_PACKAGE_PATH_NOT_EXPORTED`). drizzle-orm 1.0 is a _separate_ pre-release major from the held zod-4 / drizzle-zod hold; whether adopting it re-entangles that hold is **unverified** (verify on revisit). On revisit, confirm `npm ls esbuild` resolves cleanly (no `ELSPROBLEMS`, vite's `^0.27||^0.28` peer gets a valid copy) **and** `npm run test:run` still passes before asserting the fix works. Do NOT blunt-override.
+- [x] **esbuild — RESOLVED 2026-06-23 (NOT blocked on upstream after all):** fixed by declaring `esbuild: ^0.28.0` as a **direct devDependency** (see the 2026-06-23 resolution entry below). The "blocked on drizzle-kit/drizzle-orm 1.0" framing was wrong — it assumed the only fix was _removing_ `@esbuild-kit`. The original (now-falsified) note is preserved here for history: ~~the `vite@8`→`esbuild@0.18.20` mis-resolution can't be cleanly fixed yet.~~ `drizzle-kit@0.31.10` is the latest stable and **still** declares `@esbuild-kit/esm-loader: ^2.5.5`, so there's no newer stable release to bump to. The `@esbuild-kit` removal landed only in the `drizzle-kit@1.0.0-beta/rc` line (now `jiti@^2.6.1` + `esbuild@^0.25.10`). **Revisit when `drizzle-kit` 1.0 ships stable _and_ `drizzle-orm` 1.0 ships stable, adopted together** — drizzle-kit 1.0 has a **runtime** coupling: it `import`s `drizzle-orm/_relations`, an internal subpath that exists only in the unreleased drizzle-orm 1.0 line (our `drizzle-orm@0.45.2` lacks it → `drizzle-kit --version` itself crashes `ERR_PACKAGE_PATH_NOT_EXPORTED`). drizzle-orm 1.0 is a _separate_ pre-release major from the held zod-4 / drizzle-zod hold; whether adopting it re-entangles that hold is **unverified** (verify on revisit). On revisit, confirm `npm ls esbuild` resolves cleanly (no `ELSPROBLEMS`, vite's `^0.27||^0.28` peer gets a valid copy) **and** `npm run test:run` still passes before asserting the fix works. Do NOT blunt-override.
 - [x] **Done (2026-06-22):** the esbuild Dependabot alert (#1, `GHSA-67mh-4wv8-2f99`) is dismissed `not_used` — a _reachability_ dismissal, **not** a fix; the on-disk `esbuild@0.18.20` mis-resolution still persists. Tracking continues as a lockfile-hygiene watchpoint, above.
 
 ## Implementation Notes
@@ -67,3 +67,15 @@ What remains is the resolution defect (`npm ls`, re-verified 2026-06-22):
 - On-disk **unchanged**: `npm ls` still reports `esbuild@0.18.20 invalid: "^0.27.0 || ^0.28.0"` under `vitest → vite@8.0.14`, hoisted via `drizzle-kit@0.31.10 → @esbuild-kit/esm-loader@2.6.5 → @esbuild-kit/core-utils@3.3.2` (ELSPROBLEMS persists).
 - The esbuild Dependabot alert (#1) is now dismissed `not_used` — a _reachability_ dismissal, **not** a fix.
 - **Scope narrowed to esbuild-only.** The Dependabot alert backlog this todo originally tracked is fully cleared (0 open; uuid #4 + brace-expansion #2 dismissed `tolerable_risk`; expanded undici/form-data/ws/vite set fixed-or-dismissed). The general pre-launch re-triage of dismissed runtime-adjacent alerts is reclassified as a launch-checklist item and dropped from this todo. Retitled; Summary/Background/AC/Notes/Dependencies/Risks rewritten to the esbuild lockfile-hygiene item alone. Pre-narrowing history preserved in git (commit `f7489469`). Status remains `blocked` — genuinely blocked on upstream, kept as the standing watchpoint for the esbuild fix.
+
+### 2026-06-23 (RESOLVED — the "blocked on upstream" framing was wrong)
+
+The blocker was **misdiagnosed**. The prior triage assumed the only fix was _removing_ the `@esbuild-kit` chain, which requires the drizzle-kit + drizzle-orm 1.0 dual pre-release adoption. That premise was false.
+
+**Actual root cause:** `vite@8.0.14` declares `esbuild` as a **`peerDependency`** (`^0.27 || ^0.28`), not a regular dependency — so it resolves the _root-hoisted_ `node_modules/esbuild`. **Nothing in the repo declared esbuild directly**, so the root slot was filled by accident with the `0.18.20` that the deprecated `@esbuild-kit/core-utils` chain hoists. Worse: `server:build` invokes the **esbuild CLI directly** (`esbuild server/index.ts …`) with esbuild undeclared, so the _production server bundler_ was also silently running on that accidental, 9-major-stale `0.18.20`.
+
+**Fix (one line):** declare `esbuild: ^0.28.0` as a direct **devDependency**. A direct dep deterministically claims the root `node_modules` slot — the hoist lever that `overrides` cannot pull (overrides control version, not placement; and a `vite > esbuild` override can't inject a _peer_, both empirically confirmed). `@esbuild-kit/core-utils` then auto-nests its own `0.18.20` (still valid for its `~0.18.20`), so drizzle-kit's `db:push` loader is untouched. **No `overrides` entry needed.**
+
+**Verified:** `npm ls esbuild` clean (exit 0, no `invalid:`/`ELSPROBLEMS`); vite resolves `0.28.1` (in peer range); `@esbuild-kit` keeps nested `0.18.20`; `drizzle-kit --version` works (no `ERR_PACKAGE_PATH_NOT_EXPORTED`); `server:build` produces a valid 874kb ESM bundle on `0.28.1`; `npm run preflight` passes (full suite + coverage). Audit posture improved: GHSA-67mh-4wv8-2f99 is now confined to the dev-only nested `@esbuild-kit` copy (the already-dismissed `not_used`/unreachable item); the root esbuild that `server:build` + vitest actually use is patched `0.28.1`.
+
+Status → `done`. Archived. The drizzle-kit/drizzle-orm 1.0 dual-major upgrade remains tracked separately under the zod-4/drizzle-zod hold (memory `project_drizzle_zod_zod4_coupling`) — it is **no longer a prerequisite for anything in this todo**.
