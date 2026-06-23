@@ -1,6 +1,6 @@
 ---
 title: "Smart-scan menu confirm: visible processing affordance during on-device OCR"
-status: backlog
+status: done
 priority: low
 created: 2026-06-23
 updated: 2026-06-23

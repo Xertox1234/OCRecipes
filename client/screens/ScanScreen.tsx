@@ -107,6 +107,11 @@ export default function ScanScreen() {
   }));
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  // Visual pending state for the smart-photo confirm button. Mirrors
+  // isConfirmingRef but is state so the chip's confirm button can re-render a
+  // spinner while the async on-device OCR (menu path) runs. The ref still owns
+  // the synchronous double-tap re-entrancy guard; this is purely the visual.
+  const [isSmartConfirming, setIsSmartConfirming] = useState(false);
 
   const [confirmCard, setConfirmCard] = useState<ConfirmCardState | null>(null);
 
@@ -616,6 +621,7 @@ export default function ScanScreen() {
       {/* Product chip */}
       <ProductChip
         importantForAccessibility={overlayA11y.productChip}
+        isSmartConfirming={isSmartConfirming}
         phase={scanPhase}
         onConfirm={() => dispatch({ type: "CONFIRM_PRODUCT" })}
         onAddNutritionPhoto={() => dispatch({ type: "ADD_NUTRITION_PHOTO" })}
@@ -654,6 +660,7 @@ export default function ScanScreen() {
           if (scanPhase.type !== "SMART_CONFIRMED") return;
           if (isConfirmingRef.current) return;
           isConfirmingRef.current = true;
+          setIsSmartConfirming(true);
           try {
             const { classification, imageUri } = scanPhase;
             const action = await resolveSmartConfirmAction({
@@ -687,6 +694,7 @@ export default function ScanScreen() {
             // action.kind === "abort": user left during OCR — do nothing.
           } finally {
             isConfirmingRef.current = false;
+            setIsSmartConfirming(false);
           }
         }}
         onRetry={() => dispatch({ type: "RESET" })}
