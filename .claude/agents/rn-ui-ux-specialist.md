@@ -39,6 +39,7 @@ const { colors, spacing, fonts, borderRadius } = useTheme();
 
 - `useTheme()` hook provides mode-aware colors
 - `theme.buttonText` is `#FFFFFF` in both modes (safe for white-on-colored buttons)
+- **Solid fills under white content use `theme.accentSolid`, NOT `theme.link`** — `link` is tuned as on-dark TEXT (light), so white-on-`link` fails dark-mode AA (3.18:1); `accentSolid` (#B5451C) is the fill token (5.48:1 both modes). Use `link` only for `color`/`borderColor`/`tintColor`/`withOpacity` tints. On a token migration, check indirection (vars, color props, ternary branches), not just literals. When an a11y change darkens an active fill, don't let enabled/disabled rest on background lightness alone — add a hue/icon cue. (solutions DB: `dark-mode-accent-token-foreground-vs-fill-split`)
 - Static `StyleSheet.create` blocks can't use theme values - some hardcoded `#FFFFFF` is intentional
 - WCAG-compliant light mode colors: success/protein `#008A38`, calorie/carbs `#C94E1A`, fat `#8C6800`, textSecondary `#717171`
 
