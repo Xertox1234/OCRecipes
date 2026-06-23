@@ -1,6 +1,6 @@
 ---
 title: "Clear the Node 20 deprecation tail: upload-artifact + codeql-action"
-status: backlog
+status: done
 priority: low
 created: 2026-06-22
 updated: 2026-06-22
