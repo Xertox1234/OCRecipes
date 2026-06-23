@@ -1,11 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   getRouteForContentType,
   shouldAutoRoute,
   getConfirmationMessage,
   getContentTypeLabel,
   getPremiumGate,
+  resolveMenuLocalOCRText,
 } from "../scan-screen-utils";
+import { logger } from "@/lib/logger";
 
 describe("scan-screen-utils", () => {
   describe("getRouteForContentType", () => {
@@ -215,6 +217,57 @@ describe("scan-screen-utils", () => {
       expect(getPremiumGate("nutrition_label")).toBeNull();
       expect(getPremiumGate("non_food")).toBeNull();
       expect(getPremiumGate("has_barcode")).toBeNull();
+    });
+  });
+
+  describe("resolveMenuLocalOCRText", () => {
+    it("returns recognized text for restaurant_menu", async () => {
+      const recognize = vi
+        .fn()
+        .mockResolvedValue({ text: "Burger $10\nFries $4" });
+      const result = await resolveMenuLocalOCRText(
+        "restaurant_menu",
+        "/tmp/menu.jpg",
+        recognize,
+      );
+      expect(recognize).toHaveBeenCalledWith("/tmp/menu.jpg");
+      expect(result).toBe("Burger $10\nFries $4");
+    });
+
+    it("skips OCR and returns undefined for non-menu content", async () => {
+      const recognize = vi.fn();
+      const result = await resolveMenuLocalOCRText(
+        "prepared_meal",
+        "/tmp/meal.jpg",
+        recognize,
+      );
+      expect(recognize).not.toHaveBeenCalled();
+      expect(result).toBeUndefined();
+    });
+
+    it("returns undefined when OCR yields empty text", async () => {
+      const recognize = vi.fn().mockResolvedValue({ text: "" });
+      const result = await resolveMenuLocalOCRText(
+        "restaurant_menu",
+        "/tmp/menu.jpg",
+        recognize,
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it("returns undefined and logs when OCR throws (non-fatal)", async () => {
+      const errorSpy = vi
+        .spyOn(logger, "error")
+        .mockImplementation(() => undefined);
+      const recognize = vi.fn().mockRejectedValue(new Error("mlkit boom"));
+      const result = await resolveMenuLocalOCRText(
+        "restaurant_menu",
+        "/tmp/menu.jpg",
+        recognize,
+      );
+      expect(result).toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledOnce();
+      errorSpy.mockRestore();
     });
   });
 });

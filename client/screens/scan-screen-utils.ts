@@ -2,6 +2,7 @@ import type { ContentType } from "@shared/constants/classification";
 import type { PhotoIntent } from "@shared/constants/preparation";
 import type { PremiumFeatureKey } from "@shared/types/premium";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { logger } from "@/lib/logger";
 
 /** Screen routing target for auto-classification results */
 export type ClassificationRoute =
@@ -84,6 +85,33 @@ export function getRouteForContentType(
         : null;
     case "non_food":
       return null;
+  }
+}
+
+/**
+ * Compute on-device OCR text for the smart-scan menu path so MenuScanResult can
+ * render an instant local skeleton while the AI analysis loads (the OCR race-swap
+ * that MenuScanResultScreen performs from `localOCRText`). OCR is gated to
+ * `restaurant_menu` — its only consumer — so non-menu scans never pay the
+ * recognition cost. Failure is non-fatal: log and return undefined so the caller
+ * navigates without a preview and the server analysis still runs (mirrors the
+ * label-mode OCR handling in ScanScreen.onShutterPress).
+ */
+export async function resolveMenuLocalOCRText(
+  contentType: ContentType,
+  imageUri: string,
+  recognizeText: (uri: string) => Promise<{ text: string }>,
+): Promise<string | undefined> {
+  if (contentType !== "restaurant_menu") return undefined;
+  try {
+    const result = await recognizeText(imageUri);
+    return result.text || undefined;
+  } catch (err) {
+    logger.error(
+      "[ScanScreen smart menu OCR] recognition failed; navigating without preview",
+      err,
+    );
+    return undefined;
   }
 }
 

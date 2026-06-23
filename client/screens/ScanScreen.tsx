@@ -56,6 +56,7 @@ import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
 import {
   getPremiumGate,
   getRouteForContentType,
+  resolveMenuLocalOCRText,
 } from "@/screens/scan-screen-utils";
 import {
   buildLoadingConfirmCard,
@@ -123,6 +124,10 @@ export default function ScanScreen() {
   const scanPhaseRef = useRef(scanPhase);
   const reducedMotionRef = useRef(reducedMotion);
   const isCapturingRef = useRef(false);
+  // Re-entrancy guard for onSmartPhotoConfirm: it is async (on-device OCR for
+  // menus), which opens a double-tap window where two confirms could fire two
+  // OCR runs + two navigations. Synchronous ref check, mirroring isCapturingRef.
+  const isConfirmingRef = useRef(false);
 
   const { permission, requestPermission } = useCameraPermissions();
 
@@ -649,47 +654,67 @@ export default function ScanScreen() {
             });
           }
         }}
-        onSmartPhotoConfirm={() => {
+        onSmartPhotoConfirm={async () => {
           if (scanPhase.type !== "SMART_CONFIRMED") return;
-          const { classification, imageUri } = scanPhase;
-          const contentType = classification.contentType;
-          if (!contentType) {
-            navigation.navigate("PhotoAnalysis", {
+          if (isConfirmingRef.current) return;
+          isConfirmingRef.current = true;
+          try {
+            const { classification, imageUri } = scanPhase;
+            const contentType = classification.contentType;
+            if (!contentType) {
+              navigation.navigate("PhotoAnalysis", {
+                imageUri,
+                intent: classification.resolvedIntent ?? "log",
+              });
+              return;
+            }
+            // Gate on the SPECIFIC feature flag (not blanket isPremium), mirroring
+            // the manual picker (isIntentOptionLocked). features[gate.feature]
+            // already reflects the user's tier, so this future-proofs a partial-
+            // premium tier where isPremium is true but a single feature is off.
+            const gate = getPremiumGate(contentType);
+            if (gate && !features[gate.feature]) {
+              dispatch({ type: "RESET" });
+              return;
+            }
+            // Menus: compute on-device OCR so MenuScanResult renders an instant
+            // local skeleton while the AI analysis loads (no-op for other types).
+            const localOCRText = await resolveMenuLocalOCRText(
+              contentType,
               imageUri,
-              intent: classification.resolvedIntent ?? "log",
-            });
-            return;
-          }
-          // Gate on the SPECIFIC feature flag (not blanket isPremium), mirroring
-          // the manual picker (isIntentOptionLocked). features[gate.feature]
-          // already reflects the user's tier, so this future-proofs a partial-
-          // premium tier where isPremium is true but a single feature is off.
-          const gate = getPremiumGate(contentType);
-          if (gate && !features[gate.feature]) {
-            dispatch({ type: "RESET" });
-            return;
-          }
-          const route = getRouteForContentType(
-            contentType,
-            imageUri,
-            classification.resolvedIntent ?? null,
-            classification.barcode ?? null,
-          );
-          if (route) {
-            // navigate accepts a variable screen name from a discriminated union;
-            // cast the whole function signature to avoid React Navigation's strict
-            // per-screen overloads while keeping params typed via ClassificationRoute.
-            (
-              navigation.navigate as (
-                screen: string,
-                params?: Record<string, unknown>,
-              ) => void
-            )(
-              route.screen,
-              route.params as Record<string, unknown> | undefined,
+              recognizeTextFromPhoto,
             );
-          } else {
-            dispatch({ type: "RESET" });
+            // Liveness re-check: the OCR await above can take ~1s on a dense menu.
+            // If the user left the scan screen during that window, the blur effect
+            // (line 153) dispatched RESET, so the phase is no longer SMART_CONFIRMED.
+            // Read the mirrored ref (not the stale closure) and bail rather than
+            // navigate onto a screen the user already dismissed.
+            if (scanPhaseRef.current.type !== "SMART_CONFIRMED") return;
+            const route = getRouteForContentType(
+              contentType,
+              imageUri,
+              classification.resolvedIntent ?? null,
+              classification.barcode ?? null,
+              localOCRText,
+            );
+            if (route) {
+              // navigate accepts a variable screen name from a discriminated union;
+              // cast the whole function signature to avoid React Navigation's strict
+              // per-screen overloads while keeping params typed via ClassificationRoute.
+              (
+                navigation.navigate as (
+                  screen: string,
+                  params?: Record<string, unknown>,
+                ) => void
+              )(
+                route.screen,
+                route.params as Record<string, unknown> | undefined,
+              );
+            } else {
+              dispatch({ type: "RESET" });
+            }
+          } finally {
+            isConfirmingRef.current = false;
           }
         }}
         onRetry={() => dispatch({ type: "RESET" })}
