@@ -1,6 +1,6 @@
 ---
 title: "Close the change-email enumeration side-channel with a staged pending-email design"
-status: backlog
+status: done
 priority: medium
 created: 2026-06-24
 updated: 2026-06-24
@@ -104,3 +104,18 @@ the deferred-todo bar.
   future prerequisite. Bumped priority low → **medium** and shipped a partial
   mitigation in PR #443 (confirm-email second field in `ChangeEmailModal`). The
   staging-column redesign here is the proper fix and stays open.
+
+- **DONE — folded into PR #443** (commit `588163cf`). Implemented the staged
+  design inline (auth = NEVER delegate): nullable unconstrained `pending_email`
+  column (`migrations/0010`); `stagePendingEmail` + `applyEmailVerification`
+  (two-branch idempotent verify, replaces `markEmailVerified`); route stages on
+  gate-ON / immediate on gate-OFF; register-consistent send policy (no link to
+  registered third parties); commit-time 23505 degrades to a clean 400. All five
+  acceptance criteria met with real-module storage + route tests (incl. a new
+  `/me` no-oracle test). Reviewed: **security-auditor SHIP**, db-specialist
+  (1 WARNING = migrate-before-merge severity), code-reviewer shippable. Pattern
+  codified (`design-patterns/stage-unique-value-in-unconstrained-column-...`) +
+  security-auditor rule #20. **Merge-blocked until the prod `ALTER TABLE` is
+  verified-applied** (pending_email is on the login SELECT path → a missed
+  migration is a 42703 auth outage). The latent password-reset-by-email takeover
+  vector remains a hard dependency on any future reset flow (none today).
