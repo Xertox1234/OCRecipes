@@ -50,3 +50,23 @@ Reachability is narrow and self-mitigating, which is why this is Low rather than
 ### 2026-06-23
 
 - Initial creation. Surfaced by the advisor during the S2 helper extraction; kept out of the S2 commit to preserve it as a pure refactor.
+
+### 2026-06-24 (done — shipped inline via /todo)
+
+- Implemented inline (auth code — never delegated). TDD: added a RED test in
+  `client/hooks/__tests__/useAuth.test.ts` asserting the durable sweep
+  (`clearOfflineQueue` + `removeItem("@ocrecipes_query_cache")` + `queryClient.clear`)
+  on the no-token path; verified it failed pre-fix, then added
+  `await clearDurableLocalState();` to the `if (!token)` branch of `checkAuth`
+  (`client/hooks/useAuth.ts`) before its `setState`. All three AC met; full
+  `useAuth` suite green (29/29). The foreground-resume path is covered for free
+  (it routes through the same `checkAuth`).
+- **Residual (surfaced, NOT closed by this todo):** code-reviewer approved; the
+  security-auditor raised a pre-existing HIGH — the sweep races `App.tsx:70`'s
+  fire-and-forget `initOfflineQueue()`, whose unconditional re-persist
+  (`offline-queue.ts:68`) can resurrect an orphaned queue after the sweep's
+  `removeItem`. This makes the cross-user close **probabilistic, not
+  deterministic**, and affects the already-shipped dead-token branch too. The
+  one-liner is a strict improvement (no new risk, no data loss) and was always
+  scoped as a "narrow, self-mitigating" Low; the deterministic startup-sequencing
+  fix is tracked separately (surfaced to the user, not auto-filed).
