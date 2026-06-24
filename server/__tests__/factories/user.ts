@@ -5,6 +5,7 @@ const userDefaults: User = {
   username: "testuser",
   email: "testuser@example.com",
   emailVerified: false,
+  pendingEmail: null,
   password: "$2b$10$hashedpassword",
   displayName: null,
   avatarUrl: null,

@@ -43,14 +43,18 @@ const ALLOWLIST = new Set([
   "updateUser",
   // Email change - id is the user's own PK (req.userId); the route password-
   // re-authenticates before calling, and the lower(email) unique index is the
-  // cross-user guard. Only mutates the caller's own email + email_verified.
+  // cross-user guard. updateUserEmail mutates the caller's own email;
+  // stagePendingEmail only writes the caller's own pending_email (no constraint,
+  // committed later under the same id).
   "updateUserEmail",
+  "stagePendingEmail",
   "incrementTokenVersion",
   "deleteUser",
   // Email verification - id is the user's own PK taken from a verified,
-  // audience-partitioned token's `sub` (not req.userId); only flips
-  // email_verified=true, idempotent, exposes/escalates nothing.
-  "markEmailVerified",
+  // audience-partitioned token's `sub` (not req.userId); flips email_verified
+  // (and, on a staged change, swaps in the caller's own pending_email),
+  // idempotent, exposes/escalates nothing.
+  "applyEmailVerification",
   // Cache operations - system-level, not user-scoped data
   "incrementSuggestionCacheHit",
   "incrementInstructionCacheHit",
