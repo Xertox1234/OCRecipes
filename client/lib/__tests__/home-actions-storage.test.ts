@@ -4,6 +4,8 @@ import {
   setSectionExpanded,
   getRecentActions,
   pushRecentAction,
+  getActionUsageCounts,
+  clearHomeActionsState,
 } from "../home-actions-storage";
 
 const mockAsyncStorage = vi.hoisted(() => ({
@@ -21,6 +23,7 @@ describe("home-actions-storage", () => {
     vi.clearAllMocks();
     mockAsyncStorage.getItem.mockReturnValue(Promise.resolve(null));
     mockAsyncStorage.setItem.mockReturnValue(Promise.resolve());
+    mockAsyncStorage.removeItem.mockReturnValue(Promise.resolve());
   });
 
   describe("initHomeActionsCache", () => {
@@ -131,6 +134,81 @@ describe("home-actions-storage", () => {
         "@ocrecipes_recent_actions",
         JSON.stringify(["scan-barcode"]),
       );
+    });
+  });
+
+  describe("clearHomeActionsState", () => {
+    it("clears recent actions and usage counts from memory and disk, retaining section prefs", async () => {
+      mockAsyncStorage.getItem.mockImplementation((key: string) => {
+        if (key === "@ocrecipes_recent_actions")
+          return Promise.resolve(JSON.stringify(["ai-coach", "quick-log"]));
+        if (key === "@ocrecipes_action_usage_counts")
+          return Promise.resolve(JSON.stringify({ "quick-log": 3 }));
+        if (key === "@ocrecipes_home_sections")
+          return Promise.resolve(JSON.stringify({ scanning: false }));
+        return Promise.resolve(null);
+      });
+      await initHomeActionsCache();
+      expect(getRecentActions()).toEqual(["ai-coach", "quick-log"]);
+      expect(getActionUsageCounts()).toEqual({ "quick-log": 3 });
+
+      await clearHomeActionsState();
+
+      // Memory caches reset to empty defaults (the synchronous getters back the
+      // Home UI, so leaving these populated leaks the prior user's history).
+      expect(getRecentActions()).toEqual([]);
+      expect(getActionUsageCounts()).toEqual({});
+      // Disk keys removed.
+      expect(mockAsyncStorage.removeItem).toHaveBeenCalledWith(
+        "@ocrecipes_recent_actions",
+      );
+      expect(mockAsyncStorage.removeItem).toHaveBeenCalledWith(
+        "@ocrecipes_action_usage_counts",
+      );
+      // Section state is a device-display pref, intentionally NOT cleared.
+      expect(mockAsyncStorage.removeItem).not.toHaveBeenCalledWith(
+        "@ocrecipes_home_sections",
+      );
+      expect(getSectionState().scanning).toBe(false);
+    });
+
+    it("does not resurrect a swept history when init's read races clearHomeActionsState", async () => {
+      // A prior session's history is on disk. On a shared device, the teardown
+      // sweep must win even when it collides with a Home-mount init that already
+      // read disk — otherwise the prior user's recent/frequent actions resurface
+      // in the in-memory caches (which the sync getters return) under the next user.
+      const disk: Record<string, string | null> = {
+        "@ocrecipes_recent_actions": JSON.stringify(["A1", "A2"]),
+        "@ocrecipes_action_usage_counts": JSON.stringify({ A1: 3 }),
+      };
+      mockAsyncStorage.removeItem.mockImplementation(async (k: string) => {
+        disk[k] = null;
+      });
+      // Defer init's recent-actions read so the sweep interleaves between init's
+      // read and its cache-populate — the exact resurrection window.
+      let resolveRecent: (v: string | null) => void = () => {};
+      mockAsyncStorage.getItem.mockImplementation((k: string) => {
+        if (k === "@ocrecipes_recent_actions")
+          return new Promise<string | null>((r) => {
+            resolveRecent = r;
+          });
+        return Promise.resolve(disk[k] ?? null);
+      });
+
+      const initP = initHomeActionsCache(); // suspends at the deferred read
+      const clearP = clearHomeActionsState(); // must serialize AFTER init
+      resolveRecent(JSON.stringify(["A1", "A2"])); // init "read" the prior data
+
+      await Promise.all([initP, clearP]);
+
+      // The in-memory assertions are the load-bearing regression guard: without
+      // the lock, a late init repopulates these caches with the prior user's data
+      // (proven by the mutation check). The disk assertions are belt-and-suspenders
+      // — init never setItem, so removeItem nulls disk regardless of the lock.
+      expect(getRecentActions()).toEqual([]);
+      expect(getActionUsageCounts()).toEqual({});
+      expect(disk["@ocrecipes_recent_actions"]).toBeNull();
+      expect(disk["@ocrecipes_action_usage_counts"]).toBeNull();
     });
   });
 });
