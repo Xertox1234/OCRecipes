@@ -38,6 +38,22 @@ export const users = pgTable(
     username: text("username").notNull().unique(),
     email: text("email").notNull().unique(),
     emailVerified: boolean("email_verified").default(false).notNull(),
+    /**
+     * Staged new email awaiting verification (account email-change flow). NULL
+     * when no change is pending. Set by `stagePendingEmail`; swapped into
+     * `email` (and cleared) by `applyEmailVerification` once the new address
+     * proves control via its verification link. The current `email` is NOT
+     * touched until then, so a typo can never point the login gate at an
+     * address the user does not control, and `/api/auth/me` reveals nothing
+     * about a target address's existence before verification.
+     *
+     * Intentionally has NO unique constraint: a unique index here would let a
+     * stage attempt fail when the target is already taken, re-introducing the
+     * exact enumeration oracle this design closes. Uniqueness is enforced only
+     * on `email` at commit time (users_email_unique / users_email_lower_unique
+     * are the TOCTOU-safe arbiter) — see P3-2026-06-24-change-email-staging.
+     */
+    pendingEmail: text("pending_email"),
     password: text("password").notNull(),
     displayName: text("display_name"),
     avatarUrl: text("avatar_url"),

@@ -743,6 +743,104 @@ describe("useAuth", () => {
     });
   });
 
+  describe("changeEmail", () => {
+    it("gate OFF: updates state + cache from the returned user", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => {
+        expect(result.current.isAuthenticated).toBe(true);
+      });
+
+      const updatedUser = {
+        ...fakeUser,
+        email: "new@example.com",
+        emailVerified: false,
+      };
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve(updatedUser),
+      });
+
+      let outcome;
+      await act(async () => {
+        outcome = await result.current.changeEmail("new@example.com", "pw");
+      });
+
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "POST",
+        "/api/auth/change-email",
+        { newEmail: "new@example.com", password: "pw" },
+      );
+      expect(outcome).toEqual({ status: "updated", user: updatedUser });
+      expect(result.current.user).toEqual(updatedUser);
+      expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
+        JSON.stringify(updatedUser),
+      );
+    });
+
+    it("gate ON: returns verification_pending and refreshes the user from /me", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      const refreshedUser = {
+        ...fakeUser,
+        email: "new@example.com",
+        emailVerified: false,
+      };
+      // Mount checkAuth → old user; post-change refresh → new unverified address.
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve(fakeUser),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve(refreshedUser),
+        });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => {
+        expect(result.current.isAuthenticated).toBe(true);
+      });
+
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ status: "verification_pending" }),
+      });
+
+      let outcome;
+      await act(async () => {
+        outcome = await result.current.changeEmail("new@example.com", "pw");
+      });
+
+      expect(outcome).toEqual({ status: "verification_pending" });
+      expect(result.current.user).toEqual(refreshedUser);
+    });
+
+    it("propagates a wrong-password error to the caller without changing state", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => {
+        expect(result.current.isAuthenticated).toBe(true);
+      });
+
+      mockApiRequest.mockRejectedValue(new Error("401: Invalid credentials"));
+
+      await expect(
+        act(async () => {
+          await result.current.changeEmail("new@example.com", "wrong");
+        }),
+      ).rejects.toThrow("Invalid credentials");
+      expect(result.current.user).toEqual(fakeUser);
+    });
+  });
+
   describe("login error handling", () => {
     it("propagates API errors to the caller", async () => {
       mockTokenStorage.get.mockResolvedValue(null);

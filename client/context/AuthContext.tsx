@@ -19,6 +19,12 @@ interface AuthContextType {
   expireSession: () => Promise<void>;
   deleteAccount: (password: string) => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<User | undefined>;
+  changeEmail: (
+    newEmail: string,
+    password: string,
+  ) => Promise<
+    { status: "updated"; user: User } | { status: "verification_pending" }
+  >;
   checkAuth: () => Promise<void>;
 }
 

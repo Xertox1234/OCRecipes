@@ -305,6 +305,43 @@ export function useAuth() {
     [state.user],
   );
 
+  /**
+   * Change the authenticated user's account email. The server re-authenticates
+   * with `password` before accepting the change. Two server modes:
+   *  - verification OFF (fail-open) → the response is the updated user; cache it.
+   *  - verification ON → the response is a neutral `{ status:
+   *    "verification_pending" }` (anti-enumeration), so re-fetch `/api/auth/me`
+   *    to surface a successful change (the new, now-unverified address) while a
+   *    neutral no-op (duplicate / unchanged) leaves state as-is.
+   * Throws on wrong password / duplicate (gate OFF) / rate-limit so the caller
+   * can surface the error and keep the dialog open.
+   */
+  const changeEmail = useCallback(
+    async (
+      newEmail: string,
+      password: string,
+    ): Promise<
+      { status: "updated"; user: User } | { status: "verification_pending" }
+    > => {
+      const response = await apiRequest("POST", "/api/auth/change-email", {
+        newEmail,
+        password,
+      });
+      const data = await response.json();
+      // Gate OFF echoes the updated user (has an `id`); gate ON returns the
+      // neutral pending status with no user object. `data` is the parsed JSON
+      // (Response.json → any), matching how updateUser consumes it uncast.
+      if (data && typeof data === "object" && "id" in data) {
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data));
+        setState((prev) => ({ ...prev, user: data }));
+        return { status: "updated", user: data };
+      }
+      await checkAuth();
+      return { status: "verification_pending" };
+    },
+    [checkAuth],
+  );
+
   return {
     ...state,
     login,
@@ -313,6 +350,7 @@ export function useAuth() {
     expireSession,
     deleteAccount,
     updateUser,
+    changeEmail,
     checkAuth,
   };
 }

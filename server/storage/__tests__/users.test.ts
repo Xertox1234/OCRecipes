@@ -36,6 +36,9 @@ const {
   getUserByEmail,
   createUser,
   updateUser,
+  updateUserEmail,
+  stagePendingEmail,
+  applyEmailVerification,
   getUserTimezones,
   getUserProfile,
   createUserProfile,
@@ -179,6 +182,200 @@ describe("users storage", () => {
       const result = await updateUser("00000000-0000-0000-0000-000000000000", {
         displayName: "Ghost",
       });
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("updateUserEmail", () => {
+    it("sets the new email AND resets emailVerified to false atomically", async () => {
+      // Start from a verified account so the reset is observable.
+      await tx
+        .update(users)
+        .set({ emailVerified: true })
+        .where(eq(users.id, testUser.id));
+
+      const result = await updateUserEmail(testUser.id, "moved@example.com");
+
+      expect(result).toBeDefined();
+      expect(result!.email).toBe("moved@example.com");
+      // A changed address must re-prove ownership — never stay verified.
+      expect(result!.emailVerified).toBe(false);
+      // Returns a SafeUser — the password hash is never selected back.
+      expect(
+        (result as unknown as Record<string, unknown>).password,
+      ).toBeUndefined();
+    });
+
+    it("returns undefined for a non-existent user id", async () => {
+      const result = await updateUserEmail(
+        "00000000-0000-0000-0000-000000000000",
+        "ghost@example.com",
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it("throws a unique violation when another account holds the email (case-insensitive)", async () => {
+      await createTestUser(tx, { email: "taken@example.com" });
+
+      let err: unknown;
+      try {
+        // Different case must still collide via the lower(email) unique index.
+        await updateUserEmail(testUser.id, "TAKEN@example.com");
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeDefined();
+      expect(isUniqueViolation(err)).toBe(true);
+    });
+
+    it("also clears any staged pending_email (an immediate change supersedes a pending one)", async () => {
+      await stagePendingEmail(testUser.id, "stale-pending@example.com");
+
+      const result = await updateUserEmail(testUser.id, "direct@example.com");
+
+      expect(result).toBeDefined();
+      expect(result!.email).toBe("direct@example.com");
+      // The stale pending change must not survive a direct overwrite, or its
+      // old verification link could later commit a now-wrong address.
+      expect(result!.pendingEmail).toBeNull();
+    });
+  });
+
+  describe("stagePendingEmail", () => {
+    it("stages the new address WITHOUT touching email or emailVerified", async () => {
+      // Start verified so we can prove the current verified state is untouched.
+      await tx
+        .update(users)
+        .set({ emailVerified: true })
+        .where(eq(users.id, testUser.id));
+
+      const result = await stagePendingEmail(
+        testUser.id,
+        "pending@example.com",
+      );
+
+      expect(result).toBeDefined();
+      expect(result!.pendingEmail).toBe("pending@example.com");
+      // The login-gating column and its verified flag must NOT change — that is
+      // the whole point of staging (no typo-lockout, no /me oracle).
+      expect(result!.email).toBe(testUser.email);
+      expect(result!.emailVerified).toBe(true);
+      // Returns a SafeUser — never the password hash.
+      expect(
+        (result as unknown as Record<string, unknown>).password,
+      ).toBeUndefined();
+    });
+
+    it("succeeds even when the target is already registered to another account (no enumeration oracle)", async () => {
+      // The anti-enumeration guarantee: there is NO unique constraint on
+      // pending_email, so staging a taken address must NOT throw — otherwise a
+      // caller could probe which addresses already have accounts.
+      await createTestUser(tx, { email: "taken@example.com" });
+
+      const result = await stagePendingEmail(testUser.id, "taken@example.com");
+
+      expect(result).toBeDefined();
+      expect(result!.pendingEmail).toBe("taken@example.com");
+    });
+
+    it("returns undefined for a non-existent user id", async () => {
+      const result = await stagePendingEmail(
+        "00000000-0000-0000-0000-000000000000",
+        "ghost@example.com",
+      );
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("applyEmailVerification", () => {
+    it("verifies the current email when the token matches it (signup path, case-insensitive)", async () => {
+      const result = await applyEmailVerification(
+        testUser.id,
+        testUser.email.toUpperCase(),
+      );
+
+      expect(result).toBeDefined();
+      expect(result!.emailVerified).toBe(true);
+      // Current-email branch leaves the address itself unchanged.
+      expect(result!.email).toBe(testUser.email);
+    });
+
+    it("commits a staged pending email: swaps it into email, sets verified, clears pending", async () => {
+      await tx
+        .update(users)
+        .set({ emailVerified: true })
+        .where(eq(users.id, testUser.id));
+      await stagePendingEmail(testUser.id, "new@example.com");
+
+      // Case-insensitive: the token email matches the lower(pending_email).
+      const result = await applyEmailVerification(
+        testUser.id,
+        "NEW@example.com",
+      );
+
+      expect(result).toBeDefined();
+      expect(result!.email).toBe("new@example.com");
+      expect(result!.emailVerified).toBe(true);
+      expect(result!.pendingEmail).toBeNull();
+
+      const after = await getUser(testUser.id);
+      expect(after!.email).toBe("new@example.com");
+      expect(after!.pendingEmail).toBeNull();
+    });
+
+    it("rejects a stale token matching neither current nor pending (no-op, returns undefined)", async () => {
+      await stagePendingEmail(testUser.id, "pending@example.com");
+
+      const result = await applyEmailVerification(
+        testUser.id,
+        "stale@example.com",
+      );
+
+      expect(result).toBeUndefined();
+      // Neither the current address nor the staged one may move.
+      const after = await getUser(testUser.id);
+      expect(after!.email).toBe(testUser.email);
+      expect(after!.pendingEmail).toBe("pending@example.com");
+    });
+
+    it("throws a unique violation when committing a pending email another account now holds", async () => {
+      await createTestUser(tx, { email: "taken@example.com" });
+      // Staging is allowed (no constraint); the collision surfaces only at the
+      // commit, where the users.email unique index is the arbiter.
+      await stagePendingEmail(testUser.id, "taken@example.com");
+
+      let err: unknown;
+      try {
+        await applyEmailVerification(testUser.id, "taken@example.com");
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeDefined();
+      expect(isUniqueViolation(err)).toBe(true);
+    });
+
+    it("is idempotent across a commit (re-applying the same token succeeds via the current-email branch)", async () => {
+      await stagePendingEmail(testUser.id, "new@example.com");
+      // First apply commits the swap (email becomes new@example.com).
+      await applyEmailVerification(testUser.id, "new@example.com");
+
+      // A mail-scanner prefetch + the real click both carry the same token;
+      // after the commit it now matches the CURRENT email branch — harmless.
+      const result = await applyEmailVerification(
+        testUser.id,
+        "new@example.com",
+      );
+
+      expect(result).toBeDefined();
+      expect(result!.email).toBe("new@example.com");
+      expect(result!.emailVerified).toBe(true);
+    });
+
+    it("returns undefined for a non-existent user id", async () => {
+      const result = await applyEmailVerification(
+        "00000000-0000-0000-0000-000000000000",
+        "ghost@example.com",
+      );
       expect(result).toBeUndefined();
     });
   });

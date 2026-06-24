@@ -34,6 +34,7 @@ import {
   crudRateLimit,
   verifyEmailLimiter,
   resendVerificationLimiter,
+  changeEmailLimiter,
 } from "./_rate-limiters";
 import {
   loginSchema,
@@ -42,6 +43,7 @@ import {
   profileUpdateSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  changeEmailSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
@@ -94,8 +96,30 @@ const logger = createServiceLogger("auth");
 async function applyVerificationToken(token: string): Promise<boolean> {
   const payload = verifyVerificationToken(token);
   if (!payload) return false;
-  const user = await storage.markEmailVerified(payload.sub);
-  return Boolean(user);
+  // applyEmailVerification matches the token's `email` claim against either the
+  // row's current email (signup / re-verify) OR a staged pending_email (commit
+  // an email change), case-insensitively. A stale link for a PREVIOUS address
+  // (before a further change) matches neither → updates zero rows → false, so it
+  // can never verify a wrong address.
+  try {
+    const user = await storage.applyEmailVerification(
+      payload.sub,
+      payload.email,
+    );
+    return Boolean(user);
+  } catch (err) {
+    // Committing a staged change swaps the address into the unique `email`
+    // column. If that address was registered by someone else between staging
+    // and this click, the swap raises a 23505. Treat it as a plain failed
+    // verify (false → the SAME neutral 400 / error page as a stale token) so
+    // both callers — the POST API and the GET browser landing, which renders
+    // its own error page and does NOT go through handleRouteError — degrade
+    // gracefully instead of surfacing a 500. Safe: nothing is half-written (the
+    // failed UPDATE is atomic) and the failure leaks nothing (the clicker
+    // staged the address themselves). Any non-23505 error still rethrows.
+    if (isUniqueViolation(err)) return false;
+    throw err;
+  }
 }
 
 export function register(app: Express): void {
@@ -320,8 +344,9 @@ export function register(app: Express): void {
   // universal-link, or deployed web frontend — see lib/verify-email-page.ts.
   // Reuses applyVerificationToken so it can never drift from the POST API above.
   // Safe to verify on GET (no confirm step): the token is a stateless JWT and
-  // markEmailVerified is idempotent, so a mail scanner pre-fetching the link
-  // merely verifies the address early (the intended outcome anyway).
+  // applyEmailVerification is idempotent, so a mail scanner pre-fetching the
+  // link merely verifies (or commits) the address early — the intended outcome
+  // anyway (a committed change then re-matches the current-email branch).
   //
   // SECURITY INVARIANT — this route MUST stay OUTSIDE the `/api` prefix. The
   // token rides in the query string, and pino-http's `autoLogging.ignore`
@@ -382,6 +407,135 @@ export function register(app: Express): void {
         });
       } catch (error) {
         handleRouteError(res, error, "resend verification");
+      }
+    },
+  );
+
+  // Authenticated email change. Re-authenticates with the current password,
+  // then (gate ON) STAGES the new address in pending_email and emails a fresh
+  // verification link to it — users.email is NOT touched until the new address
+  // proves control (applyEmailVerification swaps it in on verify). Gate ON/OFF:
+  //  - ON  → neutral verification_pending for free / taken / same-as-current,
+  //          so a caller cannot enumerate which addresses already have accounts.
+  //          Staging cannot collide (pending_email has no unique constraint), so
+  //          there is no existence check and the work is uniform either way.
+  //  - OFF → fail-open (dev / no Resend): there is no verify round-trip to
+  //          commit a staged address, so the email changes IMMEDIATELY via
+  //          updateUserEmail; returns the updated user, explicit 409 on a dup.
+  // The session is intentionally NOT rotated — the password is unchanged, so the
+  // current token stays valid; requireAuth does not gate on the emailVerified
+  // claim (server/middleware/auth.ts), and the LOGIN endpoint re-checks
+  // verification on the next sign-in, which is where re-verification is enforced.
+  //
+  // The staged design (gate ON) closes the /api/auth/me enumeration side-channel
+  // AND the typo-lockout the old immediate-mutation design had: a fat-fingered
+  // address lands only in pending_email and never becomes the login-gating
+  // address unless its link is clicked. See P3-2026-06-24-change-email-staging.
+  app.post(
+    "/api/auth/change-email",
+    requireAuth,
+    changeEmailLimiter,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const parsed = changeEmailSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const { newEmail, password } = parsed.data;
+        const verificationOn = emailVerificationEnabled();
+
+        // Re-authenticate with the current password (getUserForAuth returns the
+        // hash). Same 404 / 401 shape as DELETE /api/auth/account.
+        const user = await storage.getUserForAuth(req.userId);
+        if (!user) {
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+        }
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+          return sendError(
+            res,
+            401,
+            "Invalid credentials",
+            ErrorCode.UNAUTHORIZED,
+          );
+        }
+
+        // Unchanged address (case-insensitive): no-op. Skips the write so the
+        // current verified state is never reset and the row never self-collides
+        // on the lower(email) unique index. (Stored email is already lowercased;
+        // lowercase defensively in case a legacy row was not normalized.)
+        if (newEmail === user.email.toLowerCase()) {
+          return verificationOn
+            ? sendVerificationPending(res)
+            : res.json(serializeUser(user));
+        }
+
+        if (verificationOn) {
+          // Stage the new address (pending_email) WITHOUT touching the current
+          // email. stagePendingEmail cannot raise a 23505 — pending_email has no
+          // unique index — so there is no existence check and no catch: a taken
+          // target is staged exactly like a free one, leaking nothing. The
+          // collision, if any, surfaces only at commit (applyEmailVerification).
+          const staged = await storage.stagePendingEmail(req.userId, newEmail);
+          if (!staged) {
+            return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+          }
+          // Anti-enum send policy, mirroring register's deliberate posture:
+          // ALWAYS do the lookup (so the awaited work is equalized) and ALWAYS
+          // return the same neutral body, but only email a verification LINK
+          // when the address is UNREGISTERED. We never send a "verify your
+          // email" link to an address that already belongs to another account —
+          // it would reach a third party, and the commit-swap would 23505
+          // against the email unique index anyway. The caller learns nothing
+          // either way; the send is fire-and-forget (timing-invisible).
+          const existing = await storage.getUserByEmail(newEmail);
+          if (!existing) {
+            // Reuse the same sign+send path as register/resend so the entry
+            // points never drift; the token is bound to the NEW (staged) address.
+            fireAndForget(
+              "change-email-verification",
+              sendVerificationEmail(
+                newEmail,
+                signVerificationToken(staged.id, newEmail),
+              ),
+            );
+          }
+          return sendVerificationPending(res);
+        }
+
+        // Fail-open (gate OFF): no verify round-trip exists to commit a staged
+        // address, so change the email immediately, mirroring register's
+        // pre-feature path. updateUserEmail mutates only email + email_verified
+        // (and clears any stale pending), so the ONLY 23505 it can raise is an
+        // email collision — branch on the code alone (a name-gated fall-through
+        // to 500 would still be wrong even though this path isn't anti-enum).
+        let updated;
+        try {
+          updated = await storage.updateUserEmail(req.userId, newEmail);
+        } catch (err) {
+          if (isUniqueViolation(err)) {
+            return sendError(
+              res,
+              409,
+              "Email already registered",
+              ErrorCode.CONFLICT,
+            );
+          }
+          throw err;
+        }
+        if (!updated) {
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+        }
+        // No verification email is sent when the gate is off.
+        return res.json(serializeUser(updated));
+      } catch (error) {
+        handleRouteError(res, error, "change email");
       }
     },
   );

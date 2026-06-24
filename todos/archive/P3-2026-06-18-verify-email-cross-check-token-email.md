@@ -1,9 +1,9 @@
 ---
 title: "Cross-check verification token email vs user email when an email-change feature lands"
-status: blocked
+status: done
 priority: low
 created: 2026-06-18
-updated: 2026-06-23
+updated: 2026-06-24
 assignee:
 labels: [deferred, security, api]
 github_issue:
@@ -89,3 +89,15 @@ wrongly clear the unverified state of whatever address is current.
   ignoring `payload.email`.
 - Created `P2-2026-06-23-email-change-feature.md` to track the missing feature;
   its AC carries this cross-check guard so the two land together. Stays `blocked`.
+
+### 2026-06-24 (DONE — landed with the email-change feature)
+
+- Implemented Option B (atomic): `markEmailVerified(id, expectedEmail)` now folds
+  `lower(email) = lower(expectedEmail)` into its WHERE clause
+  (`server/storage/users.ts`), and `applyVerificationToken`
+  (`server/routes/auth.ts`) passes `payload.email`. A stale verification link for
+  a previous address updates zero rows → `undefined` → neutral 400, so it can no
+  longer flip a newly-changed unverified address verified. Real-module test
+  (`server/storage/__tests__/users.test.ts`) covers the stale-token-after-change
+  case; route tests assert the 2-arg call. Shipped on branch
+  `feat/account-email-change` alongside `P2-2026-06-23-email-change-feature.md`.

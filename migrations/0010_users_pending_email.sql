@@ -1,0 +1,29 @@
+-- Stage the new email for the account email-change flow.
+--
+-- The change-email endpoint writes the new address here (unverified) instead of
+-- mutating users.email immediately. applyEmailVerification swaps it into
+-- users.email and clears this column once the new address proves control via
+-- its verification link. Keeping the current email untouched until then closes
+-- the /api/auth/me enumeration side-channel and the typo-lockout that the
+-- immediate-mutation design had (see P3-2026-06-24-change-email-staging).
+--
+-- Intentionally NO unique constraint: a unique index here would make a stage
+-- attempt fail when the target is already taken, re-introducing the enumeration
+-- oracle. Uniqueness is enforced only on users.email at commit time.
+--
+-- Expand-safe / zero-downtime ADD: nullable, no default (metadata-only, no
+-- table rewrite), idempotent via IF NOT EXISTS. BUT the merge ordering is
+-- LOAD-BEARING FOR THE WHOLE AUTH SURFACE, not just this feature: pending_email
+-- joins safeUserColumns (getTableColumns minus password) AND the full-row
+-- select() in getUserForAuth/getUserByUsernameForAuth, so the NEW build emits
+-- `SELECT ... pending_email` on the LOGIN path. If Railway auto-deploys the
+-- merge before this column exists, every login + user read 42703s = total auth
+-- outage. Per the Railway migrate-before-merge ordering (server:prod runs no
+-- db:push), this must be VERIFIED-APPLIED in prod BEFORE merging the PR — not
+-- merely documented as a step.
+--
+-- Apply with:  psql "$DATABASE_URL" -f migrations/0010_users_pending_email.sql
+-- (prod, from laptop: railway run --service Postgres -- sh -c \
+--   'psql "$DATABASE_PUBLIC_URL" -f migrations/0010_users_pending_email.sql')
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_email text;

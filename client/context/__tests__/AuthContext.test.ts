@@ -98,6 +98,9 @@ describe("AuthContext", () => {
         logout: async () => {},
         deleteAccount: async (_p: string) => {},
         updateUser: async (_updates: Record<string, unknown>) => undefined,
+        changeEmail: async (_e: string, _p: string) => ({
+          status: "verification_pending" as const,
+        }),
         checkAuth: async () => {},
       };
 
@@ -106,6 +109,7 @@ describe("AuthContext", () => {
       expect(authInterface).toHaveProperty("logout");
       expect(authInterface).toHaveProperty("deleteAccount");
       expect(authInterface).toHaveProperty("updateUser");
+      expect(authInterface).toHaveProperty("changeEmail");
       expect(authInterface).toHaveProperty("checkAuth");
       expect(authInterface).toHaveProperty("user");
       expect(authInterface).toHaveProperty("isLoading");
