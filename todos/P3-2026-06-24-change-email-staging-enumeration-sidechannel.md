@@ -1,7 +1,7 @@
 ---
 title: "Close the change-email enumeration side-channel with a staged pending-email design"
 status: backlog
-priority: low
+priority: medium
 created: 2026-06-24
 updated: 2026-06-24
 assignee:
@@ -20,13 +20,24 @@ staged (pending-email) design would remove:
 
 1. **Enumeration side-channel (low):** an authenticated caller can read
    `/api/auth/me` after the change to learn whether a target address was free.
-2. **Typo-lockout (gate-flip prerequisite):** once email verification is enforced
-   (`RESEND_API_KEY` set), a fat-fingered new address immediately sets the
-   account to an unverified address the user does not control. The login gate
+2. **Typo-lockout (LIVE whenever the gate is ON):** when email verification is
+   enforced (`RESEND_API_KEY` set), a fat-fingered new address immediately sets
+   the account to an unverified address the user does not control. The login gate
    (`server/routes/auth.ts` ~line 267, `EMAIL_NOT_VERIFIED` 403) then locks them
-   out at next login with no self-service recovery. **This is unreachable today
-   (gate OFF, fail-open path returns the user) but MUST be fixed before the
-   email-verification gate is flipped ON in prod.**
+   out once the current session ends, with no self-service recovery (they can
+   re-change while still logged in, but not after the token expires/logout).
+   **The prod gate is CONFIRMED ON** (Resend dashboard shows a delivered
+   "Verify your email for OCRecipes" send on 2026-06-22) — so this is LIVE, not a
+   future prerequisite. **Partially mitigated** by the confirm-email second field
+   added to `ChangeEmailModal` (PR #443): a typo now has to be entered identically
+   twice. That is a client-only guard and does not fix the underlying immediate
+   mutation — staging is still the proper fix. A related **takeover vector** would
+   activate IF a password-reset-by-email flow is ever added: a typo to a real
+   inbox whose owner clicks the verification link flips the account's email to the
+   typo'd (attacker-controlled) address verified (the row's email already equals
+   the typo'd value, so the cross-check matches). No reset flow exists today, so
+   it is latent — but list this as a hard dependency on any future password-reset
+   work.
 
 ## Background
 
@@ -88,3 +99,8 @@ the deferred-todo bar.
 - Filed while landing `P2-2026-06-23-email-change-feature.md`. The immediate-change
   design was deliberate (the cross-check guard depends on it); this is the
   forward hardening, surfaced by an advisor review of the shipped endpoint.
+- Confirmed the prod email-verification gate is **ON** (Resend dashboard: a
+  delivered verification send on 2026-06-22), so the typo-lockout is LIVE, not a
+  future prerequisite. Bumped priority low → **medium** and shipped a partial
+  mitigation in PR #443 (confirm-email second field in `ChangeEmailModal`). The
+  staging-column redesign here is the proper fix and stays open.

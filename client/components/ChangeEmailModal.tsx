@@ -57,6 +57,7 @@ export function ChangeEmailModal({
 }: ChangeEmailModalProps) {
   const { theme } = useTheme();
   const [newEmail, setNewEmail] = useState("");
+  const [confirmEmail, setConfirmEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +68,7 @@ export function ChangeEmailModal({
   useEffect(() => {
     if (visible) {
       setNewEmail("");
+      setConfirmEmail("");
       setPassword("");
       setShowPassword(false);
       setError(null);
@@ -86,6 +88,13 @@ export function ChangeEmailModal({
     const trimmedEmail = newEmail.trim();
     if (!EMAIL_RE.test(trimmedEmail)) {
       setError("Enter a valid email address");
+      return;
+    }
+    // Confirm-email guard against a typo: a mistyped new address is mutated
+    // immediately and (verification ON) can lock the user out at next login.
+    // Compare normalized (trim + lowercase) since the server lowercases anyway.
+    if (trimmedEmail.toLowerCase() !== confirmEmail.trim().toLowerCase()) {
+      setError("Email addresses do not match");
       return;
     }
     if (!password) {
@@ -113,7 +122,7 @@ export function ChangeEmailModal({
       setError(friendly);
       setIsSubmitting(false);
     }
-  }, [newEmail, password, onConfirm, isSubmitting]);
+  }, [newEmail, confirmEmail, password, onConfirm, isSubmitting]);
 
   const handleCancel = useCallback(() => {
     if (isSubmitting) return;
@@ -218,6 +227,31 @@ export function ChangeEmailModal({
                 accessibilityLabel="New email address"
                 error={!!error}
                 testID="change-email-new-email-input"
+              />
+
+              <ThemedText
+                type="small"
+                style={[styles.label, { color: theme.textSecondary }]}
+              >
+                Confirm new email address
+              </ThemedText>
+              <TextInput
+                leftIcon="mail"
+                placeholder="you@example.com"
+                value={confirmEmail}
+                onChangeText={(text) => {
+                  setConfirmEmail(text);
+                  if (error) setError(null);
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
+                editable={!isSubmitting}
+                accessibilityLabel="Confirm new email address"
+                error={!!error}
+                testID="change-email-confirm-email-input"
               />
 
               <ThemedText
