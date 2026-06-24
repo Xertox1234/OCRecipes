@@ -15,6 +15,7 @@ const {
   mockQueryClient,
   mockNotifySessionExpired,
   mockClearOfflineQueue,
+  mockClearHomeActionsState,
   mockWhenQueryCacheRestored,
 } = vi.hoisted(() => {
   const mockAsyncStorage: Record<string, string> = {};
@@ -32,6 +33,7 @@ const {
     mockQueryClient: { clear: vi.fn() },
     mockNotifySessionExpired: vi.fn(),
     mockClearOfflineQueue: vi.fn().mockResolvedValue(undefined),
+    mockClearHomeActionsState: vi.fn().mockResolvedValue(undefined),
     // Default: the persisted-cache restore gate is already settled, so the sweep
     // proceeds immediately. Individual tests override with a deferred promise to
     // assert the sweep waits for restoration before clearing.
@@ -73,6 +75,10 @@ vi.mock("@/lib/push-token-registration", () => ({
 
 vi.mock("@/lib/offline-queue", () => ({
   clearOfflineQueue: () => mockClearOfflineQueue(),
+}));
+
+vi.mock("@/lib/home-actions-storage", () => ({
+  clearHomeActionsState: () => mockClearHomeActionsState(),
 }));
 
 const originalFetch = globalThis.fetch;
@@ -581,6 +587,12 @@ describe("useAuth", () => {
       // queued writes can't replay under the next user (the queue key is global
       // and the drain attaches the current bearer token).
       expect(mockClearOfflineQueue).toHaveBeenCalled();
+      // ...and the per-user home-action history (recent actions + usage counts) —
+      // global non-namespaced keys that would otherwise seed the next user's Home
+      // UI on a shared device (cross-user behavioral bleed). Asserted on the logout
+      // path only: clearHomeActionsState runs solely via the shared
+      // clearDurableLocalState chokepoint, so one path proves wiring for all five.
+      expect(mockClearHomeActionsState).toHaveBeenCalled();
       // ...and the persisted query cache (regression guard: this exact call was
       // previously unasserted, the gap that let the checkAuth 4th-path leak ship).
       expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(

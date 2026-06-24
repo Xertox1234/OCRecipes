@@ -12,6 +12,7 @@ import { tokenStorage } from "@/lib/token-storage";
 import { User } from "@shared/types/auth";
 import { registerPushToken } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
+import { clearHomeActionsState } from "@/lib/home-actions-storage";
 
 interface AuthState {
   user: User | null;
@@ -25,12 +26,13 @@ const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
 /**
  * Best-effort teardown of every piece of device-local state that outlives a
  * session: the durable offline mutation queue, the persisted TanStack Query
- * cache, and the in-memory query cache. EVERY session-ending path — logout,
- * expireSession, deleteAccount, and the checkAuth dead-token branch — must call
- * this so the prior session's queued writes can't replay, and its cached data
- * can't rehydrate, under whoever signs in next on this device. The queue/cache
- * keys are global (not user-namespaced) and login() does not clear them, so
- * this is the only thing standing between two accounts on a shared device.
+ * cache, the in-memory query cache, and the per-user home-action history (recent
+ * actions + usage counts). EVERY session-ending path — logout, expireSession,
+ * deleteAccount, and the checkAuth dead-token branch — must call this so the
+ * prior session's queued writes can't replay, and its cached/behavioral data
+ * can't rehydrate, under whoever signs in next on this device. These keys are
+ * all global (not user-namespaced) and login() does not clear them, so this is
+ * the only thing standing between two accounts on a shared device.
  *
  * Contractually NON-THROWING: callers rely on this never rejecting so a clear
  * failure can't skip the auth-state reset that follows it. Clears the offline
@@ -50,6 +52,13 @@ const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
 async function clearDurableLocalState(): Promise<void> {
   try {
     await clearOfflineQueue();
+    // Clear this device's per-user home-action history (recent-actions list +
+    // per-action usage counts). These are global, non-namespaced keys that would
+    // otherwise seed the next user's Home UI on a shared device. Placed right
+    // after the queue clear so it still runs if the query-cache block below
+    // throws; it serializes against its own startup init and is non-throwing.
+    // (Section-expansion state stays — a device-display pref; theme is its own module.)
+    await clearHomeActionsState();
     // Gate on the persisted-cache restore: a teardown that races a cold-start
     // restore could otherwise clear() the cache before the restore rehydrates the
     // prior user's data into memory, re-exposing it under the next user. Resolves
