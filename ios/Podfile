@@ -90,6 +90,11 @@ target 'OCRecipes' do
           phase_name = '[MLKit] Patch for platform'
           next if target.build_phases.any? { |p| p.respond_to?(:name) && p.name == phase_name }
           phase = target.new_shell_script_build_phase(phase_name)
+          # Declare the phase intentionally always-out-of-date so Xcode stops
+          # warning about "ambiguous dependencies". This script genuinely must
+          # run every build (it re-tags MLKit binaries per platform), so there
+          # are no stable input/output files to declare instead.
+          phase.always_out_of_date = "1"
           phase.shell_script = <<~SHELL
             SCRIPT="${SRCROOT}/../scripts/patch-mlkit-simulator.py"
             PODS="${SRCROOT}/Pods"
