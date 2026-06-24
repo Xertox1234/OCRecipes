@@ -3,7 +3,7 @@ title: "Cross-check verification token email vs user email when an email-change 
 status: blocked
 priority: low
 created: 2026-06-18
-updated: 2026-06-20
+updated: 2026-06-23
 assignee:
 labels: [deferred, security, api]
 github_issue:
@@ -51,7 +51,9 @@ wrongly clear the unverified state of whatever address is current.
 
 ## Dependencies
 
-- Dormant until an email-change feature exists. Pair this with that work.
+- Dormant until an email-change feature exists. Pair this with that work:
+  `P2-2026-06-23-email-change-feature.md` (the feature todo that unblocks this —
+  its AC includes landing this cross-check guard).
 
 ## Risks
 
@@ -78,3 +80,12 @@ wrongly clear the unverified state of whatever address is current.
   `lower(email)` unique index, so the cross-check must compare
   **normalization-aware** (case-insensitive), not a bare
   `user.email === payload.email`, or it will reject legitimate current tokens.
+
+### 2026-06-23 (filed the unblocking feature todo)
+
+- Re-confirmed block holds: grep for `newEmail`/`changeEmail`/`updateEmail`/etc.
+  across `server/`, `client/`, `shared/` returns zero; `applyVerificationToken`
+  (`server/routes/auth.ts:94`) still marks via `markEmailVerified(payload.sub)`,
+  ignoring `payload.email`.
+- Created `P2-2026-06-23-email-change-feature.md` to track the missing feature;
+  its AC carries this cross-check guard so the two land together. Stays `blocked`.
