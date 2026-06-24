@@ -3,7 +3,7 @@ import { render, screen, waitFor, act } from "@testing-library/react";
 
 import { AuthProvider, useAuthContext } from "@/context/AuthContext";
 import { SessionExpiryBridge } from "@/components/SessionExpiryBridge";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, markQueryCacheRestored } from "@/lib/query-client";
 
 /**
  * End-to-end wiring test: REAL useAuth + REAL query-client emitter + REAL
@@ -73,6 +73,13 @@ function AuthProbe() {
 describe("session-expiry integration (real useAuth + emitter + bridge)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // A mid-session 401 fires long after the persisted-cache restore has settled,
+    // so the durable sweep's restore gate (whenQueryCacheRestored, awaited by
+    // expireSession) is already released in a running app. This harness doesn't
+    // mount PersistQueryClientProvider (which fires that signal at startup), so
+    // release the gate explicitly to mirror the real precondition — otherwise
+    // expireSession blocks on the 5s safety timeout and the auth flip is delayed.
+    markQueryCacheRestored();
   });
 
   it("a token-bearing session-code 401 from a real request logs out and toasts via the bridge", async () => {

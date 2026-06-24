@@ -15,6 +15,14 @@ export interface QueuedMutation {
 
 let queue: QueuedMutation[] = [];
 
+// Holds the in-flight (or completed) startup load so a concurrent
+// clearOfflineQueue() can serialize strictly AFTER it. initOfflineQueue does an
+// unconditional re-persist of the merged disk+memory queue; if the sweep's
+// removeItem lands between init's disk read and that re-persist, the orphaned
+// prior-session queue is rewritten to disk after the sweep and later drained
+// under whoever logs in next (cross-user replay). See clearOfflineQueue.
+let initPromise: Promise<void> | null = null;
+
 async function persist(): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(queue)).catch(
     () => {},
@@ -50,23 +58,31 @@ function parseQueue(raw: string | null): QueuedMutation[] {
   return parsed.filter(isQueuedMutation);
 }
 
-export async function initOfflineQueue(): Promise<void> {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY).catch(() => null);
-  // Merge persisted entries with anything enqueued during the getItem await
-  // window (L2: don't clobber an enqueue that landed mid-load). IDs are unique
-  // UUIDs so the two sets are disjoint; persisted (older) first, then cap depth.
-  const merged = [...parseQueue(raw), ...queue];
-  queue =
-    merged.length > MAX_DEPTH
-      ? merged.slice(merged.length - MAX_DEPTH)
-      : merged;
-  // Persist the merged set UNCONDITIONALLY before clearStale: a mid-load enqueue
-  // already clobbered storage to just its own entry (its persist() ran while
-  // getItem was awaiting), so without this write the merged result lives only in
-  // memory and the persisted-older entries are lost on the next force-quit.
-  // clearStale persists only when it actually filters, so it can't be relied on.
-  await persist();
-  await clearStale();
+export function initOfflineQueue(): Promise<void> {
+  // Capture the load promise SYNCHRONOUSLY (before the first await) so a
+  // concurrent clearOfflineQueue() can await it and run strictly afterward —
+  // the lock-before-await rule for single-flight guards. Memoized: the startup
+  // load runs once per process; a second call returns the same promise (re-
+  // running it would merge the now-persisted set into itself, duplicating).
+  initPromise ??= (async () => {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY).catch(() => null);
+    // Merge persisted entries with anything enqueued during the getItem await
+    // window (L2: don't clobber an enqueue that landed mid-load). IDs are unique
+    // UUIDs so the two sets are disjoint; persisted (older) first, then cap depth.
+    const merged = [...parseQueue(raw), ...queue];
+    queue =
+      merged.length > MAX_DEPTH
+        ? merged.slice(merged.length - MAX_DEPTH)
+        : merged;
+    // Persist the merged set UNCONDITIONALLY before clearStale: a mid-load enqueue
+    // already clobbered storage to just its own entry (its persist() ran while
+    // getItem was awaiting), so without this write the merged result lives only in
+    // memory and the persisted-older entries are lost on the next force-quit.
+    // clearStale persists only when it actually filters, so it can't be relied on.
+    await persist();
+    await clearStale();
+  })();
+  return initPromise;
 }
 
 export async function clearStale(): Promise<void> {
@@ -109,6 +125,25 @@ export async function incrementAttempts(id: string): Promise<void> {
 }
 
 export async function clearOfflineQueue(): Promise<void> {
+  // Serialize against an in-flight startup load. initOfflineQueue re-persists the
+  // merged disk+memory queue unconditionally, so if it read disk before our
+  // removeItem and persists after it, the orphaned prior-session queue is
+  // resurrected and later drained under whoever logs in next on a shared device
+  // (cross-user replay). Awaiting init here makes the sweep deterministic: clear
+  // always runs strictly after init completes, so our removeItem is the last
+  // write. Once init has resolved this awaits an already-settled promise (no
+  // cost). The teardown sweep (clearDurableLocalState) tolerates this delay —
+  // init is a single AsyncStorage read+write. NON-THROWING by contract, so the
+  // await is wrapped (init's awaits are all self-catching, but be defensive).
+  // No timeout here (unlike the query-cache gate, which guards a React-lifecycle
+  // signal that could fail to fire): initPromise can't reject, and the only way
+  // it never settles is a hung AsyncStorage.getItem — a dead native bridge that
+  // would wedge the removeItem below too, so a timeout would buy nothing.
+  if (initPromise) {
+    try {
+      await initPromise;
+    } catch {}
+  }
   queue = [];
   await AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
 }

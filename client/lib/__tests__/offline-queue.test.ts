@@ -171,6 +171,64 @@ describe("offline-queue", () => {
     expect(q[49].id).toBe("item-59");
   });
 
+  it("does not resurrect a swept queue when init's re-persist races clearOfflineQueue (cross-user replay close)", async () => {
+    const { initOfflineQueue, clearOfflineQueue, loadQueue } =
+      await importModule();
+
+    // A prior session's orphaned queue is sitting on disk. On a shared device,
+    // the next session-teardown sweep (clearOfflineQueue) must win — otherwise
+    // these captured writes replay under whoever logs in next.
+    const orphaned = [
+      {
+        id: "A1",
+        endpoint: "/api/scanned-items",
+        method: "POST",
+        body: { name: "A1" },
+        attempts: 0,
+        savedAt: Date.now(),
+      },
+      {
+        id: "A2",
+        endpoint: "/api/scanned-items",
+        method: "POST",
+        body: { name: "A2" },
+        attempts: 0,
+        savedAt: Date.now(),
+      },
+    ];
+    // Stateful disk fake so we can assert the FINAL persisted state, not just
+    // that removeItem was called (the resurrection is a re-write AFTER removeItem).
+    let disk: string | null = JSON.stringify(orphaned);
+    vi.mocked(AsyncStorage.setItem).mockImplementation(async (_k, v) => {
+      disk = v as string;
+    });
+    vi.mocked(AsyncStorage.removeItem).mockImplementation(async () => {
+      disk = null;
+    });
+
+    // Defer init's disk READ so the sweep can interleave between init's read and
+    // its unconditional re-persist — the exact window that resurrects the queue.
+    let resolveGet: (v: string | null) => void = () => {};
+    vi.mocked(AsyncStorage.getItem).mockReturnValueOnce(
+      new Promise<string | null>((resolve) => {
+        resolveGet = resolve;
+      }),
+    );
+
+    const initP = initOfflineQueue(); // suspends at the deferred getItem
+    const clearP = clearOfflineQueue(); // races init's re-persist
+    // init "read" the orphaned disk (the read landed BEFORE any removeItem).
+    resolveGet(JSON.stringify(orphaned));
+
+    await Promise.all([initP, clearP]);
+
+    // The sweep must win in BOTH memory and on disk: nothing left to drain under
+    // the next user. Without sequencing, init's `await persist()` re-writes the
+    // orphaned [A1,A2] AFTER the sweep's removeItem, resurrecting the queue.
+    expect(loadQueue()).toHaveLength(0);
+    expect(disk).toBeNull();
+  });
+
   it("does not clobber an item enqueued while the persisted load is in flight (L2)", async () => {
     const { initOfflineQueue, enqueue, loadQueue } = await importModule();
     let resolveGet: (v: string | null) => void = () => {};

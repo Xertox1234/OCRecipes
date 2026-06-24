@@ -15,6 +15,7 @@ const {
   mockQueryClient,
   mockNotifySessionExpired,
   mockClearOfflineQueue,
+  mockWhenQueryCacheRestored,
 } = vi.hoisted(() => {
   const mockAsyncStorage: Record<string, string> = {};
   return {
@@ -31,6 +32,10 @@ const {
     mockQueryClient: { clear: vi.fn() },
     mockNotifySessionExpired: vi.fn(),
     mockClearOfflineQueue: vi.fn().mockResolvedValue(undefined),
+    // Default: the persisted-cache restore gate is already settled, so the sweep
+    // proceeds immediately. Individual tests override with a deferred promise to
+    // assert the sweep waits for restoration before clearing.
+    mockWhenQueryCacheRestored: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -59,6 +64,7 @@ vi.mock("@/lib/query-client", () => ({
   getApiUrl: () => mockGetApiUrl(),
   queryClient: mockQueryClient,
   notifySessionExpired: () => mockNotifySessionExpired(),
+  whenQueryCacheRestored: () => mockWhenQueryCacheRestored(),
 }));
 
 vi.mock("@/lib/push-token-registration", () => ({
@@ -108,12 +114,16 @@ describe("useAuth", () => {
       // clearDurableLocalState(), leaving the durable offline queue / persisted
       // query cache on disk with NO token; the next cold launch takes this branch.
       // Extending the sweep here makes all five teardown paths consistent and
-      // reduces the prior session's residual durable state. (NOTE: this does not
-      // deterministically close the cross-user exposure — the sweep still races
-      // App.tsx's fire-and-forget initOfflineQueue() re-persist; that startup
-      // sequencing affects this AND the dead-token path and is tracked
-      // separately.) The sweep is a verified no-op on the common "fresh install,
-      // never logged in" cold start (empty queue / absent cache key / empty cache).
+      // clears the prior session's residual durable state. The startup-sequencing
+      // race this branch once lost is now closed: clearOfflineQueue serializes
+      // against the in-flight initOfflineQueue() re-persist (see offline-queue.ts)
+      // and the query-cache clear awaits the persister restore (whenQueryCacheRestored),
+      // so neither can resurrect the swept state — covering this AND the dead-token
+      // path. (Those serialization/gating behaviors are unit-tested directly in
+      // offline-queue.test.ts and the restore-gate test below; this test asserts
+      // the no-token branch invokes the sweep.) The sweep is a verified no-op on
+      // the common "fresh install, never logged in" cold start (empty queue /
+      // absent cache key / empty cache).
       mockTokenStorage.get.mockResolvedValue(null);
 
       const { result } = renderHook(() => useAuth());
@@ -128,6 +138,39 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("waits for the persisted query cache to finish restoring before clearing it (no cross-user rehydrate)", async () => {
+      // The durable sweep's queryClient.clear() must not run BEFORE the
+      // PersistQueryClientProvider has finished restoring the prior session's
+      // cache — otherwise the in-flight restore rehydrates user A's data into
+      // memory AFTER the clear (and the persister re-writes it to disk),
+      // re-exposing it under user B on a shared device. The sweep gates on the
+      // restore-complete signal (whenQueryCacheRestored).
+      mockTokenStorage.get.mockResolvedValue(null); // no-token teardown-shaped path
+      let resolveRestore: () => void = () => {};
+      mockWhenQueryCacheRestored.mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          resolveRestore = resolve;
+        }),
+      );
+
+      const { result } = renderHook(() => useAuth());
+
+      // The sweep has reached the durable-queue clear (we're inside the gated
+      // block) but the cache restore is still in flight, so the cache clear must
+      // NOT have fired yet.
+      await waitFor(() => expect(mockClearOfflineQueue).toHaveBeenCalled());
+      expect(mockQueryClient.clear).not.toHaveBeenCalled();
+
+      // Restoration completes → the sweep proceeds and clears the in-memory cache.
+      resolveRestore();
+      await waitFor(() => expect(mockQueryClient.clear).toHaveBeenCalled());
+      expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
+        "@ocrecipes_query_cache",
+      );
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.isAuthenticated).toBe(false);
     });
 
     it("authenticates with valid token and caches user", async () => {

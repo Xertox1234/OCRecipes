@@ -353,3 +353,63 @@ describe("resolveImageUrl", () => {
     expect(out).toMatch(/^https?:\/\/.+\/api\/recipe-images\/foo\.png$/);
   });
 });
+
+describe("query-cache restore gate", () => {
+  // The gate (whenQueryCacheRestored / markQueryCacheRestored) lets a session
+  // teardown await PersistQueryClientProvider's async restore before clearing the
+  // cache, so an in-flight restore can't rehydrate the prior user's data after
+  // the clear. It is a MODULE-LEVEL one-shot promise, so each test re-imports a
+  // fresh module via resetModules + dynamic import.
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("stays pending until markQueryCacheRestored() fires, then resolves (signal wins)", async () => {
+    const { markQueryCacheRestored, whenQueryCacheRestored } = await import(
+      "../query-client"
+    );
+    let resolved = false;
+    const gate = whenQueryCacheRestored().then(() => {
+      resolved = true;
+    });
+    await Promise.resolve(); // flush microtasks — must NOT resolve before the signal
+    expect(resolved).toBe(false);
+
+    markQueryCacheRestored();
+    await gate;
+    expect(resolved).toBe(true);
+  });
+
+  it("resolves via the 5s safety timeout when the restore signal never fires", async () => {
+    // Import BEFORE fake timers so module-load side effects don't seed the fake
+    // timer count; the gate's setTimeout is created in whenQueryCacheRestored().
+    const { whenQueryCacheRestored } = await import("../query-client");
+    vi.useFakeTimers();
+    let resolved = false;
+    const gate = whenQueryCacheRestored().then(() => {
+      resolved = true;
+    });
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(resolved).toBe(false); // signal never fired; timeout not yet reached
+    await vi.advanceTimersByTimeAsync(1);
+    await gate;
+    expect(resolved).toBe(true);
+  });
+
+  it("clears the safety timer when the signal wins so no stray timeout lingers", async () => {
+    const { markQueryCacheRestored, whenQueryCacheRestored } = await import(
+      "../query-client"
+    );
+    vi.useFakeTimers();
+    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+    const gate = whenQueryCacheRestored();
+    expect(vi.getTimerCount()).toBe(1); // safety timer armed
+    markQueryCacheRestored();
+    await gate;
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0); // and cleared — no lingering timer
+  });
+});

@@ -6,6 +6,7 @@ import {
   getApiUrl,
   queryClient,
   notifySessionExpired,
+  whenQueryCacheRestored,
 } from "@/lib/query-client";
 import { tokenStorage } from "@/lib/token-storage";
 import { User } from "@shared/types/auth";
@@ -35,12 +36,35 @@ const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
  * failure can't skip the auth-state reset that follows it. Clears the offline
  * queue FIRST so the privacy-critical replay fix always runs even if a later
  * removeItem rejects (clearOfflineQueue swallows its own errors, can't throw).
+ *
+ * clearOfflineQueue() serializes against the startup queue load, and the query
+ * cache clear waits on whenQueryCacheRestored(), so neither a concurrent
+ * initOfflineQueue() re-persist nor an in-flight PersistQueryClientProvider
+ * restore can resurrect the prior session's durable state AFTER this sweep,
+ * closing the cross-user replay/rehydrate race on a shared device. The queue
+ * close is fully deterministic (a hard promise dependency); the query-cache
+ * close holds as long as the restore settles within the gate's safety timeout
+ * (whenQueryCacheRestored), which it always does outside of broken provider
+ * wiring — see that function for the bound.
  */
 async function clearDurableLocalState(): Promise<void> {
   try {
     await clearOfflineQueue();
+    // Gate on the persisted-cache restore: a teardown that races a cold-start
+    // restore could otherwise clear() the cache before the restore rehydrates the
+    // prior user's data into memory, re-exposing it under the next user. Resolves
+    // immediately once restore has settled (bounded by a safety timeout).
+    await whenQueryCacheRestored();
+    // Clear the in-memory cache FIRST, then remove the disk key. The throttled
+    // persister reads the LIVE cache when it fires, so clearing memory first means
+    // any re-persist (pending, or scheduled by clear() itself) only ever writes an
+    // EMPTY cache — never re-persisting A's data in the gap before removeItem.
+    // Guard clear() independently so a (pathological) throw can't skip the disk
+    // removal — the original ordering relied on clear() being last for this.
+    try {
+      queryClient.clear();
+    } catch {}
     await AsyncStorage.removeItem(QUERY_CACHE_KEY);
-    queryClient.clear();
   } catch {}
 }
 
@@ -60,12 +84,14 @@ export function useAuth() {
         // and the durable sweep, leaving the durable offline queue / persisted
         // query cache on disk with no token. Sweep them here too so this branch
         // is consistent with the other four teardown paths and the prior
-        // session's residual durable state is reduced. (This does NOT fully close
-        // the cross-user exposure: the sweep still races App.tsx's fire-and-forget
-        // initOfflineQueue() re-persist — a startup-sequencing gap that also
-        // affects the dead-token branch below, tracked separately.)
-        // clearDurableLocalState() is contractually non-throwing and a verified
-        // no-op on the common "fresh install, never logged in" path.
+        // session's residual durable state is cleared. The sweep now SERIALIZES
+        // against the startup initializers it used to race — clearOfflineQueue()
+        // awaits the in-flight initOfflineQueue() re-persist, and the query-cache
+        // clear awaits the persister's restore — so an orphaned queue / cache can
+        // no longer be resurrected after the sweep (the same close applies to the
+        // dead-token branch below). clearDurableLocalState() is contractually
+        // non-throwing and a verified no-op on the common "fresh install, never
+        // logged in" cold start.
         await clearDurableLocalState();
         setState({ user: null, isLoading: false, isAuthenticated: false });
         return;

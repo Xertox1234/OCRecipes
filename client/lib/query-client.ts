@@ -437,3 +437,52 @@ export const asyncStoragePersister = createAsyncStoragePersister({
   key: "@ocrecipes_query_cache",
   throttleTime: 1000,
 });
+
+// --- Persisted-query-cache restore gate --------------------------------------
+// PersistQueryClientProvider restores the prior session's persisted cache into
+// `queryClient` ASYNCHRONOUSLY on mount. A session-teardown sweep that calls
+// `queryClient.clear()` before that restore finishes is undone: the restore
+// rehydrates the previous user's data into memory AFTER the clear (and, once
+// restore completes, the persister re-writes it to disk), re-exposing user A's
+// cached data under user B on a shared device. This gate lets the durable sweep
+// (`clearDurableLocalState` in useAuth) await restoration-complete first.
+//
+// Resolved by `markQueryCacheRestored()`, which App.tsx wires to the provider's
+// `onSuccess` AND `onError` props — a FAILED restore (corrupt/oversized blob)
+// must release the gate too, never wedge teardown. Created eagerly at module
+// load so a sweep that runs before the provider's restore effect (React mounts
+// deep children's effects before the parent provider's) still awaits an existing
+// promise rather than missing the signal.
+let resolveQueryCacheRestored: () => void = () => {};
+const queryCacheRestored = new Promise<void>((resolve) => {
+  resolveQueryCacheRestored = resolve;
+});
+
+// Safety cap so a never-firing restore signal (e.g. the provider not mounting in
+// some runtime path) cannot wedge a session teardown forever. Far longer than a
+// real single-key AsyncStorage restore, so it only ever fires on broken wiring.
+// Tradeoff: this caps liveness over strict determinism — if a restore somehow
+// exceeded this (pathological for a sub-2MB single-key read), the sweep would
+// proceed before it settled. Chosen because a wedged teardown is the worse fault.
+const QUERY_CACHE_RESTORE_TIMEOUT_MS = 5000;
+
+/** Idempotently releases the restore gate. Wired to the persister's onSuccess
+ *  and onError. Safe to call more than once. */
+export function markQueryCacheRestored(): void {
+  resolveQueryCacheRestored();
+}
+
+/** Resolves once the persisted query cache has finished restoring (or the safety
+ *  timeout elapses). Callers awaiting this before `queryClient.clear()` ensure an
+ *  in-flight restore can't rehydrate the prior session's data after the clear.
+ *  Clears the timer when the gate wins so no stray timeout lingers after each
+ *  teardown call (the common case — restore has long since settled). */
+export function whenQueryCacheRestored(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, QUERY_CACHE_RESTORE_TIMEOUT_MS);
+    void queryCacheRestored.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
