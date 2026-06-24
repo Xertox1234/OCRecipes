@@ -99,3 +99,36 @@ suppress legitimate announcements.
   the `/todo` run that implemented the smart-scan menu-confirm processing
   affordance. Hardware-gated and conditional — deferred rather than fixed
   speculatively.
+
+### 2026-06-23 — AC1 OBSERVED (emulator, provisional): it DOES re-read → AC2
+
+- Reproduced on an Android emulator (Medium_Phone API 36, `google_apis_playstore`
+  image, TalkBack 16.0.0) using a throwaway harness that forced the
+  `SMART_CONFIRMED` restaurant-menu chip in the real `ScanScreen` and toggled
+  `isSmartConfirming`. Captured TalkBack's composed output from `logcat` at
+  VERBOSE (`Log output level` dev setting + `setprop log.tag.talkback VERBOSE`).
+- **Result: the polite live region RE-READS THE WHOLE CHIP on the busy swap**
+  (both directions). The `Text↔ActivityIndicator` swap is a
+  `CONTENT_CHANGE_TYPE_SUBTREE` on the container carrying
+  `accessibilityLiveRegion="polite"` (`nodeLiveRegion=1`); TalkBack composed +
+  spoke:
+  - idle→busy: `ttsOutput= {Product. Restaurant menu detected. High confidence. Confirm smart photo analysis, busy. Button}`
+  - busy→idle: `ttsOutput= {Product. Restaurant menu detected. High confidence. Confirm smart photo analysis. Button}`
+    (`Pipeline … action=SPEAK text="…"`, `SpeechControllerImpl: Speaking fragment…`).
+- This is the over-announcement the todo feared → **AC2 path** (scope the live
+  cue), not AC3 (no-op). **Caveat: emulator-observed = provisional**; emulator
+  TalkBack may differ from a physical device. A physical-device re-check is still
+  advisable, but a confirmed re-read on emulator is strong and actionable.
+
+### 2026-06-23 — RESOLVED (investigation) → fix split to a follow-up
+
+- This todo's deferred question is **answered** (busy swap DOES re-read → AC2).
+  The fix is NOT the scoped one-liner this todo imagined: the container live
+  region is the sole Android announcer for **all 7 chip variants**, so the fix is
+  a cross-variant announce-model rework. Per a scope decision, the fix is tracked
+  separately and this investigation todo is archived.
+- Follow-up (the actual fix):
+  `todos/P3-2026-06-23-smart-scan-chip-live-region-announce-model-rework.md`.
+- AC disposition: AC1 ✅ observed (re-reads). AC2 → moved to the follow-up (fix).
+  AC3 ❌ not applicable (it re-reads, so not a verified-no-op). AC4 preserved (no
+  production code changed — iOS untouched).
