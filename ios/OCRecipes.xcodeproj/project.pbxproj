@@ -290,6 +290,7 @@
 		};
 		7FC3FB729761479FA5E1FEEF /* Upload Debug Symbols to Sentry */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
@@ -382,6 +383,7 @@
 		};
 		8D0098AC354B557BB21406BC /* [MLKit] Patch for platform */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
