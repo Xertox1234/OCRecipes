@@ -146,6 +146,31 @@ describe("offline-queue", () => {
     expect(q[0].id).toBe("good");
   });
 
+  it("caps the merged queue to the 50 newest on init when the persisted set alone exceeds the cap (L5)", async () => {
+    const { initOfflineQueue, loadQueue } = await importModule();
+    const now = Date.now();
+    // 60 persisted entries, oldest first. initOfflineQueue merges persisted +
+    // in-memory then slices to the last MAX_DEPTH (50) — this exercises the
+    // merge-cap branch (merged.length > MAX_DEPTH), distinct from the enqueue cap.
+    const persisted = Array.from({ length: 60 }, (_, i) => ({
+      id: `item-${i}`,
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: { name: `item-${i}` },
+      attempts: 0,
+      savedAt: now - (60 - i) * 1000,
+    }));
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue(
+      JSON.stringify(persisted),
+    );
+    await initOfflineQueue();
+    const q = loadQueue();
+    expect(q).toHaveLength(50);
+    // The 10 oldest were dropped; the 50 newest kept, in order.
+    expect(q[0].id).toBe("item-10");
+    expect(q[49].id).toBe("item-59");
+  });
+
   it("does not clobber an item enqueued while the persisted load is in flight (L2)", async () => {
     const { initOfflineQueue, enqueue, loadQueue } = await importModule();
     let resolveGet: (v: string | null) => void = () => {};

@@ -263,6 +263,47 @@ describe("offline-queue-drain", () => {
     expect(errorListener).toHaveBeenCalledOnce();
   });
 
+  it("gives a force-quit-restored item (high persisted attempts) a fresh server-retry budget — eviction uses serverAttempts, not raw attempts (M2)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { ApiError } = await import("@/lib/api-error");
+    const { drainQueue } = await importDrain();
+
+    // attempts: 3 simulates a force-quit mid-drain — incrementAttempts persisted
+    // the raw counter across the relaunch, but the in-memory serverAttempts Map
+    // reset to empty (it lives only in module state). The item must NOT be
+    // evicted on the first post-restart 5xx (which would happen if eviction read
+    // raw attempts >= MAX_ATTEMPTS=4); it must get a fresh 4-attempt budget.
+    const item = {
+      id: "restored",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: {},
+      attempts: 3,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockImplementation(async (id) => {
+      if (item.id === id) item.attempts++;
+    });
+    vi.mocked(apiRequest).mockRejectedValue(
+      new ApiError("500: Internal Server Error", undefined, 500),
+    );
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    const p = drainQueue();
+    await vi.runAllTimersAsync();
+    await p;
+
+    // A fresh server budget = 4 server attempts before eviction, despite the
+    // restored raw attempts already being 3. Raw-attempts eviction would have
+    // fired after the first call.
+    expect(vi.mocked(apiRequest)).toHaveBeenCalledTimes(4);
+    expect(dequeue).toHaveBeenCalledWith("restored");
+  });
+
   it("increments attempts BEFORE making the apiRequest call", async () => {
     const { loadQueue, incrementAttempts, dequeue } = await import(
       "@/lib/offline-queue"

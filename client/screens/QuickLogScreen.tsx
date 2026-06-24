@@ -232,7 +232,6 @@ export default function QuickLogScreen() {
           onRemoveItem={session.removeItem}
           onLogAll={session.submitLog}
           isLogging={session.isSubmitting}
-          logAllDisabled={isOffline}
           logAllLabel={isOffline ? offlineLabel("Log All") : undefined}
         />
         {isOffline && session.parsedItems.length > 0 && (

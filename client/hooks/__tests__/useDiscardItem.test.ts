@@ -1,16 +1,22 @@
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { onlineManager } from "@tanstack/react-query";
 
 import { useDiscardItem } from "../useDiscardItem";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
-const { mockApiRequest } = vi.hoisted(() => ({
+const { mockApiRequest, mockEnqueue } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
+  mockEnqueue: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+}));
+
+vi.mock("@/lib/offline-queue", () => ({
+  enqueue: (...args: unknown[]) => mockEnqueue(...args),
 }));
 
 const makePaginatedData = (items: { id: number; productName: string }[]) => ({
@@ -108,6 +114,50 @@ describe("useDiscardItem", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: QUERY_KEYS.dailySummary,
     });
+  });
+
+  it("enqueues the delete to the durable offline queue when offline (must not pause in-memory)", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    queryClient.setQueryData(
+      QUERY_KEYS.scannedItems,
+      makePaginatedData([
+        { id: 1, productName: "Apple" },
+        { id: 2, productName: "Banana" },
+      ]),
+    );
+
+    // Simulate the device being offline (production wires this via NetInfo).
+    const isOnlineSpy = vi
+      .spyOn(onlineManager, "isOnline")
+      .mockReturnValue(false);
+    try {
+      const { result } = renderHook(() => useDiscardItem(), { wrapper });
+
+      await act(async () => {
+        result.current.mutate(2);
+      });
+
+      // The mutationFn must RUN while offline and enqueue the delete durably —
+      // not pause in-memory. A paused mutation is lost on force-quit, the exact
+      // failure the durable queue exists to prevent. This requires
+      // networkMode: "always"; the default "online" pauses mutationFn offline.
+      await waitFor(() => {
+        expect(mockEnqueue).toHaveBeenCalledWith({
+          endpoint: "/api/scanned-items/2",
+          method: "DELETE",
+          body: undefined,
+        });
+      });
+      expect(mockApiRequest).not.toHaveBeenCalled();
+
+      // Optimistic removal still happened (onMutate runs regardless).
+      const data = queryClient.getQueryData<
+        ReturnType<typeof makePaginatedData>
+      >(QUERY_KEYS.scannedItems);
+      expect(data?.pages[0].items.map((i) => i.id)).toEqual([1]);
+    } finally {
+      isOnlineSpy.mockRestore();
+    }
   });
 
   it("handles mutate when cache is empty", async () => {

@@ -63,6 +63,20 @@ export function useAuth() {
           }
           await tokenStorage.clear();
           await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+          // Dead-token detection is a session teardown (the 4th such path, after
+          // logout/expireSession/deleteAccount): an expired/revoked token caught
+          // on cold launch or foreground resume. Clear the durable offline queue
+          // AND the persisted query cache so the prior session's queued writes
+          // can't replay — and its food-log/dietary cache can't rehydrate — under
+          // whoever signs in next on this device (the queue/cache keys are global
+          // and not user-namespaced; login() does not clear them). The
+          // SessionExpiryBridge can't cover this: its isAuthenticated gate is
+          // false on cold launch. Guarded so a clear failure can't skip setState.
+          try {
+            await clearOfflineQueue();
+            await AsyncStorage.removeItem(QUERY_CACHE_KEY);
+            queryClient.clear();
+          } catch {}
           setState({ user: null, isLoading: false, isAuthenticated: false });
         }
       } catch {

@@ -647,7 +647,6 @@ export default function NutritionDetailScreen() {
             <Button
               onPress={handleAddToLog}
               loading={addToLogMutation.isPending}
-              disabled={isOffline}
               accessibilityLabel={offlineLabel(
                 `Add ${nutrition?.productName || "item"} to today's food log`,
               )}

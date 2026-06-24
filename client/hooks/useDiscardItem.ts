@@ -16,6 +16,11 @@ export function useDiscardItem() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // "always" so mutationFn RUNS while offline and the branch below can enqueue
+    // the delete durably. With the default "online", an offline trigger pauses
+    // the mutation in-memory (mutationFn never runs) and the queued write is lost
+    // on force-quit — defeating the durable offline queue this hook integrates.
+    networkMode: "always",
     mutationFn: async (itemId: number) => {
       if (!onlineManager.isOnline()) {
         await enqueue({
