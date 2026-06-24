@@ -460,10 +460,22 @@ export function useNutritionLookup(params: {
       });
       return response.json() as Promise<ScannedItemResponse>;
     },
-    onSuccess: () => {
-      // data is undefined when the mutation was queued offline — navigation still proceeds
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
+    onSuccess: (data) => {
+      // Online success returns the created item; the offline-queued path (and the
+      // no-nutrition no-op) return undefined. Invalidate ONLY on real online
+      // success — the drain invalidates after replaying the queued POST on
+      // reconnect, so invalidating on the queued path would just resume a paused
+      // refetch that races the drain (S1; mirrors useQuickLogSession's guard).
+      // The success haptic + goBack still fire so the optimistic offline UX is
+      // unchanged.
+      if (data !== undefined) {
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.scannedItems,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: QUERY_KEYS.dailySummary,
+        });
+      }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
     },

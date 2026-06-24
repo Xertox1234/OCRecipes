@@ -160,6 +160,41 @@ describe("useDiscardItem", () => {
     }
   });
 
+  it("does not invalidate on the offline-queued path (drain re-syncs on reconnect)", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    queryClient.setQueryData(
+      QUERY_KEYS.scannedItems,
+      makePaginatedData([{ id: 1, productName: "Apple" }]),
+    );
+
+    const isOnlineSpy = vi
+      .spyOn(onlineManager, "isOnline")
+      .mockReturnValue(false);
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    try {
+      const { result } = renderHook(() => useDiscardItem(), { wrapper });
+
+      await act(async () => {
+        result.current.mutate(1);
+      });
+
+      await waitFor(() => {
+        expect(result.current.isSuccess).toBe(true);
+      });
+
+      // The delete was queued, not sent. Invalidating here would, on reconnect,
+      // resume a paused refetch that races the drain — briefly un-deleting the
+      // item — before the drain replays the DELETE and invalidates. Defer to the
+      // drain's post-replay invalidation instead (S1). onMutate's optimistic
+      // removal already keeps the UI correct meanwhile.
+      expect(mockEnqueue).toHaveBeenCalled();
+      expect(mockApiRequest).not.toHaveBeenCalled();
+      expect(invalidateSpy).not.toHaveBeenCalled();
+    } finally {
+      isOnlineSpy.mockRestore();
+    }
+  });
+
   it("handles mutate when cache is empty", async () => {
     const { wrapper } = createQueryWrapper();
 
