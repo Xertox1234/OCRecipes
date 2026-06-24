@@ -48,7 +48,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    CUR=$(git branch --show-current)
    if [ "$CUR" = "main" ] || [ "$CUR" = "master" ]; then
      if [ -z "$(git status --porcelain)" ]; then
-       git pull --ff-only origin "$CUR" 2>/dev/null && echo "synced local $CUR with origin" \
+       git pull --ff-only -q origin "$CUR" 2>/dev/null && echo "synced local $CUR with origin" \
          || echo "local $CUR not fast-forwardable — skipping (pull manually)"
      else
        echo "skipped main sync — working tree dirty"
@@ -296,7 +296,7 @@ After all batches have been executed (or after early termination):
    git fetch origin main --quiet || true
    CUR=$(git branch --show-current)
    if { [ "$CUR" = "main" ] || [ "$CUR" = "master" ]; } && [ -z "$(git status --porcelain)" ]; then
-     git pull --ff-only origin "$CUR" 2>/dev/null && echo "synced local $CUR with origin" \
+     git pull --ff-only -q origin "$CUR" 2>/dev/null && echo "synced local $CUR with origin" \
        || echo "local $CUR not fast-forwardable — pull manually"
    else
      git fetch origin main:main 2>/dev/null && echo "fast-forwarded local main ref" \
