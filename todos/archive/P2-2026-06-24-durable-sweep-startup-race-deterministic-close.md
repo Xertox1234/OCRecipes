@@ -3,7 +3,7 @@
 ---
 
 title: "Make the auth durable-state sweep deterministic vs the startup initializers (close the cross-user replay/rehydrate race)"
-status: backlog
+status: done
 priority: medium
 created: 2026-06-24
 updated: 2026-06-24
@@ -114,3 +114,23 @@ introduce or worsen it.
   cold-start no-token sweep). The one-liner in #442 is a strict improvement but not a
   deterministic close; this todo tracks the deterministic startup-sequencing fix covering
   both the no-token and dead-token branches.
+
+- **RESOLVED.** Implemented inline (auth = NEVER-delegate) with real-module TDD.
+  - **Offline queue (replay side):** `initOfflineQueue()` now captures its load promise
+    synchronously into a module `initPromise` (memoized `??=`, lock-before-await per
+    `sync-lock-must-precede-first-await-single-flight-guard`); `clearOfflineQueue()` awaits
+    it before `queue=[]`/`removeItem`, so the sweep runs strictly after init's unconditional
+    re-persist. Fully deterministic (hard promise dependency).
+  - **Query cache (rehydrate side):** new module-level restore gate in `query-client.ts`
+    (`markQueryCacheRestored`/`whenQueryCacheRestored`, race vs a 5s safety timeout), wired
+    to `PersistQueryClientProvider`'s `onSuccess` AND `onError` props in `App.tsx`.
+    `clearDurableLocalState()` awaits the gate, then clears in-memory cache BEFORE removing
+    the disk key (independently guarded so a throwing clear can't skip disk removal).
+  - All five teardown paths (logout/expireSession/deleteAccount/dead-token/no-token) funnel
+    through `clearDurableLocalState` → covered by one fix. AC#1–4 met; AC#5 verified
+    (101/101 across offline-queue, offline-queue-drain, query-client, useAuth, AuthContext).
+  - Regression tests: real-module concurrent resurrection test (offline-queue.test.ts),
+    restore-gate ordering test (useAuth.test.ts), gate-primitive unit tests
+    (query-client.test.ts). Reviewed by `security-auditor` (verdict: race CLOSED, no
+    exploitable findings) + `code-reviewer`; their Low findings (stale comments, determinism
+    wording, gate-internal coverage) all addressed before commit.

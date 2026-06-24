@@ -18,7 +18,11 @@ import {
   defaultShouldDehydrateQuery,
 } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { queryClient, asyncStoragePersister } from "@/lib/query-client";
+import {
+  queryClient,
+  asyncStoragePersister,
+  markQueryCacheRestored,
+} from "@/lib/query-client";
 import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import * as Notifications from "expo-notifications";
 
@@ -154,6 +158,14 @@ export default function App() {
                 PERSISTED_QUERY_KEYS.has(query.queryKey[0]),
             },
           }}
+          // Release the durable-sweep restore gate once the persisted cache has
+          // settled — on BOTH success and failure. A session teardown awaits this
+          // before queryClient.clear() so an in-flight restore can't rehydrate the
+          // prior user's data after the clear (cross-user leak on a shared device).
+          // onError covers a corrupt/oversized blob so a failed restore can't wedge
+          // teardown. (These are provider props, NOT persistOptions fields.)
+          onSuccess={markQueryCacheRestored}
+          onError={markQueryCacheRestored}
         >
           <AuthProvider>
             <PremiumProvider>
