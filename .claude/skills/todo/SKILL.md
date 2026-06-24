@@ -39,7 +39,29 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
 
    If `gh` is unavailable or unauthenticated, skip this step (worktree cleanup in step 1 still ran) and continue.
 
-3. **Report** what was cleaned: count of worktrees removed and the list of remote branches deleted (or "nothing to clean"). Then proceed to Phase 1.
+3. **Report** what was cleaned: count of worktrees removed and the list of remote branches deleted (or "nothing to clean").
+
+4. **Sync the local default branch (`main`).** Low-priority PRs from prior runs use GitHub `--auto` merge that lands _after_ the session ends, so those todos are already archived on `origin/main` while the local checkout still shows them at the old path — and the backlog would otherwise re-pick an already-merged todo. Fast-forward local `main`. Like the rest of Phase 0 this **never aborts** the run, and it is **ff-only so it never disturbs parallel work**:
+
+   ```bash
+   git fetch origin main --quiet || true
+   CUR=$(git branch --show-current)
+   if [ "$CUR" = "main" ] || [ "$CUR" = "master" ]; then
+     if [ -z "$(git status --porcelain)" ]; then
+       git pull --ff-only origin "$CUR" 2>/dev/null && echo "synced local $CUR with origin" \
+         || echo "local $CUR not fast-forwardable — skipping (pull manually)"
+     else
+       echo "skipped main sync — working tree dirty"
+     fi
+   else
+     # Not on the default branch: fast-forward the local main ref without touching the
+     # current branch/working tree. Refuses (harmlessly) if it would not be a fast-forward.
+     git fetch origin main:main 2>/dev/null && echo "fast-forwarded local main ref" \
+       || echo "local main not fast-forwardable — pull manually when on main"
+   fi
+   ```
+
+   Then proceed to Phase 1.
 
 ## Phase 1 — Baseline
 
@@ -268,6 +290,22 @@ After all batches have been executed (or after early termination):
 
    This removes worktree directories only — branches and their open PRs are unaffected.
 
+7. **Sync the local default branch with this run's merges.** A `/todo` archive (and its code change) only reaches the local working copy when the merge propagates back — nothing edits local `todos/` in place. After the run, fast-forward local `main` so any PR that merged _during_ this session (an orchestrator merge, or a low-priority `--auto` PR that already landed) is reflected locally — **ff-only, never disturbs parallel work**:
+
+   ```bash
+   git fetch origin main --quiet || true
+   CUR=$(git branch --show-current)
+   if { [ "$CUR" = "main" ] || [ "$CUR" = "master" ]; } && [ -z "$(git status --porcelain)" ]; then
+     git pull --ff-only origin "$CUR" 2>/dev/null && echo "synced local $CUR with origin" \
+       || echo "local $CUR not fast-forwardable — pull manually"
+   else
+     git fetch origin main:main 2>/dev/null && echo "fast-forwarded local main ref" \
+       || echo "local main not fast-forwardable — pull manually when on main + clean"
+   fi
+   ```
+
+   **Low-priority `--auto` PRs land asynchronously** — any still `OPEN` here will merge _after_ the session and cannot be pulled now. List each in the summary with a one-line "run `git pull` once it merges" note; the **next** `/todo` run's Phase 0 sync picks them up automatically.
+
 ## Rules
 
 - **Baseline must be green.** Never start batch processing on a broken codebase.
@@ -279,3 +317,4 @@ After all batches have been executed (or after early termination):
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.
 - **Self-cleaning.** Phase 0 force-removes leftover worktrees and deletes remote branches whose PRs are all merged or closed; Phase 5 removes this run's worktrees. The user must never have to clean up `todo/*` branches or `agent-*` worktrees by hand.
+- **Auto-sync local `main`.** Phase 0 fast-forwards local `main` at the start (catching prior runs' async `--auto` merges, which also stops the backlog from re-picking an already-archived todo) and Phase 5 fast-forwards again at the end (catching this run's merges). Always **ff-only** so parallel work is never disturbed — the user must never have to `git pull` by hand to see a completed todo archived locally.
