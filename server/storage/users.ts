@@ -118,18 +118,56 @@ export async function updateUser(
 }
 
 /**
- * Idempotently mark a user's email as verified. Returns the updated SafeUser,
- * or undefined if no user matches. `emailVerified` is intentionally NOT in
- * UpdatableUserFields (the general update whitelist) — verification is a
+ * Atomically change a user's email AND reset email_verified to false — a
+ * changed address must re-prove ownership before it counts as verified.
+ * `emailVerified` is forced false here (it is NOT a caller-settable field) so a
+ * changed email can never inherit the previous address's verified state.
+ * Case-insensitive uniqueness is enforced by the DB (users_email_unique +
+ * users_email_lower_unique); a collision surfaces as a 23505 the caller maps to
+ * a neutral / 409 response. Callers must normalize `newEmail` (trim +
+ * lowercase) before calling, to match every other write path. Returns the
+ * updated SafeUser, or undefined if no user matches.
+ */
+export async function updateUserEmail(
+  id: string,
+  newEmail: string,
+): Promise<SafeUser | undefined> {
+  const [user] = await db
+    .update(users)
+    .set({ email: newEmail, emailVerified: false })
+    .where(eq(users.id, id))
+    .returning(safeUserColumns);
+  return user || undefined;
+}
+
+/**
+ * Idempotently mark a user's email as verified — but ONLY when the token's
+ * `email` claim still matches the row's current email (compared
+ * case-insensitively, to match the lower(email) unique index). Folding the
+ * equality into the WHERE makes this a single atomic statement (Option B): a
+ * stale verification link issued for a PREVIOUS address (before an email
+ * change) updates zero rows and returns undefined, so it can never flip a
+ * newly-changed, still-unverified address to verified. `expectedEmail` is the
+ * verification token's `email` claim, which is always present
+ * (verification-token.ts) and TTL-bounded to 24h, so a legitimate current
+ * token never false-rejects. Returns the updated SafeUser, or undefined if no
+ * user matches OR the email no longer matches. `emailVerified` is intentionally
+ * NOT in UpdatableUserFields (the general update whitelist) — verification is a
  * dedicated, single-purpose mutation, not a client-settable profile field.
  */
 export async function markEmailVerified(
   id: string,
+  expectedEmail: string,
 ): Promise<SafeUser | undefined> {
   const [user] = await db
     .update(users)
     .set({ emailVerified: true })
-    .where(eq(users.id, id))
+    .where(
+      and(
+        eq(users.id, id),
+        sql`lower(${users.email}) = lower(${expectedEmail})`,
+      ),
+    )
     .returning(safeUserColumns);
   return user || undefined;
 }

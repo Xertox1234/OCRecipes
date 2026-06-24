@@ -52,6 +52,7 @@ export const storage = {
   getUserByUsernameForAuth: users.getUserByUsernameForAuth,
   createUser: users.createUser,
   updateUser: users.updateUser,
+  updateUserEmail: users.updateUserEmail,
   markEmailVerified: users.markEmailVerified,
   incrementTokenVersion: users.incrementTokenVersion,
   deleteUser: users.deleteUser,

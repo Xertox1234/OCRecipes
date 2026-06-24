@@ -1,9 +1,9 @@
 ---
 title: "Add an account email-change feature (update users.email + re-verify new address)"
-status: backlog
+status: done
 priority: medium
 created: 2026-06-23
-updated: 2026-06-23
+updated: 2026-06-24
 assignee:
 labels: [feature, auth, security, api]
 github_issue:
@@ -75,3 +75,30 @@ real-module tests.
 
 - Created while scoping the blocked verify-email cross-check todo, which is dormant
   until this feature exists.
+
+### 2026-06-24 (DONE — implemented inline on branch `feat/account-email-change`)
+
+- `POST /api/auth/change-email` (`server/routes/auth.ts`): requireAuth +
+  `changeEmailLimiter` (user-keyed 5/hr) + password re-auth, mirroring register's
+  ON/OFF gate. Gate ON → neutral `verification_pending` for free / taken /
+  same-as-current (anti-enum); gate OFF → returns updated user, explicit 409 on
+  duplicate.
+- Storage: `updateUserEmail(id, newEmail)` (sets email + `email_verified=false`
+  atomically). Duplicate handled by catching the 23505 on `isUniqueViolation`
+  alone (NOT constraint name) — `updateUserEmail` only touches the email columns,
+  so a name-gated check that fell through to 500 would itself be the enumeration
+  oracle.
+- Cross-check guard (the blocked P3) landed: `markEmailVerified(id, expectedEmail)`
+  folds `lower(email)=lower(expectedEmail)` into the WHERE; `applyVerificationToken`
+  passes `payload.email`. A stale old-address link now updates zero rows → 400.
+- Client: `ChangeEmailModal` (mirrors `DeleteAccountModal`, iOS+Android),
+  `useAuth.changeEmail`, SettingsScreen "Change Email" entry.
+- Tests: route (gate ON/OFF happy, wrong-pw, duplicate-neutral, same-email no-op,
+  404s, 400s), storage real-module (updateUserEmail reset + case-insensitive
+  collision; markEmailVerified case-insensitive match + stale-token reject), hook
+  (gate ON/OFF/error). Full `npm run preflight` green.
+- Reviewed by security-auditor (SHIP) + code-reviewer (shippable). Follow-up filed:
+  `P3-2026-06-24-change-email-staging-enumeration-sidechannel.md` (staging-column
+  design — a gate-flip prerequisite that closes both the /me enumeration channel
+  and the typo-lockout-once-gate-ON risk). Unblocks + resolves
+  `P3-2026-06-18-verify-email-cross-check-token-email.md`.

@@ -41,6 +41,10 @@ const ALLOWLIST = new Set([
   "getUserForAuth",
   "getUserByUsernameForAuth",
   "updateUser",
+  // Email change - id is the user's own PK (req.userId); the route password-
+  // re-authenticates before calling, and the lower(email) unique index is the
+  // cross-user guard. Only mutates the caller's own email + email_verified.
+  "updateUserEmail",
   "incrementTokenVersion",
   "deleteUser",
   // Email verification - id is the user's own PK taken from a verified,

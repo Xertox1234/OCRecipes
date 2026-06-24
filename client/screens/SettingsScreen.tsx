@@ -18,6 +18,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { DeleteAccountModal } from "@/components/DeleteAccountModal";
+import { ChangeEmailModal } from "@/components/ChangeEmailModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
@@ -51,6 +52,7 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
   { id: "goals", icon: "target", label: "Nutrition Goals" },
   { id: "coachReminders", icon: "bell", label: "Coach Reminders" },
   { id: "subscription", icon: "credit-card", label: "Subscription" },
+  { id: "changeEmail", icon: "mail", label: "Change Email" },
   { id: "exportData", icon: "download", label: "Export My Data" },
   { id: "signout", icon: "log-out", label: "Sign Out", danger: true },
   {
@@ -66,12 +68,14 @@ export default function SettingsScreen() {
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
-  const { logout, deleteAccount, user, updateUser } = useAuthContext();
+  const { logout, deleteAccount, changeEmail, user, updateUser } =
+    useAuthContext();
   const { isPremium } = usePremiumContext();
   const measurementUnit = useMeasurementUnit();
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [showChangeEmailModal, setShowChangeEmailModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
   const handleDeleteAccount = useCallback(
@@ -84,6 +88,22 @@ export default function SettingsScreen() {
       // the auth stack when `isAuthenticated` flips to false.
     },
     [deleteAccount],
+  );
+
+  const handleChangeEmail = useCallback(
+    async (newEmail: string, password: string) => {
+      // changeEmail throws on wrong password / duplicate / rate-limit — let the
+      // modal surface it and stay open. Only close + confirm on success.
+      const result = await changeEmail(newEmail, password);
+      setShowChangeEmailModal(false);
+      Alert.alert(
+        "Email Updated",
+        result.status === "verification_pending"
+          ? "Almost done — check your new inbox for a verification link to confirm the change."
+          : "Your email address has been updated.",
+      );
+    },
+    [changeEmail],
   );
 
   const performExport = useCallback(async () => {
@@ -170,6 +190,9 @@ export default function SettingsScreen() {
           } else {
             setShowUpgradeModal(true);
           }
+          break;
+        case "changeEmail":
+          setShowChangeEmailModal(true);
           break;
         case "exportData":
           handleExportData();
@@ -415,6 +438,13 @@ export default function SettingsScreen() {
         onClose={() => setShowDeleteAccountModal(false)}
         onConfirm={handleDeleteAccount}
         showSubscriptionWarning={isPremium}
+      />
+
+      <ChangeEmailModal
+        visible={showChangeEmailModal}
+        onClose={() => setShowChangeEmailModal(false)}
+        onConfirm={handleChangeEmail}
+        currentEmail={user?.email}
       />
     </ScrollView>
   );

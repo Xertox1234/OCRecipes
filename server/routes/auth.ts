@@ -34,6 +34,7 @@ import {
   crudRateLimit,
   verifyEmailLimiter,
   resendVerificationLimiter,
+  changeEmailLimiter,
 } from "./_rate-limiters";
 import {
   loginSchema,
@@ -42,6 +43,7 @@ import {
   profileUpdateSchema,
   verifyEmailSchema,
   resendVerificationSchema,
+  changeEmailSchema,
 } from "./_schemas";
 import { upload } from "./_upload";
 import { isUniqueViolation, uniqueViolationConstraint } from "../lib/db-errors";
@@ -94,7 +96,11 @@ const logger = createServiceLogger("auth");
 async function applyVerificationToken(token: string): Promise<boolean> {
   const payload = verifyVerificationToken(token);
   if (!payload) return false;
-  const user = await storage.markEmailVerified(payload.sub);
+  // Pass the token's `email` claim so markEmailVerified only flips verified when
+  // it still matches the row's current email. A stale link issued for a PREVIOUS
+  // address (before an email change) updates zero rows → false → neutral 400, so
+  // it can never mark a newly-changed, unverified address as verified.
+  const user = await storage.markEmailVerified(payload.sub, payload.email);
   return Boolean(user);
 }
 
@@ -382,6 +388,120 @@ export function register(app: Express): void {
         });
       } catch (error) {
         handleRouteError(res, error, "resend verification");
+      }
+    },
+  );
+
+  // Authenticated email change. Re-authenticates with the current password,
+  // then stores the NEW address as unverified and (gate ON) emails a fresh
+  // verification link to it. Mirrors register's ON/OFF gate semantics:
+  //  - ON  → neutral verification_pending for free / taken / same-as-current,
+  //          so a caller cannot enumerate which addresses already have accounts.
+  //  - OFF → fail-open: returns the updated user; explicit 409 on a duplicate.
+  // The session is intentionally NOT rotated — the password is unchanged, so the
+  // current token stays valid; requireAuth does not gate on the emailVerified
+  // claim (server/middleware/auth.ts), and the LOGIN endpoint re-checks
+  // verification on the next sign-in, which is where re-verification is enforced.
+  //
+  // KNOWN LIMITATION: the email mutates immediately (the cross-check guard in
+  // applyVerificationToken depends on this), so an authenticated caller can read
+  // /api/auth/me afterward to tell whether a free target "took" — a costly,
+  // self-destructive enumeration side channel (it overwrites the caller's own
+  // email, locking them out at next login until they verify an address they do
+  // not control). Tracked as a low-severity follow-up; a staging-column design
+  // would close it.
+  app.post(
+    "/api/auth/change-email",
+    requireAuth,
+    changeEmailLimiter,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const parsed = changeEmailSchema.safeParse(req.body);
+        if (!parsed.success) {
+          sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const { newEmail, password } = parsed.data;
+        const verificationOn = emailVerificationEnabled();
+
+        // Re-authenticate with the current password (getUserForAuth returns the
+        // hash). Same 404 / 401 shape as DELETE /api/auth/account.
+        const user = await storage.getUserForAuth(req.userId);
+        if (!user) {
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+        }
+        const isValidPassword = await bcrypt.compare(password, user.password);
+        if (!isValidPassword) {
+          return sendError(
+            res,
+            401,
+            "Invalid credentials",
+            ErrorCode.UNAUTHORIZED,
+          );
+        }
+
+        // Unchanged address (case-insensitive): no-op. Skips the write so the
+        // current verified state is never reset and the row never self-collides
+        // on the lower(email) unique index. (Stored email is already lowercased;
+        // lowercase defensively in case a legacy row was not normalized.)
+        if (newEmail === user.email.toLowerCase()) {
+          return verificationOn
+            ? sendVerificationPending(res)
+            : res.json(serializeUser(user));
+        }
+
+        let updated;
+        try {
+          updated = await storage.updateUserEmail(req.userId, newEmail);
+        } catch (err) {
+          // updateUserEmail only mutates `email` + `emailVerified`, and
+          // emailVerified is not unique — so the ONLY 23505 it can raise is an
+          // email collision (either email unique index). Branch on the code
+          // alone, NOT the constraint name: if the driver ever failed to surface
+          // the functional-index name, a name-gated check would fall through to a
+          // 500, and on the gate-ON path a 500-for-taken vs 200-for-free
+          // response would itself be the enumeration oracle this endpoint exists
+          // to prevent. (register needs the name-branch because createUser can
+          // hit username OR email; this update cannot.)
+          if (isUniqueViolation(err)) {
+            return verificationOn
+              ? sendVerificationPending(res)
+              : sendError(
+                  res,
+                  409,
+                  "Email already registered",
+                  ErrorCode.CONFLICT,
+                );
+          }
+          throw err;
+        }
+        if (!updated) {
+          return sendError(res, 404, "User not found", ErrorCode.NOT_FOUND);
+        }
+
+        if (verificationOn) {
+          // Reuse the same sign+send path as register/resend so the entry points
+          // never drift; the token is bound to the NEW address.
+          fireAndForget(
+            "change-email-verification",
+            sendVerificationEmail(
+              newEmail,
+              signVerificationToken(updated.id, newEmail),
+            ),
+          );
+          return sendVerificationPending(res);
+        }
+
+        // Fail-open (gate OFF): return the updated user, mirroring register's
+        // pre-feature path. No verification email is sent when the gate is off.
+        return res.json(serializeUser(updated));
+      } catch (error) {
+        handleRouteError(res, error, "change email");
       }
     },
   );

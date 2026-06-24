@@ -144,6 +144,16 @@ export const accountDeletionLimiter = createRateLimiter({
   keyByUser: false,
 });
 
+// Authenticated, password-gated, and triggers an outbound email — user-keyed
+// (the default) so the limit follows the account, and capped low like the other
+// sensitive auth actions. The per-recipient cap in services/email.ts is the
+// second layer against email-bombing a victim's inbox via the new-address send.
+export const changeEmailLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: "Too many email change attempts. Please wait.",
+});
+
 // --- Store webhooks (IP-keyed; called by Apple/Google stores, not users) ---
 export const webhookRateLimit = createRateLimiter({
   windowMs: 60 * 1000,

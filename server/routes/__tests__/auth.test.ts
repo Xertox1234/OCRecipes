@@ -40,6 +40,7 @@ vi.mock("../../storage", () => ({
     createUser: vi.fn(),
     getUser: vi.fn(),
     updateUser: vi.fn(),
+    updateUserEmail: vi.fn(),
     incrementTokenVersion: vi.fn(),
     getSubscriptionStatus: vi.fn(),
     getEffectiveTierForUser: vi.fn(),
@@ -552,7 +553,7 @@ describe("Auth Routes", () => {
       // Verifying proves email ownership, NOT password possession — no access
       // token is minted here (issuing one would be an auth bypass).
       expect(res.body.token).toBeUndefined();
-      expect(storage.markEmailVerified).toHaveBeenCalledWith("u1");
+      expect(storage.markEmailVerified).toHaveBeenCalledWith("u1", "a@b.com");
     });
 
     it("rejects a garbage token with 400", async () => {
@@ -576,7 +577,7 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(200);
       expect(res.headers["content-type"]).toMatch(/text\/html/);
       expect(res.text).toMatch(/verified/i);
-      expect(storage.markEmailVerified).toHaveBeenCalledWith("u1");
+      expect(storage.markEmailVerified).toHaveBeenCalledWith("u1", "a@b.com");
     });
 
     it("renders a 400 HTML page for a garbage token without touching storage", async () => {
@@ -650,6 +651,199 @@ describe("Auth Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.status).toBe("verification_pending");
       expect(sendVerificationEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /api/auth/change-email", () => {
+    async function userWithPassword(overrides: Partial<typeof mockUser> = {}) {
+      const bcrypt = await import("bcrypt");
+      const hash = await bcrypt.hash("correctpassword", 10);
+      return createMockUser({
+        password: hash,
+        email: "current@example.com",
+        ...overrides,
+      });
+    }
+
+    describe("gate ON (verification enforced)", () => {
+      beforeEach(() => {
+        vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      });
+
+      it("changes to a free email: stores unverified, sends verification, neutral 200", async () => {
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(
+          await userWithPassword(),
+        );
+        vi.mocked(storage.updateUserEmail).mockResolvedValue(
+          createMockUser({ email: "new@example.com", emailVerified: false }),
+        );
+
+        const res = await request(app)
+          .post("/api/auth/change-email")
+          .set("Authorization", "Bearer mock-token")
+          .send({ newEmail: "new@example.com", password: "correctpassword" });
+
+        expect(res.status).toBe(200);
+        expect(res.body.status).toBe("verification_pending");
+        // Neutral path leaks no user object or token.
+        expect(res.body.user).toBeUndefined();
+        expect(res.body.token).toBeUndefined();
+        expect(storage.updateUserEmail).toHaveBeenCalledWith(
+          "1",
+          "new@example.com",
+        );
+        // Verification link is sent to the NEW address with a token bound to it.
+        expect(sendVerificationEmail).toHaveBeenCalledWith(
+          "new@example.com",
+          expect.any(String),
+        );
+      });
+
+      it("rejects a wrong password with 401 and does NOT change the email", async () => {
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(
+          await userWithPassword(),
+        );
+
+        const res = await request(app)
+          .post("/api/auth/change-email")
+          .set("Authorization", "Bearer mock-token")
+          .send({ newEmail: "new@example.com", password: "wrongpassword" });
+
+        expect(res.status).toBe(401);
+        expect(res.body.error).toBe("Invalid credentials");
+        expect(storage.updateUserEmail).not.toHaveBeenCalled();
+        expect(sendVerificationEmail).not.toHaveBeenCalled();
+      });
+
+      it("a target email held by another account returns a NEUTRAL 200, never a 409 (no enumeration)", async () => {
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(
+          await userWithPassword(),
+        );
+        // The DB email unique index rejects the change atomically. Deliberately
+        // omit `constraint` — the neutral path must NOT depend on the driver
+        // surfacing an index name, or a missing name would 500 and leak
+        // existence (500-for-taken vs 200-for-free) on this gate-ON path.
+        vi.mocked(storage.updateUserEmail).mockRejectedValue({ code: "23505" });
+
+        const res = await request(app)
+          .post("/api/auth/change-email")
+          .set("Authorization", "Bearer mock-token")
+          .send({ newEmail: "taken@example.com", password: "correctpassword" });
+
+        expect(res.status).toBe(200);
+        expect(res.body.status).toBe("verification_pending");
+        // No verification link sent to a third party's address on a collision.
+        expect(sendVerificationEmail).not.toHaveBeenCalled();
+      });
+
+      it("same-as-current email is a neutral no-op (never un-verifies, never self-collides)", async () => {
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(
+          await userWithPassword(),
+        );
+
+        const res = await request(app)
+          .post("/api/auth/change-email")
+          .set("Authorization", "Bearer mock-token")
+          // Case-insensitive match of the current address.
+          .send({
+            newEmail: "CURRENT@example.com",
+            password: "correctpassword",
+          });
+
+        expect(res.status).toBe(200);
+        expect(res.body.status).toBe("verification_pending");
+        expect(storage.updateUserEmail).not.toHaveBeenCalled();
+        expect(sendVerificationEmail).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("gate OFF (fail-open, no verification)", () => {
+      // emailVerificationEnabled defaults to false via the outer beforeEach.
+
+      it("changes to a free email: returns the updated user, sends NO email", async () => {
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(
+          await userWithPassword(),
+        );
+        vi.mocked(storage.updateUserEmail).mockResolvedValue(
+          createMockUser({ email: "new@example.com", emailVerified: false }),
+        );
+
+        const res = await request(app)
+          .post("/api/auth/change-email")
+          .set("Authorization", "Bearer mock-token")
+          .send({ newEmail: "new@example.com", password: "correctpassword" });
+
+        expect(res.status).toBe(200);
+        expect(res.body.email).toBe("new@example.com");
+        expect(storage.updateUserEmail).toHaveBeenCalledWith(
+          "1",
+          "new@example.com",
+        );
+        expect(sendVerificationEmail).not.toHaveBeenCalled();
+      });
+
+      it("a duplicate email returns an explicit 409 (fail-open, no anti-enum)", async () => {
+        vi.mocked(storage.getUserForAuth).mockResolvedValue(
+          await userWithPassword(),
+        );
+        vi.mocked(storage.updateUserEmail).mockRejectedValue({
+          code: "23505",
+          constraint: "users_email_unique",
+        });
+
+        const res = await request(app)
+          .post("/api/auth/change-email")
+          .set("Authorization", "Bearer mock-token")
+          .send({ newEmail: "taken@example.com", password: "correctpassword" });
+
+        expect(res.status).toBe(409);
+      });
+    });
+
+    it("returns 404 when the user no longer exists", async () => {
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/auth/change-email")
+        .set("Authorization", "Bearer mock-token")
+        .send({ newEmail: "new@example.com", password: "correctpassword" });
+
+      expect(res.status).toBe(404);
+      expect(storage.updateUserEmail).not.toHaveBeenCalled();
+    });
+
+    it("returns 404 when the user vanishes between auth and update (updateUserEmail → undefined)", async () => {
+      vi.mocked(storage.getUserForAuth).mockResolvedValue(
+        await userWithPassword(),
+      );
+      vi.mocked(storage.updateUserEmail).mockResolvedValue(undefined);
+
+      const res = await request(app)
+        .post("/api/auth/change-email")
+        .set("Authorization", "Bearer mock-token")
+        .send({ newEmail: "new@example.com", password: "correctpassword" });
+
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 400 for an invalid email (before any storage access)", async () => {
+      const res = await request(app)
+        .post("/api/auth/change-email")
+        .set("Authorization", "Bearer mock-token")
+        .send({ newEmail: "not-an-email", password: "correctpassword" });
+
+      expect(res.status).toBe(400);
+      expect(storage.getUserForAuth).not.toHaveBeenCalled();
+    });
+
+    it("returns 400 when the password is missing", async () => {
+      const res = await request(app)
+        .post("/api/auth/change-email")
+        .set("Authorization", "Bearer mock-token")
+        .send({ newEmail: "new@example.com" });
+
+      expect(res.status).toBe(400);
+      expect(storage.getUserForAuth).not.toHaveBeenCalled();
     });
   });
 

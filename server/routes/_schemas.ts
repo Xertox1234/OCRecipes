@@ -77,6 +77,19 @@ export const deleteAccountSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+// Email change: `newEmail` is normalized identically to registerSchema (the
+// storage layer + lower(email) unique index assume a trim+lowercase'd value);
+// `password` re-authenticates the current account before the change is accepted.
+export const changeEmailSchema = z.object({
+  newEmail: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .email("Please enter a valid email address")
+    .max(254),
+  password: z.string().min(1, "Password is required").max(200),
+});
+
 // Profile update validation schema
 export const profileUpdateSchema = z.object({
   displayName: z.string().max(100).optional(),

@@ -36,6 +36,8 @@ const {
   getUserByEmail,
   createUser,
   updateUser,
+  updateUserEmail,
+  markEmailVerified,
   getUserTimezones,
   getUserProfile,
   createUserProfile,
@@ -179,6 +181,81 @@ describe("users storage", () => {
       const result = await updateUser("00000000-0000-0000-0000-000000000000", {
         displayName: "Ghost",
       });
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("updateUserEmail", () => {
+    it("sets the new email AND resets emailVerified to false atomically", async () => {
+      // Start from a verified account so the reset is observable.
+      await tx
+        .update(users)
+        .set({ emailVerified: true })
+        .where(eq(users.id, testUser.id));
+
+      const result = await updateUserEmail(testUser.id, "moved@example.com");
+
+      expect(result).toBeDefined();
+      expect(result!.email).toBe("moved@example.com");
+      // A changed address must re-prove ownership — never stay verified.
+      expect(result!.emailVerified).toBe(false);
+      // Returns a SafeUser — the password hash is never selected back.
+      expect(
+        (result as unknown as Record<string, unknown>).password,
+      ).toBeUndefined();
+    });
+
+    it("returns undefined for a non-existent user id", async () => {
+      const result = await updateUserEmail(
+        "00000000-0000-0000-0000-000000000000",
+        "ghost@example.com",
+      );
+      expect(result).toBeUndefined();
+    });
+
+    it("throws a unique violation when another account holds the email (case-insensitive)", async () => {
+      await createTestUser(tx, { email: "taken@example.com" });
+
+      let err: unknown;
+      try {
+        // Different case must still collide via the lower(email) unique index.
+        await updateUserEmail(testUser.id, "TAKEN@example.com");
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeDefined();
+      expect(isUniqueViolation(err)).toBe(true);
+    });
+  });
+
+  describe("markEmailVerified", () => {
+    it("flips emailVerified to true when the expected email matches (case-insensitive)", async () => {
+      const result = await markEmailVerified(
+        testUser.id,
+        testUser.email.toUpperCase(),
+      );
+      expect(result).toBeDefined();
+      expect(result!.emailVerified).toBe(true);
+    });
+
+    it("does NOT verify (returns undefined, row stays unverified) for a stale token after an email change", async () => {
+      const oldEmail = testUser.email;
+      await updateUserEmail(testUser.id, "current@example.com");
+
+      // An old verification link carries the PREVIOUS address.
+      const result = await markEmailVerified(testUser.id, oldEmail);
+
+      expect(result).toBeUndefined();
+      const after = await getUser(testUser.id);
+      expect(after!.emailVerified).toBe(false);
+      expect(after!.email).toBe("current@example.com");
+    });
+
+    it("returns undefined for a non-existent user id", async () => {
+      const result = await markEmailVerified(
+        "00000000-0000-0000-0000-000000000000",
+        "ghost@example.com",
+      );
       expect(result).toBeUndefined();
     });
   });
