@@ -101,6 +101,35 @@ describe("useAuth", () => {
       expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    it("sweeps the durable offline queue + persisted query cache on the cold-start no-token path (extends the sweep to the 5th teardown path, consistent with logout/expireSession/deleteAccount/dead-token)", async () => {
+      // The `if (!token)` cold-start branch is the one teardown-shaped path that
+      // did not run the durable sweep. A force-quit can interrupt a session
+      // teardown in the gap between tokenStorage.clear() and
+      // clearDurableLocalState(), leaving the durable offline queue / persisted
+      // query cache on disk with NO token; the next cold launch takes this branch.
+      // Extending the sweep here makes all five teardown paths consistent and
+      // reduces the prior session's residual durable state. (NOTE: this does not
+      // deterministically close the cross-user exposure — the sweep still races
+      // App.tsx's fire-and-forget initOfflineQueue() re-persist; that startup
+      // sequencing affects this AND the dead-token path and is tracked
+      // separately.) The sweep is a verified no-op on the common "fresh install,
+      // never logged in" cold start (empty queue / absent cache key / empty cache).
+      mockTokenStorage.get.mockResolvedValue(null);
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(mockClearOfflineQueue).toHaveBeenCalled();
+      expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
+        "@ocrecipes_query_cache",
+      );
+      expect(mockQueryClient.clear).toHaveBeenCalled();
+      // Still reaches unauthenticated state, and never hits the network.
+      expect(result.current.isAuthenticated).toBe(false);
+      expect(result.current.user).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it("authenticates with valid token and caches user", async () => {
       mockTokenStorage.get.mockResolvedValue("valid-token");
       mockFetch.mockResolvedValue({

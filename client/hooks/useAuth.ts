@@ -55,6 +55,18 @@ export function useAuth() {
     try {
       const token = await tokenStorage.get();
       if (!token) {
+        // Cold-start with no token is also a teardown-shaped path: a force-quit
+        // can interrupt a session teardown in the gap between tokenStorage.clear()
+        // and the durable sweep, leaving the durable offline queue / persisted
+        // query cache on disk with no token. Sweep them here too so this branch
+        // is consistent with the other four teardown paths and the prior
+        // session's residual durable state is reduced. (This does NOT fully close
+        // the cross-user exposure: the sweep still races App.tsx's fire-and-forget
+        // initOfflineQueue() re-persist — a startup-sequencing gap that also
+        // affects the dead-token branch below, tracked separately.)
+        // clearDurableLocalState() is contractually non-throwing and a verified
+        // no-op on the common "fresh install, never logged in" path.
+        await clearDurableLocalState();
         setState({ user: null, isLoading: false, isAuthenticated: false });
         return;
       }
