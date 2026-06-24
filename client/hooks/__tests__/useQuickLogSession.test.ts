@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { onlineManager } from "@tanstack/react-query";
 import { useQuickLogSession, MAX_LOG_ITEMS } from "../useQuickLogSession";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
-const { mockApiRequest, mockTokenStorage } = vi.hoisted(() => ({
+const { mockApiRequest, mockTokenStorage, mockEnqueue } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
   mockTokenStorage: {
     get: vi.fn(),
@@ -11,6 +12,7 @@ const { mockApiRequest, mockTokenStorage } = vi.hoisted(() => ({
     clear: vi.fn(),
     invalidateCache: vi.fn(),
   },
+  mockEnqueue: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/query-client", () => ({
@@ -19,6 +21,10 @@ vi.mock("@/lib/query-client", () => ({
 }));
 
 vi.mock("@/lib/token-storage", () => ({ tokenStorage: mockTokenStorage }));
+
+vi.mock("@/lib/offline-queue", () => ({
+  enqueue: (...args: unknown[]) => mockEnqueue(...args),
+}));
 
 const mockSpeechToText = {
   isListening: false,
@@ -79,6 +85,79 @@ describe("useQuickLogSession", () => {
     await waitFor(() => expect(result.current.parsedItems).toHaveLength(1));
     expect(result.current.parsedItems[0].name).toBe("eggs");
     expect(result.current.parseError).toBeNull();
+  });
+
+  it("enqueues each parsed item to the durable offline queue when offline (per-item, not paused)", async () => {
+    const { wrapper } = createQueryWrapper();
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          items: [
+            {
+              name: "eggs",
+              quantity: 2,
+              unit: "large",
+              calories: 143,
+              protein: 12,
+              carbs: 1,
+              fat: 10,
+              servingSize: null,
+            },
+            {
+              name: "toast",
+              quantity: 1,
+              unit: "slice",
+              calories: 80,
+              protein: 3,
+              carbs: 14,
+              fat: 1,
+              servingSize: null,
+            },
+          ],
+        }),
+    });
+
+    const { result } = renderHook(() => useQuickLogSession(), { wrapper });
+    act(() => result.current.setInputText("2 eggs and toast"));
+    act(() => result.current.handleTextSubmit());
+    await waitFor(() => expect(result.current.parsedItems).toHaveLength(2));
+
+    mockApiRequest.mockClear(); // drop the parse call; assert no LOG call fires
+
+    // Device offline: the batch mutation must RUN and enqueue each item durably,
+    // not pause in-memory (a paused mutation is lost on force-quit, the failure
+    // the durable queue prevents). Requires networkMode: "always"; the default
+    // "online" pauses mutationFn offline so the enqueue branch never executes.
+    const isOnlineSpy = vi
+      .spyOn(onlineManager, "isOnline")
+      .mockReturnValue(false);
+    try {
+      act(() => {
+        void result.current.submitLog();
+      });
+
+      await waitFor(() => expect(mockEnqueue).toHaveBeenCalledTimes(2));
+      // Enqueued per item, in order, so they replay in savedAt order on reconnect.
+      expect(mockEnqueue).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          endpoint: "/api/scanned-items",
+          method: "POST",
+          body: expect.objectContaining({ productName: "2 large eggs" }),
+        }),
+      );
+      expect(mockEnqueue).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          body: expect.objectContaining({ productName: "1 slice toast" }),
+        }),
+      );
+      // No direct server POST while offline.
+      expect(mockApiRequest).not.toHaveBeenCalled();
+    } finally {
+      isOnlineSpy.mockRestore();
+    }
   });
 
   it("sets parseError when parse fails", async () => {

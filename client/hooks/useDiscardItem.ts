@@ -16,6 +16,11 @@ export function useDiscardItem() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    // "always" so mutationFn RUNS while offline and the branch below can enqueue
+    // the delete durably. With the default "online", an offline trigger pauses
+    // the mutation in-memory (mutationFn never runs) and the queued write is lost
+    // on force-quit — defeating the durable offline queue this hook integrates.
+    networkMode: "always",
     mutationFn: async (itemId: number) => {
       if (!onlineManager.isOnline()) {
         await enqueue({
@@ -23,9 +28,15 @@ export function useDiscardItem() {
           method: "DELETE",
           body: undefined,
         });
-        return; // queued — optimistic update already removed item from cache
+        // Optimistic onMutate already removed the item. Signal "queued" so
+        // onSettled skips invalidation and defers to the drain's post-replay
+        // invalidation — otherwise a reconnect refetch can race the drain and
+        // briefly un-delete the item (S1). Both paths must return the same
+        // shape so onSettled can discriminate (DELETE has no response body).
+        return { queued: true };
       }
       await apiRequest("DELETE", `/api/scanned-items/${itemId}`);
+      return { queued: false };
     },
     onMutate: async (itemId: number) => {
       await queryClient.cancelQueries({ queryKey: QUERY_KEYS.scannedItems });
@@ -67,7 +78,12 @@ export function useDiscardItem() {
         queryClient.setQueryData(QUERY_KEYS.scannedItems, context.previousData);
       }
     },
-    onSettled: () => {
+    onSettled: (data) => {
+      // Offline-queued deletes (data.queued === true) defer invalidation to the
+      // drain's post-replay invalidation on reconnect. Online success
+      // (data.queued === false) AND errors (data === undefined) still invalidate
+      // here — the error path re-syncs the cache after onError's rollback.
+      if (data?.queued) return;
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
     },

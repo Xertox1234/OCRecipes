@@ -21,6 +21,29 @@ interface AuthState {
 const AUTH_STORAGE_KEY = "@ocrecipes_auth";
 const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
 
+/**
+ * Best-effort teardown of every piece of device-local state that outlives a
+ * session: the durable offline mutation queue, the persisted TanStack Query
+ * cache, and the in-memory query cache. EVERY session-ending path — logout,
+ * expireSession, deleteAccount, and the checkAuth dead-token branch — must call
+ * this so the prior session's queued writes can't replay, and its cached data
+ * can't rehydrate, under whoever signs in next on this device. The queue/cache
+ * keys are global (not user-namespaced) and login() does not clear them, so
+ * this is the only thing standing between two accounts on a shared device.
+ *
+ * Contractually NON-THROWING: callers rely on this never rejecting so a clear
+ * failure can't skip the auth-state reset that follows it. Clears the offline
+ * queue FIRST so the privacy-critical replay fix always runs even if a later
+ * removeItem rejects (clearOfflineQueue swallows its own errors, can't throw).
+ */
+async function clearDurableLocalState(): Promise<void> {
+  try {
+    await clearOfflineQueue();
+    await AsyncStorage.removeItem(QUERY_CACHE_KEY);
+    queryClient.clear();
+  } catch {}
+}
+
 export function useAuth() {
   const [state, setState] = useState<AuthState>({
     user: null,
@@ -63,6 +86,11 @@ export function useAuth() {
           }
           await tokenStorage.clear();
           await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+          // Dead-token detection is a session teardown (an expired/revoked token
+          // caught on cold launch or foreground resume). The SessionExpiryBridge
+          // can't cover this path — its isAuthenticated gate is false on cold
+          // launch — so the durable-state sweep must happen here.
+          await clearDurableLocalState();
           setState({ user: null, isLoading: false, isAuthenticated: false });
         }
       } catch {
@@ -192,17 +220,7 @@ export function useAuth() {
     } catch {}
     await tokenStorage.clear();
     await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-    // Clear cached query data AND the durable offline mutation queue so the next
-    // sign-in can't read the previous session's data OR replay its queued writes
-    // (the queue key is global and the drain attaches the *current* bearer token).
-    // Guarded so a throw can't skip the setState logout below. Clear the offline
-    // queue FIRST so the privacy-critical replay fix always runs even if a later
-    // removeItem rejects (clearOfflineQueue swallows its own errors, can't throw).
-    try {
-      await clearOfflineQueue();
-      await AsyncStorage.removeItem(QUERY_CACHE_KEY);
-      queryClient.clear();
-    } catch {}
+    await clearDurableLocalState();
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
 
@@ -227,17 +245,7 @@ export function useAuth() {
     try {
       await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
     } catch {}
-    // Guarded: a throw here (unlikely) must not skip the setState below — that
-    // is the actual logout, and the function is contractually non-throwing.
-    // Also clear the durable offline mutation queue so an expired session's
-    // queued writes can't replay under whoever signs in next (queue key is
-    // global; the drain attaches the current bearer token at replay time).
-    // Queue clear first so it always runs even if a later removeItem rejects.
-    try {
-      await clearOfflineQueue();
-      await AsyncStorage.removeItem(QUERY_CACHE_KEY);
-      queryClient.clear();
-    } catch {}
+    await clearDurableLocalState();
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
 
@@ -266,17 +274,10 @@ export function useAuth() {
     try {
       await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
     } catch {}
-    // Drop the deleted account's cached query data AND its queued offline writes
-    // so neither can be read nor replayed by whoever signs in next on this device
-    // (a queued write would otherwise resurrect the "erased" data under the new
-    // user, authenticated as them). Guarded so it can't skip the setState below
-    // (same non-throwing contract as the storage clears above). Queue clear
-    // first so it always runs even if a later removeItem rejects.
-    try {
-      await clearOfflineQueue();
-      await AsyncStorage.removeItem(QUERY_CACHE_KEY);
-      queryClient.clear();
-    } catch {}
+    // A queued write would otherwise resurrect the "erased" account's data under
+    // the new user, authenticated as them — so the durable sweep is mandatory on
+    // the right-to-erasure path too.
+    await clearDurableLocalState();
     setState({ user: null, isLoading: false, isAuthenticated: false });
   }, []);
 

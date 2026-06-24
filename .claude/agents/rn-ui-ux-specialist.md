@@ -170,6 +170,7 @@ server is the authority), and map caught errors via `ApiError.code`, never
 ### Screen Reader Support
 
 - [ ] `accessibilityLiveRegion` for dynamic content (Android-only)
+  - [ ] NOT on a **container** that wraps a frequently-mutating child (spinner swap, `accessibilityState={{ busy }}`, live value) — TalkBack re-reads the **whole** subtree on the change, not just the change. Scope it to the changing leaf or use explicit announces. `none` on the child does NOT help (the container is the announcer); and removing the container region can silently mute other transitions on Android (it's usually the only Android announcer). See `docs/solutions/conventions/android-container-live-region-reannounces-whole-subtree-2026-06-23.md`.
 - [ ] `AccessibilityInfo.announceForAccessibility()` for iOS dynamic content
 - [ ] Logical focus order (top-to-bottom, left-to-right)
 - [ ] `accessibilityViewIsModal` on modal inner containers

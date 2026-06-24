@@ -177,6 +177,11 @@ export function useQuickLogSession({
     PartialLogError,
     ParsedFoodItem[]
   >({
+    // "always" so mutationFn RUNS while offline and the branch below can enqueue
+    // each item durably. With the default "online", an offline submit pauses the
+    // mutation in-memory (mutationFn never runs) and the queued writes are lost
+    // on force-quit — defeating the durable offline queue this hook integrates.
+    networkMode: "always",
     mutationFn: async (items: ParsedFoodItem[]) => {
       setCapWarning(null);
 

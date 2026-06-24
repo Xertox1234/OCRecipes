@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { AppState, type AppStateStatus } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useAuth } from "../useAuth";
 
@@ -139,6 +140,27 @@ describe("useAuth", () => {
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
       expect(mockTokenStorage.clear).toHaveBeenCalled();
+    });
+
+    it("clears the offline queue AND persisted query cache on a dead-token check (4th teardown path — cross-user leak)", async () => {
+      // The dead-token branch of checkAuth is a session teardown: a token that
+      // expired/was revoked server-side is detected on cold launch / foreground
+      // resume. It must run the SAME privacy cleanup as logout/expireSession/
+      // deleteAccount, or user A's persisted food-log/dietary cache rehydrates
+      // into user B's next sign-in (deterministic, no race — login() does not
+      // clear it and query keys are not user-namespaced). The SessionExpiryBridge
+      // can't cover this: its isAuthenticated gate is false on cold launch.
+      mockTokenStorage.get.mockResolvedValue("expired-token");
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(mockClearOfflineQueue).toHaveBeenCalled();
+      expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
+        "@ocrecipes_query_cache",
+      );
+      expect(mockQueryClient.clear).toHaveBeenCalled();
     });
 
     it("fires the session-expiry emitter on a 401 from /me (so foreground-resume expiry is not silent)", async () => {
@@ -487,6 +509,11 @@ describe("useAuth", () => {
       // queued writes can't replay under the next user (the queue key is global
       // and the drain attaches the current bearer token).
       expect(mockClearOfflineQueue).toHaveBeenCalled();
+      // ...and the persisted query cache (regression guard: this exact call was
+      // previously unasserted, the gap that let the checkAuth 4th-path leak ship).
+      expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
+        "@ocrecipes_query_cache",
+      );
       expect(result.current.isAuthenticated).toBe(false);
       expect(result.current.user).toBeNull();
     });
@@ -570,6 +597,9 @@ describe("useAuth", () => {
       // under the new user).
       expect(mockQueryClient.clear).toHaveBeenCalled();
       expect(mockClearOfflineQueue).toHaveBeenCalled();
+      expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
+        "@ocrecipes_query_cache",
+      );
       expect(mockTokenStorage.clear).toHaveBeenCalled();
       expect(result.current.isAuthenticated).toBe(false);
     });
@@ -596,6 +626,9 @@ describe("useAuth", () => {
       expect(mockTokenStorage.clear).toHaveBeenCalled();
       expect(mockAsyncStorage["@ocrecipes_auth"]).toBeUndefined();
       expect(mockQueryClient.clear).toHaveBeenCalled();
+      expect(vi.mocked(AsyncStorage.removeItem)).toHaveBeenCalledWith(
+        "@ocrecipes_query_cache",
+      );
       // ...including the offline write queue, so an expired session's queued
       // mutations can't replay under whoever signs in next.
       expect(mockClearOfflineQueue).toHaveBeenCalled();
