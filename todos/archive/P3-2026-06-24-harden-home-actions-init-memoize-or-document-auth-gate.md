@@ -1,9 +1,9 @@
 ---
 title: "Harden home-actions init: close the non-memoized re-read race against clearHomeActionsState"
-status: backlog
+status: done
 priority: low
 created: 2026-06-24
-updated: 2026-06-24
+updated: 2026-06-25
 assignee:
 labels: [deferred, security, react-native]
 github_issue:
@@ -81,3 +81,22 @@ open the resurrection window.
 - Initial creation. Filed during security review of branch
   `fix/teardown-clear-home-actions-history` (commit ac5f6efb). The branch fix is
   correct and shippable as-is; this hardens the init signature for future callers.
+
+### 2026-06-25
+
+- DONE via path (a) — structural fix, branch `fix/harden-home-actions-init-epoch-guard`.
+  Replaced the single `initInFlight` lock with TWO independent guards in
+  `client/lib/home-actions-storage.ts`:
+  - `sweepEpoch` (forward case): `clear` bumps it synchronously; `init` snapshots it
+    before its disk read and commits the per-user caches only if it is unchanged.
+  - `sweepInFlight` (mirror case): `clear` publishes its `removeItem` promise; `init`
+    awaits it (in a `while` loop, not `if`) before reading disk, so an init starting
+    during the sweep cannot read pre-wipe stale history.
+- NOTE: the todo's literal "epoch-only" Implementation Note is INSUFFICIENT for AC #4 —
+  in the mirror case `clear` bumps the epoch BEFORE the fresh init snapshots it, so the
+  `===` check passes and stale disk commits. The in-flight-sweep await is required to
+  actually make it structural. Both guards verified independently load-bearing by
+  mutation-killing each (delete the guard → its regression test fails; restore → green).
+- AC #1 ✓ (a), AC #2 ✓ (epoch + sweep-await), AC #3 N/A (chose a, not b), AC #4 ✓
+  (mirror regression test added). `sectionCache` (display pref) stays committed
+  unconditionally; `clearHomeActionsState` stays contractually non-throwing.

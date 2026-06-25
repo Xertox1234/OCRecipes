@@ -20,6 +20,17 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 
 describe("home-actions-storage", () => {
   beforeEach(() => {
+    // Mock isolation: clearAllMocks wipes call history AND any per-test
+    // mockImplementation, then the mockReturnValue lines below re-establish fresh
+    // defaults — so a race test's custom getItem/removeItem impl never leaks forward.
+    // NOTE: the module-under-test's own state (sweepEpoch, sweepInFlight, the caches)
+    // is intentionally NOT reset between tests — the static top-level imports bind to a
+    // single module instance, so a vi.resetModules() here would be a no-op without
+    // converting every test to dynamic import. This is safe because sweepEpoch is only
+    // ever compared RELATIVELY within one init lifecycle (startEpoch vs current), never
+    // against an absolute, and every test calls initHomeActionsCache() before asserting
+    // on the getters. A future test that interleaves init/clear must not assume a
+    // starting epoch of 0.
     vi.clearAllMocks();
     mockAsyncStorage.getItem.mockReturnValue(Promise.resolve(null));
     mockAsyncStorage.setItem.mockReturnValue(Promise.resolve());
@@ -202,9 +213,51 @@ describe("home-actions-storage", () => {
       await Promise.all([initP, clearP]);
 
       // The in-memory assertions are the load-bearing regression guard: without
-      // the lock, a late init repopulates these caches with the prior user's data
-      // (proven by the mutation check). The disk assertions are belt-and-suspenders
-      // — init never setItem, so removeItem nulls disk regardless of the lock.
+      // the epoch check (init commits only when sweepEpoch is unchanged), a late
+      // init repopulates these caches with the prior user's data (proven by the
+      // mutation check). The disk assertions are belt-and-suspenders — init never
+      // setItem, so removeItem nulls disk regardless.
+      expect(getRecentActions()).toEqual([]);
+      expect(getActionUsageCounts()).toEqual({});
+      expect(disk["@ocrecipes_recent_actions"]).toBeNull();
+      expect(disk["@ocrecipes_action_usage_counts"]).toBeNull();
+    });
+
+    it("does not resurrect a swept history when a fresh init starts during clear's removeItem", async () => {
+      // The mirror of the test above: clear runs FIRST (bumping the epoch + nulling
+      // the caches synchronously, then suspending on removeItem), and only THEN does a
+      // fresh Home-mount init begin. The init must wait out the in-flight sweep before
+      // reading disk — otherwise it reads pre-wipe stale history and repopulates the
+      // in-memory caches the sync getters return to the next user's Home UI.
+      const disk: Record<string, string | null> = {
+        "@ocrecipes_recent_actions": JSON.stringify(["B1", "B2"]),
+        "@ocrecipes_action_usage_counts": JSON.stringify({ B1: 5 }),
+      };
+      // Defer removeItem so the sweep is still "in flight" when init starts — the exact
+      // mirror window. Gating disk-null behind the resolver means a non-waiting init
+      // would read the stale values still on disk.
+      let resolveRemove: () => void = () => {};
+      const removeGate = new Promise<void>((r) => {
+        resolveRemove = r;
+      });
+      mockAsyncStorage.removeItem.mockImplementation(async (k: string) => {
+        await removeGate;
+        disk[k] = null;
+      });
+      // Lazy getItem: snapshots disk[k] at CALL time, so an init that reads BEFORE
+      // removeItem lands gets stale data (what the in-flight-sweep wait must prevent).
+      mockAsyncStorage.getItem.mockImplementation((k: string) =>
+        Promise.resolve(disk[k] ?? null),
+      );
+
+      const clearP = clearHomeActionsState(); // epoch++, caches null, suspends on removeItem
+      const initP = initHomeActionsCache(); // must await the in-flight sweep before reading
+      resolveRemove(); // removeItem lands → disk wiped → sweep settles → init reads empty
+
+      await Promise.all([clearP, initP]);
+
+      // Without the sweepInFlight wait, init reads stale ["B1","B2"] and commits it
+      // here (proven by the mutation check); with it, init reads the wiped disk.
       expect(getRecentActions()).toEqual([]);
       expect(getActionUsageCounts()).toEqual({});
       expect(disk["@ocrecipes_recent_actions"]).toBeNull();
