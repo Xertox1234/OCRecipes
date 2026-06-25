@@ -29,6 +29,16 @@ vi.mock("@/lib/token-storage", () => ({
   },
 }));
 
+// Mock the durable-owner control plane so the drain's owner gate can be driven
+// deterministically. getDurableOwner = who the queue is confirmed clean-for;
+// getActiveUserId = who we'd drain as (the cached auth blob). The default
+// (matching pair, set in beforeEach) lets every existing authenticated test pass
+// the gate; the cross-user test overrides to a mismatch.
+vi.mock("@/lib/durable-owner", () => ({
+  getDurableOwner: vi.fn(),
+  getActiveUserId: vi.fn(),
+}));
+
 const importDrain = () => import("../offline-queue-drain");
 
 describe("offline-queue-drain", () => {
@@ -40,6 +50,13 @@ describe("offline-queue-drain", () => {
     // resolves the module mock declared above (reset by vi.resetModules()).
     const { tokenStorage } = await import("@/lib/token-storage");
     vi.mocked(tokenStorage.get).mockResolvedValue("token-A");
+    // Default: the queue's owner matches the active user, so the owner gate is a
+    // pass-through for the existing tests. The cross-user test overrides this.
+    const { getDurableOwner, getActiveUserId } = await import(
+      "@/lib/durable-owner"
+    );
+    vi.mocked(getDurableOwner).mockResolvedValue("user-1");
+    vi.mocked(getActiveUserId).mockResolvedValue("user-1");
   });
 
   afterEach(() => {
@@ -566,6 +583,70 @@ describe("offline-queue-drain", () => {
     vi.mocked(tokenStorage.get).mockResolvedValue("token-A");
     await drainQueue();
     expect(apiRequest).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT drain when the durable owner does not match the active user (cross-restart failed-wipe residue)", async () => {
+    const { loadQueue, incrementAttempts, dequeue } = await import(
+      "@/lib/offline-queue"
+    );
+    const { apiRequest } = await import("@/lib/query-client");
+    const { getDurableOwner, getActiveUserId } = await import(
+      "@/lib/durable-owner"
+    );
+    const { drainQueue } = await importDrain();
+
+    // The queue's confirmed owner is user-A, but the cached active user is user-B:
+    // A's logout wipe failed and the cold-start drain fires before checkAuth
+    // reconciles. Replaying here would POST A's captured writes under B's bearer.
+    vi.mocked(getDurableOwner).mockResolvedValue("user-A");
+    vi.mocked(getActiveUserId).mockResolvedValue("user-B");
+
+    const item = {
+      id: "cross-user",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: { tag: "A-captured-write" },
+      attempts: 0,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+    vi.mocked(incrementAttempts).mockResolvedValue(undefined);
+    vi.mocked(apiRequest).mockResolvedValue(new Response());
+    vi.mocked(dequeue).mockResolvedValue(undefined);
+
+    await drainQueue();
+
+    expect(apiRequest).not.toHaveBeenCalled();
+    expect(dequeue).not.toHaveBeenCalled();
+
+    // The early-return must release the isDraining lock: once ownership matches
+    // (the next reconcile adopts B), a later reconnect drains normally.
+    vi.mocked(getActiveUserId).mockResolvedValue("user-A");
+    await drainQueue();
+    expect(apiRequest).toHaveBeenCalledOnce();
+  });
+
+  it("does NOT drain when the durable owner is unset (legacy / never reconciled)", async () => {
+    const { loadQueue } = await import("@/lib/offline-queue");
+    const { apiRequest } = await import("@/lib/query-client");
+    const { getDurableOwner } = await import("@/lib/durable-owner");
+    const { drainQueue } = await importDrain();
+
+    vi.mocked(getDurableOwner).mockResolvedValue(null);
+
+    const item = {
+      id: "legacy",
+      endpoint: "/api/scanned-items",
+      method: "POST",
+      body: {},
+      attempts: 0,
+      savedAt: 1000,
+    };
+    vi.mocked(loadQueue).mockReturnValue([item]);
+
+    await drainQueue();
+
+    expect(apiRequest).not.toHaveBeenCalled();
   });
 
   it("does NOT replay an in-flight item under a new user's token when logout+relogin straddles the backoff wait (cross-user replay race)", async () => {

@@ -124,7 +124,7 @@ export async function incrementAttempts(id: string): Promise<void> {
   await persist();
 }
 
-export async function clearOfflineQueue(): Promise<void> {
+export async function clearOfflineQueue(): Promise<boolean> {
   // Serialize against an in-flight startup load. initOfflineQueue re-persists the
   // merged disk+memory queue unconditionally, so if it read disk before our
   // removeItem and persists after it, the orphaned prior-session queue is
@@ -145,5 +145,12 @@ export async function clearOfflineQueue(): Promise<void> {
     } catch {}
   }
   queue = [];
-  await AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+  // Returns whether the disk removal succeeded (false on a swallowed failure) so
+  // the durable-owner marker isn't advanced past a still-dirty queue — see
+  // reconcileDurableOwner. Still never throws.
+  let ok = true;
+  await AsyncStorage.removeItem(STORAGE_KEY).catch(() => {
+    ok = false;
+  });
+  return ok;
 }

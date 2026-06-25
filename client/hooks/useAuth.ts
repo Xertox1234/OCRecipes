@@ -13,6 +13,7 @@ import { User } from "@shared/types/auth";
 import { registerPushToken } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
+import { reconcileDurableOwner, AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 
 interface AuthState {
   user: User | null;
@@ -20,7 +21,6 @@ interface AuthState {
   isAuthenticated: boolean;
 }
 
-const AUTH_STORAGE_KEY = "@ocrecipes_auth";
 const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
 
 /**
@@ -48,17 +48,26 @@ const QUERY_CACHE_KEY = "@ocrecipes_query_cache";
  * close holds as long as the restore settles within the gate's safety timeout
  * (whenQueryCacheRestored), which it always does outside of broken provider
  * wiring — see that function for the bound.
+ *
+ * Returns whether EVERY store's disk wipe was confirmed (no swallowed
+ * `removeItem` failure). `reconcileDurableOwner` advances the durable-owner
+ * marker only on a `true` return, so a failed disk wipe leaves the marker stale
+ * and the next auth resolution retries — making the no-cross-user-resurrection
+ * guarantee survive an app restart, not just an in-session timing window. The
+ * five teardown callers ignore the return (they only need the best-effort wipe);
+ * it is the reconcile path that reads it.
  */
-async function clearDurableLocalState(): Promise<void> {
+async function clearDurableLocalState(): Promise<boolean> {
+  let ok = true;
   try {
-    await clearOfflineQueue();
+    if (!(await clearOfflineQueue())) ok = false;
     // Clear this device's per-user home-action history (recent-actions list +
     // per-action usage counts). These are global, non-namespaced keys that would
     // otherwise seed the next user's Home UI on a shared device. Placed right
     // after the queue clear so it still runs if the query-cache block below
     // throws; it serializes against its own startup init and is non-throwing.
     // (Section-expansion state stays — a device-display pref; theme is its own module.)
-    await clearHomeActionsState();
+    if (!(await clearHomeActionsState())) ok = false;
     // Gate on the persisted-cache restore: a teardown that races a cold-start
     // restore could otherwise clear() the cache before the restore rehydrates the
     // prior user's data into memory, re-exposing it under the next user. Resolves
@@ -73,8 +82,30 @@ async function clearDurableLocalState(): Promise<void> {
     try {
       queryClient.clear();
     } catch {}
-    await AsyncStorage.removeItem(QUERY_CACHE_KEY);
-  } catch {}
+    // Guard the disk removal independently so its failure feeds `ok` (gating the
+    // owner-marker advance) without aborting — and without poisoning the marker
+    // into never advancing if some OTHER step throws.
+    try {
+      await AsyncStorage.removeItem(QUERY_CACHE_KEY);
+    } catch {
+      ok = false;
+    }
+  } catch {
+    ok = false;
+  }
+  return ok;
+}
+
+/**
+ * Reconcile durable-store ownership for a user becoming active. Guards against a
+ * malformed identity (missing id) writing an "undefined" owner — a no-op when the
+ * id is absent. Stringifies the id so the marker compares cleanly whether the
+ * server serializes it as a string or a number. `clearDurableLocalState` is the
+ * confirmed-wipe the marker advance is gated on.
+ */
+async function reconcileOwnerFor(id: unknown): Promise<void> {
+  if (id == null) return;
+  await reconcileDurableOwner(String(id), clearDurableLocalState);
 }
 
 export function useAuth() {
@@ -117,6 +148,12 @@ export function useAuth() {
             AUTH_STORAGE_KEY,
             JSON.stringify(freshUser),
           );
+          // Reconcile durable-store ownership BEFORE the Home tree can mount: a
+          // cold start that resolves a DIFFERENT user than the durable stores were
+          // last confirmed clean-for (e.g. a prior logout's wipe failed) wipes them
+          // here so the stale history/queue/cache can't surface under this user.
+          // A no-op when the marker already matches (the common resume).
+          await reconcileOwnerFor(freshUser.id);
           setState({
             user: freshUser,
             isLoading: false,
@@ -157,6 +194,14 @@ export function useAuth() {
           }
         }
         if (cachedUser) {
+          // Reconcile here too: this offline-resume path runs neither a teardown
+          // nor any other reconcile, and the query cache (unlike the home-actions
+          // and offline-queue stores, which gate at their own read points) has no
+          // independent owner gate. A user switch can't happen offline, so the
+          // marker normally matches and this is a no-op that preserves the offline
+          // cache; it only wipes when the marker proves the restored data isn't
+          // this user's (a prior failed wipe), closing the last query-cache hole.
+          await reconcileOwnerFor(cachedUser.id);
           setState({
             user: cachedUser,
             isLoading: false,
@@ -216,6 +261,11 @@ export function useAuth() {
     const { user, token } = await response.json();
     await tokenStorage.set(token);
     await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+    // The root-cause fix: login() historically cleared NO durable local state, so
+    // a different user signing in on a shared device inherited the prior user's
+    // global-keyed history/queue/cache. Reconcile here wipes them on a mismatch
+    // before the app renders authenticated surfaces.
+    await reconcileOwnerFor(user.id);
     setState({ user, isLoading: false, isAuthenticated: true });
     // Register push token after login (fire-and-forget, non-fatal)
     registerPushToken().catch(() => {});
@@ -246,6 +296,10 @@ export function useAuth() {
       if (data.token) {
         await tokenStorage.set(data.token);
         await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(data.user));
+        // A freshly-registered user is, by definition, a different owner than any
+        // prior account on this device — reconcile wipes residual durable state
+        // before authenticated surfaces render.
+        await reconcileOwnerFor(data.user.id);
         setState({ user: data.user, isLoading: false, isAuthenticated: true });
         // Register push token after registration (fire-and-forget, non-fatal)
         registerPushToken().catch(() => {});

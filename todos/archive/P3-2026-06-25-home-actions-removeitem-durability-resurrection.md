@@ -1,6 +1,6 @@
 ---
 title: "Close the home-actions removeItem-durability resurrection (failed disk wipe survives restart)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-25
 updated: 2026-06-25
@@ -85,3 +85,11 @@ Prefer (1) or (2). Whatever is chosen, apply the same reasoning to `clearOffline
 
 - Initial creation. Surfaced in the PR #450 review as the known out-of-scope durability
   residual (the timing races were closed structurally; this disk-durability one was not).
+- DONE. Closed via the uniform durable-owner marker (`client/lib/durable-owner.ts`):
+  `reconcileDurableOwner` at login/register/checkAuth (incl. the cached-user offline
+  resume path) wipes on a user mismatch and advances `@ocrecipes_durable_owner` only
+  after a confirmed wipe; `initHomeActionsCache` loads history only when the marker
+  matches the active user (cross-restart guard), and the offline-queue drain consults
+  the same marker. AC #1–4 met. A query-cache residual on the cached-user offline path
+  was found in review and FIXED in the same PR (reconcile added to that path; a no-op
+  when the marker matches, so the legitimate offline cache is preserved).

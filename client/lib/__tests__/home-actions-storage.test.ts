@@ -39,7 +39,7 @@ describe("home-actions-storage", () => {
 
   describe("initHomeActionsCache", () => {
     it("initializes with defaults when storage is empty", async () => {
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
 
       const sections = getSectionState();
       expect(sections.scanning).toBe(true);
@@ -60,7 +60,7 @@ describe("home-actions-storage", () => {
         return Promise.resolve(null);
       });
 
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
 
       const sections = getSectionState();
       expect(sections.scanning).toBe(false);
@@ -74,17 +74,21 @@ describe("home-actions-storage", () => {
         if (key === "@ocrecipes_recent_actions") {
           return Promise.resolve(JSON.stringify(["scan-barcode", "quick-log"]));
         }
+        // The durable-owner marker must match the init user for history to load.
+        if (key === "@ocrecipes_durable_owner") {
+          return Promise.resolve("user-1");
+        }
         return Promise.resolve(null);
       });
 
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
       expect(getRecentActions()).toEqual(["scan-barcode", "quick-log"]);
     });
 
     it("handles corrupted JSON gracefully", async () => {
       mockAsyncStorage.getItem.mockReturnValue(Promise.resolve("{bad json"));
 
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
 
       // Falls back to defaults
       const sections = getSectionState();
@@ -95,7 +99,7 @@ describe("home-actions-storage", () => {
 
   describe("setSectionExpanded", () => {
     it("persists section state to AsyncStorage", async () => {
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
       await setSectionExpanded("scanning", false);
 
       expect(mockAsyncStorage.setItem).toHaveBeenCalledWith(
@@ -109,14 +113,14 @@ describe("home-actions-storage", () => {
 
   describe("pushRecentAction", () => {
     it("adds action to front of list", async () => {
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
       await pushRecentAction("scan-barcode");
 
       expect(getRecentActions()).toEqual(["scan-barcode"]);
     });
 
     it("deduplicates actions", async () => {
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
       await pushRecentAction("scan-barcode");
       await pushRecentAction("quick-log");
       await pushRecentAction("scan-barcode");
@@ -125,7 +129,7 @@ describe("home-actions-storage", () => {
     });
 
     it("limits to 4 recent actions", async () => {
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
       await pushRecentAction("a");
       await pushRecentAction("b");
       await pushRecentAction("c");
@@ -138,7 +142,7 @@ describe("home-actions-storage", () => {
     });
 
     it("persists to AsyncStorage", async () => {
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
       await pushRecentAction("scan-barcode");
 
       expect(mockAsyncStorage.setItem).toHaveBeenCalledWith(
@@ -157,9 +161,12 @@ describe("home-actions-storage", () => {
           return Promise.resolve(JSON.stringify({ "quick-log": 3 }));
         if (key === "@ocrecipes_home_sections")
           return Promise.resolve(JSON.stringify({ scanning: false }));
+        // Owner marker matches so the history loads (then clear wipes it).
+        if (key === "@ocrecipes_durable_owner")
+          return Promise.resolve("user-1");
         return Promise.resolve(null);
       });
-      await initHomeActionsCache();
+      await initHomeActionsCache("user-1");
       expect(getRecentActions()).toEqual(["ai-coach", "quick-log"]);
       expect(getActionUsageCounts()).toEqual({ "quick-log": 3 });
 
@@ -181,6 +188,23 @@ describe("home-actions-storage", () => {
         "@ocrecipes_home_sections",
       );
       expect(getSectionState().scanning).toBe(false);
+    });
+
+    it("returns true when both disk removals succeed (confirmed wipe)", async () => {
+      await initHomeActionsCache("user-1");
+      await expect(clearHomeActionsState()).resolves.toBe(true);
+    });
+
+    it("returns false (unconfirmed wipe) when a removeItem fails, without throwing", async () => {
+      mockAsyncStorage.removeItem.mockImplementation((k: string) =>
+        k === "@ocrecipes_recent_actions"
+          ? Promise.reject(new Error("disk full"))
+          : Promise.resolve(),
+      );
+      await initHomeActionsCache("user-1");
+      // Non-throwing contract preserved, but reports the failure so the
+      // durable-owner marker won't advance past this user.
+      await expect(clearHomeActionsState()).resolves.toBe(false);
     });
 
     it("does not resurrect a swept history when init's read races clearHomeActionsState", async () => {
@@ -206,7 +230,7 @@ describe("home-actions-storage", () => {
         return Promise.resolve(disk[k] ?? null);
       });
 
-      const initP = initHomeActionsCache(); // suspends at the deferred read
+      const initP = initHomeActionsCache("user-1"); // suspends at the deferred read
       const clearP = clearHomeActionsState(); // must serialize AFTER init
       resolveRecent(JSON.stringify(["A1", "A2"])); // init "read" the prior data
 
@@ -251,7 +275,7 @@ describe("home-actions-storage", () => {
       );
 
       const clearP = clearHomeActionsState(); // epoch++, caches null, suspends on removeItem
-      const initP = initHomeActionsCache(); // must await the in-flight sweep before reading
+      const initP = initHomeActionsCache("user-1"); // must await the in-flight sweep before reading
       resolveRemove(); // removeItem lands → disk wiped → sweep settles → init reads empty
 
       await Promise.all([clearP, initP]);
@@ -263,5 +287,76 @@ describe("home-actions-storage", () => {
       expect(disk["@ocrecipes_recent_actions"]).toBeNull();
       expect(disk["@ocrecipes_action_usage_counts"]).toBeNull();
     });
+  });
+});
+
+// Cross-RESTART durability (the residual the in-memory sweepEpoch/sweepInFlight
+// guards can't cover). vi.resetModules() in beforeEach gives each test a FRESH
+// module instance with sweepEpoch back to 0 and null caches — a faithful app
+// restart — so any protection here comes from the persisted durable-owner marker,
+// not the in-memory race guards. A test that skipped resetModules would only
+// exercise those guards and prove nothing about durability across a relaunch.
+describe("initHomeActionsCache — durable-owner gate (cross-restart)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    mockAsyncStorage.getItem.mockResolvedValue(null);
+    mockAsyncStorage.setItem.mockResolvedValue(undefined);
+    mockAsyncStorage.removeItem.mockResolvedValue(undefined);
+  });
+
+  it("does not resurrect a prior user's history when a failed wipe leaves it on disk and a DIFFERENT user inits after restart", async () => {
+    // User A's logout wipe FAILED, so A's history survives on disk and the marker
+    // still names A. After a restart, user B's Home mount must read empty.
+    const disk: Record<string, string | null> = {
+      "@ocrecipes_recent_actions": JSON.stringify(["A1", "A2"]),
+      "@ocrecipes_action_usage_counts": JSON.stringify({ A1: 9 }),
+      "@ocrecipes_durable_owner": "user-A",
+    };
+    mockAsyncStorage.getItem.mockImplementation((k: string) =>
+      Promise.resolve(disk[k] ?? null),
+    );
+    const { initHomeActionsCache, getRecentActions, getActionUsageCounts } =
+      await import("../home-actions-storage");
+
+    await initHomeActionsCache("user-B");
+
+    expect(getRecentActions()).toEqual([]);
+    expect(getActionUsageCounts()).toEqual({});
+  });
+
+  it("loads history when the durable-owner marker matches the active user", async () => {
+    const disk: Record<string, string | null> = {
+      "@ocrecipes_recent_actions": JSON.stringify(["mine"]),
+      "@ocrecipes_action_usage_counts": JSON.stringify({ mine: 2 }),
+      "@ocrecipes_durable_owner": "user-A",
+    };
+    mockAsyncStorage.getItem.mockImplementation((k: string) =>
+      Promise.resolve(disk[k] ?? null),
+    );
+    const { initHomeActionsCache, getRecentActions, getActionUsageCounts } =
+      await import("../home-actions-storage");
+
+    await initHomeActionsCache("user-A");
+
+    expect(getRecentActions()).toEqual(["mine"]);
+    expect(getActionUsageCounts()).toEqual({ mine: 2 });
+  });
+
+  it("does not load legacy history written before the marker existed (absent owner → one-time reset)", async () => {
+    const disk: Record<string, string | null> = {
+      "@ocrecipes_recent_actions": JSON.stringify(["legacy"]),
+      // No @ocrecipes_durable_owner key — a pre-upgrade install.
+    };
+    mockAsyncStorage.getItem.mockImplementation((k: string) =>
+      Promise.resolve(disk[k] ?? null),
+    );
+    const { initHomeActionsCache, getRecentActions } = await import(
+      "../home-actions-storage"
+    );
+
+    await initHomeActionsCache("user-A");
+
+    expect(getRecentActions()).toEqual([]);
   });
 });
