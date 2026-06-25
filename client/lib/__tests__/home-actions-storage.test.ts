@@ -20,6 +20,17 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 
 describe("home-actions-storage", () => {
   beforeEach(() => {
+    // Mock isolation: clearAllMocks wipes call history AND any per-test
+    // mockImplementation, then the mockReturnValue lines below re-establish fresh
+    // defaults — so a race test's custom getItem/removeItem impl never leaks forward.
+    // NOTE: the module-under-test's own state (sweepEpoch, sweepInFlight, the caches)
+    // is intentionally NOT reset between tests — the static top-level imports bind to a
+    // single module instance, so a vi.resetModules() here would be a no-op without
+    // converting every test to dynamic import. This is safe because sweepEpoch is only
+    // ever compared RELATIVELY within one init lifecycle (startEpoch vs current), never
+    // against an absolute, and every test calls initHomeActionsCache() before asserting
+    // on the getters. A future test that interleaves init/clear must not assume a
+    // starting epoch of 0.
     vi.clearAllMocks();
     mockAsyncStorage.getItem.mockReturnValue(Promise.resolve(null));
     mockAsyncStorage.setItem.mockReturnValue(Promise.resolve());
