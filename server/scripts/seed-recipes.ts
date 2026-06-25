@@ -42,6 +42,10 @@ import {
 } from "../services/recipe-generation";
 import { inferMealTypes } from "../lib/meal-type-inference";
 import { openai, MODEL_FAST } from "../lib/openai";
+import {
+  ALLOW_PROD_SEED_FLAG,
+  shouldSeedAsPlatformOwned,
+} from "./seed-recipes-utils";
 
 const MIN_INGREDIENTS = 4;
 const MIN_INSTRUCTIONS = 4;
@@ -390,7 +394,7 @@ async function seedOneRecipe(
   target: (typeof RECIPE_TARGETS)[number],
   index: number,
   alreadySeeded: Set<string>,
-  demoUserId: string,
+  authorId: string | null,
 ): Promise<RecipeResult> {
   const prefix = `[${index + 1}/${RECIPE_TARGETS.length}] ${target.ingredient}`;
   const seedKey = `seed-${normalizeProductName(target.ingredient)}`;
@@ -457,7 +461,7 @@ async function seedOneRecipe(
     // ── Insert via storage so addToIndex is called and seeds are
     // ── immediately searchable without a server restart (M21).
     await storage.createCommunityRecipe({
-      authorId: demoUserId,
+      authorId,
       barcode: null,
       normalizedProductName: seedKey,
       title: content.title,
@@ -475,6 +479,7 @@ async function seedOneRecipe(
       ...(macros ?? {}),
       imageUrl,
       isPublic: true,
+      isCanonical: true,
     });
     console.log(`${prefix}: ✓ inserted`);
     return "inserted";
@@ -490,7 +495,7 @@ async function main() {
   // ── M3: production guard ───────────────────────────────────────────
   // ensureDemoUser() writes a privileged "demo" user with a scripted
   // password. Refuse to run in prod unless the caller explicitly opts in.
-  const allowProdSeed = process.argv.includes("--allow-prod-seed");
+  const allowProdSeed = process.argv.includes(ALLOW_PROD_SEED_FLAG);
   if (process.env.NODE_ENV === "production" && !allowProdSeed) {
     console.error(
       "Refusing to seed in NODE_ENV=production without --allow-prod-seed.",
@@ -528,7 +533,19 @@ async function main() {
     );
   }
 
-  const demoUserId = await ensureDemoUser();
+  // Platform-owned mode (live backend): create NO account and author every
+  // recipe with authorId = null. ensureDemoUser() is intentionally NOT called —
+  // a `demo` test login must never exist on the live backend.
+  const platformOwned = shouldSeedAsPlatformOwned({
+    allowProdSeed,
+    nodeEnv: process.env.NODE_ENV,
+  });
+  const authorId = platformOwned ? null : await ensureDemoUser();
+  if (platformOwned) {
+    console.log(
+      "Platform-owned seed: no account created; recipes authored as authorId=null.",
+    );
+  }
 
   // ── M26: parallel pipeline ─────────────────────────────────────────
   // Each recipe's content+image+insert pipeline runs concurrently up to
@@ -539,7 +556,7 @@ async function main() {
   const limit = pLimit(CONTENT_CONCURRENCY);
   const results = await Promise.all(
     RECIPE_TARGETS.map((target, i) =>
-      limit(() => seedOneRecipe(target, i, alreadySeeded, demoUserId)),
+      limit(() => seedOneRecipe(target, i, alreadySeeded, authorId)),
     ),
   );
 
