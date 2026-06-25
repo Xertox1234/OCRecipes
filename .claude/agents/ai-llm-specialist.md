@@ -335,6 +335,7 @@ When reviewing or writing AI service code, verify:
 - [ ] Rate limiting applied on route (`_rate-limiters.ts`)
 - [ ] Premium feature gating via `checkPremiumFeature()`
 - [ ] Error handling uses `handleRouteError(res, err, "context")`
+- [ ] If the OpenAI client sets a custom `baseURL` (`AI_INTEGRATIONS_OPENAI_BASE_URL`), the API key's **provider must match the endpoint**: OpenAI `sk-…`/`sk-proj-…` ↔ `api.openai.com`; OpenRouter `sk-or-…` ↔ `openrouter.ai`. A mismatch compiles fine and only 401s ("Missing Authentication header") at request time; a non-OpenAI gateway base URL also breaks DALL·E (image gen is OpenAI-only — `dalleClient` stays direct), and chat models must match the provider's namespacing (bare `gpt-4o` vs `provider/model`). (Ref: `docs/solutions/runtime-errors/openrouter-base-url-with-openai-key-401-2026-06-25.md`)
 
 ---
 
