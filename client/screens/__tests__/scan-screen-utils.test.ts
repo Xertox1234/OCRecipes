@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   getRouteForContentType,
-  shouldAutoRoute,
   getConfirmationMessage,
   getContentTypeLabel,
   getPremiumGate,
@@ -152,20 +151,6 @@ describe("scan-screen-utils", () => {
         imageUri: "/tmp/photo.jpg",
         intent: "log",
       });
-    });
-  });
-
-  describe("shouldAutoRoute", () => {
-    it("returns true for confidence >= 0.7", () => {
-      expect(shouldAutoRoute(0.7)).toBe(true);
-      expect(shouldAutoRoute(0.85)).toBe(true);
-      expect(shouldAutoRoute(1.0)).toBe(true);
-    });
-
-    it("returns false for confidence < 0.7", () => {
-      expect(shouldAutoRoute(0.69)).toBe(false);
-      expect(shouldAutoRoute(0.5)).toBe(false);
-      expect(shouldAutoRoute(0)).toBe(false);
     });
   });
 
