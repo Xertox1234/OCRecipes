@@ -51,6 +51,7 @@ export function UpgradeModal({
   const haptics = useHaptics();
   const { state, purchase, restore, reset } = usePurchase();
   const autoCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevVisibleRef = useRef(false);
   const upgradeErrorMessage =
     state.status === "error" ? getUpgradeErrorMessage(state.error.code) : null;
 
@@ -95,6 +96,31 @@ export function UpgradeModal({
       reset();
     }
   }, [visible, state.status, reset]);
+
+  // Announce the modal's purpose on open. Otherwise the only screen-reader
+  // feedback is the present focus shift reading the first accessible element —
+  // the close button ("Close upgrade modal") — with no context for why the
+  // modal appeared. The idle title carries no live region (it's gated to the
+  // success swap), so we announce on BOTH platforms with no iOS gate.
+  // The string is status-independent on purpose: on a reopen-after-error the
+  // reset() above is async, so state.status is briefly "error" for one render —
+  // a fixed purpose string is always correct, a status-derived one would not be.
+  // Delayed ~500ms (past the slide-present animation) so iOS VoiceOver doesn't
+  // swallow the announcement mid screen-change; the delay is harmless on Android
+  // and lets the close-button focus read land first, then the purpose.
+  useEffect(() => {
+    const opened = visible && !prevVisibleRef.current;
+    prevVisibleRef.current = visible;
+    if (!opened) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      AccessibilityInfo.announceForAccessibility(
+        "Upgrade to Premium. Unlock the full OCRecipes experience.",
+      );
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [visible]);
 
   const handleUpgrade = useCallback(() => {
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);

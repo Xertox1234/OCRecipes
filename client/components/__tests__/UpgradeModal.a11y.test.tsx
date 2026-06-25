@@ -117,3 +117,102 @@ describe("UpgradeModal — success state a11y", () => {
     expect(successEl.getAttribute("aria-live")).toBe("assertive");
   });
 });
+
+// P3-2026-06-24: on open, the OS focus shift reads only the first accessible
+// element (the close button, "Close upgrade modal"), giving a screen-reader user
+// no context for why the modal appeared. The modal must announce its purpose on
+// the visible false→true edge. The idle title carries no live region (gated to
+// success), so this announce fires on BOTH platforms with no iOS gate, and is
+// delayed past the slide-present focus shift so VoiceOver doesn't swallow it.
+describe("UpgradeModal — on-open purpose announce a11y", () => {
+  const originalPlatformOS = RN.Platform.OS;
+  const PURPOSE = "Upgrade to Premium. Unlock the full OCRecipes experience.";
+  let announceSpy: ReturnType<typeof vi.spyOn>;
+
+  const countPurposeCalls = (spy: ReturnType<typeof vi.spyOn>) =>
+    spy.mock.calls.filter((call: unknown[]) => call[0] === PURPOSE).length;
+
+  beforeEach(() => {
+    purchaseState.current = { status: "idle" };
+    announceSpy = vi.spyOn(RN.AccessibilityInfo, "announceForAccessibility");
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    RN.Platform.OS = originalPlatformOS;
+    announceSpy.mockRestore();
+  });
+
+  it("announces the modal's purpose when it opens (iOS)", () => {
+    RN.Platform.OS = "ios";
+    const { rerender } = renderComponent(
+      <UpgradeModal visible={false} onClose={vi.fn()} />,
+    );
+    expect(announceSpy).not.toHaveBeenCalledWith(PURPOSE);
+
+    rerender(<UpgradeModal visible onClose={vi.fn()} />);
+    vi.advanceTimersByTime(500);
+
+    expect(announceSpy).toHaveBeenCalledWith(PURPOSE);
+  });
+
+  it("announces the modal's purpose when it opens (Android — no iOS gate)", () => {
+    RN.Platform.OS = "android";
+    const { rerender } = renderComponent(
+      <UpgradeModal visible={false} onClose={vi.fn()} />,
+    );
+
+    rerender(<UpgradeModal visible onClose={vi.fn()} />);
+    vi.advanceTimersByTime(500);
+
+    expect(announceSpy).toHaveBeenCalledWith(PURPOSE);
+  });
+
+  it("does not announce on mount while hidden", () => {
+    RN.Platform.OS = "ios";
+    renderComponent(<UpgradeModal visible={false} onClose={vi.fn()} />);
+    vi.advanceTimersByTime(500);
+
+    expect(announceSpy).not.toHaveBeenCalledWith(PURPOSE);
+  });
+
+  it("announces once per open and re-arms on a full close→reopen", () => {
+    RN.Platform.OS = "ios";
+    // Open via the real false→true edge (not a mount-while-visible shortcut, so
+    // it exercises the prev-ref edge guard and is StrictMode-robust)…
+    const { rerender } = renderComponent(
+      <UpgradeModal visible={false} onClose={vi.fn()} />,
+    );
+    rerender(<UpgradeModal visible onClose={vi.fn()} />);
+    vi.advanceTimersByTime(500);
+    // …a re-render while still visible must NOT re-announce…
+    rerender(<UpgradeModal visible onClose={vi.fn()} />);
+    vi.advanceTimersByTime(500);
+    expect(countPurposeCalls(announceSpy)).toBe(1);
+
+    // …a real close then reopen must re-arm and announce again (every genuine
+    // open speaks — the prev-ref resets to false on the true→false leg).
+    rerender(<UpgradeModal visible={false} onClose={vi.fn()} />);
+    vi.advanceTimersByTime(500);
+    rerender(<UpgradeModal visible onClose={vi.fn()} />);
+    vi.advanceTimersByTime(500);
+    expect(countPurposeCalls(announceSpy)).toBe(2);
+  });
+
+  it("does not announce if the modal closes before the announce delay elapses", () => {
+    RN.Platform.OS = "ios";
+    const { rerender } = renderComponent(
+      <UpgradeModal visible={false} onClose={vi.fn()} />,
+    );
+    // Open, then close within the 500ms window — the effect cleanup must cancel
+    // the pending timer so a stale announce can't fire after the modal is gone.
+    rerender(<UpgradeModal visible onClose={vi.fn()} />);
+    vi.advanceTimersByTime(200);
+    rerender(<UpgradeModal visible={false} onClose={vi.fn()} />);
+    vi.advanceTimersByTime(500);
+
+    expect(announceSpy).not.toHaveBeenCalledWith(PURPOSE);
+  });
+});
