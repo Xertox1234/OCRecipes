@@ -59,16 +59,17 @@ export function getSmartConfirmLabel(
 }
 
 /**
- * iOS VoiceOver announcement string for a chip variant when it first slides in.
+ * Screen-reader announcement string for a chip variant transition.
  *
- * Android announces the rendered chip text via `accessibilityLiveRegion`; iOS
- * suppresses that live region (to avoid a double-announce) and fires this string
- * imperatively via `AccessibilityInfo.announceForAccessibility`. The
- * `smart_photo` variant derives its announcement from
- * `getSmartConfirmLabel(phase.classification)` so the spoken text matches the
- * visible content-type-specific label (e.g. "Restaurant menu detected, tap to
- * confirm") instead of a generic "Photo analyzed". All other variants use a
- * fixed string.
+ * ProductChip announces imperatively via `AccessibilityInfo.announceForAccessibility`
+ * on BOTH platforms, once per variant transition (the chip has no container
+ * `accessibilityLiveRegion` — that re-read the whole subtree on the smart-confirm
+ * busy swap). This string is the spoken text for appear (null→non-null) and
+ * non-null→non-null transitions alike. The `smart_photo` variant derives its
+ * announcement from `getSmartConfirmLabel(phase.classification)` so the spoken
+ * text matches the visible content-type-specific label (e.g. "Restaurant menu
+ * detected, tap to confirm") instead of a generic "Photo analyzed". All other
+ * variants use a fixed string.
  */
 export function getChipAnnounceText(
   variant: NonNullable<ProductChipVariant>,

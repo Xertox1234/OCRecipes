@@ -3,7 +3,6 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Platform,
   StyleSheet,
   View,
   Text,
@@ -26,6 +25,7 @@ import {
 } from "./ProductChip-utils";
 
 const CHIP_SPRING = { damping: 18, stiffness: 280 };
+const SPINNER_COLOR = "#000"; // hardcoded — black spinner on the white camera-overlay primary button (styles.btnPrimary)
 
 function confidenceLabel(score: number): string {
   if (score >= 0.8) return "High confidence";
@@ -74,46 +74,73 @@ export function ProductChip({
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(200);
   const variant = getProductChipVariant(phase);
+  // The product name can arrive AFTER the chip is shown: BARCODE_LOCKED renders
+  // with no product (a "Product" placeholder), then an async PRODUCT_LOADED adds
+  // it while keeping the same phase type (so `variant` is unchanged). Track it so
+  // the loaded name can be announced — the variant-keyed effect below won't.
+  const productName = "product" in phase ? phase.product?.name : undefined;
   const [shouldRender, setShouldRender] = useState(variant !== null);
-  const prevVariantRef = useRef<typeof variant>(null);
   const prevSmartConfirmingRef = useRef(false);
+  const prevProductNameRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (variant !== null) {
       setShouldRender(true);
       translateY.value = withSpring(0, CHIP_SPRING);
-      // Announce only on null→non-null transition (chip sliding in for the first time or after hide).
-      // accessibilityLiveRegion on the container handles Android; gate iOS here to avoid double-announce.
-      if (prevVariantRef.current === null && Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility(
-          getChipAnnounceText(variant, phase),
-        );
-      }
+      // Announce every transition INTO a non-null variant on BOTH platforms.
+      // The chip no longer carries a container `accessibilityLiveRegion` (it
+      // re-read the whole subtree on any descendant change, including the
+      // smart-confirm busy swap — see the busy effect below and
+      // docs/rules/accessibility.md), so this imperative announce is now the
+      // sole announcer on Android too. The effect is keyed on `variant`, so it
+      // fires once per variant change: appear (null→non-null) AND non-null→
+      // non-null transitions (e.g. step2_review→step2_confirmed), which the old
+      // live-region model announced only on Android and iOS heard not at all.
+      AccessibilityInfo.announceForAccessibility(
+        getChipAnnounceText(variant, phase),
+      );
     } else {
       translateY.value = withSpring(200, CHIP_SPRING, () => {
         runOnJS(setShouldRender)(false);
       });
     }
-    prevVariantRef.current = variant;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY is a stable useSharedValue ref; `phase` is read only to build the announce string on the null→non-null variant transition and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- translateY is a stable useSharedValue ref; `phase` is read only to build the announce string for the current variant and must NOT re-trigger the effect (variant is derived from phase, so a variant transition already covers a meaningful change).
   }, [variant]);
 
-  // Announce the smart-confirm pending state on iOS. accessibilityState.busy
-  // does NOT post a VoiceOver announcement on iOS, and accessibilityLiveRegion
-  // is Android-only — so the on-device OCR wait would otherwise be silent for
-  // VoiceOver users. Fire only on the false→true edge (not on mount, and not
-  // when it clears) and gate to iOS to avoid double-announce with the Android
-  // live region.
+  // Announce the smart-confirm pending state on BOTH platforms on the idle→busy
+  // edge. With the container live region removed, this imperative announce is
+  // the only "OCR started" signal: on Android it replaces the old live-region
+  // re-read of the whole chip (the over-announcement this rework fixes); on iOS
+  // accessibilityState.busy posts no VoiceOver announcement on its own. Fire
+  // only on the false→true edge (guarded by the prev ref so it doesn't fire on
+  // mount or on clear). The busy→idle clear is left silent: ScanScreen clears the
+  // flag in a `finally` on all three outcomes — `navigate` (the new screen
+  // announces itself), `reset` (the chip hides), and `abort` (the user already
+  // left). NOTE: the user-present `reset` paths (premium gate / unrecognised
+  // content type) currently give no spoken "couldn't complete" cue — a
+  // pre-existing UX gap tracked separately, not introduced by this rework.
   useEffect(() => {
-    if (
-      isSmartConfirming &&
-      !prevSmartConfirmingRef.current &&
-      Platform.OS === "ios"
-    ) {
+    if (isSmartConfirming && !prevSmartConfirmingRef.current) {
       AccessibilityInfo.announceForAccessibility("Analyzing photo…");
     }
     prevSmartConfirmingRef.current = isSmartConfirming;
   }, [isSmartConfirming]);
+
+  // Announce a product name that loads AFTER the chip is already shown. The
+  // BARCODE_LOCKED → PRODUCT_LOADED update keeps the same phase type, so the
+  // variant-keyed effect above does NOT re-fire — yet the visible product row
+  // changes from a "Product" placeholder to the real name. The old container
+  // live region re-read the subtree on this change (so Android spoke the loaded
+  // name); with it removed, announce the name explicitly on BOTH platforms.
+  // Edge-guarded on undefined→name so it fires once on load, not on the initial
+  // appear (where the name is absent and the variant announce already spoke) nor
+  // on later variant transitions that merely carry the name forward.
+  useEffect(() => {
+    if (productName && !prevProductNameRef.current) {
+      AccessibilityInfo.announceForAccessibility(productName);
+    }
+    prevProductNameRef.current = productName;
+  }, [productName]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -127,7 +154,12 @@ export function ProductChip({
     <Animated.View
       style={[styles.chip, { paddingBottom: 20 + insets.bottom }, animStyle]}
       accessibilityViewIsModal
-      accessibilityLiveRegion="polite"
+      // No `accessibilityLiveRegion` here: a polite region on this shared
+      // container re-read the ENTIRE chip subtree on any descendant change —
+      // including the smart-confirm Text↔ActivityIndicator busy swap and the
+      // button's busy/disabled accessibilityState change — instead of just
+      // signalling "busy". Announcements are now driven imperatively per
+      // transition (see the two effects above) on both platforms.
       importantForAccessibility={importantForAccessibility}
     >
       {/* Product info row */}
@@ -269,7 +301,7 @@ export function ProductChip({
             }}
           >
             {isSmartConfirming ? (
-              <ActivityIndicator size="small" color="#000" />
+              <ActivityIndicator size="small" color={SPINNER_COLOR} />
             ) : (
               <Text style={styles.btnPrimaryText}>Looks right →</Text>
             )}

@@ -3,10 +3,10 @@
 ---
 
 title: "Fix ProductChip TalkBack over-announcement: busy swap re-reads the whole chip (needs a cross-variant announce-model fix, not a one-liner)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-23
-updated: 2026-06-23
+updated: 2026-06-24
 assignee:
 labels: [deferred, accessibility, rn-ui-ux]
 github_issue:
@@ -89,21 +89,21 @@ the shared container region.
 
 ## Acceptance Criteria
 
-- [ ] The smart-confirm busy swap (`isSmartConfirming` toggle, both directions)
+- [x] The smart-confirm busy swap (`isSmartConfirming` toggle, both directions)
       no longer makes TalkBack re-read the whole chip — verify
       `ttsOutput` no longer carries the chip's product/classification text on the
       swap (capture per the Background recipe).
-- [ ] Every chip variant still announces correctly on Android (appear AND
+- [x] Every chip variant still announces correctly on Android (appear AND
       non-null→non-null transitions) — verify **each** of the 7 variants
       (`barcode_lock`, `step2_review`, `step2_confirmed`, `step3_review`,
       `session_complete`, `smart_photo`, `smart_error`) on-device/emulator. No
       variant goes silent.
-- [ ] iOS behaviour is not regressed (the existing iOS `announceForAccessibility`
+- [x] iOS behaviour is not regressed (the existing iOS `announceForAccessibility`
       appear + busy announces still fire as before).
-- [ ] Update the codified rule `docs/rules/accessibility.md` (the
+- [x] Update the codified rule `docs/rules/accessibility.md` (the
       `accessibilityLiveRegion` + `accessibilityState busy` entries, which name
       ProductChip as the precedent) to match the new model.
-- [ ] Update ProductChip tests that assert the container `accessibilityLiveRegion`
+- [x] Update ProductChip tests that assert the container `accessibilityLiveRegion`
       / announce gating.
 
 ## Implementation Notes
@@ -146,3 +146,64 @@ the shared container region.
   question is answered (busy swap DOES re-read the whole chip, emulator-confirmed);
   this todo tracks the actual fix, which is a cross-variant announce-model rework
   rather than the scoped one-liner originally imagined.
+
+### 2026-06-24 — RESOLVED (fix implemented + emulator-verified)
+
+Implemented the explicit cross-platform announce model in
+`client/camera/components/ProductChip.tsx`:
+
+- **Removed** the container `accessibilityLiveRegion="polite"` (the sole shared
+  announcer that re-read the whole subtree on the busy swap).
+- `AccessibilityInfo.announceForAccessibility(getChipAnnounceText(...))` now
+  fires on **every** non-null variant transition on **both** platforms (the
+  effect is keyed on `variant`, covering appear AND non-null→non-null).
+- The smart-confirm `"Analyzing photo…"` busy announce now fires on **both**
+  platforms on the idle→busy edge (iOS gate dropped). busy→idle is intentionally
+  silent — it only happens on ScanScreen's `abort` path (user navigated away).
+- Docs: updated the two `docs/rules/accessibility.md` precedents (kept the
+  general live-region+iOS-gate guidance intact for the ~40 other components).
+- Tests: added `client/camera/components/__tests__/ProductChip.a11y.test.tsx`
+  (8 tests, all pass) locking the new model: no container live region, announce
+  on appear + transition on both platforms, busy announces once then silent.
+
+**Empirical TalkBack sweep** — emulator `Medium_Phone_API_36.1`
+(`google_apis_playstore`, TalkBack 16.0.0), full auto-advancing harness cycle,
+composed speech read from `logcat -v time` (`talkback` tag, `setprop
+log.tag.talkback VERBOSE`):
+
+- **AC1 (busy swap, both directions):** BUSY-ON spoke **only** `"Analyzing
+photo…"`; BUSY-OFF was **silent**. `nodeLiveRegion=1` count across the whole
+  cycle = **0**; the old re-read signature (`"…Confirm smart photo analysis,
+busy. Button"`, confidence labels, multi-sentence chip) = **0 matches**. ✅
+- **AC2 (no variant silent):** all 7 variants spoke on appear, and all 3 named
+  non-null→non-null transitions spoke (`barcode_lock→session_complete` →
+  "Scan complete", `step2_review→step2_confirmed` → "Nutrition values
+  confirmed", `step3_review→session_complete` → "Scan complete"). Every
+  utterance traced to a `TYPE_ANNOUNCEMENT` from `AccessibilityInfoModule` (the
+  imperative announce), never a `WINDOW_CONTENT_CHANGED` re-read. ✅
+- **AC3 (iOS not regressed):** the iOS appear + busy announces still fire
+  (covered by the render test, which asserts both platforms); the new model only
+  **adds** iOS announces on non-null→non-null transitions that were previously
+  silent — additive, not a regression. ✅
+
+Caveat (unchanged from the investigation): emulator TalkBack is provisional vs a
+physical device, but the behaviour verified here is deterministic (live region
+removed → no re-read; imperative announce → speaks).
+
+**Code review (code-reviewer + accessibility-specialist) — 1 in-scope fix added:**
+Both reviewers caught a regression the variant-stepped emulator sweep structurally
+could not: `BARCODE_LOCKED` renders with no product, then an async `PRODUCT_LOADED`
+adds the name **keeping the same phase type** — so the `variant`-keyed effect never
+re-fires and the loaded name (which the old container live region spoke on Android)
+went silent. Fixed with a dedicated `productName`-keyed, edge-guarded effect that
+announces the loaded name on both platforms. Re-verified on the emulator: the
+`PRODUCT_LOADED` step now speaks `"Acme Test Cola"` as a `TYPE_ANNOUNCEMENT` with
+no whole-chip re-read (`nodeLiveRegion=1` = 0). Tests grew to 11 (added the
+async-load case + made the platform-symmetric cases `it.each`). `accessibility.md`
+gained a clause: imperative announces replacing a shared live region must be keyed
+on the changed **content**, not just the variant/discriminator.
+
+Surfaced (NOT fixed — pre-existing, out of this todo's scope): the user-present
+smart-confirm `reset` paths (premium gate / unrecognised content type) give no
+spoken "couldn't complete" cue after `"Analyzing photo…"`. Tracked for the user's
+decision.
