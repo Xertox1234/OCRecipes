@@ -22,8 +22,11 @@
  *   original ~6+ min serial path.
  *
  * Safety:
- *   ensureDemoUser() refuses to run in NODE_ENV=production unless
- *   --allow-prod-seed is passed. The demo user's password is a
+ *   ensureDemoUser() is fenced to LOCAL databases: it throws unless
+ *   DATABASE_URL is a local host (localhost/127.0.0.1), so the demo/test login
+ *   can never be created on the live backend — independent of --allow-prod-seed
+ *   or NODE_ENV. The prod path (--allow-prod-seed) skips it entirely and seeds
+ *   platform-owned content (authorId=null). The demo user's password is a
  *   cryptographically-random 24-char string (or $SEED_DEMO_PASSWORD if set)
  *   and is printed to stdout once on first creation.
  */
@@ -42,6 +45,11 @@ import {
 } from "../services/recipe-generation";
 import { inferMealTypes } from "../lib/meal-type-inference";
 import { openai, MODEL_FAST } from "../lib/openai";
+import {
+  ALLOW_PROD_SEED_FLAG,
+  shouldSeedAsPlatformOwned,
+  assertLocalDbForDemoAccount,
+} from "./seed-recipes-utils";
 
 const MIN_INGREDIENTS = 4;
 const MIN_INSTRUCTIONS = 4;
@@ -200,16 +208,24 @@ const RECIPE_TARGETS = [
 ] as const;
 
 /**
- * Create or return the demo user. In production, creation requires the
- * --allow-prod-seed flag (enforced by the caller in main()). The default
- * password is a cryptographically-random 24-char hex string unless the
- * SEED_DEMO_PASSWORD env var is set, and is logged to stdout exactly once
+ * Create or return the demo user (LOCAL development only). Guarded by
+ * assertLocalDbForDemoAccount(): throws against any non-local DATABASE_URL so
+ * the demo/test login can never reach the live backend, regardless of flags or
+ * NODE_ENV. The prod seed path never calls this (it authors recipes as
+ * authorId=null). The default password is a cryptographically-random 24-char
+ * hex string unless SEED_DEMO_PASSWORD is set, logged to stdout exactly once
  * on first creation so the operator can record it.
  *
  * M3 (audit 2026-04-17): removed hardcoded "demo123" password; prod guard
  * lives in main() so the script exits before touching any state.
  */
 async function ensureDemoUser(): Promise<string> {
+  // Fail-closed: the demo/test login is local-only and must NEVER reach the live
+  // backend. Throws against any non-local DATABASE_URL host — independent of
+  // --allow-prod-seed and NODE_ENV (which `railway run` may not inject) — so a
+  // forgotten flag can never create a `demo` account on prod.
+  assertLocalDbForDemoAccount(process.env.DATABASE_URL);
+
   const existing = await db
     .select()
     .from(users)
@@ -390,7 +406,7 @@ async function seedOneRecipe(
   target: (typeof RECIPE_TARGETS)[number],
   index: number,
   alreadySeeded: Set<string>,
-  demoUserId: string,
+  authorId: string | null,
 ): Promise<RecipeResult> {
   const prefix = `[${index + 1}/${RECIPE_TARGETS.length}] ${target.ingredient}`;
   const seedKey = `seed-${normalizeProductName(target.ingredient)}`;
@@ -457,7 +473,7 @@ async function seedOneRecipe(
     // ── Insert via storage so addToIndex is called and seeds are
     // ── immediately searchable without a server restart (M21).
     await storage.createCommunityRecipe({
-      authorId: demoUserId,
+      authorId,
       barcode: null,
       normalizedProductName: seedKey,
       title: content.title,
@@ -475,6 +491,7 @@ async function seedOneRecipe(
       ...(macros ?? {}),
       imageUrl,
       isPublic: true,
+      isCanonical: true,
     });
     console.log(`${prefix}: ✓ inserted`);
     return "inserted";
@@ -490,7 +507,7 @@ async function main() {
   // ── M3: production guard ───────────────────────────────────────────
   // ensureDemoUser() writes a privileged "demo" user with a scripted
   // password. Refuse to run in prod unless the caller explicitly opts in.
-  const allowProdSeed = process.argv.includes("--allow-prod-seed");
+  const allowProdSeed = process.argv.includes(ALLOW_PROD_SEED_FLAG);
   if (process.env.NODE_ENV === "production" && !allowProdSeed) {
     console.error(
       "Refusing to seed in NODE_ENV=production without --allow-prod-seed.",
@@ -528,7 +545,19 @@ async function main() {
     );
   }
 
-  const demoUserId = await ensureDemoUser();
+  // Platform-owned mode (live backend): create NO account and author every
+  // recipe with authorId = null. ensureDemoUser() is intentionally NOT called —
+  // a `demo` test login must never exist on the live backend.
+  const platformOwned = shouldSeedAsPlatformOwned({
+    allowProdSeed,
+    nodeEnv: process.env.NODE_ENV,
+  });
+  const authorId = platformOwned ? null : await ensureDemoUser();
+  if (platformOwned) {
+    console.log(
+      "Platform-owned seed: no account created; recipes authored as authorId=null.",
+    );
+  }
 
   // ── M26: parallel pipeline ─────────────────────────────────────────
   // Each recipe's content+image+insert pipeline runs concurrently up to
@@ -539,7 +568,7 @@ async function main() {
   const limit = pLimit(CONTENT_CONCURRENCY);
   const results = await Promise.all(
     RECIPE_TARGETS.map((target, i) =>
-      limit(() => seedOneRecipe(target, i, alreadySeeded, demoUserId)),
+      limit(() => seedOneRecipe(target, i, alreadySeeded, authorId)),
     ),
   );
 
