@@ -419,6 +419,8 @@ export async function initCache(): Promise<void> {
 
 Audit 2026-04-17 H4 — `initSearchIndex` had only a boolean guard; a boot-time request arriving during the ~100–500ms init window triggered parallel `addAll` and threw.
 
+**A reset/rebuild path can DEFEAT the single-flight guard it relies on.** When reviewing a new `rebuildX()` that does `resetX(); await initX();`, check whether `resetX()` nulls the `initPromise`. If it does, two concurrent rebuilds — or a rebuild racing the fire-and-forget boot init — null each other's promise mid-flight, so both inits pass the `if (initPromise) return initPromise` guard and double-`addAll` (duplicate-ID throw, index briefly empty). Require BOTH: (1) the rebuild coalesces its own callers on a dedicated `rebuildPromise`, and (2) it `await`s any in-flight `initPromise` BEFORE calling reset, so the reset never clears a promise out from under a running init. Ask "who else can null this promise?" for every reset added near a single-flight guard. Precedent: `rebuildSearchIndex` in `server/services/recipe-search.ts` (2026-06-25) — see `docs/solutions/logic-errors/reset-clears-single-flight-init-guard-must-await-in-flight-2026-06-25.md`.
+
 ---
 
 ## Dynamic Import for Build Scripts
