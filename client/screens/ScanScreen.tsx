@@ -65,6 +65,7 @@ import {
   type ConfirmCardState,
 } from "@/screens/ScanScreenConfirmOverlay-utils";
 import { ThemedText } from "@/components/ThemedText";
+import { UpgradeModal } from "@/components/UpgradeModal";
 import { useToast } from "@/context/ToastContext";
 import {
   withOpacity,
@@ -114,6 +115,10 @@ export default function ScanScreen() {
   const [isSmartConfirming, setIsSmartConfirming] = useState(false);
 
   const [confirmCard, setConfirmCard] = useState<ConfirmCardState | null>(null);
+  // Premium-gate upsell for a blocked smart-confirm (menu/cook/receipt scan on a
+  // free tier). Mirrors PhotoIntentScreen/ReceiptCaptureScreen — UpgradeModal has
+  // no feature prop, so the copy is generic.
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   const cameraRef = useRef<CameraRef>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -675,23 +680,49 @@ export default function ScanScreen() {
                 navigation.isFocused() &&
                 scanPhaseRef.current.type === "SMART_CONFIRMED",
             });
-            if (action.kind === "navigate") {
-              // navigate accepts a variable screen name from a discriminated union;
-              // cast the whole function signature to avoid React Navigation's strict
-              // per-screen overloads while keeping params typed via ClassificationRoute.
-              (
-                navigation.navigate as (
-                  screen: string,
-                  params?: Record<string, unknown>,
-                ) => void
-              )(
-                action.route.screen,
-                action.route.params as Record<string, unknown> | undefined,
-              );
-            } else if (action.kind === "reset") {
-              dispatch({ type: "RESET" });
+            switch (action.kind) {
+              case "navigate":
+                // navigate accepts a variable screen name from a discriminated union;
+                // cast the whole function signature to avoid React Navigation's strict
+                // per-screen overloads while keeping params typed via ClassificationRoute.
+                (
+                  navigation.navigate as (
+                    screen: string,
+                    params?: Record<string, unknown>,
+                  ) => void
+                )(
+                  action.route.screen,
+                  action.route.params as Record<string, unknown> | undefined,
+                );
+                break;
+              case "blocked":
+                // blocked: hide the chip (RESET) and show the upsell. RESET-on-block
+                // (not on modal close) avoids leaving a stale interactive confirm chip
+                // in the a11y tree behind the modal. Focus-trap safety itself does not
+                // hinge on ordering — UpgradeModal is a RN <Modal> in its own native
+                // window, so its trap never nests with the chip's accessibilityViewIsModal
+                // (which lingers through its spring-out). The camera sits at IDLE behind.
+                dispatch({ type: "RESET" });
+                setShowUpgradeModal(true);
+                break;
+              case "unrecognized":
+                // Surface the existing SMART_ERROR chip ("Couldn't identify this. Try
+                // again?") — visible and announced on both platforms — instead of a
+                // silent reset.
+                dispatch({ type: "SMART_CONFIRM_FAILED" });
+                break;
+              case "abort":
+                // user left during OCR — do nothing.
+                break;
+              default: {
+                // Exhaustiveness guard: a new SmartConfirmAction kind must be handled
+                // here — a silent no-op is exactly the bug this change fixes.
+                const _exhaustive: never = action;
+                throw new Error(
+                  `unhandled smart-confirm action: ${String(_exhaustive)}`,
+                );
+              }
             }
-            // action.kind === "abort": user left during OCR — do nothing.
           } finally {
             isConfirmingRef.current = false;
             setIsSmartConfirming(false);
@@ -834,6 +865,11 @@ export default function ScanScreen() {
           )}
         </View>
       )}
+
+      <UpgradeModal
+        visible={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+      />
     </View>
   );
 }

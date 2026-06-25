@@ -135,6 +135,16 @@ export function scanPhaseReducer(
         error: action.error,
       };
 
+    case "SMART_CONFIRM_FAILED":
+      if (state.type !== "SMART_CONFIRMED") return state;
+      return {
+        type: "SMART_ERROR",
+        imageUri: state.imageUri,
+        // error is not surfaced — the visible chip text and getChipAnnounceText
+        // both hardcode the smart_error copy and ignore phase.error. State-parity only.
+        error: "unrecognized",
+      };
+
     case "RESET":
       return { type: "IDLE" };
 

@@ -84,4 +84,5 @@ export type ScanAction =
   | { type: "SMART_PHOTO_INITIATED"; imageUri: string }
   | { type: "CLASSIFICATION_SUCCEEDED"; classification: PhotoAnalysisResponse }
   | { type: "CLASSIFICATION_FAILED"; error: string }
+  | { type: "SMART_CONFIRM_FAILED" }
   | { type: "RESET" };

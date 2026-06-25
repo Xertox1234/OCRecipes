@@ -270,6 +270,36 @@ describe("scanPhaseReducer", () => {
     });
   });
 
+  it("SMART_CONFIRM_FAILED from SMART_CONFIRMED → SMART_ERROR", () => {
+    const classification: PhotoAnalysisResponse = {
+      sessionId: null,
+      intent: "auto",
+      foods: [],
+      overallConfidence: 0.9,
+      needsFollowUp: false,
+      followUpQuestions: [],
+      contentType: "restaurant_menu",
+    };
+    const state: ScanPhase = {
+      type: "SMART_CONFIRMED",
+      imageUri: "file://menu.jpg",
+      classification,
+    };
+    const result = scanPhaseReducer(state, { type: "SMART_CONFIRM_FAILED" });
+    expect(result).toEqual({
+      type: "SMART_ERROR",
+      imageUri: "file://menu.jpg",
+      error: "unrecognized",
+    });
+  });
+
+  it("SMART_CONFIRM_FAILED is a no-op outside SMART_CONFIRMED", () => {
+    const state: ScanPhase = { type: "IDLE" };
+    expect(scanPhaseReducer(state, { type: "SMART_CONFIRM_FAILED" })).toEqual(
+      state,
+    );
+  });
+
   it("RESET always returns IDLE", () => {
     const state: ScanPhase = {
       type: "BARCODE_LOCKED",

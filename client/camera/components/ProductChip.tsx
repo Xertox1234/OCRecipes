@@ -113,12 +113,10 @@ export function ProductChip({
   // re-read of the whole chip (the over-announcement this rework fixes); on iOS
   // accessibilityState.busy posts no VoiceOver announcement on its own. Fire
   // only on the false→true edge (guarded by the prev ref so it doesn't fire on
-  // mount or on clear). The busy→idle clear is left silent: ScanScreen clears the
-  // flag in a `finally` on all three outcomes — `navigate` (the new screen
-  // announces itself), `reset` (the chip hides), and `abort` (the user already
-  // left). NOTE: the user-present `reset` paths (premium gate / unrecognised
-  // content type) currently give no spoken "couldn't complete" cue — a
-  // pre-existing UX gap tracked separately, not introduced by this rework.
+  // mount or on clear). The busy→idle clear is left silent because every confirm
+  // outcome now self-announces: `navigate` (the new screen announces itself),
+  // `blocked` (UpgradeModal announces itself), `unrecognized` (the SMART_ERROR
+  // chip variant announces), and `abort` (the user already left).
   useEffect(() => {
     if (isSmartConfirming && !prevSmartConfirmingRef.current) {
       AccessibilityInfo.announceForAccessibility("Analyzing photo…");
