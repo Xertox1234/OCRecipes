@@ -470,8 +470,11 @@ async function seedOneRecipe(
       );
     }
 
-    // ── Insert via storage so addToIndex is called and seeds are
-    // ── immediately searchable without a server restart (M21).
+    // ── Insert via storage so addToIndex keeps THIS process's search index
+    // ── in sync (M21). Caveat: when the script runs out-of-process against a
+    // ── remote DB (e.g. a prod `railway run` seed), addToIndex only mutates
+    // ── this throwaway process — the live server's in-memory index stays
+    // ── stale until it restarts or an admin POSTs /api/admin/search-index/rebuild.
     await storage.createCommunityRecipe({
       authorId,
       barcode: null,

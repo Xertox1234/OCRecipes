@@ -34,6 +34,13 @@ const log = createServiceLogger("recipe-search");
 // in-flight load instead of each re-running DB queries + duplicate addAll.
 let initPromise: Promise<void> | null = null;
 
+// Single-flight guard for full rebuilds — coalesces concurrent rebuild callers
+// (admin double-click, retry, two admins) onto one in-flight rebuild. Without
+// it, each caller's resetSearchIndex() would null the other's initPromise
+// mid-flight, letting two inits run in parallel and throw on MiniSearch
+// duplicate IDs (which leaves the index transiently empty until the next read).
+let rebuildPromise: Promise<{ total: number }> | null = null;
+
 export function resetSearchIndex(): void {
   resetSearchIndexPrimitive();
   initPromise = null;
@@ -103,6 +110,38 @@ export async function initSearchIndex(): Promise<void> {
   } finally {
     // Clear on both success and failure; failed init should be retryable.
     initPromise = null;
+  }
+}
+
+/**
+ * Force a full rebuild of the in-memory search index from the database, and
+ * return the resulting document count.
+ *
+ * Out-of-process seeds (e.g. a prod `railway run` of seed-recipes) call
+ * addToIndex on their own throwaway process, so the long-running server's index
+ * stays stale until it restarts. This lets an admin refresh the live index
+ * without a redeploy.
+ *
+ * Serialized two ways so a rebuild can't race an init into a duplicate-ID throw:
+ *   1. `rebuildPromise` coalesces concurrent rebuild callers onto one run.
+ *   2. We await any in-flight `initPromise` (e.g. the fire-and-forget boot init)
+ *      BEFORE resetting — otherwise resetSearchIndex() nulls that init's promise
+ *      mid-flight and a second init runs in parallel, throwing on `addAll` of
+ *      already-indexed IDs. After the reset, initSearchIndex()'s own single-
+ *      flight guard coalesces our re-init with any concurrent search-triggered one.
+ */
+export async function rebuildSearchIndex(): Promise<{ total: number }> {
+  if (rebuildPromise) return rebuildPromise;
+  rebuildPromise = (async () => {
+    if (initPromise) await initPromise.catch(() => {});
+    resetSearchIndex();
+    await initSearchIndex();
+    return { total: getDocumentStore().size };
+  })();
+  try {
+    return await rebuildPromise;
+  } finally {
+    rebuildPromise = null;
   }
 }
 

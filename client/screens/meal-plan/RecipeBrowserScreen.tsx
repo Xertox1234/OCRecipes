@@ -317,6 +317,14 @@ export default function RecipeBrowserScreen() {
     }, 300);
   }, []);
 
+  // Flush the debounce immediately when the user presses the keyboard's
+  // "Search" key. Without this, returnKeyType="search" is a no-op and the
+  // query only commits 300ms after the last keystroke.
+  const handleSubmitSearch = useCallback(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    setDebouncedQuery(searchText.trim());
+  }, [searchText]);
+
   // Cleanup debounce timer on unmount
   React.useEffect(() => {
     return () => {
@@ -596,6 +604,7 @@ export default function RecipeBrowserScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
+            onSubmitEditing={handleSubmitSearch}
             accessibilityLabel="Search recipes"
           />
           {searchText.length > 0 && (
