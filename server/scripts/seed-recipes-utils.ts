@@ -38,7 +38,9 @@ const LOCAL_DB_HOSTS = new Set(["localhost", "127.0.0.1", "::1", ""]);
 function dbHost(databaseUrl: string | undefined): string | null {
   if (!databaseUrl) return null;
   try {
-    return new URL(databaseUrl).hostname;
+    const hostname = new URL(databaseUrl).hostname;
+    // Strip IPv6 brackets: new URL returns "[::1]" for IPv6, but LOCAL_DB_HOSTS stores "::1"
+    return hostname ? hostname.replace(/^\[|\]$/g, "") : hostname;
   } catch {
     return null;
   }

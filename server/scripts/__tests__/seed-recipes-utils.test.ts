@@ -71,6 +71,10 @@ describe("seed-recipes-utils", () => {
       expect(isLocalDbHost("postgresql:///nutricam")).toBe(true);
     });
 
+    it("is true for ::1 (IPv6 loopback)", () => {
+      expect(isLocalDbHost("postgresql://[::1]/db")).toBe(true);
+    });
+
     it("is false for a remote railway host", () => {
       expect(
         isLocalDbHost(
