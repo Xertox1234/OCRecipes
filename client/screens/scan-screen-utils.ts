@@ -182,11 +182,6 @@ export async function resolveSmartConfirmAction({
   return route ? { kind: "navigate", route } : { kind: "unrecognized" };
 }
 
-/** Whether the confidence is high enough to auto-route without confirmation */
-export function shouldAutoRoute(confidence: number): boolean {
-  return confidence >= 0.7;
-}
-
 /** Get a user-friendly confirmation message for a content type */
 export function getConfirmationMessage(contentType: ContentType): string {
   const label = CONTENT_TYPE_LABELS[contentType];

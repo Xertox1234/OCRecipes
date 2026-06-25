@@ -3,10 +3,10 @@
 ---
 
 title: "Decide: delete dead `shouldAutoRoute` export, or wire auto-routing WITH the premium gate"
-status: backlog
+status: done
 priority: low
 created: 2026-06-24
-updated: 2026-06-24
+updated: 2026-06-25
 assignee:
 labels: [deferred, rn-ui-ux, camera]
 github_issue:
@@ -37,14 +37,14 @@ for a future change.
 
 ## Acceptance Criteria
 
-- [ ] Make a decision and act on it: either
+- [x] Make a decision and act on it: either
   - **Delete** `shouldAutoRoute` and its unit test (the simplest fix — it is dead
     code today), **or**
   - **Wire auto-routing** behind it such that the premium gate (`gate &&
 !features[gate.feature]`, `scan-screen-utils.ts:166-168`) is evaluated **before**
     any `getRouteForContentType` auto-navigation — a high-confidence gated scan must
     still reach `UpgradeModal`, never silently route past it.
-- [ ] No production code path lets a gated content type auto-navigate without the gate.
+- [x] No production code path lets a gated content type auto-navigate without the gate.
 
 ## Implementation Notes
 
@@ -70,3 +70,18 @@ for a future change.
 
 - Created at close-out of the smart-confirm-reset-feedback todo to preserve its
   flagged dead-code decision.
+
+### 2026-06-25
+
+- **Decision: DELETE.** Confirmed zero production callers — a repo-wide grep over
+  `*.ts`/`*.tsx` found `shouldAutoRoute` only in its own definition and the
+  `scan-screen-utils.test.ts` import; an `auto.?rout` sweep across code + docs found
+  no other consumer. The implemented UX is the smart-confirm chip: every smart scan
+  reaches `SMART_CONFIRMED` and waits for a `ProductChip` tap → `resolveSmartConfirmAction`,
+  which enforces the premium gate before navigating (`scan-screen-utils.ts:165-168`).
+  There is no auto-route path and no gate-bypass surface. The `docs/ROADMAP.md`
+  "auto-routes" line is a historical `## Shipped` log (2026-04-09) superseded by the
+  confirm-chip design — left untouched.
+- Deleted the function (`scan-screen-utils.ts`) and its only test (import + the
+  `describe("shouldAutoRoute")` block in `scan-screen-utils.test.ts`). Behavior-neutral
+  — nothing called it. Both acceptance criteria satisfied; **no follow-up todo filed.**
