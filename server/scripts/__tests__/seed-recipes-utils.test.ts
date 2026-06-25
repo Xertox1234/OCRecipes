@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   ALLOW_PROD_SEED_FLAG,
   shouldSeedAsPlatformOwned,
+  isLocalDbHost,
+  assertLocalDbForDemoAccount,
 } from "../seed-recipes-utils";
 
 /**
@@ -51,6 +53,62 @@ describe("seed-recipes-utils", () => {
       expect(
         shouldSeedAsPlatformOwned({ allowProdSeed: false, nodeEnv: undefined }),
       ).toBe(false);
+    });
+  });
+
+  describe("isLocalDbHost", () => {
+    it("is true for localhost", () => {
+      expect(isLocalDbHost("postgresql://localhost/nutricam")).toBe(true);
+    });
+
+    it("is true for 127.0.0.1 with creds and port", () => {
+      expect(isLocalDbHost("postgresql://user:pass@127.0.0.1:5432/db")).toBe(
+        true,
+      );
+    });
+
+    it("is true for a hostless (unix-socket) url", () => {
+      expect(isLocalDbHost("postgresql:///nutricam")).toBe(true);
+    });
+
+    it("is false for a remote railway host", () => {
+      expect(
+        isLocalDbHost(
+          "postgresql://user:pass@containers-us-west-1.railway.app:5432/railway",
+        ),
+      ).toBe(false);
+    });
+
+    it("is false (fail-closed) for undefined, empty, or unparseable urls", () => {
+      expect(isLocalDbHost(undefined)).toBe(false);
+      expect(isLocalDbHost("")).toBe(false);
+      expect(isLocalDbHost("not a url")).toBe(false);
+    });
+  });
+
+  describe("assertLocalDbForDemoAccount", () => {
+    it("does not throw for a local host", () => {
+      expect(() =>
+        assertLocalDbForDemoAccount("postgresql://localhost/nutricam"),
+      ).not.toThrow();
+    });
+
+    it("throws and names the host for a remote db", () => {
+      expect(() =>
+        assertLocalDbForDemoAccount(
+          "postgresql://user:pass@db.prod.example.com:5432/app",
+        ),
+      ).toThrow(/non-local DB host 'db\.prod\.example\.com'/);
+    });
+
+    it("throws fail-closed for an unset url", () => {
+      expect(() => assertLocalDbForDemoAccount(undefined)).toThrow(/\(unset\)/);
+    });
+
+    it("throws fail-closed for an unparseable url", () => {
+      expect(() => assertLocalDbForDemoAccount("not a url")).toThrow(
+        /\(unparseable\)/,
+      );
     });
   });
 });

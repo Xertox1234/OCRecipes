@@ -22,8 +22,11 @@
  *   original ~6+ min serial path.
  *
  * Safety:
- *   ensureDemoUser() refuses to run in NODE_ENV=production unless
- *   --allow-prod-seed is passed. The demo user's password is a
+ *   ensureDemoUser() is fenced to LOCAL databases: it throws unless
+ *   DATABASE_URL is a local host (localhost/127.0.0.1), so the demo/test login
+ *   can never be created on the live backend — independent of --allow-prod-seed
+ *   or NODE_ENV. The prod path (--allow-prod-seed) skips it entirely and seeds
+ *   platform-owned content (authorId=null). The demo user's password is a
  *   cryptographically-random 24-char string (or $SEED_DEMO_PASSWORD if set)
  *   and is printed to stdout once on first creation.
  */
@@ -45,6 +48,7 @@ import { openai, MODEL_FAST } from "../lib/openai";
 import {
   ALLOW_PROD_SEED_FLAG,
   shouldSeedAsPlatformOwned,
+  assertLocalDbForDemoAccount,
 } from "./seed-recipes-utils";
 
 const MIN_INGREDIENTS = 4;
@@ -204,16 +208,24 @@ const RECIPE_TARGETS = [
 ] as const;
 
 /**
- * Create or return the demo user. In production, creation requires the
- * --allow-prod-seed flag (enforced by the caller in main()). The default
- * password is a cryptographically-random 24-char hex string unless the
- * SEED_DEMO_PASSWORD env var is set, and is logged to stdout exactly once
+ * Create or return the demo user (LOCAL development only). Guarded by
+ * assertLocalDbForDemoAccount(): throws against any non-local DATABASE_URL so
+ * the demo/test login can never reach the live backend, regardless of flags or
+ * NODE_ENV. The prod seed path never calls this (it authors recipes as
+ * authorId=null). The default password is a cryptographically-random 24-char
+ * hex string unless SEED_DEMO_PASSWORD is set, logged to stdout exactly once
  * on first creation so the operator can record it.
  *
  * M3 (audit 2026-04-17): removed hardcoded "demo123" password; prod guard
  * lives in main() so the script exits before touching any state.
  */
 async function ensureDemoUser(): Promise<string> {
+  // Fail-closed: the demo/test login is local-only and must NEVER reach the live
+  // backend. Throws against any non-local DATABASE_URL host — independent of
+  // --allow-prod-seed and NODE_ENV (which `railway run` may not inject) — so a
+  // forgotten flag can never create a `demo` account on prod.
+  assertLocalDbForDemoAccount(process.env.DATABASE_URL);
+
   const existing = await db
     .select()
     .from(users)

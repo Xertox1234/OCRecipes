@@ -26,3 +26,50 @@ export function shouldSeedAsPlatformOwned(opts: {
 }): boolean {
   return opts.allowProdSeed || opts.nodeEnv === "production";
 }
+
+/**
+ * Hostnames that count as a LOCAL database. The demo/test login may only ever
+ * be created against one of these — see assertLocalDbForDemoAccount. The empty
+ * string covers hostless unix-socket URLs (e.g. `postgresql:///nutricam`).
+ */
+const LOCAL_DB_HOSTS = new Set(["localhost", "127.0.0.1", "::1", ""]);
+
+/** Parse a DATABASE_URL's hostname, or null if absent/unparseable. */
+function dbHost(databaseUrl: string | undefined): string | null {
+  if (!databaseUrl) return null;
+  try {
+    return new URL(databaseUrl).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True ONLY when DATABASE_URL points at a local Postgres host. Fail-closed: an
+ * absent or unparseable URL returns false (treated as non-local).
+ */
+export function isLocalDbHost(databaseUrl: string | undefined): boolean {
+  const host = dbHost(databaseUrl);
+  return host !== null && LOCAL_DB_HOSTS.has(host);
+}
+
+/**
+ * Fail-closed guard for the demo/test account: throws unless DATABASE_URL is a
+ * local host. This makes "no test/demo login on the live backend" structurally
+ * true — independent of the --allow-prod-seed flag and NODE_ENV (which
+ * `railway run` may not inject). The demo account therefore cannot be written to
+ * a remote/prod DB even if every flag/env guard above it is bypassed.
+ */
+export function assertLocalDbForDemoAccount(
+  databaseUrl: string | undefined,
+): void {
+  if (!isLocalDbHost(databaseUrl)) {
+    const host =
+      dbHost(databaseUrl) ?? (databaseUrl ? "(unparseable)" : "(unset)");
+    throw new Error(
+      `Refusing to create the demo account against non-local DB host '${host}'. ` +
+        `The demo/test login is local-only; seed the live backend with ` +
+        `--allow-prod-seed (platform-owned, no account).`,
+    );
+  }
+}
