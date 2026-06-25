@@ -21,34 +21,54 @@ let sectionCache: SectionState | null = null;
 let recentCache: string[] | null = null;
 let usageCountsCache: Record<string, number> | null = null;
 
-// Tracks the LATEST in-flight initHomeActionsCache() so a concurrent
-// clearHomeActionsState() (session teardown) can serialize strictly AFTER it.
-// The bleed vector here is IN-MEMORY only: init reads disk into the caches but
-// never re-persists (no setItem), so clear's removeItem authoritatively wipes disk
-// regardless of ordering — UNLIKE clearOfflineQueue, whose init re-persists and so
-// needs serialization to prevent a DISK resurrection. The lock instead guards a
-// late init read repopulating recentCache/usageCountsCache (which the sync getters
-// return to the Home UI) AFTER the sweep nulled them. It closes the
-// init-in-flight-before-clear case; the mirror case (init STARTING during clear's
-// removeItem await) is currently unreachable only because the authenticated Home
-// tree unmounts on the auth-state flip, so no init runs during teardown — a
-// dependency on that gate, not a structural guarantee (see
-// todos/P3-2026-06-24-harden-home-actions-init-memoize-or-document-auth-gate.md).
-// Reset to null on settle (NOT memoized) so each Home mount re-reads this device's
-// disk for the current session.
-let initInFlight: Promise<void> | null = null;
+// Two independent guards make the no-cross-user-resurrection guarantee STRUCTURAL —
+// no longer dependent on the authenticated Home tree unmounting on the auth flip, so
+// a future caller that pre-warms init outside that gate cannot reopen the bleed.
+// The vector is IN-MEMORY only: init reads disk into the caches but never re-persists
+// (no setItem), so clear's removeItem authoritatively wipes disk regardless of
+// ordering. Both guards protect only recentCache/usageCountsCache (the per-user
+// history the sync getters feed to the Home UI) from a late init repopulating them
+// after a teardown sweep nulled them:
+//
+//   sweepEpoch    — bumped synchronously by each clearHomeActionsState(). init
+//                   snapshots it before its disk read and commits the per-user caches
+//                   only if it is unchanged afterward, so a sweep that starts DURING
+//                   init's read (init-in-flight-before-clear / forward case)
+//                   invalidates init's commit.
+//   sweepInFlight — the latest sweep's removeItem promise. init AWAITS it before
+//                   reading disk, so an init that STARTS while a sweep's removeItem is
+//                   still in flight (init-after-clear's-sync-null / mirror case)
+//                   cannot read pre-wipe stale history. It is awaited in a `while`
+//                   loop, NOT an `if`: a second sweep can begin while we await the
+//                   first, and we must re-wait — do not "simplify" it to an `if`.
+//
+// sectionCache is a retained device-display pref (never swept) so init commits it
+// unconditionally, outside the epoch gate.
+let sweepEpoch = 0;
+let sweepInFlight: Promise<void> | null = null;
 
 export function initHomeActionsCache(): Promise<void> {
-  // Capture the load promise SYNCHRONOUSLY (before the first await is observable
-  // to any other code) so a concurrent clearHomeActionsState() always sees and
-  // awaits it rather than racing the cache-populate below.
   const load = (async () => {
+    // Mirror-case guard: never read disk while a teardown sweep's removeItem is in
+    // flight, or we'd read pre-wipe stale history and repopulate the caches it just
+    // cleared. Loop (not `if`) so a sweep that starts while we await an earlier one
+    // is also waited out.
+    while (sweepInFlight) {
+      try {
+        await sweepInFlight;
+      } catch {}
+    }
+    // Forward-case guard: snapshot the epoch AFTER the in-flight wait but BEFORE the
+    // disk read, so a sweep that starts DURING the read invalidates our commit below.
+    const startEpoch = sweepEpoch;
+
     const [sectionsRaw, recentRaw, usageCountsRaw] = await Promise.all([
       AsyncStorage.getItem(SECTIONS_KEY).catch(() => null),
       AsyncStorage.getItem(RECENT_KEY).catch(() => null),
       AsyncStorage.getItem(USAGE_COUNTS_KEY).catch(() => null),
     ]);
 
+    // Section state is a retained device-display pref (never swept) — always commit.
     try {
       sectionCache = sectionsRaw
         ? { ...DEFAULT_SECTIONS, ...JSON.parse(sectionsRaw) }
@@ -57,22 +77,23 @@ export function initHomeActionsCache(): Promise<void> {
       sectionCache = { ...DEFAULT_SECTIONS };
     }
 
-    try {
-      recentCache = recentRaw ? JSON.parse(recentRaw) : [];
-    } catch {
-      recentCache = [];
-    }
+    // Per-user history caches are swept on teardown. Only commit our read if no sweep
+    // ran during it; otherwise the sweep won the race → leave the nulled caches as-is
+    // so we don't resurrect a prior user's history under the next user.
+    if (sweepEpoch === startEpoch) {
+      try {
+        recentCache = recentRaw ? JSON.parse(recentRaw) : [];
+      } catch {
+        recentCache = [];
+      }
 
-    try {
-      usageCountsCache = usageCountsRaw ? JSON.parse(usageCountsRaw) : {};
-    } catch {
-      usageCountsCache = {};
+      try {
+        usageCountsCache = usageCountsRaw ? JSON.parse(usageCountsRaw) : {};
+      } catch {
+        usageCountsCache = {};
+      }
     }
   })();
-  initInFlight = load;
-  void load.finally(() => {
-    if (initInFlight === load) initInFlight = null;
-  });
   return load;
 }
 
@@ -120,24 +141,28 @@ export async function incrementActionUsage(actionId: string): Promise<void> {
  * UI on a shared device (cross-user bleed). Invoked from the auth teardown sweep
  * (`clearDurableLocalState` in useAuth) on every session-ending path.
  *
- * Serializes against an in-flight initHomeActionsCache() FIRST (lock-before-await)
- * so a late init read can't repopulate the in-memory caches after this reset.
- * Unlike clearOfflineQueue this guards only that in-memory window — init never
+ * Bumps `sweepEpoch` and nulls the caches SYNCHRONOUSLY (before any await) so a
+ * concurrent in-flight init sees the bump and skips its commit, and the sync getters
+ * return empty immediately. Publishes its removeItem as `sweepInFlight` so an init
+ * that STARTS during this sweep waits it out before reading disk — together these
+ * make the no-resurrection guarantee structural (see the guard comment above).
+ * Unlike clearOfflineQueue this guards only the in-memory window — init never
  * re-persists, so removeItem authoritatively clears disk regardless of timing.
  * Section-expansion state is a device-display pref, intentionally retained.
- * Contractually NON-THROWING so a removeItem failure can't skip the auth-state
- * reset that follows it in teardown.
+ * Contractually NON-THROWING (each removeItem is caught, so `sweep` never rejects)
+ * so a removeItem failure can't skip the auth-state reset that follows it in teardown.
  */
 export async function clearHomeActionsState(): Promise<void> {
-  if (initInFlight) {
-    try {
-      await initInFlight;
-    } catch {}
-  }
+  sweepEpoch++;
   recentCache = null;
   usageCountsCache = null;
-  await Promise.all([
+  const sweep = Promise.all([
     AsyncStorage.removeItem(RECENT_KEY).catch(() => {}),
     AsyncStorage.removeItem(USAGE_COUNTS_KEY).catch(() => {}),
-  ]);
+  ]).then(() => {});
+  sweepInFlight = sweep;
+  void sweep.finally(() => {
+    if (sweepInFlight === sweep) sweepInFlight = null;
+  });
+  await sweep;
 }
