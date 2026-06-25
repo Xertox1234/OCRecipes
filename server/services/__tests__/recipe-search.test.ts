@@ -7,6 +7,7 @@ import {
   communityToSearchable,
   searchRecipes,
   initSearchIndex,
+  rebuildSearchIndex,
   resetSearchIndex,
   addToIndex,
   removeFromIndex,
@@ -353,6 +354,73 @@ describe("searchRecipes — text search", () => {
     expect(mockedStorage.getAllMealPlanRecipes).toHaveBeenCalledTimes(1);
     expect(mockedStorage.getAllPublicCommunityRecipes).toHaveBeenCalledTimes(1);
     expect(mockedStorage.getAllRecipeIngredients).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// rebuildSearchIndex
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("rebuildSearchIndex", () => {
+  const mockedStorage = vi.mocked(storage);
+
+  beforeEach(() => {
+    resetSearchIndex();
+    mockedStorage.getAllMealPlanRecipes.mockResolvedValue([baseMealPlanRecipe]);
+    mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([
+      baseCommunityRecipe,
+    ]);
+    mockedStorage.getAllRecipeIngredients.mockResolvedValue(new Map());
+  });
+
+  it("rebuilds from the database and returns the document total", async () => {
+    const { total } = await rebuildSearchIndex();
+    expect(total).toBe(2);
+    // The rebuilt index is immediately queryable.
+    const result = await searchRecipes({}, "user1");
+    expect(result.total).toBe(2);
+  });
+
+  it("refreshes a stale index after the DB gains rows post-build", async () => {
+    // Simulates the prod bug: index built empty at boot, recipes seeded after.
+    mockedStorage.getAllMealPlanRecipes.mockResolvedValue([]);
+    mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([]);
+    await initSearchIndex();
+    expect((await searchRecipes({}, "user1")).total).toBe(0);
+
+    // Out-of-process seed has now committed rows the stale index never saw.
+    mockedStorage.getAllMealPlanRecipes.mockResolvedValue([baseMealPlanRecipe]);
+    mockedStorage.getAllPublicCommunityRecipes.mockResolvedValue([
+      baseCommunityRecipe,
+    ]);
+
+    const { total } = await rebuildSearchIndex();
+    expect(total).toBe(2);
+    expect((await searchRecipes({}, "user1")).total).toBe(2);
+  });
+
+  it("serializes concurrent rebuilds onto a single in-flight run", async () => {
+    // Without the single-flight guard, the second rebuild resets the first's
+    // init mid-flight and addAll throws on MiniSearch duplicate IDs.
+    const [a, b] = await Promise.all([
+      rebuildSearchIndex(),
+      rebuildSearchIndex(),
+    ]);
+    expect(a.total).toBe(2);
+    expect(b.total).toBe(2);
+    // Loaders ran exactly once across both racers.
+    expect(mockedStorage.getAllMealPlanRecipes).toHaveBeenCalledTimes(1);
+    expect(mockedStorage.getAllPublicCommunityRecipes).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not throw when a rebuild overlaps an in-flight (boot) init", async () => {
+    // Fire-and-forget boot init still loading when an admin rebuild lands. The
+    // rebuild must await it before resetting; otherwise both inits addAll the
+    // same IDs and throw. After settling, the index reflects the rebuild.
+    const bootInit = initSearchIndex();
+    const rebuildResult = await rebuildSearchIndex();
+    await bootInit;
+    expect(rebuildResult.total).toBe(2);
   });
 });
 

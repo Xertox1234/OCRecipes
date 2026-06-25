@@ -38,6 +38,7 @@ import { register as registerCarousel } from "./routes/carousel";
 import { register as registerProfileHub } from "./routes/profile-hub";
 import { register as registerPublicApi } from "./routes/public-api";
 import { register as registerAdminApiKeys } from "./routes/admin-api-keys";
+import { register as registerAdminSearchIndex } from "./routes/admin-search-index";
 import { register as registerApiDocs } from "./routes/api-docs";
 import { register as registerPushTokens } from "./routes/push-tokens";
 import { register as registerReminders } from "./routes/reminders";
@@ -54,6 +55,7 @@ export function registerRoutes(app: Express): Server {
   registerApiDocs(app);
   registerPublicApi(app);
   registerAdminApiKeys(app);
+  registerAdminSearchIndex(app);
   // Store webhooks (/webhooks/*) — unauthenticated (store-called); register
   // before the auth-bearing modules.
   registerStoreWebhooks(app);
