@@ -3,7 +3,7 @@
 ---
 
 title: "Smart-confirm reset paths give no feedback (any user) — route premium gate to UpgradeModal, unrecognised type to SMART_ERROR"
-status: backlog
+status: done
 priority: medium
 created: 2026-06-24
 updated: 2026-06-24
@@ -87,23 +87,24 @@ onClose={() => navigation.goBack()} />`, on the _same_ `receiptScanner` gate).
 
 ## Acceptance Criteria
 
-- [ ] **Premium-gate path** shows `UpgradeModal` (consistent with
+- [x] **Premium-gate path** shows `UpgradeModal` (consistent with
       `PhotoIntentScreen` / `ReceiptCaptureScreen`). Closing the modal returns the
       user to the camera (`dispatch RESET` on close). A screen-reader user hears
       the modal; a sighted user sees it — no silent chip vanish.
-- [ ] **Unrecognised-content path** shows the existing `SMART_ERROR` chip
+- [x] **Unrecognised-content path** shows the existing `SMART_ERROR` chip
       ("Couldn't identify this. Try again?"), which is both visible AND announced
       on iOS + Android via the PR #446 variant effect.
-- [ ] The `navigate` outcome is unchanged — no failure cue (the new screen's own
+- [x] The `navigate` outcome is unchanged — no failure cue (the new screen's own
       announcement stands).
-- [ ] The `abort` outcome (user navigated away during OCR) stays silent.
-- [ ] Remove the "tracked separately" comment in the `ProductChip` busy effect
+- [x] The `abort` outcome (user navigated away during OCR) stays silent.
+- [x] Remove the "tracked separately" comment in the `ProductChip` busy effect
       (`ProductChip.tsx:119-121`) — the busy→idle clear stays silent, which is now
       correct because every outcome has its own feedback.
-- [ ] Verify on the Android emulator with TalkBack (composed speech via `logcat`,
+- [x] Verify on the Android emulator with TalkBack (composed speech via `logcat`,
       per `docs/solutions/best-practices/verify-talkback-behavior-via-emulator-logcat-2026-06-23.md`)
       and reason through the iOS VoiceOver path. Verify a **sighted** user gets
-      feedback on both reset paths too.
+      feedback on both reset paths too. _(Closed as **covered-by-review, not
+      device-tested** — see the 2026-06-24 close-out entry in Updates for why.)_
 
 ## Implementation Notes
 
@@ -186,6 +187,25 @@ onClose={() => navigation.goBack()} />`, on the _same_ `receiptScanner` gate).
   RN `<Modal>`'s separate native window — not unmount ordering — is what prevents a
   nested `accessibilityViewIsModal`). Filed follow-up
   `P3-2026-06-24-upgrademodal-no-on-open-announce`.
-- **STILL OPEN (do not archive / merge yet):** manual TalkBack + VoiceOver device
-  pass (AC's last box) — needs a physical camera to drive the live scan, so the
-  simulator can't cover it.
+- **CLOSED — accepted as covered-by-review (AC's last box); todo archived.** PR #447
+  verified **MERGED** (merge commit `85630d7f`). All five code-level ACs re-confirmed
+  present in the merged code (union / exhaustive handler / reducer transition /
+  comment removal / tests). The manual TalkBack + VoiceOver **device pass was not
+  run**: the natural live-scan flow needs a physical camera (iOS Simulator has none;
+  the Android emulator's classification is server-side and non-deterministic), and
+  the documented emulator throwaway-harness
+  (`docs/solutions/best-practices/verify-talkback-behavior-via-emulator-logcat-2026-06-23.md`)
+  can only faithfully reproduce the `SMART_ERROR` announce — which PR #446 already
+  verified — **not** the one genuinely-new concern: the blocked-path
+  **modal-over-chip focus** (an isolated `<UpgradeModal>` mount has no chip beneath
+  it). That focus interaction is physical-device-only and was already reasoned
+  through in the PR #447 accessibility-specialist review (RN `<Modal>`'s separate
+  native window prevents a nested `accessibilityViewIsModal`). With the new routing
+  unit-tested, both reset outcomes landing in production-proven a11y surfaces
+  (`SMART_ERROR` announce per PR #446; `UpgradeModal` self-announce live at
+  `PhotoIntentScreen` / `ReceiptCaptureScreen`), and code-reviewer +
+  accessibility-specialist approval already on record, a device pass adds marginal
+  value. **Decision (with the user): accept current coverage, check AC #6, archive.**
+- The `shouldAutoRoute` dead-code flag (see _Related_ above — exported + unit-tested
+  but zero production callers) is preserved as a fresh low-priority todo
+  (`P3-2026-06-24-shouldautoroute-dead-code-decision.md`) so it survives archival.
