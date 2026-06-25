@@ -70,6 +70,8 @@ useEffect(() => {
 }, [msg]);
 ```
 
+**Delay an on-open / on-present announce past the present focus shift.** An announce fired _synchronously_ on a surface's open edge (a `<Modal>`/sheet that presents with `animationType="slide"`/`"fade"`) competes with the OS present: VoiceOver/TalkBack post a screen-change and move focus to the first accessible element, so the imperative announce can be swallowed (iOS) or arrive out of order. Flag a `visible`-edge `announceForAccessibility` with **no `setTimeout`**. Fix: delay ~500ms (past the present animation) inside the edge-guarded effect, with `return () => clearTimeout(t)` so a fast close cancels it. This is the **appear/present** case only — settled-state success/error/busy announces on an already-presented surface have no focus-shift to race and stay immediate. Proven on Android (TalkBack logcat: the delayed announce lands ~580ms post-edge, before the close-button focus read); the iOS-swallow risk is reasoned from iOS screen-change behavior, not measured (don't state it as verified). See `docs/solutions/conventions/on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md`.
+
 **Announce ALL outcomes — success AND error.** When auditing async state transitions, check that BOTH success and failure paths have announcements. Check `onSuccess` + `onError` in mutation handlers, and `isSuccess` + `isError` in `useEffect` deps. Use a prev-value ref guard (`const prevRef = useRef(false)`) to fire only on `false → true` transitions. (Ref: audit 2026-05-09 H12)
 
 ```typescript
