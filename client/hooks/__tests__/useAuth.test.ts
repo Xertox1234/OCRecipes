@@ -498,6 +498,18 @@ describe("useAuth", () => {
     // The marker key is the discriminating signal: ONLY reconcileDurableOwner
     // writes "@ocrecipes_durable_owner" (after a confirmed wipe). A teardown
     // sweep never sets it, so asserting on it proves reconcile ran + advanced.
+
+    // Some tests below override AsyncStorage.removeItem to inject a wipe failure.
+    // clearAllMocks() (top-level beforeEach) clears call history, not the
+    // implementation, so restore the factory default here to stop the override
+    // leaking into later suites.
+    afterEach(() => {
+      vi.mocked(AsyncStorage.removeItem).mockImplementation((key: string) => {
+        delete mockAsyncStorage[key];
+        return Promise.resolve();
+      });
+    });
+
     it("advances the durable-owner marker on login (root-cause fix: login used to clear nothing)", async () => {
       mockTokenStorage.get.mockResolvedValue(null);
       mockApiRequest.mockResolvedValue({
@@ -570,16 +582,47 @@ describe("useAuth", () => {
       });
 
       // Marker stays unset (will retry next auth) — but login still succeeds
-      // (clearDurableLocalState is non-throwing).
+      // (clearDurableLocalState is non-throwing). The afterEach restores the
+      // default removeItem impl so the rejection can't leak into later suites.
       expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBeUndefined();
       expect(result.current.isAuthenticated).toBe(true);
+    });
 
-      // Restore the default removeItem impl (clearAllMocks resets call history,
-      // not implementations) so the rejection can't leak into later tests.
-      vi.mocked(AsyncStorage.removeItem).mockImplementation((key: string) => {
-        delete mockAsyncStorage[key];
-        return Promise.resolve();
-      });
+    it("reconciles on the cached-user OFFLINE resume path — wipes + advances when the marker mismatches", async () => {
+      // Network error → /me unavailable → fall back to the cached user. A stale
+      // marker (prior failed wipe) means the restored query cache isn't this
+      // user's; reconcile must wipe and adopt the cached user.
+      mockAsyncStorage["@ocrecipes_durable_owner"] = "stale-other-user";
+      mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify(fakeUser);
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockRejectedValue(new Error("Network error"));
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      expect(result.current.user).toEqual(fakeUser);
+      // Mismatch → durable wipe ran AND the marker advanced to the cached user.
+      expect(mockClearOfflineQueue).toHaveBeenCalled();
+      expect(mockQueryClient.clear).toHaveBeenCalled();
+      expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBe(
+        String(fakeUser.id),
+      );
+    });
+
+    it("does NOT wipe on the cached-user OFFLINE resume path when the marker already matches (preserves offline cache)", async () => {
+      // The common offline resume: same user, marker matches → reconcile is a
+      // no-op, so the offline query cache the user depends on is NOT cleared.
+      mockAsyncStorage["@ocrecipes_durable_owner"] = String(fakeUser.id);
+      mockAsyncStorage["@ocrecipes_auth"] = JSON.stringify(fakeUser);
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockRejectedValue(new Error("Network error"));
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      expect(result.current.user).toEqual(fakeUser);
+      expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+      expect(mockQueryClient.clear).not.toHaveBeenCalled();
     });
   });
 

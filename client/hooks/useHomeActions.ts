@@ -24,13 +24,21 @@ export function useHomeActions() {
   // durable-owner marker confirms belongs to them — re-running on a user switch.
   const userId = user?.id != null ? String(user.id) : null;
   useEffect(() => {
+    // Guard against an out-of-order resolution: if userId changes (user switch)
+    // while a prior init is in flight, its late .then must not pull the stale
+    // user's getters into state. The cleanup flips `cancelled` for the old effect.
+    let cancelled = false;
     initHomeActionsCache(userId)
       .then(() => {
+        if (cancelled) return;
         setSections(getSectionState());
         setRecentActions(getRecentActions());
         setUsageCounts(getActionUsageCounts());
       })
       .catch((err) => logger.error("initHomeActionsCache failed", err));
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   const toggleSection = useCallback((key: SectionKey) => {
