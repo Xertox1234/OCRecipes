@@ -119,7 +119,8 @@ export async function resolveMenuLocalOCRText(
 /** A side effect the smart-scan confirm handler should perform. */
 export type SmartConfirmAction =
   | { kind: "navigate"; route: ClassificationRoute }
-  | { kind: "reset" }
+  | { kind: "blocked"; gate: { feature: PremiumFeatureKey; label: string } } // premium gate hit
+  | { kind: "unrecognized" } // content type has no destination route
   | { kind: "abort" };
 
 /**
@@ -163,7 +164,7 @@ export async function resolveSmartConfirmAction({
   }
   const gate = getPremiumGate(contentType);
   if (gate && !features[gate.feature]) {
-    return { kind: "reset" };
+    return { kind: "blocked", gate };
   }
   const localOCRText = await resolveMenuLocalOCRText(
     contentType,
@@ -178,7 +179,7 @@ export async function resolveSmartConfirmAction({
     classification.barcode ?? null,
     localOCRText,
   );
-  return route ? { kind: "navigate", route } : { kind: "reset" };
+  return route ? { kind: "navigate", route } : { kind: "unrecognized" };
 }
 
 /** Whether the confidence is high enough to auto-route without confirmation */

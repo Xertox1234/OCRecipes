@@ -301,7 +301,7 @@ describe("scan-screen-utils", () => {
       });
     });
 
-    it("resets (no OCR) when the content type's premium feature is off", async () => {
+    it("returns blocked (no OCR) when the content type's premium feature is off", async () => {
       const recognize = vi.fn();
       const action = await resolveSmartConfirmAction({
         classification: {
@@ -315,7 +315,10 @@ describe("scan-screen-utils", () => {
         isStillLive: live,
       });
       expect(recognize).not.toHaveBeenCalled();
-      expect(action).toEqual({ kind: "reset" });
+      expect(action).toEqual({
+        kind: "blocked",
+        gate: { feature: "menuScanner", label: "Menu scanning" },
+      });
     });
 
     it("computes OCR and navigates to MenuScanResult with localOCRText for an allowed menu", async () => {
@@ -381,7 +384,7 @@ describe("scan-screen-utils", () => {
       });
     });
 
-    it("resets when the route resolves to null (has_barcode without a barcode)", async () => {
+    it("returns unrecognized when the route resolves to null (has_barcode without a barcode)", async () => {
       const action = await resolveSmartConfirmAction({
         classification: {
           contentType: "has_barcode",
@@ -393,7 +396,24 @@ describe("scan-screen-utils", () => {
         recognizeText: vi.fn(),
         isStillLive: live,
       });
-      expect(action).toEqual({ kind: "reset" });
+      expect(action).toEqual({ kind: "unrecognized" });
+    });
+
+    it("returns unrecognized (no OCR) for non_food content", async () => {
+      const recognize = vi.fn();
+      const action = await resolveSmartConfirmAction({
+        classification: {
+          contentType: "non_food",
+          resolvedIntent: null,
+          barcode: null,
+        },
+        imageUri: "/tmp/x.jpg",
+        features: menuAllowed,
+        recognizeText: recognize,
+        isStillLive: live,
+      });
+      expect(recognize).not.toHaveBeenCalled();
+      expect(action).toEqual({ kind: "unrecognized" });
     });
 
     it("navigates without localOCRText when menu OCR throws (non-fatal)", async () => {
