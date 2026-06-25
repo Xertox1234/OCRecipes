@@ -8,6 +8,7 @@ import {
 } from "@/lib/offline-queue";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
+import { getDurableOwner, getActiveUserId } from "@/lib/durable-owner";
 
 type DrainErrorListener = (message: string) => void;
 const drainErrorListeners = new Set<DrainErrorListener>();
@@ -156,6 +157,16 @@ export async function drainQueue(): Promise<void> {
     // whoever is logged in next. H1 clears the queue on teardown; this closes
     // the window where a drain begins after logout but before the next login.
     if (!(await tokenStorage.get())) return;
+    // Owner gate (cross-restart durability): skip when the queue isn't this
+    // device's confirmed durable owner. The cold-start drain (App.tsx) fires
+    // BEFORE checkAuth reconciles ownership, so a prior teardown whose wipe failed
+    // could otherwise replay user A's surviving queue under user B's bearer token
+    // here. getActiveUserId() is who we'd drain as (the cached auth blob);
+    // getDurableOwner() is who the durable stores are confirmed clean-for. A
+    // mismatch (incl. a legacy/absent owner) means don't replay — the auth-layer
+    // reconcile will wipe it. The symmetric counterpart of home-actions' init gate.
+    const owner = await getDurableOwner();
+    if (!owner || owner !== (await getActiveUserId())) return;
     const sorted = [...loadQueue()].sort((a, b) => a.savedAt - b.savedAt);
     for (const item of sorted) {
       const exists = loadQueue().find((i) => i.id === item.id);

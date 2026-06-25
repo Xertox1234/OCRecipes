@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getDurableOwner } from "@/lib/durable-owner";
 
 const SECTIONS_KEY = "@ocrecipes_home_sections";
 const RECENT_KEY = "@ocrecipes_recent_actions";
@@ -47,7 +48,16 @@ let usageCountsCache: Record<string, number> | null = null;
 let sweepEpoch = 0;
 let sweepInFlight: Promise<void> | null = null;
 
-export function initHomeActionsCache(): Promise<void> {
+/**
+ * @param userId the active user's id (stringified), or null when unauthenticated.
+ * The per-user history caches are committed only when the persisted durable-owner
+ * marker matches this user — the cross-restart durability layer. The in-memory
+ * `sweepEpoch`/`sweepInFlight` guards reset to 0 on relaunch, so they alone can't
+ * stop a previously-failed teardown wipe from resurfacing a prior user's history
+ * here on the next cold start; the marker check does. (Section state is a device
+ * pref and is always committed, regardless of owner.)
+ */
+export function initHomeActionsCache(userId: string | null): Promise<void> {
   const load = (async () => {
     // Mirror-case guard: never read disk while a teardown sweep's removeItem is in
     // flight, or we'd read pre-wipe stale history and repopulate the caches it just
@@ -62,10 +72,11 @@ export function initHomeActionsCache(): Promise<void> {
     // disk read, so a sweep that starts DURING the read invalidates our commit below.
     const startEpoch = sweepEpoch;
 
-    const [sectionsRaw, recentRaw, usageCountsRaw] = await Promise.all([
+    const [sectionsRaw, recentRaw, usageCountsRaw, owner] = await Promise.all([
       AsyncStorage.getItem(SECTIONS_KEY).catch(() => null),
       AsyncStorage.getItem(RECENT_KEY).catch(() => null),
       AsyncStorage.getItem(USAGE_COUNTS_KEY).catch(() => null),
+      getDurableOwner(),
     ]);
 
     // Section state is a retained device-display pref (never swept) — always commit.
@@ -78,18 +89,26 @@ export function initHomeActionsCache(): Promise<void> {
     }
 
     // Per-user history caches are swept on teardown. Only commit our read if no sweep
-    // ran during it; otherwise the sweep won the race → leave the nulled caches as-is
-    // so we don't resurrect a prior user's history under the next user.
+    // ran during it (the in-session forward-race guard) AND the on-disk history is
+    // owned by this user (the cross-restart durability guard). A different/absent
+    // owner means the disk holds another user's history or a legacy/unconfirmed-wipe
+    // blob — never resurrect it; leave the caches empty.
+    const ownsHistory = userId !== null && owner === userId;
     if (sweepEpoch === startEpoch) {
-      try {
-        recentCache = recentRaw ? JSON.parse(recentRaw) : [];
-      } catch {
-        recentCache = [];
-      }
+      if (ownsHistory) {
+        try {
+          recentCache = recentRaw ? JSON.parse(recentRaw) : [];
+        } catch {
+          recentCache = [];
+        }
 
-      try {
-        usageCountsCache = usageCountsRaw ? JSON.parse(usageCountsRaw) : {};
-      } catch {
+        try {
+          usageCountsCache = usageCountsRaw ? JSON.parse(usageCountsRaw) : {};
+        } catch {
+          usageCountsCache = {};
+        }
+      } else {
+        recentCache = [];
         usageCountsCache = {};
       }
     }
@@ -151,18 +170,28 @@ export async function incrementActionUsage(actionId: string): Promise<void> {
  * Section-expansion state is a device-display pref, intentionally retained.
  * Contractually NON-THROWING (each removeItem is caught, so `sweep` never rejects)
  * so a removeItem failure can't skip the auth-state reset that follows it in teardown.
+ *
+ * Returns whether BOTH disk removals succeeded. A swallowed failure returns
+ * `false` so the durable-owner marker is not advanced past this user — see
+ * `reconcileDurableOwner`. Still never throws.
  */
-export async function clearHomeActionsState(): Promise<void> {
+export async function clearHomeActionsState(): Promise<boolean> {
   sweepEpoch++;
   recentCache = null;
   usageCountsCache = null;
+  let ok = true;
   const sweep = Promise.all([
-    AsyncStorage.removeItem(RECENT_KEY).catch(() => {}),
-    AsyncStorage.removeItem(USAGE_COUNTS_KEY).catch(() => {}),
+    AsyncStorage.removeItem(RECENT_KEY).catch(() => {
+      ok = false;
+    }),
+    AsyncStorage.removeItem(USAGE_COUNTS_KEY).catch(() => {
+      ok = false;
+    }),
   ]).then(() => {});
   sweepInFlight = sweep;
   void sweep.finally(() => {
     if (sweepInFlight === sweep) sweepInFlight = null;
   });
   await sweep;
+  return ok;
 }

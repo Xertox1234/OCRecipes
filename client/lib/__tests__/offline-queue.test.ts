@@ -171,6 +171,24 @@ describe("offline-queue", () => {
     expect(q[49].id).toBe("item-59");
   });
 
+  it("clearOfflineQueue returns true when the disk removal succeeds (confirmed wipe)", async () => {
+    const { initOfflineQueue, clearOfflineQueue } = await importModule();
+    await initOfflineQueue();
+    await expect(clearOfflineQueue()).resolves.toBe(true);
+  });
+
+  it("clearOfflineQueue returns false (unconfirmed wipe) when removeItem fails, without throwing", async () => {
+    const { initOfflineQueue, clearOfflineQueue } = await importModule();
+    await initOfflineQueue();
+    // One-shot rejection so it doesn't leak into later tests (this file has no
+    // clearAllMocks). The non-throwing contract holds; the false return is what
+    // keeps reconcileDurableOwner from advancing the marker past a dirty queue.
+    vi.mocked(AsyncStorage.removeItem).mockRejectedValueOnce(
+      new Error("disk full"),
+    );
+    await expect(clearOfflineQueue()).resolves.toBe(false);
+  });
+
   it("does not resurrect a swept queue when init's re-persist races clearOfflineQueue (cross-user replay close)", async () => {
     const { initOfflineQueue, clearOfflineQueue, loadQueue } =
       await importModule();

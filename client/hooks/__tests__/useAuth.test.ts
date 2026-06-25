@@ -32,8 +32,12 @@ const {
     mockFetch: vi.fn(),
     mockQueryClient: { clear: vi.fn() },
     mockNotifySessionExpired: vi.fn(),
-    mockClearOfflineQueue: vi.fn().mockResolvedValue(undefined),
-    mockClearHomeActionsState: vi.fn().mockResolvedValue(undefined),
+    // Resolve `true` (a confirmed wipe): clearDurableLocalState ANDs these into
+    // the boolean reconcileDurableOwner reads to decide whether to advance the
+    // durable-owner marker. A default of `undefined` would poison that accounting
+    // to falsy and the marker would never advance.
+    mockClearOfflineQueue: vi.fn().mockResolvedValue(true),
+    mockClearHomeActionsState: vi.fn().mockResolvedValue(true),
     // Default: the persisted-cache restore gate is already settled, so the sweep
     // proceeds immediately. Individual tests override with a deferred promise to
     // assert the sweep waits for restoration before clearing.
@@ -487,6 +491,95 @@ describe("useAuth", () => {
       expect(mockAsyncStorage["@ocrecipes_auth"]).toBe(
         JSON.stringify(fakeUser),
       );
+    });
+  });
+
+  describe("durable-owner reconciliation", () => {
+    // The marker key is the discriminating signal: ONLY reconcileDurableOwner
+    // writes "@ocrecipes_durable_owner" (after a confirmed wipe). A teardown
+    // sweep never sets it, so asserting on it proves reconcile ran + advanced.
+    it("advances the durable-owner marker on login (root-cause fix: login used to clear nothing)", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ user: fakeUser, token: "new-token" }),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      await act(async () => {
+        await result.current.login("testuser", "password123");
+      });
+
+      expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBe(
+        String(fakeUser.id),
+      );
+    });
+
+    it("advances the durable-owner marker on a valid-token cold start (checkAuth /me)", async () => {
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBe(
+        String(fakeUser.id),
+      );
+    });
+
+    it("does NOT re-wipe when the durable owner already matches the resolved user (common resume)", async () => {
+      mockAsyncStorage["@ocrecipes_durable_owner"] = String(fakeUser.id);
+      mockTokenStorage.get.mockResolvedValue("valid-token");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(fakeUser),
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+      // Marker matched → reconcile short-circuits → no durable wipe on resume.
+      expect(mockClearOfflineQueue).not.toHaveBeenCalled();
+      expect(mockClearHomeActionsState).not.toHaveBeenCalled();
+    });
+
+    it("does NOT advance the marker when a wipe step fails (so the next auth resolution retries)", async () => {
+      mockTokenStorage.get.mockResolvedValue(null);
+      mockApiRequest.mockResolvedValue({
+        json: () => Promise.resolve({ user: fakeUser, token: "new-token" }),
+      });
+      // The persisted-query-cache removal fails → clearDurableLocalState reports
+      // an unconfirmed wipe (false) → reconcile must NOT advance the owner marker.
+      vi.mocked(AsyncStorage.removeItem).mockImplementation((key: string) => {
+        if (key === "@ocrecipes_query_cache") {
+          return Promise.reject(new Error("disk full"));
+        }
+        delete mockAsyncStorage[key];
+        return Promise.resolve();
+      });
+
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      await act(async () => {
+        await result.current.login("testuser", "password123");
+      });
+
+      // Marker stays unset (will retry next auth) — but login still succeeds
+      // (clearDurableLocalState is non-throwing).
+      expect(mockAsyncStorage["@ocrecipes_durable_owner"]).toBeUndefined();
+      expect(result.current.isAuthenticated).toBe(true);
+
+      // Restore the default removeItem impl (clearAllMocks resets call history,
+      // not implementations) so the rejection can't leak into later tests.
+      vi.mocked(AsyncStorage.removeItem).mockImplementation((key: string) => {
+        delete mockAsyncStorage[key];
+        return Promise.resolve();
+      });
     });
   });
 
