@@ -39,6 +39,32 @@ const ROW_LIMIT = 10;
 /** Local-only preset rows for the Discover feed. `pantry` is premiumOnly
  *  because `pantryTracking` is a premium feature — the feed hides it for free
  *  users (editorial rows carry their feed). */
+export interface BlankBrowseArgs {
+  debouncedQuery: string;
+  activeCuisine: string | undefined;
+  activeDiet: string | undefined;
+  activeDifficulty: string | undefined;
+  curatedOnly: boolean;
+  safeForMe: boolean;
+  pantryMode: boolean;
+  activeFilterCount: number;
+}
+
+/** True when no query, chip, or advanced filter is active — the moment we show
+ *  the Discover feed instead of a result list. */
+export function isBlankBrowseState(a: BlankBrowseArgs): boolean {
+  return (
+    a.debouncedQuery.length === 0 &&
+    !a.activeCuisine &&
+    !a.activeDiet &&
+    !a.activeDifficulty &&
+    !a.curatedOnly &&
+    !a.safeForMe &&
+    !a.pantryMode &&
+    a.activeFilterCount === 0
+  );
+}
+
 export const DISCOVERY_PRESETS: {
   key: "pantry" | "quick" | "featured";
   title: string;

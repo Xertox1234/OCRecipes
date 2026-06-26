@@ -4,6 +4,7 @@ import {
   toCarouselCard,
   DISCOVERY_PRESETS,
   DISCOVERY_STALE_TIME_MS,
+  isBlankBrowseState,
 } from "../recipe-discovery-utils";
 import type { SearchableRecipe } from "@shared/types/recipe-search";
 
@@ -96,5 +97,29 @@ describe("DISCOVERY_PRESETS", () => {
 
   it("uses a 5-minute stale time", () => {
     expect(DISCOVERY_STALE_TIME_MS).toBe(5 * 60_000);
+  });
+});
+
+describe("isBlankBrowseState", () => {
+  const blank = {
+    debouncedQuery: "",
+    activeCuisine: undefined,
+    activeDiet: undefined,
+    activeDifficulty: undefined,
+    curatedOnly: false,
+    safeForMe: false,
+    pantryMode: false,
+    activeFilterCount: 0,
+  };
+  it("is true only when query, all chips, and all advanced filters are empty", () => {
+    expect(isBlankBrowseState(blank)).toBe(true);
+    expect(isBlankBrowseState({ ...blank, debouncedQuery: "thai" })).toBe(
+      false,
+    );
+    expect(isBlankBrowseState({ ...blank, activeCuisine: "Italian" })).toBe(
+      false,
+    );
+    expect(isBlankBrowseState({ ...blank, activeFilterCount: 1 })).toBe(false);
+    expect(isBlankBrowseState({ ...blank, curatedOnly: true })).toBe(false);
   });
 });
