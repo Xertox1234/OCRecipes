@@ -886,7 +886,6 @@ export default function RecipeBrowserScreen() {
       ) : showDiscovery ? (
         <RecipeDiscoveryFeed
           onOpenRecipe={handleRecipePress}
-          onSelectCuisine={handleToggleCuisine}
           onSeePreset={(key) => {
             haptics.selection();
             if (key === "pantry") setPantryMode(true);
