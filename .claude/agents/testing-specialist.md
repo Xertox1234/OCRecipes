@@ -216,6 +216,17 @@ SignedDataVerifier: vi.fn().mockImplementation(() => ({ ... }))
 - Some return `T | null` for business logic reasons
 - Check the storage function's return type before choosing `undefined` vs `null` in mocks
 
+### Hermetic git in shell / hook self-tests
+
+A shell test (e.g. `.claude/hooks/test-*.sh`) that drives git in a `mktemp` repo via `git -C "$TMP"` is **not** isolated by `-C` alone. An inherited **absolute** `GIT_DIR`/`GIT_WORK_TREE` — injected by VS Code's Git integration or a git-worktree context — **overrides `-C`**, so the temp-repo setup runs against the developer's REAL repo: bogus `user.email`/`user.name` in `.git/config`, a phantom staged file, reverted uncommitted edits. It passes in CI (clean env) while corrupting locally.
+
+**Flag** any new/edited shell test that runs git against a temp repo and either:
+
+- does **not** `unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR` (and `export GIT_CONFIG_GLOBAL=/dev/null`) **before the first `git`**, or
+- lacks an **end-of-run guard** asserting the caller's repo is untouched (snapshot `user.email` + HEAD + `git status --porcelain` before/after, FAIL on any change).
+
+Neither `git -C` nor `cd` protects against an inherited `GIT_DIR`. See solution `logic-errors/inherited-git-dir-overrides-git-c-in-hook-self-tests`.
+
 ---
 
 ## Test Structure Conventions
