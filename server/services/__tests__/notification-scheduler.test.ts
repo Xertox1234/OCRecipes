@@ -13,7 +13,7 @@ import {
   createMockUserProfile,
 } from "../../__tests__/factories";
 
-import { sendPushToUser } from "../push-notifications";
+import { notify } from "../notifications/notify";
 import cron from "node-cron";
 
 vi.mock("../../storage", () => ({
@@ -25,13 +25,11 @@ vi.mock("../../storage", () => ({
     getUserProfile: vi.fn(),
     getDailyLogs: vi.fn(),
     getDailySummary: vi.fn(),
-    hasPendingReminderToday: vi.fn(),
-    createPendingReminder: vi.fn(),
   },
 }));
 
-vi.mock("../push-notifications", () => ({
-  sendPushToUser: vi.fn(),
+vi.mock("../notifications/notify", () => ({
+  notify: vi.fn(),
 }));
 
 vi.mock("node-cron", () => ({
@@ -56,46 +54,19 @@ beforeEach(() => {
   // which makes the scheduler's tzMap.get(...) throw. Tests that assert on a
   // specific timezone override this per-test.
   vi.mocked(storage.getUserTimezones).mockResolvedValue(new Map());
+  // Default notify to pushDelivered: true. Tests that check "not delivered"
+  // override this per-test.
+  vi.mocked(notify).mockResolvedValue({ pushDelivered: true });
   stopNotificationScheduler();
 });
 
 describe("sendDueCommitmentReminders", () => {
-  it("threads the user's stored timezone into hasPendingReminderToday", async () => {
-    // AC: the commitment path buckets the dedup window in the user's local
-    // timezone, not UTC. Storage is mocked, so we assert the tz is passed
-    // through (the local-vs-UTC boundary itself is covered by the storage
-    // getDayBounds / hasPendingReminderToday tests).
-    const entry = createMockCoachNotebookEntry({
-      id: 10,
-      userId: "la-user",
-      content: "Stretch daily",
-      type: "commitment",
-    });
-    vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
-    vi.mocked(storage.getUserTimezones).mockResolvedValue(
-      new Map([["la-user", "America/Los_Angeles"]]),
-    );
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
-    vi.mocked(sendPushToUser).mockResolvedValue(true);
-    vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
-
-    await sendDueCommitmentReminders();
-
-    expect(storage.getUserTimezones).toHaveBeenCalledWith(["la-user"]);
-    expect(storage.hasPendingReminderToday).toHaveBeenCalledWith(
-      "la-user",
-      "commitment",
-      "America/Los_Angeles",
-    );
-  });
-
   it("does nothing when there are no due commitments", async () => {
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([]);
 
     await sendDueCommitmentReminders();
 
-    expect(sendPushToUser).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
     expect(storage.updateNotebookEntryStatus).not.toHaveBeenCalled();
   });
 
@@ -107,18 +78,17 @@ describe("sendDueCommitmentReminders", () => {
       type: "commitment",
     });
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
-    vi.mocked(sendPushToUser).mockResolvedValue(true);
     vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
 
     await sendDueCommitmentReminders();
 
-    expect(sendPushToUser).toHaveBeenCalledWith(
+    expect(notify).toHaveBeenCalledWith(
       "42",
-      "Coach reminder",
-      "Drink more water",
-      { entryId: 1 },
+      "commitment",
+      expect.objectContaining({
+        title: "Coach reminder",
+        data: { entryId: 1 },
+      }),
     );
     expect(storage.updateNotebookEntryStatus).toHaveBeenCalledWith(
       1,
@@ -130,9 +100,7 @@ describe("sendDueCommitmentReminders", () => {
   it("does NOT mark entry completed when push delivery fails", async () => {
     const entry = createMockCoachNotebookEntry({ id: 2, userId: "7" });
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
-    vi.mocked(sendPushToUser).mockResolvedValue(false);
+    vi.mocked(notify).mockResolvedValue({ pushDelivered: false });
 
     await sendDueCommitmentReminders();
 
@@ -147,15 +115,12 @@ describe("sendDueCommitmentReminders", () => {
       content: longContent,
     });
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([entry]);
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
-    vi.mocked(sendPushToUser).mockResolvedValue(true);
     vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
 
     await sendDueCommitmentReminders();
 
-    const body = vi.mocked(sendPushToUser).mock.calls[0][2];
-    expect(body.length).toBe(100);
+    const body = vi.mocked(notify).mock.calls[0][2]?.body;
+    expect(body?.length).toBe(100);
   });
 
   it("processes multiple entries independently — failure on one does not block others", async () => {
@@ -165,11 +130,9 @@ describe("sendDueCommitmentReminders", () => {
       entry1,
       entry2,
     ]);
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
-    vi.mocked(sendPushToUser)
+    vi.mocked(notify)
       .mockRejectedValueOnce(new Error("network error"))
-      .mockResolvedValueOnce(true);
+      .mockResolvedValueOnce({ pushDelivered: true });
     vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
 
     await sendDueCommitmentReminders();
@@ -189,20 +152,14 @@ describe("sendDueCommitmentReminders", () => {
     );
 
     await expect(sendDueCommitmentReminders()).resolves.toBeUndefined();
-    expect(sendPushToUser).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
-  it("processes a mixed batch under bounded concurrency — muted skipped, already-pending skipped, needing-reminder sent", async () => {
+  it("processes a mixed batch under bounded concurrency — muted skipped, needing-reminder sent", async () => {
     const mutedEntry = createMockCoachNotebookEntry({
       id: 20,
       userId: "muted-user",
       content: "muted commitment",
-      type: "commitment",
-    });
-    const pendingEntry = createMockCoachNotebookEntry({
-      id: 21,
-      userId: "pending-user",
-      content: "pending commitment",
       type: "commitment",
     });
     const needsEntry = createMockCoachNotebookEntry({
@@ -213,7 +170,6 @@ describe("sendDueCommitmentReminders", () => {
     });
     vi.mocked(storage.getDueCommitmentsAllUsers).mockResolvedValue([
       mutedEntry,
-      pendingEntry,
       needsEntry,
     ]);
     // Key profile lookup by userId — parallel execution breaks call-order mocks.
@@ -223,29 +179,19 @@ describe("sendDueCommitmentReminders", () => {
         reminderMutes: userId === "muted-user" ? { commitment: true } : {},
       }),
     );
-    vi.mocked(storage.hasPendingReminderToday).mockImplementation(
-      async (userId) => userId === "pending-user",
-    );
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
-    vi.mocked(sendPushToUser).mockResolvedValue(true);
     vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
 
     await sendDueCommitmentReminders();
 
-    // Only the needs-user gets a fresh pending reminder created.
-    expect(storage.createPendingReminder).toHaveBeenCalledTimes(1);
-    expect(storage.createPendingReminder).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "needs-user", type: "commitment" }),
-    );
-    // Muted user gets no push; pending + needs users do.
-    const pushedUserIds = vi
-      .mocked(sendPushToUser)
+    // Muted user gets no notify call.
+    const notifiedUserIds = vi
+      .mocked(notify)
       .mock.calls.map((c) => c[0])
       .sort();
-    expect(pushedUserIds).toEqual(["needs-user", "pending-user"]);
+    expect(notifiedUserIds).toEqual(["needs-user"]);
   });
 
-  it("skips creating pending reminder when commitment is muted", async () => {
+  it("skips muted user — notify not called", async () => {
     const entry = createMockCoachNotebookEntry({
       id: 5,
       userId: "user-1",
@@ -259,14 +205,10 @@ describe("sendDueCommitmentReminders", () => {
         reminderMutes: { commitment: true },
       }),
     );
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(sendPushToUser).mockResolvedValue(true);
-    vi.mocked(storage.updateNotebookEntryStatus).mockResolvedValue(undefined);
 
     await sendDueCommitmentReminders();
 
-    expect(storage.createPendingReminder).not.toHaveBeenCalled();
-    expect(sendPushToUser).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 });
 
@@ -329,25 +271,23 @@ describe("sendDailyCheckinReminders", () => {
       totalFat: 30,
       itemCount: 3,
     });
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
 
     await sendDailyCheckinReminders();
 
-    expect(storage.createPendingReminder).toHaveBeenCalledWith(
+    expect(notify).toHaveBeenCalledWith(
+      "user-1",
+      "daily-checkin",
       expect.objectContaining({
-        userId: "user-1",
-        type: "daily-checkin",
         context: { calories: 850 },
       }),
     );
   });
 
-  it("threads the user's stored timezone into hasPendingReminderToday", async () => {
+  it("threads the user's stored timezone into getDailySummary", async () => {
     // AC: a user with timezone "America/Los_Angeles" gets day-bucketing for
     // their local date, not UTC. Storage is mocked, so we assert the tz is
-    // passed through (the local-vs-UTC boundary itself is covered by the
-    // getDayBounds / hasPendingReminderToday storage tests).
+    // passed through to getDailySummary (the local-vs-UTC boundary itself is
+    // covered by the getDayBounds / storage tests).
     vi.mocked(storage.getUserIdPage)
       .mockResolvedValueOnce(["la-user"])
       .mockResolvedValueOnce([]);
@@ -364,15 +304,13 @@ describe("sendDailyCheckinReminders", () => {
       totalFat: 20,
       itemCount: 2,
     });
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
 
     await sendDailyCheckinReminders();
 
     expect(storage.getUserTimezones).toHaveBeenCalledWith(["la-user"]);
-    expect(storage.hasPendingReminderToday).toHaveBeenCalledWith(
+    expect(storage.getDailySummary).toHaveBeenCalledWith(
       "la-user",
-      "daily-checkin",
+      expect.any(Date),
       "America/Los_Angeles",
     );
   });
@@ -395,14 +333,12 @@ describe("sendDailyCheckinReminders", () => {
       totalFat: 20,
       itemCount: 2,
     });
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
 
     await sendDailyCheckinReminders();
 
-    expect(storage.hasPendingReminderToday).toHaveBeenCalledWith(
+    expect(storage.getDailySummary).toHaveBeenCalledWith(
       "utc-user",
-      "daily-checkin",
+      expect.any(Date),
       "UTC",
     );
   });
@@ -417,37 +353,22 @@ describe("sendDailyCheckinReminders", () => {
         reminderMutes: { "daily-checkin": true },
       }),
     );
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
 
     await sendDailyCheckinReminders();
 
-    expect(storage.createPendingReminder).not.toHaveBeenCalled();
-  });
-
-  it("skips if daily-checkin reminder already exists today", async () => {
-    vi.mocked(storage.getUserIdPage)
-      .mockResolvedValueOnce(["user-1"])
-      .mockResolvedValueOnce([]);
-    vi.mocked(storage.getUserProfile).mockResolvedValue(
-      createMockUserProfile({ userId: "user-1", reminderMutes: {} }),
-    );
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(true);
-
-    await sendDailyCheckinReminders();
-
-    expect(storage.createPendingReminder).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it("returns gracefully when getUserIdPage throws", async () => {
     vi.mocked(storage.getUserIdPage).mockRejectedValue(new Error("db error"));
 
     await expect(sendDailyCheckinReminders()).resolves.toBeUndefined();
-    expect(storage.createPendingReminder).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
-  it("processes a mixed page under bounded concurrency — only the needing-reminder user gets one", async () => {
+  it("processes a mixed page under bounded concurrency — only unmuted users get notified", async () => {
     vi.mocked(storage.getUserIdPage)
-      .mockResolvedValueOnce(["muted-user", "pending-user", "needs-user"])
+      .mockResolvedValueOnce(["muted-user", "needs-user"])
       .mockResolvedValueOnce([]);
     // Key all per-user mocks by userId — concurrency breaks call-order mocks.
     vi.mocked(storage.getUserProfile).mockImplementation(async (userId) =>
@@ -456,9 +377,6 @@ describe("sendDailyCheckinReminders", () => {
         reminderMutes: userId === "muted-user" ? { "daily-checkin": true } : {},
       }),
     );
-    vi.mocked(storage.hasPendingReminderToday).mockImplementation(
-      async (userId) => userId === "pending-user",
-    );
     vi.mocked(storage.getDailySummary).mockResolvedValue({
       totalCalories: 720,
       totalProtein: 30,
@@ -466,13 +384,14 @@ describe("sendDailyCheckinReminders", () => {
       totalFat: 25,
       itemCount: 2,
     });
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
 
     await sendDailyCheckinReminders();
 
-    expect(storage.createPendingReminder).toHaveBeenCalledTimes(1);
-    expect(storage.createPendingReminder).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "needs-user", type: "daily-checkin" }),
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(
+      "needs-user",
+      "daily-checkin",
+      expect.anything(),
     );
   });
 
@@ -483,7 +402,6 @@ describe("sendDailyCheckinReminders", () => {
     vi.mocked(storage.getUserProfile).mockImplementation(async (userId) =>
       createMockUserProfile({ userId, reminderMutes: {} }),
     );
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
     // The summary fetch (inside the per-user loop body) throws for bad-user;
     // the per-user try/catch must isolate it so good-user still gets a reminder.
     vi.mocked(storage.getDailySummary).mockImplementation(async (userId) => {
@@ -496,23 +414,24 @@ describe("sendDailyCheckinReminders", () => {
         itemCount: 1,
       };
     });
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
 
     await expect(sendDailyCheckinReminders()).resolves.toBeUndefined();
 
-    expect(storage.createPendingReminder).toHaveBeenCalledTimes(1);
-    expect(storage.createPendingReminder).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "good-user", type: "daily-checkin" }),
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(
+      "good-user",
+      "daily-checkin",
+      expect.anything(),
     );
   });
 });
 
 describe("sendMealLogReminders", () => {
-  it("threads the user's stored timezone into hasPendingReminderToday", async () => {
-    // AC: the meal-log path buckets the dedup window in the user's local
+  it("threads the user's stored timezone into getDailyLogs", async () => {
+    // AC: the meal-log path buckets the daily-log check in the user's local
     // timezone, not UTC. Storage is mocked, so we assert the tz is passed
-    // through (the local-vs-UTC boundary itself is covered by the storage
-    // getDayBounds / hasPendingReminderToday tests).
+    // through to getDailyLogs (the local-vs-UTC boundary itself is covered by
+    // the getDayBounds / storage tests).
     vi.mocked(storage.getUserIdPage)
       .mockResolvedValueOnce(["la-user"])
       .mockResolvedValueOnce([]);
@@ -523,15 +442,13 @@ describe("sendMealLogReminders", () => {
       createMockUserProfile({ userId: "la-user", reminderMutes: {} }),
     );
     vi.mocked(storage.getDailyLogs).mockResolvedValue([]);
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
 
     await sendMealLogReminders();
 
     expect(storage.getUserTimezones).toHaveBeenCalledWith(["la-user"]);
-    expect(storage.hasPendingReminderToday).toHaveBeenCalledWith(
+    expect(storage.getDailyLogs).toHaveBeenCalledWith(
       "la-user",
-      "meal-log",
+      expect.any(Date),
       "America/Los_Angeles",
     );
   });
@@ -544,16 +461,13 @@ describe("sendMealLogReminders", () => {
       createMockUserProfile({ userId: "user-1", reminderMutes: {} }),
     );
     vi.mocked(storage.getDailyLogs).mockResolvedValue([]);
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
 
     await sendMealLogReminders();
 
-    expect(storage.createPendingReminder).toHaveBeenCalledWith(
-      expect.objectContaining({
-        userId: "user-1",
-        type: "meal-log",
-      }),
+    expect(notify).toHaveBeenCalledWith(
+      "user-1",
+      "meal-log",
+      expect.anything(),
     );
   });
 
@@ -567,11 +481,10 @@ describe("sendMealLogReminders", () => {
     vi.mocked(storage.getDailyLogs).mockResolvedValue([
       createMockDailyLog({ id: 1, userId: "user-1" }),
     ]);
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
 
     await sendMealLogReminders();
 
-    expect(storage.createPendingReminder).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it("skips when meal-log is muted", async () => {
@@ -585,28 +498,22 @@ describe("sendMealLogReminders", () => {
       }),
     );
     vi.mocked(storage.getDailyLogs).mockResolvedValue([]);
-    vi.mocked(storage.hasPendingReminderToday).mockResolvedValue(false);
 
     await sendMealLogReminders();
 
-    expect(storage.createPendingReminder).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it("returns gracefully when getUserIdPage throws", async () => {
     vi.mocked(storage.getUserIdPage).mockRejectedValue(new Error("db error"));
 
     await expect(sendMealLogReminders()).resolves.toBeUndefined();
-    expect(storage.createPendingReminder).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
-  it("processes a mixed page under bounded concurrency — muted, has-logs, and already-pending users skipped", async () => {
+  it("processes a mixed page under bounded concurrency — muted and has-logs users skipped, needs-reminder gets notified", async () => {
     vi.mocked(storage.getUserIdPage)
-      .mockResolvedValueOnce([
-        "muted-user",
-        "logged-user",
-        "pending-user",
-        "needs-user",
-      ])
+      .mockResolvedValueOnce(["muted-user", "logged-user", "needs-user"])
       .mockResolvedValueOnce([]);
     // Key all per-user mocks by userId — concurrency breaks call-order mocks.
     vi.mocked(storage.getUserProfile).mockImplementation(async (userId) =>
@@ -618,16 +525,14 @@ describe("sendMealLogReminders", () => {
     vi.mocked(storage.getDailyLogs).mockImplementation(async (userId) =>
       userId === "logged-user" ? [createMockDailyLog({ id: 1, userId })] : [],
     );
-    vi.mocked(storage.hasPendingReminderToday).mockImplementation(
-      async (userId) => userId === "pending-user",
-    );
-    vi.mocked(storage.createPendingReminder).mockResolvedValue(undefined);
 
     await sendMealLogReminders();
 
-    expect(storage.createPendingReminder).toHaveBeenCalledTimes(1);
-    expect(storage.createPendingReminder).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "needs-user", type: "meal-log" }),
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(
+      "needs-user",
+      "meal-log",
+      expect.anything(),
     );
   });
 });
