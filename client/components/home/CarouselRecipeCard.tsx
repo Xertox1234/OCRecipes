@@ -38,20 +38,23 @@ const BUTTON_SIZE = 44;
 
 interface CarouselRecipeCardProps {
   card: CarouselCardType;
-  isFavourited: boolean;
+  isFavourited?: boolean;
   onPress: (card: CarouselCardType) => void;
-  onDismiss: (card: CarouselCardType) => void;
-  onFavourite: (recipeId: number) => void;
+  onDismiss?: (card: CarouselCardType) => void;
+  onFavourite?: (recipeId: number) => void;
+  /** When false, hides the favourite/dismiss action row (static preset rows). Default true. */
+  showActions?: boolean;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
   card,
-  isFavourited,
+  isFavourited = false,
   onPress,
   onDismiss,
   onFavourite,
+  showActions = true,
 }: CarouselRecipeCardProps) {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -76,12 +79,12 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
   const handleDismiss = useCallback(() => {
     haptics.impact();
     AccessibilityInfo.announceForAccessibility("Recipe dismissed");
-    onDismiss(card);
+    onDismiss?.(card);
   }, [onDismiss, card, haptics]);
 
   const handleFavourite = useCallback(() => {
     haptics.impact();
-    onFavourite(card.id);
+    onFavourite?.(card.id);
   }, [haptics, onFavourite, card.id]);
 
   const imageUri = card.imageUrl ? resolveImageUrl(card.imageUrl) : null;
@@ -201,49 +204,51 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
           </ThemedText>
 
           {/* Action buttons */}
-          <View style={styles.actions}>
-            <Pressable
-              onPress={handleFavourite}
-              style={[
-                styles.actionButton,
-                {
-                  backgroundColor: withOpacity(
-                    isFavourited ? theme.error : theme.textSecondary,
-                    0.1,
-                  ),
-                },
-              ]}
-              hitSlop={4}
-              accessibilityRole="button"
-              accessibilityLabel={
-                isFavourited ? "Remove from favourites" : "Add to favourites"
-              }
-            >
-              <Ionicons
-                name={isFavourited ? "heart" : "heart-outline"}
-                size={18}
-                color={isFavourited ? theme.error : theme.textSecondary}
-                accessible={false}
-              />
-            </Pressable>
-            <Pressable
-              onPress={handleDismiss}
-              style={[
-                styles.actionButton,
-                { backgroundColor: withOpacity(theme.error, 0.1) },
-              ]}
-              hitSlop={4}
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss recipe"
-            >
-              <Feather
-                name="x"
-                size={18}
-                color={theme.error}
-                accessible={false}
-              />
-            </Pressable>
-          </View>
+          {showActions ? (
+            <View style={styles.actions}>
+              <Pressable
+                onPress={handleFavourite}
+                style={[
+                  styles.actionButton,
+                  {
+                    backgroundColor: withOpacity(
+                      isFavourited ? theme.error : theme.textSecondary,
+                      0.1,
+                    ),
+                  },
+                ]}
+                hitSlop={4}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isFavourited ? "Remove from favourites" : "Add to favourites"
+                }
+              >
+                <Ionicons
+                  name={isFavourited ? "heart" : "heart-outline"}
+                  size={18}
+                  color={isFavourited ? theme.error : theme.textSecondary}
+                  accessible={false}
+                />
+              </Pressable>
+              <Pressable
+                onPress={handleDismiss}
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: withOpacity(theme.error, 0.1) },
+                ]}
+                hitSlop={4}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss recipe"
+              >
+                <Feather
+                  name="x"
+                  size={18}
+                  color={theme.error}
+                  accessible={false}
+                />
+              </Pressable>
+            </View>
+          ) : null}
         </View>
       </Animated.View>
     </AnimatedPressable>
