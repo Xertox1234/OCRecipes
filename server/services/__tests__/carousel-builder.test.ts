@@ -28,6 +28,12 @@ const mockProfile: UserProfile = {
   glp1StartDate: null,
   healthDataConsentAt: null,
   reminderMutes: {},
+  notificationPrefs: {
+    categories: {},
+    quietHours: { start: "21:00", end: "08:00" },
+    ambientPush: false,
+    transactionalEnabled: true,
+  },
   createdAt: new Date(),
   updatedAt: new Date(),
 };

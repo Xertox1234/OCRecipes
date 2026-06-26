@@ -11,10 +11,11 @@
  * to "completed" so it won't be picked up again on the next run.
  *
  * Graceful degradation: if EXPO_ACCESS_TOKEN is not set, or the user has no
- * registered push tokens, sendPushToUser returns false and the entry is NOT
- * marked "completed" — the in-app indicator and local notification fallback
- * (useNotebookNotifications) continue to serve the reminder. Entries are only
- * marked completed after at least one push is confirmed delivered by Expo.
+ * registered push tokens, the push fails (notify() returns pushDelivered:
+ * false) and the entry is NOT marked "completed" — the in-app indicator and
+ * local notification fallback (useNotebookNotifications) continue to serve the
+ * reminder. Entries are only marked completed after at least one push is
+ * confirmed delivered by Expo.
  *
  * Usage: call startNotificationScheduler() once at server startup.
  */
@@ -23,7 +24,7 @@ import pLimit from "p-limit";
 import { logger } from "../lib/logger";
 import { storage } from "../storage";
 import { parseTimezone } from "../routes/_helpers";
-import { sendPushToUser } from "./push-notifications";
+import { notify } from "./notifications/notify";
 import type { ReminderMutes } from "@shared/types/reminders";
 
 /**
@@ -77,14 +78,12 @@ export async function sendDueCommitmentReminders(): Promise<void> {
   );
 
   // Fetch each user's profile once (not once per entry) to avoid redundant DB
-  // round-trips when a user has multiple due commitments. Timezones are fetched
-  // in the same batch so day-bucketing aligns to each user's local midnight.
+  // round-trips when a user has multiple due commitments.
   const uniqueUserIds = [...new Set(entries.map((e) => e.userId))];
   let profileMap: Map<
     string,
     Awaited<ReturnType<typeof storage.getUserProfile>>
   >;
-  let tzMap: Map<string, string | null>;
   try {
     profileMap = new Map(
       await Promise.all(
@@ -93,7 +92,6 @@ export async function sendDueCommitmentReminders(): Promise<void> {
         ),
       ),
     );
-    tzMap = await storage.getUserTimezones(uniqueUserIds);
   } catch (err) {
     logger.error(
       { err },
@@ -107,35 +105,17 @@ export async function sendDueCommitmentReminders(): Promise<void> {
       const profile = profileMap.get(entry.userId);
       if (isMuted(profile?.reminderMutes, "commitment")) return;
 
-      // Write pending reminder (regardless of push success). Day-bucket in the
-      // user's stored timezone (NULL/invalid → "UTC") so the dedup window
-      // matches their local calendar day, not server UTC midnight.
-      const tz = parseTimezone(tzMap.get(entry.userId));
-      const alreadyPending = await storage.hasPendingReminderToday(
-        entry.userId,
-        "commitment",
-        tz,
-      );
-      if (!alreadyPending) {
-        await storage.createPendingReminder({
-          userId: entry.userId,
-          type: "commitment",
-          context: {
-            notebookEntryId: entry.id,
-            content: entry.content.slice(0, 200),
-          },
-          scheduledFor: new Date(),
-        });
-      }
+      const { pushDelivered } = await notify(entry.userId, "commitment", {
+        title: "Coach reminder",
+        body: entry.content.slice(0, 100),
+        data: { entryId: entry.id },
+        context: {
+          notebookEntryId: entry.id,
+          content: entry.content.slice(0, 200),
+        },
+      });
 
-      const delivered = await sendPushToUser(
-        entry.userId,
-        "Coach reminder",
-        entry.content.slice(0, 100),
-        { entryId: entry.id },
-      );
-
-      if (delivered) {
+      if (pushDelivered) {
         // Mark entry completed only after confirmed delivery so the in-app
         // indicator (and future local notification fallback) still triggers
         // if push delivery was not attempted (no client or no token).
@@ -212,20 +192,10 @@ export async function sendDailyCheckinReminders(): Promise<void> {
 
           // Day-bucket in the user's stored timezone (NULL/invalid → "UTC").
           const tz = parseTimezone(tzMap.get(userId));
-          const alreadyPending = await storage.hasPendingReminderToday(
-            userId,
-            "daily-checkin",
-            tz,
-          );
-          if (alreadyPending) return;
-
           const summary = await storage.getDailySummary(userId, new Date(), tz);
 
-          await storage.createPendingReminder({
-            userId,
-            type: "daily-checkin",
+          await notify(userId, "daily-checkin", {
             context: { calories: Math.round(summary.totalCalories) },
-            scheduledFor: new Date(),
           });
         } catch (err) {
           logger.error(
@@ -280,18 +250,9 @@ export async function sendMealLogReminders(): Promise<void> {
 
           const logs = await storage.getDailyLogs(userId, new Date(), tz);
           if (logs.length > 0) return;
-          const alreadyPending = await storage.hasPendingReminderToday(
-            userId,
-            "meal-log",
-            tz,
-          );
-          if (alreadyPending) return;
 
-          await storage.createPendingReminder({
-            userId,
-            type: "meal-log",
+          await notify(userId, "meal-log", {
             context: { lastLoggedAt: null },
-            scheduledFor: new Date(),
           });
         } catch (err) {
           logger.error(

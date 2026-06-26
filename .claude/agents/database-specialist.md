@@ -356,6 +356,7 @@ Storage functions returning user rows must use `safeUserColumns` (excludes `pass
 - [ ] New tables with secrets have safe-column sets
 - [ ] All nutrition-bearing tables have `>= 0` CHECK constraints on calories, protein, carbs, fat columns
 - [ ] Store↔mirror sync: the "has it changed?" / re-embed hash is a **normalized projection** (fields + body), not raw file bytes — a bytes-hash reports false drift on every regenerated file. Deep-sort `jsonb` keys (Postgres reorders nested keys on read). See `docs/solutions/conventions/hash-normalized-projection-not-bytes-for-regenerated-mirror-2026-06-14.md`
+- [ ] Single-statement backfill (`UPDATE ... SET new_col = f(old_col)`): the new column lives on the **same table** as `old_col`. Verify the source column's table against the **live schema** (`information_schema.columns`), not the spec/plan/memory — an assumed owner (`users.reminderMutes` when it's actually `user_profiles.reminder_mutes`) makes the backfill target a non-existent column (`ERROR 42703`). Cross-table needs `UPDATE ... FROM` + a fallback default. See `docs/solutions/conventions/co-located-jsonb-backfill-column-must-share-source-table-2026-06-26.md`
 
 ### Query Patterns
 

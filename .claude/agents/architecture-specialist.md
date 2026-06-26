@@ -239,6 +239,20 @@ app.get("/api/profile/widgets", requireAuth, async (req, res) => {
 
 ---
 
+## Facade Single-Entry-Point Enforcement
+
+When a change introduces a facade meant to be the **sole** path to a primitive (a single `notify()` / `enqueue()` / `publish()` front door that adds governance, routing, or accounting), the facade's value only holds if nothing bypasses it. Convention and code review erode; a **source-grep guard test** is permanent.
+
+**Flag** a new facade that lacks a guard test. The guard walks the source tree (skipping `__tests__`/`node_modules`) and fails if any non-allowlisted file calls the low-level primitive directly. Check the guard itself:
+
+- **Call-shape regex, not bare substring:** `/\bsendPushToUser\s*\(/` (name + `(`) catches real calls while letting JSDoc/prose reference the primitive by name without a false positive.
+- **Allowlist only the definer files** (the facade + the modules that define the primitives), never whole directories — a too-broad allowlist hides real offenders.
+- **Non-vacuous:** confirm the walk actually finds files, so an empty offender list reflects a real scan.
+
+See `docs/solutions/design-patterns/facade-only-enforced-by-source-grep-guard-test-2026-06-26.md`.
+
+---
+
 ## Route Module Structure
 
 Every route file follows this structure:
