@@ -101,13 +101,16 @@ export function register(app: Express): void {
 
   // GET /api/meal-plan/catalog/config — capability probe: is the online catalog
   // configured for this deployment? NOT premium-gated and NOT a quota cost — the
-  // premium gate on /search, /:id, /save is unchanged. Read process.env at
-  // REQUEST time (not a module-load const) so tests can toggle it.
-  // MUST be registered before /catalog/:id (else the param route swallows
-  // "config" → 400 invalid id).
+  // premium gate on /search, /:id, /save is unchanged. Rate-limited with
+  // mealPlanRateLimit (like its siblings) so the auth'd handler isn't unbounded —
+  // defense-in-depth for the requireAuth check (the client only probes once per
+  // session). Read process.env at REQUEST time (not a module-load const) so tests
+  // can toggle it. MUST be registered before /catalog/:id (else the param route
+  // swallows "config" → 400 invalid id).
   app.get(
     "/api/meal-plan/catalog/config",
     requireAuth,
+    mealPlanRateLimit,
     (_req: AuthenticatedRequest, res: Response): void => {
       res.json({ enabled: Boolean(process.env.SPOONACULAR_API_KEY) });
     },
