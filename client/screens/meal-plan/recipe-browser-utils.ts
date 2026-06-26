@@ -27,3 +27,29 @@ export function shouldGatePremiumSource(
 export function isQuotaExceededError(error: unknown): boolean {
   return error instanceof ApiError && error.code === "CATALOG_QUOTA_EXCEEDED";
 }
+
+export type OnlineCtaState =
+  | "hidden"
+  | "premium-locked"
+  | "actionable"
+  | "loading"
+  | "quota-exhausted";
+
+/** Selects how the inline "Search online" CTA presents, given catalog
+ *  availability, the user's tier, and the online request's progress. Pure —
+ *  unit-tested without rendering. quota-exhausted/loading apply only after the
+ *  premium user has actually requested the online search. */
+export function resolveOnlineCtaState(a: {
+  catalogDisabled: boolean;
+  isPremium: boolean;
+  hasQuery: boolean;
+  onlineRequested: boolean;
+  onlineLoading: boolean;
+  quotaExhausted: boolean;
+}): OnlineCtaState {
+  if (a.catalogDisabled || !a.hasQuery) return "hidden";
+  if (!a.isPremium) return "premium-locked";
+  if (a.onlineRequested && a.quotaExhausted) return "quota-exhausted";
+  if (a.onlineRequested && a.onlineLoading) return "loading";
+  return "actionable";
+}
