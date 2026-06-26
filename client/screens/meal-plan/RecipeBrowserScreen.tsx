@@ -54,6 +54,8 @@ import {
 } from "@/components/meal-plan/SearchFilterSheet";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { RecipeDiscoveryFeed } from "@/components/meal-plan/RecipeDiscoveryFeed";
+import { isBlankBrowseState } from "@/components/meal-plan/recipe-discovery-utils";
 import {
   shouldGatePremiumSource,
   isQuotaExceededError,
@@ -366,10 +368,58 @@ export default function RecipeBrowserScreen() {
   // instead of local search. The catalog endpoint requires a non-empty query
   // and is premium-only, so it stays disabled for free users / blank queries.
   const isOnlineSource = advancedFilters.source === "spoonacular";
+
+  const addItemMutation = useAddMealPlanItem();
+  const { data: favouriteData } = useFavouriteRecipeIds();
+  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
+
+  const favouriteIdSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of favouriteData?.ids ?? []) {
+      set.add(`${f.recipeType}:${f.recipeId}`);
+    }
+    return set;
+  }, [favouriteData]);
+
+  const isBrowseOnly = !plannedDate || !mealType;
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (advancedFilters.sort !== "relevance") count++;
+    if (advancedFilters.maxPrepTime !== undefined) count++;
+    if (advancedFilters.maxCalories !== undefined) count++;
+    if (advancedFilters.minProtein !== undefined) count++;
+    if (advancedFilters.source !== "all") count++;
+    if (curatedOnly) count++;
+    if (safeForMe) count++;
+    return count;
+  }, [advancedFilters, curatedOnly, safeForMe]);
+
+  // Show the curated Discover feed when the user has not typed a query or
+  // activated any chip/filter and the source is not the online catalog.
+  // While the feed is shown the full-list query is disabled (null) to protect
+  // the 20/min /api/recipes/search budget.
+  const showDiscovery =
+    !isOnlineSource &&
+    isBlankBrowseState({
+      debouncedQuery,
+      activeCuisine,
+      activeDiet,
+      activeDifficulty,
+      curatedOnly,
+      safeForMe,
+      pantryMode,
+      activeFilterCount,
+    });
+
   const catalogEnabled =
     isOnlineSource && isPremium && debouncedQuery.length > 0;
 
-  const localSearch = useRecipeSearch(isOnlineSource ? null : searchParams);
+  // Both hooks are called unconditionally on every render (rules-of-hooks).
+  // We only change the *argument*: null disables the query inside the hook.
+  const localSearch = useRecipeSearch(
+    isOnlineSource || showDiscovery ? null : searchParams,
+  );
   const catalogSearch = useCatalogSearch(searchParams, catalogEnabled);
 
   const {
@@ -407,36 +457,10 @@ export default function RecipeBrowserScreen() {
     announcedSearchErrorRef.current = kind;
   }, [isQuotaExceeded, isOnlineError]);
 
-  const addItemMutation = useAddMealPlanItem();
-  const { data: favouriteData } = useFavouriteRecipeIds();
-  const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
-
-  const favouriteIdSet = useMemo(() => {
-    const set = new Set<string>();
-    for (const f of favouriteData?.ids ?? []) {
-      set.add(`${f.recipeType}:${f.recipeId}`);
-    }
-    return set;
-  }, [favouriteData]);
-
-  const isBrowseOnly = !plannedDate || !mealType;
-
   const allRecipes: SearchableRecipe[] = useMemo(
     () => searchData?.results ?? [],
     [searchData],
   );
-
-  const activeFilterCount = useMemo(() => {
-    let count = 0;
-    if (advancedFilters.sort !== "relevance") count++;
-    if (advancedFilters.maxPrepTime !== undefined) count++;
-    if (advancedFilters.maxCalories !== undefined) count++;
-    if (advancedFilters.minProtein !== undefined) count++;
-    if (advancedFilters.source !== "all") count++;
-    if (curatedOnly) count++;
-    if (safeForMe) count++;
-    return count;
-  }, [advancedFilters, curatedOnly, safeForMe]);
 
   const handleRecipePress = useCallback(
     async (item: SearchableRecipe) => {
@@ -859,6 +883,22 @@ export default function RecipeBrowserScreen() {
             description="Enter a search term to find recipes from the online catalog."
           />
         </View>
+      ) : showDiscovery ? (
+        <RecipeDiscoveryFeed
+          onOpenRecipe={handleRecipePress}
+          onSeePreset={(key) => {
+            haptics.selection();
+            if (key === "pantry") setPantryMode(true);
+            else if (key === "featured") setCuratedOnly(true);
+            else
+              setAdvancedFilters((f) => ({
+                ...f,
+                maxPrepTime: 20,
+                sort: "quickest",
+              }));
+          }}
+          contentBottomInset={insets.bottom}
+        />
       ) : isLoading ? (
         <SkeletonProvider>
           <View

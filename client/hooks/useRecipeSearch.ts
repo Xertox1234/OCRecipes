@@ -18,10 +18,14 @@ function buildQueryString(params: RecipeSearchParams, offset: number): string {
   return new URLSearchParams(entries).toString();
 }
 
-export function useRecipeSearch(params: RecipeSearchParams | null) {
+export function useRecipeSearch(
+  params: RecipeSearchParams | null,
+  options?: { staleTime?: number },
+) {
   const query = useInfiniteQuery<RecipeSearchResponse>({
     queryKey: ["/api/recipes/search", params ?? {}],
     initialPageParam: 0,
+    staleTime: options?.staleTime,
     queryFn: async ({ pageParam }) => {
       const qs = buildQueryString(params!, pageParam as number);
       const res = await apiRequest("GET", `/api/recipes/search?${qs}`);
