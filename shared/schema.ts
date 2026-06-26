@@ -21,7 +21,11 @@ import { z } from "zod";
 import { DEFAULT_NUTRITION_GOALS } from "./constants/nutrition";
 import type { DerivedRecipeAllergen } from "./constants/allergens";
 import type { MealSuggestion } from "./types/meal-suggestions";
-import type { ReminderMutes, ReminderType } from "./types/reminders";
+import type {
+  ReminderMutes,
+  ReminderType,
+  NotificationPrefs,
+} from "./types/reminders";
 import type { MeasurementUnit } from "./lib/units";
 import type {
   ConsensusNutritionData,
@@ -160,6 +164,10 @@ export const userProfiles = pgTable("user_profiles", {
   }),
   reminderMutes: jsonb("reminder_mutes")
     .$type<ReminderMutes>()
+    .default(sql`'{}'::jsonb`)
+    .notNull(),
+  notificationPrefs: jsonb("notification_prefs")
+    .$type<NotificationPrefs>()
     .default(sql`'{}'::jsonb`)
     .notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })

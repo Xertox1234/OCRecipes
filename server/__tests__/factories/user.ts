@@ -50,6 +50,12 @@ const userProfileDefaults: UserProfile = {
   glp1StartDate: null,
   healthDataConsentAt: null,
   reminderMutes: {},
+  notificationPrefs: {
+    categories: {},
+    quietHours: { start: "21:00", end: "08:00" },
+    ambientPush: false,
+    transactionalEnabled: true,
+  },
   createdAt: new Date("2024-01-01"),
   updatedAt: new Date("2024-01-01"),
 };
