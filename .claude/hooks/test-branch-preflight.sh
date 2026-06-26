@@ -3,6 +3,20 @@
 # Hermetic: uses a temp git repo; no external tools needed beyond git + jq.
 set -uo pipefail
 
+# --- Hermeticity (todos P2 git-churn) -----------------------------------------
+# Git env vars inherited from the caller — an absolute GIT_DIR/GIT_WORK_TREE injected by
+# VS Code's git integration or a worktree context — OVERRIDE `git -C <dir>`. Left set, the
+# temp-repo setup below would silently run against the REAL repo: writing t@t/T into its
+# config, staging a phantom x.txt, and detaching/switching its HEAD (reverting live edits).
+# Clear them up front so every `git` here resolves only via the temp repo we create.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null  # never read/write the user's real git config
+
+# Snapshot the caller's real repo so the end-of-run guard can prove we never touched it.
+CALLER_EMAIL_BEFORE=$(git config user.email 2>/dev/null || true)
+CALLER_HEAD_BEFORE="$(git rev-parse HEAD 2>/dev/null || true)|$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+CALLER_STATUS_BEFORE=$(git status --porcelain 2>/dev/null || true)
+
 HOOK="$(cd "$(dirname "$0")" && pwd)/branch-preflight.sh"
 PASS=0; FAIL=0
 
@@ -90,6 +104,24 @@ OUT=$(run_hook "git add -A && git commit -m 'oops'")
 assert_deny "compound 'git add && git commit' on detached HEAD is denied" "$OUT"
 
 unset GIT_DIR GIT_WORK_TREE
+
+# --- Hermeticity guard: prove the caller's real repo is byte-for-byte untouched. ---
+# If an inherited GIT_DIR ever defeats the temp-repo isolation again, this fails loudly in
+# CI/preflight instead of silently corrupting the working repo (the todos P2 git-churn bug).
+CALLER_EMAIL_AFTER=$(git config user.email 2>/dev/null || true)
+CALLER_HEAD_AFTER="$(git rev-parse HEAD 2>/dev/null || true)|$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+CALLER_STATUS_AFTER=$(git status --porcelain 2>/dev/null || true)
+if [ "$CALLER_EMAIL_AFTER" = "$CALLER_EMAIL_BEFORE" ] \
+  && [ "$CALLER_HEAD_AFTER" = "$CALLER_HEAD_BEFORE" ] \
+  && [ "$CALLER_STATUS_AFTER" = "$CALLER_STATUS_BEFORE" ]; then
+  echo "PASS: caller repo untouched (hermetic — no inherited-GIT_DIR leak)"; PASS=$((PASS+1))
+else
+  echo "FAIL: HERMETICITY — this test mutated the caller's real repo (inherited GIT_DIR leak)"
+  [ "$CALLER_EMAIL_AFTER" != "$CALLER_EMAIL_BEFORE" ] && printf '  user.email: [%s] -> [%s]\n' "$CALLER_EMAIL_BEFORE" "$CALLER_EMAIL_AFTER"
+  [ "$CALLER_HEAD_AFTER" != "$CALLER_HEAD_BEFORE" ] && printf '  HEAD: [%s] -> [%s]\n' "$CALLER_HEAD_BEFORE" "$CALLER_HEAD_AFTER"
+  [ "$CALLER_STATUS_AFTER" != "$CALLER_STATUS_BEFORE" ] && printf '  working tree changed (porcelain differs)\n'
+  FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

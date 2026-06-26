@@ -95,7 +95,10 @@ run node scripts/check-jsdom-pragma.js || exit 1
 # present so newly-added hook tests are picked up automatically (no drift).
 for t in .claude/hooks/test-*.sh; do
   [ -f "$t" ] || continue
-  run bash "$t" || exit 1
+  # Strip inherited git env so a test's `git -C <tmp>` can't be hijacked onto the real repo
+  # by an absolute GIT_DIR (VS Code terminal / worktree). Each test owns its temp repo.
+  # See todos P2 git-churn. test-branch-preflight.sh also self-clears as defense-in-depth.
+  run env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR bash "$t" || exit 1
 done
 
 # Tests + coverage need the dev DB. CI runs db:push first; mirror it unless opted out.
