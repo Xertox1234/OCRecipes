@@ -17,6 +17,8 @@ import {
   runRetentionCleanup,
   assertExecutionAllowed as assertRetentionAllowed,
 } from "./scripts/cleanup-retention";
+import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator } from "./routes/_rate-limiters";
 import crypto from "node:crypto";
 
 process.on("uncaughtException", (error) => {
@@ -220,17 +222,42 @@ function startServer() {
     }),
   );
 
-  // Health check endpoint (registered before routes for fast response)
-  app.get("/api/health", async (_req, res) => {
-    try {
-      await pool.query("SELECT 1");
-      res.json({ status: "ok" });
-    } catch {
-      res
-        .status(503)
-        .json({ status: "unhealthy", error: "Database unreachable" });
-    }
-  });
+  // Health check endpoint (registered before routes for fast response).
+  // Unauthenticated and runs a DB query (SELECT 1) per hit, so an unbounded flood
+  // could pressure the connection pool. The limiter bounds the per-IP request
+  // rate. The cap is deliberately high (600/min ≈ 10/s) to stay well clear of
+  // legitimate bursts: Railway's deploy healthcheck polls this path repeatedly
+  // within its 30s timeout (railway.json healthcheckPath) and those probes
+  // collapse into one IP bucket, so a high ceiling guarantees a deploy can never
+  // 429-fail here — while a flood is still capped to a bounded rate. Defined
+  // inline (not via the _rate-limiters.ts createRateLimiter factory) so CodeQL's
+  // js/missing-rate-limiting query can trace it — the re-exported factory consts
+  // are untraceable (the dismissed #146–#215 cluster). Reuses the shared
+  // ipKeyGenerator for X-Real-IP/Railway keying.
+  app.get(
+    "/api/health",
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: 600,
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: ipKeyGenerator,
+      message: {
+        error: "Too many health check requests. Please wait.",
+        code: "RATE_LIMITED",
+      },
+    }),
+    async (_req, res) => {
+      try {
+        await pool.query("SELECT 1");
+        res.json({ status: "ok" });
+      } catch {
+        res
+          .status(503)
+          .json({ status: "unhealthy", error: "Database unreachable" });
+      }
+    },
+  );
 
   const server = registerRoutes(app);
 
