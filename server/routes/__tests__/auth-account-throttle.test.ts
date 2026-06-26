@@ -107,18 +107,22 @@ function login(username: string, ip: string, password = "wrong-password") {
 
 // PRIMARY isolation: clear every bucket the previous attempt (test OR retry)
 // touched before the next one runs, so a filled bucket can never leak across
-// the shared module-level MemoryStore. Vitest is verified to run beforeEach
-// before EACH retry attempt, so this also neutralizes the
-// retry:2-in-a-polluted-process failure that per-test unique namespacing alone
-// could not fix. resetKey is typed `() => void` and MemoryStore clears the
-// bucket synchronously (a plain Map.delete with no internal await), so a sync
-// loop is both correct and avoids awaiting a non-thenable.
-beforeEach(() => {
+// the shared module-level MemoryStore. resetKey is typed `() => void` and
+// MemoryStore clears the bucket synchronously (a plain Map.delete with no
+// internal await), so a sync loop is both correct and avoids awaiting a
+// non-thenable. Extracted as a named helper so the regression test below can
+// exercise the IDENTICAL drain logic — keeping them in lockstep.
+function drainTouchedBuckets() {
   for (const key of touchedAccountKeys) loginAccountLimiter.resetKey(key);
   for (const key of touchedIpKeys) loginLimiter.resetKey(key);
   touchedAccountKeys.clear();
   touchedIpKeys.clear();
-});
+}
+
+// Vitest is verified to run beforeEach before EACH retry attempt, so wiring the
+// drain here also neutralizes the retry:2-in-a-polluted-process failure that
+// per-test unique namespacing alone could not fix.
+beforeEach(drainTouchedBuckets);
 
 function successUserFor(username: string) {
   // Make this username resolvable: logging in with "correct-password"
@@ -257,29 +261,28 @@ describe("per-account login throttling (real express-rate-limit)", () => {
   });
 });
 
-describe("beforeEach store reset isolates buckets across cases (regression: P3 store-pollution flake)", () => {
-  // These two cases DELIBERATELY share a username (unlike the suite above, which
-  // sidesteps pollution via unique namespacing). The bucket is filled to lockout
-  // in the first case; the second case passing proves the beforeEach store reset
-  // — not namespacing — cleared it. Vitest is verified to run beforeEach before
-  // every retry attempt, so the same mechanism covers the
-  // retry:2-in-a-polluted-process case the flake was actually about. Run in
-  // isolation either case still passes (a clean bucket also returns 401), so the
-  // proof is in their ordered pairing, never a false failure.
-  const SHARED = "reset-probe-account";
+describe("store reset clears a polluted bucket (regression: P3 store-pollution flake)", () => {
+  // Self-contained and ORDER-INDEPENDENT — it pollutes, drains, and asserts in a
+  // single test, so it can never silently false-pass under sequence.shuffle the
+  // way an ordered [setup]/[verify] pair could (a sibling running first would
+  // leave a clean bucket → vacuous 401). It calls drainTouchedBuckets() — the
+  // exact function the beforeEach hook runs — so a regression in the drain logic
+  // (dropped resetKey, wrong key derivation, changed prefix) flips the final
+  // assert from 401 to a leaked 429. Mutation-confirmed.
+  it("a per-account bucket filled to lockout returns 401 again after the drain", async () => {
+    const SHARED = "reset-probe-account";
 
-  it("[setup] fills the shared account bucket to lockout (429)", async () => {
+    // Pollute: fill the per-account bucket past the lockout threshold (rotating
+    // IPs so only the account-keyed layer trips, never the IP-keyed one).
     for (let i = 1; i <= LIMIT; i++) {
       expect((await login(SHARED, `10.7.0.${i}`)).status).toBe(401);
     }
-    // N+1th failed attempt is throttled — the SHARED bucket is now full.
     expect((await login(SHARED, "10.7.1.1")).status).toBe(429);
-  });
 
-  it("[verify] the next case sees the shared bucket reset, not a leaked 429", async () => {
-    // Had the beforeEach reset not run (or missed the key), SHARED's bucket
-    // would still sit at the lockout limit from the previous case and this lone
-    // attempt would return 429. A 401 proves the reset cleared it.
+    // Drain exactly as the beforeEach hook does between tests.
+    drainTouchedBuckets();
+
+    // Cleared: the same username gets the generic 401 again, not the leaked 429.
     expect((await login(SHARED, "10.7.2.1")).status).toBe(401);
   });
 });
