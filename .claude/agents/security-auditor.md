@@ -137,6 +137,20 @@ app.post("/api/items", requireAuth, crudRateLimit, async (req, res) => { ... });
 
 Check `server/routes/_rate-limiters.ts` for available limiter instances.
 
+**CodeQL `js/missing-rate-limiting` false-positives on factory limiters.** The
+query only recognizes a direct `rateLimit({...})` call in the middleware chain,
+so it cannot trace the `createRateLimiter()` factory's re-exported `const`
+limiters — it flags ~every authenticated route as un-rate-limited. Triage: confirm
+the route's middleware chain actually applies a `_rate-limiters.ts` limiter (an
+imported export **or** a file-local `const x = createRateLimiter(...)`) → known
+false positive, dismiss as `false positive` (never blind-dismiss). A route with
+**no** limiter anywhere is a REAL finding — fix it, don't dismiss. Inline
+`rateLimit({...})` at the route (reusing `ipKeyGenerator`) only when you
+specifically need CodeQL to trace it so the alert self-clears (e.g. a
+deploy-critical public endpoint like `/api/health`); the factory + dismiss-FP is
+the default. See
+`docs/solutions/conventions/codeql-missing-rate-limiting-untraceable-factory-2026-06-26.md`.
+
 ### 4. JWT Security
 
 **Required claims:**
