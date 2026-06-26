@@ -88,6 +88,10 @@
       },
       {
         "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/core-bare-guard.sh", "timeout": 10, "statusMessage": "Checking core.bare integrity..." }]
+      },
+      {
+        "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "bash .claude/hooks/drift-detect.sh", "timeout": 10, "statusMessage": "Checking for external HEAD drift..." }]
       },
       {
