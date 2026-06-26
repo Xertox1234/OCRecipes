@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   parseSearchableRecipeNumericId,
   toCarouselCard,
+  DISCOVERY_PRESETS,
+  DISCOVERY_STALE_TIME_MS,
 } from "../recipe-discovery-utils";
 import type { SearchableRecipe } from "@shared/types/recipe-search";
 
@@ -71,5 +73,28 @@ describe("toCarouselCard", () => {
         cuisine: null,
       }).recommendationReason,
     ).toBe("");
+  });
+});
+
+describe("DISCOVERY_PRESETS", () => {
+  it("defines pantry (premium), quick, and featured rows with local-only params", () => {
+    const keys = DISCOVERY_PRESETS.map((p) => p.key);
+    expect(keys).toEqual(["pantry", "quick", "featured"]);
+    const pantry = DISCOVERY_PRESETS.find((p) => p.key === "pantry")!;
+    expect(pantry.premiumOnly).toBe(true);
+    expect(pantry.params.pantry).toBe(true);
+    const quick = DISCOVERY_PRESETS.find((p) => p.key === "quick")!;
+    expect(quick.params).toMatchObject({ maxPrepTime: 20, sort: "quickest" });
+    expect(
+      DISCOVERY_PRESETS.find((p) => p.key === "featured")!.params.curatedOnly,
+    ).toBe(true);
+    // No preset targets the Spoonacular source (discovery is local-only by construction).
+    expect(
+      DISCOVERY_PRESETS.every((p) => p.params.source !== "spoonacular"),
+    ).toBe(true);
+  });
+
+  it("uses a 5-minute stale time", () => {
+    expect(DISCOVERY_STALE_TIME_MS).toBe(5 * 60_000);
   });
 });
