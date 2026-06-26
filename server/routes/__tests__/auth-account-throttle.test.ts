@@ -1,20 +1,52 @@
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import bcrypt from "bcrypt";
+// Same IP-key normalizer the production keyGenerator runs (via ipKeyGenerator),
+// so the test reconstructs the exact loginLimiter store key it needs to reset.
+import { ipKeyGenerator as normalizeIpKey } from "express-rate-limit";
 
 import { createMockUser } from "../../__tests__/factories";
 import { storage } from "../../storage";
-import { normalizeUsernameKey } from "../_rate-limiters";
+import {
+  loginLimiter,
+  loginAccountLimiter,
+  normalizeUsernameKey,
+  LOGIN_ACCOUNT_KEY_PREFIX,
+} from "../_rate-limiters";
 import { register } from "../auth";
 
 // NOTE: deliberately NO vi.mock("express-rate-limit") here — this file
 // exercises the REAL limiter middleware (lockout threshold, failed-attempt
 // counting, skipSuccessfulRequests). The route tests in auth.test.ts use the
-// passthrough mock instead. Because the real limiters' MemoryStore persists
-// for the lifetime of this file's module graph, every test uses its own
-// username(s) and its own X-Forwarded-For IP range so tests stay
-// order-independent.
+// passthrough mock instead.
+//
+// The real limiters' MemoryStore persists for the lifetime of this file's
+// module graph, so without intervention a bucket filled in one test (or one
+// retry attempt) leaks into the next — `retry:2` re-runs in the SAME polluted
+// process, so it cannot rescue this. PRIMARY isolation is therefore an active
+// store reset in `beforeEach` (verified to run before every retry attempt, not
+// just once per test): the `login()` helper records the exact production store
+// keys it touches, and the hook drains them via `resetKey` on both real
+// limiters. Per-test unique usernames + X-Forwarded-For IP ranges are retained
+// as defense-in-depth (and keep the IP-keyed loginLimiter buckets distinct).
+//
+// MAINTAINER NOTES:
+//  - The "beforeEach runs before every retry attempt" invariant was confirmed
+//    with a throwaway probe (Vitest 4.1.7) but is NOT guarded by a kept test —
+//    if a future Vitest changes per-retry hook semantics this isolation could
+//    regress silently. Re-run such a probe if you bump Vitest majors.
+//  - loginAccountLimiter uses skipSuccessfulRequests, whose decrement fires on
+//    the response `finish` event — i.e. possibly AFTER supertest resolves and
+//    after this beforeEach reset. Benign today (the only shared-key case below
+//    has zero successful logins). If you add a shared-key case whose first test
+//    includes SUCCESSFUL logins, that pending decrement can race the next
+//    reset — reset by absolute count or settle the response first.
+//
+// NOTE on the original flake report: a transient `404` was also observed. A 404
+// cannot originate from a rate limiter (that path returns 429), so this
+// reset does NOT address it — it points at a separate `register(app)` /
+// module-init timing symptom and is out of scope for this test-isolation fix.
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -47,12 +79,50 @@ beforeAll(async () => {
   vi.mocked(storage.getUserByUsernameForAuth).mockResolvedValue(undefined);
 });
 
+// Every login() records the exact production store keys it will hit, so the
+// beforeEach reset can clear precisely those buckets — the limiter middleware
+// exposes resetKey() but not resetAll(). Keys are derived with the SAME helpers
+// the production keyGenerators use (normalizeUsernameKey / normalizeIpKey +
+// LOGIN_ACCOUNT_KEY_PREFIX), so a reset can never silently drift from prod
+// keying (a drift would make the deterministic isolation test below fail loud).
+const touchedAccountKeys = new Set<string>();
+const touchedIpKeys = new Set<string>();
+
 function login(username: string, ip: string, password = "wrong-password") {
+  // loginAccountLimiter keys failed attempts by normalized username (falling
+  // back to the IP key when none is usable); loginLimiter keys by IP. All test
+  // IPs are IPv4 in X-Forwarded-For with no RAILWAY_ENVIRONMENT_NAME set, so
+  // normalizeIpKey(ip) === the production loginLimiter key for req.ip.
+  const usernameKey = normalizeUsernameKey(username);
+  const ipKey = normalizeIpKey(ip);
+  touchedAccountKeys.add(
+    usernameKey ? `${LOGIN_ACCOUNT_KEY_PREFIX}${usernameKey}` : ipKey,
+  );
+  touchedIpKeys.add(ipKey);
   return request(app)
     .post("/api/auth/login")
     .set("X-Forwarded-For", ip)
     .send({ username, password });
 }
+
+// PRIMARY isolation: clear every bucket the previous attempt (test OR retry)
+// touched before the next one runs, so a filled bucket can never leak across
+// the shared module-level MemoryStore. resetKey is typed `() => void` and
+// MemoryStore clears the bucket synchronously (a plain Map.delete with no
+// internal await), so a sync loop is both correct and avoids awaiting a
+// non-thenable. Extracted as a named helper so the regression test below can
+// exercise the IDENTICAL drain logic — keeping them in lockstep.
+function drainTouchedBuckets() {
+  for (const key of touchedAccountKeys) loginAccountLimiter.resetKey(key);
+  for (const key of touchedIpKeys) loginLimiter.resetKey(key);
+  touchedAccountKeys.clear();
+  touchedIpKeys.clear();
+}
+
+// Vitest is verified to run beforeEach before EACH retry attempt, so wiring the
+// drain here also neutralizes the retry:2-in-a-polluted-process failure that
+// per-test unique namespacing alone could not fix.
+beforeEach(drainTouchedBuckets);
 
 function successUserFor(username: string) {
   // Make this username resolvable: logging in with "correct-password"
@@ -188,5 +258,31 @@ describe("per-account login throttling (real express-rate-limit)", () => {
     expect(accountBlocked.headers["ratelimit-limit"]).toBe(
       ipBlocked.headers["ratelimit-limit"],
     );
+  });
+});
+
+describe("store reset clears a polluted bucket (regression: P3 store-pollution flake)", () => {
+  // Self-contained and ORDER-INDEPENDENT — it pollutes, drains, and asserts in a
+  // single test, so it can never silently false-pass under sequence.shuffle the
+  // way an ordered [setup]/[verify] pair could (a sibling running first would
+  // leave a clean bucket → vacuous 401). It calls drainTouchedBuckets() — the
+  // exact function the beforeEach hook runs — so a regression in the drain logic
+  // (dropped resetKey, wrong key derivation, changed prefix) flips the final
+  // assert from 401 to a leaked 429. Mutation-confirmed.
+  it("a per-account bucket filled to lockout returns 401 again after the drain", async () => {
+    const SHARED = "reset-probe-account";
+
+    // Pollute: fill the per-account bucket past the lockout threshold (rotating
+    // IPs so only the account-keyed layer trips, never the IP-keyed one).
+    for (let i = 1; i <= LIMIT; i++) {
+      expect((await login(SHARED, `10.7.0.${i}`)).status).toBe(401);
+    }
+    expect((await login(SHARED, "10.7.1.1")).status).toBe(429);
+
+    // Drain exactly as the beforeEach hook does between tests.
+    drainTouchedBuckets();
+
+    // Cleared: the same username gets the generic 401 again, not the leaked 429.
+    expect((await login(SHARED, "10.7.2.1")).status).toBe(401);
   });
 });
