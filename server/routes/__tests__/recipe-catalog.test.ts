@@ -250,6 +250,63 @@ describe("recipe-catalog routes", () => {
     });
   });
 
+  describe("GET /api/meal-plan/catalog/config", () => {
+    it("returns 200 { enabled: true } when SPOONACULAR_API_KEY is set", async () => {
+      const prev = process.env.SPOONACULAR_API_KEY;
+      process.env.SPOONACULAR_API_KEY = "test-key";
+      try {
+        const res = await request(app)
+          .get("/api/meal-plan/catalog/config")
+          .set("Authorization", "Bearer token");
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ enabled: true });
+      } finally {
+        if (prev === undefined) {
+          delete process.env.SPOONACULAR_API_KEY;
+        } else {
+          process.env.SPOONACULAR_API_KEY = prev;
+        }
+      }
+    });
+
+    it("returns 200 { enabled: false } when SPOONACULAR_API_KEY is unset", async () => {
+      const prev = process.env.SPOONACULAR_API_KEY;
+      delete process.env.SPOONACULAR_API_KEY;
+      try {
+        const res = await request(app)
+          .get("/api/meal-plan/catalog/config")
+          .set("Authorization", "Bearer token");
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ enabled: false });
+      } finally {
+        if (prev !== undefined) {
+          process.env.SPOONACULAR_API_KEY = prev;
+        }
+      }
+    });
+
+    it("is NOT swallowed by the /:id route (no 400 'Invalid catalog ID')", async () => {
+      const prev = process.env.SPOONACULAR_API_KEY;
+      process.env.SPOONACULAR_API_KEY = "test-key";
+      try {
+        const res = await request(app)
+          .get("/api/meal-plan/catalog/config")
+          .set("Authorization", "Bearer token");
+
+        expect(res.status).not.toBe(400);
+        expect(res.body).toHaveProperty("enabled");
+      } finally {
+        if (prev === undefined) {
+          delete process.env.SPOONACULAR_API_KEY;
+        } else {
+          process.env.SPOONACULAR_API_KEY = prev;
+        }
+      }
+    });
+  });
+
   describe("POST /api/meal-plan/catalog/:id/save", () => {
     it("returns 400 for non-numeric id", async () => {
       const res = await request(app)
