@@ -1880,3 +1880,43 @@ export const pushTokens = pgTable(
 
 export type PushToken = typeof pushTokens.$inferSelect;
 export type InsertPushToken = typeof pushTokens.$inferInsert;
+
+/**
+ * Notification governance ledger — one row per discretionary notification sent.
+ * Powers the daily global cap and the winback cooldown (Phase 1+). Kept SEPARATE
+ * from pending_reminders because that table is the coach in-app inbox and its read
+ * path (hasPendingReminders/acknowledgeReminders) is type-agnostic — a ledger row
+ * there would light the Coach badge. See the notification strategy spec, §4.
+ */
+export const notificationSends = pgTable(
+  "notification_sends",
+  {
+    id: serial("id").primaryKey(),
+    userId: varchar("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    category: text("category").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .default(sql`CURRENT_TIMESTAMP`)
+      .notNull(),
+  },
+  (table) => [
+    // One discretionary send per user+category per UTC calendar day = the dedup
+    // guard (mirrors pending_reminders' day-bucket index).
+    uniqueIndex("notification_sends_user_category_day_idx").on(
+      table.userId,
+      table.category,
+      sql`DATE(${table.sentAt} AT TIME ZONE 'UTC')`,
+    ),
+    // Supports the winback cooldown lookup (latest send for a user+category).
+    index("notification_sends_user_category_sent_idx").on(
+      table.userId,
+      table.category,
+      table.sentAt,
+    ),
+  ],
+);
+
+export type NotificationSend = typeof notificationSends.$inferSelect;
+export type InsertNotificationSend = typeof notificationSends.$inferInsert;
