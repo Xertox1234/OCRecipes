@@ -196,6 +196,8 @@ db.select().from(users).orderBy(sql.identifier(orderCol));
 
 **Flag:** any new table column whose `createInsertSchema(...).pick({...})` was not also updated. A diagnostic that looks self-contradictory (one line says the insert type lacks the field, another says it's required) is the decoupling, NOT a cold-LSP false positive — verify against a fresh `tsc`, don't dismiss. See solution `best-practices/adding-not-null-column-to-shared-table-blast-radius`.
 
+**The `.omit()` variant is the mirror image:** with `insertXSchema = createInsertSchema(x).omit({...})`, a new column **auto-flows in as optional** when it has a `.default()`. Inserts compile unchanged — nothing on the write path signals the addition. The break lands *only* on `$inferSelect` hand-built literals (test factories, mocks), which now require the `NOT NULL` field. **Flag** a new `.notNull().default(...)` column whose `$inferSelect` literals weren't updated in the same diff, and insist on a **full** `check:types` (not a focused run) — the failures are in unrelated files. See solution `code-quality/notnull-default-column-ripples-to-inferselect-not-inferinsert`.
+
 ---
 
 ## Discriminated Unions Over Optional Fields
