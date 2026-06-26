@@ -31,6 +31,7 @@ import * as coachNotebook from "./coach-notebook";
 import * as recipeFromChat from "./recipe-from-chat";
 import * as pushTokensStorage from "./push-tokens";
 import * as remindersStorage from "./reminders";
+import * as notificationSendsStorage from "./notification-sends";
 import * as canonicalRecipesStorage from "./canonical-recipes";
 import * as tastePicksStorage from "./taste-picks";
 import * as exportStorage from "./export";
@@ -310,6 +311,10 @@ export const storage = {
   getPushTokensForUser: pushTokensStorage.getPushTokensForUser,
   getPushTokensForUsers: pushTokensStorage.getPushTokensForUsers,
   deletePushToken: pushTokensStorage.deletePushToken,
+
+  // Notification governance ledger
+  recordNotificationSend: notificationSendsStorage.recordNotificationSend,
+  getLastNotificationSend: notificationSendsStorage.getLastNotificationSend,
 
   // Pending reminders
   createPendingReminder: remindersStorage.createPendingReminder,
