@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
   StyleSheet,
   View,
   TextInput,
@@ -451,6 +452,23 @@ export default function RecipeBrowserScreen() {
     onlineLoading: catalogSearch.isLoading,
     quotaExhausted,
   });
+
+  // Announce the online-search error to screen readers (restores the a11y
+  // announcement removed with the old source-toggle branch). Imperative + ref-
+  // guarded so it fires once per transition into the error state — works on iOS
+  // and Android, and avoids the accessibilityLiveRegion double-announce gotcha.
+  const announcedOnlineErrorRef = React.useRef(false);
+  useEffect(() => {
+    if (ctaState !== "quota-exhausted") {
+      announcedOnlineErrorRef.current = false;
+      return;
+    }
+    if (announcedOnlineErrorRef.current) return;
+    AccessibilityInfo.announceForAccessibility(
+      "Online search is temporarily unavailable",
+    );
+    announcedOnlineErrorRef.current = true;
+  }, [ctaState]);
 
   const onPressOnlineCta = useCallback(() => {
     haptics.selection();
