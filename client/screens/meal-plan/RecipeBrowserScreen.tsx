@@ -1,13 +1,13 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AccessibilityInfo,
   StyleSheet,
   View,
   TextInput,
-  FlatList,
+  SectionList,
   Pressable,
   ActivityIndicator,
   ScrollView,
-  AccessibilityInfo,
   type GestureResponderEvent,
 } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -40,7 +40,6 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
-import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { useAddMealPlanItem } from "@/hooks/useMealPlan";
 import {
   useFavouriteRecipeIds,
@@ -48,10 +47,12 @@ import {
 } from "@/hooks/useFavouriteRecipes";
 import { useRecipeSearch } from "@/hooks/useRecipeSearch";
 import { useCatalogSearch } from "@/hooks/useCatalogSearch";
+import { useCatalogConfig } from "@/hooks/useCatalogConfig";
 import {
   SearchFilterSheet,
   type SearchFilters,
 } from "@/components/meal-plan/SearchFilterSheet";
+import { OnlineSearchCta } from "@/components/meal-plan/OnlineSearchCta";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { RecipeDiscoveryFeed } from "@/components/meal-plan/RecipeDiscoveryFeed";
@@ -59,6 +60,7 @@ import { isBlankBrowseState } from "@/components/meal-plan/recipe-discovery-util
 import {
   shouldGatePremiumSource,
   isQuotaExceededError,
+  resolveOnlineCtaState,
 } from "@/screens/meal-plan/recipe-browser-utils";
 import type {
   SearchableRecipe,
@@ -259,11 +261,12 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
 // ── Main Screen ──────────────────────────────────────────────────────
 
 // Reanimated 4.3 tightened createAnimatedComponent's return type so it no longer
-// directly overlaps with `typeof FlatList`; cast through `unknown` (the type stays
-// FlatList for all downstream usage — only the assertion form changed).
-const AnimatedFlatList = Animated.createAnimatedComponent(
-  FlatList,
-) as unknown as typeof FlatList;
+// directly overlaps with `typeof SectionList`; cast through `unknown` so the
+// collapsing header's scroll-linked animation (onScroll={scrollHandler}) keeps
+// working — a plain SectionList silently breaks it.
+const AnimatedSectionList = Animated.createAnimatedComponent(
+  SectionList,
+) as unknown as typeof SectionList;
 
 export default function RecipeBrowserScreen() {
   const navigation = useNavigation<RecipeBrowserScreenNavigationProp>();
@@ -364,11 +367,6 @@ export default function RecipeBrowserScreen() {
     ],
   );
 
-  // When source is "Online", route to the Spoonacular catalog endpoint
-  // instead of local search. The catalog endpoint requires a non-empty query
-  // and is premium-only, so it stays disabled for free users / blank queries.
-  const isOnlineSource = advancedFilters.source === "spoonacular";
-
   const addItemMutation = useAddMealPlanItem();
   const { data: favouriteData } = useFavouriteRecipeIds();
   const { mutate: toggleFavourite } = useToggleFavouriteRecipe();
@@ -396,30 +394,37 @@ export default function RecipeBrowserScreen() {
   }, [advancedFilters, curatedOnly, safeForMe]);
 
   // Show the curated Discover feed when the user has not typed a query or
-  // activated any chip/filter and the source is not the online catalog.
-  // While the feed is shown the full-list query is disabled (null) to protect
-  // the 20/min /api/recipes/search budget.
-  const showDiscovery =
-    !isOnlineSource &&
-    isBlankBrowseState({
-      debouncedQuery,
-      activeCuisine,
-      activeDiet,
-      activeDifficulty,
-      curatedOnly,
-      safeForMe,
-      pantryMode,
-      activeFilterCount,
-    });
+  // activated any chip/filter. While the feed is shown the full-list query is
+  // disabled (null) to protect the 20/min /api/recipes/search budget.
+  const showDiscovery = isBlankBrowseState({
+    debouncedQuery,
+    activeCuisine,
+    activeDiet,
+    activeDifficulty,
+    curatedOnly,
+    safeForMe,
+    pantryMode,
+    activeFilterCount,
+  });
 
+  const catalogConfig = useCatalogConfig();
+  // Only treat the catalog as disabled once the probe has confirmed it (avoid
+  // hiding the CTA during the initial load); undefined while loading → shown.
+  const catalogDisabled = catalogConfig.data?.enabled === false;
+
+  const [onlineRequested, setOnlineRequested] = useState(false);
+  // A new query starts local-first — reset any prior online request.
+  useEffect(() => {
+    setOnlineRequested(false);
+  }, [debouncedQuery]);
+
+  // Local search is always primary (still suppressed by the Phase-1 discovery feed).
+  const localSearch = useRecipeSearch(showDiscovery ? null : searchParams);
   const catalogEnabled =
-    isOnlineSource && isPremium && debouncedQuery.length > 0;
-
-  // Both hooks are called unconditionally on every render (rules-of-hooks).
-  // We only change the *argument*: null disables the query inside the hook.
-  const localSearch = useRecipeSearch(
-    isOnlineSource || showDiscovery ? null : searchParams,
-  );
+    onlineRequested &&
+    isPremium &&
+    !catalogDisabled &&
+    debouncedQuery.length > 0;
   const catalogSearch = useCatalogSearch(searchParams, catalogEnabled);
 
   const {
@@ -427,40 +432,53 @@ export default function RecipeBrowserScreen() {
     isLoading,
     loadMore,
     isFetchingNextPage,
-    error: searchError,
-    refetch: refetchSearch,
-  } = isOnlineSource ? catalogSearch : localSearch;
+  } = localSearch;
 
-  const isQuotaExceeded = isOnlineSource && isQuotaExceededError(searchError);
-  // Any other catalog failure (server 500, network) — distinct from quota so
-  // the user gets a descriptive error + retry rather than a blank list.
-  const isOnlineError = isOnlineSource && !!searchError && !isQuotaExceeded;
-
-  // Announce online-search failures to screen readers — the list silently
-  // swaps to an error EmptyState otherwise. Track the announced error *kind* so
-  // each entry announces once, a kind change (quota → network error) re-announces
-  // even with no intervening no-error frame, and a clear resets it. Mount state
-  // is no-error, so there is no false announce on first render.
-  const announcedSearchErrorRef = React.useRef<"quota" | "online" | null>(null);
-  React.useEffect(() => {
-    const kind = isQuotaExceeded ? "quota" : isOnlineError ? "online" : null;
-    if (kind === null) {
-      announcedSearchErrorRef.current = null;
-      return;
-    }
-    if (announcedSearchErrorRef.current === kind) return;
-    AccessibilityInfo.announceForAccessibility(
-      kind === "quota"
-        ? "Online search is temporarily unavailable"
-        : "Couldn't load online recipes",
-    );
-    announcedSearchErrorRef.current = kind;
-  }, [isQuotaExceeded, isOnlineError]);
-
-  const allRecipes: SearchableRecipe[] = useMemo(
+  const localResults: SearchableRecipe[] = useMemo(
     () => searchData?.results ?? [],
     [searchData],
   );
+  const onlineResults: SearchableRecipe[] = useMemo(
+    () => catalogSearch.data?.results ?? [],
+    [catalogSearch.data],
+  );
+  const quotaExhausted = isQuotaExceededError(catalogSearch.error);
+
+  const ctaState = resolveOnlineCtaState({
+    catalogDisabled,
+    isPremium,
+    hasQuery: debouncedQuery.length > 0,
+    onlineRequested,
+    onlineLoading: catalogSearch.isLoading,
+    quotaExhausted,
+  });
+
+  // Announce the online-search error to screen readers (restores the a11y
+  // announcement removed with the old source-toggle branch). Imperative + ref-
+  // guarded so it fires once per transition into the error state — works on iOS
+  // and Android, and avoids the accessibilityLiveRegion double-announce gotcha.
+  const announcedOnlineErrorRef = React.useRef(false);
+  useEffect(() => {
+    if (ctaState !== "quota-exhausted") {
+      announcedOnlineErrorRef.current = false;
+      return;
+    }
+    if (announcedOnlineErrorRef.current) return;
+    AccessibilityInfo.announceForAccessibility(
+      "Online search is temporarily unavailable",
+    );
+    announcedOnlineErrorRef.current = true;
+  }, [ctaState]);
+
+  const onPressOnlineCta = useCallback(() => {
+    haptics.selection();
+    // Reuse the shared premium gate (spec §5.4) — free users get the upgrade hook.
+    if (shouldGatePremiumSource("spoonacular", isPremium)) {
+      setShowUpgradeModal(true);
+      return;
+    }
+    setOnlineRequested(true);
+  }, [haptics, isPremium]);
 
   const handleRecipePress = useCallback(
     async (item: SearchableRecipe) => {
@@ -594,8 +612,6 @@ export default function RecipeBrowserScreen() {
       favouriteIdSet,
     ],
   );
-
-  const keyExtractor = useCallback((item: SearchableRecipe) => item.id, []);
 
   return (
     <View
@@ -852,38 +868,7 @@ export default function RecipeBrowserScreen() {
       )}
 
       {/* Results */}
-      {isQuotaExceeded ? (
-        <View style={styles.emptyContainer}>
-          <EmptyState
-            variant="noResults"
-            icon="cloud-off"
-            title="Online search is temporarily unavailable"
-            description="The recipe catalog has hit its usage limit. Please try again later or switch to a different source."
-          />
-        </View>
-      ) : isOnlineError ? (
-        <View style={styles.emptyContainer}>
-          <EmptyState
-            variant="noResults"
-            icon="alert-circle"
-            title="Couldn't load online recipes"
-            description="Something went wrong searching the online catalog. Check your connection and try again."
-            actionLabel="Retry"
-            onAction={() => {
-              void refetchSearch();
-            }}
-          />
-        </View>
-      ) : isOnlineSource && debouncedQuery.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <EmptyState
-            variant="firstTime"
-            icon="search"
-            title="Search the online catalog"
-            description="Enter a search term to find recipes from the online catalog."
-          />
-        </View>
-      ) : showDiscovery ? (
+      {showDiscovery ? (
         <RecipeDiscoveryFeed
           onOpenRecipe={handleRecipePress}
           onSeePreset={(key) => {
@@ -913,7 +898,7 @@ export default function RecipeBrowserScreen() {
             <SkeletonBox width="100%" height={64} borderRadius={12} />
           </View>
         </SkeletonProvider>
-      ) : allRecipes.length === 0 ? (
+      ) : localResults.length === 0 && onlineResults.length === 0 ? (
         <View style={styles.emptyContainer}>
           {debouncedQuery ||
           activeCuisine ||
@@ -939,20 +924,51 @@ export default function RecipeBrowserScreen() {
               description="Create or import a recipe to get started."
             />
           )}
+          {ctaState !== "hidden" && (
+            <OnlineSearchCta
+              state={ctaState}
+              onPress={onPressOnlineCta}
+              onRetry={() => void catalogSearch.refetch()}
+            />
+          )}
         </View>
       ) : (
-        <AnimatedFlatList
-          {...FLATLIST_DEFAULTS}
-          data={allRecipes}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          contentContainerStyle={{
-            paddingHorizontal: Spacing.lg,
-            paddingBottom: insets.bottom + Spacing.xl,
-          }}
-          ItemSeparatorComponent={ItemSeparator}
-          scrollEventThrottle={16}
+        <AnimatedSectionList
+          sections={[
+            { key: "local", title: "From OCRecipes", data: localResults },
+            ...(onlineResults.length > 0
+              ? [
+                  {
+                    key: "web",
+                    title: "From the web · Spoonacular",
+                    data: onlineResults,
+                  },
+                ]
+              : []),
+          ]}
           onScroll={scrollHandler}
+          scrollEventThrottle={16}
+          keyExtractor={(item) => (item as SearchableRecipe).id}
+          renderItem={renderItem}
+          renderSectionHeader={({ section }) => (
+            <ThemedText
+              type="caption"
+              style={[styles.sectionHeader, { color: theme.textSecondary }]}
+            >
+              {(section as { title: string }).title}
+            </ThemedText>
+          )}
+          renderSectionFooter={({ section }) =>
+            (section as { key: string }).key === "local" &&
+            ctaState !== "hidden" ? (
+              <OnlineSearchCta
+                state={ctaState}
+                onPress={onPressOnlineCta}
+                onRetry={() => void catalogSearch.refetch()}
+              />
+            ) : null
+          }
+          ItemSeparatorComponent={ItemSeparator}
           onEndReached={loadMore ? () => loadMore() : undefined}
           onEndReachedThreshold={0.5}
           ListFooterComponent={
@@ -963,6 +979,12 @@ export default function RecipeBrowserScreen() {
               />
             ) : null
           }
+          contentContainerStyle={{
+            paddingHorizontal: Spacing.lg,
+            paddingBottom: insets.bottom + Spacing.xl,
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         />
       )}
 
@@ -1169,5 +1191,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: FontFamily.regular,
     marginLeft: Spacing.sm,
+  },
+  sectionHeader: {
+    fontFamily: FontFamily.semiBold,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xs,
   },
 });

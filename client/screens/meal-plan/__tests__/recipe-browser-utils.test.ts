@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   shouldGatePremiumSource,
   isQuotaExceededError,
+  resolveOnlineCtaState,
 } from "../recipe-browser-utils";
 import { ApiError } from "../../../lib/api-error";
 
@@ -36,5 +37,44 @@ describe("isQuotaExceededError", () => {
     expect(isQuotaExceededError(new Error("network"))).toBe(false);
     expect(isQuotaExceededError(null)).toBe(false);
     expect(isQuotaExceededError(undefined)).toBe(false);
+  });
+});
+
+describe("resolveOnlineCtaState", () => {
+  const d = {
+    catalogDisabled: false,
+    isPremium: false,
+    hasQuery: true,
+    onlineRequested: false,
+    onlineLoading: false,
+    quotaExhausted: false,
+  };
+  it("hidden when catalog disabled or query empty", () => {
+    expect(resolveOnlineCtaState({ ...d, catalogDisabled: true })).toBe(
+      "hidden",
+    );
+    expect(resolveOnlineCtaState({ ...d, hasQuery: false })).toBe("hidden");
+  });
+  it("premium-locked for free users with a query", () => {
+    expect(resolveOnlineCtaState(d)).toBe("premium-locked");
+  });
+  it("premium flow: actionable → loading → quota-exhausted", () => {
+    expect(resolveOnlineCtaState({ ...d, isPremium: true })).toBe("actionable");
+    expect(
+      resolveOnlineCtaState({
+        ...d,
+        isPremium: true,
+        onlineRequested: true,
+        onlineLoading: true,
+      }),
+    ).toBe("loading");
+    expect(
+      resolveOnlineCtaState({
+        ...d,
+        isPremium: true,
+        onlineRequested: true,
+        quotaExhausted: true,
+      }),
+    ).toBe("quota-exhausted");
   });
 });

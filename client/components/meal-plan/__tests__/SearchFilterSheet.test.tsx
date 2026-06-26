@@ -57,7 +57,7 @@ describe("SearchFilterSheet", () => {
     expect(screen.getByText("Quickest")).toBeDefined();
   });
 
-  it("renders source options", () => {
+  it("renders source options (Online removed — now an inline CTA)", () => {
     renderComponent(
       <SearchFilterSheet
         filters={defaultFilters}
@@ -69,23 +69,8 @@ describe("SearchFilterSheet", () => {
     expect(screen.getByText("All")).toBeDefined();
     expect(screen.getByText("My Recipes")).toBeDefined();
     expect(screen.getByText("Community")).toBeDefined();
-    expect(screen.getByText("Online")).toBeDefined();
-  });
-
-  it("calls onFiltersChange with spoonacular source when Online is selected", () => {
-    const onFiltersChange = vi.fn();
-    renderComponent(
-      <SearchFilterSheet
-        filters={defaultFilters}
-        onFiltersChange={onFiltersChange}
-        onReset={vi.fn()}
-        activeFilterCount={0}
-      />,
-    );
-    fireEvent.click(screen.getByText("Online"));
-    expect(onFiltersChange).toHaveBeenCalledWith(
-      expect.objectContaining({ source: "spoonacular" }),
-    );
+    // "Online" chip removed: online search is now triggered via the inline CTA
+    expect(screen.queryByText("Online")).toBeNull();
   });
 
   it("calls onReset when reset button is pressed", () => {

@@ -34,3 +34,9 @@ export interface CatalogSearchParams {
   offset?: number;
   number?: number;
 }
+
+/** Response of GET /api/meal-plan/catalog/config — reports whether this
+ *  deployment has the online catalog configured (SPOONACULAR_API_KEY present).
+ *  Capability probe only; does not affect the premium gate. */
+export const catalogConfigResponseSchema = z.object({ enabled: z.boolean() });
+export type CatalogConfigResponse = z.infer<typeof catalogConfigResponseSchema>;
