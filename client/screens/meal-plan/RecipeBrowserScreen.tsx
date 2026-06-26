@@ -880,7 +880,7 @@ export default function RecipeBrowserScreen() {
             <SkeletonBox width="100%" height={64} borderRadius={12} />
           </View>
         </SkeletonProvider>
-      ) : localResults.length === 0 ? (
+      ) : localResults.length === 0 && onlineResults.length === 0 ? (
         <View style={styles.emptyContainer}>
           {debouncedQuery ||
           activeCuisine ||
