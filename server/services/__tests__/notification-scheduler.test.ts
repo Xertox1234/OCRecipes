@@ -391,7 +391,7 @@ describe("sendDailyCheckinReminders", () => {
     expect(notify).toHaveBeenCalledWith(
       "needs-user",
       "daily-checkin",
-      expect.anything(),
+      expect.objectContaining({ context: { calories: 720 } }),
     );
   });
 
@@ -421,7 +421,7 @@ describe("sendDailyCheckinReminders", () => {
     expect(notify).toHaveBeenCalledWith(
       "good-user",
       "daily-checkin",
-      expect.anything(),
+      expect.objectContaining({ context: { calories: 500 } }),
     );
   });
 });
@@ -467,7 +467,7 @@ describe("sendMealLogReminders", () => {
     expect(notify).toHaveBeenCalledWith(
       "user-1",
       "meal-log",
-      expect.anything(),
+      expect.objectContaining({ context: { lastLoggedAt: null } }),
     );
   });
 
@@ -532,7 +532,7 @@ describe("sendMealLogReminders", () => {
     expect(notify).toHaveBeenCalledWith(
       "needs-user",
       "meal-log",
-      expect.anything(),
+      expect.objectContaining({ context: { lastLoggedAt: null } }),
     );
   });
 });
