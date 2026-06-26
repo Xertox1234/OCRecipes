@@ -79,6 +79,16 @@ export function normalizeUsernameKey(value: unknown): string | null {
 }
 
 /**
+ * Bucket-key prefix for the per-account login throttle. Exported so the
+ * real-limiter tests can reconstruct the exact store key to reset between
+ * cases (the limiter's MemoryStore persists for the module's lifetime) without
+ * hardcoding — keeping test resets in lockstep with the production keyGenerator
+ * below. The prefix also prevents cross-bucket collisions with IP-keyed entries
+ * when a username happens to look like an IP.
+ */
+export const LOGIN_ACCOUNT_KEY_PREFIX = "login-account:";
+
+/**
  * Per-account login throttle: keys FAILED login attempts by normalized
  * username so a distributed attacker rotating source IPs against one account
  * is still throttled (the IP-keyed loginLimiter above stays in place — the
@@ -109,7 +119,9 @@ export const loginAccountLimiter = rateLimit({
     // username happens to look like an IP. Requests with no usable username
     // fall back to the per-IP key (they can never match a real account, but
     // must not all share one global bucket an attacker could poison).
-    return username ? `login-account:${username}` : ipKeyGenerator(req);
+    return username
+      ? `${LOGIN_ACCOUNT_KEY_PREFIX}${username}`
+      : ipKeyGenerator(req);
   },
 });
 
