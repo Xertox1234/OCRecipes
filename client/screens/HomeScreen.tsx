@@ -9,6 +9,7 @@ import Animated, { FadeInDown } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 
 import { DailySummaryHeader } from "@/components/home/DailySummaryHeader";
+import { RecipeSearchEntry } from "@/components/home/RecipeSearchEntry";
 import { ThemedText } from "@/components/ThemedText";
 import { RecipeCarousel } from "@/components/home/RecipeCarousel";
 import { CuratedRecipeCarousel } from "@/components/home/CuratedRecipeCarousel";
@@ -215,6 +216,8 @@ export default function HomeScreen() {
             refetch={refetch}
           />
         </Animated.View>
+
+        <RecipeSearchEntry />
 
         <DiscoveryCarousel
           onActionPress={handleActionPress}
