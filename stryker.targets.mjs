@@ -24,10 +24,24 @@ export const MUTATION_TARGETS = {
   "macro-gap-context": {
     mutate: ["server/lib/macro-gap-context.ts"],
     testInclude: ["server/lib/__tests__/macro-gap-context.test.ts"],
+    breakThreshold: 100, // 4 survivors killed + 1 inline-suppressed NaN-equivalent
   },
   "verification-consensus": {
     mutate: ["server/lib/verification-consensus.ts"],
     testInclude: ["server/lib/__tests__/verification-consensus.test.ts"],
+    breakThreshold: 100, // 100% — no survivors
+  },
+  "cook-session-merge": {
+    mutate: ["server/lib/cook-session-merge.ts"],
+    testInclude: ["server/lib/__tests__/cook-session-merge.test.ts"],
+    breakThreshold: 100, // 100% out of the box — no survivors
+  },
+  "chat-history-truncate": {
+    mutate: ["server/lib/chat-history-truncate.ts"],
+    testInclude: ["server/lib/__tests__/chat-history-truncate.test.ts"],
+    breakThreshold: 88, // achieved 90.58%; set with margin — the 2 timeouts are
+    // nondeterministic across runners and the residual (dev-only warn block + provable
+    // equivalents) can shift ±1-2 mutants without a real test regression
   },
   "goal-calculator": {
     mutate: ["server/services/goal-calculator.ts"],

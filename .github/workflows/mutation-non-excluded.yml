@@ -1,0 +1,89 @@
+name: Mutation testing (non-excluded)
+
+# Required, self-scoping gate for the NON-EXCLUDED mutation targets (the pure server/lib
+# modules). Runs on EVERY PR so it always reports a status (safe to mark required in branch
+# protection), but only runs Stryker when one of those targets or the mutation harness
+# actually changes — otherwise it self-scopes to success in seconds. DB-free: the scoped
+# vitest.mutation.config drops globalSetup and every target's test is pure (no storage).
+#
+# The goal-safety Hard-Exclusion domain has its OWN gate (mutation-goal-safety.yml) under the
+# read-only protocol; keep the two separate so this general gate stays free of that ceremony.
+
+on:
+  pull_request:
+
+jobs:
+  mutation-non-excluded:
+    name: Mutation (non-excluded)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # need the merge-base for the three-dot diff below
+
+      - name: Detect target changes
+        id: changed
+        run: |
+          set -euo pipefail
+          BASE='${{ github.event.pull_request.base.sha }}'
+          HEAD='${{ github.event.pull_request.head.sha }}'
+          # FAIL LOUD, never fail-open: resolve the diff in its own statement so a git
+          # error (missing SHA / no merge-base) fails this required gate instead of
+          # being swallowed by an `if` and defaulting to a false "skip".
+          git rev-parse --verify "$BASE^{commit}" >/dev/null
+          git rev-parse --verify "$HEAD^{commit}" >/dev/null
+          # three-dot = merge-base..head, so a moved base branch does not pull in
+          # unrelated upstream changes (architecture rule for PR automation).
+          CHANGED="$(git diff --name-only "$BASE...$HEAD")"
+          echo "Changed files in this PR:"
+          echo "$CHANGED"
+          # Here-string, NOT `echo "$CHANGED" | grep`: under `set -o pipefail`, grep -q
+          # closes the pipe on first match and echo takes SIGPIPE (141), making the
+          # pipeline non-zero on a large changed-file list → the `if` would flip to
+          # run=false and the required gate would fail-OPEN (self-scope green on a real
+          # target change). A here-string has no pipe, so no SIGPIPE.
+          if grep -qE '^(server/lib/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.ts|server/lib/__tests__/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.test\.ts|stryker\.(conf|targets|explore\.conf)\.mjs|vitest\.mutation\.config\.ts)$' <<< "$CHANGED"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Self-scope to success (no non-excluded target changed)
+        if: steps.changed.outputs.run == 'false'
+        run: echo "No non-excluded mutation target or harness changed; gate self-scopes to success."
+
+      - uses: actions/setup-node@v5
+        if: steps.changed.outputs.run == 'true'
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.changed.outputs.run == 'true'
+        run: npm ci
+
+      # Each target enforces its own break threshold (stryker.targets.mjs); Stryker exits
+      # non-zero when score < break. Run all four on any trigger — a shared-harness change
+      # (stryker.conf/targets, vitest.mutation.config) can move every target's score.
+      - name: Mutation test (macro-gap-context, break=100)
+        if: steps.changed.outputs.run == 'true'
+        run: MUTATION_TARGET=macro-gap-context npm run test:mutation
+
+      - name: Mutation test (verification-consensus, break=100)
+        if: steps.changed.outputs.run == 'true'
+        run: MUTATION_TARGET=verification-consensus npm run test:mutation
+
+      - name: Mutation test (cook-session-merge, break=100)
+        if: steps.changed.outputs.run == 'true'
+        run: MUTATION_TARGET=cook-session-merge npm run test:mutation
+
+      - name: Mutation test (chat-history-truncate, break=88)
+        if: steps.changed.outputs.run == 'true'
+        run: MUTATION_TARGET=chat-history-truncate npm run test:mutation
+
+      - name: Upload HTML reports
+        if: steps.changed.outputs.run == 'true' && always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-reports-non-excluded
+          path: reports/mutation/

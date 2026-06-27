@@ -25,7 +25,21 @@ removal). See the gated-protocol solution doc.
 | Module                               | Approved   | Plan                                 |
 | ------------------------------------ | ---------- | ------------------------------------ |
 | `server/services/goal-calculator.ts` | 2026-06-05 | Goal-safety gated read-only protocol |
-| `server/services/adaptive-goals.ts`  | 2026-06-05 | Goal-safety gated read-only protocol |
+
+(`adaptive-goals` was an approved target on 2026-06-05 but was deleted in #384; it is
+no longer registered or approved.)
+
+## Enforced in CI
+
+Two required, self-scoping gates run Stryker only when a target or the harness changes:
+
+- **`mutation-non-excluded.yml`** — `macro-gap-context`, `verification-consensus`,
+  `cook-session-merge` (break=100), `chat-history-truncate` (break=88, achieved 90.58%;
+  the residual is a dev-only `console.warn` plus provable equivalents).
+- **`mutation-goal-safety.yml`** — `goal-calculator` (break=100), under the read-only protocol.
+
+A target gets a `breakThreshold` only after a stable baseline; Stryker exits non-zero when
+the score drops below it, so a test regression that lets a mutant survive fails the gate.
 
 ## Baselines
 
