@@ -31,16 +31,25 @@ beforeEach(() => {
 });
 
 describe("recent-recipe-searches-storage", () => {
-  it("dedupes case-insensitively, newest first, capped at 8", async () => {
+  it("dedupes case-insensitively, newest first", async () => {
+    await initRecentSearchesCache("user-1");
+    await pushRecentSearch("pasta");
+    await pushRecentSearch("salad");
+    await pushRecentSearch("PASTA"); // dedupe vs "pasta" (still in window)
+    // The old "pasta" is removed and "PASTA" moves to the front — proves the
+    // case-insensitive filter actually fires (mutating it would change this).
+    expect(getRecentSearches()).toEqual(["PASTA", "salad"]);
+  });
+
+  it("caps the list at 8, dropping the oldest", async () => {
     await initRecentSearchesCache("user-1");
     for (const q of ["a", "b", "c", "d", "e", "f", "g", "h", "i"]) {
       await pushRecentSearch(q);
     }
-    await pushRecentSearch("A"); // dedupe vs "a"
     const recent = getRecentSearches();
-    expect(recent[0]).toBe("A");
     expect(recent.length).toBe(8);
-    expect(recent.filter((r) => r.toLowerCase() === "a").length).toBe(1);
+    expect(recent[0]).toBe("i"); // newest first
+    expect(recent).not.toContain("a"); // oldest evicted
   });
 
   it("ignores empty / whitespace-only queries", async () => {
