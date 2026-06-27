@@ -15,21 +15,26 @@ Claude keeps working across turns until it's met, with a live elapsed/turns/toke
 overlay. `/todo` is the worker it drives (worktree-isolated executors).
 `/goal` is the supervisor loop; `/todo` does the work.
 
-## The five-filter safety model
+## The four-filter safety model
 
-No sleeping human is in the loop, so five independent filters stand in:
+No sleeping human is in the loop, so four independent filters stand in (the 4th is a
+documented gap, not an active guard — see below):
 
 1. **CI (required)** — `main` physically refuses any PR whose 7 required checks aren't
    green (Lint·Types·Patterns, Tests 1-3/3, Coverage, Mutation goal-safety, CodeQL
    Analyze). No human approval is required by branch protection — only green CI. That
    is the repo's real merge bar, and `gh pr merge --auto` waits on it.
 2. **`scripts/todo-automerge-guard.sh`** — the `/todo` executor runs this on every
-   `low`/`medium` PR _before_ enabling auto-merge. It HOLDs (leaves the PR open for
-   human review, no auto-merge) when the diff touches the sensitive **do-not-delegate
-   boundary** — auth, IAP/billing/subscriptions, schema/migrations, secrets/certs,
-   health — which catches a mislabeled-severity todo. Everything else auto-merges on
-   green CI. (This is a sensitive-path HOLD-list; it replaced the original tight
-   allowlist in PR #465 so the "free pass" covers the common case.)
+   `low`/`medium` PR _before_ enabling auto-merge. It is a **fail-CLOSED allowlist**:
+   it auto-merges only when **every** changed file is a known-safe surface (UI, business
+   services, shared pure modules, tests, docs/todos) and HOLDs for **anything sensitive
+   or unrecognized** — the whole sensitive backend (`server/storage`, `server/routes`,
+   `server/middleware`), `.github/`, `scripts/`, migrations, `shared/schema.ts`, secrets,
+   plus the IAP/health files that live inside otherwise-safe dirs. An UNKNOWN path HOLDs,
+   never auto-merges — so a mislabeled-severity todo can't slip a sensitive change past
+   while you sleep. (PR #465 revised this to fail-closed after a review found the interim
+   denylist fail-OPEN on whole layers; to widen the pass, add a known-safe prefix to the
+   allowlist in the script.)
 3. **Bounded stop conditions** — the `/goal` condition halts on N merges / token cap /
    2 reds, so a systemic mistake can't merge many bad PRs before you wake.
 4. **Up-to-date merges** — the executor enables `gh pr merge --auto`, which merges
@@ -54,14 +59,17 @@ one most likely to surface an unmodeled edge.
       usually fine. Set branch protection `strict: true` if you want it enforced — see
       below.
 - [ ] Guard script proven on a few real PRs (HOLDs sensitive paths, lets the rest pass).
-- [ ] Auto-mode coverage confirmed by an attended run. **Already in place:** the
-      `gh pr merge` permission (`Bash(gh pr merge:*)` in permissions.allow + the scoped
-      `--auto --squash --delete-branch` autoMode rule), `Bash(git:*)` /
-      `Bash(gh pr:*)` / `Bash(npm run *)`, and `Bash(scripts/todo-automerge-guard.sh:*)`.
-      **Unconfirmed until the debut:** whether the classifier waves through `git push`
-      of feature branches and `gh pr create` under `$defaults` (low-impact, likely
-      fine). If either blocks while you watch, add a tightly-scoped `autoMode.allow`
-      entry then — do NOT pre-widen blind.
+- [ ] Auto-mode coverage. **Action required (NOT yet in place):** add `Bash(gh pr merge:*)`
+      to `permissions.allow` — the executor's auto-merge step calls `gh pr merge --auto`,
+      which is not allow-listed today (it should sit beside the existing
+      `Bash(scripts/todo-automerge-guard.sh:*)` and `mcp__github__merge_pull_request`).
+      Also extend the scoped `gh pr merge` `autoMode.allow` rule to include `--auto`
+      (today it covers only `--squash --delete-branch`). **Confirmed in place:**
+      `Bash(scripts/todo-automerge-guard.sh:*)`, `mcp__github__merge_pull_request`,
+      `Bash(npm run *)`. **Unconfirmed until the debut:** whether the classifier waves
+      through `git push` of feature branches, `gh pr create`, and the per-merge commands
+      under `$defaults`. If any blocks while you watch, add a tightly-scoped
+      `autoMode.allow` entry then — do NOT pre-widen blind.
 
 ### The stale-merge gap (with executor `--auto`)
 
@@ -83,16 +91,16 @@ guarantee enforced outside the automation.
 > whose archive didn't land stays "actionable" and the DONE condition loops forever.
 
 ```
-/goal Drive every actionable todo with frontmatter `priority: low` in todos/ to a
-merged-or-held state (ignore the filename prefix; read the priority field). Run the
+/goal Drive every actionable todo with frontmatter `priority: low` or `priority: medium`
+in todos/ to a merged-or-held state (ignore the filename prefix; read the priority field). Run the
 /todo skill; its worktree-isolated executors do ALL the PR work themselves — implement
 the todo, archive it inside the same commit, open a PR, run scripts/todo-automerge-guard.sh,
 and (guard OK) enable `gh pr merge --auto --squash` so the PR lands on green CI. Do NOT
 create PRs or merge yourself — the executor does. Your job: dispatch /todo, watch the
 results, and enforce the stop conditions. A guard HOLD (sensitive path) leaves the PR
 open for me to review — that is a valid terminal state, not a failure.
-DONE when: no todos/*.md with `priority: low` remain that are neither merged-and-archived
-nor sitting on an open PR (auto-merging, held, or awaiting review), and test:run /
+DONE when: no todos/*.md with `priority: low` or `priority: medium` remain that are neither
+merged-and-archived nor sitting on an open PR (auto-merging, held, or awaiting review), and test:run /
 check:types / lint are green on main.
 STOP EARLY and wait for me if: 10 PRs merged, OR 1.5M output tokens, OR any 2 PRs go red,
 OR any todo blocks on a diverged remote branch (needs a one-time manual branch delete).

@@ -222,7 +222,7 @@ Agent({
 ### After Each Batch
 
 1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`.
-2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `AUTO_MERGE` (`enabled` for low/medium with a clean guard, `held` if the guard flagged a sensitive path, `disabled` for high/critical/security, `failed`, or `n/a`), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
+2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `AUTO_MERGE` (`enabled` = auto-merge queued; `held` = guard flagged a sensitive/non-allowlisted path; `disabled` = not auto-merging — high/critical/security OR a pre-existing PR a human is holding; `failed` = guard/merge couldn't run; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
 
 Proceed to the next batch in the execution plan.
 
@@ -242,7 +242,7 @@ After all batches have been executed (or after early termination):
 
 3. **Print the summary table:**
 
-   The **Branch / PR** column shows the PR URL for every todo (all priorities now open a PR). Key off each todo's `AUTO_MERGE` so a PR that will NOT land on its own is never shown as if it will: `enabled` → "auto-merge" (lands when CI is green); `held` → "held — sensitive path, needs review"; `failed` → "auto-merge failed — merge by hand"; `disabled` → "awaiting review" (high/critical/security). Show `pending manual creation` if PR creation failed.
+   The **Branch / PR** column shows the PR URL for every todo (all priorities now open a PR). Key off each todo's `AUTO_MERGE` so a PR that will NOT land on its own is never shown as if it will: `enabled` → "auto-merge" (lands when CI is green); `held` → "held — sensitive path, needs review"; `failed` → "auto-merge failed — merge by hand"; `disabled` → "awaiting review — not auto-merging". Show `pending manual creation` if PR creation failed.
 
    | #   | Todo                                  | Status  | Branch / PR             | Review Rounds | Notes                               |
    | --- | ------------------------------------- | ------- | ----------------------- | ------------- | ----------------------------------- |

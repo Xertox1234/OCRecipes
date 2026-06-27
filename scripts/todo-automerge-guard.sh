@@ -1,56 +1,87 @@
 #!/usr/bin/env bash
-# todo-automerge-guard.sh — sensitive-path gate for unattended /todo PR auto-merges.
+# todo-automerge-guard.sh — FAIL-CLOSED gate for unattended /todo PR auto-merges.
 #
-# MODEL (changed 2026-06-26, PR #465): low/medium todos auto-merge on green CI by
-# default ("free pass"). This guard HOLDs a PR for human review ONLY when its diff
-# touches the "do-not-delegate" boundary — auth, IAP/billing/subscriptions, the DB
-# schema/migrations, secrets/certs, or health data (mirrors todos/TEMPLATE.md). The
-# "low/medium" label is self-assigned; this script is the backstop that catches a
-# MISLABELED sensitive change before it lands on main unreviewed.
+# MODEL (PR #465): a low/medium /todo PR auto-merges on green CI ONLY if EVERY changed
+# file is on the known-safe ALLOWLIST and none hits the sensitive override. Anything
+# else HOLDs for human review — an unanticipated path, and the whole sensitive backend
+# (server/storage, server/routes, server/middleware), .github/ (the CI gates), scripts/
+# (incl. this guard), migrations, shared/schema.ts, secrets/certs.
 #
-# This is a DENYLIST of sensitive surfaces (the deliberate inverse of this script's
-# original fail-CLOSED allowlist). The trade-off was chosen explicitly: a self-assigned
-# "free pass" for the common case, with a HOLD only on the sensitive boundary. The
-# cost is fail-OPEN on a NEW sensitive surface nobody has added here yet — so when you
-# introduce a new auth/billing/schema/secrets/health surface, ADD ITS PATTERN BELOW.
-# When in doubt, widen the regex: a false HOLD only costs a manual merge; a missing
-# pattern auto-merges a sensitive change.
+# Fail-CLOSED is deliberate: for an auto-merge-to-prod gate an UNKNOWN path must mean
+# "a human looks", never "ship it". (An earlier denylist revision was found fail-OPEN
+# on whole sensitive layers — server/storage, .github, scripts — so this inverts it: a
+# path is unsafe unless proven safe.)
+#
+# To widen the pass: ADD a known-safe prefix to SAFE_ALLOWLIST. If you allowlist a dir
+# that also holds a sensitive file (e.g. server/services holds the IAP services), add
+# that file to SENSITIVE_OVERRIDE so it still HOLDs. A missed allowlist entry only costs
+# a manual merge; never the other way around.
 #
 # Usage:  scripts/todo-automerge-guard.sh <pr-number>
-# Exit 0 = OK to auto-merge   |   Exit 1 = HOLD for human review (also on any error)
+# Exit 0 = OK to auto-merge
+# Exit 1 = HOLD: a changed file is sensitive or not on the allowlist (human review)
+# Exit 2 = ERROR: could not evaluate (gh failure / empty diff) — fail-closed, do not merge
+# The caller distinguishes a real HOLD (1) from a tooling error (2): a HOLD means the PR
+# stays open for review; an error means auto-merge couldn't be decided (e.g. gh unauth).
 set -euo pipefail
 
 PR="${1:?usage: todo-automerge-guard.sh <pr-number>}"
 
-# Sensitive "do-not-delegate" surfaces. A changed CODE/CONFIG file matching ANY of
-# these forces a HOLD even on green CI. Patterns are path-anchored to avoid false hits
-# (e.g. an `apple.png` asset, the grocery-receipt OCR feature, or `shared/schemas/`
-# Zod files must NOT match — only IAP `receipt-validation` and the DB `shared/schema.ts`
-# do). Validated against the repo file list when authored.
-SENSITIVE_REGEX='^server/middleware/|^server/routes/auth\.|(^|/)AuthContext|^client/hooks/useAuth\.|(^|/)token-storage|verification-token|(^|/)jwt[.-]|jwt-types|bcrypt|(^|/)password|^client/lib/iap/|^server/routes/subscription|^client/lib/subscription/|subscription-tier|receipt-validation|apple-iap|google-iap|app-store-server|entitlement|^shared/schema\.ts$|^migrations/|drizzle\.config|\.env|^server/certs/|\.pem$|\.cer$|(^|/)[Hh]ealth'
+# Known-safe surfaces. A file auto-merges only if it matches one of these: UI
+# (components/screens/navigation/constants), business-logic services, shared pure
+# modules (types / zod-schemas / constants / lib), any test, an extracted *-utils file,
+# and docs/todos/markdown. NOTE: server/storage, server/routes, server/middleware,
+# migrations/, shared/schema.ts, .github/, scripts/, certs, .env are deliberately ABSENT
+# — they HOLD.
+SAFE_ALLOWLIST='^client/components/|^client/screens/|^client/navigation/|^client/constants/|^server/services/|^shared/types/|^shared/schemas/|^shared/constants/|^shared/lib/|(^|/)__tests__/|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(-|\.)utils\.tsx?$|^docs/|^todos/|\.md$'
 
-# Markdown, docs/, and todos/ are never sensitive CODE — exclude them so a todo whose
-# slug happens to contain a sensitive word (e.g. todos/archive/healthkit-….md, which
-# rides every todo PR) cannot trip a HOLD. A docs-only PR therefore auto-merges.
-NEVER_SENSITIVE_REGEX='^(docs|todos)/|\.md$'
+# Sensitive files that DO live inside an allowlisted dir and must HOLD anyway: the IAP /
+# billing surfaces under server/services (receipt-validation, store-notifications,
+# subscription-*) and the health-PII onboarding screens under client/screens. Grocery
+# "receipt" OCR (receipt-analysis, Receipt*Screen) and notification infra
+# (push-notifications, notification-scheduler) are NOT sensitive and must pass.
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth'
 
 files="$(gh pr diff "$PR" --name-only)" || {
-  echo "guard: HOLD PR #$PR — could not read changed files (gh error). Fail-closed."
-  exit 1
+  echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
+  exit 2
 }
 if [ -z "$files" ]; then
-  echo "guard: HOLD PR #$PR — no file changes (nothing to merge)"
+  echo "guard: ERROR PR #$PR — no file changes (nothing to evaluate)"
+  exit 2
+fi
+
+# A file passes only if (1) it is on the allowlist and (2) — unless it is a doc/todo/
+# markdown file, which is never sensitive CODE — it does not hit the sensitive override.
+# ANY other outcome HOLDs: not allowlisted, sensitive, or a grep regex ERROR (rc >= 2).
+# Exit codes are captured explicitly so a broken regex (rc 2) can never look like a clean
+# "no match" (rc 1) — a typo fails CLOSED, never silently auto-merges.
+unsafe=""
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  # 1) must be on the allowlist
+  if ! printf '%s' "$f" | grep -qE "$SAFE_ALLOWLIST"; then
+    unsafe="${unsafe}  ${f}"$'\n'; continue
+  fi
+  # 2) docs / todos / markdown are never sensitive code — they pass on the allowlist alone
+  #    (a todo slug like subscription-tier-ui.md must not trip the override)
+  if printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$'; then
+    continue
+  fi
+  # 3) an allowlisted CODE file that hits the sensitive override HOLDs. rc 1 (clean no-match)
+  #    is the ONLY pass; rc 0 (sensitive) and rc >= 2 (regex error) both HOLD.
+  rc_sens=0; printf '%s' "$f" | grep -qE "$SENSITIVE_OVERRIDE" || rc_sens=$?
+  if [ "$rc_sens" -ne 1 ]; then
+    unsafe="${unsafe}  ${f}"$'\n'
+  fi
+done <<< "$files"
+
+if [ -n "$unsafe" ]; then
+  echo "guard: HOLD PR #$PR — changed files not on the auto-merge allowlist (or sensitive):"
+  printf '%s' "$unsafe"
+  echo "Review by hand; do not auto-merge."
   exit 1
 fi
 
-code_files="$(printf '%s\n' "$files" | grep -vE "$NEVER_SENSITIVE_REGEX" || true)"
-sensitive="$(printf '%s\n' "$code_files" | grep -E "$SENSITIVE_REGEX" || true)"
-if [ -n "$sensitive" ]; then
-  echo "guard: HOLD PR #$PR — touches the sensitive do-not-delegate boundary:"
-  printf '  %s\n' "$sensitive"
-  echo "Review these by hand; do not auto-merge."
-  exit 1
-fi
-
-echo "guard: OK PR #$PR — no changed file is on the sensitive boundary"
+echo "guard: OK PR #$PR — every changed file is on the safe allowlist"
 exit 0
