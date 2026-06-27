@@ -191,4 +191,36 @@ describe("buildMacroGapEmphasis", () => {
     };
     expect(buildMacroGapEmphasis(targets, remaining)).toBe("");
   });
+
+  it("skips a negative target via the `target <= 0` guard", () => {
+    // A negative target must `continue`. Without the guard (`if (false)`),
+    // remainingClamped=0 and ratio=(-100-0)/-100=1.0 would fire a spurious emphasis.
+    const result = buildMacroGapEmphasis(
+      { calories: 2000, protein: -100, carbs: 200, fat: 70 },
+      { calories: 2000, protein: 0, carbs: 200, fat: 70 },
+    );
+    expect(result).toBe("");
+  });
+
+  it("reports the exact gap amount (target − remaining), not their sum", () => {
+    // protein 100, remaining 20 → gap = 80g. The `target - remainingClamped`→`+`
+    // mutant reports 120g. "80g short" (≠ the 30g dense-per constant) pins the arithmetic.
+    const result = buildMacroGapEmphasis(
+      { calories: 2000, protein: 100, carbs: 200, fat: 70 },
+      { calories: 2000, protein: 20, carbs: 200, fat: 70 },
+    );
+    expect(result).toContain("80g short");
+  });
+
+  it("on an exact ratio tie keeps the earlier macro (strict >, first-wins)", () => {
+    // protein and carbs are both exactly 50% short; iteration order is protein→carbs, so
+    // strict `ratio > largest.ratio` keeps protein. Both the `>=` mutant (later replaces on
+    // tie) and the `if (true)` mutant (last always replaces) switch the winner to carbs.
+    const result = buildMacroGapEmphasis(
+      { calories: 2000, protein: 100, carbs: 200, fat: 70 },
+      { calories: 2000, protein: 50, carbs: 100, fat: 70 },
+    );
+    expect(result).toContain("protein");
+    expect(result).not.toContain("carbs");
+  });
 });
