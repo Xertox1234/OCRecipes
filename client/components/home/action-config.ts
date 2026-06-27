@@ -135,6 +135,7 @@ export const HOME_ACTIONS: HomeAction[] = [
     icon: "search",
     label: "Search Recipes",
     subtitle: "Browse the recipe catalog",
+    renderInline: true,
   },
   {
     id: "generate-recipe",
@@ -143,6 +144,7 @@ export const HOME_ACTIONS: HomeAction[] = [
     label: "Generate Recipe",
     subtitle: "AI-powered recipe creation",
     premium: true,
+    renderInline: true,
   },
   {
     id: "import-recipe",
