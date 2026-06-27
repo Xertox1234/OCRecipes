@@ -1,7 +1,16 @@
+<!-- Filename: P3-2026-06-27-stryker-worktree-docs-solutions-symlink.md -->
+
 ---
+
+title: "Stryker mutation can't run locally inside a post-checkout git worktree (docs/solutions symlink)"
 status: backlog
 priority: low
+created: 2026-06-27
+updated: 2026-06-27
+assignee:
 labels: [deferred, testing, tooling]
+github_issue:
+
 ---
 
 # Stryker mutation can't run locally inside a post-checkout git worktree (docs/solutions symlink)
