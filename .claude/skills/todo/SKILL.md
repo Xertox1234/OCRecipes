@@ -41,7 +41,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
 
 3. **Report** what was cleaned: count of worktrees removed and the list of remote branches deleted (or "nothing to clean").
 
-4. **Sync the local default branch (`main`).** Low-priority PRs from prior runs use GitHub `--auto` merge that lands _after_ the session ends, so those todos are already archived on `origin/main` while the local checkout still shows them at the old path — and the backlog would otherwise re-pick an already-merged todo. Fast-forward local `main`. Like the rest of Phase 0 this **never aborts** the run, and it is **ff-only so it never disturbs parallel work**:
+4. **Sync the local default branch (`main`).** Low/medium-priority PRs from prior runs use GitHub `--auto` merge that lands _after_ the session ends, so those todos are already archived on `origin/main` while the local checkout still shows them at the old path — and the backlog would otherwise re-pick an already-merged todo. Fast-forward local `main`. Like the rest of Phase 0 this **never aborts** the run, and it is **ff-only so it never disturbs parallel work**:
 
    ```bash
    git fetch origin main --quiet || true
@@ -222,7 +222,7 @@ Agent({
 ### After Each Batch
 
 1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`.
-2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, `skipped-low-priority`, or `null` if PR creation failed), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
+2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `AUTO_MERGE` (`enabled` = auto-merge queued; `held` = guard flagged a sensitive/non-allowlisted path; `disabled` = not auto-merging — high/critical/security OR a pre-existing PR a human is holding; `failed` = guard/merge couldn't run; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
 
 Proceed to the next batch in the execution plan.
 
@@ -242,12 +242,12 @@ After all batches have been executed (or after early termination):
 
 3. **Print the summary table:**
 
-   The **Branch / PR** column shows: the PR URL for medium+ todos; `branch: todo/<slug>` for low-priority todos (no PR was created — merge the branch directly); `pending manual creation` if PR creation failed.
+   The **Branch / PR** column shows the PR URL for every todo (all priorities now open a PR). Key off each todo's `AUTO_MERGE` so a PR that will NOT land on its own is never shown as if it will: `enabled` → "auto-merge" (lands when CI is green); `held` → "held — sensitive path, needs review"; `failed` → "auto-merge failed — merge by hand"; `disabled` → "awaiting review — not auto-merging". Show `pending manual creation` if PR creation failed.
 
    | #   | Todo                                  | Status  | Branch / PR             | Review Rounds | Notes                               |
    | --- | ------------------------------------- | ------- | ----------------------- | ------------- | ----------------------------------- |
    | 1   | Extract suggestion generation service | success | github.com/…/pull/42    | 1             | —                                   |
-   | 2   | Storage facade re-exports             | success | branch: todo/storage-…  | 2             | low priority — no PR, merge branch  |
+   | 2   | Storage facade re-exports             | success | github.com/…/pull/43    | 2             | low priority — auto-merge enabled   |
    | 3   | Remix screen reader announcements     | blocked | —                       | 0             | Depends on remix-carousel-badge     |
    | 4   | Fix useCollapsible height test        | failed  | —                       | 1             | Type error in mock setup            |
    | 5   | Fix calorie rounding utility          | success | pending manual creation | 1             | PR creation failed — push succeeded |
@@ -255,7 +255,7 @@ After all batches have been executed (or after early termination):
 4. **Print tallies:**
 
    ```
-   Completed: N (list PR URLs for medium+; list "branch: todo/<slug>" for low-priority todos; note "PR pending manual creation" for any where PR_URL is null)
+   Completed: N (list PR URLs; mark "auto-merge" ONLY for `AUTO_MERGE: enabled`; for `held`/`failed`/`disabled` mark "PR open — needs human" so a PR that won't land on its own is never reported as self-completing; note "PR pending manual creation" for any where PR_URL is null)
    Blocked:   M
    Skipped:   S
    Failed:    F
@@ -269,6 +269,8 @@ After all batches have been executed (or after early termination):
    Then **list quality-flagged todos that were skipped from this run.** Using the dropped set carried over from Phase 2 step 6, print them under the heading "Skipped — quality flags — re-author and re-run to include them:" with one line per todo (todo filename + comma-joined flag list). If none were dropped, omit the heading.
 
    Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading.
+
+   Then **surface actionable blocks.** Not every `blocked` is a dependency-block (those resolve automatically in a later batch). If a `blocked` result's REASON is a **diverged remote `todo/*` branch** (it contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears the stale branch (the executor's reason includes the exact `git push origin --delete …` + re-run steps). Do NOT bury it as an ordinary dependency-block row.
 
 5. **Print verification result:**
 
@@ -290,7 +292,7 @@ After all batches have been executed (or after early termination):
 
    This removes worktree directories only — branches and their open PRs are unaffected.
 
-7. **Sync the local default branch with this run's merges.** A `/todo` archive (and its code change) only reaches the local working copy when the merge propagates back — nothing edits local `todos/` in place. After the run, fast-forward local `main` so any PR that merged _during_ this session (an orchestrator merge, or a low-priority `--auto` PR that already landed) is reflected locally — **ff-only, never disturbs parallel work**:
+7. **Sync the local default branch with this run's merges.** A `/todo` archive (and its code change) only reaches the local working copy when the merge propagates back — nothing edits local `todos/` in place. After the run, fast-forward local `main` so any PR that merged _during_ this session (an orchestrator merge, or a low/medium `--auto` PR that already landed) is reflected locally — **ff-only, never disturbs parallel work**:
 
    ```bash
    git fetch origin main --quiet || true
@@ -304,7 +306,7 @@ After all batches have been executed (or after early termination):
    fi
    ```
 
-   **Low-priority `--auto` PRs land asynchronously** — any still `OPEN` here will merge _after_ the session and cannot be pulled now. List each in the summary with a one-line "run `git pull` once it merges" note; the **next** `/todo` run's Phase 0 sync picks them up automatically.
+   **Low/medium `--auto` PRs land asynchronously** — any still `OPEN` here will merge _after_ the session and cannot be pulled now. List each in the summary with a one-line "run `git pull` once it merges" note; the **next** `/todo` run's Phase 0 sync picks them up automatically.
 
 ## Rules
 

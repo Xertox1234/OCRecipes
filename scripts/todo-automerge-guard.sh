@@ -1,36 +1,85 @@
 #!/usr/bin/env bash
-# todo-automerge-guard.sh — fail-CLOSED gate for unattended /todo PR auto-merges.
+# todo-automerge-guard.sh — FAIL-CLOSED gate for unattended /todo PR auto-merges.
 #
-# Auto-merge is allowed ONLY if EVERY changed file is on the known-safe allowlist.
-# Any file outside it — including paths we never anticipated — forces a HOLD for
-# human review. This is the opposite of a denylist (which would silently merge
-# anything you forgot to enumerate). The "low priority" label on a todo is
-# self-assigned; this script is the backstop that catches a mislabel before it
-# lands on main while you're asleep.
+# MODEL (PR #465): a low/medium /todo PR auto-merges on green CI ONLY if EVERY changed
+# file is on the known-safe ALLOWLIST and none hits the sensitive override. Anything
+# else HOLDs for human review — an unanticipated path, and the whole sensitive backend
+# (server/storage, server/routes, server/middleware), .github/ (the CI gates), scripts/
+# (incl. this guard), migrations, shared/schema.ts, secrets/certs.
+#
+# Fail-CLOSED is deliberate: for an auto-merge-to-prod gate an UNKNOWN path must mean
+# "a human looks", never "ship it". (An earlier denylist revision was found fail-OPEN
+# on whole sensitive layers — server/storage, .github, scripts — so this inverts it: a
+# path is unsafe unless proven safe.)
+#
+# To widen the pass: ADD a known-safe prefix to SAFE_ALLOWLIST. If you allowlist a dir
+# that also holds a sensitive file (e.g. server/services holds the IAP services), add
+# that file to SENSITIVE_OVERRIDE so it still HOLDs. A missed allowlist entry only costs
+# a manual merge; never the other way around.
 #
 # Usage:  scripts/todo-automerge-guard.sh <pr-number>
-# Exit 0 = OK to auto-merge   |   Exit 1 = HOLD for human review
+# Exit 0 = OK to auto-merge
+# Exit 1 = HOLD: a changed file is sensitive or not on the allowlist (human review)
+# Exit 2 = ERROR: could not evaluate (gh failure / empty diff) — fail-closed, do not merge
+# The caller distinguishes a real HOLD (1) from a tooling error (2): a HOLD means the PR
+# stays open for review; an error means auto-merge couldn't be decided (e.g. gh unauth).
 set -euo pipefail
 
 PR="${1:?usage: todo-automerge-guard.sh <pr-number>}"
 
-# Known-safe surfaces for unattended low-priority merges. Deliberately TIGHT —
-# broaden only as you build trust in the harness. Mirrors the "do not delegate"
-# boundary documented in todos/TEMPLATE.md (auth, IAP, schema, secrets, health).
-# A file is "safe" only if it matches one of these; otherwise the PR is HELD.
-SAFE_REGEX='^client/components/|^client/screens/|^client/constants/|(^|/)__tests__/|(-|\.)utils\.ts$|\.test\.tsx?$|^docs/|^todos/'
+# Known-safe surfaces. A file auto-merges only if it matches one of these: UI
+# (components/screens/navigation/constants), business-logic services, shared pure
+# modules (types / zod-schemas / constants / lib), any test, an extracted *-utils file,
+# and docs/todos/markdown. NOTE: server/storage, server/routes, server/middleware,
+# migrations/, shared/schema.ts, .github/, scripts/, certs, .env are deliberately ABSENT
+# — they HOLD.
+SAFE_ALLOWLIST='^client/components/|^client/screens/|^client/navigation/|^client/constants/|^server/services/|^shared/types/|^shared/schemas/|^shared/constants/|^shared/lib/|(^|/)__tests__/|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(-|\.)utils\.tsx?$|^docs/|^todos/|\.md$'
 
-files="$(gh pr diff "$PR" --name-only)"
+# Sensitive files that DO live inside an allowlisted dir and must HOLD anyway: the IAP /
+# billing surfaces under server/services (receipt-validation, store-notifications,
+# subscription-*) and the health-PII onboarding screens under client/screens. Grocery
+# "receipt" OCR (receipt-analysis, Receipt*Screen) and notification infra
+# (push-notifications, notification-scheduler) are NOT sensitive and must pass.
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth'
+
+files="$(gh pr diff "$PR" --name-only)" || {
+  echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
+  exit 2
+}
 if [ -z "$files" ]; then
-  echo "guard: HOLD PR #$PR — no file changes (nothing to merge)"
-  exit 1
+  echo "guard: ERROR PR #$PR — no file changes (nothing to evaluate)"
+  exit 2
 fi
 
-unsafe="$(printf '%s\n' "$files" | grep -vE "$SAFE_REGEX" || true)"
+# A file passes only if (1) it is on the allowlist and (2) — unless it is a doc/todo/
+# markdown file, which is never sensitive CODE — it does not hit the sensitive override.
+# ANY other outcome HOLDs: not allowlisted, sensitive, or a grep regex ERROR (rc >= 2).
+# Exit codes are captured explicitly so a broken regex (rc 2) can never look like a clean
+# "no match" (rc 1) — a typo fails CLOSED, never silently auto-merges.
+unsafe=""
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  # 1) must be on the allowlist
+  if ! printf '%s' "$f" | grep -qE "$SAFE_ALLOWLIST"; then
+    unsafe="${unsafe}  ${f}"$'\n'; continue
+  fi
+  # 2) docs / todos / markdown are never sensitive code — they pass on the allowlist alone
+  #    (a todo slug like subscription-tier-ui.md must not trip the override)
+  if printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$'; then
+    continue
+  fi
+  # 3) an allowlisted CODE file that hits the sensitive override HOLDs. rc 1 (clean no-match)
+  #    is the ONLY pass; rc 0 (sensitive) and rc >= 2 (regex error) both HOLD.
+  rc_sens=0; printf '%s' "$f" | grep -qE "$SENSITIVE_OVERRIDE" || rc_sens=$?
+  if [ "$rc_sens" -ne 1 ]; then
+    unsafe="${unsafe}  ${f}"$'\n'
+  fi
+done <<< "$files"
+
 if [ -n "$unsafe" ]; then
-  echo "guard: HOLD PR #$PR — changes files outside the auto-merge allowlist:"
-  printf '  %s\n' "$unsafe"
-  echo "Review these by hand; do not auto-merge."
+  echo "guard: HOLD PR #$PR — changed files not on the auto-merge allowlist (or sensitive):"
+  printf '%s' "$unsafe"
+  echo "Review by hand; do not auto-merge."
   exit 1
 fi
 
