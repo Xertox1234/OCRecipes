@@ -192,12 +192,18 @@ export default function HomeScreen() {
         return;
       }
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      // Any tap supersedes a pending drawer-switch reopen — cancel it first so a
+      // fast re-tap during the collapse window (which sees openDrawerId already
+      // null → the non-switch branch below) can't be clobbered by the stale timer.
+      if (switchTimerRef.current) {
+        clearTimeout(switchTimerRef.current);
+        switchTimerRef.current = null;
+      }
       const { next, isSwitch } = nextOpenDrawer(openDrawerId, action.id);
       if (isSwitch) {
         // Collapse the open one first, then open + glide the new one (avoids
         // three concurrent animations racing a moving target). Reduced motion
         // snaps instantly, so skip the collapse delay.
-        if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
         setOpenDrawerId(null);
         const delay = reducedMotion
           ? 0
