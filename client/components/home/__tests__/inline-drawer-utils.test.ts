@@ -55,6 +55,10 @@ describe("formatTermLabel", () => {
     expect(formatTermLabel("high-protein")).toBe("High Protein");
     expect(formatTermLabel("italian")).toBe("Italian");
   });
+  it("normalizes mixed case and collapses extra separators", () => {
+    expect(formatTermLabel("HIGH-PROTEIN")).toBe("High Protein");
+    expect(formatTermLabel("  air   fryer  ")).toBe("Air Fryer");
+  });
 });
 
 describe("resolveTrendingSource", () => {
@@ -90,5 +94,21 @@ describe("resolveTrendingSource", () => {
         fallback,
       ),
     ).toEqual({ kind: "fallback", terms: fallback });
+  });
+  it("shows live terms while re-fetching (stale-while-revalidate)", () => {
+    expect(
+      resolveTrendingSource(
+        { isLoading: true, isError: false, terms: ["Vegan"] },
+        fallback,
+      ),
+    ).toEqual({ kind: "terms", terms: ["Vegan"] });
+  });
+  it("shows loading on a retry after error when no terms are cached yet", () => {
+    expect(
+      resolveTrendingSource(
+        { isLoading: true, isError: true, terms: undefined },
+        fallback,
+      ),
+    ).toEqual({ kind: "loading" });
   });
 });
