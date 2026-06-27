@@ -1,7 +1,14 @@
 # Overnight Todo Automation Runbook (`/goal` + `/todo`)
 
 How to let Claude Code work through the `todos/` backlog with minimal supervision —
-implement, open PRs, and (once trusted) auto-merge low-priority work on green CI.
+implement, open PRs, and (once trusted) auto-merge low/medium work on green CI.
+
+> **Model note (2026-06-26, PR #465):** the `/todo` executor now does the PR work
+> itself — it opens a PR for **every** priority, runs `scripts/todo-automerge-guard.sh`,
+> and for `low`/`medium` todos (that the guard clears) enables `gh pr merge --auto --squash`
+> so the PR lands on green CI. You no longer create PRs or merge manually in the `/goal`
+> loop; the supervisor's job is to dispatch `/todo`, enforce the stop conditions, and
+> review what got HELD. `security`-labelled todos never auto-merge regardless of priority.
 
 `/goal` is a **native Claude Code CLI command**: you set a completion condition and
 Claude keeps working across turns until it's met, with a live elapsed/turns/tokens
@@ -12,15 +19,24 @@ overlay. `/todo` is the worker it drives (worktree-isolated executors).
 
 No sleeping human is in the loop, so five independent filters stand in:
 
-1. **CI (required)** — `main` physically refuses any PR whose 5 checks aren't green
-   (Lint·Types·Patterns, Tests 1-3/3, Coverage). No human approval is required by
-   branch protection — only green CI. That is the repo's real merge bar.
-2. **`scripts/todo-automerge-guard.sh`** — fail-CLOSED allowlist; HOLDs any PR that
-   touches a path outside the known-safe set (catches a mislabeled-severity todo).
+1. **CI (required)** — `main` physically refuses any PR whose 7 required checks aren't
+   green (Lint·Types·Patterns, Tests 1-3/3, Coverage, Mutation goal-safety, CodeQL
+   Analyze). No human approval is required by branch protection — only green CI. That
+   is the repo's real merge bar, and `gh pr merge --auto` waits on it.
+2. **`scripts/todo-automerge-guard.sh`** — the `/todo` executor runs this on every
+   `low`/`medium` PR _before_ enabling auto-merge. It HOLDs (leaves the PR open for
+   human review, no auto-merge) when the diff touches the sensitive **do-not-delegate
+   boundary** — auth, IAP/billing/subscriptions, schema/migrations, secrets/certs,
+   health — which catches a mislabeled-severity todo. Everything else auto-merges on
+   green CI. (This is a sensitive-path HOLD-list; it replaced the original tight
+   allowlist in PR #465 so the "free pass" covers the common case.)
 3. **Bounded stop conditions** — the `/goal` condition halts on N merges / token cap /
    2 reds, so a systemic mistake can't merge many bad PRs before you wake.
-4. **In-loop `update-branch`** — the loop runs `gh pr update-branch` right before each
-   merge, re-passing CI against current main and closing the stale-merge hole (see gate).
+4. **Up-to-date merges** — the executor enables `gh pr merge --auto`, which merges
+   asynchronously, so the old in-loop `gh pr update-branch` no longer runs per merge.
+   For a sequential overnight run this is usually fine (nothing else merges meanwhile);
+   to enforce it server-side, set required-checks `strict: true` (applies to all PRs).
+   See the stale-merge gap below.
 
 ## Rollout: debut attended, graduate to asleep
 
@@ -33,26 +49,27 @@ one most likely to surface an unmodeled edge.
 
 ### Pre-unattended gate (all must be true)
 
-- [ ] Stale-merge gap closed. The `/goal` block already runs `gh pr update-branch`
-      immediately before each merge (the surgical, automation-only fix). Branch
-      protection `strict: true` is an OPTIONAL belt-and-suspenders — see below.
-- [ ] Guard script proven on a few real PRs (HOLDs the right things).
+- [ ] Stale-merge gap understood. With executor `--auto` the old in-loop
+      `gh pr update-branch` no longer runs; for a sequential overnight run this is
+      usually fine. Set branch protection `strict: true` if you want it enforced — see
+      below.
+- [ ] Guard script proven on a few real PRs (HOLDs sensitive paths, lets the rest pass).
 - [ ] Auto-mode coverage confirmed by an attended run. **Already in place:** the
-      scoped `gh pr merge --squash --delete-branch` rule, `Bash(git:*)` /
+      `gh pr merge` permission (`Bash(gh pr merge:*)` in permissions.allow + the scoped
+      `--auto --squash --delete-branch` autoMode rule), `Bash(git:*)` /
       `Bash(gh pr:*)` / `Bash(npm run *)`, and `Bash(scripts/todo-automerge-guard.sh:*)`.
       **Unconfirmed until the debut:** whether the classifier waves through `git push`
       of feature branches and `gh pr create` under `$defaults` (low-impact, likely
       fine). If either blocks while you watch, add a tightly-scoped `autoMode.allow`
       entry then — do NOT pre-widen blind.
 
-### The stale-merge gap (why the loop runs `update-branch`)
+### The stale-merge gap (with executor `--auto`)
 
 With `strict: false`, PR-B can pass CI against an _old_ main, merge stale, and redden
-main even with zero file overlap with PR-A — nothing re-runs B's checks. The `/goal`
-block closes this **in-loop**: `gh pr update-branch <pr>` immediately before merge
-re-runs CI against current main. For a sequential overnight run (no concurrent merger
-while you sleep) this is sufficient — the only way main goes stale mid-merge is a
-second merger, and there isn't one.
+main even with zero file overlap with PR-A — nothing re-runs B's checks. The executor's
+`gh pr merge --auto` does **not** run `gh pr update-branch`, so this gap is open. For a
+sequential overnight run (no concurrent merger while you sleep) it is usually harmless —
+the only way main goes stale mid-merge is a second merger, and there isn't one.
 
 Optional server-side enforcement: set required-checks `strict: true`. GitHub then
 forces _every_ PR up-to-date before merge — but it applies to ALL your PRs, adding an
@@ -66,20 +83,19 @@ guarantee enforced outside the automation.
 > whose archive didn't land stays "actionable" and the DONE condition loops forever.
 
 ```
-/goal Drive every actionable todo with frontmatter `priority: low` in todos/ to a merged
-state (ignore the filename prefix; read the priority field). For each:
-  1. Implement it via the /todo executor flow (worktree-isolated).
-  2. In the SAME branch/commit, move the todo file to todos/archive/ so archival is
-     atomic with the change.
-  3. Push the branch and OPEN A PR (low todos get no PR by default — you must create one
-     so CI runs; protected main rejects any commit that hasn't passed the 5 checks).
-  4. Run scripts/todo-automerge-guard.sh <pr>. HOLD => comment why, leave PR open, skip.
-  5. OK => `gh pr update-branch <pr>` (close the strict gap), then
-     `gh pr checks <pr> --watch`. Green => `gh pr merge <pr> --squash --delete-branch`.
-     Red => leave PR open, note the failing check.
+/goal Drive every actionable todo with frontmatter `priority: low` in todos/ to a
+merged-or-held state (ignore the filename prefix; read the priority field). Run the
+/todo skill; its worktree-isolated executors do ALL the PR work themselves — implement
+the todo, archive it inside the same commit, open a PR, run scripts/todo-automerge-guard.sh,
+and (guard OK) enable `gh pr merge --auto --squash` so the PR lands on green CI. Do NOT
+create PRs or merge yourself — the executor does. Your job: dispatch /todo, watch the
+results, and enforce the stop conditions. A guard HOLD (sensitive path) leaves the PR
+open for me to review — that is a valid terminal state, not a failure.
 DONE when: no todos/*.md with `priority: low` remain that are neither merged-and-archived
-nor held with an open PR, and test:run / check:types / lint are green on main.
-STOP EARLY and wait for me if: 10 PRs merged, OR 1.5M output tokens, OR any 2 PRs go red.
+nor sitting on an open PR (auto-merging, held, or awaiting review), and test:run /
+check:types / lint are green on main.
+STOP EARLY and wait for me if: 10 PRs merged, OR 1.5M output tokens, OR any 2 PRs go red,
+OR any todo blocks on a diverged remote branch (needs a one-time manual branch delete).
 ```
 
 ## Launch

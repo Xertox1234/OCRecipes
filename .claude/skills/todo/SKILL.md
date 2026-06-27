@@ -222,7 +222,7 @@ Agent({
 ### After Each Batch
 
 1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`.
-2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `AUTO_MERGE` (`enabled` for low/medium, `disabled` for high/critical/security, `failed`, or `n/a`), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
+2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `AUTO_MERGE` (`enabled` for low/medium with a clean guard, `held` if the guard flagged a sensitive path, `disabled` for high/critical/security, `failed`, or `n/a`), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
 
 Proceed to the next batch in the execution plan.
 
@@ -242,7 +242,7 @@ After all batches have been executed (or after early termination):
 
 3. **Print the summary table:**
 
-   The **Branch / PR** column shows the PR URL for every todo (all priorities now open a PR). Low/medium PRs have squash **auto-merge enabled** — they land automatically once CI is green (note "auto-merge" in the row); high/critical and `security`-labelled PRs await human review. Show `pending manual creation` if PR creation failed.
+   The **Branch / PR** column shows the PR URL for every todo (all priorities now open a PR). Key off each todo's `AUTO_MERGE` so a PR that will NOT land on its own is never shown as if it will: `enabled` → "auto-merge" (lands when CI is green); `held` → "held — sensitive path, needs review"; `failed` → "auto-merge failed — merge by hand"; `disabled` → "awaiting review" (high/critical/security). Show `pending manual creation` if PR creation failed.
 
    | #   | Todo                                  | Status  | Branch / PR             | Review Rounds | Notes                               |
    | --- | ------------------------------------- | ------- | ----------------------- | ------------- | ----------------------------------- |
@@ -255,7 +255,7 @@ After all batches have been executed (or after early termination):
 4. **Print tallies:**
 
    ```
-   Completed: N (list PR URLs; mark "auto-merge" for low/medium and "awaiting review" for high/critical/security; note "PR pending manual creation" for any where PR_URL is null)
+   Completed: N (list PR URLs; mark "auto-merge" ONLY for `AUTO_MERGE: enabled`; for `held`/`failed`/`disabled` mark "PR open — needs human" so a PR that won't land on its own is never reported as self-completing; note "PR pending manual creation" for any where PR_URL is null)
    Blocked:   M
    Skipped:   S
    Failed:    F
@@ -269,6 +269,8 @@ After all batches have been executed (or after early termination):
    Then **list quality-flagged todos that were skipped from this run.** Using the dropped set carried over from Phase 2 step 6, print them under the heading "Skipped — quality flags — re-author and re-run to include them:" with one line per todo (todo filename + comma-joined flag list). If none were dropped, omit the heading.
 
    Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading.
+
+   Then **surface actionable blocks.** Not every `blocked` is a dependency-block (those resolve automatically in a later batch). If a `blocked` result's REASON is a **diverged remote `todo/*` branch** (it contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears the stale branch (the executor's reason includes the exact `git push origin --delete …` + re-run steps). Do NOT bury it as an ordinary dependency-block row.
 
 5. **Print verification result:**
 
