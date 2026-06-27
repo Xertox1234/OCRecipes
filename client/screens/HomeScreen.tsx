@@ -1,4 +1,10 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   RefreshControl,
   StyleSheet,
@@ -53,6 +59,8 @@ import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { Spacing, FAB_CLEARANCE, FontFamily } from "@/constants/theme";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
+import { RecipeSearchDrawer } from "@/components/home/RecipeSearchDrawer";
+import { initRecentSearchesCache } from "@/lib/recent-recipe-searches-storage";
 
 const HOME_HEADER_EXPANDED = 100;
 const HOME_HEADER_COLLAPSED = 44;
@@ -219,26 +227,38 @@ export default function HomeScreen() {
     }, []),
   );
 
+  useEffect(() => {
+    const uid = user?.id != null ? String(user.id) : null;
+    void initRecentSearchesCache(uid);
+  }, [user?.id]);
+
   const renderInlineAction = (action: HomeAction) => {
     if (action.id === "quick-log") {
       return <QuickLogDrawer key={action.id} action={action} />;
     }
     const rowRef = drawerRowRefs[action.id];
     const isLocked = !!action.premium && !isPremium;
-    // Wrap with Animated.View to carry the animatedRef for measurement — the
-    // forwardRef in HomeInlineDrawer resolves to `never` for its ComponentRef,
-    // so we keep the ref on the wrapper (identical bounding box, measure works).
+    const isOpen = openDrawerId === action.id;
+    // HomeInlineDrawer is a presentational shell (no ref); wrap here so measure()
+    // can locate this row for glide-to-top.
     return (
       <Animated.View key={action.id} ref={rowRef}>
         <HomeInlineDrawer
           icon={action.icon}
           label={action.label}
-          isOpen={openDrawerId === action.id}
+          isOpen={isOpen}
           onToggle={() => handleDrawerToggle(action)}
           maxHeight={DRAWER_MAX_HEIGHT}
           isLocked={isLocked}
         >
-          <ThemedText type="small">Coming soon</ThemedText>
+          {action.id === "search-recipes" ? (
+            <RecipeSearchDrawer
+              isOpen={isOpen}
+              onUsed={() => recordAction(action.id)}
+            />
+          ) : (
+            <ThemedText type="small">Coming soon</ThemedText>
+          )}
         </HomeInlineDrawer>
       </Animated.View>
     );
