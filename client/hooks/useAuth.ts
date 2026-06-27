@@ -13,6 +13,7 @@ import { User } from "@shared/types/auth";
 import { registerPushToken } from "@/lib/push-token-registration";
 import { clearOfflineQueue } from "@/lib/offline-queue";
 import { clearHomeActionsState } from "@/lib/home-actions-storage";
+import { clearRecentSearches } from "@/lib/recent-recipe-searches-storage";
 import { reconcileDurableOwner, AUTH_STORAGE_KEY } from "@/lib/durable-owner";
 
 interface AuthState {
@@ -68,6 +69,11 @@ async function clearDurableLocalState(): Promise<boolean> {
     // throws; it serializes against its own startup init and is non-throwing.
     // (Section-expansion state stays — a device-display pref; theme is its own module.)
     if (!(await clearHomeActionsState())) ok = false;
+    // Recent recipe searches: same global, non-namespaced key with the same
+    // cross-user bleed risk on a shared device; clear them on every session-ending
+    // path. Non-throwing; a failed wipe feeds `ok` so the durable-owner marker is
+    // not advanced past this user (the next auth resolution retries).
+    if (!(await clearRecentSearches())) ok = false;
     // Gate on the persisted-cache restore: a teardown that races a cold-start
     // restore could otherwise clear() the cache before the restore rehydrates the
     // prior user's data into memory, re-exposing it under the next user. Resolves
