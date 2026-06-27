@@ -73,7 +73,11 @@ export function RecipeSearchDrawer({
 
   // Refresh recent list whenever the drawer opens
   useEffect(() => {
-    if (isOpen) setRecent(getRecentSearches());
+    if (isOpen) {
+      setRecent(getRecentSearches());
+    } else {
+      setText("");
+    }
   }, [isOpen]);
 
   const trending = useTrendingSearches(isOpen);
@@ -153,6 +157,8 @@ export function RecipeSearchDrawer({
               styles.skeleton,
               { backgroundColor: withOpacity(theme.text, 0.06) },
             ]}
+            accessible
+            accessibilityRole="progressbar"
             accessibilityLabel="Loading trending searches"
           />
         ) : (
