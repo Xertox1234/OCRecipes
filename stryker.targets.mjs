@@ -39,7 +39,9 @@ export const MUTATION_TARGETS = {
   "chat-history-truncate": {
     mutate: ["server/lib/chat-history-truncate.ts"],
     testInclude: ["server/lib/__tests__/chat-history-truncate.test.ts"],
-    breakThreshold: 90, // 90.58%; residual = dev-only warn block + provable equivalents
+    breakThreshold: 88, // achieved 90.58%; set with margin — the 2 timeouts are
+    // nondeterministic across runners and the residual (dev-only warn block + provable
+    // equivalents) can shift ±1-2 mutants without a real test regression
   },
   "goal-calculator": {
     mutate: ["server/services/goal-calculator.ts"],

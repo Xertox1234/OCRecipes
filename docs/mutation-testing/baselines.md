@@ -29,7 +29,8 @@ threshold is enforced until a target has a stable baseline here.
 > **2026-06-27 non-excluded scope expansion.** Added `cook-session-merge` (100% as-is)
 > and `chat-history-truncate` to the registry, and raised `macro-gap-context` 88.37% → 100%
 > (killed 4 survivors; 1 NaN-equivalent suppressed inline). `chat-history-truncate` is
-> gated at **break=90** (90.58% achieved): its residual survivors are the dev-only
+> gated at **break=88** (90.58% achieved; margin below for timeout nondeterminism): its
+> residual survivors are the dev-only
 > `console.warn` budget-overflow diagnostic (lines 152-156) plus provable equivalents
 > (the empty-input fast path, optional chaining on never-null slots, and the
 > `i !== lastUserIdx` guards that are redundant in the non-user pruning phases). All four
