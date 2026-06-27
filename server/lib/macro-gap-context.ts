@@ -38,6 +38,7 @@ export function buildMacroGapEmphasis(
 
   for (const key of ["protein", "carbs", "fat", "calories"] as const) {
     const target = targets[key];
+    // Stryker disable next-line EqualityOperator -- equivalent: target===0 makes ratio=(0-0)/0=NaN, which fails the `ratio > GAP_THRESHOLD` guard regardless, so `<= 0` and `< 0` are indistinguishable
     if (target <= 0) continue;
     const remainingClamped = Math.max(0, Math.min(target, remaining[key]));
     const ratio = (target - remainingClamped) / target;

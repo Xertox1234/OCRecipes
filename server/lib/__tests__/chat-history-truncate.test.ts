@@ -27,20 +27,70 @@ describe("estimateTokens", () => {
     expect(estimateTokens({ role: "user", content: "" })).toBe(0);
   });
 
-  it("estimates CJK text at approximately 1 char per token", () => {
-    // 한글 텍스트 = Korean chars, each ≈ 1 token
-    const msg = { role: "user" as const, content: "한글텍스트" }; // 5 Korean chars
-    const tokens = estimateTokens(msg);
-    expect(tokens).toBeGreaterThanOrEqual(4);
-    expect(tokens).toBeLessThanOrEqual(6);
+  it("estimates CJK text at exactly 1 token per character", () => {
+    // 5 Hangul chars → cjkChars=5 → 5 tokens. Exact (not a range) so the
+    // `cjkTokens = cjkChars` and CJK-range mutants can't survive in-band.
+    expect(estimateTokens({ role: "user", content: "한글텍스트" })).toBe(5);
   });
 
-  it("estimates emoji-heavy text more aggressively than 4 chars per token", () => {
-    // Each emoji (🍎🍊🍋🍇) is typically 2 JS chars but 1-4 tokens
-    // Pure 4-char estimate: 8 chars / 4 = 2 tokens
-    // Emoji-aware should be higher
-    const msg = { role: "user" as const, content: "🍎🍊🍋🍇" };
-    expect(estimateTokens(msg)).toBeGreaterThan(2);
+  it("estimates emoji at exactly 2 tokens each", () => {
+    // 4 emoji → emojiChars=4 → emojiTokens=8; otherChars = 8 - 4*2 = 0.
+    // Exact assertions kill the `emojiChars * 2` and `- emojiChars * 2` mutants.
+    expect(estimateTokens({ role: "user", content: "🍎🍊🍋🍇" })).toBe(8);
+    expect(estimateTokens({ role: "user", content: "🍎" })).toBe(2);
+    // 2 emoji → otherChars = 4 - 0 - 4 = 0 → 4 tokens (kills the `/ 2` arithmetic mutant,
+    // which would leave otherChars = 4 - 1 = 3 → ceil(3/4)=1 extra token).
+    expect(estimateTokens({ role: "user", content: "🍎🍊" })).toBe(4);
+  });
+});
+
+describe("estimateTokens — codepoint classification boundaries", () => {
+  const tok = (content: string): number =>
+    estimateTokens({ role: "user", content });
+
+  // A 4-char string distinguishes CJK (n tokens) from ASCII (ceil(4/4)=1 token), so
+  // each boundary codepoint repeated 4× must classify as CJK → exactly 4 tokens. This
+  // kills the off-by-one EqualityOperator mutants (`>=`→`>`, `<=`→`<`) at each range edge.
+  const cjkBoundaries: [string, number][] = [
+    ["CJK Unified start U+4E00", 0x4e00],
+    ["CJK Unified end U+9FFF", 0x9fff],
+    ["CJK Ext-A start U+3400", 0x3400],
+    ["CJK Ext-A end U+4DBF", 0x4dbf],
+    ["Hangul start U+AC00", 0xac00],
+    ["Hangul end U+D7AF", 0xd7af],
+    ["Hiragana/Katakana start U+3040", 0x3040],
+    ["Hiragana/Katakana end U+30FF", 0x30ff],
+    ["Fullwidth start U+FF00", 0xff00],
+    ["Fullwidth end U+FFEF", 0xffef],
+  ];
+  it.each(cjkBoundaries)(
+    "classifies %s as CJK (4 chars → 4 tokens)",
+    (_l, cp) => {
+      expect(tok(String.fromCodePoint(cp).repeat(4))).toBe(4);
+    },
+  );
+
+  // Codepoints in the inter-range gaps must NOT be CJK: 4 chars → 1 ASCII token. These
+  // kill the "drop a bound" ConditionalExpression mutants (e.g. `cp >= S && true`),
+  // which would otherwise pull an out-of-range codepoint into the CJK class.
+  const outsideRanges: [string, number][] = [
+    ["below Hiragana U+303F", 0x303f],
+    ["above Katakana / below Ext-A U+3100", 0x3100],
+    ["between Ext-A and CJK U+4DFF", 0x4dff],
+    ["above CJK / below Hangul U+A000", 0xa000],
+    ["between Hangul and Fullwidth U+E000", 0xe000],
+    ["above Fullwidth, below emoji U+FFF0", 0xfff0],
+  ];
+  it.each(outsideRanges)(
+    "classifies %s as non-CJK (4 chars → 1 token)",
+    (_l, cp) => {
+      expect(tok(String.fromCodePoint(cp).repeat(4))).toBe(1);
+    },
+  );
+
+  it("treats U+FFFF as non-emoji (boundary is cp > 0xFFFF, not >=)", () => {
+    // 0xFFFF is BMP → 'other'; 4 chars → 1 token. Mutant `cp >= 0xffff` → emoji → 8.
+    expect(tok(String.fromCodePoint(0xffff).repeat(4))).toBe(1);
   });
 });
 
@@ -193,5 +243,50 @@ describe("truncateHistoryToBudget", () => {
     const result = truncateHistoryToBudget([hugeUser], 5);
     // Cannot prune the only user message
     expect(result).toContain(hugeUser);
+  });
+});
+
+describe("truncateHistoryToBudget — on-the-tie budget boundaries", () => {
+  it("returns the SAME array reference when total exactly equals budget (<= fast path)", () => {
+    // total = 1 + 1 = 2 tokens, budget exactly 2. The `totalTokens <= budget` fast path
+    // returns the input array itself. A `<` mutant (or `if (false)`) falls through to the
+    // slow path, which returns a NEW array of equal content — caught only by `toBe`.
+    const messages: HistoryMessage[] = [msg("assistant", 4), msg("user", 4)];
+    expect(truncateHistoryToBudget(messages, 2)).toBe(messages);
+  });
+
+  it("stops user-phase pruning the moment remaining equals budget (> not >=)", () => {
+    const userA = msg("user", 40, "a".repeat(40)); // 10 tokens (oldest)
+    const userB = msg("user", 40, "b".repeat(40)); // 10 tokens
+    const userLast = msg("user", 40, "c".repeat(40)); // 10 tokens (always preserved)
+    // total=30, budget=20. Prune userA → remaining=20 == budget → `>` stops, userB survives.
+    // The `remaining >= budget` mutant over-prunes userB.
+    const result = truncateHistoryToBudget([userA, userB, userLast], 20);
+    expect(result).toContainEqual(userB);
+    expect(result).not.toContainEqual(userA);
+  });
+
+  it("stops system-phase pruning the moment remaining equals budget (> not >=)", () => {
+    const sysA = msg("system", 40, "a".repeat(40)); // 10 tokens (oldest, prunable)
+    const sysB = msg("system", 40, "b".repeat(40)); // 10 tokens (prunable)
+    const sysLast = msg("system", 40, "c".repeat(40)); // 10 tokens (most-recent, protected)
+    const userLast = msg("user", 1, "z"); // 1 token
+    // total=31, budget=21. Phase 3 prunes sysA → remaining=21 == budget → `>` stops, sysB
+    // survives. The `remaining >= budget` mutant over-prunes sysB, leaving only sysLast.
+    const result = truncateHistoryToBudget([sysA, sysB, sysLast, userLast], 21);
+    const systems = result
+      .filter((m) => m.role === "system")
+      .map((m) => m.content);
+    expect(systems).toEqual(["b".repeat(40), "c".repeat(40)]);
+  });
+
+  it("prunes correctly when there is no user message (lastUserIdx -1 sentinel)", () => {
+    const toolA = msg("tool", 40, "a".repeat(40)); // 10 tokens
+    const toolB = msg("tool", 40, "b".repeat(40)); // 10 tokens
+    const asst = msg("assistant", 40, "c".repeat(40)); // 10 tokens
+    // No user message → lastUserIdx stays -1. Both tools prune; assistant survives. A
+    // `lastUserIdx = +1` mutant spuriously protects index 1 (toolB) and prunes asst instead.
+    const result = truncateHistoryToBudget([toolA, toolB, asst], 10);
+    expect(result).toEqual([asst]);
   });
 });
