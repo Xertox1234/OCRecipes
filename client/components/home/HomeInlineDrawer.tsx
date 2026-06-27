@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
@@ -47,9 +47,7 @@ export const HomeInlineDrawer = React.forwardRef<
   );
 
   const chevronRotation = useSharedValue(0);
-  const isOpenRef = useRef(false);
   useEffect(() => {
-    isOpenRef.current = isOpen;
     if (reducedMotion) {
       chevronRotation.value = isOpen ? 90 : 0;
     } else {
