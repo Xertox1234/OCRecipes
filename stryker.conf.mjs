@@ -24,8 +24,21 @@ const config = {
   coverageAnalysis: "perTest",
   // Stryker sandboxes by COPYING the project. Exclude gitignored native/build dirs:
   // copying ios/Pods (CocoaPods hermes.framework) hits ENOTSUP on socket files, and
-  // these dirs are irrelevant to the pure server-lib unit targets.
-  ignorePatterns: ["ios", "android", ".expo", "server_dist", "coverage"],
+  // these dirs are irrelevant to the pure server-lib unit targets. `.claude` and `docs`
+  // are excluded because the post-checkout hook links `docs/solutions` as a DIRECTORY
+  // symlink in every git worktree — Stryker's copyfile can't sandbox a dir symlink
+  // (ENOTSUP), which crashes the run from the main checkout (it copies nested
+  // `.claude/worktrees/*/docs/solutions`) AND from inside a worktree (its own `docs/`).
+  // Neither dir holds a mutation target, so excluding them makes the harness worktree-safe.
+  ignorePatterns: [
+    "ios",
+    "android",
+    ".expo",
+    "server_dist",
+    "coverage",
+    ".claude",
+    "docs",
+  ],
   // Skip Stryker's babel-based type-check stripper: it conflicts with the Expo
   // babel.config.js ("decorators" + "decorators-legacy" together). The vitest runner
   // transpiles via esbuild (no type-check), so type-invalid mutants run regardless.

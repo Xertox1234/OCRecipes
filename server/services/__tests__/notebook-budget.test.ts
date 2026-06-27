@@ -33,6 +33,24 @@ describe("notebook-budget", () => {
       const updatedAt = new Date("2026-03-01T12:00:00Z"); // ~59 days ago
       expect(getRecencyLabel(updatedAt, now)).toBe("older");
     });
+
+    // Exact-boundary cases: the thresholds use strict `<` (not `<=`), so at EXACTLY
+    // 2 / 8 / 31 days the entry falls into the NEXT bucket. These kill the
+    // EqualityOperator mutants (`< 2`→`<= 2`, etc.) that the range tests above miss.
+    it("is exclusive at the 2-day boundary ('this week' at exactly 2 days)", () => {
+      const updatedAt = new Date("2026-04-27T12:00:00Z"); // exactly 2 days before now
+      expect(getRecencyLabel(updatedAt, now)).toBe("this week");
+    });
+
+    it("is exclusive at the 8-day boundary ('this month' at exactly 8 days)", () => {
+      const updatedAt = new Date("2026-04-21T12:00:00Z"); // exactly 8 days before now
+      expect(getRecencyLabel(updatedAt, now)).toBe("this month");
+    });
+
+    it("is exclusive at the 31-day boundary ('older' at exactly 31 days)", () => {
+      const updatedAt = new Date("2026-03-29T12:00:00Z"); // exactly 31 days before now
+      expect(getRecencyLabel(updatedAt, now)).toBe("older");
+    });
   });
 
   describe("formatNotebookLine", () => {
@@ -127,6 +145,18 @@ describe("notebook-budget", () => {
       const budget = firstLine.length + 1 + secondLine.length;
       const result = truncateNotebookToBudget(entries, budget);
       expect(result).toBe(`${firstLine}\n${secondLine}`);
+    });
+
+    it("drops the second entry when the budget lacks room for the newline separator", () => {
+      const firstLine = formatNotebookLine(entries[0]);
+      const secondLine = formatNotebookLine(entries[1]);
+      // Budget fits both lines' chars but NOT the +1 newline between them, so only the
+      // first entry survives. Pins the `separator = lines.length === 0 ? 0 : 1` ternary
+      // and the `charCount + separator + line.length` arithmetic (a `+`→`-` or sep=0
+      // mutant would wrongly admit the second entry).
+      const budget = firstLine.length + secondLine.length; // no +1 for the newline
+      const result = truncateNotebookToBudget(entries, budget);
+      expect(result).toBe(firstLine);
     });
 
     it("returns empty string when the first entry doesn't fit", () => {
