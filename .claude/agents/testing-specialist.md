@@ -310,6 +310,7 @@ describe("ServiceName", () => {
 
 - [ ] New services have corresponding test files
 - [ ] Route handlers have test coverage for auth, validation, happy path, errors
+- [ ] Route↔auth **wiring** is guarded, not just handler logic — route tests `vi.mock("middleware/auth")`, so only a real-middleware mount test + a static "every `app.METHOD` /api route carries `requireAuth`" scan catch a route registered without auth (`server/routes/__tests__/auth-route-wiring.test.ts`)
 - [ ] Utility functions have test coverage
 - [ ] Factory exists for any new schema table
 
@@ -331,6 +332,7 @@ describe("ServiceName", () => {
 12. **Hand-curated constant with no drift detector** - When a constant is seeded from a `grep` or external scan, pair it with a unit test that re-runs the scan and asserts the constant matches. See `docs/legacy-patterns/testing.md` "Drift-Detection Test for Empirically-Derived Constants."
 13. **Tautological test body logic** - `const hasAccess = item.userId === requestingUserId; expect(hasAccess).toBe(false)` re-implements the production predicate inline; `const mock = vi.fn().mockResolvedValue(x); const r = await mock(); expect(r).toEqual(x)` calls the mock directly — both exercise zero production code and give false CI confidence. Tests must call the real function under test and mock only its collaborators.
 14. **Assuming a green pre-commit means a green CI lint** - The pre-commit hook runs `ESLINT_NO_TYPE_AWARE=1 eslint --fix`, which **skips all type-aware rules** (`@typescript-eslint/no-floating-promises`, `no-misused-promises`, …). CI runs the full type-aware lint, so a clean commit + clean `tsc --noEmit` can still fail CI's "Lint · Types · Patterns" step. Before pushing `.ts`/`.tsx`, run `npx eslint <changed files>` **without** the env flag. Classic miss: a floating `(async () => { ... })()` IIFE in a `useEffect` (fix: `void` it) or an `async` fn passed to a `() => void` prop. See `docs/solutions/conventions/pre-commit-skips-type-aware-eslint-run-it-before-push-2026-06-19.md`.
+15. **Mocked-auth route tests treated as auth coverage** - every `server/routes/__tests__` file does `vi.mock("../../middleware/auth")`, stubbing `requireAuth` to a no-op. That proves handler logic, NOT that the route is registered _behind_ auth — a new route missing `requireAuth` passes all such tests while shipping an open endpoint. Flag when a protected route lands with only a mocked-auth test; the wiring seam needs a real-middleware mount test + a static source-scan guard, and any source-scan guard must be proven fail-closed and document its parser assumptions (it sees `app.METHOD` only — not `express.Router()` mounts). See `docs/solutions/conventions/route-tests-mock-auth-hide-wiring-seam-2026-06-26.md`.
 
 ---
 
