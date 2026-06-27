@@ -37,7 +37,11 @@ jobs:
           # NOTE: scripts/mutation-explore.mjs is intentionally NOT matched here — it is
           # a dev-only spike tool that cannot affect `test:mutation` scores, so editing
           # it should not trigger this gate.
-          if echo "$CHANGED" | grep -qE '^(server/services/goal-calculator\.ts|server/services/__tests__/goal-calculator\.test\.ts|stryker\.(conf|targets|explore\.conf)\.mjs|vitest\.mutation\.config\.ts)$'; then
+          # Here-string, NOT `echo "$CHANGED" | grep`: under `set -o pipefail`, grep -q
+          # closes the pipe on first match and echo takes SIGPIPE (141), making the
+          # pipeline non-zero on a large changed-file list → the `if` would flip to
+          # run=false and this required gate would fail-OPEN. A here-string has no pipe.
+          if grep -qE '^(server/services/goal-calculator\.ts|server/services/__tests__/goal-calculator\.test\.ts|stryker\.(conf|targets|explore\.conf)\.mjs|vitest\.mutation\.config\.ts)$' <<< "$CHANGED"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"

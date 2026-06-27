@@ -37,7 +37,12 @@ jobs:
           CHANGED="$(git diff --name-only "$BASE...$HEAD")"
           echo "Changed files in this PR:"
           echo "$CHANGED"
-          if echo "$CHANGED" | grep -qE '^(server/lib/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.ts|server/lib/__tests__/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.test\.ts|stryker\.(conf|targets|explore\.conf)\.mjs|vitest\.mutation\.config\.ts)$'; then
+          # Here-string, NOT `echo "$CHANGED" | grep`: under `set -o pipefail`, grep -q
+          # closes the pipe on first match and echo takes SIGPIPE (141), making the
+          # pipeline non-zero on a large changed-file list → the `if` would flip to
+          # run=false and the required gate would fail-OPEN (self-scope green on a real
+          # target change). A here-string has no pipe, so no SIGPIPE.
+          if grep -qE '^(server/lib/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.ts|server/lib/__tests__/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.test\.ts|stryker\.(conf|targets|explore\.conf)\.mjs|vitest\.mutation\.config\.ts)$' <<< "$CHANGED"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -72,7 +77,7 @@ jobs:
         if: steps.changed.outputs.run == 'true'
         run: MUTATION_TARGET=cook-session-merge npm run test:mutation
 
-      - name: Mutation test (chat-history-truncate, break=90)
+      - name: Mutation test (chat-history-truncate, break=88)
         if: steps.changed.outputs.run == 'true'
         run: MUTATION_TARGET=chat-history-truncate npm run test:mutation
 

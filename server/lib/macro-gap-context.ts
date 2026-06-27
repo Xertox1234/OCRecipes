@@ -38,7 +38,13 @@ export function buildMacroGapEmphasis(
 
   for (const key of ["protein", "carbs", "fat", "calories"] as const) {
     const target = targets[key];
-    // Stryker disable next-line EqualityOperator -- equivalent: target===0 makes ratio=(0-0)/0=NaN, which fails the `ratio > GAP_THRESHOLD` guard regardless, so `<= 0` and `< 0` are indistinguishable
+    // The `<= 0` guard's EqualityOperator mutants: `<= 0`->`< 0` is EQUIVALENT (target===0
+    // makes ratio=(0-0)/0=NaN, which fails the `ratio > GAP_THRESHOLD` guard regardless), and
+    // `<= 0`->`>= 0` is already killed by every emphasis-expecting test (`>= 0` skips all
+    // positive targets → always ""). Stryker has no per-replacement granularity, so disabling
+    // the family drops only the one unkillable equivalent — no killable mutant is hidden.
+    // (Directive must sit on the line directly above the statement it suppresses.)
+    // Stryker disable next-line EqualityOperator -- equivalent `<= 0`->`< 0` (NaN-masked)
     if (target <= 0) continue;
     const remainingClamped = Math.max(0, Math.min(target, remaining[key]));
     const ratio = (target - remainingClamped) / target;
