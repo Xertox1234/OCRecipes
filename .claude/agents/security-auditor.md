@@ -325,6 +325,7 @@ When auditing a route file or service, check every item:
 ### Authentication & Authorization
 
 - [ ] `requireAuth` middleware on all non-public endpoints
+- [ ] `requireAuth` wiring is _verified_, not assumed — route tests `vi.mock("middleware/auth")`, so a route registered without `requireAuth` ships an open endpoint that every route test passes. The guard is `server/routes/__tests__/auth-route-wiring.test.ts` (static scan of every `app.METHOD` /api route + an annotated public-route allowlist). Treat the guard's blind spots as attack surface: it sees `app.METHOD` only — a new `express.Router()` mount (the `/api/v1` pattern), an `app.all`, or a non-literal route path can ship unauthenticated without tripping it. (Ref: `docs/solutions/conventions/route-tests-mock-auth-hide-wiring-seam-2026-06-26.md`)
 - [ ] IDOR: ownership check at route level (404, not 403)
 - [ ] IDOR: storage mutations include userId in WHERE
 - [ ] IDOR: junction table reads join through parent
