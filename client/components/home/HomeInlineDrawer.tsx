@@ -7,11 +7,8 @@ import Animated, {
   withTiming,
   cancelAnimation,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
-
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
-import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useCollapsibleHeight } from "@/hooks/useCollapsibleHeight";
 import { Spacing, withOpacity } from "@/constants/theme";
@@ -30,15 +27,16 @@ interface HomeInlineDrawerProps {
   children: React.ReactNode;
 }
 
-export const HomeInlineDrawer = React.forwardRef<
-  React.ComponentRef<typeof Animated.View>,
-  HomeInlineDrawerProps
->(function HomeInlineDrawer(
-  { icon, label, isOpen, onToggle, maxHeight, isLocked, children },
-  ref,
-) {
+export function HomeInlineDrawer({
+  icon,
+  label,
+  isOpen,
+  onToggle,
+  maxHeight,
+  isLocked,
+  children,
+}: HomeInlineDrawerProps) {
   const { theme } = useTheme();
-  const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const { animatedStyle, onContentLayout } = useCollapsibleHeight(
     isOpen,
@@ -70,12 +68,9 @@ export const HomeInlineDrawer = React.forwardRef<
   }));
 
   return (
-    <Animated.View ref={ref}>
+    <Animated.View>
       <Pressable
-        onPress={() => {
-          haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-          onToggle();
-        }}
+        onPress={onToggle}
         style={styles.header}
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -129,7 +124,7 @@ export const HomeInlineDrawer = React.forwardRef<
       </Animated.View>
     </Animated.View>
   );
-});
+}
 
 const styles = StyleSheet.create({
   header: {

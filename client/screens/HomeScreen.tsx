@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   RefreshControl,
   StyleSheet,
@@ -152,6 +152,7 @@ export default function HomeScreen() {
       const rowRef = drawerRowRefs[actionId];
       if (!rowRef) return;
       const currentY = scrollY.value;
+      const animated = !reducedMotion;
       runOnUI(() => {
         "worklet";
         const m = measure(rowRef);
@@ -160,13 +161,17 @@ export default function HomeScreen() {
           scrollRef,
           0,
           glideToTopOffset(currentY, m.pageY, collapsedBarHeight),
-          true,
+          animated,
         );
       })();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- animated refs + shared value are stable
-    [collapsedBarHeight],
+    [collapsedBarHeight, reducedMotion],
   );
+
+  // Pending drawer-switch timer (collapse-then-open). Held in a ref so a user
+  // drag or screen blur during the collapse window can cancel the reopen.
+  const switchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleDrawerToggle = useCallback(
     (action: HomeAction) => {
@@ -181,23 +186,36 @@ export default function HomeScreen() {
       const { next, isSwitch } = nextOpenDrawer(openDrawerId, action.id);
       if (isSwitch) {
         // Collapse the open one first, then open + glide the new one (avoids
-        // three concurrent animations racing a moving target).
+        // three concurrent animations racing a moving target). Reduced motion
+        // snaps instantly, so skip the collapse delay.
+        if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
         setOpenDrawerId(null);
-        setTimeout(() => {
+        const delay = reducedMotion
+          ? 0
+          : (collapseTimingConfig.duration ?? 250);
+        switchTimerRef.current = setTimeout(() => {
+          switchTimerRef.current = null;
           setOpenDrawerId(next);
           if (next) glideRowToTop(next);
-        }, collapseTimingConfig.duration ?? 250);
+        }, delay);
       } else {
         setOpenDrawerId(next);
         if (next) glideRowToTop(next);
       }
     },
-    [openDrawerId, isPremium, haptics, glideRowToTop],
+    [openDrawerId, isPremium, haptics, glideRowToTop, reducedMotion],
   );
 
   useFocusEffect(
     useCallback(() => {
-      return () => setOpenDrawerId(null); // close when Home loses focus
+      return () => {
+        // Close when Home loses focus; cancel any pending drawer-switch reopen.
+        if (switchTimerRef.current) {
+          clearTimeout(switchTimerRef.current);
+          switchTimerRef.current = null;
+        }
+        setOpenDrawerId(null);
+      };
     }, []),
   );
 
@@ -300,6 +318,10 @@ export default function HomeScreen() {
         keyboardShouldPersistTaps="handled"
         onScroll={scrollHandler}
         onScrollBeginDrag={() => {
+          if (switchTimerRef.current) {
+            clearTimeout(switchTimerRef.current);
+            switchTimerRef.current = null;
+          }
           if (openDrawerId !== null) setOpenDrawerId(null);
         }}
         refreshControl={
