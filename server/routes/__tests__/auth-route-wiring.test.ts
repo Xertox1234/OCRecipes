@@ -267,6 +267,13 @@ describe("every protected route is registered behind requireAuth (static guard)"
 
   // Parse every `app.<method>("/api…"|"/webhooks…")` registration and record
   // whether requireAuth appears in the lines between the call and the handler.
+  //
+  // Load-bearing assumptions (all uniformly true in this codebase today):
+  //   • routes use `app.METHOD(...)`, not an express.Router() sub-mount — the
+  //     "no stray Router()" test below fails loudly if that ever changes;
+  //   • the path is a literal string (not a const), so it is captured;
+  //   • the handler is an inline arrow/async fn, so the window terminates before
+  //     bleeding into the next registration.
   function scanRoutes(): { key: string; file: string; hasAuth: boolean }[] {
     const out: { key: string; file: string; hasAuth: boolean }[] = [];
     const files = fs
@@ -324,5 +331,25 @@ describe("every protected route is registered behind requireAuth (static guard)"
       (k) => !publicKeysSeen.has(k),
     );
     expect(stale).toEqual([]);
+  });
+
+  // The scan above only sees `app.METHOD` registrations; an express.Router()
+  // mounted via app.use() is invisible to it. public-api.ts deliberately uses
+  // that pattern (router.use(requireApiKey) at /api/v1) and is the sole
+  // sanctioned exception. This fails loudly if any OTHER module adopts the
+  // Router pattern — without it, such a module could ship an unauthenticated
+  // route without tripping the requireAuth scan.
+  it("no route module except public-api.ts introduces a Router() mount the scan can't see", () => {
+    const offenders = fs
+      .readdirSync(ROUTES_DIR)
+      .filter(
+        (f) => f.endsWith(".ts") && !f.startsWith("_") && f !== "public-api.ts",
+      )
+      .filter((f) =>
+        /\bexpress\.Router\(|\brouter\.(get|post|put|patch|delete|use)\(/.test(
+          fs.readFileSync(path.join(ROUTES_DIR, f), "utf8"),
+        ),
+      );
+    expect(offenders).toEqual([]);
   });
 });
