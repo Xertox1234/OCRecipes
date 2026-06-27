@@ -8,6 +8,7 @@ import {
   expandTimingConfig,
   collapseTimingConfig,
 } from "@/constants/animations";
+import { clampDrawerHeight } from "@/components/home/inline-drawer-utils";
 
 /**
  * Encapsulates animated expand/collapse height logic for a section.
@@ -23,6 +24,7 @@ import {
 export function useCollapsibleHeight(
   isExpanded: boolean,
   reducedMotion: boolean,
+  maxHeight?: number,
 ) {
   const contentHeight = useSharedValue(0);
   const animatedHeight = useSharedValue(0);
@@ -30,20 +32,19 @@ export function useCollapsibleHeight(
 
   const onContentLayout = useCallback(
     (e: { nativeEvent: { layout: { height: number } } }) => {
-      const measured = e.nativeEvent.layout.height;
-      if (measured === 0) return; // Ignore zero-height measurements
+      const raw = e.nativeEvent.layout.height;
+      if (raw === 0) return; // Ignore zero-height measurements
+      const measured = clampDrawerHeight(raw, maxHeight);
       contentHeight.value = measured;
       if (!hasMeasured.current) {
         hasMeasured.current = true;
-        // Snap to correct state without animation on first measurement
         animatedHeight.value = isExpanded ? measured : 0;
       } else if (isExpanded) {
-        // Content resized while expanded — track it immediately
         animatedHeight.value = measured;
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- shared values are stable refs
-    [isExpanded],
+    [isExpanded, maxHeight],
   );
 
   useEffect(() => {

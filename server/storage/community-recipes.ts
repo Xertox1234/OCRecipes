@@ -505,3 +505,33 @@ export async function getCommunityRecipeTitlesByIds(
     .where(inArray(communityRecipes.id, ids));
   return new Map(rows.map((r) => [r.id, r.title]));
 }
+
+/**
+ * Top "trending search" terms derived from the popular public recipe set:
+ * unnested diet tags + cuisine origins, ranked by summed popularityScore.
+ * Returns display-ready term strings (original casing). Powers the Home
+ * search drawer's trending carousel.
+ */
+export async function getTrendingSearchTerms(limit = 8): Promise<string[]> {
+  const result = await db.execute(sql`
+    WITH terms AS (
+      SELECT tag AS term, popularity_score AS score
+      FROM community_recipes,
+           jsonb_array_elements_text(diet_tags) AS tag
+      WHERE is_public = true AND tag <> ''
+      UNION ALL
+      SELECT cuisine_origin AS term, popularity_score AS score
+      FROM community_recipes
+      WHERE is_public = true
+        AND cuisine_origin IS NOT NULL
+        AND cuisine_origin <> ''
+    )
+    SELECT term, SUM(score) AS weight, COUNT(*) AS n
+    FROM terms
+    GROUP BY term
+    ORDER BY SUM(score) DESC, COUNT(*) DESC, term ASC
+    LIMIT ${limit}
+  `);
+  const rows = result.rows as { term: string }[];
+  return rows.map((r) => r.term);
+}

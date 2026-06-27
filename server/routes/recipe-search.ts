@@ -78,4 +78,19 @@ export function register(app: Express): void {
       }
     },
   );
+
+  // GET /api/recipes/trending — top popularity-derived search terms (Home drawer)
+  app.get(
+    "/api/recipes/trending",
+    requireAuth,
+    instructionsRateLimit,
+    async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
+      try {
+        const terms = await storage.getTrendingSearchTerms(8);
+        res.json({ terms });
+      } catch (error) {
+        handleRouteError(res, error, "trending searches");
+      }
+    },
+  );
 }

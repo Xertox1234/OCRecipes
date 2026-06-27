@@ -1,13 +1,31 @@
-import React, { useCallback, useMemo, useState } from "react";
-import { RefreshControl, StyleSheet, View, Pressable } from "react-native";
+import React, { useCallback, useMemo, useRef, useState } from "react";
+import {
+  RefreshControl,
+  StyleSheet,
+  View,
+  Pressable,
+  useWindowDimensions,
+} from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, {
+  FadeInDown,
+  useAnimatedRef,
+  measure,
+  runOnUI,
+  scrollTo,
+} from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 
+import { collapseTimingConfig } from "@/constants/animations";
+import {
+  glideToTopOffset,
+  nextOpenDrawer,
+} from "@/components/home/inline-drawer-utils";
+import { HomeInlineDrawer } from "@/components/home/HomeInlineDrawer";
 import { DailySummaryHeader } from "@/components/home/DailySummaryHeader";
 import { RecipeSearchEntry } from "@/components/home/RecipeSearchEntry";
 import { ThemedText } from "@/components/ThemedText";
@@ -46,15 +64,6 @@ const SECTIONS: { key: SectionKey; title: string; delay: number }[] = [
   { key: "planning", title: "Planning", delay: 250 },
 ];
 
-function renderInlineAction(action: HomeAction) {
-  switch (action.id) {
-    case "quick-log":
-      return <QuickLogDrawer key={action.id} action={action} />;
-    default:
-      return null;
-  }
-}
-
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
@@ -80,6 +89,7 @@ export default function HomeScreen() {
 
   const {
     scrollHandler,
+    scrollY,
     headerAnimatedStyle,
     collapsedBarAnimatedStyle,
     isBarVisible,
@@ -92,6 +102,20 @@ export default function HomeScreen() {
 
   const isPremium = user?.subscriptionTier === "premium";
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
+  const { height: screenHeight } = useWindowDimensions();
+  const DRAWER_MAX_HEIGHT = Math.round(screenHeight * 0.75);
+  const collapsedBarHeight = insets.top + HOME_HEADER_COLLAPSED;
+
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const searchRowRef = useAnimatedRef<Animated.View>();
+  const generateRowRef = useAnimatedRef<Animated.View>();
+  const drawerRowRefs: Record<string, typeof searchRowRef> = {
+    "search-recipes": searchRowRef,
+    "generate-recipe": generateRowRef,
+  };
+
+  const [openDrawerId, setOpenDrawerId] = useState<string | null>(null);
 
   const scrollContentContainerStyle = useMemo(
     () => ({
@@ -122,6 +146,103 @@ export default function HomeScreen() {
     },
     [isPremium, haptics, recordAction, navigation],
   );
+
+  const glideRowToTop = useCallback(
+    (actionId: string) => {
+      const rowRef = drawerRowRefs[actionId];
+      if (!rowRef) return;
+      const currentY = scrollY.value;
+      const animated = !reducedMotion;
+      runOnUI(() => {
+        "worklet";
+        const m = measure(rowRef);
+        if (m === null) return;
+        scrollTo(
+          scrollRef,
+          0,
+          glideToTopOffset(currentY, m.pageY, collapsedBarHeight),
+          animated,
+        );
+      })();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- animated refs + shared value are stable
+    [collapsedBarHeight, reducedMotion],
+  );
+
+  // Pending drawer-switch timer (collapse-then-open). Held in a ref so a user
+  // drag or screen blur during the collapse window can cancel the reopen.
+  const switchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleDrawerToggle = useCallback(
+    (action: HomeAction) => {
+      // Premium gate reimplemented here (inline path bypasses handleActionPress)
+      const opening = openDrawerId !== action.id;
+      if (opening && action.premium && !isPremium) {
+        haptics.notification(Haptics.NotificationFeedbackType.Warning);
+        setShowUpgradeModal(true);
+        return;
+      }
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+      const { next, isSwitch } = nextOpenDrawer(openDrawerId, action.id);
+      if (isSwitch) {
+        // Collapse the open one first, then open + glide the new one (avoids
+        // three concurrent animations racing a moving target). Reduced motion
+        // snaps instantly, so skip the collapse delay.
+        if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
+        setOpenDrawerId(null);
+        const delay = reducedMotion
+          ? 0
+          : (collapseTimingConfig.duration ?? 250);
+        switchTimerRef.current = setTimeout(() => {
+          switchTimerRef.current = null;
+          setOpenDrawerId(next);
+          if (next) glideRowToTop(next);
+        }, delay);
+      } else {
+        setOpenDrawerId(next);
+        if (next) glideRowToTop(next);
+      }
+    },
+    [openDrawerId, isPremium, haptics, glideRowToTop, reducedMotion],
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Close when Home loses focus; cancel any pending drawer-switch reopen.
+        if (switchTimerRef.current) {
+          clearTimeout(switchTimerRef.current);
+          switchTimerRef.current = null;
+        }
+        setOpenDrawerId(null);
+      };
+    }, []),
+  );
+
+  const renderInlineAction = (action: HomeAction) => {
+    if (action.id === "quick-log") {
+      return <QuickLogDrawer key={action.id} action={action} />;
+    }
+    const rowRef = drawerRowRefs[action.id];
+    const isLocked = !!action.premium && !isPremium;
+    // Wrap with Animated.View to carry the animatedRef for measurement — the
+    // forwardRef in HomeInlineDrawer resolves to `never` for its ComponentRef,
+    // so we keep the ref on the wrapper (identical bounding box, measure works).
+    return (
+      <Animated.View key={action.id} ref={rowRef}>
+        <HomeInlineDrawer
+          icon={action.icon}
+          label={action.label}
+          isOpen={openDrawerId === action.id}
+          onToggle={() => handleDrawerToggle(action)}
+          maxHeight={DRAWER_MAX_HEIGHT}
+          isLocked={isLocked}
+        >
+          <ThemedText type="small">Coming soon</ThemedText>
+        </HomeInlineDrawer>
+      </Animated.View>
+    );
+  };
 
   // Budget failed and nothing cached — the collapsed bar (a separate surface
   // that appears on scroll, below the DailySummaryHeader's own error UI) must
@@ -189,12 +310,20 @@ export default function HomeScreen() {
       </Animated.View>
 
       <Animated.ScrollView
+        ref={scrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={scrollContentContainerStyle}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
         onScroll={scrollHandler}
+        onScrollBeginDrag={() => {
+          if (switchTimerRef.current) {
+            clearTimeout(switchTimerRef.current);
+            switchTimerRef.current = null;
+          }
+          if (openDrawerId !== null) setOpenDrawerId(null);
+        }}
         refreshControl={
           <RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} />
         }
