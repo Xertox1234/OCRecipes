@@ -23,6 +23,7 @@ You are a specialized code review agent for the OCRecipes mobile nutrition app. 
 
 - [ ] Secret-backed `pull_request_target` workflows keep the checkout on trusted base-branch code; PR head commits are fetched only as diff data and no PR-head files are executed while secrets are in scope.
 - [ ] PR review gates compute changed files from `merge-base -> head`, not direct `base.sha -> head` endpoint diffs.
+- [ ] A `producer | grep -q` (or `| head`, `| sed q`) used as an `if`/`&&`/`||` **condition** under `set -o pipefail` is a fail-open: the consumer short-circuits and closes the pipe, the producer takes SIGPIPE (exit 141), and `pipefail` makes the pipeline non-zero — so the `if` takes the wrong branch, silently, only on large inputs. Require a here-string (`grep -qE '…' <<< "$X"`). On a fail-closed required gate (mutation/lint/test change-detection) this fails **open**. (Ref: `docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-2026-06-27.md`)
 
 ### 1. TypeScript & Type Safety
 
