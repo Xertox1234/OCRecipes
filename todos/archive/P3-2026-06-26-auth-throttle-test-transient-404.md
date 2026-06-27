@@ -3,10 +3,11 @@
 ---
 
 title: "Investigate transient 404 in auth-account-throttle test (separate from the store-pollution flake)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-26
 updated: 2026-06-26
+resolution: not-reproducible
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -27,9 +28,9 @@ This is filed as a low-priority deferred item: the 404 was intermittent, has not
 
 ## Acceptance Criteria
 
-- [ ] Determine the conditions under which `POST /api/auth/login` can return 404 in this test file (e.g. `beforeAll`/`register(app)` not completing before a request, a cross-file mock leak affecting route registration, or a module-init ordering race under full-suite parallelism).
-- [ ] Either reproduce the 404 deterministically and fix the root cause, or document why it cannot recur and close as not-reproducible.
-- [ ] If a fix is made, it does not weaken the existing throttle assertions or the store-reset isolation added in PR #462.
+- [x] Determine the conditions under which `POST /api/auth/login` can return 404 in this test file (e.g. `beforeAll`/`register(app)` not completing before a request, a cross-file mock leak affecting route registration, or a module-init ordering race under full-suite parallelism).
+- [x] Either reproduce the 404 deterministically and fix the root cause, or document why it cannot recur and close as not-reproducible. → **documented as not-reproducible** (structurally impossible after `beforeAll`; see Updates 2026-06-26 resolution).
+- [x] If a fix is made, it does not weaken the existing throttle assertions or the store-reset isolation added in PR #462. → no behavioral fix made (none needed); only the in-file NOTE comment was rewritten, so PR #462's store-reset isolation and all throttle assertions are untouched.
 
 ## Implementation Notes
 
@@ -53,3 +54,13 @@ This is filed as a low-priority deferred item: the 404 was intermittent, has not
 ### 2026-06-26
 
 - Initial creation. Split out from the PR #462 store-pollution fix, which deliberately scoped the 404 out (a 404 cannot come from a rate limiter — separate `register(app)`/init-timing symptom).
+
+### 2026-06-26 — resolved (not-reproducible)
+
+Investigated and closed as **not-reproducible** because a 404 on `POST /api/auth/login` in this test is **structurally impossible after `beforeAll`**, not merely unobserved:
+
+- **No 404 source on the handler path.** The login handler + its middleware emit only 401 / 403 / 200 / 429, and `handleRouteError` (`server/routes/_helpers.ts`) maps `ZodError` → 400 and everything else → 500 — never 404. The sole 404 source on this route is Express's unmatched-route default (route absent at request time).
+- **The route is always present by request time.** `register(app)` (`server/routes/auth.ts:125`, returns `void`) registers `/api/auth/login` unconditionally and synchronously inside an awaited `beforeAll`, which Vitest guarantees completes before any test. All three candidate triggers are excluded: (a) `beforeAll`-incomplete — `register()` is sync, nothing unawaited; (b) cross-file `vi.mock` bleed of `register` — `pool: "forks"` (`vitest.config.ts:62`) + default `isolate: true` give each file its own module graph, and `../auth` (the SUT) is never mocked here; (c) module-init ordering race — `register` runs to completion in `beforeAll`.
+- **The single observation** (one retry attempt in one PR #460 preflight run; file passes in isolation, CI green, no recurrence) has no in-file mechanism → attributable to cross-test output aggregation / worker noise under peak full-suite parallelism (the documented load-flake family, `docs/LEARNINGS.md`). Per that learning's rule, **no defensive guard added** — a guard would mask, not fix, and there is no reproducible cause.
+
+Code change: rewrote the in-file NOTE comment in `server/routes/__tests__/auth-account-throttle.test.ts` from "out of scope" to a RESOLVED explanation. No production code, no test logic, no assertion changes; PR #462's store-reset isolation untouched.
