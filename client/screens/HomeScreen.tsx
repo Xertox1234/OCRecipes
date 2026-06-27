@@ -60,6 +60,7 @@ import { Spacing, FAB_CLEARANCE, FontFamily } from "@/constants/theme";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 import { RecipeSearchDrawer } from "@/components/home/RecipeSearchDrawer";
+import { GenerateRecipeDrawer } from "@/components/home/GenerateRecipeDrawer";
 import { initRecentSearchesCache } from "@/lib/recent-recipe-searches-storage";
 
 const HOME_HEADER_EXPANDED = 100;
@@ -256,6 +257,8 @@ export default function HomeScreen() {
               isOpen={isOpen}
               onUsed={() => recordAction(action.id)}
             />
+          ) : action.id === "generate-recipe" ? (
+            <GenerateRecipeDrawer onUsed={() => recordAction(action.id)} />
           ) : (
             <ThemedText type="small">Coming soon</ThemedText>
           )}
