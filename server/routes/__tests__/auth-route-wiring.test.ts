@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express, { type Express } from "express";
+import { rateLimit } from "express-rate-limit";
 import request from "supertest";
 import fs from "node:fs";
 import path from "node:path";
@@ -194,9 +195,21 @@ describe("auth route wiring (real middleware)", () => {
     function probeApp(): Express {
       const app = express();
       app.use(express.json());
-      app.get("/__probe", requireAuth, (req, res) => {
-        res.json({ userId: req.userId });
-      });
+      // Production mounts every protected route behind a rate limiter
+      // (crudRateLimit et al. from _rate-limiters.ts), so the probe's stack
+      // mirrors a real route: limiter → requireAuth → handler. The limiter is
+      // applied inline (not via the re-exported factory consts) so CodeQL's
+      // js/missing-rate-limiting query can trace it — same reason the
+      // /api/health limiter is inlined in server/index.ts. At runtime it is the
+      // pass-through mock above, so it changes no behavior.
+      app.get(
+        "/__probe",
+        rateLimit({ windowMs: 60_000, max: 600 }),
+        requireAuth,
+        (req, res) => {
+          res.json({ userId: req.userId });
+        },
+      );
       return app;
     }
 
