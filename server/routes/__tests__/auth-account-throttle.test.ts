@@ -43,10 +43,41 @@ import { register } from "../auth";
 //    includes SUCCESSFUL logins, that pending decrement can race the next
 //    reset — reset by absolute count or settle the response first.
 //
-// NOTE on the original flake report: a transient `404` was also observed. A 404
-// cannot originate from a rate limiter (that path returns 429), so this
-// reset does NOT address it — it points at a separate `register(app)` /
-// module-init timing symptom and is out of scope for this test-isolation fix.
+// RESOLVED — the original flake report's transient `404` (investigated
+// 2026-06-26, todo P3-2026-06-26-auth-throttle-test-transient-404):
+// closed not-reproducible because a 404 from THIS app is structurally
+// impossible after `beforeAll`, not merely "not reproduced again".
+//   - The login handler + its middleware emit only 401 / 403 / 200 / 429, and
+//     handleRouteError maps ZodError → 400 / everything else → 500 — never 404.
+//     The ONLY 404 source on `POST /api/auth/login` is Express's
+//     unmatched-route default, i.e. the route was absent when the request fired.
+//   - But the login route is registered UNCONDITIONALLY and SYNCHRONOUSLY by
+//     register(app) (server/routes/auth.ts) inside an awaited `beforeAll`, and
+//     Vitest guarantees `beforeAll` completes before any test runs — so the
+//     route is always present by request time. The three candidate triggers are
+//     all excluded: (a) beforeAll-incomplete — register() is sync, nothing in
+//     beforeAll is left unawaited; (b) cross-file `vi.mock` bleed of register —
+//     impossible: `pool: "forks"` + default `isolate: true` give each file its
+//     own isolated module graph, AND `../auth` (the SUT exporting register) is
+//     never mocked here (only `../../storage` and `../../middleware/auth` are,
+//     neither of which gates route registration); (c)
+//     module-init ordering race — register runs to completion in beforeAll, well
+//     after the import graph is wired.
+//   - The single observation (one retry attempt in one PR#460 preflight run;
+//     this file passes 11/11 in isolation, CI green, no recurrence since) has no
+//     in-file mechanism — attributable to cross-test output aggregation / worker
+//     noise under peak full-suite parallelism. It belongs to the documented
+//     load-flake FAMILY (docs/LEARNINGS.md → "Load-Induced vitest vi.mock
+//     Application Flake", 2026-05-17), cited here for load-context only: that
+//     doc's specific mechanism (a vi.mock failing to apply → real code RUNS →
+//     wrong handler status) yields a handler status, never a route-absent 404,
+//     so it is NOT the literal mechanism here. Per that learning's rule, NO
+//     defensive guard is added, by design — a guard would mask, not fix, and
+//     there is no reproducible cause.
+//
+// (For reference: a 404 still cannot originate from a rate limiter either —
+// that path returns 429 — so the PR #462 store reset above was correctly scoped
+// to exclude it.)
 
 vi.mock("../../storage", () => ({
   storage: {
