@@ -66,7 +66,7 @@ ask-kimi --paths <prior-spec-1> <prior-spec-2> [...] \
 
 If `ask-kimi` exits non-zero (it prints `[ERROR …]` to stderr), dispatch a read-only **Explore** subagent with the same prior-spec paths and the same brief request.
 
-Use the brief for calibration, not blind template enforcement. Extract the recurring structure, the typical detail level for files/decisions/risks/validation, and repeated design constraints. If similar approved specs consistently include decision tables, touched-file lists, rollout order, or explicit failure paths, treat their absence here as a stronger signal; if precedent is intentionally lightweight, do not demand ceremony the repo itself does not use. When the sample pairs a plan with its design/spec, treat the design as the bar expected before implementation and the plan as the lighter planning shape.
+Use the brief for calibration, not blind template enforcement. Extract the recurring structure, the typical detail level for files/decisions/risks/validation, and repeated design constraints. If similar approved specs consistently include decision tables, touched-file lists, rollout order, or explicit failure paths, treat their absence here as a stronger signal; if precedent is intentionally lightweight, do not demand ceremony the repo itself does not use. When the selected prior specs/plans include both a plan and its design/spec for the same topic, treat the design as the bar expected before implementation and the plan as the lighter planning shape.
 
 If no useful precedent exists, say so and continue with the current document alone.
 
