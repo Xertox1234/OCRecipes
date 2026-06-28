@@ -92,6 +92,7 @@ export const LLM_TOUCHING_SERVICES: ReadonlySet<string> = new Set([
   "cooking-session.ts",
   "food-nlp.ts",
   "front-label-analysis.ts",
+  "image-art-direction.ts",
   "ingredient-substitution.ts",
   "meal-suggestions.ts",
   "menu-analysis.ts",
