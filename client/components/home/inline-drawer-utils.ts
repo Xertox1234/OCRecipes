@@ -1,12 +1,19 @@
 /** Target scroll offset so the row's current on-screen top lands just below the
  *  collapsed summary bar. `rowPageY` comes from a Reanimated measure() (already
  *  reflects the collapsing-header delta); `collapsedBarHeight` = insets.top +
- *  HOME_HEADER_COLLAPSED. Clamped to >= 0. */
+ *  HOME_HEADER_COLLAPSED. Clamped to >= 0.
+ *
+ *  MUST stay a worklet: HomeScreen.glideRowToTop calls this inside a runOnUI
+ *  worklet (alongside measure()/scrollTo()). The Reanimated Babel plugin does
+ *  not workletize across imports, so without this directive the call is fatal on
+ *  the UI thread ("Tried to synchronously call a non-worklet function"). The
+ *  directive is a no-op when the unit tests call it on the JS thread. */
 export function glideToTopOffset(
   currentScrollY: number,
   rowPageY: number,
   collapsedBarHeight: number,
 ): number {
+  "worklet";
   return Math.max(0, currentScrollY + (rowPageY - collapsedBarHeight));
 }
 
