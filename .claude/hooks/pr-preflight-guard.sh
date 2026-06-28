@@ -37,7 +37,17 @@ esac
 
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 HEAD=$(git rev-parse HEAD 2>/dev/null || echo "")
-STAMP=$(cat /tmp/ocrecipes-preflight-pass 2>/dev/null || echo "")
+
+# Resolve the stamp path from the SAME helper the writer uses (no drift). If the
+# helper can't be located, STAMP stays empty → we fall through to DENY: the safe
+# direction for a gate, never a silent allow on a path mismatch.
+STAMP=""
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+if [ -n "$ROOT" ] && [ -f "$ROOT/scripts/lib/preflight-stamp-path.sh" ]; then
+  # shellcheck source=scripts/lib/preflight-stamp-path.sh
+  . "$ROOT/scripts/lib/preflight-stamp-path.sh"
+  STAMP=$(cat "$(preflight_stamp_path)" 2>/dev/null || echo "")
+fi
 
 if [ -n "$HEAD" ] && [ "$STAMP" = "$HEAD" ]; then
   exit 0   # fresh full-preflight pass for this commit — allow.
