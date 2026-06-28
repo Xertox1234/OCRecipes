@@ -88,7 +88,7 @@ Examples:
 - A brainstorm note may be acceptable without formal headings if the intended change, boundaries, and major risks are still recoverable.
 - A final implementation spec should usually be more concrete; if key execution or validation details are absent, flag the missing information as a finding.
 
-Use the prior-spec sample to decide what level of precision is normal for this class of document in this repo.
+Use the calibration brief to decide what level of precision is normal for this class of document in this repo.
 
 ### 3. Map the affected domains
 
@@ -227,7 +227,7 @@ Give each specialist only:
 
 - the relevant spec excerpt(s),
 - the preliminary findings already raised in its domain,
-- the per-domain binding-rule summary (from the calibration brief / Step 4),
+- the per-domain binding-rule summary (from Step 4 — the `docs/rules/<domain>.md` you read inline),
 - this instruction: _"Do not broad-read the repo. Confirm or refute the findings above and add only domain-specific risks. Read a specific file only to verify a named claim."_
 
 Each specialist returns **deltas** — confirm / refute / net-new findings — not a fresh full review. Pick at most 3 from:
