@@ -25,6 +25,11 @@ import {
   OPENAI_TIMEOUT_IMAGE_MS,
 } from "../lib/openai";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
+import {
+  buildImagePrompt,
+  type ImageVariant,
+  type RecipeImageContext,
+} from "./image-art-direction";
 
 const log = createServiceLogger("canonical-enrichment");
 
@@ -116,33 +121,16 @@ function normalizeInstructions(instructions: string[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
-// Image generation — 3 shots per recipe
+// Image generation — 3 shots per recipe (art-direction engine)
 // ---------------------------------------------------------------------------
 
-const IMAGE_SHOTS: { label: string; prompt: (title: string) => string }[] = [
-  {
-    label: "hero",
-    prompt: (title) =>
-      `Professional food photography of "${title}". Overhead 45-degree angle, natural window lighting, shallow depth of field. Plated beautifully on a neutral ceramic dish with fresh herb garnish. Clean minimalist background, photorealistic.`,
-  },
-  {
-    label: "plated",
-    prompt: (title) =>
-      `Close-up food photography of a perfect serving of "${title}". Eye-level angle, warm soft lighting, rustic wooden table setting. Garnished with fresh herbs and a lemon wedge. Photorealistic, appetising.`,
-  },
-  {
-    label: "ingredients",
-    prompt: (title) =>
-      `Flat lay of all raw ingredients required to make "${title}" arranged neatly on a white marble surface. Clear natural lighting, sharp focus, photorealistic food photography. No text or labels.`,
-  },
-];
+const CANONICAL_VARIANTS: ImageVariant[] = ["hero", "plated", "ingredients"];
 
 async function generateSingleImage(
-  title: string,
-  shot: (typeof IMAGE_SHOTS)[number],
+  ctx: RecipeImageContext,
+  variant: ImageVariant,
 ): Promise<string | null> {
-  const safeTitle = sanitizeUserInput(title);
-  const prompt = shot.prompt(safeTitle);
+  const prompt = await buildImagePrompt(ctx, variant); // LLM on for HQ canonical
 
   // Try Runware HQ model first
   if (isRunwareConfigured) {
@@ -152,18 +140,18 @@ async function generateSingleImage(
         return await saveImageBuffer(buffer);
       }
       log.warn(
-        { shot: shot.label },
+        { variant },
         "Runware returned no image, falling back to DALL-E",
       );
     } catch (err) {
       log.warn(
-        { err: toError(err), shot: shot.label },
+        { err: toError(err), variant },
         "Runware failed, falling back to DALL-E",
       );
     }
   }
 
-  // DALL-E 3 fallback
+  // DALL-E 3 fallback — negatives are appended here only (not in the positive prompt)
   try {
     const dallePrompt = `${prompt} No text, no watermarks, no logos, no labels, no letters.`;
     const response = await dalleClient.images.generate(
@@ -179,15 +167,12 @@ async function generateSingleImage(
     );
     const imageData = response.data?.[0]?.b64_json;
     if (!imageData) {
-      log.error({ shot: shot.label }, "DALL-E returned no image data");
+      log.error({ variant }, "DALL-E returned no image data");
       return null;
     }
     return await saveImageBuffer(Buffer.from(imageData, "base64"));
   } catch (err) {
-    log.error(
-      { err: toError(err), shot: shot.label },
-      "DALL-E image generation error",
-    );
+    log.error({ err: toError(err), variant }, "DALL-E image generation error");
     return null;
   }
 }
@@ -197,10 +182,12 @@ async function generateSingleImage(
  * (one at a time) to avoid rate-limit bursts.
  * Individual failures are skipped gracefully — returns only successful URLs.
  */
-async function generateCanonicalImages(title: string): Promise<string[]> {
+async function generateCanonicalImages(
+  ctx: RecipeImageContext,
+): Promise<string[]> {
   const urls: string[] = [];
-  for (const shot of IMAGE_SHOTS) {
-    const url = await generateSingleImage(title, shot);
+  for (const variant of CANONICAL_VARIANTS) {
+    const url = await generateSingleImage(ctx, variant);
     if (url) urls.push(url);
   }
   return urls;
@@ -361,7 +348,13 @@ export async function enrichRecipe(recipeId: number): Promise<void> {
   }
 
   // 2. Generate 3 HQ images (hero, plated, ingredients)
-  const canonicalImages = await generateCanonicalImages(recipe.title);
+  const imageContext: RecipeImageContext = {
+    title: recipe.title,
+    cuisine: recipe.cuisineOrigin,
+    mealTypes: recipe.mealTypes,
+    ingredients: (recipe.ingredients ?? []).map((i) => i.name),
+  };
+  const canonicalImages = await generateCanonicalImages(imageContext);
   log.info(
     { recipeId, imageCount: canonicalImages.length },
     "Canonical images generated",

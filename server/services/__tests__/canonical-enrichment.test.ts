@@ -50,7 +50,12 @@ vi.mock("../../lib/openai", () => ({
     },
   },
   MODEL_HEAVY: "gpt-4o",
+  MODEL_FAST: "gpt-4o-mini",
   OPENAI_TIMEOUT_IMAGE_MS: 120000,
+  OPENAI_TIMEOUT_FAST_MS: 30000,
+  // isAiConfigured: false keeps buildImagePrompt in deterministic mode
+  // (skips the LLM art-director pre-pass so prompt assertions are stable)
+  isAiConfigured: false,
 }));
 
 vi.mock("../../lib/ai-safety", () => ({
@@ -270,6 +275,13 @@ describe("enrichRecipe", () => {
     expect(runware.dalleGenerate).not.toHaveBeenCalled();
     const [, enrichment] = vi.mocked(storage.markEnriched).mock.calls[0];
     expect(enrichment.canonicalImages).toHaveLength(3);
+    // Verify positive-only prompt: editorial phrase present, no negative terms
+    // (negatives are DALL-E-only and must not bleed into the Runware prompt)
+    const firstCall = runware.generateImage.mock.calls[0][0] as {
+      prompt: string;
+    };
+    expect(firstCall.prompt).toMatch(/editorial food photography/i);
+    expect(firstCall.prompt).not.toMatch(/no text|watermark/i);
   });
 
   it("skips images that fail on both Runware and DALL-E", async () => {
