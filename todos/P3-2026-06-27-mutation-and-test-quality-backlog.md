@@ -2,7 +2,7 @@
 
 ---
 
-title: "Mutation-testing + test-quality backlog (candidate targets + deferred features)"
+title: "Mutation-testing backlog (candidate targets + deferred features)"
 status: backlog
 priority: low
 created: 2026-06-27
@@ -13,7 +13,7 @@ github_issue:
 
 ---
 
-# Mutation-testing + test-quality backlog (candidate targets + deferred features)
+# Mutation-testing backlog (candidate targets + deferred features)
 
 ## Summary
 
@@ -55,9 +55,9 @@ subset, not all 40. See the codified rule:
   re-add.
 - **Mutation features** — whole-directory `mutate` globs (vs one file/target); a systematic
   `mutation:explore` discovery sweep over `server/lib`; mutation-score _trend_ tracking.
-- **Broader test-quality (separate from mutation)** — property-based testing (fast-check)
-  for the nutrition math / token estimator; real API contract/integration tests (route
-  tests currently mock storage + auth); expand E2E beyond the `workflow_dispatch` Maestro smoke.
+- **Broader test-quality (non-mutation)** — property-based testing, API contract/integration
+  tests, and E2E expansion now live in their own todo:
+  `todos/P3-2026-06-27-broader-test-quality-non-mutation.md`. Pursue there, not here.
 
 **Process reminders (from the #468 session):**
 
