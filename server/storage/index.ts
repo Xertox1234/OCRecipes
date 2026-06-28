@@ -202,6 +202,7 @@ export const storage = {
   batchUpdateCommunityMealTypes: community.batchUpdateCommunityMealTypes,
   deleteCommunityRecipe: community.deleteCommunityRecipe,
   getUserRecipes: community.getUserRecipes,
+  getTrendingSearchTerms: community.getTrendingSearchTerms,
 
   // Menu scans
   getMenuScans: menu.getMenuScans,
