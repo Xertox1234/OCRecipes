@@ -59,6 +59,7 @@
     "cleanup:seeds": "tsx server/scripts/cleanup-seed-recipes.ts",
     "cleanup:retention": "tsx server/scripts/cleanup-retention.ts",
     "migrate:images-r2": "tsx server/scripts/migrate-images-to-r2.ts",
+    "preview:art-direction": "tsx server/scripts/preview-art-direction.ts",
     "backfill:community-nutrition": "tsx server/scripts/backfill-community-nutrition.ts",
     "backfill:email-verified": "tsx server/scripts/backfill-email-verified.ts",
     "e2e": "maestro test e2e/flows/",
