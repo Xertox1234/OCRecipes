@@ -112,3 +112,6 @@ __pycache__/
 # Mutation testing (Stryker) — runtime outputs only; baselines live in docs/mutation-testing/
 .stryker-tmp/
 reports/mutation/
+
+# Art-direction preview batch (dev-only eyeball output from preview:art-direction)
+scratch/art-direction-preview/

@@ -305,7 +305,10 @@ async function generateImageWithRetry(
   ingredient: string,
 ): Promise<string | null> {
   for (let attempt = 1; attempt <= IMAGE_RETRIES; attempt++) {
-    const imageUrl = await generateRecipeImage(title, ingredient);
+    const imageUrl = await generateRecipeImage(
+      { title, productName: ingredient },
+      { skipLLM: true },
+    );
     if (imageUrl) return imageUrl;
     if (attempt < IMAGE_RETRIES) {
       console.log(`    Image attempt ${attempt} failed, retrying...`);

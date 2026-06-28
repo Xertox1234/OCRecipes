@@ -248,11 +248,12 @@ export function register(app: Express): void {
         // generateAndPatchRecipeImage updates the DB row when the image is ready.
         fireAndForget(
           "generate recipe image",
-          generateAndPatchRecipeImage(
-            recipe.id,
-            generatedRecipe.title,
+          generateAndPatchRecipeImage(recipe.id, {
+            title: generatedRecipe.title,
             productName,
-          ),
+            cuisine: recipe.cuisineOrigin,
+            mealTypes: recipe.mealTypes,
+          }),
         );
       } catch (error) {
         handleRouteError(res, error, "generate recipe");

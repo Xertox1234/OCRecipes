@@ -440,8 +440,11 @@ export async function* generateRecipeChatResponse(
     try {
       const imageUrl = await Promise.race([
         generateRecipeImage(
-          recipe.title,
-          recipe.ingredients.map((i) => i.name).join(", "),
+          {
+            title: recipe.title,
+            ingredients: recipe.ingredients.map((i) => i.name),
+          },
+          { skipLLM: true },
         ),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
       ]);

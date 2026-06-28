@@ -17,6 +17,10 @@ import {
 } from "../lib/runware";
 import { saveRecipeImage } from "../lib/image-store";
 import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
+import {
+  buildImagePrompt,
+  type RecipeImageContext,
+} from "./image-art-direction";
 import { buildDietaryContext } from "../lib/dietary-context";
 import { createServiceLogger, toError } from "../lib/logger";
 import { storage } from "../storage";
@@ -301,20 +305,15 @@ ${SYSTEM_PROMPT_BOUNDARY}`,
  * Persists the image via the image-store (Cloudflare R2 in production, local disk in dev) and returns the URL, or null on failure.
  */
 export async function generateRecipeImage(
-  recipeTitle: string,
-  productName: string,
+  ctx: RecipeImageContext,
+  opts?: { skipLLM?: boolean },
 ): Promise<string | null> {
-  const safeTitle = sanitizeUserInput(recipeTitle);
-  const safeProduct = sanitizeUserInput(productName);
-  const prompt = `Professional food photography of "${safeTitle}" made with ${safeProduct}. Overhead 45-degree angle, natural window lighting, shallow depth of field. Plated on a neutral ceramic dish with fresh herb garnish. Clean minimalist background, photorealistic.`;
+  const prompt = await buildImagePrompt(ctx, "hero", opts);
 
-  // Try Runware first (much cheaper than DALL-E)
   if (isRunwareConfigured) {
     try {
       const buffer = await runwareGenerateImage({ prompt });
-      if (buffer) {
-        return await saveRecipeImage(buffer);
-      }
+      if (buffer) return await saveRecipeImage(buffer);
       log.warn("Runware returned no image, falling back to DALL-E");
     } catch (error) {
       log.warn(
@@ -324,8 +323,9 @@ export async function generateRecipeImage(
     }
   }
 
-  // Fallback to DALL-E (no negative prompt support — embed exclusions in prompt)
   try {
+    // DALL-E has no separate negative field — the exclusions ride as a suffix
+    // (this is the DALL-E negative channel; composePrompt stays positive-only).
     const dallePrompt = `${prompt} No text, no watermarks, no logos, no labels, no letters.`;
     const response = await dalleClient.images.generate(
       {
@@ -338,13 +338,11 @@ export async function generateRecipeImage(
       },
       { timeout: OPENAI_TIMEOUT_IMAGE_MS },
     );
-
     const imageData = response.data?.[0]?.b64_json;
     if (!imageData) {
       log.error("DALL-E returned no image data");
       return null;
     }
-
     return await saveRecipeImage(Buffer.from(imageData, "base64"));
   } catch (error) {
     log.error({ err: toError(error) }, "DALL-E image generation error");
@@ -370,11 +368,10 @@ export async function generateFullRecipe(
  */
 export async function generateAndPatchRecipeImage(
   recipeId: number,
-  recipeTitle: string,
-  productName: string,
+  ctx: RecipeImageContext,
 ): Promise<void> {
   try {
-    const imageUrl = await generateRecipeImage(recipeTitle, productName);
+    const imageUrl = await generateRecipeImage(ctx);
     if (imageUrl) {
       await storage.updateCommunityRecipeImageUrl(recipeId, imageUrl);
     }

@@ -50,8 +50,12 @@ vi.mock("../../lib/openai", () => ({
   },
   OPENAI_TIMEOUT_HEAVY_MS: 60_000,
   OPENAI_TIMEOUT_IMAGE_MS: 120_000,
+  OPENAI_TIMEOUT_FAST_MS: 30_000,
   MODEL_FAST: "gpt-4o-mini",
   MODEL_HEAVY: "gpt-4o",
+  // isAiConfigured: false keeps isArtDirectorLLMEnabled() → false,
+  // so image-art-direction uses the deterministic path (no LLM calls in tests).
+  isAiConfigured: false,
 }));
 
 // Mock storage for generateAndPatchRecipeImage
@@ -384,7 +388,10 @@ describe("Recipe Generation", () => {
         data: [{ b64_json: "abc123base64data" }],
       } as any);
 
-      const result = await generateRecipeImage("Chicken Salad", "Chicken");
+      const result = await generateRecipeImage({
+        title: "Chicken Salad",
+        productName: "Chicken",
+      });
 
       expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
       expect(fs.promises.writeFile).toHaveBeenCalledWith(
@@ -398,7 +405,10 @@ describe("Recipe Generation", () => {
         data: [{ b64_json: undefined }],
       } as any);
 
-      const result = await generateRecipeImage("Chicken Salad", "Chicken");
+      const result = await generateRecipeImage({
+        title: "Chicken Salad",
+        productName: "Chicken",
+      });
 
       expect(result).toBeNull();
     });
@@ -406,7 +416,10 @@ describe("Recipe Generation", () => {
     it("returns null on DALL-E error", async () => {
       mockImageGenerate.mockRejectedValue(new Error("API error"));
 
-      const result = await generateRecipeImage("Chicken Salad", "Chicken");
+      const result = await generateRecipeImage({
+        title: "Chicken Salad",
+        productName: "Chicken",
+      });
 
       expect(result).toBeNull();
     });
@@ -423,11 +436,22 @@ describe("Recipe Generation", () => {
       it("uses Runware when configured and succeeds", async () => {
         mockRunwareGenerate.mockResolvedValue(Buffer.from("fake-image-data"));
 
-        const result = await generateRecipeImage("Chicken Salad", "Chicken");
+        const result = await generateRecipeImage(
+          {
+            title: "Chicken Salad",
+            productName: "Chicken",
+            cuisine: "American",
+            mealTypes: ["dinner"],
+          },
+          { skipLLM: true },
+        );
 
         expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
         expect(mockRunwareGenerate).toHaveBeenCalled();
         expect(mockImageGenerate).not.toHaveBeenCalled();
+        const promptArg = mockRunwareGenerate.mock.calls[0][0].prompt;
+        expect(promptArg).toMatch(/editorial food photography/i);
+        expect(promptArg).not.toMatch(/no text|watermark/i);
       });
 
       it("falls back to DALL-E when Runware returns null", async () => {
@@ -436,11 +460,23 @@ describe("Recipe Generation", () => {
           data: [{ b64_json: "dalle-fallback-data" }],
         } as any);
 
-        const result = await generateRecipeImage("Chicken Salad", "Chicken");
+        const result = await generateRecipeImage({
+          title: "Chicken Salad",
+          productName: "Chicken",
+        });
 
         expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
         expect(mockRunwareGenerate).toHaveBeenCalled();
         expect(mockImageGenerate).toHaveBeenCalled();
+        // M1 regression guard: the DALL-E negative channel must be present in the
+        // prompt passed to DALL-E (the suffix is the ONLY source of these terms —
+        // composePrompt is positive-only, so deleting the suffix kills this assert).
+        const dallePromptArg = (
+          mockImageGenerate.mock.calls[0][0] as { prompt: string }
+        ).prompt;
+        expect(dallePromptArg).toContain(
+          "No text, no watermarks, no logos, no labels, no letters.",
+        );
       });
 
       it("falls back to DALL-E when Runware throws", async () => {
@@ -449,7 +485,10 @@ describe("Recipe Generation", () => {
           data: [{ b64_json: "dalle-fallback-data" }],
         } as any);
 
-        const result = await generateRecipeImage("Chicken Salad", "Chicken");
+        const result = await generateRecipeImage({
+          title: "Chicken Salad",
+          productName: "Chicken",
+        });
 
         expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
         expect(mockImageGenerate).toHaveBeenCalled();
@@ -459,7 +498,10 @@ describe("Recipe Generation", () => {
         mockRunwareGenerate.mockRejectedValue(new Error("Runware down"));
         mockImageGenerate.mockRejectedValue(new Error("DALL-E down"));
 
-        const result = await generateRecipeImage("Chicken Salad", "Chicken");
+        const result = await generateRecipeImage({
+          title: "Chicken Salad",
+          productName: "Chicken",
+        });
 
         expect(result).toBeNull();
       });
@@ -503,7 +545,10 @@ describe("Recipe Generation", () => {
         data: [{ b64_json: "abc123base64data" }],
       } as any);
 
-      await generateAndPatchRecipeImage(42, "Grilled Salmon", "Salmon");
+      await generateAndPatchRecipeImage(42, {
+        title: "Grilled Salmon",
+        productName: "Salmon",
+      });
 
       expect(mockUpdateCommunityRecipeImageUrl).toHaveBeenCalledWith(
         42,
@@ -516,7 +561,10 @@ describe("Recipe Generation", () => {
         data: [{ b64_json: undefined }],
       } as any);
 
-      await generateAndPatchRecipeImage(42, "Grilled Salmon", "Salmon");
+      await generateAndPatchRecipeImage(42, {
+        title: "Grilled Salmon",
+        productName: "Salmon",
+      });
 
       expect(mockUpdateCommunityRecipeImageUrl).not.toHaveBeenCalled();
     });
@@ -525,7 +573,10 @@ describe("Recipe Generation", () => {
       mockImageGenerate.mockRejectedValue(new Error("DALL-E unavailable"));
 
       await expect(
-        generateAndPatchRecipeImage(42, "Grilled Salmon", "Salmon"),
+        generateAndPatchRecipeImage(42, {
+          title: "Grilled Salmon",
+          productName: "Salmon",
+        }),
       ).resolves.toBeUndefined();
       expect(mockUpdateCommunityRecipeImageUrl).not.toHaveBeenCalled();
     });
