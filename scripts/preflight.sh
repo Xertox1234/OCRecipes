@@ -7,7 +7,11 @@
 # Thin wrapper over the SAME npm scripts CI runs (no drift). Exit non-zero on any failure.
 set -uo pipefail
 
-STAMP_FILE="/tmp/ocrecipes-preflight-pass"
+# Pass-stamp path — single source of truth shared with the PR-create guard
+# (.claude/hooks/pr-preflight-guard.sh) so the writer and reader never drift.
+# shellcheck source=scripts/lib/preflight-stamp-path.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/preflight-stamp-path.sh"
+STAMP_FILE="$(preflight_stamp_path)"
 MODE="full"
 [ "${1:-}" = "--fast" ] && MODE="fast"
 [ "${1:-}" = "--staged" ] && MODE="staged"
