@@ -251,6 +251,14 @@ describe("enrichRecipe", () => {
     // Editorial content from the default GPT-4o mock.
     expect(enrichment.cuisineOrigin).toBe("Italian");
     expect(enrichment.toolsRequired[0].name).toBe("Skillet");
+    // M1 regression guard: the DALL-E negative channel must be present in the
+    // prompt (the suffix is the ONLY source — composePrompt is positive-only,
+    // so deleting the suffix kills this assert).
+    const dallePromptArg = runware.dalleGenerate.mock.calls[0][0]
+      .prompt as string;
+    expect(dallePromptArg).toContain(
+      "No text, no watermarks, no logos, no labels, no letters.",
+    );
   });
 
   it("uses the Runware HQ path when configured", async () => {

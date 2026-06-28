@@ -468,6 +468,15 @@ describe("Recipe Generation", () => {
         expect(result).toMatch(/^\/api\/recipe-images\/recipe-.+\.png$/);
         expect(mockRunwareGenerate).toHaveBeenCalled();
         expect(mockImageGenerate).toHaveBeenCalled();
+        // M1 regression guard: the DALL-E negative channel must be present in the
+        // prompt passed to DALL-E (the suffix is the ONLY source of these terms —
+        // composePrompt is positive-only, so deleting the suffix kills this assert).
+        const dallePromptArg = (
+          mockImageGenerate.mock.calls[0][0] as { prompt: string }
+        ).prompt;
+        expect(dallePromptArg).toContain(
+          "No text, no watermarks, no logos, no labels, no letters.",
+        );
       });
 
       it("falls back to DALL-E when Runware throws", async () => {
