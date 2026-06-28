@@ -73,7 +73,7 @@ async function main() {
       console.log(
         `Generating image for community recipe ${recipe.id}: "${recipe.title}"...`,
       );
-      const imageUrl = await generateRecipeImage(recipe.title, recipe.title);
+      const imageUrl = await generateRecipeImage({ title: recipe.title });
       if (imageUrl) {
         await db
           .update(communityRecipes)
@@ -98,7 +98,7 @@ async function main() {
       console.log(
         `Generating image for meal-plan recipe ${recipe.id}: "${recipe.title}"...`,
       );
-      const imageUrl = await generateRecipeImage(recipe.title, recipe.title);
+      const imageUrl = await generateRecipeImage({ title: recipe.title });
       if (imageUrl) {
         await db
           .update(mealPlanRecipes)

@@ -203,10 +203,11 @@ export function register(app: Express): void {
           fireAndForget(
             "recipe-image-gen",
             (async () => {
-              const imageUrl = await generateRecipeImage(
-                recipe.title,
-                recipe.title,
-              );
+              const imageUrl = await generateRecipeImage({
+                title: recipe.title,
+                cuisine: recipe.cuisine,
+                mealTypes: recipe.mealTypes,
+              });
               if (imageUrl) {
                 await storage.updateMealPlanRecipe(recipe.id, req.userId, {
                   imageUrl,
