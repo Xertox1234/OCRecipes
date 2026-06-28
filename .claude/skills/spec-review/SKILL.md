@@ -43,46 +43,32 @@ Before setting the review bar, calibrate against prior similar specs in this rep
 
 ## Procedure
 
-### 1. Find relevant prior specs
+### 1. Gather and calibrate against prior specs
 
-Before reviewing the current document, inspect a small sample of prior specs or plans that appear related by feature area, subsystem, or workflow.
+Calibrate the review bar against 2-4 of the closest prior specs/plans. **Selecting** them stays inline (filenames are nearly free and selection benefits from judgment); **reading their contents** — the bulk cost — is delegated to the worker model.
 
-Use an explicit search strategy instead of a vague similarity pass.
+**Select (inline, filenames only).** List `docs/superpowers/specs/` and `docs/superpowers/plans/` and pick the 2-4 closest, preferring in this order:
 
-Search in this order:
+1. Same basename across `specs/` and `plans/` (a plan + its design is a maturity pair)
+2. Same subsystem/feature tokens such as `coach`, `recipe`, `camera`, `ocr`, `todo`, `audit`, `kimi`, `copilot`, `eval`, `lsp`, `eslint`, `timezone`, or `worktree`
+3. Same architectural surface (client UX, client-state, routes, storage, AI workflow, review infrastructure) or same document intent (design, hardening, rollout, verification, reliability)
 
-1. Same basename across `docs/superpowers/specs/` and `docs/superpowers/plans/`
-2. Same subsystem tokens in the filename or title
-3. Same workflow family, such as `audit`, `todo`, `kimi`, `copilot`, `coach`, `recipe`, `camera`, `ocr`, `eval`, `lsp`, `eslint`, `timezone`, or `worktree`
-4. Same architectural surface, such as client UX, client-state, server routes, storage, AI workflow, or review infrastructure
-5. Same document intent, such as design, hardening, rollout, verification, or reliability
+Heuristics: strip the leading date and trailing `-design`; split on hyphens and match the strongest nouns first; prefer exact token overlaps; prefer newer precedents when several candidates are similarly close. Filename matching is weaker than reading every candidate, but over a 2-4 shortlist it is an acceptable tradeoff — and the brief below surfaces a bad pick so it can be dropped.
 
-Build the prior-spec sample from 2 to 4 documents, not a broad corpus dump.
+**Read contents (delegated — the bulk cost).** Hand the selected prior-spec/plan paths to the worker model for a compact calibration brief:
 
-Practical matching heuristics:
+```bash
+ask-kimi --paths <prior-spec-1> <prior-spec-2> [...] \
+  --question "For spec-review calibration, summarize each file in 3-5 bullets: structure, typical detail level, recurring design/review constraints, and where it was more or less precise than usual. Do NOT summarize coding rules. Output structured bullets."
+```
 
-- Strip the leading date and trailing `-design` when comparing filenames
-- Split remaining names on hyphens and match the strongest nouns first
-- Prefer exact token overlaps such as `coach`, `ocr`, `todo`, `audit`, `kimi`, `eval`, or `recipe`
-- If the current file is in `specs/`, check whether a same-topic file exists in `plans/`, and vice versa
-- Prefer newer precedents when several candidates are similarly close
+`ask-kimi` (DeepSeek V4 Flash) returns a clean, line-cited, ≤800-word structured-bullet summary on stdout (cost report on stderr). The `--paths` list contains **only prior-spec/plan files** — never `docs/rules/*` or `.github/copilot-instructions.md` (those stay inline in Step 4, where the verdict reads them verbatim). Do **not** pipe through `extract-chat` (it parses Claude Code `.jsonl` transcripts, not `ask-kimi` output).
 
-Prefer the closest precedents first:
+If `ask-kimi` exits non-zero (it prints `[ERROR …]` to stderr), dispatch a read-only **Explore** subagent with the same prior-spec paths and the same brief request.
 
-- Same feature family or subsystem
-- Same layer or domain, such as client-state, routes, storage, AI workflow, or review infrastructure
-- Same document type, such as design doc, implementation plan, or hardening plan
+Use the brief for calibration, not blind template enforcement. Extract the recurring structure, the typical detail level for files/decisions/risks/validation, and repeated design constraints. If similar approved specs consistently include decision tables, touched-file lists, rollout order, or explicit failure paths, treat their absence here as a stronger signal; if precedent is intentionally lightweight, do not demand ceremony the repo itself does not use. When the selected prior specs/plans include both a plan and its design/spec for the same topic, treat the design as the bar expected before implementation and the plan as the lighter planning shape.
 
-Use the prior specs for calibration, not for blind template enforcement. Extract:
-
-- Common structure patterns that recur in similar docs
-- Typical detail level for files, decisions, risks, and validation
-- Repeated design constraints or review concerns
-- Places where prior specs were more precise than the current one, or where they were intentionally lighter
-
-When the sample contains both a plan and a design/spec for the same topic, use that pairing to infer maturity: the plan often shows the lighter planning shape, while the design/spec shows the bar expected before implementation.
-
-If no useful precedent exists, continue with the current document alone and say so.
+If no useful precedent exists, say so and continue with the current document alone.
 
 ### 2. Triage the spec
 
@@ -102,7 +88,7 @@ Examples:
 - A brainstorm note may be acceptable without formal headings if the intended change, boundaries, and major risks are still recoverable.
 - A final implementation spec should usually be more concrete; if key execution or validation details are absent, flag the missing information as a finding.
 
-Use the prior-spec sample to decide what level of precision is normal for this class of document in this repo.
+Use the calibration brief to decide what level of precision is normal for this class of document in this repo.
 
 ### 3. Map the affected domains
 
@@ -129,8 +115,6 @@ Read only the docs needed to judge the spec:
 Do not broad-map the repo. Read just enough to validate the controlling boundaries and the highest-risk claims.
 
 Let the spec drive the depth of the review. A rough brainstorm may need more inference and more open questions. A detailed design doc should be reviewed against a higher bar for precision and completeness.
-
-Let the precedent sample adjust that bar too. If similar approved specs in this repo consistently include decision tables, touched-file lists, rollout order, or explicit failure paths, treat their absence in the current doc as a stronger signal. If the historical precedent is intentionally lightweight, do not demand ceremony that the repo itself does not use.
 
 ### 5. Run the review lenses
 
@@ -237,7 +221,16 @@ If there are no findings, state that explicitly and still note residual risks or
 
 ## Optional Specialist Pass
 
-If the spec spans multiple risky domains, run targeted specialist reviews after the initial pass. Typical mappings:
+If the spec spans multiple risky domains, dispatch up to **3** targeted specialists after the initial inline pass. Dispatch them **scoped** — never "go review the whole spec," which makes each specialist re-read everything.
+
+Give each specialist only:
+
+- the relevant spec excerpt(s),
+- the preliminary findings already raised in its domain,
+- the per-domain binding-rule summary (from Step 4 — the `docs/rules/<domain>.md` you read inline),
+- this instruction: _"Do not broad-read the repo. Confirm or refute the findings above and add only domain-specific risks. Read a specific file only to verify a named claim."_
+
+Each specialist returns **deltas** — confirm / refute / net-new findings — not a fresh full review. Pick at most 3 from:
 
 - `api` or route-heavy spec -> `api-specialist`
 - storage, schema-adjacent, or data-integrity-heavy spec -> `database-specialist`
