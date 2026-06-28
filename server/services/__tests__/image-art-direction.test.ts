@@ -94,6 +94,18 @@ describe("subjectFor", () => {
     expect(s).toMatch(/plated/i);
     expect(s).not.toMatch(/raw ingredients/i);
   });
+  it("frames plated variant as a plated serving", () => {
+    const s = subjectFor({ title: "Carbonara" }, "plated");
+    expect(s).toMatch(/plated/i);
+    expect(s).not.toMatch(/raw ingredients/i);
+  });
+  it("includes productName in the hero/plated subject when present", () => {
+    const s = subjectFor(
+      { title: "Carbonara", productName: "Guanciale" },
+      "hero",
+    );
+    expect(s).toContain("Guanciale");
+  });
 });
 
 describe("composePrompt", () => {
@@ -115,5 +127,12 @@ describe("composePrompt", () => {
     expect(out).not.toMatch(/\bno text\b/i);
     expect(out).not.toMatch(/\bcartoon\b/i);
     expect(out).not.toMatch(/\b3d render\b/i);
+  });
+  it("appends the seasonal feel clause when season is set", () => {
+    const out = composePrompt(subjectFor({ title: "Carbonara" }, "hero"), {
+      ...sampleArt,
+      season: "autumnal",
+    });
+    expect(out).toMatch(/autumnal seasonal feel/i);
   });
 });
