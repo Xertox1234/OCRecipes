@@ -1,10 +1,11 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 import { storage } from "../storage";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
 import { searchRecipes } from "../services/recipe-search";
-import { instructionsRateLimit } from "./_rate-limiters";
+import { instructionsRateLimit, ipKeyGenerator } from "./_rate-limiters";
 import { formatZodError, handleRouteError } from "./_helpers";
 import { stripAuthorId } from "./_recipe-helpers";
 import { searchQuerySchema, browseQuerySchema } from "@shared/schemas/recipe";
@@ -83,7 +84,23 @@ export function register(app: Express): void {
   app.get(
     "/api/recipes/trending",
     requireAuth,
-    instructionsRateLimit,
+    // Limiter inlined here (rather than the _rate-limiters factory const used by
+    // the sibling routes above) so CodeQL's js/missing-rate-limiting query can
+    // trace it — the createRateLimiter factory-const indirection is invisible to
+    // its dataflow (the historically-dismissed #146–#215 cluster). Behavior is
+    // identical to instructionsRateLimit: 20/min, user-keyed with the same
+    // Railway-aware IP fallback (placed after requireAuth so req.userId is set).
+    rateLimit({
+      windowMs: 60_000,
+      max: 20,
+      message: {
+        error: "Too many trending requests. Please wait.",
+        code: "RATE_LIMITED",
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
       try {
         const terms = await storage.getTrendingSearchTerms(8);
