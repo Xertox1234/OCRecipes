@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Pre-push gate. Picks the preflight depth by whether the branch already has an open PR:
+#   delete / no-op push → skipped entirely (no commits to verify).
 #   open PR  → full preflight (incl. coverage) — every PR-updating push is CI-verified locally.
 #   no PR    → preflight:fast (WIP iteration stays fast).
 # Coverage on the FIRST (pre-PR) push is enforced separately by the gh-pr-create guard.
@@ -11,11 +12,42 @@ if [ -z "${BASH_VERSION:-}" ]; then
 fi
 set +e
 
+# Decide whether there is anything to verify. Git feeds one line per pushed ref to a pre-push
+# hook on stdin: "<local-ref> <local-sha> <remote-ref> <remote-sha>". A branch DELETION has an
+# all-zero local sha (and no commits); a no-op re-push has an empty commit range — neither
+# needs the preflight. Skip only when EVERY pushed ref is provably a delete or empty; any
+# uncertainty (unknown remote sha, or empty stdin) falls through to the normal gate.
+zero="0000000000000000000000000000000000000000"
+saw_ref=0
+need_verify=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -z "${local_ref:-}" ] && continue
+  saw_ref=1
+  [ "$local_sha" = "$zero" ] && continue            # deletion → nothing to verify
+  if [ "$remote_sha" = "$zero" ]; then
+    need_verify=1                                    # brand-new remote branch → has commits
+    continue
+  fi
+  # Existing branch: skip only if the range is provably empty. `--count` is one number; a git
+  # failure (remote sha absent locally) yields "" → fail safe and verify.
+  count=$(git rev-list --count "$remote_sha..$local_sha" 2>/dev/null) || count=""
+  if [ -z "$count" ] || [ "$count" != "0" ]; then
+    need_verify=1
+  fi
+done
+
+if [ "$saw_ref" = 1 ] && [ "$need_verify" = 0 ]; then
+  echo "[pre-push] no new commits to verify (branch deletion or up-to-date) — skipping gate."
+  exit 0
+fi
+
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 
 MODE="fast"
 if command -v gh >/dev/null 2>&1; then
-  if gh pr view "$BRANCH" --json number --jq .number >/dev/null 2>&1; then
+  # Only an OPEN PR escalates to the full gate. `gh pr view` also matches CLOSED/MERGED PRs,
+  # which kept forcing the full gate on a branch long after its PR closed — list open only.
+  if [ -n "$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number // empty' 2>/dev/null)" ]; then
     MODE="full"
   fi
 else
