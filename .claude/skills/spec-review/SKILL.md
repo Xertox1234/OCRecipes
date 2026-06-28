@@ -51,7 +51,7 @@ Calibrate the review bar against 2-4 of the closest prior specs/plans. **Selecti
 
 1. Same basename across `specs/` and `plans/` (a plan + its design is a maturity pair)
 2. Same subsystem/feature tokens such as `coach`, `recipe`, `camera`, `ocr`, `todo`, `audit`, `kimi`, `copilot`, `eval`, `lsp`, `eslint`, `timezone`, or `worktree`
-3. Same architectural surface (client UX, client-state, routes, storage, AI workflow, review infrastructure) and same document intent (design, hardening, rollout, verification, reliability)
+3. Same architectural surface (client UX, client-state, routes, storage, AI workflow, review infrastructure) or same document intent (design, hardening, rollout, verification, reliability)
 
 Heuristics: strip the leading date and trailing `-design`; split on hyphens and match the strongest nouns first; prefer exact token overlaps; prefer newer precedents when several candidates are similarly close. Filename matching is weaker than reading every candidate, but over a 2-4 shortlist it is an acceptable tradeoff — and the brief below surfaces a bad pick so it can be dropped.
 
