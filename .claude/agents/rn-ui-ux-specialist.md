@@ -272,6 +272,7 @@ When reviewing or writing UI code, verify:
 - [ ] Reduced motion support
 - [ ] Layout animation delays capped
 - [ ] Animations on UI thread (worklets)
+- [ ] Any function **called inside** a worklet (`runOnUI`, animated hooks) carries its own `"worklet"` directive at its definition — the Babel plugin does NOT workletize imported plain functions; a missing directive is a redbox in dev but a **silent app close on release/OTA**. Verify worklet code on a sim/device, not just CI.
 - [ ] `runOnJS` inside `useAnimatedScrollHandler` gated on a shared-value transition — never fired every scroll frame (60Hz)
 - [ ] Chained `setTimeout` inside `useEffect`: inner timer handles captured in closure variables and cleared in cleanup
 
@@ -303,6 +304,7 @@ When reviewing or writing UI code, verify:
 14. **Conditional status node not announced to screen readers** - A `ThemedText` / `View` that appears based on a runtime state change (offline, error, success) with no paired `AccessibilityInfo.announceForAccessibility` call is silent to VoiceOver/TalkBack when the transition happens while the screen is already mounted. Add a `useEffect` with an `isFirstRender` ref guard. Do NOT add `accessibilityLiveRegion` to the same node (double TalkBack announcement). See `docs/solutions/best-practices/announceForAccessibility-isFirstRender-conditional-status-2026-06-12.md`.
 15. **Inner `setTimeout` not cleaned up** - `useEffect(() => { setTimeout(() => { ...; setTimeout(onComplete, 300); }, N); return () => clearTimeout(...) })` only clears the outer timer. Capture the inner handle in a closure variable (`let innerTimer: ReturnType<typeof setTimeout> | undefined`) so cleanup can clear both. Otherwise `onComplete` fires after unmount (Ref: audit 2026-04-17 H15)
 16. **`accessibilityViewIsModal` as the only focus trap** - It is **iOS-only**. An RN `<Modal>` traps focus on both platforms, but an _inline_ overlay (a conditionally-rendered sibling `View` — confirm cards, product chips, action panels) leaves the controls behind it reachable by TalkBack on Android. Hide the **behind-content** siblings (NOT the overlay) with `importantForAccessibility="no-hide-descendants"` (restore `"auto"`; no-op on iOS, so the iOS path is untouched). Apply **per-element, not via a wrapper** (a wrapper re-scopes absolutely-positioned `zIndex` children and can flip paint order); for stacked overlays, compute the per-surface values in one **tested pure function** so the one that is itself the active overlay stays reachable. Do NOT add `accessibilityElementsHidden` (that's the rule-17 visual-hide pattern; redundant here since iOS is already handled). See `docs/solutions/conventions/in-screen-overlay-needs-android-focus-trap-2026-06-22.md`.
+17. **Imported util called in a worklet without `"worklet"`** - Fatal on the UI thread → silent crash on release/OTA (redbox only in dev). Add the directive at the function's definition (see `client/lib/volume-scale.ts` precedent). See `docs/solutions/runtime-errors/reanimated-worklet-util-needs-directive-across-imports-2026-06-27.md`.
 
 ---
 
