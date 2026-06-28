@@ -3,7 +3,7 @@
 ---
 
 title: "Stryker mutation can't run locally inside a post-checkout git worktree (docs/solutions symlink)"
-status: backlog
+status: completed
 priority: low
 created: 2026-06-27
 updated: 2026-06-27

@@ -29,7 +29,17 @@ export default {
   testRunner: "vitest",
   vitest: { configFile: "vitest.mutation.config.ts" },
   coverageAnalysis: "perTest",
-  ignorePatterns: ["ios", "android", ".expo", "server_dist", "coverage"],
+  // `.claude` + `docs` excluded so Stryker's sandbox copy skips the post-checkout
+  // `docs/solutions` directory symlink (ENOTSUP) — see stryker.conf.mjs for the full note.
+  ignorePatterns: [
+    "ios",
+    "android",
+    ".expo",
+    "server_dist",
+    "coverage",
+    ".claude",
+    "docs",
+  ],
   disableTypeChecks: false,
   mutate: [mutate],
   incremental: false,

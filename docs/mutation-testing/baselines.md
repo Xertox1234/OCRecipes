@@ -17,6 +17,8 @@ threshold is enforced until a target has a stable baseline here.
 | 2026-06-27 | cook-session-merge               | 100%   | 27     | 0        | 0           | 0       |
 | 2026-06-27 | chat-history-truncate (before)   | 73.54% | 163    | 58       | 1           | 1       |
 | 2026-06-27 | chat-history-truncate (after)    | 90.58% | 200    | 21       | 0           | 2       |
+| 2026-06-27 | notebook-budget (before)         | 81.82% | 45     | 10       | 0           | 0       |
+| 2026-06-27 | notebook-budget (after)          | 90.91% | 50     | 5        | 0           | 0       |
 
 > **goal-safety targets** (`goal-calculator`) are Hard-Exclusion modules brought under
 > mutation testing via the gated read-only protocol — tests only, source never edited.

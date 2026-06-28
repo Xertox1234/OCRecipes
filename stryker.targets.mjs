@@ -43,6 +43,13 @@ export const MUTATION_TARGETS = {
     // nondeterministic across runners and the residual (dev-only warn block + provable
     // equivalents) can shift ±1-2 mutants without a real test regression
   },
+  "notebook-budget": {
+    mutate: ["server/services/notebook-budget.ts"],
+    testInclude: ["server/services/__tests__/notebook-budget.test.ts"],
+    breakThreshold: 88, // achieved 90.91% (killed the recency-boundary + separator
+    // survivors); the 5 residual are the line-93 redundant fast-path guard — provably
+    // equivalent (the loop yields "" for empty/non-positive budget regardless)
+  },
   "goal-calculator": {
     mutate: ["server/services/goal-calculator.ts"],
     testInclude: ["server/services/__tests__/goal-calculator.test.ts"],
