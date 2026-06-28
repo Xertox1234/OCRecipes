@@ -212,6 +212,12 @@ describe("resolveArtDirection — LLM enrich + fallback", () => {
     expect(art).toEqual(selectDeterministicArtDirection(ctx, "hero"));
   });
 
+  it("falls back to deterministic on empty content", async () => {
+    mockCreate.mockResolvedValue({ choices: [{ message: { content: "" } }] });
+    const art = await resolveArtDirection(ctx, "hero");
+    expect(art).toEqual(selectDeterministicArtDirection(ctx, "hero"));
+  });
+
   it("skips the LLM entirely when skipLLM is true", async () => {
     const art = await resolveArtDirection(ctx, "hero", { skipLLM: true });
     expect(mockCreate).not.toHaveBeenCalled();
@@ -232,13 +238,13 @@ describe("buildImagePrompt", () => {
     delete process.env.IMAGE_ART_DIRECTOR_LLM;
   });
   it("returns a composed positive prompt (deterministic path)", async () => {
-    const prompt = await buildImagePrompt(
-      { title: "Tacos", cuisine: "Mexican", mealTypes: ["lunch"] },
-      "hero",
-      { skipLLM: true },
+    const ctx = { title: "Tacos", cuisine: "Mexican", mealTypes: ["lunch"] };
+    const prompt = await buildImagePrompt(ctx, "hero", { skipLLM: true });
+    const expected = composePrompt(
+      subjectFor(ctx, "hero"),
+      selectDeterministicArtDirection(ctx, "hero"),
     );
-    expect(prompt).toMatch(/editorial food photography/i);
-    expect(prompt).toMatch(/Tacos/);
-    expect(prompt).not.toMatch(/watermark/i);
+    expect(prompt).toBe(expected);
+    expect(prompt).not.toMatch(/watermark/i); // positive-only guard
   });
 });
