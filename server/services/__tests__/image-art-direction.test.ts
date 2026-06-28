@@ -1,12 +1,27 @@
 // server/services/__tests__/image-art-direction.test.ts
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
 import {
   selectDeterministicArtDirection,
   subjectFor,
   composePrompt,
+  resolveArtDirection,
+  buildImagePrompt,
   type RecipeImageContext,
   type ArtDirection,
 } from "../image-art-direction";
+
+const mockCreate = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/openai", () => ({
+  openai: { chat: { completions: { create: mockCreate } } },
+  MODEL_FAST: "gpt-4o-mini",
+  OPENAI_TIMEOUT_FAST_MS: 15000,
+  isAiConfigured: true,
+}));
+vi.mock("../../lib/ai-safety", () => ({
+  sanitizeUserInput: vi.fn((s: string) => s),
+  SYSTEM_PROMPT_BOUNDARY: "SAFETY RULES",
+}));
 
 const italianDinner: RecipeImageContext = {
   title: "Spaghetti Carbonara",
@@ -134,5 +149,96 @@ describe("composePrompt", () => {
       season: "autumnal",
     });
     expect(out).toMatch(/autumnal seasonal feel/i);
+  });
+});
+
+const llmJson = (obj: Record<string, unknown>) => ({
+  choices: [{ message: { content: JSON.stringify(obj) } }],
+});
+
+describe("resolveArtDirection — LLM enrich + fallback", () => {
+  beforeEach(() => {
+    mockCreate.mockReset();
+    delete process.env.IMAGE_ART_DIRECTOR_LLM;
+  });
+
+  const ctx = { title: "Pad Thai", cuisine: "Thai", mealTypes: ["dinner"] };
+
+  it("uses the validated LLM art direction when enabled", async () => {
+    mockCreate.mockResolvedValue(
+      llmJson({
+        angle: "a dramatic low angle",
+        surface: "a fresh banana leaf",
+        background: "dark moody tropical depth",
+        lighting: "warm dim evening light",
+        palette: "lush greens and chili reds",
+        props: "lime and crushed peanuts",
+        mood: "moody and aromatic",
+        season: "late summer",
+      }),
+    );
+    const art = await resolveArtDirection(ctx, "hero");
+    expect(art.surface).toBe("a fresh banana leaf");
+    expect(art.season).toBe("late summer");
+  });
+
+  it("falls back to deterministic on invalid JSON", async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "not json" } }],
+    });
+    const art = await resolveArtDirection(ctx, "hero");
+    expect(art).toEqual(selectDeterministicArtDirection(ctx, "hero"));
+  });
+
+  it("falls back to deterministic on schema violation (oversized field)", async () => {
+    mockCreate.mockResolvedValue(
+      llmJson({
+        angle: "x".repeat(200),
+        surface: "s",
+        background: "b",
+        lighting: "l",
+        palette: "p",
+        props: "pr",
+        mood: "m",
+      }),
+    );
+    const art = await resolveArtDirection(ctx, "hero");
+    expect(art).toEqual(selectDeterministicArtDirection(ctx, "hero"));
+  });
+
+  it("falls back to deterministic when the call throws", async () => {
+    mockCreate.mockRejectedValue(new Error("timeout"));
+    const art = await resolveArtDirection(ctx, "hero");
+    expect(art).toEqual(selectDeterministicArtDirection(ctx, "hero"));
+  });
+
+  it("skips the LLM entirely when skipLLM is true", async () => {
+    const art = await resolveArtDirection(ctx, "hero", { skipLLM: true });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(art).toEqual(selectDeterministicArtDirection(ctx, "hero"));
+  });
+
+  it("skips the LLM when IMAGE_ART_DIRECTOR_LLM=off", async () => {
+    process.env.IMAGE_ART_DIRECTOR_LLM = "off";
+    const art = await resolveArtDirection(ctx, "hero");
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(art).toEqual(selectDeterministicArtDirection(ctx, "hero"));
+  });
+});
+
+describe("buildImagePrompt", () => {
+  beforeEach(() => {
+    mockCreate.mockReset();
+    delete process.env.IMAGE_ART_DIRECTOR_LLM;
+  });
+  it("returns a composed positive prompt (deterministic path)", async () => {
+    const prompt = await buildImagePrompt(
+      { title: "Tacos", cuisine: "Mexican", mealTypes: ["lunch"] },
+      "hero",
+      { skipLLM: true },
+    );
+    expect(prompt).toMatch(/editorial food photography/i);
+    expect(prompt).toMatch(/Tacos/);
+    expect(prompt).not.toMatch(/watermark/i);
   });
 });

@@ -1,6 +1,14 @@
 // server/services/image-art-direction.ts
 import crypto from "node:crypto";
-import { sanitizeUserInput } from "../lib/ai-safety";
+import { z } from "zod";
+import { sanitizeUserInput, SYSTEM_PROMPT_BOUNDARY } from "../lib/ai-safety";
+import {
+  openai,
+  MODEL_FAST,
+  isAiConfigured,
+  OPENAI_TIMEOUT_FAST_MS,
+} from "../lib/openai";
+import { createServiceLogger, toError } from "../lib/logger";
 
 export type ImageVariant = "hero" | "plated" | "ingredients";
 
@@ -391,4 +399,124 @@ export function composePrompt(subject: string, art: ArtDirection): string {
     `Styled with ${art.props}; ${art.palette} colour palette; ${art.mood} mood${seasonClause}.`,
     HOUSE_STYLE_SUFFIX,
   ].join(" ");
+}
+
+// ─── LLM art-director pre-pass ───────────────────────────────────────────────
+
+const log = createServiceLogger("image-art-direction");
+
+const ArtDirectionLLMSchema = z.object({
+  angle: z.string().min(1).max(60),
+  surface: z.string().min(1).max(80),
+  background: z.string().min(1).max(80),
+  lighting: z.string().min(1).max(80),
+  palette: z.string().min(1).max(80),
+  props: z.string().min(1).max(100),
+  mood: z.string().min(1).max(60),
+  season: z.string().max(40).optional(),
+});
+
+function sanitizeField(s: string): string {
+  return s
+    .replace(/[\r\n"]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function isArtDirectorLLMEnabled(): boolean {
+  return isAiConfigured && process.env.IMAGE_ART_DIRECTOR_LLM !== "off";
+}
+
+export async function resolveArtDirection(
+  ctx: RecipeImageContext,
+  variant: ImageVariant,
+  opts?: { skipLLM?: boolean },
+): Promise<ArtDirection> {
+  const deterministic = selectDeterministicArtDirection(ctx, variant);
+  if (opts?.skipLLM || !isArtDirectorLLMEnabled()) return deterministic;
+
+  try {
+    const safeTitle = sanitizeUserInput(ctx.title);
+    const safeCuisine = ctx.cuisine
+      ? sanitizeUserInput(ctx.cuisine)
+      : "unspecified";
+    const safeMeals =
+      (ctx.mealTypes ?? []).map(sanitizeUserInput).join(", ") || "unspecified";
+    const safeIngredients =
+      (ctx.ingredients ?? []).slice(0, 12).map(sanitizeUserInput).join(", ") ||
+      "unspecified";
+
+    const systemPrompt =
+      `You are a professional food-photography art director. Propose art direction that makes a dish look like a premium editorial food photo — NOT a generic plain-white-background stock image. Tailor angle, surface, background, lighting, palette, props, mood, and season to the dish, its cuisine, and when it is eaten.\n` +
+      SYSTEM_PROMPT_BOUNDARY;
+
+    const userPrompt =
+      `Dish: "${safeTitle}"\n` +
+      `Cuisine: ${safeCuisine}\n` +
+      `Meal types: ${safeMeals}\n` +
+      `Key ingredients: ${safeIngredients}\n` +
+      `Shot type: ${variant}\n\n` +
+      `Refine (do not ignore) this starting point: ${JSON.stringify(deterministic)}\n\n` +
+      `Return a JSON object with short-phrase string fields: angle, surface, background, lighting, palette, props, mood, and optionally season. Describe only the scene. Do NOT mention text, captions, logos, or watermarks.`;
+
+    const completion = await openai.chat.completions.create(
+      {
+        model: MODEL_FAST,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.8,
+        max_tokens: 300,
+        response_format: { type: "json_object" },
+      },
+      { timeout: OPENAI_TIMEOUT_FAST_MS },
+    );
+
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) return deterministic;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return deterministic;
+    }
+
+    const validated = ArtDirectionLLMSchema.safeParse(parsed);
+    if (!validated.success) {
+      log.warn(
+        { issues: validated.error.issues },
+        "art-director LLM response failed validation; using deterministic",
+      );
+      return deterministic;
+    }
+
+    const d = validated.data;
+    return {
+      angle: sanitizeField(d.angle),
+      surface: sanitizeField(d.surface),
+      background: sanitizeField(d.background),
+      lighting: sanitizeField(d.lighting),
+      palette: sanitizeField(d.palette),
+      props: sanitizeField(d.props),
+      mood: sanitizeField(d.mood),
+      season: d.season ? sanitizeField(d.season) : undefined,
+    };
+  } catch (err) {
+    log.warn(
+      { err: toError(err) },
+      "art-director LLM call failed; using deterministic",
+    );
+    return deterministic;
+  }
+}
+
+export async function buildImagePrompt(
+  ctx: RecipeImageContext,
+  variant: ImageVariant,
+  opts?: { skipLLM?: boolean },
+): Promise<string> {
+  const art = await resolveArtDirection(ctx, variant, opts);
+  return composePrompt(subjectFor(ctx, variant), art);
 }
