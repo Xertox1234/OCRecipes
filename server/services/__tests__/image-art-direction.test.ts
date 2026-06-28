@@ -2,7 +2,10 @@
 import { describe, it, expect } from "vitest";
 import {
   selectDeterministicArtDirection,
+  subjectFor,
+  composePrompt,
   type RecipeImageContext,
+  type ArtDirection,
 } from "../image-art-direction";
 
 const italianDinner: RecipeImageContext = {
@@ -67,5 +70,50 @@ describe("selectDeterministicArtDirection", () => {
       ),
     );
     expect(angles.size).toBeGreaterThanOrEqual(2);
+  });
+});
+
+const sampleArt: ArtDirection = {
+  angle: "an overhead flat-lay shot",
+  surface: "a warm rustic walnut board",
+  background: "a soft blurred trattoria interior",
+  lighting: "warm golden-hour evening glow",
+  palette: "warm reds and terracotta",
+  props: "a linen napkin and olive oil cruet",
+  mood: "cozy and rustic",
+};
+
+describe("subjectFor", () => {
+  it("frames the ingredients variant as raw components", () => {
+    const s = subjectFor({ title: "Carbonara" }, "ingredients");
+    expect(s).toMatch(/raw ingredients/i);
+    expect(s).toMatch(/Carbonara/);
+  });
+  it("frames hero/plated as a plated serving", () => {
+    const s = subjectFor({ title: "Carbonara" }, "hero");
+    expect(s).toMatch(/plated/i);
+    expect(s).not.toMatch(/raw ingredients/i);
+  });
+});
+
+describe("composePrompt", () => {
+  const out = composePrompt(
+    subjectFor({ title: "Carbonara" }, "hero"),
+    sampleArt,
+  );
+  it("includes the editorial house-style wrapper", () => {
+    expect(out).toMatch(/editorial food photography/i);
+    expect(out).toMatch(/professional color grading/i);
+  });
+  it("includes the art-direction slots", () => {
+    expect(out).toContain("overhead flat-lay");
+    expect(out).toContain("walnut board");
+    expect(out).toContain("warm reds and terracotta");
+  });
+  it("emits POSITIVE prompt only — no negative terms", () => {
+    expect(out).not.toMatch(/\bwatermark\b/i);
+    expect(out).not.toMatch(/\bno text\b/i);
+    expect(out).not.toMatch(/\bcartoon\b/i);
+    expect(out).not.toMatch(/\b3d render\b/i);
   });
 });

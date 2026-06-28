@@ -1,5 +1,6 @@
 // server/services/image-art-direction.ts
 import crypto from "node:crypto";
+import { sanitizeUserInput } from "../lib/ai-safety";
 
 export type ImageVariant = "hero" | "plated" | "ingredients";
 
@@ -361,4 +362,33 @@ export function selectDeterministicArtDirection(
     lighting: lightingForMealTypes(ctx.mealTypes),
     mood: pick(MOODS, seed, "mood"),
   };
+}
+
+const HOUSE_STYLE_PREFIX = "Premium editorial food photography of";
+const HOUSE_STYLE_SUFFIX =
+  "Photorealistic, appetizing, natural food textures, intentional composition, professional color grading, shallow depth of field where appropriate.";
+
+export function subjectFor(
+  ctx: RecipeImageContext,
+  variant: ImageVariant,
+): string {
+  const title = sanitizeUserInput(ctx.title);
+  if (variant === "ingredients") {
+    return `the raw ingredients for "${title}", neatly arranged`;
+  }
+  const made = ctx.productName
+    ? ` made with ${sanitizeUserInput(ctx.productName)}`
+    : "";
+  return `a beautifully plated serving of "${title}"${made}`;
+}
+
+export function composePrompt(subject: string, art: ArtDirection): string {
+  const seasonClause = art.season ? `, ${art.season} seasonal feel` : "";
+  return [
+    `${HOUSE_STYLE_PREFIX} ${subject}.`,
+    `Shot as ${art.angle} under ${art.lighting}.`,
+    `Presented on ${art.surface} against ${art.background}.`,
+    `Styled with ${art.props}; ${art.palette} colour palette; ${art.mood} mood${seasonClause}.`,
+    HOUSE_STYLE_SUFFIX,
+  ].join(" ");
 }
