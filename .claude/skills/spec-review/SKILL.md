@@ -221,7 +221,16 @@ If there are no findings, state that explicitly and still note residual risks or
 
 ## Optional Specialist Pass
 
-If the spec spans multiple risky domains, run targeted specialist reviews after the initial pass. Typical mappings:
+If the spec spans multiple risky domains, dispatch up to **3** targeted specialists after the initial inline pass. Dispatch them **scoped** — never "go review the whole spec," which makes each specialist re-read everything.
+
+Give each specialist only:
+
+- the relevant spec excerpt(s),
+- the preliminary findings already raised in its domain,
+- the per-domain binding-rule summary (from the calibration brief / Step 4),
+- this instruction: _"Do not broad-read the repo. Confirm or refute the findings above and add only domain-specific risks. Read a specific file only to verify a named claim."_
+
+Each specialist returns **deltas** — confirm / refute / net-new findings — not a fresh full review. Pick at most 3 from:
 
 - `api` or route-heavy spec -> `api-specialist`
 - storage, schema-adjacent, or data-integrity-heavy spec -> `database-specialist`
