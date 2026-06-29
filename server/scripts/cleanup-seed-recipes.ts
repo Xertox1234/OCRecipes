@@ -268,7 +268,10 @@ async function main() {
   let imagesRejected = 0;
   for (const r of junkRecipes) {
     if (!r.imageUrl) continue;
-    const filename = r.imageUrl.replace("/api/recipe-images/", "");
+    // Strip any cache-busting `?v=` query before deriving the on-disk filename.
+    const filename = r.imageUrl
+      .split("?")[0]
+      .replace("/api/recipe-images/", "");
 
     // Defense-in-depth against path traversal: validate the filename against
     // a strict allowlist before concatenating onto the images directory. If

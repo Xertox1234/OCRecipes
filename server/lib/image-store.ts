@@ -199,12 +199,16 @@ export async function deleteImage(
   kind: ImageKind,
 ): Promise<void> {
   if (!url) return;
+  // Strip any cache-busting `?v=` query — the stored object key/filename never
+  // includes it, so deriving the key from a versioned URL must ignore it (else
+  // the delete targets a non-existent key and orphans the real object).
+  const cleanUrl = url.split("?")[0];
   const prefix = KIND_PREFIX[kind];
   const cfg = readR2Config();
   if (cfg) {
     const normalizedBase = cfg.publicBaseUrl.replace(/\/$/, "");
-    if (url.startsWith(normalizedBase + "/")) {
-      const key = url.slice(normalizedBase.length + 1);
+    if (cleanUrl.startsWith(normalizedBase + "/")) {
+      const key = cleanUrl.slice(normalizedBase.length + 1);
       // Prefix guard: only delete objects of the expected kind.
       if (!key.startsWith(`${prefix}/`)) return;
       await client(cfg).send(
@@ -214,8 +218,8 @@ export async function deleteImage(
     }
   }
   // Legacy disk path for this kind: /api/<prefix>/<f>
-  if (url.startsWith(`/api/${prefix}/`)) {
-    const safe = path.basename(url); // prevents traversal
+  if (cleanUrl.startsWith(`/api/${prefix}/`)) {
+    const safe = path.basename(cleanUrl); // prevents traversal
     await fs.promises
       .unlink(path.join(UPLOADS_ROOT, prefix, safe))
       .catch(() => {});

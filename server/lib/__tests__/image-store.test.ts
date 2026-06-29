@@ -105,6 +105,19 @@ describe("image-store", () => {
     expect(cmd.input.Key).toBe("recipe-images/recipe-abc.png");
   });
 
+  it("deleteImage strips a cache-busting ?v= query from the derived R2 key", async () => {
+    setR2Env(true);
+    const { deleteImage } = await load();
+    await deleteImage(
+      "https://img.example.com/recipe-images/recipe-abc.png?v=1719600000000",
+      "recipe",
+    );
+    const cmd = sendMock.mock.calls[0][0];
+    expect(cmd.__cmd).toBe("Delete");
+    // Key must NOT include the query — else the real object is never deleted (orphan).
+    expect(cmd.input.Key).toBe("recipe-images/recipe-abc.png");
+  });
+
   it("deleteImage refuses an R2 key outside the kind's prefix (no delete)", async () => {
     setR2Env(true);
     const { deleteImage } = await load();
