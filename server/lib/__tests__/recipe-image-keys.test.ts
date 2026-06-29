@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   classifyRecipeImageUrl,
   deriveRecipeImageFilename,
+  bustImageUrl,
 } from "../recipe-image-keys";
 
 const BASE = "https://cdn.ocrecipes.app";
@@ -30,6 +31,11 @@ describe("classifyRecipeImageUrl", () => {
       "external",
     );
   });
+  it("still classifies a cache-busted (?v=) url as 'ours'", () => {
+    expect(
+      classifyRecipeImageUrl(`${BASE}/recipe-images/recipe-abc.png?v=7`, BASE),
+    ).toBe("ours");
+  });
 });
 
 describe("deriveRecipeImageFilename", () => {
@@ -47,5 +53,23 @@ describe("deriveRecipeImageFilename", () => {
     expect(
       deriveRecipeImageFilename("https://spoonacular.com/x.jpg"),
     ).toBeNull();
+  });
+  it("strips a cache-busting query string before extracting", () => {
+    expect(
+      deriveRecipeImageFilename(`${BASE}/recipe-images/recipe-abc.png?v=7`),
+    ).toBe("recipe-abc.png");
+  });
+});
+
+describe("bustImageUrl", () => {
+  it("appends a ?v= token to a clean url", () => {
+    expect(bustImageUrl(`${BASE}/recipe-images/recipe-abc.png`, 7)).toBe(
+      `${BASE}/recipe-images/recipe-abc.png?v=7`,
+    );
+  });
+  it("replaces an existing ?v= token (does not stack)", () => {
+    expect(bustImageUrl(`${BASE}/recipe-images/recipe-abc.png?v=1`, 2)).toBe(
+      `${BASE}/recipe-images/recipe-abc.png?v=2`,
+    );
   });
 });
