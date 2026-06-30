@@ -294,6 +294,22 @@ Three similar lines is better than a premature abstraction. Don't refactor adjac
 
 ---
 
+## Stored-Format Change Blast Radius
+
+The complement to minimal changes: when a diff DOES alter the format of a stored or serialized value — a URL gaining a `?v=` query, an id gaining a prefix, a JSON shape changing — every consumer that parses that value back must handle the new format. `tsc` cannot see a string-format change, so the regression is silent until data corrupts.
+
+```typescript
+// imageUrl gained a ?v= cache-bust query. A delete path that derives the R2
+// key by slicing the URL now yields recipe-images/x.png?v=123 — a non-existent
+// key — so the delete silently no-ops and ORPHANS the real object.
+const key = url.slice(base.length + 1); // ❌ keeps ?v=
+const key = url.split("?")[0].slice(base.length + 1); // ✅ strip query first
+```
+
+Review action: when a diff changes how a stored value is produced, hunt down every site that _consumes_ it — especially delete / cleanup / key-derivation paths — and flag any that don't handle the new format. Require a test that pins the derived key/id (mutation-proven). See solution `logic-errors/derive-storage-key-must-strip-query-before-delete`.
+
+---
+
 ## Pattern Reference
 
 - `docs/legacy-patterns/documentation.md` — todo structure, design decisions, form state
