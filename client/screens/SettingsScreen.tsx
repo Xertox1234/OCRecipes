@@ -260,6 +260,7 @@ export default function SettingsScreen() {
     <ScrollView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.xl }}
+      contentInsetAdjustmentBehavior="automatic"
     >
       <Card elevation={1} style={styles.card}>
         {visibleItems.map((item, index) => {

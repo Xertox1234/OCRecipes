@@ -1,5 +1,11 @@
 import React, { useCallback } from "react";
-import { AccessibilityInfo, Alert, View, StyleSheet } from "react-native";
+import {
+  AccessibilityInfo,
+  Alert,
+  View,
+  ScrollView,
+  StyleSheet,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 
@@ -28,7 +34,13 @@ export default function WelcomeScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <View style={[styles.content, { paddingTop: Spacing["3xl"] }]}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={{
+          paddingTop: Spacing["3xl"],
+          paddingHorizontal: Spacing.xl,
+        }}
+      >
         <View style={styles.iconContainer}>
           <View
             style={[
@@ -87,7 +99,7 @@ export default function WelcomeScreen() {
             theme={theme}
           />
         </View>
-      </View>
+      </ScrollView>
 
       <View
         style={[styles.footer, { paddingBottom: insets.bottom + Spacing.xl }]}
@@ -161,7 +173,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: Spacing.xl,
   },
   iconContainer: {
     alignItems: "center",
