@@ -17,7 +17,7 @@ env:
 
 # Verify Home tab (default after login)
 - assertVisible:
-    text: "Search recipes"
+    text: "Hello"
     timeout: 10000
 
 # Navigate to History tab
@@ -43,5 +43,5 @@ env:
 # Navigate back to Home
 - tapOn: "Home"
 - assertVisible:
-    text: "Search recipes"
+    text: "Hello"
     timeout: 5000

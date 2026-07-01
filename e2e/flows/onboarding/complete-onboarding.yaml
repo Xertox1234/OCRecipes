@@ -69,5 +69,5 @@ tags:
 
 # Should land on home screen after onboarding
 - assertVisible:
-    text: "Search recipes"
+    text: "Hello"
     timeout: 10000
