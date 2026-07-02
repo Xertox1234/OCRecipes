@@ -231,6 +231,7 @@ All features must work on both iOS and Android:
 
 - `Alert.prompt` is **iOS-only** - guard with `Platform.OS === "ios"`, provide `TextInput` fallback on Android
 - `accessibilityLiveRegion` is **Android-only** - pair with `AccessibilityInfo.announceForAccessibility()` for iOS
+- ScrollView inset props (`contentInsetAdjustmentBehavior`, `contentInset`) are **iOS-only** no-ops on Android — never the sole fix for content under a transparent header (which `useScreenOptions()` applies on BOTH platforms); use `useHeaderHeight()` + `paddingTop` (22-screen convention). Only sanctioned use is `"never"` to opt out on modal hero screens. See solutions DB: `logic-errors/ios-only-scroll-inset-prop-leaves-android-header-overlap-2026-07-02`
 - Keyboard behavior differs: `"padding"` on iOS, `"height"` on Android
 - Safe area values differ between devices (notch, Dynamic Island, navigation bar)
 - Use `Platform.select()` or `.ios.ts`/`.android.ts` extensions for native APIs
