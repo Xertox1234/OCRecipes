@@ -38,7 +38,6 @@ At review time the orchestrator (the `todo-executor` for `/todo`, the `/audit` s
 | Strict TS / Zod / type guards / nav typing           | `typescript-specialist`               |
 | Tests / Vitest / mocks / testability                 | `testing-specialist`                  |
 | Error handling / lint / minimal-changes / todo UX    | `quality-specialist`                  |
-| Library/API correctness vs current docs              | `docs-researcher`                     |
 | Cross-cutting baseline — **always dispatched**       | `code-reviewer` (+ specialists above) |
 
 `code-reviewer` **always** runs as the cross-cutting baseline; the domain specialists are selected on top of it for depth (and `code-reviewer` is the _sole_ reviewer only for a docs/config-only or trivial diff). `todo-executor` and `todo-researcher` are workflow drivers, **not** reviewers.
@@ -74,7 +73,7 @@ Every review includes `code-reviewer` (baseline); the specialists below are adde
 - `server/routes/recipes.ts` with a new auth check → `code-reviewer` + `api-specialist` + `security-auditor`
 - `server/storage/cookbooks.ts` ownership-filter change → `code-reviewer` + `database-specialist` + `security-auditor`
 - a new Zod schema in `shared/` → `code-reviewer` + `typescript-specialist`
-- bumping a library / new third-party API usage → add `docs-researcher`
+- bumping a library / new third-party API usage → the reviewer verifies against current docs via the Context7 MCP tools (`mcp__claude_ai_Context7__resolve-library-id` / `query-docs`) or WebSearch
 - a docs-only / config-only or tiny cross-cutting diff → `code-reviewer` alone
 
 #### Self-improving
@@ -115,30 +114,13 @@ The hook does **not** run `tsc` or `npm test` — CI owns those.
 
 ---
 
-## Cheap-Worker Delegation (kimi-\* Tools and Copilot Issues)
+## Cheap-Worker Delegation (kimi-\* Tools)
 
-The following CLI scripts are available globally and should be used to offload work that doesn't require the main agent's full reasoning capacity. Delegating reduces context usage and speeds up the session.
-
-GitHub Copilot can also handle bounded repo-local tasks through GitHub Issues assigned to `@copilot`. Prefer the `kimi-*` tools below for cheap read/write/challenge passes; use Copilot Issues for tracked, tightly scoped deferred work where Copilot can open a normal pull request for human review.
-
-### Copilot Issue Delegation
-
-Use Copilot Issues for eligible low/deferred review items only. The local `todos/` file remains the audit/todo traceability record; the GitHub Issue is Copilot's work queue.
-
-```bash
-npm run copilot:delegate:dry-run -- todos/YYYY-MM-DD-slug.md
-npm run copilot:delegate -- todos/YYYY-MM-DD-slug.md
-```
-
-The helper reads the todo, checks eligibility, and creates an issue with `gh issue create --assignee @copilot`. Dry-run mode prints the issue body without contacting GitHub. Live mode must fail loudly if issue creation or `@copilot` assignment fails.
-
-Eligible items are scoped docs, tests, code-quality, simple performance, or simple refactor tasks with clear files and checkbox acceptance criteria. Do not delegate JWT/auth, IAP receipt validation, secrets, health-data boundaries, goal-safety behavior, schema/migrations, production data handling, or broad architecture changes without a human-approved plan.
-
-Copilot output must be PR-based and human-reviewed. Never auto-merge Copilot work and never allow direct commits to `main`.
+The following CLI scripts are available globally, **on explicit user request only** — never invoke them automatically. Never point them at JWT auth, IAP receipt validation, or user health data. (The Copilot Issue-delegation pipeline was deleted 2026-07; routine todos go through the `/todo` skill.)
 
 ### `ask-kimi`
 
-**When:** Reading 3+ files for analysis — pattern lookups, summarization, cross-file questions.
+**What:** Bulk file Q&A — pattern lookups, summarization, cross-file questions.
 
 ```bash
 ask-kimi --paths docs/legacy-patterns/api.md server/routes/carousel.ts --question "Does this route follow the error-response pattern?"
@@ -146,7 +128,7 @@ ask-kimi --paths docs/legacy-patterns/api.md server/routes/carousel.ts --questio
 
 ### `kimi-write`
 
-**When:** Generating boilerplate that closely matches an existing reference file (new route, new storage module, new hook).
+**What:** Boilerplate generation closely matching an existing reference file (new route, new storage module, new hook).
 
 ```bash
 kimi-write --reference server/routes/nutrition.ts --target server/routes/carousel.ts --description "GET /api/carousel"
@@ -154,7 +136,7 @@ kimi-write --reference server/routes/nutrition.ts --target server/routes/carouse
 
 ### `kimi-challenge`
 
-**When:** Before choosing between two approaches or making an architectural decision (navigation patterns, camera flows, state management).
+**What:** Adversarial pressure-test of a stated decision (navigation patterns, camera flows, state management).
 
 ```bash
 kimi-challenge --decision "use X-User-Hour header (integer) vs X-User-Timezone (IANA string) for carousel time-of-day"
@@ -164,7 +146,7 @@ Returns a structured for/against analysis. Claude makes the final call; kimi-cha
 
 ### `extract-chat`
 
-**When:** Before passing a previous Claude Code session transcript back as context. It reads Claude Code JSONL logs and strips tool calls, thinking blocks, signatures, binary data, and framework-injected messages, leaving only conversation text.
+**What:** Strips a previous Claude Code session transcript before it re-enters context. Reads Claude Code JSONL logs and drops tool calls, thinking blocks, signatures, binary data, and framework-injected messages, leaving only conversation text.
 
 ```bash
 extract-chat "$VSCODE_TARGET_SESSION_LOG" -o /tmp/session-chat.txt
@@ -176,28 +158,12 @@ This keeps historical session context lean before it re-enters Claude's context 
 
 ## Token-Saving Conventions
 
-| Convention                                                             | Reason                                                                               |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Pattern lookups via `ask-kimi --paths docs/legacy-patterns/X.md`       | Avoids Claude re-reading pattern files each session                                  |
-| code-reviewer + specialist subagents for audits                        | Higher token cost, but better for deep cross-file reasoning and audit-style reviews  |
-| iOS/device setup in `docs/DEV_SETUP.md`                                | Keeps CLAUDE.md short; agents reference the doc, not inline instructions             |
-| Repo architecture memory at `/memories/repo/ocrecipes-architecture.md` | Schema, nav, services, stack facts persist across sessions without re-reading source |
-
-## Repo Memory Maintenance
-
-Update `/memories/repo/ocrecipes-architecture.md` only when durable architecture facts change:
-
-- New or removed major services, route groups, storage modules, or navigation roots
-- New core database tables or renamed domain tables
-- Changes to auth, state management, CI/test strategy, path aliases, or app stack
-- Pattern-index changes that future agents should know before opening source files
-
-Do **not** store transient TODOs, implementation notes, eval output, or details already isolated in a specific plan doc. Repo memory is loaded as compact context; keep it short and factual.
+| Convention                                                                       | Reason                                                                               |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| code-reviewer + specialist subagents for audits                                  | Higher token cost, but better for deep cross-file reasoning and audit-style reviews  |
+| iOS/device setup in `docs/DEV_SETUP.md`                                          | Keeps CLAUDE.md short; agents reference the doc, not inline instructions             |
+| Durable architecture facts in auto-memory (`MEMORY.md` → Key Architecture Notes) | Schema, nav, services, stack facts persist across sessions without re-reading source |
 
 ## Drift Checklist
 
-The canonical recurring drift list lives in `docs/AI_DRIFT_CHECKLIST.md`.
-
-Use that file for anything you want to monitor via cron or another scheduled job. Keep IDs stable, update the status fields instead of renaming rows, and add new drift-prone items there rather than duplicating checklist logic in multiple docs.
-
-The implementation plan for the scheduled checker that reads the checklist lives at [`docs/AI_DRIFT_AUTOMATION.md`](AI_DRIFT_AUTOMATION.md).
+The canonical recurring drift list lives in `docs/AI_DRIFT_CHECKLIST.md`. Keep IDs stable, update the status fields instead of renaming rows, and add new drift-prone items there rather than duplicating checklist logic in multiple docs. It is reviewed manually — no scheduled checker exists.

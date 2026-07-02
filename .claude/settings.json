@@ -32,16 +32,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/hooks/lsp-warmup.sh",
-            "timeout": 10,
-            "statusMessage": "Priming LSP warm-up directive..."
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "bash .claude/hooks/session-recent-issues.sh",
             "timeout": 20
           }
@@ -98,10 +88,6 @@
         "matcher": "Bash",
         "hooks": [{ "type": "command", "command": "bash .claude/hooks/guard-concurrent-session.sh", "timeout": 10, "statusMessage": "Checking for concurrent sessions in this checkout..." }]
       },
-      {
-        "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "bash .claude/hooks/batch-size-guard.sh", "timeout": 10, "statusMessage": "" }]
-      },
       { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-preflight-guard.sh", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
       { "matcher": "mcp__github__create_pull_request", "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-preflight-guard.sh", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
       {
@@ -147,17 +133,6 @@
             "command": "bash .claude/hooks/worktree-deps.sh",
             "timeout": 15,
             "statusMessage": "Provisioning worktree dependencies..."
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/lsp-nudge.sh",
-            "timeout": 10,
-            "statusMessage": ""
           }
         ]
       },

@@ -220,8 +220,7 @@ describe("LLM_TOUCHING_SERVICES drift detection", () => {
   it("matches the empirical grep result", () => {
     // Re-run the grep that seeded the constant. If a new service imports an LLM
     // client without being added to LLM_TOUCHING_SERVICES, this test fails and
-    // forces the developer to update the constant. (Relocated from
-    // delegate-copilot-issue.test.ts when PATH_TO_DOMAINS moved here.)
+    // forces the developer to update the constant.
     const result = execSync(
       `grep -l "openai\\|OpenAI\\|gpt-\\|completions\\|anthropic" server/services/*.ts || true`,
       { encoding: "utf8" },

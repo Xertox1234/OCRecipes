@@ -3,7 +3,7 @@
 ---
 
 title: "Compact MEMORY.md — it exceeds the session load limit (tail silently dropped)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-27
 updated: 2026-06-27
@@ -80,3 +80,7 @@ specific cuts.
 ### 2026-06-27
 
 - Initial creation. Surfaced by the memory-load-limit hook during the mutation-scope-expansion session.
+
+### 2026-07-02
+
+- Closed during the harness deletion sweep: MEMORY.md was compacted to 13.4KB (< the 17KB warning threshold and well under the 24.4KB load limit) by the 2026-07-02 memory prune (10 stale files deleted, index updated). Acceptance criteria verified met.

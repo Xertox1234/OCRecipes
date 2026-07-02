@@ -35,4 +35,4 @@ If a scheduled check edits this file automatically, append short notes rather th
 
 ## Automation Plan
 
-The implementation plan for a scheduled checker that reads this file lives at [`docs/AI_DRIFT_AUTOMATION.md`](AI_DRIFT_AUTOMATION.md). The v1 design is report-only, covers `DRIFT-001` as the first automated check, and runs weekly via GitHub Actions.
+None — this checklist is reviewed manually. (A scheduled-checker design, `docs/AI_DRIFT_AUTOMATION.md`, was drafted in 2025 but never built; it was deleted in the 2026-07 harness sweep.)

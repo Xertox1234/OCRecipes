@@ -250,7 +250,7 @@ domain_rank() {
 # repeated cost of editing many files in one domain over a long session (e.g. a /todo loop).
 # Requires a real session_id — when it's absent (or PATTERN_INJECT_NO_DEDUP=1) dedup is OFF and
 # full rules are always injected (fail-safe: more context, not less; also keeps session-less
-# test runs deterministic). Mirrors the per-session state-file pattern in lsp-nudge.sh.
+# test runs deterministic).
 # `// empty` is load-bearing: `jq -r '.session_id'` emits the literal "null" for an absent
 # key (and -e only changes the exit code, not the output), which would make session-less
 # callers share a "/tmp/...-null" state file and wrongly dedup. `// empty` yields "" instead.

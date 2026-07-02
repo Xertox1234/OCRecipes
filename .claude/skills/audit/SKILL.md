@@ -152,15 +152,15 @@ Phase 1 sets up both correctly.
 
 Validate the Phase 2 findings against current documentation before the user triages them. The orchestrator's training knowledge lags real-world docs by months; this phase catches stale false positives (a finding the docs contradict) and stale knowledge gaps (a current best practice no agent knew to flag).
 
-1. **Launch `docs-researcher` agents in parallel** — one per audit domain that has at least one finding:
-   - `full`: launch one `docs-researcher` per structural domain with findings, batched the same way Phase 2 batches its specialist agents (first 4 domains, then the rest)
-   - `pre-launch`: as `full`, **plus** one `docs-researcher` per `reliability` _cluster_ with findings (see the `reliability` bullet below)
-   - Named scope: launch one `docs-researcher` for that domain
-   - `reliability` scope: launch one `docs-researcher` per _cluster_ that has findings (1-4 researchers), batched the same way
-   - **Maintainability skip:** do **not** dispatch a `docs-researcher` for maintainability findings — they are structural opportunities, not library-API-driven. Mark each maintainability finding `Research` = `not-applicable` directly and skip to Phase 3 triage for those rows.
+1. **Launch doc-validation researcher agents in parallel (subagent type `general-purpose` — the dispatch prompt below is their full instruction set)** — one per audit domain that has at least one finding:
+   - `full`: launch one researcher per structural domain with findings, batched the same way Phase 2 batches its specialist agents (first 4 domains, then the rest)
+   - `pre-launch`: as `full`, **plus** one researcher per `reliability` _cluster_ with findings (see the `reliability` bullet below)
+   - Named scope: launch one researcher for that domain
+   - `reliability` scope: launch one researcher per _cluster_ that has findings (1-4 researchers), batched the same way
+   - **Maintainability skip:** do **not** dispatch a researcher for maintainability findings — they are structural opportunities, not library-API-driven. Mark each maintainability finding `Research` = `not-applicable` directly and skip to Phase 3 triage for those rows.
    - **Skip rule:** a domain with zero findings gets no researcher; if Phase 2 produced no findings at all, skip Phase 2.5 entirely
-   - Each agent runs as a subagent via the Agent tool with the `docs-researcher` agent type
-2. Use this dispatch prompt for each `docs-researcher` (fill in `[DOMAIN]` and the findings list):
+   - Each agent runs as a subagent via the Agent tool with the `general-purpose` agent type (the Context7 MCP tools are deferred — the researcher loads them with ToolSearch `select:mcp__claude_ai_Context7__resolve-library-id,mcp__claude_ai_Context7__query-docs` before first use)
+2. Use this dispatch prompt for each researcher (fill in `[DOMAIN]` and the findings list):
 
    ```
    You are validating audit findings for the [DOMAIN] domain against current library documentation.
@@ -169,8 +169,8 @@ Validate the Phase 2 findings against current documentation before the user tria
    [paste this domain's findings — for each: ID, description, file:line, the pattern/rule cited]
 
    For EACH finding, you MUST check current documentation: call
-   `mcp__plugin_context7_context7__resolve-library-id` to resolve the relevant
-   library, then `mcp__plugin_context7_context7__query-docs` to fetch its current
+   `mcp__claude_ai_Context7__resolve-library-id` to resolve the relevant
+   library, then `mcp__claude_ai_Context7__query-docs` to fetch its current
    docs. A verdict with no doc citation is invalid — do not rely on training knowledge.
 
    Return exactly one verdict per finding:
@@ -194,7 +194,7 @@ Validate the Phase 2 findings against current documentation before the user tria
    Do NOT fix anything. Report verdicts and any new finding candidates only.
    ```
 
-3. As each `docs-researcher` completes, update the manifest `Research` column for each finding:
+3. As each researcher completes, update the manifest `Research` column for each finding:
    - `confirmed` → `Research` = `confirmed`; finding stays `open`
    - `better-fix` → `Research` = `better-fix`; finding stays `open`; record the doc-informed approach in the Verification column so Phase 3 uses it
    - `contradicted` → `Research` = `contradicted ⚠`; finding stays `open` — do **not** auto-mark `false-positive`, the user decides at triage
@@ -203,7 +203,7 @@ Validate the Phase 2 findings against current documentation before the user tria
    - Read the file at the reported line
    - Grep for the pattern
    - For **symbol-level candidates** (unused export, dead code, signature-change or rename impact), confirm with the LSP tool (`findReferences` / call-hierarchy), not grep — it resolves `@/` and `@shared/` aliases and avoids false "unused"/"safe to change" verdicts. Same rationale as Phase 2 step 3. See `docs/rules/lsp.md`.
-   - If confirmed, add it to the manifest with status `open`, `Agent` = `docs-researcher`, `Research` = `confirmed`
+   - If confirmed, add it to the manifest with status `open`, `Agent` = `doc-researcher (Phase 2.5)`, `Research` = `confirmed`
    - If not confirmed, discard it (do not add it to the manifest)
 5. **Show the user the complete findings table** (with the `Research` column populated) and ask: "Which findings should I fix now, and which should be deferred? Note the research verdicts — `contradicted ⚠` findings may be false positives."
 
