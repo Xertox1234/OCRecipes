@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
 # todo-automerge-guard.sh — FAIL-CLOSED batch-merge eligibility check for /todo PRs.
 #
-# MODEL (since #487 — NO PR ever auto-merges; this script only CLASSIFIES): a low/medium
-# /todo PR is eligible for the user's batch-merge ONLY if EVERY changed
-# file is on the known-safe ALLOWLIST and none hits the sensitive override. Anything
-# else HOLDs for individual human review — an unanticipated path, and the whole sensitive backend
-# (server/storage, server/routes, server/middleware), .github/ (the CI gates), scripts/
-# (incl. this guard), migrations, shared/schema.ts, secrets/certs.
+# MODEL (since #487 — NO PR ever auto-merges; this script only CLASSIFIES): a /todo PR
+# is eligible for the user's batch-merge ONLY if BOTH gates pass:
+#   1. TODO GATE — the archived todo riding the PR (todos/archive/<slug>.md) has
+#      priority low|medium and no `security` mention in its frontmatter. This lives here,
+#      not only in the executor, because a fresh morning session re-running this guard
+#      has no overnight MERGE_ELIGIBLE report — the guard is the one artifact every
+#      merge path re-runs, so it must enforce the whole policy itself.
+#   2. PATH GATE — EVERY changed file is on the known-safe ALLOWLIST and none hits the
+#      sensitive override.
+# Anything else HOLDs for individual human review — an unanticipated path, and the whole
+# sensitive backend (server/storage, server/routes, server/middleware), .github/ (the CI
+# gates), scripts/ (incl. this guard), migrations, shared/schema.ts, secrets/certs.
 #
 # Fail-CLOSED is deliberate: for a merge-eligibility check an UNKNOWN path must mean
 # "a human looks", never "ship it". (An earlier denylist revision was found fail-OPEN
@@ -52,6 +58,46 @@ if [ -z "$files" ]; then
   echo "guard: ERROR PR #$PR — no file changes (nothing to evaluate)"
   exit 2
 fi
+
+# ── TODO GATE ─────────────────────────────────────────────────────────────────
+# The todo's priority and labels ride the PR as todos/archive/<slug>.md frontmatter —
+# the PR itself carries no GitHub label. Parse it from the PR head. Fail-closed at
+# every step: no archived todo in the diff, unreadable content, or a priority other
+# than low/medium ⇒ HOLD. Any mention of "security" ANYWHERE in the frontmatter
+# (labels, title, …) HOLDs — deliberately broad; a false-positive HOLD only costs a
+# manual review, never the other way around.
+todo_files="$(printf '%s\n' "$files" | grep -E '^todos/archive/.+\.md$' || true)"
+if [ -z "$todo_files" ]; then
+  echo "guard: HOLD PR #$PR — no todos/archive/*.md in the diff; cannot verify the todo's priority/labels (fail-closed)"
+  echo "Needs individual review; exclude from the batch-merge."
+  exit 1
+fi
+while IFS= read -r tf; do
+  [ -z "$tf" ] && continue
+  raw="$(gh api -H "Accept: application/vnd.github.raw" "repos/{owner}/{repo}/contents/${tf}?ref=refs/pull/${PR}/head" 2>/dev/null)" || {
+    echo "guard: ERROR PR #$PR — could not read ${tf} from the PR head (gh error). Fail-closed."
+    exit 2
+  }
+  # Frontmatter = lines between the first pair of --- markers. Here-strings, not
+  # `printf | …` pipes: under pipefail a producer-pipe into an early-exiting consumer
+  # can fail open via SIGPIPE (see solutions DB: pipefail-echo-grep-condition).
+  fm="$(awk '/^---[[:space:]]*$/{n++; next} n==1' <<< "$raw")"
+  prio="$(sed -n 's/^priority:[[:space:]]*//p' <<< "$fm" | head -n1 | tr -d "[:space:]\"'" | tr '[:upper:]' '[:lower:]')"
+  case "$prio" in
+    low|medium) : ;;
+    *)
+      echo "guard: HOLD PR #$PR — ${tf} has priority '${prio:-<missing>}'; only low/medium todos are batch-merge-eligible"
+      echo "Needs individual review; exclude from the batch-merge."
+      exit 1 ;;
+  esac
+  if grep -qi 'security' <<< "$fm"; then
+    echo "guard: HOLD PR #$PR — ${tf} frontmatter mentions 'security'; always individual review"
+    echo "Needs individual review; exclude from the batch-merge."
+    exit 1
+  fi
+done <<< "$todo_files"
+
+# ── PATH GATE ─────────────────────────────────────────────────────────────────
 
 # A file passes only if (1) it is on the allowlist and (2) — unless it is a doc/todo/
 # markdown file, which is never sensitive CODE — it does not hit the sensitive override.

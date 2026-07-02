@@ -31,9 +31,13 @@ reaches `main` while you sleep either. The filters:
    Analyze). No human approval is required by branch protection — only green CI. That
    is the repo's hard merge bar, and the morning batch-merge respects it.
 3. **`scripts/todo-automerge-guard.sh`** — the executor runs this on every `low`/`medium`
-   PR to classify it. It is a **fail-CLOSED allowlist**: `MERGE_ELIGIBLE: yes` only when
-   **every** changed file is a known-safe surface (UI, business services, shared pure
-   modules, tests, docs/todos); it HOLDs for **anything sensitive or unrecognized** —
+   PR to classify it. It is a **fail-CLOSED allowlist** with two gates: a TODO gate
+   (the archived todo's frontmatter must say priority low/medium with no `security`
+   mention — enforced by the script itself, so even a fresh session with no overnight
+   report can't batch-merge a high/security PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
+   only when **every** changed file is a known-safe surface (UI, business services,
+   shared pure modules, tests, docs/todos); it HOLDs for **anything sensitive or
+   unrecognized** —
    the whole sensitive backend (`server/storage`, `server/routes`, `server/middleware`),
    `.github/`, `scripts/`, migrations, `shared/schema.ts`, secrets, plus the IAP/health
    files that live inside otherwise-safe dirs. An UNKNOWN path HOLDs — so a
@@ -95,15 +99,20 @@ no `gh pr merge` in any form; every PR waits for my morning batch-merge. Your jo
 dispatch /todo, watch the results, and enforce the stop conditions. A guard HOLD
 (sensitive path) is a valid terminal state, not a failure.
 DONE when: every actionable low/medium todo appears in an accumulated /todo Phase 5
-summary as one of: open PR (PR_URL), "Awaiting batch-merge", "Gated on batch-merge", or
-blocked-with-reason — AND the latest /todo Phase 5 verification line is green. Evaluate
+summary as one of: open PR (PR_URL), "Awaiting batch-merge", "Gated on batch-merge",
+"Gated on a dependency (not yet implemented)", "Stale branch — self-clears next run",
+"Skipped — quality flags" (needs MY re-authoring — terminal for tonight, do not
+re-dispatch hoping it changes), or blocked-with-reason — AND the latest /todo Phase 5
+verification line is green. Evaluate
 DONE from the Phase 5 reports you already hold; do NOT re-run test:run / check:types /
-lint yourself and do NOT re-query GitHub per todo — /todo already verified and
+lint yourself and do NOT re-query GitHub per todo (one final batched `gh pr list` sweep
+to confirm PR states before reporting DONE is fine) — /todo already verified and
 classified everything once per dispatch.
-STOP EARLY and wait for me if: 10 PRs opened, OR 1.5M output tokens, OR any 2 todos fail,
-OR any todo blocks on a diverged remote branch WITH NO open PR (a genuine orphan needing
-a one-time manual branch delete — an open-PR collision is just "awaiting batch-merge",
-not a stop condition).
+STOP EARLY and wait for me if: 10 PRs opened, OR 1.5M output tokens, OR 2 executor
+failures (two todos failing once each, or one todo failing twice), OR any todo blocks
+with an ACTION NEEDED reason (an orphan branch or an unverifiable PR state — needs my
+one-time manual check/delete; an open-PR collision is just "awaiting batch-merge", not
+a stop condition).
 ```
 
 ## Launch

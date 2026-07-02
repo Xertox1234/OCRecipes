@@ -50,6 +50,7 @@ Check whether this todo is eligible for execution:
 2. **Dependency check**: If the Dependencies section lists other todo files, check whether each specific dependency filename exists as a file at `todos/<dependency-filename>.md`. If it exists (not moved to `todos/archive/`), the dependency is still pending — report `blocked` with the list of blocking todo filenames and stop.
    - Dependencies that reference external services, APIs, or non-todo items are not blocking.
 3. **Legacy delegation gate**: If the todo has a `github_issue` frontmatter value, it predates the removal of the Copilot delegation pipeline (deleted 2026-07). Report `skipped` with reason `legacy github_issue todo: <url> — needs manual triage` unless the orchestrator explicitly tells you this is a manual takeover.
+4. **Remote-branch probe** — a ~1s collision pre-check that catches an already-implemented todo BEFORE the researcher/implementation/preflight pipeline runs instead of at Step 10 push time. Run `git ls-remote --heads origin todo/<todo-slug>` (`<todo-slug>` = the todo filename minus `.md`, exactly as Step 10 defines it). This uses git transport, not the `gh` API, so it works precisely in the degraded case where Phase 2's awaiting-batch-merge skip was bypassed. No output → branch doesn't exist → proceed. If the branch exists, run Step 10's collision triage NOW (`gh pr list --head todo/<todo-slug> --state all --json number,url,state` and the same four outcomes — open PR → `skipped`, merged/closed-only → `skipped`, no PR → `blocked` orphan reason verbatim, check failed → `blocked` unknown-state reason verbatim) and stop before doing any work. Step 10's handler remains the backstop for a branch that appears mid-run.
 
 ---
 
@@ -466,9 +467,9 @@ This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both comp
 - `low` or `medium` without a `security` label — run the eligibility guard (step 4) and report its verdict.
 - `high`, `critical`, or any `security`-labelled todo — skip the guard; the PR always needs individual human review (`MERGE_ELIGIBLE: review-required`).
 
-Rename the worktree branch to a meaningful slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
+Rename the worktree branch to the todo slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
 
-1. **Determine the todo slug**: strip the `.md` extension from the todo filename. Example: `scan-confirm-null-calories-guard.md` → `scan-confirm-null-calories-guard`.
+1. **Determine the todo slug**: strip the `.md` extension from the todo filename — nothing else. The branch name MUST be exactly `todo/<todo filename minus .md>`, never shortened or prettified (no dropping the `P#-` or date prefix): Phase 2's awaiting-batch-merge skip and the Step 2/Step 10 collision triage all match on this exact name, and a "nicer" slug silently defeats them (past runs that shortened names produced duplicate PRs). Example: `P3-2026-07-02-scan-confirm-null-calories-guard.md` → `P3-2026-07-02-scan-confirm-null-calories-guard`.
 
 2. **Rename the branch and push**:
 
@@ -489,20 +490,29 @@ Then push:
 git push -u origin todo/<todo-slug>
 ```
 
-**If the push is rejected as a non-fast-forward** (a `todo/<todo-slug>` branch already exists on the remote at a diverged commit), do **NOT** force-push and do **NOT** delete the remote branch — unilaterally rewriting or deleting remote history is exactly what this agent must never do, and `git push --force` is blocked by a local permission deny rule besides. First check whether the existing branch has an open PR:
+**If the push is rejected as a non-fast-forward** (a `todo/<todo-slug>` branch already exists on the remote at a diverged commit), do **NOT** force-push and do **NOT** delete the remote branch — unilaterally rewriting or deleting remote history is exactly what this agent must never do, and `git push --force` is blocked by a local permission deny rule besides. Triage the existing branch by its PR state:
 
 ```bash
-gh pr list --head todo/<todo-slug> --state open --json number,url
+gh pr list --head todo/<todo-slug> --state all --json number,url,state
 ```
 
-- **An open PR exists — the ROUTINE case.** Under the no-auto-merge policy this todo was already implemented by a prior run and its PR is awaiting the user's batch-merge (Phase 2 triage should have skipped it; this is the downstream backstop). Do NOT retry or escalate. Report `skipped` (Step 11) with reason `already implemented — PR <url> awaiting batch-merge` and stop. Your worktree's duplicate implementation is discarded with the worktree.
-- **No open PR — a genuine orphan** from an interrupted run. **Stop and report `blocked`** (Step 11 block path) with this reason verbatim (the orchestrator surfaces it for the human in Phase 5):
+Four outcomes (Step 2's remote-branch probe runs this same triage — keep them identical):
+
+- **An open PR exists — the ROUTINE case.** Under the no-auto-merge policy this todo was already implemented by a prior run and its PR is awaiting the user's batch-merge (Phase 2 triage and the Step 2 probe should have caught it; this is the last backstop). Do NOT retry or escalate. Report `skipped` (Step 11) with reason `already implemented — PR <url> awaiting batch-merge` and stop. Your worktree's duplicate implementation is discarded with the worktree (any Step 9 codification has already persisted to the solutions DB by design; the codify skip-gate and update-existing rules keep that from duplicating entries).
+- **PRs exist but ALL are `MERGED`/`CLOSED`** — a leftover branch that Phase 0's sweep deletes on the next run; no human action needed. Report `skipped` (Step 11) with reason `stale todo/<todo-slug> branch from a merged/closed PR — Phase 0 sweeps it next run; re-run this todo afterward` and stop.
+- **No PR at all — a genuine orphan** from an interrupted run. **Stop and report `blocked`** (Step 11 block path) with this reason verbatim (the orchestrator surfaces it for the human in Phase 5):
 
 ```
-remote branch todo/<todo-slug> already exists at a diverged commit with NO open PR — an orphan from an interrupted run. Cannot fast-forward, and this agent must not force-push or delete remote state. ACTION NEEDED (human): delete it with `git push origin --delete todo/<todo-slug>` and re-run this todo. NOTE: Phase 0's auto-sweep only removes branches whose PRs are merged/closed, so a no-PR orphan will NOT self-clear.
+remote branch todo/<todo-slug> already exists at a diverged commit with NO PR — an orphan from an interrupted run. Cannot fast-forward, and this agent must not force-push or delete remote state. ACTION NEEDED (human): delete it with `git push origin --delete todo/<todo-slug>` and re-run this todo. NOTE: Phase 0's auto-sweep only removes branches whose PRs are merged/closed, so a no-PR orphan will NOT self-clear.
 ```
 
-(Never destroy a prior run's remote branch. If the `gh pr list` check itself fails, fall back to the `blocked` path — fail toward human review, never toward deletion.)
+- **The `gh pr list` check itself FAILED** (unauthenticated, rate-limited, network) — you cannot tell an awaiting-batch-merge branch from an orphan, so do NOT assert either. **Stop and report `blocked`** with this reason verbatim — unlike the orphan reason, it does not lead with a delete command, because an open PR may exist:
+
+```
+remote branch todo/<todo-slug> already exists at a diverged commit and the PR check itself failed — open-PR state UNKNOWN. Cannot fast-forward, and this agent must not force-push or delete remote state. ACTION NEEDED (human): run `gh pr list --head todo/<todo-slug> --state all` yourself; an OPEN PR means this todo is simply awaiting batch-merge (no action needed); only if there is NO PR delete the branch with `git push origin --delete todo/<todo-slug>` and re-run this todo. Never delete without checking.
+```
+
+(Never destroy a prior run's remote branch — fail toward human review, never toward deletion.)
 
 3. **Create the PR.** The GitHub MCP tools are deferred — first load them with `ToolSearch` (query: `select:mcp__github__create_pull_request,mcp__github__list_pull_requests,mcp__github__request_copilot_review`), then call `mcp__github__create_pull_request` with these fields:
    - `owner`: `xertox1234`
@@ -584,7 +594,7 @@ ATTEMPT: <1 or 2>
 
 ```
 STATUS: skipped | blocked
-REASON: <status not eligible | "already implemented — PR <url> awaiting batch-merge" (Step 10 open-PR collision) | list of blocking dependency filenames | "advisor red-flag: <reason>" | for a diverged remote branch with NO open PR, the FULL reason text from Step 10 VERBATIM — it begins "remote branch todo/<slug> already exists at a diverged commit…" and MUST keep its "ACTION NEEDED (human): … git push origin --delete …" line (Phase 5 detects the actionable block by that marker; a shortened paraphrase gets buried as an ordinary dependency row and the todo re-blocks forever)>
+REASON: <status not eligible | "already implemented — PR <url> awaiting batch-merge" (Step 2 probe or Step 10 open-PR collision) | "stale todo/<todo-slug> branch from a merged/closed PR — Phase 0 sweeps it next run; re-run this todo afterward" | list of blocking dependency filenames | "advisor red-flag: <reason>" | for a diverged remote branch (no-PR orphan OR PR-check-failed), the FULL reason text from Step 10 VERBATIM — it begins "remote branch todo/<slug> already exists at a diverged commit…" and MUST keep its "ACTION NEEDED (human): …" line (Phase 5 detects the actionable block by that marker; a shortened paraphrase gets buried as an ordinary dependency row and the todo re-blocks forever)>
 ```
 
 ---
