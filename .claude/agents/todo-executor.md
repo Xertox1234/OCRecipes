@@ -49,7 +49,7 @@ Check whether this todo is eligible for execution:
 1. **Status gate**: If `status` is not `backlog` or `planned`, report `skipped` with reason `"status is <actual status>, expected backlog or planned"` and stop.
 2. **Dependency check**: If the Dependencies section lists other todo files, check whether each specific dependency filename exists as a file at `todos/<dependency-filename>.md`. If it exists (not moved to `todos/archive/`), the dependency is still pending — report `blocked` with the list of blocking todo filenames and stop.
    - Dependencies that reference external services, APIs, or non-todo items are not blocking.
-3. **Copilot delegation gate**: If the todo has a `github_issue` frontmatter value, treat the GitHub Issue as the active Copilot work queue item and report `skipped` with reason `delegated to Copilot: <url>`. Do not implement locally unless the orchestrator explicitly tells you this is a manual takeover.
+3. **Legacy delegation gate**: If the todo has a `github_issue` frontmatter value, it predates the removal of the Copilot delegation pipeline (deleted 2026-07). Report `skipped` with reason `legacy github_issue todo: <url> — needs manual triage` unless the orchestrator explicitly tells you this is a manual takeover.
 
 ---
 
@@ -242,7 +242,7 @@ If `$DIFF` is empty, skip and set `review_output=""`.
 Otherwise:
 
 1. **Inspect the diff** (`git diff HEAD -- .`) — file paths **and** content.
-2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain specialists** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match specialists by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a Drizzle query → add `database-specialist`; a camera screen → add `camera-specialist`; an `any`/Zod change → add `typescript-specialist`; a new library API → add `docs-researcher`). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
+2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain specialists** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match specialists by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a Drizzle query → add `database-specialist`; a camera screen → add `camera-specialist`; an `any`/Zod change → add `typescript-specialist`). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
 3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the Review-Policy dispatch prompt. Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). Example:
 
    ```
@@ -327,7 +327,7 @@ Example:
 git commit -m "$(cat <<'EOF'
 refactor: consolidate duplicated cooking session types and stores
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -443,7 +443,7 @@ Skip 6b entirely if no solution file was created or updated (codify only touched
      git commit -m "$(cat <<'EOF'
    docs: codify patterns and reviewer checks from <todo title>
 
-   Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+   Co-Authored-By: Claude <noreply@anthropic.com>
    EOF
    )"
    fi
@@ -457,16 +457,14 @@ Skip 6b entirely if no solution file was created or updated (codify only touched
 
 ---
 
-## Step 10 — Push Branch & Open PR (auto-merge for low/medium)
+## Step 10 — Push Branch & Open PR
 
 This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both complete — the branch must contain the committed implementation before it is pushed.
 
-If this todo was delegated through a GitHub Issue assigned to `@copilot`, do not create direct commits or a replacement PR from this executor. The Copilot issue must produce a PR that receives human review.
+**Every todo creates a PR, and NO PR ever auto-merges** (the one exception is a legacy `github_issue` todo per the Step 2 gate — that path produces no executor PR at all). A no-PR branch cannot land under `main`'s branch protection (`enforce_admins` ON; "merge the branch directly" no longer exists). All PRs wait for the user's morning batch-merge; the merge-eligibility check (step 4 below) only classifies each PR so the orchestrator can report which ones are safe to batch-merge and which need individual review:
 
-**Priority gate + auto-merge.** Read the todo's frontmatter `priority` and `labels`. **Every priority now creates a PR** (the one exception is a `@copilot`-delegated `github_issue` todo per the guard just above — that path produces no executor PR at all) — a no-PR branch cannot land under `main`'s branch protection (`enforce_admins` ON; "merge the branch directly" no longer exists). The priority and a `security` label decide only whether the PR **auto-merges** on green CI or **waits for human review**:
-
-- `low` or `medium` — create the PR and enable **squash auto-merge** (step 4 below): it lands automatically once all required CI checks pass. CI is never bypassed — branch protection still gates the merge. **Exception:** if `labels` includes `security`, do NOT auto-merge — treat it as a review PR (next bullet) so a human reviews the security change regardless of priority.
-- `high`, `critical`, or any `security`-labelled todo — create the PR but do **NOT** enable auto-merge. The orchestrator surfaces it for human review.
+- `low` or `medium` without a `security` label — run the eligibility guard (step 4) and report its verdict.
+- `high`, `critical`, or any `security`-labelled todo — skip the guard; the PR always needs individual human review (`MERGE_ELIGIBLE: review-required`).
 
 Rename the worktree branch to a meaningful slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
 
@@ -497,7 +495,7 @@ git push -u origin todo/<todo-slug>
 remote branch todo/<todo-slug> already exists at a diverged commit from a prior interrupted/failed run of this same todo — cannot fast-forward, and this agent must not force-push or delete remote state. ACTION NEEDED (human): if that branch has an OPEN PR, finish or close it; if it has NO PR (the usual interrupted-run case), delete it with `git push origin --delete todo/<todo-slug>` and re-run this todo. NOTE: Phase 0's auto-sweep only removes branches whose PRs are merged/closed, so a no-PR leftover will NOT self-clear.
 ```
 
-(With low/medium todos now auto-merging and their branches auto-deleting on merge, this collision should be rare. When it does happen, blocking is correct — never destroy a prior run's remote branch, which may carry an open PR under review. The no-PR-leftover case needs the one-time manual delete above; the orchestrator surfaces this exact instruction rather than silently dangling the todo.)
+(Blocking is correct here — never destroy a prior run's remote branch, which may carry an open PR under review. The no-PR-leftover case needs the one-time manual delete above; the orchestrator surfaces this exact instruction rather than silently dangling the todo.)
 
 3. **Create the PR.** The GitHub MCP tools are deferred — first load them with `ToolSearch` (query: `select:mcp__github__create_pull_request,mcp__github__list_pull_requests,mcp__github__request_copilot_review`), then call `mcp__github__create_pull_request` with these fields:
    - `owner`: `xertox1234`
@@ -527,24 +525,21 @@ Todo: `todos/<filename>.md` (archived in this commit)
 🤖 Implemented by Claude Code /todo skill
 ```
 
-4. **Auto-merge gate (low/medium, non-`security`).** Per the priority gate above, for a `low`- or `medium`-priority todo whose `labels` do **not** include `security`, decide auto-merge through the **fail-closed** guard (it auto-merges only KNOWN-safe surfaces; anything sensitive or unrecognized HOLDs). Use the PR number from the `PR_URL` **in hand** — from step 3 on the normal path, or from step 6 on the already-exists path (do not assume it came from `create_pull_request`):
+4. **Merge-eligibility check (low/medium, non-`security`).** For a `low`- or `medium`-priority todo whose `labels` do **not** include `security`, run the **fail-closed** guard to classify the PR for the user's morning batch-merge. **Never enable auto-merge — do not call `gh pr merge` in any form.** Use the PR number from the `PR_URL` **in hand** — from step 3 on the normal path, or from step 6 on the already-exists path:
 
    ```bash
    scripts/todo-automerge-guard.sh <pr-number>; rc=$?
-   if [ "$rc" -eq 0 ]; then
-     gh pr merge <pr-number> --auto --squash --delete-branch   # guard OK → lands on green CI
-   fi
    ```
 
    Map the guard's exit code — it deliberately distinguishes a real HOLD from a tooling error:
-   - **`rc` 0 — guard OK** (every changed file is on the safe allowlist) → `gh pr merge --auto --squash` queues the merge; it lands when all required CI checks pass. Branch protection still gates it — nothing is bypassed. Report `AUTO_MERGE: enabled`. (`--delete-branch` is best-effort; Phase 0's sweep removes a merged branch next run.) If the `gh pr merge` call itself errors, treat it as the `rc ≥ 2` case below.
-   - **`rc` 1 — guard HOLD** (a changed file is sensitive or not on the allowlist — e.g. `server/storage`, `server/routes`, `server/middleware`, `.github/`, `scripts/`, `migrations`, `shared/schema.ts`, secrets — so the `low`/`medium` label may be a mislabel) → do **NOT** enable auto-merge; leave the PR open for review and report `AUTO_MERGE: held`. **Do not add this to `DEFERRED_WARNINGS`** — `AUTO_MERGE: held` is the channel the orchestrator surfaces it on; a held PR is not a "turn into a todo?" item.
-   - **`rc` ≥ 2 — guard could not evaluate** (gh failure / empty diff), or the `gh pr merge` call errored (e.g. `gh` not authenticated in this worktree — note PR creation used the MCP GitHub token, which is independent of `gh` CLI auth) → fail-closed: do not auto-merge, report `AUTO_MERGE: failed`, and continue. The PR is open and can be merged by hand.
-   - **`high`/`critical`/`security` todos** — skip this step entirely (do not run the guard); the PR stays open for review (`AUTO_MERGE: disabled`).
+   - **`rc` 0 — guard OK** (every changed file is on the safe allowlist) → report `MERGE_ELIGIBLE: yes` — the orchestrator lists this PR as safe for the user's batch-merge on green CI.
+   - **`rc` 1 — guard HOLD** (a changed file is sensitive or not on the allowlist — e.g. `server/storage`, `server/routes`, `server/middleware`, `.github/`, `scripts/`, `migrations`, `shared/schema.ts`, secrets — so the `low`/`medium` label may be a mislabel) → report `MERGE_ELIGIBLE: held`. **Do not add this to `DEFERRED_WARNINGS`** — `MERGE_ELIGIBLE: held` is the channel the orchestrator surfaces it on.
+   - **`rc` ≥ 2 — guard could not evaluate** (gh failure / empty diff) → fail-closed: report `MERGE_ELIGIBLE: unknown` and continue. The PR is open and gets individual review.
+   - **`high`/`critical`/`security` todos** — skip this step entirely (do not run the guard); report `MERGE_ELIGIBLE: review-required`.
 
 5. **Request Copilot review.** Once a valid `PR_URL` is in hand (i.e., step 3 succeeded or a matching open PR was found in step 6), call `mcp__github__request_copilot_review` with `owner: xertox1234`, `repo: OCRecipes`, and the PR number extracted from `PR_URL`. This is non-blocking — if the call fails for any reason (auth, network, Copilot unavailable), log the error and continue to Step 11 without treating it as a failure.
 
-6. **If PR creation fails** because a PR already exists for `todo/<todo-slug>`, call `mcp__github__list_pull_requests` (`state: open`) and match the PR whose head branch is `todo/<todo-slug>`. If a PR is found, use its URL as `PR_URL` and proceed to step 5 (request Copilot review). **Do NOT re-run step 4 on a pre-existing PR** — a human may have intentionally turned auto-merge off (`gh pr merge --disable-auto`) to hold it; leave its current auto-merge state untouched. Report `AUTO_MERGE` from the PR's CURRENT state instead: `enabled` if `gh pr view <pr-number> --json autoMergeRequest` shows it set, `disabled` if not (a human may be holding it), or `failed` if that `gh pr view` call itself errors (e.g. `gh` unauthenticated). If no open PR is found or the lookup fails for any other reason (network error, auth error, missing tool, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
+6. **If PR creation fails** because a PR already exists for `todo/<todo-slug>`, call `mcp__github__list_pull_requests` (`state: open`) and match the PR whose head branch is `todo/<todo-slug>`. If a PR is found, use its URL as `PR_URL`, run step 4's eligibility check against it, and proceed to step 5 (request Copilot review). If no open PR is found or the lookup fails for any other reason (network error, auth error, missing tool, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
 
 ---
 
@@ -559,7 +554,7 @@ STATUS: success
 COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "null" if PR creation failed>
-AUTO_MERGE: <enabled (auto-merge queued — lands on green CI) | held (guard flagged a sensitive / non-allowlisted path — PR open for review) | disabled (auto-merge not enabled — a high/critical/security todo, or a pre-existing PR a human is holding) | failed (guard/merge could not run — PR open) | n/a (no PR created)>
+MERGE_ELIGIBLE: <yes (guard OK — safe for the user's batch-merge on green CI) | held (guard flagged a sensitive / non-allowlisted path — needs individual review) | review-required (high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
 CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b> | solutions:db:add failed — <reason, file left on disk for solutions:db:ingest>
 SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written and passed the 6b sanity-check — report it even if step 7's solutions:db:add failed (the file is on disk; DB-registration status is carried by CODIFICATION_COMMIT), or "none" if no solution was codified>
 
@@ -623,7 +618,7 @@ git add todos/<filename>.md
 git commit -m "$(cat <<'EOF'
 chore: mark <todo title> as blocked after failed execution
 
-Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
 )"
 ```

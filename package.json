@@ -23,8 +23,6 @@
     "check:types": "tsc --noEmit",
     "check:types:incremental": "mkdir -p node_modules/.cache && tsc --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsc-precommit.tsbuildinfo",
     "ci:failed-logs": "bash scripts/ci-failed-logs.sh",
-    "copilot:delegate:dry-run": "tsx scripts/delegate-copilot-issue.ts --dry-run",
-    "copilot:delegate": "tsx scripts/delegate-copilot-issue.ts --live",
     "build:copilot-instructions": "tsx scripts/build-copilot-instructions.ts .github/copilot-instructions.md",
     "build:copilot-instructions:check": "tsx scripts/build-copilot-instructions.ts --check .github/copilot-instructions.md",
     "build:domain-map": "tsx scripts/build-domain-map.ts .claude/hooks/lib/domain-map.sh",

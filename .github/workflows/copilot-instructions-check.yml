@@ -13,7 +13,6 @@ on:
       - "scripts/build-copilot-instructions.ts"
       - "scripts/build-domain-map.ts"
       - "scripts/lib/path-domains.ts"
-      - "scripts/delegate-copilot-issue.ts"
       - ".github/copilot-instructions.md"
       - ".claude/hooks/lib/domain-map.sh"
   pull_request:
@@ -23,7 +22,6 @@ on:
       - "scripts/build-copilot-instructions.ts"
       - "scripts/build-domain-map.ts"
       - "scripts/lib/path-domains.ts"
-      - "scripts/delegate-copilot-issue.ts"
       - ".github/copilot-instructions.md"
       - ".claude/hooks/lib/domain-map.sh"
 

@@ -473,12 +473,10 @@ examples_ are pulled from the DB at generate-time. This is the same separation t
 
 ### 3. Freshness — ride the existing scheduled-drift rail
 
-`AI_DRIFT_CHECKLIST.md` already exists as _"a human-curated markdown table with stable IDs"_, and
-`docs/AI_DRIFT_AUTOMATION.md` specifies a report-only scheduled runner (`scripts/check-ai-drift.js` +
-`ai-drift.yml` cron) to turn it into a report — **the design is committed; the runner itself is a
-planned follow-up PR, not yet built** (every `DRIFT-*` row is still `status: pending`). So the rail to
-ride is the existing checklist plus its automation design; extend it by adding **one row** rather than
-building a new system:
+`AI_DRIFT_CHECKLIST.md` already exists as _"a human-curated markdown table with stable IDs"_ and is
+reviewed manually (the scheduled-runner design, `AI_DRIFT_AUTOMATION.md`, was deleted unbuilt in the
+2026-07 harness sweep; every `DRIFT-*` row is still `status: pending`). So the rail to ride is the
+existing checklist; extend it by adding **one row** rather than building a new system:
 
 ```
 | DRIFT-010 | trends.md freshness | monthly | pending | — | — | docs/trends.md, ocrecipes_solutions DB |
@@ -516,8 +514,7 @@ trends.md becomes the _measure_ of how much recurring-error surface has been mec
 ## Sources & precedent
 
 **Internal:** `docs/audits/CHANGELOG.md` + 45 manifests; `ocrecipes_solutions` DB; `docs/PATTERNS.md`;
-`docs/rules/*.md`; `.claude/skills/codify/SKILL.md`; `docs/AI_DRIFT_CHECKLIST.md` +
-`docs/AI_DRIFT_AUTOMATION.md`; `eslint-plugin-ocrecipes`; `scripts/check-{accessibility,idor-storage,
+`docs/rules/*.md`; `.claude/skills/codify/SKILL.md`; `docs/AI_DRIFT_CHECKLIST.md`; `eslint-plugin-ocrecipes`; `scripts/check-{accessibility,idor-storage,
 hardcoded-colors}.js`.
 
 **Open-source precedent (the "living rules/lessons for agents" ecosystem, 2026):**
