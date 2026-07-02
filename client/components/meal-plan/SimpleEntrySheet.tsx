@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { StyleSheet, View, Pressable, ActivityIndicator } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
-import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
+import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
@@ -37,24 +38,30 @@ import {
   type MealType,
 } from "@/screens/meal-plan/meal-plan-utils";
 
-const SNAP_POINTS = ["45%"];
+export const SIMPLE_ENTRY_SNAP_POINTS = ["45%"];
 
-interface SimpleEntrySheetProps {
+interface SimpleEntrySheetContentProps {
   mealType: MealType | null;
   plannedDate: string;
   onDismiss: () => void;
 }
 
-function SimpleEntrySheetInner({
-  mealType,
-  plannedDate,
-  onDismiss,
-}: SimpleEntrySheetProps) {
+export interface SimpleEntrySheetContentHandle {
+  focusDishNameInput: () => void;
+}
+
+function SimpleEntrySheetContentInner(
+  { mealType, plannedDate, onDismiss }: SimpleEntrySheetContentProps,
+  forwardedRef: React.Ref<SimpleEntrySheetContentHandle>,
+) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const queryClient = useQueryClient();
-  const sheetRef = useRef<BottomSheetModal>(null);
   const inputRef = useRef<TextInput>(null);
+
+  useImperativeHandle(forwardedRef, () => ({
+    focusDishNameInput: () => inputRef.current?.focus(),
+  }));
 
   const [dishName, setDishName] = useState("");
   const [servings, setServings] = useState(1);
@@ -85,21 +92,18 @@ function SimpleEntrySheetInner({
     setError(msg);
   }, []);
 
-  // Reset state when sheet opens/closes
+  // Reset state when the sheet opens for a meal type, and stop any
+  // in-progress voice capture when it closes.
   useEffect(() => {
     if (mealType) {
-      sheetRef.current?.present();
       setDishName("");
       setServings(1);
       setError(null);
       setIsAdding(false);
       setShowUpgrade(false);
       isAddingRef.current = false;
-    } else {
-      sheetRef.current?.dismiss();
-      if (isListening) {
-        stopListening();
-      }
+    } else if (isListening) {
+      stopListening();
     }
   }, [mealType, isListening, stopListening]);
 
@@ -123,19 +127,6 @@ function SimpleEntrySheetInner({
       showError(speechError);
     }
   }, [speechError, showError]);
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.35}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   const handleServingsChange = useCallback(
     (delta: number) => {
@@ -234,189 +225,169 @@ function SimpleEntrySheetInner({
   const canAdd = dishName.trim().length > 0 && !isAdding && !isListening;
 
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      snapPoints={SNAP_POINTS}
-      enableDynamicSizing={false}
-      keyboardBehavior="fillParent"
-      keyboardBlurBehavior="restore"
-      backdropComponent={renderBackdrop}
-      onDismiss={onDismiss}
-      onChange={(index) => {
-        if (index === 0) {
-          inputRef.current?.focus();
-        }
-      }}
-      accessibilityViewIsModal
-    >
-      <View style={styles.content}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View
-            style={[
-              styles.dragIndicator,
-              { backgroundColor: withOpacity(theme.text, 0.2) },
-            ]}
-          />
-          <View style={styles.headerRow}>
-            <ThemedText style={styles.headerTitle}>
-              Quick add to {label}
-            </ThemedText>
-            <Pressable
-              onPress={onDismiss}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-            >
-              <ThemedText style={[styles.doneText, { color: theme.link }]}>
-                Done
-              </ThemedText>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Dish name input */}
-        <View style={styles.inputContainer}>
-          <View
-            style={[
-              styles.inputBox,
-              { backgroundColor: withOpacity(theme.text, 0.05) },
-            ]}
-          >
-            <Feather name="edit-3" size={16} color={theme.textSecondary} />
-            <BottomSheetTextInput
-              ref={inputRef}
-              style={[styles.input, { color: theme.text }]}
-              placeholder={
-                isListening ? "Listening..." : "e.g. chicken stir fry"
-              }
-              placeholderTextColor={theme.textSecondary}
-              value={dishName}
-              onChangeText={(text) => {
-                setDishName(text);
-                if (error) setError(null);
-              }}
-              returnKeyType="done"
-              accessibilityLabel="Dish name"
-              aria-invalid={!!error}
-            />
-            {hasVoiceLogging && (
-              <InlineMicButton
-                isListening={isListening}
-                volume={volume}
-                onPress={handleVoicePress}
-                disabled={isAdding}
-              />
-            )}
-          </View>
-        </View>
-
-        {/* Error text */}
-        <InlineError message={error} style={styles.errorBox} />
-
-        {/* Servings stepper */}
-        <View style={styles.servingsRow}>
-          <ThemedText
-            style={[styles.servingsLabel, { color: theme.textSecondary }]}
-          >
-            Servings
-          </ThemedText>
-          <View style={styles.stepper}>
-            <Pressable
-              onPress={() => handleServingsChange(-1)}
-              style={[
-                styles.stepperButton,
-                { borderColor: withOpacity(theme.text, 0.1) },
-              ]}
-              hitSlop={4}
-              disabled={servings <= 1}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: servings <= 1 }}
-              accessibilityLabel="Decrease servings"
-            >
-              <Feather
-                name="minus"
-                size={18}
-                color={
-                  servings <= 1 ? withOpacity(theme.text, 0.2) : theme.text
-                }
-              />
-            </Pressable>
-            <ThemedText
-              style={[styles.stepperValue, { color: theme.text }]}
-              accessibilityRole="adjustable"
-              accessibilityValue={{
-                min: 1,
-                max: 99,
-                now: servings,
-                text: `${servings} servings`,
-              }}
-            >
-              {servings}
-            </ThemedText>
-            <Pressable
-              onPress={() => handleServingsChange(1)}
-              style={[
-                styles.stepperButton,
-                { borderColor: withOpacity(theme.text, 0.1) },
-              ]}
-              hitSlop={4}
-              disabled={servings >= 99}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: servings >= 99 }}
-              accessibilityLabel="Increase servings"
-            >
-              <Feather
-                name="plus"
-                size={18}
-                color={
-                  servings >= 99 ? withOpacity(theme.text, 0.2) : theme.text
-                }
-              />
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Add button */}
-        <Pressable
-          onPress={handleAdd}
-          disabled={!canAdd}
+    <View style={styles.content}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View
           style={[
-            styles.addButton,
-            {
-              backgroundColor: canAdd
-                ? theme.accentSolid
-                : withOpacity(theme.text, 0.1),
-            },
+            styles.dragIndicator,
+            { backgroundColor: withOpacity(theme.text, 0.2) },
           ]}
-          accessibilityRole="button"
-          accessibilityLabel={`Add ${dishName || "item"} to ${label}`}
-          accessibilityState={{ disabled: !canAdd }}
-        >
-          {isAdding ? (
-            <ActivityIndicator size="small" color={theme.buttonText} />
-          ) : (
-            <ThemedText
-              style={[
-                styles.addButtonText,
-                { color: canAdd ? theme.buttonText : theme.textSecondary },
-              ]}
-            >
-              Add
-            </ThemedText>
-          )}
-        </Pressable>
-
-        <UpgradeModal
-          visible={showUpgrade}
-          onClose={() => setShowUpgrade(false)}
         />
+        <View style={styles.headerRow}>
+          <ThemedText style={styles.headerTitle}>
+            Quick add to {label}
+          </ThemedText>
+          <Pressable
+            onPress={onDismiss}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
+            <ThemedText style={[styles.doneText, { color: theme.link }]}>
+              Done
+            </ThemedText>
+          </Pressable>
+        </View>
       </View>
-    </BottomSheetModal>
+
+      {/* Dish name input */}
+      <View style={styles.inputContainer}>
+        <View
+          style={[
+            styles.inputBox,
+            { backgroundColor: withOpacity(theme.text, 0.05) },
+          ]}
+        >
+          <Feather name="edit-3" size={16} color={theme.textSecondary} />
+          <BottomSheetTextInput
+            ref={inputRef}
+            style={[styles.input, { color: theme.text }]}
+            placeholder={isListening ? "Listening..." : "e.g. chicken stir fry"}
+            placeholderTextColor={theme.textSecondary}
+            value={dishName}
+            onChangeText={(text) => {
+              setDishName(text);
+              if (error) setError(null);
+            }}
+            returnKeyType="done"
+            accessibilityLabel="Dish name"
+            aria-invalid={!!error}
+          />
+          {hasVoiceLogging && (
+            <InlineMicButton
+              isListening={isListening}
+              volume={volume}
+              onPress={handleVoicePress}
+              disabled={isAdding}
+            />
+          )}
+        </View>
+      </View>
+
+      {/* Error text */}
+      <InlineError message={error} style={styles.errorBox} />
+
+      {/* Servings stepper */}
+      <View style={styles.servingsRow}>
+        <ThemedText
+          style={[styles.servingsLabel, { color: theme.textSecondary }]}
+        >
+          Servings
+        </ThemedText>
+        <View style={styles.stepper}>
+          <Pressable
+            onPress={() => handleServingsChange(-1)}
+            style={[
+              styles.stepperButton,
+              { borderColor: withOpacity(theme.text, 0.1) },
+            ]}
+            hitSlop={4}
+            disabled={servings <= 1}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: servings <= 1 }}
+            accessibilityLabel="Decrease servings"
+          >
+            <Feather
+              name="minus"
+              size={18}
+              color={servings <= 1 ? withOpacity(theme.text, 0.2) : theme.text}
+            />
+          </Pressable>
+          <ThemedText
+            style={[styles.stepperValue, { color: theme.text }]}
+            accessibilityRole="adjustable"
+            accessibilityValue={{
+              min: 1,
+              max: 99,
+              now: servings,
+              text: `${servings} servings`,
+            }}
+          >
+            {servings}
+          </ThemedText>
+          <Pressable
+            onPress={() => handleServingsChange(1)}
+            style={[
+              styles.stepperButton,
+              { borderColor: withOpacity(theme.text, 0.1) },
+            ]}
+            hitSlop={4}
+            disabled={servings >= 99}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: servings >= 99 }}
+            accessibilityLabel="Increase servings"
+          >
+            <Feather
+              name="plus"
+              size={18}
+              color={servings >= 99 ? withOpacity(theme.text, 0.2) : theme.text}
+            />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Add button */}
+      <Pressable
+        onPress={handleAdd}
+        disabled={!canAdd}
+        style={[
+          styles.addButton,
+          {
+            backgroundColor: canAdd
+              ? theme.accentSolid
+              : withOpacity(theme.text, 0.1),
+          },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={`Add ${dishName || "item"} to ${label}`}
+        accessibilityState={{ disabled: !canAdd }}
+      >
+        {isAdding ? (
+          <ActivityIndicator size="small" color={theme.buttonText} />
+        ) : (
+          <ThemedText
+            style={[
+              styles.addButtonText,
+              { color: canAdd ? theme.buttonText : theme.textSecondary },
+            ]}
+          >
+            Add
+          </ThemedText>
+        )}
+      </Pressable>
+
+      <UpgradeModal
+        visible={showUpgrade}
+        onClose={() => setShowUpgrade(false)}
+      />
+    </View>
   );
 }
 
-export const SimpleEntrySheet = React.memo(SimpleEntrySheetInner);
+export const SimpleEntrySheetContent = React.memo(
+  React.forwardRef(SimpleEntrySheetContentInner),
+);
 
 const styles = StyleSheet.create({
   content: {

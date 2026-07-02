@@ -2,7 +2,7 @@
 import React from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
-import { SimpleEntrySheet } from "../SimpleEntrySheet";
+import { SimpleEntrySheetContent } from "../SimpleEntrySheet";
 import { ApiError } from "@/lib/api-error";
 
 const mockParseFoodText = vi.fn();
@@ -84,36 +84,36 @@ describe("SimpleEntrySheet", () => {
   });
 
   it("renders header with meal label", () => {
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
     expect(screen.getByText("Quick add to Lunch")).toBeDefined();
   });
 
   it("renders dish name input", () => {
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
     expect(screen.getByLabelText("Dish name")).toBeDefined();
   });
 
   it("renders servings stepper", () => {
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
     expect(screen.getByText("Servings")).toBeDefined();
     expect(screen.getByLabelText("Decrease servings")).toBeDefined();
     expect(screen.getByLabelText("Increase servings")).toBeDefined();
   });
 
   it("renders Add button", () => {
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
     expect(screen.getByText("Add")).toBeDefined();
   });
 
   it("increments servings on plus press", () => {
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
     const increaseBtn = screen.getByLabelText("Increase servings");
     fireEvent.click(increaseBtn);
     expect(screen.getByText("2")).toBeDefined();
   });
 
   it("decrements servings on minus press", () => {
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
     // First increase to 2
     fireEvent.click(screen.getByLabelText("Increase servings"));
     // Then decrease back to 1
@@ -122,13 +122,13 @@ describe("SimpleEntrySheet", () => {
   });
 
   it("disables decrease button at minimum (1)", () => {
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
     const decreaseBtn = screen.getByLabelText("Decrease servings");
     expect(decreaseBtn).toHaveProperty("disabled", true);
   });
 
   it("calls onDismiss when Done is pressed", () => {
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
     fireEvent.click(screen.getByLabelText("Close"));
     expect(defaultProps.onDismiss).toHaveBeenCalledTimes(1);
   });
@@ -149,7 +149,7 @@ describe("SimpleEntrySheet", () => {
     mockCreateRecipe.mockResolvedValue({ id: 42 });
     mockAddItem.mockResolvedValue({ id: 1 });
 
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
 
     const input = screen.getByLabelText("Dish name");
     fireEvent.change(input, { target: { value: "chicken stir fry" } });
@@ -188,7 +188,7 @@ describe("SimpleEntrySheet", () => {
   it("shows error when parse returns empty items", async () => {
     mockParseFoodText.mockResolvedValue({ items: [] });
 
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
 
     const input = screen.getByLabelText("Dish name");
     fireEvent.change(input, { target: { value: "asdfghjkl" } });
@@ -206,7 +206,7 @@ describe("SimpleEntrySheet", () => {
   it("shows error when parse throws", async () => {
     mockParseFoodText.mockRejectedValue(new Error("API error"));
 
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
 
     const input = screen.getByLabelText("Dish name");
     fireEvent.change(input, { target: { value: "something" } });
@@ -226,7 +226,7 @@ describe("SimpleEntrySheet", () => {
       new ApiError("403: Premium required", "PREMIUM_REQUIRED"),
     );
 
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
 
     const input = screen.getByLabelText("Dish name");
     fireEvent.change(input, { target: { value: "something" } });
@@ -267,7 +267,7 @@ describe("SimpleEntrySheet", () => {
     mockCreateRecipe.mockResolvedValue({ id: 10 });
     mockAddItem.mockResolvedValue({ id: 1 });
 
-    renderComponent(<SimpleEntrySheet {...defaultProps} />);
+    renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
 
     const input = screen.getByLabelText("Dish name");
     fireEvent.change(input, { target: { value: "eggs and toast" } });
@@ -291,25 +291,25 @@ describe("SimpleEntrySheet", () => {
   describe("voice dictation", () => {
     it("renders mic button for premium users", () => {
       mockHasVoiceLogging = true;
-      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
       expect(screen.getByLabelText("Start voice input")).toBeDefined();
     });
 
     it("hides mic button for free users", () => {
       mockHasVoiceLogging = false;
-      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
       expect(screen.queryByLabelText("Start voice input")).toBeNull();
     });
 
     it("calls startListening on mic press when idle", () => {
-      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
       fireEvent.click(screen.getByLabelText("Start voice input"));
       expect(mockStartListening).toHaveBeenCalledOnce();
     });
 
     it("calls stopListening on mic press when listening", () => {
       mockIsListening = true;
-      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
       fireEvent.click(screen.getByLabelText("Listening, tap to stop"));
       expect(mockStopListening).toHaveBeenCalledOnce();
     });
@@ -319,7 +319,7 @@ describe("SimpleEntrySheet", () => {
       // then speechError effect runs (sets error)
       mockSpeechError =
         "Microphone or speech recognition permission not granted.";
-      renderComponent(<SimpleEntrySheet {...defaultProps} />);
+      renderComponent(<SimpleEntrySheetContent {...defaultProps} />);
 
       await waitFor(() => {
         expect(

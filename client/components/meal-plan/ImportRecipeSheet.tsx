@@ -1,7 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { StyleSheet, View, Pressable } from "react-native";
-import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
-import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle, NotificationFeedbackType } from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -28,9 +26,9 @@ import {
   type MealType,
 } from "@/screens/meal-plan/meal-plan-utils";
 
-const SNAP_POINTS = ["55%"];
+export const IMPORT_RECIPE_SNAP_POINTS = ["55%"];
 
-interface ImportRecipeSheetProps {
+interface ImportRecipeSheetContentProps {
   mealType: MealType | null;
   plannedDate: string;
   onDismiss: () => void;
@@ -38,41 +36,18 @@ interface ImportRecipeSheetProps {
   onPhotoImport: (uri: string, mealType: MealType, date: string) => void;
 }
 
-function ImportRecipeSheetInner({
+function ImportRecipeSheetContentInner({
   mealType,
   plannedDate,
   onDismiss,
   onNavigateUrlImport,
   onPhotoImport,
-}: ImportRecipeSheetProps) {
+}: ImportRecipeSheetContentProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const sheetRef = useRef<BottomSheetModal>(null);
   const canImportPhoto = usePremiumFeature("recipePhotoImport");
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [clipboardError, setClipboardError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (mealType) {
-      sheetRef.current?.present();
-      setClipboardError(null);
-    } else {
-      sheetRef.current?.dismiss();
-    }
-  }, [mealType]);
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.35}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   const handleUrlImport = useCallback(() => {
     if (!mealType) return;
@@ -214,71 +189,59 @@ function ImportRecipeSheetInner({
 
   return (
     <>
-      <BottomSheetModal
-        ref={sheetRef}
-        snapPoints={SNAP_POINTS}
-        enableDynamicSizing={false}
-        backdropComponent={renderBackdrop}
-        onDismiss={onDismiss}
-        accessibilityViewIsModal
-      >
-        <View style={styles.content}>
-          <View
-            style={[
-              styles.dragIndicator,
-              { backgroundColor: withOpacity(theme.text, 0.2) },
-            ]}
-          />
-          <ThemedText style={styles.title}>Import Recipe to {label}</ThemedText>
-          <View style={styles.options}>
-            {rows.map((row) => {
-              const isLocked = row.premium && !canImportPhoto;
-              return (
-                <Pressable
-                  key={row.key}
-                  onPress={row.onPress}
-                  style={[
-                    styles.optionRow,
-                    { backgroundColor: withOpacity(theme.text, 0.04) },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    isLocked ? `${row.title}, premium feature` : row.title
-                  }
-                >
-                  <Feather name={row.icon} size={20} color={theme.link} />
-                  <View style={styles.optionText}>
-                    <ThemedText style={styles.optionTitle}>
-                      {row.title}
-                    </ThemedText>
-                    <ThemedText
-                      style={[
-                        styles.optionDesc,
-                        { color: theme.textSecondary },
-                      ]}
-                    >
-                      {row.desc}
-                    </ThemedText>
-                  </View>
-                  <Feather
-                    name={isLocked ? "lock" : "chevron-right"}
-                    size={16}
-                    color={theme.textSecondary}
-                  />
-                </Pressable>
-              );
-            })}
-          </View>
-          {clipboardError && (
-            <ThemedText
-              style={[styles.errorText, { color: theme.error }]}
-              accessibilityRole="alert"
-            >
-              {clipboardError}
-            </ThemedText>
-          )}
+      <View style={styles.content}>
+        <View
+          style={[
+            styles.dragIndicator,
+            { backgroundColor: withOpacity(theme.text, 0.2) },
+          ]}
+        />
+        <ThemedText style={styles.title}>Import Recipe to {label}</ThemedText>
+        <View style={styles.options}>
+          {rows.map((row) => {
+            const isLocked = row.premium && !canImportPhoto;
+            return (
+              <Pressable
+                key={row.key}
+                onPress={row.onPress}
+                style={[
+                  styles.optionRow,
+                  { backgroundColor: withOpacity(theme.text, 0.04) },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isLocked ? `${row.title}, premium feature` : row.title
+                }
+              >
+                <Feather name={row.icon} size={20} color={theme.link} />
+                <View style={styles.optionText}>
+                  <ThemedText style={styles.optionTitle}>
+                    {row.title}
+                  </ThemedText>
+                  <ThemedText
+                    style={[styles.optionDesc, { color: theme.textSecondary }]}
+                  >
+                    {row.desc}
+                  </ThemedText>
+                </View>
+                <Feather
+                  name={isLocked ? "lock" : "chevron-right"}
+                  size={16}
+                  color={theme.textSecondary}
+                />
+              </Pressable>
+            );
+          })}
         </View>
-      </BottomSheetModal>
+        {clipboardError && (
+          <ThemedText
+            style={[styles.errorText, { color: theme.error }]}
+            accessibilityRole="alert"
+          >
+            {clipboardError}
+          </ThemedText>
+        )}
+      </View>
       <UpgradeModal
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
@@ -287,7 +250,9 @@ function ImportRecipeSheetInner({
   );
 }
 
-export const ImportRecipeSheet = React.memo(ImportRecipeSheetInner);
+export const ImportRecipeSheetContent = React.memo(
+  ImportRecipeSheetContentInner,
+);
 
 const styles = StyleSheet.create({
   content: {

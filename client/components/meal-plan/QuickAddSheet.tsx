@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -8,12 +9,9 @@ import React, {
 import { StyleSheet, View, Pressable } from "react-native";
 import type { TextInput } from "react-native-gesture-handler";
 import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
   BottomSheetTextInput,
   BottomSheetFlatList,
 } from "@gorhom/bottom-sheet";
-import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle, NotificationFeedbackType } from "expo-haptics";
 
@@ -35,14 +33,18 @@ import {
   type MealType,
 } from "@/screens/meal-plan/meal-plan-utils";
 
-const SNAP_POINTS = ["70%"];
+export const QUICK_ADD_SNAP_POINTS = ["70%"];
 
-interface QuickAddSheetProps {
+interface QuickAddSheetContentProps {
   mealType: MealType | null;
   plannedDate: string;
   onDismiss: () => void;
   onNavigateCreate: (mealType: MealType, plannedDate: string) => void;
   onNavigateImport: (mealType: MealType, plannedDate: string) => void;
+}
+
+export interface QuickAddSheetContentHandle {
+  focusSearchInput: () => void;
 }
 
 type RecipeRow = {
@@ -52,20 +54,26 @@ type RecipeRow = {
   source: "personal" | "community";
 };
 
-function QuickAddSheetInner({
-  mealType,
-  plannedDate,
-  onDismiss,
-  onNavigateCreate,
-  onNavigateImport,
-}: QuickAddSheetProps) {
+function QuickAddSheetContentInner(
+  {
+    mealType,
+    plannedDate,
+    onDismiss,
+    onNavigateCreate,
+    onNavigateImport,
+  }: QuickAddSheetContentProps,
+  forwardedRef: React.Ref<QuickAddSheetContentHandle>,
+) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const sheetRef = useRef<BottomSheetModal>(null);
   const inputRef = useRef<TextInput>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useImperativeHandle(forwardedRef, () => ({
+    focusSearchInput: () => inputRef.current?.focus(),
+  }));
 
   // Debounce search input
   useEffect(() => {
@@ -73,14 +81,11 @@ function QuickAddSheetInner({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Open/close sheet based on mealType
+  // Reset search state whenever the sheet is opened for a meal type
   useEffect(() => {
     if (mealType) {
-      sheetRef.current?.present();
       setSearchQuery("");
       setDebouncedQuery("");
-    } else {
-      sheetRef.current?.dismiss();
     }
   }, [mealType]);
 
@@ -172,19 +177,6 @@ function QuickAddSheetInner({
     onDismiss();
     onNavigateImport(mealType, plannedDate);
   }, [mealType, plannedDate, onDismiss, onNavigateImport]);
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.35}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   const renderItem = useCallback(
     ({ item }: { item: RecipeRow }) => {
@@ -347,21 +339,7 @@ function QuickAddSheetInner({
   );
 
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      snapPoints={SNAP_POINTS}
-      enableDynamicSizing={false}
-      keyboardBehavior="extend"
-      keyboardBlurBehavior="restore"
-      backdropComponent={renderBackdrop}
-      onDismiss={onDismiss}
-      onChange={(index) => {
-        if (index === 0) {
-          inputRef.current?.focus();
-        }
-      }}
-      accessibilityViewIsModal
-    >
+    <>
       {/* Header */}
       <View style={styles.header}>
         <View
@@ -418,11 +396,13 @@ function QuickAddSheetInner({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       />
-    </BottomSheetModal>
+    </>
   );
 }
 
-export const QuickAddSheet = React.memo(QuickAddSheetInner);
+export const QuickAddSheetContent = React.memo(
+  React.forwardRef(QuickAddSheetContentInner),
+);
 
 const styles = StyleSheet.create({
   header: {
