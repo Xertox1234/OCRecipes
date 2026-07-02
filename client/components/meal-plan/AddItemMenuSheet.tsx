@@ -1,12 +1,5 @@
-import React, {
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-} from "react";
+import React, { useCallback } from "react";
 import { StyleSheet, View, Pressable } from "react-native";
-import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
-import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle } from "expo-haptics";
 
@@ -24,70 +17,23 @@ import {
   type MealType,
 } from "@/screens/meal-plan/meal-plan-utils";
 
-const SNAP_POINTS = ["45%"];
+export const ADD_ITEM_MENU_SNAP_POINTS = ["45%"];
 
-interface AddItemMenuSheetProps {
+interface AddItemMenuSheetContentProps {
   mealType: MealType | null;
   onChooseRecipe: () => void;
   onSimpleEntry: () => void;
   onImportRecipe: () => void;
-  onDismiss: () => void;
 }
 
-const AddItemMenuSheetInner = React.forwardRef<
-  { debugPresent: () => void },
-  AddItemMenuSheetProps
->(function AddItemMenuSheetInner(
-  { mealType, onChooseRecipe, onSimpleEntry, onImportRecipe, onDismiss },
-  forwardedRef,
-) {
+export function AddItemMenuSheetContent({
+  mealType,
+  onChooseRecipe,
+  onSimpleEntry,
+  onImportRecipe,
+}: AddItemMenuSheetContentProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
-  const sheetRef = useRef<BottomSheetModal>(null);
-
-  useImperativeHandle(forwardedRef, () => ({
-    debugPresent: () => {
-      console.log(
-        "[DEBUG-SHEET] debugPresent() called synchronously from onPress",
-      );
-      sheetRef.current?.present();
-      console.log("[DEBUG-SHEET] debugPresent() present() call returned");
-    },
-  }));
-
-  console.log(
-    "[DEBUG-SHEET] AddItemMenuSheetInner render, mealType=",
-    mealType,
-  );
-
-  useEffect(() => {
-    console.log(
-      "[DEBUG-SHEET] effect fired, mealType=",
-      mealType,
-      "sheetRef.current truthy=",
-      !!sheetRef.current,
-    );
-    if (mealType) {
-      console.log("[DEBUG-SHEET] calling present()");
-      sheetRef.current?.present();
-      console.log("[DEBUG-SHEET] present() call returned");
-    } else {
-      sheetRef.current?.dismiss();
-    }
-  }, [mealType]);
-
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.35}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   const handleChooseRecipe = useCallback(() => {
     haptics.impact(ImpactFeedbackStyle.Light);
@@ -107,105 +53,79 @@ const AddItemMenuSheetInner = React.forwardRef<
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
 
   return (
-    <BottomSheetModal
-      ref={sheetRef}
-      snapPoints={SNAP_POINTS}
-      backdropComponent={renderBackdrop}
-      onDismiss={onDismiss}
-      onChange={(index) => console.log("[DEBUG-SHEET] onChange index=", index)}
-      onAnimate={(fromIndex, toIndex) =>
-        console.log("[DEBUG-SHEET] onAnimate", fromIndex, "->", toIndex)
-      }
-      accessibilityViewIsModal
-    >
-      <View style={styles.content}>
-        <View
+    <View style={styles.content}>
+      <View
+        style={[
+          styles.dragIndicator,
+          { backgroundColor: withOpacity(theme.text, 0.2) },
+        ]}
+      />
+      <ThemedText style={styles.title}>Add to {label}</ThemedText>
+      <View style={styles.options}>
+        <Pressable
+          onPress={handleChooseRecipe}
           style={[
-            styles.dragIndicator,
-            { backgroundColor: withOpacity(theme.text, 0.2) },
+            styles.optionRow,
+            { backgroundColor: withOpacity(theme.text, 0.04) },
           ]}
-        />
-        <ThemedText style={styles.title}>Add to {label}</ThemedText>
-        <View style={styles.options}>
-          <Pressable
-            onPress={handleChooseRecipe}
-            style={[
-              styles.optionRow,
-              { backgroundColor: withOpacity(theme.text, 0.04) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Choose recipe"
-          >
-            <Feather name="book-open" size={20} color={theme.link} />
-            <View style={styles.optionText}>
-              <ThemedText style={styles.optionTitle}>Choose Recipe</ThemedText>
-              <ThemedText
-                style={[styles.optionDesc, { color: theme.textSecondary }]}
-              >
-                Search your recipes or create new
-              </ThemedText>
-            </View>
-            <Feather
-              name="chevron-right"
-              size={16}
-              color={theme.textSecondary}
-            />
-          </Pressable>
-          <Pressable
-            onPress={handleSimpleEntry}
-            style={[
-              styles.optionRow,
-              { backgroundColor: withOpacity(theme.text, 0.04) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Simple entry"
-          >
-            <Feather name="edit-3" size={20} color={theme.link} />
-            <View style={styles.optionText}>
-              <ThemedText style={styles.optionTitle}>Simple Entry</ThemedText>
-              <ThemedText
-                style={[styles.optionDesc, { color: theme.textSecondary }]}
-              >
-                Type a dish name, AI estimates nutrition
-              </ThemedText>
-            </View>
-            <Feather
-              name="chevron-right"
-              size={16}
-              color={theme.textSecondary}
-            />
-          </Pressable>
-          <Pressable
-            onPress={handleImportRecipe}
-            style={[
-              styles.optionRow,
-              { backgroundColor: withOpacity(theme.text, 0.04) },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Import recipe"
-          >
-            <Feather name="download" size={20} color={theme.link} />
-            <View style={styles.optionText}>
-              <ThemedText style={styles.optionTitle}>Import Recipe</ThemedText>
-              <ThemedText
-                style={[styles.optionDesc, { color: theme.textSecondary }]}
-              >
-                From URL, photo, or clipboard
-              </ThemedText>
-            </View>
-            <Feather
-              name="chevron-right"
-              size={16}
-              color={theme.textSecondary}
-            />
-          </Pressable>
-        </View>
+          accessibilityRole="button"
+          accessibilityLabel="Choose recipe"
+        >
+          <Feather name="book-open" size={20} color={theme.link} />
+          <View style={styles.optionText}>
+            <ThemedText style={styles.optionTitle}>Choose Recipe</ThemedText>
+            <ThemedText
+              style={[styles.optionDesc, { color: theme.textSecondary }]}
+            >
+              Search your recipes or create new
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+        </Pressable>
+        <Pressable
+          onPress={handleSimpleEntry}
+          style={[
+            styles.optionRow,
+            { backgroundColor: withOpacity(theme.text, 0.04) },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Simple entry"
+        >
+          <Feather name="edit-3" size={20} color={theme.link} />
+          <View style={styles.optionText}>
+            <ThemedText style={styles.optionTitle}>Simple Entry</ThemedText>
+            <ThemedText
+              style={[styles.optionDesc, { color: theme.textSecondary }]}
+            >
+              Type a dish name, AI estimates nutrition
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+        </Pressable>
+        <Pressable
+          onPress={handleImportRecipe}
+          style={[
+            styles.optionRow,
+            { backgroundColor: withOpacity(theme.text, 0.04) },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Import recipe"
+        >
+          <Feather name="download" size={20} color={theme.link} />
+          <View style={styles.optionText}>
+            <ThemedText style={styles.optionTitle}>Import Recipe</ThemedText>
+            <ThemedText
+              style={[styles.optionDesc, { color: theme.textSecondary }]}
+            >
+              From URL, photo, or clipboard
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={16} color={theme.textSecondary} />
+        </Pressable>
       </View>
-    </BottomSheetModal>
+    </View>
   );
-});
-
-export const AddItemMenuSheet = React.memo(AddItemMenuSheetInner);
+}
 
 const styles = StyleSheet.create({
   content: {

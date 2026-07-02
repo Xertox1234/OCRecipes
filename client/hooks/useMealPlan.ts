@@ -22,30 +22,11 @@ export function useMealPlanItems(startDate: string, endDate: string) {
   return useQuery<MealPlanItemWithRelations[]>({
     queryKey: ["/api/meal-plan", startDate, endDate],
     queryFn: async () => {
-      console.log(
-        "[DEBUG-SHEET] useMealPlanItems queryFn starting",
-        startDate,
-        endDate,
+      const res = await apiRequest(
+        "GET",
+        `/api/meal-plan?start=${startDate}&end=${endDate}`,
       );
-      try {
-        const res = await apiRequest(
-          "GET",
-          `/api/meal-plan?start=${startDate}&end=${endDate}`,
-        );
-        console.log(
-          "[DEBUG-SHEET] useMealPlanItems apiRequest returned, status=",
-          res.status,
-        );
-        const json = await res.json();
-        console.log(
-          "[DEBUG-SHEET] useMealPlanItems json parsed, length=",
-          json?.length,
-        );
-        return json;
-      } catch (err) {
-        console.log("[DEBUG-SHEET] useMealPlanItems ERROR", err);
-        throw err;
-      }
+      return res.json();
     },
     enabled: !!startDate && !!endDate,
   });
