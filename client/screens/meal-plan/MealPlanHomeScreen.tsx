@@ -1023,6 +1023,85 @@ export default function MealPlanHomeScreen() {
     year: "numeric",
   });
 
+  // Memoized so BottomSheetModal's own memo(forwardRef(...)) wrapping can
+  // bail out on unrelated screen re-renders instead of re-invoking its
+  // ~20-hook body every time.
+  const addItemMenuSheetChildren = useMemo(
+    () => (
+      <AddItemMenuSheetContent
+        mealType={addItemMenuMealType}
+        onChooseRecipe={handleChooseRecipe}
+        onSimpleEntry={handleSimpleEntry}
+        onImportRecipe={handleImportRecipe}
+      />
+    ),
+    [
+      addItemMenuMealType,
+      handleChooseRecipe,
+      handleSimpleEntry,
+      handleImportRecipe,
+    ],
+  );
+
+  const importRecipeSheetChildren = useMemo(
+    () => (
+      <ImportRecipeSheetContent
+        mealType={importRecipeMealType}
+        plannedDate={selectedDateStr}
+        onDismiss={handleImportRecipeDismiss}
+        onNavigateUrlImport={handleNavigateUrlImport}
+        onPhotoImport={handlePhotoImport}
+      />
+    ),
+    [
+      importRecipeMealType,
+      selectedDateStr,
+      handleImportRecipeDismiss,
+      handleNavigateUrlImport,
+      handlePhotoImport,
+    ],
+  );
+
+  const handleQuickAddSheetChange = useCallback((index: number) => {
+    if (index === 0) quickAddSheetContentRef.current?.focusSearchInput();
+  }, []);
+
+  const quickAddSheetChildren = useMemo(
+    () => (
+      <QuickAddSheetContent
+        ref={quickAddSheetContentRef}
+        mealType={quickAddMealType}
+        plannedDate={selectedDateStr}
+        onDismiss={handleQuickAddDismiss}
+        onNavigateCreate={handleNavigateCreate}
+        onNavigateImport={handleNavigateImport}
+      />
+    ),
+    [
+      quickAddMealType,
+      selectedDateStr,
+      handleQuickAddDismiss,
+      handleNavigateCreate,
+      handleNavigateImport,
+    ],
+  );
+
+  const handleSimpleEntrySheetChange = useCallback((index: number) => {
+    if (index === 0) simpleEntrySheetContentRef.current?.focusDishNameInput();
+  }, []);
+
+  const simpleEntrySheetChildren = useMemo(
+    () => (
+      <SimpleEntrySheetContent
+        ref={simpleEntrySheetContentRef}
+        mealType={simpleEntryMealType}
+        plannedDate={selectedDateStr}
+        onDismiss={handleSimpleEntryDismiss}
+      />
+    ),
+    [simpleEntryMealType, selectedDateStr, handleSimpleEntryDismiss],
+  );
+
   if (isLoading) {
     return (
       <View
@@ -1287,12 +1366,7 @@ export default function MealPlanHomeScreen() {
         onDismiss={handleAddItemMenuDismiss}
         accessibilityViewIsModal
       >
-        <AddItemMenuSheetContent
-          mealType={addItemMenuMealType}
-          onChooseRecipe={handleChooseRecipe}
-          onSimpleEntry={handleSimpleEntry}
-          onImportRecipe={handleImportRecipe}
-        />
+        {addItemMenuSheetChildren}
       </BottomSheetModal>
       <BottomSheetModal
         ref={importRecipeSheetRef}
@@ -1302,13 +1376,7 @@ export default function MealPlanHomeScreen() {
         onDismiss={handleImportRecipeDismiss}
         accessibilityViewIsModal
       >
-        <ImportRecipeSheetContent
-          mealType={importRecipeMealType}
-          plannedDate={selectedDateStr}
-          onDismiss={handleImportRecipeDismiss}
-          onNavigateUrlImport={handleNavigateUrlImport}
-          onPhotoImport={handlePhotoImport}
-        />
+        {importRecipeSheetChildren}
       </BottomSheetModal>
       <BottomSheetModal
         ref={quickAddSheetRef}
@@ -1318,19 +1386,10 @@ export default function MealPlanHomeScreen() {
         keyboardBlurBehavior="restore"
         backdropComponent={renderSheetBackdrop}
         onDismiss={handleQuickAddDismiss}
-        onChange={(index) => {
-          if (index === 0) quickAddSheetContentRef.current?.focusSearchInput();
-        }}
+        onChange={handleQuickAddSheetChange}
         accessibilityViewIsModal
       >
-        <QuickAddSheetContent
-          ref={quickAddSheetContentRef}
-          mealType={quickAddMealType}
-          plannedDate={selectedDateStr}
-          onDismiss={handleQuickAddDismiss}
-          onNavigateCreate={handleNavigateCreate}
-          onNavigateImport={handleNavigateImport}
-        />
+        {quickAddSheetChildren}
       </BottomSheetModal>
       <BottomSheetModal
         ref={simpleEntrySheetRef}
@@ -1340,18 +1399,10 @@ export default function MealPlanHomeScreen() {
         keyboardBlurBehavior="restore"
         backdropComponent={renderSheetBackdrop}
         onDismiss={handleSimpleEntryDismiss}
-        onChange={(index) => {
-          if (index === 0)
-            simpleEntrySheetContentRef.current?.focusDishNameInput();
-        }}
+        onChange={handleSimpleEntrySheetChange}
         accessibilityViewIsModal
       >
-        <SimpleEntrySheetContent
-          ref={simpleEntrySheetContentRef}
-          mealType={simpleEntryMealType}
-          plannedDate={selectedDateStr}
-          onDismiss={handleSimpleEntryDismiss}
-        />
+        {simpleEntrySheetChildren}
       </BottomSheetModal>
     </View>
   );
