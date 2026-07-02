@@ -203,7 +203,7 @@ Validate the Phase 2 findings against current documentation before the user tria
    - Read the file at the reported line
    - Grep for the pattern
    - For **symbol-level candidates** (unused export, dead code, signature-change or rename impact), confirm with the LSP tool (`findReferences` / call-hierarchy), not grep — it resolves `@/` and `@shared/` aliases and avoids false "unused"/"safe to change" verdicts. Same rationale as Phase 2 step 3. See `docs/rules/lsp.md`.
-   - If confirmed, add it to the manifest with status `open`, `Agent` = `doc-researcher (Phase 2.5)`, `Research` = `confirmed`
+   - If confirmed, add it to the manifest with status `open`, `Agent` = `researcher (Phase 2.5)`, `Research` = `confirmed`
    - If not confirmed, discard it (do not add it to the manifest)
 5. **Show the user the complete findings table** (with the `Research` column populated) and ask: "Which findings should I fix now, and which should be deferred? Note the research verdicts — `contradicted ⚠` findings may be false positives."
 

@@ -120,6 +120,8 @@ Build the work queue from the `todos/` backlog.
 
    > **Stuck todos**: If any file has `status: in-progress`, it was left mid-run by a crashed executor and is being skipped. To re-queue it, manually edit its frontmatter to `status: backlog` and re-run `/todo`.
 
+   **Awaiting batch-merge (skip).** A completed todo's archive move rides its unmerged PR branch, so the local `todos/*.md` still says `backlog` until the user batch-merges — triage must not re-pick it. Fetch open PR head branches once: `gh pr list --state open --limit 200 --json headRefName --jq '.[].headRefName'`. Skip any actionable todo whose slug (filename minus `.md`) matches an open `todo/<slug>` branch — it is already implemented and awaiting batch-merge; re-dispatching would re-implement it and collide with its own open PR. Carry the skipped set in orchestrator state and list it in the Phase 5 summary under "Awaiting batch-merge". If `gh` is unavailable, continue without this check (the executor's push-collision guard is the downstream backstop).
+
 4. **Quality check.** Catching authoring problems here is much cheaper than spawning a researcher + executor only to have them fail on an incoherent spec. For each actionable todo, scan the body and record any flag that fires:
    - **empty-AC** — the Acceptance Criteria section is missing or contains no `- [ ]` checkbox lines.
    - **thin-IN** — the Implementation Notes section body (text between its heading and the next heading) is shorter than 50 characters after trimming whitespace.
@@ -150,7 +152,7 @@ Determine which todos can safely run in parallel and which must run sequentially
    - Paths with line ranges: `path/to/file.ts:123-145`
    - Backtick-quoted paths: `` `path/to/file.ts` ``
 2. **Build a file-overlap map**: two todos are "dependent" if they share any mentioned file path (ignoring line ranges — file-level granularity).
-3. **Check inter-todo dependencies.** Also parse each todo's Dependencies section. If a todo lists another todo filename as a dependency and that file still exists in `todos/` (not yet archived), it cannot run until after the dependency completes. Schedule it in a later batch, after the dependency's batch.
+3. **Check inter-todo dependencies.** Also parse each todo's Dependencies section. If a todo lists another todo filename as a dependency and that file still exists in `todos/` (not yet archived on `main`), do **not** schedule the dependent in this run at all — even if the dependency completes in an earlier batch, its archive lands on `main` only when the user merges its PR, so a same-run dispatch of the dependent is guaranteed to report `blocked` (wasted worktree + researcher + executor). Skip it with reason `gated on merging <dependency>'s PR` and list it in the Phase 5 summary under "Gated on batch-merge".
 4. **Todos that mention NO specific files must run sequentially.** Unknown scope means they could potentially conflict with anything.
 5. **Independent todos** (disjoint file sets, and each mentions at least one file) can run in parallel.
 6. **Max 4 parallel agents per batch.** If more than 4 independent todos exist, split them into multiple batches.
@@ -268,11 +270,13 @@ After all batches have been executed (or after early termination):
 
    Then **list quality-flagged todos that were skipped from this run.** Using the dropped set carried over from Phase 2 step 6, print them under the heading "Skipped — quality flags — re-author and re-run to include them:" with one line per todo (todo filename + comma-joined flag list). If none were dropped, omit the heading.
 
-   Then **list PRs ready for batch-merge.** Print every `MERGE_ELIGIBLE: yes` PR under the heading "Ready for batch-merge — say the word and I'll verify green CI + clean tree and squash-merge them:". Nothing merges until the user asks; when they do, verify each PR's CI is green and the local tree is clean (`git status --porcelain`), then `gh pr merge <n> --squash --delete-branch` each one, skipping any that conflict.
+   Then **list PRs ready for batch-merge.** Print every `MERGE_ELIGIBLE: yes` PR under the heading "Ready for batch-merge — say the word and I'll verify green CI + clean tree and squash-merge them:". Nothing merges until the user asks. When they do, for each PR: **re-run `scripts/todo-automerge-guard.sh <n>`** (the overnight classification is advisory — it goes stale if the PR was amended after the executor ran it; exit 0 required), verify CI is green and the local tree is clean (`git status --porcelain`), then `gh pr merge <n> --squash --delete-branch`, skipping any that conflict or now HOLD. This Phase 5 flow is the **single canonical batch-merge procedure** — other docs point here rather than restating it.
+
+   Then **list todos awaiting batch-merge and gated dependents.** Print the Phase 2 "Awaiting batch-merge" skip set (already implemented — PR open from a prior run) and the Phase 3 "Gated on batch-merge" set (dependent todos whose dependency's PR must merge first), each with the PR to merge to unblock them. These are not failures; they clear on the next run after the user merges.
 
    Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading.
 
-   Then **surface actionable blocks.** Not every `blocked` is a dependency-block (those resolve automatically in a later batch). If a `blocked` result's REASON is a **diverged remote `todo/*` branch** (it contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears the stale branch (the executor's reason includes the exact `git push origin --delete …` + re-run steps). Do NOT bury it as an ordinary dependency-block row.
+   Then **surface actionable blocks.** Dependency-blocks do NOT resolve on their own — they clear only after the user merges the dependency's PR (they belong under "Gated on batch-merge" above, with the PR to merge named). If a `blocked` result's REASON is a **diverged remote `todo/*` branch with no open PR** (it contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears the stale branch (the executor's reason includes the exact `git push origin --delete …` + re-run steps). Do NOT bury it as an ordinary dependency row.
 
 5. **Print verification result:**
 
