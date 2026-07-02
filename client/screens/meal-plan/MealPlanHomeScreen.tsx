@@ -729,10 +729,13 @@ export default function MealPlanHomeScreen() {
     [haptics],
   );
 
+  const addItemMenuSheetDebugRef = useRef<{ debugPresent: () => void }>(null);
+
   const handleAddItem = useCallback(
     (mealType: MealType) => {
       haptics.selection();
       setAddItemMenuMealType(mealType);
+      addItemMenuSheetDebugRef.current?.debugPresent();
     },
     [haptics],
   );
@@ -1206,12 +1209,14 @@ export default function MealPlanHomeScreen() {
         onClose={() => setShowUpgradeModal(false)}
       />
       <AddItemMenuSheet
+        ref={addItemMenuSheetDebugRef}
         mealType={addItemMenuMealType}
         onChooseRecipe={handleChooseRecipe}
         onSimpleEntry={handleSimpleEntry}
         onImportRecipe={handleImportRecipe}
         onDismiss={handleAddItemMenuDismiss}
       />
+      {/* DEBUG: temporarily disabled to isolate multi-modal-provider hypothesis
       <ImportRecipeSheet
         mealType={importRecipeMealType}
         plannedDate={selectedDateStr}
@@ -1231,6 +1236,7 @@ export default function MealPlanHomeScreen() {
         plannedDate={selectedDateStr}
         onDismiss={handleSimpleEntryDismiss}
       />
+      */}
     </View>
   );
 }

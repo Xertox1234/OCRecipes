@@ -1,4 +1,9 @@
-import React, { useCallback, useEffect, useRef } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+} from "react";
 import { StyleSheet, View, Pressable } from "react-native";
 import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
@@ -29,20 +34,43 @@ interface AddItemMenuSheetProps {
   onDismiss: () => void;
 }
 
-function AddItemMenuSheetInner({
-  mealType,
-  onChooseRecipe,
-  onSimpleEntry,
-  onImportRecipe,
-  onDismiss,
-}: AddItemMenuSheetProps) {
+const AddItemMenuSheetInner = React.forwardRef<
+  { debugPresent: () => void },
+  AddItemMenuSheetProps
+>(function AddItemMenuSheetInner(
+  { mealType, onChooseRecipe, onSimpleEntry, onImportRecipe, onDismiss },
+  forwardedRef,
+) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const sheetRef = useRef<BottomSheetModal>(null);
 
-  useEffect(() => {
-    if (mealType) {
+  useImperativeHandle(forwardedRef, () => ({
+    debugPresent: () => {
+      console.log(
+        "[DEBUG-SHEET] debugPresent() called synchronously from onPress",
+      );
       sheetRef.current?.present();
+      console.log("[DEBUG-SHEET] debugPresent() present() call returned");
+    },
+  }));
+
+  console.log(
+    "[DEBUG-SHEET] AddItemMenuSheetInner render, mealType=",
+    mealType,
+  );
+
+  useEffect(() => {
+    console.log(
+      "[DEBUG-SHEET] effect fired, mealType=",
+      mealType,
+      "sheetRef.current truthy=",
+      !!sheetRef.current,
+    );
+    if (mealType) {
+      console.log("[DEBUG-SHEET] calling present()");
+      sheetRef.current?.present();
+      console.log("[DEBUG-SHEET] present() call returned");
     } else {
       sheetRef.current?.dismiss();
     }
@@ -82,9 +110,12 @@ function AddItemMenuSheetInner({
     <BottomSheetModal
       ref={sheetRef}
       snapPoints={SNAP_POINTS}
-      enableDynamicSizing={false}
       backdropComponent={renderBackdrop}
       onDismiss={onDismiss}
+      onChange={(index) => console.log("[DEBUG-SHEET] onChange index=", index)}
+      onAnimate={(fromIndex, toIndex) =>
+        console.log("[DEBUG-SHEET] onAnimate", fromIndex, "->", toIndex)
+      }
       accessibilityViewIsModal
     >
       <View style={styles.content}>
@@ -172,7 +203,7 @@ function AddItemMenuSheetInner({
       </View>
     </BottomSheetModal>
   );
-}
+});
 
 export const AddItemMenuSheet = React.memo(AddItemMenuSheetInner);
 
