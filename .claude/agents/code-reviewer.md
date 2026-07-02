@@ -116,6 +116,7 @@ export const storage = {
 - [ ] Safe area insets applied correctly for iOS notch/dynamic island
 - [ ] Haptic feedback used for important interactions (scan success, button press)
 - [ ] Platform-specific code handled with Platform.OS or Platform.select()
+- [ ] **iOS-only ScrollView props are never the sole fix for a cross-platform bug** — `contentInsetAdjustmentBehavior`/`contentInset` are silent no-ops on Android, and `useScreenOptions()` makes headers transparent on BOTH platforms; header insets use `useHeaderHeight()` + `paddingTop`. (Ref: solutions DB `logic-errors/ios-only-scroll-inset-prop-leaves-android-header-overlap-2026-07-02`, PR #483 review)
 - [ ] Performance optimized: useMemo, useCallback for FlatList callbacks
 - [ ] Navigation uses TypeScript navigation props from `@/types/navigation`
 - [ ] Theme system used via `useTheme()` hook for consistent styling
