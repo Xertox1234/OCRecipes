@@ -247,7 +247,7 @@ After all batches have been executed (or after early termination):
    | #   | Todo                                  | Status  | Branch / PR             | Review Rounds | Notes                               |
    | --- | ------------------------------------- | ------- | ----------------------- | ------------- | ----------------------------------- |
    | 1   | Extract suggestion generation service | success | github.com/…/pull/42    | 1             | —                                   |
-   | 2   | Storage facade re-exports             | success | github.com/…/pull/43    | 2             | low priority — auto-merge enabled   |
+   | 2   | Storage facade re-exports             | success | github.com/…/pull/43    | 2             | ready for batch-merge               |
    | 3   | Remix screen reader announcements     | blocked | —                       | 0             | Depends on remix-carousel-badge     |
    | 4   | Fix useCollapsible height test        | failed  | —                       | 1             | Type error in mock setup            |
    | 5   | Fix calorie rounding utility          | success | pending manual creation | 1             | PR creation failed — push succeeded |
@@ -294,7 +294,7 @@ After all batches have been executed (or after early termination):
 
    This removes worktree directories only — branches and their open PRs are unaffected.
 
-7. **Sync the local default branch with this run's merges.** A `/todo` archive (and its code change) only reaches the local working copy when the merge propagates back — nothing edits local `todos/` in place. After the run, fast-forward local `main` so any PR that merged _during_ this session (an orchestrator merge, or a low/medium `--auto` PR that already landed) is reflected locally — **ff-only, never disturbs parallel work**:
+7. **Sync the local default branch with this run's merges.** A `/todo` archive (and its code change) only reaches the local working copy when the merge propagates back — nothing edits local `todos/` in place. After the run, fast-forward local `main` so any PR that merged _during_ this session (a user-requested batch-merge) is reflected locally — **ff-only, never disturbs parallel work**:
 
    ```bash
    git fetch origin main --quiet || true
