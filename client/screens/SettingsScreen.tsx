@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
+import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
 import Constants from "expo-constants";
 
@@ -67,6 +68,7 @@ export default function SettingsScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const { logout, deleteAccount, changeEmail, user, updateUser } =
     useAuthContext();
@@ -259,8 +261,10 @@ export default function SettingsScreen() {
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.xl }}
-      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={{
+        paddingTop: headerHeight,
+        paddingBottom: insets.bottom + Spacing.xl,
+      }}
     >
       <Card elevation={1} style={styles.card}>
         {visibleItems.map((item, index) => {

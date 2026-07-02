@@ -39,7 +39,9 @@ export default function WelcomeScreen() {
         contentContainerStyle={{
           paddingTop: Spacing["3xl"],
           paddingHorizontal: Spacing.xl,
+          paddingBottom: Spacing["3xl"],
         }}
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.iconContainer}>
           <View
