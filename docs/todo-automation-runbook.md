@@ -66,13 +66,16 @@ one most likely to surface an unmodeled edge.
 ## Morning batch-merge
 
 The Phase 5 summary lists PRs under "Ready for batch-merge" (`MERGE_ELIGIBLE: yes`).
-Say the word and the orchestrator will, for each one: verify all required CI checks are
-green, verify the local tree is clean (`git status --porcelain`), then
-`gh pr merge <n> --squash --delete-branch`, skipping any that conflict. Merging
-sequentially in one sitting also closes the classic stale-merge gap (a PR passing CI
-against an old `main`) for practical purposes — if you want it enforced server-side,
-set required-checks `strict: true`, at the cost of an update-branch step on every
-manual PR too.
+Say the word (in any session — a fresh morning session works: ask it to list open
+`todo/*` PRs and run the batch-merge per the /todo skill) and the orchestrator executes
+the **single canonical procedure in `.claude/skills/todo/SKILL.md` Phase 5** — in short:
+re-run the eligibility guard per PR (the overnight classification is advisory and can go
+stale if a PR was amended), verify green CI + clean tree, squash-merge with
+`--delete-branch`, skip conflicts/HOLDs. Don't restate or improvise the steps — the
+skill owns them. Merging sequentially in one sitting also closes the classic
+stale-merge gap (a PR passing CI against an old `main`) for practical purposes — if you
+want it enforced server-side, set required-checks `strict: true`, at the cost of an
+update-branch step on every manual PR too.
 
 `held` / `review-required` / `unknown` PRs you review individually, like any other PR.
 
@@ -91,10 +94,16 @@ scripts/todo-automerge-guard.sh to classify it (MERGE_ELIGIBLE). NEVER merge any
 no `gh pr merge` in any form; every PR waits for my morning batch-merge. Your job:
 dispatch /todo, watch the results, and enforce the stop conditions. A guard HOLD
 (sensitive path) is a valid terminal state, not a failure.
-DONE when: no todos/*.md with `priority: low` or `priority: medium` remain that are neither
-archived-on-an-open-PR nor blocked, and test:run / check:types / lint are green locally.
+DONE when: every actionable low/medium todo appears in an accumulated /todo Phase 5
+summary as one of: open PR (PR_URL), "Awaiting batch-merge", "Gated on batch-merge", or
+blocked-with-reason — AND the latest /todo Phase 5 verification line is green. Evaluate
+DONE from the Phase 5 reports you already hold; do NOT re-run test:run / check:types /
+lint yourself and do NOT re-query GitHub per todo — /todo already verified and
+classified everything once per dispatch.
 STOP EARLY and wait for me if: 10 PRs opened, OR 1.5M output tokens, OR any 2 todos fail,
-OR any todo blocks on a diverged remote branch (needs a one-time manual branch delete).
+OR any todo blocks on a diverged remote branch WITH NO open PR (a genuine orphan needing
+a one-time manual branch delete — an open-PR collision is just "awaiting batch-merge",
+not a stop condition).
 ```
 
 ## Launch

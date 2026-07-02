@@ -2,7 +2,7 @@
 # PreToolUse — hard-block PR creation (Bash `gh pr create` OR the
 # mcp__github__create_pull_request tool) unless a fresh FULL `npm run preflight` pass-stamp
 # exists for the current HEAD. This guarantees lint/type/test/COVERAGE parity before a PR can
-# open. The single-push /todo auto-merge flow has no PR at push time AND creates via the MCP
+# open. The /todo executor flow has no PR at push time AND creates via the MCP
 # tool, so the pre-push hook cannot gate it — this does (both PR-creation paths converge here).
 # Escape (emergencies): set SKIP_PR_PREFLIGHT=1 in the shell that launched Claude Code.
 set -uo pipefail

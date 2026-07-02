@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# todo-automerge-guard.sh — FAIL-CLOSED gate for unattended /todo PR auto-merges.
+# todo-automerge-guard.sh — FAIL-CLOSED batch-merge eligibility check for /todo PRs.
 #
-# MODEL (PR #465): a low/medium /todo PR auto-merges on green CI ONLY if EVERY changed
+# MODEL (since #487 — NO PR ever auto-merges; this script only CLASSIFIES): a low/medium
+# /todo PR is eligible for the user's batch-merge ONLY if EVERY changed
 # file is on the known-safe ALLOWLIST and none hits the sensitive override. Anything
-# else HOLDs for human review — an unanticipated path, and the whole sensitive backend
+# else HOLDs for individual human review — an unanticipated path, and the whole sensitive backend
 # (server/storage, server/routes, server/middleware), .github/ (the CI gates), scripts/
 # (incl. this guard), migrations, shared/schema.ts, secrets/certs.
 #
-# Fail-CLOSED is deliberate: for an auto-merge-to-prod gate an UNKNOWN path must mean
+# Fail-CLOSED is deliberate: for a merge-eligibility check an UNKNOWN path must mean
 # "a human looks", never "ship it". (An earlier denylist revision was found fail-OPEN
 # on whole sensitive layers — server/storage, .github, scripts — so this inverts it: a
 # path is unsafe unless proven safe.)
@@ -18,16 +19,17 @@
 # a manual merge; never the other way around.
 #
 # Usage:  scripts/todo-automerge-guard.sh <pr-number>
-# Exit 0 = OK to auto-merge
-# Exit 1 = HOLD: a changed file is sensitive or not on the allowlist (human review)
-# Exit 2 = ERROR: could not evaluate (gh failure / empty diff) — fail-closed, do not merge
+# Exit 0 = eligible for the user's batch-merge (MERGE_ELIGIBLE: yes) — NOT a merge command
+# Exit 1 = HOLD: a changed file is sensitive or not on the allowlist (individual review)
+# Exit 2 = ERROR: could not evaluate (gh failure / empty diff) — fail-closed, treat as HOLD
 # The caller distinguishes a real HOLD (1) from a tooling error (2): a HOLD means the PR
-# stays open for review; an error means auto-merge couldn't be decided (e.g. gh unauth).
+# needs individual review; an error means eligibility couldn't be decided (e.g. gh unauth).
+# Nothing in this script merges anything; the user batch-merges eligible PRs themselves.
 set -euo pipefail
 
 PR="${1:?usage: todo-automerge-guard.sh <pr-number>}"
 
-# Known-safe surfaces. A file auto-merges only if it matches one of these: UI
+# Known-safe surfaces. A file is batch-merge-eligible only if it matches one of these: UI
 # (components/screens/navigation/constants), business-logic services, shared pure
 # modules (types / zod-schemas / constants / lib), any test, an extracted *-utils file,
 # and docs/todos/markdown. NOTE: server/storage, server/routes, server/middleware,
@@ -55,7 +57,7 @@ fi
 # markdown file, which is never sensitive CODE — it does not hit the sensitive override.
 # ANY other outcome HOLDs: not allowlisted, sensitive, or a grep regex ERROR (rc >= 2).
 # Exit codes are captured explicitly so a broken regex (rc 2) can never look like a clean
-# "no match" (rc 1) — a typo fails CLOSED, never silently auto-merges.
+# "no match" (rc 1) — a typo fails CLOSED, never silently passes as eligible.
 unsafe=""
 while IFS= read -r f; do
   [ -z "$f" ] && continue
@@ -77,9 +79,9 @@ while IFS= read -r f; do
 done <<< "$files"
 
 if [ -n "$unsafe" ]; then
-  echo "guard: HOLD PR #$PR — changed files not on the auto-merge allowlist (or sensitive):"
+  echo "guard: HOLD PR #$PR — changed files not on the batch-merge allowlist (or sensitive):"
   printf '%s' "$unsafe"
-  echo "Review by hand; do not auto-merge."
+  echo "Needs individual review; exclude from the batch-merge."
   exit 1
 fi
 

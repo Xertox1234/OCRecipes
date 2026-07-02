@@ -489,13 +489,20 @@ Then push:
 git push -u origin todo/<todo-slug>
 ```
 
-**If the push is rejected as a non-fast-forward** (a `todo/<todo-slug>` branch already exists on the remote at a diverged commit — leftover from a prior interrupted/failed run of this same todo), do **NOT** force-push and do **NOT** delete the remote branch. Unilaterally rewriting or deleting remote history is exactly what this agent must never do — and `git push --force` is blocked by a local permission deny rule besides. Instead, **stop and report `blocked`** (Step 11 block path) with this reason (the orchestrator surfaces it for the human in Phase 5):
+**If the push is rejected as a non-fast-forward** (a `todo/<todo-slug>` branch already exists on the remote at a diverged commit), do **NOT** force-push and do **NOT** delete the remote branch — unilaterally rewriting or deleting remote history is exactly what this agent must never do, and `git push --force` is blocked by a local permission deny rule besides. First check whether the existing branch has an open PR:
+
+```bash
+gh pr list --head todo/<todo-slug> --state open --json number,url
+```
+
+- **An open PR exists — the ROUTINE case.** Under the no-auto-merge policy this todo was already implemented by a prior run and its PR is awaiting the user's batch-merge (Phase 2 triage should have skipped it; this is the downstream backstop). Do NOT retry or escalate. Report `skipped` (Step 11) with reason `already implemented — PR <url> awaiting batch-merge` and stop. Your worktree's duplicate implementation is discarded with the worktree.
+- **No open PR — a genuine orphan** from an interrupted run. **Stop and report `blocked`** (Step 11 block path) with this reason verbatim (the orchestrator surfaces it for the human in Phase 5):
 
 ```
-remote branch todo/<todo-slug> already exists at a diverged commit from a prior interrupted/failed run of this same todo — cannot fast-forward, and this agent must not force-push or delete remote state. ACTION NEEDED (human): if that branch has an OPEN PR, finish or close it; if it has NO PR (the usual interrupted-run case), delete it with `git push origin --delete todo/<todo-slug>` and re-run this todo. NOTE: Phase 0's auto-sweep only removes branches whose PRs are merged/closed, so a no-PR leftover will NOT self-clear.
+remote branch todo/<todo-slug> already exists at a diverged commit with NO open PR — an orphan from an interrupted run. Cannot fast-forward, and this agent must not force-push or delete remote state. ACTION NEEDED (human): delete it with `git push origin --delete todo/<todo-slug>` and re-run this todo. NOTE: Phase 0's auto-sweep only removes branches whose PRs are merged/closed, so a no-PR orphan will NOT self-clear.
 ```
 
-(Blocking is correct here — never destroy a prior run's remote branch, which may carry an open PR under review. The no-PR-leftover case needs the one-time manual delete above; the orchestrator surfaces this exact instruction rather than silently dangling the todo.)
+(Never destroy a prior run's remote branch. If the `gh pr list` check itself fails, fall back to the `blocked` path — fail toward human review, never toward deletion.)
 
 3. **Create the PR.** The GitHub MCP tools are deferred — first load them with `ToolSearch` (query: `select:mcp__github__create_pull_request,mcp__github__list_pull_requests,mcp__github__request_copilot_review`), then call `mcp__github__create_pull_request` with these fields:
    - `owner`: `xertox1234`
@@ -577,7 +584,7 @@ ATTEMPT: <1 or 2>
 
 ```
 STATUS: skipped | blocked
-REASON: <status not eligible | list of blocking dependency filenames | "advisor red-flag: <reason>" | for a diverged remote branch, the FULL reason text from Step 10 VERBATIM — it begins "remote branch todo/<slug> already exists at a diverged commit…" and MUST keep its "ACTION NEEDED (human): … git push origin --delete …" line (Phase 5 detects the actionable block by that marker; a shortened paraphrase gets buried as an ordinary dependency-block and the todo re-blocks forever)>
+REASON: <status not eligible | "already implemented — PR <url> awaiting batch-merge" (Step 10 open-PR collision) | list of blocking dependency filenames | "advisor red-flag: <reason>" | for a diverged remote branch with NO open PR, the FULL reason text from Step 10 VERBATIM — it begins "remote branch todo/<slug> already exists at a diverged commit…" and MUST keep its "ACTION NEEDED (human): … git push origin --delete …" line (Phase 5 detects the actionable block by that marker; a shortened paraphrase gets buried as an ordinary dependency row and the todo re-blocks forever)>
 ```
 
 ---
