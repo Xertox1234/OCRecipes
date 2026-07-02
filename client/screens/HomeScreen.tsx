@@ -119,17 +119,10 @@ export default function HomeScreen() {
 
   // BottomSheetModal must be declared directly in this screen component —
   // declaring it inside an imported child component silently breaks
-  // .present(). Same pattern as MealPlanHomeScreen; see docs/solutions.
+  // .present(). Presented imperatively in the press handler (the
+  // useBeverageSheet-verified shape) — the state→effect→present shape
+  // silently fails on this screen. See docs/solutions.
   const importSheetRef = useRef<BottomSheetModal>(null);
-  const [importSheetOpen, setImportSheetOpen] = useState(false);
-
-  useEffect(() => {
-    if (importSheetOpen) {
-      importSheetRef.current?.present();
-    } else {
-      importSheetRef.current?.dismiss();
-    }
-  }, [importSheetOpen]);
 
   const renderImportSheetBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -145,7 +138,7 @@ export default function HomeScreen() {
   );
 
   const handleImportSheetDismiss = useCallback(() => {
-    setImportSheetOpen(false);
+    importSheetRef.current?.dismiss();
   }, []);
 
   const handleImportUrlNavigate = useCallback(() => {
@@ -218,7 +211,7 @@ export default function HomeScreen() {
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       recordAction(action.id);
       if (action.id === "import-recipe") {
-        setImportSheetOpen(true);
+        importSheetRef.current?.present();
         return;
       }
       navigateAction(action, navigation);

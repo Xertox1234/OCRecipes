@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import { StyleSheet, View, ScrollView, Pressable, Text } from "react-native";
 import Animated, {
   useSharedValue,
@@ -155,17 +149,10 @@ export default function RecipeEntryHubScreen() {
 
   // BottomSheetModal must be declared directly in this screen component —
   // declaring it inside an imported child component silently breaks
-  // .present(). Same pattern as MealPlanHomeScreen; see docs/solutions.
+  // .present(). Presented imperatively in the press handler (the
+  // useBeverageSheet-verified shape) — the state→effect→present shape
+  // silently fails on non-meal-plan screens. See docs/solutions.
   const importSheetRef = useRef<BottomSheetModal>(null);
-  const [importSheetOpen, setImportSheetOpen] = useState(false);
-
-  useEffect(() => {
-    if (importSheetOpen) {
-      importSheetRef.current?.present();
-    } else {
-      importSheetRef.current?.dismiss();
-    }
-  }, [importSheetOpen]);
 
   const renderSheetBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -181,7 +168,7 @@ export default function RecipeEntryHubScreen() {
   );
 
   const handleSheetDismiss = useCallback(() => {
-    setImportSheetOpen(false);
+    importSheetRef.current?.dismiss();
   }, []);
 
   const handleNavigateUrlImport = useCallback(() => {
@@ -219,7 +206,7 @@ export default function RecipeEntryHubScreen() {
         navigation.navigate("RecipeAIGenerate", { returnToMealPlan });
         break;
       case "import":
-        setImportSheetOpen(true);
+        importSheetRef.current?.present();
         break;
       case "browse":
         navigation.navigate("RecipeBrowser", {});
