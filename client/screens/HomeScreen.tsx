@@ -509,8 +509,6 @@ export default function HomeScreen() {
         snapPoints={IMPORT_RECIPE_SNAP_POINTS}
         enableDynamicSizing={false}
         backdropComponent={renderImportSheetBackdrop}
-        onDismiss={handleImportSheetDismiss}
-        accessibilityViewIsModal
       >
         {importSheetChildren}
       </BottomSheetModal>

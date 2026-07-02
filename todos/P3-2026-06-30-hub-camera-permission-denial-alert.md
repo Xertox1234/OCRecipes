@@ -27,6 +27,7 @@ Surfaced during the Phase 1 recipe-import consolidation (`docs/superpowers/plans
 
 - [ ] `ImportRecipeSheet.tsx`'s `handleCamera` (and `handleGallery`, if it has the same gap) shows a clear, actionable message when the OS camera/library permission is denied — e.g. an `Alert` with a path to Settings, matching what `RecipeEntryHubScreen`'s old `launchCamera` did.
 - [ ] Behavior verified consistent across every entry point that opens the shared sheet (Hub, Home tile, Home discovery card, QuickAddSheet, meal-slot action).
+- [ ] Android: denial must not surface as an unhandled promise rejection — the app declares `CAMERA` in the manifest (VisionCamera), so `ImagePicker.launchCameraAsync` REJECTS on denial there (it does not silently no-op like iOS), and `void handlePremiumAction(async () => …)` has no catch. Wrap the launcher call (or `handlePremiumAction`) in a try/catch that feeds the same friendly alert. (Added 2026-07-02 from the phase1-v2 port review.)
 
 ## Implementation Notes
 

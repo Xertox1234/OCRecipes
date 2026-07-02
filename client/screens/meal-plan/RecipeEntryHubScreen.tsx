@@ -243,8 +243,6 @@ export default function RecipeEntryHubScreen() {
         snapPoints={IMPORT_RECIPE_SNAP_POINTS}
         enableDynamicSizing={false}
         backdropComponent={renderSheetBackdrop}
-        onDismiss={handleSheetDismiss}
-        accessibilityViewIsModal
       >
         {importSheetChildren}
       </BottomSheetModal>

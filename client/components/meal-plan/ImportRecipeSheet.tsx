@@ -174,7 +174,11 @@ function ImportRecipeSheetContentInner({
 
   return (
     <>
-      <View style={styles.content}>
+      {/* accessibilityViewIsModal must live on this inner View —
+          BottomSheetModal typechecks the prop but never forwards it
+          (verified in @gorhom/bottom-sheet source), so setting it on the
+          modal is a silent no-op. iOS-only prop; traps VoiceOver focus. */}
+      <View style={styles.content} accessibilityViewIsModal>
         <View
           style={[
             styles.dragIndicator,
