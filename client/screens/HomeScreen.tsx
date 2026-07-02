@@ -72,6 +72,10 @@ const HOME_HEADER_EXPANDED = 100;
 const HOME_HEADER_COLLAPSED = 44;
 const HOME_COLLAPSE_THRESHOLD = 80;
 
+// Sheet contents draw their own drag indicator — hide the library's default
+// (otherwise both render). Module-level so BottomSheetModal's memo holds.
+const SHEET_HANDLE_HIDDEN = { display: "none" as const };
+
 const SECTIONS: { key: SectionKey; title: string; delay: number }[] = [
   { key: "nutrition", title: "Nutrition & Health", delay: 150 },
   { key: "recipes", title: "Recipes", delay: 200 },
@@ -140,6 +144,13 @@ export default function HomeScreen() {
   const handleImportSheetDismiss = useCallback(() => {
     importSheetRef.current?.dismiss();
   }, []);
+
+  // BottomSheetModal's own background defaults to white regardless of theme —
+  // it must be themed explicitly (memoized so the modal's memo holds).
+  const sheetBackgroundStyle = useMemo(
+    () => ({ backgroundColor: theme.backgroundDefault }),
+    [theme.backgroundDefault],
+  );
 
   const handleImportUrlNavigate = useCallback(() => {
     navigation.navigate("MealPlanTab", { screen: "RecipeImport" });
@@ -509,6 +520,8 @@ export default function HomeScreen() {
         snapPoints={IMPORT_RECIPE_SNAP_POINTS}
         enableDynamicSizing={false}
         backdropComponent={renderImportSheetBackdrop}
+        backgroundStyle={sheetBackgroundStyle}
+        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
       >
         {importSheetChildren}
       </BottomSheetModal>

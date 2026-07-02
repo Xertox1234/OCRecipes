@@ -40,6 +40,10 @@ type EntryHubRouteProp = RouteProp<MealPlanStackParamList, "RecipeEntryHub">;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+// Sheet content draws its own drag indicator — hide the library's default
+// (otherwise both render). Module-level so BottomSheetModal's memo holds.
+const SHEET_HANDLE_HIDDEN = { display: "none" as const };
+
 interface CardDef {
   id: string;
   icon: React.ComponentProps<typeof Feather>["name"];
@@ -171,6 +175,13 @@ export default function RecipeEntryHubScreen() {
     importSheetRef.current?.dismiss();
   }, []);
 
+  // BottomSheetModal's own background defaults to white regardless of theme —
+  // it must be themed explicitly (memoized so the modal's memo holds).
+  const sheetBackgroundStyle = useMemo(
+    () => ({ backgroundColor: theme.backgroundDefault }),
+    [theme.backgroundDefault],
+  );
+
   const handleNavigateUrlImport = useCallback(() => {
     navigation.navigate("RecipeImport", { returnToMealPlan });
   }, [navigation, returnToMealPlan]);
@@ -243,6 +254,8 @@ export default function RecipeEntryHubScreen() {
         snapPoints={IMPORT_RECIPE_SNAP_POINTS}
         enableDynamicSizing={false}
         backdropComponent={renderSheetBackdrop}
+        backgroundStyle={sheetBackgroundStyle}
+        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
       >
         {importSheetChildren}
       </BottomSheetModal>

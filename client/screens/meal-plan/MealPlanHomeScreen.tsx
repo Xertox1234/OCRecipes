@@ -472,6 +472,10 @@ const MealSlotSection = React.memo(function MealSlotSection({
 const FREE_MAX_DAYS_FORWARD = 7;
 const PREMIUM_MAX_DAYS_FORWARD = 90;
 
+// Sheet contents draw their own drag indicators — hide the library's default
+// (otherwise both render). Module-level so BottomSheetModal's memo holds.
+const SHEET_HANDLE_HIDDEN = { display: "none" as const };
+
 export default function MealPlanHomeScreen() {
   const navigation = useNavigation<MealPlanHomeScreenNavigationProp>();
   const headerHeight = useHeaderHeight();
@@ -509,6 +513,13 @@ export default function MealPlanHomeScreen() {
       />
     ),
     [],
+  );
+
+  // BottomSheetModal's own background defaults to white regardless of theme —
+  // it must be themed explicitly (memoized so the modals' memo holds).
+  const sheetBackgroundStyle = useMemo(
+    () => ({ backgroundColor: theme.backgroundDefault }),
+    [theme.backgroundDefault],
   );
 
   const [today, setToday] = useState(() => {
@@ -1360,6 +1371,8 @@ export default function MealPlanHomeScreen() {
         snapPoints={ADD_ITEM_MENU_SNAP_POINTS}
         enableDynamicSizing={false}
         backdropComponent={renderSheetBackdrop}
+        backgroundStyle={sheetBackgroundStyle}
+        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleAddItemMenuDismiss}
         accessibilityViewIsModal
       >
@@ -1370,6 +1383,8 @@ export default function MealPlanHomeScreen() {
         snapPoints={IMPORT_RECIPE_SNAP_POINTS}
         enableDynamicSizing={false}
         backdropComponent={renderSheetBackdrop}
+        backgroundStyle={sheetBackgroundStyle}
+        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleImportRecipeDismiss}
         accessibilityViewIsModal
       >
@@ -1382,6 +1397,8 @@ export default function MealPlanHomeScreen() {
         keyboardBehavior="extend"
         keyboardBlurBehavior="restore"
         backdropComponent={renderSheetBackdrop}
+        backgroundStyle={sheetBackgroundStyle}
+        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleQuickAddDismiss}
         onChange={handleQuickAddSheetChange}
         accessibilityViewIsModal
@@ -1395,6 +1412,8 @@ export default function MealPlanHomeScreen() {
         keyboardBehavior="fillParent"
         keyboardBlurBehavior="restore"
         backdropComponent={renderSheetBackdrop}
+        backgroundStyle={sheetBackgroundStyle}
+        handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleSimpleEntryDismiss}
         onChange={handleSimpleEntrySheetChange}
         accessibilityViewIsModal
