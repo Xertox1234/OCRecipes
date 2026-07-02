@@ -400,7 +400,9 @@ function QuickAddSheetContentInner(
   );
 }
 
-export const QuickAddSheetContent = React.forwardRef(QuickAddSheetContentInner);
+export const QuickAddSheetContent = React.memo(
+  React.forwardRef(QuickAddSheetContentInner),
+);
 
 const styles = StyleSheet.create({
   header: {

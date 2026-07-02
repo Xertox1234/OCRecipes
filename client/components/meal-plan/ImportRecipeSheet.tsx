@@ -36,7 +36,7 @@ interface ImportRecipeSheetContentProps {
   onPhotoImport: (uri: string, mealType: MealType, date: string) => void;
 }
 
-export function ImportRecipeSheetContent({
+function ImportRecipeSheetContentInner({
   mealType,
   plannedDate,
   onDismiss,
@@ -249,6 +249,10 @@ export function ImportRecipeSheetContent({
     </>
   );
 }
+
+export const ImportRecipeSheetContent = React.memo(
+  ImportRecipeSheetContentInner,
+);
 
 const styles = StyleSheet.create({
   content: {

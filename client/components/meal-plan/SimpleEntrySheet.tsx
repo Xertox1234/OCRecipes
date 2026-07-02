@@ -385,8 +385,8 @@ function SimpleEntrySheetContentInner(
   );
 }
 
-export const SimpleEntrySheetContent = React.forwardRef(
-  SimpleEntrySheetContentInner,
+export const SimpleEntrySheetContent = React.memo(
+  React.forwardRef(SimpleEntrySheetContentInner),
 );
 
 const styles = StyleSheet.create({

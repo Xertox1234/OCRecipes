@@ -26,7 +26,7 @@ interface AddItemMenuSheetContentProps {
   onImportRecipe: () => void;
 }
 
-export function AddItemMenuSheetContent({
+function AddItemMenuSheetContentInner({
   mealType,
   onChooseRecipe,
   onSimpleEntry,
@@ -126,6 +126,8 @@ export function AddItemMenuSheetContent({
     </View>
   );
 }
+
+export const AddItemMenuSheetContent = React.memo(AddItemMenuSheetContentInner);
 
 const styles = StyleSheet.create({
   content: {
