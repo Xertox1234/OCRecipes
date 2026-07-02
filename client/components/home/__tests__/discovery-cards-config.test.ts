@@ -42,4 +42,12 @@ describe("discovery-cards-config", () => {
       ).toBeGreaterThan(0);
     }
   });
+
+  it("the import-recipe card does not claim URL-only import", () => {
+    const card = DISCOVERY_CARDS.find((c) => c.id === "import-recipe");
+    expect(card).toBeDefined();
+    expect(card!.headline.toLowerCase()).not.toBe(
+      "import any recipe from a website in seconds",
+    );
+  });
 });

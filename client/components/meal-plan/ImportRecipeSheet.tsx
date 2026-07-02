@@ -25,15 +25,22 @@ import {
   MEAL_LABELS,
   type MealType,
 } from "@/screens/meal-plan/meal-plan-utils";
+import { RECIPE_IMPORT_OPTIONS } from "./recipe-import-options";
 
 export const IMPORT_RECIPE_SNAP_POINTS = ["55%"];
 
 interface ImportRecipeSheetContentProps {
+  // Standalone mode: mealType null + plannedDate omitted (Home tab, Recipe
+  // Entry Hub). Meal-plan mode: both set, forwarded to the import screens.
   mealType: MealType | null;
-  plannedDate: string;
+  plannedDate?: string;
   onDismiss: () => void;
-  onNavigateUrlImport: (mealType: MealType, date: string) => void;
-  onPhotoImport: (uri: string, mealType: MealType, date: string) => void;
+  onNavigateUrlImport: (mealType: MealType | null, date?: string) => void;
+  onPhotoImport: (
+    uri: string,
+    mealType: MealType | null,
+    date?: string,
+  ) => void;
 }
 
 function ImportRecipeSheetContentInner({
@@ -50,7 +57,6 @@ function ImportRecipeSheetContentInner({
   const [clipboardError, setClipboardError] = useState<string | null>(null);
 
   const handleUrlImport = useCallback(() => {
-    if (!mealType) return;
     haptics.impact(ImpactFeedbackStyle.Light);
     onDismiss();
     onNavigateUrlImport(mealType, plannedDate);
@@ -70,7 +76,6 @@ function ImportRecipeSheetContentInner({
 
   const handleCamera = useCallback(() => {
     void handlePremiumAction(async () => {
-      if (!mealType) return;
       haptics.impact(ImpactFeedbackStyle.Light);
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ["images"],
@@ -91,7 +96,6 @@ function ImportRecipeSheetContentInner({
 
   const handleGallery = useCallback(() => {
     void handlePremiumAction(async () => {
-      if (!mealType) return;
       haptics.impact(ImpactFeedbackStyle.Light);
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
@@ -112,7 +116,6 @@ function ImportRecipeSheetContentInner({
 
   const handleClipboard = useCallback(() => {
     void handlePremiumAction(async () => {
-      if (!mealType) return;
       haptics.impact(ImpactFeedbackStyle.Light);
       setClipboardError(null);
 
@@ -152,51 +155,39 @@ function ImportRecipeSheetContentInner({
 
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
 
-  const rows = [
-    {
-      key: "url",
-      icon: "link" as const,
-      title: "From URL",
-      desc: "Paste a recipe link",
-      premium: false,
-      onPress: handleUrlImport,
-    },
-    {
-      key: "camera",
-      icon: "camera" as const,
-      title: "From Camera",
-      desc: "Snap a cookbook or recipe card",
-      premium: true,
-      onPress: handleCamera,
-    },
-    {
-      key: "gallery",
-      icon: "image" as const,
-      title: "From Gallery",
-      desc: "Choose a recipe screenshot",
-      premium: true,
-      onPress: handleGallery,
-    },
-    {
-      key: "clipboard",
-      icon: "clipboard" as const,
-      title: "From Clipboard",
-      desc: "Use a copied recipe image",
-      premium: true,
-      onPress: handleClipboard,
-    },
-  ];
+  const handlers: Record<
+    (typeof RECIPE_IMPORT_OPTIONS)[number]["key"],
+    { premium: boolean; onPress: () => void }
+  > = {
+    url: { premium: false, onPress: handleUrlImport },
+    camera: { premium: true, onPress: handleCamera },
+    gallery: { premium: true, onPress: handleGallery },
+    clipboard: { premium: true, onPress: handleClipboard },
+  };
+  const rows = RECIPE_IMPORT_OPTIONS.map((option) => ({
+    key: option.key,
+    icon: option.icon,
+    title: option.title,
+    desc: option.desc,
+    ...handlers[option.key],
+  }));
 
   return (
     <>
-      <View style={styles.content}>
+      {/* accessibilityViewIsModal must live on this inner View —
+          BottomSheetModal typechecks the prop but never forwards it
+          (verified in @gorhom/bottom-sheet source), so setting it on the
+          modal is a silent no-op. iOS-only prop; traps VoiceOver focus. */}
+      <View style={styles.content} accessibilityViewIsModal>
         <View
           style={[
             styles.dragIndicator,
             { backgroundColor: withOpacity(theme.text, 0.2) },
           ]}
         />
-        <ThemedText style={styles.title}>Import Recipe to {label}</ThemedText>
+        <ThemedText style={styles.title}>
+          {mealType ? `Import Recipe to ${label}` : "Import a Recipe"}
+        </ThemedText>
         <View style={styles.options}>
           {rows.map((row) => {
             const isLocked = row.premium && !canImportPhoto;

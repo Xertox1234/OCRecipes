@@ -40,7 +40,7 @@ interface QuickAddSheetContentProps {
   plannedDate: string;
   onDismiss: () => void;
   onNavigateCreate: (mealType: MealType, plannedDate: string) => void;
-  onNavigateImport: (mealType: MealType, plannedDate: string) => void;
+  onOpenImportSheet: (mealType: MealType, plannedDate: string) => void;
 }
 
 export interface QuickAddSheetContentHandle {
@@ -60,7 +60,7 @@ function QuickAddSheetContentInner(
     plannedDate,
     onDismiss,
     onNavigateCreate,
-    onNavigateImport,
+    onOpenImportSheet,
   }: QuickAddSheetContentProps,
   forwardedRef: React.Ref<QuickAddSheetContentHandle>,
 ) {
@@ -175,8 +175,8 @@ function QuickAddSheetContentInner(
   const handleImportRecipe = useCallback(() => {
     if (!mealType) return;
     onDismiss();
-    onNavigateImport(mealType, plannedDate);
-  }, [mealType, plannedDate, onDismiss, onNavigateImport]);
+    onOpenImportSheet(mealType, plannedDate);
+  }, [mealType, plannedDate, onDismiss, onOpenImportSheet]);
 
   const renderItem = useCallback(
     ({ item }: { item: RecipeRow }) => {
@@ -326,11 +326,11 @@ function QuickAddSheetContentInner(
             { borderColor: withOpacity(theme.text, 0.1) },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Import from URL"
+          accessibilityLabel="Import a recipe"
         >
-          <Feather name="link" size={16} color={theme.link} />
+          <Feather name="download" size={16} color={theme.link} />
           <ThemedText style={[styles.footerButtonText, { color: theme.link }]}>
-            Import from URL
+            Import a recipe
           </ThemedText>
         </Pressable>
       </View>

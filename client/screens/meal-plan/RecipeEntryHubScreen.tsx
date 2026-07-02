@@ -1,15 +1,5 @@
-import React, { useCallback } from "react";
-import {
-  StyleSheet,
-  View,
-  ScrollView,
-  Pressable,
-  Text,
-  ActionSheetIOS,
-  Platform,
-  Alert,
-} from "react-native";
-import * as ImagePicker from "expo-image-picker";
+import React, { useCallback, useMemo, useRef } from "react";
+import { StyleSheet, View, ScrollView, Pressable, Text } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -21,8 +11,14 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
+import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 
 import { useHeaderHeight } from "@react-navigation/elements";
+import {
+  ImportRecipeSheetContent,
+  IMPORT_RECIPE_SNAP_POINTS,
+} from "@/components/meal-plan/ImportRecipeSheet";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
@@ -74,18 +70,11 @@ const CARDS: CardDef[] = [
     description: "Describe what you want, AI does the rest",
   },
   {
-    id: "url",
-    icon: "link",
+    id: "import",
+    icon: "download",
     accent: "accentGreen",
-    title: "Import from URL",
-    description: "Paste a link from any recipe site",
-  },
-  {
-    id: "photo",
-    icon: "camera",
-    accent: "accentBlue",
-    title: "Scan a recipe",
-    description: "Take a photo of a cookbook or card",
+    title: "Import a Recipe",
+    description: "From a link, a photo, or your clipboard",
   },
   {
     id: "browse",
@@ -158,7 +147,35 @@ export default function RecipeEntryHubScreen() {
 
   const returnToMealPlan = route.params?.returnToMealPlan;
 
-  const navigateWithPhoto = useCallback(
+  // BottomSheetModal must be declared directly in this screen component —
+  // declaring it inside an imported child component silently breaks
+  // .present(). Presented imperatively in the press handler (the
+  // useBeverageSheet-verified shape) — the state→effect→present shape
+  // silently fails on non-meal-plan screens. See docs/solutions.
+  const importSheetRef = useRef<BottomSheetModal>(null);
+
+  const renderSheetBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.35}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
+  const handleSheetDismiss = useCallback(() => {
+    importSheetRef.current?.dismiss();
+  }, []);
+
+  const handleNavigateUrlImport = useCallback(() => {
+    navigation.navigate("RecipeImport", { returnToMealPlan });
+  }, [navigation, returnToMealPlan]);
+
+  const handlePhotoImport = useCallback(
     (uri: string) => {
       navigation.navigate("RecipePhotoImport", {
         photoUri: uri,
@@ -168,54 +185,17 @@ export default function RecipeEntryHubScreen() {
     [navigation, returnToMealPlan],
   );
 
-  const launchCamera = useCallback(async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert(
-        "Camera Access",
-        "Please enable camera access in Settings to scan recipes.",
-      );
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ["images"],
-      quality: 0.9,
-    });
-    if (!result.canceled && result.assets[0]) {
-      navigateWithPhoto(result.assets[0].uri);
-    }
-  }, [navigateWithPhoto]);
-
-  const launchLibrary = useCallback(async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      quality: 0.9,
-    });
-    if (!result.canceled && result.assets[0]) {
-      navigateWithPhoto(result.assets[0].uri);
-    }
-  }, [navigateWithPhoto]);
-
-  const handlePhotoPress = useCallback(() => {
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: ["Cancel", "Take Photo", "Choose from Library"],
-          cancelButtonIndex: 0,
-        },
-        (buttonIndex) => {
-          if (buttonIndex === 1) void launchCamera();
-          if (buttonIndex === 2) void launchLibrary();
-        },
-      );
-    } else {
-      Alert.alert("Scan a recipe", "Choose a source", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Take Photo", onPress: () => void launchCamera() },
-        { text: "Choose from Library", onPress: () => void launchLibrary() },
-      ]);
-    }
-  }, [launchCamera, launchLibrary]);
+  const importSheetChildren = useMemo(
+    () => (
+      <ImportRecipeSheetContent
+        mealType={null}
+        onDismiss={handleSheetDismiss}
+        onNavigateUrlImport={handleNavigateUrlImport}
+        onPhotoImport={handlePhotoImport}
+      />
+    ),
+    [handleSheetDismiss, handleNavigateUrlImport, handlePhotoImport],
+  );
 
   const handleCardPress = (id: string) => {
     switch (id) {
@@ -225,11 +205,8 @@ export default function RecipeEntryHubScreen() {
       case "ai":
         navigation.navigate("RecipeAIGenerate", { returnToMealPlan });
         break;
-      case "url":
-        navigation.navigate("RecipeImport", { returnToMealPlan });
-        break;
-      case "photo":
-        handlePhotoPress();
+      case "import":
+        importSheetRef.current?.present();
         break;
       case "browse":
         navigation.navigate("RecipeBrowser", {});
@@ -238,28 +215,38 @@ export default function RecipeEntryHubScreen() {
   };
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      contentContainerStyle={[
-        styles.content,
-        {
-          paddingTop: headerHeight + Spacing.lg,
-          paddingBottom: insets.bottom + Spacing.xl,
-        },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-        How would you like to start?
-      </Text>
-      {CARDS.map((card) => (
-        <ActionCard
-          key={card.id}
-          card={card}
-          onPress={() => handleCardPress(card.id)}
-        />
-      ))}
-    </ScrollView>
+    <>
+      <ScrollView
+        style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: headerHeight + Spacing.lg,
+            paddingBottom: insets.bottom + Spacing.xl,
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
+          How would you like to start?
+        </Text>
+        {CARDS.map((card) => (
+          <ActionCard
+            key={card.id}
+            card={card}
+            onPress={() => handleCardPress(card.id)}
+          />
+        ))}
+      </ScrollView>
+      <BottomSheetModal
+        ref={importSheetRef}
+        snapPoints={IMPORT_RECIPE_SNAP_POINTS}
+        enableDynamicSizing={false}
+        backdropComponent={renderSheetBackdrop}
+      >
+        {importSheetChildren}
+      </BottomSheetModal>
+    </>
   );
 }
 

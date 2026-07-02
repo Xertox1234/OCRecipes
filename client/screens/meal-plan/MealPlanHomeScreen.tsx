@@ -846,7 +846,8 @@ export default function MealPlanHomeScreen() {
   }, [simpleEntryMealType]);
 
   const handleNavigateUrlImport = useCallback(
-    (mt: MealType, date: string) => {
+    (mt: MealType | null, date?: string) => {
+      if (mt === null || date === undefined) return;
       setImportRecipeMealType(null);
       navigation.navigate("RecipeImport", {
         returnToMealPlan: { mealType: mt, plannedDate: date },
@@ -856,7 +857,8 @@ export default function MealPlanHomeScreen() {
   );
 
   const handlePhotoImport = useCallback(
-    (uri: string, mt: MealType, date: string) => {
+    (uri: string, mt: MealType | null, date?: string) => {
+      if (mt === null || date === undefined) return;
       setImportRecipeMealType(null);
       navigation.navigate("RecipePhotoImport", {
         photoUri: uri,
@@ -875,14 +877,9 @@ export default function MealPlanHomeScreen() {
     [navigation],
   );
 
-  const handleNavigateImport = useCallback(
-    (mt: MealType, date: string) => {
-      navigation.navigate("RecipeImport", {
-        returnToMealPlan: { mealType: mt, plannedDate: date },
-      });
-    },
-    [navigation],
-  );
+  const handleOpenImportSheet = useCallback((mt: MealType) => {
+    InteractionManager.runAfterInteractions(() => setImportRecipeMealType(mt));
+  }, []);
 
   const handleSuggest = useCallback(
     (mealType: MealType) => {
@@ -1074,7 +1071,7 @@ export default function MealPlanHomeScreen() {
         plannedDate={selectedDateStr}
         onDismiss={handleQuickAddDismiss}
         onNavigateCreate={handleNavigateCreate}
-        onNavigateImport={handleNavigateImport}
+        onOpenImportSheet={handleOpenImportSheet}
       />
     ),
     [
@@ -1082,7 +1079,7 @@ export default function MealPlanHomeScreen() {
       selectedDateStr,
       handleQuickAddDismiss,
       handleNavigateCreate,
-      handleNavigateImport,
+      handleOpenImportSheet,
     ],
   );
 
