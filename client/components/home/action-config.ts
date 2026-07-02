@@ -50,11 +50,6 @@ export function navigateAction(
     case "generate-recipe":
       navigation.navigate("RecipeChat", {});
       break;
-    case "import-recipe":
-      navigation.navigate("MealPlanTab", {
-        screen: "RecipeImport",
-      });
-      break;
     case "create-cookbook":
       navigation.navigate("MealPlanTab", {
         screen: "CookbookCreate",
@@ -151,7 +146,7 @@ export const HOME_ACTIONS: HomeAction[] = [
     group: "recipes",
     icon: "download",
     label: "Import Recipe",
-    subtitle: "Import from a URL",
+    subtitle: "Link, photo, or clipboard",
   },
   {
     id: "create-cookbook",

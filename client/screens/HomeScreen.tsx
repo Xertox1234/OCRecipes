@@ -25,6 +25,8 @@ import Animated, {
   scrollTo,
 } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
+import { BottomSheetModal, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
+import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 
 import { collapseTimingConfig } from "@/constants/animations";
 import {
@@ -57,6 +59,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { Spacing, FAB_CLEARANCE, FontFamily } from "@/constants/theme";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import {
+  ImportRecipeSheetContent,
+  IMPORT_RECIPE_SNAP_POINTS,
+} from "@/components/meal-plan/ImportRecipeSheet";
 import type { HomeScreenNavigationProp } from "@/types/navigation";
 import { RecipeSearchDrawer } from "@/components/home/RecipeSearchDrawer";
 import { GenerateRecipeDrawer } from "@/components/home/GenerateRecipeDrawer";
@@ -111,6 +117,67 @@ export default function HomeScreen() {
   const isPremium = user?.subscriptionTier === "premium";
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // BottomSheetModal must be declared directly in this screen component —
+  // declaring it inside an imported child component silently breaks
+  // .present(). Same pattern as MealPlanHomeScreen; see docs/solutions.
+  const importSheetRef = useRef<BottomSheetModal>(null);
+  const [importSheetOpen, setImportSheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (importSheetOpen) {
+      importSheetRef.current?.present();
+    } else {
+      importSheetRef.current?.dismiss();
+    }
+  }, [importSheetOpen]);
+
+  const renderImportSheetBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        opacity={0.35}
+        pressBehavior="close"
+      />
+    ),
+    [],
+  );
+
+  const handleImportSheetDismiss = useCallback(() => {
+    setImportSheetOpen(false);
+  }, []);
+
+  const handleImportUrlNavigate = useCallback(() => {
+    navigation.navigate("MealPlanTab", { screen: "RecipeImport" });
+  }, [navigation]);
+
+  const handleImportPhotoNavigate = useCallback(
+    (uri: string) => {
+      navigation.navigate("MealPlanTab", {
+        screen: "RecipePhotoImport",
+        params: { photoUri: uri },
+      });
+    },
+    [navigation],
+  );
+
+  const importSheetChildren = useMemo(
+    () => (
+      <ImportRecipeSheetContent
+        mealType={null}
+        onDismiss={handleImportSheetDismiss}
+        onNavigateUrlImport={handleImportUrlNavigate}
+        onPhotoImport={handleImportPhotoNavigate}
+      />
+    ),
+    [
+      handleImportSheetDismiss,
+      handleImportUrlNavigate,
+      handleImportPhotoNavigate,
+    ],
+  );
+
   const { height: screenHeight } = useWindowDimensions();
   const DRAWER_MAX_HEIGHT = Math.round(screenHeight * 0.75);
   const collapsedBarHeight = insets.top + HOME_HEADER_COLLAPSED;
@@ -150,6 +217,10 @@ export default function HomeScreen() {
       }
       haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       recordAction(action.id);
+      if (action.id === "import-recipe") {
+        setImportSheetOpen(true);
+        return;
+      }
       navigateAction(action, navigation);
     },
     [isPremium, haptics, recordAction, navigation],
@@ -439,6 +510,17 @@ export default function HomeScreen() {
         visible={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
       />
+
+      <BottomSheetModal
+        ref={importSheetRef}
+        snapPoints={IMPORT_RECIPE_SNAP_POINTS}
+        enableDynamicSizing={false}
+        backdropComponent={renderImportSheetBackdrop}
+        onDismiss={handleImportSheetDismiss}
+        accessibilityViewIsModal
+      >
+        {importSheetChildren}
+      </BottomSheetModal>
     </>
   );
 }

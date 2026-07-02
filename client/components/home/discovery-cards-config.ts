@@ -83,8 +83,8 @@ export const DISCOVERY_CARDS: DiscoveryCard[] = [
   {
     id: "import-recipe",
     eyebrow: "✨ Try this",
-    headline: "Import any recipe from a website in seconds",
-    subtitle: "Paste a URL and we'll parse the rest.",
+    headline: "Import any recipe — link, photo, or clipboard",
+    subtitle: "From a URL, a cookbook photo, or a copied screenshot.",
     emoji: "🔗",
     ctaLabel: "Import a Recipe",
   },
