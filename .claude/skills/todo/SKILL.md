@@ -19,27 +19,49 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    git worktree prune
    ```
 
-2. **Delete stale remote branches.** Every `/todo` run pushes a `todo/<slug>` branch for its PR; nothing deletes it after the PR merges, so they pile up on `origin`. Delete every remote branch whose PRs are all `MERGED` or `CLOSED` — but never one with an open PR, and never `main` or the current branch:
+2. **Delete stale remote branches.** Every `/todo` run pushes a `todo/<slug>` branch for its PR; nothing deletes it after the PR merges, so they pile up on `origin`. Delete every remote branch whose PRs are **all `MERGED`** — but never one with an open PR, never one whose PR was closed WITHOUT merging (that is a rejection signal, not cleanup — see below), and never `main` or the current branch:
 
    ```bash
    git fetch --prune --quiet
    CURRENT=$(git branch --show-current)
-   gh pr list --state open --limit 400 --json headRefName --jq '.[].headRefName' | sort -u > /tmp/todo-open-prs.txt
-   gh pr list --state all  --limit 400 --json headRefName,state \
-     --jq '.[] | select(.state=="MERGED" or .state=="CLOSED") | .headRefName' | sort -u > /tmp/todo-stale-prs.txt
-   git branch -r --format='%(refname:short)' | sed 's#^origin/##' \
-     | grep -vxE "HEAD|main|${CURRENT:-main}" | sort -u > /tmp/todo-remote-branches.txt
-   comm -12 /tmp/todo-stale-prs.txt /tmp/todo-remote-branches.txt \
-     | comm -23 - /tmp/todo-open-prs.txt > /tmp/todo-delete-branches.txt
-   if [ -s /tmp/todo-delete-branches.txt ]; then
-     xargs git push origin --delete < /tmp/todo-delete-branches.txt
-     git fetch --prune --quiet
+   # Start clean: sweep outputs must never survive from a previous run — a skipped sweep
+   # (gh failure / limit cap) would otherwise leave stale lists for later steps to trust.
+   rm -f /tmp/todo-open-prs.txt /tmp/todo-delete-branches.txt /tmp/todo-closed-unmerged-branches.txt
+   # ONE fetch of every PR; the open/merged/closed views below derive from it. gh returns
+   # newest-first, so a truncated fetch silently drops the OLDEST PRs — exactly the ones
+   # the sweep needs. If the returned count EQUALS the limit, treat the sweep as
+   # unreliable: keep the open-PR list (best available data for Phase 2) but skip branch
+   # deletion this run and note the skip in the Phase 5 summary.
+   gh pr list --state all --limit 1000 --json headRefName,state > /tmp/todo-all-prs.json \
+     || { rm -f /tmp/todo-all-prs.json; echo "gh pr list failed — step SKIPPED"; }
+   if [ -s /tmp/todo-all-prs.json ]; then
+     jq -r '.[] | select(.state=="OPEN")   | .headRefName' /tmp/todo-all-prs.json | sort -u > /tmp/todo-open-prs.txt
+     if [ "$(jq 'length' /tmp/todo-all-prs.json)" -eq 1000 ]; then
+       echo "PR fetch hit the --limit cap — sweep unreliable; skipping branch deletion this run"
+     else
+       jq -r '.[] | select(.state=="MERGED") | .headRefName' /tmp/todo-all-prs.json | sort -u > /tmp/todo-merged-prs.txt
+       jq -r '.[] | select(.state=="CLOSED") | .headRefName' /tmp/todo-all-prs.json | sort -u > /tmp/todo-closed-prs.txt
+       git branch -r --format='%(refname:short)' | sed 's#^origin/##' \
+         | grep -vxE "HEAD|main|${CURRENT:-main}" | sort -u > /tmp/todo-remote-branches.txt
+       # Delete only all-MERGED branches: ≥1 merged PR, no open PR, no closed-unmerged PR.
+       comm -12 /tmp/todo-merged-prs.txt /tmp/todo-remote-branches.txt \
+         | comm -23 - /tmp/todo-open-prs.txt \
+         | comm -23 - /tmp/todo-closed-prs.txt > /tmp/todo-delete-branches.txt
+       # Closed WITHOUT merging and no open PR = a rejected implementation — never sweep
+       # it silently; carry this list to the Phase 5 attention section.
+       comm -12 /tmp/todo-closed-prs.txt /tmp/todo-remote-branches.txt \
+         | comm -23 - /tmp/todo-open-prs.txt > /tmp/todo-closed-unmerged-branches.txt
+       if [ -s /tmp/todo-delete-branches.txt ]; then
+         xargs git push origin --delete < /tmp/todo-delete-branches.txt
+         git fetch --prune --quiet
+       fi
+     fi
    fi
    ```
 
-   If `gh` is unavailable or unauthenticated, skip this step (worktree cleanup in step 1 still ran) and continue.
+   If the `gh` call fails (unavailable, unauthenticated, network), the block above deletes the temp file and this step is **SKIPPED** — no stale `/tmp` lists survive for later phases to trust, no branch deletion happens, and Phase 2 fetches its own open-PR list (worktree cleanup in step 1 still ran). Continue.
 
-3. **Report** what was cleaned: count of worktrees removed and the list of remote branches deleted (or "nothing to clean").
+3. **Report** what was cleaned: count of worktrees removed and the list of remote branches deleted (or "nothing to clean"). If `/tmp/todo-closed-unmerged-branches.txt` is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces both.
 
 4. **Sync the local default branch (`main`).** PRs from prior runs land via the user's batch-merge (possibly from another session), so those todos may already be archived on `origin/main` while the local checkout still shows them at the old path — and the backlog would otherwise re-pick an already-merged todo. Fast-forward local `main`. Like the rest of Phase 0 this **never aborts** the run, and it is **ff-only so it never disturbs parallel work**:
 
@@ -120,7 +142,7 @@ Build the work queue from the `todos/` backlog.
 
    > **Stuck todos**: If any file has `status: in-progress`, it was left mid-run by a crashed executor and is being skipped. To re-queue it, manually edit its frontmatter to `status: backlog` and re-run `/todo`.
 
-   **Awaiting batch-merge (skip).** A completed todo's archive move rides its unmerged PR branch, so the local `todos/*.md` still says `backlog` until the user batch-merges — triage must not re-pick it. Fetch open PR head branches once: `gh pr list --state open --limit 200 --json headRefName --jq '.[].headRefName'`. Skip any actionable todo whose slug (filename minus `.md`) matches an open `todo/<slug>` branch — it is already implemented and awaiting batch-merge; re-dispatching would re-implement it and collide with its own open PR. Carry the skipped set in orchestrator state and list it in the Phase 5 summary under "Awaiting batch-merge". If `gh` is unavailable, continue without this check (the executor's push-collision guard is the downstream backstop).
+   **Awaiting batch-merge (skip).** A completed todo's archive move rides its unmerged PR branch, so the local `todos/*.md` still says `backlog` until the user batch-merges — triage must not re-pick it. Reuse **this run's** open-PR list from Phase 0 step 2 (`/tmp/todo-open-prs.txt`); only if Phase 0's gh step was skipped, fetch it now (`gh pr list --state open --limit 1000 --json headRefName --jq '.[].headRefName' | sort -u > /tmp/todo-open-prs.txt` — never trust a `/tmp` file left by a previous run; Phase 0 rewrites or deletes it every run precisely so this step can trust it). Skip any actionable todo whose slug (filename minus `.md`) **exactly matches** an open `todo/<branch-slug>` branch — executors are required to use the exact filename slug as the branch name, so exact match is the only join. A match means the todo is already implemented and awaiting batch-merge; re-dispatching would re-implement it and collide with its own open PR. Carry the skipped set (with each todo's PR branch) in orchestrator state and list it in the Phase 5 summary under "Awaiting batch-merge". If the list cannot be fetched at all, continue without this check (the executor's Step 2 remote-branch probe and Step 10 push-collision triage are the downstream backstops).
 
 4. **Quality check.** Catching authoring problems here is much cheaper than spawning a researcher + executor only to have them fail on an incoherent spec. For each actionable todo, scan the body and record any flag that fires:
    - **empty-AC** — the Acceptance Criteria section is missing or contains no `- [ ]` checkbox lines.
@@ -152,7 +174,10 @@ Determine which todos can safely run in parallel and which must run sequentially
    - Paths with line ranges: `path/to/file.ts:123-145`
    - Backtick-quoted paths: `` `path/to/file.ts` ``
 2. **Build a file-overlap map**: two todos are "dependent" if they share any mentioned file path (ignoring line ranges — file-level granularity).
-3. **Check inter-todo dependencies.** Also parse each todo's Dependencies section. If a todo lists another todo filename as a dependency and that file still exists in `todos/` (not yet archived on `main`), do **not** schedule the dependent in this run at all — even if the dependency completes in an earlier batch, its archive lands on `main` only when the user merges its PR, so a same-run dispatch of the dependent is guaranteed to report `blocked` (wasted worktree + researcher + executor). Skip it with reason `gated on merging <dependency>'s PR` and list it in the Phase 5 summary under "Gated on batch-merge".
+3. **Check inter-todo dependencies.** Also parse each todo's Dependencies section. If a todo lists another todo filename as a dependency and that file still exists in `todos/` (not yet archived on `main`), do **not** schedule the dependent in this run at all — even if the dependency completes in an earlier batch, its archive lands on `main` only when the user merges its PR, so a same-run dispatch of the dependent is guaranteed to report `blocked` (wasted worktree + researcher + executor). The skip reason depends on the dependency's actual state — never claim a PR merge will unblock it unless that PR exists:
+   - Dependency has an **open `todo/*` PR** (check the Phase 0/2 open-PR list): skip with reason `gated on merging <dependency>'s PR (<branch>)` → Phase 5 "Gated on batch-merge".
+   - Dependency has **no PR** (quality-dropped, previously failed, or never attempted): skip with reason `gated on <dependency> — not implemented yet` → Phase 5 "Gated on a dependency (not yet implemented)". The unblock is re-authoring or a future run of the dependency, not a merge.
+   - Dependency is **scheduled in THIS run**: defer the wording — at Phase 5 time use the dependency's actual outcome (PR opened → first bullet; failed/blocked → second bullet).
 4. **Todos that mention NO specific files must run sequentially.** Unknown scope means they could potentially conflict with anything.
 5. **Independent todos** (disjoint file sets, and each mentions at least one file) can run in parallel.
 6. **Max 4 parallel agents per batch.** If more than 4 independent todos exist, split them into multiple batches.
@@ -223,8 +248,8 @@ Agent({
 
 ### After Each Batch
 
-1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`.
-2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes` = guard OK, safe for the user's batch-merge; `held` = guard flagged a sensitive/non-allowlisted path; `review-required` = high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
+1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it.
+2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes` = guard OK, safe for the user's batch-merge; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
 
 Proceed to the next batch in the execution plan.
 
@@ -244,7 +269,7 @@ After all batches have been executed (or after early termination):
 
 3. **Print the summary table:**
 
-   The **Branch / PR** column shows the PR URL for every todo (all priorities open a PR, and **no PR ever auto-merges** — everything waits for the user's batch-merge). Key off each todo's `MERGE_ELIGIBLE`: `yes` → "ready for batch-merge"; `held` → "held — sensitive path, needs review"; `review-required` → "needs individual review"; `unknown` → "guard couldn't evaluate — review by hand". Show `pending manual creation` if PR creation failed.
+   The **Branch / PR** column shows the PR URL for every todo (all priorities open a PR, and **no PR ever auto-merges** — everything waits for the user's batch-merge). Key off each todo's `MERGE_ELIGIBLE`: `yes` → "ready for batch-merge"; `held` → "held — guard HOLD (path or todo-frontmatter gate; see the executor's reason line)"; `review-required` → "needs individual review"; `unknown` → "guard couldn't evaluate — review by hand". Show `pending manual creation` if PR creation failed.
 
    | #   | Todo                                  | Status  | Branch / PR             | Review Rounds | Notes                               |
    | --- | ------------------------------------- | ------- | ----------------------- | ------------- | ----------------------------------- |
@@ -270,13 +295,21 @@ After all batches have been executed (or after early termination):
 
    Then **list quality-flagged todos that were skipped from this run.** Using the dropped set carried over from Phase 2 step 6, print them under the heading "Skipped — quality flags — re-author and re-run to include them:" with one line per todo (todo filename + comma-joined flag list). If none were dropped, omit the heading.
 
-   Then **list PRs ready for batch-merge.** Print every `MERGE_ELIGIBLE: yes` PR under the heading "Ready for batch-merge — say the word and I'll verify green CI + clean tree and squash-merge them:". Nothing merges until the user asks. When they do, for each PR: **re-run `scripts/todo-automerge-guard.sh <n>`** (the overnight classification is advisory — it goes stale if the PR was amended after the executor ran it; exit 0 required), verify CI is green and the local tree is clean (`git status --porcelain`), then `gh pr merge <n> --squash --delete-branch`, skipping any that conflict or now HOLD. This Phase 5 flow is the **single canonical batch-merge procedure** — other docs point here rather than restating it.
+   Then **list PRs ready for batch-merge.** Print every `MERGE_ELIGIBLE: yes` PR under the heading "Ready for batch-merge — say the word and I'll verify green CI + clean tree and squash-merge them:". Nothing merges until the user asks. When they do, for each PR: **re-run `scripts/todo-automerge-guard.sh <n>`** (the overnight classification is advisory — it goes stale if the PR was amended after the executor ran it; exit 0 required; the guard itself enforces the priority/`security` frontmatter gate, so this procedure is safe even from a fresh session with no overnight report), verify CI is green and the local tree is clean (`git status --porcelain`), then `gh pr merge <n> --squash --delete-branch`, skipping any that conflict or now HOLD. This Phase 5 flow is the **single canonical batch-merge procedure** — other docs point here rather than restating it.
 
-   Then **list todos awaiting batch-merge and gated dependents.** Print the Phase 2 "Awaiting batch-merge" skip set (already implemented — PR open from a prior run) and the Phase 3 "Gated on batch-merge" set (dependent todos whose dependency's PR must merge first), each with the PR to merge to unblock them. These are not failures; they clear on the next run after the user merges.
+   Then **list todos awaiting batch-merge and gated dependents.** Route executor results on `REASON_CODE` first; matching on reason-text prefixes is the legacy fallback for a report that lacks the field. Four groups:
+   - **Awaiting batch-merge** — the Phase 2 skip set **plus any executor `skipped` result with `REASON_CODE: OPEN_PR_COLLISION`** (legacy fallback: reason begins `already implemented`; take the PR URL from the reason), each with the PR to merge to unblock it.
+   - **Gated on batch-merge** — Phase 3 dependents whose dependency HAS an open PR, each with that PR.
+   - **Gated on a dependency (not yet implemented)** — Phase 3 dependents whose dependency has no PR (quality-dropped, failed, or never attempted). These do NOT clear on a merge — flag them: the dependency needs re-authoring or a future run first.
+   - **Stale branch — self-clears next run** — executor `skipped` results with `REASON_CODE: STALE_BRANCH_MERGED` (legacy fallback: reason begins `stale todo/`) — a leftover branch whose PRs all MERGED; Phase 0's sweep deletes it and the todo re-runs then — no action needed. (A branch whose PR was closed WITHOUT merging is never in this group — that blocks with `REASON_CODE: PR_CLOSED_UNMERGED` and lands under "Blocked — needs a one-time manual fix" below.)
+
+   None of these are failures. The first two clear on the next run after the user merges; the stale-branch group clears on the next run automatically; only the not-yet-implemented group needs the user's attention.
+
+   **Producer contract:** every listing group in this summary is a **terminal state for the run** — the overnight `/goal` DONE condition in `docs/todo-automation-runbook.md` derives from "appears in some listing group". Never add a group whose members should be re-dispatched the same night without updating that DONE condition in the same change.
 
    Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading.
 
-   Then **surface actionable blocks.** Dependency-blocks do NOT resolve on their own — they clear only after the user merges the dependency's PR (they belong under "Gated on batch-merge" above, with the PR to merge named). If a `blocked` result's REASON is a **diverged remote `todo/*` branch with no open PR** (it contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears the stale branch (the executor's reason includes the exact `git push origin --delete …` + re-run steps). Do NOT bury it as an ordinary dependency row.
+   Then **surface actionable blocks.** Dependency-blocks (`REASON_CODE: DEPENDENCY_GATED`) do NOT resolve on their own — route each into the gated listings above ("Gated on batch-merge" if the dependency's PR is open; "Gated on a dependency (not yet implemented)" if it has none). If a `blocked` result carries `REASON_CODE: ORPHAN_BRANCH`, `PR_CHECK_FAILED`, or `PR_CLOSED_UNMERGED` (legacy fallback: its REASON contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears it (the executor's reason includes the exact steps). Do NOT bury it as an ordinary dependency row. In the same section, also print any closed-unmerged `todo/*` branches Phase 0 found (`/tmp/todo-closed-unmerged-branches.txt`) — each is a rejection signal (its PR was closed without merging); the user decides whether the todo is still wanted — and note if Phase 0 skipped the branch sweep (gh failure or the `--limit` cap).
 
 5. **Print verification result:**
 
@@ -324,6 +357,6 @@ After all batches have been executed (or after early termination):
 - **The executor agent does the work.** This orchestrator only triages, dispatches, and summarizes. Never implement todo changes directly.
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.
-- **Self-cleaning.** Phase 0 force-removes leftover worktrees and deletes remote branches whose PRs are all merged or closed; Phase 5 removes this run's worktrees. The user must never have to clean up `todo/*` branches or `agent-*` worktrees by hand.
+- **Self-cleaning.** Phase 0 force-removes leftover worktrees and deletes remote branches whose PRs are **all merged** (a branch whose PR was closed WITHOUT merging is a rejection signal — surfaced in Phase 5, never auto-swept); Phase 5 removes this run's worktrees. The user must never have to clean up `todo/*` branches or `agent-*` worktrees by hand.
 - **No auto-merge, ever.** Executors never run `gh pr merge`; every PR waits for the user's batch-merge. The orchestrator merges only when the user explicitly asks in Phase 5, after verifying green CI and a clean tree.
 - **Auto-sync local `main`.** Phase 0 fast-forwards local `main` at the start (catching merges from prior sessions, which also stops the backlog from re-picking an already-archived todo) and Phase 5 fast-forwards again at the end (catching this run's merges). Always **ff-only** so parallel work is never disturbed — the user must never have to `git pull` by hand to see a completed todo archived locally.

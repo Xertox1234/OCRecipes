@@ -31,9 +31,13 @@ reaches `main` while you sleep either. The filters:
    Analyze). No human approval is required by branch protection — only green CI. That
    is the repo's hard merge bar, and the morning batch-merge respects it.
 3. **`scripts/todo-automerge-guard.sh`** — the executor runs this on every `low`/`medium`
-   PR to classify it. It is a **fail-CLOSED allowlist**: `MERGE_ELIGIBLE: yes` only when
-   **every** changed file is a known-safe surface (UI, business services, shared pure
-   modules, tests, docs/todos); it HOLDs for **anything sensitive or unrecognized** —
+   PR to classify it. It is a **fail-CLOSED allowlist** with two gates: a TODO gate
+   (the archived todo's frontmatter must say priority low/medium with no `security`
+   mention — enforced by the script itself, so even a fresh session with no overnight
+   report can't batch-merge a high/security PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
+   only when **every** changed file is a known-safe surface (UI, business services,
+   shared pure modules, tests, docs/todos); it HOLDs for **anything sensitive or
+   unrecognized** —
    the whole sensitive backend (`server/storage`, `server/routes`, `server/middleware`),
    `.github/`, `scripts/`, migrations, `shared/schema.ts`, secrets, plus the IAP/health
    files that live inside otherwise-safe dirs. An UNKNOWN path HOLDs — so a
@@ -93,17 +97,26 @@ the todo, archive it inside the same commit, open a PR, and run
 scripts/todo-automerge-guard.sh to classify it (MERGE_ELIGIBLE). NEVER merge anything —
 no `gh pr merge` in any form; every PR waits for my morning batch-merge. Your job:
 dispatch /todo, watch the results, and enforce the stop conditions. A guard HOLD
-(sensitive path) is a valid terminal state, not a failure.
-DONE when: every actionable low/medium todo appears in an accumulated /todo Phase 5
-summary as one of: open PR (PR_URL), "Awaiting batch-merge", "Gated on batch-merge", or
-blocked-with-reason — AND the latest /todo Phase 5 verification line is green. Evaluate
+(path or todo-frontmatter gate) is a valid terminal state, not a failure.
+DONE when: every actionable low/medium todo appears in SOME listing group of the latest
+accumulated /todo Phase 5 summary, or as blocked-with-reason, or as a `failed` row in
+the Phase 5 table — AND the latest /todo Phase 5 verification line is green. Every Phase
+5 listing group is a terminal state for the night (the skill guarantees this): open PR,
+awaiting/gated on batch-merge, dependency not yet implemented, stale branch, "Skipped —
+quality flags" (that one needs MY re-authoring). A failed todo is terminal for the night
+too — leave it for my morning review. Never re-dispatch a listed or failed todo hoping
+its outcome changes. Evaluate
 DONE from the Phase 5 reports you already hold; do NOT re-run test:run / check:types /
-lint yourself and do NOT re-query GitHub per todo — /todo already verified and
+lint yourself and do NOT re-query GitHub per todo (one final batched `gh pr list` sweep
+to confirm PR states before reporting DONE is fine) — /todo already verified and
 classified everything once per dispatch.
-STOP EARLY and wait for me if: 10 PRs opened, OR 1.5M output tokens, OR any 2 todos fail,
-OR any todo blocks on a diverged remote branch WITH NO open PR (a genuine orphan needing
-a one-time manual branch delete — an open-PR collision is just "awaiting batch-merge",
-not a stop condition).
+STOP EARLY and wait for me if: 10 PRs opened, OR 1.5M output tokens, OR 2 STATUS:
+failed reports accumulated across the night — two different todos, or the same todo
+failing in two dispatches (each report already represents the executor's two internal
+attempts), OR any todo blocks with REASON_CODE: ORPHAN_BRANCH, PR_CHECK_FAILED,
+or PR_CLOSED_UNMERGED — the ACTION NEEDED codes (an orphan branch, an unverifiable PR
+state, or a PR closed without merging — each needs my one-time decision; an open-PR
+collision is just "awaiting batch-merge", not a stop condition).
 ```
 
 ## Launch
