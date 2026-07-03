@@ -6,6 +6,7 @@ module: client
 tags: [react-native, accessibility, dynamic-type, fonts, themedtext]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx]
 created: '2026-05-13'
+last_updated: '2026-07-03'
 ---
 
 # Dynamic Type overflow prevention with maxScale on fixed-height containers
@@ -36,7 +37,7 @@ import { MAX_FONT_SCALE_CONSTRAINED } from "@/constants/theme";
 
 ## Exceptions
 
-Where it's applied: Tab bar labels, CalorieBudgetBar, Chip, HomeRecipeCard difficulty badge, VerificationBadge, AllergenBadge, FastingStreakBadge (compact), Toast, OfflineBanner, ScanScreen reticle text, HistoryScreen stat values.
+Where it's applied: Tab bar labels, CalorieBudgetBar, Chip, VerificationBadge, AllergenBadge, FastingStreakBadge (compact), Toast, OfflineBanner, ScanScreen reticle text, HistoryScreen stat values.
 
 ## Related Files
 
