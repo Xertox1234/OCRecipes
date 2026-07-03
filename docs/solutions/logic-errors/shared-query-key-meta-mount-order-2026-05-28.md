@@ -1,7 +1,12 @@
 ---
-title: shared-query-key-meta-mount-order
+title: meta.silentError on a shared query key is mount-order-dependent
 track: bug
 category: logic-errors
+module: client
+severity: medium
+tags: [client-state, react-query, query-meta, error-handling, toast]
+symptoms: [A query failure shows no toast and no inline error on one screen after another screen opted out via meta.silentError, Toast suppression varies with screen mount order, A screen double-reports errors (global toast plus inline UI) on a shared query key]
+applies_to: [client/lib/query-client.ts]
 created: '2026-05-28'
 ---
 

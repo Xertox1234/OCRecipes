@@ -2,6 +2,7 @@
 title: React Compiler is active — how it changes memoization findings and fixes
 track: knowledge
 category: best-practices
+module: client
 tags: [performance, react-compiler, react-native, expo, flatlist]
 created: '2026-06-10'
 source: 2026-06-10 full audit (M2 better-fix; M3/L7 false-positives)

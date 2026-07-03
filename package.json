@@ -210,6 +210,9 @@
     "evals/datasets/*.json": [
       "node scripts/check-eval-dataset-secrets.js"
     ],
+    "docs/solutions/**/*.md": [
+      "node scripts/check-solution-frontmatter.js"
+    ],
     "*.{js,md}": [
       "prettier --write"
     ]

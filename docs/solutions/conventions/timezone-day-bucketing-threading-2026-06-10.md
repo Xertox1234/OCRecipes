@@ -2,6 +2,7 @@
 title: 'Day-bucketed reads must thread tz end-to-end (header for requests, stored tz for jobs)'
 track: knowledge
 category: conventions
+module: server
 tags: [timezone, database, nutrition, coach, day-bounds]
 created: '2026-06-10'
 source: 2026-06-10 full audit (H1 + per-fix review + Phase 6)

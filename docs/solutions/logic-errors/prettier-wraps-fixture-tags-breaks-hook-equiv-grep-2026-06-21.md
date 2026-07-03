@@ -47,7 +47,7 @@ fixture file is **committed**, so `lint-staged` runs Prettier on it, and Prettie
 wraps any YAML-frontmatter array longer than `printWidth` (80) onto multiple lines:
 
 ```yaml
-tags:
+ tags:
   [
     accessibility,
     react-native,    # <- now on a continuation line; ^tags:.* can never see it

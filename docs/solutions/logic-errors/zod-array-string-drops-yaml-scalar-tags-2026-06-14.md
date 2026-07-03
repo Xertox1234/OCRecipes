@@ -42,7 +42,7 @@ Coerce the scalar union to string at the element level so a numeric/null/boolean
 not dropped:
 
 ```ts
-tags: z
+ tags: z
   .array(z.union([z.string(), z.number(), z.boolean(), z.null()]).transform((v) => String(v)))
   .optional()
   .catch(undefined),

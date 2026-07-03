@@ -2,6 +2,7 @@
 title: Visually-hidden-but-mounted surfaces must be hidden from the a11y tree (both directions)
 track: knowledge
 category: conventions
+module: client
 tags: [accessibility, pointerEvents, reduced-motion, collapsed-header, voiceover, talkback]
 created: '2026-06-10'
 source: '2026-06-10 full audit (H4, M13 + Phase 6 inverse finding)'

@@ -37,10 +37,15 @@ ROWS=$(find "$SOLUTIONS_DIR" -type f -name '*.md' \
       FNR == 1 { fm = 0; created = ""; track = ""; title = "" }
       /^---[ \t\r]*$/ {
         fm++
-        if (fm == 2 && created >= thr &&
-            created ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) {
-          rel = substr(FILENAME, length(root) + 1)
-          printf "%d\t%s\t%s\t%s\t%s\n", (track == "bug"), created, track, title, rel
+        if (fm == 2) {
+          if (created >= thr &&
+              created ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) {
+            rel = substr(FILENAME, length(root) + 1)
+            printf "%d\t%s\t%s\t%s\t%s\n", (track == "bug"), created, track, title, rel
+          }
+          # Frontmatter is closed — skip the body (~85% of corpus I/O).
+          # nextfile: POSIX-2024; supported by BSD awk, gawk, mawk >=1.3.3.
+          nextfile
         }
         next
       }

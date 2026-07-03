@@ -5,6 +5,7 @@ category: code-quality
 module: client
 severity: low
 tags: [api, client, fetch, dead-code, error-handling, tanstack-query]
+symptoms: [Unreachable if (!res.ok) branches after apiRequest calls, Dead error-handling code in client data hooks and screens]
 applies_to: [client/hooks/**/*.ts, client/screens/**/*.tsx, client/lib/query-client.ts]
 created: '2026-05-13'
 last_updated: '2026-06-02'

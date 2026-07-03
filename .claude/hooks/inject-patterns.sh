@@ -115,12 +115,15 @@ domain_tag_pattern() {
 
 # Emit "source_rel<TAB>title" lines for a domain from the canonical docs/solutions/ tree.
 solutions_from_markdown() {
-  local domain="$1" tag_pattern="$2"
+  local domain="$1" tag_pattern
+  tag_pattern=$(domain_tag_pattern "$domain")
   [ -d "$SOLUTIONS_DIR" ] || return 0
   local matches
   # Widen CAP#1 by +4 so a bug-track ref just outside the natural top-N is a reservation
   # candidate (reserve_bug_slot caps back to SOLUTIONS_PER_DOMAIN at the end).
-  matches=$(grep -rl --include='*.md' -E "^tags:.*${tag_pattern}" \
+  # --exclude=README.md: the schema README quotes example frontmatter lines that the
+  # line-anchored grep would otherwise treat as a real solution's tags.
+  matches=$(grep -rl --include='*.md' --exclude=README.md -E "^tags:.*${tag_pattern}" \
     "$SOLUTIONS_DIR" 2>/dev/null | grep -v '/_manifests/' \
     | sed "s|.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)\.md\$|\1 &|" \
     | sort -r | cut -d' ' -f2- | head -n "$((SOLUTIONS_PER_DOMAIN + 4))" || true)
@@ -234,8 +237,7 @@ if [ -n "$DOMAINS" ]; then
     # domain's tag is in the solution's `tags`, newest-first by the YYYY-MM-DD in the
     # filename, capped at SOLUTIONS_PER_DOMAIN. Solutions whose applies_to: globs match
     # the edited file are promoted ahead of the rest. See solutions_from_markdown.
-    TAG_PATTERN=$(domain_tag_pattern "$DOMAIN")
-    SOLUTION_LINES=$(solutions_from_markdown "$DOMAIN" "$TAG_PATTERN")
+    SOLUTION_LINES=$(solutions_from_markdown "$DOMAIN")
     if [ -n "$SOLUTION_LINES" ]; then
       printf '\n[SOLUTIONS — %s (Read the file for the full body)]\n' "$DOMAIN" >> "$TMPFILE"
       while IFS=$'\t' read -r rel title; do

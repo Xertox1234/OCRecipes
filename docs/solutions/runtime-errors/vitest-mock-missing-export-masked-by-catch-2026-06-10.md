@@ -2,7 +2,10 @@
 title: Vitest mock factories throw lazily on missing exports — masked by SUT catch blocks
 track: bug
 category: runtime-errors
+module: server
+severity: low
 tags: [vitest, vi.mock, mock-factory, testing, misleading-errors]
+symptoms: [Tests fail inside the SUT catch block with its user-facing message, Nothing in the failure output mentions the mock or the missing export]
 created: '2026-06-10'
 source: '2026-06-10 full audit (L18 fix fallout, receipt-analysis tests)'
 ---

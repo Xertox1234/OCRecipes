@@ -81,14 +81,14 @@ category: <one value from category list> # see field table for valid values per 
 tags: [tag1, tag2, tag3]
 module: camera | server | client | shared
 applies_to: ["client/**/*.tsx", "..."] # optional — glob patterns where this binds (hook routing)
-symptoms: # required for track:bug, optional for track:knowledge
-  - "Symptom 1"
-  - "Symptom 2"
+symptoms: [Symptom 1, Symptom 2] # required for track:bug, optional for track:knowledge
 created: YYYY-MM-DD
 last_updated: YYYY-MM-DD # optional — set on merge updates
 severity: low | medium | high | critical # required for track:bug, optional for track:knowledge
 ---
 ```
+
+**Format invariant (load-bearing):** every frontmatter array (`tags`, `applies_to`, `symptoms`) must be a **single-line inline-flow** array (`[a, b, c]`). Retrieval is line-anchored — `inject-patterns.sh` greps `^tags:` and `session-recent-issues.sh` parses frontmatter line-by-line — so a wrapped array makes the file silently invisible to pattern injection. `docs/solutions/` is in `.prettierignore` so Prettier can't re-wrap arrays, and `scripts/check-solution-frontmatter.js` (lint-staged) enforces this plus the required fields at commit time. In body examples, never put a `tags:`/`applies_to:` line at column 0 — indent quoted frontmatter by one space so the inject grep can't mistake it for the real thing.
 
 ### Field requirements by track
 
@@ -105,7 +105,7 @@ severity: low | medium | high | critical # required for track:bug, optional for 
 | `last_updated` | optional                                                                  | optional                                             |
 | `severity`     | required                                                                  | optional                                             |
 
-The `applies_to` field is forward-looking: it will eventually let the pattern-injection hook scope retrieval to files matching the glob. Capture it now so the eventual hook rewrite doesn't need a backfill pass.
+The `applies_to` field is live in the pattern-injection hook: solutions whose globs match the file being edited are promoted ahead of the date-ordered rest of their domain's matches.
 
 ## Body Template
 
