@@ -3,10 +3,10 @@
 ---
 
 title: "inject-patterns: dedup the DISCIPLINE preamble per session and split >9KB domain payloads"
-status: backlog
+status: done
 priority: low
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-03
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -32,16 +32,23 @@ spill file and demands an extra Read.
 
 ## Acceptance Criteria
 
-- [ ] The DISCIPLINE preamble is injected at most once per session (reuse the existing
+- [x] The DISCIPLINE preamble is injected at most once per session (reuse the existing
       dedup-state file at `/tmp/ocrecipes-pattern-inject-<session>`); subsequent edits get a
-      one-line pointer at most
-- [ ] A first-touch edit to `client/components/` and to `server/routes/` injects without
+      one-line pointer at most — marker line `__preamble__`; wiped state fails open to full
+- [x] A first-touch edit to `client/components/` and to `server/routes/` injects without
       hitting the spill-file truncation path (trim rules files and/or raise the cap and/or
-      inject rules-per-domain incrementally — pick the simplest)
-- [ ] `test-inject-patterns.sh` covers the preamble dedup behavior
-- [ ] Gate C equivalence (DB path == markdown path) still holds — or is already deleted if
-      P3-2026-07-02-solutions-kb-markdown-canonical landed first
-- [ ] `npm run preflight` green
+      inject rules-per-domain incrementally — pick the simplest) — done with BOTH: over-budget
+      domains defer (one-line pointer, not recorded in dedup state → full injection on the
+      next edit) AND accessibility.md consolidated 6,547→4,582B (announcement family had
+      3x-repeated exceptions). First touch: client/components 7,041B, server/routes 7,987B,
+      client/screens 6,899B — all under the 9,000B threshold, no spill
+- [x] `test-inject-patterns.sh` covers the preamble dedup behavior — +8 tests (47 total):
+      preamble first/repeat/wiped-state/session-less, first-touch no-spill x2, deferral
+      pointer + next-edit catch-up
+- [x] Gate C equivalence (DB path == markdown path) still holds — or is already deleted if
+      P3-2026-07-02-solutions-kb-markdown-canonical landed first — moot: markdown-canonical
+      merged first (PR #491); the hook is single-path
+- [x] `npm run preflight` green
 
 ## Implementation Notes
 
