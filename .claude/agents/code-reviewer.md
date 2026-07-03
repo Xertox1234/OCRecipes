@@ -92,7 +92,8 @@ If you notice an obvious domain defect while reviewing (a missing ownership chec
 - [ ] Todos follow the template in `todos/TEMPLATE.md` — context, files-to-modify table, implementation pattern for complex changes, verification steps
 - [ ] Resolved todos move to `todos/archive/` — never a `todos/done/` folder (deprecated path)
 - [ ] Design decisions documented with rationale — non-obvious architectural choices go in `docs/decisions/` with a date prefix (e.g. `2026-04-30-image-storage-r2.md`), stating constraints, alternatives considered, chosen approach, and tradeoffs accepted
-- [ ] One-time discoveries (gotchas, post-mortems) go in `docs/LEARNINGS.md` — the reverse-chronological log — not `docs/decisions/`
+- [ ] One-time discoveries (gotchas, post-mortems) are codified as `docs/solutions/<category>/` files via `/codify` — never appended to `docs/LEARNINGS.md` or `docs/legacy-patterns/*.md` (frozen archives, retired as write targets in the Phase 2 refactor)
+- [ ] **Mechanism-retirement vocabulary sweep** — when a PR retires a mechanism (a store, symlink scheme, service, or tool), grep the surviving prose (`.claude/agents/`, `.claude/skills/`, `docs/*.md`) for the retired mechanism's characteristic nouns; a justification clause that still credits the deleted mechanism is a defect even when the instruction's conclusion remains correct — such clauses routinely survive careful section-by-section rewrites (three did in the PR #491 cutover). (Ref: `docs/solutions/best-practices/mechanism-retirement-prose-vocabulary-sweep-2026-07-03.md`)
 
 ### 5. Dependency & Lockfile Changes
 
