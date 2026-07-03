@@ -31,7 +31,9 @@ THRESHOLD=9000
 # would cross this, remaining domains are DEFERRED — a one-line pointer now, full injection
 # on the session's next edit (a deferred domain is simply not recorded in the dedup state).
 # Sits under THRESHOLD to leave headroom for the pointer lines themselves, so a first-touch
-# multi-domain edit lands inline instead of byte-truncating mid-file to the spill.
+# multi-domain edit lands inline instead of byte-truncating mid-file to the spill. The 400B
+# margin is a heuristic (~3 pointer lines); if it ever proves short, the failure mode is the
+# pre-existing spill/truncation backstop below — degraded, never lost.
 DOMAIN_BUDGET=$((THRESHOLD - 400))
 
 # Cap a newest-first `rel<TAB>title` candidate list to $1 lines, but guarantee at least one
@@ -279,7 +281,7 @@ if [ -n "$DOMAINS" ]; then
     # would defer forever); the spill block below remains the backstop for that case.
     if [ "$DEDUP" = "1" ] && [ "$EMITTED_FULL" = "1" ] &&
       [ $(($(wc -c < "$TMPFILE") + $(wc -c < "$BLOCKFILE"))) -gt "$DOMAIN_BUDGET" ]; then
-      printf '\n[RULES — %s] deferred (inline size cap) — auto-injects on the next edit this session; or read docs/rules/%s.md now.\n' "$DOMAIN" "$DOMAIN" >> "$TMPFILE"
+      printf '\n[RULES — %s] deferred (inline size cap) — auto-injects on a later edit this session; or read docs/rules/%s.md now.\n' "$DOMAIN" "$DOMAIN" >> "$TMPFILE"
       continue
     fi
 
