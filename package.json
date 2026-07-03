@@ -213,6 +213,9 @@
     "docs/solutions/**/*.md": [
       "node scripts/check-solution-frontmatter.js"
     ],
+    "docs/rules/*.md": [
+      "node scripts/check-rules-file-size.js"
+    ],
     "*.{js,md}": [
       "prettier --write"
     ]

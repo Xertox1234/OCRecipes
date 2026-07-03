@@ -82,7 +82,10 @@ exemptions); move the prose to a solution doc the hook auto-surfaces:
   in the dedup state) rather than spilled — spill remains the session-less backstop.
 - `docs/rules/security.md` — the file that drifted to 8 KB and was trimmed to ~4.8 KB.
 - `docs/rules/accessibility.md` — the announcement-family consolidation precedent (6.5 → 4.6 KB).
-- `docs/rules/client-state.md` — now the largest (~8.4 KB); a candidate for the same treatment.
+- `scripts/check-rules-file-size.js` — since 2026-07-03 lint-staged ENFORCES a 6,500 B cap
+  on `docs/rules/*.md` (budget derivation in its header); regrowth now fails at commit time.
+- `docs/rules/client-state.md` — the last over-cap file (~8.4 KB, frozen grandfather cap);
+  trim tracked in `todos/P3-2026-07-03-client-state-rules-trim.md`.
 
 ## See Also
 
