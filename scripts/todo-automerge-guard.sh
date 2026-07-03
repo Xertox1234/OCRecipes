@@ -94,7 +94,7 @@ while IFS= read -r tf; do
   fi
   # Frontmatter = lines between the first pair of --- markers. Here-strings, not
   # `printf | …` pipes: under pipefail a producer-pipe into an early-exiting consumer
-  # can fail open via SIGPIPE (see solutions DB: pipefail-echo-grep-condition).
+  # can fail open via SIGPIPE (see docs/solutions: pipefail-echo-grep-condition).
   fm="$(awk '/^---[[:space:]]*$/{n++; next} n==1' <<< "$raw")"
   # Single awk (prints the first match, then exits itself) — the previous `sed | head -n1`
   # form is a consumer-kills-producer pipe that can die 141 under pipefail when head

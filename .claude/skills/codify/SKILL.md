@@ -178,27 +178,24 @@ Write one file per finding at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`
 
 Kebab-case the finding's intended title; cap at ~60 characters. Avoid generic words like `error`, `bug`, `fix` that don't aid disambiguation.
 
-### 6b. Overlap-check (advisory, semantic)
+### 6b. Overlap-check (advisory, lexical)
 
-Run the built-in near-duplicate check before writing:
-
-```bash
-npm run solutions:db:add -- <draft-file> --dry-run
-```
-
-This embeds the draft and reports `near-duplicate: <path> (cosine …)` for any existing solution at cosine ≥ 0.88. The semantic check catches paraphrased duplicates that lexical Jaccard misses — and avoids the full-corpus scan that caused the agent slowdown documented in `docs/solutions/_manifests/2026-05-13-learnings.md`. Cross-category overlap is still handled by `## See Also` links, not by reclassifying the file.
-
-**Advisory only — proceed regardless.** Surfacing the duplicate lets the user manually merge or set `last_updated:` on the existing file if they choose. (Steps 1-3 of the Phase 2 refactor recorded 0 merges across 366 files using a similar rubric; strict-block-on-overlap would have added friction with no benefit.)
-
-### 6c. Write the file, then register it in the DB
-
-Compose the solution markdown and write it to `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Then run:
+Check for an existing near-duplicate before writing — a slug-core collision or a distinctive-title-keyword hit:
 
 ```bash
-npm run solutions:db:add -- docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md
+# slug collision — any existing file sharing the slug core (date suffix stripped)
+find docs/solutions -name "*<slug-core>*.md" ! -path '*/_manifests/*'
+# title-keyword collision — 2-3 distinctive keywords from the intended title (skip stopwords)
+grep -riE "^title:.*(<kw1>|<kw2>)" docs/solutions --include='*.md' | grep -v _manifests
 ```
 
-This inserts/embeds the row into the canonical DB and re-exports the file in canonical form. The DB is the source of truth; the file is its regenerated mirror.
+Cross-category overlap is still handled by `## See Also` links, not by reclassifying the file.
+
+**Advisory only — proceed regardless.** On a plausible hit, prefer extending the existing file (add to the relevant section, bump `last_updated:`) over writing a second one. (Steps 1-3 of the Phase 2 refactor recorded 0 merges across 366 files using a similar rubric; strict-block-on-overlap would have added friction with no benefit.)
+
+### 6c. Write the file
+
+Compose the solution markdown and write it to `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. The tree is the canonical, git-tracked store — the file write plus the Step 7 commit IS the registration; there is no separate database. Keep frontmatter arrays (`tags:`, `applies_to:`) single-line inline-flow — the inject hook's `^tags:` grep cannot match a wrapped array (`docs/solutions/` is in `.prettierignore` for exactly this reason).
 
 Frontmatter — match `docs/solutions/README.md` schema exactly. Required fields per track:
 
@@ -237,14 +234,14 @@ Cross-link convention for `## See Also`:
 
 ## Step 7 — Commit
 
-Solution content now lives in the DB and `docs/solutions/` is gitignored — there is nothing to `git add` there. Only stage `.claude/agents/*.md` files that were also updated in Step 6.
+Stage every codification target together — solution files under `docs/solutions/` (tracked) plus any `.claude/agents/*.md` updated in Step 6:
 
 ```bash
-# Example — substitute the actual agent files you updated (if any):
-git add .claude/agents/security-auditor.md
+# Example — substitute the actual files you wrote/updated:
+git add docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md .claude/agents/security-auditor.md
 git commit -m "docs(solutions): codify findings from $(git branch --show-current)"
 ```
 
-If no agent files were updated (only solution files were written), there is no commit — the solution persists by living in the DB and its `docs/solutions/` mirror.
+A solution persists by this commit — always commit when any file was written.
 
 Use `docs(solutions):` as the conventional-commit type — matches Step 2-3 commits from the Phase 2 refactor (e.g. `88c16a6e`, `247eacd9`). The pre-commit hook runs `lint-staged` only (ESLint fix + Prettier on staged files); the full lint/type/test gate is enforced by CI on push.

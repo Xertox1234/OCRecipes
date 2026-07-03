@@ -3,11 +3,8 @@ package-lock.json
 # via `npm run build:copilot-instructions:check`. Prettier reformatting would
 # silently drift the file from what the script produces.
 .github/copilot-instructions.md
-# Solutions-DB CI fixtures must byte-match the canonical format that
-# scripts/solutions-db/export.ts produces for REAL mirror files (which are
-# gitignored, so never Prettier-formatted, and use single-line inline-flow
-# arrays). Prettier wraps long `tags:` arrays to multi-line, which the
-# markdown inject path (`^tags:.*<domain>` grep in inject-patterns.sh) cannot
-# match — diverging the DB and markdown paths and breaking the Gate C
-# hook-equivalence check (npm run solutions:db:hook-check).
-scripts/solutions-db/__fixtures__/solutions/
+# The canonical solutions corpus uses single-line inline-flow frontmatter
+# arrays. Prettier wraps long `tags:` arrays to multi-line, which the
+# line-anchored `^tags:.*<domain>` grep in inject-patterns.sh cannot match —
+# silently dropping those solutions from pattern injection.
+docs/solutions/

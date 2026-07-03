@@ -1,13 +1,3 @@
 {
-  "mcpServers": {
-    "solutions-db": {
-      "command": "npx",
-      "args": ["tsx", "scripts/solutions-db/mcp-server.ts"],
-      "env": {
-        "SOLUTIONS_DB_READONLY_URL": "${SOLUTIONS_DB_READONLY_URL}",
-        "AI_INTEGRATIONS_OPENAI_API_KEY": "${AI_INTEGRATIONS_OPENAI_API_KEY}",
-        "AI_INTEGRATIONS_OPENAI_BASE_URL": "${AI_INTEGRATIONS_OPENAI_BASE_URL}"
-      }
-    }
-  }
+  "mcpServers": {}
 }

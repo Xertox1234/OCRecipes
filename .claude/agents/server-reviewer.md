@@ -283,4 +283,4 @@ Context: `shared/schema.ts` defines the full PostgreSQL schema (33 tables); stor
 - `shared/schema.ts` — all table definitions; `shared/constants/error-codes.ts` — error code constants
 - `docs/legacy-patterns/api.md`, `docs/legacy-patterns/architecture.md`, `docs/legacy-patterns/database.md`, `docs/legacy-patterns/security.md` — full pattern catalogs
 - Audit log: `docs/audits/CHANGELOG.md`
-- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
+- **`docs/solutions/*.md`** — canonical, git-tracked codified knowledge store; find candidates mid-session with `grep -rl '^tags:.*\b<tag>\b' docs/solutions --include='*.md' | grep -v _manifests` or a title-keyword grep; frontmatter schema in `docs/solutions/README.md`.

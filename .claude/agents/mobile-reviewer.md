@@ -13,7 +13,7 @@ Consolidated review agent for the OCRecipes React Native/Expo client, in four pa
 
 Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-injected into read-only agents).
 
-**Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
+**`docs/solutions/*.md`** — canonical, git-tracked codified knowledge store; find candidates mid-session with `grep -rl '^tags:.*\b<tag>\b' docs/solutions --include='*.md' | grep -v _manifests` or a title-keyword grep; frontmatter schema in `docs/solutions/README.md`.
 
 ---
 

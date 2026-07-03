@@ -368,6 +368,6 @@ When auditing a route file or service, check every item:
 - `server/middleware/auth.ts` - JWT verification with issuer/audience
 - `server/services/recipe-import.ts` - SSRF protection (safeFetch, isBlockedUrl)
 - `shared/constants/error-codes.ts` - ErrorCode constants
-- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
+- **`docs/solutions/*.md`** — canonical, git-tracked codified knowledge store; find candidates mid-session with `grep -rl '^tags:.*\b<tag>\b' docs/solutions --include='*.md' | grep -v _manifests` or a title-keyword grep; frontmatter schema in `docs/solutions/README.md`.
 
 **Export/redaction check (2026-06-10 audit):** in data exports, treat infrastructure credentials as non-user-data even in own-data exports — Expo push tokens, raw IAP receipt blobs, and on Android the `transactionId` itself (it IS the Google purchase token). Object-storage keys on public CDNs must be random (`crypto.randomUUID()`), never `userId`-or-timestamp-derived.

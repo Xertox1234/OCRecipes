@@ -261,4 +261,4 @@ The barcode verification pipeline builds a verified product database intended to
 - `docs/legacy-patterns/security.md` — AI prompt sanitization requirements
 - `docs/legacy-patterns/database.md` — cache-first pattern, fire-and-forget, source-aware null pass-through
 - `docs/legacy-patterns/architecture.md` — service/storage layer boundaries
-- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
+- **`docs/solutions/*.md`** — canonical, git-tracked codified knowledge store; find candidates mid-session with `grep -rl '^tags:.*\b<tag>\b' docs/solutions --include='*.md' | grep -v _manifests` or a title-keyword grep; frontmatter schema in `docs/solutions/README.md`.
