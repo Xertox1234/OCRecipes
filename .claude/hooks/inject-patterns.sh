@@ -27,9 +27,8 @@ SOLUTIONS_PER_DOMAIN=4
 # Cap a newest-first `rel<TAB>title` candidate list to $1 lines, but guarantee at least one
 # bug-track line (category dir = logic-errors|runtime-errors|code-quality|performance-issues)
 # survives the cap when the candidates contain one. Keeps the original order otherwise.
-# Both emitters feed an OVER-cap (SOLUTIONS_PER_DOMAIN + 4) candidate list through this so a
-# recent bug-track ref just outside the natural top-N can be swapped into the LAST slot. The
-# logic MUST be byte-for-byte identical in both call sites (enforced by solutions:db:hook-check).
+# solutions_from_markdown feeds an OVER-cap (SOLUTIONS_PER_DOMAIN + 4) candidate list through
+# this so a recent bug-track ref just outside the natural top-N can be swapped into the LAST slot.
 reserve_bug_slot() {
   local cap="$1" line rel
   local -a all=() top=() rest=()
@@ -114,14 +113,13 @@ domain_tag_pattern() {
   esac
 }
 
-# Emit "source_rel<TAB>title" lines for a domain from the markdown files (today's logic).
+# Emit "source_rel<TAB>title" lines for a domain from the canonical docs/solutions/ tree.
 solutions_from_markdown() {
   local domain="$1" tag_pattern="$2"
   [ -d "$SOLUTIONS_DIR" ] || return 0
   local matches
   # Widen CAP#1 by +4 so a bug-track ref just outside the natural top-N is a reservation
-  # candidate (reserve_bug_slot caps back to SOLUTIONS_PER_DOMAIN at the end). Must match the
-  # DB path's widened date-cap exactly to preserve equivalence.
+  # candidate (reserve_bug_slot caps back to SOLUTIONS_PER_DOMAIN at the end).
   matches=$(grep -rl --include='*.md' -E "^tags:.*${tag_pattern}" \
     "$SOLUTIONS_DIR" 2>/dev/null | grep -v '/_manifests/' \
     | sed "s|.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)\.md\$|\1 &|" \
@@ -131,7 +129,7 @@ solutions_from_markdown() {
   while IFS= read -r sol; do
     [ -n "$sol" ] || continue
     local pats matched=false
-    # applies_to is inline flow style (mirror is canonical): strip `applies_to: [ ... ]`,
+    # applies_to is inline flow style (canonical corpus format): strip `applies_to: [ ... ]`,
     # split on commas, trim surrounding spaces and optional quotes. Tolerates quoted too.
     pats=$(grep -m1 '^applies_to:' "$sol" 2>/dev/null \
       | sed -E 's/^applies_to:[[:space:]]*\[?//; s/\][[:space:]]*$//' \
@@ -159,66 +157,10 @@ solutions_from_markdown() {
     rel="${sol_file#"$PROJECT_ROOT"/}"
     rel="${rel#docs/solutions/}"
     # Strip a YAML scalar wrapper: double-quoted, OR single-quoted (with '' → ' unescape),
-    # so single-quoted titles match the DB path's properly-parsed title (Gate C equivalence).
+    # so quoted titles emit as their parsed scalar value.
     title=$(grep -m1 -E '^title:' "$sol_file" 2>/dev/null | sed -E "s/^title:[[:space:]]*//; s/^\"//; s/\"\$//; s/^'//; s/'\$//; s/''/'/g" || true)
     printf '%s\t%s\n' "$rel" "${title:-untitled}"
   done <<< "$matches" | reserve_bug_slot "$SOLUTIONS_PER_DOMAIN"
-}
-
-# Emit "source_rel<TAB>title" lines for a domain from the DB. Returns non-zero on psql failure.
-solutions_from_db() {
-  local domain="$1"
-  [ -n "${SOLUTIONS_DB_READONLY_URL:-}" ] || return 1
-  # Mirror the markdown path's tag matching EXACTLY: it greps each file's `tags:` line
-  # with the ERE from domain_tag_pattern (`\b<domain>\b`, or `\bai(-[a-z]+)?\b` for
-  # ai-prompting). Word boundaries make it match the domain as a hyphen/comma-delimited
-  # token inside compound tags too (e.g. `\bapi\b` matches `paid-api`). Replicate that
-  # per array element with the same regex, translating ERE `\b` → Postgres `\y`. (Exact
-  # array membership would UNDER-match compound tags and diverge from markdown.)
-  local pg_pattern
-  pg_pattern=$(domain_tag_pattern "$domain")   # e.g. \bapi\b  or  \bai(-[a-z]+)?\b
-  pg_pattern="${pg_pattern//\\b/\\y}"           # ERE \b → Postgres \y word boundary
-  pg_pattern="${pg_pattern//\'/\'\'}"           # SQL-escape any single quotes (none today; defensive)
-  local where="EXISTS (SELECT 1 FROM unnest(tags) t WHERE t ~ '${pg_pattern}')"
-  local rows
-  rows=$(psql "$SOLUTIONS_DB_READONLY_URL" -tAF$'\t' -c \
-    "SELECT source_path, title, array_to_string(applies_to,'|') FROM solutions WHERE ${where} LIMIT 200;" \
-    2>/dev/null) || return 1
-  [ -n "$rows" ] || return 0
-  # Date-sort by the YYYY-MM-DD embedded in source_path (mirrors the markdown path's filename sort).
-  local sorted
-  # Cap to the newest SOLUTIONS_PER_DOMAIN by date BEFORE promotion — the markdown path
-  # head's its match list before splitting priority/fallback, so applies_to promotion only
-  # REORDERS within the date-top-N; it never pulls in an (N+1)th file. Capping here mirrors
-  # that. (Capping after promotion would surface applies_to matches from the whole corpus.)
-  # Widen CAP#1 (date-cap) by +4 — mirrors the markdown path's widened CAP#1 — so bug-track
-  # candidates just outside the natural top-N are in scope before reservation.
-  sorted=$(printf '%s\n' "$rows" | awk -F'\t' '{
-    if (match($1, /[0-9]{4}-[0-9]{2}-[0-9]{2}\.md$/)) d=substr($1, RSTART, 10); else d="0000-00-00";
-    print d "\t" $0 }' | sort -rk1,1 | cut -f2- | head -n "$((SOLUTIONS_PER_DOMAIN + 4))")
-  local priority="" fallback="" nl=$'\n' tab=$'\t'
-  while IFS=$'\t' read -r sp title pats; do
-    [ -n "$sp" ] || continue
-    local matched=false pat patarr=()
-    if [ -n "$pats" ]; then
-      IFS='|' read -ra patarr <<< "$pats"   # IFS scoped to this read only — no leak
-      for pat in "${patarr[@]}"; do
-        [ -n "$pat" ] || continue
-        # shellcheck disable=SC2254
-        [[ "$_FILE_REL" == $pat ]] && { matched=true; break; }
-      done
-    fi
-    local rel="${sp#docs/solutions/}"
-    if [ "$matched" = true ]; then priority="${priority:+$priority$nl}${rel}${tab}${title}"; else fallback="${fallback:+$fallback$nl}${rel}${tab}${title}"; fi
-  done <<< "$sorted"
-  # `; return 0` is load-bearing under `set -o pipefail`: when the result is empty, `grep -v`
-  # (or reserve_bug_slot, which also exits non-zero on empty output) exits 1, which would make
-  # this function return non-zero and wrongly trigger the markdown fallback for a LEGITIMATELY-
-  # empty DB result. psql failure is already caught above; here a successful-but-empty query must
-  # return 0 (= "no refs", don't fall back). Widen CAP#2 by +4 (mirrors the markdown path) and
-  # pipe the over-cap candidate list through reserve_bug_slot to cap back with a guaranteed bug
-  # slot — identical reservation logic to solutions_from_markdown (Gate C equivalence).
-  printf '%s\n%s\n' "$priority" "$fallback" | grep -v '^$' | head -n "$((SOLUTIONS_PER_DOMAIN + 4))" | reserve_bug_slot "$SOLUTIONS_PER_DOMAIN"; return 0
 }
 
 # Emission priority (lower = emitted earlier = fills the inline budget first). When a
@@ -288,19 +230,12 @@ if [ -n "$DOMAINS" ]; then
     fi
 
     # Inject the most relevant docs/solutions/ files for this domain (path + title only —
-    # Read the file for the body). Source is the DB by default, with a markdown fallback.
-    # Matching rule (both sources): a solution matches a domain if the domain's tag is in
-    # the solution's `tags`, newest-first by the YYYY-MM-DD in the filename, capped at
-    # SOLUTIONS_PER_DOMAIN. Solutions whose applies_to: globs match the edited file are
-    # promoted ahead of the rest. See solutions_from_db / solutions_from_markdown.
+    # Read the file for the body). Matching rule: a solution matches a domain if the
+    # domain's tag is in the solution's `tags`, newest-first by the YYYY-MM-DD in the
+    # filename, capped at SOLUTIONS_PER_DOMAIN. Solutions whose applies_to: globs match
+    # the edited file are promoted ahead of the rest. See solutions_from_markdown.
     TAG_PATTERN=$(domain_tag_pattern "$DOMAIN")
-    # DB path when enabled AND the query succeeds (exit 0 — even if empty, which means
-    # "legitimately no refs"). Otherwise (markdown mode OR psql failure) use the mirror.
-    if [ "${PATTERN_INJECT_SOURCE:-db}" != "markdown" ] && SOLUTION_LINES=$(solutions_from_db "$DOMAIN"); then
-      :
-    else
-      SOLUTION_LINES=$(solutions_from_markdown "$DOMAIN" "$TAG_PATTERN")
-    fi
+    SOLUTION_LINES=$(solutions_from_markdown "$DOMAIN" "$TAG_PATTERN")
     if [ -n "$SOLUTION_LINES" ]; then
       printf '\n[SOLUTIONS — %s (Read the file for the full body)]\n' "$DOMAIN" >> "$TMPFILE"
       while IFS=$'\t' read -r rel title; do

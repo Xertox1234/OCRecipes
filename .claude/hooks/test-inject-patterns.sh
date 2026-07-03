@@ -302,6 +302,14 @@ fi
 
 rm -f /tmp/ocrecipes-pattern-inject-itest-dedup-A /tmp/ocrecipes-pattern-inject-itest-dedup-B
 
+# Static guard: the hook is markdown-only — a psql/DB path must not creep back in
+# (the solutions DB was retired 2026-07; docs/solutions/ is the canonical store).
+if grep -qE 'psql|solutions_from_db|SOLUTIONS_DB_READONLY_URL|PATTERN_INJECT_SOURCE' "$HOOK"; then
+  echo "FAIL: hook is markdown-only (found a retired DB-path reference)"; FAIL=$((FAIL + 1))
+else
+  echo "PASS: hook is markdown-only (no DB-path references)"; PASS=$((PASS + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

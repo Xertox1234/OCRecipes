@@ -3,10 +3,8 @@
 # .claude/worktrees/ the gitignored, local-only files it needs but that
 # `git worktree add` does not copy:
 #   - node_modules — so the TypeScript language server can resolve dependencies.
-#   - docs/solutions/ + docs/LEARNINGS.md — the local knowledge base the
-#     todo-executor research step greps; the dir symlink also lets codify writes
-#     inside a worktree land in the shared store instead of dying with the
-#     worktree on cleanup.
+#   - docs/LEARNINGS.md — gitignored local learnings file the todo-executor
+#     research step greps.
 #
 # `git worktree add` copies tracked files only, so a fresh worktree has no
 # node_modules. Without it the worktree's own tsconfig.json — which does
@@ -29,8 +27,7 @@ GIT_COMMON=$(cd "$GIT_COMMON" 2>/dev/null && pwd -P) || exit 0
 MAIN_ROOT=$(dirname "$GIT_COMMON")
 
 # Nothing to share if the main checkout has none of the linkable sources.
-[ -d "$MAIN_ROOT/node_modules" ] || [ -d "$MAIN_ROOT/docs/solutions" ] || \
-  [ -f "$MAIN_ROOT/docs/LEARNINGS.md" ] || exit 0
+[ -d "$MAIN_ROOT/node_modules" ] || [ -f "$MAIN_ROOT/docs/LEARNINGS.md" ] || exit 0
 
 # Enumerate worktrees precisely via git. This handles worktree names that
 # contain slashes (which a `.claude/worktrees/*/` glob would miss) and reports
@@ -49,10 +46,6 @@ git worktree list --porcelain 2>/dev/null | while read -r key path; do
   # has the source and the worktree lacks a resolvable copy.
   if [ -d "$MAIN_ROOT/node_modules" ] && [ ! -e "$path/node_modules" ]; then
     ln -sfn "$MAIN_ROOT/node_modules" "$path/node_modules" 2>/dev/null || true
-  fi
-  if [ -d "$MAIN_ROOT/docs/solutions" ] && [ ! -e "$path/docs/solutions" ]; then
-    mkdir -p "$path/docs" 2>/dev/null || true
-    ln -sfn "$MAIN_ROOT/docs/solutions" "$path/docs/solutions" 2>/dev/null || true
   fi
   if [ -f "$MAIN_ROOT/docs/LEARNINGS.md" ] && [ ! -e "$path/docs/LEARNINGS.md" ]; then
     mkdir -p "$path/docs" 2>/dev/null || true
