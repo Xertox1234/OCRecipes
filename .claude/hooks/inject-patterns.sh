@@ -24,6 +24,16 @@ RULES_DIR="$PROJECT_ROOT/docs/rules"
 # leaving headroom for the full rules files under the 9000-byte spill threshold.
 SOLUTIONS_PER_DOMAIN=4
 
+# Inline size cap: Claude Code's hook-output cap is ~10K; past THRESHOLD the assembled
+# context is copied to the spill file and truncated inline (see the spill block at the end).
+THRESHOLD=9000
+# Byte budget for FULL domain payloads when session dedup is ON. Once the assembled context
+# would cross this, remaining domains are DEFERRED — a one-line pointer now, full injection
+# on the session's next edit (a deferred domain is simply not recorded in the dedup state).
+# Sits under THRESHOLD to leave headroom for the pointer lines themselves, so a first-touch
+# multi-domain edit lands inline instead of byte-truncating mid-file to the spill.
+DOMAIN_BUDGET=$((THRESHOLD - 400))
+
 # Cap a newest-first `rel<TAB>title` candidate list to $1 lines, but guarantee at least one
 # bug-track line (category dir = logic-errors|runtime-errors|code-quality|performance-issues)
 # survives the cap when the candidates contain one. Keeps the original order otherwise.
@@ -85,14 +95,37 @@ if [ -z "$DOMAINS" ]; then
   esac
 fi
 
-# Build context in a temp file (avoids subshell newline stripping)
+# Build context in a temp file (avoids subshell newline stripping); BLOCKFILE stages one
+# domain's payload at a time so the deferral decision can measure it before committing it.
 TMPFILE=$(mktemp)
-trap 'rm -f "$TMPFILE"' EXIT
+BLOCKFILE=$(mktemp)
+trap 'rm -f "$TMPFILE" "$BLOCKFILE"' EXIT
 
 printf '=== Pre-write context for %s ===\n' "$FILE_PATH" >> "$TMPFILE"
 
-# Discipline preamble — applies to every Edit/Write regardless of domain match
-cat >> "$TMPFILE" <<'EOF'
+# Per-session dedup: inject each payload (the DISCIPLINE preamble, and each domain's full
+# rules + solution refs) only the FIRST time it appears in a session; on later edits emit a
+# one-line pointer instead. This bounds the repeated cost of editing many files in one
+# session (e.g. a /todo loop).
+# Requires a real session_id — when it's absent (or PATTERN_INJECT_NO_DEDUP=1) dedup is OFF and
+# full payloads are always injected (fail-safe: more context, not less; also keeps session-less
+# test runs deterministic).
+# `// empty` is load-bearing: `jq -r '.session_id'` emits the literal "null" for an absent
+# key (and -e only changes the exit code, not the output), which would make session-less
+# callers share a "/tmp/...-null" state file and wrongly dedup. `// empty` yields "" instead.
+SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+DEDUP=1
+{ [ -z "$SESSION" ] || [ "${PATTERN_INJECT_NO_DEDUP:-0}" = "1" ]; } && DEDUP=0
+DEDUP_STATE="/tmp/ocrecipes-pattern-inject-${SESSION}"
+
+# Discipline preamble — applies to every Edit/Write regardless of domain match, but is
+# injected in FULL at most once per session (marker line `__preamble__` in the dedup state;
+# `__` can never collide with a domain name). A missing/wiped state file fails OPEN to the
+# full preamble — more context, not less.
+if [ "$DEDUP" = "1" ] && grep -qxF "__preamble__" "$DEDUP_STATE" 2>/dev/null; then
+  printf '\n[DISCIPLINE] injected earlier this session — still binding: think before coding, simplest change that works, surgical diffs, LSP-first on shared symbols.\n' >> "$TMPFILE"
+else
+  cat >> "$TMPFILE" <<'EOF'
 
 [DISCIPLINE — applies before any edit]
 - Think before coding. State your assumptions out loud. If the request is ambiguous, ask. If a simpler approach exists, push back. Stop when you are confused, name what is unclear, do not just pick one interpretation and run.
@@ -101,6 +134,8 @@ cat >> "$TMPFILE" <<'EOF'
 - Goal-driven execution. Turn vague instructions into verifiable targets before writing a line. "Add validation" becomes "write tests for invalid inputs, then make them pass."
 - LSP-first. Before editing a shared symbol, check its blast radius with the LSP tool (findReferences / call-hierarchy), not grep — it resolves @/ and @shared/ aliases. See docs/rules/lsp.md.
 EOF
+  [ "$DEDUP" = "1" ] && printf '__preamble__\n' >> "$DEDUP_STATE"
+fi
 
 # Map a hook domain to the ERE fragment that matches it inside a `tags:` line.
 # Most domains are their own whole-word tag (`\bapi\b`). The ai-prompting domain
@@ -190,20 +225,6 @@ domain_rank() {
   esac
 }
 
-# Per-session dedup: inject each domain's full rules + solution refs only the FIRST time that
-# domain appears in a session; on later edits emit a one-line pointer instead. This bounds the
-# repeated cost of editing many files in one domain over a long session (e.g. a /todo loop).
-# Requires a real session_id — when it's absent (or PATTERN_INJECT_NO_DEDUP=1) dedup is OFF and
-# full rules are always injected (fail-safe: more context, not less; also keeps session-less
-# test runs deterministic).
-# `// empty` is load-bearing: `jq -r '.session_id'` emits the literal "null" for an absent
-# key (and -e only changes the exit code, not the output), which would make session-less
-# callers share a "/tmp/...-null" state file and wrongly dedup. `// empty` yields "" instead.
-SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
-DEDUP=1
-{ [ -z "$SESSION" ] || [ "${PATTERN_INJECT_NO_DEDUP:-0}" = "1" ]; } && DEDUP=0
-DEDUP_STATE="/tmp/ocrecipes-pattern-inject-${SESSION}"
-
 # Repo-relative path of the edited file — used by both solution-source functions for
 # applies_to: glob matching. FILE_PATH may be absolute; strip the PROJECT_ROOT prefix.
 _FILE_REL="${FILE_PATH#"$PROJECT_ROOT"/}"
@@ -217,6 +238,7 @@ if [ -n "$DOMAINS" ]; then
   # compatible — no mapfile).
   # shellcheck disable=SC2207
   DOMAIN_LIST=($(for d in "${DOMAIN_LIST[@]}"; do printf '%s\t%s\n' "$(domain_rank "$d")" "$d"; done | sort -n | cut -f2))
+  EMITTED_FULL=0
   for DOMAIN in "${DOMAIN_LIST[@]}"; do
     RULES_FILE="$RULES_DIR/${DOMAIN}.md"
 
@@ -226,10 +248,14 @@ if [ -n "$DOMAINS" ]; then
       continue
     fi
 
+    # Stage this domain's FULL payload (rules + solution refs) in BLOCKFILE so the deferral
+    # decision below can measure it before committing it inline.
+    : > "$BLOCKFILE"
+
     # Inject full rules file (short by design) — docs/rules/ is NOT being retired.
     if [ -f "$RULES_FILE" ]; then
-      printf '\n[RULES — %s]\n' "$DOMAIN" >> "$TMPFILE"
-      cat "$RULES_FILE" >> "$TMPFILE"
+      printf '\n[RULES — %s]\n' "$DOMAIN" >> "$BLOCKFILE"
+      cat "$RULES_FILE" >> "$BLOCKFILE"
     fi
 
     # Inject the most relevant docs/solutions/ files for this domain (path + title only —
@@ -239,21 +265,35 @@ if [ -n "$DOMAINS" ]; then
     # the edited file are promoted ahead of the rest. See solutions_from_markdown.
     SOLUTION_LINES=$(solutions_from_markdown "$DOMAIN")
     if [ -n "$SOLUTION_LINES" ]; then
-      printf '\n[SOLUTIONS — %s (Read the file for the full body)]\n' "$DOMAIN" >> "$TMPFILE"
+      printf '\n[SOLUTIONS — %s (Read the file for the full body)]\n' "$DOMAIN" >> "$BLOCKFILE"
       while IFS=$'\t' read -r rel title; do
         [ -n "$rel" ] || continue
-        printf -- '- docs/solutions/%s — %s\n' "$rel" "${title:-untitled}" >> "$TMPFILE"
+        printf -- '- docs/solutions/%s — %s\n' "$rel" "${title:-untitled}" >> "$BLOCKFILE"
       done <<< "$SOLUTION_LINES"
     fi
+
+    # Defer instead of truncate: with session state available and at least one domain already
+    # emitted in full, a domain that would push the context over DOMAIN_BUDGET is deferred —
+    # NOT recorded in the dedup state, so the session's next edit injects it in full. The
+    # first domain always emits regardless of size (otherwise an oversized single domain
+    # would defer forever); the spill block below remains the backstop for that case.
+    if [ "$DEDUP" = "1" ] && [ "$EMITTED_FULL" = "1" ] &&
+      [ $(($(wc -c < "$TMPFILE") + $(wc -c < "$BLOCKFILE"))) -gt "$DOMAIN_BUDGET" ]; then
+      printf '\n[RULES — %s] deferred (inline size cap) — auto-injects on the next edit this session; or read docs/rules/%s.md now.\n' "$DOMAIN" "$DOMAIN" >> "$TMPFILE"
+      continue
+    fi
+
+    cat "$BLOCKFILE" >> "$TMPFILE"
+    EMITTED_FULL=1
 
     # Record this domain as injected so later edits in the session get the one-line pointer.
     [ "$DEDUP" = "1" ] && printf '%s\n' "$DOMAIN" >> "$DEDUP_STATE"
   done
 fi
 
-# Spill overflow to a stable temp file so the agent can read the rest.
-# Claude Code's hook-output cap is ~10K; multi-domain injections routinely exceed this.
-THRESHOLD=9000
+# Spill overflow to a stable temp file so the agent can read the rest (THRESHOLD is defined
+# at the top). With session dedup ON the deferral above keeps injections under the cap, so
+# this is now the backstop for session-less runs and single domains too big for the budget.
 SPILL_FILE="/tmp/ocrecipes-injection-context.md"
 CONTEXT_SIZE=$(wc -c < "$TMPFILE")
 if [ "$CONTEXT_SIZE" -gt "$THRESHOLD" ]; then
