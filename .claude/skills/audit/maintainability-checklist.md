@@ -5,7 +5,7 @@ Used by the `/audit maintainability` scope and as a parallel discovery lens with
 
 Adapted from Cursor's "Thermo-Nuclear Code Quality Review" skill, project-tuned —
 600-line file threshold (not 1000), explicit dedup guard against sibling
-specialists. The unique value of this lens is **bias toward deletion over
+reviewers. The unique value of this lens is **bias toward deletion over
 rearrangement**: looking for the restructuring that makes whole branches,
 helpers, modes, or layers disappear rather than polishing the same complexity.
 
@@ -26,18 +26,16 @@ inevitable in hindsight.
 If you see a path to **delete** complexity rather than rearrange it, push hard
 for that path.
 
-## Dedup with sibling specialists (CRITICAL)
+## Dedup with sibling reviewers (CRITICAL)
 
-This lens runs alongside `architecture-specialist`, `typescript-specialist`,
-`quality-specialist`, and `testing-specialist`. Do NOT re-flag what they would
-catch — the manifest balloons and the "two perspectives" benefit becomes noise:
+This lens runs alongside `server-reviewer` and `code-reviewer`. Do NOT re-flag
+what they would catch — the manifest balloons and the "two perspectives"
+benefit becomes noise:
 
 - **Skip:** boundary violations, layer leaks, dependency-direction breaks
-  (architecture-specialist owns these as defects)
-- **Skip:** missing types, unsafe casts as defects, Zod gaps
-  (typescript-specialist owns these)
-- **Skip:** missing error handling, lint/type errors, untested boundaries
-  (quality-specialist + testing-specialist own these)
+  (`server-reviewer` owns these as defects)
+- **Skip:** missing types, unsafe casts as defects, Zod gaps, missing error
+  handling, lint/type errors, untested boundaries (`code-reviewer` owns these)
 
 **Your unique scope:**
 
@@ -47,8 +45,8 @@ catch — the manifest balloons and the "two perspectives" benefit becomes noise
 - Thin wrappers / identity abstractions that add indirection without buying clarity
 - Avoidable sequential / non-atomic orchestration where the simpler structure is obvious
 
-If a finding could equally come from a pattern-driven specialist, skip it. If a
-finding overlaps but you can frame it as a _simpler design_ the specialist
+If a finding could equally come from a pattern-driven reviewer, skip it. If a
+finding overlaps but you can frame it as a _simpler design_ the reviewer
 wouldn't propose (e.g., "the right fix is not to add a type guard here, it's to
 delete this branch entirely by reshaping the input"), keep it — and make the
 simpler design the heart of the finding.
@@ -91,7 +89,7 @@ simpler design the heart of the finding.
 
 - Question unnecessary optionality, `unknown`, `any`, or cast-heavy code **when
   a clearer type boundary could exist** — the maintainability cost is the
-  structural complexity that follows, not the cast itself (typescript-specialist
+  structural complexity that follows, not the cast itself (`code-reviewer`
   owns the cast-as-defect angle).
 - If a branch relies on silent fallback to paper over an unclear invariant, ask
   whether the boundary should be made explicit instead.
@@ -99,7 +97,7 @@ simpler design the heart of the finding.
 ### Standard 6 — Canonical layer, reuse canonical helpers
 
 - Call out feature logic leaking into shared paths or implementation details
-  leaking through APIs (boundary angle only — architecture-specialist owns the
+  leaking through APIs (boundary angle only — `server-reviewer` owns the
   layer-violation defect angle).
 - Prefer existing canonical utilities/helpers over bespoke one-offs.
 - Push code toward the right package, service, or module instead of normalizing

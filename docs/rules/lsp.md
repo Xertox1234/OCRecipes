@@ -39,13 +39,11 @@ files. The LSP is TypeScript-only.
 definitions cannot be edited. When dispatching symbol work to them, include the
 LSP-first directive and the cold-start warm-up note in the dispatch prompt.
 
-## Canonical agent block
+## Agent guidance
 
-The block below is the single source of truth, duplicated verbatim into each
-symbol-working agent in `.claude/agents/`. **Edit it HERE only.** The drift-check
-(`npm run lsp:check-agent-block`) fails if any agent copy diverges.
-
-<!-- LSP-AGENT-BLOCK:START -->
+This file is the single source of truth for LSP usage. Agent files in
+`.claude/agents/` carry only a one-line pointer here ("Symbol work: follow
+`docs/rules/lsp.md` (auto-injected)") — never a copied block.
 
 ## Tooling: LSP-First Symbol Navigation
 
@@ -71,5 +69,3 @@ query once — the second call is correct. Positions are 1-based.
 **Ceiling:** the LSP tool is navigation-only — no diagnostics operation, so type
 errors still come from `npm run check:types` / CI. It is TypeScript-only: keep
 using `grep` for `.sql`, config, native code, and plain-text searches.
-
-<!-- LSP-AGENT-BLOCK:END -->

@@ -219,25 +219,23 @@ If there are no findings, state that explicitly and still note residual risks or
 - For Express work, expect route helpers, explicit ownership checks, and service/storage separation.
 - For React Native work, expect navigation typing, theme-system alignment, accessibility considerations, and performance awareness on hot paths.
 
-## Optional Specialist Pass
+## Optional Domain-Reviewer Pass
 
-If the spec spans multiple risky domains, dispatch up to **3** targeted specialists after the initial inline pass. Dispatch them **scoped** — never "go review the whole spec," which makes each specialist re-read everything.
+If the spec spans multiple risky domains, dispatch up to **3** targeted domain reviewers after the initial inline pass. Dispatch them **scoped** — never "go review the whole spec," which makes each reviewer re-read everything.
 
-Give each specialist only:
+Give each reviewer only:
 
 - the relevant spec excerpt(s),
 - the preliminary findings already raised in its domain,
 - the per-domain binding-rule summary (from Step 4 — the `docs/rules/<domain>.md` you read inline),
 - this instruction: _"Do not broad-read the repo. Confirm or refute the findings above and add only domain-specific risks. Read a specific file only to verify a named claim."_
 
-Each specialist returns **deltas** — confirm / refute / net-new findings — not a fresh full review. Pick at most 3 from:
+Each reviewer returns **deltas** — confirm / refute / net-new findings — not a fresh full review. Pick at most 3 from:
 
-- `api` or route-heavy spec -> `api-specialist`
-- storage, schema-adjacent, or data-integrity-heavy spec -> `database-specialist`
-- cross-layer ownership or service-boundary changes -> `architecture-specialist`
-- AI, evals, or prompt-safety changes -> `ai-llm-specialist`
-- React Native interaction or navigation changes -> `rn-ui-ux-specialist`
-- verification or test-strategy questions -> `testing-specialist`
+- route-heavy, storage/schema-adjacent, or cross-layer service-boundary spec -> `server-reviewer`
+- AI, evals, or prompt-safety changes -> `ai-reviewer`
+- React Native interaction or navigation changes -> `mobile-reviewer`
+- verification or test-strategy questions -> `code-reviewer`
 - security-sensitive surfaces -> `security-auditor`
 
-Use specialists to deepen the review, not to replace the core verdict.
+Use domain reviewers to deepen the review, not to replace the core verdict.

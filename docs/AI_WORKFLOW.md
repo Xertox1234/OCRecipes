@@ -15,32 +15,23 @@ Code review is **orchestrator-dispatched, domain-selected, and scoped to the cod
 At review time the orchestrator (the `todo-executor` for `/todo`, the `/audit` skill for its review phases, or the main session for an on-demand review):
 
 1. **Inspects the in-context diff** — both file **paths** and **content**.
-2. **Always dispatches `code-reviewer`** as the cross-cutting baseline (it carries the broad OCRecipes pattern + correctness checklist that catches stray issues outside any single domain — a rogue `as` cast, a missing error boundary), **plus selects the relevant domain specialists** for depth — typically **1–2 more**. Path is a starting hint (the `docs/rules/<domain>` mapping); **content overrides it** — a JWT call → add `security-auditor`, an `any` cast → add `typescript-specialist`, an N+1 query → add `database-specialist` / `performance-specialist`, even when the path looks generic. For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
+2. **Always dispatches `code-reviewer`** as the cross-cutting baseline (it carries the broad OCRecipes pattern + correctness checklist — TypeScript strict-mode, code quality, testing — that catches stray issues outside any single domain, e.g. a rogue `as` cast or a missing error boundary), **plus selects the relevant domain reviewers** for depth — typically **1–2 more**. Path is a starting hint (the `docs/rules/<domain>` mapping); **content overrides it** — a JWT call → add `security-auditor`, an N+1 query or route change → add `server-reviewer`, a screen or camera change → add `mobile-reviewer`, even when the path looks generic. For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
 3. **Dispatches them in parallel**, each scoped to the in-context diff and reviewing through its own lens.
 4. **Merges** findings (dedupe overlaps) and applies the tier rule.
 
-**Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo at **`code-reviewer` + 1–2 specialists (≤3 total)** to avoid a 4×N subagent blow-up against the project's "max ~4 parallel agents" guidance. A branch-wide review (`/codify`) or an audit may use more (`code-reviewer` + 2–3 specialists) because it is not itself nested in a parallel batch.
+**Concurrency:** keep per-review fan-out small. In `/todo`, review runs _inside_ an already-parallel batch (up to 4 executors), so cap each todo at **`code-reviewer` + 1–2 domain reviewers (≤3 total)** to avoid a 4×N subagent blow-up against the project's "max ~4 parallel agents" guidance. A branch-wide review (`/codify`) or an audit may use more (`code-reviewer` + 2–3 domain reviewers) because it is not itself nested in a parallel batch.
 
 #### Reviewer roster
 
-| Pick when the in-context code touches…               | Agent                                 |
-| ---------------------------------------------------- | ------------------------------------- |
-| Camera / OCR / vision / barcode / frame processors   | `camera-specialist`                   |
-| RN UI / components / animations / theming / layout   | `rn-ui-ux-specialist`                 |
-| Accessibility (VoiceOver/TalkBack, WCAG, focus trap) | `accessibility-specialist`            |
-| HTTP routes / Express / uploads / premium gates      | `api-specialist`                      |
-| Server architecture / layering / SSE / sessions      | `architecture-specialist`             |
-| Drizzle / schema / storage modules / migrations      | `database-specialist`                 |
-| Security (IDOR, JWT, SSRF, prompt injection, rate)   | `security-auditor`                    |
-| AI/LLM / OpenAI / prompts / AI safety / caching      | `ai-llm-specialist`                   |
-| Nutrition science / macros / food NLP / Verified API | `nutrition-domain-expert`             |
-| Perf (memo, FlatList, TTL caches, Reanimated)        | `performance-specialist`              |
-| Strict TS / Zod / type guards / nav typing           | `typescript-specialist`               |
-| Tests / Vitest / mocks / testability                 | `testing-specialist`                  |
-| Error handling / lint / minimal-changes / todo UX    | `quality-specialist`                  |
-| Cross-cutting baseline — **always dispatched**       | `code-reviewer` (+ specialists above) |
+| Pick when the in-context code touches…                                                | Agent                                      |
+| ------------------------------------------------------------------------------------- | ------------------------------------------ |
+| HTTP routes / Express / architecture & layering / SSE / Drizzle / schema / migrations | `server-reviewer`                          |
+| RN UI / theming / accessibility / camera & OCR / barcode / client performance         | `mobile-reviewer`                          |
+| AI/LLM / OpenAI / prompts / AI caching & cost / nutrition science / food NLP          | `ai-reviewer`                              |
+| Security (IDOR, JWT, SSRF, prompt injection, rate limiting)                           | `security-auditor`                         |
+| Cross-cutting baseline (strict TS / Zod / tests / quality) — **always dispatched**    | `code-reviewer` (+ domain reviewers above) |
 
-`code-reviewer` **always** runs as the cross-cutting baseline; the domain specialists are selected on top of it for depth (and `code-reviewer` is the _sole_ reviewer only for a docs/config-only or trivial diff). `todo-executor` and `todo-researcher` are workflow drivers, **not** reviewers.
+`code-reviewer` **always** runs as the cross-cutting baseline; the domain reviewers are selected on top of it for depth (and `code-reviewer` is the _sole_ reviewer only for a docs/config-only or trivial diff). `todo-executor` and `todo-researcher` are workflow drivers, **not** reviewers.
 
 #### Working-tree safety (critical — do not skip)
 
@@ -67,18 +58,18 @@ Agent({
 
 #### Selection examples
 
-Every review includes `code-reviewer` (baseline); the specialists below are added on top.
+Every review includes `code-reviewer` (baseline); the domain reviewers below are added on top.
 
-- `client/screens/ScanScreen.tsx` → `code-reviewer` + `camera-specialist` + `rn-ui-ux-specialist`
-- `server/routes/recipes.ts` with a new auth check → `code-reviewer` + `api-specialist` + `security-auditor`
-- `server/storage/cookbooks.ts` ownership-filter change → `code-reviewer` + `database-specialist` + `security-auditor`
-- a new Zod schema in `shared/` → `code-reviewer` + `typescript-specialist`
+- `client/screens/ScanScreen.tsx` → `code-reviewer` + `mobile-reviewer`
+- `server/routes/recipes.ts` with a new auth check → `code-reviewer` + `server-reviewer` + `security-auditor`
+- `server/storage/cookbooks.ts` ownership-filter change → `code-reviewer` + `server-reviewer` + `security-auditor`
+- a new Zod schema in `shared/` → `code-reviewer` alone (Zod/type-guard rigor is its baseline lens)
 - bumping a library / new third-party API usage → the reviewer verifies against current docs via the Context7 MCP tools (`mcp__claude_ai_Context7__resolve-library-id` / `query-docs`) or WebSearch
 - a docs-only / config-only or tiny cross-cutting diff → `code-reviewer` alone
 
 #### Self-improving
 
-Any review finding that reveals a reusable rule feeds back — via `/codify` (`.claude/skills/codify/SKILL.md`) — into both `code-reviewer.md` and the matching specialist agent, so the roster sharpens over time. For a quick, generic, non-pattern-aware diff pass, the built-in `/code-review` skill is also available.
+Any review finding that reveals a reusable rule feeds back — via `/codify` (`.claude/skills/codify/SKILL.md`) — into exactly **one** owning reviewer file (single-write; the routing table lives in codify Step 5), so the roster sharpens over time without dual-write drift. For a quick, generic, non-pattern-aware diff pass, the built-in `/code-review` skill is also available.
 
 ### CI (GitHub Actions)
 
@@ -160,7 +151,7 @@ This keeps historical session context lean before it re-enters Claude's context 
 
 | Convention                                                                       | Reason                                                                               |
 | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| code-reviewer + specialist subagents for audits                                  | Higher token cost, but better for deep cross-file reasoning and audit-style reviews  |
+| code-reviewer + domain-reviewer subagents for audits                             | Higher token cost, but better for deep cross-file reasoning and audit-style reviews  |
 | iOS/device setup in `docs/DEV_SETUP.md`                                          | Keeps CLAUDE.md short; agents reference the doc, not inline instructions             |
 | Durable architecture facts in auto-memory (`MEMORY.md` → Key Architecture Notes) | Schema, nav, services, stack facts persist across sessions without re-reading source |
 
