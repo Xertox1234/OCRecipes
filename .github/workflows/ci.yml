@@ -54,16 +54,15 @@ jobs:
       - name: Verify .github/copilot-instructions.md is current
         run: npm run build:copilot-instructions:check
 
-      - name: Commit-verify hook tests
-        run: bash .claude/hooks/test-commit-verify.sh
-      - name: Branch-preflight hook tests
-        run: bash .claude/hooks/test-branch-preflight.sh
-      - name: PR-verify hook tests
-        run: bash .claude/hooks/test-pr-verify.sh
-      - name: PR preflight guard hook test
-        run: bash .claude/hooks/test-pr-preflight-guard.sh
-      - name: Session recent-issues hook test
-        run: bash .claude/hooks/test-session-recent-issues.sh
+      # Mirror of scripts/preflight.sh:98-104 — same glob, same git-env stripping, so the
+      # two runners can't drift on membership and newly-added hook tests run automatically.
+      - name: Hook self-tests (.claude/hooks/test-*.sh)
+        run: |
+          for t in .claude/hooks/test-*.sh; do
+            [ -f "$t" ] || continue
+            echo "▶ $t"
+            env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR bash "$t" || exit 1
+          done
 
   test:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
