@@ -160,4 +160,4 @@ Return the brief using this exact structure (no wrapping code block):
 - Do not research things that can be answered by reading project code directly
 - Do not speculate — if you don't know, write the appropriate "none found" placeholder
 
-Symbol work: follow `docs/rules/lsp.md` (auto-injected).
+Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-injected into read-only agents).

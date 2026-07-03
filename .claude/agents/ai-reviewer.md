@@ -11,7 +11,7 @@ You are a specialized review agent for AI/LLM integration code and nutrition-dom
 
 **Read-only contract:** this agent reviews and reports — it NEVER edits files. Return findings as `file:line — issue — concrete fix`, ordered most-severe first, each tagged with a severity: **CRITICAL** / **WARNING** / **SUGGESTION**.
 
-Symbol work: follow `docs/rules/lsp.md` (auto-injected).
+Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-injected into read-only agents).
 
 ---
 
@@ -49,7 +49,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 
 **Text (MODEL_FAST = gpt-4o-mini), all under `server/services/`:** `food-nlp.ts` (natural-language food parsing, e.g. "2 eggs and toast"), `nutrition-coach.ts` (streaming chat), `meal-suggestions.ts`, `recipe-generation.ts` (premium), `recipe-chat.ts`, `cooking-session.ts` (step-by-step guidance), `ingredient-substitution.ts`, `voice-transcription.ts`, `pantry-meal-plan.ts`.
 
-**Image generation:** `server/services/carousel-builder.ts` — recipe card images via Runware (FLUX.1 Schnell, $0.0006/img) with DALL-E fallback.
+**Image generation:** `server/services/carousel-builder.ts` — recipe card images via Runware (FLUX.2 klein 9B KV default, FLUX.1 dev for curated recipes — see `server/lib/runware.ts`) with DALL-E fallback.
 
 ## Implementation Patterns
 

@@ -42,30 +42,7 @@ LSP-first directive and the cold-start warm-up note in the dispatch prompt.
 ## Agent guidance
 
 This file is the single source of truth for LSP usage. Agent files in
-`.claude/agents/` carry only a one-line pointer here ("Symbol work: follow
-`docs/rules/lsp.md` (auto-injected)") — never a copied block.
-
-## Tooling: LSP-First Symbol Navigation
-
-This repo has the TypeScript LSP wired into the `LSP` tool. For any symbol-level
-work, prefer it over `grep` — it matches semantic identity and resolves the `@/`
-and `@shared/` path aliases; `grep` matches text (comments, strings, unrelated
-same-name identifiers).
-
-- **Find usages / rename-safety:** `findReferences` (not grep).
-- **Jump to a definition:** `goToDefinition`.
-- **Find interface implementations:** `goToImplementation` — e.g. the storage
-  facade interface in `server/storage/index.ts` → its concrete modules.
-- **Impact analysis across layers:** `incomingCalls` / `outgoingCalls` (call
-  hierarchy) — trace `routes → services → storage → db` precisely instead of a
-  flat reference list.
-- **Locate a symbol by name across the repo:** `workspaceSymbol`.
-
-**Cold-start gotcha:** the FIRST LSP query in a session often returns degraded
-results (e.g. `findReferences` returns only the definition). Warm the server with
-a throwaway `hover` first; if any result looks impossibly small, re-run the same
-query once — the second call is correct. Positions are 1-based.
-
-**Ceiling:** the LSP tool is navigation-only — no diagnostics operation, so type
-errors still come from `npm run check:types` / CI. It is TypeScript-only: keep
-using `grep` for `.sql`, config, native code, and plain-text searches.
+`.claude/agents/` carry only a one-line pointer here — never a copied block.
+Read-only agents (the reviewers, `todo-researcher`) must read this file
+directly; the inject hook fires only on Edit/Write, so nothing is auto-injected
+into their context.

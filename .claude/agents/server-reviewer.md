@@ -13,7 +13,7 @@ Consolidated review agent for OCRecipes server-side code: Express route handlers
 
 This agent reviews and reports — it NEVER edits files. Return findings as `file:line — issue — concrete fix`, ordered most-severe first, each tagged **CRITICAL**, **WARNING**, or **SUGGESTION**.
 
-Symbol work: follow `docs/rules/lsp.md` (auto-injected).
+Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-injected into read-only agents).
 
 ## Dependency Direction (check first — load-bearing)
 
@@ -71,11 +71,13 @@ grep -rn 'from "\.\./services' server/storage/ --include="*.ts"
 - When adding a new AI endpoint, grep for the sibling endpoint and confirm BOTH are gated identically: `checkPremiumFeature()` BEFORE the AI call, then the per-user daily quota check (429 + `ErrorCode.QUOTA_EXCEEDED`). Audits 2026-04-17 H2 + 2026-04-18 H7 found endpoints with rate limiting but no premium gate.
 - Read endpoints that hit paid APIs (Spoonacular, Runware, OpenAI) need the same gate — `GET /catalog/search`, `GET /catalog/:id`, `GET /chat/stream` all cost money per call.
 - Any route calling OpenAI must guard with `checkAiConfigured()` before the call to prevent runtime errors when the API key is not set.
+- New recipe-generation endpoints use `recipeGenerationRateLimit` (not `cookingPhotoRateLimit` or inline `rateLimit()`) AND the two-phase quota: `getDailyRecipeGenerationCount` before the AI call, `logRecipeGenerationWithLimitCheck` atomically after. Verify against the sibling `POST /api/recipes/generate` (Ref: `docs/LEARNINGS.md` "New Recipe Generation Endpoint Skipped Quota Check", audit 2026-04-28 H1).
 
 ## Request Validation
 
 - Mobile clients often send numeric values as strings — use the shared `numericStringField` / `nullableNumericStringField` helpers from `_helpers.ts`, never repeated inline transforms.
 - Zod schemas for user-provided URLs must reject `data:`, `javascript:`, `ftp:` — `z.string().url().refine((url) => /^https?:\/\//.test(url), ...)` (audit #6 L3).
+- OCR/AI/user-parsed numeric values flowing into DB columns with CHECK constraints are validated at ALL layers: client parser (reject negative/absurd), server route (clamp before insert), DB schema (CHECK ≥ 0) — missing any layer risks silent 500s (Ref: `docs/legacy-patterns/security.md` "Defense-in-Depth: Client-to-DB Numeric Validation Pipeline", audit M5/M7/M6/L8).
 
 ## Image Uploads
 
@@ -174,6 +176,12 @@ export async function initCache(): Promise<void> {
 
 **A reset/rebuild path can DEFEAT the single-flight guard it relies on.** For a new `rebuildX()` that does `resetX(); await initX();`, check whether `resetX()` nulls the `initPromise` — if so, two concurrent rebuilds (or a rebuild racing the fire-and-forget boot init) null each other's promise mid-flight, both inits pass the guard, and double-`addAll` throws (index briefly empty). Require BOTH: (1) the rebuild coalesces its own callers on a dedicated `rebuildPromise`, and (2) it `await`s any in-flight `initPromise` BEFORE calling reset. Ask "who else can null this promise?" for every reset added near a single-flight guard. Precedent: `rebuildSearchIndex` in `server/services/recipe-search.ts` (2026-06-25) — see `docs/solutions/logic-errors/reset-clears-single-flight-init-guard-must-await-in-flight-2026-06-25.md`.
 
+## Hot-Path Performance
+
+- [ ] **In-memory TTL cache for per-request hot reads** (auth token versions, user tier, feature flags): `Map<string, { value, expiresAt }>` with TTL check on read and an explicit `invalidateCache(key)` called on logout/mutation to evict immediately. When NOT to use: multi-instance deployments without shared cache (each instance has its own Map — use Redis) and client-side (use TanStack Query or the existing `tokenStorage` pattern). Reference: `server/middleware/auth.ts` `tokenVersionCache`
+- [ ] **Single-pass predicate composition** when 3+ independent boolean filters apply to the same array — each chained `.filter()` allocates a new intermediate array and re-walks the collection (Ref: audit 2026-04-17 M22 — `searchRecipes` chained 9 sequential `.filter()` calls, allocating 8 throwaway arrays per request). Build a `predicates` array (always-applied guards like the IDOR check first), filter once with per-element short-circuit; keep filter-metadata side effects next to `predicates.push()` so the recorded filter set matches what was evaluated
+- [ ] **Pre-compiled regex cache for static keyword matching** (allergen detection, cultural food names): compile escaped word-boundary patterns into a module-level `Map` pre-populated at module load — with 190+ allergen keywords × 100 ingredients per request, uncached compilation means thousands of `new RegExp()` calls. Reference: `shared/constants/allergens.ts` `keywordPatternCache`
+
 ## Env Validation & Module Evaluation
 
 - Required env vars fail fast: read at module load and throw (`throw new Error("JWT_SECRET environment variable is required")`) if missing.
@@ -231,11 +239,15 @@ Context: `shared/schema.ts` defines the full PostgreSQL schema (33 tables); stor
 - [ ] Naive `col <= X` on a nullable column drops the null population — when null means different things per source (community recipe nutrition = "not imported yet", personal = "user left blank"), use source-aware pass-through: `or(isNull(col), col <= X)` for community, plain `col <= X` for personal. A single naive filter silently excludes seed recipes + community pool from macro-filtered search (Ref: `docs/legacy-patterns/database.md` "Source-Aware Null Pass-Through", audit 2026-04-18 H10).
 - [ ] Raw `db.execute()` casts (`result.rows[0] as T`, `db.execute<T>(...)`) are compile-time-only assertions — a migration that adds/renames a column produces a silently misshapen object. Zod-parse `result.rows[0]` against the table's inferred select schema (`createSelectSchema(table).parse(...)`) to catch drift at runtime.
 - [ ] Batch UPDATE done as N serial UPDATEs inside a transaction holds the tx open for N × RTT — use a single `UPDATE tbl SET col = v.col FROM (VALUES (id1, val1), …) AS v(id, col) WHERE tbl.id = v.id` (one round-trip), casting `VALUES` literals explicitly (`::int`, `::text[]`, `::jsonb`) so Postgres doesn't infer `unknown` (Ref: `docs/legacy-patterns/database.md` "Batch UPDATE via UPDATE … FROM (VALUES …)", audit 2026-04-18 H8).
+- [ ] Drizzle `sql<T>` is a TypeScript hint, NOT runtime coercion — PG returns strings for numeric aggregates (`COUNT(*)`); coerce explicitly with `Number(...)`. Dynamic column names need `sql.identifier(col)` — a `${col}` interpolation binds a parameter, not a column name.
+- [ ] Pre-fetched data is passed to dependent functions via an optional parameter — never re-queried inside the callee when the caller already holds it.
+- [ ] **Parallel query paths stay in sync after a schema change** — when a PR adds a new filterable column (GIN index, enum, text[]), grep every consumer of the table and confirm the filter is wired into: (a) the search-index write, (b) the search-index read path, (c) the SQL fallback path (`getUnifiedRecipes`, cache-miss queries), (d) the backfill script. A filter working only on the MiniSearch path returns stale/incorrect results on cold start (Ref: `docs/LEARNINGS.md` "Parallel Filter Paths Drift", audit 2026-04-18 H3).
 - [ ] Bulk UPDATE must refresh the search index — after `batchUpdateMealTypes` or similar, the MiniSearch/Lunr index still holds the pre-update document. Re-read `getDocumentStore(name)` for each updated id and call `addToIndex(name, { ...doc, newCol: newValue })` after the UPDATE commits (audit 2026-04-18 H8).
 
 ## Caching
 
-- [ ] Cache-first check before expensive operations; composite key `itemId + userId + profileHash`; TTL checked inline in the query (`gt(cache.expiresAt, new Date())`); profile-hash invalidation via `calculateProfileHash()`; `cacheId` returned to the client for child cache lookups; `fireAndForget` for hit-count tracking.
+- [ ] Cache-first check before expensive operations; composite key `itemId + userId + profileHash`; TTL checked inline in the query (`gt(cache.expiresAt, new Date())`); profile-hash invalidation via `calculateProfileHash()`; `cacheId` returned to the client for child cache lookups; `fireAndForget` for hit-count tracking; cascade delete configured for parent-child cache relationships.
+- [ ] **Admin ops invalidate caches** — any admin operation modifying state cached in memory (API keys, feature flags) must call the corresponding cache-invalidation function (Ref: `docs/legacy-patterns/database.md`, audit M2).
 - [ ] Dedup: unique composite index + `onConflictDoUpdate` with `set: { data, expiresAt }`. **If a table has a unique key AND a TTL column, always use `onConflictDoUpdate`** — `onConflictDoNothing` silently skips the insert when an expired row exists with the same key; the subsequent get filters it out as expired (returning `undefined`) and any `!` non-null assertion crashes (audit 2026-04-28 H3). `onConflictDoNothing` is correct only for true idempotent first-write-wins inserts where the row never expires (e.g. `favourites`, dismissals) — it returns `undefined` on conflict, which is not an error.
 - [ ] **`onConflictDoNothing({ target })` on a partial unique index silently inserts duplicates** — Drizzle's `{ target: [col] }` generates `ON CONFLICT (col) DO NOTHING`, and PostgreSQL cannot match a partial index (one with a `WHERE` predicate) via column list; the conflict clause is ignored and the insert proceeds (duplicate row or constraint-violation error). Rule: for tables whose unique index was built with ``.where(sql`col IS NOT NULL`)``, use `onConflictDoNothing()` with NO args. Grep marker: `uniqueIndex(...).where(sql...)` in `shared/schema.ts`. Affected tables: `coachNotebook` (`dedupeKey IS NOT NULL`), `communityRecipes` (`sourceMessageId IS NOT NULL`), `chatMessages` (`turnKey IS NOT NULL`) (Ref: audit 2026-05-09 C1).
 - [ ] Cache/index loaders use column-restricted `.select({...})` — never `SELECT *` on tables with JSONB columns (`instructions`, `ingredients`): loading JSONB the cache never reads multiplies startup memory and DB transfer. Declare a narrow `SearchIndexable*` / `Cacheable*` Pick type next to the loader (or in `server/lib/` if cross-cutting) (audit 2026-04-17 H5).

@@ -50,7 +50,7 @@ agent has to notice). The gap column is the prevention backlog.
 
 | #     | Family                                                              | DB category          | Domain / rules                        | Codified (bug-track)                                   | Audit recurrence     | Existing guardrail                                                                            | Hard guard?       | Biggest gap → proposed guard                                                        |
 | ----- | ------------------------------------------------------------------- | -------------------- | ------------------------------------- | ------------------------------------------------------ | -------------------- | --------------------------------------------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------- |
-| **A** | Drizzle/Postgres **type-lies** & silent query semantics             | runtime/logic-errors | `database`, `typescript`              | ~25 (`drizzle` 19 / `postgres` 10)                     | ~80% full audits     | `database.md` + `typescript.md` rules; code-reviewer + database-specialist                    | Partial           | Raw `db.execute`/aggregate casts unlinted → **ast-grep rule + Zod-at-boundary**     |
+| **A** | Drizzle/Postgres **type-lies** & silent query semantics             | runtime/logic-errors | `database`, `typescript`              | ~25 (`drizzle` 19 / `postgres` 10)                     | ~80% full audits     | `database.md` + `typescript.md` rules; code-reviewer + server-reviewer                        | Partial           | Raw `db.execute`/aggregate casts unlinted → **ast-grep rule + Zod-at-boundary**     |
 | **B** | Missing-transaction / **check-then-act races**                      | logic-errors         | `database`                            | ~7 (`race-condition` 4 / `transactions` 3)             | ~60–80%              | `database.md` advisory-lock rules; code-reviewer "side-effects-in-tx"                         | No                | No atomicity lint → **ast-grep: check-then-write outside tx**                       |
 | **C** | **Silent failures** / swallowed errors / dead guards                | logic-errors         | `api`, `client-state`, `ai-prompting` | ~10 (`error-handling`) **largest by finding-count**    | ~40% of all findings | `no-floating-promises`, `no-misused-promises`, `no-dead-apiRequest-guard`, `handleRouteError` | **Yes (routes)**  | Client mutations missing visible `onError` → **check-mutation-onerror.js**          |
 | **D** | **Fix-one-miss-the-siblings** — parity drift                        | logic-errors (meta)  | `architecture`, `database`            | ~6 named                                               | ~30%                 | `drift-detect.sh` (fragile); code-reviewer "parallel paths in sync"                           | Weak              | Largest structural gap → **enum/field-list parity ast-grep + LSP-refs gate**        |
@@ -58,12 +58,12 @@ agent has to notice). The gap column is the prevention backlog.
 | **F** | **React Navigation** (modal overlay, focus, order, beforeRemove)    | logic-errors         | `react-native`                        | ~8 (`react-navigation`)                                | ~30%                 | `react-native.md` rules; code-reviewer                                                        | **No**            | Zero lint coverage → **ast-grep: fullScreenModal dismiss / beforeRemove whitelist** |
 | **G** | **Authz / IDOR** / tenant isolation                                 | logic/runtime-errors | `security`                            | ~17 (`security` 11 / `auth` 6; `idor` 12 kb)           | ~50% security        | `no-parseint-req` ESLint; `check-idor-storage.js`; `security.md`                              | **Yes**           | Polymorphic-FK target check + cache-clear-on-logout still review-only               |
 | **H** | **Premium-gate / quota / tier parity** (revenue)                    | logic-errors         | `api`, `security`                     | ~3 named                                               | ~40% post-launch     | `api.md` read-gate rule; `security.md` `getEffectiveTierForUser` rule                         | No                | New read endpoint can skip gate → **check-premium-gate-parity.js**                  |
-| **I** | **Accessibility** double-announce / mislabel / focus-trap           | logic-errors         | `accessibility`                       | ~14 (`accessibility` 5 / `voiceover` 5 / `talkback` 4) | ~30%                 | `check-accessibility.js` (3 patterns); `accessibility.md`; a11y-specialist                    | **Yes (partial)** | Double-announce-with-InlineError uncaught → **extend check-accessibility.js**       |
+| **I** | **Accessibility** double-announce / mislabel / focus-trap           | logic-errors         | `accessibility`                       | ~14 (`accessibility` 5 / `voiceover` 5 / `talkback` 4) | ~30%                 | `check-accessibility.js` (3 patterns); `accessibility.md`; mobile-reviewer                    | **Yes (partial)** | Double-announce-with-InlineError uncaught → **extend check-accessibility.js**       |
 | **J** | **Casts over runtime validation** (`as` vs Zod)                     | runtime-errors       | `typescript`                          | ~16 (`typescript` 11 / `type-safety` 5)                | ~25%                 | `no-as-string-req` ESLint (req.\* only); `typescript.md`                                      | Partial           | `as` on responses/rows unlinted → **broaden `no-as-string-req` to wire data**       |
 | **K** | **Regex / keyword-matching** edge cases (OCR / NLP)                 | logic-errors         | `ai-prompting`, `security`            | ~9 (`regex` 4 / `ocr` 5)                               | ~20% camera/AI       | `security.md` regex-bound rule; `ai-prompting.md` decimal-dose rule; evals                    | Weak (evals)      | Boundary/keyword-collision unguarded → **table-driven regex fixtures + evals**      |
 | **L** | **AI/LLM safety & integration drift**                               | logic-errors         | `ai-prompting`, `security`            | ~16 (`openai` 4 + `ai-safety` 12 kb)                   | ~50% post-launch     | `ai-prompting.md` tool-schema rule; `mutation-goal-safety` eval; ai-llm-spec                  | Weak              | Tool schema↔handler drift unverified → **schema/handler parity test generator**    |
 | **M** | **Agent / tooling false-positives** (grep-vs-read, drift fragility) | (meta)               | `architecture`, `lsp`                 | ~5 named + FP clusters                                 | every audit          | LSP-first rule; `merge-base` review rule; `drift-detect.sh`                                   | Weak              | Biggest tooling gap → **LSP-gate + mutation floor + `set -e` in hooks**             |
-| **N** | **Sequential→parallel queries / missing indexes**                   | performance-issues   | `performance`, `database`             | **3 codified — under-codified!**                       | **~80% full audits** | `database.md` `Promise.all`-in-tx rule; performance-specialist                                | No                | Most-recurrent, least-codified → **ast-grep: sequential awaits + codify backlog**   |
+| **N** | **Sequential→parallel queries / missing indexes**                   | performance-issues   | `performance`, `database`             | **3 codified — under-codified!**                       | **~80% full audits** | `database.md` `Promise.all`-in-tx rule; server-reviewer                                       | No                | Most-recurrent, least-codified → **ast-grep: sequential awaits + codify backlog**   |
 | **O** | **Missing rate-limiters** on authenticated endpoints                | (security)           | `security`, `api`                     | folded into `security`                                 | ~60%                 | `security.md`; review; per-route `crudRateLimit`                                              | No                | No "limiter present?" check → **check-route-ratelimit.js**                          |
 | **P** | **Helper-dedup / DRY** violations                                   | code-quality         | `architecture`                        | folded into `code-quality`                             | ~50% code-quality    | `architecture.md` "extract service" rule; jscpd-in-spirit                                     | No                | No dup detector → **jscpd CI threshold (advisory)**                                 |
 
@@ -109,7 +109,7 @@ lie"_ · _"`onConflictDoNothing({target})` silently no-ops on partial unique ind
 .default()` leaves existing rows NULL"_ · _"Nullable FK inner join silently drops rows (LEFT JOIN +
 COALESCE)"_ · _"node-postgres pooled connection is poisoned when ROLLBACK is skipped on query error."_
 **Existing guardrail.** `database.md` (lines on `onConflictDoNothing`, `.default([]).notNull()`, raw
-`db.execute` Zod), `typescript.md` (parseFloat aggregates). Review-enforced by database-specialist.
+`db.execute` Zod), `typescript.md` (parseFloat aggregates). Review-enforced by server-reviewer.
 **Gap → guard.** No _hard_ guard on raw-SQL casts or aggregate string-coercion. **Propose:** an
 ast-grep rule flagging `sql<number|Date>` on aggregate expressions and `db.execute(...)` results used
 without a Zod parse (semgrep/ast-grep is the OSS-standard way to lint these AST shapes).
@@ -217,7 +217,7 @@ _"PersistQueryClientProvider cache survives logout — cross-user data visible o
 _"parseInt on req.userId returns NaN."_
 **Existing guardrail.** **Hard:** `no-parseint-req` ESLint, `scripts/check-idor-storage.js`
 pre-commit. `security.md` (scope reads by userId+visibility; field whitelist; polymorphic target
-EXISTS). security-auditor + database-specialist.
+EXISTS). security-auditor + server-reviewer.
 **Gap → guard.** Polymorphic-FK target check and `queryClient.clear()` on all three teardown paths
 are review-only. **Propose:** extend `check-idor-storage.js` to flag junction inserts lacking a
 target EXISTS guard.
@@ -252,7 +252,7 @@ VoiceOver"_ · _"accessibilityLiveRegion + announceForAccessibility causes doubl
 announcements"_ · _"InlineError + onError announceForAccessibility causes double VoiceOver announce."_
 **Existing guardrail.** **Hard (partial):** `scripts/check-accessibility.js` (3 patterns) pre-commit.
 `accessibility.md` (modal root, assertive live region, the InlineError-don't-double-announce
-exception). accessibility-specialist.
+exception). mobile-reviewer.
 **Gap → guard.** The check covers only 3 shapes; double-announce-with-InlineError and role/state
 mismatches slip through. **Propose:** extend `check-accessibility.js` with the InlineError
 double-announce and `role`-without-matching-`state` cases.
@@ -304,7 +304,7 @@ _"Map OpenAI batch embeddings by response index, never by array position"_ · _"
 Schema/Handler Drift — Phantom Parameters"_ · _"Unsanitized AI Prompt Parameter That Looked
 Server-Generated."_
 **Existing guardrail.** `ai-prompting.md` (schema=handler names; 4-guard parse; cacheAffectingFields
-sync); `mutation-goal-safety` eval; ai-llm-specialist + security-auditor.
+sync); `mutation-goal-safety` eval; ai-reviewer + security-auditor.
 **Gap → guard.** Schema↔handler parity is unverified mechanically. **Propose:** a generated test that
 asserts every tool's JSON-schema property set equals its handler's destructured params (catches
 phantom params at CI, not runtime).
@@ -340,7 +340,7 @@ as a prevention gap.**
 meal-suggestions 5-query waterfall → 3 parallel; reminder scheduler serial fan-out;
 `community_recipes.is_public` full-table scan → GIN index.
 **Existing guardrail.** `database.md` (`Promise.all` for parallel queries in a transaction);
-performance-specialist.
+server-reviewer.
 **Gap → guard.** **Propose:** (1) backfill-codify the recurring instances so the family is visible in
 the DB; (2) an ast-grep heuristic for ≥2 independent `await storage.*` in sequence in a route handler.
 **Regenerate:** `… WHERE category='performance-issues'` (will under-count until backfilled — see plan).

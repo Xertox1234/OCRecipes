@@ -11,7 +11,7 @@ Consolidated review agent for the OCRecipes React Native/Expo client, in four pa
 
 **Read-only contract: this agent reviews and reports — it NEVER edits files.** Return findings as `file:line — issue — concrete fix`, ordered most-severe first, each tagged **CRITICAL** / **WARNING** / **SUGGESTION**.
 
-Symbol work: follow `docs/rules/lsp.md` (auto-injected).
+Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-injected into read-only agents).
 
 **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth).
 
@@ -51,9 +51,10 @@ Symbol work: follow `docs/rules/lsp.md` (auto-injected).
 
 ### Navigation
 
-- [ ] Typed navigation props from `client/types/navigation.ts`; never cast (`as never`, `as unknown`) — use a proper `CompositeNavigationProp` for cross-navigator access
+- [ ] Typed navigation props from `client/types/navigation.ts`; never cast (`as never`, `as unknown`) — use a proper `CompositeNavigationProp` for cross-navigator access; a three-level composite (stack → tab → root) is required to reach root-level modals from tab screens
 - [ ] Root-level modal screens (Scan, NutritionDetail, PhotoIntent, PhotoAnalysis, etc.) are registered in the root stack navigator
 - [ ] Double discard-changes prompt: if the screen has a `beforeRemove` Alert for unsaved changes, children must NOT also show their own Alert for the same condition (child Alert → onDiscard → `navigation.goBack()` re-fires `beforeRemove` → second identical Alert). Screen owns the prompt; children delegate via `onGoBack()` (Ref: audit 2026-04-17 H13)
+- [ ] **`fullScreenModal` dismissal requires `goBack()` after `navigate()`** — a `presentation: "fullScreenModal"` screen calling `navigation.navigate("Target", ...)` sends the action but does NOT pop the modal off the root stack; a separate `navigation.goBack()` is required. TypeScript won't catch the omission. (Ref: `docs/LEARNINGS.md` "fullScreenModal Dismissal Requires goBack()", audit 2026-05-09 H6)
 
 ### Animations (Reanimated 4 only)
 
@@ -67,6 +68,18 @@ Symbol work: follow `docs/rules/lsp.md` (auto-injected).
 ### Effect ordering
 
 - [ ] When multiple `useEffect` hooks write the same state, declaration order = execution order on mount — put "reset" effects before "set" effects so the set value persists
+
+### Client state & data fetching
+
+- [ ] TanStack Query for ALL server state — no `useState`+`useEffect` data fetching; React Context is for auth and onboarding state only
+- [ ] `if (!res.ok)` after `await apiRequest(...)` is unreachable dead code — `apiRequest` throws on non-2xx via `throwIfResNotOk`; wrap the call in `try/catch` instead (Ref: `docs/legacy-patterns/client-state.md` § "apiRequest Throws on Non-2xx")
+- [ ] Premium-gated queries use the `enabled` parameter to avoid guaranteed-403 calls
+- [ ] In-memory caching for frequently-read, rarely-changed values (see `client/lib/token-storage.ts`); no AsyncStorage reads in hot paths (API request flows); batch storage operations with `multiSet`/`multiRemove`; Authorization header takes its token from `tokenStorage`
+- [ ] **Auth teardown clears ALL persisted client state** — every teardown path (`logout`, `expireSession`, `deleteAccount`) must clear the token, the query cache (`queryClient.clear()` + remove its key), AND any durable replayed-later write store (offline mutation queue, draft/pending-upload list). A global (non-user-namespaced) queue whose drain attaches the _current_ bearer token replays user A's writes under user B after a logout+relogin — a cross-account WRITE contamination. Treat a `clear*` helper with **zero callers** as a red flag, not dead code. (Ref: audit 2026-06-19 H1, `docs/solutions/logic-errors/durable-write-queue-not-cleared-on-auth-teardown-cross-account-replay-2026-06-19.md`)
+- [ ] **A fix touching a persistence path verifies the DURABLE side** — when a change writes to AsyncStorage / a persisted cache / a durable queue, confirm the fix and its test assert the _persisted_ result, not just the in-memory state. A test that mocks `setItem` and only checks the in-memory array can pass while the fix silently relocates a data-loss bug from memory to storage. (Ref: audit 2026-06-19 L2, offline-queue merge-on-init persist gap)
+- [ ] **Epoch counter ≠ full teardown-race guard for a non-memoized reader** — a teardown clear that bumps a generation/epoch counter closes only the _forward_ race (sweep during the read), NOT the _mirror_ race: a fresh reader starting after the bump but while the sweep's async `removeItem` is still settling reads pre-wipe stale data and commits it. Require a second guard — the reader `while (sweepInFlight) await`s the in-flight wipe promise (NOT `if`) before reading — plus a mirror test (clear-then-fresh-read over a _deferred_ `removeItem`). (Ref: `docs/solutions/logic-errors/epoch-counter-alone-misses-sweep-vs-fresh-read-race-2026-06-25.md`, `client/lib/home-actions-storage.ts`)
+- [ ] **Mutation variable, not hook parameter, for freshly-set state** — when a mutation runs in the same handler as the `setState` that sets its input (`setSessionId(sid); await addPhoto.mutateAsync(uri)`), the mutation's hook closure sees the pre-render state. Make the value a mutation variable: `useAddCookPhoto()` (no hook arg), `addPhoto.mutateAsync({ sessionId: sid, uri })`. (Ref: `docs/legacy-patterns/hooks.md` "Mutation Parameter Over Hook Parameter for Fresh State", audit 2026-04-18 H12)
+- [ ] **Ref-mirror sync timing** — a ref backing a SYNCHRONOUS guard read in a user-event handler (`if (busyRef.current) return;`) must be assigned at RENDER time (`busyRef.current = isPending;` in the body), NOT via `useEffect` (post-paint, one-frame stale window). The `useEffect`-mirror is only correct when the ref is read later in another effect/async callback. (Ref: `docs/rules/hooks.md`, 2026-05-25 audit Phase-6 review)
 
 ---
 
@@ -82,7 +95,7 @@ Symbol work: follow `docs/rules/lsp.md` (auto-injected).
 
 ### Dynamic announcements
 
-- [ ] `accessibilityLiveRegion` is **Android-only**; `AccessibilityInfo.announceForAccessibility()` covers iOS. For status/progress announcements (selection counts, step progress, loading) use **only** `announceForAccessibility` — pairing both makes TalkBack announce the text twice (Ref: audit 2026-05-10 H9). Error context may warrant both (the `InlineError` pattern) — verify double-announce does not occur
+- [ ] `accessibilityLiveRegion` is **Android-only**; `AccessibilityInfo.announceForAccessibility()` covers iOS. **Un-gated** pairing double-announces on TalkBack (Android live region + `TYPE_ANNOUNCEMENT` — Ref: audit 2026-05-10 H9); the compliant pairing gates the imperative announce to `Platform.OS === "ios"` (the `InlineError` pattern, per `docs/rules/accessibility.md`). For status/progress announcements with **no** live region on the element, a single un-gated `announceForAccessibility` covers both platforms — do not flag that as missing a live region
 - [ ] **Container live region re-reads the WHOLE subtree on ANY descendant change.** Flag `accessibilityLiveRegion="polite"`/`"assertive"` on a **container** (not a leaf) wrapping a frequently-mutating child — a `Text↔ActivityIndicator` spinner swap, `accessibilityState={{ busy }}`, or a live value. On Android, TalkBack re-speaks the container's entire accessible text on the change (confirmed on `ProductChip`, `nodeLiveRegion=1`). Three fix traps: (1) `accessibilityLiveRegion="none"` on the swapping **child** does NOT help — the container is the announcer; (2) removing/narrowing the container region often **silently mutes** other Android transitions (it's usually the only Android announcer; iOS uses a gated `announceForAccessibility`); (3) an imperative announce keyed on the render **discriminator** (`[variant]`/`[type]`/key) drops **same-discriminator content updates** — an async value filling in while the discriminator stays the same (e.g. `BARCODE_LOCKED`→`PRODUCT_LOADED` loading the product name in place) goes silent on both platforms. Replacement announces must be keyed on the changed **content**, edge-guarded per in-place value. Map the region's full blast radius across every rendered state before changing it; a variant-stepped manual/render sweep cannot catch trap (3) — add an explicit placeholder→value-attached case. See `docs/solutions/conventions/android-container-live-region-reannounces-whole-subtree-2026-06-23.md` and `docs/solutions/logic-errors/imperative-announce-must-be-content-keyed-not-variant-keyed-2026-06-24.md`; verify on-device/emulator per `docs/solutions/best-practices/verify-talkback-behavior-via-emulator-logcat-2026-06-23.md`
 - [ ] **Skip the mount announce** with an `isFirstRender` ref (set false and return on first run) — the visible state on mount is sufficient; re-announcing via audio is disruptive
 - [ ] **Delay an on-open / on-present announce ~500ms past the present focus shift** (inside the edge-guarded effect, with `return () => clearTimeout(t)` so a fast close cancels it). An announce fired synchronously on a `<Modal>`/sheet `visible` edge competes with the OS present: VoiceOver/TalkBack post a screen-change and move focus to the first accessible element, so the announce can be swallowed (iOS — reasoned from screen-change behavior, not measured; don't state as verified) or arrive out of order (proven on Android: TalkBack logcat shows the delayed announce landing ~580ms post-edge, before the close-button focus read). Flag a `visible`-edge `announceForAccessibility` with **no `setTimeout`**. Appear/present case only — settled-state success/error/busy announces on an already-presented surface have no focus shift to race and stay immediate. See `docs/solutions/conventions/on-open-announce-must-delay-past-modal-present-focus-shift-2026-06-25.md`
@@ -187,6 +200,7 @@ The pre-commit script only catches: `Pressable`/`TouchableOpacity` with `onPress
 ### Image capture & upload
 
 - [ ] `takePicture()` used; FormData append uses `{ uri, type, name } as unknown as Blob`; image quality/compression configured appropriately; gallery picker provided as an alternative to the camera
+- [ ] User cancellation (`result.canceled` from the picker/camera) is a **silent return**, NOT an error — no error toast when the user intentionally backed out. Capture failure (`takePicture` throw) gets its own catch with a retry/gallery fallback
 - [ ] **Null-photo handling — both catch AND else:** `takePicture()` can return `null` or a photo without a `uri` without throwing; a `catch`-only handler silently drops the null-return case. Handle both paths with a "Capture failed — try again or pick from your gallery" alert (Ref: audit 2026-05-10 M7 / code-reviewer LOW)
 - Server-side file-upload magic-byte validation: `docs/legacy-patterns/security.md`
 
@@ -242,33 +256,7 @@ The pre-commit script only catches: `Pressable`/`TouchableOpacity` with `onPress
 - [ ] `useMemo` for expensive computations; `useCallback` for callbacks passed as props (both subject to the React Compiler caveat above)
 - [ ] Timer-driven UIs: when a timer fires every N seconds but the derived value only changes at a coarser boundary, use a floored bucket as the dependency — e.g. `Math.floor(elapsedMinutes / 60)` as the `useMemo` dep (or as the prop to a `React.memo` child) instead of raw `elapsedMinutes`, stable for up to 60 minutes
 
-### Server-side hot paths
-
-- [ ] **In-memory TTL cache for per-request hot reads** (auth token versions, user tier, feature flags — AsyncStorage-class reads take 2–10ms): `Map<string, { value, expiresAt }>` with TTL check on read and an explicit `invalidateCache(key)` called on logout/mutation to evict immediately. When NOT to use: multi-instance deployments without shared cache (each instance has its own Map — use Redis) and client-side (use TanStack Query or the existing `tokenStorage` pattern). Reference: `server/middleware/auth.ts` `tokenVersionCache`
-- [ ] **Singleton init needs a shared promise** — `if (initialized) return` on a boolean is NOT a concurrency guard: two concurrent callers both pass the check (Ref: audit 2026-04-17 H4 — `initSearchIndex` had only the boolean; a server-boot request arriving during the ~100–500ms init window triggered parallel `addAll` and MiniSearch threw "duplicate id"). Pattern:
-
-  ```typescript
-  if (initialized) return;
-  if (initPromise) return initPromise;
-  initPromise = (async () => {
-    try {
-      index.addAll(await loadAllFromDb());
-      initialized = true;
-    } catch (err) {
-      resetCachePrimitive();
-      throw err;
-    } // partial addAll poisons state; retry must start clean
-  })();
-  try {
-    await initPromise;
-  } finally {
-    initPromise = null;
-  } // cleared on success AND failure → retryable
-  ```
-
-- [ ] **`Promise.all` for independent async work**, never serial `for await` on the streaming critical path. Capture `{ tc, result }` tuples inside the `map` so pairing survives refactors (prevents parallel-array alignment bugs); `Promise.all` preserves input order; per-item try/catch returns an error result (e.g. "temporarily unavailable") instead of rejecting the batch (Ref: audit 2026-04-17 H7 — the nutrition-coach tool-call loop was still serial despite a commit subject claiming parallelism)
-- [ ] **Single-pass predicate composition** when 3+ independent boolean filters apply to the same array — each chained `.filter()` allocates a new intermediate array and re-walks the collection (Ref: audit 2026-04-17 M22 — `searchRecipes` chained 9 sequential `.filter()` calls, allocating 8 throwaway arrays per request). Build a `predicates` array (always-applied guards like the IDOR check first), filter once with per-element short-circuit; keep filter-metadata side effects next to `predicates.push()` so the recorded filter set matches what was evaluated
-- [ ] **Pre-compiled regex cache for static keyword matching** (allergen detection, cultural food names): compile escaped word-boundary patterns into a module-level `Map` and pre-populate at module load — with 190+ allergen keywords × 100 ingredients per request, uncached compilation means thousands of `new RegExp()` calls; the cache reduces this to zero. Reference: `shared/constants/allergens.ts` `keywordPatternCache`
+(Server-side hot-path performance — TTL caches, singleton init, predicate composition — is owned by `server-reviewer`; AI tool-call parallelism by `ai-reviewer`.)
 
 ---
 

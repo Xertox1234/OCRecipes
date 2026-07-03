@@ -76,22 +76,21 @@ or `.tsx` file** (a cross-cutting policy the CLI does not add).
 > source of truth for domain→reviewer routing. Other surfaces (`.claude/skills/audit/SKILL.md`,
 > `.claude/agents/todo-executor.md`) point here — never restate these tables elsewhere.
 
-The domain labels from Step 1 carry forward to two places: they tell the reviewers (Step 3) which lenses matter most, and they drive the self-improvement routing in Step 5 (which reviewer file owns a new review rule). Map each label to the reviewer(s) to dispatch:
+The domain labels from Step 1 carry forward to two places: they tell the reviewers (Step 3) which lenses matter most, and they drive the self-improvement routing in Step 5 (which reviewer file owns a new review rule). The table keys are exactly the labels the `path-domains.ts` CLI emits (the 13 rules-domains + routing-only `camera`) plus the hand-added `typescript` — never invent other keys; they will never match the CLI output:
 
-| Domain label(s)                | Reviewer(s) to dispatch                                    |
-| ------------------------------ | ---------------------------------------------------------- |
-| `security`                     | `security-auditor`                                         |
-| `architecture`, `duplication`  | `server-reviewer`                                          |
-| `api`                          | `server-reviewer`                                          |
-| `database`                     | `server-reviewer` (+ `ai-reviewer` for nutrition data)     |
-| `react-native`, `ui`, `camera` | `mobile-reviewer`                                          |
-| `hooks`, `client-state`        | `mobile-reviewer`                                          |
-| `accessibility`                | `mobile-reviewer`                                          |
-| `performance`                  | `mobile-reviewer` (client) / `server-reviewer` (server/DB) |
-| `ai`, `llm`                    | `ai-reviewer`                                              |
-| `testing`, `test`              | `code-reviewer`                                            |
-| `typescript`, `types`          | `code-reviewer`                                            |
-| _(no match)_                   | `code-reviewer` only                                       |
+| Domain label(s)                           | Reviewer(s) to dispatch                                    |
+| ----------------------------------------- | ---------------------------------------------------------- |
+| `security`                                | `security-auditor`                                         |
+| `api`, `architecture`                     | `server-reviewer`                                          |
+| `database`                                | `server-reviewer` (+ `ai-reviewer` for nutrition data)     |
+| `react-native`, `design-system`, `camera` | `mobile-reviewer`                                          |
+| `hooks`, `client-state`                   | `mobile-reviewer`                                          |
+| `accessibility`                           | `mobile-reviewer`                                          |
+| `performance`                             | `mobile-reviewer` (client) / `server-reviewer` (server/DB) |
+| `ai-prompting`                            | `ai-reviewer`                                              |
+| `testing`                                 | `code-reviewer`                                            |
+| `typescript`                              | `code-reviewer`                                            |
+| _(no match)_                              | `code-reviewer` only                                       |
 
 Combine dispatch targets for multiple matched domains — dispatching several reviewers over one branch is normal. Rule _ownership_ is different: a finding that reveals a reusable review rule updates exactly **one** owning reviewer file (see Step 5 — single-write rule).
 

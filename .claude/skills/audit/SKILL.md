@@ -333,7 +333,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
 
 4. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip standard fixes.
    - For **solutions**, create one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"` (main checkout, not the worktree). Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
-   - For **reviewer agent updates**, add the checklist item to the one owning `.claude/agents/*.md` file (codify Step 5 routing) and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
+   - For **reviewer agent updates**, add the checklist item to the one owning `.claude/agents/*.md` file (codify Step 5 routing); when the owner is `security-auditor` and the finding is a repeatable failure mode, extend its `Common Vulnerabilities to Catch` list too.
 5. Review the codification diff for accuracy and scope. Keep it limited to the reusable knowledge extracted from the audit.
    5b. **Rules routing**: For each codified finding that was CRITICAL or HIGH severity, evaluate whether it warrants a `docs/rules/{domain}.md` entry. Criteria — all three must be true:
    - It is a "never do X" class (not a preference or style choice)
