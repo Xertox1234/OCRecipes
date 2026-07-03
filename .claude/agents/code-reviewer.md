@@ -68,7 +68,7 @@ If you notice an obvious domain defect while reviewing (a missing ownership chec
 - [ ] Try-catch around async operations at system boundaries (user-facing handlers, DB, external APIs) — NOT around internal calls where the framework already guarantees the contract
 - [ ] User-friendly error messages displayed; network errors handled gracefully
 - [ ] API error responses parsed via the structured `code` field to drive UX (`PREMIUM_REQUIRED` → upgrade modal, `QUOTA_EXCEEDED` → limit message with reset time) — not just raw `err.message` in a generic alert
-- [ ] **Never log a non-`Error` object through an Error-coercion helper** — many SDKs (Resend, Stripe, AWS) **return** errors as a plain object `{ message, name, statusCode }` rather than throwing; `toError(value)` flattens that to the useless string `"[object Object]"`. For a `{ data, error }`-returning SDK call, log the error object's fields directly — `logger.error({ resendError: error }, "…")` — so the serializer keeps `message`/`name`/`statusCode`. Reserve `toError(...)` for values that were genuinely thrown. (Ref: solutions-db `code-quality/non-error-sdk-object-flattened-by-error-coercion-helper`)
+- [ ] **Never log a non-`Error` object through an Error-coercion helper** — many SDKs (Resend, Stripe, AWS) **return** errors as a plain object `{ message, name, statusCode }` rather than throwing; `toError(value)` flattens that to the useless string `"[object Object]"`. For a `{ data, error }`-returning SDK call, log the error object's fields directly — `logger.error({ resendError: error }, "…")` — so the serializer keeps `message`/`name`/`statusCode`. Reserve `toError(...)` for values that were genuinely thrown. (Ref: `docs/solutions/code-quality/non-error-sdk-object-flattened-by-error-coercion-helper`)
 
 ### 3. Code Quality & Conventions
 
@@ -132,7 +132,7 @@ Vitest (NOT Jest); tests co-located in `__tests__/` directories. The pre-commit 
 ## Key Files to Reference
 
 - `docs/PATTERNS.md` — established development patterns
-- **Solutions DB** (`ocrecipes_solutions`) — canonical codified knowledge store; query mid-session via MCP tools `search_solutions` (semantic), `get_solution`, `related_solutions`. The `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth)
+- **`docs/solutions/*.md`** — canonical, git-tracked codified knowledge store; find candidates mid-session with `grep -rl '^tags:.*\b<tag>\b' docs/solutions --include='*.md' | grep -v _manifests` or a title-keyword grep; frontmatter schema in `docs/solutions/README.md`
 - `docs/rules/*.md` — current binding rules; `docs/legacy-patterns/*.md` — frozen archive (deep-linked named sections); `docs/LEARNINGS.md` — reverse-chronological gotcha log
 - `shared/schemas/` — Zod request/response schemas; `shared/types/` — shared TypeScript types; `server/types/express.d.ts` — Express augmentations
 - `eslint.config.js` — `as never` ban + custom rules; `.husky/pre-commit` — pre-commit pipeline (`lint-staged` only)

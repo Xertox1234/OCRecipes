@@ -60,13 +60,11 @@ Check whether this todo is eligible for execution:
 
 For non-lightweight todos, **extract the affected source files** from the todo's Implementation Notes and Acceptance Criteria (any file references — fully-qualified paths (`server/routes/cooking.ts`), bare filenames (`` `cooking.ts` ``), and paths with line ranges (`path/to/file.ts:123-145`); extract paths exactly as they appear). Every step below keys off this list.
 
-### Step 3a — Verified-solution read-back (solutions DB)
+### Step 3a — Verified-solution read-back (docs/solutions/)
 
-Codified knowledge lives in the **solutions DB** (`ocrecipes_solutions`); the `docs/solutions/*.md` tree is a regenerated read-only mirror (fallback only — never the source of truth). The codify step (Step 9) authors new solutions via `npm run solutions:db:add`; this step reads them back **first — before the researcher** via the MCP `solutions-db` tools — so you reuse a known solution instead of re-deriving it, and on a tight match skip the researcher fan-out entirely. The DB/MCP is the primary query path; the grep mechanics in the stages below are the **documented fallback** for when the MCP server is unavailable. The two primary tools for the `applies_to` match are `mcp__solutions-db__find_by_applies_to` (exact-glob match against an affected file — the strongest match key) and `mcp__solutions-db__search_solutions` (semantic search by todo title / Implementation Notes); use `get_solution` to read a full body and `related_solutions` to widen. Nearly every solution declares an `applies_to:` glob list — use it as the primary match key against the affected files.
+Codified knowledge lives in the **`docs/solutions/*.md` tree** — the canonical, git-tracked store (one file per solution; frontmatter schema in `docs/solutions/README.md`). The codify step (Step 9) authors new solutions by writing markdown files there directly; this step reads them back **first — before the researcher** — so you reuse a known solution instead of re-deriving it, and on a tight match skip the researcher fan-out entirely. Nearly every solution declares an `applies_to:` glob list — use it as the primary match key against the affected files.
 
-1. **Stage 1 — candidate set.** **Primary path (MCP):** call `mcp__solutions-db__find_by_applies_to` once per affected file (passing the full affected path) to get the solutions whose `applies_to` globs cover it, and `mcp__solutions-db__search_solutions` with the todo title / Implementation Notes for semantic candidates. Union the results; the DB already excludes `_manifests/`, and the glob match is evaluated server-side so both scoped and broad globs are covered without a separate query.
-
-   **Fallback path (markdown mirror, only when the MCP server is unavailable):** grep the regenerated `docs/solutions/` mirror. For each affected file, derive its two-segment directory prefix (`server/storage/cookbooks.ts` → `server/storage`; `client/hooks/useFoo.ts` → `client/hooks`) and its top segment (`server`, `client`, `shared`). Union **two** greps per affected file over `^applies_to:` lines, excluding `_manifests/`:
+1. **Stage 1 — candidate set.** Grep `docs/solutions/`. For each affected file, derive its two-segment directory prefix (`server/storage/cookbooks.ts` → `server/storage`; `client/hooks/useFoo.ts` → `client/hooks`) and its top segment (`server`, `client`, `shared`). Union **two** greps per affected file over `^applies_to:` lines, excluding `_manifests/`:
 
    ```bash
    # narrow (scoped globs) + broad (top-level ** globs) — both forms exist in the corpus
@@ -323,7 +321,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 **Codify if any one is true:**
 
-- The solution required a workaround or constraint not currently captured in the solutions DB (`ocrecipes_solutions`) or `docs/rules/`
+- The solution required a workaround or constraint not currently captured in `docs/solutions/` or `docs/rules/`
 - The implementation revealed a library gotcha or platform-specific behavior
 - `review_output` contained a CRITICAL or WARNING finding that reveals a reusable rule
 
@@ -334,12 +332,10 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 **If codifying:**
 
-**Where the artifacts live.** Codified knowledge lives in the **solutions DB** (`ocrecipes_solutions`) — the canonical store. The `docs/solutions/*.md` tree is a regenerated read-only mirror (gitignored, fallback only — never the source of truth). New solutions are authored via `npm run solutions:db:add` (see `/codify` skill) targeting the DB, not by writing markdown files directly. Agent files (`.claude/agents/*.md`) and rules files (`docs/rules/*.md`) are tracked and live in the worktree like any other code change, riding the todo branch.
-
-> **Important — paths:** Write solution files at the **worktree-relative** path `docs/solutions/<category>/<slug>.md` and pass that same worktree-relative path to `npm run solutions:db:add` (the worktree's `docs/solutions/` symlinks into the main checkout, and `solutions:db:add`'s path guard rejects an absolute `$MAIN_CHECKOUT/...` path when run from the worktree — see step 1). Where `$MAIN_CHECKOUT` still appears below (the related-files `test -e` checks in 6b), substitute the literal path you read from the spawn prompt (e.g. `/Users/yourname/projects/OCRecipes`). Shell state does not persist between Bash tool calls — each runs in a fresh shell, so a `MAIN_CHECKOUT=...` export in one call is empty in the next; do not rely on a shell variable or re-derive the path with `git rev-parse` from inside the worktree.
+**Where the artifacts live.** Codified knowledge lives in the **`docs/solutions/*.md` tree** — the canonical, git-tracked store. New solutions are authored by writing a markdown file there directly (see `/codify` skill) and committing it on the todo branch. Solution files, agent files (`.claude/agents/*.md`), and rules files (`docs/rules/*.md`) are all tracked and live in the worktree like any other code change, riding the todo branch.
 
 1. Determine which reusable knowledge was produced. A single todo may update more than one target:
-   - **Solution** — a reusable rule (knowledge-track) or post-mortem (bug-track) written as one new file at the worktree-relative path `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`, then **registered in the canonical DB** with `npm run solutions:db:add -- <that file>` (step 7 — the `add` call, not the file write, is what persists the solution). The worktree's `docs/solutions/` is a symlink into the main checkout, so a worktree-relative write lands in the real tree and survives worktree teardown; an absolute `$MAIN_CHECKOUT/docs/solutions/...` path is **rejected** by `solutions:db:add`'s path guard when run from the worktree, so always use the worktree-relative form. See `.claude/skills/codify/SKILL.md` Steps 5-6 for the canonical routing rubric and body template; see `docs/solutions/README.md` for the frontmatter schema.
+   - **Solution** — a reusable rule (knowledge-track) or post-mortem (bug-track) written as one new file at the worktree-relative path `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`, committed with the other codification targets (step 7). See `.claude/skills/codify/SKILL.md` Steps 5-6 for the canonical routing rubric and body template; see `docs/solutions/README.md` for the frontmatter schema.
    - **Reviewer agent update** — a new review rule for exactly **one** owning reviewer agent (tracked, in the worktree; single-write — see step 3)
 
 2. Pick the solution category by **nature of the finding**, not by the todo's label. A `security`-labelled todo can produce a `runtime-errors/` crash post-mortem OR a `conventions/` rule depending on what was actually learned. Choose exactly one of the seven destinations:
@@ -363,7 +359,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 4. Compose a short description of what was learned: the non-obvious constraint, workaround, reusable rule, or review gap exposed by the todo or by `review_output`.
 
 5. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip routine fixes.
-   - For **solutions**, first check the `verified_solutions` note from Step 3: if a surfaced solution is in the same category and covers the same files/finding, **update that existing file** at the worktree-relative path `docs/solutions/<category>/<existing-slug>.md` (extend its body, bump `last_updated`) instead of writing a duplicate. Only when no existing solution covers the finding, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Both the new-file and update-file paths go through step 7's `npm run solutions:db:add -- <file>` after the 6b sanity-check — `add` upserts, so it registers an update as cleanly as a new row. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Smell patterns` (optional) / `## Why` / `## Examples` / `## Exceptions` / `## Related Files` / `## See Also`). For `## See Also` links, use a **bare slug** for same-category targets (`[label](other-slug-2026-05-15.md)`) and a `../<target-category>/` prefix for cross-category targets (`[label](../conventions/some-rule-2026-05-15.md)`) — same-category links are routinely mis-typed with a `../` prefix.
+   - For **solutions**, first check the `verified_solutions` note from Step 3: if a surfaced solution is in the same category and covers the same files/finding, **update that existing file** at the worktree-relative path `docs/solutions/<category>/<existing-slug>.md` (extend its body, bump `last_updated`) instead of writing a duplicate. Only when no existing solution covers the finding, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Both the new-file and update-file paths are committed in step 7 after the 6b sanity-check. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Smell patterns` (optional) / `## Why` / `## Examples` / `## Exceptions` / `## Related Files` / `## See Also`). For `## See Also` links, use a **bare slug** for same-category targets (`[label](other-slug-2026-05-15.md)`) and a `../<target-category>/` prefix for cross-category targets (`[label](../conventions/some-rule-2026-05-15.md)`) — same-category links are routinely mis-typed with a `../` prefix.
    - For **reviewer agent updates**, add the checklist item to the one owning `.claude/agents/*.md` file (codify Step 5 routing); when the owner is `security-auditor` and the finding is a repeatable failure mode, extend its `Common Vulnerabilities to Catch` list too.
 
 5b. **Rules routing**: If the finding was CRITICAL or HIGH severity AND is a "never do X" class that can be stated in one bullet, append the rule to `docs/rules/{domain}.md`. The domain name is the rules file basename — `security` → `docs/rules/security.md`, `react-native` → `docs/rules/react-native.md`, `accessibility` → `docs/rules/accessibility.md`, etc. All 13 domain files exist: `api`, `architecture`, `database`, `security`, `react-native`, `accessibility`, `design-system`, `hooks`, `client-state`, `typescript`, `performance`, `testing`, `ai-prompting`. Include the updated rules file in the codification commit at step 7.
@@ -377,39 +373,34 @@ Decide inline whether this implementation produced knowledge worth preserving. U
      --target <target file>
    ```
 
-6a. **Overlap check (advisory, semantic).** kimi-write has now written the file to disk, so the near-duplicate check can read and embed it. For each new or updated solution file, run it against the path that actually exists on disk — a **new** file is dated (`<slug>-<YYYY-MM-DD>.md`), an **updated** existing file keeps its original name (`<existing-slug>.md`):
+6a. **Overlap check (advisory, lexical).** For each **new** solution file, check whether an existing solution already covers the finding — a slug-core collision or a distinctive-title-keyword hit:
 
 ```bash
-npm run solutions:db:add -- docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md --dry-run   # new file
-npm run solutions:db:add -- docs/solutions/<category>/<existing-slug>.md --dry-run        # updated existing file
+# slug collision — any existing file sharing the slug core (date suffix stripped)
+find docs/solutions -name "*<slug-core>*.md" ! -path '*/_manifests/*'
+# title-keyword collision — 2-3 distinctive keywords from the intended title (skip stopwords)
+grep -riE "^title:.*(<kw1>|<kw2>)" docs/solutions --include='*.md' | grep -v _manifests
 ```
 
-This embeds the draft and reports `near-duplicate: <path> (cosine …)` for any existing solution at cosine ≥ 0.88 — catching paraphrased duplicates the lexical `applies_to` scan misses. **Advisory only — proceed regardless.** If a near-duplicate surfaces, prefer the item-5 "update existing file" path (extend the existing solution, bump `last_updated`) over writing a second file. On the **update** path the dry-run will report the file you are updating as its own high-cosine near-duplicate (the DB still holds the pre-edit embedding; because you extended rather than rewrote the file, the match is typically 0.90–0.99, not exactly 1.000) — if the reported near-duplicate path **is** the file being updated, that is the expected self-match; ignore it. Act only on a near-duplicate whose path points at a **different** solution. The real registration happens in step 7, after the 6b sanity-check passes — never register before 6b, or a 6b failure would leave an orphaned DB row that `rm` cannot undo.
+**Advisory only — proceed regardless.** If a plausible near-duplicate surfaces, prefer the item-5 "update existing file" path (extend the existing solution, bump `last_updated`) over writing a second file. On the **update** path the file you are updating will match its own slug/title — the expected self-match; act only on a hit that points at a **different** solution.
 
 6b. **Sanity-check the solution file before declaring codify complete.** kimi-write output goes to a durable location (the main checkout), where future executors can read it back at Step 3a and short-circuit research onto it. A broken codification poisons the corpus. For each new or updated solution file, run two checks:
 
 1.  **Frontmatter completeness.** Re-read the file at the worktree-relative `docs/solutions/<category>/<slug>.md`. Confirm every field marked **required** for the file's track in the "Field requirements by track" table of `docs/solutions/README.md` — that table is the authority. As of that schema: **both tracks require** `title`, `track`, `category`, `tags`, `module`, `created`; **bug-track additionally requires** `symptoms` and `severity`. `applies_to` and `last_updated` are **optional** — their absence is never a failure. There is no `name` or `description` field in this schema (those belong to a different frontmatter format) — do not check for them.
-2.  **Related-files validity.** Extract every backtick-quoted path containing `/` from the `## Related Files` section. `test -e "$MAIN_CHECKOUT/<path>"` each one. All must exist.
+2.  **Related-files validity.** Extract every backtick-quoted path containing `/` from the `## Related Files` section. `test -e "<path>"` each one from the worktree root (tracked files exist in the worktree natively). All must exist.
 
-On any check failure, **delete the file before it is registered** (`rm docs/solutions/<...>.md` — worktree-relative — for new files; for an updated existing file, log the rejection but leave it — never destroy existing knowledge), log `codification rejected — <one-line reason>`, and report `CODIFICATION_COMMIT: rejected — <reason>` in Step 11. Because the real `solutions:db:add` runs only after 6b passes (step 7), a rejected file never reaches the DB — there is no orphaned row to clean up. Codification rejection is non-blocking — the todo's implementation is still verified, reviewed, committed, and PR'd.
+On any check failure, **delete the file before it is committed** (`rm docs/solutions/<...>.md` — worktree-relative — for new files; for an updated existing file, log the rejection and `git checkout -- <file>` to restore the pre-edit version — never destroy existing knowledge), log `codification rejected — <one-line reason>`, and report `CODIFICATION_COMMIT: rejected — <reason>` in Step 11. Because the commit happens only after 6b passes (step 7), a rejected file never lands on the branch. Codification rejection is non-blocking — the todo's implementation is still verified, reviewed, committed, and PR'd.
 
 Skip 6b entirely if no solution file was created or updated (codify only touched agent/rules files).
 
-7. **Register the solution in the DB, then commit the tracked targets.** A solution persists by being inserted into the `ocrecipes_solutions` DB (the canonical store) via `npm run solutions:db:add`, **not** by the file write and **not** by a git commit — the `docs/solutions/` mirror is regenerated from the DB separately and is gitignored.
+7. **Commit the codification targets.** A solution persists by its file being **committed on the todo branch** — `docs/solutions/` is tracked, exactly like agent and rules files. The file write plus this commit IS the registration; there is no separate store.
 
-   First, for each accepted solution file (one that passed the 6b sanity-check — new or item-5 update), run the canonical registration. This step is the AC: every solution-file write in Step 9 is followed by a `solutions:db:add`. `add` upserts, so it handles both a new row and an update to an existing one, and it re-exports the file in canonical form:
-
-   ```bash
-   npm run solutions:db:add -- docs/solutions/<category>/<slug>.md
-   ```
-
-   Then stage and commit only the **tracked** codification targets. Do **not** attempt to stage any `docs/solutions/` file (`git add` would silently no-op on the gitignored mirror); only `.claude/agents/*.md` and `docs/rules/*.md` are tracked:
+   Stage and commit every accepted codification target together — solution files (new or item-5 updates that passed 6b), `.claude/agents/*.md`, and `docs/rules/*.md`:
 
    ```bash
-   # Stage only tracked codification targets — never the solution file.
-   git add <tracked codification target(s)>
+   git add docs/solutions/<category>/<slug>.md <other codification target(s)>
 
-   # If at least one tracked target was staged, commit it.
+   # If at least one target was staged, commit it.
    if ! git diff --cached --quiet; then
      git commit -m "$(cat <<'EOF'
    docs: codify patterns and reviewer checks from <todo title>
@@ -419,10 +410,6 @@ Skip 6b entirely if no solution file was created or updated (codify only touched
    )"
    fi
    ```
-
-   If only a solution was codified (no tracked agent/rules targets), there is no commit — the codification persists in `ocrecipes_solutions` via the `solutions:db:add` above, independently of the worktree's lifecycle. Skipping the empty commit avoids a misleading "nothing to commit" failure.
-
-   If `npm run solutions:db:add` exits non-zero (e.g. missing `SOLUTIONS_DATABASE_URL`/`AI_INTEGRATIONS_OPENAI_API_KEY`, or the DB is unreachable), log `codification skipped — solutions:db:add failed` and report it in Step 11 (`CODIFICATION_COMMIT: solutions:db:add failed — …`); the solution file remains on disk and a later **manual** `npm run solutions:db:ingest` (run by the orchestrator or a human — it is not self-healing) reconciles it into the DB. Registration failure is non-blocking.
 
    If `kimi-write` exits non-zero for any target, log "codification skipped — kimi-write failed" for that target and continue to Step 10. Codification failure is non-blocking.
 
@@ -548,8 +535,8 @@ COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "null" if PR creation failed>
 MERGE_ELIGIBLE: <yes (guard OK — safe for the user's batch-merge on green CI) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | review-required (high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
-CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b> | solutions:db:add failed — <reason, file left on disk for solutions:db:ingest>
-SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written and passed the 6b sanity-check — report it even if step 7's solutions:db:add failed (the file is on disk; DB-registration status is carried by CODIFICATION_COMMIT), or "none" if no solution was codified>
+CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b>
+SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written, passed the 6b sanity-check, and was committed in step 7, or "none" if no solution was codified>
 
 FILES_CHANGED: <list of modified files>
 SHORT_CIRCUIT: <docs/solutions path reused as the primary guide (researcher skipped), or "none">

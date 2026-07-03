@@ -10,7 +10,7 @@
 > **regenerable view**, not a hand-maintained list — see [§ Operating Model](#operating-model-keeping-this-living)
 > for the queries that refresh every count and the prevention-wiring roadmap.
 >
-> **Last generated:** 2026-06-18 · **Source of truth:** `ocrecipes_solutions` DB + `docs/audits/CHANGELOG.md`
+> **Last generated:** 2026-06-18 · **Source of truth:** the `docs/solutions/` corpus + `docs/audits/CHANGELOG.md`
 > · **Tracking:** committed (not gitignored) so it ships to every worktree, CI, and Copilot.
 >
 > **Salvage note (2026-06-20):** restored to `main` from a pre-#403 branch where it had
@@ -18,6 +18,11 @@
 > 2026-06-19 full audit (#406) or its codified solutions; some Operating-Model items
 > (recent-issue surfacing, scheduled-drift freshness) shipped in the prevention loop (#405).
 > Re-generate per [§ Operating Model](#operating-model-keeping-this-living) to refresh.
+>
+> **Cutover note (2026-07-03):** the `ocrecipes_solutions` Postgres DB referenced throughout
+> was retired — `docs/solutions/*.md` is now the canonical, git-tracked store. Mentions of the
+> DB below are historical (counts were generated from it); regenerate any count with a
+> frontmatter grep over `docs/solutions/` (e.g. `grep -rl '^tags:.*\btag\b' docs/solutions`).
 
 ---
 
@@ -437,17 +442,17 @@ mechanism. trends.md plugs into them; it does not parallel them.
 
 ### 1. trends.md is a _generated view_, not a hand-maintained list
 
-Every count and family in this doc derives from the `ocrecipes_solutions` DB (and the audit
-CHANGELOG). So the refresh story is "re-run the query," exactly like `docs/solutions/` is a
-regenerated mirror of the DB. Proposed generator (a script to add later — **not** created by this
-report, per the no-code constraint):
+Every count and family in this doc derives from the codified-solutions corpus (`docs/solutions/`,
+git-tracked) and the audit CHANGELOG. So the refresh story is "re-run the query" — today that
+means a frontmatter grep/filter over the tree. Proposed generator (a script to add later — **not**
+created by this report, per the no-code constraint):
 
 ```bash
 # scripts/generate-trends.ts  (proposed)
 #   1. Read a small hand-curated docs/trends.config.yaml: the 16 families, each with
-#      { id, title, domain, rules_file, regenerating_sql, existing_guard, gap, proposed_guard }.
-#   2. For each family, run regenerating_sql against ocrecipes_solutions → current codified count
-#      + severity skew + top-N representative titles.
+#      { id, title, domain, rules_file, regenerating_query, existing_guard, gap, proposed_guard }.
+#   2. For each family, run regenerating_query (a tags/category frontmatter filter) over
+#      docs/solutions/ → current codified count + severity skew + top-N representative titles.
 #   3. Cross-join the audit-recurrence % from a parsed docs/audits/CHANGELOG.md.
 #   4. Render docs/trends.md from a template (the prose stays in the config; only the numbers and
 #      example titles are regenerated). Stamp "Last generated: <date>".
@@ -455,15 +460,14 @@ report, per the no-code constraint):
 ```
 
 The _taxonomy and prose_ live in a tiny config (human-curated, rarely changes); the _numbers and
-examples_ are pulled from the DB at generate-time. This is the same separation that keeps
+examples_ are pulled from the corpus at generate-time. This is the same separation that keeps
 `copilot-instructions.md` generated-but-stable from `scripts/lib/path-domains.ts`.
 
 ### 2. Indexing & search — reuse what exists, don't reinvent
 
-- **Semantic + structured search** is already live: the `solutions-db` MCP server
-  (`search_solutions`, `find_by_applies_to`, `sql`) over `tsvector` + embeddings. trends.md should
-  _point at_ these, not duplicate them — each family lists the `tags`/`category` filter that pulls its
-  members.
+- **Structured search** is a frontmatter grep over the tracked corpus (`^tags:`, `^applies_to:`,
+  `category` = directory). trends.md should _point at_ these, not duplicate them — each family
+  lists the `tags`/`category` filter that pulls its members.
 - **Write-time injection** is already live: `inject-patterns.sh` injects `docs/rules/<domain>.md`
   by path→domain. **The lightest-touch upgrade:** add a one-line pointer to the relevant trends.md
   family in each `docs/rules/<domain>.md` header, so the agent meets the trend context exactly when it
@@ -479,7 +483,7 @@ reviewed manually (the scheduled-runner design, `AI_DRIFT_AUTOMATION.md`, was de
 existing checklist; extend it by adding **one row** rather than building a new system:
 
 ```
-| DRIFT-010 | trends.md freshness | monthly | pending | — | — | docs/trends.md, ocrecipes_solutions DB |
+| DRIFT-010 | trends.md freshness | monthly | pending | — | — | docs/trends.md, docs/solutions/ |
   Run `npm run trends:generate --check`; flag if regenerated counts differ from the committed file
   (i.e. new codified bugs have landed since last generate) or if last-generated date > 35 days old. |
 ```
@@ -490,7 +494,7 @@ re-generates.
 ### 4. The closed loop (this is the actual goal)
 
 ```
-   bug found ──▶ /codify ──▶ ocrecipes_solutions DB ──▶ npm run trends:generate ──▶ docs/trends.md
+   bug found ──▶ /codify ──▶ docs/solutions/*.md (tracked) ──▶ npm run trends:generate ──▶ docs/trends.md
         ▲                                                          │
         │                                                          ▼
         └──────  prevention guard (lint / check-*.js / ast-grep / test)  ◀── Prevention Scorecard
@@ -503,9 +507,9 @@ trends.md becomes the _measure_ of how much recurring-error surface has been mec
 
 ### What this is **not**
 
-- Not a replacement for `docs/rules/` (binding per-domain rules) or the solutions DB (per-item store).
+- Not a replacement for `docs/rules/` (binding per-domain rules) or `docs/solutions/` (per-item store).
   It is the **aggregate + gap layer** above them.
-- Not a new search engine — it points at the existing MCP search.
+- Not a new search engine — it points at the existing frontmatter-grep conventions.
 - Not auto-edited — like the AI-drift checklist, it's human-curated prose + machine-regenerated
   numbers; a scheduled check _reports_ staleness, it doesn't rewrite meaning.
 
@@ -513,7 +517,7 @@ trends.md becomes the _measure_ of how much recurring-error surface has been mec
 
 ## Sources & precedent
 
-**Internal:** `docs/audits/CHANGELOG.md` + 45 manifests; `ocrecipes_solutions` DB; `docs/PATTERNS.md`;
+**Internal:** `docs/audits/CHANGELOG.md` + 45 manifests; the `docs/solutions/` corpus; `docs/PATTERNS.md`;
 `docs/rules/*.md`; `.claude/skills/codify/SKILL.md`; `docs/AI_DRIFT_CHECKLIST.md`; `eslint-plugin-ocrecipes`; `scripts/check-{accessibility,idor-storage,
 hardcoded-colors}.js`.
 

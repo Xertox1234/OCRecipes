@@ -3,10 +3,10 @@
 ---
 
 title: "Solutions KB: make the markdown mirror canonical, retire the Postgres/pgvector layer"
-status: backlog
+status: done
 priority: low
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-03
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -69,3 +69,25 @@ correctly HOLD it for individual review.
   at 568 files).
 - Step 3a read-back in todo-executor.md references MCP tools; its markdown fallback path
   already exists and becomes the primary — verify the fallback greps still match the corpus.
+
+## Updates
+
+### 2026-07-03 (completion)
+
+- **DONE** — implemented on `todo/solutions-kb-markdown-canonical` (4 commits: corpus tracked,
+  hooks markdown-only, DB layer deleted, prose inverted). All acceptance criteria met. Final
+  export verified at exact parity (573 rows == 573 files, round-trip green) before cutover;
+  injection output byte-identical to the pre-cutover baseline; digest row set identical to the
+  retired SQL. Stale trusted-kimi file purged. Every hook test suite green.
+
+### 2026-07-03
+
+- Bumped `status: backlog → planned` — staged as the **keystone** harness item for the next
+  session. Do this first: it retires the DB layer so the sibling
+  `P3-2026-07-02-inject-patterns-payload-tuning` collapses to a single markdown-only edit
+  (its Gate C equivalence AC is voided once this lands).
+- Serialization note: this shares `inject-patterns.sh` + `test-inject-patterns.sh` with the
+  inject-patterns todo, and `codify/SKILL.md` + `todo-executor.md` with
+  `P3-2026-07-02-typescript-crosscut-label-in-path-domains-cli`. Those cannot run as a parallel
+  `/todo` batch — one reviewed PR at a time. All touch `.claude/`/`scripts/`, so the automerge
+  guard HOLDS each for individual review.

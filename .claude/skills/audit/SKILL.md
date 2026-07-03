@@ -81,8 +81,8 @@ Dispatched as a **single invocation** (not cluster-based — the lens is one min
 
 The audit produces two classes of artifact:
 
-- **Tracked** — code fixes, `docs/rules/` edits, `.claude/agents/` edits. These live in the worktree and ride the audit branch.
-- **Gitignored** — manifest (`docs/audits/YYYY-MM-DD-<scope>.md`), `docs/audits/CHANGELOG.md` append, codified solution files (`docs/solutions/...`). These have no branch to persist on, so they live in the **main checkout** and survive when `git worktree remove` runs in Phase 9.
+- **Tracked** — code fixes, `docs/rules/` edits, `.claude/agents/` edits, codified solution files (`docs/solutions/...`). These live in the worktree and ride the audit branch.
+- **Gitignored** — manifest (`docs/audits/YYYY-MM-DD-<scope>.md`), `docs/audits/CHANGELOG.md` append. These have no branch to persist on, so they live in the **main checkout** and survive when `git worktree remove` runs in Phase 9.
 
 Phase 1 sets up both correctly.
 
@@ -304,7 +304,7 @@ This phase reviews the **whole multi-file diff** — a deeper pass than Phase 3'
 
 After code review is clean:
 
-1. Stage all changed files: code fixes + review fixes + any new todos. (The manifest, `docs/audits/CHANGELOG.md`, and codified solution files live in the **main checkout** — `$MAIN_CHECKOUT/docs/audits/...` and `$MAIN_CHECKOUT/docs/solutions/...` — per Phase 1's setup. They are gitignored and never stage from the worktree; their persistence is by living outside the worktree, not by commit.)
+1. Stage all changed files: code fixes + review fixes + any new todos + codified solution files (`docs/solutions/...` is tracked — stage from the worktree like any other change). (The manifest and `docs/audits/CHANGELOG.md` live in the **main checkout** — `$MAIN_CHECKOUT/docs/audits/...` — per Phase 1's setup. They are gitignored and never stage from the worktree; their persistence is by living outside the worktree, not by commit.)
 2. Commit with message format:
    ```
    fix: resolve [scope] audit findings ([N] verified, [M] deferred)
@@ -322,7 +322,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    - **Learnings** — Findings that revealed gotchas, bugs with interesting root causes, or security/performance lessons
    - **Reviewer agent updates** — New checks a reviewer agent should enforce going forward
 2. For each candidate, apply this decision matrix:
-   - Reusable knowledge (recurring solution, gotcha, bug root cause, performance issue, security rule, etc.) → **Solution** → create one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"` — in the main checkout, not the worktree (see Phase 1 setup). See `.claude/skills/codify/SKILL.md` Step 5 for the 7-way category routing rubric (by finding nature) and Step 6 for the body template. Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor). Then run `npm run solutions:db:add -- <that-file>` so the canonical DB and its mirror are updated (see `/codify`).
+   - Reusable knowledge (recurring solution, gotcha, bug root cause, performance issue, security rule, etc.) → **Solution** → create one new file at the worktree-relative path `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md` — the tree is git-tracked, so it commits on the audit branch like any other change. See `.claude/skills/codify/SKILL.md` Step 5 for the 7-way category routing rubric (by finding nature) and Step 6 for the body template. Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor).
    - New review check needed → **Reviewer agent update** → add it to the **single owning reviewer file** per the canonical routing table in `.claude/skills/codify/SKILL.md` Step 5 (single-write rule — never dual-write a rule into two agents)
 3. **Audit-specific routing** (domains the codify table does not cover):
 
@@ -332,7 +332,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
    | Maintainability | reinforce `.claude/skills/audit/maintainability-checklist.md` itself (the mindset doc) — sharpen rule 0, the dedup guard, or the approval bar when a finding reveals a missing structural-quality lens. **Do NOT** add maintainability checks to reviewer agents' checklists (they would dilute the reviewer's defect focus). High-severity findings whose root cause is a "never do X" boundary or type-contract rule may also append a bullet to `docs/rules/architecture.md` or `docs/rules/typescript.md` per the Phase 5b criteria. |
 
 4. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip standard fixes.
-   - For **solutions**, create one new file at `"$MAIN_CHECKOUT/docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md"` (main checkout, not the worktree). Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
+   - For **solutions**, create one new file at the worktree-relative path `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Why` / `## Examples` / `## Related Files` / `## See Also`).
    - For **reviewer agent updates**, add the checklist item to the one owning `.claude/agents/*.md` file (codify Step 5 routing); when the owner is `security-auditor` and the finding is a repeatable failure mode, extend its `Common Vulnerabilities to Catch` list too.
 5. Review the codification diff for accuracy and scope. Keep it limited to the reusable knowledge extracted from the audit.
    5b. **Rules routing**: For each codified finding that was CRITICAL or HIGH severity, evaluate whether it warrants a `docs/rules/{domain}.md` entry. Criteria — all three must be true:
