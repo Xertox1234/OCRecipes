@@ -38,11 +38,9 @@ client/
 │   ├── ThemedView.tsx
 │   ├── CalorieBudgetBar.tsx
 │   ├── ChatBubble.tsx
-│   ├── CuisineTag.tsx
 │   ├── GroceryListPickerModal.tsx
 │   ├── HighProteinSuggestions.tsx
 │   ├── HistoryItemActions.tsx
-│   ├── HomeRecipeCard.tsx
 │   ├── MealSuggestionsModal.tsx
 │   ├── MicronutrientBar.tsx
 │   ├── MicronutrientSummary.tsx
