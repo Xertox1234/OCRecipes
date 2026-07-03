@@ -54,16 +54,24 @@ jobs:
       - name: Verify .github/copilot-instructions.md is current
         run: npm run build:copilot-instructions:check
 
-      - name: Commit-verify hook tests
-        run: bash .claude/hooks/test-commit-verify.sh
-      - name: Branch-preflight hook tests
-        run: bash .claude/hooks/test-branch-preflight.sh
-      - name: PR-verify hook tests
-        run: bash .claude/hooks/test-pr-verify.sh
-      - name: PR preflight guard hook test
-        run: bash .claude/hooks/test-pr-preflight-guard.sh
-      - name: Session recent-issues hook test
-        run: bash .claude/hooks/test-session-recent-issues.sh
+      # Mirror of the hook-test loop in scripts/preflight.sh (full mode) — same glob, same
+      # git-env stripping, so the two runners can't drift on membership and newly-added hook
+      # tests run automatically. The zero-count guard keeps the glob from failing open if the
+      # tests are ever renamed or relocated (an unmatched glob would otherwise pass green).
+      - name: Hook self-tests (.claude/hooks/test-*.sh)
+        run: |
+          ran=0
+          for t in .claude/hooks/test-*.sh; do
+            [ -f "$t" ] || continue
+            echo "▶ $t"
+            env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR bash "$t" || exit 1
+            ran=$((ran+1))
+          done
+          if [ "$ran" -eq 0 ]; then
+            echo "::error::.claude/hooks/test-*.sh matched no files — hook self-test suite did not run"
+            exit 1
+          fi
+          echo "✓ $ran hook self-tests passed"
 
   test:
     name: Tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
