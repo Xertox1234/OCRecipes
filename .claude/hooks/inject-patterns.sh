@@ -26,7 +26,10 @@ SOLUTIONS_PER_DOMAIN=4
 
 # Inline size cap: Claude Code's hook-output cap is ~10K; past THRESHOLD the assembled
 # context is copied to the spill file and truncated inline (see the spill block at the end).
+# The spill file also receives deferred domains' full payloads (rules + solution refs), so
+# deferred content is always recoverable on the CURRENT edit, not only on a later one.
 THRESHOLD=9000
+SPILL_FILE="/tmp/ocrecipes-injection-context.md"
 # Byte budget for FULL domain payloads when session dedup is ON. Once the assembled context
 # would cross this, remaining domains are DEFERRED — a one-line pointer now, full injection
 # on the session's next edit (a deferred domain is simply not recorded in the dedup state).
@@ -98,10 +101,12 @@ if [ -z "$DOMAINS" ]; then
 fi
 
 # Build context in a temp file (avoids subshell newline stripping); BLOCKFILE stages one
-# domain's payload at a time so the deferral decision can measure it before committing it.
+# domain's payload at a time so the deferral decision can measure it before committing it;
+# DEFER_FILE accumulates the full payloads of deferred domains for the spill file.
 TMPFILE=$(mktemp)
 BLOCKFILE=$(mktemp)
-trap 'rm -f "$TMPFILE" "$BLOCKFILE"' EXIT
+DEFER_FILE=$(mktemp)
+trap 'rm -f "$TMPFILE" "$BLOCKFILE" "$DEFER_FILE"' EXIT
 
 printf '=== Pre-write context for %s ===\n' "$FILE_PATH" >> "$TMPFILE"
 
@@ -276,12 +281,15 @@ if [ -n "$DOMAINS" ]; then
 
     # Defer instead of truncate: with session state available and at least one domain already
     # emitted in full, a domain that would push the context over DOMAIN_BUDGET is deferred —
-    # NOT recorded in the dedup state, so the session's next edit injects it in full. The
-    # first domain always emits regardless of size (otherwise an oversized single domain
-    # would defer forever); the spill block below remains the backstop for that case.
+    # NOT recorded in the dedup state, so the session's next edit injects it in full. Its
+    # complete payload (rules + solution refs) is still written to the spill file via
+    # DEFER_FILE, so it is recoverable NOW, not only on a later edit. The first domain
+    # always emits regardless of size (otherwise an oversized single domain would defer
+    # forever); the spill block below remains the backstop for that case.
     if [ "$DEDUP" = "1" ] && [ "$EMITTED_FULL" = "1" ] &&
       [ $(($(wc -c < "$TMPFILE") + $(wc -c < "$BLOCKFILE"))) -gt "$DOMAIN_BUDGET" ]; then
-      printf '\n[RULES — %s] deferred (inline size cap) — auto-injects on a later edit this session; or read docs/rules/%s.md now.\n' "$DOMAIN" "$DOMAIN" >> "$TMPFILE"
+      printf '\n[RULES — %s] deferred (inline size cap) — full payload in %s now; auto-injects on a later edit this session.\n' "$DOMAIN" "$SPILL_FILE" >> "$TMPFILE"
+      cat "$BLOCKFILE" >> "$DEFER_FILE"
       continue
     fi
 
@@ -293,17 +301,27 @@ if [ -n "$DOMAINS" ]; then
   done
 fi
 
-# Spill overflow to a stable temp file so the agent can read the rest (THRESHOLD is defined
-# at the top). With session dedup ON the deferral above keeps injections under the cap, so
-# this is now the backstop for session-less runs and single domains too big for the budget.
-SPILL_FILE="/tmp/ocrecipes-injection-context.md"
+# Spill overflow to a stable temp file so the agent can read the rest (THRESHOLD/SPILL_FILE
+# are defined at the top). With session dedup ON the deferral above keeps injections under
+# the cap, so truncation is now the backstop for session-less runs and single domains too
+# big for the budget. Deferred domains' full payloads always land in the spill file too —
+# appended after the full context on truncation, or written alone when the inline fit.
 CONTEXT_SIZE=$(wc -c < "$TMPFILE")
 if [ "$CONTEXT_SIZE" -gt "$THRESHOLD" ]; then
   cp "$TMPFILE" "$SPILL_FILE"
+  if [ -s "$DEFER_FILE" ]; then
+    printf '\n=== Deferred domain payloads (referenced by the deferred pointers above) ===\n' >> "$SPILL_FILE"
+    cat "$DEFER_FILE" >> "$SPILL_FILE"
+  fi
   head -c 8800 "$TMPFILE" > "${TMPFILE}.trunc"
   mv "${TMPFILE}.trunc" "$TMPFILE"
   printf '\n\n[TRUNCATED — %d bytes total. Full pattern context written to %s. Read that file for the rest before editing.]\n' \
     "$CONTEXT_SIZE" "$SPILL_FILE" >> "$TMPFILE"
+elif [ -s "$DEFER_FILE" ]; then
+  {
+    printf '=== Deferred domain payloads for %s (referenced by the inline deferred pointers) ===\n' "$FILE_PATH"
+    cat "$DEFER_FILE"
+  } > "$SPILL_FILE"
 fi
 
 # Output hook response JSON

@@ -342,21 +342,24 @@ else
   echo "FAIL: preamble dedup → session-less edits always get the full preamble"; FAIL=$((FAIL + 1))
 fi
 
-# --- First-touch payloads fit inline (deferral instead of spill) ---
+# --- First-touch payloads fit inline (deferral instead of truncation) ---
 # With session dedup ON, a first-touch multi-domain edit must land under the spill
 # threshold: over-budget domains are deferred with a one-line pointer (and NOT recorded in
-# the dedup state) instead of byte-truncating the payload to the spill file. The two
-# hottest edit paths (client/components: 4 domains; server/routes: 3 domains) both
-# overflowed to the spill before deferral existed.
+# the dedup state) instead of byte-truncating the payload. Their full payloads land in the
+# spill file (recoverable now), so the spill file EXISTING is expected — the failure mode
+# being pinned is the inline TRUNCATED marker. The two hottest edit paths
+# (client/components: 4 domains; server/routes: 3 domains) both truncated before deferral
+# existed. The byte bound is derived from the hook's THRESHOLD, not hardcoded.
+THRESH=$(grep -m1 '^THRESHOLD=' "$HOOK" | cut -d= -f2)
 for tf in client/components/RecipeCard.tsx server/routes/recipes.ts; do
   sid="itest-firsttouch-$(basename "$tf" | tr '.' '-')"
   rm -f "/tmp/ocrecipes-pattern-inject-${sid}"
   ft=$(inline_ctx "{\"session_id\":\"${sid}\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"${tf}\"}}")
   ft_bytes=$(printf '%s' "$ft" | wc -c | tr -d ' ')
-  if [ "${ft_bytes:-9999}" -le 9000 ] && ! echo "$ft" | grep -q "TRUNCATED" && [ ! -f "$SPILL_FILE" ]; then
-    echo "PASS: first touch $tf fits inline (${ft_bytes} B, no spill)"; PASS=$((PASS + 1))
+  if [ "${ft_bytes:-99999}" -le "${THRESH:-9000}" ] && ! echo "$ft" | grep -q "TRUNCATED"; then
+    echo "PASS: first touch $tf fits inline (${ft_bytes} B, no truncation)"; PASS=$((PASS + 1))
   else
-    echo "FAIL: first touch $tf fits inline (got ${ft_bytes} B; TRUNCATED marker or spill file present)"; FAIL=$((FAIL + 1))
+    echo "FAIL: first touch $tf fits inline (got ${ft_bytes} B vs cap ${THRESH:-9000}, or TRUNCATED marker present)"; FAIL=$((FAIL + 1))
   fi
   rm -f "/tmp/ocrecipes-pattern-inject-${sid}"
 done
@@ -372,6 +375,13 @@ if echo "$d1" | grep -qF "[RULES — api] deferred" && ! echo "$d1" | grep -qF "
   echo "PASS: deferral → first touch defers api with a pointer, not a truncated body"; PASS=$((PASS + 1))
 else
   echo "FAIL: deferral → first touch defers api with a pointer, not a truncated body"; FAIL=$((FAIL + 1))
+fi
+# The deferred domain's FULL payload (rules body + solution refs) must be recoverable NOW
+# via the spill file the pointer names — not only on a later edit.
+if [ -f "$SPILL_FILE" ] && grep -qF "handleRouteError" "$SPILL_FILE" && grep -qF "SOLUTIONS — api" "$SPILL_FILE"; then
+  echo "PASS: deferral → deferred payload (rules + solution refs) recoverable from the spill file now"; PASS=$((PASS + 1))
+else
+  echo "FAIL: deferral → deferred payload (rules + solution refs) recoverable from the spill file now"; FAIL=$((FAIL + 1))
 fi
 d2=$(inline_ctx "$DEFER_SESS")
 if echo "$d2" | grep -qF "handleRouteError" && echo "$d2" | grep -qF "[RULES — security] already injected"; then
