@@ -97,22 +97,26 @@ the todo, archive it inside the same commit, open a PR, and run
 scripts/todo-automerge-guard.sh to classify it (MERGE_ELIGIBLE). NEVER merge anything —
 no `gh pr merge` in any form; every PR waits for my morning batch-merge. Your job:
 dispatch /todo, watch the results, and enforce the stop conditions. A guard HOLD
-(sensitive path) is a valid terminal state, not a failure.
-DONE when: every actionable low/medium todo appears in an accumulated /todo Phase 5
-summary as one of: open PR (PR_URL), "Awaiting batch-merge", "Gated on batch-merge",
-"Gated on a dependency (not yet implemented)", "Stale branch — self-clears next run",
-"Skipped — quality flags" (needs MY re-authoring — terminal for tonight, do not
-re-dispatch hoping it changes), or blocked-with-reason — AND the latest /todo Phase 5
-verification line is green. Evaluate
+(path or todo-frontmatter gate) is a valid terminal state, not a failure.
+DONE when: every actionable low/medium todo appears in SOME listing group of the latest
+accumulated /todo Phase 5 summary, or as blocked-with-reason, or as a `failed` row in
+the Phase 5 table — AND the latest /todo Phase 5 verification line is green. Every Phase
+5 listing group is a terminal state for the night (the skill guarantees this): open PR,
+awaiting/gated on batch-merge, dependency not yet implemented, stale branch, "Skipped —
+quality flags" (that one needs MY re-authoring). A failed todo is terminal for the night
+too — leave it for my morning review. Never re-dispatch a listed or failed todo hoping
+its outcome changes. Evaluate
 DONE from the Phase 5 reports you already hold; do NOT re-run test:run / check:types /
 lint yourself and do NOT re-query GitHub per todo (one final batched `gh pr list` sweep
 to confirm PR states before reporting DONE is fine) — /todo already verified and
 classified everything once per dispatch.
-STOP EARLY and wait for me if: 10 PRs opened, OR 1.5M output tokens, OR 2 executor
-failures (two todos failing once each, or one todo failing twice), OR any todo blocks
-with an ACTION NEEDED reason (an orphan branch or an unverifiable PR state — needs my
-one-time manual check/delete; an open-PR collision is just "awaiting batch-merge", not
-a stop condition).
+STOP EARLY and wait for me if: 10 PRs opened, OR 1.5M output tokens, OR 2 STATUS:
+failed reports accumulated across the night — two different todos, or the same todo
+failing in two dispatches (each report already represents the executor's two internal
+attempts), OR any todo blocks with REASON_CODE: ORPHAN_BRANCH, PR_CHECK_FAILED,
+or PR_CLOSED_UNMERGED — the ACTION NEEDED codes (an orphan branch, an unverifiable PR
+state, or a PR closed without merging — each needs my one-time decision; an open-PR
+collision is just "awaiting batch-merge", not a stop condition).
 ```
 
 ## Launch

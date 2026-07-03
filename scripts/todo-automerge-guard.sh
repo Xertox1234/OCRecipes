@@ -26,7 +26,10 @@
 #
 # Usage:  scripts/todo-automerge-guard.sh <pr-number>
 # Exit 0 = eligible for the user's batch-merge (MERGE_ELIGIBLE: yes) — NOT a merge command
-# Exit 1 = HOLD: a changed file is sensitive or not on the allowlist (individual review)
+# Exit 1 = HOLD: needs individual review — a changed file is sensitive / not on the
+#          allowlist, or the TODO gate failed (no archived todo in the diff, an archive
+#          file absent from the PR head, priority not low/medium, or 'security' in its
+#          frontmatter)
 # Exit 2 = ERROR: could not evaluate (gh failure / empty diff) — fail-closed, treat as HOLD
 # The caller distinguishes a real HOLD (1) from a tooling error (2): a HOLD means the PR
 # needs individual review; an error means eligibility couldn't be decided (e.g. gh unauth).
@@ -74,15 +77,29 @@ if [ -z "$todo_files" ]; then
 fi
 while IFS= read -r tf; do
   [ -z "$tf" ] && continue
-  raw="$(gh api -H "Accept: application/vnd.github.raw" "repos/{owner}/{repo}/contents/${tf}?ref=refs/pull/${PR}/head" 2>/dev/null)" || {
+  # Capture stderr too: a 404 (file listed in the diff but absent from the PR head) is a
+  # policy HOLD — the archive can't be verified, so the PR can't be eligible. Any other
+  # failure stays exit 2 (tooling error), with the gh error echoed instead of discarded.
+  # On SUCCESS, stray stderr noise (e.g. a gh update banner) can land in $raw — harmless:
+  # the frontmatter awk below only reads lines between the first pair of --- markers.
+  if ! raw="$(gh api -H "Accept: application/vnd.github.raw" "repos/{owner}/{repo}/contents/${tf}?ref=refs/pull/${PR}/head" 2>&1)"; then
+    if grep -qE '\bHTTP 404\b|"status": *"404"' <<< "$raw"; then
+      echo "guard: HOLD PR #$PR — ${tf} is listed in the diff but absent from the PR head (deleted?); cannot verify frontmatter"
+      echo "Needs individual review; exclude from the batch-merge."
+      exit 1
+    fi
     echo "guard: ERROR PR #$PR — could not read ${tf} from the PR head (gh error). Fail-closed."
+    printf '%s\n' "$raw"
     exit 2
-  }
+  fi
   # Frontmatter = lines between the first pair of --- markers. Here-strings, not
   # `printf | …` pipes: under pipefail a producer-pipe into an early-exiting consumer
   # can fail open via SIGPIPE (see solutions DB: pipefail-echo-grep-condition).
   fm="$(awk '/^---[[:space:]]*$/{n++; next} n==1' <<< "$raw")"
-  prio="$(sed -n 's/^priority:[[:space:]]*//p' <<< "$fm" | head -n1 | tr -d "[:space:]\"'" | tr '[:upper:]' '[:lower:]')"
+  # Single awk (prints the first match, then exits itself) — the previous `sed | head -n1`
+  # form is a consumer-kills-producer pipe that can die 141 under pipefail when head
+  # closes the pipe early. Same SIGPIPE family as the here-string note above.
+  prio="$(awk '/^priority:/{sub(/^priority:[[:space:]]*/,""); print; exit}' <<< "$fm" | tr -d "[:space:]\"'" | tr '[:upper:]' '[:lower:]')"
   case "$prio" in
     low|medium) : ;;
     *)
