@@ -6,8 +6,9 @@ module: shared
 severity: medium
 tags: [ci, prettier, solutions-db, inject-patterns, yaml-frontmatter, grep, fixtures, hook-equivalence]
 symptoms: ['CI ''Solutions-DB gates'' job fails at Gate C with ''GATE C FAILED: N/M probes diverged.''', hook-equivalence-check.ts reports 'MISMATCH for <file> (md=0 db=2)' with the same solution listed twice under db-only, A solution the DB inject path surfaces is invisible to the markdown fallback path (md=0) even though its tags clearly match the domain, The divergence is on exactly one fixture; the other probes pass]
-applies_to: [.prettierignore, scripts/solutions-db/__fixtures__/**/*.md, .claude/hooks/inject-patterns.sh]
+applies_to: [.prettierignore, docs/solutions/**/*.md, .claude/hooks/inject-patterns.sh, .gitignore]
 created: '2026-06-21'
+last_updated: '2026-07-03'
 ---
 
 # Prettier wraps committed solutions-db fixtures, breaking the grep-based markdown inject path (Gate C)
@@ -102,14 +103,29 @@ matches; `gray-matter` still parses `tags`/`applies_to`; CI Gate C goes green.
   under your control.
 - A green pure-lib unit test does not prove inject equivalence — Gate C is the
   only check that exercises the hook's two real paths end-to-end. Keep it green.
+- **Un-gitignoring a tree is a behavior change, not just git bookkeeping: every
+  staged-file hook (lint-staged patterns, pre-commit checks) suddenly applies to
+  it.** Audit the lint-staged globs against the tree's format invariants and add
+  the ignore-file entries BEFORE the mass `git add` — ordering is load-bearing,
+  because the reformat happens at commit time and is silent. This trap recurred
+  2026-07-03 when the whole `docs/solutions/` corpus (572 files) became tracked
+  for the markdown-canonical cutover; `docs/solutions/` went into
+  `.prettierignore` first, and a post-commit assertion verified every committed
+  `tags:` array was still single-line.
+
+## Update (2026-07-03)
+
+The solutions DB, Gate C, and the fixture corpus described above were retired by
+the markdown-canonical cutover (`docs/solutions/` is now the tracked canonical
+store; PR #491). The Root Cause mechanics and Prevention rules remain current —
+the hook's `^tags:` grep is now the ONLY inject path, so a wrapped array no
+longer causes a divergence; it silently drops the solution from injection.
 
 ## Related Files
 
-- `.prettierignore` — fixture-corpus exemption + rationale comment
-- `.claude/hooks/inject-patterns.sh` — `solutions_from_markdown` (grep) vs `solutions_from_db` (parsed array)
-- `scripts/solutions-db/hook-equivalence-check.ts` — Gate C probe harness
-- `scripts/solutions-db/__fixtures__/solutions/` — committed fixture corpus
-- `.github/workflows/ci.yml` — "Solutions-DB gates" job (advisory; parity · round-trip · hook-equiv)
+- `.prettierignore` — `docs/solutions/` exemption + rationale comment (fixture-corpus entry retired 2026-07)
+- `.claude/hooks/inject-patterns.sh` — `solutions_from_markdown` (the sole inject path since 2026-07)
+- `.gitignore` — where `docs/solutions/` was un-ignored in the cutover
 
 ## See Also
 
