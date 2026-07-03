@@ -94,7 +94,6 @@ docs/plans/
 # AI-workflow history: kept locally, not synced to GitHub.
 # (todos/ stays tracked on purpose — it feeds Copilot work assignment.)
 docs/superpowers/
-docs/solutions/
 docs/audits/
 docs/research/
 docs/LEARNINGS.md
