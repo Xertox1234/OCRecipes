@@ -63,33 +63,36 @@ git diff <resolved-range> --name-only | xargs npx tsx scripts/lib/path-domains.t
 ```
 
 This prints the comma-separated union of **routing labels** (rules-domains plus
-routing-only labels such as `camera`, used by Step 2 to pick specialist agents)
+routing-only labels such as `camera`, used by Step 2 to pick domain reviewers)
 across all changed files. The mapping is defined once in
 `scripts/lib/path-domains.ts` — the same source the generated
 `.github/copilot-instructions.md` and `.claude/hooks/lib/domain-map.sh` derive
 from. **In addition, include `typescript` whenever any changed file is a `.ts`
 or `.tsx` file** (a cross-cutting policy the CLI does not add).
 
-## Step 2 — Map domains to specialist review agents
+## Step 2 — Map domains to review agents
 
-The domain labels from Step 1 carry forward to two places: they tell the code-reviewer subagent (Step 3) which lenses matter most, and they drive the self-improvement routing in Step 5 (which specialist agents get a new review rule). Map each label to its specialist agent(s):
+> **Canonical routing tables.** This table and the Step 5 agent-update table are the single
+> source of truth for domain→reviewer routing. Other surfaces (`.claude/skills/audit/SKILL.md`,
+> `.claude/agents/todo-executor.md`) point here — never restate these tables elsewhere.
 
-| Domain label(s)                | Specialist agent(s) (self-improvement target)           |
-| ------------------------------ | ------------------------------------------------------- |
-| `security`                     | `security-auditor.md`, `ai-llm-specialist.md`           |
-| `architecture`, `duplication`  | `architecture-specialist.md`, `api-specialist.md`       |
-| `react-native`, `ui`, `camera` | `rn-ui-ux-specialist.md`, `camera-specialist.md`        |
-| `performance`                  | `performance-specialist.md`, `database-specialist.md`   |
-| `testing`, `test`              | `testing-specialist.md`                                 |
-| `database`                     | `database-specialist.md`, `nutrition-domain-expert.md`  |
-| `api`                          | `api-specialist.md`                                     |
-| `hooks`                        | `rn-ui-ux-specialist.md`                                |
-| `typescript`, `types`          | `typescript-specialist.md`                              |
-| `client-state`                 | `rn-ui-ux-specialist.md`                                |
-| `accessibility`                | `accessibility-specialist.md`, `rn-ui-ux-specialist.md` |
-| _(no match)_                   | `code-reviewer.md` only                                 |
+The domain labels from Step 1 carry forward to two places: they tell the reviewers (Step 3) which lenses matter most, and they drive the self-improvement routing in Step 5 (which reviewer file owns a new review rule). The table keys are exactly the labels the `path-domains.ts` CLI emits (the 13 rules-domains + routing-only `camera`) plus the hand-added `typescript` — never invent other keys; they will never match the CLI output:
 
-Combine targets for multiple matched domains. A finding in a touched domain that reveals a reusable review rule updates both `code-reviewer.md` and the matching specialist agent(s) (see Step 5).
+| Domain label(s)                           | Reviewer(s) to dispatch                                    |
+| ----------------------------------------- | ---------------------------------------------------------- |
+| `security`                                | `security-auditor`                                         |
+| `api`, `architecture`                     | `server-reviewer`                                          |
+| `database`                                | `server-reviewer` (+ `ai-reviewer` for nutrition data)     |
+| `react-native`, `design-system`, `camera` | `mobile-reviewer`                                          |
+| `hooks`, `client-state`                   | `mobile-reviewer`                                          |
+| `accessibility`                           | `mobile-reviewer`                                          |
+| `performance`                             | `mobile-reviewer` (client) / `server-reviewer` (server/DB) |
+| `ai-prompting`                            | `ai-reviewer`                                              |
+| `testing`                                 | `code-reviewer`                                            |
+| `typescript`                              | `code-reviewer`                                            |
+| _(no match)_                              | `code-reviewer` only                                       |
+
+Combine dispatch targets for multiple matched domains — dispatching several reviewers over one branch is normal. Rule _ownership_ is different: a finding that reveals a reusable review rule updates exactly **one** owning reviewer file (see Step 5 — single-write rule).
 
 ## Step 3 — Review the branch diff (orchestrator-dispatched, domain-selected)
 
@@ -107,7 +110,7 @@ git diff <resolved-range> --stat
 
 If the diff is empty, set `review_output=""` and proceed to Step 4. Otherwise:
 
-1. **Always include `code-reviewer`** (cross-cutting baseline). Then add the relevant domain specialists for the branch — you already have the touched **domain labels** from Step 1 and their **specialist agents** from the Step 2 mapping — typically **2–3 specialists** on top (a branch usually spans more domains than a single todo). Use content as well as paths (a JWT/ownership change → add `security-auditor` even if Step 1 didn't tag it).
+1. **Always include `code-reviewer`** (cross-cutting baseline). Then add the relevant domain reviewers for the branch — you already have the touched **domain labels** from Step 1 and their **reviewers** from the Step 2 mapping — typically **1–2 domain reviewers** on top (a branch usually spans more domains than a single todo). Use content as well as paths (a JWT/ownership change → add `security-auditor` even if Step 1 didn't tag it).
 2. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the Review-Policy dispatch prompt with `git diff <resolved-range>` as the diff command (the **same resolved range from Step 1** — on the post-merge path this is `HEAD^ HEAD`, **not** `main...HEAD`, or the dispatched reviewers diff an empty range and falsely return "No findings") and the branch name as the context label. **Working-tree safety:** capture `WORKTREE=$(git rev-parse --show-toplevel)` + the current branch/HEAD in your own cwd and require each reviewer to use `git -C "$WORKTREE"` (not `cd`) + a tree check at the start of its prompt (per Review Policy → "Working-tree safety") — a reviewer must be on this branch in this tree or it diffs the wrong range. Each reviews ONLY the changes in the resolved range through its lens and returns `[CRITICAL]/[WARNING]/[SUGGESTION] file:line — description`, or `No findings`.
 3. **Merge** all reviewers' findings (dedupe overlaps), noting which agent reported each.
 
@@ -153,17 +156,19 @@ For each codification candidate, classify by **nature of the finding**, not by r
 2. If the finding documents a rule the diff complied with, or a pattern the diff exemplifies → **knowledge-track** (the user needs the rule + why + examples shape).
 3. Within bug-track, prefer the more specific category (`runtime-errors` > `logic-errors` > `code-quality`). A crash is also a logic error, but `runtime-errors` is the more useful surface for retrieval.
 
-**Agent update target** (self-improvement — only when the finding reveals a reusable review rule). A single candidate may update both a solution file and one or more agents.
+**Agent update target** (self-improvement — only when the finding reveals a reusable review rule). A single candidate may update a solution file and one agent.
 
-| Finding domain | Update agent(s)                                                                                                           |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Security       | `.claude/agents/security-auditor.md`, `.claude/agents/ai-llm-specialist.md`                                               |
-| Performance    | `.claude/agents/performance-specialist.md`, `.claude/agents/database-specialist.md`                                       |
-| Data integrity | `.claude/agents/database-specialist.md`, `.claude/agents/nutrition-domain-expert.md`                                      |
-| Architecture   | `.claude/agents/architecture-specialist.md`, `.claude/agents/api-specialist.md`                                           |
-| Code quality   | `.claude/agents/quality-specialist.md`, `.claude/agents/typescript-specialist.md`, `.claude/agents/testing-specialist.md` |
-| Camera/vision  | `.claude/agents/camera-specialist.md`, `.claude/agents/rn-ui-ux-specialist.md`                                            |
-| Accessibility  | `.claude/agents/accessibility-specialist.md`, `.claude/agents/rn-ui-ux-specialist.md`                                     |
+**Single-write rule:** a review rule lands in exactly **ONE** owning reviewer file — never dual-written into a second agent. If a finding spans two domains, pick the row matching its root cause. (This table is the canonical routing home — see the Step 2 note.)
+
+| Finding domain                        | Owning agent file                    |
+| ------------------------------------- | ------------------------------------ |
+| Security                              | `.claude/agents/security-auditor.md` |
+| API / architecture / data integrity   | `.claude/agents/server-reviewer.md`  |
+| Server or DB performance              | `.claude/agents/server-reviewer.md`  |
+| Client performance                    | `.claude/agents/mobile-reviewer.md`  |
+| UI/UX / camera/vision / accessibility | `.claude/agents/mobile-reviewer.md`  |
+| AI/LLM / nutrition domain             | `.claude/agents/ai-reviewer.md`      |
+| Code quality / TypeScript / testing   | `.claude/agents/code-reviewer.md`    |
 
 ## Step 6 — Overlap-check, then write one file per finding
 

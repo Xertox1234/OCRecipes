@@ -143,23 +143,13 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 
 ---
 
-**3b — File-path pattern + rules supplement:** After the read-back and (if it ran) the researcher, apply the domain mapping below to the source file paths extracted above. This runs on both paths — it is how the short-circuit path loads domain patterns. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/legacy-patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
+**3b — File-path pattern + rules supplement:** After the read-back and (if it ran) the researcher, derive the domains for the source file paths extracted above from the **single source of truth** — do not maintain or consult a hand-copied mapping table here (a previous inline copy drifted from the source in 3 rows). The canonical mapping is `scripts/lib/path-domains.ts` (the same source `.claude/hooks/lib/domain-map.sh` and the generated `.github/copilot-instructions.md` derive from):
 
-| File path pattern                                                                                                                                   | Additional domains to load                 |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `server/routes/*`                                                                                                                                   | api, security, architecture                |
-| `server/storage/*`, `shared/schema.ts`, `migrations/*`                                                                                              | database, security, architecture           |
-| `server/middleware/*`                                                                                                                               | security, api                              |
-| `server/services/photo-analysis.ts`, `server/services/nutrition-coach.ts`, `server/services/recipe-chat.ts`, `server/services/recipe-generation.ts` | architecture, ai-prompting                 |
-| `evals/*`                                                                                                                                           | ai-prompting, testing                      |
-| `server/services/*`                                                                                                                                 | architecture                               |
-| `client/screens/*`, `client/components/*`                                                                                                           | react-native, design-system, accessibility |
-| `client/navigation/*`                                                                                                                               | react-native, accessibility                |
-| `client/hooks/*`                                                                                                                                    | hooks, client-state, react-native          |
-| `client/context/*`, `client/lib/*`                                                                                                                  | client-state                               |
-| `client/constants/theme.ts`, `design_guidelines.md`                                                                                                 | design-system                              |
-| `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `*.spec.tsx`, `*/__tests__/*`                                                                               | testing                                    |
-| `*.ts`, `*.tsx`                                                                                                                                     | typescript                                 |
+```bash
+npx tsx scripts/lib/path-domains.ts <source file paths...>   # prints the comma-separated union of rules domains
+```
+
+In addition, include `typescript` whenever any source file is a `.ts`/`.tsx` file (a cross-cutting policy the CLI does not add). This runs on both paths — it is how the short-circuit path loads domain patterns. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/legacy-patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
 
 ## Step 3.5 — Advisor pre-check
 
@@ -243,16 +233,8 @@ If `$DIFF` is empty, skip and set `review_output=""`.
 Otherwise:
 
 1. **Inspect the diff** (`git diff HEAD -- .`) — file paths **and** content.
-2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain specialists** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match specialists by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a Drizzle query → add `database-specialist`; a camera screen → add `camera-specialist`; an `any`/Zod change → add `typescript-specialist`). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
-3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the Review-Policy dispatch prompt. Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). Example:
-
-   ```
-   Agent({
-     description: "Review (<domain>): <todo title>",
-     subagent_type: "<selected agent>",
-     prompt: "Your ambient cwd is the main checkout, NOT the tree under review. Use `git -C \"<WORKTREE>\"` for every git command and read files at <WORKTREE>/<path>; do not cd.\n\nFirst confirm the tree: `git -C \"<WORKTREE>\" rev-parse --abbrev-ref HEAD` and `git -C \"<WORKTREE>\" rev-parse --short HEAD` must be <BRANCH>/<HEAD_SHORT> — if not, STOP and report 'wrong working tree'.\n\nThen review ONLY these changed files through your <domain> lens — correctness, security, and OCRecipes pattern compliance (todo: <todo title>):\n<changed-file list>\n\nRun `git -C \"<WORKTREE>\" diff HEAD -- <those files>` to see the changes; read surrounding code at <WORKTREE>/<path> and use LSP for context. Do NOT review unchanged code.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
-   })
-   ```
+2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain reviewers** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match reviewers by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a route, Drizzle query, or service-layering change → add `server-reviewer`; a screen, camera, accessibility, or client-perf change → add `mobile-reviewer`; an AI-service or nutrition-calculation change → add `ai-reviewer`; `any`/Zod/testing changes are already the `code-reviewer` baseline's lens). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
+3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run).
 
 4. **Merge** all reviewers' findings into one list (dedupe where two reviewers flag the same file:line). Store the merged result in working context as `review_output`, noting which agent reported each finding.
 
@@ -358,8 +340,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
 1. Determine which reusable knowledge was produced. A single todo may update more than one target:
    - **Solution** — a reusable rule (knowledge-track) or post-mortem (bug-track) written as one new file at the worktree-relative path `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`, then **registered in the canonical DB** with `npm run solutions:db:add -- <that file>` (step 7 — the `add` call, not the file write, is what persists the solution). The worktree's `docs/solutions/` is a symlink into the main checkout, so a worktree-relative write lands in the real tree and survives worktree teardown; an absolute `$MAIN_CHECKOUT/docs/solutions/...` path is **rejected** by `solutions:db:add`'s path guard when run from the worktree, so always use the worktree-relative form. See `.claude/skills/codify/SKILL.md` Steps 5-6 for the canonical routing rubric and body template; see `docs/solutions/README.md` for the frontmatter schema.
-   - **Code reviewer update** — a new review rule for `.claude/agents/code-reviewer.md` (tracked, in the worktree)
-   - **Specialist agent update** — a new domain-specific review rule for one or more specialist agents (tracked, in the worktree)
+   - **Reviewer agent update** — a new review rule for exactly **one** owning reviewer agent (tracked, in the worktree; single-write — see step 3)
 
 2. Pick the solution category by **nature of the finding**, not by the todo's label. A `security`-labelled todo can produce a `runtime-errors/` crash post-mortem OR a `conventions/` rule depending on what was actually learned. Choose exactly one of the seven destinations:
 
@@ -377,24 +358,13 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
    Do **not** append to `docs/legacy-patterns/*.md` or `docs/LEARNINGS.md` — those monoliths are a frozen archive (retired in the Phase 2 pattern-codification refactor). The codify skill (`.claude/skills/codify/SKILL.md`) is the single source of truth for routing.
 
-3. Route specialist-agent updates using this table when a finding reveals a reusable domain-specific check:
-
-   | Finding Domain | Update Agent(s)                                                              |
-   | -------------- | ---------------------------------------------------------------------------- |
-   | Security       | `security-auditor.md`, `ai-llm-specialist.md`                                |
-   | Performance    | `performance-specialist.md`, `database-specialist.md`                        |
-   | Data integrity | `database-specialist.md`, `nutrition-domain-expert.md`                       |
-   | Architecture   | `architecture-specialist.md`, `api-specialist.md`                            |
-   | Code quality   | `quality-specialist.md`, `typescript-specialist.md`, `testing-specialist.md` |
-   | Camera/vision  | `camera-specialist.md`, `rn-ui-ux-specialist.md`                             |
-   | Accessibility  | `accessibility-specialist.md`, `rn-ui-ux-specialist.md`                      |
+3. Route reviewer-agent updates using the **canonical routing table in `.claude/skills/codify/SKILL.md` Step 5** when a finding reveals a reusable domain-specific check — do not restate the table here (a previous inline copy drifted). **Single-write rule:** the rule lands in exactly ONE owning reviewer file, never dual-written into a second agent.
 
 4. Compose a short description of what was learned: the non-obvious constraint, workaround, reusable rule, or review gap exposed by the todo or by `review_output`.
 
 5. Update the target files directly. Only codify items that are recurring, non-obvious, and project-specific. Skip routine fixes.
    - For **solutions**, first check the `verified_solutions` note from Step 3: if a surfaced solution is in the same category and covers the same files/finding, **update that existing file** at the worktree-relative path `docs/solutions/<category>/<existing-slug>.md` (extend its body, bump `last_updated`) instead of writing a duplicate. Only when no existing solution covers the finding, create one new file at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`. Both the new-file and update-file paths go through step 7's `npm run solutions:db:add -- <file>` after the 6b sanity-check — `add` upserts, so it registers an update as cleanly as a new row. Frontmatter per `docs/solutions/README.md`. Body per the track template (bug-track: `## Problem` / `## Symptoms` / `## Root Cause` / `## Solution` / `## Prevention` / `## Related Files` / `## See Also`; knowledge-track: `## Rule` or `## When this applies` / `## Smell patterns` (optional) / `## Why` / `## Examples` / `## Exceptions` / `## Related Files` / `## See Also`). For `## See Also` links, use a **bare slug** for same-category targets (`[label](other-slug-2026-05-15.md)`) and a `../<target-category>/` prefix for cross-category targets (`[label](../conventions/some-rule-2026-05-15.md)`) — same-category links are routinely mis-typed with a `../` prefix.
-   - For **code reviewer updates**, add checklist items to `.claude/agents/code-reviewer.md` and update `Common Mistakes to Catch` when the issue reflects a recurring review gap.
-   - For **specialist agent updates**, add checklist items to the appropriate `.claude/agents/*.md` file and update `Common Mistakes to Catch` when the finding represents a repeatable failure mode.
+   - For **reviewer agent updates**, add the checklist item to the one owning `.claude/agents/*.md` file (codify Step 5 routing); when the owner is `security-auditor` and the finding is a repeatable failure mode, extend its `Common Vulnerabilities to Catch` list too.
 
 5b. **Rules routing**: If the finding was CRITICAL or HIGH severity AND is a "never do X" class that can be stated in one bullet, append the rule to `docs/rules/{domain}.md`. The domain name is the rules file basename — `security` → `docs/rules/security.md`, `react-native` → `docs/rules/react-native.md`, `accessibility` → `docs/rules/accessibility.md`, etc. All 13 domain files exist: `api`, `architecture`, `database`, `security`, `react-native`, `accessibility`, `design-system`, `hooks`, `client-state`, `typescript`, `performance`, `testing`, `ai-prompting`. Include the updated rules file in the codification commit at step 7.
 
@@ -402,7 +372,7 @@ Decide inline whether this implementation produced knowledge worth preserving. U
 
    ```bash
    kimi-write \
-     --spec "Update this file with reusable knowledge discovered during implementation of '<todo title>': <description of what was learned>. For new solution files at docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md, use the frontmatter schema in docs/solutions/README.md and the body template for the chosen track (bug or knowledge); create cleanly. For an existing solution file being updated via the dedup path, preserve its frontmatter and existing body, extend only the relevant section with the new knowledge, and bump last_updated. For existing agent files, preserve all existing content exactly and add checklist items to the review checklist; update Common Mistakes to Catch when the issue is a recurring failure mode." \
+     --spec "Update this file with reusable knowledge discovered during implementation of '<todo title>': <description of what was learned>. For new solution files at docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md, use the frontmatter schema in docs/solutions/README.md and the body template for the chosen track (bug or knowledge); create cleanly. For an existing solution file being updated via the dedup path, preserve its frontmatter and existing body, extend only the relevant section with the new knowledge, and bump last_updated. For existing agent files, preserve all existing content exactly and add checklist items to the review checklist; when the file is security-auditor and the issue is a recurring failure mode, extend its Common Vulnerabilities to Catch list too." \
      --context <target file> \
      --target <target file>
    ```
@@ -693,31 +663,4 @@ EOF
 
 You are an implementation agent that turns todo specifications into verified, reviewed, committed code changes.
 
-<!-- LSP-AGENT-BLOCK:START -->
-
-## Tooling: LSP-First Symbol Navigation
-
-This repo has the TypeScript LSP wired into the `LSP` tool. For any symbol-level
-work, prefer it over `grep` — it matches semantic identity and resolves the `@/`
-and `@shared/` path aliases; `grep` matches text (comments, strings, unrelated
-same-name identifiers).
-
-- **Find usages / rename-safety:** `findReferences` (not grep).
-- **Jump to a definition:** `goToDefinition`.
-- **Find interface implementations:** `goToImplementation` — e.g. the storage
-  facade interface in `server/storage/index.ts` → its concrete modules.
-- **Impact analysis across layers:** `incomingCalls` / `outgoingCalls` (call
-  hierarchy) — trace `routes → services → storage → db` precisely instead of a
-  flat reference list.
-- **Locate a symbol by name across the repo:** `workspaceSymbol`.
-
-**Cold-start gotcha:** the FIRST LSP query in a session often returns degraded
-results (e.g. `findReferences` returns only the definition). Warm the server with
-a throwaway `hover` first; if any result looks impossibly small, re-run the same
-query once — the second call is correct. Positions are 1-based.
-
-**Ceiling:** the LSP tool is navigation-only — no diagnostics operation, so type
-errors still come from `npm run check:types` / CI. It is TypeScript-only: keep
-using `grep` for `.sql`, config, native code, and plain-text searches.
-
-<!-- LSP-AGENT-BLOCK:END -->
+Symbol work: follow `docs/rules/lsp.md` (auto-injected).

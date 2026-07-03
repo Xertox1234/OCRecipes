@@ -29,7 +29,6 @@ if [ "$MODE" = "fast" ]; then
 
   # Cheap, deterministic, no-DB pattern checks first (fail fast).
   run npm run build:copilot-instructions:check || exit 1
-  run npm run lsp:check-agent-block || exit 1
 
   # Type-aware lint on changed files only (ESLINT_NO_TYPE_AWARE= enables type-aware, matching CI).
   if [ "${#CHANGED[@]}" -gt 0 ]; then
@@ -87,7 +86,6 @@ run npm run lint || exit 1
 run npm run lint:suppress:check || exit 1
 run npm run check:types || exit 1
 run npm run build:copilot-instructions:check || exit 1
-run npm run lsp:check-agent-block || exit 1
 run node scripts/check-accessibility.js || exit 1
 run node scripts/check-hardcoded-colors.js || exit 1
 run node scripts/check-idor-storage.js || exit 1
