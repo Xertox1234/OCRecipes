@@ -3,7 +3,7 @@
 ---
 
 title: "Trim CLAUDE.md (~199 → ~110 lines): cut package.json/architecture restatements, keep footguns"
-status: backlog
+status: done
 priority: low
 created: 2026-07-03
 updated: 2026-07-03
@@ -36,13 +36,13 @@ a hook.
 
 ## Acceptance Criteria
 
-- [ ] CLAUDE.md reduced toward ~110 lines by removing: - Development Commands that only restate `package.json` — **but KEEP the footgun
+- [x] CLAUDE.md reduced toward ~110 lines by removing: - Development Commands that only restate `package.json` — **but KEEP the footgun
       annotations** (e.g. the EAS `--message`/`--platform` locks, `--allow-prod-seed`,
       `db:push` pg_trgm note). - "Architecture" stack lists that are derivable from the code / already in `MEMORY.md`. - Any section duplicated verbatim in `MEMORY.md`, a `.claude/skills/*/SKILL.md`, or a hook.
-- [ ] KEEP intact: Workflow Standards, the Key Patterns / inject-hook mechanics, the
+- [x] KEEP intact: Workflow Standards, the Key Patterns / inject-hook mechanics, the
       Deferred-Todos policy, and the **full Environment Variables inventory** (no `.env.example`
       exists — CLAUDE.md is the only inventory of them).
-- [ ] Each cut diff-reviewed to confirm it is a restatement, not a unique fact — no loss of the
+- [x] Each cut diff-reviewed to confirm it is a restatement, not a unique fact — no loss of the
       footgun knowledge the audit explicitly flagged as load-bearing.
 
 ## Implementation Notes
@@ -73,3 +73,16 @@ a hook.
 
 - Initial creation. Filed from the 2026-07-02 harness audit (CONSOLIDATE #5). Flagged
   manual/local (gitignored) and NOT `/todo`-automatable — pick it up in an interactive session.
+- DONE (same day, interactive `/todo` session, orchestrator-direct per the out-of-repo-fix
+  policy — no executor). CLAUDE.md trimmed 212 → 134 lines (file had grown past the audit's
+  ~199 count; same ~80-line absolute cut, erring toward keeping per the Risks section). Cuts:
+  code-quality/testing/prod-build command restatements, seed timing/concurrency internals,
+  `preview:art-direction` commands (env knob kept in the env inventory), Frontend/Backend
+  stack lists, monorepo file counts, navigator file names, schema domain list, `__tests__/`
+  directory listing, stale test counts. Kept verbatim: Workflow Standards, Key Patterns +
+  Deferred-Todos policy, full Environment Variables inventory. Kept condensed: all footgun
+  annotations (EAS `--message`/`--platform` locks, `--allow-prod-seed`, pg_trgm, Expo Go
+  no-camera, backfill overwrite + Cloudflare purge, cleanup:seeds orphan-only scope,
+  Scan-is-a-FAB, deep-link paths, CNF → USDA → API Ninjas order). Every cut diff-reviewed
+  against a pre-trim backup. Note: the trim itself is local-only (gitignored); this PR only
+  archives the todo.
