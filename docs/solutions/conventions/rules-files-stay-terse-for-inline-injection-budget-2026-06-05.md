@@ -6,6 +6,7 @@ module: shared
 tags: [docs-rules, pattern-injection, hook-scripts, context-budget, maintainability]
 applies_to: [docs/rules/*.md, .claude/hooks/inject-patterns.sh]
 created: '2026-06-05'
+last_updated: '2026-07-03'
 ---
 
 # docs/rules/*.md must stay terse — the inject hook embeds them inline under a byte cap
@@ -23,6 +24,12 @@ the agent must choose to re-read.
 
 - A rules bullet has grown into a multi-sentence paragraph with failure-mode narrative,
   "wrong twice over" explanations, or worked examples.
+- A rule FAMILY restates the same exception under multiple bullets. `accessibility.md`'s
+  announcement family (iOS announce vs Android live region) carried the InlineError
+  exception twice, the iOS-gating condition three times, and one precedent twice —
+  consolidating the family into one cluster took the file 6,547 → 4,582 B with every
+  binding rule preserved (verified bullet-by-bullet at review, 2026-07-03). Repetition
+  across bullets is the dominant bloat mechanism; consolidation, not deletion, is the trim.
 - A single `docs/rules/<domain>.md` is more than ~4–5 KB (run `wc -c docs/rules/*.md`).
 - A multi-domain edit (e.g. a storage file → database+security+architecture) routinely
   spills, and the highest-stakes domain is the one getting truncated.
@@ -70,9 +77,15 @@ exemptions); move the prose to a solution doc the hook auto-surfaces:
 
 ## Related Files
 
-- `.claude/hooks/inject-patterns.sh` — embeds rules inline; ~8800 B cap; priority-ordered spill.
+- `.claude/hooks/inject-patterns.sh` — embeds rules inline; ~8800 B cap; since 2026-07 an
+  over-budget domain is DEFERRED to the session's next edit (one-line pointer, not recorded
+  in the dedup state) rather than spilled — spill remains the session-less backstop.
 - `docs/rules/security.md` — the file that drifted to 8 KB and was trimmed to ~4.8 KB.
-- `docs/rules/client-state.md` — next-largest (~7.5 KB); a candidate for the same treatment.
+- `docs/rules/accessibility.md` — the announcement-family consolidation precedent (6.5 → 4.6 KB).
+- `scripts/check-rules-file-size.js` — since 2026-07-03 lint-staged ENFORCES a 6,500 B cap
+  on `docs/rules/*.md` (budget derivation in its header); regrowth now fails at commit time.
+- `docs/rules/client-state.md` — the last over-cap file (~8.4 KB, frozen grandfather cap);
+  trim tracked in `todos/P3-2026-07-03-client-state-rules-trim.md`.
 
 ## See Also
 

@@ -6,6 +6,7 @@ module: shared
 tags: [hook-scripts, pattern-injection, context-budget, truncation, claude-code]
 applies_to: [.claude/hooks/*.sh]
 created: '2026-06-05'
+last_updated: '2026-07-03'
 ---
 
 # Priority-order and never half-emit when injecting shared context under a size cap
@@ -43,6 +44,16 @@ and **whether the consumer knows**. Two principles:
    spill is strictly better than a silent partial, because the consumer can recover the full
    content and *knows* it needs to.
 
+3. **Defer whole units when the consumer is stateful.** (2026-07) When delivery recurs and
+   per-consumer state exists (the hook's per-session dedup file), an over-budget source
+   needn't spill at all: emit a one-line pointer now and deliver it in full on the next
+   event — implemented by simply NOT recording the source as delivered. Guard against
+   starvation by always emitting the first not-yet-delivered source regardless of size
+   (spill stays as its backstop); every source then converges within a bounded number of
+   events. In `inject-patterns.sh`, a first-touch `client/components` edit went from
+   9,007 B byte-truncated + spill to 7,041 B fully inline, with the three lower-priority
+   domains arriving whole on the following edits.
+
 The payoff is determinism: the truncation victim is principled and predictable, and the
 consumer is never misled into acting on a fragment it thinks is complete.
 
@@ -72,8 +83,10 @@ For the source-keep-it-small half of the same problem, see the rules-files conve
 
 ## Related Files
 
-- `.claude/hooks/inject-patterns.sh` — `domain_rank()`, priority sort, spill-with-pointer.
-- `.claude/hooks/test-inject-patterns.sh` — asserts the highest-stakes domain stays inline.
+- `.claude/hooks/inject-patterns.sh` — `domain_rank()`, priority sort, session-stateful
+  deferral (2026-07), spill-with-pointer backstop.
+- `.claude/hooks/test-inject-patterns.sh` — asserts the highest-stakes domain stays inline,
+  first-touch payloads fit without spill, and deferred domains catch up on the next edit.
 
 ## See Also
 

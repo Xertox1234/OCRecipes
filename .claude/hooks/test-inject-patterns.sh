@@ -302,6 +302,95 @@ fi
 
 rm -f /tmp/ocrecipes-pattern-inject-itest-dedup-A /tmp/ocrecipes-pattern-inject-itest-dedup-B
 
+# --- Preamble session dedup ---
+# The ~1.1KB DISCIPLINE preamble is injected in full at most once per session (marker
+# `__preamble__` in the dedup state file); later edits get a one-line pointer. A wiped
+# state file fails OPEN to the full preamble. package.json maps to no domain, isolating
+# the preamble from domain payloads. "Surgical changes" is a preamble-body sentinel.
+PRE_SESS='{"session_id":"itest-preamble","tool_name":"Edit","tool_input":{"file_path":"package.json"}}'
+PRE_STATE=/tmp/ocrecipes-pattern-inject-itest-preamble
+rm -f "$PRE_STATE"
+
+p1=$(inline_ctx "$PRE_SESS")
+if echo "$p1" | grep -qF "Surgical changes" && ! echo "$p1" | grep -qF "[DISCIPLINE] injected earlier"; then
+  echo "PASS: preamble dedup → first edit in a session gets the full preamble"; PASS=$((PASS + 1))
+else
+  echo "FAIL: preamble dedup → first edit in a session gets the full preamble"; FAIL=$((FAIL + 1))
+fi
+
+p2=$(inline_ctx "$PRE_SESS")
+if echo "$p2" | grep -qF "[DISCIPLINE] injected earlier" && ! echo "$p2" | grep -qF "Surgical changes"; then
+  echo "PASS: preamble dedup → repeat edit emits a one-line pointer, not the full preamble"; PASS=$((PASS + 1))
+else
+  echo "FAIL: preamble dedup → repeat edit emits a one-line pointer, not the full preamble"; FAIL=$((FAIL + 1))
+fi
+
+rm -f "$PRE_STATE"
+p3=$(inline_ctx "$PRE_SESS")
+if echo "$p3" | grep -qF "Surgical changes"; then
+  echo "PASS: preamble dedup → wiped state file fails open to the full preamble"; PASS=$((PASS + 1))
+else
+  echo "FAIL: preamble dedup → wiped state file fails open to the full preamble"; FAIL=$((FAIL + 1))
+fi
+rm -f "$PRE_STATE"
+
+pns1=$(inline_ctx '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}')
+pns2=$(inline_ctx '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}')
+if echo "$pns1" | grep -qF "Surgical changes" && echo "$pns2" | grep -qF "Surgical changes"; then
+  echo "PASS: preamble dedup → session-less edits always get the full preamble"; PASS=$((PASS + 1))
+else
+  echo "FAIL: preamble dedup → session-less edits always get the full preamble"; FAIL=$((FAIL + 1))
+fi
+
+# --- First-touch payloads fit inline (deferral instead of truncation) ---
+# With session dedup ON, a first-touch multi-domain edit must land under the spill
+# threshold: over-budget domains are deferred with a one-line pointer (and NOT recorded in
+# the dedup state) instead of byte-truncating the payload. Their full payloads land in the
+# spill file (recoverable now), so the spill file EXISTING is expected — the failure mode
+# being pinned is the inline TRUNCATED marker. The two hottest edit paths
+# (client/components: 4 domains; server/routes: 3 domains) both truncated before deferral
+# existed. The byte bound is derived from the hook's THRESHOLD, not hardcoded.
+THRESH=$(grep -m1 '^THRESHOLD=' "$HOOK" | cut -d= -f2)
+for tf in client/components/RecipeCard.tsx server/routes/recipes.ts; do
+  sid="itest-firsttouch-$(basename "$tf" | tr '.' '-')"
+  rm -f "/tmp/ocrecipes-pattern-inject-${sid}"
+  ft=$(inline_ctx "{\"session_id\":\"${sid}\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"${tf}\"}}")
+  ft_bytes=$(printf '%s' "$ft" | wc -c | tr -d ' ')
+  if [ "${ft_bytes:-99999}" -le "${THRESH:-9000}" ] && ! echo "$ft" | grep -q "TRUNCATED"; then
+    echo "PASS: first touch $tf fits inline (${ft_bytes} B, no truncation)"; PASS=$((PASS + 1))
+  else
+    echo "FAIL: first touch $tf fits inline (got ${ft_bytes} B vs cap ${THRESH:-9000}, or TRUNCATED marker present)"; FAIL=$((FAIL + 1))
+  fi
+  rm -f "/tmp/ocrecipes-pattern-inject-${sid}"
+done
+
+# --- Deferred domains catch up on the next edit ---
+# server/routes first touch defers api (rank 40) behind security (rank 10); the second
+# edit must inject the deferred domain IN FULL — proving a deferred domain is not recorded
+# in the dedup state. "handleRouteError" is an api-body sentinel.
+DEFER_SESS='{"session_id":"itest-defer","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+rm -f /tmp/ocrecipes-pattern-inject-itest-defer
+d1=$(inline_ctx "$DEFER_SESS")
+if echo "$d1" | grep -qF "[RULES — api] deferred" && ! echo "$d1" | grep -qF "handleRouteError"; then
+  echo "PASS: deferral → first touch defers api with a pointer, not a truncated body"; PASS=$((PASS + 1))
+else
+  echo "FAIL: deferral → first touch defers api with a pointer, not a truncated body"; FAIL=$((FAIL + 1))
+fi
+# The deferred domain's FULL payload (rules body + solution refs) must be recoverable NOW
+# via the spill file the pointer names — not only on a later edit.
+if [ -f "$SPILL_FILE" ] && grep -qF "handleRouteError" "$SPILL_FILE" && grep -qF "SOLUTIONS — api" "$SPILL_FILE"; then
+  echo "PASS: deferral → deferred payload (rules + solution refs) recoverable from the spill file now"; PASS=$((PASS + 1))
+else
+  echo "FAIL: deferral → deferred payload (rules + solution refs) recoverable from the spill file now"; FAIL=$((FAIL + 1))
+fi
+d2=$(inline_ctx "$DEFER_SESS")
+if echo "$d2" | grep -qF "handleRouteError" && echo "$d2" | grep -qF "[RULES — security] already injected"; then
+  echo "PASS: deferral → deferred domain injects in full on the next edit"; PASS=$((PASS + 1))
+else
+  echo "FAIL: deferral → deferred domain injects in full on the next edit"; FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/ocrecipes-pattern-inject-itest-defer
+
 # Static guard: the hook is markdown-only — a psql/DB path must not creep back in
 # (the solutions DB was retired 2026-07; docs/solutions/ is the canonical store).
 if grep -qE 'psql|solutions_from_db|SOLUTIONS_DB_READONLY_URL|PATTERN_INJECT_SOURCE' "$HOOK"; then
