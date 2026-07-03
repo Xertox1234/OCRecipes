@@ -97,7 +97,7 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
       onPress={handlePress}
       style={[animatedStyle, styles.cardWrapper]}
       accessibilityRole="button"
-      accessibilityLabel={`${card.title}${prepLabel ? `, ${prepLabel} prep` : ""}. ${card.recommendationReason}. Double tap to view recipe.`}
+      accessibilityLabel={`${card.isRemix ? "Remixed recipe. " : ""}${card.title}${prepLabel ? `, ${prepLabel} prep` : ""}. ${card.recommendationReason}. Double tap to view recipe.`}
       accessibilityHint="Opens recipe details"
     >
       <Animated.View
@@ -166,7 +166,8 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
                 // link) so the glyph clears contrast; the one withOpacity exception.
                 { backgroundColor: withOpacity(theme.accentSolid, 0.9) },
               ]}
-              accessibilityLabel="Remixed recipe"
+              // Decorative — remix status is announced via the card label prefix
+              accessible={false}
             >
               <Ionicons
                 name="shuffle-outline"
