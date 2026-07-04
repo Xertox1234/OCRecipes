@@ -3,7 +3,7 @@
 ---
 
 title: "Consolidate the drift-family hooks (3 warn-only hooks defending one scenario)"
-status: backlog
+status: done
 priority: low
 created: 2026-07-03
 updated: 2026-07-03
@@ -83,3 +83,26 @@ emit a warning the user usually already knows is a poor effort/leverage ratio.
 - Initial creation. Filed from the 2026-07-02 harness audit (CONSOLIDATE #4), which was
   executed only partially by PRs #487–#490 (the CUT list + roster consolidation); this
   consolidation item was not picked up.
+
+### 2026-07-03 — Decision & implementation
+
+- **Target shape chosen: option (b)** — delete the lowest-signal hook
+  `guard-concurrent-session.sh` (and its `test-guard-concurrent-session.sh`), keeping the
+  matched `drift-detect.sh` (Pre) + `drift-detect-update.sh` (Post) detector/state-writer
+  pair intact. Net reduction **3 → 2 hooks**.
+- Rationale: `guard-concurrent-session` is warn-only / fail-open and only fires when a
+  **second live Claude session** is active in the **same** un-isolated checkout — a case
+  already **enforced** against by `guard-worktree-isolation.sh` (Edit/Write) and caught
+  reactively (once HEAD actually moves) by `drift-detect.sh`. Its provenance todo
+  (`P2-2026-06-26-parallel-agent-git-churn-shared-worktree`) confirms it was the softest of
+  that work's deliverables. Folding its heartbeat-lease mechanism into the Pre-only,
+  SHA-baseline `drift-detect` (option a) would mix two mechanisms for a low-value warn — the
+  Risk note warns against that effort.
+- `drift-detect.sh`'s warn message now carries the durable-fix nudge to
+  `superpowers:using-git-worktrees` (it previously lived only in the deleted hook), asserted
+  by a new case in `test-drift-detect.sh`.
+- `.claude/settings.json` PreToolUse/Bash wiring updated — the `guard-concurrent-session`
+  entry removed, no dead hook pointers remain.
+- Collateral: `docs/solutions/code-quality/cksum-hash-key-differs-gnu-bsd-use-field-1-2026-06-26.md`
+  referenced the deleted hook pair as its only `## Related Files` example; repointed to note
+  the example was consolidated away (the `cksum` field-1 snippet stays inline in `## Solution`).

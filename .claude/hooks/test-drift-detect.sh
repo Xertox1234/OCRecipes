@@ -131,6 +131,9 @@ OUT=$(run_detect "git commit -m claude-next")
 assert_contains "external drift: detect warns" "Drift detected" "$OUT"
 assert_contains "external drift: includes stored SHA" "$V2_SHA" "$OUT"
 assert_contains "external drift: includes current SHA" "$EXT_SHA" "$OUT"
+# The warn message must point to worktree isolation as the durable fix (the concurrent-session
+# hook that used to carry this nudge was folded away in the 2026-07-03 drift-family consolidation).
+assert_contains "external drift: points to the worktree-isolation durable fix" "using-git-worktrees" "$OUT"
 
 # --- Test: git push also triggers detect ---
 # Keep the same drifted state (baseline=V2_SHA, HEAD=EXT_SHA).

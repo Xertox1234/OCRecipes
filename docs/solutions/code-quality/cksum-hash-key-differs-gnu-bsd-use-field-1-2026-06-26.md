@@ -76,10 +76,13 @@ and any hermetic test that recomputes the key must use the **same** extraction.
 
 ## Related Files
 
-- `.claude/hooks/guard-concurrent-session.sh` — keys a per-working-tree `/tmp`
-  lease dir on `cksum` of `git rev-parse --show-toplevel`; uses the field-1 form.
-- `.claude/hooks/test-guard-concurrent-session.sh` — recomputes the identical key
-  to locate the hook's lease dir; must match the hook's extraction exactly.
+- The original in-repo example — `guard-concurrent-session.sh`, which keyed a
+  per-working-tree lease dir under /tmp on `cksum` of `git rev-parse --show-toplevel`
+  using the field-1 form — was removed in the 2026-07-03 drift-family hook consolidation.
+  No other file currently uses `cksum`, so the pattern is preserved inline in the
+  `## Solution` section above.
+- Scope is unchanged from the `applies_to` frontmatter: any shell hook or script that
+  hashes a string into a temp/cache directory name.
 
 ## See Also
 
