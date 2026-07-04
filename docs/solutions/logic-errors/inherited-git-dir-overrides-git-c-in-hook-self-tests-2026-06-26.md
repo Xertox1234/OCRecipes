@@ -6,7 +6,7 @@ module: shared
 severity: high
 tags: [git, hooks, test-isolation, git-dir, hermetic-tests, tooling, worktree]
 symptoms: ['A shell/git hook self-test silently mutates the REAL repo: bogus user.email/user.name in .git/config, a phantom staged file, or uncommitted tracked-file edits reverted (HEAD detached/switched)', 'Corruption reproduces only locally (under VS Code''s integrated terminal or a git worktree), never in CI', The test passes its own assertions while clobbering the caller's working tree]
-applies_to: [.claude/hooks/test-*.sh, scripts/preflight.sh]
+applies_to: [.claude/hooks/test-*.sh, scripts/run-hook-tests.sh, scripts/preflight.sh]
 created: '2026-06-26'
 ---
 
@@ -69,5 +69,5 @@ run env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u
 
 - `.claude/hooks/test-branch-preflight.sh` — the fixed self-test (unset + caller-untouched guard).
 - `.claude/hooks/test-core-bare-guard.sh` — sibling test written hermetic from the start.
-- `scripts/preflight.sh` — env-strip around the `test-*.sh` loop.
+- `scripts/run-hook-tests.sh` — owns the five-var env-strip around the `.claude/hooks/test-*.sh` loop; called by both `scripts/preflight.sh` (full mode) and `.github/workflows/ci.yml`.
 - `.claude/hooks/core-bare-guard.sh` — companion PreToolUse guard for the related `core.bare` flip symptom.

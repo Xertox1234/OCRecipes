@@ -8,6 +8,7 @@ tags: [bash, shell, glob, nullglob, ci, github-actions, hooks, set-e, fail-open,
 symptoms: [A CI or gate step that "runs everything matching a glob" goes green having executed zero items after a rename or relocation, Step log shows none of the per-item markers yet the step exits 0, An existence guard with continue silently converts an unmatched literal glob pattern into "nothing to do"]
 applies_to: [.claude/hooks/**, scripts/**/*.sh, .github/workflows/*.yml, .husky/**]
 created: '2026-07-03'
+last_updated: '2026-07-03'
 ---
 
 # A glob-driven runner loop passes green when the glob matches nothing — count runs and fail on zero
@@ -71,15 +72,15 @@ test failure fail-fasts before the guard.
 - When replacing hand-listed invocations with a glob (to kill membership drift), notice
   the invariant the hand-list gave for free: each named file's existence was asserted by
   the failing exit of a missing file. Re-establish it explicitly.
-- `scripts/preflight.sh`'s twin loop still fails open; the single-source extraction
-  (`todos/P3-2026-07-03-hook-test-runner-single-source.md`) carries this guard to both
-  callers.
+- Both callers now single-source the loop through `scripts/run-hook-tests.sh` (extraction
+  landed 2026-07-03), so this guard is carried to `scripts/preflight.sh` full mode and CI
+  alike — there is no longer a twin loop to drift.
 
 ## Related Files
 
-- `.github/workflows/ci.yml` — "Hook self-tests" step in the checks job (guard in place)
-- `scripts/preflight.sh` — hook-test loop in full mode (fails open until the extraction todo lands)
-- `todos/P3-2026-07-03-hook-test-runner-single-source.md` — extraction follow-up
+- `scripts/run-hook-tests.sh` — single source for the loop, counter, and zero-count guard (both callers invoke it)
+- `.github/workflows/ci.yml` — "Hook self-tests" step calls `scripts/run-hook-tests.sh`
+- `scripts/preflight.sh` — full mode calls `scripts/run-hook-tests.sh` (now guarded too, no longer fails open)
 
 ## See Also
 
