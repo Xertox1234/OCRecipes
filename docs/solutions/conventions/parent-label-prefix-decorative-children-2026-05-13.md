@@ -6,6 +6,7 @@ module: client
 tags: [react-native, accessibility, voiceover, talkback, labels]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx]
 created: '2026-05-13'
+last_updated: '2026-07-03'
 ---
 
 # Parent label prefix for decorative child elements (accessibility)
@@ -15,9 +16,13 @@ created: '2026-05-13'
 When a component has a decorative badge or status indicator that is a visual child of an interactive parent (like a `Pressable`), prevent double-announcement by:
 
 1. Prefixing the parent's `accessibilityLabel` with the badge status
-2. Setting `accessible={false}` on the child element
+2. Hiding the child from the accessibility tree — **scope the hiding to what the child contains**:
+   - Icon-only child: `accessible={false}` suffices.
+   - Child with an announceable descendant (a `Text` node, a labeled subview): `accessible={false}` alone does NOT silence descendants — TalkBack still reads the text. Use the full subtree treatment: `accessible={false}` + `accessibilityElementsHidden` + `importantForAccessibility="no-hide-descendants"`.
 
 This pattern applies to any card, button, or interactive component with a decorative badge (remix badge, premium lock, allergen indicator, etc.).
+
+**Fix at the source, not per call site.** A reusable badge component (`CuratedBadge`, `AllergenBadge`, `VerificationBadge` class) must not hardcode its own `accessibilityLabel` when its placements live inside labeled parents — make the component decorative internally so a new placement cannot re-introduce the bug, and put the status in each parent's label. When fixing one badge instance, sweep the same container and sibling badge components for the identical pattern: the 2026-07 CarouselRecipeCard remix fix initially missed the structurally identical `CuratedBadge` bug 12 lines below it (PR #499 review).
 
 ## Examples
 
@@ -85,9 +90,12 @@ React Native's accessibility system (iOS VoiceOver, Android TalkBack) announce a
 
 ## Related Files
 
+- `client/components/CuratedBadge.tsx` — decorative-at-the-source exemplar (full subtree treatment; renders a visible `Text` child)
+- `client/components/home/CarouselRecipeCard.tsx` — parent label composing remix + curated status prefixes
 - Touch target rule: badge wrapper itself should never be tappable (hit target only on parent)
 
 ## See Also
 
 - [Accessibility props pattern](../design-patterns/accessibility-props-pattern-2026-05-13.md)
-- [Decorative icons inside interactive elements](../design-patterns/accessibility-props-pattern-2026-05-13.md)
+- [Decorative badge double-announcement on interactive cards](../logic-errors/decorative-badge-double-announcement-2026-05-13.md) — the bug shape this rule prevents
+- [jsdom RN render tests cannot assert a11y-tree hiding](jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md) — how to test compliance honestly

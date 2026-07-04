@@ -17,9 +17,12 @@ export function CuratedBadge({ compact = false }: CuratedBadgeProps) {
   return (
     <View
       style={[styles.container, { backgroundColor: withOpacity(color, 0.15) }]}
-      accessible
-      accessibilityLabel="Curated recipe"
-      accessibilityRole="text"
+      // Decorative — every placement sits inside an already-labeled parent,
+      // which must carry "Curated recipe" in its own accessibilityLabel.
+      // Subtree hiding covers the visible "Curated" text on both platforms.
+      accessible={false}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
     >
       <Feather
         name="star"
