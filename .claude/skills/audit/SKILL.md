@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Run a structured code audit with manifest tracking, per-fix verification, and pattern codification
+description: Run a structured code audit with manifest tracking, per-fix verification, and pattern codification. Scopes — full (default), pre-launch, security, performance, data-integrity, architecture, code-quality, camera, accessibility, reliability, maintainability
 ---
 
 You are running a structured code audit. The scope is: $ARGUMENTS (defaults to "full" if empty).
