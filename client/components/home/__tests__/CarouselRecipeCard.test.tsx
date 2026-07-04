@@ -82,4 +82,62 @@ describe("CarouselRecipeCard remix badge accessibility", () => {
       ),
     ).toBeDefined();
   });
+
+  it("treats a prep time of 0 as no prep time", () => {
+    // Characterization: 0 is not a meaningful prep duration — the label and
+    // badge intentionally omit the prep segment, same as null.
+    renderComponent(
+      <CarouselRecipeCard
+        card={{ ...baseCard, prepTimeMinutes: 0 }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText(
+        "Pasta Carbonara. High protein. Double tap to view recipe.",
+      ),
+    ).toBeDefined();
+  });
+});
+
+describe("CarouselRecipeCard curated badge accessibility", () => {
+  it("prefixes the card label with the curated status for canonical cards", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{ ...baseCard, isCanonical: true }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText(
+        "Curated recipe. Pasta Carbonara, 20 min prep. High protein. Double tap to view recipe.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("orders remix before curated when both statuses apply", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{ ...baseCard, isRemix: true, isCanonical: true }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText(
+        "Remixed recipe. Curated recipe. Pasta Carbonara, 20 min prep. High protein. Double tap to view recipe.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("does not carry a redundant 'Curated recipe' label on the badge", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{ ...baseCard, isCanonical: true }}
+        onPress={vi.fn()}
+      />,
+    );
+    // Same guard as the remix badge: curated status is conveyed via the
+    // parent label prefix, never by the badge's own label.
+    expect(screen.queryByLabelText("Curated recipe")).toBeNull();
+  });
 });

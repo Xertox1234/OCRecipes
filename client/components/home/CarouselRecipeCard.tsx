@@ -88,6 +88,8 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
   }, [haptics, onFavourite, card.id]);
 
   const imageUri = card.imageUrl ? resolveImageUrl(card.imageUrl) : null;
+  // Truthy check is deliberate: 0 is not a meaningful prep duration, so it
+  // renders like null (no badge, no label segment).
   const prepLabel = card.prepTimeMinutes ? `${card.prepTimeMinutes} min` : null;
 
   return (
@@ -97,7 +99,7 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
       onPress={handlePress}
       style={[animatedStyle, styles.cardWrapper]}
       accessibilityRole="button"
-      accessibilityLabel={`${card.isRemix ? "Remixed recipe. " : ""}${card.title}${prepLabel ? `, ${prepLabel} prep` : ""}. ${card.recommendationReason}. Double tap to view recipe.`}
+      accessibilityLabel={`${card.isRemix ? "Remixed recipe. " : ""}${card.isCanonical ? "Curated recipe. " : ""}${card.title}${prepLabel ? `, ${prepLabel} prep` : ""}. ${card.recommendationReason}. Double tap to view recipe.`}
       accessibilityHint="Opens recipe details"
     >
       <Animated.View

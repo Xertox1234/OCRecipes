@@ -15,8 +15,11 @@ describe("CuratedBadge", () => {
     expect(screen.queryByText("Curated")).toBeNull();
   });
 
-  it("renders with accessibilityLabel", () => {
+  it("is decorative — exposes no accessibility label of its own", () => {
+    // Both call sites place the badge inside an already-labeled Pressable;
+    // curated status must be announced via the parent's label, never the
+    // badge (decorative-badge-double-announcement solution).
     renderComponent(<CuratedBadge />);
-    expect(screen.getByLabelText("Curated recipe")).toBeDefined();
+    expect(screen.queryByLabelText("Curated recipe")).toBeNull();
   });
 });
