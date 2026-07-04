@@ -372,10 +372,15 @@ CS_SID="itest-firsttouch-client-context"
 rm -f "/tmp/ocrecipes-pattern-inject-${CS_SID}"
 cs=$(inline_ctx "{\"session_id\":\"${CS_SID}\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"client/context/AuthContext.tsx\"}}")
 cs_bytes=$(printf '%s' "$cs" | wc -c | tr -d ' ')
-if [ "${cs_bytes:-99999}" -le "${THRESH:-9000}" ] && ! echo "$cs" | grep -q "TRUNCATED"; then
-  echo "PASS: first touch client/context (single-domain client-state) fits inline (${cs_bytes} B, no truncation)"; PASS=$((PASS + 1))
+# Positive assertion: the rules-file H1 is cat'd verbatim ONLY on the full-inline emit path.
+# Without it, an empty or preamble-only injection (broken hook / path→domain mapping) would
+# satisfy "byte-count under cap AND no TRUNCATED marker" and fail open — a green test that
+# never proved client-state was injected at all.
+cs_has_rules=$(printf '%s\n' "$cs" | grep -c "^# Client State Rules")
+if [ "${cs_bytes:-99999}" -le "${THRESH:-9000}" ] && [ "${cs_has_rules:-0}" -ge 1 ] && ! echo "$cs" | grep -q "TRUNCATED"; then
+  echo "PASS: first touch client/context (single-domain client-state) injected inline (${cs_bytes} B, rules present, no truncation)"; PASS=$((PASS + 1))
 else
-  echo "FAIL: first touch client/context fits inline (got ${cs_bytes} B vs cap ${THRESH:-9000}, or TRUNCATED marker present)"; FAIL=$((FAIL + 1))
+  echo "FAIL: first touch client/context inline (got ${cs_bytes} B vs cap ${THRESH:-9000}; client-state rules present=${cs_has_rules:-0}; or TRUNCATED marker present)"; FAIL=$((FAIL + 1))
 fi
 rm -f "/tmp/ocrecipes-pattern-inject-${CS_SID}"
 
