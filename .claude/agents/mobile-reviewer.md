@@ -115,6 +115,8 @@ Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-inj
 - [ ] Do NOT mark `accessible={false}`: icon-only buttons with no visible text (these need `accessibilityLabel`), icons conveying information absent from the text label (e.g. an error icon the label doesn't mention)
 - [ ] When the icon conveys status not in the text (lock badge, premium indicator), encode it in the parent label — premium-locked features must say WHY: ``accessibilityLabel={`Recipe Generation${!isPremium ? " (Premium required)" : ""}`}``
 - [ ] Decorative badges (remix, lock, allergen dot, premium status) set `accessible={false}`; the parent interactive component includes badge status in its `accessibilityLabel` without duplicating badge text ("Remixed recipe." not "Remix badge remixed recipe"). Ref: "Parent Label Prefix for Decorative Child Elements" in `docs/legacy-patterns/react-native.md`
+- [ ] A badge hiding an announceable descendant (`Text` child, labeled subview) needs the full subtree treatment — `accessible={false}` alone does not silence descendants on TalkBack; require `accessibilityElementsHidden` + `importantForAccessibility="no-hide-descendants"` too. Reusable badge components (`CuratedBadge` class) must be decorative at the source, never hardcode their own `accessibilityLabel`
+- [ ] When a diff fixes one decorative-badge double-announcement, sweep the same container and sibling badge components for the identical pattern before approving — the CarouselRecipeCard remix fix initially missed the structurally identical CuratedBadge bug 12 lines below it (PR #499)
 - References: `client/screens/ProfileScreen.tsx` (SettingsItem), `client/components/home/ActionRow.tsx`, `client/components/Toast.tsx`
 
 ### Touch targets (WCAG 2.5.5)
