@@ -396,20 +396,57 @@ if echo "$d1" | grep -qF "[RULES — api] deferred" && ! echo "$d1" | grep -qF "
 else
   echo "FAIL: deferral → first touch defers api with a pointer, not a truncated body"; FAIL=$((FAIL + 1))
 fi
-# The deferred domain's FULL payload (rules body + solution refs) must be recoverable NOW
-# via the spill file the pointer names — not only on a later edit.
-if [ -f "$SPILL_FILE" ] && grep -qF "handleRouteError" "$SPILL_FILE" && grep -qF "SOLUTIONS — api" "$SPILL_FILE"; then
-  echo "PASS: deferral → deferred payload (rules + solution refs) recoverable from the spill file now"; PASS=$((PASS + 1))
+# api is pre-estimate-deferred here (its rules alone overflow the budget), so the perf skip
+# means only its RULES body reaches the spill now — the solution refs are not built (asserted
+# absent in the server/storage test below, where the margin is trim-robust). The full payload
+# incl. solution refs auto-injects on the NEXT edit (asserted just below). This is the
+# documented "rules now, solution refs next edit" recoverability trade.
+if [ -f "$SPILL_FILE" ] && grep -qF "handleRouteError" "$SPILL_FILE"; then
+  echo "PASS: deferral → pre-estimated api ships its RULES body to the spill file now"; PASS=$((PASS + 1))
 else
-  echo "FAIL: deferral → deferred payload (rules + solution refs) recoverable from the spill file now"; FAIL=$((FAIL + 1))
+  echo "FAIL: deferral → pre-estimated api ships its RULES body to the spill file now"; FAIL=$((FAIL + 1))
 fi
 d2=$(inline_ctx "$DEFER_SESS")
-if echo "$d2" | grep -qF "handleRouteError" && echo "$d2" | grep -qF "[RULES — security] already injected"; then
-  echo "PASS: deferral → deferred domain injects in full on the next edit"; PASS=$((PASS + 1))
+# The FULL payload catches up on edit 2: both the rules body AND the solution refs that the
+# pre-estimate skipped on edit 1 must now inject in full.
+if echo "$d2" | grep -qF "handleRouteError" && echo "$d2" | grep -qF "SOLUTIONS — api" && echo "$d2" | grep -qF "[RULES — security] already injected"; then
+  echo "PASS: deferral → deferred domain injects in full (rules + solution refs) on the next edit"; PASS=$((PASS + 1))
 else
-  echo "FAIL: deferral → deferred domain injects in full on the next edit"; FAIL=$((FAIL + 1))
+  echo "FAIL: deferral → deferred domain injects in full (rules + solution refs) on the next edit"; FAIL=$((FAIL + 1))
 fi
 rm -f /tmp/ocrecipes-pattern-inject-itest-defer
+
+# --- Pre-estimate deferral skips the solutions_from_markdown corpus sweep ---
+# A domain whose RULES alone overflow the budget is certain to defer regardless of solution
+# refs, so the hook defers it WITHOUT running solutions_from_markdown (~50-70ms saved/domain).
+# server/storage defers `database` behind `security`: docs/rules/database.md (~6.3KB) overflows
+# rules-only by a wide, trim-robust margin (unlike the tight api case above), so this reliably
+# exercises the pre-estimate path. The pre-estimated pointer names it; its RULES reach the
+# spill but its SOLUTIONS block is never built — the documented "rules now, solution refs next
+# edit" recoverability trade. The full payload still catches up on the session's next edit.
+PREEST_SESS='{"session_id":"itest-preest","tool_name":"Edit","tool_input":{"file_path":"server/storage/recipes.ts"}}'
+rm -f /tmp/ocrecipes-pattern-inject-itest-preest
+pe1=$(inline_ctx "$PREEST_SESS")
+pe_spill=""; [ -f "$SPILL_FILE" ] && pe_spill=$(cat "$SPILL_FILE")
+if echo "$pe1" | grep -qF "[RULES — database] deferred (inline size cap, pre-estimated)"; then
+  echo "PASS: pre-estimate → database deferred via the cheap pre-estimate (pointer present)"; PASS=$((PASS + 1))
+else
+  echo "FAIL: pre-estimate → database deferred via the cheap pre-estimate (pointer present)"; FAIL=$((FAIL + 1))
+fi
+# RULES recoverable in the spill now; SOLUTIONS — database never built (the perf saving).
+if echo "$pe_spill" | grep -qF "[RULES — database]" && ! echo "$pe_spill" | grep -qF "SOLUTIONS — database"; then
+  echo "PASS: pre-estimate → database RULES in spill now, SOLUTIONS sweep skipped"; PASS=$((PASS + 1))
+else
+  echo "FAIL: pre-estimate → database RULES in spill now, SOLUTIONS sweep skipped"; FAIL=$((FAIL + 1))
+fi
+# Catch-up: the skipped SOLUTIONS — database must inject in full on the session's next edit.
+pe2=$(inline_ctx "$PREEST_SESS")
+if echo "$pe2" | grep -qF "SOLUTIONS — database"; then
+  echo "PASS: pre-estimate → skipped SOLUTIONS — database catch up on the next edit"; PASS=$((PASS + 1))
+else
+  echo "FAIL: pre-estimate → skipped SOLUTIONS — database catch up on the next edit"; FAIL=$((FAIL + 1))
+fi
+rm -f /tmp/ocrecipes-pattern-inject-itest-preest
 
 # Static guard: the hook is markdown-only — a psql/DB path must not creep back in
 # (the solutions DB was retired 2026-07; docs/solutions/ is the canonical store).
