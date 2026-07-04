@@ -364,6 +364,21 @@ for tf in client/components/RecipeCard.tsx server/routes/recipes.ts; do
   rm -f "/tmp/ocrecipes-pattern-inject-${sid}"
 done
 
+# A client/context/** edit maps to a SINGLE domain (client-state): deferral cannot help a
+# lone over-budget domain (the first domain always emits in full), so this fits inline only
+# once docs/rules/client-state.md is under the size cap. Regression guard for the trim in
+# todos/archive/P3-2026-07-03-client-state-rules-trim.md.
+CS_SID="itest-firsttouch-client-context"
+rm -f "/tmp/ocrecipes-pattern-inject-${CS_SID}"
+cs=$(inline_ctx "{\"session_id\":\"${CS_SID}\",\"tool_name\":\"Edit\",\"tool_input\":{\"file_path\":\"client/context/AuthContext.tsx\"}}")
+cs_bytes=$(printf '%s' "$cs" | wc -c | tr -d ' ')
+if [ "${cs_bytes:-99999}" -le "${THRESH:-9000}" ] && ! echo "$cs" | grep -q "TRUNCATED"; then
+  echo "PASS: first touch client/context (single-domain client-state) fits inline (${cs_bytes} B, no truncation)"; PASS=$((PASS + 1))
+else
+  echo "FAIL: first touch client/context fits inline (got ${cs_bytes} B vs cap ${THRESH:-9000}, or TRUNCATED marker present)"; FAIL=$((FAIL + 1))
+fi
+rm -f "/tmp/ocrecipes-pattern-inject-${CS_SID}"
+
 # --- Deferred domains catch up on the next edit ---
 # server/routes first touch defers api (rank 40) behind security (rank 10); the second
 # edit must inject the deferred domain IN FULL — proving a deferred domain is not recorded
