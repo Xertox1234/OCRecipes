@@ -6,15 +6,16 @@ module: client
 severity: medium
 tags: [accessibility, voiceover, talkback, decorative-elements, screen-reader]
 symptoms: [VoiceOver/TalkBack reads a status label twice when tapping a card, Decorative badge inside an interactive parent has its own `accessibilityLabel`, Single user action produces two consecutive screen reader announcements]
-applies_to: [client/components/HomeRecipeCard.tsx, client/components/**/*Card.tsx]
+applies_to: [client/components/**/*Card.tsx]
 created: '2026-04-26'
+last_updated: '2026-07-03'
 ---
 
 # Decorative Badge Double-Announcement on Interactive Cards
 
 ## Problem
 
-`HomeRecipeCard` rendered a remix badge (`View` with icon + text) inside an interactive `Pressable` parent. Both the badge and the parent had their own `accessibilityLabel`. iOS VoiceOver and Android TalkBack announced both labels back-to-back when the card was focused: "Remixed recipe" then "Pasta Carbonara by Alice."
+The Home screen's recipe card component (since removed in PR #494) rendered a remix badge (`View` with icon + text) inside an interactive `Pressable` parent. Both the badge and the parent had their own `accessibilityLabel`. iOS VoiceOver and Android TalkBack announced both labels back-to-back when the card was focused: "Remixed recipe" then "Pasta Carbonara by Alice."
 
 ## Symptoms
 
@@ -61,7 +62,6 @@ Result: single announcement per interaction; remix status is still conveyed via 
 
 ## Related Files
 
-- `client/components/HomeRecipeCard.tsx:56,106–121` — fixed implementation
 - WCAG: [1.3.1 Info and Relationships (Level A)](https://www.w3.org/WAI/WCAG21/Understanding/info-and-relationships.html)
 
 ## See Also
