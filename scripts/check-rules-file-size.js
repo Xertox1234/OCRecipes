@@ -39,11 +39,11 @@ const colors = {
 
 const MAX_BYTES = 6500;
 
-// Files already over the cap when the guard landed. Each gets a FROZEN cap just
-// above its current size — it may shrink but not grow. Remove the entry when the
-// file is trimmed under MAX_BYTES (tracked in
-// todos/P3-2026-07-03-client-state-rules-trim.md).
-const GRANDFATHERED = new Map([["docs/rules/client-state.md", 8500]]);
+// Files already over the cap when the guard landed get a FROZEN cap just above
+// their current size — they may shrink but not grow. Add an entry only for a
+// genuinely over-cap file that cannot be trimmed immediately; remove it once the
+// file is trimmed under MAX_BYTES. Currently empty (all rules files fit the cap).
+const GRANDFATHERED = new Map();
 
 function relPath(filePath) {
   const repoRoot = path.resolve(__dirname, "..");

@@ -3,7 +3,7 @@
 ---
 
 title: "Trim docs/rules/client-state.md under the 6,500B injection cap, then remove its grandfather entry"
-status: backlog
+status: done
 priority: low
 created: 2026-07-03
 updated: 2026-07-03

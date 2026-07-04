@@ -28,8 +28,12 @@ the agent must choose to re-read.
   announcement family (iOS announce vs Android live region) carried the InlineError
   exception twice, the iOS-gating condition three times, and one precedent twice —
   consolidating the family into one cluster took the file 6,547 → 4,582 B with every
-  binding rule preserved (verified bullet-by-bullet at review, 2026-07-03). Repetition
-  across bullets is the dominant bloat mechanism; consolidation, not deletion, is the trim.
+  binding rule preserved (verified bullet-by-bullet at review, 2026-07-03). The same
+  mechanism trimmed `client-state.md` 8,443 → 6,390 B: the `apiRequest`/`ApiError` error
+  contract was restated across three bullets, so extracting it once and folding two rule
+  pairs (auth-teardown, mutation-error) preserved every binding rule (2026-07-03).
+  Repetition across bullets is the dominant bloat mechanism; consolidation, not deletion,
+  is the trim.
 - A single `docs/rules/<domain>.md` is more than ~4–5 KB (run `wc -c docs/rules/*.md`).
 - A multi-domain edit (e.g. a storage file → database+security+architecture) routinely
   spills, and the highest-stakes domain is the one getting truncated.
@@ -84,8 +88,12 @@ exemptions); move the prose to a solution doc the hook auto-surfaces:
 - `docs/rules/accessibility.md` — the announcement-family consolidation precedent (6.5 → 4.6 KB).
 - `scripts/check-rules-file-size.js` — since 2026-07-03 lint-staged ENFORCES a 6,500 B cap
   on `docs/rules/*.md` (budget derivation in its header); regrowth now fails at commit time.
-- `docs/rules/client-state.md` — the last over-cap file (~8.4 KB, frozen grandfather cap);
-  trim tracked in `todos/P3-2026-07-03-client-state-rules-trim.md`.
+  Its `GRANDFATHERED` exemption map is now EMPTY — every rules file fits the 6,500 B cap.
+- `docs/rules/client-state.md` — trimmed 8.4 → 6.4 KB by consolidation (2026-07-03), the
+  second precedent after `accessibility.md`; the `GRANDFATHERED` entry was removed once it
+  fit. A single-domain client-state path that this file oversized used to force the
+  truncation/spill path on every first-touch edit — the PR #492 deferral cannot help a lone
+  over-budget domain (the first domain always emits in full), so the trim was the fix.
 
 ## See Also
 
