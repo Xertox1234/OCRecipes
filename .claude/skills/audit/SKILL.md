@@ -121,18 +121,26 @@ Phase 1 sets up both correctly.
 
 5. **Digest prior-audit findings for dedup** (sanctioned skill-embedded invocation — `docs/AI_WORKFLOW.md` → Cheap-Worker Delegation; replaces reading the whole CHANGELOG inline).
 
-   **Skip for the `security` scope** (its prior findings describe auth/IAP/health-data code — hard-excluded from cheap-worker delegation): use the inline read instead — `cat "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"` plus the most recent manifest.
+   **Skip the delegation — use the inline read instead** (`cat "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"` plus the most recent manifest) whenever the invocation's **domain set** includes security- or IAP/auth-adjacent work: the named `security` scope, `full`, `pre-launch`, and `reliability` (its classes 3 & 6 are IAP/auth). The scope _string_ alone is not the signal — the default `full` audit dispatches the security domain too.
 
-   Otherwise select inline, then delegate the bulk read:
+   For the remaining scopes (`performance`, `code-quality`, `maintainability`, other named non-security domains), the CHANGELOG content is still scope-agnostic — prior auth/IAP finding summaries appear in every scope's history — so build a **fail-closed filtered corpus** first, then delegate:
 
    ```bash
+   # Paragraph-filter sensitive entries out of the corpus before it leaves the machine
+   # (over-dropping is fine — Phase 2 re-checks the manifest inline anyway).
    # Inline the $(...) — zsh does not word-split an unquoted $VAR, so a PRIOR= variable
    # arrives as ONE newline-embedded path; command substitution splits in both shells.
-   ask-kimi --max-tokens 32768 \
-     --paths "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md" \
-     $(ls -t "$MAIN_CHECKOUT"/docs/audits/*.md | grep -vE 'CHANGELOG|TEMPLATE' | head -2) \
+   TMP=$(mktemp -d)
+   for f in "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md" \
+     $(ls -t "$MAIN_CHECKOUT"/docs/audits/*.md | grep -vE 'CHANGELOG|TEMPLATE' | head -2); do
+     awk -v RS= -v ORS='\n\n' 'tolower($0) !~ /auth|jwt|iap|receipt|subscription|session|password|credential|health/' \
+       "$f" > "$TMP/$(basename "$f")"
+   done
+   ask-kimi --max-tokens 32768 --paths "$TMP"/*.md \
      --question "Dedup brief for an upcoming '<scope>' audit. From the CHANGELOG and manifests, structured bullets, cite file+line: (1) every prior finding relevant to <scope>: ID/title, file:line, severity, final status (fixed/deferred/false-positive/open), source manifest + date; (2) deferred items possibly still open; (3) findings recurring across audits."
    ```
+
+   Cite-and-verify caveat for the filtered corpus: line numbers in the brief refer to the **filtered** copies — confirm against the real files in `docs/audits/`.
 
    Keep the brief for Phase 2 dedup. It is **advisory — cite-and-verify**: never mark a Phase 2 finding `false-positive` as "already fixed" without confirming the cited manifest/CHANGELOG line inline.
 

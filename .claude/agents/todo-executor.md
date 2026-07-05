@@ -87,13 +87,18 @@ Codified knowledge lives in the **`docs/solutions/*.md` tree** — the canonical
 
    Collect the **top-3 paths** for the 2b digest below — do not read the full bodies inline (that read is delegated; on the 2b skip path, or if both 2b fallbacks fail, read the full body of the top 3 inline as before).
 
-   **2b — Knowledge digest (delegated bulk read).** ONE `ask-kimi` call replaces the inline top-3 full-body reads AND the "In both paths" LEARNINGS/archive greps below (sanctioned skill-embedded invocation — `docs/AI_WORKFLOW.md` → Cheap-Worker Delegation).
+   **2b — Knowledge digest (delegated bulk read; the label marks it as item 2's companion — there is no 2a).** ONE `ask-kimi` call replaces the inline top-3 full-body reads AND the "In both paths" LEARNINGS/archive greps below (sanctioned skill-embedded invocation — `docs/AI_WORKFLOW.md` → Cheap-Worker Delegation).
 
-   **Skip gate — no delegation, keep all reads inline** when EITHER: the todo's `labels` include `security`, OR any affected file is sensitive — it matches the `SENSITIVE_OVERRIDE` regex sourced at runtime from `scripts/todo-automerge-guard.sh` (single source of truth — do not restate it here) or lives under `server/middleware/` (JWT/API-key auth, which that regex does not cover):
+   **Skip gate — no delegation, keep all reads inline** when ANY of: the todo's `labels` include `security`; the todo title or labels mention auth, JWT, login, session, token, IAP, receipt, or subscription; or any affected file is sensitive — it matches the `SENSITIVE_OVERRIDE` regex sourced at runtime from `scripts/todo-automerge-guard.sh` (an IAP/health keyword override for the automerge guard's allowlist — NOT a general sensitivity detector, which is why the auth surfaces are appended explicitly in the alternation) or an auth-surface pattern:
 
    ```bash
    SENS=$(grep -m1 '^SENSITIVE_OVERRIDE=' scripts/todo-automerge-guard.sh | cut -d= -f2- | tr -d "'")
-   printf '%s\n' <affected files> | grep -qE "$SENS|(^|/)server/middleware/" && echo "SKIP — sensitive files, no delegation"
+   if [ -z "$SENS" ]; then
+     echo "SKIP — SENSITIVE_OVERRIDE extraction failed, failing closed"
+   elif printf '%s\n' <affected files> |
+     grep -qE "$SENS|(^|/)server/middleware/|(^|/)server/routes/auth|verification-token|token-storage|AuthContext|useAuth"; then
+     echo "SKIP — sensitive files, no delegation"
+   fi
    ```
 
    **Select paths inline** (selection is judgment — it stays with you): `docs/LEARNINGS.md` ONLY if an inline `grep -n` for the affected files/domain hits (225KB monolith — omit when nothing matches), **capturing the hit line numbers** — you MUST pass them into the question as anchors ("LEARNINGS mentions the affected files at/near lines N, M — report those entries in full"); in a 75k-token corpus the worker reliably extracts anchored lines but reliably misses unanchored ones (verified 2026-07-05: an unanchored digest missed a directly relevant entry at line 4078). Also: up to 8 `todos/archive/*.md` files from `grep -l` on the affected files, newest first; the top-3 solution paths from Stage 2. Order LEARNINGS.md first (stable corpus prefix → provider cache hits across a batch), then archive, then solutions. NEVER include `docs/rules/*`, `.github/copilot-instructions.md`, or `CLAUDE.md` — binding files stay inline.

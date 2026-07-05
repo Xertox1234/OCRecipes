@@ -109,7 +109,7 @@ The hook does **not** run `tsc` or `npm test` — CI owns those.
 
 The following CLI scripts are available globally. Their use has two tiers:
 
-**Sanctioned skill-embedded invocations** — the ONLY places a kimi tool runs without an explicit user request. Each lives in its owning skill/agent file with its own skip conditions and fallback (that file is authoritative for the mechanics):
+**Sanctioned skill-embedded invocations** — the ONLY places a kimi tool runs without an explicit user request. Five of the six live in an owning skill/agent file with their own skip conditions and fallback (that file is authoritative for the mechanics); the planning pre-read digest has no dedicated skill — its mechanics are the subsection below:
 
 | Where                                                           | Tool         | Purpose                                       |
 | --------------------------------------------------------------- | ------------ | --------------------------------------------- |
@@ -168,7 +168,13 @@ This keeps historical session context lean before it re-enters Claude's context 
 
 ### Sanctioned pattern: planning pre-read digest
 
-During planning/brainstorming sessions the main session MAY digest research piles before reading selectively. Scope: `docs/research/`, `docs/cowork/**`, `docs/brainstorms/`, and prior specs/plans in `docs/superpowers/`. Select the file list inline (judgment stays with Claude); delegate only the bulk read:
+During planning/brainstorming sessions the main session MAY digest research piles before reading selectively. Scope: `docs/research/`, `docs/cowork/**`, `docs/brainstorms/`, and prior specs/plans in `docs/superpowers/`. Select the file list inline (judgment stays with Claude), then **mechanically drop sensitive candidates** — judgment alone is not the gate; the hard exclusions apply to research docs too (e.g. the IAP-adjacent subscription-gating brainstorm):
+
+```bash
+printf '%s\n' <candidate paths> | grep -viE 'auth|jwt|iap|receipt|subscription|health'
+```
+
+Delegate only the bulk read of the survivors:
 
 ```bash
 ask-kimi --paths <selected research docs> \
