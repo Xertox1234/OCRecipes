@@ -55,16 +55,27 @@ if [ "$MODE" = "fast" ]; then
   # Whole-program type check (cannot be scoped).
   run npm run check:types || exit 1
 
-  # Tests that import the changed files. Degrade to a warning if Postgres is unreachable.
+  # Tests that import the changed files. A pass-stamp must certify EXECUTED verification,
+  # so we track whether the related-tests step actually ran and refuse to stamp if it was
+  # skipped for an unreachable DB (else the PR-guard would trust a stamp over zero tests).
+  tests_skipped=0
   if [ "${#CHANGED[@]}" -gt 0 ]; then
     if pg_isready -q 2>/dev/null; then
       run npx vitest related --run "${CHANGED[@]}" || exit 1
     else
-      echo "⚠ Postgres not reachable — skipping related tests (they'll run in CI / full preflight)."
+      echo "⚠ Postgres not reachable — related tests SKIPPED; NOT writing a pass-stamp."
+      echo "  (lint + tsc passed; PR creation stays blocked until a run that executes tests — or SKIP_PR_PREFLIGHT=1.)"
+      tests_skipped=1
     fi
   fi
 
   echo "✅ preflight:fast passed"
+
+  # Stamp only when verification was complete: tests ran, or none were needed (no changed TS).
+  if [ "$tests_skipped" -eq 0 ]; then
+    git rev-parse HEAD > "$STAMP_FILE" 2>/dev/null || true
+    echo "✔ pass-stamp written for $(git rev-parse --short HEAD 2>/dev/null)"
+  fi
   exit 0
 fi
 
