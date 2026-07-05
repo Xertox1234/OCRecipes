@@ -16,8 +16,25 @@ MODE="full"
 [ "${1:-}" = "--fast" ] && MODE="fast"
 [ "${1:-}" = "--staged" ] && MODE="staged"
 
-# PREFLIGHT_DRY_RUN=1 → echo the command but do not execute (used by the gate's tests).
-run() { echo "▶ $*"; [ -n "${PREFLIGHT_DRY_RUN:-}" ] && return 0; "$@"; }
+# Run one step. Default: buffer output, print a ▶ breadcrumb then a one-line ✔ on success,
+# or ✗ + the full captured output on failure. This keeps the happy path quiet — the script's
+# output is read into an agent's context on every push. Escapes:
+#   PREFLIGHT_DRY_RUN=1 → echo the command, do not execute (self-tests rely on this exact echo).
+#   PREFLIGHT_VERBOSE=1 → stream output live, like the pre-2026-07 behavior.
+run() {
+  if [ -n "${PREFLIGHT_DRY_RUN:-}" ]; then echo "▶ $*"; return 0; fi
+  if [ -n "${PREFLIGHT_VERBOSE:-}" ]; then echo "▶ $*"; "$@"; return $?; fi
+  printf '▶ %s…\n' "$*"
+  local out rc
+  out=$("$@" 2>&1); rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '✔ %s\n' "$*"
+  else
+    printf '✗ %s\n' "$*"
+    printf '%s\n' "$out"
+  fi
+  return "$rc"
+}
 
 if [ "$MODE" = "fast" ]; then
   # Files this branch changed vs main (committed range — push gate semantics).
@@ -100,7 +117,10 @@ run bash scripts/run-hook-tests.sh || exit 1
 # Tests + coverage need the dev DB. CI runs db:push first; mirror it unless opted out.
 # NOTE: db:push mutates the local dev DB schema (stateless Drizzle push — idempotent).
 if [ -z "${PREFLIGHT_SKIP_DB_PUSH:-}" ]; then
-  run npm run db:push || exit 1
+  # Streamed, NOT via run(): `drizzle-kit push` can prompt on a destructive diff; buffering
+  # its output would hide the prompt and hang. Only reached in on-demand full mode.
+  echo "▶ npm run db:push (streamed — may prompt on a destructive diff)…"
+  npm run db:push || exit 1
 fi
 run npm run test:coverage:ci || exit 1
 
