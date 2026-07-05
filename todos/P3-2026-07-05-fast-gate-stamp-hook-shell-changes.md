@@ -19,11 +19,10 @@ github_issue:
 
 `scripts/preflight.sh --fast` writes a HEAD pass-stamp whenever its (possibly empty) related-tests
 step didn't get skipped for an unreachable Postgres — but when the changed-file set contains no
-`*.ts`/`*.tsx` (an all-`.sh`/hook PR, or docs-only), `--fast` runs only `build:copilot-instructions:check`
-
-- whole-program `tsc` and never exercises the changed shell/hook logic, yet still stamps HEAD as
-  "verified." Consider running the hook self-test suite in `--fast` when `.claude/hooks/**` or `.husky/**`
-  changed, before writing the stamp.
+`*.ts`/`*.tsx` (an all-`.sh`/hook PR, or docs-only), `--fast` runs only two DB-free steps
+(`build:copilot-instructions:check` and whole-program `tsc`) and never exercises the changed
+shell/hook logic, yet still stamps HEAD as "verified." Consider running the hook self-test suite
+in `--fast` when `.claude/hooks/**` or `.husky/**` changed, before writing the stamp.
 
 ## Background
 
