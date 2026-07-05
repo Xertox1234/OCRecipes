@@ -61,7 +61,7 @@ if [ -z "$STORED_SHA" ] || [ "$STORED_SHA" = "$CURRENT_SHA" ]; then
 fi
 
 # HEAD moved without Claude recording it — external drift detected.
-MSG="Drift detected: repo HEAD moved externally since Claude's last git op. Stored: ${STORED_SHA} → Current: ${CURRENT_SHA}. Likely cause: parallel-terminal commit, rebase, or push by the user. Re-check \`git log --oneline -5\` and \`git status\` to reconcile before proceeding."
+MSG="Drift detected: repo HEAD moved externally since Claude's last git op. Stored: ${STORED_SHA} → Current: ${CURRENT_SHA}. Likely cause: parallel-terminal commit, rebase, or push by the user. Re-check \`git log --oneline -5\` and \`git status\` to reconcile before proceeding. Durable fix: give each session its own checkout via the superpowers:using-git-worktrees skill so parallel work can't move HEAD underneath you. (Warn-only.)"
 
 jq -n --arg m "$MSG" '{
   "hookSpecificOutput": {
