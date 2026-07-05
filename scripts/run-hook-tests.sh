@@ -12,7 +12,7 @@
 #   - per-test fail-fast (`|| exit 1`, load-bearing — this runs under preflight's no-`-e` shell);
 #   - a `▶ <test>` marker per test for step-log readability;
 #   - a zero-count fail-closed guard, so an unmatched glob fails RED instead of passing green —
-#     see docs/solutions/logic-errors/empty-probe-output-needs-exit-code-check-2026-07-02.md.
+#     see docs/solutions/logic-errors/glob-runner-loop-fails-open-count-and-fail-on-zero-2026-07-03.md.
 #
 # Caller-agnostic: no dependence on preflight's run() helper. Plain `set -uo pipefail` +
 # explicit `exit 1` so it behaves identically under preflight (no -e) and GitHub's
