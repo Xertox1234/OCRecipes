@@ -3,9 +3,10 @@ title: Resolve the diff range once for branch-diff skills; never scatter literal
 track: knowledge
 category: conventions
 module: shared
-tags: [codify, skill, diff-range, main-head, post-merge, squash, tooling]
-applies_to: [.claude/skills/codify/SKILL.md, .claude/skills/spec-review/SKILL.md]
+tags: [codify, skill, diff-range, main-head, post-merge, squash, tooling, uncommitted, audit, review-dispatch]
+applies_to: [.claude/skills/codify/SKILL.md, .claude/skills/spec-review/SKILL.md, .claude/skills/audit/SKILL.md]
 created: '2026-06-20'
+last_updated: '2026-07-05'
 source: 2026-06-20 todo P3-2026-06-19-codify-skill-handle-post-merge-diff
 ---
 
@@ -29,11 +30,23 @@ the merge commit). A "nothing to codify" early-exit may fire **only when both**
 
 ## When this applies
 
-Any skill whose Step 1 (or equivalent) starts from `git diff main...HEAD`. As of
-2026-06-20 `/codify` is the only such skill (verified: `grep -rln
-"main\.\.\.HEAD" .claude/skills` returns only `codify/SKILL.md`); `spec-review`
-consumes `path-domains.ts` but diffs differently. Apply this rule whenever a new
-branch-diff skill is added.
+Any skill whose Step 1 (or equivalent) starts from `git diff main...HEAD`, and —
+more broadly — any orchestrator that dispatches a reviewer over "the changes",
+because the same empty-range trap bites whenever the picked range does not match
+the current commit state. Two skills carry `main...HEAD` today (`grep -rln
+"main\.\.\.HEAD" .claude/skills`): `/codify` (Step 1 range resolution) and
+`/audit` (Phase 3 + Phase 6 review dispatch, where it appears as an explicit
+**"not `main...HEAD`"** caution — see below); `spec-review` consumes
+`path-domains.ts` but diffs differently. Apply this rule whenever a new
+branch-diff or review-dispatch skill is added.
+
+**Reviewing uncommitted work (the `/audit` case, PR #510).** `/audit` reviews
+each fix **before it is committed** (fixes are staged/committed only in Phase 7),
+so its per-fix and whole-diff reviewers must diff **`git diff HEAD`** (working
+tree vs `HEAD`), never `main...HEAD` — which is **empty** when the branch `HEAD`
+still equals its base (no commits yet). Same failure mode as the post-merge trap:
+wrong range → empty diff → every reviewer silently returns "No findings" and
+unreviewed code passes the gate.
 
 ## Why
 
@@ -55,6 +68,19 @@ The post-merge fallback must be **confirmable, not silent** (a botched heuristic
 could codify an unrelated prior commit): echo `HEAD`'s subject
 (`git log -1 --format='%h %s' HEAD`) and treat it as the unit only if it is the
 intended just-merged change, else ask for an explicit `<sha>`/`<range>`.
+
+**Generalize to the commit state, not the skill.** The single underlying rule is
+*pick the range that is non-empty for the current commit state*: uncommitted work
+→ `git diff HEAD`; committed on a feature branch → `main...HEAD`; a just-merged
+squash on the default branch → `HEAD^ HEAD`. Any mismatch yields an empty diff and
+a silent false pass. When the canonical dispatch prompt (`docs/AI_WORKFLOW.md` →
+Review Policy) offers **both** `diff HEAD` and `main...HEAD` variants, the
+consuming skill must **pin** the correct one for its state — and the pin must sit
+where it governs **every** dispatched reviewer (the shared dispatch preamble),
+not under one reviewer's bullet. PR #510 first shipped the pin under only the
+"domain reviewers" bullet, leaving the always-dispatched `code-reviewer` free to
+pick the empty `main...HEAD` variant; the follow-up hoisted it into the shared
+preamble so it covers all reviewers.
 
 ## Examples
 
@@ -84,6 +110,8 @@ the resolved decision use `<resolved-range>`.
 ## Related Files
 
 - `.claude/skills/codify/SKILL.md` — Step 1 range resolution + Step 3 review dispatch/confirm-check
+- `.claude/skills/audit/SKILL.md` — Phase 3 / Phase 6 review dispatch; pins `diff HEAD` for uncommitted fixes (PR #510)
+- `docs/AI_WORKFLOW.md` — Review Policy dispatch prompt offers both `diff HEAD` and `main...HEAD`; consumers must pin one for their commit state
 - `scripts/lib/path-domains.ts` — range-agnostic label CLI fed by the resolved `--name-only` list
 
 ## See Also
