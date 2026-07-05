@@ -3,7 +3,7 @@
 ---
 
 title: "Single-source the hook self-test runner: extract scripts/run-hook-tests.sh called by ci.yml and preflight.sh"
-status: backlog
+status: done
 priority: low
 created: 2026-07-03
 updated: 2026-07-03

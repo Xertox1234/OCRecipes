@@ -91,17 +91,11 @@ run node scripts/check-hardcoded-colors.js || exit 1
 run node scripts/check-idor-storage.js || exit 1
 run node scripts/check-jsdom-pragma.js || exit 1
 
-# Hook unit tests. CI's "Lint · Types · Patterns" job runs the `.claude/hooks/test-*.sh`
-# suite; mirror it so a broken hook test is caught locally, not only in CI (a failing hook
-# test is a "PR run failed" category the gate would otherwise miss). Loop over every test
-# present so newly-added hook tests are picked up automatically (no drift).
-for t in .claude/hooks/test-*.sh; do
-  [ -f "$t" ] || continue
-  # Strip inherited git env so a test's `git -C <tmp>` can't be hijacked onto the real repo
-  # by an absolute GIT_DIR (VS Code terminal / worktree). Each test owns its temp repo.
-  # See todos P2 git-churn. test-branch-preflight.sh also self-clears as defense-in-depth.
-  run env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR bash "$t" || exit 1
-done
+# Hook unit tests. The full mechanism — the `.claude/hooks/test-*.sh` glob loop, the inherited
+# git-env strip (so a test's `git -C <tmp>` can't be hijacked onto the real repo), per-test
+# fail-fast, and the zero-count guard — lives in scripts/run-hook-tests.sh, the SAME script
+# CI's "Lint · Types · Patterns" job runs, so the two runners can't drift. Add hooks there.
+run bash scripts/run-hook-tests.sh || exit 1
 
 # Tests + coverage need the dev DB. CI runs db:push first; mirror it unless opted out.
 # NOTE: db:push mutates the local dev DB schema (stateless Drizzle push — idempotent).
