@@ -6,6 +6,7 @@ module: shared
 tags: [claude-code, subagents, agents, inject-patterns, hooks, registry, harness, session-lifecycle]
 applies_to: [.claude/agents/**/*.md, docs/rules/**/*.md]
 created: '2026-07-02'
+last_updated: '2026-07-05'
 ---
 
 # Agent-file edits take effect on session reload, not when you save
@@ -39,6 +40,10 @@ the moment you save.
   dispatches `subagent_type: "<new-name>"` to smoke-test it.
 - Relying on injected rules inside a reviewer prompt ("the LSP rules will be in your
   context") when the reviewer has no Edit/Write.
+- A read-only agent whose duties are governed by a binding `docs/rules/*` domain carries
+  **no read-directly pointer at all** — it restates the rule content inline instead. The
+  restated copy is a drift surface, not a substitute: PR #512's prompt-engineer restated
+  sanitization and cache-invalidation rules and was wrong on day one.
 
 ## Why
 
@@ -56,6 +61,10 @@ isn't the change that's running," which reads as a mysterious no-op.
 - **Pointer wording** — read-only reviewers say "follow `docs/rules/lsp.md` (read it
   directly — it is not auto-injected into read-only agents)"; `todo-executor` (an editing
   agent) keeps "(auto-injected)" because it holds true for it.
+- **Pointer presence, not just wording** — when authoring or reviewing a read-only
+  agent, check that every binding rules domain it operates in has an explicit
+  "read `docs/rules/<domain>.md` directly" line (prompt-engineer gained one for
+  `docs/rules/ai-prompting.md` in PR #512 after shipping without it).
 - **Smoke-testing a new agent** — do NOT `subagent_type`-dispatch a brand-new agent in
   the session that created it. Content-validate instead: dispatch a `general-purpose`
   agent told to **Read the new agent file and adopt it as its instructions**, which
@@ -81,3 +90,4 @@ isn't the change that's running," which reads as a mysterious no-op.
 ## See Also
 
 - [../best-practices/grep-verify-single-ownership-after-dedup-consolidation-2026-07-02.md](../best-practices/grep-verify-single-ownership-after-dedup-consolidation-2026-07-02.md) — sibling lesson from the same consolidation: verifying the roster is complicated by this load timing
+- [../logic-errors/symbol-existence-grep-is-not-claim-verification-2026-07-05.md](../logic-errors/symbol-existence-grep-is-not-claim-verification-2026-07-05.md) — what happens when a read-only agent restates rules instead of pointing: the copies drift and pass symbol-level fact-checks
