@@ -54,6 +54,21 @@ and **whether the consumer knows**. Two principles:
    9,007 B byte-truncated + spill to 7,041 B fully inline, with the three lower-priority
    domains arriving whole on the following edits.
 
+4. **Skip building a unit you can already prove will defer.** (2026-07) When assembling a
+   unit's payload is itself expensive, don't build the whole thing just to measure it and then
+   defer it. If a *cheap lower bound* on the unit's size already exceeds the budget, the unit is
+   certain to defer no matter what the expensive part adds — so skip the expensive part. In
+   `inject-patterns.sh` each domain's payload is `[rules file] + [docs/solutions refs]`, and
+   building the solution refs is a ~50-70 ms corpus `grep` sweep while the rules file is a cheap
+   `wc -c`. Because rules-only is a *strict* lower bound on rules+solutions, a domain whose rules
+   alone overflow `DOMAIN_BUDGET` will defer regardless — so the hook defers it *before* the
+   sweep, saving ~140-165 ms/first-touch multi-domain edit (~42-49% of the hook's runtime). Two
+   conditions make this safe: (a) the lower bound must be *strict* — here payload assembly is
+   append-only (rules first, solutions appended after), so the estimate never mis-defers a unit
+   the exact-size check would have kept inline; (b) the first not-yet-delivered unit is still
+   exempt (`EMITTED_FULL` gate), so the highest-priority source — `security` — is never
+   pre-estimated away.
+
 The payoff is determinism: the truncation victim is principled and predictable, and the
 consumer is never misled into acting on a fragment it thinks is complete.
 
@@ -80,13 +95,21 @@ For the source-keep-it-small half of the same problem, see the rules-files conve
   budget you never hit. This pattern earns its keep only when overflow is routine.
 - `bash` on macOS is 3.2 by default — avoid `mapfile`/`readarray`; use the
   `$(... | sort | cut)` array idiom (word-split is safe for whitespace-free tokens).
+- The pre-estimate skip (Why #4) trades recoverability for speed: a pre-estimated defer spills
+  only its cheap part (rules), not the skipped expensive part (solution refs), so "full payload
+  recoverable *now* via spill" holds only for exact-size defers. This is acceptable only because
+  the deferred unit auto-injects in full on the next event; if there is no next event (a single
+  final edit), the solution refs simply wait until that domain is next touched. Don't apply the
+  skip where same-event full recovery is a hard requirement.
 
 ## Related Files
 
 - `.claude/hooks/inject-patterns.sh` — `domain_rank()`, priority sort, session-stateful
-  deferral (2026-07), spill-with-pointer backstop.
+  deferral (2026-07), pre-estimate skip before the solutions sweep (2026-07), spill-with-pointer
+  backstop.
 - `.claude/hooks/test-inject-patterns.sh` — asserts the highest-stakes domain stays inline,
-  first-touch payloads fit without spill, and deferred domains catch up on the next edit.
+  first-touch payloads fit without spill, deferred domains catch up on the next edit, and the
+  pre-estimate skips the solutions sweep for a certain-to-defer domain (`server/storage`).
 
 ## See Also
 

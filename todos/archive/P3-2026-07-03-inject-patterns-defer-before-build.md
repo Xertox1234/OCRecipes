@@ -3,7 +3,7 @@
 ---
 
 title: "inject-patterns: pre-estimate domain size to skip building payloads that will defer (~145ms/first-touch edit)"
-status: backlog
+status: done
 priority: low
 created: 2026-07-03
 updated: 2026-07-03
@@ -46,7 +46,7 @@ it and accept pointer-only deferral for estimated defers).
       conservative pre-estimate marks as certain to defer — OR the todo is closed as
       won't-fix with a measurement showing the saving no longer justifies the complexity
 - [ ] Deferred-payload recoverability (the `deferred payload recoverable from the spill
-    file now` test) either still holds or its removal is an explicit, documented decision
+  file now` test) either still holds or its removal is an explicit, documented decision
 - [ ] `bash .claude/hooks/test-inject-patterns.sh` green
 - [ ] Measured before/after timings recorded in the PR description
 
@@ -61,3 +61,26 @@ outcome — the current behavior is correct, just not maximally cheap.
 
 - Estimate-based deferral changes which domains land inline for borderline sizes;
   first-fit ordering must stay rank-based so security never regresses.
+
+## Resolution (2026-07-03) — IMPLEMENTED
+
+Implemented the conservative pre-estimate skip. A `[RULES — <domain>]`-only lower-bound size
+check runs BEFORE `solutions_from_markdown`: when a domain's rules alone already exceed
+`DOMAIN_BUDGET`, it is certain to defer regardless of solution refs, so the ~50-70ms corpus
+sweep is skipped and the domain defers with a rules-only spill payload.
+
+- **AC1** — met. First-touch multi-domain edits skip `solutions_from_markdown` for
+  certain-to-defer domains. Because rules-only is a strict lower bound on the full payload,
+  the estimate NEVER mis-defers a domain the exact check would have kept inline (verified by
+  code review). `security` (rank 10, emitted first, `EMITTED_FULL=0`) is never pre-estimated
+  away, so the first-fit ordering risk does not materialize.
+- **AC2** — the recoverability removal is an explicit, documented decision. Pre-estimate-
+  deferred domains ship rules-only to the spill; their solution refs auto-inject in full on
+  the session's next edit ("rules now, solution refs next edit"). The `itest-defer` api test
+  was reframed accordingly, and a wide-margin `server/storage`/`database` test proves the
+  sweep is skipped. Documented in the priority-order-context-injection solution's Exceptions.
+- **AC3** — `bash .claude/hooks/test-inject-patterns.sh` green (52/52).
+- **AC4** — measured before/after (N=40 first-touch runs, dedup ON):
+  - `client/components` (4 domains): ~348ms → ~201ms/run (~146ms, 42% faster)
+  - `server/routes` (3 domains): ~284ms → ~145ms/run (~139ms, 49% faster)
+  - `server/storage` (3 domains): ~333ms → ~170ms/run (~163ms, 49% faster)

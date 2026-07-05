@@ -26,8 +26,11 @@ SOLUTIONS_PER_DOMAIN=4
 
 # Inline size cap: Claude Code's hook-output cap is ~10K; past THRESHOLD the assembled
 # context is copied to the spill file and truncated inline (see the spill block at the end).
-# The spill file also receives deferred domains' full payloads (rules + solution refs), so
-# deferred content is always recoverable on the CURRENT edit, not only on a later one.
+# The spill file also receives deferred domains' payloads: a domain deferred by the EXACT size
+# check keeps its full rules + solution refs; one deferred by the cheap PRE-ESTIMATE (rules
+# alone already overflow) ships rules only — its solution refs skip the corpus sweep and
+# auto-inject on the next edit. So on the CURRENT edit rules are always recoverable; solution
+# refs are recoverable too unless the domain was pre-estimated away.
 THRESHOLD=9000
 SPILL_FILE="/tmp/ocrecipes-injection-context.md"
 # Byte budget for FULL domain payloads when session dedup is ON. Once the assembled context
@@ -265,6 +268,23 @@ if [ -n "$DOMAINS" ]; then
       cat "$RULES_FILE" >> "$BLOCKFILE"
     fi
 
+    # Pre-estimate deferral (perf): if this domain's rules ALONE already push the context past
+    # DOMAIN_BUDGET, it is certain to defer no matter what solution refs would add — rules-only
+    # is a strict lower bound on the full payload. So skip the ~50-70ms solutions_from_markdown
+    # corpus sweep for it. Because the estimate is a strict lower bound it NEVER mis-defers a
+    # domain the exact check below would have kept inline; it only short-circuits domains that
+    # check would defer anyway. The spill payload is then rules-only (solution refs are not
+    # built); the domain still auto-injects in FULL (rules + solution refs) on the session's
+    # next edit, so recoverability degrades to "rules now, solution refs next edit" — a
+    # deliberate, documented trade (see the priority-order-context-injection solution). security
+    # is rank 10 and always emits first (EMITTED_FULL=0), so it is never pre-estimated away.
+    if [ "$DEDUP" = "1" ] && [ "$EMITTED_FULL" = "1" ] &&
+      [ $(($(wc -c < "$TMPFILE") + $(wc -c < "$BLOCKFILE"))) -gt "$DOMAIN_BUDGET" ]; then
+      printf '\n[RULES — %s] deferred (inline size cap, pre-estimated) — rules in %s now; solution refs auto-inject on a later edit this session.\n' "$DOMAIN" "$SPILL_FILE" >> "$TMPFILE"
+      cat "$BLOCKFILE" >> "$DEFER_FILE"
+      continue
+    fi
+
     # Inject the most relevant docs/solutions/ files for this domain (path + title only —
     # Read the file for the body). Matching rule: a solution matches a domain if the
     # domain's tag is in the solution's `tags`, newest-first by the YYYY-MM-DD in the
@@ -279,12 +299,13 @@ if [ -n "$DOMAINS" ]; then
       done <<< "$SOLUTION_LINES"
     fi
 
-    # Defer instead of truncate: with session state available and at least one domain already
-    # emitted in full, a domain that would push the context over DOMAIN_BUDGET is deferred —
-    # NOT recorded in the dedup state, so the session's next edit injects it in full. Its
-    # complete payload (rules + solution refs) is still written to the spill file via
-    # DEFER_FILE, so it is recoverable NOW, not only on a later edit. The first domain
-    # always emits regardless of size (otherwise an oversized single domain would defer
+    # Exact-size deferral: the fallback for a domain whose rules alone FIT the budget (so the
+    # pre-estimate above let it through) but whose rules + solution refs together overflow it.
+    # With session state and at least one domain already emitted in full, such a domain is
+    # deferred — NOT recorded in the dedup state, so the session's next edit injects it in full.
+    # Unlike a pre-estimated defer, its complete payload (rules + solution refs — already built)
+    # is written to the spill file via DEFER_FILE, so it is fully recoverable NOW. The first
+    # domain always emits regardless of size (otherwise an oversized single domain would defer
     # forever); the spill block below remains the backstop for that case.
     if [ "$DEDUP" = "1" ] && [ "$EMITTED_FULL" = "1" ] &&
       [ $(($(wc -c < "$TMPFILE") + $(wc -c < "$BLOCKFILE"))) -gt "$DOMAIN_BUDGET" ]; then
@@ -304,8 +325,9 @@ fi
 # Spill overflow to a stable temp file so the agent can read the rest (THRESHOLD/SPILL_FILE
 # are defined at the top). With session dedup ON the deferral above keeps injections under
 # the cap, so truncation is now the backstop for session-less runs and single domains too
-# big for the budget. Deferred domains' full payloads always land in the spill file too —
-# appended after the full context on truncation, or written alone when the inline fit.
+# big for the budget. Deferred domains' payloads land in the spill file too (rules + solution
+# refs for exact-size defers; rules only for pre-estimated defers) — appended after the full
+# context on truncation, or written alone when the inline fit.
 CONTEXT_SIZE=$(wc -c < "$TMPFILE")
 if [ "$CONTEXT_SIZE" -gt "$THRESHOLD" ]; then
   cp "$TMPFILE" "$SPILL_FILE"
