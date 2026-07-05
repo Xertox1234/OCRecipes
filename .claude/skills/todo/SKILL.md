@@ -208,13 +208,9 @@ Determine which todos can safely run in parallel and which must run sequentially
 
 Work through the execution plan batch by batch.
 
-### Parallel Batches
+### Executor dispatch (shared by both batch types)
 
-For each batch marked parallel, spawn one `todo-executor` agent per todo, each in an **isolated worktree**.
-
-Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` and the actual main checkout path (e.g., `/Users/williamtower/projects/OCRecipes`) for `<MAIN_CHECKOUT>` in the prompt string. Never pass the literal text `<BASE_BRANCH>` or `<MAIN_CHECKOUT>`.
-
-Use the Agent tool with these parameters:
+Every executor is a `todo-executor` agent spawned in an **isolated worktree** via the Agent tool with these parameters:
 
 ```
 Agent({
@@ -225,26 +221,15 @@ Agent({
 })
 ```
 
-Launch all agents in the batch simultaneously (up to 4). Wait for all to complete before proceeding.
+Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` and the actual main checkout path (e.g., `/Users/williamtower/projects/OCRecipes`) for `<MAIN_CHECKOUT>`. Never pass the literal text `<BASE_BRANCH>` or `<MAIN_CHECKOUT>`.
+
+### Parallel Batches
+
+For each batch marked parallel, spawn one executor per todo using the dispatch call above — launch all agents in the batch simultaneously (up to 4), then wait for all to complete before proceeding.
 
 ### Sequential Batches
 
-For each batch marked sequential, spawn a **single** `todo-executor` agent.
-
-Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` and the actual main checkout path (e.g., `/Users/williamtower/projects/OCRecipes`) for `<MAIN_CHECKOUT>` in the prompt string. Never pass the literal text `<BASE_BRANCH>` or `<MAIN_CHECKOUT>`.
-
-Run one at a time. Wait for each to complete before starting the next.
-
-Use the Agent tool with these parameters:
-
-```
-Agent({
-  description: "Execute todo: <todo title>",
-  subagent_type: "general-purpose",
-  isolation: "worktree",
-  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\nMain checkout: <MAIN_CHECKOUT>\n\nExecute all steps in order and report the result."
-})
-```
+For each batch marked sequential, spawn a **single** executor using the dispatch call above. Run one at a time, waiting for each to complete before starting the next.
 
 ### After Each Batch
 

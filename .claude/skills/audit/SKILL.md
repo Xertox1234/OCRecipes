@@ -241,15 +241,12 @@ For **each** finding the user wants fixed:
    - Grep/read the fixed code to confirm the change is present
    - For a **symbol-changing fix**, re-run `findReferences` to confirm the change propagated to every call site with no stale callers or dangling references — grep can miss alias-resolved usages.
    - Run the specific test file(s) to confirm they pass
-7. **Review the fix** using the orchestrator-dispatched model in `docs/AI_WORKFLOW.md` → Review Policy, scoped to just the files this fix touched. The finding already carries a **domain** (the reviewer that discovered it), so the natural reviewer is that domain's reviewer — select it from the roster (usually **1**, cap **2** if the fix genuinely spans domains; content overrides the recorded domain). **Working-tree safety:** you run inside the audit worktree but the reviewer subagent does not inherit that cwd, so capture `WORKTREE=$(git rev-parse --show-toplevel)` (+ `git rev-parse --abbrev-ref HEAD` / `--short HEAD`) and require the reviewer to use `git -C "$WORKTREE"` (not `cd`) — otherwise it diffs an empty main checkout and falsely returns "No findings". Dispatch via the Agent tool:
+7. **Review the fix** using the orchestrator-dispatched model in `docs/AI_WORKFLOW.md` → Review Policy, scoped to just the files this fix touched. The finding already carries a **domain** (the reviewer that discovered it), so the natural reviewer is that domain's reviewer — select it from the roster (usually **1**, cap **2** if the fix genuinely spans domains; content overrides the recorded domain). Dispatch via the Agent tool using the **canonical dispatch prompt and "Working-tree safety" procedure from `docs/AI_WORKFLOW.md` → Review Policy** — read them from that file; they are not restated here (a previous inline copy drifted — see `.claude/agents/todo-executor.md`). In your own (correct) cwd, capture `WORKTREE=$(git rev-parse --show-toplevel)` plus the audit branch and short HEAD, then fill the canonical prompt with these audit-specific substitutions:
+   - **context label** — the finding ID
+   - **changed files** — the files this fix touched, reviewed via the working-tree diff variant `git -C "$WORKTREE" diff HEAD -- <those files>` (the fix stays uncommitted until Phase 7, so the `main...HEAD` variant would show nothing and yield a false "No findings")
+   - add a **`Fix: <one-line fix description>`** line so the reviewer has the intent
 
-   ```
-   Agent({
-     description: "Audit fix review (<domain>): <finding ID>",
-     subagent_type: "<domain reviewer, e.g. security-auditor>",
-     prompt: "Your ambient cwd is the main checkout, NOT the audit tree. Use `git -C \"<WORKTREE>\"` for every git command and read files at <WORKTREE>/<path>; do not cd.\n\nFirst confirm the tree: `git -C \"<WORKTREE>\" rev-parse --abbrev-ref HEAD` and `git -C \"<WORKTREE>\" rev-parse --short HEAD` must be <audit branch>/<short HEAD> — if not, STOP and report 'wrong working tree'.\n\nThen review a single audit fix through your <domain> lens — correctness, security, and OCRecipes pattern compliance.\n\nFix: <one-line fix description>\n\nRun `git -C \"<WORKTREE>\" diff HEAD -- <files this fix touched>` to see only this fix's changes; read surrounding code at <WORKTREE>/<path> and use LSP for full context. Do NOT review unchanged code.\n\nReturn findings using exactly this format:\n[CRITICAL] file:line — description\n[WARNING] file:line — description\n[SUGGESTION] file:line — description\nIf there are no issues, return exactly: No findings."
-   })
-   ```
+   The canonical prompt already opens with the mandatory tree check and returns the `[CRITICAL] / [WARNING] / [SUGGESTION] / No findings` format that the Response handling below consumes.
 
    Reviewers have full tool access (LSP, file reads). Scope to the single fix so each finding is verified before you move on. Per-fix review uses the **domain reviewer only** — the always-on `code-reviewer` cross-cutting baseline runs in **Phase 6** over the whole multi-file diff, not once per finding (that would spawn it dozens of times). If multiple domain reviewers are selected for one fix, merge their findings before applying the tier rule.
 
@@ -281,12 +278,9 @@ For findings the user wants deferred:
 
 ## Phase 5: Verify & Summarize
 
-1. Run the full verification suite:
-   - `npm run test:run` — all tests must pass
-   - `npm run check:types` — zero errors
-   - `npm run lint` — zero errors
-2. Update the manifest summary table with final counts
-3. Append an entry to the main checkout's CHANGELOG (`"$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"`) — the worktree's copy would vanish at Phase 9
+1. **Summarize from the manifest — do not run the full suite here.** Each user-selected fix already passed its **targeted** tests and per-fix review in Phase 3; the single authoritative full-suite gate runs once at the end of Phase 6. Confirm every fixed finding is marked `verified` with its per-fix evidence.
+2. Update the manifest summary table with the findings counts per severity (Found / Verified / Deferred / False-positive / Open). The summary table tracks findings only — the suite is a pass/fail gate run in Phase 6, not a number recorded here.
+3. **Draft** the CHANGELOG entry from the manifest, but do **not** append it yet: the append-only CHANGELOG must record a confirmed-green audit, so it is written only after Phase 6's authoritative suite gate (Phase 6 step 6).
 4. **Report the final summary to the user:**
    - Findings: X total (C/H/M/L breakdown)
    - Verified: N fixed with evidence
@@ -299,7 +293,7 @@ For findings the user wants deferred:
 
 This phase reviews the **whole multi-file diff** — a deeper pass than Phase 3's per-fix, per-finding reviews. Audit work is one of the places where the extra token cost is justified because reviewers may need to reason across multiple files, patterns, and fix interactions that a single-fix scoped review cannot see. Dispatch per the `docs/AI_WORKFLOW.md` → Review Policy model.
 
-1. **Select reviewers for the full diff** (per Review Policy): the relevant **domain reviewers** for the union of all touched domains across the fixes, **plus** the `code-reviewer` generalist — always, here, because Phase 6's distinctive value is the cross-file + structural-quality pass that only the generalist carries. Dispatch them **in parallel** over the list of all modified files from Phase 3, giving each the one-line fix descriptions (from the manifest) for context. **Working-tree safety:** capture `WORKTREE=$(git rev-parse --show-toplevel)` in your own cwd and require every reviewer prompt (domain reviewers and `code-reviewer` alike) to use `git -C "$WORKTREE"` for all git commands + read files at `$WORKTREE/<path>` and begin with a tree check (per Review Policy → "Working-tree safety") — do not `cd`; a subagent does not inherit this worktree's cwd and would otherwise review an empty main checkout.
+1. **Select reviewers for the full diff** (per Review Policy): the relevant **domain reviewers** for the union of all touched domains across the fixes, **plus** the `code-reviewer` generalist — always, here, because Phase 6's distinctive value is the cross-file + structural-quality pass that only the generalist carries. Dispatch them **in parallel** over the list of all modified files from Phase 3, giving each the one-line fix descriptions (from the manifest) for context. **Working-tree safety:** in your own cwd capture `WORKTREE=$(git rev-parse --show-toplevel)` plus the audit branch and short HEAD, and have every reviewer (domain reviewers and `code-reviewer` alike) follow the **"Working-tree safety" procedure in `docs/AI_WORKFLOW.md` → Review Policy** — `git -C "$WORKTREE"` for all git commands, read files at `$WORKTREE/<path>`, and open with the tree check; not restated here. They must **also** use the working-tree diff variant — `git -C "$WORKTREE" diff HEAD -- <the modified files>`, **not** `main...HEAD`: audit fixes stay uncommitted until Phase 7, so the branch HEAD equals its base and `main...HEAD` shows nothing — a false "No findings" that silently passes unreviewed code.
    - **Domain reviewers**: use the Review-Policy dispatch prompt, scoped to the modified-file set, reviewing through each lens.
    - **`code-reviewer`** (`.claude/agents/code-reviewer.md`): give it the cross-cutting instruction:
 
@@ -319,7 +313,8 @@ This phase reviews the **whole multi-file diff** — a deeper pass than Phase 3'
 2. For each CRITICAL or HIGH finding: fix immediately (follow Phase 3 rules — read, fix, verify, update manifest)
 3. For MEDIUM findings: use judgment — fix if quick, otherwise record in the manifest's Deferred Items table (do not auto-create a todo)
 4. For LOW findings: fix if a trivial one-liner, otherwise record in the manifest's Deferred Items table
-5. Re-run `npm run test:run`, `npm run check:types`, and `npm run lint` after any review fixes
+5. **Run the single authoritative full-suite gate** — `npm run test:run` (all pass), `npm run check:types` (zero errors), `npm run lint` (zero errors). Run it **even if the review produced no fixes** (Phase 5 no longer runs the suite); this is the audit's one post-fix full-suite confirmation. If the gate is **red**, fix per Phase 3 rules (read → fix → re-verify → update manifest) and re-run until green **before** step 6 — never append the CHANGELOG or proceed to commit on a red suite.
+6. **Append the CHANGELOG entry** to the main checkout's CHANGELOG (`"$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"`) — build it from the **final** manifest (the Phase 5 draft as a starting point, refreshed for any counts Phase 6's fixes or deferrals changed). Now that the gate (step 5) is green, the append-only log records a confirmed-green audit with final counts. (The worktree's copy would vanish at Phase 9, so it must be written to the main checkout.)
 
 ## Phase 7: Commit Fixes
 
@@ -371,7 +366,7 @@ After fixes are committed, extract reusable knowledge inline from the audit mani
 **Why the order is fix → commit → codify:**
 
 - the per-fix domain-reviewer review runs inside Phase 3, so every fix is reviewed and verified before Phase 6 (Code Review) deepens the inspection across files
-- Phase 6 (Code Review) is a subagent-based audit pass over the multi-file diff; Phase 7 (Commit) follows once review is clean
+- Phase 6 (Code Review) is a subagent-based audit pass over the multi-file diff **and runs the single authoritative full-suite gate, then appends the confirmed-green CHANGELOG entry**; Phase 7 (Commit) follows once review is clean and the suite is green
 - Committing before codifying keeps the fix diff clean and reviewable without docs noise
 - Codification (Phase 8) happens last so the codifier sees the complete picture — all verified fixes, including any corrections triggered by the per-fix review or by the Phase 6 review
 - If codification reveals issues, the fixes are already safely committed
@@ -419,6 +414,7 @@ After the fix commit (Phase 7) and the codification commit (Phase 8) both exist 
 - **The manifest is the source of truth.** Every finding must be in it. Every status change must be recorded.
 - **Zero open findings at close.** Everything is either verified, deferred (with todo), or false-positive.
 - **No documentation during the fix phase.** Fix code first (Phases 3-6). Codify patterns only after the fix commit in Phase 8.
+- **The full test/type/lint suite runs once, as the authoritative post-fix gate at the end of Phase 6** — after all fix and review corrections. Phase 3 runs only targeted tests; Phase 5 summarizes from the manifest and does not re-run the suite (the Phase 1 baseline run is separate — it establishes the starting green state).
 - **Per-fix review is not optional.** Every fix in Phase 3 must pass its selected reviewer(s) (the finding's domain reviewer, per the Review Policy roster) before being marked `verified`. It catches what test-based verification misses and gives Phase 8 the full context needed for codification and agent updates.
 - **Deferred is not dropped.** Findings the user explicitly chose to defer at Phase 2.5 triage get a todo (Phase 4) with priority and rationale. Surfaced WARNING/MEDIUM/LOW findings from Phases 3 and 6 stay in the manifest's Deferred Items table — they are NOT auto-filed as todos. The manifest is their record; the user decides at close whether any warrant a todo. "We'll get to it" is not a rationale.
 - **The changelog is append-only.** Never edit previous entries.
