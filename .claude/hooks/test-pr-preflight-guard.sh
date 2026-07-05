@@ -39,6 +39,12 @@ OUT=$(run_hook "gh pr create --title x --body y")
 assert_empty "fresh stamp allows create" "" "$OUT"
 rm -f "$STAMP_FILE"
 
+# 3b. A stamp for a DIFFERENT sha (stale) → deny (must match HEAD exactly).
+echo "0000000000000000000000000000000000000000" > "$STAMP_FILE"
+OUT=$(run_hook "gh pr create --title x --body y")
+assert_contains "stale stamp (wrong sha) denies" '"permissionDecision": "deny"' "$OUT"
+rm -f "$STAMP_FILE"
+
 # 4. Bypass env → allow.
 OUT=$(SKIP_PR_PREFLIGHT=1 run_hook "gh pr create --title x --body y")
 assert_empty "bypass env allows create" "" "$OUT"

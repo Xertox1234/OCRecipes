@@ -14,10 +14,26 @@ set -uo pipefail
 STAMP_FILE="$(preflight_stamp_path)"
 MODE="full"
 [ "${1:-}" = "--fast" ] && MODE="fast"
-[ "${1:-}" = "--staged" ] && MODE="staged"
 
-# PREFLIGHT_DRY_RUN=1 → echo the command but do not execute (used by the gate's tests).
-run() { echo "▶ $*"; [ -n "${PREFLIGHT_DRY_RUN:-}" ] && return 0; "$@"; }
+# Run one step. Default: buffer output, print a ▶ breadcrumb then a one-line ✔ on success,
+# or ✗ + the full captured output on failure. This keeps the happy path quiet — the script's
+# output is read into an agent's context on every push. Escapes:
+#   PREFLIGHT_DRY_RUN=1 → echo the command, do not execute (self-tests rely on this exact echo).
+#   PREFLIGHT_VERBOSE=1 → stream output live, like the pre-2026-07 behavior.
+run() {
+  if [ -n "${PREFLIGHT_DRY_RUN:-}" ]; then echo "▶ $*"; return 0; fi
+  if [ -n "${PREFLIGHT_VERBOSE:-}" ]; then echo "▶ $*"; "$@"; return $?; fi
+  printf '▶ %s…\n' "$*"
+  local out rc
+  out=$("$@" 2>&1); rc=$?
+  if [ "$rc" -eq 0 ]; then
+    printf '✔ %s\n' "$*"
+  else
+    printf '✗ %s\n' "$*"
+    printf '%s\n' "$out"
+  fi
+  return "$rc"
+}
 
 if [ "$MODE" = "fast" ]; then
   # Files this branch changed vs main (committed range — push gate semantics).
@@ -38,46 +54,27 @@ if [ "$MODE" = "fast" ]; then
   # Whole-program type check (cannot be scoped).
   run npm run check:types || exit 1
 
-  # Tests that import the changed files. Degrade to a warning if Postgres is unreachable.
+  # Tests that import the changed files. A pass-stamp must certify EXECUTED verification,
+  # so we track whether the related-tests step actually ran and refuse to stamp if it was
+  # skipped for an unreachable DB (else the PR-guard would trust a stamp over zero tests).
+  tests_skipped=0
   if [ "${#CHANGED[@]}" -gt 0 ]; then
     if pg_isready -q 2>/dev/null; then
       run npx vitest related --run "${CHANGED[@]}" || exit 1
     else
-      echo "⚠ Postgres not reachable — skipping related tests (they'll run in CI / full preflight)."
+      echo "⚠ Postgres not reachable — related tests SKIPPED; NOT writing a pass-stamp."
+      echo "  (lint + tsc passed; PR creation stays blocked until a run that executes tests — or SKIP_PR_PREFLIGHT=1.)"
+      tests_skipped=1
     fi
   fi
 
   echo "✅ preflight:fast passed"
-  exit 0
-fi
 
-if [ "$MODE" = "staged" ]; then
-  # Files staged for THIS commit (what is about to be committed).
-  CHANGED=()
-  while IFS= read -r f; do [ -n "$f" ] && CHANGED+=("$f"); done \
-    < <(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' 2>/dev/null)
-
-  # Separate probe: anything staged that can affect types — .ts/.tsx plus .json
-  # (resolveJsonModule) and tsconfig* (path/config changes a .ts-only filter misses).
-  TS_AFFECTING=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' '*.json' 'tsconfig*' 2>/dev/null)
-
-  # Type-aware lint on staged TS files only (ESLINT_NO_TYPE_AWARE= enables type-aware).
-  if [ "${#CHANGED[@]}" -gt 0 ]; then
-    run env ESLINT_NO_TYPE_AWARE= npx eslint "${CHANGED[@]}" || exit 1
+  # Stamp only when verification was complete: tests ran, or none were needed (no changed TS).
+  if [ "$tests_skipped" -eq 0 ]; then
+    git rev-parse HEAD > "$STAMP_FILE" 2>/dev/null || true
+    echo "✔ pass-stamp written for $(git rev-parse --short HEAD 2>/dev/null)"
   fi
-
-  # Incremental whole-program type check when any type-affecting file is staged.
-  if [ -n "$TS_AFFECTING" ]; then
-    run npm run check:types:incremental || exit 1
-  fi
-
-  # Unit tests reachable from the staged files. Integration tests (server/storage/__tests__)
-  # are excluded — they need the dev DB, which may be stale right after a schema edit.
-  if [ "${#CHANGED[@]}" -gt 0 ]; then
-    run npx vitest related --run "${CHANGED[@]}" --exclude 'server/storage/__tests__/**' || exit 1
-  fi
-
-  echo "✅ preflight:staged passed"
   exit 0
 fi
 
@@ -100,7 +97,10 @@ run bash scripts/run-hook-tests.sh || exit 1
 # Tests + coverage need the dev DB. CI runs db:push first; mirror it unless opted out.
 # NOTE: db:push mutates the local dev DB schema (stateless Drizzle push — idempotent).
 if [ -z "${PREFLIGHT_SKIP_DB_PUSH:-}" ]; then
-  run npm run db:push || exit 1
+  # Streamed, NOT via run(): `drizzle-kit push` can prompt on a destructive diff; buffering
+  # its output would hide the prompt and hang. Only reached in on-demand full mode.
+  echo "▶ npm run db:push (streamed — may prompt on a destructive diff)…"
+  npm run db:push || exit 1
 fi
 run npm run test:coverage:ci || exit 1
 

@@ -1,31 +1,16 @@
 #!/usr/bin/env bash
-# Pre-commit hook: lint-staged.
-#
-# Bypass: nothing to bypass — lint-staged always runs.
+# Pre-commit hook: lint-staged ONLY. Fast by design — the semantic gate (type-aware lint +
+# tsc + related tests) runs once at pre-push (scripts/preflight.sh --fast), not per commit.
+# See docs/superpowers/specs/2026-07-04-preflight-gate-consolidation-design.md.
+# Bypass: git commit --no-verify.
 
-# Husky runs hooks as `sh -e`, ignoring the bash shebang above. This script uses
-# bash-only features (arrays, `<<<` here-strings, `$'...'`). When `sh` is not bash
-# — e.g. dash, the default /bin/sh on Linux — re-exec under bash so those features
-# parse. Must run before lint-staged so it doesn't execute twice. On macOS `sh` is
-# bash (BASH_VERSION set), so this is a no-op there.
+# Husky runs hooks as `sh -e`, ignoring the bash shebang. This script needs bash (lint-staged
+# invocation is plain, but keep the re-exec so future bash-only edits are safe). On macOS `sh`
+# is bash (BASH_VERSION set), so this is a no-op there.
 if [ -z "${BASH_VERSION:-}" ]; then
   exec bash "$0" "$@"
 fi
-# Husky invokes this script as `sh -e`, which activates errexit. We manage exit
-# codes explicitly, so clear errexit now that we are running under bash.
+# Clear errexit inherited from `sh -e`; we manage exit codes explicitly.
 set +e
 
 NODE_OPTIONS="--max-old-space-size=4096" npx lint-staged --concurrent false || exit 1
-
-# Changed-scope gate: type-aware lint + incremental tsc + related unit tests on staged
-# files. Runs after lint-staged so it validates the auto-fixed, re-staged result.
-#
-# core.hooksPath is a SHARED, ABSOLUTE path, so every git worktree runs THIS hook
-# against its OWN scripts/preflight.sh. The `grep -- --staged` guard ensures we only
-# invoke the gate where that script understands the flag; on older branches/worktrees
-# whose preflight.sh predates --staged it would otherwise fall through to MODE=full and
-# run the entire CI gate (incl. db:push against the shared dev DB) on every commit.
-# Bypass: git commit --no-verify, or PRECOMMIT_SKIP_GATE=1.
-if [ -z "${PRECOMMIT_SKIP_GATE:-}" ] && grep -q -- '--staged' scripts/preflight.sh 2>/dev/null; then
-  bash scripts/preflight.sh --staged || exit 1
-fi

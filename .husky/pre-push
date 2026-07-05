@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
-# Pre-push gate. Picks the preflight depth by whether the branch already has an open PR:
-#   delete / no-op push → skipped entirely (no commits to verify).
-#   open PR  → full preflight (incl. coverage) — every PR-updating push is CI-verified locally.
-#   no PR    → preflight:fast (WIP iteration stays fast).
-# Coverage on the FIRST (pre-PR) push is enforced separately by the gh-pr-create guard.
-# Bypass (emergencies only): git push --no-verify
+# Pre-push gate. Always runs the fast smoke gate (scripts/preflight.sh --fast), except:
+#   - delete / no-op push  → skipped (no commits to verify);
+#   - HEAD already carries a fresh pass-stamp (from a prior --fast or on-demand
+#     `npm run preflight`) → skipped (this exact commit was already verified).
+# Coverage + the full suite are delegated to CI's required checks (the gate on main). Full
+# local parity is on-demand via `npm run preflight`. Bypass (emergencies): git push --no-verify
 
-# Husky runs hooks as `sh -e`; re-exec under bash for arrays/[[ ]]/$'...'. (Copied from .husky/pre-commit.)
+# Husky runs hooks as `sh -e`; re-exec under bash for the sourced helper (`local`) and arrays.
 if [ -z "${BASH_VERSION:-}" ]; then
   exec bash "$0" "$@"
 fi
 set +e
 
-# Decide whether there is anything to verify. Git feeds one line per pushed ref to a pre-push
-# hook on stdin: "<local-ref> <local-sha> <remote-ref> <remote-sha>". A branch DELETION has an
-# all-zero local sha (and no commits); a no-op re-push has an empty commit range — neither
-# needs the preflight. Skip only when EVERY pushed ref is provably a delete or empty; any
-# uncertainty (unknown remote sha, or empty stdin) falls through to the normal gate.
+# --- (a) Skip delete / no-op pushes FIRST (never consults the stamp) -----------
+# Git feeds one line per pushed ref on stdin: "<local-ref> <local-sha> <remote-ref> <remote-sha>".
+# A branch DELETION has an all-zero local sha; a no-op re-push has an empty commit range. Skip
+# only when EVERY pushed ref is provably a delete or empty; any uncertainty falls through.
 zero="0000000000000000000000000000000000000000"
 saw_ref=0
 need_verify=0
@@ -28,8 +27,6 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     need_verify=1                                    # brand-new remote branch → has commits
     continue
   fi
-  # Existing branch: skip only if the range is provably empty. `--count` is one number; a git
-  # failure (remote sha absent locally) yields "" → fail safe and verify.
   count=$(git rev-list --count "$remote_sha..$local_sha" 2>/dev/null) || count=""
   if [ -z "$count" ] || [ "$count" != "0" ]; then
     need_verify=1
@@ -41,24 +38,23 @@ if [ "$saw_ref" = 1 ] && [ "$need_verify" = 0 ]; then
   exit 0
 fi
 
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-
-MODE="fast"
-if command -v gh >/dev/null 2>&1; then
-  # Only an OPEN PR escalates to the full gate. `gh pr view` also matches CLOSED/MERGED PRs,
-  # which kept forcing the full gate on a branch long after its PR closed — list open only.
-  if [ -n "$(gh pr list --state open --head "$BRANCH" --json number --jq '.[0].number // empty' 2>/dev/null)" ]; then
-    MODE="full"
-  fi
-else
-  echo "[pre-push] gh not found — running fast gate; coverage is enforced at gh pr create." >&2
+# --- (b) Skip when HEAD is already stamped (this exact commit was verified) -----
+# Resolve the stamp via the SAME helper the writer/guard use. A missing helper or empty stamp
+# fails toward RUNNING the gate (verify), never toward a false skip.
+HEAD_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+STAMP=""
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+if [ -n "$ROOT" ] && [ -f "$ROOT/scripts/lib/preflight-stamp-path.sh" ]; then
+  # shellcheck source=scripts/lib/preflight-stamp-path.sh
+  . "$ROOT/scripts/lib/preflight-stamp-path.sh"
+  STAMP=$(cat "$(preflight_stamp_path)" 2>/dev/null || echo "")
+fi
+if [ -n "$HEAD_SHA" ] && [ "$STAMP" = "$HEAD_SHA" ]; then
+  echo "[pre-push] HEAD $(git rev-parse --short HEAD 2>/dev/null) already verified (fresh pass-stamp) — skipping gate."
+  exit 0
 fi
 
-if [ "$MODE" = "full" ]; then
-  echo "[pre-push] open PR detected for '$BRANCH' — running full preflight (incl. coverage)…"
-  npm run preflight || { echo "[pre-push] full preflight failed — push aborted (bypass: --no-verify)."; exit 1; }
-else
-  echo "[pre-push] no open PR for '$BRANCH' — running fast gate…"
-  npm run preflight:fast || { echo "[pre-push] fast gate failed — push aborted (bypass: --no-verify)."; exit 1; }
-fi
+# --- (c) Run the fast smoke gate ----------------------------------------------
+echo "[pre-push] running fast gate…"
+npm run preflight:fast || { echo "[pre-push] fast gate failed — push aborted (bypass: --no-verify)."; exit 1; }
 exit 0
