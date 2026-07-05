@@ -14,7 +14,6 @@ set -uo pipefail
 STAMP_FILE="$(preflight_stamp_path)"
 MODE="full"
 [ "${1:-}" = "--fast" ] && MODE="fast"
-[ "${1:-}" = "--staged" ] && MODE="staged"
 
 # Run one step. Default: buffer output, print a ▶ breadcrumb then a one-line ✔ on success,
 # or ✗ + the full captured output on failure. This keeps the happy path quiet — the script's
@@ -76,36 +75,6 @@ if [ "$MODE" = "fast" ]; then
     git rev-parse HEAD > "$STAMP_FILE" 2>/dev/null || true
     echo "✔ pass-stamp written for $(git rev-parse --short HEAD 2>/dev/null)"
   fi
-  exit 0
-fi
-
-if [ "$MODE" = "staged" ]; then
-  # Files staged for THIS commit (what is about to be committed).
-  CHANGED=()
-  while IFS= read -r f; do [ -n "$f" ] && CHANGED+=("$f"); done \
-    < <(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' 2>/dev/null)
-
-  # Separate probe: anything staged that can affect types — .ts/.tsx plus .json
-  # (resolveJsonModule) and tsconfig* (path/config changes a .ts-only filter misses).
-  TS_AFFECTING=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.tsx' '*.json' 'tsconfig*' 2>/dev/null)
-
-  # Type-aware lint on staged TS files only (ESLINT_NO_TYPE_AWARE= enables type-aware).
-  if [ "${#CHANGED[@]}" -gt 0 ]; then
-    run env ESLINT_NO_TYPE_AWARE= npx eslint "${CHANGED[@]}" || exit 1
-  fi
-
-  # Incremental whole-program type check when any type-affecting file is staged.
-  if [ -n "$TS_AFFECTING" ]; then
-    run npm run check:types:incremental || exit 1
-  fi
-
-  # Unit tests reachable from the staged files. Integration tests (server/storage/__tests__)
-  # are excluded — they need the dev DB, which may be stale right after a schema edit.
-  if [ "${#CHANGED[@]}" -gt 0 ]; then
-    run npx vitest related --run "${CHANGED[@]}" --exclude 'server/storage/__tests__/**' || exit 1
-  fi
-
-  echo "✅ preflight:staged passed"
   exit 0
 fi
 
