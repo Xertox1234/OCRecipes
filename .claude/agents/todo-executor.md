@@ -85,18 +85,40 @@ Codified knowledge lives in the **`docs/solutions/*.md` tree** — the canonical
    2. `tags` ∩ todo `labels` — more overlap ranks higher.
    3. bug-track `symptoms`, or `title` keywords, overlapping the todo title / Implementation Notes.
 
-   Read the **full body of the top 3** only.
+   Collect the **top-3 paths** for the 2b digest below — do not read the full bodies inline (that read is delegated; on the 2b skip path, or if both 2b fallbacks fail, read the full body of the top 3 inline as before).
+
+   **2b — Knowledge digest (delegated bulk read).** ONE `ask-kimi` call replaces the inline top-3 full-body reads AND the "In both paths" LEARNINGS/archive greps below (sanctioned skill-embedded invocation — `docs/AI_WORKFLOW.md` → Cheap-Worker Delegation).
+
+   **Skip gate — no delegation, keep all reads inline** when EITHER: the todo's `labels` include `security`, OR any affected file is sensitive — it matches the `SENSITIVE_OVERRIDE` regex sourced at runtime from `scripts/todo-automerge-guard.sh` (single source of truth — do not restate it here) or lives under `server/middleware/` (JWT/API-key auth, which that regex does not cover):
+
+   ```bash
+   SENS=$(grep -m1 '^SENSITIVE_OVERRIDE=' scripts/todo-automerge-guard.sh | cut -d= -f2- | tr -d "'")
+   printf '%s\n' <affected files> | grep -qE "$SENS|(^|/)server/middleware/" && echo "SKIP — sensitive files, no delegation"
+   ```
+
+   **Select paths inline** (selection is judgment — it stays with you): `docs/LEARNINGS.md` ONLY if an inline `grep -n` for the affected files/domain hits (225KB monolith — omit when nothing matches), **capturing the hit line numbers** — you MUST pass them into the question as anchors ("LEARNINGS mentions the affected files at/near lines N, M — report those entries in full"); in a 75k-token corpus the worker reliably extracts anchored lines but reliably misses unanchored ones (verified 2026-07-05: an unanchored digest missed a directly relevant entry at line 4078). Also: up to 8 `todos/archive/*.md` files from `grep -l` on the affected files, newest first; the top-3 solution paths from Stage 2. Order LEARNINGS.md first (stable corpus prefix → provider cache hits across a batch), then archive, then solutions. NEVER include `docs/rules/*`, `.github/copilot-instructions.md`, or `CLAUDE.md` — binding files stay inline.
+
+   ```bash
+   ask-kimi --max-tokens 32768 --paths <ordered paths> \
+     --question "Knowledge digest for todo '<title>' (affected files: <list>). Three sections, structured bullets, cite file+line for EVERY claim: (1) SOLUTIONS — per docs/solutions file: which applies_to glob (if any) matches an affected file; the one-line takeaway from its Solution/Prevention or Rule section; QUOTE VERBATIM any sentence that names this todo's task, with its line number. (2) LEARNINGS — report in full the entries at/near lines <anchors from your inline grep -n>, plus any other mention of the affected files or their domain. (3) PRIOR TODOS — per archive todo: what it changed in the affected files and any outcome/warning. Write 'no relevant content' for an empty section."
+   ```
+
+   (`--max-tokens` is deliberately below the tool default: the corpus can reach ~80k tokens and prompt + completion must fit the model context.)
+
+   The brief is **advisory — cite-and-verify, never final**: anything that gates a decision (short-circuit quotes, "already handled" claims) must be re-read inline at the cited lines before acting on it.
+
+   **Fallback:** non-zero exit / `[ERROR …]` on stderr → dispatch a read-only Explore subagent with the same paths and the same three-section brief. If that also fails, fall back to the skip-gate inline behavior.
 
 3. **Threshold (no weak matches).** Surface a solution only if **either** ≥1 `applies_to` glob matches an affected file, **or** (affected files are empty/unknown) ≥2 tag overlaps with labels AND a title/symptom keyword hit. Otherwise note `No verified solution matched.` and proceed.
 
-4. **Carry forward.** Keep a `verified_solutions` note in context for Step 4 and Step 9, ≤3 entries, each: solution path, match type (`GLOB MATCH` / `TAG MATCH`), and the one-line takeaway from its `Solution`/`Prevention` (bug-track) or `Rule` (knowledge-track) section. Mark any solution whose `## Related Files` are missing as **stale** — advisory only, never a blind fix (the Short-circuit gate below has the concrete freshness test).
+4. **Carry forward.** Keep a `verified_solutions` note in context for Step 4 and Step 9, ≤3 entries, each: solution path, match type (`GLOB MATCH` / `TAG MATCH`), and the one-line takeaway from its `Solution`/`Prevention` (bug-track) or `Rule` (knowledge-track) section (taken from the 2b digest's SOLUTIONS section, or from the inline reads on the skip path). Mark any solution whose `## Related Files` are missing as **stale** — advisory only, never a blind fix (the Short-circuit gate below has the concrete freshness test).
 
 ### Short-circuit gate
 
 From the read-back results, check for a **tight match** — a single surfaced solution where **all four** hold:
 
 1. **GLOB MATCH** — at least one `applies_to` glob matches an affected file. A tag-only match never qualifies, and a match via a broad `<top>/**` glob (e.g. `client/**/*.tsx`) does **not** count toward a tight match — only a narrowly-scoped glob does.
-2. **Directly on-task** — you can quote a specific sentence in the solution that names this todo's task. Bug-track: at least one `## Symptoms` entry paraphrases a phrase from the todo's Implementation Notes or Acceptance Criteria. Knowledge-track: the todo's Acceptance Criteria explicitly require enforcing the solution's `## Rule` (not merely "happens to touch a file the rule covers"). **If you cannot quote a specific sentence in the solution that names this todo's task, it is not a tight match.**
+2. **Directly on-task** — you can quote a specific sentence in the solution that names this todo's task. Bug-track: at least one `## Symptoms` entry paraphrases a phrase from the todo's Implementation Notes or Acceptance Criteria. Knowledge-track: the todo's Acceptance Criteria explicitly require enforcing the solution's `## Rule` (not merely "happens to touch a file the rule covers"). **If you cannot quote a specific sentence in the solution that names this todo's task, it is not a tight match.** A quote surfaced by the 2b digest qualifies only after you re-read the cited lines inline and confirm the sentence exists (cite-and-verify).
 3. **Fresh** — extract every backtick-quoted path containing `/` from the solution's `## Related Files`, resolve each relative to the **repo root**, and `test -e` it; every one must exist. (In your worktree this is reliable: tracked files — including the `docs/solutions/` corpus — are checked out natively, so a missing tracked path means the solution is genuinely stale.) A stale solution never short-circuits.
 4. **Unrivalled** — it is the _only_ tight match. If two or more solutions tightly match, the task spans concerns — do not short-circuit.
 
@@ -135,8 +157,7 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 
 **In both paths (short-circuit or full research)**, also do:
 
-- **Grep `docs/LEARNINGS.md`** for mentions of the affected files or domain area.
-- **Grep `todos/archive/`** for prior todos that touched the same files.
+- **LEARNINGS + prior-todos evidence**: consume sections (2) and (3) of the 2b digest brief. If the digest was skipped (sensitive gate) or failed through both fallbacks, do it inline as before: grep `docs/LEARNINGS.md` for mentions of the affected files or domain area, grep `todos/archive/` for prior todos that touched the same files, and read the hits.
 - **Read the full source files** listed in Implementation Notes or Acceptance Criteria to understand the current state before modifying anything.
 
 ---

@@ -107,7 +107,28 @@ The hook does **not** run `tsc` or `npm test` — CI owns those.
 
 ## Cheap-Worker Delegation (kimi-\* Tools)
 
-The following CLI scripts are available globally, **on explicit user request only** — never invoke them automatically. Never point them at JWT auth, IAP receipt validation, or user health data. (The Copilot Issue-delegation pipeline was deleted 2026-07; routine todos go through the `/todo` skill.)
+The following CLI scripts are available globally. Their use has two tiers:
+
+**Sanctioned skill-embedded invocations** — the ONLY places a kimi tool runs without an explicit user request. Each lives in its owning skill/agent file with its own skip conditions and fallback (that file is authoritative for the mechanics):
+
+| Where                                                           | Tool         | Purpose                                       |
+| --------------------------------------------------------------- | ------------ | --------------------------------------------- |
+| `.claude/skills/spec-review/SKILL.md` (Step 1)                  | `ask-kimi`   | prior-spec calibration brief                  |
+| `.claude/agents/todo-executor.md` (Step 3a, item 2b)            | `ask-kimi`   | solutions/LEARNINGS/archive knowledge digest  |
+| `.claude/agents/todo-executor.md` (Step 9)                      | `kimi-write` | codification file authoring                   |
+| `.claude/skills/audit/SKILL.md` (Phase 1, dedup digest)         | `ask-kimi`   | prior-findings dedup digest                   |
+| `.claude/skills/audit/SKILL.md` (Phase 4, deferred boilerplate) | `kimi-write` | deferred-todo boilerplate first pass          |
+| Planning pre-read digest (subsection below)                     | `ask-kimi`   | research-pile digest before selective reading |
+
+**Ad-hoc use** — anything not in the table runs **on explicit user request only** — never invoke automatically. `kimi-challenge` is always ad-hoc.
+
+**Hard exclusions (absolute, both tiers):** Never point them at JWT auth, IAP receipt validation, or user health data.
+
+**Universal rules for every sanctioned embed:** output is advisory — cite-and-verify, never final; `--paths` never includes binding files (`docs/rules/*`, `.github/copilot-instructions.md`, `CLAUDE.md`); on non-zero exit (`[ERROR …]` on stderr) fall back to a read-only Explore subagent with the same paths and brief.
+
+Every kimi call appends token counts to `~/.local/share/claude-coworker/usage.jsonl`; run `kimi-gain` for the cumulative savings report.
+
+(The Copilot Issue-delegation pipeline was deleted 2026-07; routine todos go through the `/todo` skill.)
 
 ### `ask-kimi`
 
@@ -144,6 +165,17 @@ extract-chat "$VSCODE_TARGET_SESSION_LOG" -o /tmp/session-chat.txt
 ```
 
 This keeps historical session context lean before it re-enters Claude's context window. It does not process arbitrary `kimi-*` stdout.
+
+### Sanctioned pattern: planning pre-read digest
+
+During planning/brainstorming sessions the main session MAY digest research piles before reading selectively. Scope: `docs/research/`, `docs/cowork/**`, `docs/brainstorms/`, and prior specs/plans in `docs/superpowers/`. Select the file list inline (judgment stays with Claude); delegate only the bulk read:
+
+```bash
+ask-kimi --paths <selected research docs> \
+  --question "Map this research pile for planning <topic>: per file, 2-4 bullets — key findings, decisions already made, open questions, anything constraining <topic>. Cite file and line for every claim."
+```
+
+The brief is advisory — read the cited lines before relying on any claim. The universal rules and hard exclusions above apply.
 
 ---
 

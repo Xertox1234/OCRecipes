@@ -119,11 +119,24 @@ Phase 1 sets up both correctly.
    - Run `npm run check:types` — note error count
    - Run `npm run lint` — note error/warning count
 
-5. **Check the main checkout's CHANGELOG** for previous audit findings that may still be relevant:
+5. **Digest prior-audit findings for dedup** (sanctioned skill-embedded invocation — `docs/AI_WORKFLOW.md` → Cheap-Worker Delegation; replaces reading the whole CHANGELOG inline).
+
+   **Skip for the `security` scope** (its prior findings describe auth/IAP/health-data code — hard-excluded from cheap-worker delegation): use the inline read instead — `cat "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"` plus the most recent manifest.
+
+   Otherwise select inline, then delegate the bulk read:
 
    ```bash
-   cat "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"
+   # Inline the $(...) — zsh does not word-split an unquoted $VAR, so a PRIOR= variable
+   # arrives as ONE newline-embedded path; command substitution splits in both shells.
+   ask-kimi --max-tokens 32768 \
+     --paths "$MAIN_CHECKOUT/docs/audits/CHANGELOG.md" \
+     $(ls -t "$MAIN_CHECKOUT"/docs/audits/*.md | grep -vE 'CHANGELOG|TEMPLATE' | head -2) \
+     --question "Dedup brief for an upcoming '<scope>' audit. From the CHANGELOG and manifests, structured bullets, cite file+line: (1) every prior finding relevant to <scope>: ID/title, file:line, severity, final status (fixed/deferred/false-positive/open), source manifest + date; (2) deferred items possibly still open; (3) findings recurring across audits."
    ```
+
+   Keep the brief for Phase 2 dedup. It is **advisory — cite-and-verify**: never mark a Phase 2 finding `false-positive` as "already fixed" without confirming the cited manifest/CHANGELOG line inline.
+
+   If `ask-kimi` exits non-zero (`[ERROR …]` on stderr), dispatch a read-only Explore subagent with the same paths and brief; if that also fails, fall back to the inline `cat`.
 
 6. **Create the manifest at the main checkout's path** — `"$MAIN_CHECKOUT/docs/audits/$(date +%Y-%m-%d)-<scope>.md"` — using the template from `"$MAIN_CHECKOUT/docs/audits/TEMPLATE.md"`. Record the baseline from step 4 in the manifest header.
 
@@ -139,7 +152,7 @@ Phase 1 sets up both correctly.
    - Use the agent prompt template from the mapping section, specifying the domain and scope
    - Each agent runs as a subagent via the Agent tool with the corresponding `.claude/agents/*.md` agent type
 2. As each agent completes, **deduplicate** its findings against:
-   - The previous audit's manifest (if one exists) — mark already-fixed items as `false-positive`
+   - The Phase 1 dedup brief and the previous audit's manifest (if one exists) — mark already-fixed items as `false-positive` (cite-and-verify: confirm the cited manifest/CHANGELOG line inline before marking)
    - Other agents in this run — combine duplicates into single findings (agents with overlapping domains may flag the same issue)
 3. For each **genuinely new finding**, verify it exists in the current code:
    - Read the file at the reported line
