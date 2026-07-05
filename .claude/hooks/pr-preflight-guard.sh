@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # PreToolUse — hard-block PR creation (Bash `gh pr create` OR the
-# mcp__github__create_pull_request tool) unless a fresh FULL `npm run preflight` pass-stamp
-# exists for the current HEAD. This guarantees lint/type/test/COVERAGE parity before a PR can
-# open. The /todo executor flow has no PR at push time AND creates via the MCP
-# tool, so the pre-push hook cannot gate it — this does (both PR-creation paths converge here).
+# mcp__github__create_pull_request tool) unless a fresh pass-stamp exists for the current HEAD.
+# Any HEAD-matching stamp is accepted: the pre-push fast gate writes one (type-aware lint + tsc
+# + related tests) and `npm run preflight` writes one for full local parity. COVERAGE is
+# enforced by CI's required checks, not here. The /todo executor flow has no PR at push time AND
+# creates via the MCP tool, so the pre-push hook cannot gate it — this does (both PR-creation
+# paths converge here).
 # Escape (emergencies): set SKIP_PR_PREFLIGHT=1 in the shell that launched Claude Code.
 set -uo pipefail
 
@@ -50,11 +52,11 @@ if [ -n "$ROOT" ] && [ -f "$ROOT/scripts/lib/preflight-stamp-path.sh" ]; then
 fi
 
 if [ -n "$HEAD" ] && [ "$STAMP" = "$HEAD" ]; then
-  exit 0   # fresh full-preflight pass for this commit — allow.
+  exit 0   # fresh pass-stamp for this commit (fast or full) — allow.
 fi
 
 FOUND="${STAMP:0:7}"; [ -z "$FOUND" ] && FOUND="none"
-REASON="Blocked: run \`npm run preflight\` (full CI parity incl. coverage) before opening a PR. No fresh pass-stamp for HEAD ${HEAD:0:7} (found: ${FOUND}). This catches the lint/test/coverage failures that otherwise reach CI. Emergency bypass: SKIP_PR_PREFLIGHT=1."
+REASON="Blocked: no fresh preflight pass-stamp for HEAD ${HEAD:0:7} (found: ${FOUND}). Push the branch first — the pre-push fast gate stamps a verified HEAD — or run \`npm run preflight\` for full local parity. Coverage is enforced by CI's required checks, not here. Emergency bypass: SKIP_PR_PREFLIGHT=1."
 
 jq -n --arg r "$REASON" '{
   "hookSpecificOutput": {
