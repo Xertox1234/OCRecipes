@@ -31,7 +31,9 @@ export const AppState = {
 export const Share = {
   share: vi.fn(() => Promise.resolve({ action: "sharedAction" })),
 };
-export const Linking = { openURL: async () => {} };
+// openSettings is vi.fn() so tests can assert the permission-denied-alert
+// "Open Settings" action button (e.g. `vi.spyOn(RN.Linking, "openSettings")`).
+export const Linking = { openURL: async () => {}, openSettings: vi.fn() };
 export const NativeModules = {};
 
 // ---------------------------------------------------------------------------
