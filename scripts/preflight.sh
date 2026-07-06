@@ -43,17 +43,21 @@ if [ "$MODE" = "fast" ]; then
   while IFS= read -r f; do [ -n "$f" ] && CHANGED+=("$f"); done \
     < <(git diff --name-only --diff-filter=ACMR "$BASE" HEAD -- '*.ts' '*.tsx' 2>/dev/null)
 
-  # Separate probe: hook/husky shell changes. The CHANGED array above only globs *.ts/*.tsx,
-  # so an all-.sh push (hooks or husky) would otherwise stamp without ever exercising the
-  # changed shell logic. Same BASE..HEAD committed range as CHANGED — push-gate semantics,
-  # not the staged/working set. Filter is ACDMRT (includes D and T), not CHANGED's ACMR: this
-  # array is only ever used as a boolean gate (never passed to eslint/vitest, which can't take
-  # a deleted path), so a hook-file DELETION or TYPECHANGE (e.g. swapped for a symlink) must
-  # still trip the gate — each is exactly the kind of shell-logic change run-hook-tests.sh
-  # should verify.
+  # Separate probe: hook/husky/scripts shell changes. The CHANGED array above only globs
+  # *.ts/*.tsx, so an all-.sh push (hooks, husky, or a scripts/*.sh helper like
+  # run-hook-tests.sh or lib/preflight-stamp-path.sh — this very gate's own machinery) would
+  # otherwise stamp without ever exercising the changed shell logic. Same BASE..HEAD committed
+  # range as CHANGED — push-gate semantics, not the staged/working set. Filter is ACDMRT
+  # (includes D and T), not CHANGED's ACMR: this array is only ever used as a boolean gate
+  # (never passed to eslint/vitest, which can't take a deleted path), so a hook-file DELETION
+  # or TYPECHANGE (e.g. swapped for a symlink) must still trip the gate — each is exactly the
+  # kind of shell-logic change run-hook-tests.sh should verify. 'scripts/*.sh' is a git
+  # pathspec, not a shell glob — git's wildcard matching crosses '/' by default, so it also
+  # reaches scripts/lib/*.sh and scripts/pg-lab/**/*.sh, not just scripts/'s top level
+  # (verified against commit 1c6c86e4, which only touched scripts/lib/preflight-stamp-path.sh).
   HOOK_CHANGED=()
   while IFS= read -r f; do [ -n "$f" ] && HOOK_CHANGED+=("$f"); done \
-    < <(git diff --name-only --diff-filter=ACDMRT "$BASE" HEAD -- '.claude/hooks/' '.husky/' 2>/dev/null)
+    < <(git diff --name-only --diff-filter=ACDMRT "$BASE" HEAD -- '.claude/hooks/' '.husky/' 'scripts/*.sh' 2>/dev/null)
 
   # Cheap, deterministic, no-DB pattern checks first (fail fast).
   run npm run build:copilot-instructions:check || exit 1

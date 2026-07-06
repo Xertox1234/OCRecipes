@@ -3,7 +3,7 @@ title: "A diff-filter copied from a lint-scoping sibling array silently drops de
 track: bug
 category: logic-errors
 module: shared
-severity: low
+severity: medium
 tags: [git, diff-filter, bash, shell, ci, hooks, husky, boolean-gate, code-review]
 symptoms: [A git-diff-driven boolean gate stays false for a push that only deletes or typechanges a file under its watched path, A stamp/skip/certify mechanism silently certifies a push it never actually verified, The bug is invisible in normal testing because most changes are additions/modifications — only deletion or symlink-swap scenarios trigger it]
 applies_to: [scripts/*.sh, .claude/hooks/**]
@@ -27,7 +27,7 @@ deliberate there. But `HOOK_CHANGED` has a completely different purpose — it i
 as an existence gate (`[ ${#HOOK_CHANGED[@]} -gt 0 ]`), never handed to a downstream
 tool, so there is no reason to exclude any diff-filter status letter.
 
-Two rounds of code review caught two successive gaps from this copy-paste:
+Three rounds of code review caught three successive gaps from this copy-paste:
 
 - **Round 1** found that `ACMR` silently misses a *pure deletion* of a hook file (e.g.,
   `git rm .claude/hooks/some-test.sh` with nothing else in the push). `HOOK_CHANGED`
@@ -38,8 +38,16 @@ Two rounds of code review caught two successive gaps from this copy-paste:
   (e.g., a hook file swapped for a symlink between commits, producing a bare `T`
   diff-status record) is invisible to `ACDMR` as well.
 
-Both gaps were confirmed empirically via a throwaway git repo replicating the diff range
-logic.
+- **Round 3** (after fixing the filter to `ACDMRT`) found the gap was in the *watched
+  path list*, not the filter: `HOOK_CHANGED` only scoped `.claude/hooks/` and `.husky/`,
+  so a change to `scripts/*.sh` — including `scripts/run-hook-tests.sh` itself, the very
+  script this probe is supposed to make sure gets exercised, and
+  `scripts/lib/preflight-stamp-path.sh` — was invisible to the probe entirely, the exact
+  same "silently certifies a push it never verified" failure mode from Round 1, just in a
+  different dimension (path scope, not diff-filter status letters).
+
+All three gaps were confirmed empirically via a throwaway git repo replicating the diff
+range logic, with a dedicated regression test added for each round.
 
 ## Symptoms
 
@@ -51,25 +59,35 @@ logic.
 
 ## Root Cause
 
-A `--diff-filter` allowlist was copied from a sibling array (`CHANGED`, which passes
-paths to eslint/vitest and must exclude `D`) to a purely boolean existence gate
-(`HOOK_CHANGED`, which only checks emptiness). The filter was applied without questioning
-why it excludes what it excludes. A filter tuned for "must be operable by a downstream
-tool" (exclude `D`) is wrong for "must detect that something happened to this path"
-(include `D`, and generally `T` too).
+Two distinct dimensions of the same "verify what you certify" gate were each scoped too
+narrowly, both by silently inheriting a neighbor's assumptions instead of deriving the
+probe's own requirements from scratch:
+
+- The `--diff-filter` allowlist was copied from a sibling array (`CHANGED`, which passes
+  paths to eslint/vitest and must exclude `D`) to a purely boolean existence gate
+  (`HOOK_CHANGED`, which only checks emptiness). A filter tuned for "must be operable by
+  a downstream tool" (exclude `D`) is wrong for "must detect that something happened to
+  this path" (include `D`, and `T` too).
+- The watched **path list** covered `.claude/hooks/` and `.husky/` — the directories the
+  original PR #508 gap report named — but not `scripts/*.sh`, even though the hook-test
+  *mechanism itself* (`scripts/run-hook-tests.sh`, `scripts/lib/preflight-stamp-path.sh`)
+  lives there. The probe verified everything BUT the script that does the verifying.
 
 ## Solution
 
-Use `--diff-filter=ACDMRT` for the boolean-only probe, or better yet, omit
-`--diff-filter` entirely:
+Use `--diff-filter=ACDMRT` for the boolean-only probe (or omit `--diff-filter` entirely),
+AND scope the watched paths to everywhere the verified logic actually lives — not just
+the directory named in the original bug report:
 
 ```bash
 # HOOK_CHANGED is a pure existence gate — never passed to a downstream tool.
-# Include ALL status letters (ACDMRT) so that deletions and typechanges
-# are detected just as reliably as additions and modifications.
+# Include ALL status letters (ACDMRT) so that deletions and typechanges are detected
+# just as reliably as additions and modifications. 'scripts/*.sh' is a git pathspec
+# (crosses '/' by default, so it also reaches scripts/lib/*.sh) — not just a shell glob
+# restricted to scripts/'s top level.
 HOOK_CHANGED=()
 while IFS= read -r f; do [ -n "$f" ] && HOOK_CHANGED+=("$f"); done \
-  < <(git diff --name-only --diff-filter=ACDMRT "$BASE" HEAD -- '.claude/hooks/' '.husky/' 2>/dev/null)
+  < <(git diff --name-only --diff-filter=ACDMRT "$BASE" HEAD -- '.claude/hooks/' '.husky/' 'scripts/*.sh' 2>/dev/null)
 
 if [ "${#HOOK_CHANGED[@]}" -gt 0 ]; then
   run bash scripts/run-hook-tests.sh || exit 1
@@ -90,15 +108,22 @@ detect any change regardless of status letter.
 - For a probe used only as an existence/boolean gate, the safest default is to omit
   `--diff-filter` entirely, or include every status letter that could occur
   (`ACDMRT` covers the common set).
+- For a "did the thing I'm about to verify change" probe, the watched path list must
+  include the verification mechanism's OWN location, not just the location named in
+  whatever bug report motivated the probe — ask "where does every file this probe is
+  supposed to catch actually live?", not just "where did the reported bug live?".
 - Code review check: any copy-paste of a `--diff-filter` warrants a note in the PR
-  description explaining the consumer's requirements and why the filter matches.
+  description explaining the consumer's requirements and why the filter matches; a new
+  path-scoped probe warrants an explicit "what's the full set of paths this SHOULD
+  cover?" check, not just "does it cover the reported case?".
 
 ## Related Files
 
 - `scripts/preflight.sh` — contains both `CHANGED` (lint-scoped, uses `ACMR`) and
-  `HOOK_CHANGED` (existence gate, now uses `ACDMRT`)
+  `HOOK_CHANGED` (existence gate, now uses `ACDMRT` over `.claude/hooks/`, `.husky/`,
+  AND `scripts/*.sh`)
 - `.claude/hooks/test-preflight-fast-stamp.sh` — tests the stamp-behavior including
-  deletion-only and typechange-only edge cases
+  deletion-only, typechange-only, and scripts/*.sh-outside-.claude/hooks edge cases
 
 ## See Also
 
