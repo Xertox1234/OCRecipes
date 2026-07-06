@@ -1,9 +1,9 @@
 ---
 name: audit
-description: Run a structured code audit with manifest tracking, per-fix verification, and pattern codification
+description: Run a structured code audit with manifest tracking, per-fix verification, and pattern codification. Scopes — full (default), pre-launch, security, performance, data-integrity, architecture, code-quality, camera, accessibility, reliability, maintainability
 ---
 
-You are running a structured code audit. The scope is: $ARGUMENTS (defaults to "full" if empty).
+You are running a structured code audit. Parse $ARGUMENTS as `<scope> [<focus>]`: the first whitespace-separated token is the scope (defaults to "full" if $ARGUMENTS is empty); everything after it, if any, is an optional focus path/module (e.g. `security server/routes` → scope `security`, focus `server/routes`) — forward the focus into the Phase 2 discovery-prompt template's `Scope:` line below, never into a `<scope>` placeholder. Every `<scope>` placeholder elsewhere in this file (branch names, manifest filenames, PR head refs) refers to the scope token alone.
 
 This workflow enforces finding tracking, per-fix verification, and a persistent audit trail. **Never skip steps.**
 
