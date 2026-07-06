@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { StyleSheet, View, Pressable } from "react-native";
+import { StyleSheet, View, Pressable, Alert, Linking } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle, NotificationFeedbackType } from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
@@ -14,6 +14,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import {
   Spacing,
@@ -52,6 +53,7 @@ function ImportRecipeSheetContentInner({
 }: ImportRecipeSheetContentProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const canImportPhoto = usePremiumFeature("recipePhotoImport");
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [clipboardError, setClipboardError] = useState<string | null>(null);
@@ -74,13 +76,69 @@ function ImportRecipeSheetContentInner({
     [canImportPhoto, haptics],
   );
 
+  // Permission denial is a blocking system decision (Cancel vs. navigate out
+  // to Settings), not a form-validation message — InlineError has no room
+  // for an action button, so Alert.alert is the right tool here, matching
+  // the pre-consolidation RecipeEntryHubScreen behavior this restores.
+  const showPermissionDeniedAlert = useCallback(
+    (subject: "Camera" | "Photo Library") => {
+      haptics.notification(NotificationFeedbackType.Warning);
+      Alert.alert(
+        `${subject} Access`,
+        `Please enable ${subject.toLowerCase()} access in Settings to import recipes.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Open Settings",
+            onPress: () => {
+              void Linking.openSettings();
+            },
+          },
+        ],
+      );
+    },
+    [haptics],
+  );
+
   const handleCamera = useCallback(() => {
     void handlePremiumAction(async () => {
       haptics.impact(ImpactFeedbackStyle.Light);
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ["images"],
-        quality: 0.9,
-      });
+      let result: ImagePicker.ImagePickerResult;
+      try {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== "granted") {
+          showPermissionDeniedAlert("Camera");
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ["images"],
+          quality: 0.9,
+        });
+      } catch {
+        // Android rejects launchCameraAsync (rather than no-op'ing like iOS)
+        // when the CAMERA manifest permission is denied. Re-check status
+        // instead of assuming the rejection was permission-related, so an
+        // unrelated failure (e.g. no camera hardware) isn't mislabeled as a
+        // Settings problem. The recheck itself is guarded too — if it also
+        // throws (e.g. the native permission declaration is missing), don't
+        // let that escape as a second unhandled rejection.
+        try {
+          const { status } = await ImagePicker.getCameraPermissionsAsync();
+          if (status !== "granted") {
+            showPermissionDeniedAlert("Camera");
+          } else {
+            // Recheck confirms this wasn't a permission problem — the Settings
+            // alert would mislabel it, but the user still needs to know the
+            // tap did nothing.
+            toast.error("Couldn't open the camera. Please try again.");
+          }
+        } catch {
+          // Cause is undeterminable — can't tell if it's a permission issue,
+          // but the user still needs some signal the tap failed.
+          toast.error("Couldn't open the camera. Please try again.");
+        }
+        return;
+      }
       if (result.canceled || !result.assets[0]) return;
       onDismiss();
       onPhotoImport(result.assets[0].uri, mealType, plannedDate);
@@ -92,15 +150,40 @@ function ImportRecipeSheetContentInner({
     plannedDate,
     onDismiss,
     onPhotoImport,
+    showPermissionDeniedAlert,
+    toast,
   ]);
 
   const handleGallery = useCallback(() => {
     void handlePremiumAction(async () => {
       haptics.impact(ImpactFeedbackStyle.Light);
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        quality: 0.9,
-      });
+      let result: ImagePicker.ImagePickerResult;
+      try {
+        const { status } =
+          await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          showPermissionDeniedAlert("Photo Library");
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          quality: 0.9,
+        });
+      } catch {
+        // Recheck is guarded too — see the mirrored comment in handleCamera.
+        try {
+          const { status } =
+            await ImagePicker.getMediaLibraryPermissionsAsync();
+          if (status !== "granted") {
+            showPermissionDeniedAlert("Photo Library");
+          } else {
+            toast.error("Couldn't open the gallery. Please try again.");
+          }
+        } catch {
+          toast.error("Couldn't open the gallery. Please try again.");
+        }
+        return;
+      }
       if (result.canceled || !result.assets[0]) return;
       onDismiss();
       onPhotoImport(result.assets[0].uri, mealType, plannedDate);
@@ -112,6 +195,8 @@ function ImportRecipeSheetContentInner({
     plannedDate,
     onDismiss,
     onPhotoImport,
+    showPermissionDeniedAlert,
+    toast,
   ]);
 
   const handleClipboard = useCallback(() => {
