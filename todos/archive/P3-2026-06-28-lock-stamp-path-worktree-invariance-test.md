@@ -1,6 +1,6 @@
 ---
 title: "lock preflight stamp-path worktree cwd-invariance with a discriminating test"
-status: backlog
+status: done
 priority: low
 created: 2026-06-28
 updated: 2026-06-28
@@ -38,14 +38,14 @@ decision that's easy to "simplify" wrongly.
 
 ## Acceptance Criteria
 
-- [ ] `.claude/hooks/test-preflight-stamp-path.sh` adds a case that, in a temp git repo with at
+- [x] `.claude/hooks/test-preflight-stamp-path.sh` adds a case that, in a temp git repo with at
       least one commit, runs `git worktree add` to create a linked worktree, then asserts
       `preflight_stamp_path` resolves to the SAME path from the main checkout and from the linked
       worktree (i.e. `key_in <main>` == `key_in <linked-worktree>`).
-- [ ] The new case provably FAILS if the helper is changed from `--git-common-dir` to
+- [x] The new case provably FAILS if the helper is changed from `--git-common-dir` to
       `--git-dir` (verify once by hand during implementation, then revert).
-- [ ] Temp worktree + repo are cleaned up via the existing `trap ... EXIT`; no real paths touched.
-- [ ] Test stays hermetic (own temp repo, inherited git env stripped as in `key_in`).
+- [x] Temp worktree + repo are cleaned up via the existing `trap ... EXIT`; no real paths touched.
+- [x] Test stays hermetic (own temp repo, inherited git env stripped as in `key_in`).
 
 ## Implementation Notes
 
@@ -67,3 +67,22 @@ decision that's easy to "simplify" wrongly.
 ### 2026-06-28
 
 - Initial creation. Surfaced in the PR #478 (`1c6c86e`) wrap-up review.
+
+### 2026-07-05 (resolution)
+
+- Added case 5 to `.claude/hooks/test-preflight-stamp-path.sh`: builds a temp repo with an
+  `--allow-empty` init commit, runs `git worktree add`, and asserts `key_in <main>` ==
+  `key_in <linked-worktree>`.
+- Verified by hand: temporarily changed `scripts/lib/preflight-stamp-path.sh` from
+  `--git-common-dir` to `--git-dir` — case 3 (subdir proxy) still passed, case 5 (real
+  worktree) correctly FAILED with a "worktree drift" message. Reverted; `git diff` on the
+  helper confirms no residual change.
+- Code review (`code-reviewer`) raised one WARNING: the new case's mutating setup (commit +
+  worktree add) didn't strip inherited git env at the file level, unlike the `key_in()`
+  resolution step — a residual risk only if the file is run directly outside the
+  env-stripping wrapper (`scripts/run-hook-tests.sh`). Fixed inline by adding a file-level
+  `unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR` +
+  `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null` guard at the top of the script,
+  mirroring the established precedent in `.claude/hooks/test-core-bare-guard.sh`.
+- Full hook-test suite (`scripts/run-hook-tests.sh`, 16 tests) and project-wide
+  `check:types`/`lint`/`test:run` all pass.
