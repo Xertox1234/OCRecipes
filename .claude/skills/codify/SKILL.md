@@ -180,9 +180,22 @@ Write one file per finding at `docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md`
 
 Kebab-case the finding's intended title; cap at ~60 characters. Avoid generic words like `error`, `bug`, `fix` that don't aid disambiguation.
 
-### 6b. Overlap-check (advisory, lexical)
+### 6b. Overlap-check (advisory, lexical + pg_trgm)
 
-Check for an existing near-duplicate before writing — a slug-core collision or a distinctive-title-keyword hit:
+Check for an existing near-duplicate before writing. Try the pg_trgm near-dup advisory
+first (PG Lab — `docs/research/2026-07-05-pg-lab-roadmap.md`) — it is fail-silent by
+design, so its empty-output signal covers failure, an unreachable/unbuilt `ocrecipes_lab`,
+and a genuine no-match **indistinguishably** (the script cannot tell these apart, and
+neither can you from the call site). Whenever the command prints nothing, run both greps
+below too — never skip them just because the advisory ran:
+
+```bash
+# pg_trgm advisory — silent (no output, exit 0) when ocrecipes_lab is unreachable/unbuilt
+# or nothing scores above threshold; a hit prints "<path> (score <n>)" lines. Note: the
+# projection is only as fresh as the last manual `--rebuild` — it does not auto-update
+# when this very skill adds a new solution file, so treat a miss as weak evidence only.
+scripts/pg-lab/codify-neardup.sh "<intended title>"
+```
 
 ```bash
 # slug collision — any existing file sharing the slug core (date suffix stripped)

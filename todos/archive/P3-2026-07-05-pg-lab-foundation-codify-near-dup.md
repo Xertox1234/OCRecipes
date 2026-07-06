@@ -3,7 +3,7 @@
 ---
 
 title: "PG Lab foundation: create ocrecipes_lab DB + pg_trgm near-dup advisory at /codify time"
-status: backlog
+status: done
 priority: low
 created: 2026-07-05
 updated: 2026-07-05
@@ -25,13 +25,13 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md` (design rails §1-4 ar
 
 ## Acceptance Criteria
 
-- [ ] `scripts/pg-lab/init.sh`: creates `ocrecipes_lab` DB if absent, `CREATE EXTENSION IF NOT EXISTS pg_trgm`, creates schemas `harness`, `repo`, `dev`. Idempotent. Respects `LAB_DATABASE_URL` (default `postgresql://localhost/ocrecipes_lab`).
-- [ ] `scripts/pg-lab/schema/codify-neardup.sql`: `harness.solution_titles(path, title, summary, tags, created)` — a derived projection of `docs/solutions/` frontmatter.
-- [ ] `scripts/pg-lab/codify-neardup.sh --rebuild`: drops and repopulates the projection from the markdown corpus (one-way derivation; no parity checking).
-- [ ] `scripts/pg-lab/codify-neardup.sh "<candidate title>"`: prints top-5 `similarity()` matches above a threshold (start 0.45, tune) with paths; exit 0 always.
-- [ ] `/codify` skill (`.claude/skills/codify/SKILL.md`) near-dup step invokes the script when `ocrecipes_lab` is reachable, silently falls back to the existing title grep when not (fail-silent rail).
-- [ ] Value probe: the script appends one line per invocation (timestamp, candidate, top-score) to `harness.codify_neardup_log` so a later query shows whether the advisory ever fires above threshold. Prune date: if zero useful hits by 2026-10-01, revert the skill edit.
-- [ ] Tests: shellcheck-clean; a fixture-driven test proving --rebuild + query round-trip on a temp corpus dir (pattern: RECENT_SOLUTIONS_DIR test seam from session-recent-issues.sh).
+- [x] `scripts/pg-lab/init.sh`: creates `ocrecipes_lab` DB if absent, `CREATE EXTENSION IF NOT EXISTS pg_trgm`, creates schemas `harness`, `repo`, `dev`. Idempotent. Respects `LAB_DATABASE_URL` (default `postgresql://localhost/ocrecipes_lab`).
+- [x] `scripts/pg-lab/schema/codify-neardup.sql`: `harness.solution_titles(path, title, summary, tags, created)` — a derived projection of `docs/solutions/` frontmatter.
+- [x] `scripts/pg-lab/codify-neardup.sh --rebuild`: truncates and repopulates the projection from the markdown corpus (one-way derivation; no parity checking).
+- [x] `scripts/pg-lab/codify-neardup.sh "<candidate title>"`: prints top-5 `similarity()` matches above a threshold (start 0.45, tune) with paths; exit 0 always.
+- [x] `/codify` skill (`.claude/skills/codify/SKILL.md`) near-dup step invokes the script when `ocrecipes_lab` is reachable, silently falls back to the existing title grep when not (fail-silent rail).
+- [x] Value probe: the script appends one line per invocation (timestamp, candidate, top-score) to `harness.codify_neardup_log` so a later query shows whether the advisory ever fires above threshold. Prune date: if zero useful hits by 2026-10-01, revert the skill edit.
+- [x] Tests: shellcheck-clean; a fixture-driven test proving --rebuild + query round-trip on a temp corpus dir (pattern: RECENT_SOLUTIONS_DIR test seam from session-recent-issues.sh).
 
 ## Implementation Notes
 
@@ -54,3 +54,12 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md` (design rails §1-4 ar
 ### 2026-07-05
 
 - Initial creation from PG Lab roadmap (Batch A).
+- Implemented: `scripts/pg-lab/init.sh`, `scripts/pg-lab/schema/codify-neardup.sql`,
+  `scripts/pg-lab/codify-neardup.sh` (--rebuild + query modes), `.claude/skills/codify/SKILL.md`
+  Step 6b wired to try the advisory first, and `.claude/hooks/test-pg-lab-codify-neardup.sh`.
+  Two review rounds (code-reviewer + server-reviewer): fixed a trailing-slash path-corruption
+  bug in the awk frontmatter extractor, and a value-probe logging gap (a reachable-but-empty
+  table now logs `top_score = NULL` so "never rebuilt" is distinguishable from "genuinely
+  zero hits" for the 2026-10-01 prune-date decision), plus a TOCTOU-race swallow in
+  `init.sh` and wording/comment cleanups. Verified live against a local Postgres 18 (real
+  579-file corpus round-trip + fixture-driven test, all passing); no CRITICAL findings.
