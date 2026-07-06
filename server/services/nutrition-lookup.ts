@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { getStandardizedFoodName } from "./cultural-food-map";
 import { createServiceLogger, toError } from "../lib/logger";
 import { barcodeVariants } from "./barcode-lookup";
+import { cachedFetch } from "./dev-api-cache";
 
 const log = createServiceLogger("nutrition-lookup");
 
@@ -218,7 +219,8 @@ async function lookupAPINinjas(query: string): Promise<NutritionData | null> {
   }
 
   try {
-    const response = await fetch(
+    const response = await cachedFetch(
+      "api-ninjas",
       `https://api.api-ninjas.com/v1/nutrition?query=${encodeURIComponent(query)}`,
       {
         headers: { "X-Api-Key": apiKey },
@@ -307,11 +309,13 @@ async function ensureCNFFoods(): Promise<void> {
   cnfFetchPromise = (async () => {
     try {
       const [enRes, frRes] = await Promise.all([
-        fetch(
+        cachedFetch(
+          "cnf",
           "https://food-nutrition.canada.ca/api/canadian-nutrient-file/food/?lang=en&type=json",
           { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
         ),
-        fetch(
+        cachedFetch(
+          "cnf",
           "https://food-nutrition.canada.ca/api/canadian-nutrient-file/food/?lang=fr&type=json",
           { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
         ),
@@ -472,7 +476,8 @@ export async function lookupCNF(query: string): Promise<NutritionData | null> {
   log.debug({ query, match: displayName, code: matchCode }, "CNF match found");
 
   try {
-    const nutRes = await fetch(
+    const nutRes = await cachedFetch(
+      "cnf",
       `https://food-nutrition.canada.ca/api/canadian-nutrient-file/nutrientamount/?lang=en&type=json&id=${matchCode}`,
       { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
@@ -557,7 +562,8 @@ function mapUsdaFoodToNutrition(food: {
  */
 async function lookupUSDA(query: string): Promise<NutritionData | null> {
   try {
-    const response = await fetch(
+    const response = await cachedFetch(
+      "usda",
       `https://api.nal.usda.gov/fdc/v1/foods/search?query=${encodeURIComponent(query)}&pageSize=1&api_key=${USDA_API_KEY}`,
       { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
@@ -592,7 +598,8 @@ export async function lookupUSDAByUPC(
 
   for (const variant of variants) {
     try {
-      const response = await fetch(
+      const response = await cachedFetch(
+        "usda",
         `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${USDA_API_KEY}`,
         {
           method: "POST",
