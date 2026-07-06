@@ -385,31 +385,65 @@ fi
 rm -f "/tmp/ocrecipes-pattern-inject-${CS_SID}"
 
 # --- Deferred domains catch up on the next edit ---
-# server/routes first touch defers api (rank 40) behind security (rank 10); the second
-# edit must inject the deferred domain IN FULL — proving a deferred domain is not recorded
-# in the dedup state. "handleRouteError" is an api-body sentinel.
-DEFER_SESS='{"session_id":"itest-defer","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+# shared/schema.ts first touch defers `database` (rank 20) behind `security` (rank 10); the
+# second edit must inject the deferred domain IN FULL — proving a deferred domain is not
+# recorded in the dedup state. This fixture (like the `itest-preest` case below) is chosen for
+# COMFORTABLE headroom: docs/rules/database.md alone (~6.3KB) overflows the remaining budget by
+# a wide, trim-robust margin (~5.5KB) — this test previously used server/routes.ts (`api`
+# domain), whose rules file (~1KB) only cleared the defer threshold by ~174B, a margin any
+# future rules-file or preamble edit could silently flip without an obvious cause (see
+# docs/solutions/best-practices/test-budget-margin-must-clear-threshold-with-headroom-2026-07-05.md).
+# "onConflictDoNothing" is a database-body sentinel. Reusing the `database` domain here means
+# this case and `itest-preest` below now exercise the same domain triple via different fixture
+# files — an intentional trade of incidental domain-name diversity for margin robustness; the
+# generic rank/defer/dedup machinery under test (domain_rank, EMITTED_FULL, DOMAIN_BUDGET) does
+# not care which domain name triggers it.
+#
+# rules_section: extract only the "[RULES — <domain>]" body from an already-captured context
+# blob, stopping at the next bracketed section header (same technique as sec_inline_bytes
+# above). Scopes the sentinel check below to the RULES section so it can't accidentally match
+# a LATER, unrelated block in the same blob — e.g. a "[SOLUTIONS — database]" list entry whose
+# docs/solutions/ file TITLE happens to quote the same phrase — which would let the assertion
+# pass even if the RULES-body catch-up itself regressed.
+rules_section() {
+  local domain="$1" text="$2"
+  printf '%s\n' "$text" | awk -v hdr="[RULES — ${domain}]" '
+    index($0, hdr) == 1 { f=1; next }
+    /^\[(RULES|SOLUTIONS|TRUNCATED|NOTE)/ { f=0 }
+    f'
+}
+DEFER_SESS='{"session_id":"itest-defer","tool_name":"Edit","tool_input":{"file_path":"shared/schema.ts"}}'
 rm -f /tmp/ocrecipes-pattern-inject-itest-defer
 d1=$(inline_ctx "$DEFER_SESS")
-if echo "$d1" | grep -qF "[RULES — api] deferred" && ! echo "$d1" | grep -qF "handleRouteError"; then
-  echo "PASS: deferral → first touch defers api with a pointer, not a truncated body"; PASS=$((PASS + 1))
+if echo "$d1" | grep -qF "[RULES — database] deferred" && ! echo "$d1" | grep -qF "onConflictDoNothing"; then
+  echo "PASS: deferral → first touch defers database with a pointer, not a truncated body"; PASS=$((PASS + 1))
 else
-  echo "FAIL: deferral → first touch defers api with a pointer, not a truncated body"; FAIL=$((FAIL + 1))
+  echo "FAIL: deferral → first touch defers database with a pointer, not a truncated body"; FAIL=$((FAIL + 1))
 fi
-# api is pre-estimate-deferred here (its rules alone overflow the budget), so the perf skip
-# means only its RULES body reaches the spill now — the solution refs are not built (asserted
-# absent in the server/storage test below, where the margin is trim-robust). The full payload
-# incl. solution refs auto-injects on the NEXT edit (asserted just below). This is the
-# documented "rules now, solution refs next edit" recoverability trade.
-if [ -f "$SPILL_FILE" ] && grep -qF "handleRouteError" "$SPILL_FILE"; then
-  echo "PASS: deferral → pre-estimated api ships its RULES body to the spill file now"; PASS=$((PASS + 1))
+# database is pre-estimate-deferred here (its rules alone overflow the budget), so the perf
+# skip means only its RULES body reaches the spill now — the solution refs are not built
+# (asserted absent in the server/storage `itest-preest` case below). The full payload incl.
+# solution refs auto-injects on the NEXT edit (asserted just below). This is the documented
+# "rules now, solution refs next edit" recoverability trade.
+# NOTE: use `grep -qF ... <<< "$(...)"` (here-string), NOT `echo "$(...)" | grep -qF ...`, for
+# the rules_section-scoped checks below. The sentinel sits near the START of a multi-KB
+# extracted section; `grep -q` exits the instant it matches, and under this file's `pipefail`
+# (line 3) the upstream `echo`'s resulting SIGPIPE can make the pipeline report failure even
+# though grep matched — a false negative. A here-string has no separate writer process to race.
+defer_spill=""; [ -f "$SPILL_FILE" ] && defer_spill=$(cat "$SPILL_FILE")
+if [ -n "$defer_spill" ] && grep -qF "onConflictDoNothing" <<< "$(rules_section database "$defer_spill")"; then
+  echo "PASS: deferral → pre-estimated database ships its RULES body to the spill file now"; PASS=$((PASS + 1))
 else
-  echo "FAIL: deferral → pre-estimated api ships its RULES body to the spill file now"; FAIL=$((FAIL + 1))
+  echo "FAIL: deferral → pre-estimated database ships its RULES body to the spill file now"; FAIL=$((FAIL + 1))
 fi
 d2=$(inline_ctx "$DEFER_SESS")
 # The FULL payload catches up on edit 2: both the rules body AND the solution refs that the
-# pre-estimate skipped on edit 1 must now inject in full.
-if echo "$d2" | grep -qF "handleRouteError" && echo "$d2" | grep -qF "SOLUTIONS — api" && echo "$d2" | grep -qF "[RULES — security] already injected"; then
+# pre-estimate skipped on edit 1 must now inject in full, alongside the dedup pointer for the
+# already-emitted `security` domain. The sentinel check is scoped to the RULES — database
+# section (rules_section) so a coincidental phrase match inside the SOLUTIONS — database list
+# (real docs/solutions/ titles do contain "onConflictDoNothing") can't mask a RULES catch-up
+# regression; see the here-string note above for why this uses `<<<` rather than a pipe.
+if grep -qF "onConflictDoNothing" <<< "$(rules_section database "$d2")" && echo "$d2" | grep -qF "SOLUTIONS — database" && echo "$d2" | grep -qF "[RULES — security] already injected"; then
   echo "PASS: deferral → deferred domain injects in full (rules + solution refs) on the next edit"; PASS=$((PASS + 1))
 else
   echo "FAIL: deferral → deferred domain injects in full (rules + solution refs) on the next edit"; FAIL=$((FAIL + 1))
