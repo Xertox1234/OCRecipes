@@ -3,7 +3,7 @@
 ---
 
 title: "Tighten /goal DONE-condition mapping to Phase 5's exact listing headings"
-status: backlog
+status: done
 priority: low
 created: 2026-07-06
 updated: 2026-07-06
@@ -34,10 +34,10 @@ group is a terminal state" guarantee without the `/goal` paste block's enumerati
 
 ## Acceptance Criteria
 
-- [ ] The `/goal` paste block's DONE-condition enumeration in `docs/todo-automation-runbook.md`
+- [x] The `/goal` paste block's DONE-condition enumeration in `docs/todo-automation-runbook.md`
       lists each Phase 5 listing heading from `.claude/skills/todo/SKILL.md` by exact name (or
       a 1:1 documented mapping), including "Needs individual review"
-- [ ] A comment or cross-reference ties the two lists together so a future heading rename in
+- [x] A comment or cross-reference ties the two lists together so a future heading rename in
       one file prompts an update in the other
 
 ## Implementation Notes
@@ -59,3 +59,11 @@ Relevant files: `docs/todo-automation-runbook.md` (the `/goal` paste block, ~lin
 ### 2026-07-06
 
 - Initial creation, filed from PR #525 code review (SUGGESTION-level finding)
+- Implemented: rewrote the `/goal` paste block's terminal-state enumeration in
+  `docs/todo-automation-runbook.md` to list each Phase 5 listing heading from
+  `.claude/skills/todo/SKILL.md` by exact name (including the previously-missing "Needs
+  individual review"), and added a reciprocal cross-reference between the runbook's
+  enumeration and SKILL.md's Phase 5 step 4 Producer contract paragraph so a future
+  heading rename in either file prompts an update in the other. code-reviewer pass: no
+  CRITICAL/WARNING findings; two SUGGESTIONs applied inline (exact-quote fix in SKILL.md,
+  this Updates entry).

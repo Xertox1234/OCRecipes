@@ -75,7 +75,7 @@ one most likely to surface an unmodeled edge.
 - [ ] Executor permission coverage confirmed during the attended debut: `git push` of
       feature branches, `gh pr create` / `mcp__github__create_pull_request`,
       `Bash(scripts/todo-automerge-guard.sh:*)`, **and now `gh pr merge --auto --squash
-    --delete-branch` on a guard-cleared PR** all run without prompts. This last one is
+  --delete-branch` on a guard-cleared PR** all run without prompts. This last one is
       new since the 2026-07-06 restoration — the executor arms auto-merge itself, from
       an unattended session, before CI has gone green. Confirm the `autoMode.allow`
       entry for `gh pr merge` explicitly covers arming `--auto` pre-CI-green (not just
@@ -117,9 +117,16 @@ is a valid terminal state, not a failure.
 DONE when: every actionable low/medium todo appears in SOME listing group of the latest
 accumulated /todo Phase 5 summary, or as blocked-with-reason, or as a `failed` row in
 the Phase 5 table — AND the latest /todo Phase 5 verification line is green. Every Phase
-5 listing group is a terminal state for the night (the skill guarantees this): open PR,
-auto-merging on green CI, gated on a dependency, dependency not yet implemented, stale
-branch, "Skipped — quality flags" (that one needs MY re-authoring). A failed todo is
+5 listing group is a terminal state for the night (the skill guarantees this — the list
+below mirrors the exact headings in `.claude/skills/todo/SKILL.md` Phase 5 step 4; if you
+rename a heading there, update this enumeration too, and vice versa): "Awaiting merge",
+"Gated on a pending PR", "Gated on a dependency (not yet implemented)", "Stale branch —
+self-clears next run", "Auto-merging on green CI (no action needed)", "Auto-merge failed
+to arm" (needs manual `gh pr merge --auto`, or individual review), "Needs individual
+review" (held/unknown/review-required PRs), "Skipped — quality flags" (that one needs MY
+re-authoring), and "Blocked — needs a one-time manual fix" (this one also forces a STOP
+EARLY below, so it won't co-occur with a clean DONE). ("Deferred warnings" lists review
+findings, not todo outcomes, so it is not one of these groups.) A failed todo is
 terminal for the night too — leave it for my morning review. Never re-dispatch a listed
 or failed todo hoping its outcome changes. Evaluate
 DONE from the Phase 5 reports you already hold; do NOT re-run test:run / check:types /
