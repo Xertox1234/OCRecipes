@@ -436,9 +436,9 @@ Skip 6b entirely if no solution file was created or updated (codify only touched
 
 This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both complete — the branch must contain the committed implementation before it is pushed.
 
-**Every todo creates a PR** (the one exception is a legacy `github_issue` todo per the Step 2 gate — that path produces no executor PR at all). A no-PR branch cannot land under `main`'s branch protection (`enforce_admins` ON; "merge the branch directly" no longer exists). The merge-eligibility check (step 4 below) decides what happens next:
+**Every todo creates a PR** (the one exception is a legacy `github_issue` todo per the Step 2 gate — that path produces no executor PR at all). A no-PR branch cannot land under `main`'s branch protection (`enforce_admins` ON; "merge the branch directly" no longer exists). The merge-eligibility check (step 5 below) decides what happens next — it runs after the Copilot review request (step 4) so the review is always requested before auto-merge is armed, even though the request itself is non-blocking and does not gate the merge on the review completing:
 
-- `low` or `medium` without a `security` label — run the eligibility guard (step 4). Guard OK → enable GitHub's native auto-merge on the PR immediately; it lands on its own once CI goes green, no human step. Guard HOLD/unknown → the PR stays open for the user's individual review.
+- `low` or `medium` without a `security` label — run the eligibility guard (step 5). Guard OK → enable GitHub's native auto-merge on the PR immediately; it lands on its own once CI goes green, no human step. Guard HOLD/unknown → the PR stays open for the user's individual review.
 - `high`, `critical`, or any `security`-labelled todo — skip the guard; the PR always needs individual human review (`MERGE_ELIGIBLE: review-required`) and is never auto-merged.
 
 Rename the worktree branch to the todo slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
@@ -522,7 +522,9 @@ Todo: `todos/<filename>.md` (archived in this commit)
 🤖 Implemented by Claude Code /todo skill
 ```
 
-4. **Merge-eligibility check (low/medium, non-`security`).** For a `low`- or `medium`-priority todo whose `labels` do **not** include `security`, run the **fail-closed** guard to classify the PR. Use the PR number from the `PR_URL` **in hand** — from step 3 on the normal path, or from step 6 on the already-exists path:
+4. **Request Copilot review.** Once a valid `PR_URL` is in hand (i.e., step 3 succeeded or a matching open PR was found in step 6), call `mcp__github__request_copilot_review` with `owner: xertox1234`, `repo: OCRecipes`, and the PR number extracted from `PR_URL`. This is non-blocking — if the call fails for any reason (auth, network, Copilot unavailable), log the error and continue to step 5 without treating it as a failure. Requesting review before the merge-eligibility check (step 5) guarantees the review is always requested before auto-merge can be armed — it does not guarantee the review completes before CI does, since the request itself does not block.
+
+5. **Merge-eligibility check (low/medium, non-`security`).** For a `low`- or `medium`-priority todo whose `labels` do **not** include `security`, run the **fail-closed** guard to classify the PR. Use the PR number from the `PR_URL` **in hand** — from step 3 on the normal path, or from step 6 on the already-exists path:
 
    ```bash
    scripts/todo-automerge-guard.sh <pr-number>; rc=$?
@@ -538,9 +540,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
    - **`rc` ≥ 2 — guard could not evaluate** (gh failure, empty diff, or a non-404 read error on the archived todo) → fail-closed: report `MERGE_ELIGIBLE: unknown` and continue. **Never call `gh pr merge`** — the PR is open and gets individual review.
    - **`high`/`critical`/`security` todos** — skip this step entirely (do not run the guard, **never call `gh pr merge`**); report `MERGE_ELIGIBLE: review-required`.
 
-5. **Request Copilot review.** Once a valid `PR_URL` is in hand (i.e., step 3 succeeded or a matching open PR was found in step 6), call `mcp__github__request_copilot_review` with `owner: xertox1234`, `repo: OCRecipes`, and the PR number extracted from `PR_URL`. This is non-blocking — if the call fails for any reason (auth, network, Copilot unavailable), log the error and continue to Step 11 without treating it as a failure.
-
-6. **If PR creation fails** because a PR already exists for `todo/<todo-slug>`, call `mcp__github__list_pull_requests` (`state: open`) and match the PR whose head branch is `todo/<todo-slug>`. If a PR is found, use its URL as `PR_URL`, run step 4's eligibility check against it, and proceed to step 5 (request Copilot review). If no open PR is found or the lookup fails for any other reason (network error, auth error, missing tool, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
+6. **If PR creation fails** because a PR already exists for `todo/<todo-slug>`, call `mcp__github__list_pull_requests` (`state: open`) and match the PR whose head branch is `todo/<todo-slug>`. If a PR is found, use its URL as `PR_URL`, request Copilot review (step 4), then run step 5's eligibility check against it. If no open PR is found or the lookup fails for any other reason (network error, auth error, missing tool, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
 
 ---
 
