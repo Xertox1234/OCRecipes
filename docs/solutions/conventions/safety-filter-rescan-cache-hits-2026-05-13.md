@@ -30,17 +30,19 @@ if (cachedResponse && containsDangerousDietaryAdvice(cachedResponse)) {
 }
 ```
 
-Also bump the cache version constant whenever safety logic changes so all stale entries are cache-missed immediately:
+For prompt changes, the coach service now invalidates the cache automatically via a memoized template hash — no manual bump needed:
 
 ```typescript
-// Bump this string whenever safety filters change — forces cache miss for all
-// existing entries rather than waiting for natural TTL expiry (H5 — 2026-04-18)
-const COACH_CACHE_VERSION = "v2-2026-04-18";
+// getSystemPromptTemplateVersion() (nutrition-coach.ts) — memoized hash of the
+// system-prompt template; changes automatically when the prompt prose is edited.
 ```
+
+That auto-hash does **not** cover safety-regex changes: editing `SAFETY_PATTERNS` in `coach-intent-classifier.ts` doesn't touch the prompt template, so the hash stays the same and stale entries would otherwise survive the full TTL. That gap is exactly why the re-scan rule above still matters — safety filtering must run again at cache-read time regardless of what does or doesn't bust the key. A service still keyed on a manual version constant (rather than an auto-hash) must bump that constant by hand whenever its safety logic changes.
 
 ## Related Files
 
-- `server/services/coach-pro-chat.ts` → `hashCoachCacheKey`, `COACH_CACHE_VERSION`
+- `server/services/coach-pro-chat.ts` → `hashCoachCacheKey`
+- `server/services/nutrition-coach.ts` → `getSystemPromptTemplateVersion`
 
 ## Origin
 

@@ -1,6 +1,6 @@
 ---
 title: "ai-reviewer checklist still mandates manual COACH_CACHE_VERSION bump — mechanism was replaced by auto-hash"
-status: backlog
+status: done
 priority: low
 created: 2026-07-05
 updated: 2026-07-05
@@ -21,11 +21,11 @@ Found 2026-07-05 while fact-checking the prompt-engineer agent redesign (PR for 
 
 ## Acceptance Criteria
 
-- [ ] ai-reviewer.md checklist items describe the current invalidation mechanism: coach uses `getSystemPromptTemplateVersion()` auto-hash; any service keyed on a manual version constant must bump it.
-- [ ] The `COACH_CACHE_VERSION = "v3"` example is removed or rewritten as historical context.
-- [ ] The principle "cache key must change when the prompt, tool schema, or safety regex changes" is preserved.
-- [ ] `docs/solutions/conventions/safety-filter-rescan-cache-hits-2026-05-13.md` no longer teaches the manual bump: its mechanism lines (~33-39) point at the auto-hash for prompt changes while PRESERVING the file's still-correct primary rule (re-scan safety filters on cache read — the auto-hash does NOT cover safety-regex changes), and its `## Related Files` entry references live symbols (`hashCoachCacheKey`, `getSystemPromptTemplateVersion`).
-- [ ] Post-fix, `git grep COACH_CACHE_VERSION` returns only the nutrition-coach.ts doc comment, historical-context mentions, and frozen `docs/legacy-patterns/` hits.
+- [x] ai-reviewer.md checklist items describe the current invalidation mechanism: coach uses `getSystemPromptTemplateVersion()` auto-hash; any service keyed on a manual version constant must bump it.
+- [x] The `COACH_CACHE_VERSION = "v3"` example is removed or rewritten as historical context.
+- [x] The principle "cache key must change when the prompt, tool schema, or safety regex changes" is preserved.
+- [x] `docs/solutions/conventions/safety-filter-rescan-cache-hits-2026-05-13.md` no longer teaches the manual bump: its mechanism lines (~33-39) point at the auto-hash for prompt changes while PRESERVING the file's still-correct primary rule (re-scan safety filters on cache read — the auto-hash does NOT cover safety-regex changes), and its `## Related Files` entry references live symbols (`hashCoachCacheKey`, `getSystemPromptTemplateVersion`).
+- [x] Post-fix, `git grep COACH_CACHE_VERSION` returns only the nutrition-coach.ts doc comment, historical-context mentions, and frozen `docs/legacy-patterns/` hits.
 
 ## Implementation Notes
 
@@ -48,3 +48,10 @@ Found 2026-07-05 while fact-checking the prompt-engineer agent redesign (PR for 
 
 - Initial creation — filed during the prompt-engineer v2 redesign session.
 - Scope widened after PR #512 review: the original "no remaining hits" claim was wrong — `docs/solutions/conventions/safety-filter-rescan-cache-hits-2026-05-13.md` still teaches the manual bump and is now in scope; verification AC added.
+
+### 2026-07-06
+
+- Implemented: rewrote `.claude/agents/ai-reviewer.md` Caching checklist (lines ~112-113) to describe the coach's `getSystemPromptTemplateVersion()` auto-hash, reframed `COACH_CACHE_VERSION = "v3"` as historical context, and preserved the "prompt/tool-schema/safety-regex change must invalidate the cache" principle.
+- Rewrote `docs/solutions/conventions/safety-filter-rescan-cache-hits-2026-05-13.md` mechanism lines to point at the auto-hash for prompt changes, explicitly note the auto-hash does NOT cover safety-regex changes (why the re-scan rule still holds), and updated `## Related Files` to live symbols (`hashCoachCacheKey`, `getSystemPromptTemplateVersion`).
+- `code-reviewer` review caught that the first draft of the ai-reviewer.md rewrite implied the auto-hash covers tool-schema changes too ("either way") — it doesn't (`TOOL_DEFINITIONS` is never hashed). Fixed inline to state the gap explicitly. Codified as a fresh recurrence in `docs/solutions/logic-errors/symbol-existence-grep-is-not-claim-verification-2026-07-05.md` (updated, not duplicated).
+- All ACs verified; `git grep COACH_CACHE_VERSION` post-fix returns only the nutrition-coach.ts doc comment, the ai-reviewer.md historical mention, and frozen `docs/legacy-patterns/` hits.
