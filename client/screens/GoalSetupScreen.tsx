@@ -7,7 +7,6 @@ import {
   Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -19,6 +18,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { InlineError } from "@/components/InlineError";
+import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -213,7 +213,6 @@ function NumberInput({
 
 export default function GoalSetupScreen() {
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
@@ -320,13 +319,13 @@ export default function GoalSetupScreen() {
 
   return (
     <ThemedView style={styles.container} accessibilityViewIsModal>
-      <ScrollView
+      <ScreenScrollView
         ref={scrollViewRef}
+        headerInsetExtra={Spacing.xl}
         style={styles.scrollView}
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: headerHeight + Spacing.xl,
             paddingBottom: insets.bottom + Spacing["3xl"],
           },
         ]}
@@ -683,7 +682,7 @@ export default function GoalSetupScreen() {
             </Card>
           </Animated.View>
         )}
-      </ScrollView>
+      </ScreenScrollView>
     </ThemedView>
   );
 }

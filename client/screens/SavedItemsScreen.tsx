@@ -7,7 +7,6 @@ import {
   RefreshControl,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 
@@ -21,6 +20,7 @@ import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import {
   useSavedItems,
   useSavedItemCount,
@@ -100,7 +100,7 @@ function SavedItemsSkeleton() {
 
 export default function SavedItemsScreen() {
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
+  const headerHeight = useHeaderContentInset();
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();

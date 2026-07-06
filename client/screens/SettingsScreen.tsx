@@ -3,7 +3,6 @@ import {
   StyleSheet,
   View,
   Pressable,
-  ScrollView,
   Platform,
   Alert,
   Linking,
@@ -11,12 +10,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
 import Constants from "expo-constants";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { DeleteAccountModal } from "@/components/DeleteAccountModal";
 import { ChangeEmailModal } from "@/components/ChangeEmailModal";
@@ -68,7 +67,6 @@ export default function SettingsScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const { logout, deleteAccount, changeEmail, user, updateUser } =
     useAuthContext();
@@ -259,10 +257,9 @@ export default function SettingsScreen() {
     : `Version ${appVersion}`;
 
   return (
-    <ScrollView
+    <ScreenScrollView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       contentContainerStyle={{
-        paddingTop: headerHeight,
         paddingBottom: insets.bottom + Spacing.xl,
       }}
     >
@@ -451,7 +448,7 @@ export default function SettingsScreen() {
         onConfirm={handleChangeEmail}
         currentEmail={user?.email}
       />
-    </ScrollView>
+    </ScreenScrollView>
   );
 }
 

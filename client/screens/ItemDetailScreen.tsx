@@ -1,7 +1,6 @@
 import React from "react";
-import { AccessibilityInfo, StyleSheet, View, ScrollView } from "react-native";
+import { AccessibilityInfo, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useHeaderHeight } from "@react-navigation/elements";
 import { useRoute, RouteProp } from "@react-navigation/native";
 import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
@@ -9,10 +8,12 @@ import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { formatDateLong as formatDate } from "@/lib/format";
 import type { ScannedItemResponse } from "@/types/api";
@@ -129,7 +130,7 @@ function ItemDetailSkeleton() {
 
 export default function ItemDetailScreen() {
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
+  const headerHeight = useHeaderContentInset();
   const route = useRoute<ItemDetailRouteProp>();
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
@@ -184,12 +185,12 @@ export default function ItemDetailScreen() {
   }
 
   return (
-    <ScrollView
+    <ScreenScrollView
+      headerInsetExtra={Spacing.lg}
       style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
       contentContainerStyle={[
         styles.container,
         {
-          paddingTop: headerHeight + Spacing.lg,
           paddingBottom: insets.bottom + Spacing.xl,
         },
       ]}
@@ -288,7 +289,7 @@ export default function ItemDetailScreen() {
           ) : null}
         </Card>
       </Animated.View>
-    </ScrollView>
+    </ScreenScrollView>
   );
 }
 

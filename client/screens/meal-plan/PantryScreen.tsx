@@ -7,7 +7,6 @@ import {
   TextInput,
   RefreshControl,
 } from "react-native";
-import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -21,6 +20,7 @@ import { UpgradeModal } from "@/components/UpgradeModal";
 import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
@@ -126,7 +126,7 @@ function PantryItemRow({
 }
 
 export default function PantryScreen() {
-  const headerHeight = useHeaderHeight();
+  const headerHeight = useHeaderContentInset();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
