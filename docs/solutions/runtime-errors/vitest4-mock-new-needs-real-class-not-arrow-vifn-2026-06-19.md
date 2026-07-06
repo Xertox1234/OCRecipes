@@ -8,6 +8,7 @@ tags: [vitest, mocking, testing, constructor, esm]
 symptoms: ['Test throws `TypeError: () => ({ ... }) is not a constructor`.', 'Production code does `new SomeSdk(key)` and the mock is `vi.fn().mockImplementation(() => ({ ... }))`.']
 applies_to: ['**/__tests__/**/*.test.ts']
 created: '2026-06-19'
+last_updated: '2026-07-06'
 ---
 
 # Vitest 4: mocking a class you `new` requires a real class, not vi.fn() with an arrow impl
@@ -71,6 +72,11 @@ put the spy on the prototype.
 
 - `server/services/__tests__/email.test.ts` — the Resend class mock
 - `server/services/email.ts` — `new Resend(key)`
+- `evals/__tests__/eval-results-store.test.ts` — same TypeError recurred mocking `pg`'s
+  `Client` (production code: `evals/lib/eval-results-store.ts`'s `new Client({...})`);
+  confirms this isn't Resend-specific — any `new SomeSdk()` mocked via
+  `vi.fn().mockImplementation(() => ({...}))` hits it. Fixed the same way: a `function`
+  expression instead of an arrow function.
 
 ## See Also
 
