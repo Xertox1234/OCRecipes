@@ -380,11 +380,11 @@ After the fix commit (Phase 7) and the codification commit (Phase 8) both exist 
    ```bash
    git push -u origin audit/YYYY-MM-DD-<scope>
    ```
-   (use the branch created in Phase 1 step 6 — substitute the real date and scope)
+   (use the branch created in Phase 1 step 3 — substitute the real date and scope)
 3. **Create the PR.** The GitHub MCP tools are deferred — first load them with `ToolSearch` (query: `select:mcp__github__create_pull_request,mcp__github__list_pull_requests`), then call `mcp__github__create_pull_request` with:
    - `owner`: `Xertox1234`
    - `repo`: `OCRecipes`
-   - `base`: the branch captured in Phase 1 step 5 (usually `main`)
+   - `base`: the branch captured in Phase 1 step 1 (usually `main`)
    - `head`: `audit/YYYY-MM-DD-<scope>`
    - `body`: the template below
 4. **If PR creation fails** because a PR already exists for the branch, call `mcp__github__list_pull_requests` (`state: open`) and match the PR whose head branch is `audit/YYYY-MM-DD-<scope>`. If found, use its URL. If no open PR is found or the lookup fails for any other reason, report that no PR URL is available — the branch is pushed and the PR can be opened manually.

@@ -1,6 +1,6 @@
 ---
 title: "Move the 'add typescript for .ts/.tsx' cross-cutting policy into path-domains.ts instead of hand-stating it in two docs"
-status: backlog
+status: done
 priority: low
 created: 2026-07-02
 updated: 2026-07-02
@@ -38,16 +38,16 @@ the fix belongs one level deeper.
 
 ## Acceptance Criteria
 
-- [ ] `scripts/lib/path-domains.ts` can emit `typescript` for any `.ts`/`.tsx` input via a
+- [x] `scripts/lib/path-domains.ts` can emit `typescript` for any `.ts`/`.tsx` input via a
       dedicated, opt-in path (e.g. a `--typescript-crosscut` flag, or a documented
       `routingLabelsForPath` option) — NOT unconditionally, so existing consumers are
       unaffected.
-- [ ] The two docs above reference the CLI behavior instead of hand-stating the policy
+- [x] The two docs above reference the CLI behavior instead of hand-stating the policy
       (one owning statement; the other points to it or to the CLI).
-- [ ] The other `path-domains.ts` consumers — the generated `.github/copilot-instructions.md`
+- [x] The other `path-domains.ts` consumers — the generated `.github/copilot-instructions.md`
       (`npm run build:copilot-instructions:check` stays green) and
       `.claude/hooks/lib/domain-map.sh` — are verified unchanged by the new opt-in flag.
-- [ ] A unit test pins the new behavior (a `.ts` input under the flag yields `typescript`
+- [x] A unit test pins the new behavior (a `.ts` input under the flag yields `typescript`
       in the label union; without the flag it does not).
 
 ## Implementation Notes
@@ -79,3 +79,26 @@ the fix belongs one level deeper.
 ### 2026-07-02
 
 - Initial creation — deferred low-severity DRY/altitude finding from the `/review 490` cycle.
+
+### 2026-07-05
+
+- Implemented: added an opt-in `--typescript-crosscut` flag to `runCli` in
+  `scripts/lib/path-domains.ts` that unions in the `typescript` label for any
+  `.ts`/`.tsx` input file, on top of whatever `rulesDomainsForPath`/
+  `routingLabelsForPath` already produce. Default (no-flag) output is
+  byte-identical — verified via `npm run build:generated:check` (both
+  `.github/copilot-instructions.md` and `.claude/hooks/lib/domain-map.sh`
+  still match their generated content, since those two consumers import
+  `PATH_TO_DOMAINS` directly and never pass CLI flags).
+- `.claude/skills/codify/SKILL.md` Step 1 is now the owning statement
+  describing the flag; `.claude/agents/todo-executor.md` Step 3b points to it.
+- Added unit tests in `scripts/lib/__tests__/path-domains.test.ts` pinning:
+  flag-on adds `typescript` for a `.ts` file with no other domain match,
+  flag-on unions with existing domains for a `.tsx` file, flag-off leaves a
+  `.ts` file with no domain match empty, flag composes with `--routing`, and
+  flag-on does not add `typescript` for a non-`.ts`/`.tsx` file.
+- Code review (code-reviewer, single reviewer — docs/config + tiny
+  cross-cutting internal-tooling diff): no CRITICAL findings. One WARNING
+  (missing negative-case test for the flag) and two SUGGESTIONs (stale
+  "Four artifacts" header comment, minor prose duplication in
+  todo-executor.md) — all fixed inline.

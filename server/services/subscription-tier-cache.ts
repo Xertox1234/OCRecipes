@@ -103,4 +103,5 @@ export async function resolveSubscriptionTierFeatures(
 export const _testInternals = {
   tierCache,
   TTL_MS,
+  MAX_CACHE_SIZE,
 };

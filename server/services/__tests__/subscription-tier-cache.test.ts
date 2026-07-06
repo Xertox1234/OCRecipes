@@ -170,4 +170,48 @@ describe("subscription-tier-cache", () => {
 
     expect(features.recipeGeneration).toBe(true);
   });
+
+  it("evicts the oldest entry when the cache reaches MAX_CACHE_SIZE, keeping size bounded", async () => {
+    mockGetSubscriptionStatus.mockResolvedValue(freeStatus);
+
+    // Seed the cache directly up to the MAX_CACHE_SIZE limit with fake entries
+    // in known insertion order — Map iteration order is insertion order, so
+    // "oldest-0" is the first key evicted.
+    const maxSize = _testInternals.MAX_CACHE_SIZE;
+    for (let i = 0; i < maxSize; i++) {
+      _testInternals.tierCache.set(`oldest-${i}`, {
+        features: TIER_FEATURES.free,
+        expiresAt: Date.now() + _testInternals.TTL_MS,
+      });
+    }
+    expect(_testInternals.tierCache.size).toBe(maxSize);
+
+    await resolveSubscriptionTierFeatures("new-user");
+
+    // The oldest entry was evicted to make room — size stays bounded, not
+    // maxSize + 1 — and the newly-resolved user is present.
+    expect(_testInternals.tierCache.has("oldest-0")).toBe(false);
+    expect(_testInternals.tierCache.has("new-user")).toBe(true);
+    expect(_testInternals.tierCache.size).toBe(maxSize);
+  });
+
+  it("treats the exact TTL boundary as still-cached (expiry is a strict '>', not '>=')", async () => {
+    vi.useFakeTimers();
+    try {
+      mockGetSubscriptionStatus.mockResolvedValue(freeStatus);
+
+      await resolveSubscriptionTierFeatures("u14");
+
+      // Advance the clock to land EXACTLY on expiresAt (now + TTL_MS).
+      vi.setSystemTime(new Date(Date.now() + _testInternals.TTL_MS));
+
+      await resolveSubscriptionTierFeatures("u14");
+
+      // At the exact boundary the entry is NOT yet expired (`>`, not `>=`),
+      // so the second call must still be served from cache.
+      expect(mockGetSubscriptionStatus).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

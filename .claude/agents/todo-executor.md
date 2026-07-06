@@ -170,10 +170,10 @@ If the researcher failed and no label matches the table above, read `CLAUDE.md` 
 **3b — File-path pattern + rules supplement:** After the read-back and (if it ran) the researcher, derive the domains for the source file paths extracted above from the **single source of truth** — do not maintain or consult a hand-copied mapping table here (a previous inline copy drifted from the source in 3 rows). The canonical mapping is `scripts/lib/path-domains.ts` (the same source `.claude/hooks/lib/domain-map.sh` and the generated `.github/copilot-instructions.md` derive from):
 
 ```bash
-npx tsx scripts/lib/path-domains.ts <source file paths...>   # prints the comma-separated union of rules domains
+npx tsx scripts/lib/path-domains.ts --typescript-crosscut <source file paths...>   # prints the comma-separated union of rules domains, plus typescript for any .ts/.tsx input
 ```
 
-In addition, include `typescript` whenever any source file is a `.ts`/`.tsx` file (a cross-cutting policy the CLI does not add). This runs on both paths — it is how the short-circuit path loads domain patterns. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/legacy-patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
+`--typescript-crosscut` folds in the cross-cutting "any `.ts`/`.tsx` file → `typescript`" policy directly in the CLI — see `.claude/skills/codify/SKILL.md` Step 1 for the flag's rationale. This runs on both paths — it is how the short-circuit path loads domain patterns. Read `docs/rules/{domain}.md` (full) and the first 80 lines of `docs/legacy-patterns/{domain}.md` for any domain not already covered by the label-based lookup. This ensures the right patterns load even when todo labels are incomplete.
 
 ## Step 3.5 — Advisor pre-check
 
