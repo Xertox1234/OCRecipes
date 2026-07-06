@@ -145,6 +145,7 @@ describe("dev-api-cache", () => {
 
       expect(mockFetch).not.toHaveBeenCalled();
       expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toBe("application/json");
       await expect(res.json()).resolves.toEqual({ hit: true });
     });
 

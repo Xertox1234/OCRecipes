@@ -216,6 +216,7 @@ export async function cachedFetch(
       await logInvocation(api, true);
       return new Response(JSON.stringify(cached.response), {
         status: cached.status,
+        headers: { "content-type": "application/json" },
       });
     }
   }
