@@ -1,6 +1,7 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
 import os from "node:os";
+import { FlakeLedgerReporter } from "./scripts/pg-lab/vitest-flake-reporter";
 
 export default defineConfig({
   esbuild: {
@@ -75,6 +76,21 @@ export default defineConfig({
     // no deterministic root cause to fix. A genuine failure fails all 3 attempts
     // and is still reported; only contention flakes are absorbed.
     retry: 2,
+    // Local-only PG Lab flake ledger (todos/archive/P3-2026-07-05-pg-flake-ledger.md) —
+    // appends per-test retry/duration data to dev.test_runs in ocrecipes_lab so retry
+    // consumption and timing drift become queryable trends (scripts/pg-lab/flake-report.sh).
+    // Omitted entirely in CI: CI runners don't run ocrecipes_lab and the ledger is a
+    // local-dev signal, not a CI artifact — excluding it here (rather than relying solely
+    // on the reporter's own internal CI check) also avoids ever *constructing* (and thus
+    // connecting) the reporter in an environment that will never use it. (The static
+    // `import` of vitest-flake-reporter.ts above — and its own `import pg from "pg"` — is
+    // still evaluated in CI regardless, since ES module imports aren't conditional; only
+    // the `new FlakeLedgerReporter()` call is skipped. That's harmless here: `pg` is
+    // already a server runtime dependency, and importing it has no side effects.)
+    // `"default"` is kept so console output is unchanged from Vitest's built-in reporter.
+    reporters: process.env.CI
+      ? ["default"]
+      : ["default", new FlakeLedgerReporter()],
     setupFiles: ["./test/setup.ts"],
     globalSetup: ["./test/global-teardown.ts"],
   },
