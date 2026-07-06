@@ -436,10 +436,10 @@ Skip 6b entirely if no solution file was created or updated (codify only touched
 
 This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both complete — the branch must contain the committed implementation before it is pushed.
 
-**Every todo creates a PR, and NO PR ever auto-merges** (the one exception is a legacy `github_issue` todo per the Step 2 gate — that path produces no executor PR at all). A no-PR branch cannot land under `main`'s branch protection (`enforce_admins` ON; "merge the branch directly" no longer exists). All PRs wait for the user's morning batch-merge; the merge-eligibility check (step 4 below) only classifies each PR so the orchestrator can report which ones are safe to batch-merge and which need individual review:
+**Every todo creates a PR** (the one exception is a legacy `github_issue` todo per the Step 2 gate — that path produces no executor PR at all). A no-PR branch cannot land under `main`'s branch protection (`enforce_admins` ON; "merge the branch directly" no longer exists). The merge-eligibility check (step 4 below) decides what happens next:
 
-- `low` or `medium` without a `security` label — run the eligibility guard (step 4) and report its verdict.
-- `high`, `critical`, or any `security`-labelled todo — skip the guard; the PR always needs individual human review (`MERGE_ELIGIBLE: review-required`).
+- `low` or `medium` without a `security` label — run the eligibility guard (step 4). Guard OK → enable GitHub's native auto-merge on the PR immediately; it lands on its own once CI goes green, no human step. Guard HOLD/unknown → the PR stays open for the user's individual review.
+- `high`, `critical`, or any `security`-labelled todo — skip the guard; the PR always needs individual human review (`MERGE_ELIGIBLE: review-required`) and is never auto-merged.
 
 Rename the worktree branch to the todo slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
 
@@ -472,7 +472,7 @@ gh pr list --head todo/<todo-slug> --state all --json number,url,state
 
 Five outcomes (Step 2's remote-branch probe runs this same triage — keep them identical). Each outcome names its Step 11 `REASON_CODE`:
 
-- **An open PR exists — the ROUTINE case** (`REASON_CODE: OPEN_PR_COLLISION`). Under the no-auto-merge policy this todo was already implemented by a prior run and its PR is awaiting the user's batch-merge (Phase 2 triage and the Step 2 probe should have caught it; this is the last backstop). Do NOT retry or escalate. Report `skipped` (Step 11) with reason `already implemented — PR <url> awaiting batch-merge` and stop. Your worktree's duplicate implementation is discarded with the worktree (the prior run's PR carries its own codification commit; this worktree's duplicate solution files are discarded with it by design).
+- **An open PR exists — the ROUTINE case** (`REASON_CODE: OPEN_PR_COLLISION`). This todo was already implemented by a prior run and its PR is either auto-merging (guard-eligible) or awaiting individual review (Phase 2 triage and the Step 2 probe should have caught it; this is the last backstop). Do NOT retry or escalate. Report `skipped` (Step 11) with reason `already implemented — PR <url> (already auto-merging or awaiting individual review — check gh pr view <url> for its current state)` and stop. Your worktree's duplicate implementation is discarded with the worktree (the prior run's PR carries its own codification commit; this worktree's duplicate solution files are discarded with it by design).
 - **PRs exist and ALL are `MERGED`** (`REASON_CODE: STALE_BRANCH_MERGED`) — a leftover branch that Phase 0's sweep deletes on the next run; no human action needed. Report `skipped` (Step 11) with reason `stale todo/<todo-slug> branch from a merged PR — Phase 0 sweeps it next run; re-run this todo afterward` and stop.
 - **A PR was `CLOSED` without merging** (and none is open) (`REASON_CODE: PR_CLOSED_UNMERGED`) — the user closed a prior implementation of this todo without merging it. That is a rejection signal, not routine cleanup — silently re-implementing would ship work the user already declined, and Phase 0's sweep deliberately never deletes such a branch. **Stop and report `blocked`** (Step 11 block path) with this reason verbatim:
 
@@ -522,17 +522,21 @@ Todo: `todos/<filename>.md` (archived in this commit)
 🤖 Implemented by Claude Code /todo skill
 ```
 
-4. **Merge-eligibility check (low/medium, non-`security`).** For a `low`- or `medium`-priority todo whose `labels` do **not** include `security`, run the **fail-closed** guard to classify the PR for the user's morning batch-merge. **Never enable auto-merge — do not call `gh pr merge` in any form.** Use the PR number from the `PR_URL` **in hand** — from step 3 on the normal path, or from step 6 on the already-exists path:
+4. **Merge-eligibility check (low/medium, non-`security`).** For a `low`- or `medium`-priority todo whose `labels` do **not** include `security`, run the **fail-closed** guard to classify the PR. Use the PR number from the `PR_URL` **in hand** — from step 3 on the normal path, or from step 6 on the already-exists path:
 
    ```bash
    scripts/todo-automerge-guard.sh <pr-number>; rc=$?
    ```
 
    Map the guard's exit code — it deliberately distinguishes a real HOLD from a tooling error:
-   - **`rc` 0 — guard OK** (both gates passed: every changed file is on the safe allowlist, and the archived todo's frontmatter is priority low/medium with no `security` mention) → report `MERGE_ELIGIBLE: yes` — the orchestrator lists this PR as safe for the user's batch-merge on green CI.
-   - **`rc` 1 — guard HOLD**, via either gate: the PATH gate (a changed file is sensitive or not on the allowlist — e.g. `server/storage`, `server/routes`, `server/middleware`, `.github/`, `scripts/`, `migrations`, `shared/schema.ts`, secrets) or the TODO gate (no `todos/archive/*.md` in the diff, an archive file absent from the PR head, priority not low/medium, or `security` in the frontmatter — so the `low`/`medium` label may be a mislabel). Report `MERGE_ELIGIBLE: held (guard: <the guard's HOLD reason line — the first line of its output>)` so the report says WHICH gate held. **Do not add this to `DEFERRED_WARNINGS`** — `MERGE_ELIGIBLE: held` is the channel the orchestrator surfaces it on.
-   - **`rc` ≥ 2 — guard could not evaluate** (gh failure, empty diff, or a non-404 read error on the archived todo) → fail-closed: report `MERGE_ELIGIBLE: unknown` and continue. The PR is open and gets individual review.
-   - **`high`/`critical`/`security` todos** — skip this step entirely (do not run the guard); report `MERGE_ELIGIBLE: review-required`.
+   - **`rc` 0 — guard OK** (both gates passed: every changed file is on the safe allowlist, and the archived todo's frontmatter is priority low/medium with no `security` mention) → enable auto-merge immediately:
+     ```bash
+     gh pr merge <pr-number> --auto --squash --delete-branch
+     ```
+     This is GitHub's native auto-merge: it does not merge now, it arms the PR to merge itself the instant required CI checks pass — no further action from anyone. If the `gh pr merge --auto` call itself fails (network/auth/auto-merge disabled on the repo), do not retry silently — report `MERGE_ELIGIBLE: yes (auto-merge enable FAILED — needs manual gh pr merge --auto --squash --delete-branch <n>, or individual review)`. Otherwise report `MERGE_ELIGIBLE: yes (auto-merge enabled)`.
+   - **`rc` 1 — guard HOLD**, via either gate: the PATH gate (a changed file is sensitive or not on the allowlist — e.g. `server/storage`, `server/routes`, `server/middleware`, `.github/`, `scripts/`, `migrations`, `shared/schema.ts`, secrets) or the TODO gate (no `todos/archive/*.md` in the diff, an archive file absent from the PR head, priority not low/medium, or `security` in the frontmatter — so the `low`/`medium` label may be a mislabel). **Never call `gh pr merge` for a held PR.** Report `MERGE_ELIGIBLE: held (guard: <the guard's HOLD reason line — the first line of its output>)` so the report says WHICH gate held. **Do not add this to `DEFERRED_WARNINGS`** — `MERGE_ELIGIBLE: held` is the channel the orchestrator surfaces it on.
+   - **`rc` ≥ 2 — guard could not evaluate** (gh failure, empty diff, or a non-404 read error on the archived todo) → fail-closed: report `MERGE_ELIGIBLE: unknown` and continue. **Never call `gh pr merge`** — the PR is open and gets individual review.
+   - **`high`/`critical`/`security` todos** — skip this step entirely (do not run the guard, **never call `gh pr merge`**); report `MERGE_ELIGIBLE: review-required`.
 
 5. **Request Copilot review.** Once a valid `PR_URL` is in hand (i.e., step 3 succeeded or a matching open PR was found in step 6), call `mcp__github__request_copilot_review` with `owner: xertox1234`, `repo: OCRecipes`, and the PR number extracted from `PR_URL`. This is non-blocking — if the call fails for any reason (auth, network, Copilot unavailable), log the error and continue to Step 11 without treating it as a failure.
 
@@ -551,7 +555,7 @@ STATUS: success
 COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "null" if PR creation failed>
-MERGE_ELIGIBLE: <yes (guard OK — safe for the user's batch-merge on green CI) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | review-required (high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
+MERGE_ELIGIBLE: <yes (auto-merge enabled — GitHub squash-merges automatically once CI is green, nothing further needed) | yes (auto-merge enable FAILED — needs manual gh pr merge --auto or individual review) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | review-required (high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
 CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b>
 SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written, passed the 6b sanity-check, and was committed in step 7, or "none" if no solution was codified>
 
@@ -582,16 +586,16 @@ REASON: <the canonical reason text for the code, per the mapping below>
 
 `REASON_CODE` enum (shared with the /todo orchestrator's Phase 5 routing — never invent a new value):
 
-| REASON_CODE           | STATUS            | Canonical REASON text                                                                                                                               |
-| --------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OPEN_PR_COLLISION`   | skipped           | `already implemented — PR <url> awaiting batch-merge` (Step 2 probe or Step 10 open-PR collision)                                                   |
-| `STALE_BRANCH_MERGED` | skipped           | `stale todo/<todo-slug> branch from a merged PR — Phase 0 sweeps it next run; re-run this todo afterward`                                           |
-| `PR_CLOSED_UNMERGED`  | blocked           | the full Step 10 closed-without-merge reason — keep its `ACTION NEEDED (human): …` line intact                                                      |
-| `ORPHAN_BRANCH`       | blocked           | the full Step 10 orphan reason (probe-adjusted wording if from Step 2) — keep its `ACTION NEEDED (human): …` line intact                            |
-| `PR_CHECK_FAILED`     | blocked           | the full Step 10 unknown-state reason — keep its `ACTION NEEDED (human): …` line intact                                                             |
-| `DEPENDENCY_GATED`    | blocked           | list of blocking dependency filenames (Step 2 dependency check)                                                                                     |
-| `ADVISOR_RED`         | blocked           | `advisor red-flag: <reason>` (Step 3.5)                                                                                                             |
-| `NONE`                | skipped or failed | any other skip — e.g. `status is <actual>, expected backlog or planned`, or the Step 2 legacy `github_issue` gate — and every plain `failed` report |
+| REASON_CODE           | STATUS            | Canonical REASON text                                                                                                                                                            |
+| --------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPEN_PR_COLLISION`   | skipped           | `already implemented — PR <url> (already auto-merging or awaiting individual review — check gh pr view <url> for its current state)` (Step 2 probe or Step 10 open-PR collision) |
+| `STALE_BRANCH_MERGED` | skipped           | `stale todo/<todo-slug> branch from a merged PR — Phase 0 sweeps it next run; re-run this todo afterward`                                                                        |
+| `PR_CLOSED_UNMERGED`  | blocked           | the full Step 10 closed-without-merge reason — keep its `ACTION NEEDED (human): …` line intact                                                                                   |
+| `ORPHAN_BRANCH`       | blocked           | the full Step 10 orphan reason (probe-adjusted wording if from Step 2) — keep its `ACTION NEEDED (human): …` line intact                                                         |
+| `PR_CHECK_FAILED`     | blocked           | the full Step 10 unknown-state reason — keep its `ACTION NEEDED (human): …` line intact                                                                                          |
+| `DEPENDENCY_GATED`    | blocked           | list of blocking dependency filenames (Step 2 dependency check)                                                                                                                  |
+| `ADVISOR_RED`         | blocked           | `advisor red-flag: <reason>` (Step 3.5)                                                                                                                                          |
+| `NONE`                | skipped or failed | any other skip — e.g. `status is <actual>, expected backlog or planned`, or the Step 2 legacy `github_issue` gate — and every plain `failed` report                              |
 
 (`QUALITY_FLAGS` also exists in this enum but is assigned by the /todo orchestrator in Phase 2 triage — an executor never emits it.)
 
