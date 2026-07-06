@@ -290,7 +290,7 @@ After all batches have been executed (or after early termination):
 
    None of these are failures. The first two clear on the next run after the user merges; the stale-branch group clears on the next run automatically; only the not-yet-implemented group needs the user's attention.
 
-   **Producer contract:** every listing group in this summary is a **terminal state for the run** — the overnight `/goal` DONE condition in `docs/todo-automation-runbook.md` derives from "appears in some listing group". Never add a group whose members should be re-dispatched the same night without updating that DONE condition in the same change.
+   **Producer contract:** every listing group in this summary is a **terminal state for the run** — the overnight `/goal` DONE condition in `docs/todo-automation-runbook.md` derives from "appears in some listing group", and that paste block's enumeration lists each of these headings by exact name (see its `/goal` completion-condition section). Never add, rename, or remove a listing group without updating that enumeration in the same change.
 
    Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading.
 
