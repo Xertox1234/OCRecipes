@@ -49,6 +49,15 @@ vi.mock("@/hooks/useHaptics", () => ({
   }),
 }));
 
+const mockToastError = vi.fn();
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    success: vi.fn(),
+    error: mockToastError,
+    info: vi.fn(),
+  }),
+}));
+
 let mockCanImportPhoto = true;
 vi.mock("@/hooks/usePremiumFeatures", () => ({
   usePremiumFeature: () => mockCanImportPhoto,
@@ -158,7 +167,7 @@ describe("ImportRecipeSheet permission-denied handling", () => {
     expect(defaultProps.onPhotoImport).not.toHaveBeenCalled();
   });
 
-  it("does not show the misleading Settings alert when the launcher rejects for an unrelated reason", async () => {
+  it("does not show the misleading Settings alert when the launcher rejects for an unrelated reason, but does surface a generic error toast", async () => {
     mockRequestCameraPermissionsAsync.mockResolvedValue({ status: "granted" });
     mockLaunchCameraAsync.mockRejectedValue(new Error("Camera busy"));
     // Recheck shows permission is still granted — the rejection wasn't a
@@ -173,9 +182,12 @@ describe("ImportRecipeSheet permission-denied handling", () => {
     });
     expect(RN.Alert.alert).not.toHaveBeenCalled();
     expect(defaultProps.onPhotoImport).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      expect.stringContaining("camera"),
+    );
   });
 
-  it("does not throw an unhandled rejection when the recheck itself also rejects", async () => {
+  it("does not throw an unhandled rejection when the recheck itself also rejects, but does surface a generic error toast", async () => {
     mockRequestCameraPermissionsAsync.mockResolvedValue({ status: "granted" });
     mockLaunchCameraAsync.mockRejectedValue(new Error("Camera busy"));
     mockGetCameraPermissionsAsync.mockRejectedValue(
@@ -190,6 +202,9 @@ describe("ImportRecipeSheet permission-denied handling", () => {
     });
     expect(RN.Alert.alert).not.toHaveBeenCalled();
     expect(defaultProps.onPhotoImport).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      expect.stringContaining("camera"),
+    );
   });
 
   it("imports the photo when gallery permission is granted", async () => {
@@ -257,7 +272,7 @@ describe("ImportRecipeSheet permission-denied handling", () => {
     expect(defaultProps.onPhotoImport).not.toHaveBeenCalled();
   });
 
-  it("does not show the misleading Settings alert when the gallery launcher rejects for an unrelated reason", async () => {
+  it("does not show the misleading Settings alert when the gallery launcher rejects for an unrelated reason, but does surface a generic error toast", async () => {
     mockRequestMediaLibraryPermissionsAsync.mockResolvedValue({
       status: "granted",
     });
@@ -274,5 +289,30 @@ describe("ImportRecipeSheet permission-denied handling", () => {
     });
     expect(RN.Alert.alert).not.toHaveBeenCalled();
     expect(defaultProps.onPhotoImport).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      expect.stringContaining("gallery"),
+    );
+  });
+
+  it("does not throw an unhandled rejection when the gallery recheck itself also rejects, but does surface a generic error toast", async () => {
+    mockRequestMediaLibraryPermissionsAsync.mockResolvedValue({
+      status: "granted",
+    });
+    mockLaunchImageLibraryAsync.mockRejectedValue(new Error("Disk full"));
+    mockGetMediaLibraryPermissionsAsync.mockRejectedValue(
+      new Error("native module unavailable"),
+    );
+
+    renderComponent(<ImportRecipeSheetContent {...defaultProps} />);
+    fireEvent.click(screen.getByLabelText("From Gallery"));
+
+    await waitFor(() => {
+      expect(mockGetMediaLibraryPermissionsAsync).toHaveBeenCalledTimes(1);
+    });
+    expect(RN.Alert.alert).not.toHaveBeenCalled();
+    expect(defaultProps.onPhotoImport).not.toHaveBeenCalled();
+    expect(mockToastError).toHaveBeenCalledWith(
+      expect.stringContaining("gallery"),
+    );
   });
 });

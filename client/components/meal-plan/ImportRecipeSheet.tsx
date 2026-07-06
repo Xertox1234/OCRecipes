@@ -14,6 +14,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import {
   Spacing,
@@ -52,6 +53,7 @@ function ImportRecipeSheetContentInner({
 }: ImportRecipeSheetContentProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const canImportPhoto = usePremiumFeature("recipePhotoImport");
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [clipboardError, setClipboardError] = useState<string | null>(null);
@@ -124,9 +126,16 @@ function ImportRecipeSheetContentInner({
           const { status } = await ImagePicker.getCameraPermissionsAsync();
           if (status !== "granted") {
             showPermissionDeniedAlert("Camera");
+          } else {
+            // Recheck confirms this wasn't a permission problem — the Settings
+            // alert would mislabel it, but the user still needs to know the
+            // tap did nothing.
+            toast.error("Couldn't open the camera. Please try again.");
           }
         } catch {
-          // Cause is undeterminable — stay silent rather than guess.
+          // Cause is undeterminable — can't tell if it's a permission issue,
+          // but the user still needs some signal the tap failed.
+          toast.error("Couldn't open the camera. Please try again.");
         }
         return;
       }
@@ -142,6 +151,7 @@ function ImportRecipeSheetContentInner({
     onDismiss,
     onPhotoImport,
     showPermissionDeniedAlert,
+    toast,
   ]);
 
   const handleGallery = useCallback(() => {
@@ -166,9 +176,11 @@ function ImportRecipeSheetContentInner({
             await ImagePicker.getMediaLibraryPermissionsAsync();
           if (status !== "granted") {
             showPermissionDeniedAlert("Photo Library");
+          } else {
+            toast.error("Couldn't open the gallery. Please try again.");
           }
         } catch {
-          // Cause is undeterminable — stay silent rather than guess.
+          toast.error("Couldn't open the gallery. Please try again.");
         }
         return;
       }
@@ -184,6 +196,7 @@ function ImportRecipeSheetContentInner({
     onDismiss,
     onPhotoImport,
     showPermissionDeniedAlert,
+    toast,
   ]);
 
   const handleClipboard = useCallback(() => {
