@@ -34,8 +34,9 @@ no longer registered or approved.)
 Two required, self-scoping gates run Stryker only when a target or the harness changes:
 
 - **`mutation-non-excluded.yml`** — every target in `stryker.targets.mjs` except the
-  Hard-Exclusion ones (as of 2026-07-05: `macro-gap-context`, `verification-consensus`,
-  `cook-session-merge`, `chat-history-truncate`, `notebook-budget`, `carousel-builder`,
+  Hard-Exclusion ones (the current non-excluded set, as of 2026-07-05:
+  `macro-gap-context`, `verification-consensus`, `cook-session-merge`,
+  `chat-history-truncate`, `notebook-budget`, `carousel-builder`,
   `subscription-tier-cache`). This list has drifted from the workflow before — treat
   `stryker.targets.mjs` (registry) and `docs/mutation-testing/baselines.md` (achieved
   scores + residual notes) as the source of truth, not this bullet.
@@ -49,8 +50,12 @@ the score drops below it, so a test regression that lets a mutant survive fails 
 See `baselines.md` for the tracked mutation scores. Equivalent-mutant handling
 depends on the module:
 
-- **Non-excluded** modules: suppress inline in source with
-  `// Stryker disable next-line <mutator> -- <reason>`.
+- **Non-excluded** modules: either suppress inline in source with
+  `// Stryker disable next-line <mutator> -- <reason>`, or — when the equivalent can't
+  be isolated to one line — leave `breakThreshold` with margin below the achieved score
+  and document the reasoning in the target's `stryker.targets.mjs` comment plus
+  `baselines.md` (the precedent used by `chat-history-truncate`, `notebook-budget`,
+  `carousel-builder`, and `subscription-tier-cache`).
 - **Hard-Exclusion** modules (read-only): NEVER suppress in source — record the
   equivalent in `accepted-equivalents.json` (`file:line:mutator` + reason). The
   target's CI `break` is set to its achieved score (below 100) to account for the
