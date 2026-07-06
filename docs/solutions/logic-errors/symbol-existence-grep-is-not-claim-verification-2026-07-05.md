@@ -8,6 +8,7 @@ tags: [verification, fact-checking, agents, prompts, documentation, grep, review
 symptoms: [Doc or agent-file prose cites real symbols but states wrong relationships between them (order, exclusivity, tier assignment, wrong owning file), A pre-merge fact-check grepped every cited symbol and came back green, Adversarial review later confirms several claims false against source comments and existing tests]
 applies_to: [.claude/agents/**/*.md, .claude/skills/**/*.md, docs/**/*.md]
 created: '2026-07-05'
+last_updated: '2026-07-06'
 ---
 
 # A symbol-existence grep passes while the claim about the symbol is wrong — verify the predicate at the source
@@ -76,11 +77,23 @@ defects that the symbol-existence pass had approved.
 - When a doc restates another doc's checklist, verify against the **code**, not the
   other doc — the upstream copy may itself have drifted (the cache-bump claim was
   faithfully transcribed from an already-stale checklist).
+- **The fix for a stale claim is itself a fresh claim — verify its scope, not just its
+  symbols.** The 2026-07-06 follow-up todo that corrected the `ai-reviewer.md`
+  cache-bump staleness first drafted a replacement bullet claiming the coach's
+  `getSystemPromptTemplateVersion()` auto-hash busts the cache for prompt, tool-schema,
+  *and* safety-regex changes "either way." All three symbols/terms were real, but the
+  exclusivity/coverage predicate was false: the hash only covers `buildSystemPrompt()`'s
+  text output — `TOOL_DEFINITIONS` (from `getToolDefinitions()`) is built and passed to
+  the OpenAI call completely independently and is never hashed. Code review (not a
+  symbol grep) caught it. Retiring stale vocabulary and restating a mechanism's scope
+  are both claims — re-run the same predicate check on the replacement prose you just
+  wrote, not only on the text you deleted.
 
 ## Related Files
 
 - `.claude/agents/prompt-engineer.md` — the agent definition whose convention section shipped the four defects
-- `server/services/nutrition-coach.ts` — boundary-last comment + test; the auto-hash the stale cache claim missed
+- `.claude/agents/ai-reviewer.md` — Caching checklist; the 2026-07-06 fix for the original cache-bump staleness needed its own predicate-level correction (prompt-hash scope) before it was accurate
+- `server/services/nutrition-coach.ts` — boundary-last comment + test; the auto-hash the stale cache claim missed; `getSystemPromptTemplateVersion()` hashes prompt text only, not `TOOL_DEFINITIONS`
 - `server/lib/ai-safety.ts` — `sanitizeUserInput` vs `sanitizeContextField`
 - `evals/lib/judge-generic.ts` — judge implementation (`evals/judge.ts` is a thin wrapper)
 
