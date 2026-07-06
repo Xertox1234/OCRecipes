@@ -13,6 +13,7 @@ import { startCacheCleanupJob } from "./storage/cache";
 import { startPromotionJob } from "./services/canonical-promotion";
 import { logger, rootLogger, toError } from "./lib/logger";
 import { requestContextMiddleware } from "./lib/request-context";
+import { installContractSnapshotMiddleware } from "./lib/contract-snapshot";
 import {
   runRetentionCleanup,
   assertExecutionAllowed as assertRetentionAllowed,
@@ -193,6 +194,9 @@ function startServer() {
   setupBodyParsing(app);
   setupRequestLogging(app);
   app.use(requestContextMiddleware);
+  // Dev-only, opt-in (CONTRACT_SNAPSHOT=1) — see server/lib/contract-snapshot.ts and
+  // docs/research/2026-07-05-pg-lab-roadmap.md (PG Lab Batch C).
+  installContractSnapshotMiddleware(app);
 
   // Serve static assets
   app.use(
