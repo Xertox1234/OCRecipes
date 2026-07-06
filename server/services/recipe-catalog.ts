@@ -9,6 +9,7 @@ import {
   type CatalogSearchResponse,
 } from "@shared/types/recipe-catalog";
 import { createServiceLogger, toError } from "../lib/logger";
+import { cachedFetch } from "./dev-api-cache";
 
 const log = createServiceLogger("recipe-catalog");
 
@@ -227,7 +228,7 @@ export async function searchCatalogRecipes(
   if (params.intolerances)
     url.searchParams.set("intolerances", params.intolerances);
 
-  const res = await fetch(url.toString(), {
+  const res = await cachedFetch("spoonacular", url.toString(), {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 
@@ -264,7 +265,7 @@ export async function getCatalogRecipeDetail(spoonacularId: number): Promise<{
   if (!SPOONACULAR_API_KEY) return null;
 
   const url = `${SPOONACULAR_BASE}/recipes/${spoonacularId}/information?includeNutrition=true&apiKey=${SPOONACULAR_API_KEY}`;
-  const res = await fetch(url, {
+  const res = await cachedFetch("spoonacular", url, {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 
@@ -321,7 +322,7 @@ export async function getSpoonacularSubstitutes(
   url.searchParams.set("ingredientName", ingredientName);
 
   try {
-    const res = await fetch(url.toString(), {
+    const res = await cachedFetch("spoonacular", url.toString(), {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 

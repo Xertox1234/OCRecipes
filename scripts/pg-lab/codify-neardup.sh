@@ -45,9 +45,16 @@ THRESHOLD="${PG_LAB_NEARDUP_THRESHOLD:-0.45}"
 # database. Loud failure even in query mode's otherwise fail-silent design: a misconfigured
 # LAB_DATABASE_URL is a bug to surface, not an "environment temporarily unavailable" case
 # the fail-silent contract exists for. See init.sh for the matching guard.
-case "${LAB_DATABASE_URL##*/}" in
+#
+# Strip any query string / fragment BEFORE the last-path-segment split — a raw
+# `${VAR##*/}` split alone lets a suffix like `?sslmode=require` smuggle a denylisted name
+# (e.g. `nutricam?sslmode=require`) past the `case` match entirely, while `psql` itself
+# parses the full URI correctly and connects to the real database anyway.
+LAB_DB_PATH="${LAB_DATABASE_URL%%\?*}"
+LAB_DB_PATH="${LAB_DB_PATH%%\#*}"
+case "${LAB_DB_PATH##*/}" in
   nutricam | ocrecipes_solutions)
-    echo "codify-neardup.sh: refusing — LAB_DATABASE_URL resolves to '${LAB_DATABASE_URL##*/}', a real app database, not a PG Lab database" >&2
+    echo "codify-neardup.sh: refusing — LAB_DATABASE_URL resolves to '${LAB_DB_PATH##*/}', a real app database, not a PG Lab database" >&2
     exit 1
     ;;
 esac
