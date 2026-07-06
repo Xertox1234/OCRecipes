@@ -41,6 +41,18 @@ INIT_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam" bash "$INIT" 2>&1 
 assert_nonzero "init.sh refuses LAB_DATABASE_URL=nutricam" "$INIT_RC"
 assert_contains "init.sh refusal names nutricam" "$INIT_ERR" "nutricam"
 
+# Query-string-smuggling regression: a raw `${VAR##*/}` split (without stripping the query
+# string first) lets `nutricam?sslmode=require` sail past the denylist while psql still
+# connects to the real `nutricam` database — see docs/solutions/logic-errors/
+# denylist-bypassed-by-connection-string-query-string-2026-07-06.md.
+NEARDUP_QS_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$SCRIPT" "anything" 2>&1 1>/dev/null); NEARDUP_QS_RC=$?
+assert_nonzero "codify-neardup.sh refuses nutricam+query-string" "$NEARDUP_QS_RC"
+assert_contains "codify-neardup.sh query-string refusal names nutricam" "$NEARDUP_QS_ERR" "nutricam"
+
+INIT_QS_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$INIT" 2>&1 1>/dev/null); INIT_QS_RC=$?
+assert_nonzero "init.sh refuses nutricam+query-string" "$INIT_QS_RC"
+assert_contains "init.sh query-string refusal names nutricam" "$INIT_QS_ERR" "nutricam"
+
 # Identifier-injection guard (init.sh derives a bare DB_NAME and interpolates it into SQL
 # text via psql -c; codify-neardup.sh never does, it always passes the full URL to -d).
 LAB_DATABASE_URL='postgresql://localhost/foo"; DROP TABLE x; --' bash "$INIT" >/dev/null 2>&1

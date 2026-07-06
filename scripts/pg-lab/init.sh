@@ -20,12 +20,18 @@ set -euo pipefail
 
 LAB_DATABASE_URL="${LAB_DATABASE_URL:-postgresql://localhost/ocrecipes_lab}"
 
-# Simplifying assumption: a plain postgresql://host[:port]/dbname URL with no query
-# string. This is a local-dev-only tool (never prod) and every documented
+# Simplifying assumption: a plain postgresql://host[:port]/dbname URL, optionally with a
+# query string / fragment. This is a local-dev-only tool (never prod) and every documented
 # LAB_DATABASE_URL usage in this repo is of that shape, so plain string surgery to swap
 # the path segment for the "postgres" maintenance DB is sufficient — no URL parser needed.
-DB_NAME="${LAB_DATABASE_URL##*/}"
-MAINT_URL="${LAB_DATABASE_URL%/*}/postgres"
+# Strip query string / fragment BEFORE deriving DB_NAME — a raw `${VAR##*/}` split alone
+# lets a suffix like `?sslmode=require` smuggle a denylisted name (e.g.
+# `nutricam?sslmode=require`) past the `case` match below entirely, while `psql` itself
+# parses the full URI correctly and connects to the real database anyway.
+LAB_DB_PATH="${LAB_DATABASE_URL%%\?*}"
+LAB_DB_PATH="${LAB_DB_PATH%%\#*}"
+DB_NAME="${LAB_DB_PATH##*/}"
+MAINT_URL="${LAB_DB_PATH%/*}/postgres"
 
 # Hard safety rail: this script must never create/touch a real app database, and
 # DB_NAME is interpolated directly into SQL text below (psql -c has no bind-param
