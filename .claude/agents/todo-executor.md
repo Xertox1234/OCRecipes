@@ -219,13 +219,15 @@ Execute the todo:
 
 ## Step 5 — Verify
 
-Run all three verification commands:
+Run all three verification commands **synchronously, in the foreground** — never with `run_in_background: true`:
 
 ```bash
 npm run test:run
 npm run check:types
 npm run lint
 ```
+
+**Never background these and wait.** Unlike the orchestrator (which gets an automatic notification when a dispatched _agent_ finishes), you get no equivalent notification when your _own_ backgrounded shell command finishes — nothing re-invokes you. If you background a verification command and then stop to "wait for it," you strand yourself: the harness sees no live background children and reports you as complete with no final result, while your real implementation sits uncommitted until the orchestrator notices and explicitly resumes you. Always block on the command and read its real output before proceeding.
 
 All three must pass with zero errors. If any fail:
 
