@@ -415,7 +415,7 @@ rules_section() {
 DEFER_SESS='{"session_id":"itest-defer","tool_name":"Edit","tool_input":{"file_path":"shared/schema.ts"}}'
 rm -f /tmp/ocrecipes-pattern-inject-itest-defer
 d1=$(inline_ctx "$DEFER_SESS")
-if echo "$d1" | grep -qF "[RULES — database] deferred" && ! echo "$d1" | grep -qF "onConflictDoNothing"; then
+if grep -qF "[RULES — database] deferred" <<< "$d1" && ! grep -qF "onConflictDoNothing" <<< "$d1"; then
   echo "PASS: deferral → first touch defers database with a pointer, not a truncated body"; PASS=$((PASS + 1))
 else
   echo "FAIL: deferral → first touch defers database with a pointer, not a truncated body"; FAIL=$((FAIL + 1))
@@ -443,7 +443,7 @@ d2=$(inline_ctx "$DEFER_SESS")
 # section (rules_section) so a coincidental phrase match inside the SOLUTIONS — database list
 # (real docs/solutions/ titles do contain "onConflictDoNothing") can't mask a RULES catch-up
 # regression; see the here-string note above for why this uses `<<<` rather than a pipe.
-if grep -qF "onConflictDoNothing" <<< "$(rules_section database "$d2")" && echo "$d2" | grep -qF "SOLUTIONS — database" && echo "$d2" | grep -qF "[RULES — security] already injected"; then
+if grep -qF "onConflictDoNothing" <<< "$(rules_section database "$d2")" && grep -qF "SOLUTIONS — database" <<< "$d2" && grep -qF "[RULES — security] already injected" <<< "$d2"; then
   echo "PASS: deferral → deferred domain injects in full (rules + solution refs) on the next edit"; PASS=$((PASS + 1))
 else
   echo "FAIL: deferral → deferred domain injects in full (rules + solution refs) on the next edit"; FAIL=$((FAIL + 1))
