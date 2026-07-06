@@ -40,6 +40,18 @@ LAB_DATABASE_URL="${LAB_DATABASE_URL:-postgresql://localhost/ocrecipes_lab}"
 SOLUTIONS_DIR="${PG_LAB_SOLUTIONS_DIR:-$PROJECT_ROOT/docs/solutions}"
 THRESHOLD="${PG_LAB_NEARDUP_THRESHOLD:-0.45}"
 
+# Hard safety rail: --rebuild TRUNCATEs harness.solution_titles, and query mode connects
+# to whatever LAB_DATABASE_URL resolves to — neither must ever run against a real app
+# database. Loud failure even in query mode's otherwise fail-silent design: a misconfigured
+# LAB_DATABASE_URL is a bug to surface, not an "environment temporarily unavailable" case
+# the fail-silent contract exists for. See init.sh for the matching guard.
+case "${LAB_DATABASE_URL##*/}" in
+  nutricam | ocrecipes_solutions)
+    echo "codify-neardup.sh: refusing — LAB_DATABASE_URL resolves to '${LAB_DATABASE_URL##*/}', a real app database, not a PG Lab database" >&2
+    exit 1
+    ;;
+esac
+
 MODE="${1:-}"
 
 if [ -z "$MODE" ]; then

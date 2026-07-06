@@ -27,6 +27,22 @@ LAB_DATABASE_URL="${LAB_DATABASE_URL:-postgresql://localhost/ocrecipes_lab}"
 DB_NAME="${LAB_DATABASE_URL##*/}"
 MAINT_URL="${LAB_DATABASE_URL%/*}/postgres"
 
+# Hard safety rail: this script must never create/touch a real app database, and
+# DB_NAME is interpolated directly into SQL text below (psql -c has no bind-param
+# support for identifiers) — so it must also be a safe bare identifier, never a
+# quote-breaking string. Denylist (not an allowlist) so it doesn't constrain future
+# ocrecipes_lab-family naming (e.g. the test fixture's pg_lab_codify_neardup_test_$$).
+case "$DB_NAME" in
+  nutricam | ocrecipes_solutions)
+    echo "init.sh: refusing — LAB_DATABASE_URL resolves to '$DB_NAME', a real app database, not a PG Lab database" >&2
+    exit 1
+    ;;
+esac
+if ! [[ "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  echo "init.sh: refusing — '$DB_NAME' (derived from LAB_DATABASE_URL) is not a safe Postgres identifier" >&2
+  exit 1
+fi
+
 EXISTS="$(psql -X -q -tA -v ON_ERROR_STOP=1 -d "$MAINT_URL" \
   -c "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'")"
 

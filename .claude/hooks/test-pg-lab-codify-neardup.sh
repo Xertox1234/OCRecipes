@@ -30,6 +30,22 @@ OUT=$(LAB_DATABASE_URL="postgresql://localhost/pg_lab_test_does_not_exist_$$" ba
 assert_empty "unreachable DB -> no output" "$OUT"
 assert_exit0 "unreachable DB -> exit 0" "$RC"
 
+# Hard safety rail: LAB_DATABASE_URL resolving to a real app database must be refused
+# loudly by BOTH scripts, before any DB connection is attempted — no live Postgres needed
+# for these assertions, the guard is a pure string check that runs before the first psql call.
+NEARDUP_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam" bash "$SCRIPT" "anything" 2>&1 1>/dev/null); NEARDUP_RC=$?
+assert_nonzero "codify-neardup.sh refuses LAB_DATABASE_URL=nutricam" "$NEARDUP_RC"
+assert_contains "codify-neardup.sh refusal names nutricam" "$NEARDUP_ERR" "nutricam"
+
+INIT_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam" bash "$INIT" 2>&1 1>/dev/null); INIT_RC=$?
+assert_nonzero "init.sh refuses LAB_DATABASE_URL=nutricam" "$INIT_RC"
+assert_contains "init.sh refusal names nutricam" "$INIT_ERR" "nutricam"
+
+# Identifier-injection guard (init.sh derives a bare DB_NAME and interpolates it into SQL
+# text via psql -c; codify-neardup.sh never does, it always passes the full URL to -d).
+LAB_DATABASE_URL='postgresql://localhost/foo"; DROP TABLE x; --' bash "$INIT" >/dev/null 2>&1
+assert_nonzero "init.sh refuses a DB name that isn't a safe identifier" "$?"
+
 # The rest needs a live local Postgres to create a throwaway test DB. Skip (not fail) when
 # there is none — mirrors the jq-unavailable skip in test-session-recent-issues.sh.
 psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local Postgres reachable"; exit 0; }
