@@ -13,9 +13,15 @@ interface ScreenScrollViewProps extends ScrollViewProps {
 /**
  * Drop-in `ScrollView` for screens rendered under a transparent header (the
  * `useScreenOptions()` default). Applies the header inset automatically so
- * new screens can't reintroduce the hidden-first-row bug from hand-rolled
- * `paddingTop` math or an iOS-only prop like `contentInsetAdjustmentBehavior`
- * (which no-ops on Android). See `docs/rules/react-native.md`.
+ * new screens don't need hand-rolled `paddingTop` math or an iOS-only prop
+ * like `contentInsetAdjustmentBehavior` (which no-ops on Android). See
+ * `docs/rules/react-native.md`.
+ *
+ * CAVEAT: a caller-supplied `contentContainerStyle` with its own `paddingTop`
+ * silently WINS over this guard (RN style arrays let a later entry override
+ * an earlier one for the same key — see `mergeHeaderInsetStyle`). Don't set
+ * `paddingTop` on `contentContainerStyle` unless you intend to replace the
+ * header inset entirely.
  *
  * Screens that deliberately scroll content under the transparent header
  * (e.g. hero-image detail screens) should keep using a plain `ScrollView`
