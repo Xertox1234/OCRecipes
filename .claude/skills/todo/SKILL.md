@@ -12,7 +12,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
 1. **Force-remove leftover executor worktrees.** Executor worktrees are created _locked_, so `git worktree prune` alone silently skips them and they accumulate forever. Force-remove every one. Use the non-`--porcelain` form and expand a leading `~` manually — some environments proxy `git` (e.g. this project's `rtk` hook, see CLAUDE.md/RTK.md) and rewrite `--porcelain`'s output into a condensed, non-standard single-line format with `~`-shorthand paths, which breaks a `^worktree ` anchor silently (zero matches, no error) and which `read`-into-a-variable does not tilde-expand at use time:
 
    ```bash
-   git worktree list | awk '/\.claude\/worktrees\/agent-/ {print $1}' | while read -r wt; do
+   git worktree list | awk '/\.claude\/worktrees\/agent-/ {sub(/ +[0-9a-f]{4,40} +\[[^]]*\].*$/, ""); print}' | while read -r wt; do
      wt="${wt/#\~/$HOME}"
      git worktree unlock "$wt" 2>/dev/null
      git worktree remove --force "$wt" 2>/dev/null && echo "removed worktree: $wt"
@@ -308,7 +308,7 @@ After all batches have been executed (or after early termination):
 6. **Remove this run's executor worktrees.** Force-remove them — a bare `git worktree prune` cannot, because they are created _locked_. Use the non-`--porcelain` form and expand a leading `~` manually (see the Phase 0 note on why: a `git` proxy in this environment can rewrite `--porcelain` output into a condensed, `~`-shorthand format that silently breaks a `^worktree ` anchor):
 
    ```bash
-   git worktree list | awk '/\.claude\/worktrees\/agent-/ {print $1}' | while read -r wt; do
+   git worktree list | awk '/\.claude\/worktrees\/agent-/ {sub(/ +[0-9a-f]{4,40} +\[[^]]*\].*$/, ""); print}' | while read -r wt; do
      wt="${wt/#\~/$HOME}"
      git worktree unlock "$wt" 2>/dev/null
      git worktree remove --force "$wt" 2>/dev/null && echo "removed worktree: $wt"

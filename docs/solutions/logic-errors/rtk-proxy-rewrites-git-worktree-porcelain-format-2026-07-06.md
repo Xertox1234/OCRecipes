@@ -32,9 +32,9 @@ A second, independent bug compounds the first once you switch to parsing the con
 
 Two changes, both needed:
 
-1. **Parse the actual output your environment returns, not the documented contract.** Match on content (the worktree path pattern) rather than the porcelain line prefix, and read plain `git worktree list` instead of `--porcelain`:
+1. **Parse the actual output your environment returns, not the documented contract.** Match on content (the worktree path pattern) rather than the porcelain line prefix, and read plain `git worktree list` instead of `--porcelain`. Extract the path by **stripping the known trailing `<sha> [<branch>]` suffix**, not by splitting on whitespace (`{print $1}`) — the plain format is `<path> <sha> [<branch>]`, and a path containing a space (a plausible `$HOME`, e.g. `/Users/Jane Doe/...`) would otherwise be silently truncated to its first word, mis-targeting `git worktree remove`:
    ```bash
-   git worktree list | awk '/\.claude\/worktrees\/agent-/ {print $1}' | while read -r wt; do
+   git worktree list | awk '/\.claude\/worktrees\/agent-/ {sub(/ +[0-9a-f]{4,40} +\[[^]]*\].*$/, ""); print}' | while read -r wt; do
      wt="${wt/#\~/$HOME}"
      git worktree unlock "$wt" 2>/dev/null
      git worktree remove --force "$wt" 2>/dev/null && echo "removed worktree: $wt"
