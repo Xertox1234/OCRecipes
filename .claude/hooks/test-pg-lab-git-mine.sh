@@ -29,6 +29,14 @@ REFUSE_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam" bash "$SCRIPT" h
 assert_nonzero "git-mine.sh refuses LAB_DATABASE_URL=nutricam" "$REFUSE_RC"
 assert_contains "refusal names nutricam" "$REFUSE_ERR" "nutricam"
 
+# Query-string-smuggling regression (docs/solutions/logic-errors/
+# denylist-bypassed-by-connection-string-query-string-2026-07-06.md): a raw `${VAR##*/}`
+# split lets `nutricam?sslmode=require` sail past the denylist while psql still connects
+# to the real database.
+REFUSE_QS_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$SCRIPT" hotspots 2>&1 1>/dev/null); REFUSE_QS_RC=$?
+assert_nonzero "git-mine.sh refuses nutricam+query-string" "$REFUSE_QS_RC"
+assert_contains "query-string refusal names nutricam" "$REFUSE_QS_ERR" "nutricam"
+
 # The rest needs a live local Postgres to create a throwaway test DB. Skip (not fail) when
 # there is none.
 psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local Postgres reachable"; exit 0; }

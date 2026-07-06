@@ -49,10 +49,15 @@ LAB_DATABASE_URL="${LAB_DATABASE_URL:-postgresql://localhost/ocrecipes_lab}"
 SCHEMA_FILE="$SCRIPT_DIR/schema/git-mining.sql"
 
 # Hard safety rail (matches codify-neardup.sh / init.sh): this tool must never run against
-# a real app database.
-case "${LAB_DATABASE_URL##*/}" in
+# a real app database. Strip query string / fragment BEFORE the last-path-segment split — a
+# raw `${VAR##*/}` split alone lets a suffix like `?sslmode=require` smuggle a denylisted
+# name (e.g. `nutricam?sslmode=require`) past the `case` match entirely, while `psql` itself
+# parses the full URI correctly and connects to the real database anyway.
+LAB_DB_PATH="${LAB_DATABASE_URL%%\?*}"
+LAB_DB_PATH="${LAB_DB_PATH%%\#*}"
+case "${LAB_DB_PATH##*/}" in
   nutricam | ocrecipes_solutions)
-    echo "git-mine.sh: refusing — LAB_DATABASE_URL resolves to '${LAB_DATABASE_URL##*/}', a real app database, not a PG Lab database" >&2
+    echo "git-mine.sh: refusing — LAB_DATABASE_URL resolves to '${LAB_DB_PATH##*/}', a real app database, not a PG Lab database" >&2
     exit 1
     ;;
 esac
