@@ -472,7 +472,7 @@ gh pr list --head todo/<todo-slug> --state all --json number,url,state
 
 Five outcomes (Step 2's remote-branch probe runs this same triage — keep them identical). Each outcome names its Step 11 `REASON_CODE`:
 
-- **An open PR exists — the ROUTINE case** (`REASON_CODE: OPEN_PR_COLLISION`). This todo was already implemented by a prior run and its PR is either auto-merging (guard-eligible) or awaiting individual review (Phase 2 triage and the Step 2 probe should have caught it; this is the last backstop). Do NOT retry or escalate. Report `skipped` (Step 11) with reason `already implemented — PR <url> awaiting batch-merge` and stop. Your worktree's duplicate implementation is discarded with the worktree (the prior run's PR carries its own codification commit; this worktree's duplicate solution files are discarded with it by design).
+- **An open PR exists — the ROUTINE case** (`REASON_CODE: OPEN_PR_COLLISION`). This todo was already implemented by a prior run and its PR is either auto-merging (guard-eligible) or awaiting individual review (Phase 2 triage and the Step 2 probe should have caught it; this is the last backstop). Do NOT retry or escalate. Report `skipped` (Step 11) with reason `already implemented — PR <url> (already auto-merging or awaiting individual review — check gh pr view <url> for its current state)` and stop. Your worktree's duplicate implementation is discarded with the worktree (the prior run's PR carries its own codification commit; this worktree's duplicate solution files are discarded with it by design).
 - **PRs exist and ALL are `MERGED`** (`REASON_CODE: STALE_BRANCH_MERGED`) — a leftover branch that Phase 0's sweep deletes on the next run; no human action needed. Report `skipped` (Step 11) with reason `stale todo/<todo-slug> branch from a merged PR — Phase 0 sweeps it next run; re-run this todo afterward` and stop.
 - **A PR was `CLOSED` without merging** (and none is open) (`REASON_CODE: PR_CLOSED_UNMERGED`) — the user closed a prior implementation of this todo without merging it. That is a rejection signal, not routine cleanup — silently re-implementing would ship work the user already declined, and Phase 0's sweep deliberately never deletes such a branch. **Stop and report `blocked`** (Step 11 block path) with this reason verbatim:
 
@@ -586,16 +586,16 @@ REASON: <the canonical reason text for the code, per the mapping below>
 
 `REASON_CODE` enum (shared with the /todo orchestrator's Phase 5 routing — never invent a new value):
 
-| REASON_CODE           | STATUS            | Canonical REASON text                                                                                                                               |
-| --------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OPEN_PR_COLLISION`   | skipped           | `already implemented — PR <url> awaiting batch-merge` (Step 2 probe or Step 10 open-PR collision)                                                   |
-| `STALE_BRANCH_MERGED` | skipped           | `stale todo/<todo-slug> branch from a merged PR — Phase 0 sweeps it next run; re-run this todo afterward`                                           |
-| `PR_CLOSED_UNMERGED`  | blocked           | the full Step 10 closed-without-merge reason — keep its `ACTION NEEDED (human): …` line intact                                                      |
-| `ORPHAN_BRANCH`       | blocked           | the full Step 10 orphan reason (probe-adjusted wording if from Step 2) — keep its `ACTION NEEDED (human): …` line intact                            |
-| `PR_CHECK_FAILED`     | blocked           | the full Step 10 unknown-state reason — keep its `ACTION NEEDED (human): …` line intact                                                             |
-| `DEPENDENCY_GATED`    | blocked           | list of blocking dependency filenames (Step 2 dependency check)                                                                                     |
-| `ADVISOR_RED`         | blocked           | `advisor red-flag: <reason>` (Step 3.5)                                                                                                             |
-| `NONE`                | skipped or failed | any other skip — e.g. `status is <actual>, expected backlog or planned`, or the Step 2 legacy `github_issue` gate — and every plain `failed` report |
+| REASON_CODE           | STATUS            | Canonical REASON text                                                                                                                                                            |
+| --------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPEN_PR_COLLISION`   | skipped           | `already implemented — PR <url> (already auto-merging or awaiting individual review — check gh pr view <url> for its current state)` (Step 2 probe or Step 10 open-PR collision) |
+| `STALE_BRANCH_MERGED` | skipped           | `stale todo/<todo-slug> branch from a merged PR — Phase 0 sweeps it next run; re-run this todo afterward`                                                                        |
+| `PR_CLOSED_UNMERGED`  | blocked           | the full Step 10 closed-without-merge reason — keep its `ACTION NEEDED (human): …` line intact                                                                                   |
+| `ORPHAN_BRANCH`       | blocked           | the full Step 10 orphan reason (probe-adjusted wording if from Step 2) — keep its `ACTION NEEDED (human): …` line intact                                                         |
+| `PR_CHECK_FAILED`     | blocked           | the full Step 10 unknown-state reason — keep its `ACTION NEEDED (human): …` line intact                                                                                          |
+| `DEPENDENCY_GATED`    | blocked           | list of blocking dependency filenames (Step 2 dependency check)                                                                                                                  |
+| `ADVISOR_RED`         | blocked           | `advisor red-flag: <reason>` (Step 3.5)                                                                                                                                          |
+| `NONE`                | skipped or failed | any other skip — e.g. `status is <actual>, expected backlog or planned`, or the Step 2 legacy `github_issue` gate — and every plain `failed` report                              |
 
 (`QUALITY_FLAGS` also exists in this enum but is assigned by the /todo orchestrator in Phase 2 triage — an executor never emits it.)
 
