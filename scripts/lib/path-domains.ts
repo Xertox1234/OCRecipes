@@ -1,11 +1,12 @@
 #!/usr/bin/env tsx
 // Single source of truth for the file-path -> domain mapping.
 //
-// Four artifacts derive from this module so they can never drift apart:
+// Five artifacts derive from this module so they can never drift apart:
 //   1. scripts/build-copilot-instructions.ts  -> .github/copilot-instructions.md
 //   2. scripts/build-domain-map.ts            -> .claude/hooks/lib/domain-map.sh
-//   3. .claude/skills/codify/SKILL.md  Step 1 (via the CLI below, --routing)
+//   3. .claude/skills/codify/SKILL.md  Step 1 (via the CLI below, --routing --typescript-crosscut)
 //   4. .claude/skills/spec-review/SKILL.md Step 3 (via the CLI below)
+//   5. .claude/agents/todo-executor.md Step 3b (via the CLI below, --typescript-crosscut)
 //
 // Each rule's matcher is a structured descriptor that compiles three ways:
 // an anchored RegExp (for TS matching), a bash [[ glob ]] condition pair (for
@@ -328,19 +329,27 @@ export function routingLabelsForPath(filePath: string): RoutingLabel[] {
 /**
  * CLI: print the sorted, comma-joined union of domains across the given file
  * paths. `--routing` switches from rules-domains to routing labels (adds camera).
- * Consumed by .claude/skills/codify (--routing) and spec-review (no flag).
- * `write` is injectable for testing; defaults to stdout.
+ * `--typescript-crosscut` additionally adds `typescript` for any `.ts`/`.tsx`
+ * input file, on top of whatever `--routing` (or its absence) already produces —
+ * this is the cross-cutting "any TS file touches the typescript domain" policy,
+ * opt-in so the two generated artifacts (which import `PATH_TO_DOMAINS` directly,
+ * never through this CLI) and spec-review (which never passes the flag) are
+ * unaffected. Consumed by .claude/skills/codify (--routing --typescript-crosscut),
+ * .claude/agents/todo-executor.md Step 3b (--typescript-crosscut), and spec-review
+ * (no flags). `write` is injectable for testing; defaults to stdout.
  */
 export function runCli(
   argv: readonly string[],
   write: (s: string) => void = (s) => process.stdout.write(s),
 ): number {
   const routing = argv.includes("--routing");
+  const typescriptCrosscut = argv.includes("--typescript-crosscut");
   const files = argv.filter((a) => !a.startsWith("--"));
   const union = new Set<string>();
   for (const f of files) {
     const labels = routing ? routingLabelsForPath(f) : rulesDomainsForPath(f);
     for (const l of labels) union.add(l);
+    if (typescriptCrosscut && /\.tsx?$/.test(f)) union.add("typescript");
   }
   const sorted = [...union].sort();
   if (sorted.length > 0) write(sorted.join(", "));

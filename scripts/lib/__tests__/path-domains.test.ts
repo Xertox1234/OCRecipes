@@ -214,6 +214,44 @@ describe("runCli", () => {
     expect(runCli(["README.md"], (s) => out.push(s))).toBe(0);
     expect(out.join("")).toBe("");
   });
+
+  it("--typescript-crosscut adds typescript for a .ts input with no other domain match", () => {
+    const out: string[] = [];
+    runCli(["--typescript-crosscut", "scripts/foo.ts"], (s) => out.push(s));
+    expect(out.join("")).toBe("typescript");
+  });
+
+  it("--typescript-crosscut unions with the file's own domains (.tsx input)", () => {
+    const out: string[] = [];
+    runCli(["--typescript-crosscut", "client/context/AuthContext.tsx"], (s) =>
+      out.push(s),
+    );
+    // client/context/** already contributes client-state; the crosscut adds typescript.
+    expect(out.join("")).toBe("client-state, typescript");
+  });
+
+  it("without --typescript-crosscut, a .ts file with no domain match yields nothing", () => {
+    const out: string[] = [];
+    runCli(["scripts/foo.ts"], (s) => out.push(s));
+    expect(out.join("")).toBe("");
+  });
+
+  it("--typescript-crosscut does not add typescript for a non-.ts/.tsx file", () => {
+    const out: string[] = [];
+    runCli(["--typescript-crosscut", "README.md"], (s) => out.push(s));
+    expect(out.join("")).toBe("");
+  });
+
+  it("--typescript-crosscut composes with --routing", () => {
+    const out: string[] = [];
+    runCli(
+      ["--routing", "--typescript-crosscut", "client/screens/ScanScreen.tsx"],
+      (s) => out.push(s),
+    );
+    expect(out.join("")).toBe(
+      "accessibility, camera, design-system, react-native, typescript",
+    );
+  });
 });
 
 describe("LLM_TOUCHING_SERVICES drift detection", () => {

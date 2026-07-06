@@ -59,16 +59,18 @@ source of truth — do **not** maintain an inline mapping table (it drifts). Fee
 the **resolved range** into `--name-only`:
 
 ```bash
-git diff <resolved-range> --name-only | xargs npx tsx scripts/lib/path-domains.ts --routing
+git diff <resolved-range> --name-only | xargs npx tsx scripts/lib/path-domains.ts --routing --typescript-crosscut
 ```
 
 This prints the comma-separated union of **routing labels** (rules-domains plus
 routing-only labels such as `camera`, used by Step 2 to pick domain reviewers)
-across all changed files. The mapping is defined once in
-`scripts/lib/path-domains.ts` — the same source the generated
-`.github/copilot-instructions.md` and `.claude/hooks/lib/domain-map.sh` derive
-from. **In addition, include `typescript` whenever any changed file is a `.ts`
-or `.tsx` file** (a cross-cutting policy the CLI does not add).
+across all changed files, plus `typescript` for any changed `.ts`/`.tsx` file —
+the CLI's `--typescript-crosscut` flag folds in that cross-cutting policy
+directly (opt-in, so the generated `.github/copilot-instructions.md` and
+`.claude/hooks/lib/domain-map.sh` — which read `PATH_TO_DOMAINS` directly and
+never pass CLI flags — are unaffected). The mapping is defined once in
+`scripts/lib/path-domains.ts` — the same source those two generated artifacts
+derive from.
 
 ## Step 2 — Map domains to review agents
 
@@ -76,7 +78,7 @@ or `.tsx` file** (a cross-cutting policy the CLI does not add).
 > source of truth for domain→reviewer routing. Other surfaces (`.claude/skills/audit/SKILL.md`,
 > `.claude/agents/todo-executor.md`) point here — never restate these tables elsewhere.
 
-The domain labels from Step 1 carry forward to two places: they tell the reviewers (Step 3) which lenses matter most, and they drive the self-improvement routing in Step 5 (which reviewer file owns a new review rule). The table keys are exactly the labels the `path-domains.ts` CLI emits (the 13 rules-domains + routing-only `camera`) plus the hand-added `typescript` — never invent other keys; they will never match the CLI output:
+The domain labels from Step 1 carry forward to two places: they tell the reviewers (Step 3) which lenses matter most, and they drive the self-improvement routing in Step 5 (which reviewer file owns a new review rule). The table keys are exactly the labels the `path-domains.ts` CLI emits (the 13 rules-domains + routing-only `camera`, plus `typescript` via `--typescript-crosscut`) — never invent other keys; they will never match the CLI output:
 
 | Domain label(s)                           | Reviewer(s) to dispatch                                    |
 | ----------------------------------------- | ---------------------------------------------------------- |
