@@ -43,6 +43,22 @@ if [ "$MODE" = "fast" ]; then
   while IFS= read -r f; do [ -n "$f" ] && CHANGED+=("$f"); done \
     < <(git diff --name-only --diff-filter=ACMR "$BASE" HEAD -- '*.ts' '*.tsx' 2>/dev/null)
 
+  # Separate probe: hook/husky/scripts shell changes. The CHANGED array above only globs
+  # *.ts/*.tsx, so an all-.sh push (hooks, husky, or a scripts/*.sh helper like
+  # run-hook-tests.sh or lib/preflight-stamp-path.sh — this very gate's own machinery) would
+  # otherwise stamp without ever exercising the changed shell logic. Same BASE..HEAD committed
+  # range as CHANGED — push-gate semantics, not the staged/working set. Filter is ACDMRT
+  # (includes D and T), not CHANGED's ACMR: this array is only ever used as a boolean gate
+  # (never passed to eslint/vitest, which can't take a deleted path), so a hook-file DELETION
+  # or TYPECHANGE (e.g. swapped for a symlink) must still trip the gate — each is exactly the
+  # kind of shell-logic change run-hook-tests.sh should verify. 'scripts/*.sh' is a git
+  # pathspec, not a shell glob — git's wildcard matching crosses '/' by default, so it also
+  # reaches scripts/lib/*.sh and scripts/pg-lab/**/*.sh, not just scripts/'s top level
+  # (verified against commit 1c6c86e4, which only touched scripts/lib/preflight-stamp-path.sh).
+  HOOK_CHANGED=()
+  while IFS= read -r f; do [ -n "$f" ] && HOOK_CHANGED+=("$f"); done \
+    < <(git diff --name-only --diff-filter=ACDMRT "$BASE" HEAD -- '.claude/hooks/' '.husky/' 'scripts/*.sh' 2>/dev/null)
+
   # Cheap, deterministic, no-DB pattern checks first (fail fast).
   run npm run build:copilot-instructions:check || exit 1
 
@@ -53,6 +69,15 @@ if [ "$MODE" = "fast" ]; then
 
   # Whole-program type check (cannot be scoped).
   run npm run check:types || exit 1
+
+  # Hook/husky self-tests — the SAME script full-mode preflight and CI call (no drift risk),
+  # gated on the probe above so the common TS-only fast path never pays for it. A failure here
+  # exits non-zero before the stamp write below, so (unlike the DB-gated related-tests case)
+  # no extra tests_skipped-style tracking is needed: there is no "skip for external reason"
+  # case for hook tests, only pass or fail.
+  if [ "${#HOOK_CHANGED[@]}" -gt 0 ]; then
+    run bash scripts/run-hook-tests.sh || exit 1
+  fi
 
   # Tests that import the changed files. A pass-stamp must certify EXECUTED verification,
   # so we track whether the related-tests step actually ran and refuse to stamp if it was
@@ -70,7 +95,13 @@ if [ "$MODE" = "fast" ]; then
 
   echo "✅ preflight:fast passed"
 
-  # Stamp only when verification was complete: tests ran, or none were needed (no changed TS).
+  # Stamp only when verification was complete: tests ran, or none were needed (no changed TS),
+  # AND hook tests ran if hook/husky files changed (or none were needed — the guard above
+  # already exits before reaching here on a hook-test failure). A push with neither changed TS
+  # nor changed hooks (e.g. all-docs) has nothing left for this gate to verify beyond the two
+  # DB-free steps above — it still stamps. That's a conscious choice (nothing to verify →
+  # nothing withheld), not an oversight; see .claude/hooks/test-preflight-fast-stamp.sh's
+  # "docs-only → stamp" case.
   if [ "$tests_skipped" -eq 0 ]; then
     git rev-parse HEAD > "$STAMP_FILE" 2>/dev/null || true
     echo "✔ pass-stamp written for $(git rev-parse --short HEAD 2>/dev/null)"
