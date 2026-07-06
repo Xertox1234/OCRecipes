@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import pLimit from "p-limit";
 import { runAssertions, runStructuralAssertions } from "../assertions";
+import { persistResults } from "./eval-results-store";
 import { judgeGeneric, DEFAULT_JUDGE_MODEL } from "./judge-generic";
 import type {
   EvalTestCase,
@@ -543,4 +544,8 @@ export async function runEvalSuite(
   const resultsPath = path.join(resultsDir, `${runResult.runId}.json`);
   fs.writeFileSync(resultsPath, JSON.stringify(runResult, null, 2));
   console.log(`\nFull results saved to: ${resultsPath}`);
+
+  // PG Lab eval-results time series (fail-silent — never blocks/fails the eval run;
+  // see evals/lib/eval-results-store.ts).
+  await persistResults(runResult, config.suiteName, config.dimensionWeights);
 }
