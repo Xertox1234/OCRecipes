@@ -75,7 +75,7 @@ one most likely to surface an unmodeled edge.
 - [ ] Executor permission coverage confirmed during the attended debut: `git push` of
       feature branches, `gh pr create` / `mcp__github__create_pull_request`,
       `Bash(scripts/todo-automerge-guard.sh:*)`, **and now `gh pr merge --auto --squash
-  --delete-branch` on a guard-cleared PR** all run without prompts. This last one is
+--delete-branch` on a guard-cleared PR** all run without prompts. This last one is
       new since the 2026-07-06 restoration — the executor arms auto-merge itself, from
       an unattended session, before CI has gone green. Confirm the `autoMode.allow`
       entry for `gh pr merge` explicitly covers arming `--auto` pre-CI-green (not just
