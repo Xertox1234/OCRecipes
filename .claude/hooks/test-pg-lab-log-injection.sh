@@ -36,6 +36,14 @@ ERR=$(printf '%s' "$LINE" | LAB_DATABASE_URL="postgresql://localhost/nutricam" b
 assert_exit0 "refuses LAB_DATABASE_URL=nutricam (still exit 0, fail-silent)" "$RC"
 assert_contains "refusal names nutricam" "$ERR" "nutricam"
 
+# Query-string-smuggling regression (docs/solutions/logic-errors/
+# denylist-bypassed-by-connection-string-query-string-2026-07-06.md): a raw `${VAR##*/}`
+# split lets `nutricam?sslmode=require` sail past the denylist while psql still connects
+# to the real database.
+QS_ERR=$(printf '%s' "$LINE" | LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$SCRIPT" 2>&1 1>/dev/null); QS_RC=$?
+assert_exit0 "refuses nutricam+query-string (still exit 0, fail-silent)" "$QS_RC"
+assert_contains "query-string refusal names nutricam" "$QS_ERR" "nutricam"
+
 # A line with no trailing newline (a caller that forgets it, e.g. a single-record log line
 # built via command substitution, which strips trailing newlines) must still be processed —
 # `read` returns non-zero at EOF-without-newline even though it populated the variables; the
