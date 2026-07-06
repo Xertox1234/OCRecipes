@@ -3,7 +3,7 @@
 ---
 
 title: "Copilot review request races auto-merge for guard-eligible todo PRs"
-status: backlog
+status: done
 priority: low
 created: 2026-07-06
 updated: 2026-07-06
@@ -34,7 +34,7 @@ Copilot input either.
 
 ## Acceptance Criteria
 
-- [ ] Reorder Step 10 so the Copilot review request (current Step 5) fires before the
+- [x] Reorder Step 10 so the Copilot review request (current Step 5) fires before the
       merge-eligibility check / auto-merge arm (current Step 4), OR
 - [ ] Confirm (and document) that requesting Copilot review before arming auto-merge has
       no meaningful race-reduction benefit given Copilot review is asynchronous anyway,
@@ -60,3 +60,14 @@ risk — Step 5 is already documented as non-blocking (a failure there doesn't s
 ### 2026-07-06
 
 - Initial creation, filed from PR #525 code review (SUGGESTION-level finding)
+- Implemented: reordered Step 10 of `.claude/agents/todo-executor.md` so "Request Copilot
+  review" is now sub-step 4 and "Merge-eligibility check" is now sub-step 5 (previously
+  4 and 5 respectively). Updated all in-file cross-references (the step-10 intro, the
+  "already-exists" fallback sub-step 6, and the two guard-eligibility bullets) to match
+  the new numbering and order. Chose the reorder (AC option 1) over won't-fix: it is a
+  strict improvement in the edge case where CI checks are already green by the time
+  Step 10 runs (arming auto-merge first could merge/delete-branch before the review is
+  ever requested at all); it does not guarantee review-completes-before-merge in the
+  general case since the Copilot review request remains explicitly non-blocking, but that
+  was never in scope — the reorder guarantees "requested before armed," which is the
+  concrete, low-risk improvement the todo asked for.
