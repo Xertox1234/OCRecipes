@@ -112,6 +112,22 @@ describe("carousel-builder", () => {
     expect(cards[0].imageUrl).toBe("https://example.com/pasta.jpg");
     expect(cards[0].prepTimeMinutes).toBe(25);
     expect(cards[0].recommendationReason).toBe("Matches your keto diet");
+    // Strict boolean, not merely falsy — recipe 1's remixedFromId is null.
+    expect(cards[0].isRemix).toBe(false);
+  });
+
+  it("marks isRemix strictly true (not merely truthy) for a remixed recipe", async () => {
+    const remixedRecipe = {
+      ...mockCommunityRecipes[0],
+      remixedFromId: 99,
+    };
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      remixedRecipe,
+    ]);
+
+    const cards = await buildCarousel("1", mockProfile);
+
+    expect(cards[0].isRemix).toBe(true);
   });
 
   it("passes dismissedIds to storage so dismissed recipes are excluded at the DB level", async () => {
@@ -154,10 +170,13 @@ describe("carousel-builder", () => {
 
   it("generates 'Matches your cuisine preferences' label when dietTags overlap cuisinePreferences and dietType does not match", async () => {
     // Profile prefers Italian cuisine and follows a vegan diet (not keto).
+    // Two-element list, ordered so the FIRST entry does NOT match: this
+    // distinguishes `.some()` (true — "italian" matches) from a mutated
+    // `.every()` (false — "thai" fails on the first element).
     const cuisineProfile: UserProfile = {
       ...mockProfile,
       dietType: "vegan",
-      cuisinePreferences: ["italian"],
+      cuisinePreferences: ["thai", "italian"],
     };
     // Recipe is Italian (dietTags includes "italian") but not vegan.
     const italianRecipe = {
@@ -174,6 +193,101 @@ describe("carousel-builder", () => {
 
     expect(cards[0].recommendationReason).toBe(
       "Matches your cuisine preferences",
+    );
+  });
+
+  it("does not match cuisine preferences when dietTags exist but none overlap the profile's cuisine list", async () => {
+    const noOverlapRecipe = {
+      ...mockCommunityRecipes[0],
+      dietTags: ["mediterranean"],
+      timeEstimate: "45 minutes", // over 30 min — keeps the quick-easy fallback out of the way
+    };
+    const cuisineProfile: UserProfile = {
+      ...mockProfile,
+      dietType: "vegan", // recipe has no dietTags matching "vegan" either
+      cuisinePreferences: ["thai", "italian"],
+    };
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      noOverlapRecipe,
+    ]);
+
+    const cards = await buildCarousel("1", cuisineProfile);
+
+    expect(cards[0].recommendationReason).toBe("Recently added recipe");
+  });
+
+  it("does not throw when cuisinePreferences is legacy-null and neither diet nor time-based fallback matches", async () => {
+    const noDietRecipe = {
+      ...mockCommunityRecipes[0],
+      // Non-empty: the REAL guard short-circuits on `cuisinePreferences` being
+      // null before `tags.some(...)` is ever reached, regardless of whether
+      // dietTags is empty. But a mutant that collapses the `&&` chain to an
+      // unconditional `true` (bypassing the null check) forces `tags.some(...)`
+      // to run — which only invokes its callback (and thus throws on the null
+      // `cuisinePreferences!.some(...)` inside it) when dietTags is non-empty.
+      // An empty dietTags would make that forced call vacuously false either
+      // way, hiding the mutant.
+      dietTags: ["mediterranean"],
+      timeEstimate: "45 minutes", // over 30 min — no quick-easy fallback either
+    };
+    const legacyNullProfile: UserProfile = {
+      ...mockProfile,
+      dietType: null,
+      // Cast: `cuisinePreferences` is `.notNull()` in the schema, but the source
+      // still defensively guards it as falsy (`server/lib/dietary-context.ts`,
+      // `server/utils/profile-hash.ts` do the same) — inject null to exercise
+      // that defensive guard without evaluating `.length` on it.
+      cuisinePreferences: null as unknown as string[],
+    };
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      noDietRecipe,
+    ]);
+
+    const cards = await buildCarousel("1", legacyNullProfile);
+
+    expect(cards[0].recommendationReason).toBe("Recently added recipe");
+  });
+
+  it("returns null prepTimeMinutes and the default fallback reason when timeEstimate and match signals are all absent", async () => {
+    const noSignalRecipe = {
+      ...mockCommunityRecipes[0],
+      dietTags: [],
+      timeEstimate: null,
+    };
+    const noMatchProfile: UserProfile = {
+      ...mockProfile,
+      dietType: null,
+      cuisinePreferences: [],
+    };
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      noSignalRecipe,
+    ]);
+
+    const cards = await buildCarousel("1", noMatchProfile);
+
+    expect(cards[0].prepTimeMinutes).toBeNull();
+    expect(cards[0].recommendationReason).toBe("Recently added recipe");
+  });
+
+  it("treats exactly 30 minutes as within the quick-and-easy boundary", async () => {
+    const boundaryRecipe = {
+      ...mockCommunityRecipes[0],
+      dietTags: [],
+      timeEstimate: "30 minutes",
+    };
+    const noMatchProfile: UserProfile = {
+      ...mockProfile,
+      dietType: null,
+      cuisinePreferences: [],
+    };
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      boundaryRecipe,
+    ]);
+
+    const cards = await buildCarousel("1", noMatchProfile);
+
+    expect(cards[0].recommendationReason).toBe(
+      "Quick and easy — under 30 minutes",
     );
   });
 

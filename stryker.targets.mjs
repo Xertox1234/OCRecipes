@@ -50,6 +50,28 @@ export const MUTATION_TARGETS = {
     // survivors); the 5 residual are the line-93 redundant fast-path guard — provably
     // equivalent (the loop yields "" for empty/non-positive budget regardless)
   },
+  "carousel-builder": {
+    mutate: ["server/services/carousel-builder.ts"],
+    testInclude: ["server/services/__tests__/carousel-builder.test.ts"],
+    breakThreshold: 90, // achieved 93.15% (76.71% -> 93.15%; killed isRemix boolean,
+    // timeEstimate-null, cuisine-match .some/.every + boundary, and prepMins boundary
+    // survivors). Residual 5: the `length > 0` vs `>= 0` / `true &&` pair at line 59 are
+    // provable equivalents (cuisinePreferences=[] makes the downstream `.some()`
+    // vacuously false regardless of the gate); the 3 `?? []` ArrayDeclaration mutants
+    // (dietTags line 49, mealTypes lines 101-102) are only observable by matching
+    // Stryker's literal "Stryker was here" placeholder string — not worth chasing.
+  },
+  "subscription-tier-cache": {
+    mutate: ["server/services/subscription-tier-cache.ts"],
+    testInclude: ["server/services/__tests__/subscription-tier-cache.test.ts"],
+    breakThreshold: 90, // achieved 93.75% (71.88% -> 93.75%; added the MAX_CACHE_SIZE
+    // eviction test + the exact-TTL-boundary test, covering the 5 previously-untested
+    // eviction-path mutants and killing the TTL EqualityOperator survivor). Residual 2:
+    // `if (oldestKey !== undefined)` -> `if (true)` is a provable equivalent (oldestKey
+    // is never undefined once the outer size>=MAX_CACHE_SIZE gate has passed); the
+    // `?? "free"` -> `?? ""` StringLiteral is also equivalent ("free" is itself a valid
+    // tier, so isValidSubscriptionTier's fallback ternary resolves both to "free").
+  },
   "goal-calculator": {
     mutate: ["server/services/goal-calculator.ts"],
     testInclude: ["server/services/__tests__/goal-calculator.test.ts"],

@@ -42,7 +42,7 @@ jobs:
           # pipeline non-zero on a large changed-file list → the `if` would flip to
           # run=false and the required gate would fail-OPEN (self-scope green on a real
           # target change). A here-string has no pipe, so no SIGPIPE.
-          if grep -qE '^(server/lib/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.ts|server/lib/__tests__/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.test\.ts|server/services/notebook-budget\.ts|server/services/__tests__/notebook-budget\.test\.ts|stryker\.(conf|targets|explore\.conf)\.mjs|vitest\.mutation\.config\.ts)$' <<< "$CHANGED"; then
+          if grep -qE '^(server/lib/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.ts|server/lib/__tests__/(macro-gap-context|verification-consensus|cook-session-merge|chat-history-truncate)\.test\.ts|server/services/(notebook-budget|carousel-builder|subscription-tier-cache)\.ts|server/services/__tests__/(notebook-budget|carousel-builder|subscription-tier-cache)\.test\.ts|stryker\.(conf|targets|explore\.conf)\.mjs|vitest\.mutation\.config\.ts)$' <<< "$CHANGED"; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -63,7 +63,7 @@ jobs:
         run: npm ci
 
       # Each target enforces its own break threshold (stryker.targets.mjs); Stryker exits
-      # non-zero when score < break. Run all five on any trigger — a shared-harness change
+      # non-zero when score < break. Run all seven on any trigger — a shared-harness change
       # (stryker.conf/targets, vitest.mutation.config) can move every target's score.
       - name: Mutation test (macro-gap-context, break=100)
         if: steps.changed.outputs.run == 'true'
@@ -84,6 +84,14 @@ jobs:
       - name: Mutation test (notebook-budget, break=88)
         if: steps.changed.outputs.run == 'true'
         run: MUTATION_TARGET=notebook-budget npm run test:mutation
+
+      - name: Mutation test (carousel-builder, break=90)
+        if: steps.changed.outputs.run == 'true'
+        run: MUTATION_TARGET=carousel-builder npm run test:mutation
+
+      - name: Mutation test (subscription-tier-cache, break=90)
+        if: steps.changed.outputs.run == 'true'
+        run: MUTATION_TARGET=subscription-tier-cache npm run test:mutation
 
       - name: Upload HTML reports
         if: steps.changed.outputs.run == 'true' && always()

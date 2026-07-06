@@ -19,6 +19,12 @@ threshold is enforced until a target has a stable baseline here.
 | 2026-06-27 | chat-history-truncate (after)    | 90.58% | 200    | 21       | 0           | 2       |
 | 2026-06-27 | notebook-budget (before)         | 81.82% | 45     | 10       | 0           | 0       |
 | 2026-06-27 | notebook-budget (after)          | 90.91% | 50     | 5        | 0           | 0       |
+| 2026-06-27 | carousel-builder (before)        | 76.71% | 56     | 14       | 3           | 0       |
+| 2026-07-05 | carousel-builder (after)         | 93.15% | 68     | 3        | 2           | 0       |
+| 2026-06-27 | subscription-tier-cache (before) | 71.88% | 23     | 4        | 5           | 0       |
+| 2026-07-05 | subscription-tier-cache (after)  | 93.75% | 30     | 2        | 0           | 0       |
+| 2026-06-27 | recipe-normalization (rejected)  | 66.19% | 139    | 71       | 0           | 0       |
+| 2026-06-27 | cooking-adjustment (rejected)    | 51.94% | 67     | 61       | 1           | 0       |
 
 > **goal-safety targets** (`goal-calculator`) are Hard-Exclusion modules brought under
 > mutation testing via the gated read-only protocol — tests only, source never edited.
@@ -41,3 +47,36 @@ threshold is enforced until a target has a stable baseline here.
 > survivors that are almost all `Regex`-mutator whitespace noise), so a gate there would
 > read as "protected" without testing the safety patterns; its meaningful thresholds are
 > covered by function-level tests instead.
+>
+> **2026-07-05 mutation-testing backlog** (`P3-2026-06-27-mutation-and-test-quality-backlog.md`)
+> baselined the 4 remaining pure-logic candidates identified in the 2026-06-27 scoping pass.
+> **Onboarded:** `carousel-builder` (76.71% → 93.15%, break=90) — added strict-boolean
+> assertions for `isRemix`, a `timeEstimate: null` case, a legacy-`cuisinePreferences: null`
+> guard case (the pre-existing tests never exercised a falsy `cuisinePreferences`, so the
+> `&&`-chain guard at line 58 was untested), a two-element `cuisinePreferences` list ordered
+> to distinguish `.some()` from a mutated `.every()`, and the 30-minute quick-and-easy
+> boundary. Residual 5: the `length > 0` vs `>= 0` / `true &&` pair at line 59 are provable
+> equivalents (once `cuisinePreferences` is `[]`, the downstream `.some()` on that same empty
+> array is vacuously false regardless of whether the length gate passed), and the 3 `?? []`
+> ArrayDeclaration mutants (`dietTags` line 49, `mealTypes` lines 101-102 in the sort
+> comparator) are only observable by matching Stryker's literal `"Stryker was here"`
+> placeholder string as a diet type / cuisine preference / meal-time hint — the same
+> pedantry trap as chasing `Regex` whitespace, not worth it. **Onboarded:**
+> `subscription-tier-cache` (71.88% → 93.75%, break=90) — the 5 no-coverage mutants were all
+> in the untested `MAX_CACHE_SIZE` eviction path (never exercised because no test filled the
+> cache to 10,000 entries); one eviction test (seed the cache to the limit via
+> `_testInternals.tierCache`, assert the oldest key is evicted and size stays bounded) killed
+> 6 mutants in that path (the 5 no-coverage ones plus one adjacent `>=`-vs-`>` survivor on the
+> outer size gate), and a separate TTL-exact-boundary test (`Date.now() === expiresAt`) killed
+> the `>` vs `>=` survivor on the TTL check — 7 of the 9 previously-unkilled mutants closed in
+> total. Residual 2: `if (oldestKey !== undefined)` → `if (true)` is a provable
+> equivalent (the outer `size >= MAX_CACHE_SIZE` gate guarantees a non-empty `Map`, so
+> `.keys().next().value` is never `undefined` in any reachable state), and `?? "free"` →
+> `?? ""` is also equivalent (`"free"` is itself a valid tier, so `isValidSubscriptionTier`'s
+> fallback ternary resolves both the real and mutated default to `"free"` downstream).
+> **Rejected (SKIP, not re-evaluated):** `recipe-normalization` (66.19%, 71 survivors —
+> string/parsing `Regex` and `StringLiteral` noise on unit conversion, the same shape as the
+> `ai-safety` rejection) and `cooking-adjustment` (51.94%, 61 survivors — dominated by
+> `ObjectLiteral` mutants on the per-method adjustment-factor data tables, e.g. gutting a
+> `{ protein: 0.93, fat: 0.95, ... }` literal to `{}`; low-value data-table noise, not
+> branching/computational logic worth gating).
