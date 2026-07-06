@@ -1,17 +1,22 @@
 # Overnight Todo Automation Runbook (`/goal` + `/todo`)
 
 How to let Claude Code work through the `todos/` backlog with minimal supervision —
-implement, open PRs, and leave them ready for your morning batch-merge.
+guard-eligible todos merge themselves once CI is green, and everything else is left
+open for your morning review.
 
-> **Model note (2026-07-02, harness sweep):** **no PR ever auto-merges.** The `/todo`
-> executor opens a PR for **every** priority and runs `scripts/todo-automerge-guard.sh`
-> as a **classification only** — it reports `MERGE_ELIGIBLE: yes/held/review-required/unknown`
-> and never calls `gh pr merge`. Overnight output is a stack of open PRs; in the morning
-> you ask the orchestrator to batch-merge the `MERGE_ELIGIBLE: yes` ones (it verifies
-> green CI + a clean tree, then squash-merges) and you individually review the rest.
-> `security`-labelled and `high`/`critical` todos are always individual-review.
-> (Historical: 2026-06-26 PR #465 had the executor enable `gh pr merge --auto --squash`
-> for guard-cleared low/medium PRs; that self-merge path was removed 2026-07-02.)
+> **Model note (2026-07-06, restored):** guard-eligible PRs auto-merge. The `/todo`
+> executor opens a PR for **every** priority, runs `scripts/todo-automerge-guard.sh`,
+> and on a `low`/`medium`, non-`security` PR that clears the guard (both the TODO gate
+> and the PATH gate), it immediately runs `gh pr merge --auto --squash --delete-branch` —
+> GitHub's native auto-merge, which arms the PR to land itself the instant required CI
+> checks pass. No human or orchestrator step is needed for those. `held` / `unknown` /
+> `review-required` PRs stay open for individual review, exactly as before.
+> (History: 2026-06-26 PR #465 first added this self-merge path → removed 2026-07-02
+> after a harness sweep tightened the policy to "no PR ever auto-merges" → restored
+> 2026-07-06 after the fully-manual model cost ~3 hours to review and merge 10
+> low-severity PRs, which was redundant given the PR is already gated by the
+> `code-reviewer`/domain-reviewer pass during execution, full CI, and this same
+> fail-closed guard. The guard itself is unchanged — only what happens on a pass.)
 
 `/goal` is a **native Claude Code CLI command**: you set a completion condition and
 Claude keeps working across turns until it's met, with a live elapsed/turns/tokens
@@ -20,16 +25,23 @@ overlay. `/todo` is the worker it drives (worktree-isolated executors).
 
 ## The safety model
 
-No sleeping human is in the loop, and — since nothing merges overnight — no code
-reaches `main` while you sleep either. The filters:
+No sleeping human is in the loop, so code CAN reach `main` while you sleep now — but
+only through the guard, never unconditionally. The filters:
 
-1. **No unattended merges** — the strongest guard is structural: every PR waits for
-   you. The worst overnight outcome is a stack of bad open PRs, which you decline in
-   the morning.
-2. **CI (required)** — `main` physically refuses any PR whose 7 required checks aren't
+1. **Merges are guard-gated, not human-gated** — a PR only auto-merges if it is
+   `low`/`medium` priority, non-`security`, and every changed file is on the guard's
+   safe-path allowlist. Anything else — `high`/`critical`, `security`-labelled, guard
+   HOLD, or guard-unknown — is structurally incapable of auto-merging and sits open for
+   you. The worst overnight outcome for a guard-eligible PR is a bad-but-CI-passing
+   change landing on `main`; the worst outcome for everything else is unchanged — a
+   stack of bad open PRs you decline in the morning.
+2. **CI (required)** — `main` physically refuses any PR whose 8 required checks aren't
    green (Lint·Types·Patterns, Tests 1-3/3, Coverage, Mutation goal-safety, CodeQL
-   Analyze). No human approval is required by branch protection — only green CI. That
-   is the repo's hard merge bar, and the morning batch-merge respects it.
+   Analyze, Mutation non-excluded). No human approval is required by branch protection —
+   only green CI. That
+   is the repo's hard merge bar, and it's the ONLY thing standing between an armed
+   auto-merge and landing on `main` — there is no human checkpoint after the guard
+   passes.
 3. **`scripts/todo-automerge-guard.sh`** — the executor runs this on every `low`/`medium`
    PR to classify it. It is a **fail-CLOSED allowlist** with two gates: a TODO gate
    (the archived todo's frontmatter must say priority low/medium with no `security`
@@ -61,27 +73,28 @@ one most likely to surface an unmodeled edge.
 
 - [ ] Guard script proven on a few real PRs (HOLDs sensitive paths, clears the rest).
 - [ ] Executor permission coverage confirmed during the attended debut: `git push` of
-      feature branches, `gh pr create` / `mcp__github__create_pull_request`, and
-      `Bash(scripts/todo-automerge-guard.sh:*)` all run without prompts. If anything
-      blocks while you watch, add a tightly-scoped `autoMode.allow` entry then — do
-      NOT pre-widen blind. (The executor never needs `gh pr merge` in any form — that
-      permission exists for YOUR morning batch-merge, not for the overnight run.)
+      feature branches, `gh pr create` / `mcp__github__create_pull_request`,
+      `Bash(scripts/todo-automerge-guard.sh:*)`, **and now `gh pr merge --auto --squash
+    --delete-branch` on a guard-cleared PR** all run without prompts. This last one is
+      new since the 2026-07-06 restoration — the executor arms auto-merge itself, from
+      an unattended session, before CI has gone green. Confirm the `autoMode.allow`
+      entry for `gh pr merge` explicitly covers arming `--auto` pre-CI-green (not just
+      merging once CI is already green) — see `.claude/settings.local.json`. If anything
+      blocks while you watch, widen that entry precisely, then re-test; do NOT
+      pre-widen blind.
 
-## Morning batch-merge
+## Morning check-in
 
-The Phase 5 summary lists PRs under "Ready for batch-merge" (`MERGE_ELIGIBLE: yes`).
-Say the word (in any session — a fresh morning session works: ask it to list open
-`todo/*` PRs and run the batch-merge per the /todo skill) and the orchestrator executes
-the **single canonical procedure in `.claude/skills/todo/SKILL.md` Phase 5** — in short:
-re-run the eligibility guard per PR (the overnight classification is advisory and can go
-stale if a PR was amended), verify green CI + clean tree, squash-merge with
-`--delete-branch`, skip conflicts/HOLDs. Don't restate or improvise the steps — the
-skill owns them. Merging sequentially in one sitting also closes the classic
-stale-merge gap (a PR passing CI against an old `main`) for practical purposes — if you
-want it enforced server-side, set required-checks `strict: true`, at the cost of an
-update-branch step on every manual PR too.
+The Phase 5 summary lists `MERGE_ELIGIBLE: yes` PRs under "Auto-merging on green CI (no
+action needed)" — the executor already armed `gh pr merge --auto --squash
+--delete-branch` on each when it opened the PR, so most of these have either already
+merged overnight or will the moment their CI finishes. Nothing to do for that group; just
+skim it for visibility. If any instead shows "Auto-merge failed to arm", the executor's
+`gh pr merge --auto` call itself failed (network/auth/repo setting) — merge it by hand
+with the same command, or treat it as an individual review.
 
-`held` / `review-required` / `unknown` PRs you review individually, like any other PR.
+`held` / `review-required` / `unknown` PRs you still review and merge individually, like
+any other PR — this group is unaffected by the 2026-07-06 change.
 
 ## The `/goal` completion condition (paste this)
 
@@ -93,19 +106,22 @@ update-branch step on every manual PR too.
 /goal Drive every actionable todo with frontmatter `priority: low` or `priority: medium`
 in todos/ to an open-PR state (ignore the filename prefix; read the priority field). Run the
 /todo skill; its worktree-isolated executors do ALL the PR work themselves — implement
-the todo, archive it inside the same commit, open a PR, and run
-scripts/todo-automerge-guard.sh to classify it (MERGE_ELIGIBLE). NEVER merge anything —
-no `gh pr merge` in any form; every PR waits for my morning batch-merge. Your job:
-dispatch /todo, watch the results, and enforce the stop conditions. A guard HOLD
-(path or todo-frontmatter gate) is a valid terminal state, not a failure.
+the todo, archive it inside the same commit, open a PR, run
+scripts/todo-automerge-guard.sh to classify it (MERGE_ELIGIBLE), and — ONLY when the
+guard passes (low/medium, non-security, safe-path-only) — arm
+`gh pr merge --auto --squash --delete-branch` themselves so it lands on its own once CI
+is green. You (the orchestrator) never call `gh pr merge` yourself; that call belongs to
+the executor and only fires on a guard pass. Your job: dispatch /todo, watch the
+results, and enforce the stop conditions. A guard HOLD (path or todo-frontmatter gate)
+is a valid terminal state, not a failure.
 DONE when: every actionable low/medium todo appears in SOME listing group of the latest
 accumulated /todo Phase 5 summary, or as blocked-with-reason, or as a `failed` row in
 the Phase 5 table — AND the latest /todo Phase 5 verification line is green. Every Phase
 5 listing group is a terminal state for the night (the skill guarantees this): open PR,
-awaiting/gated on batch-merge, dependency not yet implemented, stale branch, "Skipped —
-quality flags" (that one needs MY re-authoring). A failed todo is terminal for the night
-too — leave it for my morning review. Never re-dispatch a listed or failed todo hoping
-its outcome changes. Evaluate
+auto-merging on green CI, gated on a dependency, dependency not yet implemented, stale
+branch, "Skipped — quality flags" (that one needs MY re-authoring). A failed todo is
+terminal for the night too — leave it for my morning review. Never re-dispatch a listed
+or failed todo hoping its outcome changes. Evaluate
 DONE from the Phase 5 reports you already hold; do NOT re-run test:run / check:types /
 lint yourself and do NOT re-query GitHub per todo (one final batched `gh pr list` sweep
 to confirm PR states before reporting DONE is fine) — /todo already verified and
@@ -116,7 +132,10 @@ failing in two dispatches (each report already represents the executor's two int
 attempts), OR any todo blocks with REASON_CODE: ORPHAN_BRANCH, PR_CHECK_FAILED,
 or PR_CLOSED_UNMERGED — the ACTION NEEDED codes (an orphan branch, an unverifiable PR
 state, or a PR closed without merging — each needs my one-time decision; an open-PR
-collision is just "awaiting batch-merge", not a stop condition).
+collision is just "awaiting merge or review, per its eligibility", not a stop
+condition), OR an executor reports `MERGE_ELIGIBLE: yes (auto-merge enable FAILED ...)` —
+that means `gh pr merge --auto` itself errored (likely a permission prompt or repo
+setting) and needs my attention, not a silent retry.
 ```
 
 ## Launch
@@ -130,5 +149,5 @@ claude            # then run:  /todo   (watch it; fix stumbles)
 # Unattended, after the gate above is satisfied:
 claude --bg       # background session — survives sleep, shows in `claude agents`
 #   then paste the /goal block above
-# morning:  claude agents     # elapsed / turns / tokens; then review + batch-merge PRs
+# morning:  claude agents     # elapsed / turns / tokens; then check auto-merge status + review any held/review-required PRs
 ```

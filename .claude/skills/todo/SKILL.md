@@ -254,12 +254,12 @@ After all batches have been executed (or after early termination):
 
 3. **Print the summary table:**
 
-   The **Branch / PR** column shows the PR URL for every todo (all priorities open a PR, and **no PR ever auto-merges** — everything waits for the user's batch-merge). Key off each todo's `MERGE_ELIGIBLE`: `yes` → "ready for batch-merge"; `held` → "held — guard HOLD (path or todo-frontmatter gate; see the executor's reason line)"; `review-required` → "needs individual review"; `unknown` → "guard couldn't evaluate — review by hand". Show `pending manual creation` if PR creation failed.
+   The **Branch / PR** column shows the PR URL for every todo (all priorities open a PR). Key off each todo's `MERGE_ELIGIBLE`: `yes (auto-merge enabled)` → "auto-merging on green CI"; `yes (auto-merge enable FAILED ...)` → "auto-merge failed to arm — needs manual merge or review"; `held` → "held — guard HOLD (path or todo-frontmatter gate; see the executor's reason line)"; `review-required` → "needs individual review"; `unknown` → "guard couldn't evaluate — review by hand". Show `pending manual creation` if PR creation failed.
 
    | #   | Todo                                  | Status  | Branch / PR             | Review Rounds | Notes                               |
    | --- | ------------------------------------- | ------- | ----------------------- | ------------- | ----------------------------------- |
    | 1   | Extract suggestion generation service | success | github.com/…/pull/42    | 1             | —                                   |
-   | 2   | Storage facade re-exports             | success | github.com/…/pull/43    | 2             | ready for batch-merge               |
+   | 2   | Storage facade re-exports             | success | github.com/…/pull/43    | 2             | auto-merging on green CI            |
    | 3   | Remix screen reader announcements     | blocked | —                       | 0             | Depends on remix-carousel-badge     |
    | 4   | Fix useCollapsible height test        | failed  | —                       | 1             | Type error in mock setup            |
    | 5   | Fix calorie rounding utility          | success | pending manual creation | 1             | PR creation failed — push succeeded |
@@ -267,7 +267,7 @@ After all batches have been executed (or after early termination):
 4. **Print tallies:**
 
    ```
-   Completed: N (list PR URLs; mark "ready for batch-merge" ONLY for `MERGE_ELIGIBLE: yes`; for `held`/`review-required`/`unknown` mark "PR open — needs individual review". NO PR is self-completing — none auto-merge; note "PR pending manual creation" for any where PR_URL is null)
+   Completed: N (list PR URLs; mark "auto-merging on green CI" for `MERGE_ELIGIBLE: yes (auto-merge enabled)`; mark "auto-merge failed to arm" for `yes (auto-merge enable FAILED ...)`; for `held`/`review-required`/`unknown` mark "PR open — needs individual review". Note "PR pending manual creation" for any where PR_URL is null)
    Blocked:   M
    Skipped:   S
    Failed:    F
@@ -280,7 +280,7 @@ After all batches have been executed (or after early termination):
 
    Then **list quality-flagged todos that were skipped from this run.** Using the dropped set carried over from Phase 2 step 6, print them under the heading "Skipped — quality flags — re-author and re-run to include them:" with one line per todo (todo filename + comma-joined flag list). If none were dropped, omit the heading.
 
-   Then **list PRs ready for batch-merge.** Print every `MERGE_ELIGIBLE: yes` PR under the heading "Ready for batch-merge — say the word and I'll verify green CI + clean tree and squash-merge them:". Nothing merges until the user asks. When they do, for each PR: **re-run `scripts/todo-automerge-guard.sh <n>`** (the overnight classification is advisory — it goes stale if the PR was amended after the executor ran it; exit 0 required; the guard itself enforces the priority/`security` frontmatter gate, so this procedure is safe even from a fresh session with no overnight report), verify CI is green and the local tree is clean (`git status --porcelain`), then `gh pr merge <n> --squash --delete-branch`, skipping any that conflict or now HOLD. This Phase 5 flow is the **single canonical batch-merge procedure** — other docs point here rather than restating it.
+   Then **report auto-merge status.** For every `MERGE_ELIGIBLE: yes (auto-merge enabled)` PR, nothing further is needed — the executor already ran `gh pr merge --auto --squash --delete-branch`, so GitHub squash-merges it automatically the instant required CI checks pass. List these under "Auto-merging on green CI (no action needed):" with their PR URLs, for visibility only. For any `MERGE_ELIGIBLE: yes (auto-merge enable FAILED ...)` PR, the executor's `gh pr merge --auto` call itself failed — list it under "Auto-merge failed to arm — needs manual `gh pr merge --auto --squash --delete-branch <n>`, or individual review:". `held` / `unknown` / `review-required` PRs are unaffected by this change — list them exactly as before, under "Needs individual review:", for the user to review and merge by hand.
 
    Then **list todos awaiting batch-merge and gated dependents.** Route executor results on `REASON_CODE` first; matching on reason-text prefixes is the legacy fallback for a report that lacks the field. Four groups:
    - **Awaiting batch-merge** — the Phase 2 skip set **plus any executor `skipped` result with `REASON_CODE: OPEN_PR_COLLISION`** (legacy fallback: reason begins `already implemented`; take the PR URL from the reason), each with the PR to merge to unblock it.
@@ -343,5 +343,5 @@ After all batches have been executed (or after early termination):
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.
 - **Self-cleaning.** Phase 0 force-removes leftover worktrees and deletes remote branches whose PRs are **all merged** (a branch whose PR was closed WITHOUT merging is a rejection signal — surfaced in Phase 5, never auto-swept); Phase 5 removes this run's worktrees. The user must never have to clean up `todo/*` branches or `agent-*` worktrees by hand.
-- **No auto-merge, ever.** Executors never run `gh pr merge`; every PR waits for the user's batch-merge. The orchestrator merges only when the user explicitly asks in Phase 5, after verifying green CI and a clean tree.
+- **Auto-merge only through the guard.** Executors enable GitHub's native `gh pr merge --auto --squash --delete-branch` ONLY when `todo-automerge-guard.sh` returns exit 0 (low/medium priority, non-`security`, safe-path-only) — it then merges itself once CI is green, no orchestrator or user step. Every other PR (`held`, `unknown`, `review-required`) stays open and is never auto-merged; the user reviews and merges those individually.
 - **Auto-sync local `main`.** Phase 0 fast-forwards local `main` at the start (catching merges from prior sessions, which also stops the backlog from re-picking an already-archived todo) and Phase 5 fast-forwards again at the end (catching this run's merges). Always **ff-only** so parallel work is never disturbed — the user must never have to `git pull` by hand to see a completed todo archived locally.
