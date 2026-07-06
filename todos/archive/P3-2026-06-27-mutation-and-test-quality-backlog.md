@@ -3,10 +3,10 @@
 ---
 
 title: "Mutation-testing backlog (candidate targets + deferred features)"
-status: backlog
+status: done
 priority: low
 created: 2026-06-27
-updated: 2026-06-27
+updated: 2026-07-05
 assignee:
 labels: [deferred, testing, tooling]
 github_issue:
@@ -34,14 +34,14 @@ subset, not all 40. See the codified rule:
 
 ## Acceptance Criteria
 
-- [ ] Baseline the pure-logic candidates with `npm run mutation:explore` and onboard the
+- [x] Baseline the pure-logic candidates with `npm run mutation:explore` and onboard the
       ones with a clean, high-value survivor profile (target ~90%+ achievable). Candidates:
       `server/lib/recipe-normalization.ts`, `server/services/cooking-adjustment.ts`,
       `server/services/notebook-budget.ts`, `server/services/carousel-builder.ts`,
       `server/services/subscription-tier-cache.ts`. (Baseline RESULTS recorded in Updates below.)
-- [ ] Each onboarded target: register in `stryker.targets.mjs` with a `breakThreshold`
+- [x] Each onboarded target: register in `stryker.targets.mjs` with a `breakThreshold`
       below achieved (margin), add to `mutation-non-excluded.yml`, record in `baselines.md`.
-- [ ] Decision recorded (onboard / reject-with-reason) for every candidate, so rejected
+- [x] Decision recorded (onboard / reject-with-reason) for every candidate, so rejected
       ones aren't re-evaluated — mirror the `ai-safety` rejection note in `baselines.md`.
 
 ## Implementation Notes
@@ -117,3 +117,30 @@ subset, not all 40. See the codified rule:
 - **Remaining onboarding candidates (next):** `carousel-builder` (76.71%, 14+3) and
   `subscription-tier-cache` (71.88%, 4+5). `recipe-normalization` + `cooking-adjustment` stay
   SKIP. Repeat the notebook-budget recipe: kill killable survivors, break ≈ achieved−margin.
+
+### 2026-07-05
+
+- **All three Acceptance Criteria closed.** Re-confirmed the 2026-06-27 baselines are still
+  accurate (`recipe-normalization` 66.19%/71 survivors, `cooking-adjustment` 51.94%/61
+  survivors+1 no-cov — unchanged) and finished the two remaining onboarding candidates:
+  - **`carousel-builder` onboarded** (76.71% → 93.15%, break=90): strengthened
+    `server/services/__tests__/carousel-builder.test.ts` with strict-boolean `isRemix`
+    assertions, a `timeEstimate: null` case, a legacy-`cuisinePreferences: null` guard case
+    (the `&&`-chain guard at line 58 was never exercised with a falsy `cuisinePreferences`),
+    a two-element `cuisinePreferences` list ordered to distinguish `.some()` from a mutated
+    `.every()`, a "tags exist but none overlap" negative case, and the 30-minute
+    quick-and-easy boundary. Residual 5 documented as equivalents/Stryker-placeholder
+    artifacts in `baselines.md` (not chased — same pedantry trap as `Regex` whitespace).
+  - **`subscription-tier-cache` onboarded** (71.88% → 93.75%, break=90): the 5 no-coverage
+    mutants were all in the never-exercised `MAX_CACHE_SIZE` eviction path; one eviction test
+    (seed `_testInternals.tierCache` to the 10,000 limit, assert oldest-key eviction + bounded
+    size) plus one TTL-exact-boundary test closed 7 of the 9 gaps. Residual 2 documented as
+    provable equivalents in `baselines.md`.
+  - Both registered in `stryker.targets.mjs`, wired into
+    `.github/workflows/mutation-non-excluded.yml` (change-detection regex + two new job
+    steps), and recorded in `docs/mutation-testing/baselines.md` alongside the
+    `recipe-normalization` / `cooking-adjustment` SKIP decisions (mirroring the `ai-safety`
+    rejection note) so neither is re-evaluated.
+  - The Implementation Notes' deferred items (broader Hard-Exclusion coverage, whole-directory
+    mutate globs, mutation-score trend tracking) remain explicitly out of scope for this todo
+    per its own text — not carried into a follow-up todo.
