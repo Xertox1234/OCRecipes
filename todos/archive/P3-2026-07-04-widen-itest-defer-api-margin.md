@@ -3,10 +3,10 @@
 ---
 
 title: "Widen the fragile ~174B itest-defer api-test budget margin in test-inject-patterns.sh"
-status: backlog
+status: done
 priority: low
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-05
 assignee:
 labels: [deferred, harness, test-fragility]
 github_issue:
@@ -41,14 +41,14 @@ gates every Edit/Write.
 
 ## Acceptance Criteria
 
-- [ ] The `itest-defer` api-domain test in `.claude/hooks/test-inject-patterns.sh` no longer
+- [x] The `itest-defer` api-domain test in `.claude/hooks/test-inject-patterns.sh` no longer
       depends on a sub-~200B margin — either switch it to a domain/fixture with comfortable
       headroom (as the `database` case already does) or make the assertion tolerant of small
       `DOMAIN_BUDGET`-relative shifts, whichever keeps the test's INTENT (verifying the defer
       path) intact.
-- [ ] The test still fails if the defer logic regresses (i.e. it is not weakened into a no-op).
-- [ ] `bash .claude/hooks/test-inject-patterns.sh` green.
-- [ ] `npm run preflight` green.
+- [x] The test still fails if the defer logic regresses (i.e. it is not weakened into a no-op).
+- [x] `bash .claude/hooks/test-inject-patterns.sh` green.
+- [x] `npm run preflight` green.
 
 ## Implementation Notes
 
@@ -80,3 +80,34 @@ gates every Edit/Write.
 - Initial creation. Filed from the 2026-07-03 `/todo` run's pre-merge review of PR #504
   (inject-patterns pre-estimate defer-before-build), flagged by both the executor and the
   independent reviewer as a pre-existing, unworsened fragility worth a low-priority follow-up.
+
+### 2026-07-05
+
+- Implemented. Switched the `itest-defer` fixture from `server/routes/recipes.ts` (`api`
+  domain, ~174B margin) to `shared/schema.ts` (`database` domain, ~5.5KB margin) — mirroring
+  the existing wide-margin `itest-preest` case. `inject-patterns.sh` and its `DOMAIN_BUDGET`/
+  `THRESHOLD` constants were left untouched, per the Implementation Notes constraint.
+- Round-1 code review (`code-reviewer`) found two WARNINGs, both fixed: a dangling forward
+  reference to a not-yet-created solution file (now created — see below), and a sentinel
+  match (`"onConflictDoNothing"`) that wasn't scoped to the `[RULES — database]` section and
+  could theoretically be masked by an unrelated `SOLUTIONS — database` list entry sharing the
+  same phrase (real docs/solutions/ titles do). Added a `rules_section` awk helper to scope
+  the check.
+- Fixing the scoping surfaced a real, independent bug: `echo "$(fn ...)" | grep -qF "..."`
+  under this file's `set -uo pipefail` can produce a false negative when `grep -q` matches
+  early in a multi-KB string and the resulting SIGPIPE to the upstream `echo` gets reported by
+  `pipefail` as the pipeline's exit status. Fixed by using a here-string
+  (`grep -qF "..." <<< "$(...)"`) instead, which has no separate writer process to race.
+  Verified empirically (reproduced the failure and the fix, confirmed clean across repeated
+  runs, and confirmed AC2 — the test still fails when the defer logic is intentionally broken).
+- Round-2 review confirmed no regressions and no remaining CRITICAL/WARNING findings. Its one
+  substantive SUGGESTION (that the fixture matches only 2 domains, not 3) was checked against
+  the actual session-based hook flow and found to be based on a different code path
+  (`PATTERN_INJECT_NO_DEDUP=1`, which silently truncates `architecture`'s content from the
+  inline view) — the real flow confirmed all three domains (`security`, `database`,
+  `architecture`) are matched and processed, so the comment was left as-is.
+- Codified: `docs/solutions/best-practices/test-budget-margin-must-clear-threshold-with-headroom-2026-07-05.md`
+  (knowledge-track — pick fixtures with comfortable, not marginal, headroom over a
+  size-threshold in a test).
+- All four acceptance criteria verified: `bash .claude/hooks/test-inject-patterns.sh` green
+  (52/52, stable across repeated runs), `npm run preflight` green.
