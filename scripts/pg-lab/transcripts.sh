@@ -113,7 +113,14 @@ import re
 import sys
 
 REDACT_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9]{16,}"),                                  # OpenAI-style secret keys
+    # sk-[A-Za-z0-9]{16,} alone misses sk-ant-.../sk-proj-... — both contain hyphens within
+    # the first 16 chars after "sk-", which the alnum-only class doesn't match. Allow
+    # hyphens/underscores generically, plus explicit prefixes for clarity and defense-in-depth.
+    re.compile(r"sk-[A-Za-z0-9_-]{16,}"),                                # OpenAI/Anthropic-style secret keys (sk-..., sk-ant-..., sk-proj-...)
+    re.compile(r"sk_live_[A-Za-z0-9]{16,}|rk_live_[A-Za-z0-9]{16,}"),    # Stripe secret/restricted keys
+    re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"),  # GitHub PATs (ghp_/gho_/ghu_/ghs_/github_pat_)
+    re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),                         # Slack tokens
+    re.compile(r"AIza[0-9A-Za-z_-]{20,}"),                               # Google API keys
     re.compile(r"AKIA[0-9A-Z]{16}"),                                     # AWS access key id
     re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
     re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"),    # JWT-shaped tokens

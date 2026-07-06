@@ -62,6 +62,7 @@ cat > "$PROJECT_DIR/test-session-1.jsonl" <<'JSONL'
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"echo hi"}}]},"sessionId":"test-session-1","cwd":"/fixture/project","timestamp":"2026-01-01T10:00:04.000Z","uuid":"a-3"}
 {"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"hi"}]},"sessionId":"test-session-1","cwd":"/fixture/project","timestamp":"2026-01-01T10:00:05.000Z","uuid":"u-3"}
 {"type":"user","message":{"role":"user","content":[{"type":"text","text":"Does a real question wrapped in list content still get ingested?"}]},"sessionId":"test-session-1","cwd":"/fixture/project","timestamp":"2026-01-01T10:00:06.000Z","uuid":"u-4"}
+{"type":"user","message":{"role":"user","content":"Here's my key: sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890ABCDEF and a GitHub PAT ghp_abcdefghijklmnopqrstuvwxyz1234 pasted by mistake."},"sessionId":"test-session-1","cwd":"/fixture/project","timestamp":"2026-01-01T10:00:07.000Z","uuid":"u-5"}
 {"type":"queue-operation","operation":"add","sessionId":"test-session-1"}
 this is not valid json at all {{{
 JSONL
@@ -71,7 +72,22 @@ assert_exit0 "--import against fixture corpus" "$IMPORT_RC"
 assert_contains "--import reports the session" "$IMPORT_OUT" "test-session-1: imported lines"
 
 ROWCOUNT=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.transcript_messages")
-assert_eq "--import ingests exactly 4 rows (2x user text, assistant text, tool name)" "$ROWCOUNT" "4"
+assert_eq "--import ingests exactly 5 rows (2x user text, assistant text, tool name, secret-redaction fixture)" "$ROWCOUNT" "5"
+
+# Redaction regression (docs/solutions/ — REDACT_PATTERNS missed several real secret
+# shapes, verified empirically): pasted secrets must never reach the archive raw.
+SECRET_ROW=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT content FROM harness.transcript_messages WHERE msg_uuid LIKE 'u-5%'")
+assert_contains "Anthropic-shaped key is redacted" "$SECRET_ROW" "[REDACTED]"
+if printf '%s' "$SECRET_ROW" | grep -qF "sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890ABCDEF"; then
+  echo "FAIL: raw Anthropic-shaped key leaked into stored content"; FAIL=1
+else
+  echo "ok: raw Anthropic-shaped key never stored"
+fi
+if printf '%s' "$SECRET_ROW" | grep -qF "ghp_abcdefghijklmnopqrstuvwxyz1234"; then
+  echo "FAIL: raw GitHub PAT leaked into stored content"; FAIL=1
+else
+  echo "ok: raw GitHub PAT never stored"
+fi
 
 LIST_TEXT_ROW=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT content FROM harness.transcript_messages WHERE msg_uuid LIKE 'u-4%'")
 assert_eq "user list-content text block is ingested (not treated as tool_result)" "$LIST_TEXT_ROW" "Does a real question wrapped in list content still get ingested?"
@@ -87,7 +103,7 @@ REIMPORT_OUT=$(LAB_DATABASE_URL="$TEST_URL" PG_LAB_TRANSCRIPTS_DIR="$FIX" bash "
 assert_exit0 "second --import (no new lines) exits 0" "$REIMPORT_RC"
 assert_contains "second --import reports no new lines" "$REIMPORT_OUT" "no new lines"
 ROWCOUNT_AFTER=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.transcript_messages")
-assert_eq "incremental re-import adds zero rows" "$ROWCOUNT_AFTER" "4"
+assert_eq "incremental re-import adds zero rows" "$ROWCOUNT_AFTER" "5"
 
 # FTS search: a hit should surface the matching row plus its ±1-message context; a miss
 # must print no results and never error.
@@ -118,7 +134,7 @@ fi
 REBUILD_OUT=$(LAB_DATABASE_URL="$TEST_URL" PG_LAB_TRANSCRIPTS_DIR="$FIX" bash "$SCRIPT" --rebuild 2>&1); REBUILD_RC=$?
 assert_exit0 "--rebuild against fixture corpus" "$REBUILD_RC"
 ROWCOUNT_REBUILD=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.transcript_messages")
-assert_eq "--rebuild reimports exactly the same 4 rows" "$ROWCOUNT_REBUILD" "4"
+assert_eq "--rebuild reimports exactly the same 5 rows" "$ROWCOUNT_REBUILD" "5"
 LOGCOUNT_AFTER_REBUILD=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.transcript_search_log")
 assert_eq "--rebuild preserves the search-log ledger" "$LOGCOUNT_AFTER_REBUILD" "$LOGCOUNT"
 
@@ -131,7 +147,7 @@ assert_nonzero "--rebuild against an empty source dir refuses" "$EMPTY_REBUILD_R
 assert_contains "--rebuild refusal names the empty-dir reason" "$EMPTY_REBUILD_ERR" "refusing"
 rm -rf "$EMPTY_FIX"
 ROWCOUNT_AFTER_REFUSED_REBUILD=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.transcript_messages")
-assert_eq "table untouched after a refused empty-dir rebuild" "$ROWCOUNT_AFTER_REFUSED_REBUILD" "4"
+assert_eq "table untouched after a refused empty-dir rebuild" "$ROWCOUNT_AFTER_REFUSED_REBUILD" "5"
 
 # A mid-file parser crash (an unexpected shape, e.g. a bare-string `message` field instead
 # of an object) must be isolated to that one session: no partial rows committed, no bookmark
@@ -153,6 +169,6 @@ CRASH_BOOKMARK=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.
 assert_eq "crashed session's bookmark is never created/advanced" "$CRASH_BOOKMARK" "0"
 # The other, healthy session in the same batch must be unaffected by the crash.
 HEALTHY_ROWCOUNT=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.transcript_messages WHERE session_id = 'test-session-1'")
-assert_eq "the other session in the same batch is unaffected by the crash" "$HEALTHY_ROWCOUNT" "4"
+assert_eq "the other session in the same batch is unaffected by the crash" "$HEALTHY_ROWCOUNT" "5"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
