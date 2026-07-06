@@ -113,6 +113,33 @@ trap 'rm -f "$TMPFILE" "$BLOCKFILE" "$DEFER_FILE"' EXIT
 
 printf '=== Pre-write context for %s ===\n' "$FILE_PATH" >> "$TMPFILE"
 
+# PG Lab usage telemetry accumulator (see the tail block near the end of this file for the
+# single guarded log-injection.sh call). One line per (domain, action) outcome, fields
+# separated by \x1f (ASCII Unit Separator) — NOT \t: bash's `read` collapses runs of tab
+# even when IFS is set to tab alone, which would silently misalign fields on any line with
+# two adjacent empty fields (see log-injection.sh's header comment). Reused/appended at the
+# existing pointer/defer/emit branches below — never a new decision path, purely bookkeeping
+# alongside the existing one. Variable name kept as LOG_TSV (the pre-existing working name)
+# despite the delimiter no longer being an actual tab.
+LOG_TSV=""
+
+# Comma-joined repo-relative doc ids (docs/rules/<domain>.md + each docs/solutions/<rel>
+# from $SOLUTION_LINES) for the CURRENT domain iteration's injection-log line. Reuses
+# already-computed $RULES_FILE / $SOLUTION_LINES — never re-derives domain matching. Only
+# valid to call once $SOLUTION_LINES has been set for the domain currently being processed.
+doc_ids_for_log() {
+  local ids=""
+  [ -f "$RULES_FILE" ] && ids="${RULES_FILE#"$PROJECT_ROOT"/}"
+  if [ -n "$SOLUTION_LINES" ]; then
+    local rel
+    while IFS=$'\t' read -r rel _title; do
+      [ -n "$rel" ] || continue
+      ids="${ids:+$ids,}docs/solutions/${rel}"
+    done <<< "$SOLUTION_LINES"
+  fi
+  printf '%s' "$ids"
+}
+
 # Per-session dedup: inject each payload (the DISCIPLINE preamble, and each domain's full
 # rules + solution refs) only the FIRST time it appears in a session; on later edits emit a
 # one-line pointer instead. This bounds the repeated cost of editing many files in one
@@ -255,6 +282,7 @@ if [ -n "$DOMAINS" ]; then
     # Already injected this session? Emit a one-line pointer and skip the full payload.
     if [ "$DEDUP" = "1" ] && grep -qxF "$DOMAIN" "$DEDUP_STATE" 2>/dev/null; then
       printf '\n[RULES — %s] already injected earlier this session — re-read docs/rules/%s.md if the rules are no longer in context.\n' "$DOMAIN" "$DOMAIN" >> "$TMPFILE"
+      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "pointer" 0 "")"$'\n'
       continue
     fi
 
@@ -282,6 +310,11 @@ if [ -n "$DOMAINS" ]; then
       [ $(($(wc -c < "$TMPFILE") + $(wc -c < "$BLOCKFILE"))) -gt "$DOMAIN_BUDGET" ]; then
       printf '\n[RULES — %s] deferred (inline size cap, pre-estimated) — rules in %s now; solution refs auto-inject on a later edit this session.\n' "$DOMAIN" "$SPILL_FILE" >> "$TMPFILE"
       cat "$BLOCKFILE" >> "$DEFER_FILE"
+      # Solution refs were never computed for this pre-estimated defer, so the doc list is
+      # rules-only here (not doc_ids_for_log, which assumes $SOLUTION_LINES is fresh).
+      PRE_EST_DOC_IDS=""
+      [ -f "$RULES_FILE" ] && PRE_EST_DOC_IDS="${RULES_FILE#"$PROJECT_ROOT"/}"
+      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$PRE_EST_DOC_IDS")"$'\n'
       continue
     fi
 
@@ -311,11 +344,13 @@ if [ -n "$DOMAINS" ]; then
       [ $(($(wc -c < "$TMPFILE") + $(wc -c < "$BLOCKFILE"))) -gt "$DOMAIN_BUDGET" ]; then
       printf '\n[RULES — %s] deferred (inline size cap) — full payload in %s now; auto-injects on a later edit this session.\n' "$DOMAIN" "$SPILL_FILE" >> "$TMPFILE"
       cat "$BLOCKFILE" >> "$DEFER_FILE"
+      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)")"$'\n'
       continue
     fi
 
     cat "$BLOCKFILE" >> "$TMPFILE"
     EMITTED_FULL=1
+    LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "injected" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)")"$'\n'
 
     # Record this domain as injected so later edits in the session get the one-line pointer.
     [ "$DEDUP" = "1" ] && printf '%s\n' "$DOMAIN" >> "$DEDUP_STATE"
@@ -344,6 +379,19 @@ elif [ -s "$DEFER_FILE" ]; then
     printf '=== Deferred domain payloads for %s (referenced by the inline deferred pointers) ===\n' "$FILE_PATH"
     cat "$DEFER_FILE"
   } > "$SPILL_FILE"
+fi
+
+# PG Lab usage telemetry (fire-and-forget) — backgrounded + disowned so a slow/unreachable
+# lab DB can never regress this hook's measured latency (~145ms/first-touch edit per PR
+# #504): the call is spawned and the script moves on immediately without waiting on it.
+# PATTERN_INJECT_NO_LOG=1 is a hard kill switch (skips even spawning the subprocess).
+# stdout/stderr are redirected away so a logging failure can never surface in hook output.
+if [ "${PATTERN_INJECT_NO_LOG:-0}" != "1" ] && [ -n "$LOG_TSV" ]; then
+  LOG_SCRIPT="$PROJECT_ROOT/scripts/pg-lab/log-injection.sh"
+  if [ -f "$LOG_SCRIPT" ]; then
+    { printf '%s' "$LOG_TSV" | bash "$LOG_SCRIPT" >/dev/null 2>&1; } &
+    disown 2>/dev/null || true
+  fi
 fi
 
 # Output hook response JSON

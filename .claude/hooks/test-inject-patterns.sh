@@ -2,8 +2,18 @@
 # Tests for inject-patterns.sh — run from project root
 set -uo pipefail
 
-HOOK="$(cd "$(dirname "$0")" && pwd)/inject-patterns.sh"
+HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
+HOOK="$HOOK_DIR/inject-patterns.sh"
+PROJECT_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
 SPILL_FILE="/tmp/ocrecipes-injection-context.md"
+# This suite's every invocation of $HOOK would otherwise also fire the PG Lab usage-telemetry
+# tail block (scripts/pg-lab/log-injection.sh), permanently polluting a developer's real
+# local ocrecipes_lab.harness.injection_log with dozens of test-run rows indistinguishable
+# from genuine usage (that table is append-only and never pruned programmatically). The
+# dedicated byte-identical logging on/off/DB-down assertions near the end of this file
+# unset this locally (against a throwaway DB, never the real one) to actually exercise the
+# telemetry path; every other invocation in this suite must stay opted out.
+export PATTERN_INJECT_NO_LOG=1
 PASS=0; FAIL=0
 
 # run_hook: clear stale spill, invoke hook, echo stdout+spill combined so callers can grep both.
@@ -489,6 +499,45 @@ if grep -qE 'psql|solutions_from_db|SOLUTIONS_DB_READONLY_URL|PATTERN_INJECT_SOU
 else
   echo "PASS: hook is markdown-only (no DB-path references)"; PASS=$((PASS + 1))
 fi
+
+# PG Lab usage telemetry tail call: hook output must be BYTE-IDENTICAL whether logging is
+# on (against a real, reachable lab DB), off (PATTERN_INJECT_NO_LOG=1, this suite's default),
+# or the lab DB is unreachable — a logging failure must never surface in hook output. The
+# "on" case uses a throwaway per-PID DB (never the shared ocrecipes_lab) so this suite never
+# writes permanent rows into a developer's real telemetry ledger.
+LOG_TEST_INPUT='{"session_id":"itest-hook-log-eq","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-eq
+OUT_OFF=$(echo "$LOG_TEST_INPUT" | PATTERN_INJECT_NO_LOG=1 bash "$HOOK" 2>/dev/null)
+
+rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-eq
+OUT_DBDOWN=$(echo "$LOG_TEST_INPUT" | PATTERN_INJECT_NO_LOG=0 LAB_DATABASE_URL="postgresql://localhost/pg_lab_does_not_exist_$$" bash "$HOOK" 2>/dev/null)
+
+LOG_TEST_DB="pg_lab_itest_hook_log_$$"
+LOG_TEST_URL="postgresql://localhost/$LOG_TEST_DB"
+LOG_TEST_HAS_PG=0
+if command -v psql >/dev/null 2>&1 && psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1; then
+  LOG_TEST_HAS_PG=1
+  LAB_DATABASE_URL="$LOG_TEST_URL" bash "$PROJECT_ROOT/scripts/pg-lab/init.sh" >/dev/null 2>&1
+  psql -X -q -v ON_ERROR_STOP=1 -d "$LOG_TEST_URL" -f "$PROJECT_ROOT/scripts/pg-lab/schema/injection-log.sql" >/dev/null 2>&1
+fi
+
+if [ "$LOG_TEST_HAS_PG" = "1" ]; then
+  rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-eq
+  OUT_ON=$(echo "$LOG_TEST_INPUT" | PATTERN_INJECT_NO_LOG=0 LAB_DATABASE_URL="$LOG_TEST_URL" bash "$HOOK" 2>/dev/null)
+  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$LOG_TEST_DB\"" >/dev/null 2>&1
+  if [ "$OUT_ON" = "$OUT_OFF" ] && [ "$OUT_ON" = "$OUT_DBDOWN" ]; then
+    echo "PASS: hook output byte-identical across logging on/off/DB-down"; PASS=$((PASS + 1))
+  else
+    echo "FAIL: hook output byte-identical across logging on/off/DB-down"; FAIL=$((FAIL + 1))
+  fi
+else
+  if [ "$OUT_OFF" = "$OUT_DBDOWN" ]; then
+    echo "PASS: hook output byte-identical across logging off/DB-down (no local Postgres — 'on' case skipped)"; PASS=$((PASS + 1))
+  else
+    echo "FAIL: hook output byte-identical across logging off/DB-down"; FAIL=$((FAIL + 1))
+  fi
+fi
+rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-eq
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

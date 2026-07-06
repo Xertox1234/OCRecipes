@@ -58,11 +58,34 @@ ROWS=$(find "$SOLUTIONS_DIR" -type f -name '*.md' \
 
 DIGEST="[RECENT SOLUTIONS — codified in the last 14 days, bug-track first]"
 DIGEST+=$'\n'"Pull more on demand: grep docs/solutions/ — e.g. \`grep -ril '^title:.*<keyword>' docs/solutions --include='*.md' | grep -v _manifests\`; schema in docs/solutions/README.md."
+# DOC_PATHS: comma-joined repo-relative doc ids delivered by this digest, for the PG Lab
+# usage-telemetry tail call below — reuses the already-parsed $rel, no recomputation.
+DOC_PATHS=""
 while IFS=$'\t' read -r _bug created track title rel; do
   [ -n "$created" ] || continue
   category="${rel%%/*}"
   DIGEST+=$'\n'"- ${created} [${track}/${category}] ${title} — docs/solutions/${rel}"
+  DOC_PATHS="${DOC_PATHS:+$DOC_PATHS,}docs/solutions/${rel}"
 done <<< "$ROWS"
+
+# PG Lab usage telemetry (fire-and-forget, one-shot SessionStart event) — backgrounded +
+# disowned so a slow/unreachable lab DB can never delay session start; stdout/stderr are
+# redirected away so a logging failure can never surface in this hook's own output.
+# PATTERN_INJECT_NO_LOG=1 is a hard kill switch (skips even spawning the subprocess).
+if [ "${PATTERN_INJECT_NO_LOG:-0}" != "1" ]; then
+  LOG_SCRIPT="$PROJECT_ROOT/scripts/pg-lab/log-injection.sh"
+  if [ -f "$LOG_SCRIPT" ]; then
+    INPUT=$(cat)
+    SID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+    # \x1f (ASCII Unit Separator), NOT \t: this line has edited_path AND domain both empty
+    # (a SessionStart digest is not scoped to a file or a domain) — bash's `read` collapses
+    # adjacent tab-delimited empty fields even with IFS set to tab alone, which would
+    # misalign every field after them. See log-injection.sh's header comment.
+    LOG_LINE=$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SID" "SessionStart" "" "" "injected" "$(( $(printf '%s' "$DIGEST" | wc -c) ))" "$DOC_PATHS")
+    { printf '%s\n' "$LOG_LINE" | bash "$LOG_SCRIPT" >/dev/null 2>&1; } &
+    disown 2>/dev/null || true
+  fi
+fi
 
 jq -n --arg ctx "$DIGEST" \
   '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":$ctx}}'
