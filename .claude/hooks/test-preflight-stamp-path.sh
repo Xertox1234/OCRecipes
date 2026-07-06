@@ -12,6 +12,14 @@ set -uo pipefail
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 
+# Snapshot the caller's real repo so the end-of-run guard below can prove case 5's
+# mutating setup (a real commit + `git worktree add`) never touched it, mirroring
+# test-branch-preflight.sh's defense-in-depth pattern — see
+# docs/solutions/logic-errors/inherited-git-dir-overrides-git-c-in-hook-self-tests-2026-06-26.md.
+CALLER_EMAIL_BEFORE=$(git config user.email 2>/dev/null || true)
+CALLER_HEAD_BEFORE="$(git rev-parse HEAD 2>/dev/null || true)|$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+CALLER_STATUS_BEFORE=$(git status --porcelain 2>/dev/null || true)
+
 HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/lib/preflight-stamp-path.sh"
 FAIL=0
 ok()  { echo "ok: $1"; }
@@ -64,5 +72,21 @@ WT_DIR="$R3/wt"
 
 P3MAIN=$(key_in "$R3"); P3WT=$(key_in "$WT_DIR")
 [ "$P3MAIN" = "$P3WT" ] && ok "linked worktree → same path as main checkout" || bad "worktree drift: $P3MAIN vs $P3WT"
+
+# 6. Hermeticity guard: prove the caller's real repo is byte-for-byte untouched by
+# case 5's mutating setup (the real commit + `git worktree add` above).
+CALLER_EMAIL_AFTER=$(git config user.email 2>/dev/null || true)
+CALLER_HEAD_AFTER="$(git rev-parse HEAD 2>/dev/null || true)|$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+CALLER_STATUS_AFTER=$(git status --porcelain 2>/dev/null || true)
+if [ "$CALLER_EMAIL_AFTER" = "$CALLER_EMAIL_BEFORE" ] \
+  && [ "$CALLER_HEAD_AFTER" = "$CALLER_HEAD_BEFORE" ] \
+  && [ "$CALLER_STATUS_AFTER" = "$CALLER_STATUS_BEFORE" ]; then
+  ok "caller repo untouched (hermetic — no inherited-GIT_DIR leak)"
+else
+  bad "caller repo was touched by this test run"
+  [ "$CALLER_EMAIL_AFTER" != "$CALLER_EMAIL_BEFORE" ] && printf '  user.email: [%s] -> [%s]\n' "$CALLER_EMAIL_BEFORE" "$CALLER_EMAIL_AFTER"
+  [ "$CALLER_HEAD_AFTER" != "$CALLER_HEAD_BEFORE" ] && printf '  HEAD: [%s] -> [%s]\n' "$CALLER_HEAD_BEFORE" "$CALLER_HEAD_AFTER"
+  [ "$CALLER_STATUS_AFTER" != "$CALLER_STATUS_BEFORE" ] && printf '  working tree changed (porcelain differs)\n'
+fi
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
