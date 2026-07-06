@@ -19,9 +19,15 @@
  *    also satisfies "don't flag Reanimated built-ins / Math.*" for free
  *    (`Math.max(...)` is a MemberExpression call, never a bare-identifier
  *    call, and reanimated built-ins are never in the local-import map).
- *  - A same-file helper called inside a worklet is out of scope by design —
- *    Reanimated's Babel plugin CAN reach those (single-file AST) and
- *    auto-workletizes them; only the cross-file case is unreachable to it.
+ *  - A same-file helper called inside a worklet IS checked too (verified
+ *    against the installed `react-native-worklets` Babel plugin: it does NOT
+ *    auto-workletize a plain function merely because a worklet calls it,
+ *    same-file or not — only a function that itself carries the directive,
+ *    or is itself a recognized hook/gesture callback, gets workletized).
+ *    Resolution is MODULE-SCOPE (top-level) only by design — it does not
+ *    recurse into function/block bodies, so a nested/shadowed declaration at
+ *    non-top-level scope sharing the name is never matched (avoids
+ *    misattributing a call to the wrong same-named declaration).
  *  - Only the worklet-callback hooks/gesture builder methods listed below are
  *    treated as worklet contexts. Full data-flow worklet inference (e.g. a
  *    `withTiming` completion callback) is out of scope.
@@ -83,8 +89,22 @@ const GESTURE_CALLBACK_METHODS = new Set([
   "onTouchesCancelled",
 ]);
 
-// Tried in order against the resolved base path (no extension yet).
-const CANDIDATE_SUFFIXES = [".ts", ".tsx", "/index.ts", "/index.tsx"];
+// Tried in order against the resolved base path (no extension yet). Includes
+// RN platform-split suffixes (a bare specifier like "./foo" can resolve to
+// foo.ios.ts / foo.android.ts / foo.native.ts at Metro bundle time) so a
+// worklet helper split across platform files still resolves.
+const CANDIDATE_SUFFIXES = [
+  ".ts",
+  ".tsx",
+  "/index.ts",
+  "/index.tsx",
+  ".native.ts",
+  ".native.tsx",
+  ".ios.ts",
+  ".ios.tsx",
+  ".android.ts",
+  ".android.tsx",
+];
 
 function createSource(filePath: string, text: string): ts.SourceFile {
   const kind = filePath.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
@@ -325,17 +345,62 @@ function collectBareCalleeCalls(
 }
 
 function blockStartsWithWorkletDirective(body: ts.ConciseBody): boolean {
-  // A directive prologue is only expressible as the first statement of a
-  // block body — a concise arrow body (`() => "worklet"`, an expression)
-  // can never carry one, so it correctly reads as "no directive".
+  // A directive prologue is only expressible in a block body — a concise
+  // arrow body (`() => "worklet"`, a bare expression) can never carry one, so
+  // it correctly reads as "no directive". Within a block, the directive
+  // prologue is the leading run of string-literal expression statements
+  // (e.g. `"use strict"; "worklet";`) — this matches the real Reanimated
+  // Babel plugin, which accepts "worklet" anywhere in that leading run, not
+  // only as literally the first statement.
   if (!ts.isBlock(body)) return false;
-  const first = body.statements[0];
-  return (
-    !!first &&
-    ts.isExpressionStatement(first) &&
-    ts.isStringLiteral(first.expression) &&
-    first.expression.text === "worklet"
-  );
+  for (const stmt of body.statements) {
+    if (
+      !ts.isExpressionStatement(stmt) ||
+      !ts.isStringLiteral(stmt.expression)
+    ) {
+      return false; // end of the directive prologue — "worklet" never appeared
+    }
+    if (stmt.expression.text === "worklet") return true;
+  }
+  return false;
+}
+
+/** Look up `name` among `sourceFile`'s MODULE-SCOPE (top-level) declarations
+ * only — deliberately does NOT recurse into function/block bodies. A DFS that
+ * walked every descendant could match a nested, shadowed same-named
+ * declaration (e.g. a private helper inside another function) instead of the
+ * real top-level declaration, producing both false positives and false
+ * negatives. Returns null when no top-level function/const-arrow declaration
+ * by that name exists (e.g. a re-export chain, a class method, or a
+ * global/built-in) — callers must treat null as SKIP, never as "no
+ * directive", to keep the false-positive rate low. */
+function findTopLevelWorkletDirective(
+  sourceFile: ts.SourceFile,
+  name: string,
+): boolean | null {
+  for (const stmt of sourceFile.statements) {
+    if (
+      ts.isFunctionDeclaration(stmt) &&
+      stmt.name?.text === name &&
+      stmt.body
+    ) {
+      return blockStartsWithWorkletDirective(stmt.body);
+    }
+    if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (
+          ts.isIdentifier(decl.name) &&
+          decl.name.text === name &&
+          decl.initializer &&
+          (ts.isArrowFunction(decl.initializer) ||
+            ts.isFunctionExpression(decl.initializer))
+        ) {
+          return blockStartsWithWorkletDirective(decl.initializer.body);
+        }
+      }
+    }
+  }
+  return null;
 }
 
 /** Look up `exportedName` in the resolved target file and report whether its
@@ -351,36 +416,7 @@ function resolveWorkletDirective(
   const found = readResolvedFile(basePath, fs);
   if (!found) return null;
   const targetSource = createSource(found.path, found.source);
-
-  let result: boolean | null = null;
-  function visit(node: ts.Node) {
-    if (result !== null) return;
-    if (
-      ts.isFunctionDeclaration(node) &&
-      node.name?.text === exportedName &&
-      node.body
-    ) {
-      result = blockStartsWithWorkletDirective(node.body);
-      return;
-    }
-    if (ts.isVariableStatement(node)) {
-      for (const decl of node.declarationList.declarations) {
-        if (
-          ts.isIdentifier(decl.name) &&
-          decl.name.text === exportedName &&
-          decl.initializer &&
-          (ts.isArrowFunction(decl.initializer) ||
-            ts.isFunctionExpression(decl.initializer))
-        ) {
-          result = blockStartsWithWorkletDirective(decl.initializer.body);
-          return;
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(targetSource);
-  return result;
+  return findTopLevelWorkletDirective(targetSource, exportedName);
 }
 
 /**
@@ -404,7 +440,26 @@ export function scanFileForWorkletOffenders(
   for (const { node, kind } of collectWorkletBodies(sourceFile)) {
     for (const call of collectBareCalleeCalls(node, sourceFile)) {
       const binding = importMap.get(call.name);
-      if (!binding) continue; // same-file helper or a library import — out of scope
+      if (!binding) {
+        // Not a cross-file import — either a same-file, module-scope helper
+        // (checked below) or a library built-in / genuine global (no
+        // top-level declaration by that name in this file at all, so
+        // findTopLevelWorkletDirective returns null and is correctly skipped).
+        const sameFileDirective = findTopLevelWorkletDirective(
+          sourceFile,
+          call.name,
+        );
+        if (sameFileDirective === false) {
+          offenders.push({
+            file: filePath,
+            line: call.line,
+            workletKind: kind,
+            calleeName: call.name,
+            resolvedFile: filePath,
+          });
+        }
+        continue;
+      }
 
       const basePath = resolveModuleBase(
         filePath,

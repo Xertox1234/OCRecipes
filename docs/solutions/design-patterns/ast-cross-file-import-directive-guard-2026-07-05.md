@@ -4,6 +4,7 @@ track: knowledge
 category: design-patterns
 tags: [static-guard, typescript-compiler-api, ast, cross-file, vitest, testing, reanimated, worklets, source-scanning]
 module: client
+applies_to: ["scripts/**", "client/lib/**"]
 created: '2026-07-05'
 ---
 
@@ -24,7 +25,7 @@ Two things distinguish this from a routine "cross-file invariant" script call pe
 
 ## Examples
 
-`scripts/worklet-directive-guard.ts` + `scripts/__tests__/worklet-directive-guard.test.ts` (this todo): scans `client/**` for worklet-context call sites (`runOnUI`, `useAnimatedStyle`, `useAnimatedScrollHandler`, Gesture-builder callbacks, etc.), and for each bare-identifier call inside a worklet body that resolves to a named import (relative path or `@/`/`@shared/` alias only — default/namespace imports and bare package specifiers are out of scope), parses the resolved target file and checks whether the exported declaration's body opens with a `"worklet";` directive statement.
+`scripts/worklet-directive-guard.ts` + `scripts/__tests__/worklet-directive-guard.test.ts` (this todo): scans `client/**` for worklet-context call sites (`runOnUI`, `useAnimatedStyle`, `useAnimatedScrollHandler`, Gesture-builder callbacks, etc.), and for each bare-identifier call inside a worklet body — whether it resolves to a named cross-file import (relative path or `@/`/`@shared/` alias) or a same-file, module-scope declaration — checks whether that declaration's body carries a `"worklet"` directive in its leading directive prologue. Resolution is deliberately MODULE-SCOPE (top-level) only, both for the cross-file target and the same-file case: it does not recurse into function/block bodies, so a nested/shadowed declaration sharing the name is never matched — a naive DFS that did walk every descendant was verified (empirically, against the installed Babel plugin) to produce both false positives and false negatives when a nested private helper shares a name with the real top-level declaration.
 
 Key structural choices worth reusing:
 
@@ -57,7 +58,7 @@ export interface ScanFsAdapter {
 //    correct default for a guard whose job is to be trusted, not exhaustive.
 ```
 
-**Testing shape:** pair unit tests using in-memory fixtures (prove both the regression — directive removed → flagged — and the compliant shape — directive present → not flagged, plus every deliberate scope boundary: built-ins/`Math.*` not flagged, same-file helpers not flagged, renamed/type-only imports handled, `@shared/` alias resolved, and — critically — that the shadow-check doesn't OVER-suppress a genuine offender sitting next to an unrelated local variable) with one integration test that walks the real source tree and asserts zero offenders today, with a "scans a sane number of files" floor so a broken walker can't pass vacuously.
+**Testing shape:** pair unit tests using in-memory fixtures (prove both the regression — directive removed → flagged — and the compliant shape — directive present → not flagged, plus every deliberate scope boundary: built-ins/`Math.*` not flagged, a directive-less same-file helper IS flagged, a nested/shadowed same-named decoy at non-module scope does NOT fool the module-scope-only resolution in either direction, renamed/type-only imports handled, `@shared/` alias resolved, and — critically — that the shadow-check doesn't OVER-suppress a genuine offender sitting next to an unrelated local variable) with one integration test that walks the real source tree and asserts zero offenders today, with a "scans a sane number of files" floor so a broken walker can't pass vacuously.
 
 ## Exceptions
 

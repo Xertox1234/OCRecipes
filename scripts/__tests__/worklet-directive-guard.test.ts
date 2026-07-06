@@ -100,7 +100,7 @@ describe("scanFileForWorkletOffenders (unit, synthetic fixtures)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("does not flag a same-file helper called inside a worklet (Babel's single-file pass reaches it)", () => {
+  it("flags a same-file, module-scope helper called inside a worklet that lacks its own directive (Babel does NOT auto-workletize it, same-file or not)", () => {
     const memfs = memoryFs({});
     const source = `
       import { runOnUI } from "react-native-reanimated";
@@ -114,6 +114,131 @@ describe("scanFileForWorkletOffenders (unit, synthetic fixtures)", () => {
     `;
     const offenders = scanFileForWorkletOffenders(
       "/virtual/caller3.ts",
+      source,
+      memfs,
+      NO_ALIASES,
+    );
+    expect(offenders).toHaveLength(1);
+    expect(offenders[0]).toMatchObject({
+      calleeName: "localHelper",
+      resolvedFile: "/virtual/caller3.ts",
+    });
+  });
+
+  it("does not flag a same-file helper that carries its own worklet directive", () => {
+    const memfs = memoryFs({});
+    const source = `
+      import { runOnUI } from "react-native-reanimated";
+      function localHelper(x: number) { "worklet"; return x + 1; }
+      function onPress() {
+        runOnUI(() => {
+          "worklet";
+          localHelper(1);
+        })();
+      }
+    `;
+    const offenders = scanFileForWorkletOffenders(
+      "/virtual/caller3b.ts",
+      source,
+      memfs,
+      NO_ALIASES,
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("does not flag a same-file bare call with no matching top-level declaration (a genuine global/built-in, e.g. parseInt)", () => {
+    const memfs = memoryFs({});
+    const source = `
+      import { runOnUI } from "react-native-reanimated";
+      function onPress() {
+        runOnUI(() => {
+          "worklet";
+          parseInt("1", 10);
+        })();
+      }
+    `;
+    const offenders = scanFileForWorkletOffenders(
+      "/virtual/caller3c.ts",
+      source,
+      memfs,
+      NO_ALIASES,
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("resolves a directive-less TOP-LEVEL export even when a nested, shadowed declaration of the same name DOES carry the directive (module-scope-only resolution — must not be fooled by nested decoys)", () => {
+    const memfs = memoryFs({
+      "/virtual/nested-decoy-good.ts": `
+        function outer() {
+          function badFn(x: number) { "worklet"; return x; } // nested decoy, directived
+        }
+        export function badFn(x: number) { return x + 1; } // real top-level export, NOT directived
+      `,
+    });
+    const source = `
+      import { runOnUI } from "react-native-reanimated";
+      import { badFn } from "./nested-decoy-good";
+      function onPress() {
+        runOnUI(() => {
+          "worklet";
+          badFn(1);
+        })();
+      }
+    `;
+    const offenders = scanFileForWorkletOffenders(
+      "/virtual/caller-nested-decoy-good.ts",
+      source,
+      memfs,
+      NO_ALIASES,
+    );
+    expect(offenders).toHaveLength(1);
+    expect(offenders[0].calleeName).toBe("badFn");
+  });
+
+  it("does not misreport a directived TOP-LEVEL export as an offender when a nested, shadowed declaration of the same name lacks the directive (module-scope-only resolution — must not false-positive on nested decoys)", () => {
+    const memfs = memoryFs({
+      "/virtual/nested-decoy-bad.ts": `
+        function outer() {
+          function goodFn(x: number) { return x; } // nested decoy, NOT directived
+        }
+        export function goodFn(x: number) { "worklet"; return x + 1; } // real top-level export, directived
+      `,
+    });
+    const source = `
+      import { runOnUI } from "react-native-reanimated";
+      import { goodFn } from "./nested-decoy-bad";
+      function onPress() {
+        runOnUI(() => {
+          "worklet";
+          goodFn(1);
+        })();
+      }
+    `;
+    const offenders = scanFileForWorkletOffenders(
+      "/virtual/caller-nested-decoy-bad.ts",
+      source,
+      memfs,
+      NO_ALIASES,
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it('recognizes the worklet directive when it isn\'t literally the first statement (a leading `"use strict";` before it is still a valid directive prologue)', () => {
+    const memfs = memoryFs({
+      "/virtual/use-strict-first.ts": `export function goodFn(x: number) { "use strict"; "worklet"; return x + 1; }`,
+    });
+    const source = `
+      import { runOnUI } from "react-native-reanimated";
+      import { goodFn } from "./use-strict-first";
+      function onPress() {
+        runOnUI(() => {
+          "worklet";
+          goodFn(1);
+        })();
+      }
+    `;
+    const offenders = scanFileForWorkletOffenders(
+      "/virtual/caller-use-strict.ts",
       source,
       memfs,
       NO_ALIASES,
