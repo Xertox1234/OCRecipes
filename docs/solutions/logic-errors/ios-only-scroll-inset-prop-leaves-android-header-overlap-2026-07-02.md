@@ -8,6 +8,7 @@ tags: [react-native, scrollview, platform-parity, transparent-header, navigation
 symptoms: [First list row hidden/clipped behind the nav header on Android while iOS looks fixed, A ScrollView fix that "works in the simulator" but the bug report reproduces on Android, contentInsetAdjustmentBehavior="automatic" present with no paddingTop/useHeaderHeight on the same scroll content]
 applies_to: [client/screens/**/*.tsx, client/components/**/*.tsx]
 created: '2026-07-02'
+last_updated: '2026-07-05'
 ---
 
 # iOS-only contentInsetAdjustmentBehavior as the sole header-inset fix leaves Android content under the transparent header
@@ -36,23 +37,34 @@ on both platforms. Fixing it with an iOS-only knob repairs exactly half the bug.
 
 ## Solution
 
-Use the app-wide cross-platform mechanism instead — read the real header height and pad the
-scroll content (the convention already used by 22 screens):
+As of 2026-07-05 the app-wide cross-platform mechanism is `useHeaderContentInset()`
+(`client/hooks/useHeaderContentInset.ts`), a thin wrapper around `useHeaderHeight()` — or the
+`ScreenScrollView` wrapper (`client/components/ScreenScrollView.tsx`) for a plain `ScrollView`
+screen. Prefer these over importing `useHeaderHeight` directly and hand-rolling the math:
 
 ```tsx
-import { useHeaderHeight } from "@react-navigation/elements";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 
-const headerHeight = useHeaderHeight();
+const headerInset = useHeaderContentInset(Spacing.xl); // headerHeight + Spacing.xl
 
 <ScrollView
   contentContainerStyle={{
-    paddingTop: headerHeight, // add + Spacing.* only if no first-child margin provides the gap
+    paddingTop: headerInset,
     paddingBottom: insets.bottom + Spacing.xl,
   }}
 >
+
+// or, for a plain ScrollView screen:
+import { ScreenScrollView } from "@/components/ScreenScrollView";
+
+<ScreenScrollView
+  headerInsetExtra={Spacing.xl}
+  contentContainerStyle={{ paddingBottom: insets.bottom + Spacing.xl }}
+>
 ```
 
-Fixed in commit `b5dce2b2` (`client/screens/SettingsScreen.tsx`). The only sanctioned use of
+Fixed in commit `b5dce2b2` (`client/screens/SettingsScreen.tsx`), then centralized in
+`todos/archive/P3-2026-07-02-shared-header-inset-mechanism.md`. The only sanctioned use of
 `contentInsetAdjustmentBehavior` in this codebase is `"never"` to *opt out* of automatic
 insets on modal hero screens (`FeaturedRecipeDetailScreen`, `RecipeDetailContent`).
 
@@ -60,16 +72,21 @@ insets on modal hero screens (`FeaturedRecipeDetailScreen`, `RecipeDetailContent
 
 - When a diff fixes a layout/inset/keyboard issue with any iOS-only ScrollView prop, demand
   Android parity: either the bug is provably iOS-only, or the fix must use a cross-platform
-  mechanism (`useHeaderHeight()` + `paddingTop`, safe-area insets).
-- Root cause is systemic: `useScreenOptions()` defaults `headerTransparent: true`, forcing a
-  per-screen inset workaround on every list screen. A shared owner for the inset is tracked in
-  `todos/P3-2026-07-02-shared-header-inset-mechanism.md`.
+  mechanism (`useHeaderContentInset()` / `ScreenScrollView`, safe-area insets).
+- `useScreenOptions()` still defaults `headerTransparent: true`, so any new scrollable screen
+  needs the inset. Reach for `useHeaderContentInset()` (or `ScreenScrollView` for a plain
+  `ScrollView`) rather than importing `useHeaderHeight` directly and hand-rolling
+  `paddingTop` math — see `docs/rules/react-native.md`. Migration to the shared mechanism is
+  staged (5 of 23 screens as of 2026-07-05); a screen still on the raw `useHeaderHeight()`
+  pattern isn't wrong, just not yet migrated.
 
 ## Related Files
 
-- `client/screens/SettingsScreen.tsx` — the fixed screen
+- `client/hooks/useHeaderContentInset.ts` — the canonical inset hook
+- `client/components/ScreenScrollView.tsx` — the `ScrollView` wrapper built on that hook
+- `client/screens/SettingsScreen.tsx` — the originally-fixed screen, now migrated to `ScreenScrollView`
 - `client/hooks/useScreenOptions.ts` — `transparent = true` default (root cause)
-- `client/screens/SavedItemsScreen.tsx`, `client/screens/HistoryScreen.tsx` — canonical `useHeaderHeight()` examples
+- `client/screens/SavedItemsScreen.tsx`, `client/screens/meal-plan/PantryScreen.tsx` — canonical `useHeaderContentInset()` examples for `FlatList`/`SectionList` screens
 
 ## See Also
 
