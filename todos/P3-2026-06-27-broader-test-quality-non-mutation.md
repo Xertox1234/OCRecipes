@@ -3,10 +3,10 @@
 ---
 
 title: "Broader test-quality: property-based, contract/integration, and E2E coverage"
-status: backlog
+status: blocked
 priority: low
 created: 2026-06-27
-updated: 2026-06-27
+updated: 2026-07-07
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -84,3 +84,12 @@ is a tracking umbrella, not a single unit of work.)
 
 - Initial creation. Split out of the mutation backlog todo so the non-mutation test-quality
   workstreams are tracked independently.
+
+### 2026-07-07
+
+- Marked `blocked` by the `/todo` orchestrator (P3-only run). This file is explicitly a
+  tracking umbrella, not a single automatable unit — self-declared above: "expect each to
+  need its own design + PR (and human review)." Dispatching a `todo-executor` against it as-is
+  risks it either failing or attempting all three initiatives in one oversized PR. Unblock by
+  splitting each Acceptance Criteria bullet into its own focused todo with concrete file paths
+  when actually scheduled, then set this umbrella to `done` (or archive it) once split.
