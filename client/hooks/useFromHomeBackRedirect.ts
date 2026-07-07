@@ -1,11 +1,9 @@
 import { usePreventRemove } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
-import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
-import type { MainTabParamList } from "@/navigation/MainTabNavigator";
 
 interface FromHomeNavigation {
   dispatch: NavigationProp<ParamListBase>["dispatch"];
-  getParent: NavigationProp<ParamListBase>["getParent"];
+  getParent: () => { navigate: (screen: "HomeTab") => void } | undefined;
   setParams: (params: { fromHome: undefined }) => void;
 }
 
@@ -46,8 +44,6 @@ export function useFromHomeBackRedirect(
       return;
     }
     navigation.setParams({ fromHome: undefined });
-    navigation
-      .getParent<BottomTabNavigationProp<MainTabParamList>>()
-      ?.navigate("HomeTab");
+    navigation.getParent()?.navigate("HomeTab");
   });
 }
