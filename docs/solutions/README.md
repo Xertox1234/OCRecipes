@@ -17,6 +17,9 @@ Issues where code runs but produces incorrect behavior.
 
 - **[stale-closure-callback-refs.md](./logic-errors/stale-closure-callback-refs.md)** — Using refs instead of state for synchronous checks in callbacks
 - **[useeffect-cleanup-memory-leak.md](./logic-errors/useeffect-cleanup-memory-leak.md)** — Cleaning up timers and subscriptions on unmount
+- **[native-stack-back-dispatches-pop-not-goback-2026-07-07.md](./logic-errors/native-stack-back-dispatches-pop-not-goback-2026-07-07.md)** — native-stack's back button/gesture dispatch POP, not GO_BACK
+- **[beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md](./logic-errors/beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md)** — Hand-rolled beforeRemove + preventDefault() desyncs native-stack from JS state; use usePreventRemove
+- **[always-armed-preventremove-early-return-skips-redirect-2026-07-07.md](./logic-errors/always-armed-preventremove-early-return-skips-redirect-2026-07-07.md)** — Every early-return branch in a multi-concern beforeRemove handler must reapply the same redirect condition
 
 #### [runtime-errors/](./runtime-errors/)
 
@@ -61,13 +64,17 @@ Decomposition manifests live under [`_manifests/`](./_manifests/) (prefixed `_` 
 | Dairy-free / gluten-free recipes wrongly flagged or over-excluded | [allergen-keyword-matcher-plant-substitute-false-positive-2026-05-20.md](./logic-errors/allergen-keyword-matcher-plant-substitute-false-positive-2026-05-20.md) |
 | Runtime type errors from database                                 | [unsafe-type-cast-zod-validation.md](./runtime-errors/unsafe-type-cast-zod-validation.md)                                                                       |
 | No style autocomplete                                             | [react-native-style-typing.md](./code-quality/react-native-style-typing.md)                                                                                     |
+| beforeRemove back-button interception never fires on device        | [native-stack-back-dispatches-pop-not-goback-2026-07-07.md](./logic-errors/native-stack-back-dispatches-pop-not-goback-2026-07-07.md)                          |
+| "[Screen] was removed natively but didn't get removed from JS state" | [beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md](./logic-errors/beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md)                |
+| Redirect works for back-button but not after a successful save     | [always-armed-preventremove-early-return-skips-redirect-2026-07-07.md](./logic-errors/always-armed-preventremove-early-return-skips-redirect-2026-07-07.md)    |
 
 ### By Tag
 
 - **react**: stale-closure-callback-refs, useeffect-cleanup-memory-leak
-- **hooks**: stale-closure-callback-refs, useeffect-cleanup-memory-leak
+- **hooks**: stale-closure-callback-refs, useeffect-cleanup-memory-leak, native-stack-back-dispatches-pop-not-goback-2026-07-07, beforeremove-preventdefault-desyncs-native-stack-2026-07-07, always-armed-preventremove-early-return-skips-redirect-2026-07-07
 - **typescript**: unsafe-type-cast-zod-validation, react-native-style-typing
 - **zod**: unsafe-type-cast-zod-validation
+- **react-navigation**: native-stack-back-dispatches-pop-not-goback-2026-07-07, beforeremove-preventdefault-desyncs-native-stack-2026-07-07, always-armed-preventremove-early-return-skips-redirect-2026-07-07
 
 ## YAML Frontmatter Schema
 

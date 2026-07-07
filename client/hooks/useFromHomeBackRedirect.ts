@@ -1,7 +1,7 @@
 import { usePreventRemove } from "@react-navigation/native";
 import type { NavigationProp, ParamListBase } from "@react-navigation/native";
 
-interface FromHomeNavigation {
+export interface FromHomeNavigation {
   dispatch: NavigationProp<ParamListBase>["dispatch"];
   getParent: () => { navigate: (screen: "HomeTab") => void } | undefined;
   setParams: (params: { fromHome: undefined }) => void;
@@ -10,8 +10,16 @@ interface FromHomeNavigation {
 // The native-stack header back button and the iOS swipe-back gesture both
 // dispatch a StackActions.pop() ("POP"), not CommonActions.goBack()
 // ("GO_BACK") — only an explicit navigation.goBack() call produces the
-// latter. Both must be treated as "the user went back".
-const BACK_ACTION_TYPES = new Set(["GO_BACK", "POP"]);
+// latter. Both must be treated as "the user went back". Exported so
+// RecipeCreateScreen's own beforeRemove interception (which must interleave
+// an unsaved-changes discard guard, so it can't just call this hook) checks
+// the same set instead of a second, driftable copy.
+export const BACK_ACTION_TYPES = new Set(["GO_BACK", "POP"]);
+
+export function redirectToHomeTab(navigation: FromHomeNavigation) {
+  navigation.setParams({ fromHome: undefined });
+  navigation.getParent()?.navigate("HomeTab");
+}
 
 /**
  * A screen reached via a cross-tab shortcut from Home (e.g. "Grocery List",
@@ -43,7 +51,6 @@ export function useFromHomeBackRedirect(
       navigation.dispatch(e.data.action);
       return;
     }
-    navigation.setParams({ fromHome: undefined });
-    navigation.getParent()?.navigate("HomeTab");
+    redirectToHomeTab(navigation);
   });
 }

@@ -7,16 +7,12 @@ import {
 } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
-import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
-import type { MainTabParamList } from "@/navigation/MainTabNavigator";
 import WizardShell from "@/components/recipe-wizard/WizardShell";
-
-// The native-stack header back button and the iOS swipe-back gesture both
-// dispatch a StackActions.pop() ("POP"), not CommonActions.goBack()
-// ("GO_BACK") — only an explicit navigation.goBack() call produces the
-// latter. Both mean "the user went back".
-const BACK_ACTION_TYPES = new Set(["GO_BACK", "POP"]);
+import {
+  BACK_ACTION_TYPES,
+  redirectToHomeTab,
+} from "@/hooks/useFromHomeBackRedirect";
 
 type RecipeCreateScreenNavigationProp = NativeStackNavigationProp<
   MealPlanStackParamList,
@@ -63,21 +59,23 @@ export default function RecipeCreateScreen() {
   // the native screen stack). Always armed (not just while dirty/fromHome)
   // so the discard confirm and the redirect share one interception point —
   // running both off separate conditions would race an Alert against an
-  // immediate tab switch.
+  // immediate tab switch. `proceed` is the single exit for every branch
+  // (saving, discarding, or a plain clean back) so a save-triggered goBack()
+  // still redirects home instead of silently falling through to a raw
+  // dispatch — it's leaving the screen the same way an explicit back would.
   usePreventRemove(true, (e) => {
+    const proceed = () => {
+      if (fromHome && BACK_ACTION_TYPES.has(e.data.action.type)) {
+        redirectToHomeTab(navigation);
+      } else {
+        navigation.dispatch(e.data.action);
+      }
+    };
+
     if (isSavingRef.current) {
-      navigation.dispatch(e.data.action);
+      proceed();
       return;
     }
-
-    const redirectHome = () => {
-      navigation.setParams({ fromHome: undefined });
-      navigation
-        .getParent<BottomTabNavigationProp<MainTabParamList>>()
-        ?.navigate("HomeTab");
-    };
-    const isBackFromHome =
-      fromHome && BACK_ACTION_TYPES.has(e.data.action.type);
 
     if (isDirtyRef.current) {
       Alert.alert(
@@ -85,27 +83,13 @@ export default function RecipeCreateScreen() {
         "You have unsaved changes. Are you sure you want to go back?",
         [
           { text: "Keep editing", style: "cancel" },
-          {
-            text: "Discard",
-            style: "destructive",
-            onPress: () => {
-              if (isBackFromHome) {
-                redirectHome();
-              } else {
-                navigation.dispatch(e.data.action);
-              }
-            },
-          },
+          { text: "Discard", style: "destructive", onPress: proceed },
         ],
       );
       return;
     }
 
-    if (isBackFromHome) {
-      redirectHome();
-    } else {
-      navigation.dispatch(e.data.action);
-    }
+    proceed();
   });
 
   return (
