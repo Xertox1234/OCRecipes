@@ -37,18 +37,26 @@ export type MealPlanStackParamList = {
   RecipeCreate: {
     prefill?: ImportedRecipeData;
     returnToMealPlan?: { mealType: string; plannedDate: string };
+    /** Set when this screen was reached (via RecipeImport/RecipePhotoImport) from Home — see useFromHomeBackRedirect. */
+    fromHome?: boolean;
   };
   RecipeImport:
-    | { returnToMealPlan?: { mealType: string; plannedDate: string } }
+    | {
+        returnToMealPlan?: { mealType: string; plannedDate: string };
+        /** Set when navigated to directly from Home — see useFromHomeBackRedirect. */
+        fromHome?: boolean;
+      }
     | undefined;
   RecipePhotoImport: {
     photoUri: string;
     returnToMealPlan?: { mealType: string; plannedDate: string };
+    /** Set when navigated to directly from Home — see useFromHomeBackRedirect. */
+    fromHome?: boolean;
   };
-  GroceryLists: undefined;
+  GroceryLists: { fromHome?: boolean } | undefined;
   GroceryList: { listId: number };
-  Pantry: undefined;
-  CookbookCreate: { cookbookId?: number } | undefined;
+  Pantry: { fromHome?: boolean } | undefined;
+  CookbookCreate: { cookbookId?: number; fromHome?: boolean } | undefined;
   CookbookList: undefined;
   CookbookDetail: { cookbookId: number };
   FavouriteRecipes: undefined;

@@ -160,14 +160,17 @@ export default function HomeScreen() {
   );
 
   const handleImportUrlNavigate = useCallback(() => {
-    navigation.navigate("MealPlanTab", { screen: "RecipeImport" });
+    navigation.navigate("MealPlanTab", {
+      screen: "RecipeImport",
+      params: { fromHome: true },
+    });
   }, [navigation]);
 
   const handleImportPhotoNavigate = useCallback(
     (uri: string) => {
       navigation.navigate("MealPlanTab", {
         screen: "RecipePhotoImport",
-        params: { photoUri: uri },
+        params: { photoUri: uri, fromHome: true },
       });
     },
     [navigation],

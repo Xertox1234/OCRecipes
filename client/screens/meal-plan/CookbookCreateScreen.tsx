@@ -35,6 +35,7 @@ import {
 } from "@/constants/theme";
 import type { CookbookCreateScreenNavigationProp } from "@/types/navigation";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
+import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
 const NAME_MAX = 100;
 const DESCRIPTION_MAX = 500;
@@ -44,6 +45,7 @@ export default function CookbookCreateScreen() {
   const route = useRoute<RouteProp<MealPlanStackParamList, "CookbookCreate">>();
   const cookbookId = route.params?.cookbookId;
   const isEditMode = !!cookbookId;
+  useFromHomeBackRedirect(navigation, route.params?.fromHome);
 
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();

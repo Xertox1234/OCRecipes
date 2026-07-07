@@ -2,7 +2,8 @@ import React, { useCallback, useState } from "react";
 import { StyleSheet, View, Pressable, FlatList, TextInput } from "react-native";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -26,11 +27,15 @@ import {
 import { usePremiumContext } from "@/context/PremiumContext";
 import { VERIFICATION_STREAK_UNLOCK_THRESHOLD } from "@shared/types/premium";
 import type { GroceryListsScreenNavigationProp } from "@/types/navigation";
+import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { GroceryList } from "@shared/schema";
 import { formatDateRange } from "@/lib/format";
+import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
 export default function GroceryListsScreen() {
   const navigation = useNavigation<GroceryListsScreenNavigationProp>();
+  const route = useRoute<RouteProp<MealPlanStackParamList, "GroceryLists">>();
+  useFromHomeBackRedirect(navigation, route.params?.fromHome);
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useSafeTabBarHeight();
   const { theme } = useTheme();
