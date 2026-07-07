@@ -4,8 +4,8 @@ track: bug
 category: logic-errors
 module: scripts
 severity: medium
-tags: [ts-morph, typescript-compiler-api, static-analysis, ast, dead-code, reference-count, pg-lab]
-symptoms: ['A barrel-re-exported symbol (`export { x } from "./y"` or `export * from "./y"`) appears as TWO separate export candidates when iterating `getExportedDeclarations()` over every source file in a project', 'A reference-count computed as `findReferencesAsNodes().length - 1` reports 0 for an export that has exactly one real external usage', 'A dead-code/unused-export detector built on these APIs produces both false-positive duplicates and false-positive "unused" results for exports that are actually used', 'findReferencesAsNodes() counts a barrel\'s own export specifier as a reference, so a symbol reachable ONLY through an unused barrel reports a nonzero reference count even though it has no real external usage']
+tags: [ts-morph, typescript-compiler-api, static-analysis, ast, dead-code, reference-count, pg-lab, silent-failure]
+symptoms: ['A barrel-re-exported symbol (`export { x } from "./y"` or `export * from "./y"`) appears as TWO separate export candidates when iterating `getExportedDeclarations()` over every source file in a project', 'A reference-count computed as `findReferencesAsNodes().length - 1` reports 0 for an export that has exactly one real external usage', 'A dead-code/unused-export detector built on these APIs produces both false-positive duplicates and false-positive "unused" results for exports that are actually used', 'findReferencesAsNodes() counts a barrel\'s own export specifier as a reference, so a symbol reachable ONLY through an unused barrel reports a nonzero reference count even though it has no real external usage', 'project.addSourceFilesAtPaths([...]) silently adds zero files for one literal path in the array that no longer matches anything on disk — no throw, no console warning, and the returned SourceFile[] is easy to discard without checking it']
 applies_to: [scripts/pg-lab/**/*.ts]
 created: '2026-07-06'
 last_updated: '2026-07-07'
@@ -46,6 +46,12 @@ hand-built fixture missed both):
   "./origin"` with no other importers) reports a nonzero reference count even though it
   has zero real external usages — the barrel's `ExportSpecifier` node is returned as a
   reference.
+- `project.addSourceFilesAtPaths([...literal paths...])` returns the `SourceFile[]` it
+  actually added — but if one literal path in the array (as opposed to a glob) no longer
+  matches any file on disk (renamed, moved, deleted), that entry contributes zero files to
+  the result with no exception and no console output. Code that discards the return value
+  has no way to tell "the file was scanned" from "the file silently dropped out of the
+  project."
 
 ## Root Cause
 
@@ -70,6 +76,14 @@ hand-built fixture missed both):
    fixture: `origin.ts` exports `deadFn` with zero external callers; `barrel.ts` does
    `export { deadFn } from "./origin"`; then
    `declaration.findReferencesAsNodes().length` is 1, not 0.
+3. `addSourceFilesAtPaths()` is glob-based under the hood (`globSync` over each array
+   entry) — a literal path with no glob metacharacters is just a degenerate glob that
+   matches at most one file. Zero matches for a broken glob and zero matches for a
+   correct-but-currently-empty glob are indistinguishable to the API, so it has no basis
+   to warn; "matched nothing" is valid, ordinary glob behavior, not an error condition.
+   The caller is the only one who knows a specific entry was meant to be load-bearing
+   (e.g., a single hardcoded entrypoint file, as opposed to a directory glob where zero
+   matches might be legitimate).
 
 ## Solution
 
@@ -134,6 +148,45 @@ hand-built fixture missed both):
    `ImportEdge.kind: 'import' | 'reexport'`; this document focuses specifically on the
    `findReferencesAsNodes()` / `getExportedDeclarations()` API-gotchas class.
 
+   **Update 2026-07-07 — prefer `ExportSpecifier.getExportDeclaration()` over the
+   hand-rolled `parent.getParent()?.getParent()` walk shown above.** ts-morph exposes a
+   direct, non-optional accessor for exactly this ancestor
+   (`getExportDeclaration(): ExportDeclaration`, implemented as an unbounded
+   `getFirstAncestorByKindOrThrow()` walk, not hardcoded to two levels), so the guarded
+   two-hop climb and its "should never happen, but keep safe" `Node.isExportDeclaration`
+   re-check are both unnecessary once `parent` is narrowed to `ExportSpecifier`:
+
+   ```ts
+   const externalRefs = allRefs.filter(ref => {
+     const parent = ref.getParent();
+     if (!Node.isExportSpecifier(parent)) return true;
+     return !parent.getExportDeclaration().hasModuleSpecifier();
+   });
+   ```
+
+   Same behavior for every case (local `export { x }`, named re-export, aliased
+   `export { x as y } from`), one API call instead of two `getParent()` hops plus a
+   defensive re-check, and resilient to a future ts-morph AST nesting change the
+   hand-rolled walk would silently mis-navigate.
+
+4. **Verify a load-bearing literal path was actually added, when using
+   `addSourceFilesAtPaths()` for a single specific file (not a directory glob).** Capture
+   the return value and confirm the expected absolute path is present; throw if not —
+   silence here means the file quietly dropped out of the project with no other signal:
+
+   ```ts
+   const entryPointPath = path.join(configDir, "client/index.js");
+   const added = project.addSourceFilesAtPaths([...globs, entryPointPath]);
+   if (!added.some(sf => sf.getFilePath() === entryPointPath)) {
+     throw new Error(`expected entrypoint not found at ${entryPointPath} -- did it move?`);
+   }
+   ```
+
+   This converts a silent, permanent regression (the file drops out of the graph on a
+   future rename with zero test coverage catching it — verified: no fixture-based test
+   exercises this literal production path, since fixtures use a synthetic tsconfig, never
+   the real repo's) into a loud, immediate failure the next time the tool is run.
+
 ## Prevention
 
 - When iterating any per-file ts-morph API that can resolve to a declaration OUTSIDE the
@@ -158,12 +211,28 @@ hand-built fixture missed both):
   true`) and exclude it — a barrel passing a symbol through is not itself a use of that
   symbol. This applies symmetrically to whatever cheap/AST-only pass-1 mechanism a
   project uses too (not just the expensive pass).
+- When a ts-morph node-navigation need matches a named accessor on the node class
+  (`ExportSpecifier.getExportDeclaration()`, and others like it), prefer the accessor over
+  hand-walking `getParent()` — grep the relevant `.d.ts` first (`node_modules/ts-morph/lib/
+  ts-morph.d.ts`) before writing a multi-hop parent chain from scratch.
+- `addSourceFilesAtPaths()` treats every array entry as a glob, including a literal path
+  with no metacharacters — pass the return value through a presence check for any entry
+  that MUST be found (a single hardcoded entrypoint file), not just entries meant as
+  best-effort directory scans.
+- When a local code comment is updated to correct or add a caveat to a claim (e.g. "no
+  adjustment needed... EXCEPT for barrels"), grep the same file for other comments —
+  especially a top-of-file header docstring — asserting the same now-qualified claim
+  unconditionally. A caveat added only at the point of use, with the file's header still
+  making the old unqualified claim, reads as internally contradictory to a future
+  maintainer who trusts the header (the natural first-read entry point) and could
+  "simplify away" the caveat's guard as apparently redundant.
 
 ## Related Files
 
 - `scripts/pg-lab/symbol-graph.ts` — `extractGraph`'s origin-file filter,
-  `findReferencesCount`'s `Node.isReferenceFindable()` guard, and the
-  `ExportSpecifier`/`hasModuleSpecifier` filter in the reference-counting logic
+  `findReferencesCount`'s `Node.isReferenceFindable()` guard and
+  `getExportDeclaration()`-based barrel filter, and `loadProject`'s
+  `addSourceFilesAtPaths()` presence check for the `client/index.js` entrypoint
 - `.claude/hooks/test-pg-lab-symbol-graph.sh` — the fixture test's namespace-import
   (`getOrderInternal`) and barrel (`server/storage/index.ts`) shapes
 
