@@ -48,8 +48,10 @@
  *   `findReferencesAsNodes()` on its declaration — a real, project-wide, symbol-aware
  *   reference count (the raw node count IS the external-usage count: verified empirically
  *   that ts-morph's findReferencesAsNodes() returns only usage sites, never the
- *   declaration's own name node, so no "minus 1" adjustment is needed or correct). This is
- *   the ONLY class of export that pays for the expensive check. It matters a great deal in
+ *   declaration's own name node, so no "minus 1" adjustment is needed or correct -- EXCEPT
+ *   a barrel's own `export {x} from "./y"` specifier, which DOES show up as a spurious
+ *   reference and must be filtered out; see findReferencesCount's ExportSpecifier check).
+ *   This is the ONLY class of export that pays for the expensive check. It matters a great deal in
  *   practice: this repo's `server/storage/index.ts` re-exports every domain module via
  *   `import * as users from "./users"` (a NAMESPACE import), so pass 1 alone would
  *   misreport nearly every storage-domain export as "0 references" — pass 2 is what
@@ -217,13 +219,39 @@ function findReferencesCount(declaration: Node): number {
   // ref_count to 0 and misreported it as dead -- caught by the fixture test's
   // namespace-import assertion (server/routes/orders.ts's `storageInternal
   // .getOrderInternal()` access).
-  return declaration.findReferencesAsNodes().length;
+  //
+  // findReferencesAsNodes() DOES count a barrel's `export { x } from "./y"` specifier as a
+  // reference to `x` -- verified empirically against a synthetic fixture (a name node whose
+  // parent is an ExportSpecifier under an ExportDeclaration with a module specifier). That
+  // is the SAME pass-through-is-not-a-use bug the ImportEdge.kind/cheapCounts fix addresses
+  // for pass 1, reached via pass 2 instead: a barrel-only-re-exported export with zero real
+  // importers would otherwise still report ref_count 1 here even after the cheapCounts fix,
+  // since the barrel's own re-export specifier is the "reference" being counted. A LOCAL
+  // `export { x }` (no `from` clause, i.e. no module specifier) is not a re-export edge --
+  // it genuinely exposes the declaration under a public name and still counts.
+  return declaration.findReferencesAsNodes().filter((ref) => {
+    const parent = ref.getParent();
+    if (!Node.isExportSpecifier(parent)) return true;
+    // getExportDeclaration() is ts-morph's own non-optional accessor for an
+    // ExportSpecifier's owning ExportDeclaration -- preferred over hand-walking
+    // parent.getParent() twice, since it can't silently resolve the wrong ancestor if a
+    // future ts-morph version changes the AST's exact nesting depth.
+    return !parent.getExportDeclaration().hasModuleSpecifier();
+  }).length;
 }
 
 interface ImportEdge {
   fromPath: string;
   toPath: string;
   names: string[];
+  // "import" -- a genuine ImportDeclaration or dynamic import()/require()/vi.mock() edge:
+  // the FROM file actually consumes the named bindings, so it counts as a reference.
+  // "reexport" -- a barrel's `export {...} from "./y"` / `export * from "./y"`: the FROM
+  // file merely passes the binding through without consuming it itself. The edge is still
+  // real for blast-radius/cycle purposes (changing `y.ts` can affect the barrel and its own
+  // consumers), so it stays in `imports`, but it must NOT count as a reference to the names
+  // it re-exports -- a barrel's mere re-export of `x` is not a USE of `x` (see cheapCounts).
+  kind: "import" | "reexport";
 }
 
 interface ExportRow {
@@ -252,12 +280,36 @@ function loadProject(tsConfigFilePath: string): Project {
   });
   if (isDefaultRepoConfig) {
     const configDir = path.dirname(tsConfigFilePath);
-    project.addSourceFilesAtPaths([
+    // client/index.js -- the app's registered root entrypoint (package.json "main",
+    // `registerRootComponent(App)`) -- is a plain .js file, so the "client/**/*.{ts,tsx}"
+    // glob below never matches it, making it (and its one real edge into
+    // client/App.tsx) invisible to blast/cycles entirely, not just ref-counting.
+    // ts-morph parses an explicitly-added .js file fine without "allowJs" in the
+    // tsconfig (verified empirically) -- this is the ONLY root-level .js entrypoint in
+    // the tracked repo (the sibling root-level `/index.js` is a gitignored build
+    // artifact, not source). Added as an exact path, not a broader glob, to avoid
+    // pulling in unrelated .js files under client/ (there are none today, but a future
+    // one shouldn't silently join the graph without a deliberate glob change).
+    const entryPointPath = path.join(configDir, "client/index.js");
+    const added = project.addSourceFilesAtPaths([
       path.join(configDir, "server/**/*.ts"),
       path.join(configDir, "client/**/*.{ts,tsx}"),
       path.join(configDir, "shared/**/*.ts"),
       path.join(configDir, "scripts/**/*.ts"),
+      entryPointPath,
     ]);
+    // addSourceFilesAtPaths() silently adds zero files for a literal path that matches
+    // nothing -- no throw, no warning (verified against ts-morph's glob-based
+    // implementation). Without this check, a future rename/move of client/index.js would
+    // silently drop its edge into client/App.tsx from the graph -- and since
+    // symbol-graph.sh's dead-exports allowlist no longer carries a client/App.tsx fallback
+    // entry (removed once this entrypoint edge made it unnecessary), App.tsx would start
+    // silently false-flagging as dead with no test catching it.
+    if (!added.some((sf) => sf.getFilePath() === entryPointPath)) {
+      throw new Error(
+        `loadProject: expected entrypoint not found at ${entryPointPath} -- did client/index.js move or get renamed? symbol-graph.sh's dead-exports allowlist depends on this file being scanned.`,
+      );
+    }
   }
   return project;
 }
@@ -300,7 +352,12 @@ function extractGraph(
         if (spec.isTypeOnly()) continue; // inline `{ type Foo, bar }` -- Foo has no runtime edge
         names.push(spec.getName());
       }
-      imports.push({ fromPath, toPath: rel(target.getFilePath()), names });
+      imports.push({
+        fromPath,
+        toPath: rel(target.getFilePath()),
+        names,
+        kind: "import",
+      });
     }
 
     for (const decl of sourceFile.getExportDeclarations()) {
@@ -313,8 +370,14 @@ function extractGraph(
         names.push(spec.getName());
       }
       // `export * from "./y"` (decl.isNamespaceExport()) contributes no discrete name,
-      // same rationale as a namespace import above.
-      imports.push({ fromPath, toPath: rel(target.getFilePath()), names });
+      // same rationale as a namespace import above. kind: "reexport" -- see the ImportEdge
+      // comment for why this must not feed cheapCounts.
+      imports.push({
+        fromPath,
+        toPath: rel(target.getFilePath()),
+        names,
+        kind: "reexport",
+      });
     }
 
     for (const toAbsPath of collectDynamicEdgeTargets(
@@ -322,7 +385,12 @@ function extractGraph(
       aliasRoots,
       loadedPaths,
     )) {
-      imports.push({ fromPath, toPath: rel(toAbsPath), names: [] });
+      imports.push({
+        fromPath,
+        toPath: rel(toAbsPath),
+        names: [],
+        kind: "import",
+      });
     }
 
     for (const [name, decls] of sourceFile.getExportedDeclarations()) {
@@ -344,6 +412,10 @@ function extractGraph(
 
   const cheapCounts = new Map<string, number>();
   for (const edge of imports) {
+    // A barrel's mere re-export of `x` is not a USE of `x` -- skip "reexport" edges here so
+    // a barrel that pass-throughs an export nobody actually imports doesn't inflate its
+    // ref_count and mask it as used (see the ImportEdge.kind comment).
+    if (edge.kind === "reexport") continue;
     for (const name of edge.names) {
       const key = `${edge.toPath}::${name}`;
       cheapCounts.set(key, (cheapCounts.get(key) ?? 0) + 1);
