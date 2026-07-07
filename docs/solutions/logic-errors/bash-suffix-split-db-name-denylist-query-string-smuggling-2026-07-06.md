@@ -8,6 +8,7 @@ tags: [postgres, bash, shell, denylist, safety-rail, pg-lab, url-parsing, silent
 applies_to: [scripts/pg-lab/**/*.sh]
 symptoms: ['A `case "${URL##*/}" in known_db_1 | known_db_2) refuse ;; esac` guard passes for a connection string with a trailing `?query=string` or `#fragment`', The tool actually making the connection (psql, or anything with a real URL parser) connects to the real denylisted database anyway, No error or warning — the script proceeds as if the connection string were safe]
 created: '2026-07-06'
+last_updated: '2026-07-07'
 ---
 
 # Bash `${VAR##*/}` database-name denylist checks must strip query string/fragment first
@@ -81,13 +82,19 @@ of shell string surgery. Treat "match a URL component with `${VAR##*/}`/`${VAR%%
 alone" as suspect in review — the fix above is 2 lines and cheap to apply everywhere this
 pattern recurs.
 
-**Known instances of this same unfixed pattern in this codebase as of 2026-07-06** (found
-during review of this fix, out of scope for the PR that fixed `flake-report.sh` — worth
-aligning in a follow-up):
+**Update 2026-07-07:** all three scripts below are now fixed — `init.sh` and
+`codify-neardup.sh` in PR #538 (2026-07-06), `eval-report.sh` in the sibling PR mentioned
+above. See the companion doc linked in See Also for the current per-script fix matrix
+across the full `scripts/pg-lab/*.sh` family, including a residual `?dbname=`
+query-parameter-override gap this simpler fix does not close.
 
-- `scripts/pg-lab/init.sh`
-- `scripts/pg-lab/codify-neardup.sh`
-- `scripts/pg-lab/eval-report.sh` (sibling, in-progress todo/PR as of this writing)
+~~Known instances of this same unfixed pattern in this codebase as of 2026-07-06~~ (found
+during review of this fix, out of scope for the PR that fixed `flake-report.sh` — resolved,
+see update above):
+
+- ~~`scripts/pg-lab/init.sh`~~ fixed
+- ~~`scripts/pg-lab/codify-neardup.sh`~~ fixed
+- ~~`scripts/pg-lab/eval-report.sh`~~ fixed
 
 ## Related Files
 
@@ -95,5 +102,6 @@ aligning in a follow-up):
 
 ## See Also
 
+- [A database-name denylist parsed by naive string-slicing is bypassed by a connection-string query string](denylist-bypassed-by-connection-string-query-string-2026-07-06.md) — the same bug family, independently discovered the same day via `codify-neardup.sh`/`injection-report.sh`; has the current per-script fix matrix, the residual `?dbname=`-override gap, and a libpq-behavior nuance (`#` is a literal dbname character in connection strings, not a fragment delimiter)
 - [Buffer-then-flush writers must chunk multi-row INSERTs](../runtime-errors/postgres-bind-parameter-limit-buffered-multirow-insert-2026-07-06.md) — found in the same review pass, a different PG Lab safety gap
 - [psql -c does not interpolate :'var' substitution](psql-c-flag-skips-var-substitution-2026-07-05.md) — another shell-string-handling gotcha specific to this same `scripts/pg-lab/*.sh` family

@@ -8,6 +8,7 @@ tags: [postgres, connection-string, denylist, security, url-parsing, pg-lab]
 symptoms: ['A "must never resolve to a real app database" refusal check compares an exact string like `dbName === "nutricam"`, but the check is built by slicing everything after the last `/` in a connection string', 'A `LAB_DATABASE_URL`/`DATABASE_URL`-style value with a trailing query string (e.g. `postgresql://host/nutricam?sslmode=require`) silently passes the check and connects to the real database anyway', 'The bypass is invisible in code review unless someone traces what the sliced string actually evaluates to for a URL carrying query params']
 applies_to: [scripts/pg-lab/**/*.sh, server/lib/contract-snapshot.ts]
 created: '2026-07-06'
+last_updated: '2026-07-07'
 ---
 
 # A database-name denylist parsed by naive string-slicing is bypassed by a connection-string query string
@@ -46,6 +47,21 @@ handle, and silently loses (fails to match, thus fails to refuse) rather than er
 There is no visible signal that the check ran incorrectly — the caller just proceeds as if
 the denylist had approved the connection.
 
+**Important asymmetry between the two suffix types** (verified live 2026-07-07,
+`psql` against local Postgres 18): the denylist match fails to catch *both* a
+`?query`-suffixed and a `#fragment`-suffixed value equally, but what happens *next* differs.
+libpq does **not** treat `#` as a URI fragment delimiter inside a connection string — it's
+included literally as part of the dbname. `postgresql://host/nutricam#anchor` connects to a
+database literally named `nutricam#anchor`, which doesn't exist, so `psql` fails LOUDLY
+(`FATAL: database "nutricam#anchor" does not exist`) rather than silently resolving to the
+real `nutricam`. The query-string vector is the one with a genuine silent-bypass outcome;
+the fragment vector fails the denylist match for the same structural reason but doesn't
+reach the same dangerous outcome. Stripping the fragment (as the fix below does) is still
+correct defense-in-depth — a future libpq version or a different Postgres client library
+could parse `#` differently — but don't conflate the two vectors' current real-world
+severity when writing tests or comments (a mistake this project's own PG Lab test suite
+made once already, corrected in `injection-report.sh`'s test file).
+
 ## Solution
 
 Parse the database name with an actual URL parser, not string slicing:
@@ -82,6 +98,46 @@ catches variants the exact-match list can't enumerate — including percent-enco
 (`nutr%69cam` decodes to the literal `nutricam` for a real Postgres connection, but the
 un-decoded pathname still contains a `%` that the identifier regex rejects).
 
+### Residual Gap: Query-Parameter Override and Percent-Encoding
+
+A security-auditor code review (2026-07-07, live-verified against a real local Postgres
+instance) confirmed that the bash `%%\?*` + `##*/` strip-then-match fix documented above
+**does not close** two further bypass vectors that libpq resolves differently than a bash
+string match:
+
+1. **`?dbname=` query-parameter override** — e.g.
+   `postgresql://localhost/ocrecipes_lab?dbname=nutricam` strips to the safe-looking
+   `ocrecipes_lab` under the documented fix and sails through both the exact-match denylist
+   and the identifier-format allowlist, but libpq's own connection-string parser honors the
+   `dbname` query parameter over the URI path segment and connects to the real `nutricam`
+   database anyway.
+
+2. **Percent-encoding** — e.g.
+   `postgresql://localhost/nutr%69cam` strips to `nutr%69cam`, which fails both the
+   exact-match denylist and the identifier-format allowlist (it contains a literal `%`),
+   yet libpq percent-decodes `%69` to `i` before connecting, resolving to the real
+   `nutricam` database.
+
+Both were confirmed via live `psql` probes — the server emitted a 'database does not exist'
+FATAL error naming the **actual resolved database name**, proving that what the guard's
+bash string ops saw was not what `psql` actually connected to.
+
+**These two vectors are not closable by string-slicing harder.** The robust fix is to
+stop hand-parsing the URI in bash entirely and ask `psql` for ground truth instead:
+
+```bash
+ACTUAL_DB=$(psql -X -tAqd "$LAB_DATABASE_URL" -c 'SELECT current_database()' 2>/dev/null)
+```
+
+then denylist-match `$ACTUAL_DB`, not any bash-derived substring. This approach naturally
+defeats both `dbname=` overrides and percent-encoding because `psql` connects using
+libpq's full parser and then reports the database it actually connected to.
+
+> ⚠️ **This remains an OPEN, unfixed gap** across every script in the `scripts/pg-lab/*.sh`
+> family, including those this document's earlier sections mark as already fixed for the
+> simpler query-string/fragment bypass. The query-param-override and percent-encoding
+> vectors are unaddressed everywhere as of 2026-07-07.
+
 ## Prevention
 
 - Never derive a security-relevant comparison value (a database name, hostname, or any
@@ -98,20 +154,55 @@ un-decoded pathname still contains a `%` that the identifier regex rejects).
   copy does NOT propagate to the others — audit every copy when the pattern is found
   broken in one, or factor the check into one shared, sourced/imported helper so this
   class of drift can't recur.
+- **For bash scripts specifically**, the only reliable defense against all URI-based
+  bypasses (query string suffix, `?dbname=` override, percent-encoding, and any future
+  libpq peculiarity) is to delegate the connection to `psql` and inspect the actual
+  resolved database name via `current_database()` after the connection succeeds. This is
+  more expensive (requires a live connection attempt) but guarantees the guard matches
+  what the driver will actually use.
 
 ## Related Files
 
-- `server/lib/contract-snapshot.ts` — `parseDbName()` / `getLabPool()`, fixed
-- `scripts/pg-lab/contract-diff.sh` — bash `%%\?*` + `##*/` sequence, fixed
-- `scripts/pg-lab/init.sh` — already had the identifier-regex second layer (line ~41),
-  which incidentally protected it from this exact bypass before this fix existed
-  elsewhere
-- `scripts/pg-lab/codify-neardup.sh` — **NOT fixed**; has the identical naive
-  `${LAB_DATABASE_URL##*/}` denylist with no identifier-regex second layer, so the same
-  query-string bypass is still live there as of this writing (out of scope of the PR that
-  discovered it — a different, already-merged PG Lab item's script)
+- `server/lib/contract-snapshot.ts` — `parseDbName()` / `getLabPool()`, fixed for
+  query-string/fragment bypass; **still vulnerable to `?dbname=` override and
+  percent-encoding**, though the TypeScript `new URL()` path does not strip query
+  parameters beyond the pathname, so the identifier-regex second layer would reject
+  `dbname` overrides if they are passed as path components (but not if they are query
+  parameters that libpq reads separately). As of 2026-07-07, this file is not known to be
+  exploitable because the `?dbname=` parameter is not automatically injected by the
+  library the TypeScript code uses (`pg`), but the guard is not robust against future
+  changes.
+- `scripts/pg-lab/contract-diff.sh` — bash `%%\?*` + `##*/` sequence strips the query
+  string only; it does **not** also strip a trailing `#fragment` (unlike the other fixed
+  siblings below), so the fragment-suffix bypass is still live there as of 2026-07-07;
+  **also vulnerable to `?dbname=` override and percent-encoding**.
+- `scripts/pg-lab/init.sh` — fixed for query-string/fragment (via the `LAB_DB_PATH` strip
+  pattern) and already had the identifier-regex second layer (line ~41) independently.
+  However, the identifier-regex allowlist does **not** protect against `?dbname=`
+  overrides because the query-parameter value is never seen by the bash path extraction;
+  **still vulnerable to that vector** (and to percent-encoding, though the allowlist would
+  reject `%`-containing strings, so percent-encoding of a bare identifier in the path is
+  blocked — but a percent-encoded `dbname=` parameter value would still be hidden from the
+  bash check entirely).
+- `scripts/pg-lab/codify-neardup.sh` — **fixed** for query-string/fragment bypass (via the
+  identical `LAB_DB_PATH` strip pattern); **still vulnerable to `?dbname=` override and
+  percent-encoding**.
+- `scripts/pg-lab/injection-report.sh` — **now fixed** for query-string/fragment bypass
+  (via the identical `LAB_DB_PATH` strip pattern) and for percent-encoding (via a new
+  identifier-format allowlist, matching `init.sh`'s pattern, both added 2026-07-07);
+  **still vulnerable to `?dbname=` override** — the identifier-format check only rejects
+  malformed path segments, it cannot see a query parameter libpq reads separately.
+- `scripts/pg-lab/log-injection.sh`, `scripts/pg-lab/eval-report.sh`,
+  `scripts/pg-lab/flake-report.sh`, `scripts/pg-lab/git-mine.sh` — also fixed for
+  query-string/fragment via the identical `LAB_DB_PATH` pattern; **still vulnerable to
+  `?dbname=` override and percent-encoding**.
+- `scripts/pg-lab/api-cache-report.sh`, `scripts/pg-lab/symbol-graph.sh`,
+  `scripts/pg-lab/transcripts.sh` — **NOT fixed** even for the simpler query-string/fragment
+  bypass; still use the naive `${LAB_DATABASE_URL##*/}` alone (out of scope of the PR that
+  discovered this, per todos/archive/P3-2026-07-06-pg-lab-safety-rail-query-string-bypass.md).
 
 ## See Also
 
+- [Bash `${VAR##*/}` database-name denylist checks must strip query string/fragment first](bash-suffix-split-db-name-denylist-query-string-smuggling-2026-07-06.md) — the same bug family, independently discovered the same day via `flake-report.sh`; this file has the deeper root-cause/residual-gap analysis, that one has the original `flake-report.sh` fix
 - [Lazy-initialize DB pools and API clients in modules that tests import](../conventions/lazy-init-db-pool-and-api-client-in-test-imported-modules-2026-06-13.md) — the sibling convention this same module (`contract-snapshot.ts`) also follows
 - [psql -c does not interpolate :'var' substitution](psql-c-flag-skips-var-substitution-2026-07-05.md) — another PG Lab shell-scripting gotcha in the same `scripts/pg-lab/` family

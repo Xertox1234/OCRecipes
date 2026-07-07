@@ -47,13 +47,29 @@ case "$DAYS" in ''|*[!0-9]*)
 esac
 
 # Hard safety rail: mirrors init.sh / codify-neardup.sh — this must never read a real app
-# database (a report over the wrong DB is worse than no report).
-case "${LAB_DATABASE_URL##*/}" in
+# database (a report over the wrong DB is worse than no report). Strip query string /
+# fragment BEFORE the last-path-segment split — a raw `${VAR##*/}` split alone lets a
+# suffix like `?sslmode=require` smuggle a denylisted name (e.g. `nutricam?sslmode=require`)
+# past the `case` match entirely, while `psql` itself parses the full URI correctly and
+# connects to the real database anyway. This remains a hand-parsed, best-effort guard, not
+# a hard guarantee — it does not close a `?dbname=` query-parameter override, where libpq
+# honors the override over the URI path segment
+# (docs/solutions/logic-errors/denylist-bypassed-by-connection-string-query-string-2026-07-06.md).
+LAB_DB_PATH="${LAB_DATABASE_URL%%\?*}"
+LAB_DB_PATH="${LAB_DB_PATH%%\#*}"
+case "${LAB_DB_PATH##*/}" in
   nutricam | ocrecipes_solutions)
-    echo "injection-report.sh: refusing — LAB_DATABASE_URL resolves to '${LAB_DATABASE_URL##*/}', a real app database, not a PG Lab database" >&2
+    echo "injection-report.sh: refusing — LAB_DATABASE_URL resolves to '${LAB_DB_PATH##*/}', a real app database, not a PG Lab database" >&2
     exit 1
     ;;
 esac
+# Second, independent layer: a percent-encoded denylisted name (e.g. `nutr%69cam`, which
+# libpq decodes to `nutricam` before connecting) fails the exact-match case above but is
+# still not a safe bare identifier, so this allowlist catches it too.
+if ! [[ "${LAB_DB_PATH##*/}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  echo "injection-report.sh: refusing — '${LAB_DB_PATH##*/}' (derived from LAB_DATABASE_URL) is not a safe Postgres identifier" >&2
+  exit 1
+fi
 
 command -v psql >/dev/null 2>&1 || { echo "injection-report.sh: psql not found on PATH" >&2; exit 1; }
 psql -X -q -d "$LAB_DATABASE_URL" -c 'SELECT 1' >/dev/null 2>&1 || {
