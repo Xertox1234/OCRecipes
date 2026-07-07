@@ -106,10 +106,7 @@ function ConfirmationModalInner({
     isActioning.current = false;
   }, [optionsRef]);
 
-  // Imperatively presented via useConfirmationModal's confirm() (no isOpen
-  // state) — onSheetChange/onSheetAnimate derive presented state from
-  // gorhom's snap-index/animation lifecycle for the Android back-dismiss
-  // wiring below.
+  // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
   const { onSheetChange, onSheetAnimate } = useSheetBackHandler(sheetRef);
 
   const handleConfirm = useCallback(() => {

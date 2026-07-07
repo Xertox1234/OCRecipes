@@ -102,9 +102,7 @@ export function BeveragePickerSheet({
     resetState();
   }, [resetState]);
 
-  // Imperatively presented via useBeverageSheet's open() (no isOpen state) —
-  // onSheetChange/onSheetAnimate derive presented state from gorhom's
-  // snap-index/animation lifecycle for the Android back-dismiss wiring below.
+  // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
   const { onSheetChange, onSheetAnimate } = useSheetBackHandler(sheetRef);
 
   // --- Step 1: Beverage selection ---

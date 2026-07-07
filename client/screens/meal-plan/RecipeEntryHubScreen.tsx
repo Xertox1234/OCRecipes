@@ -159,9 +159,7 @@ export default function RecipeEntryHubScreen() {
   // silently fails on non-meal-plan screens. See docs/solutions.
   const importSheetRef = useRef<BottomSheetModal>(null);
 
-  // Imperatively presented (no isOpen state) — onSheetChange/onSheetAnimate
-  // derive presented state from gorhom's snap-index/animation lifecycle for
-  // the Android back-dismiss wiring below.
+  // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
   const {
     onSheetChange: handleSheetChange,
     onSheetAnimate: handleSheetAnimate,

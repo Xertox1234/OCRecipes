@@ -309,9 +309,7 @@ export default function RecipeBrowserScreen() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const filterSheetRef = React.useRef<BottomSheetModal>(null);
 
-  // Imperatively presented (no isOpen state) — onSheetChange/onSheetAnimate
-  // derive presented state from gorhom's snap-index/animation lifecycle for
-  // the Android back-dismiss wiring below.
+  // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
   const {
     onSheetChange: handleFilterSheetChange,
     onSheetAnimate: handleFilterSheetAnimate,
