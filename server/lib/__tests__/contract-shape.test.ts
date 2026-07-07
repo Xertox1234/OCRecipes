@@ -165,11 +165,12 @@ describe("deriveShape", () => {
       expect(Object.keys(overThreshold.keys)).toEqual(["<dynamic>"]);
     });
 
-    it("redacts a free-text-keyed object when every value has the identical structural shape (regression: server/routes/grocery.ts, server/services/menu-analysis.ts allergenFlags)", () => {
+    it("redacts a free-text-keyed object when every value has the identical structural shape (regression: server/routes/grocery.ts allergenFlags)", () => {
       // Neither "shrimp" nor "peanut butter" matches any DYNAMIC_KEY_PATTERN, and two
       // entries is far under MAX_STATIC_OBJECT_KEYS -- looksDynamicallyKeyed alone
       // would miss this. hasUniformNonPrimitiveValueShape is what catches it: both
-      // values are the identical { allergenId, severity } shape.
+      // values are the identical { allergenId, severity } shape grocery.ts actually
+      // rebuilds (server/routes/grocery.ts:238-241).
       const shape = deriveShape({
         allergenFlags: {
           shrimp: { allergenId: "shellfish", severity: "high" },
@@ -194,6 +195,80 @@ describe("deriveShape", () => {
               },
             },
           },
+        },
+      });
+    });
+
+    it("redacts a free-text-keyed object when every value has the identical structural shape (regression: server/services/menu-analysis.ts allergenFlags — real 5-field AllergenMatch shape)", () => {
+      // menu-analysis.ts assigns the full AllergenMatch object verbatim
+      // (server/services/menu-analysis.ts:200: `allergenFlags[itemName] = m`), which
+      // has 5 fields (shared/constants/allergens.ts's AllergenMatch: allergenId,
+      // severity, ingredientName, matchedKeyword, isDerived) -- NOT grocery.ts's
+      // hand-rebuilt 2-field { allergenId, severity }. This test pins the real
+      // menu-analysis.ts shape so it can't pass on a fixture that only matches
+      // grocery.ts's differently-shaped allergenFlags.
+      const shape = deriveShape({
+        allergenFlags: {
+          shrimp: {
+            allergenId: "shellfish",
+            severity: "high",
+            ingredientName: "shrimp",
+            matchedKeyword: "shrimp",
+            isDerived: false,
+          },
+          "peanut butter": {
+            allergenId: "peanut",
+            severity: "severe",
+            ingredientName: "peanut butter",
+            matchedKeyword: "peanut",
+            isDerived: true,
+          },
+        },
+      });
+      const serialized = JSON.stringify(shape);
+      expect(serialized).not.toContain("shrimp");
+      expect(serialized).not.toContain("peanut butter");
+      expect(shape).toEqual({
+        type: "object",
+        keys: {
+          allergenFlags: {
+            type: "object",
+            keys: {
+              "<dynamic>": {
+                type: "object",
+                keys: {
+                  allergenId: { type: "string" },
+                  severity: { type: "string" },
+                  ingredientName: { type: "string" },
+                  matchedKeyword: { type: "string" },
+                  isDerived: { type: "boolean" },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    it("stores a literal '__proto__' key as a normal field instead of silently dropping it (prototype-pollution guard)", () => {
+      // JSON.parse gives an object a REAL own property named "__proto__" ([[DefineOwnProperty]]
+      // semantics, not [[Set]]) -- but a naive `keys[key] = value` bracket assignment on a
+      // plain-object accumulator invokes Object.prototype's legacy __proto__ SETTER instead
+      // of creating an own property, silently vanishing the key rather than storing or
+      // redacting it. Both keys here are short, pattern-free, and primitive-valued so
+      // neither redaction signal fires and this reaches the plain (non-redacted) key-copy
+      // path in deriveShape where the bug lives.
+      const shape = deriveShape(
+        JSON.parse('{"__proto__": "high", "shrimp": "high"}'),
+      ) as Extract<Shape, { type: "object" }>;
+
+      expect(Object.getPrototypeOf(shape.keys)).toBe(Object.prototype);
+      expect(Object.keys(shape.keys)).toEqual(["__proto__", "shrimp"]);
+      expect(shape).toEqual({
+        type: "object",
+        keys: {
+          ["__proto__"]: { type: "string" }, // computed key -- a literal `"__proto__":` here would hit the same spec special-case
+          shrimp: { type: "string" },
         },
       });
     });

@@ -66,9 +66,13 @@ function mergeShapes(shapes: Shape[]): Shape {
  * catch them — see `hasUniformNonPrimitiveValueShape` below, the second, independent
  * signal added specifically to close that gap. This function deliberately trades some
  * false positives/negatives for never requiring per-route configuration (an allowlist
- * of expected keys per route pattern was considered and rejected: `deriveShape` has no
- * route context, and the ~45 route modules in this app would make an allowlist a
- * second, drift-prone place to update on every response shape change).
+ * of expected keys per route pattern was considered and rejected: `deriveShape` itself
+ * is a pure function with no route context, and while its sole caller —
+ * `recordSnapshot` in server/lib/contract-snapshot.ts — does have route context
+ * available, wiring a per-route allowlist through that one call site would still make
+ * the allowlist a second, drift-prone place to update on every response shape change
+ * across the ~45 route modules in this app, a maintenance cost judged not worth
+ * trading for the heuristic's occasional over/under-redaction).
  *
  *   - MAX_STATIC_OBJECT_KEYS (50): a real static schema (deliberately named fields)
  *     essentially never has this many keys at one nesting level; a genuine dynamic-key
@@ -146,13 +150,22 @@ function looksDynamicallyKeyed(keys: string[]): boolean {
  * so a 1-entry check would redact virtually every nested single-field object in the
  * app. A dynamic-keyed map with exactly one live entry is not caught by this signal
  * (documented residual risk, same class noted in `looksDynamicallyKeyed` above).
+ *
+ * Takes the already-merged shape rather than computing it internally — the caller
+ * (deriveShape) needs `mergeShapes(valueShapes)` either way when the object turns out
+ * dynamic (as the `<dynamic>` placeholder's value shape), so it merges once and passes
+ * the result in here rather than merging twice for the same input.
  */
 const MIN_UNIFORM_MAP_KEYS = 2;
 
-function hasUniformNonPrimitiveValueShape(valueShapes: Shape[]): boolean {
-  if (valueShapes.length < MIN_UNIFORM_MAP_KEYS) return false;
-  const merged = mergeShapes(valueShapes);
-  return merged.type === "object" || merged.type === "array";
+function hasUniformNonPrimitiveValueShape(
+  valueShapes: Shape[],
+  merged: Shape,
+): boolean {
+  return (
+    valueShapes.length >= MIN_UNIFORM_MAP_KEYS &&
+    (merged.type === "object" || merged.type === "array")
+  );
 }
 
 /** Placeholder key used in place of a dynamically-keyed object's real key names. */
@@ -199,21 +212,24 @@ export function deriveShape(value: unknown): Shape {
       const objValue = value as Record<string, unknown>;
       const sortedKeys = Object.keys(objValue).sort();
       const valueShapes = sortedKeys.map((key) => deriveShape(objValue[key]));
+      const mergedValueShape = mergeShapes(valueShapes);
 
       if (
         looksDynamicallyKeyed(sortedKeys) ||
-        hasUniformNonPrimitiveValueShape(valueShapes)
+        hasUniformNonPrimitiveValueShape(valueShapes, mergedValueShape)
       ) {
         return {
           type: "object",
-          keys: { [DYNAMIC_KEY_PLACEHOLDER]: mergeShapes(valueShapes) },
+          keys: { [DYNAMIC_KEY_PLACEHOLDER]: mergedValueShape },
         };
       }
 
-      const keys: Record<string, Shape> = {};
-      sortedKeys.forEach((key, i) => {
-        keys[key] = valueShapes[i];
-      });
+      // Object.fromEntries (not `keys[key] = ...` bracket assignment) so a literal
+      // "__proto__" key becomes a real own property instead of silently invoking
+      // Object.prototype's legacy __proto__ setter and vanishing from the shape.
+      const keys: Record<string, Shape> = Object.fromEntries(
+        sortedKeys.map((key, i) => [key, valueShapes[i]] as const),
+      );
       return { type: "object", keys };
     }
     default:
