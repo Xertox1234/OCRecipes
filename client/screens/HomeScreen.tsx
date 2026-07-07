@@ -57,6 +57,7 @@ import { useAuthContext } from "@/context/AuthContext";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
 import { useTheme } from "@/hooks/useTheme";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
+import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { Spacing, FAB_CLEARANCE, FontFamily } from "@/constants/theme";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import {
@@ -127,6 +128,12 @@ export default function HomeScreen() {
   // useBeverageSheet-verified shape) — the state→effect→present shape
   // silently fails on this screen. See docs/solutions.
   const importSheetRef = useRef<BottomSheetModal>(null);
+
+  // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
+  const {
+    onSheetChange: handleImportSheetChange,
+    onSheetAnimate: handleImportSheetAnimate,
+  } = useSheetBackHandler(importSheetRef);
 
   const renderImportSheetBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -522,6 +529,8 @@ export default function HomeScreen() {
         backdropComponent={renderImportSheetBackdrop}
         backgroundStyle={sheetBackgroundStyle}
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
+        onChange={handleImportSheetChange}
+        onAnimate={handleImportSheetAnimate}
       >
         {importSheetChildren}
       </BottomSheetModal>

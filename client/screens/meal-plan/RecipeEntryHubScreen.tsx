@@ -20,6 +20,7 @@ import {
   IMPORT_RECIPE_SNAP_POINTS,
 } from "@/components/meal-plan/ImportRecipeSheet";
 import { useTheme } from "@/hooks/useTheme";
+import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 
@@ -158,6 +159,12 @@ export default function RecipeEntryHubScreen() {
   // silently fails on non-meal-plan screens. See docs/solutions.
   const importSheetRef = useRef<BottomSheetModal>(null);
 
+  // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
+  const {
+    onSheetChange: handleSheetChange,
+    onSheetAnimate: handleSheetAnimate,
+  } = useSheetBackHandler(importSheetRef);
+
   const renderSheetBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
@@ -256,6 +263,8 @@ export default function RecipeEntryHubScreen() {
         backdropComponent={renderSheetBackdrop}
         backgroundStyle={sheetBackgroundStyle}
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
+        onChange={handleSheetChange}
+        onAnimate={handleSheetAnimate}
       >
         {importSheetChildren}
       </BottomSheetModal>

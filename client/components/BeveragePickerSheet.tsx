@@ -23,6 +23,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import {
   Spacing,
   BorderRadius,
@@ -100,6 +101,9 @@ export function BeveragePickerSheet({
   const handleDismiss = useCallback(() => {
     resetState();
   }, [resetState]);
+
+  // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
+  const { onSheetChange, onSheetAnimate } = useSheetBackHandler(sheetRef);
 
   // --- Step 1: Beverage selection ---
 
@@ -298,6 +302,8 @@ export function BeveragePickerSheet({
       maxDynamicContentSize={MAX_DYNAMIC_HEIGHT}
       backdropComponent={renderBackdrop}
       onDismiss={handleDismiss}
+      onChange={onSheetChange}
+      onAnimate={onSheetAnimate}
       handleIndicatorStyle={{ display: "none" }}
       backgroundStyle={{ backgroundColor: theme.backgroundDefault }}
       animationConfigs={animationConfigs}

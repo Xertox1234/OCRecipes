@@ -26,6 +26,14 @@ export const Alert = { alert: vi.fn() };
 export const AppState = {
   addEventListener: vi.fn(() => ({ remove: vi.fn() })),
 };
+// BackHandler — Android hardware back button. addEventListener returns a
+// NativeEventSubscription-shaped object (`.remove()`), matching the real API
+// so hooks that clean up via `subscription.remove()` work unmodified in
+// tests. Default impl is a no-op subscription; tests spy on it to assert
+// registration and to invoke the captured handler directly.
+export const BackHandler = {
+  addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+};
 // Share API — used by useFavouriteRecipes useShareRecipe. Default impl is a
 // no-op resolved promise; tests `vi.spyOn(RN.Share, "share").mockResolvedValue(...)`.
 export const Share = {
