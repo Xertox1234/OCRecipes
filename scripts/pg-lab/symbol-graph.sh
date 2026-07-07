@@ -106,7 +106,16 @@ WHERE ref_count = 0
   -- Entrypoint/config allowlist: invoked BY tooling (Expo/Metro, Express, Vitest/ESLint/
   -- drizzle-kit/Babel config loaders), never imported by another module, so a correct
   -- reference graph reports these as zero-referenced even though they are load-bearing.
-  AND path NOT IN ('client/index.js', 'client/App.tsx', 'server/index.ts')
+  -- client/App.tsx is NOT in this list -- it used to be a hardcoded workaround for
+  -- client/index.js being excluded from the ts-morph project glob (App.tsx's only real
+  -- edge is client/index.js's `import App from "@/App"`, so App.tsx looked dead whenever
+  -- that edge was invisible). Now that symbol-graph.ts's loadProject scans client/index.js
+  -- too, the real edge exists and App.tsx earns a genuine ref_count > 0 -- no allowlist
+  -- entry needed. client/index.js itself stays allowlisted: it is the genuine entrypoint
+  -- (registered via package.json "main", invoked by Metro/Expo, never imported by another
+  -- module) and, having no export statements of its own, would never appear as a
+  -- repo.exports row regardless -- this entry is defensive, not load-bearing today.
+  AND path NOT IN ('client/index.js', 'server/index.ts')
   AND path NOT LIKE '%.config.ts'
   AND path NOT LIKE '%.config.js'
   -- Drizzle relations() objects (shared/schema.ts's `export const xRelations = relations(

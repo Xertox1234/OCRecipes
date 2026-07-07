@@ -55,11 +55,21 @@ assert_exit0 "init.sh creates the throwaway DB" "$?"
 
 # Fixture mini-project: an alias-resolved cycle (a <-> b via @fixture/*), a genuinely dead
 # export (dead.ts's unusedHelper, still dead even after a dynamic import of its module), a
-# dynamic import()/alias edge (dynamic.ts), and a layering violation (server/routes
-# importing server/storage/internal.ts directly via a NAMESPACE import — this also
-# exercises the expensive pass-2 reference count, since a namespace import contributes
-# nothing to the cheap pass-1 count, mirroring server/storage/index.ts's real pattern in
-# this repo).
+# dynamic import()/alias edge (dynamic.ts), a layering violation (server/routes importing
+# server/storage/internal.ts directly via a NAMESPACE import — this also exercises the
+# expensive pass-2 reference count, since a namespace import contributes nothing to the
+# cheap pass-1 count, mirroring server/storage/index.ts's real pattern in this repo), a
+# NAMED barrel re-export of an otherwise-unimported export (barrel.ts/reexport-only.ts --
+# the barrel's own `export {...} from` specifier must not itself count as a reference), and
+# a plain .js entrypoint importing into the graph (entry.js -- mirrors client/index.js
+# being invisible to blast/cycles before symbol-graph.ts's loadProject glob fix).
+#
+# "allowJs": true + the "**/*.js" include entry are needed for THIS fixture's project load
+# to pick up entry.js at all -- unlike symbol-graph.ts's production loadProject (which adds
+# client/index.js via an explicit addSourceFilesAtPaths entry, working without allowJs),
+# this fixture always takes ts-morph's default auto-add-from-tsconfig path (its tsconfig is
+# never DEFAULT_TSCONFIG), which silently excludes .js files from `include` unless allowJs
+# is set.
 FIX=$(mktemp -d)
 mkdir -p "$FIX/server/routes" "$FIX/server/storage"
 
@@ -71,10 +81,11 @@ cat > "$FIX/tsconfig.json" <<'JSON'
     "module": "commonjs",
     "moduleResolution": "node",
     "skipLibCheck": true,
+    "allowJs": true,
     "baseUrl": ".",
     "paths": { "@fixture/*": ["./*"] }
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "**/*.js"]
 }
 JSON
 
@@ -124,12 +135,27 @@ export function getOrder(): string {
 }
 TS
 
+cat > "$FIX/reexport-only.ts" <<'TS'
+export function reexportOnlyDead(): string {
+  return "only reachable via a barrel that nobody imports";
+}
+TS
+
+cat > "$FIX/barrel.ts" <<'TS'
+export { reexportOnlyDead } from "./reexport-only";
+TS
+
+cat > "$FIX/entry.js" <<'JS'
+import { valueFromA } from "@fixture/a";
+console.log(valueFromA());
+JS
+
 REBUILD_OUT=$(cd "$PROJECT_ROOT" && LAB_DATABASE_URL="$TEST_URL" npx tsx "$TS_SCRIPT" --rebuild --project "$FIX/tsconfig.json" 2>&1); REBUILD_RC=$?
 assert_exit0 "--rebuild against fixture project" "$REBUILD_RC"
 assert_contains "--rebuild reports rebuilt tables" "$REBUILD_OUT" "rebuilt repo.modules"
 
 MODULE_COUNT=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM repo.modules")
-assert_eq "rebuild loads all 7 fixture modules" "$MODULE_COUNT" "7"
+assert_eq "rebuild loads all 10 fixture modules" "$MODULE_COUNT" "10"
 
 # blast: server/storage/internal.ts has two direct dependents (index.ts's `export *` and
 # orders.ts's direct namespace import).
@@ -141,13 +167,24 @@ assert_contains "blast finds server/routes/orders.ts" "$BLAST_OUT" "server/route
 DEAD_BLAST_OUT=$(LAB_DATABASE_URL="$TEST_URL" bash "$SH_SCRIPT" blast dead.ts)
 assert_contains "blast finds dynamic.ts via the dynamic import() edge" "$DEAD_BLAST_OUT" "dynamic.ts"
 
+# blast on a.ts proves entry.js's plain-.js import edge was captured (mirrors
+# client/index.js's import of client/App.tsx in the real repo).
+ENTRY_BLAST_OUT=$(LAB_DATABASE_URL="$TEST_URL" bash "$SH_SCRIPT" blast a.ts)
+assert_contains "blast finds entry.js via the .js entrypoint's import edge" "$ENTRY_BLAST_OUT" "entry.js"
+
 # dead-exports: dead.ts's unusedHelper is genuinely dead (the dynamic import of its module
 # doesn't reference the export itself). getOrderInternal must NOT be flagged even though it
 # has zero NAMED-import references — it's only ever reached via orders.ts's namespace
 # import, which pass 1 (cheap) can't see; pass 2's findReferencesAsNodes must catch it.
+# reexportOnlyDead must BE flagged even though barrel.ts's `export { reexportOnlyDead }
+# from "./reexport-only"` gives it a nonzero apparent reference in both passes if the
+# barrel-reexport fix regresses -- pass 1's cheapCounts must not count the "reexport" kind
+# edge, and pass 2's findReferencesAsNodes must not count the barrel's own ExportSpecifier
+# as a reference either.
 DEAD_OUT=$(LAB_DATABASE_URL="$TEST_URL" bash "$SH_SCRIPT" dead-exports)
 assert_contains "dead-exports finds dead.ts's unusedHelper" "$DEAD_OUT" "unusedHelper"
 assert_not_contains "dead-exports does not flag getOrderInternal (namespace-import usage)" "$DEAD_OUT" "getOrderInternal"
+assert_contains "dead-exports finds reexportOnlyDead despite the barrel re-export" "$DEAD_OUT" "reexportOnlyDead"
 
 # cycles: a.ts and b.ts import each other (through the @fixture/* alias).
 CYCLES_OUT=$(LAB_DATABASE_URL="$TEST_URL" bash "$SH_SCRIPT" cycles)

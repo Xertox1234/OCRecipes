@@ -1,0 +1,59 @@
+<!-- Filename: P3-2026-07-06-symbol-graph-barrel-reexport-and-entrypoint-gaps.md -->
+
+---
+
+title: "PG Lab symbol-graph: barrel re-exports inflate ref-counts (false negatives) and client/index.js is invisible to blast/cycles"
+status: done
+priority: low
+created: 2026-07-06
+updated: 2026-07-07
+assignee:
+labels: [deferred, harness]
+github_issue:
+
+---
+
+# PG Lab symbol-graph: barrel re-exports inflate ref-counts and client/index.js is invisible to blast/cycles
+
+## Summary
+
+A second-opinion review of PR #533 (PG Lab TypeScript symbol/import-graph snapshot) found two real gaps beyond the three bugs already fixed during implementation: (1) barrel re-export edges (`export { x } from "./y"`) are counted the same as genuine import edges, inflating cheap ref-counts and hiding genuinely dead exports (a false negative — the opposite direction from the already-fixed duplicate-row bug); (2) `client/index.js` is excluded from the ts-morph project glob (`client/**/*.{ts,tsx}` only), making it invisible to the `blast`/`cycles` queries entirely, not just ref-counting — currently patched around only for `dead-exports` via a narrow hardcoded allowlist entry in `symbol-graph.sh`.
+
+## Background
+
+Found during second-opinion review of this session's `/todo` batch PRs. Confirmed live against the real repo: 7+ files (`server/storage/index.ts`, `client/camera/index.ts`, `client/components/recipe-detail/index.ts`, `server/__tests__/factories/index.ts`, etc.) use named `export {...} from` re-exports, so the barrel-counting issue is not hypothetical. `client/index.js` was confirmed to exist and do `import App from "@/App"` — a real root edge invisible to the graph.
+
+## Acceptance Criteria
+
+- [x] Import edges gain a "kind" discriminator (genuine `ImportDeclaration` vs. pass-through re-export), and `cheapCounts`/ref-count logic only counts genuine imports — a barrel's mere re-export of `x` must not itself count as a reference to `x`.
+- [x] `dead-exports` re-triaged after the fix: record in Updates whether the false-negative rate changes materially now that barrel counting is corrected.
+- [x] `loadProject`'s glob is extended (or a documented exception added) so `client/index.js` — and any other root-level `.js` entry points — are included in the graph, restoring the edge itself rather than just papering over it via the `dead-exports` allowlist hack in `symbol-graph.sh`.
+- [x] Regression test: a fixture with a barrel `export {x} from "./y"` and zero real importers of `x` must report `x` as dead; a fixture importing a `.js` entry point must show that edge in `blast`.
+
+## Implementation Notes
+
+- Files in scope: `scripts/pg-lab/symbol-graph.ts` (edge model + `cheapCounts` + `loadProject`'s glob), `scripts/pg-lab/symbol-graph.sh` (remove the `client/App.tsx` hardcoded allowlist entry once the real fix lands).
+- This is a dev-only internal tooling accuracy issue (no security/data-integrity impact) — affects trust in `dead-exports`/`blast`/`cycles` output for future dead-code sweeps, not app correctness.
+- Live-test against the real repo (not just the fixture) per this tool's own established pattern — the three bugs fixed during the original implementation were all caught this way, not by the fixture test.
+
+## Dependencies
+
+- None. Independent of PR #533's merge status.
+
+## Risks
+
+- Low — dev-tool accuracy only. Worst case if left unfixed: `dead-exports`/`blast`/`cycles` output is quietly less trustworthy than it appears, risking a future dead-code deletion sweep missing real usages or missing real dead code.
+
+## Updates
+
+### 2026-07-06
+
+- Initial creation — filed during second-opinion review of this session's `/todo` batch PRs, per user instruction to fix directly or file a followup for anything not immediately fixable.
+
+### 2026-07-07
+
+- Implemented both fixes and re-triaged `dead-exports` against the real repo (`--rebuild` with the default tsconfig, `ocrecipes_lab`):
+  - **Barrel-counting fix is two-part, not one.** `cheapCounts` (pass 1) was the AC's literal example, but empirically `findReferencesAsNodes()` (pass 2) _also_ counts a barrel's `export {x} from "./y"` specifier as a reference to `x` (verified with a throwaway ts-morph fixture before touching the implementation) — so fixing pass 1 alone left pass 2 re-introducing the exact same false negative whenever pass 1's cheap count was 0. Both `ImportEdge.kind` (skips `"reexport"` edges in `cheapCounts`) and `findReferencesCount`'s new filter (drops any reference whose parent is an `ExportSpecifier` under an `ExportDeclaration` with a module specifier) were required together.
+  - **Real-repo dead-exports count: 62 before, 62 after** (using the pre-fix allowlist that still excludes `client/App.tsx`, to isolate the barrel-counting fix alone). The false-negative rate did **not** change materially in this repo's _current_ snapshot — none of the repo's existing named barrel re-exports currently mask a genuinely-dead export. This does not mean the bug was hypothetical: the new fixture regression test (`reexportOnlyDead`) proves the false negative is real and was reproducible before the fix (confirmed red/green — the assertion fails against the pre-fix `symbol-graph.ts` and passes after). It simply means today's specific barrel usages all happen to have at least one real consumer.
+  - **`client/index.js` glob fix confirmed live**: after adding it to `loadProject`'s `addSourceFilesAtPaths`, `blast client/App.tsx` now correctly lists `client/index.js`, and `client/App.tsx`'s `default` export shows `ref_count = 1` from that real edge — this holds even with the `client/App.tsx` hardcoded allowlist entry removed from `symbol-graph.sh`'s `dead-exports` query (final dead-exports count with the new query: still 62, and `client/App.tsx` is correctly absent). `client/index.js` itself stays in the allowlist — it has no export statements of its own, so it would never appear as a `repo.exports` row regardless, but the entry is kept as defensive documentation of intent.
+  - **Noted, out of scope**: `getModuleSpecifierSourceFile()` resolves many bare npm package specifiers (e.g. `expo`, `react`, `zod`) to their `.d.ts` files under `node_modules`, producing `repo.imports` rows that point outside the scanned module set (69 distinct packages observed in the real snapshot). This is pre-existing behavior across every already-scanned file, not something introduced by this todo's changes (confirmed: `client/index.js`'s own `import { registerRootComponent } from "expo"` produces one such edge, consistent with the pre-existing pattern). Left unfixed — no acceptance criterion covers it, and it doesn't affect `blast`/`cycles`/`dead-exports` correctness since nothing queries `node_modules/*` paths.
