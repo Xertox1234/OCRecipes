@@ -25,6 +25,7 @@ import {
 import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { useScrollLinkedHeader } from "@/hooks/useScrollLinkedHeader";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Chip } from "@/components/Chip";
@@ -307,6 +308,14 @@ export default function RecipeBrowserScreen() {
   const [pantryMode, setPantryMode] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const filterSheetRef = React.useRef<BottomSheetModal>(null);
+
+  // Imperatively presented (no isOpen state) — onSheetChange/onSheetAnimate
+  // derive presented state from gorhom's snap-index/animation lifecycle for
+  // the Android back-dismiss wiring below.
+  const {
+    onSheetChange: handleFilterSheetChange,
+    onSheetAnimate: handleFilterSheetAnimate,
+  } = useSheetBackHandler(filterSheetRef);
 
   const { isPremium } = usePremiumContext();
 
@@ -1000,6 +1009,8 @@ export default function RecipeBrowserScreen() {
         )}
         backgroundStyle={{ backgroundColor: theme.backgroundRoot }}
         handleIndicatorStyle={{ backgroundColor: withOpacity(theme.text, 0.3) }}
+        onChange={handleFilterSheetChange}
+        onAnimate={handleFilterSheetAnimate}
       >
         <BottomSheetView accessibilityViewIsModal>
           <SearchFilterSheet

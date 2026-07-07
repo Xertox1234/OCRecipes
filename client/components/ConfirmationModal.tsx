@@ -14,6 +14,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import {
   Spacing,
   BorderRadius,
@@ -105,6 +106,12 @@ function ConfirmationModalInner({
     isActioning.current = false;
   }, [optionsRef]);
 
+  // Imperatively presented via useConfirmationModal's confirm() (no isOpen
+  // state) — onSheetChange/onSheetAnimate derive presented state from
+  // gorhom's snap-index/animation lifecycle for the Android back-dismiss
+  // wiring below.
+  const { onSheetChange, onSheetAnimate } = useSheetBackHandler(sheetRef);
+
   const handleConfirm = useCallback(() => {
     if (isActioning.current) return;
     isActioning.current = true;
@@ -146,6 +153,8 @@ function ConfirmationModalInner({
       maxDynamicContentSize={MAX_DYNAMIC_HEIGHT}
       backdropComponent={renderBackdrop}
       onDismiss={handleDismiss}
+      onChange={onSheetChange}
+      onAnimate={onSheetAnimate}
       accessibilityViewIsModal
       handleIndicatorStyle={{ display: "none" }}
       backgroundStyle={{ backgroundColor: theme.backgroundDefault }}

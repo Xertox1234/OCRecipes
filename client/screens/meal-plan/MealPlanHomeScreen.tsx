@@ -68,6 +68,7 @@ import {
   useConfirmMealPlanItem,
 } from "@/hooks/useMealPlan";
 import { useDailyBudget } from "@/hooks/useDailyBudget";
+import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { apiRequest } from "@/lib/query-client";
 import { getDeviceTimezone } from "@/lib/timezone";
 import { useCreateMealPlanRecipe } from "@/hooks/useMealPlanRecipes";
@@ -855,6 +856,14 @@ export default function MealPlanHomeScreen() {
       simpleEntrySheetRef.current?.dismiss();
     }
   }, [simpleEntryMealType]);
+
+  // Android hardware back dismisses whichever sheet is open, consuming the
+  // event instead of popping the screen underneath — @gorhom/bottom-sheet has
+  // no built-in BackHandler wiring. State-driven hosts pass isOpen directly.
+  useSheetBackHandler(addItemMenuSheetRef, addItemMenuMealType !== null);
+  useSheetBackHandler(importRecipeSheetRef, importRecipeMealType !== null);
+  useSheetBackHandler(quickAddSheetRef, quickAddMealType !== null);
+  useSheetBackHandler(simpleEntrySheetRef, simpleEntryMealType !== null);
 
   const handleNavigateUrlImport = useCallback(
     (mt: MealType | null, date?: string) => {
