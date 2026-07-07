@@ -48,8 +48,10 @@
  *   `findReferencesAsNodes()` on its declaration — a real, project-wide, symbol-aware
  *   reference count (the raw node count IS the external-usage count: verified empirically
  *   that ts-morph's findReferencesAsNodes() returns only usage sites, never the
- *   declaration's own name node, so no "minus 1" adjustment is needed or correct). This is
- *   the ONLY class of export that pays for the expensive check. It matters a great deal in
+ *   declaration's own name node, so no "minus 1" adjustment is needed or correct -- EXCEPT
+ *   a barrel's own `export {x} from "./y"` specifier, which DOES show up as a spurious
+ *   reference and must be filtered out; see findReferencesCount's ExportSpecifier check).
+ *   This is the ONLY class of export that pays for the expensive check. It matters a great deal in
  *   practice: this repo's `server/storage/index.ts` re-exports every domain module via
  *   `import * as users from "./users"` (a NAMESPACE import), so pass 1 alone would
  *   misreport nearly every storage-domain export as "0 references" — pass 2 is what
@@ -230,10 +232,11 @@ function findReferencesCount(declaration: Node): number {
   return declaration.findReferencesAsNodes().filter((ref) => {
     const parent = ref.getParent();
     if (!Node.isExportSpecifier(parent)) return true;
-    const exportDecl = parent.getParent()?.getParent();
-    return !(
-      Node.isExportDeclaration(exportDecl) && exportDecl.hasModuleSpecifier()
-    );
+    // getExportDeclaration() is ts-morph's own non-optional accessor for an
+    // ExportSpecifier's owning ExportDeclaration -- preferred over hand-walking
+    // parent.getParent() twice, since it can't silently resolve the wrong ancestor if a
+    // future ts-morph version changes the AST's exact nesting depth.
+    return !parent.getExportDeclaration().hasModuleSpecifier();
   }).length;
 }
 
@@ -277,23 +280,36 @@ function loadProject(tsConfigFilePath: string): Project {
   });
   if (isDefaultRepoConfig) {
     const configDir = path.dirname(tsConfigFilePath);
-    project.addSourceFilesAtPaths([
+    // client/index.js -- the app's registered root entrypoint (package.json "main",
+    // `registerRootComponent(App)`) -- is a plain .js file, so the "client/**/*.{ts,tsx}"
+    // glob below never matches it, making it (and its one real edge into
+    // client/App.tsx) invisible to blast/cycles entirely, not just ref-counting.
+    // ts-morph parses an explicitly-added .js file fine without "allowJs" in the
+    // tsconfig (verified empirically) -- this is the ONLY root-level .js entrypoint in
+    // the tracked repo (the sibling root-level `/index.js` is a gitignored build
+    // artifact, not source). Added as an exact path, not a broader glob, to avoid
+    // pulling in unrelated .js files under client/ (there are none today, but a future
+    // one shouldn't silently join the graph without a deliberate glob change).
+    const entryPointPath = path.join(configDir, "client/index.js");
+    const added = project.addSourceFilesAtPaths([
       path.join(configDir, "server/**/*.ts"),
       path.join(configDir, "client/**/*.{ts,tsx}"),
       path.join(configDir, "shared/**/*.ts"),
       path.join(configDir, "scripts/**/*.ts"),
-      // client/index.js -- the app's registered root entrypoint (package.json "main",
-      // `registerRootComponent(App)`) -- is a plain .js file, so the "client/**/*.{ts,tsx}"
-      // glob above never matches it, making it (and its one real edge into
-      // client/App.tsx) invisible to blast/cycles entirely, not just ref-counting.
-      // ts-morph parses an explicitly-added .js file fine without "allowJs" in the
-      // tsconfig (verified empirically) -- this is the ONLY root-level .js entrypoint in
-      // the tracked repo (the sibling root-level `/index.js` is a gitignored build
-      // artifact, not source). Added as an exact path, not a broader glob, to avoid
-      // pulling in unrelated .js files under client/ (there are none today, but a future
-      // one shouldn't silently join the graph without a deliberate glob change).
-      path.join(configDir, "client/index.js"),
+      entryPointPath,
     ]);
+    // addSourceFilesAtPaths() silently adds zero files for a literal path that matches
+    // nothing -- no throw, no warning (verified against ts-morph's glob-based
+    // implementation). Without this check, a future rename/move of client/index.js would
+    // silently drop its edge into client/App.tsx from the graph -- and since
+    // symbol-graph.sh's dead-exports allowlist no longer carries a client/App.tsx fallback
+    // entry (removed once this entrypoint edge made it unnecessary), App.tsx would start
+    // silently false-flagging as dead with no test catching it.
+    if (!added.some((sf) => sf.getFilePath() === entryPointPath)) {
+      throw new Error(
+        `loadProject: expected entrypoint not found at ${entryPointPath} -- did client/index.js move or get renamed? symbol-graph.sh's dead-exports allowlist depends on this file being scanned.`,
+      );
+    }
   }
   return project;
 }
