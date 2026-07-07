@@ -47,6 +47,21 @@ handle, and silently loses (fails to match, thus fails to refuse) rather than er
 There is no visible signal that the check ran incorrectly — the caller just proceeds as if
 the denylist had approved the connection.
 
+**Important asymmetry between the two suffix types** (verified live 2026-07-07,
+`psql` against local Postgres 18): the denylist match fails to catch *both* a
+`?query`-suffixed and a `#fragment`-suffixed value equally, but what happens *next* differs.
+libpq does **not** treat `#` as a URI fragment delimiter inside a connection string — it's
+included literally as part of the dbname. `postgresql://host/nutricam#anchor` connects to a
+database literally named `nutricam#anchor`, which doesn't exist, so `psql` fails LOUDLY
+(`FATAL: database "nutricam#anchor" does not exist`) rather than silently resolving to the
+real `nutricam`. The query-string vector is the one with a genuine silent-bypass outcome;
+the fragment vector fails the denylist match for the same structural reason but doesn't
+reach the same dangerous outcome. Stripping the fragment (as the fix below does) is still
+correct defense-in-depth — a future libpq version or a different Postgres client library
+could parse `#` differently — but don't conflate the two vectors' current real-world
+severity when writing tests or comments (a mistake this project's own PG Lab test suite
+made once already, corrected in `injection-report.sh`'s test file).
+
 ## Solution
 
 Parse the database name with an actual URL parser, not string slicing:
@@ -188,5 +203,6 @@ libpq's full parser and then reports the database it actually connected to.
 
 ## See Also
 
+- [Bash `${VAR##*/}` database-name denylist checks must strip query string/fragment first](bash-suffix-split-db-name-denylist-query-string-smuggling-2026-07-06.md) — the same bug family, independently discovered the same day via `flake-report.sh`; this file has the deeper root-cause/residual-gap analysis, that one has the original `flake-report.sh` fix
 - [Lazy-initialize DB pools and API clients in modules that tests import](../conventions/lazy-init-db-pool-and-api-client-in-test-imported-modules-2026-06-13.md) — the sibling convention this same module (`contract-snapshot.ts`) also follows
 - [psql -c does not interpolate :'var' substitution](psql-c-flag-skips-var-substitution-2026-07-05.md) — another PG Lab shell-scripting gotcha in the same `scripts/pg-lab/` family
