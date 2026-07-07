@@ -3,10 +3,10 @@
 ---
 
 title: "PG Lab (spec-first): injection ranking layer — time decay + git-aware boosts + budget"
-status: backlog
+status: blocked
 priority: low
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-07
 assignee:
 labels: [deferred, harness, spec-first]
 github_issue:
@@ -51,3 +51,14 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`; evidence and the doob
 ### 2026-07-05
 
 - Initial creation from PG Lab roadmap (Phase D, spec-first).
+
+### 2026-07-07
+
+- Marked `blocked` by the `/todo` orchestrator (P3-only run), for two independent reasons:
+  (1) this todo's own Acceptance Criteria requires an interactive `superpowers:brainstorming`
+  session covering scoring formula, ranking location, and rollout — decisions only the user
+  can make, not something an autonomous `todo-executor` should fabricate; (2) its Dependencies
+  section requires "~30 days of data" from `pg-injection-usage-telemetry.md`, which merged only
+  2 days before this triage — the temporal gate cannot be satisfied yet regardless of the spec
+  question. Unblock once ~30 days of usage-telemetry data exists AND a human-led brainstorming
+  session is run.

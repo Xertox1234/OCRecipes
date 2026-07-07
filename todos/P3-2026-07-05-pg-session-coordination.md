@@ -3,10 +3,10 @@
 ---
 
 title: "PG Lab (spec-first): cross-terminal session coordination via advisory locks + LISTEN/NOTIFY"
-status: backlog
+status: blocked
 priority: low
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-07
 assignee:
 labels: [deferred, harness, spec-first]
 github_issue:
@@ -50,3 +50,12 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`. This attacks the most
 ### 2026-07-05
 
 - Initial creation from PG Lab roadmap (Phase D, spec-first).
+
+### 2026-07-07
+
+- Marked `blocked` by the `/todo` orchestrator (P3-only run). This is the highest-complexity
+  PG Lab item and its own Acceptance Criteria requires an interactive `superpowers:brainstorming`
+  session (registry schema, staleness/reaping, which hooks participate, overlap with
+  `drift-detect.sh`) — decisions only the user can make, not something an autonomous
+  `todo-executor` should fabricate. Unblock by running the brainstorming session directly with
+  the user in a dedicated interactive session, then write and `/spec-review` the resulting spec.

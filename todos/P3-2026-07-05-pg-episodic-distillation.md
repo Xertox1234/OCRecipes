@@ -3,10 +3,10 @@
 ---
 
 title: "PG Lab (spec-first): episodic transcript distillation experiment vs /codify"
-status: backlog
+status: blocked
 priority: low
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-07
 assignee:
 labels: [deferred, harness, spec-first]
 github_issue:
@@ -50,3 +50,13 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`. The daringanitch/clau
 ### 2026-07-05
 
 - Initial creation from PG Lab roadmap (Phase D, spec-first).
+
+### 2026-07-07
+
+- Marked `blocked` by the `/todo` orchestrator (P3-only run). This todo's own Acceptance
+  Criteria requires a `superpowers:brainstorming` session — inherently interactive, exploring
+  the user's intent on model choice, prompt/schema design, and cadence. An autonomous
+  `todo-executor` cannot supply those decisions; dispatching one risks a fabricated spec
+  document opened as a PR without genuine design input. Unblock by running the brainstorming
+  session directly with the user in a dedicated interactive session, then write and
+  `/spec-review` the resulting spec per this todo's Acceptance Criteria.
