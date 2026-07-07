@@ -173,8 +173,10 @@ libpq's full parser and then reports the database it actually connected to.
   identical `LAB_DB_PATH` strip pattern); **still vulnerable to `?dbname=` override and
   percent-encoding**.
 - `scripts/pg-lab/injection-report.sh` — **now fixed** for query-string/fragment bypass
-  (via the identical `LAB_DB_PATH` strip pattern added 2026-07-07); **still vulnerable to
-  `?dbname=` override and percent-encoding**.
+  (via the identical `LAB_DB_PATH` strip pattern) and for percent-encoding (via a new
+  identifier-format allowlist, matching `init.sh`'s pattern, both added 2026-07-07);
+  **still vulnerable to `?dbname=` override** — the identifier-format check only rejects
+  malformed path segments, it cannot see a query parameter libpq reads separately.
 - `scripts/pg-lab/log-injection.sh`, `scripts/pg-lab/eval-report.sh`,
   `scripts/pg-lab/flake-report.sh`, `scripts/pg-lab/git-mine.sh` — also fixed for
   query-string/fragment via the identical `LAB_DB_PATH` pattern; **still vulnerable to

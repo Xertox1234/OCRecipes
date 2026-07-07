@@ -36,14 +36,28 @@ assert_nonzero "injection-report.sh refuses nutricam+query-string" "$QS_RC"
 assert_contains "query-string refusal names nutricam" "$QS_ERR" "nutricam"
 assert_contains "query-string refusal is the denylist rail, not a downstream error" "$QS_ERR" "a real app database, not a PG Lab database"
 
-# Fragment-smuggling regression, same root cause as the query-string case. Assert on the
-# distinctive denylist message, not merely "nutricam" — a fragment that falls through to
-# psql fails with an unrelated "cannot reach" connection error that also mentions
+# Fragment-suffix regression. Note this is NOT the same silent-bypass mechanism as the
+# query-string case above: libpq treats `#` as a literal dbname character, not a URI
+# fragment delimiter, so a pre-fix `nutricam#anchor` already fails LOUDLY (psql errors on a
+# database literally named "nutricam#anchor" — verified live) rather than silently
+# connecting to the real nutricam. Stripping the fragment here is a harmless robustness
+# addition, not the closure of a live silent-bypass hole the way the query-string strip is.
+# Assert on the distinctive denylist message, not merely "nutricam" — a fragment that falls
+# through to psql fails with an unrelated "cannot reach" connection error that also mentions
 # "nutricam", which would make a weaker assertion pass for the wrong reason (verified against
 # the pre-fix script).
 FRAG_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam#anchor" bash "$SCRIPT" 2>&1 1>/dev/null); FRAG_RC=$?
 assert_nonzero "injection-report.sh refuses nutricam+fragment" "$FRAG_RC"
 assert_contains "fragment refusal names nutricam" "$FRAG_ERR" "nutricam"
 assert_contains "fragment refusal is the denylist rail, not a downstream error" "$FRAG_ERR" "a real app database, not a PG Lab database"
+
+# Percent-encoding regression: a raw `nutr%69cam` fails the exact-match denylist above (it
+# isn't literally "nutricam"), but libpq decodes `%69` to `i` before connecting, resolving
+# to the real database. The new identifier-format allowlist (defense-in-depth, matching
+# init.sh's pattern) rejects it independently because a bare identifier can't contain `%`
+# (docs/solutions/logic-errors/denylist-bypassed-by-connection-string-query-string-2026-07-06.md).
+PCT_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutr%69cam" bash "$SCRIPT" 2>&1 1>/dev/null); PCT_RC=$?
+assert_nonzero "injection-report.sh refuses percent-encoded nutricam" "$PCT_RC"
+assert_contains "percent-encoding refusal is the identifier-format rail" "$PCT_ERR" "is not a safe Postgres identifier"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
