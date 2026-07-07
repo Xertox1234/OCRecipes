@@ -88,19 +88,19 @@ function AppContent() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <KeyboardProvider>
-        <BottomSheetModalProvider>
-          <ToastProvider>
+        <ToastProvider>
+          <BottomSheetModalProvider>
             <BatchScanProvider>
               <NavigationContainer ref={navigationRef} linking={linking}>
                 <RootStackNavigator />
               </NavigationContainer>
             </BatchScanProvider>
-            <OfflineBanner />
-            <QueryErrorToastBridge />
-            <SessionExpiryBridge />
-            <OfflineQueueBridge />
-          </ToastProvider>
-        </BottomSheetModalProvider>
+          </BottomSheetModalProvider>
+          <OfflineBanner />
+          <QueryErrorToastBridge />
+          <SessionExpiryBridge />
+          <OfflineQueueBridge />
+        </ToastProvider>
         <StatusBar style={isDark ? "light" : "dark"} />
       </KeyboardProvider>
     </GestureHandlerRootView>

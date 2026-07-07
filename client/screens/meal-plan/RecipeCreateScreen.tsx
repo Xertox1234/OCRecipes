@@ -1,10 +1,22 @@
-import React, { useCallback, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { Alert } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  useNavigation,
+  useRoute,
+  usePreventRemove,
+} from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RouteProp } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
+import type { MainTabParamList } from "@/navigation/MainTabNavigator";
 import WizardShell from "@/components/recipe-wizard/WizardShell";
+
+// The native-stack header back button and the iOS swipe-back gesture both
+// dispatch a StackActions.pop() ("POP"), not CommonActions.goBack()
+// ("GO_BACK") — only an explicit navigation.goBack() call produces the
+// latter. Both mean "the user went back".
+const BACK_ACTION_TYPES = new Set(["GO_BACK", "POP"]);
 
 type RecipeCreateScreenNavigationProp = NativeStackNavigationProp<
   MealPlanStackParamList,
@@ -16,7 +28,7 @@ type RecipeCreateRouteProp = RouteProp<MealPlanStackParamList, "RecipeCreate">;
 export default function RecipeCreateScreen() {
   const navigation = useNavigation<RecipeCreateScreenNavigationProp>();
   const route = useRoute<RecipeCreateRouteProp>();
-  const { prefill, returnToMealPlan } = route.params ?? {};
+  const { prefill, returnToMealPlan, fromHome } = route.params ?? {};
   const isDirtyRef = useRef(false);
   const isSavingRef = useRef(false);
 
@@ -41,13 +53,33 @@ export default function RecipeCreateScreen() {
     isSavingRef.current = saving;
   }, []);
 
-  // Guard against hardware back button / swipe-back gesture
-  React.useEffect(() => {
-    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
-      if (isSavingRef.current) return;
-      if (!isDirtyRef.current) return;
+  // Guard against hardware back button / swipe-back gesture. Also redirects
+  // to Home instead of MealPlanHome when this screen was reached (via
+  // RecipeImport/RecipePhotoImport) from Home — see useFromHomeBackRedirect's
+  // doc comment for why a plain back action lands in the wrong place, and why
+  // this uses usePreventRemove rather than a hand-rolled beforeRemove
+  // listener + preventDefault() (native-stack's own back gesture isn't fully
+  // coordinated with a plain preventDefault(), which desyncs JS state from
+  // the native screen stack). Always armed (not just while dirty/fromHome)
+  // so the discard confirm and the redirect share one interception point —
+  // running both off separate conditions would race an Alert against an
+  // immediate tab switch.
+  usePreventRemove(true, (e) => {
+    if (isSavingRef.current) {
+      navigation.dispatch(e.data.action);
+      return;
+    }
 
-      e.preventDefault();
+    const redirectHome = () => {
+      navigation.setParams({ fromHome: undefined });
+      navigation
+        .getParent<BottomTabNavigationProp<MainTabParamList>>()
+        ?.navigate("HomeTab");
+    };
+    const isBackFromHome =
+      fromHome && BACK_ACTION_TYPES.has(e.data.action.type);
+
+    if (isDirtyRef.current) {
       Alert.alert(
         "Discard changes?",
         "You have unsaved changes. Are you sure you want to go back?",
@@ -56,13 +88,25 @@ export default function RecipeCreateScreen() {
           {
             text: "Discard",
             style: "destructive",
-            onPress: () => navigation.dispatch(e.data.action),
+            onPress: () => {
+              if (isBackFromHome) {
+                redirectHome();
+              } else {
+                navigation.dispatch(e.data.action);
+              }
+            },
           },
         ],
       );
-    });
-    return unsubscribe;
-  }, [navigation]);
+      return;
+    }
+
+    if (isBackFromHome) {
+      redirectHome();
+    } else {
+      navigation.dispatch(e.data.action);
+    }
+  });
 
   return (
     <WizardShell

@@ -28,6 +28,7 @@ import {
 import { useParseRecipeFromUrl } from "@/hooks/useMealPlanRecipes";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipeImportScreenNavigationProp } from "@/types/navigation";
+import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
 type ImportState = "idle" | "loading" | "error";
 
@@ -42,6 +43,8 @@ export default function RecipeImportScreen() {
   const haptics = useHaptics();
 
   const returnToMealPlan = route.params?.returnToMealPlan;
+  const fromHome = route.params?.fromHome;
+  useFromHomeBackRedirect(navigation, fromHome);
   const parseMutation = useParseRecipeFromUrl();
 
   const [url, setUrl] = useState("");
@@ -73,6 +76,7 @@ export default function RecipeImportScreen() {
       navigation.replace("RecipeCreate", {
         prefill: importedData,
         returnToMealPlan,
+        fromHome,
       });
     } catch (error) {
       setState("error");
@@ -89,7 +93,7 @@ export default function RecipeImportScreen() {
         setErrorMessage("Something went wrong. Please try again.");
       }
     }
-  }, [url, haptics, parseMutation, returnToMealPlan, navigation]);
+  }, [url, haptics, parseMutation, returnToMealPlan, fromHome, navigation]);
 
   const handleTryAgain = useCallback(() => {
     setState("idle");
@@ -97,8 +101,8 @@ export default function RecipeImportScreen() {
   }, []);
 
   const handleCreateManually = useCallback(() => {
-    navigation.navigate("RecipeCreate", { returnToMealPlan });
-  }, [navigation, returnToMealPlan]);
+    navigation.navigate("RecipeCreate", { returnToMealPlan, fromHome });
+  }, [navigation, returnToMealPlan, fromHome]);
 
   const inputStyle = [
     styles.urlInput,

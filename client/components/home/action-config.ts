@@ -53,6 +53,7 @@ export function navigateAction(
     case "create-cookbook":
       navigation.navigate("MealPlanTab", {
         screen: "CookbookCreate",
+        params: { fromHome: true },
       });
       break;
 
@@ -65,11 +66,13 @@ export function navigateAction(
     case "grocery-list":
       navigation.navigate("MealPlanTab", {
         screen: "GroceryLists",
+        params: { fromHome: true },
       });
       break;
     case "pantry":
       navigation.navigate("MealPlanTab", {
         screen: "Pantry",
+        params: { fromHome: true },
       });
       break;
   }

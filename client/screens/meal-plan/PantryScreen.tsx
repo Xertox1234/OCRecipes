@@ -35,10 +35,13 @@ import {
   useCreatePantryItem,
   useDeletePantryItem,
 } from "@/hooks/usePantry";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import type { RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { PantryItem } from "@shared/schema";
+import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
 function getExpirationBadge(expiresAt: string | Date | null) {
   if (!expiresAt) return null;
@@ -135,6 +138,8 @@ export default function PantryScreen() {
   const { confirm, ConfirmationModal } = useConfirmationModal();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<MealPlanStackParamList, "Pantry">>();
+  useFromHomeBackRedirect(navigation, route.params?.fromHome);
 
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [newItemName, setNewItemName] = useState("");

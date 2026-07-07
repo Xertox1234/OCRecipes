@@ -30,6 +30,7 @@ import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipePhotoImportScreenNavigationProp } from "@/types/navigation";
+import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
 type ScreenState = "analyzing" | "review" | "error";
 
@@ -66,7 +67,8 @@ export default function RecipePhotoImportScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
 
-  const { photoUri, returnToMealPlan } = route.params;
+  const { photoUri, returnToMealPlan, fromHome } = route.params;
+  useFromHomeBackRedirect(navigation, fromHome);
   const photoImportMutation = useRecipePhotoImport();
 
   const [state, setState] = useState<ScreenState>("analyzing");
@@ -126,8 +128,8 @@ export default function RecipePhotoImportScreen() {
     if (!result) return;
     haptics.impact();
     const prefill = mapPhotoResultToImportedRecipeData(result);
-    navigation.replace("RecipeCreate", { prefill, returnToMealPlan });
-  }, [result, haptics, navigation, returnToMealPlan]);
+    navigation.replace("RecipeCreate", { prefill, returnToMealPlan, fromHome });
+  }, [result, haptics, navigation, returnToMealPlan, fromHome]);
 
   const handleTryAgain = useCallback(() => {
     setState("analyzing");
@@ -154,8 +156,8 @@ export default function RecipePhotoImportScreen() {
   }, [photoUri, photoImportMutation]);
 
   const handleUrlImport = useCallback(() => {
-    navigation.navigate("RecipeImport", { returnToMealPlan });
-  }, [navigation, returnToMealPlan]);
+    navigation.navigate("RecipeImport", { returnToMealPlan, fromHome });
+  }, [navigation, returnToMealPlan, fromHome]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
