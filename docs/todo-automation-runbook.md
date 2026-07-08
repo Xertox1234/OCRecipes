@@ -45,16 +45,22 @@ only through the guard, never unconditionally. The filters:
 3. **`scripts/todo-automerge-guard.sh`** — the executor runs this on every `low`/`medium`
    PR to classify it. It is a **fail-CLOSED allowlist** with two gates: a TODO gate
    (the archived todo's frontmatter must say priority low/medium, with no `security`
-   mention and no sensitive-domain keyword — auth/session/admin/premium/IAP/health/etc. —
-   enforced by the script itself, so even a fresh session with no overnight report can't
-   batch-merge a high/security/sensitive-intent PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
+   mention and no sensitive-domain keyword — auth/admin/premium/subscription/IAP/api-key/
+   credential/etc.; session/verification/receipt/secret/health are deliberately excluded
+   from THIS free-text keyword list because they collide with this app's own
+   recipe/nutrition vocabulary, though the path gate below still catches them by file
+   name — enforced by the script itself, so even a fresh session with no overnight report
+   can't batch-merge a high/security/sensitive-intent PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
    only when **every** changed file is a known-safe surface (all of `client/`, `server/routes/`
    and `server/storage/` minus their sensitive files, business services, shared pure
    modules, tests, docs/todos); it HOLDs for **anything sensitive or unrecognized** — the
    whole `server/middleware/` directory, `.github/`, `scripts/`, migrations,
-   `shared/schema.ts`, secrets, plus named-sensitive files (auth/session/verification/
-   admin/premium/login/api-key surfaces, IAP/health) that live inside the otherwise-open
-   `client/`, `server/routes/`, and `server/storage/` roots. An UNKNOWN path HOLDs — so a
+   `shared/schema.ts`, secrets, plus named-sensitive files (auth/session/email-verification
+   (`VerifyEmailScreen`)/admin/premium/login/api-key surfaces, IAP/health) that live inside
+   the otherwise-open `client/`, `server/routes/`, and `server/storage/` roots — note the
+   unrelated Verified Product API (`server/routes/verification.ts`, `VerificationBadge`,
+   barcode/nutrition-data verification) is NOT sensitive and stays eligible. An UNKNOWN
+   path HOLDs — so a
    mislabeled-severity todo can't get itself onto your batch-merge list. (PR #465
    revised this to fail-closed after a review found the interim denylist fail-OPEN on
    whole layers; a 2026-07-08 audit widened the allowlist from narrow subdirectories to
