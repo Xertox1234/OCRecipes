@@ -149,7 +149,7 @@ describe("Menu Routes", () => {
         allergenFlags: {
           "Shrimp Pasta": {
             allergenId: "shellfish",
-            severity: "high",
+            severity: "severe",
             ingredientName: "shrimp",
             matchedKeyword: "shrimp",
             isDerived: false,
