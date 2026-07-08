@@ -187,6 +187,18 @@ describe("todo-automerge-guard.sh (new: widened path allowlist)", () => {
     );
     expect(status).toBe(0);
   });
+
+  it.each([
+    "server/routes/verification.ts",
+    "server/storage/verification.ts",
+    "client/components/VerificationBadge.tsx",
+  ])(
+    "allows %s (Verified Product API — barcode/nutrition-data verification, not auth; confirmed by reading its imports before assuming 'verification' meant email verification)",
+    (file) => {
+      const { status } = runGuard([file], GENERIC_LOW_TODO);
+      expect(status).toBe(0);
+    },
+  );
 });
 
 describe("todo-automerge-guard.sh (new: expanded sensitive-path override)", () => {
@@ -195,9 +207,6 @@ describe("todo-automerge-guard.sh (new: expanded sensitive-path override)", () =
     "server/storage/sessions.ts",
     "server/storage/api-keys.ts",
     "client/components/SessionExpiryBridge.tsx",
-    "server/routes/verification.ts",
-    "server/storage/verification.ts",
-    "client/components/VerificationBadge.tsx",
     "client/screens/VerifyEmailScreen.tsx",
     "server/routes/store-webhooks.ts",
     "server/routes/_admin.ts",
@@ -230,4 +239,24 @@ describe("todo-automerge-guard.sh (new: sensitive-intent keyword gate)", () => {
     );
     expect(status).toBe(1);
   });
+
+  it.each([
+    "Add secret ingredient field to recipe form",
+    "Fix grocery receipt OCR crash",
+    "Improve cook session review screen",
+    "Improve barcode verification accuracy",
+  ])(
+    "does NOT HOLD a generic allowlisted file for the ordinary recipe-domain title %j (session/verif/receipt/secret deliberately excluded from SENSITIVE_INTENT_KEYWORDS — they collide with this app's own vocabulary)",
+    (title) => {
+      const { status } = runGuard(
+        ["client/screens/HomeScreen.tsx"],
+        frontmatter({
+          title: JSON.stringify(title),
+          priority: "low",
+          labels: "[]",
+        }),
+      );
+      expect(status).toBe(0);
+    },
+  );
 });

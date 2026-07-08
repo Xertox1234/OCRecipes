@@ -53,21 +53,29 @@ SAFE_ALLOWLIST='^client/|^server/routes/|^server/storage/|^server/services/|^sha
 # auth/session/admin surfaces now exposed by opening client/, server/routes/, and
 # server/storage/ as whole roots — server/middleware/ (whole dir, defense-in-depth for
 # todo-executor.md's separate skip-gate, which sources this constant), server/routes/auth,
-# token-storage, AuthContext, useAuth, any *verif*-named file (verification.ts,
-# VerificationBadge, VerifyEmailScreen), server/storage/users.ts (content-sensitive
-# role/mass-assignment surface, not name-sensitive), sessions.ts (auth session storage —
-# anchored so it does NOT match the unrelated CookSession/QuickLogSession feature),
-# SessionExpiryBridge, admin*, and Login*. Grocery "receipt" OCR (receipt.ts,
-# Receipt*Screen) and push-notification tokens (push-tokens.ts, push-token-registration)
-# are NOT sensitive and must pass.
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/auth|token-storage|AuthContext|useAuth|[Vv]erif|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|SessionExpiryBridge|admin|Premium|[Ll]ogin|api-key|secret|credential'
+# token-storage, AuthContext, useAuth, VerifyEmailScreen (the one genuinely auth-adjacent
+# verification surface — confirmed by reading it: it calls verifyEmailRequest /
+# resendVerificationRequest), server/storage/users.ts (content-sensitive role/mass-assignment
+# surface, not name-sensitive), sessions.ts (auth session storage — anchored so it does NOT
+# match the unrelated CookSession/QuickLogSession feature), SessionExpiryBridge, admin*, and
+# Login*. server/routes/verification.ts, server/storage/verification.ts, and
+# VerificationBadge are the UNRELATED Verified Product API (barcode/nutrition-data
+# verification — see shared/types/verification.ts) and must NOT be held. Grocery "receipt"
+# OCR (receipt.ts, Receipt*Screen) and push-notification tokens (push-tokens.ts,
+# push-token-registration) are NOT sensitive and must pass too.
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/auth|token-storage|AuthContext|useAuth|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|SessionExpiryBridge|admin|Premium|[Ll]ogin|api-key|secret|credential'
 
 # Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
 # whose own title/frontmatter names a sensitive domain, regardless of which file it ends
 # up touching — the backstop for a future sensitive file whose name gives no signal (see
 # server/storage/users.ts in SENSITIVE_OVERRIDE above for why this matters). Sourced at
 # runtime by todo-executor.md's research-delegation skip-gate too — one definition.
-SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|session|verif|premium|subscription|iap|receipt|health|api-key|secret|credential'
+# session, verif, receipt, and secret are deliberately EXCLUDED from this list (though they
+# remain in SENSITIVE_OVERRIDE for path matching): as free-text title words they collide
+# with this app's own recipe/nutrition vocabulary — "secret ingredient", "grocery receipt
+# OCR", "cook session", and "barcode verification" (Verified Product API) are all ordinary,
+# non-sensitive todos that would otherwise be wrongly HELD.
+SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|premium|subscription|iap|health|api-key|credential'
 
 files="$(gh pr diff "$PR" --name-only)" || {
   echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
