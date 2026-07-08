@@ -5,6 +5,7 @@ import request from "supertest";
 import { storage } from "../../storage";
 import { generateGroceryItems } from "../../services/grocery-generation";
 import { register } from "../grocery";
+import { installContractSnapshotMiddleware } from "../../lib/contract-snapshot";
 import { _testInternals as streakCacheInternals } from "../../services/verification-streak-cache";
 import {
   createMockUser,
@@ -205,6 +206,50 @@ describe("Grocery Routes", () => {
       expect(res.body.allergenFlags["whole milk"]).toBeDefined();
       expect(res.body.allergenFlags["whole milk"].allergenId).toBe("milk");
       expect(res.body.allergenFlags["whole milk"].severity).toBe("severe");
+    });
+
+    it("marks allergenFlags as dynamically-keyed for the contract-snapshot tool even at a single flagged entry (pins the real grocery.ts -> markDynamicKeyFields linkage, see server/lib/dynamic-key-fields.ts)", async () => {
+      vi.mocked(storage.getGroceryListWithItems).mockResolvedValue({
+        ...mockList,
+        items: [createMockGroceryListItem({ name: "whole milk" })],
+      });
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({
+          allergies: [{ name: "milk", severity: "severe" }],
+        }),
+      );
+
+      // A separate app instance with the (normally dev-only, opt-in) contract-
+      // snapshot middleware installed BEFORE register(app) -- register() itself
+      // is untouched by this test, so this exercises the real grocery.ts handler.
+      const queryFn = vi.fn().mockResolvedValue(undefined);
+      const getQuery = vi.fn().mockReturnValue(queryFn);
+      const snapshotApp = express();
+      snapshotApp.use(express.json());
+      installContractSnapshotMiddleware(snapshotApp, {
+        env: { NODE_ENV: "development", CONTRACT_SNAPSHOT: "1" },
+        getBranch: () => "feature-branch",
+        getQuery,
+      });
+      register(snapshotApp);
+
+      const res = await request(snapshotApp)
+        .get("/api/meal-plan/grocery-lists/1")
+        .set("Authorization", "Bearer token");
+
+      // The marker call must never change what's actually sent to the client.
+      expect(res.status).toBe(200);
+      expect(res.body.allergenFlags["whole milk"].allergenId).toBe("milk");
+
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      const [, params] = queryFn.mock.calls[0] as [string, unknown[]];
+      const shapeJson = params[4] as string;
+      // Exactly one flagged allergen -- the todo's stated COMMON case. Without
+      // grocery.ts calling markDynamicKeyFields, this item name would survive
+      // redaction (see contract-shape.test.ts's forcedDynamicKeys negative test
+      // pinning the identical fixture without the marker).
+      expect(shapeJson).not.toContain("whole milk");
+      expect(shapeJson).toContain("<dynamic>");
     });
 
     it("returns empty allergenFlags when user has no allergies", async () => {

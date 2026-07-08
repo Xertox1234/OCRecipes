@@ -14,6 +14,7 @@ import {
 import { menuRateLimit, crudRateLimit } from "./_rate-limiters";
 import { createImageUpload } from "./_upload";
 import { detectImageMimeType } from "../lib/image-mime";
+import { markDynamicKeyFields } from "../lib/dynamic-key-fields";
 
 const menuUpload = createImageUpload(5 * 1024 * 1024);
 
@@ -66,6 +67,15 @@ export function register(app: Express): void {
           menuItems: result.menuItems ?? [],
         });
 
+        // Tell the (dev-only, opt-in) contract-snapshot tool that allergenFlags is a
+        // dynamically-keyed map (keyed by menu-item name) even at the single-entry or
+        // all-primitive-valued shapes its own heuristics alone would miss — see
+        // server/lib/dynamic-key-fields.ts and
+        // docs/solutions/conventions/redact-dynamic-object-keys-not-just-values-2026-07-07.md.
+        // No-op when the snapshot middleware isn't installed (prod, or CONTRACT_SNAPSHOT
+        // unset), and harmless when result.allergenFlags is absent — this never affects
+        // the response actually sent below.
+        markDynamicKeyFields(res, ["allergenFlags"]);
         res.json({ ...result, id: saved.id });
       } catch (error) {
         handleRouteError(res, error, "analyze menu");

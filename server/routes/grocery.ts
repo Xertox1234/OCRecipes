@@ -13,6 +13,7 @@ import {
 } from "../services/grocery-generation";
 import { deductPantryFromGrocery } from "../services/pantry-deduction";
 import { parseUserAllergies } from "@shared/constants/allergens";
+import { markDynamicKeyFields } from "../lib/dynamic-key-fields";
 import {
   crudRateLimit,
   mealPlanRateLimit,
@@ -242,6 +243,14 @@ export function register(app: Express): void {
           }
         }
 
+        // Tell the (dev-only, opt-in) contract-snapshot tool that allergenFlags is a
+        // dynamically-keyed map (keyed by grocery-item name) even at the single-entry
+        // or all-primitive-valued shapes its own heuristics alone would miss — see
+        // server/lib/dynamic-key-fields.ts and
+        // docs/solutions/conventions/redact-dynamic-object-keys-not-just-values-2026-07-07.md.
+        // No-op when the snapshot middleware isn't installed (prod, or CONTRACT_SNAPSHOT
+        // unset) — this never affects the response actually sent below.
+        markDynamicKeyFields(res, ["allergenFlags"]);
         res.json({ ...list, allergenFlags });
       } catch (error) {
         handleRouteError(res, error, "fetch grocery list");
