@@ -44,19 +44,23 @@ only through the guard, never unconditionally. The filters:
    passes.
 3. **`scripts/todo-automerge-guard.sh`** — the executor runs this on every `low`/`medium`
    PR to classify it. It is a **fail-CLOSED allowlist** with two gates: a TODO gate
-   (the archived todo's frontmatter must say priority low/medium with no `security`
-   mention — enforced by the script itself, so even a fresh session with no overnight
-   report can't batch-merge a high/security PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
-   only when **every** changed file is a known-safe surface (UI, business services,
-   shared pure modules, tests, docs/todos); it HOLDs for **anything sensitive or
-   unrecognized** —
-   the whole sensitive backend (`server/storage`, `server/routes`, `server/middleware`),
-   `.github/`, `scripts/`, migrations, `shared/schema.ts`, secrets, plus the IAP/health
-   files that live inside otherwise-safe dirs. An UNKNOWN path HOLDs — so a
+   (the archived todo's frontmatter must say priority low/medium, with no `security`
+   mention and no sensitive-domain keyword — auth/session/admin/premium/IAP/health/etc. —
+   enforced by the script itself, so even a fresh session with no overnight report can't
+   batch-merge a high/security/sensitive-intent PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
+   only when **every** changed file is a known-safe surface (all of `client/`, `server/routes/`
+   and `server/storage/` minus their sensitive files, business services, shared pure
+   modules, tests, docs/todos); it HOLDs for **anything sensitive or unrecognized** — the
+   whole `server/middleware/` directory, `.github/`, `scripts/`, migrations,
+   `shared/schema.ts`, secrets, plus named-sensitive files (auth/session/verification/
+   admin/premium/login/api-key surfaces, IAP/health) that live inside the otherwise-open
+   `client/`, `server/routes/`, and `server/storage/` roots. An UNKNOWN path HOLDs — so a
    mislabeled-severity todo can't get itself onto your batch-merge list. (PR #465
    revised this to fail-closed after a review found the interim denylist fail-OPEN on
-   whole layers; to widen the pass, add a known-safe prefix to the allowlist in the
-   script.)
+   whole layers; a 2026-07-08 audit widened the allowlist from narrow subdirectories to
+   whole roots and added the sensitive-intent keyword gate as a second, independent
+   layer — see the script's own header comment for the full model; to widen the pass
+   further, add a known-safe prefix to the allowlist in the script.)
 4. **Bounded stop conditions** — the `/goal` condition halts on N PRs opened / token
    cap / repeated failures, so a systemic mistake can't burn the whole backlog before
    you wake.
