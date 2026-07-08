@@ -120,6 +120,39 @@ describe("installContractSnapshotMiddleware", () => {
     expect(res.status).toBe(404);
     expect(queryFn).not.toHaveBeenCalled();
   });
+
+  it("does not leak a literal user email from a dynamically-keyed response body", async () => {
+    const queryFn = vi.fn().mockResolvedValue(undefined);
+    const getQuery = vi.fn().mockReturnValue(queryFn);
+    const app = express();
+    installContractSnapshotMiddleware(app, {
+      env: { NODE_ENV: "development", CONTRACT_SNAPSHOT: "1" },
+      getBranch: () => "feature-branch",
+      getQuery,
+    });
+    app.get("/nutrition-by-email", (_req, res) => {
+      res.json({ "alice@example.com": { calories: 500, protein: 30 } });
+    });
+
+    const res = await request(app).get("/nutrition-by-email");
+
+    expect(res.status).toBe(200);
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    const [, params] = queryFn.mock.calls[0] as [string, unknown[]];
+    const shapeJson = params[4] as string;
+    expect(shapeJson).not.toContain("alice@example.com");
+    expect(shapeJson).not.toContain("@");
+    expect(shapeJson).toContain("<dynamic>");
+    expect(JSON.parse(shapeJson)).toEqual({
+      type: "object",
+      keys: {
+        "<dynamic>": {
+          type: "object",
+          keys: { calories: { type: "number" }, protein: { type: "number" } },
+        },
+      },
+    });
+  });
 });
 
 describe("getLabPool (lab-DB denylist)", () => {
