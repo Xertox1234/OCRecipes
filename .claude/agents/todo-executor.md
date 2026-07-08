@@ -89,15 +89,17 @@ Codified knowledge lives in the **`docs/solutions/*.md` tree** — the canonical
 
    **2b — Knowledge digest (delegated bulk read; the label marks it as item 2's companion — there is no 2a).** ONE `ask-kimi` call replaces the inline top-3 full-body reads AND the "In both paths" LEARNINGS/archive greps below (sanctioned skill-embedded invocation — `docs/AI_WORKFLOW.md` → Cheap-Worker Delegation).
 
-   **Skip gate — no delegation, keep all reads inline** when ANY of: the todo's `labels` include `security`; the todo title or labels mention auth, JWT, login, session, token, IAP, receipt, or subscription; or any affected file is sensitive — it matches the `SENSITIVE_OVERRIDE` regex sourced at runtime from `scripts/todo-automerge-guard.sh` (an IAP/health keyword override for the automerge guard's allowlist — NOT a general sensitivity detector, which is why the auth surfaces are appended explicitly in the alternation) or an auth-surface pattern:
+   **Skip gate — no delegation, keep all reads inline** when ANY of: the todo's `labels` include `security`; the todo title or labels match `SENSITIVE_INTENT_KEYWORDS` sourced at runtime from `scripts/todo-automerge-guard.sh` (auth, jwt, login, password, admin, session, verif, premium, subscription, iap, receipt, health — the same sensitive-domain list the automerge guard's TODO gate HOLDs on); or any affected file is sensitive — it matches the `SENSITIVE_OVERRIDE` regex, also sourced at runtime from the same script (a full path/filename denylist covering auth, session, verification, admin, premium, and IAP/health surfaces — no separate alternation needs appending here, unlike before this was folded into the guard's own constant):
 
    ```bash
    SENS=$(grep -m1 '^SENSITIVE_OVERRIDE=' scripts/todo-automerge-guard.sh | cut -d= -f2- | tr -d "'")
-   if [ -z "$SENS" ]; then
-     echo "SKIP — SENSITIVE_OVERRIDE extraction failed, failing closed"
-   elif printf '%s\n' <affected files> |
-     grep -qE "$SENS|(^|/)server/middleware/|(^|/)server/routes/auth|verification-token|token-storage|AuthContext|useAuth"; then
+   INTENT=$(grep -m1 '^SENSITIVE_INTENT_KEYWORDS=' scripts/todo-automerge-guard.sh | cut -d= -f2- | tr -d "'")
+   if [ -z "$SENS" ] || [ -z "$INTENT" ]; then
+     echo "SKIP — SENSITIVE_OVERRIDE/SENSITIVE_INTENT_KEYWORDS extraction failed, failing closed"
+   elif printf '%s\n' <affected files> | grep -qE "$SENS"; then
      echo "SKIP — sensitive files, no delegation"
+   elif printf '%s\n' <todo title/labels> | grep -qiE "$INTENT"; then
+     echo "SKIP — sensitive-domain todo, no delegation"
    fi
    ```
 
@@ -538,7 +540,7 @@ Todo: `todos/<filename>.md` (archived in this commit)
      gh pr merge <pr-number> --auto --squash --delete-branch
      ```
      This is GitHub's native auto-merge: it does not merge now, it arms the PR to merge itself the instant required CI checks pass — no further action from anyone. If the `gh pr merge --auto` call itself fails (network/auth/auto-merge disabled on the repo), do not retry silently — report `MERGE_ELIGIBLE: yes (auto-merge enable FAILED — needs manual gh pr merge --auto --squash --delete-branch <n>, or individual review)`. Otherwise report `MERGE_ELIGIBLE: yes (auto-merge enabled)`.
-   - **`rc` 1 — guard HOLD**, via either gate: the PATH gate (a changed file is sensitive or not on the allowlist — e.g. `server/storage`, `server/routes`, `server/middleware`, `.github/`, `scripts/`, `migrations`, `shared/schema.ts`, secrets) or the TODO gate (no `todos/archive/*.md` in the diff, an archive file absent from the PR head, priority not low/medium, or `security` in the frontmatter — so the `low`/`medium` label may be a mislabel). **Never call `gh pr merge` for a held PR.** Report `MERGE_ELIGIBLE: held (guard: <the guard's HOLD reason line — the first line of its output>)` so the report says WHICH gate held. **Do not add this to `DEFERRED_WARNINGS`** — `MERGE_ELIGIBLE: held` is the channel the orchestrator surfaces it on.
+   - **`rc` 1 — guard HOLD**, via either gate: the PATH gate (a changed file is sensitive or not on the allowlist — e.g. `server/middleware`, `.github/`, `scripts/`, `migrations`, `shared/schema.ts`, secrets, or a named-sensitive file inside the otherwise-open `client/`, `server/routes/`, `server/storage/` roots such as `users.ts`, `sessions.ts`, or an auth/verification/admin/premium/login surface) or the TODO gate (no `todos/archive/*.md` in the diff, an archive file absent from the PR head, priority not low/medium, `security` in the frontmatter, or a sensitive-domain keyword — auth/session/admin/premium/etc. — in the frontmatter, so the `low`/`medium` label may be a mislabel or the work may simply be sensitive by intent). **Never call `gh pr merge` for a held PR.** Report `MERGE_ELIGIBLE: held (guard: <the guard's HOLD reason line — the first line of its output>)` so the report says WHICH gate held. **Do not add this to `DEFERRED_WARNINGS`** — `MERGE_ELIGIBLE: held` is the channel the orchestrator surfaces it on.
    - **`rc` ≥ 2 — guard could not evaluate** (gh failure, empty diff, or a non-404 read error on the archived todo) → fail-closed: report `MERGE_ELIGIBLE: unknown` and continue. **Never call `gh pr merge`** — the PR is open and gets individual review.
    - **`high`/`critical`/`security` todos** — skip this step entirely (do not run the guard, **never call `gh pr merge`**); report `MERGE_ELIGIBLE: review-required`.
 
