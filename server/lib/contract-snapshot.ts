@@ -177,11 +177,10 @@ async function recordSnapshot(
   // `undefined` fields, serializes Dates to strings, etc.) rather than the in-memory
   // object shape.
   const normalized: unknown = JSON.parse(JSON.stringify(body));
-  // Read BEFORE the round-trip above matters conceptually, not just in code order:
-  // res.locals is separate from `body` entirely, so it is never touched by (and
-  // can't be stripped by) the JSON.parse(JSON.stringify(body)) normalization — see
-  // dynamic-key-fields.ts's module doc comment for why the marker lives there
-  // rather than on `body` itself.
+  // Ordering here doesn't matter: res.locals is separate from `body` entirely, so
+  // it is never touched by (and can't be stripped by) the JSON.parse(JSON.stringify(body))
+  // normalization above — see dynamic-key-fields.ts's module doc comment for why
+  // the marker lives there rather than on `body` itself.
   const forcedDynamicKeys = readDynamicKeyFields(res);
   const shape = deriveShape(normalized, forcedDynamicKeys);
 

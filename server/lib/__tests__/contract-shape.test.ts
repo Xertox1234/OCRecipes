@@ -513,6 +513,62 @@ describe("deriveShape", () => {
         },
       });
     });
+
+    it("still force-redacts a second marked key nested inside an already-forced key's values (regression: forcedDynamicKeys was previously dropped across this recursion boundary)", () => {
+      // otherDynamicField is marked alongside allergenFlags and happens to sit
+      // inside one of allergenFlags's own entries -- deriveForcedDynamicShape must
+      // forward forcedDynamicKeys into its own recursive deriveShape calls, or this
+      // nested single-entry map would silently fall back to the heuristics alone
+      // (which miss it -- see the "does NOT redact" negative test above) and leak
+      // "onlyone" verbatim.
+      const shape = deriveShape(
+        {
+          allergenFlags: {
+            shrimp: { otherDynamicField: { onlyone: "x" } },
+          },
+        },
+        new Set(["allergenFlags", "otherDynamicField"]),
+      );
+      const serialized = JSON.stringify(shape);
+      expect(serialized).not.toContain("shrimp");
+      expect(serialized).not.toContain("onlyone");
+      // "allergenFlags" and "otherDynamicField" are the marked FIELD names (static,
+      // hand-typed) and remain literal keys, same as the top-level test above --
+      // it's each field's *value* (shrimp's map, then onlyone's map) that collapses
+      // to <dynamic>, one level below each marked key.
+      expect(shape).toEqual({
+        type: "object",
+        keys: {
+          allergenFlags: {
+            type: "object",
+            keys: {
+              "<dynamic>": {
+                type: "object",
+                keys: {
+                  otherDynamicField: {
+                    type: "object",
+                    keys: {
+                      "<dynamic>": { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    it("falls back to plain deriveShape for a non-object value at a marked key (e.g. null), rather than crashing or mis-redacting", () => {
+      const shape = deriveShape(
+        { allergenFlags: null },
+        new Set(["allergenFlags"]),
+      );
+      expect(shape).toEqual({
+        type: "object",
+        keys: { allergenFlags: { type: "null" } },
+      });
+    });
   });
 });
 

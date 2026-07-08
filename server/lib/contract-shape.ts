@@ -200,16 +200,28 @@ const NO_FORCED_DYNAMIC_KEYS: ReadonlySet<string> = new Set();
  * itself a plain object (e.g. absent, null, or — in a future refactor — a
  * differently-shaped value) so a stale/misapplied marker degrades gracefully
  * rather than throwing or silently mis-redacting an unrelated value.
+ *
+ * Forwards `forcedDynamicKeys` into both of its own recursive `deriveShape`
+ * calls — a second marked field name nested inside this field's values (e.g.
+ * `markDynamicKeyFields(res, ["allergenFlags", "otherDynamicField"])` where
+ * `otherDynamicField` sits inside one of `allergenFlags`'s entries) must still
+ * be force-redacted, not silently fall back to the heuristics alone just
+ * because it's nested under an already-forced key.
  */
-function deriveForcedDynamicShape(value: unknown): Shape {
+function deriveForcedDynamicShape(
+  value: unknown,
+  forcedDynamicKeys: ReadonlySet<string>,
+): Shape {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return deriveShape(value);
+    return deriveShape(value, forcedDynamicKeys);
   }
   const objValue = value as Record<string, unknown>;
   const keys = Object.keys(objValue);
   if (keys.length === 0) return { type: "object", keys: {} };
 
-  const valueShapes = keys.sort().map((key) => deriveShape(objValue[key]));
+  const valueShapes = keys
+    .sort()
+    .map((key) => deriveShape(objValue[key], forcedDynamicKeys));
   return {
     type: "object",
     keys: { [DYNAMIC_KEY_PLACEHOLDER]: mergeShapes(valueShapes) },
@@ -225,11 +237,16 @@ function deriveForcedDynamicShape(value: unknown): Shape {
  * than the in-memory object shape — see server/lib/contract-snapshot.ts.
  *
  * @param forcedDynamicKeys — top-level-or-nested key NAMES (matched wherever they
- * appear in the value tree) whose value is always treated as a dynamically-keyed map
- * and force-redacted via `deriveForcedDynamicShape`, regardless of entry count or
- * value primitiveness. Populated from a producer's `markDynamicKeyFields` call — see
- * server/lib/dynamic-key-fields.ts — and passed through by `recordSnapshot` in
- * contract-snapshot.ts. Defaults to empty, so every existing caller that doesn't pass
+ * appear in the value tree, not scoped to a specific JSON path) whose value is always
+ * treated as a dynamically-keyed map and force-redacted via `deriveForcedDynamicShape`,
+ * regardless of entry count or value primitiveness. Matching by bare name rather than
+ * path means an unrelated field that happens to share a marked name would also be
+ * force-redacted — accepted because it only ever over-redacts (costs that one field's
+ * diff granularity), never under-redacts, and today's two marked routes each have
+ * exactly one field with the marked name in their response tree. Populated from a
+ * producer's `markDynamicKeyFields` call — see server/lib/dynamic-key-fields.ts — and
+ * passed through by `recordSnapshot` in contract-snapshot.ts. Defaults to empty, so
+ * every existing caller that doesn't pass
  * it behaves exactly as before this parameter was added.
  *
  * CAVEAT: object KEY NAMES are stored verbatim for a normal, statically-shaped object
@@ -273,7 +290,7 @@ export function deriveShape(
       const sortedKeys = Object.keys(objValue).sort();
       const valueShapes = sortedKeys.map((key) =>
         forcedDynamicKeys.has(key)
-          ? deriveForcedDynamicShape(objValue[key])
+          ? deriveForcedDynamicShape(objValue[key], forcedDynamicKeys)
           : deriveShape(objValue[key], forcedDynamicKeys),
       );
       const mergedValueShape = mergeShapes(valueShapes);
