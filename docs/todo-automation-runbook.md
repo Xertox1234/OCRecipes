@@ -44,19 +44,44 @@ only through the guard, never unconditionally. The filters:
    passes.
 3. **`scripts/todo-automerge-guard.sh`** — the executor runs this on every `low`/`medium`
    PR to classify it. It is a **fail-CLOSED allowlist** with two gates: a TODO gate
-   (the archived todo's frontmatter must say priority low/medium with no `security`
-   mention — enforced by the script itself, so even a fresh session with no overnight
-   report can't batch-merge a high/security PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
-   only when **every** changed file is a known-safe surface (UI, business services,
-   shared pure modules, tests, docs/todos); it HOLDs for **anything sensitive or
-   unrecognized** —
-   the whole sensitive backend (`server/storage`, `server/routes`, `server/middleware`),
-   `.github/`, `scripts/`, migrations, `shared/schema.ts`, secrets, plus the IAP/health
-   files that live inside otherwise-safe dirs. An UNKNOWN path HOLDs — so a
+   (the archived todo's frontmatter must say priority low/medium, with no `security`
+   mention and no sensitive-domain keyword — auth/admin/premium/subscription/IAP/api-key/
+   credential/etc.; session/verification/receipt/secret/health are deliberately excluded
+   from THIS free-text keyword list because they collide with this app's own
+   recipe/nutrition vocabulary, though the path gate below still catches them by file
+   name — enforced by the script itself, so even a fresh session with no overnight report
+   can't batch-merge a high/security/sensitive-intent PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
+   only when **every** changed file is a known-safe surface (all of `client/` and
+   `server/storage/` minus their sensitive files, business services, shared pure modules,
+   tests, docs/todos); it HOLDs for **anything sensitive or unrecognized** — the whole
+   `server/routes/` directory (held wholesale, the request/authz boundary — see below), the
+   whole `server/middleware/` directory, `.github/`, `scripts/`, migrations,
+   `shared/schema.ts`, secrets, plus named-sensitive files (auth/session/email-verification
+   (`VerifyEmailScreen`)/admin/premium/login/api-key surfaces, IAP/health) that live inside
+   the otherwise-open `client/` and `server/storage/` roots — note the unrelated Verified
+   Product API (`server/storage/verification.ts`, `VerificationBadge`, barcode/nutrition-data
+   verification) is NOT sensitive and stays eligible in `server/storage/`; its
+   `server/routes/verification.ts` counterpart still HOLDs, but only because ALL of
+   `server/routes/` does now, not because it's flagged sensitive. An UNKNOWN
+   path HOLDs — so a
    mislabeled-severity todo can't get itself onto your batch-merge list. (PR #465
    revised this to fail-closed after a review found the interim denylist fail-OPEN on
-   whole layers; to widen the pass, add a known-safe prefix to the allowlist in the
-   script.)
+   whole layers; a 2026-07-08 audit widened the allowlist from narrow subdirectories to
+   whole roots and added the sensitive-intent keyword gate as a second, independent
+   layer, then reverted `server/routes/` back to HOLD-by-default the same day after a
+   final review found real auth-security logic — rate limiters, password-strength schemas,
+   upload validation, external API-key auth — living in shared route infra whose filenames
+   named no sensitive keyword, so enumerate-the-sensitive-ones was the wrong default for
+   that one root. The same day, an xhigh-effort review re-ran that exact hunt across
+   `client/` and `server/services/` (the roots that DID stay open) and found 15+ more
+   instances — Bearer-token-attachment hooks, health-PII fields, PII-redaction and
+   anti-abuse logic — closed by name in `SENSITIVE_OVERRIDE`, plus a drift-detection test
+   (`scripts/__tests__/todo-automerge-guard.test.ts`) that re-runs the Bearer-token
+   signature as a CI check so the next such file fails a test instead of silently
+   auto-merging (health-PII wasn't automated the same way — too broad a signature for an
+   app where dietary data is core product logic, not just a security concern — see the
+   script's own comment). See the script's own header comment for the full model; to widen
+   the pass further, add a known-safe prefix to the allowlist in the script.)
 4. **Bounded stop conditions** — the `/goal` condition halts on N PRs opened / token
    cap / repeated failures, so a systemic mistake can't burn the whole backlog before
    you wake.
