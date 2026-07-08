@@ -18,13 +18,6 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
      git worktree remove --force "$wt" 2>/dev/null && echo "removed worktree: $wt"
    done
    git worktree prune
-   # A worktree branch that outlived its removed worktree is a dead orphan (executor failed
-   # before Step 10's rename to todo/<slug>, so it has no PR). git branch -D refuses a branch
-   # still checked out in a live worktree, so this prunes only the truly dead. Scoped to
-   # worktree-agent-* so manual `worktree-*` branches from using-git-worktrees are untouched.
-   git branch --list 'worktree-agent-*' --format='%(refname:short)' | while read -r b; do
-     git branch -D "$b" 2>/dev/null && echo "deleted orphan worktree branch: $b"
-   done
    ```
 
 2. **Delete stale remote branches.** Every `/todo` run pushes a `todo/<slug>` branch for its PR; nothing deletes it after the PR merges, so they pile up on `origin`. Delete every remote branch whose PRs are **all `MERGED`** — but never one with an open PR, never one whose PR was closed WITHOUT merging (that is a rejection signal, not cleanup — see below), and never `main` or the current branch:
@@ -35,7 +28,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    # Start clean: sweep outputs must never survive from a previous run — a skipped sweep
    # (gh failure / limit cap) would otherwise leave stale lists for later steps to trust.
    rm -f /tmp/todo-open-prs.txt /tmp/todo-delete-branches.txt /tmp/todo-closed-unmerged-branches.txt \
-     /tmp/todo-local-branches.txt /tmp/todo-delete-local-branches.txt
+     /tmp/todo-local-branches.txt /tmp/todo-delete-local-branches.txt /tmp/todo-local-closed-unmerged-branches.txt
    # ONE fetch of every PR; the open/merged/closed views below derive from it. gh returns
    # newest-first, so a truncated fetch silently drops the OLDEST PRs — exactly the ones
    # the sweep needs. If the returned count EQUALS the limit, treat the sweep as
@@ -50,12 +43,16 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
      else
        jq -r '.[] | select(.state=="MERGED") | .headRefName' /tmp/todo-all-prs.json | sort -u > /tmp/todo-merged-prs.txt
        jq -r '.[] | select(.state=="CLOSED") | .headRefName' /tmp/todo-all-prs.json | sort -u > /tmp/todo-closed-prs.txt
+       # Shared gate: given a sorted branch-list file, print only entries whose PRs are ALL
+       # merged (no open PR, no closed-unmerged PR) — used for both remote and local refs
+       # below so the two sweeps can't drift out of sync with each other.
+       merged_only() {
+         comm -12 /tmp/todo-merged-prs.txt "$1" | comm -23 - /tmp/todo-open-prs.txt | comm -23 - /tmp/todo-closed-prs.txt
+       }
        git branch -r --format='%(refname:short)' | sed 's#^origin/##' \
          | grep -vxE "HEAD|main|${CURRENT:-main}" | sort -u > /tmp/todo-remote-branches.txt
        # Delete only all-MERGED branches: ≥1 merged PR, no open PR, no closed-unmerged PR.
-       comm -12 /tmp/todo-merged-prs.txt /tmp/todo-remote-branches.txt \
-         | comm -23 - /tmp/todo-open-prs.txt \
-         | comm -23 - /tmp/todo-closed-prs.txt > /tmp/todo-delete-branches.txt
+       merged_only /tmp/todo-remote-branches.txt > /tmp/todo-delete-branches.txt
        # Closed WITHOUT merging and no open PR = a rejected implementation — never sweep
        # it silently; carry this list to the Phase 5 attention section.
        comm -12 /tmp/todo-closed-prs.txt /tmp/todo-remote-branches.txt \
@@ -72,21 +69,25 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
        # current/open/closed-unmerged.
        git branch --list 'todo/*' --format='%(refname:short)' \
          | grep -vxF "${CURRENT:-x}" | sort -u > /tmp/todo-local-branches.txt
-       comm -12 /tmp/todo-merged-prs.txt /tmp/todo-local-branches.txt \
-         | comm -23 - /tmp/todo-open-prs.txt \
-         | comm -23 - /tmp/todo-closed-prs.txt > /tmp/todo-delete-local-branches.txt
+       merged_only /tmp/todo-local-branches.txt > /tmp/todo-delete-local-branches.txt
        if [ -s /tmp/todo-delete-local-branches.txt ]; then
          while read -r b; do
-           git branch -D "$b" 2>/dev/null && echo "deleted local branch: $b"
+           out=$(git branch -D "$b" 2>&1) && echo "deleted local branch: $b" \
+             || { echo "$out" | grep -qE "checked out at|used by worktree at" || echo "WARNING: could not delete local branch $b: $out"; }
          done < /tmp/todo-delete-local-branches.txt
        fi
+       # Local closed-unmerged (rejection signal) — mirrors the remote check above. Never
+       # auto-delete it, but DO surface it in Phase 5, or a local-only rejection signal
+       # (its remote branch may already be gone) silently vanishes with no trace at all.
+       comm -12 /tmp/todo-closed-prs.txt /tmp/todo-local-branches.txt \
+         | comm -23 - /tmp/todo-open-prs.txt > /tmp/todo-local-closed-unmerged-branches.txt
      fi
    fi
    ```
 
    If the `gh` call fails (unavailable, unauthenticated, network), the block above deletes the temp file and this step is **SKIPPED** — no stale `/tmp` lists survive for later phases to trust, no branch deletion happens, and Phase 2 fetches its own open-PR list (worktree cleanup in step 1 still ran). Continue.
 
-3. **Report** what was cleaned: count of worktrees removed, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If `/tmp/todo-closed-unmerged-branches.txt` is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces both.
+3. **Report** what was cleaned: count of worktrees removed, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If any `WARNING:` line was printed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere), carry it verbatim. If `/tmp/todo-closed-unmerged-branches.txt` or `/tmp/todo-local-closed-unmerged-branches.txt` is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces all of it.
 
 4. **Sync the local default branch (`main`).** PRs from prior runs land via auto-merge or the user's review (possibly from another session), so those todos may already be archived on `origin/main` while the local checkout still shows them at the old path — and the backlog would otherwise re-pick an already-merged todo. Fast-forward local `main`. Like the rest of Phase 0 this **never aborts** the run, and it is **ff-only so it never disturbs parallel work**:
 
@@ -319,7 +320,7 @@ After all batches have been executed (or after early termination):
 
    Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading.
 
-   Then **surface actionable blocks.** Dependency-blocks (`REASON_CODE: DEPENDENCY_GATED`) do NOT resolve on their own — route each into the gated listings above ("Gated on a pending PR" if the dependency's PR is open; "Gated on a dependency (not yet implemented)" if it has none). If a `blocked` result carries `REASON_CODE: ORPHAN_BRANCH`, `PR_CHECK_FAILED`, or `PR_CLOSED_UNMERGED` (legacy fallback: its REASON contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears it (the executor's reason includes the exact steps). Do NOT bury it as an ordinary dependency row. In the same section, also print any closed-unmerged `todo/*` branches Phase 0 found (`/tmp/todo-closed-unmerged-branches.txt`) — each is a rejection signal (its PR was closed without merging); the user decides whether the todo is still wanted — and note if Phase 0 skipped the branch sweep (gh failure or the `--limit` cap).
+   Then **surface actionable blocks.** Dependency-blocks (`REASON_CODE: DEPENDENCY_GATED`) do NOT resolve on their own — route each into the gated listings above ("Gated on a pending PR" if the dependency's PR is open; "Gated on a dependency (not yet implemented)" if it has none). If a `blocked` result carries `REASON_CODE: ORPHAN_BRANCH`, `PR_CHECK_FAILED`, or `PR_CLOSED_UNMERGED` (legacy fallback: its REASON contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears it (the executor's reason includes the exact steps). Do NOT bury it as an ordinary dependency row. In the same section, also print any closed-unmerged `todo/*` branches Phase 0 found, both remote (`/tmp/todo-closed-unmerged-branches.txt`) and local (`/tmp/todo-local-closed-unmerged-branches.txt`) — each is a rejection signal (its PR was closed without merging); the user decides whether the todo is still wanted. Also print any `WARNING:` line Phase 0 echoed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere) verbatim — the branch needs manual inspection. And note if Phase 0 skipped the branch sweep (gh failure or the `--limit` cap).
 
 5. **Print verification result:**
 
@@ -338,19 +339,9 @@ After all batches have been executed (or after early termination):
      git worktree remove --force "$wt" 2>/dev/null && echo "removed worktree: $wt"
    done
    git worktree prune
-   # A worktree branch that outlived its removed worktree is a dead orphan (executor failed
-   # before Step 10's rename to todo/<slug>, so it has no PR). git branch -D refuses a branch
-   # still checked out in a live worktree, so this prunes only the truly dead. Scoped to
-   # worktree-agent-* so manual `worktree-*` branches from using-git-worktrees are untouched.
-   git branch --list 'worktree-agent-*' --format='%(refname:short)' | while read -r b; do
-     git branch -D "$b" 2>/dev/null && echo "deleted orphan worktree branch: $b"
-   done
    ```
 
-   This removes worktree directories and any orphaned `worktree-agent-*` branch left behind
-   by an executor that failed before renaming to `todo/<slug>` — branches with an open PR
-   (i.e. every successfully renamed `todo/<slug>` branch) are unaffected here; those are
-   swept by Phase 0 step 2 once their PR merges.
+   This removes worktree directories only — branches and their open PRs are unaffected.
 
 7. **Sync the local default branch with this run's merges.** A `/todo` archive (and its code change) only reaches the local working copy when the merge propagates back — nothing edits local `todos/` in place. After the run, fast-forward local `main` so any PR that merged _during_ this session (a user-requested batch-merge) is reflected locally — **ff-only, never disturbs parallel work**:
 
@@ -378,6 +369,6 @@ After all batches have been executed (or after early termination):
 - **The executor agent does the work.** This orchestrator only triages, dispatches, and summarizes. Never implement todo changes directly.
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.
-- **Self-cleaning.** Phase 0 force-removes leftover worktrees, deletes remote branches whose PRs are **all merged**, and deletes the matching LOCAL `todo/*` branches (a branch whose PR was closed WITHOUT merging is a rejection signal — surfaced in Phase 5, never auto-swept); Phase 0 and Phase 5 both also prune any orphaned `worktree-agent-*` branch left by an executor that failed before renaming. The user must never have to clean up `todo/*` branches or `agent-*` worktrees — local or remote — by hand.
+- **Self-cleaning.** Phase 0 force-removes leftover worktrees and deletes both remote AND local `todo/*` branches whose PRs are **all merged** (a branch whose PR was closed WITHOUT merging is a rejection signal — surfaced in Phase 5, never auto-swept, for both remote and local); Phase 5 removes this run's worktrees. The user must never have to clean up `todo/*` branches — local or remote — or `agent-*` worktrees by hand.
 - **Auto-merge only through the guard.** Executors enable GitHub's native `gh pr merge --auto --squash --delete-branch` ONLY when `todo-automerge-guard.sh` returns exit 0 (low/medium priority, non-`security`, safe-path-only) — it then merges itself once CI is green, no orchestrator or user step. Every other PR (`held`, `unknown`, `review-required`) stays open and is never auto-merged; the user reviews and merges those individually.
 - **Auto-sync local `main`.** Phase 0 fast-forwards local `main` at the start (catching merges from prior sessions, which also stops the backlog from re-picking an already-archived todo) and Phase 5 fast-forwards again at the end (catching this run's merges). Always **ff-only** so parallel work is never disturbed — the user must never have to `git pull` by hand to see a completed todo archived locally.
