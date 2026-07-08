@@ -164,6 +164,19 @@ Automating this further (e.g. statically verifying every dynamically-keyed respo
 field is marked) was judged not worth it for two producers; revisit if a third
 distinct dynamically-keyed field is added without going through this convention.
 
+**Correction (2026-07-08, same day, found in an ultrareview of the PR that shipped
+the above):** the marker mechanism's own `deriveForcedDynamicShape` helper had a
+recursion bug — its internal recursive calls didn't forward `forcedDynamicKeys`,
+so a *second* marked field nested inside a first marked field's values silently
+lost its forcing and fell back to the heuristics alone. Not reachable by either
+of the two producers above (neither nests a second marked field), but real and
+untested. Fixed same-day; see
+[A special-cased recursive helper must forward the same context parameter as the general-case recursion](../logic-errors/forced-recursion-branch-drops-forwarded-context-2026-07-08.md)
+for the full writeup. Left as a deferred, not-yet-actioned finding from that same
+review: `server/lib/dynamic-key-fields.ts`'s `res.locals`-based marker duplicates
+`server/lib/request-context.ts`'s existing AsyncLocalStorage per-request context
+mechanism — tracked in `todos/P3-2026-07-08-dynamic-key-fields-reinvents-request-context.md`.
+
 ## Related Files
 
 - `server/lib/contract-shape.ts` — `deriveShape()`, `looksDynamicallyKeyed()`,
