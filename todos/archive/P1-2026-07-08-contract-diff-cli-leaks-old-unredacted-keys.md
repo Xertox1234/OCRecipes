@@ -98,9 +98,9 @@ it will keep firing every time someone diffs against a pre-#544 snapshot until f
   still prints real key names via the normal path — that isn't the pre-#544-vs-post-#544
   migration channel this todo addresses.
 
-> **CORRECTED 2026-07-08** — the fix above was too broad. See the `### 2026-07-08 —
-xhigh code review + correction` entry below for the full correction; do not treat the
-> claims above as the final, verified state of `diffRouteShapes()`.
+> **CORRECTED 2026-07-08** — the fix above was too broad. See the "xhigh code review +
+> correction" Updates entry below for the full correction; do not treat the claims above
+> as the final, verified state of `diffRouteShapes()`.
 
 ### 2026-07-08 — xhigh code review + correction
 
