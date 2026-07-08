@@ -120,14 +120,78 @@ shares the identical `{ allergenId, severity }` shape.
   robust (if more maintenance-heavy) alternative — evaluate this tradeoff per project
   rather than defaulting to heuristics everywhere.
 
+## Update (2026-07-08): a producer-side marker closes both gaps for known routes
+
+The two gaps above are common enough (a single flagged allergen is the *ordinary*
+case, not the edge case) that they warranted closing, not just documenting. Rather
+than a per-route allowlist of *expected* keys (rejected above for its maintenance
+cost across ~45 route modules), the fix is a producer-side marker: the two known
+dynamically-keyed-map producers (`server/routes/grocery.ts`,
+`server/routes/menu.ts`) call `markDynamicKeyFields(res, ["allergenFlags"])`
+immediately before their `res.json(...)`, right next to the code that builds the
+map. `deriveShape()` gained an optional `forcedDynamicKeys` parameter that
+force-redacts a marked field deterministically, at any entry count and any value
+shape — closing both gaps for these two routes.
+
+Two design choices made this work without compromising the module's other
+invariants:
+
+1. **The marker lives on `res.locals`, never on the response body.** The body
+   passed to `res.json(...)` is what actually reaches the client — a marker
+   embedded in it would leak into the real API contract. `res.locals` is
+   Express-only per-request state, never serialized to the wire, and — critically
+   — untouched by `recordSnapshot`'s `JSON.parse(JSON.stringify(body))`
+   normalization (a marker attached directly to `body`, e.g. a non-enumerable
+   property, would be silently stripped by that round-trip).
+2. **The marker mechanism lives in its own tiny module**
+   (`server/lib/dynamic-key-fields.ts`), not in `contract-snapshot.ts`. A route
+   file marking its own response doesn't need to import that module's dev/lab-only
+   dependencies (`pg`, git-branch reading, the lab-DB pool) just to call one
+   function — and `contract-shape.ts` itself stays Express-agnostic (its new
+   parameter is a plain `ReadonlySet<string>`, no `Response` import).
+
+**This is still a hand-maintained list, and therefore still fail-open** — the same
+shape as the allowlist-is-a-denylist pattern this project has separately learned to
+watch for (see See Also below). A future route that returns a new free-text-keyed
+dynamic map and forgets to call `markDynamicKeyFields` falls back to the two
+heuristics alone, with their original two gaps intact. This was accepted
+deliberately, not overlooked, because the residual surface is narrow: an
+identifier-shaped key (email/UUID/long numeric id) or a >=2-entry non-primitive
+map still trips the heuristics regardless of marking, so the only unmarked-route
+leak path left is a free-text-keyed map that is *also* single-entry-or-all-primitive
+— a materially narrower combination than "any dynamic key" (the pre-#544 exposure).
+Automating this further (e.g. statically verifying every dynamically-keyed response
+field is marked) was judged not worth it for two producers; revisit if a third
+distinct dynamically-keyed field is added without going through this convention.
+
+**Correction (2026-07-08, same day, found in an ultrareview of the PR that shipped
+the above):** the marker mechanism's own `deriveForcedDynamicShape` helper had a
+recursion bug — its internal recursive calls didn't forward `forcedDynamicKeys`,
+so a *second* marked field nested inside a first marked field's values silently
+lost its forcing and fell back to the heuristics alone. Not reachable by either
+of the two producers above (neither nests a second marked field), but real and
+untested. Fixed same-day; see
+[A special-cased recursive helper must forward the same context parameter as the general-case recursion](../logic-errors/forced-recursion-branch-drops-forwarded-context-2026-07-08.md)
+for the full writeup. Left as a deferred, not-yet-actioned finding from that same
+review: `server/lib/dynamic-key-fields.ts`'s `res.locals`-based marker duplicates
+`server/lib/request-context.ts`'s existing AsyncLocalStorage per-request context
+mechanism — tracked in `todos/P3-2026-07-08-dynamic-key-fields-reinvents-request-context.md`.
+
 ## Related Files
 
 - `server/lib/contract-shape.ts` — `deriveShape()`, `looksDynamicallyKeyed()`,
-  `hasUniformNonPrimitiveValueShape()`, `mergeShapes()`
-- `server/routes/grocery.ts` — the live `allergenFlags` case that motivated the second
-  signal
-- `server/services/menu-analysis.ts` — second live instance of the same shape
+  `hasUniformNonPrimitiveValueShape()`, `deriveForcedDynamicShape()`,
+  `mergeShapes()`
+- `server/lib/dynamic-key-fields.ts` — `markDynamicKeyFields()` /
+  `readDynamicKeyFields()`, the producer-marker mechanism from the 2026-07-08
+  update above
+- `server/routes/grocery.ts` — the live `allergenFlags` case that motivated the
+  second signal, now also a marked producer
+- `server/services/menu-analysis.ts` / `server/routes/menu.ts` — second live
+  instance of the same shape; `menu.ts` is the marked producer (the service
+  function itself has no `res` to mark with)
 
 ## See Also
 
 - [A database-name denylist parsed by naive string-slicing is bypassed by a connection-string query string](../logic-errors/denylist-bypassed-by-connection-string-query-string-2026-07-06.md) — a different finding in the same `server/lib/contract-snapshot.ts` module family
+- [Widening an allowlist root turns it into a hand-maintained denylist that fails open](../best-practices/widening-allowlist-root-creates-hand-maintained-denylist-2026-07-08.md) — the general pattern this doc's 2026-07-08 update's `markDynamicKeyFields` residual is an instance of: any hand-maintained "which fields/paths are special" list is fail-open by construction; the mitigation here is narrowing the residual surface (see the update above), not eliminating the list

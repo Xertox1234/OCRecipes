@@ -381,6 +381,195 @@ describe("deriveShape", () => {
       });
     });
   });
+
+  describe("forcedDynamicKeys marker (closes the two accepted heuristic gaps for a marked field, see server/lib/dynamic-key-fields.ts)", () => {
+    it("redacts a single-entry map at a marked key even though neither heuristic alone would catch it (closes gap 1: fewer than MIN_UNIFORM_MAP_KEYS entries)", () => {
+      // Exactly one flagged allergen -- the todo's stated COMMON case for
+      // server/routes/grocery.ts and server/services/menu-analysis.ts.
+      // "shrimp" matches no DYNAMIC_KEY_PATTERN, and 1 entry is under
+      // MIN_UNIFORM_MAP_KEYS, so looksDynamicallyKeyed and
+      // hasUniformNonPrimitiveValueShape both miss this on their own (see the
+      // negative test below) -- marking "allergenFlags" as forced closes it.
+      const shape = deriveShape(
+        {
+          allergenFlags: {
+            shrimp: { allergenId: "shellfish", severity: "high" },
+          },
+        },
+        new Set(["allergenFlags"]),
+      );
+      const serialized = JSON.stringify(shape);
+      expect(serialized).not.toContain("shrimp");
+      expect(shape).toEqual({
+        type: "object",
+        keys: {
+          allergenFlags: {
+            type: "object",
+            keys: {
+              "<dynamic>": {
+                type: "object",
+                keys: {
+                  allergenId: { type: "string" },
+                  severity: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    it("does NOT redact that same single-entry map without the marker (documents the residual heuristic-only gap for an unmarked field)", () => {
+      const shape = deriveShape({
+        allergenFlags: {
+          shrimp: { allergenId: "shellfish", severity: "high" },
+        },
+      });
+      // No forcedDynamicKeys passed -- the real key name survives, proving the
+      // marker (not some other change) is what closes gap 1 above.
+      expect(shape).toEqual({
+        type: "object",
+        keys: {
+          allergenFlags: {
+            type: "object",
+            keys: {
+              shrimp: {
+                type: "object",
+                keys: {
+                  allergenId: { type: "string" },
+                  severity: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    it("redacts an all-primitive-valued map at a marked key at any entry count (closes gap 2: hasUniformNonPrimitiveValueShape only fires on object/array values)", () => {
+      const shape = deriveShape(
+        { allergenFlags: { shrimp: "high", peanuts: "severe" } },
+        new Set(["allergenFlags"]),
+      );
+      const serialized = JSON.stringify(shape);
+      expect(serialized).not.toContain("shrimp");
+      expect(serialized).not.toContain("peanuts");
+      expect(shape).toEqual({
+        type: "object",
+        keys: {
+          allergenFlags: {
+            type: "object",
+            keys: { "<dynamic>": { type: "string" } },
+          },
+        },
+      });
+    });
+
+    it("does NOT redact that same all-primitive-valued map without the marker (documents the residual heuristic-only gap for an unmarked field)", () => {
+      const shape = deriveShape({
+        allergenFlags: { shrimp: "high", peanuts: "severe" },
+      });
+      expect(shape).toEqual({
+        type: "object",
+        keys: {
+          allergenFlags: {
+            type: "object",
+            keys: {
+              peanuts: { type: "string" },
+              shrimp: { type: "string" },
+            },
+          },
+        },
+      });
+    });
+
+    it("leaves an empty map at a marked key as a plain empty object (nothing to redact)", () => {
+      const shape = deriveShape(
+        { allergenFlags: {} },
+        new Set(["allergenFlags"]),
+      );
+      expect(shape).toEqual({
+        type: "object",
+        keys: { allergenFlags: { type: "object", keys: {} } },
+      });
+    });
+
+    it("only force-redacts the marked key, leaving sibling static fields intact", () => {
+      const shape = deriveShape(
+        {
+          restaurantName: "Test Cafe",
+          allergenFlags: { shrimp: "high" },
+        },
+        new Set(["allergenFlags"]),
+      );
+      expect(shape).toEqual({
+        type: "object",
+        keys: {
+          restaurantName: { type: "string" },
+          allergenFlags: {
+            type: "object",
+            keys: { "<dynamic>": { type: "string" } },
+          },
+        },
+      });
+    });
+
+    it("still force-redacts a second marked key nested inside an already-forced key's values (regression: forcedDynamicKeys was previously dropped across this recursion boundary)", () => {
+      // otherDynamicField is marked alongside allergenFlags and happens to sit
+      // inside one of allergenFlags's own entries -- deriveForcedDynamicShape must
+      // forward forcedDynamicKeys into its own recursive deriveShape calls, or this
+      // nested single-entry map would silently fall back to the heuristics alone
+      // (which miss it -- see the "does NOT redact" negative test above) and leak
+      // "onlyone" verbatim.
+      const shape = deriveShape(
+        {
+          allergenFlags: {
+            shrimp: { otherDynamicField: { onlyone: "x" } },
+          },
+        },
+        new Set(["allergenFlags", "otherDynamicField"]),
+      );
+      const serialized = JSON.stringify(shape);
+      expect(serialized).not.toContain("shrimp");
+      expect(serialized).not.toContain("onlyone");
+      // "allergenFlags" and "otherDynamicField" are the marked FIELD names (static,
+      // hand-typed) and remain literal keys, same as the top-level test above --
+      // it's each field's *value* (shrimp's map, then onlyone's map) that collapses
+      // to <dynamic>, one level below each marked key.
+      expect(shape).toEqual({
+        type: "object",
+        keys: {
+          allergenFlags: {
+            type: "object",
+            keys: {
+              "<dynamic>": {
+                type: "object",
+                keys: {
+                  otherDynamicField: {
+                    type: "object",
+                    keys: {
+                      "<dynamic>": { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    it("falls back to plain deriveShape for a non-object value at a marked key (e.g. null), rather than crashing or mis-redacting", () => {
+      const shape = deriveShape(
+        { allergenFlags: null },
+        new Set(["allergenFlags"]),
+      );
+      expect(shape).toEqual({
+        type: "object",
+        keys: { allergenFlags: { type: "null" } },
+      });
+    });
+  });
 });
 
 describe("diffRouteShapes", () => {

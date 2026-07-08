@@ -7,6 +7,7 @@ import type { MenuAnalysisResult } from "../../services/menu-analysis";
 import { analyzeMenuPhoto } from "../../services/menu-analysis";
 import { createMockMenuScan } from "../../__tests__/factories";
 import { register } from "../menu";
+import { installContractSnapshotMiddleware } from "../../lib/contract-snapshot";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -128,6 +129,70 @@ describe("Menu Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.restaurantName).toBe("Test Cafe");
       expect(res.body.id).toBe(1);
+    });
+
+    it("marks allergenFlags as dynamically-keyed for the contract-snapshot tool even at a single flagged entry (pins the real menu.ts -> markDynamicKeyFields linkage, see server/lib/dynamic-key-fields.ts)", async () => {
+      mockPremium();
+      const mockResult: MenuAnalysisResult = {
+        restaurantName: "Test Cafe",
+        cuisine: "Italian",
+        menuItems: [
+          {
+            name: "Shrimp Pasta",
+            estimatedCalories: 500,
+            estimatedProtein: 20,
+            estimatedCarbs: 60,
+            estimatedFat: 15,
+            tags: [],
+          },
+        ],
+        allergenFlags: {
+          "Shrimp Pasta": {
+            allergenId: "shellfish",
+            severity: "severe",
+            ingredientName: "shrimp",
+            matchedKeyword: "shrimp",
+            isDerived: false,
+          },
+        },
+      };
+      vi.mocked(analyzeMenuPhoto).mockResolvedValue(mockResult);
+      vi.mocked(storage.createMenuScan).mockResolvedValue(
+        createMockMenuScan({ id: 1, restaurantName: "Test Cafe" }),
+      );
+
+      // A separate app instance with the (normally dev-only, opt-in) contract-
+      // snapshot middleware installed BEFORE register(app) -- register() itself
+      // is untouched by this test, so this exercises the real menu.ts handler.
+      const queryFn = vi.fn().mockResolvedValue(undefined);
+      const getQuery = vi.fn().mockReturnValue(queryFn);
+      const snapshotApp = express();
+      snapshotApp.use(express.json());
+      installContractSnapshotMiddleware(snapshotApp, {
+        env: { NODE_ENV: "development", CONTRACT_SNAPSHOT: "1" },
+        getBranch: () => "feature-branch",
+        getQuery,
+      });
+      register(snapshotApp);
+
+      const res = await request(snapshotApp)
+        .post("/api/menu/scan")
+        .set("Authorization", "Bearer token");
+
+      // The marker call must never change what's actually sent to the client.
+      expect(res.status).toBe(200);
+      expect(res.body.allergenFlags["Shrimp Pasta"].allergenId).toBe(
+        "shellfish",
+      );
+
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      const [, params] = queryFn.mock.calls[0] as [string, unknown[]];
+      const shapeJson = params[4] as string;
+      // Exactly one flagged allergen -- the todo's stated COMMON case. Without
+      // menu.ts calling markDynamicKeyFields, this item name would survive
+      // redaction (see contract-shape.test.ts's forcedDynamicKeys negative test).
+      expect(shapeJson).not.toContain("Shrimp Pasta");
+      expect(shapeJson).toContain("<dynamic>");
     });
 
     it("returns 403 for free tier users", async () => {

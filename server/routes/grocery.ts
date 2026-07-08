@@ -13,6 +13,7 @@ import {
 } from "../services/grocery-generation";
 import { deductPantryFromGrocery } from "../services/pantry-deduction";
 import { parseUserAllergies } from "@shared/constants/allergens";
+import { markDynamicKeyFields } from "../lib/dynamic-key-fields";
 import {
   crudRateLimit,
   mealPlanRateLimit,
@@ -242,6 +243,9 @@ export function register(app: Express): void {
           }
         }
 
+        // allergenFlags is keyed by grocery-item name — see
+        // server/lib/dynamic-key-fields.ts for why this is marked.
+        markDynamicKeyFields(res, ["allergenFlags"]);
         res.json({ ...list, allergenFlags });
       } catch (error) {
         handleRouteError(res, error, "fetch grocery list");

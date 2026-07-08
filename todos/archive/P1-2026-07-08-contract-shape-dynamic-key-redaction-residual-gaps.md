@@ -3,7 +3,7 @@
 ---
 
 title: "contract-shape.ts dynamic-key redaction has two accepted, non-theoretical false-negative gaps"
-status: backlog
+status: done
 priority: high
 created: 2026-07-08
 updated: 2026-07-08
@@ -51,13 +51,13 @@ reachable today for a live, health-adjacent-data route, not an edge case.
 
 ## Acceptance Criteria
 
-- [ ] Evaluate the producer-side-marker approach at the two known call sites
+- [x] Evaluate the producer-side-marker approach at the two known call sites
       (`grocery.ts`'s `allergenFlags`, `menu-analysis.ts`'s `allergenFlags`) as an alternative
       or supplement to the heuristic signals already in `deriveShape`.
-- [ ] Either close the two documented gaps (single-entry pattern-miss; all-primitive-valued
+- [x] Either close the two documented gaps (single-entry pattern-miss; all-primitive-valued
       dynamic map) or make an explicit, user-visible decision to accept them permanently with
       a clearly justified rationale (not just a code comment).
-- [ ] Regression tests for both previously-uncaught scenarios if closed via new logic.
+- [x] Regression tests for both previously-uncaught scenarios if closed via new logic.
 
 ## Implementation Notes
 
@@ -85,3 +85,48 @@ reachable today for a live, health-adjacent-data route, not an edge case.
 
 - Filed during code review of PR #544 (merged as 137b746e), per user instruction to merge
   and file findings as follow-up todos.
+
+### 2026-07-08 (resolved)
+
+- Implemented the producer-side marker: `server/lib/dynamic-key-fields.ts`
+  (`markDynamicKeyFields` / `readDynamicKeyFields`) stores field names on
+  `res.locals` — not on the response body, so it can't leak to the client and
+  isn't stripped by `recordSnapshot`'s `JSON.parse(JSON.stringify(body))`
+  round-trip (the wrinkle flagged in this todo's Background). `deriveShape` gained
+  an optional `forcedDynamicKeys` parameter that force-redacts a marked field
+  deterministically at any entry count and any value shape, via a new
+  `deriveForcedDynamicShape` helper — closing both accepted gaps for the two known
+  producers.
+- Wired into `server/routes/grocery.ts` and `server/routes/menu.ts` (the actual
+  `res.json` call site for `menu-analysis.ts`'s `allergenFlags`), each calling
+  `markDynamicKeyFields(res, ["allergenFlags"])` immediately before `res.json`.
+- Kept as **defense-in-depth alongside**, not a replacement for, the existing
+  `looksDynamicallyKeyed`/`hasUniformNonPrimitiveValueShape` heuristics — an
+  unmarked future route with the same shape still falls back to them.
+- Explicit, user-visible residual-risk decision (per this todo's 2nd acceptance
+  criterion): the marker is a hand-maintained list and therefore still fail-open in
+  the same shape as the allowlist-is-a-denylist pattern
+  (`docs/solutions/best-practices/widening-allowlist-root-creates-hand-maintained-denylist-2026-07-08.md`).
+  Accepted because the residual surface is narrow — an identifier-shaped key or a
+  > =2-entry non-primitive map still trips the heuristics regardless of marking, so
+  > only a free-text-keyed, single-entry-or-all-primitive map on a _new, unmarked_
+  > route remains exposed, a materially smaller surface than the pre-#544 state.
+  > Documented in `contract-shape.ts`'s doc comments, `dynamic-key-fields.ts`'s
+  > module comment, and this convention doc's 2026-07-08 update.
+- Regression tests added at both layers: unit (`deriveShape` + `forcedDynamicKeys`,
+  both positive and negative fixtures proving the marker — not something else — is
+  what closes the gap) and integration (`installContractSnapshotMiddleware` +
+  `markDynamicKeyFields` mechanism test, plus real-route linkage tests in
+  `grocery.test.ts` and `menu.test.ts` proving the actual routes call the marker,
+  not just that the mechanism works in isolation).
+- Convention doc updated: `docs/solutions/conventions/redact-dynamic-object-keys-not-just-values-2026-07-07.md`.
+- Verified: `tsc --noEmit` clean, `eslint` clean, 118 tests passing across the 5
+  affected suites.
+- Landed on `todo/contract-shape-dynamic-key-redaction-residual-gaps` off `main`
+  (commits 5ecd060a, 316a69b9) rather than in the session's assigned worktree —
+  that worktree turned out to be a stale, unrelated, already-pushed feature branch
+  (`worktree-widen-todo-automerge-path-gate`, 12 commits about the todo-automerge
+  path-gate widening); work was recovered onto a fresh branch after being
+  mistakenly made directly on `main`'s working tree (absolute paths were used
+  instead of the worktree path throughout the session — caught via an ESLint "no
+  files matching" error, before anything was committed to `main`).

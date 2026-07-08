@@ -14,6 +14,7 @@ import {
 import { menuRateLimit, crudRateLimit } from "./_rate-limiters";
 import { createImageUpload } from "./_upload";
 import { detectImageMimeType } from "../lib/image-mime";
+import { markDynamicKeyFields } from "../lib/dynamic-key-fields";
 
 const menuUpload = createImageUpload(5 * 1024 * 1024);
 
@@ -66,6 +67,10 @@ export function register(app: Express): void {
           menuItems: result.menuItems ?? [],
         });
 
+        // allergenFlags is keyed by menu-item name — see
+        // server/lib/dynamic-key-fields.ts for why this is marked. Harmless when
+        // result.allergenFlags is absent (deriveShape simply won't find the key).
+        markDynamicKeyFields(res, ["allergenFlags"]);
         res.json({ ...result, id: saved.id });
       } catch (error) {
         handleRouteError(res, error, "analyze menu");

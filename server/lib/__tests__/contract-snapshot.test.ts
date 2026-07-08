@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import { installContractSnapshotMiddleware } from "../contract-snapshot";
+import { markDynamicKeyFields } from "../dynamic-key-fields";
 
 function createApp(
   options: Parameters<typeof installContractSnapshotMiddleware>[1],
@@ -149,6 +150,55 @@ describe("installContractSnapshotMiddleware", () => {
         "<dynamic>": {
           type: "object",
           keys: { calories: { type: "number" }, protein: { type: "number" } },
+        },
+      },
+    });
+  });
+
+  it("force-redacts a single-entry dynamically-keyed field marked via markDynamicKeyFields, closing the gap neither heuristic alone catches (mechanism-level pin — see grocery.test.ts/menu.test.ts for the real-route pin)", async () => {
+    const queryFn = vi.fn().mockResolvedValue(undefined);
+    const getQuery = vi.fn().mockReturnValue(queryFn);
+    const app = express();
+    installContractSnapshotMiddleware(app, {
+      env: { NODE_ENV: "development", CONTRACT_SNAPSHOT: "1" },
+      getBranch: () => "feature-branch",
+      getQuery,
+    });
+    app.get("/allergen-flags", (_req, res) => {
+      // Exactly what a producer does: mark right before res.json, next to the
+      // code that built the dynamic map.
+      markDynamicKeyFields(res, ["allergenFlags"]);
+      res.json({
+        allergenFlags: {
+          shrimp: { allergenId: "shellfish", severity: "high" },
+        },
+      });
+    });
+
+    const res = await request(app).get("/allergen-flags");
+
+    expect(res.status).toBe(200);
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    const [, params] = queryFn.mock.calls[0] as [string, unknown[]];
+    const shapeJson = params[4] as string;
+    // Without the marker, a single-entry map like this would NOT be redacted --
+    // see contract-shape.test.ts's "does NOT redact that same single-entry map
+    // without the marker" for the same fixture proving the negative.
+    expect(shapeJson).not.toContain("shrimp");
+    expect(JSON.parse(shapeJson)).toEqual({
+      type: "object",
+      keys: {
+        allergenFlags: {
+          type: "object",
+          keys: {
+            "<dynamic>": {
+              type: "object",
+              keys: {
+                allergenId: { type: "string" },
+                severity: { type: "string" },
+              },
+            },
+          },
         },
       },
     });

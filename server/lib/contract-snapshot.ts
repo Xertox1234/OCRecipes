@@ -24,6 +24,7 @@ import { execSync } from "node:child_process";
 import type { Application, NextFunction, Request, Response } from "express";
 import pg from "pg";
 import { deriveShape } from "./contract-shape";
+import { readDynamicKeyFields } from "./dynamic-key-fields";
 import { logger, toError } from "./logger";
 
 const { Pool } = pg;
@@ -176,7 +177,12 @@ async function recordSnapshot(
   // `undefined` fields, serializes Dates to strings, etc.) rather than the in-memory
   // object shape.
   const normalized: unknown = JSON.parse(JSON.stringify(body));
-  const shape = deriveShape(normalized);
+  // Ordering here doesn't matter: res.locals is separate from `body` entirely, so
+  // it is never touched by (and can't be stripped by) the JSON.parse(JSON.stringify(body))
+  // normalization above — see dynamic-key-fields.ts's module doc comment for why
+  // the marker lives there rather than on `body` itself.
+  const forcedDynamicKeys = readDynamicKeyFields(res);
+  const shape = deriveShape(normalized, forcedDynamicKeys);
 
   await query(
     `INSERT INTO dev.contract_snapshots
