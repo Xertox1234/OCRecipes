@@ -55,8 +55,15 @@ PR="${1:?usage: todo-automerge-guard.sh <pr-number>}"
 # (rate limiters, password-strength schemas, upload validation, external API-key auth)
 # living in shared route infra whose filenames name no sensitive keyword — see git log
 # for the full incident — so enumerate-the-sensitive-ones-in-SENSITIVE_OVERRIDE was the
-# wrong default for this specific root, unlike client/ and server/storage/ where no
-# equivalent hidden-security-logic pattern was found.
+# wrong default for this specific root. client/ and server/storage/ stay open under the
+# SAME model (a widened root is filename-denylist-protected, not proven exhaustive) —
+# accepted there, unlike routes, because (a) the two comparable shared chokepoints found
+# in client/ (query-client.ts, reporter.ts — see SENSITIVE_OVERRIDE below) already carry
+# adversarial tests pinning the security property itself, which routes' rate-limiter/
+# password-schema values did NOT have, so an obvious regression fails CI before it can
+# auto-merge, and (b) reverting either root wholesale would give up most of this widening's
+# value. This is a residual-risk acceptance, not a proof that no other such file exists —
+# see the script's git history / PR description for the human's sign-off on this tradeoff.
 SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shared/schemas/|^shared/constants/|^shared/lib/|(^|/)__tests__/|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(-|\.)utils\.tsx?$|^docs/|^todos/|\.md$'
 
 # Sensitive files that DO live inside an allowlisted dir and must HOLD anyway: the IAP /
@@ -78,8 +85,14 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # held; server/routes/verification.ts holds too, but only because ALL of server/routes/
 # does now — not because it's flagged sensitive. Grocery "receipt" OCR (receipt.ts,
 # Receipt*Screen) and push-notification tokens (push-tokens.ts, push-token-registration)
-# are NOT sensitive and must pass too.
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|token-storage|AuthContext|useAuth|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|SessionExpiryBridge|admin|Premium|[Ll]ogin|api-key|secret|credential'
+# are NOT sensitive and must pass too. client/lib/query-client.ts (attaches the Bearer
+# token to every API call and detects session death — found by a final-review hunt for
+# the same shared-infra pattern that bit server/routes/) and client/lib/reporter.ts
+# (scrubEvent strips Authorization headers before Sentry — "belt-and-suspenders" defense
+# against a live JWT leaking to a third-party SaaS) must HOLD despite already having
+# adversarial test coverage (a subtle logic change, not just deletion, could still slip
+# through both gates).
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|token-storage|AuthContext|useAuth|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|SessionExpiryBridge|admin|Premium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$'
 
 # Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
 # whose own title/frontmatter names a sensitive domain, regardless of which file it ends

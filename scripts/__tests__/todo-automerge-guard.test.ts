@@ -234,6 +234,14 @@ describe("todo-automerge-guard.sh (new: expanded sensitive-path override)", () =
       expect(status).toBe(1);
     },
   );
+
+  it.each(["client/lib/query-client.ts", "client/lib/reporter.ts"])(
+    "HOLDs %s (shared client/ infra carrying real security logic — Bearer-token attachment/session-expiry detection, and Authorization-header scrubbing before Sentry — found by a final-review hunt for the same hidden-security-logic pattern that caused server/routes/ to revert)",
+    (file) => {
+      const { status } = runGuard([file], GENERIC_LOW_TODO);
+      expect(status).toBe(1);
+    },
+  );
 });
 
 describe("todo-automerge-guard.sh (new: sensitive-intent keyword gate)", () => {
