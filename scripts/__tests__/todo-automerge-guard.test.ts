@@ -105,11 +105,6 @@ describe("todo-automerge-guard.sh (regression — behavior unchanged by this wid
     expect(status).toBe(1);
   });
 
-  it("HOLDs server/routes/auth.ts (path override) even though server/routes/ is now broadly allowed", () => {
-    const { status } = runGuard(["server/routes/auth.ts"], GENERIC_LOW_TODO);
-    expect(status).toBe(1);
-  });
-
   it("HOLDs client/context/AuthContext.tsx (path override)", () => {
     const { status } = runGuard(
       ["client/context/AuthContext.tsx"],
@@ -159,11 +154,6 @@ describe("todo-automerge-guard.sh (regression — behavior unchanged by this wid
 });
 
 describe("todo-automerge-guard.sh (new: widened path allowlist)", () => {
-  it("allows server/routes/recipes.ts for a low-priority todo", () => {
-    const { status } = runGuard(["server/routes/recipes.ts"], GENERIC_LOW_TODO);
-    expect(status).toBe(0);
-  });
-
   it("allows server/storage/meal-plans.ts for a medium-priority todo", () => {
     const { status } = runGuard(
       ["server/storage/meal-plans.ts"],
@@ -189,7 +179,6 @@ describe("todo-automerge-guard.sh (new: widened path allowlist)", () => {
   });
 
   it.each([
-    "server/routes/verification.ts",
     "server/storage/verification.ts",
     "client/components/VerificationBadge.tsx",
   ])(
@@ -201,6 +190,33 @@ describe("todo-automerge-guard.sh (new: widened path allowlist)", () => {
   );
 });
 
+describe("todo-automerge-guard.sh (server/routes/ HOLDs wholesale, not enumerate-the-sensitive-ones)", () => {
+  it.each([
+    "server/routes/recipes.ts",
+    "server/routes/meal-suggestions.ts",
+    "server/routes/verification.ts",
+  ])(
+    "HOLDs %s even though it names no sensitive keyword — server/routes/ was reverted off the allowlist entirely after a whole-root widening let auth-security logic (rate limiters, password schemas, upload validation, API-key auth) slip through in shared route infra whose filenames named no sensitive keyword",
+    (file) => {
+      const { status } = runGuard([file], GENERIC_LOW_TODO);
+      expect(status).toBe(1);
+    },
+  );
+
+  it.each([
+    "server/routes/_rate-limiters.ts",
+    "server/routes/_schemas.ts",
+    "server/routes/_upload.ts",
+    "server/routes/public-api.ts",
+  ])(
+    "HOLDs %s (the specific fail-open files a final whole-branch review found: real auth-security logic imported by auth.ts, matching no override token under the old whole-root widening)",
+    (file) => {
+      const { status } = runGuard([file], GENERIC_LOW_TODO);
+      expect(status).toBe(1);
+    },
+  );
+});
+
 describe("todo-automerge-guard.sh (new: expanded sensitive-path override)", () => {
   it.each([
     "server/storage/users.ts",
@@ -208,9 +224,6 @@ describe("todo-automerge-guard.sh (new: expanded sensitive-path override)", () =
     "server/storage/api-keys.ts",
     "client/components/SessionExpiryBridge.tsx",
     "client/screens/VerifyEmailScreen.tsx",
-    "server/routes/store-webhooks.ts",
-    "server/routes/_admin.ts",
-    "server/routes/admin-api-keys.ts",
     "client/context/PremiumContext.tsx",
     "client/hooks/usePremiumFeatures.ts",
     "client/screens/LoginScreen.tsx",

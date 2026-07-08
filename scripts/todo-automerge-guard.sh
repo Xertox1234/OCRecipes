@@ -14,15 +14,20 @@
 #   2. PATH GATE — EVERY changed file is on the known-safe ALLOWLIST and none hits the
 #      sensitive override.
 # Anything else HOLDs for individual human review — an unanticipated path, the whole
-# server/middleware/ directory, .github/ (the CI gates), scripts/ (incl. this guard),
-# migrations, shared/schema.ts, secrets/certs, plus explicit sensitive files named in
-# SENSITIVE_OVERRIDE that live inside the otherwise-open client/, server/routes/, and
-# server/storage/ roots.
+# server/routes/ directory (the request/authz boundary — see SAFE_ALLOWLIST's comment for
+# why this one root HOLDs wholesale instead of being enumerate-the-sensitive-ones), the
+# whole server/middleware/ directory, .github/ (the CI gates), scripts/ (incl. this
+# guard), migrations, shared/schema.ts, secrets/certs, plus explicit sensitive files named
+# in SENSITIVE_OVERRIDE that live inside the otherwise-open client/ and server/storage/
+# roots.
 #
 # To widen the pass: ADD a known-safe prefix to SAFE_ALLOWLIST. If you allowlist a dir
 # that also holds a sensitive file (e.g. server/services holds the IAP services), add
 # that file to SENSITIVE_OVERRIDE so it still HOLDs. A missed allowlist entry only costs
-# a manual merge; never the other way around.
+# a manual merge; never the other way around. Before allowlisting a WHOLE new root,
+# specifically check whether security-relevant logic (rate limiting, input validation,
+# auth checks) hides in generically-named or shared-infra files there — enumerating the
+# sensitive files after the fact failed for server/routes/ (see git log).
 #
 # Usage:  scripts/todo-automerge-guard.sh <pr-number>
 # Exit 0 = eligible for the user's batch-merge (MERGE_ELIGIBLE: yes) — NOT a merge command
@@ -39,31 +44,42 @@ set -euo pipefail
 PR="${1:?usage: todo-automerge-guard.sh <pr-number>}"
 
 # Known-safe surfaces. A file is batch-merge-eligible only if it matches one of these:
-# all of client/ (UI, hooks, context, lib, screens, navigation, constants, ...), all of
-# server/routes/ and server/storage/ (minus the sensitive files named in
-# SENSITIVE_OVERRIDE below), business-logic services, shared pure modules (types /
-# zod-schemas / constants / lib), any test, an extracted *-utils file, and docs/todos/
-# markdown. NOTE: server/middleware/, migrations/, shared/schema.ts, .github/, scripts/,
-# certs, .env are deliberately ABSENT — they HOLD in full, not file-by-file.
-SAFE_ALLOWLIST='^client/|^server/routes/|^server/storage/|^server/services/|^shared/types/|^shared/schemas/|^shared/constants/|^shared/lib/|(^|/)__tests__/|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(-|\.)utils\.tsx?$|^docs/|^todos/|\.md$'
+# all of client/ (UI, hooks, context, lib, screens, navigation, constants, ...) and all of
+# server/storage/ (minus the sensitive files named in SENSITIVE_OVERRIDE below),
+# business-logic services, shared pure modules (types / zod-schemas / constants / lib),
+# any test, an extracted *-utils file, and docs/todos/ markdown. NOTE: server/routes/,
+# server/middleware/, migrations/, shared/schema.ts, .github/, scripts/, certs, .env are
+# deliberately ABSENT — they HOLD in full, not file-by-file. server/routes/ HOLDs
+# wholesale (2026-07-08, reverted from a brief whole-root widening) because it's the
+# request/authz boundary: an initial widening attempt found real auth-security logic
+# (rate limiters, password-strength schemas, upload validation, external API-key auth)
+# living in shared route infra whose filenames name no sensitive keyword — see git log
+# for the full incident — so enumerate-the-sensitive-ones-in-SENSITIVE_OVERRIDE was the
+# wrong default for this specific root, unlike client/ and server/storage/ where no
+# equivalent hidden-security-logic pattern was found.
+SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shared/schemas/|^shared/constants/|^shared/lib/|(^|/)__tests__/|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(-|\.)utils\.tsx?$|^docs/|^todos/|\.md$'
 
 # Sensitive files that DO live inside an allowlisted dir and must HOLD anyway: the IAP /
 # billing surfaces (receipt-validation, store-notification, store-webhook, subscription-*,
 # entitlement, Premium*), the health-PII onboarding screens (client/**Health*), and the
-# auth/session/admin surfaces now exposed by opening client/, server/routes/, and
-# server/storage/ as whole roots — server/middleware/ (whole dir, defense-in-depth for
-# todo-executor.md's separate skip-gate, which sources this constant), server/routes/auth,
-# token-storage, AuthContext, useAuth, VerifyEmailScreen (the one genuinely auth-adjacent
-# verification surface — confirmed by reading it: it calls verifyEmailRequest /
-# resendVerificationRequest), server/storage/users.ts (content-sensitive role/mass-assignment
-# surface, not name-sensitive), sessions.ts (auth session storage — anchored so it does NOT
-# match the unrelated CookSession/QuickLogSession feature), SessionExpiryBridge, admin*, and
-# Login*. server/routes/verification.ts, server/storage/verification.ts, and
-# VerificationBadge are the UNRELATED Verified Product API (barcode/nutrition-data
-# verification — see shared/types/verification.ts) and must NOT be held. Grocery "receipt"
-# OCR (receipt.ts, Receipt*Screen) and push-notification tokens (push-tokens.ts,
-# push-token-registration) are NOT sensitive and must pass too.
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/auth|token-storage|AuthContext|useAuth|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|SessionExpiryBridge|admin|Premium|[Ll]ogin|api-key|secret|credential'
+# auth/session surfaces now exposed by opening client/ and server/storage/ as whole roots
+# — server/middleware/ (whole dir, defense-in-depth for todo-executor.md's separate
+# skip-gate, which sources this constant), token-storage, AuthContext, useAuth,
+# VerifyEmailScreen (the one genuinely auth-adjacent verification surface — confirmed by
+# reading it: it calls verifyEmailRequest / resendVerificationRequest),
+# server/storage/users.ts (content-sensitive role/mass-assignment surface, not
+# name-sensitive), sessions.ts (auth session storage — anchored so it does NOT match the
+# unrelated CookSession/QuickLogSession feature), SessionExpiryBridge, admin*, and Login*.
+# (admin/Login* currently only match files under server/routes/, which HOLDs wholesale
+# regardless — kept as forward-looking coverage for a future client/ or server/storage/
+# file of the same name, same as secret/credential below.) server/storage/verification.ts
+# and client/components/VerificationBadge are the UNRELATED Verified Product API
+# (barcode/nutrition-data verification — see shared/types/verification.ts) and must NOT be
+# held; server/routes/verification.ts holds too, but only because ALL of server/routes/
+# does now — not because it's flagged sensitive. Grocery "receipt" OCR (receipt.ts,
+# Receipt*Screen) and push-notification tokens (push-tokens.ts, push-token-registration)
+# are NOT sensitive and must pass too.
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|token-storage|AuthContext|useAuth|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|SessionExpiryBridge|admin|Premium|[Ll]ogin|api-key|secret|credential'
 
 # Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
 # whose own title/frontmatter names a sensitive domain, regardless of which file it ends
