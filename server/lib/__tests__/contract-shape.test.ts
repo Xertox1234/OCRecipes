@@ -471,4 +471,44 @@ describe("diffRouteShapes", () => {
       retyped: [],
     });
   });
+
+  describe("one side redacted to <dynamic> (regression: pre-#544 snapshot vs post-#544)", () => {
+    it("reports no diff when the redacted value shape matches the real keys' merged shape", () => {
+      // base = what deriveShape produced BEFORE PR #544 (real key names stored
+      // literally); feature = what it produces AFTER #544 (collapsed to <dynamic>).
+      const base = objShape({
+        "alice@example.com": { type: "number" },
+        "bob@example.com": { type: "number" },
+      });
+      const feature = objShape({ "<dynamic>": { type: "number" } });
+
+      const diff = diffRouteShapes(base, feature);
+      expect(diff).toEqual({ added: [], removed: [], retyped: [] });
+      expect(JSON.stringify(diff)).not.toContain("@example.com");
+    });
+
+    it("reports a <dynamic> retype (never the real key names) when the value shape actually changed", () => {
+      const base = objShape({
+        "alice@example.com": { type: "number" },
+        "bob@example.com": { type: "number" },
+      });
+      const feature = objShape({ "<dynamic>": { type: "string" } });
+
+      const diff = diffRouteShapes(base, feature);
+      expect(diff).toEqual({ added: [], removed: [], retyped: ["<dynamic>"] });
+      expect(JSON.stringify(diff)).not.toContain("@example.com");
+    });
+
+    it("holds symmetrically when the feature side has the real keys and base is redacted", () => {
+      const base = objShape({ "<dynamic>": { type: "number" } });
+      const feature = objShape({
+        "alice@example.com": { type: "number" },
+        "bob@example.com": { type: "number" },
+      });
+
+      const diff = diffRouteShapes(base, feature);
+      expect(diff).toEqual({ added: [], removed: [], retyped: [] });
+      expect(JSON.stringify(diff)).not.toContain("@example.com");
+    });
+  });
 });

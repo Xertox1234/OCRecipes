@@ -262,6 +262,13 @@ function unwrapToKeys(shape: Shape): Record<string, Shape> | null {
   return current.type === "object" ? current.keys : null;
 }
 
+/** True when a shape's key set is exactly the redaction placeholder — i.e. deriveShape
+ *  collapsed a dynamically-keyed object to `{ "<dynamic>": <mergedValueShape> }`. */
+function isRedactedKeySet(keys: Record<string, Shape>): boolean {
+  const names = Object.keys(keys);
+  return names.length === 1 && names[0] === DYNAMIC_KEY_PLACEHOLDER;
+}
+
 /**
  * Diff two shapes recorded for the same (route_pattern, method, status) across
  * branches. When a key-level comparison isn't possible (primitive/mixed root shapes),
@@ -275,6 +282,28 @@ export function diffRouteShapes(base: Shape, feature: Shape): RouteShapeDiff {
   if (!baseKeys || !featureKeys) {
     const retyped =
       canonicalKey(base) === canonicalKey(feature) ? [] : ["<root>"];
+    return { added: [], removed: [], retyped };
+  }
+
+  // One side redacted to <dynamic>, the other still holds real key names — an old
+  // pre-#544 snapshot diffed against a post-#544 one for the same route. Emitting the
+  // raw key names here would reprint the exact dynamic keys (emails, item names) that
+  // #544 redacts. Collapse to a single <dynamic> comparison: reconstruct what post-#544
+  // code would have stored for the unredacted side (mergeShapes of its values) and
+  // compare value shapes only — never surface the real names.
+  const baseRedacted = isRedactedKeySet(baseKeys);
+  const featureRedacted = isRedactedKeySet(featureKeys);
+  if (baseRedacted !== featureRedacted) {
+    const baseValue = baseRedacted
+      ? baseKeys[DYNAMIC_KEY_PLACEHOLDER]
+      : mergeShapes(Object.values(baseKeys));
+    const featureValue = featureRedacted
+      ? featureKeys[DYNAMIC_KEY_PLACEHOLDER]
+      : mergeShapes(Object.values(featureKeys));
+    const retyped =
+      canonicalKey(baseValue) === canonicalKey(featureValue)
+        ? []
+        : [DYNAMIC_KEY_PLACEHOLDER];
     return { added: [], removed: [], retyped };
   }
 

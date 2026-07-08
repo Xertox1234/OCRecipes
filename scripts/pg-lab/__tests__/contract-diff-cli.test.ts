@@ -162,4 +162,24 @@ describe("formatReport", () => {
     expect(out).toContain("+ extra");
     expect(out).toContain("~ count");
   });
+
+  it("never prints real dynamic key names when diffing a pre-#544 snapshot against a post-#544 one (regression)", () => {
+    // base = a snapshot recorded before PR #544's redaction fix (real user emails
+    // stored as object keys); feature = the same route recorded after the fix
+    // (collapsed to <dynamic>) with a genuinely different value shape. The report
+    // must surface the value-shape change WITHOUT ever reprinting the real emails.
+    const base = row({
+      shape: objShape({
+        "alice@example.com": { type: "number" },
+        "bob@example.com": { type: "number" },
+      }),
+    });
+    const feature = row({
+      shape: objShape({ "<dynamic>": { type: "string" } }),
+    });
+    const report = buildDiffReport({ base: [base], feature: [feature] });
+    const out = formatReport(report);
+    expect(out).toContain("~ <dynamic>");
+    expect(out).not.toContain("@example.com");
+  });
 });

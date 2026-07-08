@@ -3,7 +3,7 @@
 ---
 
 title: "contract-diff-cli.ts prints pre-redaction dynamic key names when diffing old vs. new contract snapshots"
-status: backlog
+status: done
 priority: high
 created: 2026-07-08
 updated: 2026-07-08
@@ -42,12 +42,12 @@ it will keep firing every time someone diffs against a pre-#544 snapshot until f
 
 ## Acceptance Criteria
 
-- [ ] `diffRouteShapes` (or its caller) treats a key transitioning to/from the `<dynamic>`
+- [x] `diffRouteShapes` (or its caller) treats a key transitioning to/from the `<dynamic>`
       placeholder as a redaction, not an ordinary added/removed key — never printing the OLD
       real key names in that case.
-- [ ] `contract-diff-cli.ts`'s report output never contains a raw, non-`<dynamic>` dynamic key
+- [x] `contract-diff-cli.ts`'s report output never contains a raw, non-`<dynamic>` dynamic key
       name sourced from a pre-redaction snapshot.
-- [ ] Regression test: diff an old-style shape (real key names, as `deriveShape` produced
+- [x] Regression test: diff an old-style shape (real key names, as `deriveShape` produced
       before PR #544) against a new-style shape (`<dynamic>` placeholder) for the same route
       and assert the report contains no real key name.
 
@@ -75,3 +75,25 @@ it will keep firing every time someone diffs against a pre-#544 snapshot until f
 
 - Filed during code review of PR #544 (merged as 137b746e), per user instruction to merge
   and file findings as follow-up todos.
+
+### 2026-07-08 — Resolved
+
+- Fixed in `diffRouteShapes()` (`server/lib/contract-shape.ts`): added a module-private
+  `isRedactedKeySet()` guard. When exactly one side's key set is the sole `<dynamic>`
+  placeholder, the diff no longer compares raw key names at all — it reconstructs what
+  post-#544 `deriveShape()` would have stored for the unredacted side
+  (`mergeShapes(Object.values(realKeys))`, reusing the exact same helper `deriveShape` uses)
+  and compares value shapes only, collapsing to `retyped: ["<dynamic>"]` (or no diff) —
+  never emitting the real key names. `formatReport()` in `contract-diff-cli.ts` required no
+  change since it only prints whatever `diffRouteShapes` returns.
+- Regression tests added: 3 cases in `server/lib/__tests__/contract-shape.test.ts`
+  (`diffRouteShapes` describe block — same-shape/no-diff, changed-shape/retyped, and the
+  symmetric reversed-sides case) plus 1 end-to-end case in
+  `scripts/pg-lab/__tests__/contract-diff-cli.test.ts` (`formatReport` describe block)
+  proving the printed CLI output never contains a real dynamic key name. Also manually
+  smoke-tested the actual `contract-diff-cli.ts` script via stdin with a hand-built
+  old-vs-new payload — confirmed real emails never appear in stdout.
+- Known, accepted boundary (not a regression, out of scope for this fix): a route whose
+  keys never trip the `<dynamic>` heuristic, or two pre-#544 snapshots on both branches,
+  still prints real key names via the normal path — that isn't the pre-#544-vs-post-#544
+  migration channel this todo addresses.
