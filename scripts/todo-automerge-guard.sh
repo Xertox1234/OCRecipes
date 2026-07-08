@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # todo-automerge-guard.sh — FAIL-CLOSED batch-merge eligibility check for /todo PRs.
 #
-# MODEL (since #487 — NO PR ever auto-merges; this script only CLASSIFIES): a /todo PR
-# is eligible for the user's batch-merge ONLY if BOTH gates pass:
+# MODEL (2026-07-06 restored — see docs/todo-automation-runbook.md): a guard-OK PR gets
+# GitHub's native `gh pr merge --auto` armed by the /todo executor immediately, so it
+# lands on its own once CI is green. This script only CLASSIFIES eligibility — it never
+# merges anything itself. A /todo PR is eligible ONLY if BOTH gates pass:
 #   1. TODO GATE — the archived todo riding the PR (todos/archive/<slug>.md) has
-#      priority low|medium and no `security` mention in its frontmatter. This lives here,
-#      not only in the executor, because a fresh morning session re-running this guard
-#      has no overnight MERGE_ELIGIBLE report — the guard is the one artifact every
-#      merge path re-runs, so it must enforce the whole policy itself.
+#      priority low|medium, no `security` mention, and no sensitive-intent keyword
+#      (auth/session/admin/etc. — see SENSITIVE_INTENT_KEYWORDS) in its frontmatter.
+#      This lives here, not only in the executor, because a fresh morning session
+#      re-running this guard has no overnight MERGE_ELIGIBLE report — the guard is the
+#      one artifact every merge path re-runs, so it must enforce the whole policy itself.
 #   2. PATH GATE — EVERY changed file is on the known-safe ALLOWLIST and none hits the
 #      sensitive override.
-# Anything else HOLDs for individual human review — an unanticipated path, and the whole
-# sensitive backend (server/storage, server/routes, server/middleware), .github/ (the CI
-# gates), scripts/ (incl. this guard), migrations, shared/schema.ts, secrets/certs.
-#
-# Fail-CLOSED is deliberate: for a merge-eligibility check an UNKNOWN path must mean
-# "a human looks", never "ship it". (An earlier denylist revision was found fail-OPEN
-# on whole sensitive layers — server/storage, .github, scripts — so this inverts it: a
-# path is unsafe unless proven safe.)
+# Anything else HOLDs for individual human review — an unanticipated path, the whole
+# server/middleware/ directory, .github/ (the CI gates), scripts/ (incl. this guard),
+# migrations, shared/schema.ts, secrets/certs, plus explicit sensitive files named in
+# SENSITIVE_OVERRIDE that live inside the otherwise-open client/, server/routes/, and
+# server/storage/ roots.
 #
 # To widen the pass: ADD a known-safe prefix to SAFE_ALLOWLIST. If you allowlist a dir
 # that also holds a sensitive file (e.g. server/services holds the IAP services), add
@@ -28,8 +28,8 @@
 # Exit 0 = eligible for the user's batch-merge (MERGE_ELIGIBLE: yes) — NOT a merge command
 # Exit 1 = HOLD: needs individual review — a changed file is sensitive / not on the
 #          allowlist, or the TODO gate failed (no archived todo in the diff, an archive
-#          file absent from the PR head, priority not low/medium, or 'security' in its
-#          frontmatter)
+#          file absent from the PR head, priority not low/medium, 'security' in its
+#          frontmatter, or a sensitive-intent keyword in its frontmatter)
 # Exit 2 = ERROR: could not evaluate (gh failure / empty diff) — fail-closed, treat as HOLD
 # The caller distinguishes a real HOLD (1) from a tooling error (2): a HOLD means the PR
 # needs individual review; an error means eligibility couldn't be decided (e.g. gh unauth).
@@ -38,20 +38,36 @@ set -euo pipefail
 
 PR="${1:?usage: todo-automerge-guard.sh <pr-number>}"
 
-# Known-safe surfaces. A file is batch-merge-eligible only if it matches one of these: UI
-# (components/screens/navigation/constants), business-logic services, shared pure
-# modules (types / zod-schemas / constants / lib), any test, an extracted *-utils file,
-# and docs/todos/markdown. NOTE: server/storage, server/routes, server/middleware,
-# migrations/, shared/schema.ts, .github/, scripts/, certs, .env are deliberately ABSENT
-# — they HOLD.
-SAFE_ALLOWLIST='^client/components/|^client/screens/|^client/navigation/|^client/constants/|^server/services/|^shared/types/|^shared/schemas/|^shared/constants/|^shared/lib/|(^|/)__tests__/|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(-|\.)utils\.tsx?$|^docs/|^todos/|\.md$'
+# Known-safe surfaces. A file is batch-merge-eligible only if it matches one of these:
+# all of client/ (UI, hooks, context, lib, screens, navigation, constants, ...), all of
+# server/routes/ and server/storage/ (minus the sensitive files named in
+# SENSITIVE_OVERRIDE below), business-logic services, shared pure modules (types /
+# zod-schemas / constants / lib), any test, an extracted *-utils file, and docs/todos/
+# markdown. NOTE: server/middleware/, migrations/, shared/schema.ts, .github/, scripts/,
+# certs, .env are deliberately ABSENT — they HOLD in full, not file-by-file.
+SAFE_ALLOWLIST='^client/|^server/routes/|^server/storage/|^server/services/|^shared/types/|^shared/schemas/|^shared/constants/|^shared/lib/|(^|/)__tests__/|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(-|\.)utils\.tsx?$|^docs/|^todos/|\.md$'
 
 # Sensitive files that DO live inside an allowlisted dir and must HOLD anyway: the IAP /
-# billing surfaces under server/services (receipt-validation, store-notifications,
-# subscription-*) and the health-PII onboarding screens under client/screens. Grocery
-# "receipt" OCR (receipt-analysis, Receipt*Screen) and notification infra
-# (push-notifications, notification-scheduler) are NOT sensitive and must pass.
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth'
+# billing surfaces (receipt-validation, store-notification, store-webhook, subscription-*,
+# entitlement, Premium*), the health-PII onboarding screens (client/**Health*), and the
+# auth/session/admin surfaces now exposed by opening client/, server/routes/, and
+# server/storage/ as whole roots — server/middleware/ (whole dir, defense-in-depth for
+# todo-executor.md's separate skip-gate, which sources this constant), server/routes/auth,
+# token-storage, AuthContext, useAuth, any *verif*-named file (verification.ts,
+# VerificationBadge, VerifyEmailScreen), server/storage/users.ts (content-sensitive
+# role/mass-assignment surface, not name-sensitive), sessions.ts (auth session storage —
+# anchored so it does NOT match the unrelated CookSession/QuickLogSession feature),
+# SessionExpiryBridge, admin*, and Login*. Grocery "receipt" OCR (receipt.ts,
+# Receipt*Screen) and push-notification tokens (push-tokens.ts, push-token-registration)
+# are NOT sensitive and must pass.
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/auth|token-storage|AuthContext|useAuth|[Vv]erif|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|SessionExpiryBridge|admin|Premium|[Ll]ogin'
+
+# Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
+# whose own title/frontmatter names a sensitive domain, regardless of which file it ends
+# up touching — the backstop for a future sensitive file whose name gives no signal (see
+# server/storage/users.ts in SENSITIVE_OVERRIDE above for why this matters). Sourced at
+# runtime by todo-executor.md's research-delegation skip-gate too — one definition.
+SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|session|verif|premium|subscription|iap|receipt|health'
 
 files="$(gh pr diff "$PR" --name-only)" || {
   echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
@@ -109,6 +125,11 @@ while IFS= read -r tf; do
   esac
   if grep -qi 'security' <<< "$fm"; then
     echo "guard: HOLD PR #$PR — ${tf} frontmatter mentions 'security'; always individual review"
+    echo "Needs individual review; exclude from the batch-merge."
+    exit 1
+  fi
+  if grep -qiE "$SENSITIVE_INTENT_KEYWORDS" <<< "$fm"; then
+    echo "guard: HOLD PR #$PR — ${tf} frontmatter/title mentions a sensitive-domain keyword (auth/session/admin/etc.); always individual review"
     echo "Needs individual review; exclude from the batch-merge."
     exit 1
   fi
