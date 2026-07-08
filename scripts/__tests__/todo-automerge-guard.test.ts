@@ -193,6 +193,7 @@ describe("todo-automerge-guard.sh (new: expanded sensitive-path override)", () =
   it.each([
     "server/storage/users.ts",
     "server/storage/sessions.ts",
+    "server/storage/api-keys.ts",
     "client/components/SessionExpiryBridge.tsx",
     "server/routes/verification.ts",
     "server/storage/verification.ts",
