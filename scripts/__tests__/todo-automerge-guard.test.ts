@@ -245,8 +245,11 @@ describe("todo-automerge-guard.sh (new: sensitive-intent keyword gate)", () => {
     "Fix grocery receipt OCR crash",
     "Improve cook session review screen",
     "Improve barcode verification accuracy",
+    "Add health score to recipe card",
+    "Improve healthy-recipe filter",
+    "Show health insights on dashboard",
   ])(
-    "does NOT HOLD a generic allowlisted file for the ordinary recipe-domain title %j (session/verif/receipt/secret deliberately excluded from SENSITIVE_INTENT_KEYWORDS — they collide with this app's own vocabulary)",
+    "does NOT HOLD a generic allowlisted file for the ordinary recipe-domain title %j (session/verif/receipt/secret/health deliberately excluded from SENSITIVE_INTENT_KEYWORDS — they collide with this app's own vocabulary)",
     (title) => {
       const { status } = runGuard(
         ["client/screens/HomeScreen.tsx"],

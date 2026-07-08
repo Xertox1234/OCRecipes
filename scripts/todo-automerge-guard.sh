@@ -70,12 +70,16 @@ SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)sub
 # up touching — the backstop for a future sensitive file whose name gives no signal (see
 # server/storage/users.ts in SENSITIVE_OVERRIDE above for why this matters). Sourced at
 # runtime by todo-executor.md's research-delegation skip-gate too — one definition.
-# session, verif, receipt, and secret are deliberately EXCLUDED from this list (though they
-# remain in SENSITIVE_OVERRIDE for path matching): as free-text title words they collide
-# with this app's own recipe/nutrition vocabulary — "secret ingredient", "grocery receipt
-# OCR", "cook session", and "barcode verification" (Verified Product API) are all ordinary,
-# non-sensitive todos that would otherwise be wrongly HELD.
-SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|premium|subscription|iap|health|api-key|credential'
+# session, verif, receipt, secret, and health are deliberately EXCLUDED from this list
+# (though session/verif/receipt/secret remain in SENSITIVE_OVERRIDE for path matching, and
+# health-NAMED files still match `(^|/)[Hh]ealth` there too): as free-text title words they
+# collide with this app's own recipe/nutrition vocabulary — "secret ingredient", "grocery
+# receipt OCR", "cook session", "barcode verification" (Verified Product API), and "health
+# score on recipe card" / "healthy-recipe filter" are all ordinary, non-sensitive todos that
+# would otherwise be wrongly HELD. (Residual gap: health-PII living in an innocuously named
+# file — e.g. profile-hub.ts, dietary-context.ts — isn't path-covered by name and now relies
+# on CI + review rather than this gate, same as any other unnamed-sensitive-file gap.)
+SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|premium|subscription|iap|api-key|credential'
 
 files="$(gh pr diff "$PR" --name-only)" || {
   echo "guard: ERROR PR #$PR — could not read changed files (gh error). Fail-closed."
