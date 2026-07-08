@@ -72,8 +72,16 @@ only through the guard, never unconditionally. The filters:
    final review found real auth-security logic — rate limiters, password-strength schemas,
    upload validation, external API-key auth — living in shared route infra whose filenames
    named no sensitive keyword, so enumerate-the-sensitive-ones was the wrong default for
-   that one root — see the script's own header comment for the full model; to widen the
-   pass further, add a known-safe prefix to the allowlist in the script.)
+   that one root. The same day, an xhigh-effort review re-ran that exact hunt across
+   `client/` and `server/services/` (the roots that DID stay open) and found 15+ more
+   instances — Bearer-token-attachment hooks, health-PII fields, PII-redaction and
+   anti-abuse logic — closed by name in `SENSITIVE_OVERRIDE`, plus a drift-detection test
+   (`scripts/__tests__/todo-automerge-guard.test.ts`) that re-runs the Bearer-token
+   signature as a CI check so the next such file fails a test instead of silently
+   auto-merging (health-PII wasn't automated the same way — too broad a signature for an
+   app where dietary data is core product logic, not just a security concern — see the
+   script's own comment). See the script's own header comment for the full model; to widen
+   the pass further, add a known-safe prefix to the allowlist in the script.)
 4. **Bounded stop conditions** — the `/goal` condition halts on N PRs opened / token
    cap / repeated failures, so a systemic mistake can't burn the whole backlog before
    you wake.

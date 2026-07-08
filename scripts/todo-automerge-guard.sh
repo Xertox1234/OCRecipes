@@ -19,7 +19,13 @@
 # whole server/middleware/ directory, .github/ (the CI gates), scripts/ (incl. this
 # guard), migrations, shared/schema.ts, secrets/certs, plus explicit sensitive files named
 # in SENSITIVE_OVERRIDE that live inside the otherwise-open client/ and server/storage/
-# roots.
+# roots. server/routes/, .github/, scripts/, and migrations/ are held BOTH by SAFE_ALLOWLIST
+# omission AND by an explicit whole-dir SENSITIVE_OVERRIDE entry — belt-and-suspenders,
+# because SAFE_ALLOWLIST's directory-independent test/spec/utils/md tokens (below) would
+# otherwise let a file under one of these directories slip through on filename pattern
+# alone, regardless of directory (this bit a real file: server/routes/__tests__/
+# auth-route-wiring.test.ts, itself a security-relevant guard, silently passed until this
+# was added).
 #
 # To widen the pass: ADD a known-safe prefix to SAFE_ALLOWLIST. If you allowlist a dir
 # that also holds a sensitive file (e.g. server/services holds the IAP services), add
@@ -27,7 +33,13 @@
 # a manual merge; never the other way around. Before allowlisting a WHOLE new root,
 # specifically check whether security-relevant logic (rate limiting, input validation,
 # auth checks) hides in generically-named or shared-infra files there — enumerating the
-# sensitive files after the fact failed for server/routes/ (see git log).
+# sensitive files after the fact failed for server/routes/ (see git log), and hand-hunting
+# client/ and server/services/ for the same pattern found 15+ more instances in one pass.
+# For client/ and server/services/ specifically, don't rely on hand-hunting alone — see
+# the "drift detection" test in scripts/__tests__/todo-automerge-guard.test.ts, which
+# re-runs the hunt for the two most-recurring signatures (Bearer-token attachment,
+# health-PII field declarations) as a CI-enforced check, so the next instance fails a test
+# instead of silently auto-merging.
 #
 # Usage:  scripts/todo-automerge-guard.sh <pr-number>
 # Exit 0 = eligible for the user's batch-merge (MERGE_ELIGIBLE: yes) — NOT a merge command
@@ -70,44 +82,80 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # billing surfaces (receipt-validation, store-notification, store-webhook, subscription-*,
 # entitlement, Premium*), the health-PII onboarding screens (client/**Health*), and the
 # auth/session surfaces now exposed by opening client/ and server/storage/ as whole roots
-# — server/middleware/ (whole dir, defense-in-depth for todo-executor.md's separate
-# skip-gate, which sources this constant), token-storage, AuthContext, useAuth,
+# — server/middleware/, server/routes/, .github/, scripts/, migrations/ (whole dirs — the
+# last four ALSO close a bypass where the allowlist's directory-independent test/spec/utils
+# tokens below let a file under an otherwise-unlisted directory slip through, e.g.
+# server/routes/__tests__/auth-route-wiring.test.ts, itself a security-relevant static-scan
+# guard; server/middleware/ is defense-in-depth for todo-executor.md's separate skip-gate,
+# which sources this constant), token-storage, AuthContext, useAuth, verification-token
+# (server/lib/verification-token.ts — JWT-signs/verifies email-verification tokens; not
+# covered by the server/routes/ whole-dir entry since it lives in server/lib/),
 # VerifyEmailScreen (the one genuinely auth-adjacent verification surface — confirmed by
 # reading it: it calls verifyEmailRequest / resendVerificationRequest),
 # server/storage/users.ts (content-sensitive role/mass-assignment surface, not
-# name-sensitive), sessions.ts (auth session storage — anchored so it does NOT match the
-# unrelated CookSession/QuickLogSession feature), SessionExpiryBridge, admin*, and Login*.
-# (admin/Login* currently only match files under server/routes/, which HOLDs wholesale
-# regardless — kept as forward-looking coverage for a future client/ or server/storage/
-# file of the same name, same as secret/credential below.) server/storage/verification.ts
-# and client/components/VerificationBadge are the UNRELATED Verified Product API
-# (barcode/nutrition-data verification — see shared/types/verification.ts) and must NOT be
-# held; server/routes/verification.ts holds too, but only because ALL of server/routes/
-# does now — not because it's flagged sensitive. Grocery "receipt" OCR (receipt.ts,
+# name-sensitive), sessions.ts / session-store.ts / user-sessions.ts (HELD out of caution
+# for the auth-session-storage naming pattern, despite server/storage/sessions.ts itself
+# actually being a generic upload/confirm session store per its own header comment — not
+# auth-related; an earlier version of this comment wrongly asserted it WAS auth-session
+# storage, confirmed by reading the file — kept HELD anyway since a false-positive HOLD
+# costs only a manual review, and this is the anchor's original intent even if this
+# specific file doesn't need it; the literal sessions.ts anchor doesn't cover the latter
+# two variants, though no such file exists today; anchored so none of these match the
+# unrelated CookSession/QuickLogSession feature — see the multi-hook block below for why
+# that feature's OWN files are covered by name instead), SessionExpiryBridge, [Aa]dmin, and
+# [Pp]remium (case-classed to cover both server's lowercase-kebab and client's PascalCase
+# naming conventions — a bare `admin`/`Premium` literal missed half of each pair).
+# server/storage/verification.ts and client/components/VerificationBadge are the UNRELATED
+# Verified Product API (barcode/nutrition-data verification — see
+# shared/types/verification.ts) and must NOT be held. Grocery "receipt" OCR (receipt.ts,
 # Receipt*Screen) and push-notification tokens (push-tokens.ts, push-token-registration)
-# are NOT sensitive and must pass too. client/lib/query-client.ts (attaches the Bearer
-# token to every API call and detects session death — found by a final-review hunt for
-# the same shared-infra pattern that bit server/routes/) and client/lib/reporter.ts
-# (scrubEvent strips Authorization headers before Sentry — "belt-and-suspenders" defense
-# against a live JWT leaking to a third-party SaaS) must HOLD despite already having
-# adversarial test coverage (a subtle logic change, not just deletion, could still slip
-# through both gates).
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|token-storage|AuthContext|useAuth|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|SessionExpiryBridge|admin|Premium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$'
+# are NOT sensitive and must pass too.
+#
+# client/lib/query-client.ts (attaches the Bearer token to every API call and detects
+# session death) and client/lib/reporter.ts (scrubEvent strips Authorization headers
+# before Sentry) were the first shared-infra chokepoints found this way; a later,
+# deliberately-repeated hunt for the SAME pattern (grep client/ and server/services/ for
+# tokenStorage + Bearer-header construction) found ten more: client/hooks/useAvatarUpload,
+# useCarouselRecipes, useChat, useCookSession, useHistoryData, useMenuScan,
+# useNutritionLookup, useReceiptScan, useSavedItems, and useCoachStream — one of which
+# (useCookSession) an earlier version of this PR's own test suite had asserted was
+# "confirmed non-sensitive." See scripts/__tests__/todo-automerge-guard.test.ts's
+# "drift detection" block below for the mechanism that now re-runs this hunt as a test,
+# so the ELEVENTH such file fails loudly instead of silently auto-merging.
+#
+# client/context/OnboardingContext.tsx, client/hooks/useDietaryProfileForm.ts, and
+# client/hooks/useAllergenCheck.ts hold real health-PII (allergies, healthConditions)
+# under names the (^|/)[Hh]ealth token doesn't catch — found by the same hunt, also now
+# covered by the drift-detection test's second signature (allergies/healthConditions field
+# declarations). server/storage/export.ts (CCPA/PIPEDA data-export PII-redaction
+# allowlist), server/services/email.ts (per-recipient anti-abuse/anti-enumeration rate
+# limiter gating verification-email sends), and client/lib/durable-owner.ts (the trust
+# anchor offline-queue-drain.ts itself depends on for cross-user data isolation) and
+# client/lib/offline-queue-drain.ts / client/lib/photo-upload.ts (bearer-token
+# attachment + a documented cross-user-replay/TOCTOU guard, subject of 3 dedicated past
+# security-fix PRs) are each one-off instances of hidden security logic in a
+# generically-named, allowlisted-directory file — named individually since none shares a
+# signature generic enough for the drift-detection test to generalize without becoming a
+# broad "security detector" (deliberately avoided — see that test's own comment).
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
 
 # Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
 # whose own title/frontmatter names a sensitive domain, regardless of which file it ends
 # up touching — the backstop for a future sensitive file whose name gives no signal (see
 # server/storage/users.ts in SENSITIVE_OVERRIDE above for why this matters). Sourced at
 # runtime by todo-executor.md's research-delegation skip-gate too — one definition.
-# session, verif, receipt, secret, and health are deliberately EXCLUDED from this list
-# (though session/verif/receipt/secret remain in SENSITIVE_OVERRIDE for path matching, and
-# health-NAMED files still match `(^|/)[Hh]ealth` there too): as free-text title words they
-# collide with this app's own recipe/nutrition vocabulary — "secret ingredient", "grocery
-# receipt OCR", "cook session", "barcode verification" (Verified Product API), and "health
-# score on recipe card" / "healthy-recipe filter" are all ordinary, non-sensitive todos that
-# would otherwise be wrongly HELD. (Residual gap: health-PII living in an innocuously named
-# file — e.g. profile-hub.ts, dietary-context.ts — isn't path-covered by name and now relies
-# on CI + review rather than this gate, same as any other unnamed-sensitive-file gap.)
+# session, verif, receipt, secret, and health are deliberately EXCLUDED from this list:
+# as free-text title words they collide with this app's own recipe/nutrition vocabulary —
+# "secret ingredient", "grocery receipt OCR", "cook session", "barcode verification"
+# (Verified Product API), and "health score on recipe card" / "healthy-recipe filter" are
+# all ordinary, non-sensitive todos that would otherwise be wrongly HELD. This does NOT
+# mean SENSITIVE_OVERRIDE (above) carries bare `verif`/`receipt`/`session` tokens — it
+# doesn't; only the specific compounds VerifyEmailScreen, receipt-validation, sessions.ts/
+# session-store.ts/user-sessions.ts, and the named CookSession-adjacent hooks are covered
+# by path. `secret` and `health` ARE bare tokens there (`(^|/)[Hh]ealth` for health-NAMED
+# files). A todo about a genuinely sensitive file whose name gives no signal — the
+# server/storage/users.ts case this whole gate exists to backstop, or any future file like
+# it — relies on CI + review, not this list, same as any other unnamed-sensitive-file gap.
 SENSITIVE_INTENT_KEYWORDS='auth|jwt|login|password|admin|premium|subscription|iap|api-key|credential'
 
 files="$(gh pr diff "$PR" --name-only)" || {
