@@ -97,3 +97,41 @@ it will keep firing every time someone diffs against a pre-#544 snapshot until f
   keys never trip the `<dynamic>` heuristic, or two pre-#544 snapshots on both branches,
   still prints real key names via the normal path — that isn't the pre-#544-vs-post-#544
   migration channel this todo addresses.
+
+> **CORRECTED 2026-07-08** — the fix above was too broad. See the `### 2026-07-08 —
+xhigh code review + correction` entry below for the full correction; do not treat the
+> claims above as the final, verified state of `diffRouteShapes()`.
+
+### 2026-07-08 — xhigh code review + correction
+
+- An xhigh-effort multi-agent code review of the PR above (10 independent finder angles +
+  a gap sweep) found that the `isRedactedKeySet()` interception was too broad: it fired on
+  ANY `baseRedacted !== featureRedacted` asymmetry, without checking whether the
+  non-redacted side's real keys would themselves qualify as dynamic under `deriveShape`'s
+  own heuristics. Confirmed via direct execution: a route that genuinely changed from a
+  static object (`{ width, height }`) to an unrelated dynamically-keyed map — with
+  coinciding merged value types — was reported as **"no differences,"** silently
+  swallowing a real API contract change. A related, lower-severity gap: even when a real
+  difference WAS detected, it collapsed to a lossy `retyped: ["<dynamic>"]` instead of the
+  real (safe) `added`/`removed` key names. A third, related gap: a real static field
+  literally named the string `"<dynamic>"` was misclassified as a redaction placeholder.
+  The review also found two **pre-existing** (not introduced by this PR, but living in the
+  exact function it touches) `__proto__`-prototype-chain bugs in the unmodified per-key
+  loop, where `key in obj` walks the prototype chain and silently drops or misclassifies a
+  genuine `__proto__`-named key.
+- Fixed by re-applying `deriveShape`'s own redaction heuristic
+  (`looksDynamicallyKeyed` / `hasUniformNonPrimitiveValueShape`) to the non-redacted side
+  before trusting the interception — only collapse to a value-shape-only comparison when
+  that side would actually be redacted by `deriveShape` today; otherwise fall through to
+  the normal per-key loop, which safely reports real key names (they were never
+  classified as sensitive/dynamic). This single guard resolves both the false-negative and
+  the `"<dynamic>"`-literal-name collision. The `__proto__` bugs were fixed by replacing
+  `key in obj` with `Object.prototype.hasOwnProperty.call(obj, key)`, matching the
+  project's existing convention (`server/services/image-art-direction.ts`).
+- 5 new regression tests added to `server/lib/__tests__/contract-shape.test.ts` covering
+  the false negative, the precision-loss case, the `"<dynamic>"`-literal collision, and
+  both `__proto__` directions. All 49 tests pass (44 prior + 5 new); typecheck and lint
+  clean; the original migration-scenario tests still pass unchanged, confirming the
+  leak-prevention property is preserved alongside the correctness fix.
+- Codified as
+  [redaction-diff-intercept-must-validate-both-sides-not-just-asymmetry-2026-07-08.md](../../docs/solutions/logic-errors/redaction-diff-intercept-must-validate-both-sides-not-just-asymmetry-2026-07-08.md).

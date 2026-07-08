@@ -510,5 +510,82 @@ describe("diffRouteShapes", () => {
       expect(diff).toEqual({ added: [], removed: [], retyped: [] });
       expect(JSON.stringify(diff)).not.toContain("@example.com");
     });
+
+    it("does NOT intercept a route that genuinely changed from a static object to an unrelated dynamic map (regression: false negative)", () => {
+      // width/height are ordinary static fields -- deriveShape would never redact
+      // them. A route that actually replaced them with a dynamically-keyed map is a
+      // real, meaningful contract change and must still be reported, even though the
+      // value types happen to coincide (both "number").
+      const base = objShape({
+        width: { type: "number" },
+        height: { type: "number" },
+      });
+      const feature = objShape({ "<dynamic>": { type: "number" } });
+
+      expect(diffRouteShapes(base, feature)).toEqual({
+        added: ["<dynamic>"],
+        removed: ["height", "width"],
+        retyped: [],
+      });
+    });
+
+    it("reports added/removed (not a lossy generic retype) when the non-dynamic side's value type also differs", () => {
+      const base = objShape({
+        width: { type: "number" },
+        height: { type: "number" },
+      });
+      const feature = objShape({ "<dynamic>": { type: "string" } });
+
+      expect(diffRouteShapes(base, feature)).toEqual({
+        added: ["<dynamic>"],
+        removed: ["height", "width"],
+        retyped: [],
+      });
+    });
+
+    it("does not misclassify a real static field literally named '<dynamic>' as a redaction placeholder", () => {
+      const base = objShape({ "<dynamic>": { type: "boolean" } });
+      const feature = objShape({ someFlag: { type: "boolean" } });
+
+      expect(diffRouteShapes(base, feature)).toEqual({
+        added: ["someFlag"],
+        removed: ["<dynamic>"],
+        retyped: [],
+      });
+    });
+  });
+
+  describe("__proto__ key handling (regression: `in` operator walks the prototype chain)", () => {
+    it("reports a genuinely removed __proto__ key as removed, not silently dropped", () => {
+      const base = objShape(
+        Object.fromEntries([
+          ["shrimp", { type: "string" }],
+          ["__proto__", { type: "string" }],
+        ]),
+      );
+      const feature = objShape({ shrimp: { type: "string" } });
+
+      expect(diffRouteShapes(base, feature)).toEqual({
+        added: [],
+        removed: ["__proto__"],
+        retyped: [],
+      });
+    });
+
+    it("reports a genuinely added __proto__ key as added, not misclassified as retyped", () => {
+      const base = objShape({ shrimp: { type: "string" } });
+      const feature = objShape(
+        Object.fromEntries([
+          ["shrimp", { type: "string" }],
+          ["__proto__", { type: "string" }],
+        ]),
+      );
+
+      expect(diffRouteShapes(base, feature)).toEqual({
+        added: ["__proto__"],
+        removed: [],
+        retyped: [],
+      });
+    });
   });
 });

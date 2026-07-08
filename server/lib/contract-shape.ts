@@ -288,36 +288,53 @@ export function diffRouteShapes(base: Shape, feature: Shape): RouteShapeDiff {
   // One side redacted to <dynamic>, the other still holds real key names — an old
   // pre-#544 snapshot diffed against a post-#544 one for the same route. Emitting the
   // raw key names here would reprint the exact dynamic keys (emails, item names) that
-  // #544 redacts. Collapse to a single <dynamic> comparison: reconstruct what post-#544
-  // code would have stored for the unredacted side (mergeShapes of its values) and
-  // compare value shapes only — never surface the real names.
+  // #544 redacts. But that key-set asymmetry alone doesn't prove this IS a #544
+  // migration: a route can also genuinely change from a static object to an unrelated
+  // dynamic map (or vice versa), which the per-key loop below must still catch. So only
+  // intercept when the non-redacted side's real keys would themselves have been
+  // redacted by deriveShape today (the same two signals deriveShape itself uses) —
+  // otherwise fall through and let the normal loop report the real, safe key names.
   const baseRedacted = isRedactedKeySet(baseKeys);
   const featureRedacted = isRedactedKeySet(featureKeys);
   if (baseRedacted !== featureRedacted) {
-    const baseValue = baseRedacted
-      ? baseKeys[DYNAMIC_KEY_PLACEHOLDER]
-      : mergeShapes(Object.values(baseKeys));
-    const featureValue = featureRedacted
-      ? featureKeys[DYNAMIC_KEY_PLACEHOLDER]
-      : mergeShapes(Object.values(featureKeys));
-    const retyped =
-      canonicalKey(baseValue) === canonicalKey(featureValue)
-        ? []
-        : [DYNAMIC_KEY_PLACEHOLDER];
-    return { added: [], removed: [], retyped };
+    const realKeys = baseRedacted ? featureKeys : baseKeys;
+    const realKeyNames = Object.keys(realKeys);
+    const realValueShapes = Object.values(realKeys);
+    const realMergedValue = mergeShapes(realValueShapes);
+    const realSideLooksDynamic =
+      looksDynamicallyKeyed(realKeyNames) ||
+      hasUniformNonPrimitiveValueShape(realValueShapes, realMergedValue);
+
+    if (realSideLooksDynamic) {
+      const baseValue = baseRedacted
+        ? baseKeys[DYNAMIC_KEY_PLACEHOLDER]
+        : realMergedValue;
+      const featureValue = featureRedacted
+        ? featureKeys[DYNAMIC_KEY_PLACEHOLDER]
+        : realMergedValue;
+      const retyped =
+        canonicalKey(baseValue) === canonicalKey(featureValue)
+          ? []
+          : [DYNAMIC_KEY_PLACEHOLDER];
+      return { added: [], removed: [], retyped };
+    }
+    // else: the non-redacted side doesn't actually look dynamic, so this isn't a
+    // #544-migration case — fall through to the normal per-key loop below.
   }
 
   const added: string[] = [];
   const retyped: string[] = [];
   for (const key of Object.keys(featureKeys)) {
-    if (!(key in baseKeys)) {
+    if (!Object.prototype.hasOwnProperty.call(baseKeys, key)) {
       added.push(key);
     } else if (canonicalKey(baseKeys[key]) !== canonicalKey(featureKeys[key])) {
       retyped.push(key);
     }
   }
 
-  const removed = Object.keys(baseKeys).filter((key) => !(key in featureKeys));
+  const removed = Object.keys(baseKeys).filter(
+    (key) => !Object.prototype.hasOwnProperty.call(featureKeys, key),
+  );
 
   return {
     added: added.sort(),
