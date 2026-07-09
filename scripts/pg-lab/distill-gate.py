@@ -45,8 +45,84 @@ def redact(text):
     return text
 
 
+# --- Layer 1: nutrition-record field names. SINGLE SOURCE: shared/schema.ts (Drizzle
+# definitions carry BOTH casings — camelCase TS property + snake_case SQL column; spec).
+# Curated from schema.ts on 2026-07-09; regenerate by grepping its table definitions:
+#   grep -nE 'decimal\(|integer\(' shared/schema.ts
+# snake_case variants are DERIVED mechanically below — one list, no second list to drift.
+NUTRITION_FIELDS_CAMEL = [
+    "calories", "protein", "carbs", "fat", "fiber", "sugar", "sodium",
+    "servingSize", "servings",
+    "caloriesPerServing", "proteinPerServing", "carbsPerServing", "fatPerServing",
+    "fiberPerServing", "sugarPerServing",
+    "dailyCalorieGoal", "dailyProteinGoal", "dailyCarbsGoal", "dailyFatGoal",
+    "goalWeight",
+]
+
+
+def _snake(name):
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+FIELD_NAMES = sorted(set(NUTRITION_FIELDS_CAMEL) | {_snake(f) for f in NUTRITION_FIELDS_CAMEL})
+
+# Three VALUE-BEARING container shapes per field (spec): pasted RECORDS carry numeric
+# values; code that merely names a column (decimal("calories", ...)) must pass. Shapes:
+#   1. JSON key with numeric/quoted value:      "calories": 235.5
+#   2. key=value / key: value record line:      calories=421   calories: 421
+#   3. psql/markdown table: handled separately (header cell + numeric row nearby).
+_FIELD_ALT = "|".join(re.escape(f) for f in FIELD_NAMES)
+JSON_SHAPE = re.compile(r'"(?:' + _FIELD_ALT + r')"\s*:\s*["\']?\d')
+KV_SHAPE = re.compile(r"\b(?:" + _FIELD_ALT + r")\s*[=:]\s*\d")
+TABLE_HEADER = re.compile(r"(?m)^[^|\n]*\b(?:" + _FIELD_ALT + r")\b[^|\n]*\|")
+NUMERIC_ROW = re.compile(r"(?m)^[\s|]*[\d.]+[\s\d.|a-zA-Z%]*\|[\s\d.|a-zA-Z%]*$")
+
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# Pinned allowlist SET (spec): developer + bot/tooling + RFC 2606 example domains. A single
+# -address allowlist would drop most of the corpus (commit trailers, test fixtures).
+EMAIL_ALLOWLIST = {
+    "william.tower@gmail.com",
+    "noreply@anthropic.com",
+    "noreply@github.com",
+}
+EMAIL_ALLOW_DOMAINS = {"example.com", "example.org", "example.net", "anthropic.com", "github.com"}
+
+DOB_RE = re.compile(r"(?i)\b(dob|date[_ ]of[_ ]birth|birth[_ ]?date|born)\b\W{0,12}\d{4}-\d{2}-\d{2}")
+WEIGHT_HEIGHT_RE = re.compile(
+    r"\b\d{2,3}(?:\.\d+)?\s*(?:kg|kgs|lbs?|pounds)\b"
+    r"|\b\d{2,3}(?:\.\d+)?\s*cm\b"
+    r"|\b\d'\d{1,2}\""
+)
+
+
+def _table_hit(text):
+    m = TABLE_HEADER.search(text)
+    if not m:
+        return False
+    # numeric data row within the next 5 lines of the matched header
+    tail = text[m.end():].split("\n", 6)[:5]
+    return any(NUMERIC_ROW.match(line) for line in tail)
+
+
 def layer1(text):
-    """Pattern screen. Returns a class string, or None to pass. Filled in Task 3."""
+    """Pattern screen. Returns a class string, or None to pass.
+
+    Note (spec): the user-ID/UUID and free-date classes are SUBSUMED here — they were
+    specified to fire only adjacent to a matched field-name block, and a field-name match
+    already gates the session, so they cannot add coverage; DOB is the independent date
+    surface. Free-floating UUIDs/ISO dates never gate alone (dev transcripts are full of
+    them)."""
+    if JSON_SHAPE.search(text) or KV_SHAPE.search(text) or _table_hit(text):
+        return "nutrition_fields"
+    for email in EMAIL_RE.findall(text):
+        addr = email.lower()
+        domain = addr.rsplit("@", 1)[1]
+        if addr not in EMAIL_ALLOWLIST and domain not in EMAIL_ALLOW_DOMAINS:
+            return "email"
+    if DOB_RE.search(text):
+        return "dob"
+    if WEIGHT_HEIGHT_RE.search(text):
+        return "weight_height_units"
     return None
 
 

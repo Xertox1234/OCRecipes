@@ -43,6 +43,58 @@ assert_eq "gate: secret-only session still sent" "$(json_field "$OUT" verdict)" 
 assert_contains "gate: artifact redacted" "$(cat "$GFIX/secret.out")" "[REDACTED]"
 assert_not_contains "gate: raw key absent from artifact" "$(cat "$GFIX/secret.out")" "sk-ant-api03"
 
+# Layer 1 — JSON-form nutrition record (camelCase, value-bearing) gates
+printf '[#u-1] user: debugging, here is the record: {"caloriesPerServing": 320.5, "proteinPerServing": 12}\n' > "$GFIX/json.txt"
+OUT=$(python3 "$GATE" "$GFIX/json.txt" "$GFIX/json.out")
+assert_eq "gate: JSON nutrition record gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: JSON class nutrition_fields" "$(json_field "$OUT" class)" "nutrition_fields"
+
+# Layer 1 — psql-table paste (snake_case headers + numeric row): THE channel the three
+# container shapes exist for (spec critical finding)
+cat > "$GFIX/psql.txt" <<'TBL'
+[#u-1] user: query output while debugging:
+ serving_size | calories | protein
+--------------+----------+---------
+ 100g         |   235.50 |   11.20
+TBL
+OUT=$(python3 "$GATE" "$GFIX/psql.txt" "$GFIX/psql.out")
+assert_eq "gate: psql table paste gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: psql table class nutrition_fields" "$(json_field "$OUT" class)" "nutrition_fields"
+
+# Layer 1 — key=value record line gates
+printf '[#u-1] user: row was calories=421 protein=18 for that user\n' > "$GFIX/kv.txt"
+OUT=$(python3 "$GATE" "$GFIX/kv.txt" "$GFIX/kv.out")
+assert_eq "gate: key=value record gated" "$(json_field "$OUT" verdict)" "gated"
+
+# Layer 1 — code DISCUSSION does not gate (field name without a value-bearing container)
+printf '[#u-1] user: should calories stay decimal("calories", { precision: 10 }) in schema.ts?\n' > "$GFIX/code.txt"
+OUT=$(python3 "$GATE" "$GFIX/code.txt" "$GFIX/code.out")
+assert_eq "gate: schema code discussion passes" "$(json_field "$OUT" verdict)" "sent"
+
+# Layer 1 — non-allowlisted email gates; allowlisted set + RFC 2606 pass
+printf '[#u-1] user: the affected account is jane.roe1984@gmail.com\n' > "$GFIX/email.txt"
+OUT=$(python3 "$GATE" "$GFIX/email.txt" "$GFIX/email.out")
+assert_eq "gate: foreign email gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: email class" "$(json_field "$OUT" class)" "email"
+printf '[#u-1] user: mail william.tower@gmail.com, bot noreply@anthropic.com, fixture demo@example.com\n' > "$GFIX/email-ok.txt"
+OUT=$(python3 "$GATE" "$GFIX/email-ok.txt" "$GFIX/email-ok.out")
+assert_eq "gate: allowlisted emails pass" "$(json_field "$OUT" verdict)" "sent"
+
+# Layer 1 — DOB keyword-adjacent date gates; free-floating ISO date passes
+printf '[#u-1] user: her dob: 1984-03-11 was in the row\n' > "$GFIX/dob.txt"
+OUT=$(python3 "$GATE" "$GFIX/dob.txt" "$GFIX/dob.out")
+assert_eq "gate: dob-adjacent date gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: dob class" "$(json_field "$OUT" class)" "dob"
+printf '[#u-1] user: see docs/research/2026-07-04-postgres-memory-for-claude-code.md from 2026-07-04\n' > "$GFIX/date-ok.txt"
+OUT=$(python3 "$GATE" "$GFIX/date-ok.txt" "$GFIX/date-ok.out")
+assert_eq "gate: free-floating dates pass" "$(json_field "$OUT" verdict)" "sent"
+
+# Layer 1 — prose weight-with-units gates
+printf '[#u-1] user: the profile showed 72.5 kg at signup\n' > "$GFIX/wt.txt"
+OUT=$(python3 "$GATE" "$GFIX/wt.txt" "$GFIX/wt.out")
+assert_eq "gate: weight-with-units gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: weight class" "$(json_field "$OUT" class)" "weight_height_units"
+
 # Fail-closed: unreadable input → non-zero exit, gated verdict, no artifact
 OUT=$(python3 "$GATE" "$GFIX/does-not-exist.txt" "$GFIX/nope.out" 2>/dev/null); RC=$?
 assert_nonzero "gate: missing input fails closed (non-zero)" "$RC"
