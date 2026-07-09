@@ -368,6 +368,7 @@ SQL
   # Reverse sweep: window-period solutions never matched by any candidate's near_dup_path.
   # Memory-file half is mtime-based best-effort (spec: baseline asymmetry) — solutions only here.
   echo "== codify-only (window-period solutions with no matching candidate) =="
+  echo "note: memory-file baseline omitted — mtime-based best-effort only (spec: baseline asymmetry); sweep is git-exact for docs/solutions"
   local matched="$WORK/matched.txt"
   sql -tA -c "SELECT DISTINCT near_dup_path FROM harness.memory_candidates WHERE near_dup_path IS NOT NULL" > "$matched"
   # Sentinel keeps the pattern file non-empty — grep -f on an empty file is
