@@ -859,11 +859,44 @@ export default function MealPlanHomeScreen() {
 
   // Android hardware back dismisses whichever sheet is open, consuming the
   // event instead of popping the screen underneath — @gorhom/bottom-sheet has
-  // no built-in BackHandler wiring. State-driven hosts pass isOpen directly.
-  useSheetBackHandler(addItemMenuSheetRef, addItemMenuMealType !== null);
-  useSheetBackHandler(importRecipeSheetRef, importRecipeMealType !== null);
-  useSheetBackHandler(quickAddSheetRef, quickAddMealType !== null);
-  useSheetBackHandler(simpleEntrySheetRef, simpleEntryMealType !== null);
+  // no built-in BackHandler wiring. State-driven hosts pass isOpen directly,
+  // AND must wire the returned onSheetChange/onSheetAnimate onto the
+  // BottomSheetModal's own onChange/onAnimate props below — isOpen flipping
+  // false no longer closes the ref by itself; only onSheetChange(-1) does,
+  // so the ref stays "open" for the sheet's full close animation instead of
+  // racing ahead of what the user still sees on screen (see
+  // useSheetBackHandler's JSDoc).
+  //
+  // Declaration order below is load-bearing, not cosmetic: each call
+  // registers its own `BackHandler.addEventListener` in a mount-time effect,
+  // and Android's BackHandler consults listeners in REVERSE registration
+  // order (last-registered first — see
+  // node_modules/react-native/Libraries/Utilities/BackHandler.android.js).
+  // During a same-screen handoff (e.g. handleChooseRecipe closes
+  // addItemMenu and opens quickAdd via InteractionManager), the
+  // later-declared destination sheet's listener is consulted before the
+  // earlier-declared source sheet's — which is why a stray back press
+  // during the crossover dismisses the newly-opened sheet rather than the
+  // one still finishing its close animation. Reordering these four calls
+  // would silently flip that precedence with no type error and no test
+  // coverage (each hook instance is unit-tested in isolation) — keep
+  // addItemMenu first and the other three declared after it.
+  const {
+    onSheetChange: onAddItemMenuSheetChange,
+    onSheetAnimate: onAddItemMenuSheetAnimate,
+  } = useSheetBackHandler(addItemMenuSheetRef, addItemMenuMealType !== null);
+  const {
+    onSheetChange: onImportRecipeSheetChange,
+    onSheetAnimate: onImportRecipeSheetAnimate,
+  } = useSheetBackHandler(importRecipeSheetRef, importRecipeMealType !== null);
+  const {
+    onSheetChange: onQuickAddSheetBackHandlerChange,
+    onSheetAnimate: onQuickAddSheetAnimate,
+  } = useSheetBackHandler(quickAddSheetRef, quickAddMealType !== null);
+  const {
+    onSheetChange: onSimpleEntrySheetBackHandlerChange,
+    onSheetAnimate: onSimpleEntrySheetAnimate,
+  } = useSheetBackHandler(simpleEntrySheetRef, simpleEntryMealType !== null);
 
   const handleNavigateUrlImport = useCallback(
     (mt: MealType | null, date?: string) => {
@@ -1079,9 +1112,13 @@ export default function MealPlanHomeScreen() {
     ],
   );
 
-  const handleQuickAddSheetChange = useCallback((index: number) => {
-    if (index === 0) quickAddSheetContentRef.current?.focusSearchInput();
-  }, []);
+  const handleQuickAddSheetChange = useCallback(
+    (index: number) => {
+      onQuickAddSheetBackHandlerChange(index);
+      if (index === 0) quickAddSheetContentRef.current?.focusSearchInput();
+    },
+    [onQuickAddSheetBackHandlerChange],
+  );
 
   const quickAddSheetChildren = useMemo(
     () => (
@@ -1103,9 +1140,13 @@ export default function MealPlanHomeScreen() {
     ],
   );
 
-  const handleSimpleEntrySheetChange = useCallback((index: number) => {
-    if (index === 0) simpleEntrySheetContentRef.current?.focusDishNameInput();
-  }, []);
+  const handleSimpleEntrySheetChange = useCallback(
+    (index: number) => {
+      onSimpleEntrySheetBackHandlerChange(index);
+      if (index === 0) simpleEntrySheetContentRef.current?.focusDishNameInput();
+    },
+    [onSimpleEntrySheetBackHandlerChange],
+  );
 
   const simpleEntrySheetChildren = useMemo(
     () => (
@@ -1383,6 +1424,8 @@ export default function MealPlanHomeScreen() {
         backgroundStyle={sheetBackgroundStyle}
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleAddItemMenuDismiss}
+        onChange={onAddItemMenuSheetChange}
+        onAnimate={onAddItemMenuSheetAnimate}
         accessibilityViewIsModal
       >
         {addItemMenuSheetChildren}
@@ -1395,6 +1438,8 @@ export default function MealPlanHomeScreen() {
         backgroundStyle={sheetBackgroundStyle}
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleImportRecipeDismiss}
+        onChange={onImportRecipeSheetChange}
+        onAnimate={onImportRecipeSheetAnimate}
         accessibilityViewIsModal
       >
         {importRecipeSheetChildren}
@@ -1410,6 +1455,7 @@ export default function MealPlanHomeScreen() {
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleQuickAddDismiss}
         onChange={handleQuickAddSheetChange}
+        onAnimate={onQuickAddSheetAnimate}
         accessibilityViewIsModal
       >
         {quickAddSheetChildren}
@@ -1425,6 +1471,7 @@ export default function MealPlanHomeScreen() {
         handleIndicatorStyle={SHEET_HANDLE_HIDDEN}
         onDismiss={handleSimpleEntryDismiss}
         onChange={handleSimpleEntrySheetChange}
+        onAnimate={onSimpleEntrySheetAnimate}
         accessibilityViewIsModal
       >
         {simpleEntrySheetChildren}

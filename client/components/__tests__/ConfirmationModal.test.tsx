@@ -5,6 +5,13 @@ import { renderComponent } from "../../../test/utils/render-component";
 import { useConfirmationModal } from "../ConfirmationModal";
 import type { ConfirmOptions } from "../ConfirmationModal";
 
+// useSheetBackHandler calls useIsFocused (@react-navigation/native), which
+// needs a NavigationContainer ancestor the plain renderComponent() wrapper
+// doesn't provide — mock it directly rather than pull in a real container.
+vi.mock("@react-navigation/native", () => ({
+  useIsFocused: () => true,
+}));
+
 // Test wrapper that exposes the hook API via a trigger button
 function TestHarness({ options }: { options: ConfirmOptions }) {
   const { confirm, ConfirmationModal } = useConfirmationModal();

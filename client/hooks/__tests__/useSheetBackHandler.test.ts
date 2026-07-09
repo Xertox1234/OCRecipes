@@ -6,8 +6,20 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 
 import { useSheetBackHandler } from "../useSheetBackHandler";
 
+const { useIsFocusedMock } = vi.hoisted(() => ({
+  useIsFocusedMock: vi.fn(() => true),
+}));
+
+vi.mock("@react-navigation/native", () => ({
+  useIsFocused: useIsFocusedMock,
+}));
+
 describe("useSheetBackHandler", () => {
   const originalPlatformOS = RN.Platform.OS;
+
+  beforeEach(() => {
+    useIsFocusedMock.mockReturnValue(true);
+  });
 
   afterEach(() => {
     // Platform.OS is a plain string property, not a function — vi.spyOn can't
@@ -15,6 +27,8 @@ describe("useSheetBackHandler", () => {
     // useFavouriteRecipes.test.ts convention).
     RN.Platform.OS = originalPlatformOS;
     vi.restoreAllMocks();
+    useIsFocusedMock.mockReset();
+    useIsFocusedMock.mockReturnValue(true);
   });
 
   function makeSheetRef() {
@@ -93,6 +107,88 @@ describe("useSheetBackHandler", () => {
     // Listener is registered once for the host's lifetime, not re-registered
     // around visibility — the ref gate (not re-subscription) is what tracks
     // open/closed state.
+    expect(addEventListenerSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays open across the close animation for state-driven hosts too, until onSheetChange confirms closed", () => {
+    // Mirrors the imperative-host asymmetric bias: isOpen flipping to false
+    // (e.g. a synchronous state clear inside an in-sheet action handler)
+    // must not immediately let a back press fall through while the sheet is
+    // still visibly closing — only onSheetChange(-1) confirms the close
+    // animation actually landed.
+    RN.Platform.OS = "android";
+    const addEventListenerSpy = vi.spyOn(RN.BackHandler, "addEventListener");
+    const sheetRef = makeSheetRef();
+
+    const { result, rerender } = renderHook(
+      ({ isOpen }: { isOpen: boolean }) =>
+        useSheetBackHandler(sheetRef, isOpen),
+      { initialProps: { isOpen: true } },
+    );
+
+    const handler = addEventListenerSpy.mock.calls[0]?.[1] as () => boolean;
+    expect(handler()).toBe(true);
+
+    // The host's boolean flips closed synchronously, but the sheet's close
+    // animation hasn't visually finished — onSheetChange(-1) hasn't fired.
+    rerender({ isOpen: false });
+    expect(handler()).toBe(true);
+
+    result.current.onSheetChange(-1);
+    expect(handler()).toBe(false);
+  });
+
+  it("lets the event fall through when the sheet is open but the host screen isn't focused", () => {
+    useIsFocusedMock.mockReturnValue(false);
+    RN.Platform.OS = "android";
+    const addEventListenerSpy = vi.spyOn(RN.BackHandler, "addEventListener");
+    const sheetRef = makeSheetRef();
+
+    renderHook(() => useSheetBackHandler(sheetRef, true));
+
+    const handler = addEventListenerSpy.mock.calls[0]?.[1] as () => boolean;
+    const consumed = handler();
+
+    expect(consumed).toBe(false);
+    expect(sheetRef.current?.dismiss).not.toHaveBeenCalled();
+  });
+
+  it("stops consuming back presses once the host screen blurs, without re-registering the listener", () => {
+    // A deep-link/notification navigation can blur (not unmount) a tab
+    // screen while its sheet state is still non-null — a stale listener
+    // must not swallow a back press meant for the newly-focused screen.
+    RN.Platform.OS = "android";
+    const addEventListenerSpy = vi.spyOn(RN.BackHandler, "addEventListener");
+    const sheetRef = makeSheetRef();
+
+    const { rerender } = renderHook(() => useSheetBackHandler(sheetRef, true));
+
+    const handler = addEventListenerSpy.mock.calls[0]?.[1] as () => boolean;
+    expect(handler()).toBe(true);
+
+    useIsFocusedMock.mockReturnValue(false);
+    rerender();
+
+    expect(handler()).toBe(false);
+    expect(addEventListenerSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes consuming back presses once the host screen refocuses (tab-switch-away-then-back)", () => {
+    RN.Platform.OS = "android";
+    const addEventListenerSpy = vi.spyOn(RN.BackHandler, "addEventListener");
+    const sheetRef = makeSheetRef();
+
+    const { rerender } = renderHook(() => useSheetBackHandler(sheetRef, true));
+
+    const handler = addEventListenerSpy.mock.calls[0]?.[1] as () => boolean;
+
+    useIsFocusedMock.mockReturnValue(false);
+    rerender();
+    expect(handler()).toBe(false);
+
+    useIsFocusedMock.mockReturnValue(true);
+    rerender();
+    expect(handler()).toBe(true);
     expect(addEventListenerSpy).toHaveBeenCalledTimes(1);
   });
 

@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { StyleSheet, View, Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { ImpactFeedbackStyle } from "expo-haptics";
@@ -34,18 +34,43 @@ function AddItemMenuSheetContentInner({
 }: AddItemMenuSheetContentProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  // Guards against a near-simultaneous double-tap on two different rows: each
+  // handler synchronously clears the parent's menu state and defers opening
+  // the next sheet via InteractionManager, so two fast taps before the first
+  // dismissal lands could otherwise present two sheets at once. The guard set
+  // (isActioning.current = true, read synchronously in the row handler)
+  // mirrors ConfirmationModal's isActioning.current pattern; the reset is
+  // different — ConfirmationModal resets synchronously from its own dismiss
+  // callback, while this component has no such callback, so the reset below
+  // runs from a useEffect keyed on mealType becoming truthy (a fresh sheet
+  // open). That's safe here because the read this guards (a row tap) is
+  // always separated from the reset by the sheet's own open animation, so
+  // the effect's one-frame post-paint lag is never observable.
+  const isActioning = useRef(false);
+
+  useEffect(() => {
+    if (mealType) {
+      isActioning.current = false;
+    }
+  }, [mealType]);
 
   const handleChooseRecipe = useCallback(() => {
+    if (isActioning.current) return;
+    isActioning.current = true;
     haptics.impact(ImpactFeedbackStyle.Light);
     onChooseRecipe();
   }, [haptics, onChooseRecipe]);
 
   const handleSimpleEntry = useCallback(() => {
+    if (isActioning.current) return;
+    isActioning.current = true;
     haptics.impact(ImpactFeedbackStyle.Light);
     onSimpleEntry();
   }, [haptics, onSimpleEntry]);
 
   const handleImportRecipe = useCallback(() => {
+    if (isActioning.current) return;
+    isActioning.current = true;
     haptics.impact(ImpactFeedbackStyle.Light);
     onImportRecipe();
   }, [haptics, onImportRecipe]);

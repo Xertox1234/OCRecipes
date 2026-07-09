@@ -6,9 +6,9 @@ module: client
 severity: medium
 tags: [gorhom-bottom-sheet, bottom-sheet, react-native, android, backhandler, animation-timing, race-condition]
 applies_to: [client/hooks/*.ts, client/**/*.tsx]
-symptoms: ['Any derived "is the sheet open" state that updates only from BottomSheetModal.onChange is briefly wrong (still reads closed) for the ~200-300ms duration of the sheet''s opening spring/timing animation.', "A consumer of that derived state (e.g. a hardware-back handler, an overlay dimmer, a focus trap) behaves as if the sheet were closed while it is visibly open and animating.", "The bug reproduces only on imperatively-presented sheets (no React isOpen state driving presence) — state-driven sheets that mirror their own trigger state via useEffect are unaffected.", "Hard to catch by casual manual testing: the window is sub-second, so a slow/deliberate interaction during that window is needed to trigger it."]
+symptoms: ['Any derived "is the sheet open" state that updates only from BottomSheetModal.onChange is briefly wrong (still reads closed) for the ~200-300ms duration of the sheet''s opening spring/timing animation.', "A consumer of that derived state (e.g. a hardware-back handler, an overlay dimmer, a focus trap) behaves as if the sheet were closed while it is visibly open and animating.", "The OPENING half of the bug reproduces only on imperatively-presented sheets (no React isOpen state driving presence); state-driven sheets that mirror their own trigger state via useEffect are unaffected on the opening edge, but ARE affected on the CLOSING edge if that same effect flips the ref closed directly from the boolean instead of waiting for onChange(-1) (see the 2026-07-09 update below).", "Hard to catch by casual manual testing: the window is sub-second, so a slow/deliberate interaction during that window is needed to trigger it."]
 created: 2026-07-07
-last_updated: 2026-07-07
+last_updated: 2026-07-09
 ---
 
 # @gorhom/bottom-sheet's onChange fires when a sheet's animation completes, not when it starts
@@ -65,7 +65,24 @@ const onSheetAnimate = useCallback((_fromIndex: number, toIndex: number) => {
 // <BottomSheetModal onChange={onSheetChange} onAnimate={onSheetAnimate} ... />
 ```
 
-For **state-driven** hosts (a screen already tracks `isOpen`/trigger state in React and mirrors it into a ref via `useEffect` for an async callback to read), this gap doesn't apply — the ref is set directly from the trigger state at the moment `.present()`/`.dismiss()` is called, not from a gorhom callback, so there's no animation-timing lag to account for.
+For **state-driven** hosts (a screen already tracks `isOpen`/trigger state in React and mirrors it into a ref via `useEffect` for an async callback to read), the *opening* half of this gap doesn't apply — the ref is set directly from the trigger state at the moment `.present()` is called, not from a gorhom callback, so there's no animation-timing lag on the way in.
+
+**Update (2026-07-09) — the *closing* half of this gap DOES apply to state-driven hosts, and the original write-up above missed it.** A state-driven host that mirrors `isOpen` both ways (`isOpenRef.current = isOpen` on every change, via a plain `useEffect(() => { isOpenRef.current = isOpen; }, [isOpen])`) has the SAME dead-window bug as the imperative case, just on the other edge: when an in-sheet action handler synchronously flips the trigger state to a falsy/null value (e.g. `setAddItemMenuMealType(null)`), the ref flips `false` immediately — before the sheet's ~300ms close animation has visually finished. A back press (or any other consumer of that ref) during that window sees "closed" while the sheet is still on screen. This surfaced in `client/screens/meal-plan/MealPlanHomeScreen.tsx`'s 4 state-driven sheets and was fixed the same way as the imperative case: apply the SAME asymmetric bias to state-driven hosts too.
+
+```ts
+// Fixed: the isOpen effect only ever OPENS the ref — closing is confirmed
+// exclusively by onSheetChange(-1), exactly like the imperative case.
+useEffect(() => {
+  if (isOpen) {
+    isOpenRef.current = true;
+  }
+  // Deliberately no `else` — see the asymmetric-bias note above.
+}, [isOpen]);
+```
+
+This means a state-driven host now has a **required** obligation it didn't have before: it MUST also wire the hook's `onSheetChange` onto the BottomSheetModal's `onChange` prop (previously this was optional/no-op for state-driven hosts, since the boolean alone used to fully drive both edges). **Footgun: a state-driven host that passes `isOpen` but forgets to wire `onSheetChange` now leaves the ref permanently stuck "open" after the first close** — worse than the original bug, since it silently swallows every subsequent back press for that ref. There is no compile-time signal for this — same type shape, `tsc` passes either way. A static presence-check script (`scripts/check-bottomsheet-backhandler.js`, added alongside this fix) catches a `BottomSheetModal` host that never calls `useSheetBackHandler(` at all, but it does NOT catch a host that calls the hook yet forgets to wire the returned `onSheetChange` — that gap is still open (see `todos/archive/P3-2026-07-07-usesheetbackhandler-edge-cases.md`).
+
+**Related gotcha found in the same fix, worth flagging here since it's easy to miss:** when multiple `BottomSheetModal` hosts on the same screen each call `useSheetBackHandler`, every call registers its own `BackHandler.addEventListener` — and Android's `BackHandler` consults listeners in **reverse registration order** (last-registered first; see `node_modules/react-native/Libraries/Utilities/BackHandler.android.js`). During a same-screen sheet handoff (closing sheet A, then opening sheet B from within A's own action handler), which sheet's listener "wins" a stray back press depends on which `useSheetBackHandler(...)` call is declared later in the component — swap the declaration order and a back press can silently dismiss the wrong (stale) sheet instead of the one currently visible. No type error, no isolated unit test catches this (each hook instance is typically tested alone) — it only shows up when several instances share one screen. Document declaration-order dependence with an inline comment wherever multiple `useSheetBackHandler` calls coexist in one component.
 
 ## Prevention
 
@@ -76,9 +93,11 @@ For **state-driven** hosts (a screen already tracks `isOpen`/trigger state in Re
 
 ## Related Files
 
-- `client/hooks/useSheetBackHandler.ts` — the hook that surfaced this; `onSheetAnimate`/`onSheetChange` implement the fix above.
-- `client/hooks/__tests__/useSheetBackHandler.test.ts` — test coverage for the animation-start vs. animation-complete ordering.
+- `client/hooks/useSheetBackHandler.ts` — the hook that surfaced this; `onSheetAnimate`/`onSheetChange` implement the fix above, now applied to BOTH usage modes (the `isOpen`-mirror effect only ever opens the ref; closing is confirmed exclusively by `onSheetChange(-1)`).
+- `client/hooks/__tests__/useSheetBackHandler.test.ts` — test coverage for the animation-start vs. animation-complete ordering, the state-driven closing-grace-period case, and the `useIsFocused()` focus-scoping gate.
 - `client/screens/HomeScreen.tsx`, `client/screens/meal-plan/RecipeEntryHubScreen.tsx`, `client/components/BeveragePickerSheet.tsx`, `client/components/ConfirmationModal.tsx`, `client/screens/meal-plan/RecipeBrowserScreen.tsx` — imperative hosts wiring both callbacks.
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — the 4 state-driven hosts that surfaced the 2026-07-09 closing-gap update; all 4 `useSheetBackHandler` calls now wire `onSheetChange`/`onSheetAnimate` too, and their declaration order (addItemMenu first) is load-bearing for same-screen sheet-crossover back-press correctness (see the LIFO note above).
+- `scripts/check-bottomsheet-backhandler.js` — static presence check added alongside the 2026-07-09 fix; catches a host that never calls `useSheetBackHandler(` but NOT one that calls it without wiring `onSheetChange`.
 
 ## See Also
 

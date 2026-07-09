@@ -13,6 +13,13 @@ import { renderComponent } from "../../../test/utils/render-component";
 import { BeveragePickerSheet } from "../BeveragePickerSheet";
 import type { BeverageSheetOptions } from "@/hooks/useBeverageSheet";
 
+// useSheetBackHandler calls useIsFocused (@react-navigation/native), which
+// needs a NavigationContainer ancestor the plain renderComponent() wrapper
+// doesn't provide — mock it directly rather than pull in a real container.
+vi.mock("@react-navigation/native", () => ({
+  useIsFocused: () => true,
+}));
+
 // Expected error message from the calorie validation branch
 // (MAX_CUSTOM_CALORIES = 5000, defined in BeveragePickerSheet.tsx)
 const CALORIE_ERROR = "Calories must be between 0 and 5000";
