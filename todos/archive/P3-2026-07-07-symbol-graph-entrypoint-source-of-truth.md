@@ -3,7 +3,7 @@
 ---
 
 title: "PG Lab symbol-graph: derive entrypoint path from package.json main instead of duplicated literals"
-status: backlog
+status: done
 priority: low
 created: 2026-07-07
 updated: 2026-07-07
@@ -41,7 +41,7 @@ PR fixed (invisible-to-blast, or dead-exports false positive).
 
 - [ ] `scripts/pg-lab/symbol-graph.ts`'s `loadProject` reads the entrypoint path from
       `package.json`'s `"main"` field (e.g. `JSON.parse(fs.readFileSync(path.join(configDir,
-    "package.json"), "utf8")).main`) instead of the hardcoded `"client/index.js"` literal.
+  "package.json"), "utf8")).main`) instead of the hardcoded `"client/index.js"` literal.
 - [ ] `scripts/pg-lab/symbol-graph.sh`'s dead-exports allowlist derives the same value (e.g.
       via `node -p "require('<repo-root>/package.json').main"`) instead of the hardcoded
       `'client/index.js'` literal, OR the allowlist is restructured so both scripts share one
