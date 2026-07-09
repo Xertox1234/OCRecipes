@@ -19,6 +19,37 @@ assert_eq()       { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 
 
 command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not installed"; exit 0; }
 
+# ---------- Gate (no DB required) ----------
+GFIX="$(mktemp -d)"
+gate_cleanup() { rm -rf "$GFIX"; }
+# note: combined with DB cleanup below once FIX exists; for now standalone
+json_field() { python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1],""))' "$2" <<<"$1"; }
+
+# Clean session passes, artifact written 0600, sha matches
+printf '[#u-1] user: Let us discuss the search architecture.\n\n[#a-1] assistant: pg_trgm word_similarity is the right primitive here.\n' > "$GFIX/clean.txt"
+OUT=$(python3 "$GATE" "$GFIX/clean.txt" "$GFIX/clean.out"); RC=$?
+assert_exit0 "gate: clean session exits 0" "$RC"
+assert_eq "gate: clean session verdict sent" "$(json_field "$OUT" verdict)" "sent"
+PERMS=$(stat -f '%Lp' "$GFIX/clean.out" 2>/dev/null || stat -c '%a' "$GFIX/clean.out")
+assert_eq "gate: artifact is 0600" "$PERMS" "600"
+WANT_SHA=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$GFIX/clean.out")
+assert_eq "gate: reported sha256 matches artifact" "$(json_field "$OUT" sha256)" "$WANT_SHA"
+
+# Defense-in-depth redaction happens in the artifact
+printf '[#u-1] user: my key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890 sorry\n' > "$GFIX/secret.txt"
+OUT=$(python3 "$GATE" "$GFIX/secret.txt" "$GFIX/secret.out")
+assert_eq "gate: secret-only session still sent" "$(json_field "$OUT" verdict)" "sent"
+assert_contains "gate: artifact redacted" "$(cat "$GFIX/secret.out")" "[REDACTED]"
+assert_not_contains "gate: raw key absent from artifact" "$(cat "$GFIX/secret.out")" "sk-ant-api03"
+
+# Fail-closed: unreadable input → non-zero exit, gated verdict, no artifact
+OUT=$(python3 "$GATE" "$GFIX/does-not-exist.txt" "$GFIX/nope.out" 2>/dev/null); RC=$?
+assert_nonzero "gate: missing input fails closed (non-zero)" "$RC"
+assert_eq "gate: missing input verdict gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: missing input class gate_error" "$(json_field "$OUT" class)" "gate_error"
+[ ! -f "$GFIX/nope.out" ]; assert_exit0 "gate: no artifact on gate_error" "$?"
+rm -rf "$GFIX"
+
 # ---------- DB-dependent sections ----------
 command -v psql >/dev/null 2>&1 || { echo "skip: psql not installed"; [ "$FAIL" -eq 0 ] && exit 0 || exit 1; }
 psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local Postgres reachable"; [ "$FAIL" -eq 0 ] && exit 0 || exit 1; }
