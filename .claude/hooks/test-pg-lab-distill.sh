@@ -294,4 +294,16 @@ LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$MEMSTUB" DISTILL_MEMORY_DIR="$ME
 MND=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT near_dup_path FROM harness.memory_candidates WHERE session_id='memdup-session'")
 assert_contains "memory near-dup flagged" "$MND" "some_memory.md"
 
+# Review: 'a' + note accepts; 'd' rejects with dup: prefix; 'q' quits leaving rest pending
+psql -X -q -d "$TEST_URL" -c "UPDATE harness.memory_candidates SET status='pending', reviewer_note=NULL, reviewed_at=NULL" >/dev/null
+NPEND=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
+REVOUT=$(printf 'a\ngood one\nd\n\nq\n' | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" --review 2>&1); RC=$?
+assert_exit0 "--review runs" "$RC"
+NACC=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='accepted' AND reviewer_note='good one' AND reviewed_at IS NOT NULL")
+assert_eq "review accept with note" "$NACC" "1"
+NDUP=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='rejected' AND reviewer_note LIKE 'dup:%'")
+assert_eq "review duplicate-reject" "$NDUP" "1"
+NLEFT=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
+assert_eq "quit leaves remainder pending" "$NLEFT" "$((NPEND - 2))"
+
 [ "$FAIL" -eq 0 ] && { echo "all assertions passed"; exit 0; } || exit 1
