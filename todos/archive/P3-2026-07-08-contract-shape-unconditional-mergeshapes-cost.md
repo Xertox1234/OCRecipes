@@ -3,10 +3,10 @@
 ---
 
 title: "contract-shape.ts computes mergeShapes unconditionally for every object node, discarded in the common static case"
-status: backlog
+status: done
 priority: low
 created: 2026-07-08
-updated: 2026-07-08
+updated: 2026-07-09
 assignee:
 labels: [deferred, server]
 github_issue:
@@ -34,10 +34,10 @@ the `CONTRACT_SNAPSHOT=1` dev-only opt-in flag, never on production traffic.
 
 ## Acceptance Criteria
 
-- [ ] `mergeShapes(valueShapes)` is only computed when a redaction signal might actually need
+- [x] `mergeShapes(valueShapes)` is only computed when a redaction signal might actually need
       it (e.g. a cheap linear uniformity pre-check before building the full Map/sort), or its
       cost is otherwise avoided for the common static-object case.
-- [ ] Existing `contract-shape.test.ts` suite still passes unchanged (behavior-preserving
+- [x] Existing `contract-shape.test.ts` suite still passes unchanged (behavior-preserving
       optimization only).
 
 ## Implementation Notes
@@ -60,3 +60,15 @@ the `CONTRACT_SNAPSHOT=1` dev-only opt-in flag, never on production traffic.
 ### 2026-07-08
 
 - Filed during code review of PR #544 (merged as 137b746e).
+
+### 2026-07-09
+
+- Implemented: `deriveShape()`'s object branch now checks `looksDynamicallyKeyed` first
+  (cheap, key-only), then gates the expensive `mergeShapes` call behind a new O(n)
+  `couldBeUniformNonPrimitive` pre-check (coarse `.type` comparison) that skips the
+  full canonicalKey/Map/sort work whenever the common static-object case (mixed
+  primitive field types) makes redaction impossible. Verified behavior-preserving by
+  hand-trace and by the unchanged `contract-shape.test.ts` suite (46/46 passing).
+  Reviewed by code-reviewer, server-reviewer, and security-auditor — no CRITICAL or
+  WARNING findings; all three independently confirmed the pre-check can never produce
+  a false negative (never skip a redaction the old code would have performed).
