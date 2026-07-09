@@ -106,6 +106,25 @@ function getGitSha(cwd: string): string | null {
   }
 }
 
+/** Read the client entrypoint path out of `package.json`'s "main" field instead of a
+ * hardcoded literal -- `main` is this repo's actual, git-history-stable source of truth
+ * for "the" registered root entrypoint (Metro/Expo resolve it the same way), so a future
+ * rename only requires editing package.json, not this script too. Only called for the
+ * real-repo config (never the test fixture, which has no package.json and doesn't take
+ * this code path -- see loadProject's isDefaultRepoConfig guard). */
+function readMainEntrypoint(configDir: string): string {
+  const packageJsonPath = path.join(configDir, "package.json");
+  const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as {
+    main?: string;
+  };
+  if (typeof pkg.main !== "string" || pkg.main.length === 0) {
+    throw new Error(
+      `readMainEntrypoint: package.json has no "main" field at ${packageJsonPath} -- symbol-graph.ts's loadProject depends on this to find the client entrypoint file.`,
+    );
+  }
+  return pkg.main;
+}
+
 /** Build the alias-prefix -> absolute-root-dir table from the SAME tsconfig ts-morph
  * loaded (compilerOptions.paths / baseUrl) -- never hardcoded, so it can't drift from the
  * real `@/`/`@shared/` config (or a fixture's own aliases in tests). */
@@ -280,17 +299,19 @@ function loadProject(tsConfigFilePath: string): Project {
   });
   if (isDefaultRepoConfig) {
     const configDir = path.dirname(tsConfigFilePath);
-    // client/index.js -- the app's registered root entrypoint (package.json "main",
-    // `registerRootComponent(App)`) -- is a plain .js file, so the "client/**/*.{ts,tsx}"
-    // glob below never matches it, making it (and its one real edge into
-    // client/App.tsx) invisible to blast/cycles entirely, not just ref-counting.
-    // ts-morph parses an explicitly-added .js file fine without "allowJs" in the
-    // tsconfig (verified empirically) -- this is the ONLY root-level .js entrypoint in
-    // the tracked repo (the sibling root-level `/index.js` is a gitignored build
-    // artifact, not source). Added as an exact path, not a broader glob, to avoid
-    // pulling in unrelated .js files under client/ (there are none today, but a future
-    // one shouldn't silently join the graph without a deliberate glob change).
-    const entryPointPath = path.join(configDir, "client/index.js");
+    // The app's registered root entrypoint (package.json "main",
+    // `registerRootComponent(App)`) -- read from package.json itself (readMainEntrypoint),
+    // never a hardcoded literal, so a future rename only requires editing package.json --
+    // is a plain .js file, so the "client/**/*.{ts,tsx}" glob below never matches it,
+    // making it (and its one real edge into client/App.tsx) invisible to blast/cycles
+    // entirely, not just ref-counting. ts-morph parses an explicitly-added .js file fine
+    // without "allowJs" in the tsconfig (verified empirically) -- this is the ONLY
+    // root-level .js entrypoint in the tracked repo (the sibling root-level `/index.js` is
+    // a gitignored build artifact, not source). Added as an exact path, not a broader
+    // glob, to avoid pulling in unrelated .js files under client/ (there are none today,
+    // but a future one shouldn't silently join the graph without a deliberate glob
+    // change).
+    const entryPointPath = path.join(configDir, readMainEntrypoint(configDir));
     const added = project.addSourceFilesAtPaths([
       path.join(configDir, "server/**/*.ts"),
       path.join(configDir, "client/**/*.{ts,tsx}"),
@@ -300,14 +321,15 @@ function loadProject(tsConfigFilePath: string): Project {
     ]);
     // addSourceFilesAtPaths() silently adds zero files for a literal path that matches
     // nothing -- no throw, no warning (verified against ts-morph's glob-based
-    // implementation). Without this check, a future rename/move of client/index.js would
-    // silently drop its edge into client/App.tsx from the graph -- and since
-    // symbol-graph.sh's dead-exports allowlist no longer carries a client/App.tsx fallback
-    // entry (removed once this entrypoint edge made it unnecessary), App.tsx would start
-    // silently false-flagging as dead with no test catching it.
+    // implementation). Without this check, a future rename/move of the package.json
+    // "main" entrypoint (or a stale "main" field pointing at a moved file) would silently
+    // drop its edge into client/App.tsx from the graph -- and since symbol-graph.sh's
+    // dead-exports allowlist no longer carries a client/App.tsx fallback entry (removed
+    // once this entrypoint edge made it unnecessary), App.tsx would start silently
+    // false-flagging as dead with no test catching it.
     if (!added.some((sf) => sf.getFilePath() === entryPointPath)) {
       throw new Error(
-        `loadProject: expected entrypoint not found at ${entryPointPath} -- did client/index.js move or get renamed? symbol-graph.sh's dead-exports allowlist depends on this file being scanned.`,
+        `loadProject: expected entrypoint not found at ${entryPointPath} -- did package.json's "main" field move or get renamed? symbol-graph.sh's dead-exports allowlist depends on this file being scanned.`,
       );
     }
   }

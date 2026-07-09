@@ -36,6 +36,9 @@
 #   scripts/pg-lab/symbol-graph.sh layering
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 LAB_DATABASE_URL="${LAB_DATABASE_URL:-postgresql://localhost/ocrecipes_lab}"
 
 # Hard safety rail, matching init.sh/codify-neardup.sh: this tool must never run against a
@@ -99,7 +102,28 @@ SQL
 
   dead-exports)
     print_snapshot_age
-    psql -X -q -d "$LAB_DATABASE_URL" <<'SQL'
+    # The client entrypoint value is derived from package.json's "main" field, never a
+    # hardcoded literal -- mirrors symbol-graph.ts's loadProject/readMainEntrypoint, so a
+    # future rename only requires editing package.json, not this script too.
+    # server/index.ts has no equivalent package.json field naming it "the" server
+    # entrypoint (only a free-text "server:dev": "tsx server/index.ts" script string
+    # exists), so it stays a hardcoded literal below -- there is no source of truth to
+    # derive it from.
+    MAIN_ENTRY="$(node -p "require('$PROJECT_ROOT/package.json').main" 2>/dev/null)"
+    # A missing "main" field makes `node -p` print the literal string "undefined" (still
+    # non-empty, still exit 0) -- `-z` alone would NOT catch that and would silently
+    # allowlist the nonsense path "undefined" instead of refusing to run. Mirrors the TS
+    # side's `typeof pkg.main !== "string"` guard (readMainEntrypoint in symbol-graph.ts).
+    if [ -z "$MAIN_ENTRY" ] || [ "$MAIN_ENTRY" = "undefined" ]; then
+      echo "symbol-graph.sh: could not read package.json's \"main\" field at $PROJECT_ROOT/package.json -- refusing to run dead-exports without the entrypoint allowlist value" >&2
+      exit 1
+    fi
+    # :'main_entry' is psql's quoted-literal substitution (safe for arbitrary string
+    # content, unlike a bare :var -- see docs/solutions/logic-errors/
+    # psql-c-flag-skips-var-substitution-2026-07-05.md) -- passed via -v, read through
+    # this heredoc/stdin, never -c (which skips the substitution pass entirely). Same
+    # mechanism the `blast` command above already uses for its :'target' variable.
+    psql -X -q -d "$LAB_DATABASE_URL" -v main_entry="$MAIN_ENTRY" <<'SQL'
 SELECT path, name
 FROM repo.exports
 WHERE ref_count = 0
@@ -107,15 +131,16 @@ WHERE ref_count = 0
   -- drizzle-kit/Babel config loaders), never imported by another module, so a correct
   -- reference graph reports these as zero-referenced even though they are load-bearing.
   -- client/App.tsx is NOT in this list -- it used to be a hardcoded workaround for
-  -- client/index.js being excluded from the ts-morph project glob (App.tsx's only real
-  -- edge is client/index.js's `import App from "@/App"`, so App.tsx looked dead whenever
-  -- that edge was invisible). Now that symbol-graph.ts's loadProject scans client/index.js
-  -- too, the real edge exists and App.tsx earns a genuine ref_count > 0 -- no allowlist
-  -- entry needed. client/index.js itself stays allowlisted: it is the genuine entrypoint
-  -- (registered via package.json "main", invoked by Metro/Expo, never imported by another
-  -- module) and, having no export statements of its own, would never appear as a
-  -- repo.exports row regardless -- this entry is defensive, not load-bearing today.
-  AND path NOT IN ('client/index.js', 'server/index.ts')
+  -- the client entrypoint being excluded from the ts-morph project glob (App.tsx's only
+  -- real edge is the entrypoint's `import App from "@/App"`, so App.tsx looked dead
+  -- whenever that edge was invisible). Now that symbol-graph.ts's loadProject scans the
+  -- package.json-derived entrypoint too, the real edge exists and App.tsx earns a genuine
+  -- ref_count > 0 -- no allowlist entry needed. The entrypoint itself stays allowlisted:
+  -- it is the genuine entrypoint (registered via package.json "main", invoked by
+  -- Metro/Expo, never imported by another module) and, having no export statements of its
+  -- own, would never appear as a repo.exports row regardless -- this entry is defensive,
+  -- not load-bearing today.
+  AND path NOT IN (:'main_entry', 'server/index.ts')
   AND path NOT LIKE '%.config.ts'
   AND path NOT LIKE '%.config.js'
   -- Drizzle relations() objects (shared/schema.ts's `export const xRelations = relations(
