@@ -3,10 +3,10 @@
 ---
 
 title: "Broader test-quality: property-based, contract/integration, and E2E coverage"
-status: blocked
+status: done
 priority: low
 created: 2026-06-27
-updated: 2026-07-07
+updated: 2026-07-09
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -93,3 +93,12 @@ is a tracking umbrella, not a single unit of work.)
   risks it either failing or attempting all three initiatives in one oversized PR. Unblock by
   splitting each Acceptance Criteria bullet into its own focused todo with concrete file paths
   when actually scheduled, then set this umbrella to `done` (or archive it) once split.
+
+### 2026-07-09
+
+- Split into three standalone todos per the unblock plan above, at user request via
+  `/todo <this file>`. Archiving this umbrella — none of the three sub-items were implemented
+  here, only scoped out as their own thin-stub todos (each still needs its own design pass):
+  - `todos/P3-2026-07-09-property-based-testing-pure-numeric-modules.md`
+  - `todos/P3-2026-07-09-realdb-integration-test-harness.md`
+  - `todos/P3-2026-07-09-e2e-regression-gating-maestro.md`
