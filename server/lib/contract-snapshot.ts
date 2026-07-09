@@ -23,7 +23,10 @@
 import { execSync } from "node:child_process";
 import type { Application, NextFunction, Request, Response } from "express";
 import pg from "pg";
-import { deriveShape } from "./contract-shape";
+import {
+  deriveShape,
+  hasUnredactedUniformPrimitiveObject,
+} from "./contract-shape";
 import { readDynamicKeyFields } from "./dynamic-key-fields";
 import { logger, toError } from "./logger";
 
@@ -183,6 +186,20 @@ async function recordSnapshot(
   // the marker lives there rather than on `body` itself.
   const forcedDynamicKeys = readDynamicKeyFields(res);
   const shape = deriveShape(normalized, forcedDynamicKeys);
+
+  // Observability only -- never affects what's stored or what gets redacted (the
+  // shape above is already final). Cheap, single-condition proxy for the
+  // primitive-valued dynamic-map gap neither heuristic in contract-shape.ts
+  // catches (see hasUnredactedUniformPrimitiveObject's doc comment for the
+  // known-noisy signal-to-noise tradeoff, e.g. `{ width, height }` also matches).
+  // debug (not warn) precisely because of that noise: a breadcrumb for manual
+  // triage of dev.contract_snapshots rows, not an actionable alert.
+  if (hasUnredactedUniformPrimitiveObject(shape)) {
+    logger.debug(
+      { routePattern, method, status },
+      "contract-snapshot: a uniform-primitive-valued object was NOT redacted (known-noisy proxy for the primitive-valued dynamic-map gap; may be a benign static shape like `{ width, height }`)",
+    );
+  }
 
   await query(
     `INSERT INTO dev.contract_snapshots

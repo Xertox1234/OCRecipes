@@ -99,6 +99,18 @@ function mergeShapes(shapes: Shape[]): Shape {
  *     to force-redact `allergenFlags` deterministically regardless of entry count, so
  *     this gap is closed for them; a future, not-yet-marked route with the same
  *     free-text-keyed shape would still fall through to this heuristic alone.
+ *
+ *     NOT INSTRUMENTED (deliberate decision, not an oversight): unlike the
+ *     all-primitive-valued gap below (see `hasUnredactedUniformPrimitiveObject`),
+ *     this sub-2-entry gap has no runtime telemetry, because a single- or
+ *     zero-key object is the single most common object shape in any JSON API — an
+ *     `{ id }`, a `{ status: "ok" }`, an empty `{}` — so a signal here would fire on
+ *     an overwhelming majority of ordinary responses with near-zero
+ *     signal-to-noise, unlike the >= 2-key uniform-primitive check, which is
+ *     comparatively rare. A marker- or count-based signal restricted to *known*
+ *     dynamic-key-producing fields would need the same per-route bookkeeping
+ *     `markDynamicKeyFields` already provides, so it would add nothing this gap
+ *     doesn't already have covered for the two known routes.
  */
 const MAX_STATIC_OBJECT_KEYS = 50;
 const MAX_KEY_LENGTH_FOR_PATTERN_CHECK = 200;
@@ -172,6 +184,105 @@ function hasUniformNonPrimitiveValueShape(
     valueShapes.length >= MIN_UNIFORM_MAP_KEYS &&
     (merged.type === "object" || merged.type === "array")
   );
+}
+
+function isPrimitiveShapeType(type: Shape["type"]): boolean {
+  return type === "string" || type === "number" || type === "boolean";
+}
+
+/**
+ * Observability-only proxy for the gap-2 residual documented on
+ * `hasUniformNonPrimitiveValueShape` above (and, for a marked field, closed by
+ * `deriveForcedDynamicShape`): detects a plain (non-redacted) object, anywhere in
+ * an already-derived Shape tree, with >= MIN_UNIFORM_MAP_KEYS keys whose values are
+ * all the SAME primitive type. This is the mirror image of
+ * `hasUniformNonPrimitiveValueShape` -- that function deliberately excludes
+ * primitive values from the redaction decision (see its doc comment); this
+ * function walks the shape `deriveShape` already returned to flag the same
+ * structural pattern for a caller to log, purely for manual triage. It never
+ * changes what `deriveShape` returns and is not itself a redaction signal --
+ * `deriveShape` stays pure/side-effect-free; see `recordSnapshot` in
+ * contract-snapshot.ts for the one caller that logs on a hit.
+ *
+ * A correctly-redacted `<dynamic>` placeholder node (exactly one key,
+ * DYNAMIC_KEY_PLACEHOLDER) is never itself flagged -- it fails the
+ * >= MIN_UNIFORM_MAP_KEYS check on its own single key. But this function does NOT
+ * merely skip that one key; it also does not recurse into the placeholder's merged
+ * value shape (see the `<dynamic>` short-circuit in the object case below). That
+ * pruning is deliberate, not incidental: for a real dynamic map like
+ * `allergenFlags` (redacted keys, values shaped `{ allergenId: string, severity:
+ * string }`), the per-entry value shape is ITSELF a 2-key, same-typed-string
+ * object that would otherwise match this exact proxy signal on virtually every
+ * response with >= 1 flagged allergen -- a false trigger on the two live routes
+ * the whole redaction mechanism exists to protect, with zero leak-detection value,
+ * since the placeholder's own (sensitive) keys are already hidden and the nested
+ * field names are ordinary, already-classified static schema names. Verified
+ * empirically against the real grocery.ts/menu.ts allergenFlags shape (see
+ * contract-shape.test.ts's redacted-`<dynamic>`-object test).
+ *
+ * Bounded like `deriveShape`'s own recursion (see `unwrapToKeys` above for the
+ * project's convention of documenting this): each call recurses strictly into a
+ * child Shape node one level down (an object's values, an array's element shape,
+ * or a mixed shape's variants), and `deriveShape` never produces a self-referential
+ * Shape, so this always terminates at the tree's leaves. Same complexity class as
+ * `deriveShape` itself -- O(distinct shape nodes), not O(payload), since
+ * `mergeShapes` already collapsed any repeated structure before this ever runs.
+ *
+ * SIGNAL-TO-NOISE ASSESSMENT (the concern raised in this feature's own todo Risks
+ * section): even with the `<dynamic>`-subtree pruning above, this still fires on
+ * the identical structural pattern for two cases that are NOT distinguishable from
+ * a plain (non-redacted) object's shape alone -- (a) a genuine primitive-valued
+ * dynamic map (e.g. a hypothetical `Record<string, AllergySeverity>` simplification
+ * of `allergenFlags`, the gap this proxies for), and (b) an entirely ordinary
+ * static object that happens to have >= 2 same-typed fields, e.g. `{ width: 100,
+ * height: 50 }` or `{ r: 255, g: 0, b: 0 }` -- ordinary, common, and completely
+ * benign. Case (b) will fire far more often than case (a) in most route surfaces.
+ * Accepted deliberately rather than solved: requiring the *same* primitive type
+ * across all keys (not just "all primitive") already prunes the more common
+ * heterogeneous case (`{ id: 5, name: "a" }` does NOT match); going further (e.g.
+ * key-name heuristics to guess "static" vs "dynamic" intent) would be inventing a
+ * new redaction-adjacent heuristic, which this feature's own acceptance criteria
+ * explicitly rule out ("cheap, single-condition check, no new heuristic"). This is
+ * why the caller logs at `debug`, not `warn`: a noisy-but-cheap breadcrumb for
+ * someone manually inspecting `dev.contract_snapshots` rows for a suspected leak,
+ * not an actionable alert.
+ */
+export function hasUnredactedUniformPrimitiveObject(shape: Shape): boolean {
+  switch (shape.type) {
+    case "object": {
+      const keys = Object.keys(shape.keys);
+      // A correctly-redacted node: its single key is the placeholder, and
+      // whatever real per-entry field names produced its merged value shape were
+      // already independently classified (dynamic or not) when THEY were
+      // derived. Recursing into it adds no leak-detection signal -- the
+      // placeholder's own keys are exactly what needed hiding and already are
+      // hidden -- only guaranteed noise from ordinary per-entry schema field
+      // names (e.g. an AllergenMatch's `allergenId`/`severity` both being
+      // strings). Treat the whole subtree as opaque rather than descend into it.
+      if (keys.length === 1 && keys[0] === DYNAMIC_KEY_PLACEHOLDER)
+        return false;
+
+      const values = Object.values(shape.keys);
+      if (
+        values.length >= MIN_UNIFORM_MAP_KEYS &&
+        values.every(
+          (value) =>
+            value.type === values[0].type && isPrimitiveShapeType(value.type),
+        )
+      ) {
+        return true;
+      }
+      return values.some(hasUnredactedUniformPrimitiveObject);
+    }
+    case "array":
+      return shape.items
+        ? hasUnredactedUniformPrimitiveObject(shape.items)
+        : false;
+    case "mixed":
+      return shape.variants.some(hasUnredactedUniformPrimitiveObject);
+    default:
+      return false;
+  }
 }
 
 /** Placeholder key used in place of a dynamically-keyed object's real key names. */

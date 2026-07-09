@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { deriveShape, diffRouteShapes, type Shape } from "../contract-shape";
+import {
+  deriveShape,
+  diffRouteShapes,
+  hasUnredactedUniformPrimitiveObject,
+  type Shape,
+} from "../contract-shape";
 
 describe("deriveShape", () => {
   it("derives primitive shapes", () => {
@@ -569,6 +574,83 @@ describe("deriveShape", () => {
         keys: { allergenFlags: { type: "null" } },
       });
     });
+  });
+});
+
+describe("hasUnredactedUniformPrimitiveObject (redaction-gap telemetry proxy)", () => {
+  it("detects a plain object with >= 2 keys sharing the same primitive type (the proxy signal)", () => {
+    // Deliberately the same fixture the todo's Risks section calls out as noisy:
+    // this is what a benign static object looks like too (see the negative test
+    // below) -- this function can't tell them apart from the shape alone, by
+    // design (see its doc comment in contract-shape.ts).
+    expect(
+      hasUnredactedUniformPrimitiveObject(
+        deriveShape({ width: 100, height: 50 }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does NOT flag a heterogeneous-primitive-typed object (different types don't count as uniform)", () => {
+    expect(
+      hasUnredactedUniformPrimitiveObject(deriveShape({ id: 5, name: "a" })),
+    ).toBe(false);
+  });
+
+  it("does NOT flag a single-key primitive object (below MIN_UNIFORM_MAP_KEYS)", () => {
+    expect(
+      hasUnredactedUniformPrimitiveObject(deriveShape({ status: "ok" })),
+    ).toBe(false);
+  });
+
+  it("does NOT flag an already-redacted <dynamic> object, even when its merged value shape is itself uniform-primitive (pruned -- no leak-detection signal in an already-redacted subtree)", () => {
+    // Real allergenFlags-shaped fixture: each entry's value is {allergenId,
+    // severity}, both strings -- a uniform-primitive shape that WOULD match the
+    // proxy signal on its own. But it's nested under the "<dynamic>" placeholder,
+    // whose own real keys (the sensitive part) are already hidden -- the entry's
+    // field names (allergenId/severity) are ordinary static schema names, already
+    // independently classified as non-dynamic when THEY were derived. Recursing
+    // into a redacted subtree would only ever produce noise here, never signal,
+    // so hasUnredactedUniformPrimitiveObject prunes at the placeholder boundary
+    // instead of descending into it.
+    const shape = deriveShape({
+      shrimp: { allergenId: "shellfish", severity: "high" },
+      peanuts: { allergenId: "peanut", severity: "severe" },
+    });
+    // Sanity check this fixture actually redacted, so the negative below is real.
+    expect(
+      Object.keys((shape as Extract<Shape, { type: "object" }>).keys),
+    ).toEqual(["<dynamic>"]);
+    expect(hasUnredactedUniformPrimitiveObject(shape)).toBe(false);
+  });
+
+  it("detects the proxy pattern nested inside an unrelated static object", () => {
+    const shape = deriveShape({ meta: { width: 100, height: 50 } });
+    expect(hasUnredactedUniformPrimitiveObject(shape)).toBe(true);
+  });
+
+  it("detects the proxy pattern inside array elements", () => {
+    const shape = deriveShape([{ width: 100, height: 50 }]);
+    expect(hasUnredactedUniformPrimitiveObject(shape)).toBe(true);
+  });
+
+  it("detects the proxy pattern inside a heterogeneous (mixed) array variant", () => {
+    const shape = deriveShape([{ width: 100, height: 50 }, "x"]);
+    expect(hasUnredactedUniformPrimitiveObject(shape)).toBe(true);
+  });
+
+  it("does NOT flag a heterogeneous (mixed) array whose object variant isn't uniform-primitive", () => {
+    const shape = deriveShape([{ id: 5, name: "a" }, "x"]);
+    expect(hasUnredactedUniformPrimitiveObject(shape)).toBe(false);
+  });
+
+  it("returns false for a shape with no matching object anywhere", () => {
+    expect(hasUnredactedUniformPrimitiveObject(deriveShape("hello"))).toBe(
+      false,
+    );
+    expect(hasUnredactedUniformPrimitiveObject(deriveShape({ id: 5 }))).toBe(
+      false,
+    );
+    expect(hasUnredactedUniformPrimitiveObject(deriveShape([]))).toBe(false);
   });
 });
 
