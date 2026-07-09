@@ -14,6 +14,7 @@ import { startPromotionJob } from "./services/canonical-promotion";
 import { logger, rootLogger, toError } from "./lib/logger";
 import { requestContextMiddleware } from "./lib/request-context";
 import { installContractSnapshotMiddleware } from "./lib/contract-snapshot";
+import { UUID_RE } from "./lib/identifier-patterns";
 import {
   runRetentionCleanup,
   assertExecutionAllowed as assertRetentionAllowed,
@@ -123,9 +124,6 @@ function setupBodyParsing(app: express.Application) {
 
   app.use(express.urlencoded({ extended: false, limit: "2mb" }));
 }
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function setupRequestLogging(app: express.Application) {
   app.use(

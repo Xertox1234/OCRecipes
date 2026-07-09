@@ -1,3 +1,6 @@
+import { UUID_RE } from "./identifier-patterns";
+import { EMAIL_SHAPE_RE } from "@shared/constants/email-patterns";
+
 /**
  * Pure, side-effect-free helpers for the PG Lab API contract snapshot/diff item
  * (docs/research/2026-07-05-pg-lab-roadmap.md, Batch C). Derives a structural TYPE
@@ -104,8 +107,8 @@ const MAX_STATIC_OBJECT_KEYS = 50;
 const MAX_KEY_LENGTH_FOR_PATTERN_CHECK = 200;
 
 const DYNAMIC_KEY_PATTERNS: RegExp[] = [
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/, // email — mirrors client/components/ChangeEmailModal.tsx's EMAIL_RE
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, // UUID
+  EMAIL_SHAPE_RE, // email shape (shared/constants/email-patterns.ts) — not a validation boundary, see that module's doc comment
+  UUID_RE, // UUID (server/lib/identifier-patterns.ts) — shared with server/index.ts's x-request-id check
   /^\d{4,}$/, // long numeric id (barcode, row id, etc.) — unlikely as a hand-typed field name
 ];
 

@@ -3,7 +3,7 @@
 ---
 
 title: "Centralize duplicated UUID/email identifier regexes instead of inline copies in contract-shape.ts"
-status: backlog
+status: done
 priority: low
 created: 2026-07-07
 updated: 2026-07-07
