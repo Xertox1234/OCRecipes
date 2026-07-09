@@ -34,6 +34,7 @@ PERMS=$(stat -f '%Lp' "$GFIX/clean.out" 2>/dev/null || stat -c '%a' "$GFIX/clean
 assert_eq "gate: artifact is 0600" "$PERMS" "600"
 WANT_SHA=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$GFIX/clean.out")
 assert_eq "gate: reported sha256 matches artifact" "$(json_field "$OUT" sha256)" "$WANT_SHA"
+[ ! -e "$GFIX/clean.out.tmp" ]; assert_exit0 "gate: no temp file left beside artifact" "$?"
 
 # Defense-in-depth redaction happens in the artifact
 printf '[#u-1] user: my key is sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890 sorry\n' > "$GFIX/secret.txt"

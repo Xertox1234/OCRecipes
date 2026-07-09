@@ -64,11 +64,25 @@ def main():
     if verdict:
         print(json.dumps({"verdict": "gated", "class": verdict}))
         return
-    fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
-    print(json.dumps({"verdict": "sent",
-                      "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}))
+    payload = json.dumps({"verdict": "sent",
+                          "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()})
+    tmp = dst + ".tmp"
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, dst)
+        print(payload)
+        sys.stdout.flush()
+    except BaseException:
+        # Contract: no out-file may survive any non-sent outcome — remove both the temp
+        # file and dst (dst only exists here if the final print/flush failed post-replace).
+        for p in (tmp, dst):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+        raise
 
 
 if __name__ == "__main__":
