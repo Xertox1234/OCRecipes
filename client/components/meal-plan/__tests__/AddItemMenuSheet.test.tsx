@@ -61,4 +61,28 @@ describe("AddItemMenuSheet", () => {
     fireEvent.click(screen.getByLabelText("Import recipe"));
     expect(defaultProps.onImportRecipe).toHaveBeenCalledTimes(1);
   });
+
+  it("guards against a near-simultaneous double-tap on two different rows — only the first press fires", () => {
+    // A near-simultaneous tap on two rows could otherwise present two
+    // sheets at once via the parent's InteractionManager.runAfterInteractions
+    // deferral (see the todo that added this guard).
+    renderComponent(<AddItemMenuSheetContent {...defaultProps} />);
+    fireEvent.click(screen.getByLabelText("Choose recipe"));
+    fireEvent.click(screen.getByLabelText("Simple entry"));
+
+    expect(defaultProps.onChooseRecipe).toHaveBeenCalledTimes(1);
+    expect(defaultProps.onSimpleEntry).not.toHaveBeenCalled();
+  });
+
+  it("resets the double-tap guard when the sheet reopens for a new mealType", () => {
+    const { rerender } = renderComponent(
+      <AddItemMenuSheetContent {...defaultProps} />,
+    );
+    fireEvent.click(screen.getByLabelText("Choose recipe"));
+    expect(defaultProps.onChooseRecipe).toHaveBeenCalledTimes(1);
+
+    rerender(<AddItemMenuSheetContent {...defaultProps} mealType="lunch" />);
+    fireEvent.click(screen.getByLabelText("Simple entry"));
+    expect(defaultProps.onSimpleEntry).toHaveBeenCalledTimes(1);
+  });
 });

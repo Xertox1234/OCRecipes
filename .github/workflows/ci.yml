@@ -45,6 +45,9 @@ jobs:
       - name: Hardcoded colors
         run: node scripts/check-hardcoded-colors.js
 
+      - name: BottomSheetModal BackHandler wiring
+        run: node scripts/check-bottomsheet-backhandler.js
+
       - name: IDOR storage check
         run: node scripts/check-idor-storage.js
 
