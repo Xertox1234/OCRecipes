@@ -173,10 +173,46 @@ lost its forcing and fell back to the heuristics alone. Not reachable by either
 of the two producers above (neither nests a second marked field), but real and
 untested. Fixed same-day; see
 [A special-cased recursive helper must forward the same context parameter as the general-case recursion](../logic-errors/forced-recursion-branch-drops-forwarded-context-2026-07-08.md)
-for the full writeup. Left as a deferred, not-yet-actioned finding from that same
-review: `server/lib/dynamic-key-fields.ts`'s `res.locals`-based marker duplicates
-`server/lib/request-context.ts`'s existing AsyncLocalStorage per-request context
-mechanism — tracked in `todos/P3-2026-07-08-dynamic-key-fields-reinvents-request-context.md`.
+for the full writeup.
+
+**Considered and resolved (2026-07-08): keep the `res.locals` marker, do not
+migrate it onto `request-context.ts`.** The same review that found the
+recursion bug above also flagged `dynamic-key-fields.ts`'s `res.locals`-based
+marker as reinventing `server/lib/request-context.ts`'s existing
+`AsyncLocalStorage`-based `RequestContext` — both are, on the surface, a
+"producer sets per-request metadata, a later consumer reads it" mechanism.
+Filed as a follow-up todo for a considered pass rather than a same-day PR
+fixup; that pass concluded **`res.locals` is the better fit, not a duplication
+worth collapsing**, for two reasons:
+
+1. The migration case rested partly on `recordSnapshot()` "wouldn't need `res`
+   threaded through at all" if it read `getRequestContext()` instead of
+   `readDynamicKeyFields(res)`. That benefit doesn't actually exist:
+   `recordSnapshot()` already reads `res.statusCode` directly (see
+   `contract-snapshot.ts`), so `res` stays in its parameter list regardless of
+   where the marker lives.
+2. `RequestContext` exists to propagate a few values to arbitrary,
+   deeply-nested, arbitrarily-async call sites across the whole app (auth sets
+   `userId` once; logging reads it from any log call anywhere), and is
+   populated via `AsyncLocalStorage.run()` on **every** production request.
+   This marker's job is narrower and travels exactly one hop: set on `res`
+   immediately before a route's own `res.json()` call, read back in the very
+   next middleware layer wrapping that same `res.json`. `res.locals` — an
+   Express-native, response-scoped bag built for precisely this shape — is a
+   tighter fit than widening a small, load-bearing, always-populated
+   interface for a dev-only diagnostic field. Both mechanisms happen to store
+   "per-request metadata," but the propagation requirements differ enough
+   that folding this one into `RequestContext` would be a net loss, not a
+   simplification. (Research during that pass also reasoned, via Express's
+   continuous-middleware-chain execution model and Node's `AsyncLocalStorage`
+   continuation tracking, that the `RequestContext` scope would in fact still
+   be reliably active at the point `contract-snapshot.ts`'s wrapped
+   `res.json` executes — analytically, not via an added empirical test — so
+   migration was rejected on interface-surface grounds, not because it was
+   technically infeasible.)
+
+See `server/lib/dynamic-key-fields.ts`'s module doc comment for the same
+rationale kept alongside the code it justifies.
 
 ## Update (2026-07-09): a diagnostic/telemetry walk over the shape tree must also stop at the redaction boundary
 
