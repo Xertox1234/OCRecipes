@@ -213,4 +213,50 @@ W2=$(LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$STUB" bash "$SCRIPT" --wind
 SEEN2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT sessions_seen FROM harness.distill_runs ORDER BY id DESC LIMIT 1")
 assert_eq "second --window is a no-op (bookmark)" "$SEEN2" "0"
 
+# Candidates from the Task 5 window run should now exist (stub returned one valid candidate)
+# — reset ledgers and re-run so this task's assertions see a fresh run.
+psql -X -q -d "$TEST_URL" -c "TRUNCATE harness.memory_candidates, harness.distilled_sessions, harness.distill_runs RESTART IDENTITY CASCADE" >/dev/null
+LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$STUB" bash "$SCRIPT" --window 2026-07-01 2026-07-14 >/dev/null 2>&1
+NCAND=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
+assert_eq "valid candidate inserted pending" "$NCAND" "1"
+CANDROW=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT target_store||'|'||subtype||'|'||array_to_string(source_msgs,',') FROM harness.memory_candidates LIMIT 1")
+assert_eq "candidate fields round-trip" "$CANDROW" "solution|knowledge:conventions|c-1"
+TOKS=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT tokens_in||'/'||tokens_out FROM harness.distill_runs ORDER BY id DESC LIMIT 1")
+assert_eq "token counts recorded from send stderr" "$TOKS" "1200/90"
+
+# Malformed response => parse_failed outcome, run completes; invented subtype => candidate
+# rejected but session still 'sent'
+BADSTUB="$FIX/bad-send.sh"; cat > "$BADSTUB" <<'EOF'
+#!/usr/bin/env bash
+echo 'Sorry, here is prose, not JSON.'
+echo '[kimi: 500 in (0 cached) / 20 out | finish: stop]' >&2
+EOF
+chmod +x "$BADSTUB"
+SUBSTUB="$FIX/subtype-send.sh"; cat > "$SUBSTUB" <<'EOF'
+#!/usr/bin/env bash
+echo '[{"target_store":"solution","subtype":"bug:invented-category","title":"x","content":"y","evidence_msg_uuids":[]},{"target_store":"memory","subtype":"feedback","title":"Valid one","content":"Valid content.","evidence_msg_uuids":["m-1"]}]'
+echo '[kimi: 700 in (0 cached) / 40 out | finish: stop]' >&2
+EOF
+chmod +x "$SUBSTUB"
+psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" >/dev/null <<'SQL'
+INSERT INTO harness.transcript_messages (msg_uuid, session_id, project_dir, ts, role, content) VALUES
+ ('m-1','malformed-session','fx','2026-07-02T10:00:00Z','user','Another clean discussion, no records.'),
+ ('s-1','subtype-session','fx','2026-07-03T10:00:00Z','user','Clean discussion for subtype validation.');
+SQL
+LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$BADSTUB" bash "$SCRIPT" --window 2026-07-02 2026-07-02 >/dev/null 2>&1
+MF=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT outcome FROM harness.distilled_sessions WHERE session_id='malformed-session'")
+assert_eq "malformed response -> parse_failed" "$MF" "parse_failed"
+LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$SUBSTUB" bash "$SCRIPT" --window 2026-07-03 2026-07-03 >/dev/null 2>&1
+SS=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT outcome FROM harness.distilled_sessions WHERE session_id='subtype-session'")
+assert_eq "invented subtype: session still sent" "$SS" "sent"
+NVALID=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE session_id='subtype-session'")
+assert_eq "invented subtype rejected, valid sibling inserted" "$NVALID" "1"
+
+# Cost cap: seed a run at the cap -> refusal before any send
+psql -X -q -d "$TEST_URL" -c "INSERT INTO harness.distill_runs (window_start,window_end,tokens_in) VALUES ('2026-01-01','2026-01-01', 20000000000)" >/dev/null
+CAPOUT=$(LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$STUB" bash "$SCRIPT" --window 2026-07-04 2026-07-04 2>&1); RC=$?
+assert_nonzero "cost cap refusal" "$RC"
+assert_contains "cap message names the cap" "$CAPOUT" "cap"
+psql -X -q -d "$TEST_URL" -c "DELETE FROM harness.distill_runs WHERE tokens_in = 20000000000" >/dev/null
+
 [ "$FAIL" -eq 0 ] && { echo "all assertions passed"; exit 0; } || exit 1

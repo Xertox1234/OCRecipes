@@ -29,6 +29,25 @@ DISTILL_PRICE_OUT_PER_MTOK="${DISTILL_PRICE_OUT_PER_MTOK:-1.20}"
 DISTILL_MEMORY_DIR="${DISTILL_MEMORY_DIR:-$HOME/.claude/projects/-Users-williamtower-projects-OCRecipes/memory}"
 MAX_BUFFER_CHARS=400000
 
+# Distillation prompt (spec: "Distillation prompt + typed output"). Empty array is the
+# expected common case — noise control lives HERE, not in post-filtering.
+DISTILL_PROMPT=$(cat <<'EOF'
+You are distilling a Claude Code session transcript from the OCRecipes project into durable, reusable knowledge. Extract ONLY knowledge a future coding session would benefit from: decisions with their rationale, discovered constraints or gotchas, user preferences and corrections, recurring workflows.
+
+Most sessions contain NO durable knowledge. An empty JSON array [] is the expected common case. Do not manufacture candidates.
+
+Never extract: secrets or credentials, personal or health data, session-specific trivia (file paths under active edit, transient test failures, one-off command output).
+
+Return ONLY a JSON array — no markdown fences, no prose before or after. Each element:
+{"target_store":"memory"|"solution","subtype":"...","title":"...","content":"...","evidence_msg_uuids":["..."]}
+
+subtype when target_store=memory: one of user, feedback, project, reference.
+subtype when target_store=solution: one of bug:logic-errors, bug:runtime-errors, bug:code-quality, bug:performance-issues, knowledge:conventions, knowledge:design-patterns, knowledge:best-practices.
+
+title: at most 100 characters, specific. content: 3-10 self-contained sentences including the WHY. evidence_msg_uuids: the [#uuid] markers of the transcript lines the knowledge came from.
+EOF
+)
+
 # Hard safety rail (same as init.sh/codify-neardup.sh/transcripts.sh) — strip query string
 # and fragment BEFORE the suffix split (docs/solutions/logic-errors/
 # bash-suffix-split-db-name-denylist-query-string-smuggling-2026-07-06.md).
@@ -87,14 +106,62 @@ INSERT INTO harness.distilled_sessions (session_id, run_id, outcome) VALUES (:'s
 SQL
 }
 
-# Filled in Task 6 (send + parse + candidate insert). Contract: args sid, run_id, artifact;
-# echoes "tokens_in tokens_out n_candidates parse_failed(0|1)" on stdout.
+insert_candidate() {  # sid, store, subtype, title, content, uuids_csv
+  sql -v sid="$1" -v store="$2" -v subtype="$3" -v title="$4" -v content="$5" -v uuids="$6" <<'SQL'
+INSERT INTO harness.memory_candidates (session_id, source_msgs, target_store, subtype, title, content)
+VALUES (:'sid', CASE WHEN :'uuids' = '' THEN NULL ELSE string_to_array(:'uuids', ',') END,
+        :'store', :'subtype', :'title', :'content');
+SQL
+}
+
+# Contract: args sid, run_id, artifact; echoes "tokens_in tokens_out n_candidates
+# parse_failed(0|1)" on stdout.
 send_session() {
-  local sid="$1" run_id="$2" artifact="$3" errf="$WORK/send.err"
-  "$DISTILL_SEND_CMD" --paths "$artifact" --question "distill" >"$WORK/resp.txt" 2>"$errf" || true
-  local toks
-  toks=$(sed -n 's/.*\[kimi: \([0-9][0-9]*\) in.*\/ \([0-9][0-9]*\) out.*/\1 \2/p' "$errf")
-  echo "${toks:-0 0} 0 0"
+  local sid="$1" run_id="$2" artifact="$3" errf="$WORK/send.err" respf="$WORK/resp.txt"
+  if ! "$DISTILL_SEND_CMD" --paths "$artifact" --question "$DISTILL_PROMPT" >"$respf" 2>"$errf"; then
+    echo "0 0 0 1"; return
+  fi
+  local toks tin tout
+  toks=$(sed -n 's/.*\[kimi: \([0-9][0-9]*\) in.*\/ \([0-9][0-9]*\) out.*/\1 \2/p' "$errf" | head -1)
+  tin=${toks%% *}; tout=${toks##* }; tin=${tin:-0}; tout=${tout:-0}
+  # Parse + validate: emits one TAB-separated line per VALID candidate
+  # (store, subtype, title, content-with-\n-escaped, uuids_csv); exit 1 = unparseable.
+  local parsed="$WORK/cands.tsv"
+  if ! python3 - "$respf" <<'PYEOF' > "$parsed"
+import json, re, sys
+raw = open(sys.argv[1], encoding="utf-8").read().strip()
+raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw)  # tolerate fenced output
+arr = json.loads(raw)
+if not isinstance(arr, list):
+    raise SystemExit(1)
+MEM = {"user", "feedback", "project", "reference"}
+SOL = {"bug:logic-errors", "bug:runtime-errors", "bug:code-quality", "bug:performance-issues",
+       "knowledge:conventions", "knowledge:design-patterns", "knowledge:best-practices"}
+for c in arr:
+    store, sub = c.get("target_store"), c.get("subtype")
+    title, content = (c.get("title") or "").strip(), (c.get("content") or "").strip()
+    uuids = c.get("evidence_msg_uuids") or []
+    if store == "memory" and sub in MEM: pass
+    elif store == "solution" and sub in SOL: pass
+    else: continue  # invented subtype/store: reject candidate, keep the session
+    if not title or not content: continue
+    # Escape backslash FIRST, then newline — the bash side unescapes with printf '%b',
+    # which would otherwise mangle literal backslashes in LLM content (code snippets).
+    safe = content.replace("\\", "\\\\").replace("\t", " ").replace("\n", "\\n")
+    fields = [store, sub, title[:200], safe,
+              ",".join(u for u in uuids if isinstance(u, str))]
+    print("\t".join(fields))
+PYEOF
+  then
+    echo "$tin $tout 0 1"; return
+  fi
+  local n=0
+  while IFS=$'\t' read -r store subtype title content uuids; do
+    [ -n "$store" ] || continue
+    insert_candidate "$sid" "$store" "$subtype" "$title" "$(printf '%b' "$content")" "$uuids"
+    n=$((n + 1))
+  done < "$parsed"
+  echo "$tin $tout $n 0"
 }
 
 check_cost_cap() {
