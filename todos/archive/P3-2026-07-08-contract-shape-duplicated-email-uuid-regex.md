@@ -3,10 +3,10 @@
 ---
 
 title: "contract-shape.ts duplicates EMAIL_RE/UUID_RE instead of importing a shared constant"
-status: backlog
+status: done
 priority: low
 created: 2026-07-08
-updated: 2026-07-08
+updated: 2026-07-09
 assignee:
 labels: [deferred, server]
 github_issue:
@@ -58,3 +58,12 @@ broken today.
 ### 2026-07-08
 
 - Filed during code review of PR #544 (merged as 137b746e).
+
+### 2026-07-09
+
+- Archived as a duplicate. Independently re-discovered the exact same finding
+  `P3-2026-07-07-contract-shape-regex-dedup.md` already tracked (both trace to PR #544's
+  `DYNAMIC_KEY_PATTERNS`), caught during a `/todo` triage pass. The duplicate's acceptance
+  criteria are fully satisfied by [PR #557](https://github.com/Xertox1234/OCRecipes/pull/557),
+  which centralized `UUID_RE` into `server/lib/identifier-patterns.ts` and `EMAIL_SHAPE_RE` into
+  `shared/constants/email-patterns.ts`. No separate implementation needed.
