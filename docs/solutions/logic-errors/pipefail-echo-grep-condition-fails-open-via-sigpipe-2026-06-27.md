@@ -4,11 +4,11 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [ci, shell, bash, github-actions, pipefail, sigpipe, grep, head, awk, command-substitution, change-detection]
-symptoms: [A self-scoping CI gate green-lights a PR that DID change the guarded files, A change-detection `if cmd | grep -q ...` step takes the wrong branch only on large inputs, 'Works for small PRs, silently fails open for PRs that touch thousands of files', A script under set -euo pipefail dies with exit 141 outside its documented exit-code contract]
-applies_to: [.github/workflows/*.yml, .husky/**, scripts/*.sh]
+tags: [ci, shell, bash, github-actions, pipefail, sigpipe, grep, head, awk, printf, command-substitution, change-detection, testing, flaky-tests]
+symptoms: [A self-scoping CI gate green-lights a PR that DID change the guarded files, A change-detection `if cmd | grep -q ...` step takes the wrong branch only on large inputs, 'Works for small PRs, silently fails open for PRs that touch thousands of files', A script under set -euo pipefail dies with exit 141 outside its documented exit-code contract, 'A test assert_contains helper intermittently reports a needle as missing when the captured output DOES contain it, with `printf: write error: Broken pipe` nearby']
+applies_to: [.github/workflows/*.yml, .husky/**, scripts/*.sh, .claude/hooks/test-*.sh]
 created: '2026-06-27'
-last_updated: '2026-07-02'
+last_updated: '2026-07-09'
 ---
 
 # A `cmd | grep -q` shell condition under `set -o pipefail` fails open via SIGPIPE
@@ -89,6 +89,25 @@ prio="$(awk '/^priority:/{sub(/^priority:[[:space:]]*/,""); print; exit}' <<< "$
 `awk ... exit` stops reading on its own, so no downstream consumer ever closes the pipe
 on a still-writing producer (`tr` reads to EOF; it never exits early).
 
+### Variant: test assert helpers flake on FOUND needles (2026-07-09)
+
+A third face, seen in `.claude/hooks/test-pg-lab-distill.sh`'s assert helpers under
+`set -uo pipefail`:
+
+```bash
+assert_contains() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "ok"; else echo "FAIL — missing"; fi; }
+```
+
+An assertion whose needle WAS present flaked to `FAIL — missing` roughly 1 run in 6, with
+`printf: write error: Broken pipe` printed beside it. Same mechanism, but note the input
+was only a few KB — **the trigger threshold is the writer's chunk size, not the ~64 KB pipe
+buffer**. bash's *builtin* `printf` flushes through a small stdio buffer (~4 KB chunks), so
+`grep -q` can match in the first chunk and close the pipe while a later chunk is still
+pending, even for modest strings. The "only huge inputs" intuition from the `echo` form
+does not transfer. Perversely, the *earlier and more successful* the match, the likelier
+the flake. Fix is the same here-string: `if grep -qF -- "$3" <<<"$2"` — the shell buffers
+the whole string before grep runs, so there is no writer left to break.
+
 ## Prevention
 
 - Treat **any** `producer | grep -q` (or `| head`, `| sed q`) used as an `if` / `&&` /
@@ -105,6 +124,7 @@ on a still-writing producer (`tr` reads to EOF; it never exits early).
 - `.github/workflows/mutation-non-excluded.yml` — change-detection step (here-string form)
 - `.github/workflows/mutation-goal-safety.yml` — same change-detection pattern, same fix
 - `scripts/todo-automerge-guard.sh` — priority extraction (single-awk form of the variant)
+- `.claude/hooks/test-pg-lab-distill.sh` — assert helpers (here-string form of the test-assert variant); `.claude/hooks/test-pg-lab-transcripts.sh` still has the pipe form (todos/P3-2026-07-09-transcripts-test-pipefail-epipe-flake.md)
 
 ## See Also
 
