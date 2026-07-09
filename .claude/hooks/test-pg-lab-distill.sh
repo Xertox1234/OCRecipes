@@ -174,4 +174,43 @@ assert_contains "memory_candidates exists" "$TABLES" "memory_candidates"
 assert_contains "distill_runs exists" "$TABLES" "distill_runs"
 assert_contains "distilled_sessions exists" "$TABLES" "distilled_sessions"
 
+# --- distill.sh fixtures: transcript rows + a stub send (mimics ask-kimi's contract:
+# response JSON on stdout, "[kimi: N in (0 cached) / M out | finish: stop]" on stderr).
+psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" -f "$PROJECT_ROOT/scripts/pg-lab/schema/transcripts.sql" >/dev/null
+psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" >/dev/null <<'SQL'
+INSERT INTO harness.transcript_messages (msg_uuid, session_id, project_dir, ts, role, content) VALUES
+ ('c-1','clean-session','fx','2026-07-01T10:00:00Z','user','We decided pg_trgm beats embeddings here.'),
+ ('c-2','clean-session','fx','2026-07-01T10:00:05Z','assistant','Agreed — keyword search wins the neutral benchmarks.'),
+ ('h-1','healthy-session','fx','2026-07-01T11:00:00Z','user','debug row: {"caloriesPerServing": 320.5, "proteinPerServing": 12}'),
+ ('o-1','out-of-window','fx','2026-06-01T09:00:00Z','user','Old session outside the window.');
+SQL
+STUB="$FIX/stub-send.sh"
+cat > "$STUB" <<'EOF'
+#!/usr/bin/env bash
+echo '[{"target_store":"solution","subtype":"knowledge:conventions","title":"Fixture: prefer pg_trgm keyword search over embeddings","content":"Fixture content sentence.","evidence_msg_uuids":["c-1"]}]'
+echo '[kimi: 1200 in (0 cached) / 90 out | finish: stop]' >&2
+EOF
+chmod +x "$STUB"
+
+# Refusal rail (query-string smuggling covered): nutricam refused before any connection
+REF=$(LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=disable" bash "$SCRIPT" --window 2026-07-01 2026-07-14 2>&1 1>/dev/null); RC=$?
+assert_nonzero "distill.sh refuses nutricam (with query string)" "$RC"
+assert_contains "refusal names nutricam" "$REF" "nutricam"
+
+WOUT=$(LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$STUB" bash "$SCRIPT" --window 2026-07-01 2026-07-14 2>&1); RC=$?
+assert_exit0 "--window runs" "$RC"
+SEEN=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT sessions_seen||'/'||sessions_sent||'/'||sessions_gated FROM harness.distill_runs ORDER BY id DESC LIMIT 1")
+assert_eq "--window run stats seen/sent/gated" "$SEEN" "2/1/1"
+CLEAN_OUTCOME=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT outcome FROM harness.distilled_sessions WHERE session_id='clean-session'")
+assert_eq "clean session outcome sent" "$CLEAN_OUTCOME" "sent"
+GATED_OUTCOME=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT outcome FROM harness.distilled_sessions WHERE session_id='healthy-session'")
+assert_eq "healthy session outcome gated" "$GATED_OUTCOME" "gated"
+OOW=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.distilled_sessions WHERE session_id='out-of-window'")
+assert_eq "out-of-window session untouched" "$OOW" "0"
+
+# Idempotency: second run over the same window selects zero sessions
+W2=$(LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$STUB" bash "$SCRIPT" --window 2026-07-01 2026-07-14 2>&1)
+SEEN2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT sessions_seen FROM harness.distill_runs ORDER BY id DESC LIMIT 1")
+assert_eq "second --window is a no-op (bookmark)" "$SEEN2" "0"
+
 [ "$FAIL" -eq 0 ] && { echo "all assertions passed"; exit 0; } || exit 1
