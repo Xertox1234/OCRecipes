@@ -259,4 +259,39 @@ assert_nonzero "cost cap refusal" "$RC"
 assert_contains "cap message names the cap" "$CAPOUT" "cap"
 psql -X -q -d "$TEST_URL" -c "DELETE FROM harness.distill_runs WHERE tokens_in = 20000000000" >/dev/null
 
+# Near-dup: seed the solutions projection with a very similar title; re-run a fresh session
+psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" -f "$PROJECT_ROOT/scripts/pg-lab/schema/codify-neardup.sql" >/dev/null
+psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" >/dev/null <<'SQL'
+INSERT INTO harness.solution_titles (path, title) VALUES
+ ('docs/solutions/conventions/prefer-pg-trgm-keyword-search-2026-07-01.md',
+  'Fixture: prefer pg_trgm keyword search over embeddings');
+INSERT INTO harness.transcript_messages (msg_uuid, session_id, project_dir, ts, role, content) VALUES
+ ('n-1','neardup-session','fx','2026-07-05T10:00:00Z','user','Clean discussion for near-dup flagging.');
+SQL
+LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$STUB" bash "$SCRIPT" --window 2026-07-05 2026-07-05 >/dev/null 2>&1
+ND=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT near_dup_path FROM harness.memory_candidates WHERE session_id='neardup-session'")
+assert_contains "solution near-dup flagged" "$ND" "prefer-pg-trgm-keyword-search"
+
+# Memory-store near-dup via ad-hoc file comparison
+MEMDIR="$FIX/memory"; mkdir -p "$MEMDIR"
+cat > "$MEMDIR/some_memory.md" <<'MD'
+---
+name: some_memory
+description: "Valid one — a highly similar memory description"
+metadata:
+  type: feedback
+---
+Body.
+MD
+MEMSTUB="$FIX/mem-send.sh"; cat > "$MEMSTUB" <<'EOF'
+#!/usr/bin/env bash
+echo '[{"target_store":"memory","subtype":"feedback","title":"Valid one","content":"Content.","evidence_msg_uuids":[]}]'
+echo '[kimi: 300 in (0 cached) / 30 out | finish: stop]' >&2
+EOF
+chmod +x "$MEMSTUB"
+psql -X -q -d "$TEST_URL" -c "INSERT INTO harness.transcript_messages (msg_uuid, session_id, project_dir, ts, role, content) VALUES ('mm-1','memdup-session','fx','2026-07-06T10:00:00Z','user','Clean.')" >/dev/null
+LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$MEMSTUB" DISTILL_MEMORY_DIR="$MEMDIR" bash "$SCRIPT" --window 2026-07-06 2026-07-06 >/dev/null 2>&1
+MND=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT near_dup_path FROM harness.memory_candidates WHERE session_id='memdup-session'")
+assert_contains "memory near-dup flagged" "$MND" "some_memory.md"
+
 [ "$FAIL" -eq 0 ] && { echo "all assertions passed"; exit 0; } || exit 1

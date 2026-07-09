@@ -106,11 +106,54 @@ INSERT INTO harness.distilled_sessions (session_id, run_id, outcome) VALUES (:'s
 SQL
 }
 
+# Ad-hoc memory-title extraction (per run, no persisted projection — spec rail): path TAB
+# "name — description" from each memory file's frontmatter.
+build_memory_titles() {
+  local out="$WORK/memory-titles.tsv"
+  : > "$out"
+  local f name desc
+  for f in "$DISTILL_MEMORY_DIR"/*.md; do
+    [ -e "$f" ] || continue
+    [ "$(basename "$f")" = "MEMORY.md" ] && continue
+    name=$(sed -n 's/^name:[[:space:]]*//p' "$f" | head -1)
+    desc=$(sed -n 's/^description:[[:space:]]*//p' "$f" | head -1 | tr -d '"' | tr '\t' ' ')
+    [ -n "$name$desc" ] && printf '%s\t%s\n' "$f" "${name:+$name — }$desc" >> "$out"
+  done
+}
+
 insert_candidate() {  # sid, store, subtype, title, content, uuids_csv
-  sql -v sid="$1" -v store="$2" -v subtype="$3" -v title="$4" -v content="$5" -v uuids="$6" <<'SQL'
-INSERT INTO harness.memory_candidates (session_id, source_msgs, target_store, subtype, title, content)
+  local sid="$1" store="$2" subtype="$3" title="$4" content="$5" uuids="$6" nd=""
+  if [ "$store" = "solution" ]; then
+    nd=$(sql -tA -v t="$title" <<'SQL'
+SELECT path || E'\t' || round(similarity(title, :'t')::numeric, 3)
+FROM harness.solution_titles
+WHERE similarity(title, :'t') >= 0.45
+ORDER BY similarity(title, :'t') DESC LIMIT 1;
+SQL
+    )
+  elif [ -s "$WORK/memory-titles.tsv" ]; then
+    # word_similarity, NOT similarity(): a short candidate title against a long
+    # name+description whole-string under-scores (~0.2 for an exact contained phrase) —
+    # the same short-query-vs-long-text lesson behind transcripts.sh --fuzzy.
+    nd=$(sql -tA -v t="$title" <<SQL
+CREATE TEMP TABLE mem_titles (path text, title text);
+\\copy mem_titles FROM '$WORK/memory-titles.tsv' (FORMAT csv, DELIMITER E'\t')
+SELECT path || E'\t' || round(word_similarity(:'t', title)::numeric, 3)
+FROM mem_titles
+WHERE word_similarity(:'t', title) >= 0.45
+ORDER BY word_similarity(:'t', title) DESC LIMIT 1;
+SQL
+    )
+  fi
+  local nd_path="" nd_score=""
+  if [ -n "$nd" ]; then nd_path="${nd%%$'\t'*}"; nd_score="${nd##*$'\t'}"; fi
+  sql -v sid="$sid" -v store="$store" -v subtype="$subtype" -v title="$title" \
+      -v content="$content" -v uuids="$uuids" -v ndp="$nd_path" -v nds="$nd_score" <<'SQL'
+INSERT INTO harness.memory_candidates
+  (session_id, source_msgs, target_store, subtype, title, content, near_dup_path, near_dup_score)
 VALUES (:'sid', CASE WHEN :'uuids' = '' THEN NULL ELSE string_to_array(:'uuids', ',') END,
-        :'store', :'subtype', :'title', :'content');
+        :'store', :'subtype', :'title', :'content',
+        NULLIF(:'ndp', ''), NULLIF(:'nds', '')::numeric);
 SQL
 }
 
@@ -180,6 +223,7 @@ run_window() {
   local start="$1" end="$2"
   apply_schema
   check_cost_cap
+  build_memory_titles
   local run_id
   run_id=$(sql -tA -v s="$start" -v e="$end" <<'SQL'
 INSERT INTO harness.distill_runs (window_start, window_end) VALUES (:'s', :'e') RETURNING id;
