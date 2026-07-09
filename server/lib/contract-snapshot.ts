@@ -154,6 +154,40 @@ export function installContractSnapshotMiddleware(
   });
 }
 
+// DECISION (2026-07-09, todos/archive/P3-2026-07-08-contract-snapshots-no-backfill-for-pre-fix-rows.md):
+// rows written before PR #544 added dynamic-key redaction to deriveShape() keep their
+// raw, unredacted key names forever, because the upsert below is keyed on
+// (branch, route_pattern, method, status) — it only overwrites a row when that exact
+// branch is re-exercised, so a row from a since-deleted or since-merged branch is never
+// touched again. Deliberately NOT backfilling those rows in place. Three reasons:
+//   1. This table is dev-only, opt-in (CONTRACT_SNAPSHOT=1), and unconditionally refused
+//      under NODE_ENV=production (see installContractSnapshotMiddleware above) — no
+//      production data is ever at risk.
+//   2. The canonical leak channel — a developer diffing an old pre-#544 snapshot
+//      against a new post-#544 one for the same route (the migration scenario
+//      contract-diff.sh exists to run across a branch boundary) — is already closed:
+//      diffRouteShapes() in contract-shape.ts now treats that redaction transition as
+//      such and never prints the raw keys (see
+//      todos/archive/P1-2026-07-08-contract-diff-cli-leaks-old-unredacted-keys.md).
+//      NOT fully closed, by that same todo's own accepted boundary: diffing two
+//      pre-#544 rows against each other, or a key that never trips the redaction
+//      heuristic, still prints real key names via the normal per-key path. That
+//      residual is narrower than the pre-#544 exposure (it requires two stale rows on
+//      both sides, or a non-dynamic-looking key) and is still confined to a dev-only,
+//      opt-in, non-production tool.
+//   3. Every row here is disposable, re-derivable diagnostic data, not a source of truth
+//      (scripts/pg-lab/init.sh's module doc comment: "ocrecipes_lab ... is NEVER a
+//      source of truth"). Writing a real backfill script would mean duplicating
+//      deriveShape()'s redaction heuristics (looksDynamicallyKeyed /
+//      hasUniformNonPrimitiveValueShape) as a second, standalone recursive walker over
+//      an already-derived Shape tree instead of a raw response body — those heuristics
+//      are not currently exported for reuse, and this exact module has already had
+//      multiple subtle regression bugs in redaction logic this week (see
+//      docs/solutions/logic-errors/redaction-diff-intercept-must-validate-both-sides-not-just-asymmetry-2026-07-08.md).
+//      That risk is disproportionate to a P3/low-severity, no-production-exposure gap.
+// Remediation available to any developer who wants pre-fix rows gone from their own
+// local table: `TRUNCATE dev.contract_snapshots;` (safe — every row is disposable and
+// gets repopulated the next time CONTRACT_SNAPSHOT=1 traffic hits the route).
 async function recordSnapshot(
   query: QueryFn,
   branch: string,
