@@ -139,13 +139,19 @@ function looksDynamicallyKeyed(keys: string[]): boolean {
  * fields..." test for a pinned example).
  *
  * FALSE NEGATIVE (closed for the two known routes via a producer marker, distinct
- * from and broader than the single-entry gap above): a dynamic-keyed object whose
+ * from the single-entry gap above): a dynamic-keyed object whose
  * values are all PRIMITIVE (e.g. `{ shrimp: "high", peanuts: "severe" }` — a
  * plausible simplification of `allergenFlags` from `Record<string, {allergenId,
  * severity}>` to `Record<string, AllergySeverity>`) is caught by NEITHER heuristic
- * signal, at ANY entry count — primitives are deliberately excluded above precisely
- * because they collide too often in legitimate static records (`{ width: 100,
- * height: 50 }`, `{ r, g, b }`) to use as a uniformity signal. Not live in this
+ * signal for object sizes in the 2-50 entry range — bounded above by
+ * MAX_STATIC_OBJECT_KEYS (the 1-entry case is the separately documented
+ * single-entry gap above, not this signal's doing), not unbounded at any entry
+ * count: past 50 entries, `looksDynamicallyKeyed`'s key-count check fires
+ * independently of value type, so a larger all-primitive-valued object is still
+ * redacted by that signal alone. Primitives are deliberately excluded from
+ * `hasUniformNonPrimitiveValueShape` precisely because they collide too often in
+ * legitimate static records (`{ width: 100, height: 50 }`, `{ r, g, b }`) to use as a
+ * uniformity signal. Not live in this
  * codebase today (no `Record<string, primitive>` response-shaped value exists as of
  * this writing), but a future refactor to that shape at `allergenFlags` would still
  * be caught, since `deriveForcedDynamicShape` below redacts a marked field's value
@@ -261,7 +267,8 @@ function deriveForcedDynamicShape(
  * still relies on the heuristics alone, and so still carries their residual gaps:
  * (1) a dynamic-keyed object with fewer than MIN_UNIFORM_MAP_KEYS entries whose
  * key(s) also don't match a DYNAMIC_KEY_PATTERN, and (2) a dynamic-keyed object
- * whose values are all PRIMITIVE (not caught at any entry count).
+ * whose values are all PRIMITIVE, for object sizes in the 2-50 entry range (bounded
+ * by MAX_STATIC_OBJECT_KEYS — see `hasUniformNonPrimitiveValueShape` above).
  */
 export function deriveShape(
   value: unknown,
