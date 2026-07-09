@@ -32,7 +32,9 @@ printf '[#u-1] user: Let us discuss the search architecture.\n\n[#a-1] assistant
 OUT=$(python3 "$GATE" "$GFIX/clean.txt" "$GFIX/clean.out"); RC=$?
 assert_exit0 "gate: clean session exits 0" "$RC"
 assert_eq "gate: clean session verdict sent" "$(json_field "$OUT" verdict)" "sent"
-PERMS=$(stat -f '%Lp' "$GFIX/clean.out" 2>/dev/null || stat -c '%a' "$GFIX/clean.out")
+# python3, not stat: BSD stat wants -f '%Lp' while GNU stat's -f means --file-system
+# (prints an fs-info block AND lets the || fallback fire, corrupting the capture on CI).
+PERMS=$(python3 -c 'import os,sys; print(oct(os.stat(sys.argv[1]).st_mode & 0o777)[2:])' "$GFIX/clean.out")
 assert_eq "gate: artifact is 0600" "$PERMS" "600"
 WANT_SHA=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$GFIX/clean.out")
 assert_eq "gate: reported sha256 matches artifact" "$(json_field "$OUT" sha256)" "$WANT_SHA"
