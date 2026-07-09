@@ -3,7 +3,7 @@
 ---
 
 title: "todo skill: surface local todo/\* branches that were renamed but never got a PR"
-status: backlog
+status: done
 priority: low
 created: 2026-07-07
 updated: 2026-07-07
@@ -43,14 +43,14 @@ detection under review pressure.
 
 ## Acceptance Criteria
 
-- [ ] Phase 0 step 2 computes local `todo/*` branches with NO PR in any state (present in
+- [x] Phase 0 step 2 computes local `todo/*` branches with NO PR in any state (present in
       `/tmp/todo-local-branches.txt` but absent from merged/open/closed PR lists) into a new
       `/tmp/todo-local-no-pr-branches.txt`
-- [ ] Never auto-delete or auto-push these branches — only detect and surface
-- [ ] Phase 5's "Blocked — needs a one-time manual fix" section prints this list, mirroring how
+- [x] Never auto-delete or auto-push these branches — only detect and surface
+- [x] Phase 5's "Blocked — needs a one-time manual fix" section prints this list, mirroring how
       it already surfaces local/remote closed-unmerged branches
-- [ ] Phase 0 step 3's Report instruction mentions carrying this list to Phase 5
-- [ ] Verified with a live fixture: a local `todo/<slug>` branch with genuinely zero PR record
+- [x] Phase 0 step 3's Report instruction mentions carrying this list to Phase 5
+- [x] Verified with a live fixture: a local `todo/<slug>` branch with genuinely zero PR record
       survives the sweep and is surfaced in a dry run of the Phase 5 reporting logic
 
 ## Implementation Notes
@@ -76,3 +76,24 @@ arguments and portability across the environments this skill runs in is unverifi
 ### 2026-07-07
 
 - Filed during PR #547's code-review fix cycle; de-scoped from that PR per advisor review.
+
+### 2026-07-09
+
+- Implemented: Phase 0 step 2 now computes `/tmp/todo-local-no-pr-branches.txt` via
+  `sort -u` over the merged/open/closed PR-branch lists into `/tmp/todo-all-pr-branches.txt`,
+  then `comm -23 /tmp/todo-local-branches.txt /tmp/todo-all-pr-branches.txt`. Detection-only —
+  never wired into any delete/push code path. Phase 0 step 3's Report instruction and Phase 5's
+  "Blocked — needs a one-time manual fix" section both now mention/print this list, mirroring
+  the existing local/remote closed-unmerged handling. New file added to the Phase 0 `rm -f`
+  stale-data cleanup line.
+- AC 5 verified via an isolated fixture (outside the repo, in the session scratchpad, using
+  distinctly-named temp files to avoid touching the live `/tmp/todo-*` namespace): a throwaway
+  git repo with a local `todo/fixture-no-pr-branch` (zero PR record), plus a
+  `todo/decoy-merged-branch` (merged PR) and `todo/decoy-open-branch` (open PR) as negative
+  controls. Ran the actual `merged_only()` + new `comm`/`sort` logic against hand-written
+  PR-state fixture files. Result: the fixture branch was absent from the delete-list (survives
+  the sweep) and present in the no-PR list (surfaced); both decoys were correctly excluded from
+  the no-PR list. A dry run of the Phase 5 print logic correctly rendered the fixture under
+  "Blocked — needs a one-time manual fix:".
+- Reviewed by `code-reviewer`: no CRITICAL or WARNING findings; one SUGGESTION (check off AC 5
+  and document the fixture run) addressed in this Updates entry.

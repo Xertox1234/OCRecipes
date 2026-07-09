@@ -28,7 +28,8 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    # Start clean: sweep outputs must never survive from a previous run — a skipped sweep
    # (gh failure / limit cap) would otherwise leave stale lists for later steps to trust.
    rm -f /tmp/todo-open-prs.txt /tmp/todo-delete-branches.txt /tmp/todo-closed-unmerged-branches.txt \
-     /tmp/todo-local-branches.txt /tmp/todo-delete-local-branches.txt /tmp/todo-local-closed-unmerged-branches.txt
+     /tmp/todo-local-branches.txt /tmp/todo-delete-local-branches.txt /tmp/todo-local-closed-unmerged-branches.txt \
+     /tmp/todo-local-no-pr-branches.txt
    # ONE fetch of every PR; the open/merged/closed views below derive from it. gh returns
    # newest-first, so a truncated fetch silently drops the OLDEST PRs — exactly the ones
    # the sweep needs. If the returned count EQUALS the limit, treat the sweep as
@@ -81,13 +82,21 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
        # (its remote branch may already be gone) silently vanishes with no trace at all.
        comm -12 /tmp/todo-closed-prs.txt /tmp/todo-local-branches.txt \
          | comm -23 - /tmp/todo-open-prs.txt > /tmp/todo-local-closed-unmerged-branches.txt
+       # No PR at all, in ANY state — a genuine orphan: the executor renamed its worktree
+       # branch to todo/<slug> at Step 10, but the process crashed or the push/`gh pr
+       # create` call failed before any PR ever existed. Never auto-delete or auto-push
+       # it — it might be genuine in-flight work — only detect and surface in Phase 5.
+       sort -u /tmp/todo-merged-prs.txt /tmp/todo-open-prs.txt /tmp/todo-closed-prs.txt \
+         > /tmp/todo-all-pr-branches.txt
+       comm -23 /tmp/todo-local-branches.txt /tmp/todo-all-pr-branches.txt \
+         > /tmp/todo-local-no-pr-branches.txt
      fi
    fi
    ```
 
    If the `gh` call fails (unavailable, unauthenticated, network), the block above deletes the temp file and this step is **SKIPPED** — no stale `/tmp` lists survive for later phases to trust, no branch deletion happens, and Phase 2 fetches its own open-PR list (worktree cleanup in step 1 still ran). Continue.
 
-3. **Report** what was cleaned: count of worktrees removed, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If any `WARNING:` line was printed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere), carry it verbatim. If `/tmp/todo-closed-unmerged-branches.txt` or `/tmp/todo-local-closed-unmerged-branches.txt` is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces all of it.
+3. **Report** what was cleaned: count of worktrees removed, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If any `WARNING:` line was printed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere), carry it verbatim. If `/tmp/todo-closed-unmerged-branches.txt`, `/tmp/todo-local-closed-unmerged-branches.txt`, or `/tmp/todo-local-no-pr-branches.txt` is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces all of it.
 
 4. **Sync the local default branch (`main`).** PRs from prior runs land via auto-merge or the user's review (possibly from another session), so those todos may already be archived on `origin/main` while the local checkout still shows them at the old path — and the backlog would otherwise re-pick an already-merged todo. Fast-forward local `main`. Like the rest of Phase 0 this **never aborts** the run, and it is **ff-only so it never disturbs parallel work**:
 
@@ -320,7 +329,7 @@ After all batches have been executed (or after early termination):
 
    Then **list deferred warnings for triage.** Collect every non-`none` `DEFERRED_WARNINGS` entry from all executors and print them under the heading "Deferred warnings — tell me which (if any) to turn into todos:". Nothing here is filed automatically; the user decides. If there are none, omit the heading.
 
-   Then **surface actionable blocks.** Dependency-blocks (`REASON_CODE: DEPENDENCY_GATED`) do NOT resolve on their own — route each into the gated listings above ("Gated on a pending PR" if the dependency's PR is open; "Gated on a dependency (not yet implemented)" if it has none). If a `blocked` result carries `REASON_CODE: ORPHAN_BRANCH`, `PR_CHECK_FAILED`, or `PR_CLOSED_UNMERGED` (legacy fallback: its REASON contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears it (the executor's reason includes the exact steps). Do NOT bury it as an ordinary dependency row. In the same section, also print any closed-unmerged `todo/*` branches Phase 0 found, both remote (`/tmp/todo-closed-unmerged-branches.txt`) and local (`/tmp/todo-local-closed-unmerged-branches.txt`) — each is a rejection signal (its PR was closed without merging); the user decides whether the todo is still wanted. Also print any `WARNING:` line Phase 0 echoed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere) verbatim — the branch needs manual inspection. And note if Phase 0 skipped the branch sweep (gh failure or the `--limit` cap).
+   Then **surface actionable blocks.** Dependency-blocks (`REASON_CODE: DEPENDENCY_GATED`) do NOT resolve on their own — route each into the gated listings above ("Gated on a pending PR" if the dependency's PR is open; "Gated on a dependency (not yet implemented)" if it has none). If a `blocked` result carries `REASON_CODE: ORPHAN_BRANCH`, `PR_CHECK_FAILED`, or `PR_CLOSED_UNMERGED` (legacy fallback: its REASON contains `ACTION NEEDED`), print that REASON verbatim under the heading "Blocked — needs a one-time manual fix:" — it will re-block every run until the human clears it (the executor's reason includes the exact steps). Do NOT bury it as an ordinary dependency row. In the same section, also print any closed-unmerged `todo/*` branches Phase 0 found, both remote (`/tmp/todo-closed-unmerged-branches.txt`) and local (`/tmp/todo-local-closed-unmerged-branches.txt`) — each is a rejection signal (its PR was closed without merging); the user decides whether the todo is still wanted. Also print any local `todo/*` branches with NO PR in any state that Phase 0 found (`/tmp/todo-local-no-pr-branches.txt`) — each is a possible orphan from an interrupted executor run (the branch was renamed to `todo/<slug>` at Step 10 but the process crashed, or the push/`gh pr create` call failed, before any PR ever existed); Phase 0 never deletes or pushes these, so the user should inspect each one and either push it and open a PR manually, or delete the local branch if the work is abandoned. Also print any `WARNING:` line Phase 0 echoed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere) verbatim — the branch needs manual inspection. And note if Phase 0 skipped the branch sweep (gh failure or the `--limit` cap).
 
 5. **Print verification result:**
 
