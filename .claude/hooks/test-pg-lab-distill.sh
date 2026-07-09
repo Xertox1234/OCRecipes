@@ -101,6 +101,18 @@ assert_nonzero "gate: missing input fails closed (non-zero)" "$RC"
 assert_eq "gate: missing input verdict gated" "$(json_field "$OUT" verdict)" "gated"
 assert_eq "gate: missing input class gate_error" "$(json_field "$OUT" class)" "gate_error"
 [ ! -f "$GFIX/nope.out" ]; assert_exit0 "gate: no artifact on gate_error" "$?"
+
+# Post-review hardening: users-table weight/height columns gate in value-bearing shapes
+printf '[#u-1] user: profile row was {"weight": 72.5, "height": 178.0}\n' > "$GFIX/wh.txt"
+OUT=$(python3 "$GATE" "$GFIX/wh.txt" "$GFIX/wh.out")
+assert_eq "gate: weight/height record gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: weight/height class nutrition_fields" "$(json_field "$OUT" class)" "nutrition_fields"
+
+# Post-review hardening: natural-prose DOB phrasing gates (spec: within 12 chars, any chars)
+printf '[#u-1] user: her date of birth is 1984-03-11 per the record\n' > "$GFIX/dob2.txt"
+OUT=$(python3 "$GATE" "$GFIX/dob2.txt" "$GFIX/dob2.out")
+assert_eq "gate: prose dob gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: prose dob class" "$(json_field "$OUT" class)" "dob"
 rm -rf "$GFIX"
 
 # ---------- DB-dependent sections ----------

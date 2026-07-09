@@ -48,6 +48,8 @@ def redact(text):
 # --- Layer 1: nutrition-record field names. SINGLE SOURCE: shared/schema.ts (Drizzle
 # definitions carry BOTH casings — camelCase TS property + snake_case SQL column; spec).
 # Curated from schema.ts on 2026-07-09; regenerate by grepping its table definitions:
+# (weight/height added post-review 2026-07-09 — users-table health columns; bare style-code
+# pastes like "height: 44" now gate as a priced fail-closed tradeoff.)
 #   grep -nE 'decimal\(|integer\(' shared/schema.ts
 # snake_case variants are DERIVED mechanically below — one list, no second list to drift.
 NUTRITION_FIELDS_CAMEL = [
@@ -56,7 +58,7 @@ NUTRITION_FIELDS_CAMEL = [
     "caloriesPerServing", "proteinPerServing", "carbsPerServing", "fatPerServing",
     "fiberPerServing", "sugarPerServing",
     "dailyCalorieGoal", "dailyProteinGoal", "dailyCarbsGoal", "dailyFatGoal",
-    "goalWeight",
+    "goalWeight", "weight", "height",
 ]
 
 
@@ -87,7 +89,7 @@ EMAIL_ALLOWLIST = {
 }
 EMAIL_ALLOW_DOMAINS = {"example.com", "example.org", "example.net", "anthropic.com", "github.com"}
 
-DOB_RE = re.compile(r"(?i)\b(dob|date[_ ]of[_ ]birth|birth[_ ]?date|born)\b\W{0,12}\d{4}-\d{2}-\d{2}")
+DOB_RE = re.compile(r"(?i)\b(dob|date[_ ]of[_ ]birth|birth[_ ]?date|born)\b.{0,12}\d{4}-\d{2}-\d{2}")
 WEIGHT_HEIGHT_RE = re.compile(
     r"\b\d{2,3}(?:\.\d+)?\s*(?:kg|kgs|lbs?|pounds)\b"
     r"|\b\d{2,3}(?:\.\d+)?\s*cm\b"
