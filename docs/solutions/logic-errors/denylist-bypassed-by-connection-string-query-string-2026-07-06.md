@@ -8,7 +8,7 @@ tags: [postgres, connection-string, denylist, security, url-parsing, pg-lab]
 symptoms: ['A "must never resolve to a real app database" refusal check compares an exact string like `dbName === "nutricam"`, but the check is built by slicing everything after the last `/` in a connection string', 'A `LAB_DATABASE_URL`/`DATABASE_URL`-style value with a trailing query string (e.g. `postgresql://host/nutricam?sslmode=require`) silently passes the check and connects to the real database anyway', 'The bypass is invisible in code review unless someone traces what the sliced string actually evaluates to for a URL carrying query params']
 applies_to: [scripts/pg-lab/**/*.sh, server/lib/contract-snapshot.ts]
 created: '2026-07-06'
-last_updated: '2026-07-07'
+last_updated: '2026-07-09'
 ---
 
 # A database-name denylist parsed by naive string-slicing is bypassed by a connection-string query string
@@ -172,10 +172,11 @@ libpq's full parser and then reports the database it actually connected to.
   exploitable because the `?dbname=` parameter is not automatically injected by the
   library the TypeScript code uses (`pg`), but the guard is not robust against future
   changes.
-- `scripts/pg-lab/contract-diff.sh` — bash `%%\?*` + `##*/` sequence strips the query
-  string only; it does **not** also strip a trailing `#fragment` (unlike the other fixed
-  siblings below), so the fragment-suffix bypass is still live there as of 2026-07-07;
-  **also vulnerable to `?dbname=` override and percent-encoding**.
+- `scripts/pg-lab/contract-diff.sh` — **now fixed** for query-string/fragment bypass (via a
+  `DB_NAME` `%%\?*` + `%%\#*` + `##*/` strip sequence, added 2026-07-09) and already had the
+  identifier-format allowlist independently (percent-encoding protection, matching `init.sh`'s
+  pattern); **still vulnerable to `?dbname=` override** — the identifier-format check only
+  rejects malformed path segments, it cannot see a query parameter libpq reads separately.
 - `scripts/pg-lab/init.sh` — fixed for query-string/fragment (via the `LAB_DB_PATH` strip
   pattern) and already had the identifier-regex second layer (line ~41) independently.
   However, the identifier-regex allowlist does **not** protect against `?dbname=`
