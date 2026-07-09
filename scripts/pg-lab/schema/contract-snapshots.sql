@@ -15,6 +15,13 @@
 -- Idempotent: safe to re-run (IF NOT EXISTS everywhere). Also safe to apply standalone,
 -- without scripts/pg-lab/init.sh having run first (CREATE SCHEMA is repeated here
 -- defensively).
+--
+-- No backfill/redaction for rows written before the dynamic-key redaction fix in
+-- deriveShape() (server/lib/contract-shape.ts): explicit, deliberate decision, not an
+-- oversight — see the DECISION comment above recordSnapshot() in
+-- server/lib/contract-snapshot.ts for the full rationale. Every row here is disposable,
+-- re-derivable diagnostic data; `TRUNCATE dev.contract_snapshots;` is a safe way to clear
+-- stale rows from a local table.
 
 CREATE SCHEMA IF NOT EXISTS dev;
 
