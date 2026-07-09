@@ -306,4 +306,22 @@ assert_eq "review duplicate-reject" "$NDUP" "1"
 NLEFT=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
 assert_eq "quit leaves remainder pending" "$NLEFT" "$((NPEND - 2))"
 
+# Report: buckets derive from review encoding; spend > 0; codify-only sweep runs (the git
+# window in the fixture repo has no docs/solutions commits in 2026-07 => count 0 lines is fine)
+RPT=$(LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" --report 2026-07-01 2026-07-14 2>&1); RC=$?
+assert_exit0 "--report runs" "$RC"
+assert_contains "report: automation-only bucket" "$RPT" "automation-only: 1"
+assert_contains "report: caught-by-both bucket" "$RPT" "caught-by-both: 1"
+assert_contains "report: spend line" "$RPT" "spend:"
+assert_contains "report: gate stats" "$RPT" "gated"
+assert_contains "report: codify-only" "$RPT" "codify-only"
+
+# Precondition hints on an empty DB
+EMPTY_DB="pg_lab_distill_empty_$$"
+psql -X -q -d postgres -c "CREATE DATABASE \"$EMPTY_DB\"" >/dev/null 2>&1
+HINT=$(LAB_DATABASE_URL="postgresql://localhost/$EMPTY_DB" bash "$SCRIPT" --report 2>&1)
+assert_contains "report: transcripts precondition hint" "$HINT" "transcripts.sh --import"
+assert_contains "report: solution_titles precondition hint" "$HINT" "codify-neardup.sh --rebuild"
+psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$EMPTY_DB\"" >/dev/null 2>&1
+
 [ "$FAIL" -eq 0 ] && { echo "all assertions passed"; exit 0; } || exit 1

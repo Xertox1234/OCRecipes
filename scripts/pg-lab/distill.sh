@@ -327,6 +327,58 @@ SQL
   echo "review done: $(sql -tA -c 'SELECT count(*) FROM harness.memory_candidates WHERE status = $$pending$$') still pending"
 }
 
+run_report() {
+  local start="${1:-}" end="${2:-}"
+  apply_schema
+  # Precondition hints (spec: surface, don't report a silently empty experiment)
+  local tm st
+  tm=$(sql -tA -c "SELECT COALESCE((SELECT count(*) FROM harness.transcript_messages), 0)" 2>/dev/null || echo 0)
+  st=$(sql -tA -c "SELECT COALESCE((SELECT count(*) FROM harness.solution_titles), 0)" 2>/dev/null || echo 0)
+  [ "${tm:-0}" -gt 0 ] || echo "PRECONDITION: transcript corpus empty — run scripts/pg-lab/transcripts.sh --import"
+  [ "${st:-0}" -gt 0 ] || echo "PRECONDITION: solution_titles empty — run scripts/pg-lab/codify-neardup.sh --rebuild"
+  if [ -z "$start" ]; then
+    read -r start end <<<"$(sql -tA -c "SELECT COALESCE(min(window_start),CURRENT_DATE)||' '||COALESCE(max(window_end),CURRENT_DATE) FROM harness.distill_runs")"
+  fi
+  echo "== runs =="
+  sql <<'SQL'
+SELECT id, ran_at::date AS ran, window_start, window_end, sessions_seen AS seen,
+       sessions_sent AS sent, sessions_gated AS gated, parse_failures AS pfail,
+       candidates, tokens_in, tokens_out
+FROM harness.distill_runs ORDER BY id;
+SQL
+  local tok_line
+  tok_line=$(sql -tA <<'SQL'
+SELECT COALESCE(sum(tokens_in),0) || ' ' || COALESCE(sum(tokens_out),0) FROM harness.distill_runs;
+SQL
+  )
+  awk -v line="$tok_line" -v pin="$DISTILL_PRICE_IN_PER_MTOK" -v pout="$DISTILL_PRICE_OUT_PER_MTOK" -v cap="$DISTILL_COST_CAP_USD" \
+    'BEGIN { split(line, t, " "); printf "spend: $%.4f of $%s cap (%s in / %s out tokens)\n", t[1]/1e6*pin + t[2]/1e6*pout, cap, t[1], t[2] }'
+  echo "== candidates =="
+  sql <<'SQL'
+SELECT status, count(*) FROM harness.memory_candidates GROUP BY status ORDER BY status;
+SQL
+  echo "== buckets =="
+  sql -tA <<'SQL'
+SELECT 'caught-by-both: '  || count(*) FILTER (WHERE status='rejected' AND reviewer_note LIKE 'dup:%')
+    || E'\nautomation-only: ' || count(*) FILTER (WHERE status='accepted')
+    || E'\nnoise: '            || count(*) FILTER (WHERE status='rejected' AND (reviewer_note IS NULL OR reviewer_note NOT LIKE 'dup:%'))
+    || E'\npending: '          || count(*) FILTER (WHERE status='pending')
+FROM harness.memory_candidates;
+SQL
+  # Reverse sweep: window-period solutions never matched by any candidate's near_dup_path.
+  # Memory-file half is mtime-based best-effort (spec: baseline asymmetry) — solutions only here.
+  echo "== codify-only (window-period solutions with no matching candidate) =="
+  local matched="$WORK/matched.txt"
+  sql -tA -c "SELECT DISTINCT near_dup_path FROM harness.memory_candidates WHERE near_dup_path IS NOT NULL" > "$matched"
+  # Sentinel keeps the pattern file non-empty — grep -f on an empty file is
+  # implementation-defined across GNU/BSD.
+  echo "__no_matches_sentinel__" >> "$matched"
+  git -C "$SCRIPT_DIR/../.." log --since="$start" --until="$end 23:59" --diff-filter=A --name-only --pretty=format: -- docs/solutions \
+    | grep -v '^$' | grep -v _manifests | sort -u \
+    | grep -vxF -f "$matched" \
+    | sed 's/^/codify-only: /' || true
+}
+
 MODE="${1:-}"
 case "$MODE" in
   --window)
@@ -334,6 +386,9 @@ case "$MODE" in
     run_window "$2" "$3"
     ;;
   --review) run_review ;;
-  --report) echo "distill.sh: --report lands in Task 9" >&2; exit 1 ;;
+  --report)
+    shift
+    run_report "${1:-}" "${2:-}"
+    ;;
   *) echo "usage: $0 --window <start> <end> | --review | --report [start end]" >&2; exit 1 ;;
 esac
