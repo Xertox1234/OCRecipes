@@ -199,6 +199,12 @@ REF=$(LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=disable" bash "$
 assert_nonzero "distill.sh refuses nutricam (with query string)" "$RC"
 assert_contains "refusal names nutricam" "$REF" "nutricam"
 
+# A '/'-bearing query value (?sslrootcert=/path) must not hijack the ##*/ split — strip
+# order regression fixture (query/fragment BEFORE suffix split; found in code review)
+REF2=$(LAB_DATABASE_URL="postgresql://localhost/nutricam?sslrootcert=/tmp/ca.pem" bash "$SCRIPT" --window 2026-07-01 2026-07-14 2>&1 1>/dev/null); RC=$?
+assert_nonzero "distill.sh refuses nutricam (slash-bearing query value)" "$RC"
+assert_contains "slash-query refusal names nutricam" "$REF2" "nutricam"
+
 WOUT=$(LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$STUB" bash "$SCRIPT" --window 2026-07-01 2026-07-14 2>&1); RC=$?
 assert_exit0 "--window runs" "$RC"
 SEEN=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT sessions_seen||'/'||sessions_sent||'/'||sessions_gated FROM harness.distill_runs ORDER BY id DESC LIMIT 1")

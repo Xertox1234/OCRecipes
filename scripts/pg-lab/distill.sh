@@ -26,6 +26,8 @@ DISTILL_COST_CAP_USD="${DISTILL_COST_CAP_USD:-5}"
 # never raise above the verified price.
 DISTILL_PRICE_IN_PER_MTOK="${DISTILL_PRICE_IN_PER_MTOK:-0.30}"
 DISTILL_PRICE_OUT_PER_MTOK="${DISTILL_PRICE_OUT_PER_MTOK:-1.20}"
+# Deliberately machine-specific: the experiment compares candidates against THIS project's
+# memory corpus (spec: comparison protocol). Override via env elsewhere.
 DISTILL_MEMORY_DIR="${DISTILL_MEMORY_DIR:-$HOME/.claude/projects/-Users-williamtower-projects-OCRecipes/memory}"
 MAX_BUFFER_CHARS=400000
 
@@ -48,10 +50,12 @@ title: at most 100 characters, specific. content: 3-10 self-contained sentences 
 EOF
 )
 
-# Hard safety rail (same as init.sh/codify-neardup.sh/transcripts.sh) — strip query string
-# and fragment BEFORE the suffix split (docs/solutions/logic-errors/
-# bash-suffix-split-db-name-denylist-query-string-smuggling-2026-07-06.md).
-DB_NAME="${LAB_DATABASE_URL##*/}"; DB_NAME="${DB_NAME%%\?*}"; DB_NAME="${DB_NAME%%#*}"
+# Hard safety rail (same as init.sh/codify-neardup.sh) — strip query string and fragment
+# BEFORE the suffix split (docs/solutions/logic-errors/
+# bash-suffix-split-db-name-denylist-query-string-smuggling-2026-07-06.md). Order is
+# load-bearing: splitting first lets any '/'-bearing query value (?sslrootcert=/path/ca.pem
+# is standard libpq) capture the ##*/ match and smuggle a denylisted name past the case.
+DB_NAME="${LAB_DATABASE_URL%%\?*}"; DB_NAME="${DB_NAME%%#*}"; DB_NAME="${DB_NAME##*/}"
 case "$DB_NAME" in
   nutricam | ocrecipes_solutions)
     echo "distill.sh: refusing — LAB_DATABASE_URL resolves to '$DB_NAME', a real app database, not a PG Lab database" >&2
@@ -130,7 +134,7 @@ FROM harness.solution_titles
 WHERE similarity(title, :'t') >= 0.45
 ORDER BY similarity(title, :'t') DESC LIMIT 1;
 SQL
-    )
+    ) || nd=""  # advisory lookup: degrade to unflagged (loud on stderr), never lose the insert
   elif [ -s "$WORK/memory-titles.tsv" ]; then
     # word_similarity, NOT similarity(): a short candidate title against a long
     # name+description whole-string under-scores (~0.2 for an exact contained phrase) —
@@ -143,7 +147,7 @@ FROM mem_titles
 WHERE word_similarity(:'t', title) >= 0.45
 ORDER BY word_similarity(:'t', title) DESC LIMIT 1;
 SQL
-    )
+    ) || nd=""  # advisory lookup: degrade to unflagged (loud on stderr), never lose the insert
   fi
   local nd_path="" nd_score=""
   if [ -n "$nd" ]; then nd_path="${nd%%$'\t'*}"; nd_score="${nd##*$'\t'}"; fi
@@ -157,12 +161,16 @@ VALUES (:'sid', CASE WHEN :'uuids' = '' THEN NULL ELSE string_to_array(:'uuids',
 SQL
 }
 
-# Contract: args sid, run_id, artifact; echoes "tokens_in tokens_out n_candidates
-# parse_failed(0|1)" on stdout.
+# Contract: args sid, run_id, artifact; writes "tokens_in tokens_out n_candidates
+# parse_failed(0|1)" to $WORK/send.result. Result goes via FILE and the caller uses a bare
+# call, NOT read <<<"$(send_session ...)": command substitution disables errexit inside the
+# function (bash default), which would silently swallow a failed candidate INSERT after a
+# paid send. Bare call keeps unguarded failures LOUD; the tolerated ones (send failure,
+# parse failure, near-dup lookup) are each explicitly guarded.
 send_session() {
   local sid="$1" run_id="$2" artifact="$3" errf="$WORK/send.err" respf="$WORK/resp.txt"
   if ! "$DISTILL_SEND_CMD" --paths "$artifact" --question "$DISTILL_PROMPT" >"$respf" 2>"$errf"; then
-    echo "0 0 0 1"; return
+    echo "0 0 0 1" > "$WORK/send.result"; return
   fi
   local toks tin tout
   toks=$(sed -n 's/.*\[kimi: \([0-9][0-9]*\) in.*\/ \([0-9][0-9]*\) out.*/\1 \2/p' "$errf" | head -1)
@@ -196,7 +204,7 @@ for c in arr:
     print("\t".join(fields))
 PYEOF
   then
-    echo "$tin $tout 0 1"; return
+    echo "$tin $tout 0 1" > "$WORK/send.result"; return
   fi
   local n=0
   while IFS=$'\t' read -r store subtype title content uuids; do
@@ -204,7 +212,7 @@ PYEOF
     insert_candidate "$sid" "$store" "$subtype" "$title" "$(printf '%b' "$content")" "$uuids"
     n=$((n + 1))
   done < "$parsed"
-  echo "$tin $tout $n 0"
+  echo "$tin $tout $n 0" > "$WORK/send.result"
 }
 
 check_cost_cap() {
@@ -263,7 +271,8 @@ SQL
       echo "distill.sh: artifact hash mismatch for $sid — refusing to send" >&2
       gated=$((gated + 1)); record_session "$sid" "$run_id" "gated"; continue
     fi
-    read -r s_tin s_tout s_cands s_pfail <<<"$(send_session "$sid" "$run_id" "$artifact")"
+    send_session "$sid" "$run_id" "$artifact"
+    read -r s_tin s_tout s_cands s_pfail < "$WORK/send.result"
     tin=$((tin + s_tin)); tout=$((tout + s_tout)); cands=$((cands + s_cands))
     if [ "$s_pfail" -ne 0 ]; then
       pfail=$((pfail + 1)); record_session "$sid" "$run_id" "parse_failed"
