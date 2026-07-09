@@ -113,6 +113,39 @@ printf '[#u-1] user: her date of birth is 1984-03-11 per the record\n' > "$GFIX/
 OUT=$(python3 "$GATE" "$GFIX/dob2.txt" "$GFIX/dob2.out")
 assert_eq "gate: prose dob gated" "$(json_field "$OUT" verdict)" "gated"
 assert_eq "gate: prose dob class" "$(json_field "$OUT" class)" "dob"
+
+# Layer 2 — one >=2000-char pasted-data run in a LONG session (ratio < 30%) gates: the
+# absolute trigger exists because a pure ratio dilutes (spec).
+python3 - "$GFIX/abs.txt" <<'PY'
+import sys
+prose = "".join(f"[#u-{i}] user: ordinary discussion line {i} about architecture.\n\n" for i in range(200))
+blob = "\n".join('{"item_%d": %d, "note": "bulk"}' % (i, i) for i in range(80))  # ~2.4k chars, JSON-ish lines
+open(sys.argv[1], "w").write(prose + blob + "\n" + prose)
+PY
+OUT=$(python3 "$GATE" "$GFIX/abs.txt" "$GFIX/abs.out")
+assert_eq "gate: absolute-size pasted run gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: absolute class" "$(json_field "$OUT" class)" "volume_guard_absolute"
+
+# Layer 2 — many mid-size runs pushing ratio > 30% gates
+python3 - "$GFIX/ratio.txt" <<'PY'
+import sys
+prose = "".join(f"[#u-{i}] user: short line {i}.\n" for i in range(20))          # ~400 chars
+blob = "\n".join('| row%03d | %d |' % (i, i) for i in range(60))                  # ~1k chars table run
+open(sys.argv[1], "w").write(prose + blob + "\n")
+PY
+OUT=$(python3 "$GATE" "$GFIX/ratio.txt" "$GFIX/ratio.out")
+assert_eq "gate: ratio breach gated" "$(json_field "$OUT" verdict)" "gated"
+assert_eq "gate: ratio class" "$(json_field "$OUT" class)" "volume_guard_ratio"
+
+# Layer 2 — small pasted snippet (<500-char run) in normal dialogue passes
+python3 - "$GFIX/small.txt" <<'PY'
+import sys
+prose = "".join(f"[#u-{i}] user: ordinary line {i} of discussion.\n\n" for i in range(40))
+open(sys.argv[1], "w").write(prose + '| a | 1 |\n| b | 2 |\n' + prose)
+PY
+OUT=$(python3 "$GATE" "$GFIX/small.txt" "$GFIX/small.out")
+assert_eq "gate: small paste passes" "$(json_field "$OUT" verdict)" "sent"
+
 rm -rf "$GFIX"
 
 # ---------- DB-dependent sections ----------

@@ -128,8 +128,46 @@ def layer1(text):
     return None
 
 
+# --- Layer 2: volume guard (spec defaults — tuning requires the fixture re-run).
+RUN_MIN_CHARS = 500        # a contiguous data-shaped run must reach this to count at all
+RUN_ABSOLUTE_CHARS = 2000  # any single run this large gates regardless of ratio
+RATIO_MAX = 0.30
+
+_BASE64_LINE = re.compile(r"^[A-Za-z0-9+/=]{60,}$")
+_TABLE_SEP = re.compile(r"^[-+| ]+$")
+_JSONISH = re.compile(r'^\s*[\[{]|"[A-Za-z_]+"\s*:')
+
+
+def _is_data_line(line):
+    s = line.strip()
+    if not s:
+        return False
+    return bool(
+        _JSONISH.search(line)
+        or _BASE64_LINE.fullmatch(s)
+        or line.count("|") >= 2
+        or _TABLE_SEP.fullmatch(s)
+    )
+
+
 def layer2(text):
-    """Volume guard. Returns a class string, or None to pass. Filled in Task 4."""
+    """Volume guard. Contiguous data-shaped line runs; numerator = chars in runs >=
+    RUN_MIN_CHARS, denominator = all chars. Gate on any run >= RUN_ABSOLUTE_CHARS
+    (dilution defense) or numerator/denominator > RATIO_MAX."""
+    total = len(text) or 1
+    numerator = 0
+    run = 0
+    for line in text.split("\n") + [""]:  # sentinel flushes the final run
+        if _is_data_line(line):
+            run += len(line) + 1
+            continue
+        if run >= RUN_ABSOLUTE_CHARS:
+            return "volume_guard_absolute"
+        if run >= RUN_MIN_CHARS:
+            numerator += run
+        run = 0
+    if numerator / total > RATIO_MAX:
+        return "volume_guard_ratio"
     return None
 
 
