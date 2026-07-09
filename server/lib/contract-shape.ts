@@ -178,10 +178,12 @@ function looksDynamicallyKeyed(keys: string[]): boolean {
  * app. A dynamic-keyed map with exactly one live entry is not caught by this signal
  * (documented residual risk, same class noted in `looksDynamicallyKeyed` above).
  *
- * Takes the already-merged shape rather than computing it internally — the caller
- * (deriveShape) needs `mergeShapes(valueShapes)` either way when the object turns out
- * dynamic (as the `<dynamic>` placeholder's value shape), so it merges once and passes
- * the result in here rather than merging twice for the same input.
+ * Takes the already-merged shape rather than computing it internally — on the path
+ * where a caller needs `mergeShapes(valueShapes)` either way (e.g. the `<dynamic>`
+ * placeholder's value shape once redaction is decided), it merges once and passes the
+ * result in here rather than merging twice for the same input. See
+ * `couldBeUniformNonPrimitive` below for the cheap pre-check `deriveShape` runs first so
+ * it can skip the merge entirely when it isn't needed at all.
  */
 const MIN_UNIFORM_MAP_KEYS = 2;
 
@@ -292,6 +294,31 @@ export function hasUnredactedUniformPrimitiveObject(shape: Shape): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * Cheap O(n) pre-check for whether `mergeShapes(valueShapes)` could possibly collapse to
+ * a uniform non-primitive shape — the only outcome `hasUniformNonPrimitiveValueShape`
+ * cares about — so `deriveShape`'s hot path can skip `mergeShapes`'s O(n log n)
+ * canonicalKey/Map/sort work entirely for the common case: an ordinary static object
+ * whose fields have differing coarse types (e.g. `{ zebra: "z", apple: 1, banana: true
+ * }`), which this rejects on the very first comparison.
+ *
+ * Comparing only each shape's coarse `.type` (not full structural equality) is
+ * necessary-but-not-sufficient, by design, and must stay that way: it can false-POSITIVE
+ * (e.g. two same-"object"-typed fields with different nested keys still pass this
+ * check), in which case the caller falls through to the real `mergeShapes` to get the
+ * authoritative answer — but it can never false-NEGATIVE. `mergeShapes` only yields a
+ * non-`mixed` (object/array) result when every input is byte-identical, which requires
+ * every input to share the same coarse type first; differing coarse types guarantee
+ * `mergeShapes` would produce `mixed` anyway. Tightening this into anything stricter
+ * than a coarse-type comparison risks introducing a false negative — don't.
+ */
+function couldBeUniformNonPrimitive(valueShapes: Shape[]): boolean {
+  if (valueShapes.length < MIN_UNIFORM_MAP_KEYS) return false;
+  const firstType = valueShapes[0].type;
+  if (firstType !== "object" && firstType !== "array") return false;
+  return valueShapes.every((shape) => shape.type === firstType);
 }
 
 /** Placeholder key used in place of a dynamically-keyed object's real key names. */
@@ -414,16 +441,27 @@ export function deriveShape(
           ? deriveForcedDynamicShape(objValue[key], forcedDynamicKeys)
           : deriveShape(objValue[key], forcedDynamicKeys),
       );
-      const mergedValueShape = mergeShapes(valueShapes);
 
-      if (
-        looksDynamicallyKeyed(sortedKeys) ||
-        hasUniformNonPrimitiveValueShape(valueShapes, mergedValueShape)
-      ) {
+      if (looksDynamicallyKeyed(sortedKeys)) {
         return {
           type: "object",
-          keys: { [DYNAMIC_KEY_PLACEHOLDER]: mergedValueShape },
+          keys: { [DYNAMIC_KEY_PLACEHOLDER]: mergeShapes(valueShapes) },
         };
+      }
+
+      // Only worth computing the full mergeShapes (canonicalKey/Map/sort) when there's
+      // a chance it collapses to a uniform non-primitive shape -- the one thing
+      // hasUniformNonPrimitiveValueShape checks for. The overwhelmingly common case (an
+      // ordinary static object mixing primitive-typed fields) fails this cheap coarse-
+      // type scan and skips mergeShapes entirely.
+      if (couldBeUniformNonPrimitive(valueShapes)) {
+        const mergedValueShape = mergeShapes(valueShapes);
+        if (hasUniformNonPrimitiveValueShape(valueShapes, mergedValueShape)) {
+          return {
+            type: "object",
+            keys: { [DYNAMIC_KEY_PLACEHOLDER]: mergedValueShape },
+          };
+        }
       }
 
       // Object.fromEntries (not `keys[key] = ...` bracket assignment) so a literal
