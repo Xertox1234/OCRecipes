@@ -202,7 +202,8 @@
     ],
     "client/**/*.tsx": [
       "node scripts/check-accessibility.js",
-      "node scripts/check-hardcoded-colors.js"
+      "node scripts/check-hardcoded-colors.js",
+      "node scripts/check-bottomsheet-backhandler.js"
     ],
     "client/components/**/__tests__/*.test.tsx": [
       "node scripts/check-jsdom-pragma.js"

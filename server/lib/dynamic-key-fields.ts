@@ -36,6 +36,34 @@
  * keyed map that is ALSO single-entry-or-all-primitive -- a narrower, rarer
  * combination than "any dynamic key," not the wide-open surface the pre-#544 code
  * had.
+ *
+ * ALTERNATIVE CONSIDERED, REJECTED: server/lib/request-context.ts's
+ * AsyncLocalStorage-based `RequestContext` (an ultrareview of PR #551 flagged
+ * this res.locals marker as reinventing that existing "producer sets
+ * per-request metadata, a later consumer reads it" mechanism -- see
+ * docs/solutions/conventions/redact-dynamic-object-keys-not-just-values-2026-07-07.md's
+ * 2026-07-08 update for the full resolution). Kept res.locals rather than
+ * adding a `forcedDynamicKeys` field + setter to `RequestContext`, for two
+ * reasons:
+ *
+ * 1. The migration's cited benefit -- that `recordSnapshot()` "wouldn't need
+ *    res threaded through at all" -- doesn't actually hold: `recordSnapshot()`
+ *    already reads `res.statusCode` directly, so `res` stays in its parameter
+ *    list either way. There is no threading cost for migrating to remove.
+ * 2. `RequestContext` exists to propagate a handful of values to arbitrary,
+ *    deeply-nested, arbitrarily-async call sites across the whole app (auth
+ *    sets `userId` once; logging reads it from any log call anywhere) and is
+ *    populated via `AsyncLocalStorage.run()` on every production request.
+ *    This marker's job is narrower and travels exactly one hop: set on `res`
+ *    immediately before a route's own `res.json()` call, read back in the
+ *    very next middleware layer that wraps that same `res.json`. `res.locals`
+ *    -- an Express-native, response-scoped bag built for precisely this
+ *    "producer sets response-scoped metadata, next-in-chain middleware reads
+ *    it" shape -- is a tighter fit than widening a small, load-bearing,
+ *    always-populated interface for a dev-only diagnostic field. Both
+ *    mechanisms happen to store "per-request metadata," but the propagation
+ *    requirements differ enough that folding this one into `RequestContext`
+ *    would be a net loss, not a simplification.
  */
 import type { Response } from "express";
 

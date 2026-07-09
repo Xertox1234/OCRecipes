@@ -6,6 +6,7 @@ tags: [security, server, redaction, pii, structural-shape, contract-snapshot]
 module: server
 applies_to: [server/lib/contract-shape.ts]
 created: '2026-07-07'
+last_updated: '2026-07-09'
 ---
 
 # Structural shape derivation must redact dynamically-keyed objects, not just discard values
@@ -172,16 +173,63 @@ lost its forcing and fell back to the heuristics alone. Not reachable by either
 of the two producers above (neither nests a second marked field), but real and
 untested. Fixed same-day; see
 [A special-cased recursive helper must forward the same context parameter as the general-case recursion](../logic-errors/forced-recursion-branch-drops-forwarded-context-2026-07-08.md)
-for the full writeup. Left as a deferred, not-yet-actioned finding from that same
-review: `server/lib/dynamic-key-fields.ts`'s `res.locals`-based marker duplicates
-`server/lib/request-context.ts`'s existing AsyncLocalStorage per-request context
-mechanism — tracked in `todos/P3-2026-07-08-dynamic-key-fields-reinvents-request-context.md`.
+for the full writeup.
+
+**Considered and resolved (2026-07-08): keep the `res.locals` marker, do not
+migrate it onto `request-context.ts`.** The same review that found the
+recursion bug above also flagged `dynamic-key-fields.ts`'s `res.locals`-based
+marker as reinventing `server/lib/request-context.ts`'s existing
+`AsyncLocalStorage`-based `RequestContext` — both are, on the surface, a
+"producer sets per-request metadata, a later consumer reads it" mechanism.
+Filed as a follow-up todo for a considered pass rather than a same-day PR
+fixup; that pass concluded **`res.locals` is the better fit, not a duplication
+worth collapsing**, for two reasons:
+
+1. The migration case rested partly on `recordSnapshot()` "wouldn't need `res`
+   threaded through at all" if it read `getRequestContext()` instead of
+   `readDynamicKeyFields(res)`. That benefit doesn't actually exist:
+   `recordSnapshot()` already reads `res.statusCode` directly (see
+   `contract-snapshot.ts`), so `res` stays in its parameter list regardless of
+   where the marker lives.
+2. `RequestContext` exists to propagate a few values to arbitrary,
+   deeply-nested, arbitrarily-async call sites across the whole app (auth sets
+   `userId` once; logging reads it from any log call anywhere), and is
+   populated via `AsyncLocalStorage.run()` on **every** production request.
+   This marker's job is narrower and travels exactly one hop: set on `res`
+   immediately before a route's own `res.json()` call, read back in the very
+   next middleware layer wrapping that same `res.json`. `res.locals` — an
+   Express-native, response-scoped bag built for precisely this shape — is a
+   tighter fit than widening a small, load-bearing, always-populated
+   interface for a dev-only diagnostic field. Both mechanisms happen to store
+   "per-request metadata," but the propagation requirements differ enough
+   that folding this one into `RequestContext` would be a net loss, not a
+   simplification. (Research during that pass also reasoned, via Express's
+   continuous-middleware-chain execution model and Node's `AsyncLocalStorage`
+   continuation tracking, that the `RequestContext` scope would in fact still
+   be reliably active at the point `contract-snapshot.ts`'s wrapped
+   `res.json` executes — analytically, not via an added empirical test — so
+   migration was rejected on interface-surface grounds, not because it was
+   technically infeasible.)
+
+See `server/lib/dynamic-key-fields.ts`'s module doc comment for the same
+rationale kept alongside the code it justifies.
+
+## Update (2026-07-09): a diagnostic/telemetry walk over the shape tree must also stop at the redaction boundary
+
+A follow-up todo added dev-mode telemetry (`hasUnredactedUniformPrimitiveObject` in `server/lib/contract-shape.ts`, wired into `recordSnapshot` in `server/lib/contract-snapshot.ts`) to flag, for manual triage, a plain (non-redacted) object with >= 2 keys whose values are all the same primitive type -- the closest cheap observable proxy for the all-primitive-valued dynamic-map gap documented above.
+
+The first implementation recursed into every object node in an already-derived Shape tree, INCLUDING the merged value shape nested under a correctly-redacted `<dynamic>` placeholder. For the real `allergenFlags` shape (entries shaped `{ allergenId: string, severity: string }`), that nested value shape is itself a 2-key, same-typed-string object -- so the new telemetry fired a false 'was NOT redacted' signal on essentially every response with >= 1 flagged allergen, on exactly the two live routes (`grocery.ts`, `menu.ts`) the whole redaction mechanism exists to protect. This carries zero leak-detection value: the placeholder's own real (sensitive) keys are already hidden, and the nested field names are ordinary, already-classified static schema names, not user data.
+
+Fixed by pruning recursion at the redaction-placeholder boundary: treat any `{ "<dynamic>": ... }` node as opaque and do not descend into it. Verified empirically against the real `allergenFlags` production shape before and after the fix.
+
+**Rule for future consumers**: any downstream code that inspects an already-derived Shape tree for its own purpose (diffing, telemetry, counting, redaction-adjacent auditing, etc.) must independently know to treat the `<dynamic>` placeholder as an opaque leaf, not just a normal object node. This is the second distinct bug class in this module caused by a consumer failing to special-case the placeholder (the first is documented in the diffRouteShapes finding linked below) -- the placeholder's 'opaque past this point' contract is easy to violate in a NEW piece of code that doesn't reuse either existing example.
 
 ## Related Files
 
 - `server/lib/contract-shape.ts` — `deriveShape()`, `looksDynamicallyKeyed()`,
   `hasUniformNonPrimitiveValueShape()`, `deriveForcedDynamicShape()`,
   `mergeShapes()`
+- `server/lib/contract-shape.ts` — `hasUnredactedUniformPrimitiveObject()`, the new telemetry proxy and its `<dynamic>`-placeholder pruning guard.
 - `server/lib/dynamic-key-fields.ts` — `markDynamicKeyFields()` /
   `readDynamicKeyFields()`, the producer-marker mechanism from the 2026-07-08
   update above
@@ -195,3 +243,4 @@ mechanism — tracked in `todos/P3-2026-07-08-dynamic-key-fields-reinvents-reque
 
 - [A database-name denylist parsed by naive string-slicing is bypassed by a connection-string query string](../logic-errors/denylist-bypassed-by-connection-string-query-string-2026-07-06.md) — a different finding in the same `server/lib/contract-snapshot.ts` module family
 - [Widening an allowlist root turns it into a hand-maintained denylist that fails open](../best-practices/widening-allowlist-root-creates-hand-maintained-denylist-2026-07-08.md) — the general pattern this doc's 2026-07-08 update's `markDynamicKeyFields` residual is an instance of: any hand-maintained "which fields/paths are special" list is fail-open by construction; the mitigation here is narrowing the residual surface (see the update above), not eliminating the list
+- [A diff guard that intercepts on "one side looks redacted" must also confirm the other side would actually BE redacted, or it silently swallows real changes](../logic-errors/redaction-diff-intercept-must-validate-both-sides-not-just-asymmetry-2026-07-08.md) — the sibling instance of the same 'a Shape-tree consumer must specially handle the <dynamic> placeholder' class of bug, in diffRouteShapes rather than in a telemetry walk.

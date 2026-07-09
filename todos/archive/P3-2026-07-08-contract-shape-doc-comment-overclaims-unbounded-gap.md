@@ -3,7 +3,7 @@
 ---
 
 title: "contract-shape.ts doc comment overclaims the primitive-value redaction gap is unbounded"
-status: backlog
+status: done
 priority: low
 created: 2026-07-08
 updated: 2026-07-08
@@ -33,7 +33,7 @@ coverage could misjudge the attack surface for a security-sensitive redaction pa
 
 ## Acceptance Criteria
 
-- [ ] Doc comment above `hasUniformNonPrimitiveValueShape()` accurately states the primitive-
+- [x] Doc comment above `hasUniformNonPrimitiveValueShape()` accurately states the primitive-
       value gap is bounded to 2-50 entries (not "ANY entry count").
 
 ## Implementation Notes
@@ -53,3 +53,9 @@ coverage could misjudge the attack surface for a security-sensitive redaction pa
 ### 2026-07-08
 
 - Filed during code review of PR #544 (merged as 137b746e).
+- Fixed: corrected the doc comment above `hasUniformNonPrimitiveValueShape()` to state
+  the primitive-value gap is bounded to the 2-50 entry range, not unbounded. Also fixed
+  the identical overclaim ("not caught at any entry count") in `deriveShape()`'s CAVEAT
+  block for internal consistency (same defect, same file, out of the AC's literal scope
+  but squarely within its intent — flagged by advisor review). Comment-only change, no
+  behavior change; all existing tests pass unmodified.

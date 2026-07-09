@@ -25,6 +25,7 @@ LAB_DATABASE_URL="${LAB_DATABASE_URL:-postgresql://localhost/ocrecipes_lab}"
 # `"nutricam?sslmode=require"`, silently bypassing an exact-string denylist check.
 # Same denylist + identifier check as init.sh (codify-neardup.sh predates this fix).
 DB_NAME="${LAB_DATABASE_URL%%\?*}"
+DB_NAME="${DB_NAME%%\#*}"
 DB_NAME="${DB_NAME##*/}"
 case "$DB_NAME" in
   nutricam | ocrecipes_solutions)

@@ -3,7 +3,7 @@
 ---
 
 title: "server/lib/dynamic-key-fields.ts reinvents the existing request-context.ts AsyncLocalStorage mechanism"
-status: backlog
+status: done
 priority: low
 created: 2026-07-08
 updated: 2026-07-08
@@ -102,3 +102,24 @@ path. No user-facing or security impact from leaving it as-is.
   confirmed/plausible fixes and codify the reusable lesson; this specific
   finding was deliberately left unapplied (see Background) and is filed here
   rather than only mentioned in the PR's commit message.
+
+### 2026-07-08 (resolved)
+
+- **Decision: keep `res.locals`, do not migrate to `RequestContext`.** The
+  migration's cited benefit (`recordSnapshot()` "wouldn't need `res` threaded
+  through at all") doesn't actually hold — `recordSnapshot()` already reads
+  `res.statusCode` directly, so `res` stays in its parameter list regardless.
+  Separately, `RequestContext` exists to propagate values to arbitrary,
+  deeply-nested, arbitrarily-async call sites across the whole app and is
+  populated on every production request (auth + logging depend on it); this
+  marker's job is narrower — it travels exactly one hop, set on `res` right
+  before a route's own `res.json()` and read back in the very next middleware
+  layer wrapping that same `res.json`. `res.locals` is the tighter fit for
+  that shape, so folding it into `RequestContext` would widen a small,
+  load-bearing interface for no simplification gain.
+- Documented in both `server/lib/dynamic-key-fields.ts`'s module doc comment
+  and `docs/solutions/conventions/redact-dynamic-object-keys-not-just-values-2026-07-07.md`
+  (which now reads "Considered and resolved" instead of "deferred,
+  not-yet-actioned").
+- No code/logic changes — documentation only. Acceptance criterion 2 ("if
+  migrating, verify empirically...") is N/A since migration was rejected.

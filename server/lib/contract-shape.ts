@@ -1,3 +1,6 @@
+import { UUID_RE } from "./identifier-patterns";
+import { EMAIL_SHAPE_RE } from "@shared/constants/email-patterns";
+
 /**
  * Pure, side-effect-free helpers for the PG Lab API contract snapshot/diff item
  * (docs/research/2026-07-05-pg-lab-roadmap.md, Batch C). Derives a structural TYPE
@@ -99,13 +102,25 @@ function mergeShapes(shapes: Shape[]): Shape {
  *     to force-redact `allergenFlags` deterministically regardless of entry count, so
  *     this gap is closed for them; a future, not-yet-marked route with the same
  *     free-text-keyed shape would still fall through to this heuristic alone.
+ *
+ *     NOT INSTRUMENTED (deliberate decision, not an oversight): unlike the
+ *     all-primitive-valued gap below (see `hasUnredactedUniformPrimitiveObject`),
+ *     this sub-2-entry gap has no runtime telemetry, because a single- or
+ *     zero-key object is the single most common object shape in any JSON API — an
+ *     `{ id }`, a `{ status: "ok" }`, an empty `{}` — so a signal here would fire on
+ *     an overwhelming majority of ordinary responses with near-zero
+ *     signal-to-noise, unlike the >= 2-key uniform-primitive check, which is
+ *     comparatively rare. A marker- or count-based signal restricted to *known*
+ *     dynamic-key-producing fields would need the same per-route bookkeeping
+ *     `markDynamicKeyFields` already provides, so it would add nothing this gap
+ *     doesn't already have covered for the two known routes.
  */
 const MAX_STATIC_OBJECT_KEYS = 50;
 const MAX_KEY_LENGTH_FOR_PATTERN_CHECK = 200;
 
 const DYNAMIC_KEY_PATTERNS: RegExp[] = [
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/, // email — mirrors client/components/ChangeEmailModal.tsx's EMAIL_RE
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, // UUID
+  EMAIL_SHAPE_RE, // email shape (shared/constants/email-patterns.ts) — not a validation boundary, see that module's doc comment
+  UUID_RE, // UUID (server/lib/identifier-patterns.ts) — shared with server/index.ts's x-request-id check
   /^\d{4,}$/, // long numeric id (barcode, row id, etc.) — unlikely as a hand-typed field name
 ];
 
@@ -139,13 +154,19 @@ function looksDynamicallyKeyed(keys: string[]): boolean {
  * fields..." test for a pinned example).
  *
  * FALSE NEGATIVE (closed for the two known routes via a producer marker, distinct
- * from and broader than the single-entry gap above): a dynamic-keyed object whose
+ * from the single-entry gap above): a dynamic-keyed object whose
  * values are all PRIMITIVE (e.g. `{ shrimp: "high", peanuts: "severe" }` — a
  * plausible simplification of `allergenFlags` from `Record<string, {allergenId,
  * severity}>` to `Record<string, AllergySeverity>`) is caught by NEITHER heuristic
- * signal, at ANY entry count — primitives are deliberately excluded above precisely
- * because they collide too often in legitimate static records (`{ width: 100,
- * height: 50 }`, `{ r, g, b }`) to use as a uniformity signal. Not live in this
+ * signal for object sizes in the 2-50 entry range — bounded above by
+ * MAX_STATIC_OBJECT_KEYS (the 1-entry case is the separately documented
+ * single-entry gap above, not this signal's doing), not unbounded at any entry
+ * count: past 50 entries, `looksDynamicallyKeyed`'s key-count check fires
+ * independently of value type, so a larger all-primitive-valued object is still
+ * redacted by that signal alone. Primitives are deliberately excluded from
+ * `hasUniformNonPrimitiveValueShape` precisely because they collide too often in
+ * legitimate static records (`{ width: 100, height: 50 }`, `{ r, g, b }`) to use as a
+ * uniformity signal. Not live in this
  * codebase today (no `Record<string, primitive>` response-shaped value exists as of
  * this writing), but a future refactor to that shape at `allergenFlags` would still
  * be caught, since `deriveForcedDynamicShape` below redacts a marked field's value
@@ -157,10 +178,12 @@ function looksDynamicallyKeyed(keys: string[]): boolean {
  * app. A dynamic-keyed map with exactly one live entry is not caught by this signal
  * (documented residual risk, same class noted in `looksDynamicallyKeyed` above).
  *
- * Takes the already-merged shape rather than computing it internally — the caller
- * (deriveShape) needs `mergeShapes(valueShapes)` either way when the object turns out
- * dynamic (as the `<dynamic>` placeholder's value shape), so it merges once and passes
- * the result in here rather than merging twice for the same input.
+ * Takes the already-merged shape rather than computing it internally — on the path
+ * where a caller needs `mergeShapes(valueShapes)` either way (e.g. the `<dynamic>`
+ * placeholder's value shape once redaction is decided), it merges once and passes the
+ * result in here rather than merging twice for the same input. See
+ * `couldBeUniformNonPrimitive` below for the cheap pre-check `deriveShape` runs first so
+ * it can skip the merge entirely when it isn't needed at all.
  */
 const MIN_UNIFORM_MAP_KEYS = 2;
 
@@ -172,6 +195,130 @@ function hasUniformNonPrimitiveValueShape(
     valueShapes.length >= MIN_UNIFORM_MAP_KEYS &&
     (merged.type === "object" || merged.type === "array")
   );
+}
+
+function isPrimitiveShapeType(type: Shape["type"]): boolean {
+  return type === "string" || type === "number" || type === "boolean";
+}
+
+/**
+ * Observability-only proxy for the gap-2 residual documented on
+ * `hasUniformNonPrimitiveValueShape` above (and, for a marked field, closed by
+ * `deriveForcedDynamicShape`): detects a plain (non-redacted) object, anywhere in
+ * an already-derived Shape tree, with >= MIN_UNIFORM_MAP_KEYS keys whose values are
+ * all the SAME primitive type. This is the mirror image of
+ * `hasUniformNonPrimitiveValueShape` -- that function deliberately excludes
+ * primitive values from the redaction decision (see its doc comment); this
+ * function walks the shape `deriveShape` already returned to flag the same
+ * structural pattern for a caller to log, purely for manual triage. It never
+ * changes what `deriveShape` returns and is not itself a redaction signal --
+ * `deriveShape` stays pure/side-effect-free; see `recordSnapshot` in
+ * contract-snapshot.ts for the one caller that logs on a hit.
+ *
+ * A correctly-redacted `<dynamic>` placeholder node (exactly one key,
+ * DYNAMIC_KEY_PLACEHOLDER) is never itself flagged -- it fails the
+ * >= MIN_UNIFORM_MAP_KEYS check on its own single key. But this function does NOT
+ * merely skip that one key; it also does not recurse into the placeholder's merged
+ * value shape (see the `<dynamic>` short-circuit in the object case below). That
+ * pruning is deliberate, not incidental: for a real dynamic map like
+ * `allergenFlags` (redacted keys, values shaped `{ allergenId: string, severity:
+ * string }`), the per-entry value shape is ITSELF a 2-key, same-typed-string
+ * object that would otherwise match this exact proxy signal on virtually every
+ * response with >= 1 flagged allergen -- a false trigger on the two live routes
+ * the whole redaction mechanism exists to protect, with zero leak-detection value,
+ * since the placeholder's own (sensitive) keys are already hidden and the nested
+ * field names are ordinary, already-classified static schema names. Verified
+ * empirically against the real grocery.ts/menu.ts allergenFlags shape (see
+ * contract-shape.test.ts's redacted-`<dynamic>`-object test).
+ *
+ * Bounded like `deriveShape`'s own recursion (see `unwrapToKeys` above for the
+ * project's convention of documenting this): each call recurses strictly into a
+ * child Shape node one level down (an object's values, an array's element shape,
+ * or a mixed shape's variants), and `deriveShape` never produces a self-referential
+ * Shape, so this always terminates at the tree's leaves. Same complexity class as
+ * `deriveShape` itself -- O(distinct shape nodes), not O(payload), since
+ * `mergeShapes` already collapsed any repeated structure before this ever runs.
+ *
+ * SIGNAL-TO-NOISE ASSESSMENT (the concern raised in this feature's own todo Risks
+ * section): even with the `<dynamic>`-subtree pruning above, this still fires on
+ * the identical structural pattern for two cases that are NOT distinguishable from
+ * a plain (non-redacted) object's shape alone -- (a) a genuine primitive-valued
+ * dynamic map (e.g. a hypothetical `Record<string, AllergySeverity>` simplification
+ * of `allergenFlags`, the gap this proxies for), and (b) an entirely ordinary
+ * static object that happens to have >= 2 same-typed fields, e.g. `{ width: 100,
+ * height: 50 }` or `{ r: 255, g: 0, b: 0 }` -- ordinary, common, and completely
+ * benign. Case (b) will fire far more often than case (a) in most route surfaces.
+ * Accepted deliberately rather than solved: requiring the *same* primitive type
+ * across all keys (not just "all primitive") already prunes the more common
+ * heterogeneous case (`{ id: 5, name: "a" }` does NOT match); going further (e.g.
+ * key-name heuristics to guess "static" vs "dynamic" intent) would be inventing a
+ * new redaction-adjacent heuristic, which this feature's own acceptance criteria
+ * explicitly rule out ("cheap, single-condition check, no new heuristic"). This is
+ * why the caller logs at `debug`, not `warn`: a noisy-but-cheap breadcrumb for
+ * someone manually inspecting `dev.contract_snapshots` rows for a suspected leak,
+ * not an actionable alert.
+ */
+export function hasUnredactedUniformPrimitiveObject(shape: Shape): boolean {
+  switch (shape.type) {
+    case "object": {
+      const keys = Object.keys(shape.keys);
+      // A correctly-redacted node: its single key is the placeholder, and
+      // whatever real per-entry field names produced its merged value shape were
+      // already independently classified (dynamic or not) when THEY were
+      // derived. Recursing into it adds no leak-detection signal -- the
+      // placeholder's own keys are exactly what needed hiding and already are
+      // hidden -- only guaranteed noise from ordinary per-entry schema field
+      // names (e.g. an AllergenMatch's `allergenId`/`severity` both being
+      // strings). Treat the whole subtree as opaque rather than descend into it.
+      if (keys.length === 1 && keys[0] === DYNAMIC_KEY_PLACEHOLDER)
+        return false;
+
+      const values = Object.values(shape.keys);
+      if (
+        values.length >= MIN_UNIFORM_MAP_KEYS &&
+        values.every(
+          (value) =>
+            value.type === values[0].type && isPrimitiveShapeType(value.type),
+        )
+      ) {
+        return true;
+      }
+      return values.some(hasUnredactedUniformPrimitiveObject);
+    }
+    case "array":
+      return shape.items
+        ? hasUnredactedUniformPrimitiveObject(shape.items)
+        : false;
+    case "mixed":
+      return shape.variants.some(hasUnredactedUniformPrimitiveObject);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Cheap O(n) pre-check for whether `mergeShapes(valueShapes)` could possibly collapse to
+ * a uniform non-primitive shape — the only outcome `hasUniformNonPrimitiveValueShape`
+ * cares about — so `deriveShape`'s hot path can skip `mergeShapes`'s O(n log n)
+ * canonicalKey/Map/sort work entirely for the common case: an ordinary static object
+ * whose fields have differing coarse types (e.g. `{ zebra: "z", apple: 1, banana: true
+ * }`), which this rejects on the very first comparison.
+ *
+ * Comparing only each shape's coarse `.type` (not full structural equality) is
+ * necessary-but-not-sufficient, by design, and must stay that way: it can false-POSITIVE
+ * (e.g. two same-"object"-typed fields with different nested keys still pass this
+ * check), in which case the caller falls through to the real `mergeShapes` to get the
+ * authoritative answer — but it can never false-NEGATIVE. `mergeShapes` only yields a
+ * non-`mixed` (object/array) result when every input is byte-identical, which requires
+ * every input to share the same coarse type first; differing coarse types guarantee
+ * `mergeShapes` would produce `mixed` anyway. Tightening this into anything stricter
+ * than a coarse-type comparison risks introducing a false negative — don't.
+ */
+function couldBeUniformNonPrimitive(valueShapes: Shape[]): boolean {
+  if (valueShapes.length < MIN_UNIFORM_MAP_KEYS) return false;
+  const firstType = valueShapes[0].type;
+  if (firstType !== "object" && firstType !== "array") return false;
+  return valueShapes.every((shape) => shape.type === firstType);
 }
 
 /** Placeholder key used in place of a dynamically-keyed object's real key names. */
@@ -261,7 +408,8 @@ function deriveForcedDynamicShape(
  * still relies on the heuristics alone, and so still carries their residual gaps:
  * (1) a dynamic-keyed object with fewer than MIN_UNIFORM_MAP_KEYS entries whose
  * key(s) also don't match a DYNAMIC_KEY_PATTERN, and (2) a dynamic-keyed object
- * whose values are all PRIMITIVE (not caught at any entry count).
+ * whose values are all PRIMITIVE, for object sizes in the 2-50 entry range (bounded
+ * by MAX_STATIC_OBJECT_KEYS — see `hasUniformNonPrimitiveValueShape` above).
  */
 export function deriveShape(
   value: unknown,
@@ -293,16 +441,27 @@ export function deriveShape(
           ? deriveForcedDynamicShape(objValue[key], forcedDynamicKeys)
           : deriveShape(objValue[key], forcedDynamicKeys),
       );
-      const mergedValueShape = mergeShapes(valueShapes);
 
-      if (
-        looksDynamicallyKeyed(sortedKeys) ||
-        hasUniformNonPrimitiveValueShape(valueShapes, mergedValueShape)
-      ) {
+      if (looksDynamicallyKeyed(sortedKeys)) {
         return {
           type: "object",
-          keys: { [DYNAMIC_KEY_PLACEHOLDER]: mergedValueShape },
+          keys: { [DYNAMIC_KEY_PLACEHOLDER]: mergeShapes(valueShapes) },
         };
+      }
+
+      // Only worth computing the full mergeShapes (canonicalKey/Map/sort) when there's
+      // a chance it collapses to a uniform non-primitive shape -- the one thing
+      // hasUniformNonPrimitiveValueShape checks for. The overwhelmingly common case (an
+      // ordinary static object mixing primitive-typed fields) fails this cheap coarse-
+      // type scan and skips mergeShapes entirely.
+      if (couldBeUniformNonPrimitive(valueShapes)) {
+        const mergedValueShape = mergeShapes(valueShapes);
+        if (hasUniformNonPrimitiveValueShape(valueShapes, mergedValueShape)) {
+          return {
+            type: "object",
+            keys: { [DYNAMIC_KEY_PLACEHOLDER]: mergedValueShape },
+          };
+        }
       }
 
       // Object.fromEntries (not `keys[key] = ...` bracket assignment) so a literal

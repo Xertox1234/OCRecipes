@@ -37,6 +37,22 @@ QS_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash
 assert_nonzero "contract-diff.sh refuses nutricam even with a query string appended" "$QS_RC"
 assert_contains "contract-diff.sh refusal (query string form) names nutricam" "$QS_ERR" "nutricam"
 
+# Fragment-suffix regression. Note this is NOT the same silent-bypass mechanism as the
+# query-string case above: libpq treats `#` as a literal dbname character, not a URI
+# fragment delimiter, so a pre-fix `nutricam#anchor` already fails LOUDLY (psql errors on a
+# database literally named "nutricam#anchor" — verified live) rather than silently
+# connecting to the real nutricam. Stripping the fragment here is a harmless robustness
+# addition, not the closure of a live silent-bypass hole the way the query-string strip is.
+# Assert on the distinctive denylist message, not merely "nutricam" — without the fragment
+# strip, "nutricam#anchor" falls through the exact-match case (it isn't literally
+# "nutricam") to the identifier-format check below, which also refuses it but with a
+# different message ("is not a safe Postgres identifier") — a weaker assertion would pass
+# for the wrong reason on the unfixed script.
+FRAG_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam#anchor" bash "$SCRIPT" feature main 2>&1 1>/dev/null); FRAG_RC=$?
+assert_nonzero "contract-diff.sh refuses nutricam+fragment" "$FRAG_RC"
+assert_contains "fragment refusal names nutricam" "$FRAG_ERR" "nutricam"
+assert_contains "fragment refusal is the denylist rail, not a downstream error" "$FRAG_ERR" "a real app database, not a PG Lab database"
+
 # Identifier-injection guard, mirroring init.sh's stricter check.
 LAB_DATABASE_URL='postgresql://localhost/foo"; DROP TABLE x; --' bash "$SCRIPT" feature main >/dev/null 2>&1
 assert_nonzero "contract-diff.sh refuses a database name that isn't a safe identifier" "$?"

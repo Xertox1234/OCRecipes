@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 import { installContractSnapshotMiddleware } from "../contract-snapshot";
 import { markDynamicKeyFields } from "../dynamic-key-fields";
+import { logger } from "../logger";
 
 function createApp(
   options: Parameters<typeof installContractSnapshotMiddleware>[1],
@@ -202,6 +203,62 @@ describe("installContractSnapshotMiddleware", () => {
         },
       },
     });
+  });
+
+  it("logs a dev-mode debug breadcrumb when a uniform-primitive-valued object reaches the plain (non-redacted) path (observability only -- does not change the stored shape)", async () => {
+    const queryFn = vi.fn().mockResolvedValue(undefined);
+    const getQuery = vi.fn().mockReturnValue(queryFn);
+    const app = express();
+    installContractSnapshotMiddleware(app, {
+      env: { NODE_ENV: "development", CONTRACT_SNAPSHOT: "1" },
+      getBranch: () => "feature-branch",
+      getQuery,
+    });
+    app.get("/dimensions", (_req, res) => {
+      res.json({ width: 100, height: 50 });
+    });
+
+    const debugSpy = vi.spyOn(logger, "debug");
+    const res = await request(app).get("/dimensions");
+
+    expect(res.status).toBe(200);
+    // Behavior is unchanged: the object is genuinely not redacted either way.
+    const [, params] = queryFn.mock.calls[0] as [string, unknown[]];
+    expect(JSON.parse(params[4] as string)).toEqual({
+      type: "object",
+      keys: { height: { type: "number" }, width: { type: "number" } },
+    });
+
+    const matchingCall = debugSpy.mock.calls.find(
+      (call) =>
+        typeof call[1] === "string" && call[1].includes("was NOT redacted"),
+    );
+    expect(matchingCall).toBeDefined();
+    expect(matchingCall?.[0]).toMatchObject({ routePattern: "/dimensions" });
+
+    debugSpy.mockRestore();
+  });
+
+  it("does NOT log the redaction-gap breadcrumb for an ordinary object that isn't a uniform-primitive candidate (no false trigger)", async () => {
+    const queryFn = vi.fn().mockResolvedValue(undefined);
+    const getQuery = vi.fn().mockReturnValue(queryFn);
+    const app = createApp({
+      env: { NODE_ENV: "development", CONTRACT_SNAPSHOT: "1" },
+      getBranch: () => "feature-branch",
+      getQuery,
+    });
+
+    const debugSpy = vi.spyOn(logger, "debug");
+    const res = await request(app).get("/test/123");
+
+    expect(res.status).toBe(200);
+    const matchingCall = debugSpy.mock.calls.find(
+      (call) =>
+        typeof call[1] === "string" && call[1].includes("was NOT redacted"),
+    );
+    expect(matchingCall).toBeUndefined();
+
+    debugSpy.mockRestore();
   });
 });
 
