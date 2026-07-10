@@ -224,11 +224,11 @@ do_consult() {
   case "$lvl" in
     collision)
       msg="Session ${osid:0:8} (${okind}, branch ${obranch}, last seen ${oseen}) is mid-edit on this same file in this same checkout. Coordinate before editing — parallel same-file edits here produced tangled commits before. (Warn-only.)"
-      log_event "warn-collision" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" &
+      log_event "warn-collision" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" >/dev/null 2>&1 &
       ;;
     worktree)
       msg="Session ${osid:0:8} (${okind}, branch ${obranch}) is editing the same file in another worktree — expect a merge conflict when both land. (Warn-only.)"
-      log_event "warn-worktree" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" &
+      log_event "warn-worktree" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" >/dev/null 2>&1 &
       ;;
     *) exit 0 ;;
   esac
