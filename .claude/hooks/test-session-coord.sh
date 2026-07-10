@@ -241,4 +241,22 @@ for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$SNAPME" ] && break; sleep 0.3; done
 [ -f "$SNAPME" ] && echo "ok: consult spawned async refresh" || { echo "FAIL: no refresh spawned"; FAIL=1; }
 rm -f "$SNAPME"
 
+# --- refresh-snapshot: stale-lock recovery -------------------------------------------
+# A held lockdir with a FRESH mtime still blocks a refresh -- guard preserved.
+mkdir "/tmp/claude-session-coord-${MYSID}.refresh-lock"
+bash "$SCRIPT" refresh-snapshot --session "$MYSID" >/dev/null 2>&1
+assert_exit0 "fresh-lock refresh still exits 0" "$?"
+[ ! -f "$SNAP" ] && echo "ok: fresh lockdir still blocks refresh" || { echo "FAIL: fresh lockdir did not block refresh"; FAIL=1; }
+rmdir "/tmp/claude-session-coord-${MYSID}.refresh-lock" 2>/dev/null
+
+# A SIGKILL-orphaned lockdir (mtime > 60s old) gets broken -- refresh proceeds and the
+# lockdir is left clean afterward (re-created + released, not leaked).
+mkdir "/tmp/claude-session-coord-${MYSID}.refresh-lock"
+touch -t 202001010000 "/tmp/claude-session-coord-${MYSID}.refresh-lock"
+bash "$SCRIPT" refresh-snapshot --session "$MYSID" >/dev/null 2>&1
+assert_exit0 "stale-lock refresh exits 0" "$?"
+[ -f "$SNAP" ] && echo "ok: stale lock broken, snapshot written" || { echo "FAIL: stale lock still blocked refresh"; FAIL=1; }
+[ ! -d "/tmp/claude-session-coord-${MYSID}.refresh-lock" ] && echo "ok: lockdir released cleanly after stale-break" || { echo "FAIL: lockdir leaked after stale-break"; FAIL=1; }
+rm -f "$SNAP"
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

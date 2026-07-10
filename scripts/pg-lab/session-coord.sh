@@ -152,8 +152,17 @@ do_refresh_snapshot() {
   snap="/tmp/claude-session-coord-${sid}.json"
   lockdir="/tmp/claude-session-coord-${sid}.refresh-lock"  # script-scope, not local: the EXIT trap fires after this function returns
   # In-flight guard (spec §5.1 flock intent; mkdir because flock(1) is absent on stock
-  # macOS): losers exit silently, one refresh per burst.
-  mkdir "$lockdir" 2>/dev/null || exit 0
+  # macOS): losers exit silently, one refresh per burst. A SIGKILL-orphaned lockdir would
+  # otherwise disable refreshes forever, since nothing ever rmdir's it again -- break locks
+  # older than 60s (one retry; if that also loses the race, another process won it fairly).
+  mkdir "$lockdir" 2>/dev/null || {
+    local lock_mt lock_age
+    lock_mt=$(stat -f %m "$lockdir" 2>/dev/null || stat -c %Y "$lockdir" 2>/dev/null) || exit 0
+    lock_age=$(( $(date +%s) - lock_mt ))
+    [ "$lock_age" -gt 60 ] || exit 0
+    rmdir "$lockdir" 2>/dev/null
+    mkdir "$lockdir" 2>/dev/null || exit 0
+  }
   trap 'rmdir "$lockdir" 2>/dev/null' EXIT
   do_reap
   json=$(psql -X -qtA -d "$LAB_DATABASE_URL" -v sid="$sid" 2>/dev/null <<'SQL'
