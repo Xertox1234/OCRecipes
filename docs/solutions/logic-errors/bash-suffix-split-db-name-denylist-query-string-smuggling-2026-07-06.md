@@ -8,7 +8,7 @@ tags: [postgres, bash, shell, denylist, safety-rail, pg-lab, url-parsing, silent
 applies_to: [scripts/pg-lab/**/*.sh]
 symptoms: ['A `case "${URL##*/}" in known_db_1 | known_db_2) refuse ;; esac` guard passes for a connection string with a trailing `?query=string` or `#fragment`', The tool actually making the connection (psql, or anything with a real URL parser) connects to the real denylisted database anyway, No error or warning — the script proceeds as if the connection string were safe]
 created: '2026-07-06'
-last_updated: '2026-07-07'
+last_updated: '2026-07-09'
 ---
 
 # Bash `${VAR##*/}` database-name denylist checks must strip query string/fragment first
@@ -73,6 +73,16 @@ In a TypeScript writer (not a bash script), prefer `new URL(connectionString).pa
 directly — it's the same fix, expressed with an actual URL parser instead of string
 surgery, and is the pattern this project's PG Lab TypeScript writers already use.
 
+**The strip order is load-bearing (2026-07-09 variant).** Splitting first and stripping
+after — `D="${URL##*/}"; D="${D%%\?*}"` — looks equivalent but reopens the hole: any
+`/`-bearing query *value* makes `##*/` grab the last slash inside the query instead of the
+path separator. `?sslrootcert=/etc/ssl/certs/ca.pem` is a standard libpq parameter, and
+under the inverted order `postgresql://localhost/nutricam?sslrootcert=/etc/ssl/certs/ca.pem`
+resolves to `ca.pem` — no denylist match, refusal silently skipped. Caught by code review
+in `scripts/pg-lab/distill.sh` (the comment cited this doc while the code inverted it).
+A regression fixture must use a `/`-bearing query value: `?sslmode=disable` passes under
+BOTH orders and cannot detect the inversion.
+
 ## Prevention
 
 Any bash script that denylists a database (or host, or any other URL component) by
@@ -95,6 +105,11 @@ see update above):
 - ~~`scripts/pg-lab/init.sh`~~ fixed
 - ~~`scripts/pg-lab/codify-neardup.sh`~~ fixed
 - ~~`scripts/pg-lab/eval-report.sh`~~ fixed
+
+**Update 2026-07-09:** `scripts/pg-lab/transcripts.sh:83` was found to still use the raw
+split (`case "${LAB_DATABASE_URL##*/}"` with no strip at all — the 2026-07-06 fix wave
+missed it); surfaced for a fix, unresolved as of this update. `scripts/pg-lab/distill.sh`
+shipped with the correct order plus a `/`-bearing-query regression fixture (PR #564).
 
 ## Related Files
 
