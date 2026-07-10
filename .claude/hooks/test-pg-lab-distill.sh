@@ -354,4 +354,16 @@ assert_contains "report: transcripts precondition hint" "$HINT" "transcripts.sh 
 assert_contains "report: solution_titles precondition hint" "$HINT" "codify-neardup.sh --rebuild"
 psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$EMPTY_DB\"" >/dev/null 2>&1
 
+# Unrecognized input must RE-PROMPT, not silently quit: pre-fix `q|*)` treated a typo or a
+# blank Enter as quit, ending a 254-candidate review after a stray keystroke (live,
+# 2026-07-10 — reviewer saw ~18 of 254). Stray 'zz' and a blank line precede a valid 'a'.
+# Runs LAST: it resets review statuses, which the report assertions above depend on.
+psql -X -q -d "$TEST_URL" -c "UPDATE harness.memory_candidates SET status='pending', reviewer_note=NULL, reviewed_at=NULL" >/dev/null
+NPEND2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
+printf 'zz\n\na\nresilient note\nq\n' | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" --review >/dev/null 2>&1
+NACC2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='accepted' AND reviewer_note='resilient note'")
+assert_eq "stray input re-prompts instead of quitting" "$NACC2" "1"
+NLEFT2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
+assert_eq "only the explicit q ends the review" "$NLEFT2" "$((NPEND2 - 1))"
+
 [ "$FAIL" -eq 0 ] && { echo "all assertions passed"; exit 0; } || exit 1

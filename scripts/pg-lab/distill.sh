@@ -310,12 +310,21 @@ SELECT E'\n--- candidate #' || id || ' [' || target_store || '/' || subtype || '
        || E'\n' || content
 FROM harness.memory_candidates WHERE id = :id;
 SQL
-    printf '[a]ccept / [d]uplicate-reject / [n]oise-reject / [s]kip / [q]uit: '
-    IFS= read -r choice || choice=q
+    # Re-prompt on anything unrecognized — a catch-all quit turned one stray keystroke
+    # (blank Enter, trailing space, typo) into a silent end of the whole review (live,
+    # 2026-07-10: reviewer saw ~18 of 254 candidates). Only an explicit q or EOF quits.
+    while :; do
+      printf '[a]ccept / [d]uplicate-reject / [n]oise-reject / [s]kip / [q]uit: '
+      IFS= read -r choice || choice=q
+      case "$choice" in
+        a|d|n|s|q) break ;;
+        *) echo "unrecognized input '$choice' — expected a, d, n, s, or q" ;;
+      esac
+    done
     case "$choice" in
       a|d|n) printf 'note (empty for none): '; IFS= read -r note || note="" ;;
       s) continue ;;
-      q|*) break ;;
+      q) break ;;
     esac
     case "$choice" in
       a) sql -v id="$cid" -v note="$note" <<'SQL'
