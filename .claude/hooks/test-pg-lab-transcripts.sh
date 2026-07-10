@@ -27,6 +27,25 @@ REFUSAL_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam" bash "$SCRIPT" 
 assert_nonzero "transcripts.sh refuses LAB_DATABASE_URL=nutricam" "$REFUSAL_RC"
 assert_contains "refusal names nutricam" "$REFUSAL_ERR" "nutricam"
 
+# Smuggling regressions (docs/solutions/logic-errors/
+# bash-suffix-split-db-name-denylist-query-string-smuggling-2026-07-06.md and
+# denylist-bypassed-by-connection-string-query-string-2026-07-06.md). Deliberately NO mode
+# argument: pre-fix these URLs sailed past the guard, and a modeless invocation exits at
+# the usage check without ever touching a database — so the discriminating assertion is
+# the distinctive refusal message, not the (vacuously nonzero) exit code.
+QS_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$SCRIPT" 2>&1 1>/dev/null); QS_RC=$?
+assert_nonzero "refuses nutricam+query-string" "$QS_RC"
+assert_contains "query-string refusal is the denylist rail, not a downstream error" "$QS_ERR" "a real app database, not a PG Lab database"
+SLQ_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam?sslrootcert=/tmp/ca.pem" bash "$SCRIPT" 2>&1 1>/dev/null); SLQ_RC=$?
+assert_nonzero "refuses nutricam+slash-bearing query value" "$SLQ_RC"
+assert_contains "slash-query refusal is the denylist rail, not a downstream error" "$SLQ_ERR" "a real app database, not a PG Lab database"
+FRAG_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutricam#anchor" bash "$SCRIPT" 2>&1 1>/dev/null); FRAG_RC=$?
+assert_nonzero "refuses nutricam+fragment" "$FRAG_RC"
+assert_contains "fragment refusal is the denylist rail, not a downstream error" "$FRAG_ERR" "a real app database, not a PG Lab database"
+PCT_ERR=$(LAB_DATABASE_URL="postgresql://localhost/nutr%69cam" bash "$SCRIPT" 2>&1 1>/dev/null); PCT_RC=$?
+assert_nonzero "refuses percent-encoded nutricam" "$PCT_RC"
+assert_contains "percent-encoding refusal is the identifier allowlist" "$PCT_ERR" "not a safe Postgres identifier"
+
 # The rest needs a live local Postgres to create a throwaway test DB. Skip (not fail) when
 # there is none — mirrors test-pg-lab-codify-neardup.sh.
 psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local Postgres reachable"; exit 0; }
