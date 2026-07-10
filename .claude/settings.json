@@ -123,6 +123,24 @@
             "statusMessage": "Checking worktree isolation..."
           }
         ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/session-coord-hook.sh consult" }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/session-coord-hook.sh consult" }
+        ]
+      },
+      {
+        "matcher": "MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/session-coord-hook.sh consult" }
+        ]
       }
     ],
     "PostToolUse": [

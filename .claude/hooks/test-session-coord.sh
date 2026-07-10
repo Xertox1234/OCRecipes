@@ -84,7 +84,7 @@ assert_empty "wrapper register silent" "$OUT"
 OUT=$(printf '{}' | bash "$WRAPPER" bogus 2>/dev/null); RC=$?
 assert_exit0 "wrapper bogus subcommand exit 0" "$RC"; assert_empty "wrapper bogus silent" "$OUT"
 # settings.json wiring present:
-for pair in "SessionStart:register" "PostToolUse:record" "SessionEnd:deregister"; do
+for pair in "SessionStart:register" "PostToolUse:record" "SessionEnd:deregister" "PreToolUse:consult"; do
   grep -q "session-coord-hook.sh ${pair#*:}" "$PROJECT_ROOT/.claude/settings.json" \
     && echo "ok: settings wires ${pair}" || { echo "FAIL: settings missing ${pair}"; FAIL=1; }
 done
