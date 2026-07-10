@@ -145,7 +145,33 @@ SQL
   if cpid=$(claude_pid); then rm -f "$(bridge_file "$cpid")" 2>/dev/null || true; fi
 }
 
-do_refresh_snapshot() { :; }   # Task 4
+do_refresh_snapshot() {
+  local sid="" lockdir snap tmp json
+  while [ $# -gt 0 ]; do case "$1" in --session) sid="${2:-}"; shift ;; esac; shift; done
+  [ -n "$sid" ] || exit 0
+  snap="/tmp/claude-session-coord-${sid}.json"
+  lockdir="/tmp/claude-session-coord-${sid}.refresh-lock"
+  # In-flight guard (spec §5.1 flock intent; mkdir because flock(1) is absent on stock
+  # macOS): losers exit silently, one refresh per burst.
+  mkdir "$lockdir" 2>/dev/null || exit 0
+  trap 'rmdir "$lockdir" 2>/dev/null' EXIT
+  do_reap
+  json=$(psql -X -qtA -d "$LAB_DATABASE_URL" -v sid="$sid" 2>/dev/null <<'SQL'
+SELECT COALESCE(json_agg(s), '[]'::json) FROM (
+  SELECT r.session_id, r.session_kind, r.branch, r.repo_root, r.last_seen_at,
+         COALESCE((SELECT json_agg(json_build_object('abs_path', f.abs_path, 'rel_path', f.rel_path))
+                   FROM harness.files_in_flight f WHERE f.session_id = r.session_id), '[]'::json) AS files
+  FROM harness.session_registry r
+  WHERE r.session_id <> :'sid' AND r.expires_at > now()
+) s;
+SQL
+  ) || exit 0
+  [ -n "$json" ] || exit 0
+  tmp="${snap}.tmp.$$"
+  printf '{"sessions":%s}\n' "$json" > "$tmp" 2>/dev/null || { rm -f "$tmp"; exit 0; }
+  jq -e '.sessions' "$tmp" >/dev/null 2>&1 || { rm -f "$tmp"; exit 0; }  # never install corrupt JSON
+  mv -f "$tmp" "$snap" 2>/dev/null || rm -f "$tmp"
+}
 do_consult() { :; }            # PR 2
 do_attribute_drift() { :; }    # PR 2
 

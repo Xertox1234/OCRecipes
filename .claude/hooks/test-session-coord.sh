@@ -133,4 +133,30 @@ NROWS=$(psql -X -qtA -d "$TEST_URL" -c "SELECT count(*) FROM harness.session_reg
 assert_eq "deregister removes the row" "$NROWS" "0"
 [ ! -f "/tmp/claude-session-coord-pid-${STUB_PID}.sid" ] && echo "ok: deregister removes bridge" || { echo "FAIL: bridge survived deregister"; FAIL=1; }
 
+# --- refresh-snapshot ------------------------------------------------------------------
+# Seed two sessions: "me" and an "other" with one in-flight file.
+psql -X -q -d "$TEST_URL" >/dev/null <<'SQL'
+DELETE FROM harness.session_registry;
+INSERT INTO harness.session_registry (session_id, repo_root, session_kind, branch) VALUES
+ ('me',    '/tmp/checkout-a', 'interactive', 'main'),
+ ('other', '/tmp/checkout-b', 'todo-executor', 'todo/foo');
+INSERT INTO harness.files_in_flight (session_id, abs_path, rel_path) VALUES
+ ('other', '/tmp/checkout-b/server/index.ts', 'server/index.ts');
+SQL
+bash "$SCRIPT" refresh-snapshot --session me >/dev/null 2>&1
+assert_exit0 "refresh-snapshot exits 0" "$?"
+SNAP="/tmp/claude-session-coord-me.json"
+N_OTHER=$(jq -r '.sessions | length' "$SNAP" 2>/dev/null)
+assert_eq "snapshot lists only OTHER sessions" "$N_OTHER" "1"
+assert_eq "snapshot session id" "$(jq -r '.sessions[0].session_id' "$SNAP")" "other"
+assert_eq "snapshot carries files" "$(jq -r '.sessions[0].files[0].rel_path' "$SNAP")" "server/index.ts"
+rm -f "$SNAP"
+
+# In-flight guard: a held lockdir makes a second refresh a silent no-op.
+mkdir "/tmp/claude-session-coord-me.refresh-lock"
+bash "$SCRIPT" refresh-snapshot --session me >/dev/null 2>&1
+assert_exit0 "guarded refresh still exits 0" "$?"
+[ ! -f "$SNAP" ] && echo "ok: guarded refresh wrote nothing" || { echo "FAIL: guard ignored"; FAIL=1; }
+rmdir "/tmp/claude-session-coord-me.refresh-lock"
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
