@@ -17,8 +17,8 @@ SCRIPT="$PROJECT_ROOT/scripts/pg-lab/git-mine.sh"
 FAIL=0
 assert_exit0()    { if [ "$2" -eq 0 ]; then echo "ok: $1"; else echo "FAIL: $1 — expected exit 0, got $2"; FAIL=1; fi; }
 assert_nonzero()  { if [ "$2" -ne 0 ]; then echo "ok: $1"; else echo "FAIL: $1 — expected non-zero exit, got 0"; FAIL=1; fi; }
-assert_contains() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
-assert_not_contains() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "FAIL: $1 — unexpectedly contains: $3"; FAIL=1; else echo "ok: $1"; fi; }
+assert_contains() { if grep -qF -- "$3" <<<"$2"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
+assert_not_contains() { if grep -qF -- "$3" <<<"$2"; then echo "FAIL: $1 — unexpectedly contains: $3"; FAIL=1; else echo "ok: $1"; fi; }
 assert_eq()       { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected $3, got $2"; FAIL=1; fi; }
 
 command -v psql >/dev/null 2>&1 || { echo "skip: psql not installed"; exit 0; }

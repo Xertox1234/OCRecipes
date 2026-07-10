@@ -45,8 +45,8 @@ git -c user.email=t@t -c user.name=t commit -q --allow-empty -m B
 SHA_B=$(git rev-parse HEAD)   # == HEAD
 
 run_case() { : > "$NPM_LOG"; printf '%s' "$1" | bash "$HOOK" 2>&1; }
-assert_contains() { if printf '%s' "$3" | grep -qF "$2"; then echo "PASS: $1"; PASS=$((PASS+1)); else echo "FAIL: $1 (missing: $2)"; printf '  got: %s\n' "$(printf '%s' "$3" | head -2)"; FAIL=$((FAIL+1)); fi; }
-assert_absent()   { if printf '%s' "$3" | grep -qF "$2"; then echo "FAIL: $1 (present: $2)"; FAIL=$((FAIL+1)); else echo "PASS: $1"; PASS=$((PASS+1)); fi; }
+assert_contains() { if grep -qF "$2" <<<"$3"; then echo "PASS: $1"; PASS=$((PASS+1)); else echo "FAIL: $1 (missing: $2)"; printf '  got: %s\n' "$(head -2 <<<"$3")"; FAIL=$((FAIL+1)); fi; }
+assert_absent()   { if grep -qF "$2" <<<"$3"; then echo "FAIL: $1 (present: $2)"; FAIL=$((FAIL+1)); else echo "PASS: $1"; PASS=$((PASS+1)); fi; }
 assert_npm_empty(){ if [ ! -s "$NPM_LOG" ]; then echo "PASS: $1"; PASS=$((PASS+1)); else echo "FAIL: $1 (npm ran: $(cat "$NPM_LOG"))"; FAIL=$((FAIL+1)); fi; }
 assert_npm_line() { if grep -qx "$2" "$NPM_LOG"; then echo "PASS: $1"; PASS=$((PASS+1)); else echo "FAIL: $1 (npm log: $(cat "$NPM_LOG"))"; FAIL=$((FAIL+1)); fi; }
 

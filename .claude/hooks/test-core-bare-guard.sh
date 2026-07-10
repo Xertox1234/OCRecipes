@@ -37,7 +37,7 @@ OUT=$(run_hook "git status")
 [ "$(git config --bool core.bare)" = "false" ] \
   && { echo "PASS: core.bare reset to false"; PASS=$((PASS+1)); } \
   || { echo "FAIL: core.bare not reset"; FAIL=$((FAIL+1)); }
-printf '%s' "$OUT" | grep -q "Auto-corrected core.bare" \
+grep -q "Auto-corrected core.bare" <<<"$OUT" \
   && { echo "PASS: emits correction note"; PASS=$((PASS+1)); } \
   || { echo "FAIL: no correction note"; FAIL=$((FAIL+1)); }
 
