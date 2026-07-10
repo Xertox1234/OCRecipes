@@ -62,6 +62,26 @@ rm -rf "$TMPD"
 SID_RC=$( (. "$PSWALK"; resolve_claude_pid() { echo 424242; }; resolve_session_id >/dev/null 2>&1; echo $?) )
 assert_eq "ps-walk: missing bridge -> rc 1" "$SID_RC" "1"
 
+# --- hook wrapper (no DB needed) -------------------------------------------------------
+WRAPPER="$PROJECT_ROOT/.claude/hooks/session-coord-hook.sh"
+[ -f "$WRAPPER" ] || { echo "FAIL: session-coord-hook.sh missing"; FAIL=1; }
+# Write-path calls must return immediately (<2s even though the child sleeps via an
+# unreachable "DB" that has PGCONNECT_TIMEOUT=2), silently, exit 0.
+START=$(date +%s)
+OUT=$(printf '{"session_id":"w1","cwd":"/tmp"}' | LAB_DATABASE_URL="postgresql://10.255.255.1/lab" bash "$WRAPPER" register 2>/dev/null); RC=$?
+ELAPSED=$(( $(date +%s) - START ))
+assert_exit0 "wrapper register exit 0" "$RC"
+assert_empty "wrapper register silent" "$OUT"
+[ "$ELAPSED" -le 1 ] && echo "ok: wrapper backgrounds (returned in ${ELAPSED}s)" || { echo "FAIL: wrapper blocked ${ELAPSED}s"; FAIL=1; }
+# Unknown subcommand: silent no-op.
+OUT=$(printf '{}' | bash "$WRAPPER" bogus 2>/dev/null); RC=$?
+assert_exit0 "wrapper bogus subcommand exit 0" "$RC"; assert_empty "wrapper bogus silent" "$OUT"
+# settings.json wiring present:
+for pair in "SessionStart:register" "PostToolUse:record" "SessionEnd:deregister"; do
+  grep -q "session-coord-hook.sh ${pair#*:}" "$PROJECT_ROOT/.claude/settings.json" \
+    && echo "ok: settings wires ${pair}" || { echo "FAIL: settings missing ${pair}"; FAIL=1; }
+done
+
 psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local Postgres reachable"; exit 0; }
 
 TEST_DB="pg_lab_session_coord_test_$$"
