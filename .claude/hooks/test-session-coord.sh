@@ -18,6 +18,34 @@ assert_eq()       { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 
 
 command -v psql >/dev/null 2>&1 || { echo "skip: psql not installed"; exit 0; }
 command -v jq   >/dev/null 2>&1 || { echo "skip: jq not installed"; exit 0; }
+
+# --- lib/ps-walk.sh (no DB needed) ---------------------------------------------------
+PSWALK="$PROJECT_ROOT/scripts/pg-lab/lib/ps-walk.sh"
+[ -f "$PSWALK" ] || { echo "FAIL: lib/ps-walk.sh missing"; FAIL=1; }
+
+# resolve_claude_pid: walking from a shell with no claude ancestor must rc-1 quietly.
+# (CI runners have no `claude` process; locally the test still passes because we start
+# the walk from a detached `sleep` whose ancestry tops out at the test shell.)
+WALK_OUT=$( (. "$PSWALK" && resolve_claude_pid 1) 2>&1 ); WALK_RC=$?
+assert_eq "ps-walk: pid 1 has no claude ancestor -> rc 1" "$WALK_RC" "1"
+assert_empty "ps-walk: failure prints nothing" "$WALK_OUT"
+
+# bridge round-trip: bridge_file is a pure path function; resolve_session_id reads it.
+FAKE_PID=99999999
+BRIDGE=$( (. "$PSWALK" && bridge_file "$FAKE_PID") )
+assert_eq "ps-walk: bridge_file path shape" "$BRIDGE" "/tmp/claude-session-coord-pid-${FAKE_PID}.sid"
+
+# resolve_session_id with a stubbed resolve_claude_pid: overriding the function after
+# sourcing proves resolve_session_id composes the two helpers rather than re-walking.
+SID_OUT=$( (
+  . "$PSWALK"
+  resolve_claude_pid() { echo "$FAKE_PID"; }
+  printf 'sess-bridge-test' > "/tmp/claude-session-coord-pid-${FAKE_PID}.sid"
+  resolve_session_id
+  rm -f "/tmp/claude-session-coord-pid-${FAKE_PID}.sid"
+) )
+assert_eq "ps-walk: resolve_session_id reads the bridge" "$SID_OUT" "sess-bridge-test"
+
 psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local Postgres reachable"; exit 0; }
 
 TEST_DB="pg_lab_session_coord_test_$$"
