@@ -17,6 +17,8 @@ case "$SUB" in
     printf '%s' "$INPUT" | bash "$SCRIPT" consult --stdin-json
     ;;
   register|record|deregister)
+    # --stdin-json is only meaningful to register's CLI/hook-mode branch; record and
+    # deregister always read stdin unconditionally and ignore the flag entirely.
     printf '%s' "$INPUT" | bash "$SCRIPT" "$SUB" --stdin-json >/dev/null 2>&1 &
     ;;
 esac

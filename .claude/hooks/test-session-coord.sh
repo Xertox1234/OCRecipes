@@ -19,6 +19,14 @@ assert_eq()       { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 
 command -v psql >/dev/null 2>&1 || { echo "skip: psql not installed"; exit 0; }
 command -v jq   >/dev/null 2>&1 || { echo "skip: jq not installed"; exit 0; }
 
+# Test-fixture identifiers, $$-scoped so two suite runs executing concurrently on one
+# machine (parallel preflights do happen) never collide on shared /tmp paths or DB pids.
+STUB_PID=$((80000000 + $$))
+FAKE_PID=$((90000000 + $$))
+STUB_PID_B=$((70000000 + $$))
+MYSID="me-$$"
+OTHERSID="other-$$"
+
 # --- lib/ps-walk.sh (no DB needed) ---------------------------------------------------
 PSWALK="$PROJECT_ROOT/scripts/pg-lab/lib/ps-walk.sh"
 [ -f "$PSWALK" ] || { echo "FAIL: lib/ps-walk.sh missing"; FAIL=1; }
@@ -30,7 +38,6 @@ assert_eq "ps-walk: pid 1 has no claude ancestor -> rc 1" "$WALK_RC" "1"
 assert_empty "ps-walk: failure prints nothing" "$WALK_OUT"
 
 # bridge round-trip: bridge_file is a pure path function; resolve_session_id reads it.
-FAKE_PID=99999999
 BRIDGE=$( (. "$PSWALK" && bridge_file "$FAKE_PID") )
 assert_eq "ps-walk: bridge_file path shape" "$BRIDGE" "/tmp/claude-session-coord-pid-${FAKE_PID}.sid"
 
@@ -68,7 +75,7 @@ WRAPPER="$PROJECT_ROOT/.claude/hooks/session-coord-hook.sh"
 # Write-path calls must return immediately (<2s even though the child sleeps via an
 # unreachable "DB" that has PGCONNECT_TIMEOUT=2), silently, exit 0.
 START=$(date +%s)
-OUT=$(printf '{"session_id":"w1","cwd":"/tmp"}' | LAB_DATABASE_URL="postgresql://10.255.255.1/lab" bash "$WRAPPER" register 2>/dev/null); RC=$?
+OUT=$(printf '{"session_id":"w1","cwd":"/tmp"}' | SESSION_COORD_CLAUDE_PID="$STUB_PID_B" LAB_DATABASE_URL="postgresql://10.255.255.1/lab" bash "$WRAPPER" register 2>/dev/null); RC=$?
 ELAPSED=$(( $(date +%s) - START ))
 assert_exit0 "wrapper register exit 0" "$RC"
 assert_empty "wrapper register silent" "$OUT"
@@ -82,11 +89,18 @@ for pair in "SessionStart:register" "PostToolUse:record" "SessionEnd:deregister"
     && echo "ok: settings wires ${pair}" || { echo "FAIL: settings missing ${pair}"; FAIL=1; }
 done
 
+# Fail-silent + denylist (no live DB needed for these two — only the psql binary, which
+# CI has — so they run ahead of the live-Postgres gate for CI coverage).
+OUT=$(printf '{"session_id":"s1","cwd":"%s"}' "$PROJECT_ROOT" | SESSION_COORD_CLAUDE_PID="$STUB_PID_B" LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" bash "$SCRIPT" register --stdin-json 2>/dev/null); RC=$?
+assert_exit0 "register vs unreachable DB -> exit 0" "$RC"; assert_empty "register vs unreachable DB -> silent" "$OUT"
+ERR=$(printf '{}' | SESSION_COORD_CLAUDE_PID="$STUB_PID_B" LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$SCRIPT" register --stdin-json 2>&1 1>/dev/null); RC=$?
+assert_exit0 "denylist refusal still exit 0" "$RC"; assert_contains "denylist names nutricam" "$ERR" "nutricam"
+
 psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local Postgres reachable"; exit 0; }
 
 TEST_DB="pg_lab_session_coord_test_$$"
 TEST_URL="postgresql://localhost/$TEST_DB"
-cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; rm -f /tmp/claude-session-coord-pid-77777777.sid /tmp/claude-session-coord-pid-88888888.sid 2>/dev/null; rmdir /tmp/claude-session-coord-me.refresh-lock 2>/dev/null; }
+cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; rm -f "/tmp/claude-session-coord-pid-${STUB_PID_B}.sid" "/tmp/claude-session-coord-pid-${STUB_PID}.sid" 2>/dev/null; rmdir "/tmp/claude-session-coord-${MYSID}.refresh-lock" 2>/dev/null; }
 trap cleanup EXIT
 
 LAB_DATABASE_URL="$TEST_URL" bash "$INIT" >/dev/null 2>&1
@@ -102,14 +116,7 @@ COLS=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM information_schema
 export LAB_DATABASE_URL="$TEST_URL"
 REPO_ROOT_NOW=$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel)
 
-# Fail-silent + denylist (no live DB needed for these two, but grouped here for flow):
-OUT=$(printf '{"session_id":"s1","cwd":"%s"}' "$PROJECT_ROOT" | SESSION_COORD_CLAUDE_PID=77777777 LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" bash "$SCRIPT" register --stdin-json 2>/dev/null); RC=$?
-assert_exit0 "register vs unreachable DB -> exit 0" "$RC"; assert_empty "register vs unreachable DB -> silent" "$OUT"
-ERR=$(printf '{}' | SESSION_COORD_CLAUDE_PID=77777777 LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$SCRIPT" register --stdin-json 2>&1 1>/dev/null); RC=$?
-assert_exit0 "denylist refusal still exit 0" "$RC"; assert_contains "denylist names nutricam" "$ERR" "nutricam"
-
 # register (hook mode): upserts row + writes bridge for a stubbed claude pid.
-STUB_PID=88888888
 printf '{"session_id":"sess-reg","cwd":"%s"}' "$PROJECT_ROOT" \
   | SESSION_COORD_CLAUDE_PID="$STUB_PID" bash "$SCRIPT" register --stdin-json >/dev/null 2>&1
 assert_exit0 "register hook-mode exits 0" "$?"
@@ -154,30 +161,30 @@ assert_eq "deregister removes the row" "$NROWS" "0"
 [ ! -f "/tmp/claude-session-coord-pid-${STUB_PID}.sid" ] && echo "ok: deregister removes bridge" || { echo "FAIL: bridge survived deregister"; FAIL=1; }
 
 # --- refresh-snapshot ------------------------------------------------------------------
-# Seed two sessions: "me" and an "other" with one in-flight file.
-psql -X -q -d "$TEST_URL" >/dev/null <<'SQL'
+# Seed two sessions: $MYSID and an $OTHERSID with one in-flight file.
+psql -X -q -d "$TEST_URL" >/dev/null <<SQL
 DELETE FROM harness.session_registry;
 INSERT INTO harness.session_registry (session_id, repo_root, session_kind, branch) VALUES
- ('me',    '/tmp/checkout-a', 'interactive', 'main'),
- ('other', '/tmp/checkout-b', 'todo-executor', 'todo/foo');
+ ('$MYSID',    '/tmp/checkout-a', 'interactive', 'main'),
+ ('$OTHERSID', '/tmp/checkout-b', 'todo-executor', 'todo/foo');
 INSERT INTO harness.files_in_flight (session_id, abs_path, rel_path) VALUES
- ('other', '/tmp/checkout-b/server/index.ts', 'server/index.ts');
+ ('$OTHERSID', '/tmp/checkout-b/server/index.ts', 'server/index.ts');
 SQL
-bash "$SCRIPT" refresh-snapshot --session me >/dev/null 2>&1
+bash "$SCRIPT" refresh-snapshot --session "$MYSID" >/dev/null 2>&1
 assert_exit0 "refresh-snapshot exits 0" "$?"
-SNAP="/tmp/claude-session-coord-me.json"
+SNAP="/tmp/claude-session-coord-${MYSID}.json"
 N_OTHER=$(jq -r '.sessions | length' "$SNAP" 2>/dev/null)
 assert_eq "snapshot lists only OTHER sessions" "$N_OTHER" "1"
-assert_eq "snapshot session id" "$(jq -r '.sessions[0].session_id' "$SNAP")" "other"
+assert_eq "snapshot session id" "$(jq -r '.sessions[0].session_id' "$SNAP")" "$OTHERSID"
 assert_eq "snapshot carries files" "$(jq -r '.sessions[0].files[0].rel_path' "$SNAP")" "server/index.ts"
 rm -f "$SNAP"
-[ ! -d "/tmp/claude-session-coord-me.refresh-lock" ] && echo "ok: refresh released its lockdir" || { echo "FAIL: lockdir leaked after successful refresh"; FAIL=1; }
+[ ! -d "/tmp/claude-session-coord-${MYSID}.refresh-lock" ] && echo "ok: refresh released its lockdir" || { echo "FAIL: lockdir leaked after successful refresh"; FAIL=1; }
 
 # In-flight guard: a held lockdir makes a second refresh a silent no-op.
-mkdir "/tmp/claude-session-coord-me.refresh-lock"
-bash "$SCRIPT" refresh-snapshot --session me >/dev/null 2>&1
+mkdir "/tmp/claude-session-coord-${MYSID}.refresh-lock"
+bash "$SCRIPT" refresh-snapshot --session "$MYSID" >/dev/null 2>&1
 assert_exit0 "guarded refresh still exits 0" "$?"
 [ ! -f "$SNAP" ] && echo "ok: guarded refresh wrote nothing" || { echo "FAIL: guard ignored"; FAIL=1; }
-rmdir "/tmp/claude-session-coord-me.refresh-lock"
+rmdir "/tmp/claude-session-coord-${MYSID}.refresh-lock"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
