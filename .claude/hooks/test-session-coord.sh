@@ -66,7 +66,7 @@ psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local P
 
 TEST_DB="pg_lab_session_coord_test_$$"
 TEST_URL="postgresql://localhost/$TEST_DB"
-cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; }
+cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; rm -f /tmp/claude-session-coord-pid-77777777.sid /tmp/claude-session-coord-pid-88888888.sid 2>/dev/null; }
 trap cleanup EXIT
 
 LAB_DATABASE_URL="$TEST_URL" bash "$INIT" >/dev/null 2>&1
@@ -83,9 +83,9 @@ export LAB_DATABASE_URL="$TEST_URL"
 REPO_ROOT_NOW=$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel)
 
 # Fail-silent + denylist (no live DB needed for these two, but grouped here for flow):
-OUT=$(printf '{"session_id":"s1","cwd":"%s"}' "$PROJECT_ROOT" | LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" bash "$SCRIPT" register --stdin-json 2>/dev/null); RC=$?
+OUT=$(printf '{"session_id":"s1","cwd":"%s"}' "$PROJECT_ROOT" | SESSION_COORD_CLAUDE_PID=77777777 LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" bash "$SCRIPT" register --stdin-json 2>/dev/null); RC=$?
 assert_exit0 "register vs unreachable DB -> exit 0" "$RC"; assert_empty "register vs unreachable DB -> silent" "$OUT"
-ERR=$(printf '{}' | LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$SCRIPT" register --stdin-json 2>&1 1>/dev/null); RC=$?
+ERR=$(printf '{}' | SESSION_COORD_CLAUDE_PID=77777777 LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$SCRIPT" register --stdin-json 2>&1 1>/dev/null); RC=$?
 assert_exit0 "denylist refusal still exit 0" "$RC"; assert_contains "denylist names nutricam" "$ERR" "nutricam"
 
 # register (hook mode): upserts row + writes bridge for a stubbed claude pid.
