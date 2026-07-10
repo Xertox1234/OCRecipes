@@ -24,8 +24,7 @@ PSWALK="$PROJECT_ROOT/scripts/pg-lab/lib/ps-walk.sh"
 [ -f "$PSWALK" ] || { echo "FAIL: lib/ps-walk.sh missing"; FAIL=1; }
 
 # resolve_claude_pid: walking from a shell with no claude ancestor must rc-1 quietly.
-# (CI runners have no `claude` process; locally the test still passes because we start
-# the walk from a detached `sleep` whose ancestry tops out at the test shell.)
+# (CI runners have no claude process; pid 1's guard stops the walk before any ps call.)
 WALK_OUT=$( (. "$PSWALK" && resolve_claude_pid 1) 2>&1 ); WALK_RC=$?
 assert_eq "ps-walk: pid 1 has no claude ancestor -> rc 1" "$WALK_RC" "1"
 assert_empty "ps-walk: failure prints nothing" "$WALK_OUT"
@@ -45,6 +44,23 @@ SID_OUT=$( (
   rm -f "/tmp/claude-session-coord-pid-${FAKE_PID}.sid"
 ) )
 assert_eq "ps-walk: resolve_session_id reads the bridge" "$SID_OUT" "sess-bridge-test"
+
+# Positive walk: a real ancestor whose argv ends in "/claude" (no trailing args — the
+# launcher shape the argv fallback must catch) is found from a grandchild shell.
+TMPD=$(mktemp -d /tmp/pswalk-test-XXXXXX)
+cat > "$TMPD/claude" <<EOF
+#!/usr/bin/env bash
+echo \$\$ > "$TMPD/expected-pid"
+bash -c '. "$PSWALK" && resolve_claude_pid' > "$TMPD/walk-out" 2>/dev/null
+EOF
+chmod +x "$TMPD/claude"
+"$TMPD/claude"
+assert_eq "ps-walk: walk finds no-args claude ancestor" "$(cat "$TMPD/walk-out" 2>/dev/null)" "$(cat "$TMPD/expected-pid" 2>/dev/null)"
+rm -rf "$TMPD"
+
+# resolve_session_id with NO bridge file -> rc 1, silent.
+SID_RC=$( (. "$PSWALK"; resolve_claude_pid() { echo 424242; }; resolve_session_id >/dev/null 2>&1; echo $?) )
+assert_eq "ps-walk: missing bridge -> rc 1" "$SID_RC" "1"
 
 psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local Postgres reachable"; exit 0; }
 

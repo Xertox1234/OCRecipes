@@ -21,7 +21,7 @@ resolve_claude_pid() {
     case "${comm##*/}" in claude) printf '%s\n' "$pid"; return 0 ;; esac
     args=$(ps -o command= -p "$pid" 2>/dev/null) || return 1
     case " $args" in
-      *" claude") printf '%s\n' "$pid"; return 0 ;;
+      *" claude"|*"/claude") printf '%s\n' "$pid"; return 0 ;;
       *"/claude "*|*" claude "*) printf '%s\n' "$pid"; return 0 ;;
     esac
     pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]') || return 1
@@ -37,5 +37,5 @@ resolve_session_id() {
   cpid=$(resolve_claude_pid) || return 1
   f=$(bridge_file "$cpid")
   [ -r "$f" ] || return 1
-  cat "$f"
+  cat "$f" 2>/dev/null
 }
