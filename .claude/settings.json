@@ -36,6 +36,11 @@
             "timeout": 20
           }
         ]
+      },
+      {
+        "hooks": [
+          { "type": "command", "command": "bash .claude/hooks/session-coord-hook.sh register" }
+        ]
       }
     ],
     "PreToolUse": [
@@ -156,9 +161,13 @@
             "command": "bash .claude/hooks/eslint-fix.sh",
             "timeout": 60,
             "statusMessage": "eslint --fix on changed file..."
-          }
+          },
+          { "type": "command", "command": "bash .claude/hooks/session-coord-hook.sh record" }
         ]
       }
+    ],
+    "SessionEnd": [
+      { "matcher": "*", "hooks": [ { "type": "command", "command": "bash .claude/hooks/session-coord-hook.sh deregister" } ] }
     ]
   }
 }
