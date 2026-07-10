@@ -141,6 +141,17 @@ OUT=$(python3 "$GATE" "$GFIX/ratio.txt" "$GFIX/ratio.out")
 assert_eq "gate: ratio breach gated" "$(json_field "$OUT" verdict)" "gated"
 assert_eq "gate: ratio class" "$(json_field "$OUT" class)" "volume_guard_ratio"
 
+# Layer 2 — a long single-line PROSE message must not read as a pasted-data run: the
+# assembly prefix `[#uuid] user:` starts with '[', which the JSONISH start-anchor matched,
+# so any >=2000-char one-line message falsely tripped volume_guard_absolute (found live
+# 2026-07-09 via the csv-field-limit fixture).
+python3 - "$GFIX/longprose.txt" <<'PY'
+import sys
+open(sys.argv[1], "w").write("[#u-1] user: " + "we discussed the navigation architecture at length " * 50 + "\n\n[#a-1] assistant: agreed, that tradeoff holds.\n")
+PY
+OUT=$(python3 "$GATE" "$GFIX/longprose.txt" "$GFIX/longprose.out")
+assert_eq "gate: long single-line prose message passes" "$(json_field "$OUT" verdict)" "sent"
+
 # Layer 2 — small pasted snippet (<500-char run) in normal dialogue passes
 python3 - "$GFIX/small.txt" <<'PY'
 import sys
@@ -269,6 +280,15 @@ assert_nonzero "cost cap refusal" "$RC"
 assert_contains "cap message names the cap" "$CAPOUT" "cap"
 psql -X -q -d "$TEST_URL" -c "DELETE FROM harness.distill_runs WHERE tokens_in = 20000000000" >/dev/null
 
+# A single message larger than Python's csv default 128 KiB field limit must not crash
+# assemble_session (csv.field_size_limit fix) — real transcripts contain >131072-char
+# messages; pre-fix this aborted the whole run mid-window (2026-07-09, live run, 73/88).
+psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" -c "INSERT INTO harness.transcript_messages (msg_uuid, session_id, project_dir, ts, role, content) SELECT 'big-1','bigfield-session','fx','2026-07-07T10:00:00Z','user', repeat('ordinary architecture discussion ', 5000)" >/dev/null
+BIGOUT=$(LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$STUB" bash "$SCRIPT" --window 2026-07-07 2026-07-07 2>&1); RC=$?
+assert_exit0 "oversized-field session does not crash --window" "$RC"
+BF=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT outcome FROM harness.distilled_sessions WHERE session_id='bigfield-session'")
+assert_eq "oversized-field session sent" "$BF" "sent"
+
 # Near-dup: seed the solutions projection with a very similar title; re-run a fresh session
 psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" -f "$PROJECT_ROOT/scripts/pg-lab/schema/codify-neardup.sql" >/dev/null
 psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" >/dev/null <<'SQL'
@@ -333,5 +353,17 @@ HINT=$(LAB_DATABASE_URL="postgresql://localhost/$EMPTY_DB" bash "$SCRIPT" --repo
 assert_contains "report: transcripts precondition hint" "$HINT" "transcripts.sh --import"
 assert_contains "report: solution_titles precondition hint" "$HINT" "codify-neardup.sh --rebuild"
 psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$EMPTY_DB\"" >/dev/null 2>&1
+
+# Unrecognized input must RE-PROMPT, not silently quit: pre-fix `q|*)` treated a typo or a
+# blank Enter as quit, ending a 254-candidate review after a stray keystroke (live,
+# 2026-07-10 — reviewer saw ~18 of 254). Stray 'zz' and a blank line precede a valid 'a'.
+# Runs LAST: it resets review statuses, which the report assertions above depend on.
+psql -X -q -d "$TEST_URL" -c "UPDATE harness.memory_candidates SET status='pending', reviewer_note=NULL, reviewed_at=NULL" >/dev/null
+NPEND2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
+printf 'zz\n\na\nresilient note\nq\n' | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" --review >/dev/null 2>&1
+NACC2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='accepted' AND reviewer_note='resilient note'")
+assert_eq "stray input re-prompts instead of quitting" "$NACC2" "1"
+NLEFT2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
+assert_eq "only the explicit q ends the review" "$NLEFT2" "$((NPEND2 - 1))"
 
 [ "$FAIL" -eq 0 ] && { echo "all assertions passed"; exit 0; } || exit 1
