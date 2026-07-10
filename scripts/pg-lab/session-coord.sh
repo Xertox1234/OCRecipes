@@ -146,11 +146,11 @@ SQL
 }
 
 do_refresh_snapshot() {
-  local sid="" lockdir snap tmp json
+  local sid="" snap tmp json
   while [ $# -gt 0 ]; do case "$1" in --session) sid="${2:-}"; shift ;; esac; shift; done
   [ -n "$sid" ] || exit 0
   snap="/tmp/claude-session-coord-${sid}.json"
-  lockdir="/tmp/claude-session-coord-${sid}.refresh-lock"
+  lockdir="/tmp/claude-session-coord-${sid}.refresh-lock"  # script-scope, not local: the EXIT trap fires after this function returns
   # In-flight guard (spec §5.1 flock intent; mkdir because flock(1) is absent on stock
   # macOS): losers exit silently, one refresh per burst.
   mkdir "$lockdir" 2>/dev/null || exit 0

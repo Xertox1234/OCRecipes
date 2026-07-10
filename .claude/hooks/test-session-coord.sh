@@ -66,7 +66,7 @@ psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local P
 
 TEST_DB="pg_lab_session_coord_test_$$"
 TEST_URL="postgresql://localhost/$TEST_DB"
-cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; rm -f /tmp/claude-session-coord-pid-77777777.sid /tmp/claude-session-coord-pid-88888888.sid 2>/dev/null; }
+cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; rm -f /tmp/claude-session-coord-pid-77777777.sid /tmp/claude-session-coord-pid-88888888.sid 2>/dev/null; rmdir /tmp/claude-session-coord-me.refresh-lock 2>/dev/null; }
 trap cleanup EXIT
 
 LAB_DATABASE_URL="$TEST_URL" bash "$INIT" >/dev/null 2>&1
@@ -151,6 +151,7 @@ assert_eq "snapshot lists only OTHER sessions" "$N_OTHER" "1"
 assert_eq "snapshot session id" "$(jq -r '.sessions[0].session_id' "$SNAP")" "other"
 assert_eq "snapshot carries files" "$(jq -r '.sessions[0].files[0].rel_path' "$SNAP")" "server/index.ts"
 rm -f "$SNAP"
+[ ! -d "/tmp/claude-session-coord-me.refresh-lock" ] && echo "ok: refresh released its lockdir" || { echo "FAIL: lockdir leaked after successful refresh"; FAIL=1; }
 
 # In-flight guard: a held lockdir makes a second refresh a silent no-op.
 mkdir "/tmp/claude-session-coord-me.refresh-lock"
