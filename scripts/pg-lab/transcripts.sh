@@ -79,13 +79,27 @@ if ! [[ "$FUZZY_THRESHOLD" =~ ^[0-9]*\.?[0-9]+$ ]]; then
 fi
 
 # Hard safety rail: this script must never point at a real app database (see init.sh /
-# codify-neardup.sh for the identical guard).
-case "${LAB_DATABASE_URL##*/}" in
+# codify-neardup.sh for the identical guard). Strip query string / fragment BEFORE the
+# last-path-segment split — a raw `${VAR##*/}` split alone lets `nutricam?sslmode=require`
+# (or any '/'-bearing query value, e.g. `?sslrootcert=/path/ca.pem`) smuggle a denylisted
+# name past the case match, while psql parses the full URI and connects to the real
+# database anyway (docs/solutions/logic-errors/
+# bash-suffix-split-db-name-denylist-query-string-smuggling-2026-07-06.md).
+LAB_DB_PATH="${LAB_DATABASE_URL%%\?*}"
+LAB_DB_PATH="${LAB_DB_PATH%%\#*}"
+case "${LAB_DB_PATH##*/}" in
   nutricam | ocrecipes_solutions)
-    echo "transcripts.sh: refusing — LAB_DATABASE_URL resolves to '${LAB_DATABASE_URL##*/}', a real app database, not a PG Lab database" >&2
+    echo "transcripts.sh: refusing — LAB_DATABASE_URL resolves to '${LAB_DB_PATH##*/}', a real app database, not a PG Lab database" >&2
     exit 1
     ;;
 esac
+# Defense-in-depth (matches init.sh / injection-report.sh): percent-encoding defeats the
+# exact-match denylist (libpq decodes `nutr%69cam` to nutricam) but is still not a safe
+# bare identifier, so this allowlist catches it too.
+if ! [[ "${LAB_DB_PATH##*/}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  echo "transcripts.sh: refusing — '${LAB_DB_PATH##*/}' (derived from LAB_DATABASE_URL) is not a safe Postgres identifier" >&2
+  exit 1
+fi
 
 command -v psql >/dev/null 2>&1 || { echo "transcripts.sh: psql not found on PATH" >&2; exit 1; }
 
