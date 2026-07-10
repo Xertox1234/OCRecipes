@@ -44,10 +44,18 @@ in PR #566. Key learnings to design against:
       (memory files / `docs/solutions/` via existing conventions) or explicit discard —
       then drop the three `harness.memory_candidates`/`distill_runs`/`distilled_sessions`
       tables per the experiment-scoped rail. _(Done 2026-07-10 — see Updates.)_
+- [ ] Recreate the session bookmark before any future run: `harness.distilled_sessions`
+      (the at-most-once send guarantee) was dropped with the experiment tables on
+      2026-07-10, so a fresh run currently has NO memory of what was sent and would
+      re-send (and re-bill) the entire window. Recreate the table — or an equivalent
+      durable bookmark — as part of the production schema, and make `distill.sh` fail
+      loudly if it is absent rather than silently re-sending.
 - [ ] Candidate-volume control designed and implemented: some combination of a stricter
       prompt (fewer, higher-bar candidates), a hard per-session candidate cap, and/or
       pre-ranking so review sees the best N first. Target: ≤ 1 candidate/session average
-      on a comparable window.
+      on a comparable window. Triage evidence (2026-07-10): ~9% survival vs canon and
+      near-zero near-dup catch rate on 118 conceptual duplicates — include a canon-aware
+      semantic dedup pass, not just a stricter generation prompt.
 - [ ] Review UX: `--review` gains a progress indicator (`#k of N`) so an interrupted
       session is visible (the silent-early-quit incident of 2026-07-10 motivates this).
 - [ ] Cadence decision AFTER volume control proves out: manual `--window` per fortnight vs
@@ -78,6 +86,9 @@ in PR #566. Key learnings to design against:
 
 - Filed per the experiment's Keep criterion (spec: "file a follow-up todo for
   productionizing — possible cron, review-queue UX").
+- Added the bookmark-recreation AC: dropping the experiment tables also deleted
+  `harness.distilled_sessions`, so the idempotent-resume guarantee is gone until
+  productionization recreates it.
 - **Triage AC complete** (same day). 4 parallel classifier agents checked all 251
   accepted candidates against docs/solutions (615 files), the memory dir, and
   CLAUDE.md/docs/rules. Outcome: 118 already covered, 73 ephemeral, 34 other-project
