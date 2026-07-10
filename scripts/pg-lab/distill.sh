@@ -90,6 +90,9 @@ COPY (SELECT msg_uuid, role, content FROM harness.transcript_messages WHERE sess
 SQL
   python3 - "$rows" "$buf" "$MAX_BUFFER_CHARS" <<'PYEOF'
 import csv, sys
+# Real transcript messages exceed csv's default 128 KiB field limit (found live: a
+# >131072-char content field aborted the run at session 74/88, 2026-07-09).
+csv.field_size_limit(sys.maxsize)
 rows_path, buf_path, cap = sys.argv[1], sys.argv[2], int(sys.argv[3])
 out, size = [], 0
 with open(rows_path, newline="", encoding="utf-8") as f:

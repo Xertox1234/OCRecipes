@@ -136,9 +136,16 @@ RATIO_MAX = 0.30
 _BASE64_LINE = re.compile(r"^[A-Za-z0-9+/=]{60,}$")
 _TABLE_SEP = re.compile(r"^[-+| ]+$")
 _JSONISH = re.compile(r'^\s*[\[{]|"[A-Za-z_]+"\s*:')
+# The assembly format prefixes each message's FIRST line with `[#uuid] role: ` — which
+# starts with '[' and therefore matches _JSONISH's start anchor. Strip it before
+# classifying, or any >=2000-char one-line prose message falsely trips
+# volume_guard_absolute (found live 2026-07-09). A pasted JSON object after the prefix
+# still matches post-strip.
+_MSG_PREFIX = re.compile(r"^\[#[^\]\s]+\] (?:user|assistant): ")
 
 
 def _is_data_line(line):
+    line = _MSG_PREFIX.sub("", line)
     s = line.strip()
     if not s:
         return False
