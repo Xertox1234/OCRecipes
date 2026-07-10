@@ -3,10 +3,10 @@
 ---
 
 title: "test-pg-lab-transcripts.sh assert helpers can flake under pipefail (printf | grep -q EPIPE)"
-status: backlog
+status: done
 priority: low
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-10
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -34,10 +34,10 @@ outputs make the race more likely, not less.
 
 ## Acceptance Criteria
 
-- [ ] `assert_contains` (and any `assert_not_contains`) in `test-pg-lab-transcripts.sh` no
+- [x] `assert_contains` (and any `assert_not_contains`) in `test-pg-lab-transcripts.sh` no
       longer pipes `printf` into `grep -q` (herestring or pure-bash `case` match instead)
-- [ ] Full test file passes: `bash .claude/hooks/test-pg-lab-transcripts.sh`
-- [ ] Grep the other `.claude/hooks/test-*.sh` files for the same `printf ... | grep -q`
+- [x] Full test file passes: `bash .claude/hooks/test-pg-lab-transcripts.sh`
+- [x] Grep the other `.claude/hooks/test-*.sh` files for the same `printf ... | grep -q`
       pattern under pipefail and fix any other instances in the same PR
 
 ## Implementation Notes
@@ -62,3 +62,12 @@ outputs make the race more likely, not less.
 ### 2026-07-09
 
 - Initial creation (observed live in the distill test during pg-lab/episodic-distillation work; fixed there, sibling left for this todo).
+
+### 2026-07-10 — DONE
+
+- Sweep found the pattern far wider than assumed: 26 instances across 17 hook-test files
+  (shared copied preamble), all under pipefail. All converted to herestrings in one
+  mechanical pass (scripted regex transform, 25 lines swapped 1:1, zero residual matches),
+  including two non-standard shapes: the `&&`/`||` continuation form in
+  test-core-bare-guard.sh and the `$(printf | head -2)` consumer-kills-producer diagnostic
+  in test-pre-push.sh. Full hook self-test suite green (25/25).

@@ -29,7 +29,7 @@ run_hook() {
 
 assert_deny() {
   local name="$1" out="$2"
-  if printf '%s' "$out" | grep -q '"permissionDecision": "deny"'; then
+  if grep -q '"permissionDecision": "deny"' <<<"$out"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected deny)"
@@ -71,7 +71,7 @@ assert_silent "commit on main is allowed" "$OUT"
 git -C "$REPO" checkout --detach HEAD -q 2>/dev/null
 OUT=$(run_hook "git commit -m 'oops'")
 assert_deny "commit on detached HEAD is denied" "$OUT"
-if printf '%s' "$OUT" | grep -qi "detached"; then
+if grep -qi "detached" <<<"$OUT"; then
   echo "PASS: deny message mentions detached HEAD"; PASS=$((PASS+1))
 else
   echo "FAIL: deny message should mention detached HEAD"

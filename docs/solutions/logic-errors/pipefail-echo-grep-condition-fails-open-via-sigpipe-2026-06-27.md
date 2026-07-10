@@ -124,7 +124,7 @@ the whole string before grep runs, so there is no writer left to break.
 - `.github/workflows/mutation-non-excluded.yml` — change-detection step (here-string form)
 - `.github/workflows/mutation-goal-safety.yml` — same change-detection pattern, same fix
 - `scripts/todo-automerge-guard.sh` — priority extraction (single-awk form of the variant)
-- `.claude/hooks/test-pg-lab-distill.sh` — assert helpers (here-string form of the test-assert variant); `.claude/hooks/test-pg-lab-transcripts.sh` still has the pipe form (todos/P3-2026-07-09-transcripts-test-pipefail-epipe-flake.md)
+- `.claude/hooks/test-*.sh` — all assert helpers use the here-string form since the 2026-07-10 sweep (26 instances across 17 files; the shared copied preamble had propagated the pipe form everywhere)
 
 ## See Also
 

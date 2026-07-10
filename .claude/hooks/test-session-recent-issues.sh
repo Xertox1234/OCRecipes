@@ -11,8 +11,8 @@ PROJECT_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
 FAIL=0
 assert_empty()    { if [ -z "$2" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected empty, got: $2"; FAIL=1; fi; }
 assert_exit0()    { if [ "$2" -eq 0 ]; then echo "ok: $1"; else echo "FAIL: $1 — expected exit 0, got $2"; FAIL=1; fi; }
-assert_contains() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
-assert_absent()   { if printf '%s' "$2" | grep -qF -- "$3"; then echo "FAIL: $1 — unexpectedly present: $3"; FAIL=1; else echo "ok: $1"; fi; }
+assert_contains() { if grep -qF -- "$3" <<<"$2"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
+assert_absent()   { if grep -qF -- "$3" <<<"$2"; then echo "FAIL: $1 — unexpectedly present: $3"; FAIL=1; else echo "ok: $1"; fi; }
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not installed"; exit 0; }
 

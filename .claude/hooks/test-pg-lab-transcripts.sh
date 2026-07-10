@@ -16,7 +16,7 @@ SCRIPT="$PROJECT_ROOT/scripts/pg-lab/transcripts.sh"
 FAIL=0
 assert_exit0()    { if [ "$2" -eq 0 ]; then echo "ok: $1"; else echo "FAIL: $1 — expected exit 0, got $2"; FAIL=1; fi; }
 assert_nonzero()  { if [ "$2" -ne 0 ]; then echo "ok: $1"; else echo "FAIL: $1 — expected non-zero exit, got 0"; FAIL=1; fi; }
-assert_contains() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
+assert_contains() { if grep -qF -- "$3" <<<"$2"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
 assert_eq()       { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected $3, got $2"; FAIL=1; fi; }
 
 command -v psql >/dev/null 2>&1 || { echo "skip: psql not installed"; exit 0; }
@@ -97,12 +97,12 @@ assert_eq "--import ingests exactly 5 rows (2x user text, assistant text, tool n
 # shapes, verified empirically): pasted secrets must never reach the archive raw.
 SECRET_ROW=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT content FROM harness.transcript_messages WHERE msg_uuid LIKE 'u-5%'")
 assert_contains "Anthropic-shaped key is redacted" "$SECRET_ROW" "[REDACTED]"
-if printf '%s' "$SECRET_ROW" | grep -qF "sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890ABCDEF"; then
+if grep -qF "sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890ABCDEF" <<<"$SECRET_ROW"; then
   echo "FAIL: raw Anthropic-shaped key leaked into stored content"; FAIL=1
 else
   echo "ok: raw Anthropic-shaped key never stored"
 fi
-if printf '%s' "$SECRET_ROW" | grep -qF "ghp_abcdefghijklmnopqrstuvwxyz1234"; then
+if grep -qF "ghp_abcdefghijklmnopqrstuvwxyz1234" <<<"$SECRET_ROW"; then
   echo "FAIL: raw GitHub PAT leaked into stored content"; FAIL=1
 else
   echo "ok: raw GitHub PAT never stored"

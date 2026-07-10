@@ -11,7 +11,7 @@ PROJECT_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
 SCRIPT="$PROJECT_ROOT/scripts/pg-lab/injection-report.sh"
 FAIL=0
 assert_nonzero()  { if [ "$2" -ne 0 ]; then echo "ok: $1"; else echo "FAIL: $1 — expected non-zero exit, got 0"; FAIL=1; fi; }
-assert_contains() { if printf '%s' "$2" | grep -qF -- "$3"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
+assert_contains() { if grep -qF -- "$3" <<<"$2"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
 
 command -v bash >/dev/null 2>&1 || { echo "skip: bash not installed"; exit 0; }
 

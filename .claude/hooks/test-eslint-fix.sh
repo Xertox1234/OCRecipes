@@ -36,7 +36,7 @@ run_hook() {
 
 assert_contains() {
   local name="$1" needle="$2" out="$3"
-  if printf '%s' "$out" | grep -qF "$needle"; then
+  if grep -qF "$needle" <<<"$out"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected substring: $needle)"
