@@ -78,4 +78,59 @@ assert_exit0 "schema is idempotent (second apply clean)" "$?"
 COLS=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM information_schema.columns WHERE table_schema='harness' AND table_name IN ('session_registry','files_in_flight','coordination_log')")
 [ "$COLS" -ge 18 ] && echo "ok: expected columns present" || { echo "FAIL: columns missing ($COLS)"; FAIL=1; }
 
+# --- session-coord.sh write path ------------------------------------------------------
+export LAB_DATABASE_URL="$TEST_URL"
+REPO_ROOT_NOW=$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel)
+
+# Fail-silent + denylist (no live DB needed for these two, but grouped here for flow):
+OUT=$(printf '{"session_id":"s1","cwd":"%s"}' "$PROJECT_ROOT" | LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" bash "$SCRIPT" register --stdin-json 2>/dev/null); RC=$?
+assert_exit0 "register vs unreachable DB -> exit 0" "$RC"; assert_empty "register vs unreachable DB -> silent" "$OUT"
+ERR=$(printf '{}' | LAB_DATABASE_URL="postgresql://localhost/nutricam?sslmode=require" bash "$SCRIPT" register --stdin-json 2>&1 1>/dev/null); RC=$?
+assert_exit0 "denylist refusal still exit 0" "$RC"; assert_contains "denylist names nutricam" "$ERR" "nutricam"
+
+# register (hook mode): upserts row + writes bridge for a stubbed claude pid.
+STUB_PID=88888888
+printf '{"session_id":"sess-reg","cwd":"%s"}' "$PROJECT_ROOT" \
+  | SESSION_COORD_CLAUDE_PID="$STUB_PID" bash "$SCRIPT" register --stdin-json >/dev/null 2>&1
+assert_exit0 "register hook-mode exits 0" "$?"
+ROW=$(psql -X -qtA -F'|' -d "$TEST_URL" -c "SELECT session_id, repo_root, session_kind FROM harness.session_registry WHERE session_id='sess-reg'")
+assert_eq "register row: id+root" "$(cut -d'|' -f1-2 <<<"$ROW")" "sess-reg|$REPO_ROOT_NOW"
+assert_eq "register bridge file content" "$(cat "/tmp/claude-session-coord-pid-${STUB_PID}.sid" 2>/dev/null)" "sess-reg"
+
+# register (CLI mode): --kind re-upserts the SAME row via the bridge.
+SESSION_COORD_CLAUDE_PID="$STUB_PID" bash "$SCRIPT" register --kind todo-executor >/dev/null 2>&1
+KIND=$(psql -X -qtA -d "$TEST_URL" -c "SELECT session_kind FROM harness.session_registry WHERE session_id='sess-reg'")
+assert_eq "register --kind re-upserts kind" "$KIND" "todo-executor"
+NROWS=$(psql -X -qtA -d "$TEST_URL" -c "SELECT count(*) FROM harness.session_registry")
+assert_eq "register --kind did not create a second row" "$NROWS" "1"
+
+# record: files_in_flight upsert with per-file rel_path; heartbeat bumps expires_at.
+printf '{"session_id":"sess-reg","tool_name":"Edit","tool_input":{"file_path":"%s/package.json"}}' "$REPO_ROOT_NOW" \
+  | bash "$SCRIPT" record --stdin-json >/dev/null 2>&1
+FROW=$(psql -X -qtA -F'|' -d "$TEST_URL" -c "SELECT abs_path, rel_path FROM harness.files_in_flight WHERE session_id='sess-reg'")
+assert_eq "record: abs+rel path" "$FROW" "$REPO_ROOT_NOW/package.json|package.json"
+
+# record self-heals a reaped row (kind degrades to unknown — informational only).
+psql -X -q -d "$TEST_URL" -c "DELETE FROM harness.session_registry" >/dev/null
+printf '{"session_id":"sess-reg","tool_name":"Edit","tool_input":{"file_path":"%s/package.json"}}' "$REPO_ROOT_NOW" \
+  | bash "$SCRIPT" record --stdin-json >/dev/null 2>&1
+NROWS=$(psql -X -qtA -d "$TEST_URL" -c "SELECT count(*) FROM harness.session_registry WHERE session_id='sess-reg'")
+assert_eq "record recreates a reaped registry row" "$NROWS" "1"
+
+# reap: expired rows (and their files, via cascade) vanish.
+psql -X -q -d "$TEST_URL" -c "UPDATE harness.session_registry SET expires_at = now() - interval '1 minute'" >/dev/null
+bash "$SCRIPT" reap >/dev/null 2>&1
+NROWS=$(psql -X -qtA -d "$TEST_URL" -c "SELECT count(*) FROM harness.session_registry")
+NFILES=$(psql -X -qtA -d "$TEST_URL" -c "SELECT count(*) FROM harness.files_in_flight")
+assert_eq "reap deletes expired sessions" "$NROWS" "0"
+assert_eq "reap cascades to files" "$NFILES" "0"
+
+# deregister: removes row + bridge file.
+printf '{"session_id":"sess-dereg","cwd":"%s"}' "$PROJECT_ROOT" \
+  | SESSION_COORD_CLAUDE_PID="$STUB_PID" bash "$SCRIPT" register --stdin-json >/dev/null 2>&1
+printf '{"session_id":"sess-dereg"}' | SESSION_COORD_CLAUDE_PID="$STUB_PID" bash "$SCRIPT" deregister --stdin-json >/dev/null 2>&1
+NROWS=$(psql -X -qtA -d "$TEST_URL" -c "SELECT count(*) FROM harness.session_registry WHERE session_id='sess-dereg'")
+assert_eq "deregister removes the row" "$NROWS" "0"
+[ ! -f "/tmp/claude-session-coord-pid-${STUB_PID}.sid" ] && echo "ok: deregister removes bridge" || { echo "FAIL: bridge survived deregister"; FAIL=1; }
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
