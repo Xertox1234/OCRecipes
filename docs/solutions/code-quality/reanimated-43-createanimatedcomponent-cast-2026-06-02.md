@@ -8,6 +8,7 @@ tags: [reanimated, typescript, animated, flatlist, cast, react-native]
 symptoms: ['TS2352: Conversion of type ''AnimatedComponentType<...>'' to type ''typeof FlatList'' may be a mistake because neither type sufficiently overlaps', Appears only after bumping react-native-reanimated to 4.3+ on an existing `Animated.createAnimatedComponent(X) as typeof X` line, 'check:types fails (exit 2) with zero runtime/behavior change']
 applies_to: [client/**/*.tsx]
 created: '2026-06-02'
+last_updated: '2026-07-10'
 ---
 
 # Reanimated 4.3 createAnimatedComponent requires cast-through-unknown
@@ -37,6 +38,16 @@ const AnimatedFlatList = Animated.createAnimatedComponent(
 ```
 
 Reanimated 4.3+ also deprecates `createAnimatedComponent` in favor of `Animated.FlatList` etc., but switching is a larger, optional change — the cast is the minimal fix. No `deprecation`/`no-deprecated` ESLint rule is enabled in this repo and `tsc` does not fail on deprecation warnings, so the cast passes CI.
+
+### Variant: SectionList with a scroll-linked collapsing header (2026-07-10)
+
+Restructuring a `FlatList` to a `SectionList` on a screen with a scroll-linked collapsing header (`onScroll={scrollHandler}` + `scrollEventThrottle={16}`) silently breaks the header animation — a plain `SectionList` doesn't drive the shared value. There is no built-in `AnimatedSectionList`; create it with the same factory-and-cast pattern and attach the same scroll props:
+
+```ts
+const AnimatedSectionList = Animated.createAnimatedComponent(
+  SectionList,
+) as unknown as typeof SectionList;
+```
 
 ## Prevention
 

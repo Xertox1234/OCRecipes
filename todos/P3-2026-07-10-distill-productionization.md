@@ -40,10 +40,10 @@ in PR #566. Key learnings to design against:
 
 ## Acceptance Criteria
 
-- [ ] Triage the 251 accepted candidates from the experiment into canonical stores
+- [x] Triage the 251 accepted candidates from the experiment into canonical stores
       (memory files / `docs/solutions/` via existing conventions) or explicit discard —
       then drop the three `harness.memory_candidates`/`distill_runs`/`distilled_sessions`
-      tables per the experiment-scoped rail.
+      tables per the experiment-scoped rail. _(Done 2026-07-10 — see Updates.)_
 - [ ] Candidate-volume control designed and implemented: some combination of a stricter
       prompt (fewer, higher-bar candidates), a hard per-session candidate cap, and/or
       pre-ranking so review sees the best N first. Target: ≤ 1 candidate/session average
@@ -78,3 +78,13 @@ in PR #566. Key learnings to design against:
 
 - Filed per the experiment's Keep criterion (spec: "file a follow-up todo for
   productionizing — possible cron, review-queue UX").
+- **Triage AC complete** (same day). 4 parallel classifier agents checked all 251
+  accepted candidates against docs/solutions (615 files), the memory dir, and
+  CLAUDE.md/docs/rules. Outcome: 118 already covered, 73 ephemeral, 34 other-project
+  (exported as a digest into the plant_id_community checkout), 1 rerouted to
+  `P3-2026-07-10-audit-deterministic-scanners.md`, **23 kept** — 9 new memory files,
+  8 memory-file appends, 5 new solution docs, 1 solution-doc append (this PR). The
+  three `harness.*` experiment tables were then dropped. Net survival rate ~9% —
+  hard evidence for the volume-control AC below: the distiller's accept stream is
+  ~10× too permissive against canon, and near-dup titles alone caught almost none
+  of the 118 conceptual duplicates.
