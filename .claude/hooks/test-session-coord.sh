@@ -100,7 +100,7 @@ psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local P
 
 TEST_DB="pg_lab_session_coord_test_$$"
 TEST_URL="postgresql://localhost/$TEST_DB"
-cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; rm -f "/tmp/claude-session-coord-pid-${STUB_PID_B}.sid" "/tmp/claude-session-coord-pid-${STUB_PID}.sid" 2>/dev/null; rmdir "/tmp/claude-session-coord-${MYSID}.refresh-lock" 2>/dev/null; }
+cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; rm -f "/tmp/claude-session-coord-pid-${STUB_PID_B}.sid" "/tmp/claude-session-coord-pid-${STUB_PID}.sid" 2>/dev/null; rmdir "/tmp/claude-session-coord-${MYSID}.refresh-lock" 2>/dev/null; rm -f "/tmp/claude-session-coord-consult-me.json" 2>/dev/null; rmdir "/tmp/claude-session-coord-consult-me.refresh-lock" 2>/dev/null; }
 trap cleanup EXIT
 
 LAB_DATABASE_URL="$TEST_URL" bash "$INIT" >/dev/null 2>&1
@@ -186,5 +186,59 @@ bash "$SCRIPT" refresh-snapshot --session "$MYSID" >/dev/null 2>&1
 assert_exit0 "guarded refresh still exits 0" "$?"
 [ ! -f "$SNAP" ] && echo "ok: guarded refresh wrote nothing" || { echo "FAIL: guard ignored"; FAIL=1; }
 rmdir "/tmp/claude-session-coord-${MYSID}.refresh-lock"
+
+# --- consult -----------------------------------------------------------------------
+SNAPME="/tmp/claude-session-coord-consult-me.json"
+mk_consult_input() { printf '{"session_id":"consult-me","tool_name":"Edit","tool_input":{"file_path":"%s"}}' "$1"; }
+cat > "$SNAPME" <<JSON
+{"sessions":[{"session_id":"other-sess","session_kind":"interactive","branch":"main","repo_root":"/tmp/checkout-a","last_seen_at":"2026-07-10T00:00:00Z","files":[
+  {"abs_path":"/tmp/checkout-a/server/index.ts","rel_path":"server/index.ts"},
+  {"abs_path":"/tmp/checkout-a/shared/schema.ts","rel_path":"shared/schema.ts"}]}]}
+JSON
+touch "$SNAPME"  # fresh mtime -> no refresh spawn during these assertions
+
+# Level 1: same abs_path -> collision warning naming the other session.
+# Note: msg uses ${osid:0:8} (short-ID abbreviation, matches real UUID session ids) --
+# "other-sess" is 10 chars, so the message shows the 8-char prefix "other-se".
+OUT=$(mk_consult_input "/tmp/checkout-a/server/index.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
+assert_contains "consult L1 emits additionalContext" "$OUT" '"hookEventName": "PreToolUse"'
+assert_contains "consult L1 names other session" "$OUT" "other-se"
+assert_contains "consult L1 says same checkout" "$OUT" "same checkout"
+
+# Level 2: same rel_path, DIFFERENT repo_root (file lives in another worktree). do_consult
+# resolves its own root via `git -C <dir> rev-parse --show-toplevel`, which requires a REAL
+# git worktree on disk -- a literal, non-existent "/tmp/checkout-b" can never resolve. Build
+# one via git's own toplevel output (dodges the macOS /tmp -> /private/tmp symlink mismatch
+# that a bare `mkdir /tmp/checkout-b` would hit).
+CKB=$(d=$(mktemp -d); git -C "$d" init -q; git -C "$d" rev-parse --show-toplevel)
+OUT=$(mk_consult_input "$CKB/shared/schema.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
+assert_contains "consult L2 emits worktree note" "$OUT" "another worktree"
+rm -rf "$CKB"
+
+# No match -> silent.
+OUT=$(mk_consult_input "/tmp/checkout-b/client/App.tsx" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
+assert_empty "consult no-match silent" "$OUT"
+
+# Self-suppression: a snapshot row with OUR session_id must never warn.
+cat > "$SNAPME" <<JSON
+{"sessions":[{"session_id":"consult-me","session_kind":"interactive","branch":"main","repo_root":"/tmp/checkout-a","last_seen_at":"2026-07-10T00:00:00Z","files":[{"abs_path":"/tmp/x.ts","rel_path":"x.ts"}]}]}
+JSON
+touch "$SNAPME"
+OUT=$(mk_consult_input "/tmp/x.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
+assert_empty "consult self-suppressed" "$OUT"
+
+# Corrupt snapshot -> silent, exit 0.
+printf 'not json' > "$SNAPME"; touch "$SNAPME"
+OUT=$(mk_consult_input "/tmp/x.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null); RC=$?
+assert_exit0 "consult corrupt snapshot exit 0" "$RC"; assert_empty "consult corrupt snapshot silent" "$OUT"
+
+# Missing snapshot -> silent AND spawns a refresh (snapshot appears shortly).
+rm -f "$SNAPME"
+psql -X -q -d "$TEST_URL" -c "INSERT INTO harness.session_registry (session_id, repo_root) VALUES ('consult-me','/tmp/checkout-c') ON CONFLICT (session_id) DO NOTHING" >/dev/null
+OUT=$(mk_consult_input "/tmp/x.ts" | bash "$SCRIPT" consult --stdin-json 2>/dev/null)
+assert_empty "consult missing snapshot silent" "$OUT"
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$SNAPME" ] && break; sleep 0.3; done
+[ -f "$SNAPME" ] && echo "ok: consult spawned async refresh" || { echo "FAIL: no refresh spawned"; FAIL=1; }
+rm -f "$SNAPME"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

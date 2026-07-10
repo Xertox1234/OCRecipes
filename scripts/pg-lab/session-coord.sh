@@ -172,7 +172,59 @@ SQL
   jq -e '.sessions' "$tmp" >/dev/null 2>&1 || { rm -f "$tmp"; exit 0; }  # never install corrupt JSON
   mv -f "$tmp" "$snap" 2>/dev/null || rm -f "$tmp"
 }
-do_consult() { :; }            # PR 2
+snapshot_age_secs() { # portable mtime age; huge number when file missing
+  local f="$1" mt
+  mt=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null) || { echo 999999; return; }
+  echo $(( $(date +%s) - mt ))
+}
+
+emit_context() { # $1 message -> PreToolUse additionalContext JSON (drift-detect shape)
+  jq -n --arg m "$1" '{ "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": $m } }'
+}
+
+do_consult() {
+  local input sid file snap age dir root rel match msg
+  input=$(cat)
+  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
+  file=$(jq -re '.tool_input.file_path // empty' <<<"$input" 2>/dev/null) || exit 0
+  [ -n "$file" ] || exit 0
+  snap="/tmp/claude-session-coord-${sid}.json"
+  age=$(snapshot_age_secs "$snap")
+  # Stale-while-revalidate (spec §5.1): use whatever we have NOW; refresh in background.
+  if [ "$age" -gt 25 ]; then
+    bash "$SELF_DIR/session-coord.sh" refresh-snapshot --session "$sid" >/dev/null 2>&1 &
+  fi
+  [ -f "$snap" ] || exit 0
+  # rel_path of the target, from the FILE's containing worktree (same walk as record).
+  dir=$(dirname "$file")
+  while [ ! -d "$dir" ] && [ "$dir" != "/" ]; do dir=$(dirname "$dir"); done
+  root=$(git_root_of "$dir") || root=""
+  rel=""; [ -n "$root" ] && rel="${file#"$root"/}"
+  # One jq pass: level|sid|kind|branch|age-minutes for the first match, self excluded.
+  match=$(jq -r --arg f "$file" --arg rel "$rel" --arg root "$root" --arg me "$sid" '
+    [ .sessions[]? | select(.session_id != $me) | . as $s | .files[]?
+      | if .abs_path == $f then {lvl:"collision",s:$s}
+        elif ($rel != "" and .rel_path == $rel and $s.repo_root != $root) then {lvl:"worktree",s:$s}
+        else empty end
+    ] | .[0] // empty
+    | "\(.lvl)\u001f\(.s.session_id)\u001f\(.s.session_kind)\u001f\(.s.branch // "?")\u001f\(.s.last_seen_at)"
+  ' "$snap" 2>/dev/null) || exit 0
+  [ -n "$match" ] || exit 0
+  local lvl osid okind obranch oseen
+  IFS=$'\x1f' read -r lvl osid okind obranch oseen <<<"$match"
+  case "$lvl" in
+    collision)
+      msg="Session ${osid:0:8} (${okind}, branch ${obranch}, last seen ${oseen}) is mid-edit on this same file in this same checkout. Coordinate before editing — parallel same-file edits here produced tangled commits before. (Warn-only.)"
+      log_event "warn-collision" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" &
+      ;;
+    worktree)
+      msg="Session ${osid:0:8} (${okind}, branch ${obranch}) is editing the same file in another worktree — expect a merge conflict when both land. (Warn-only.)"
+      log_event "warn-worktree" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" &
+      ;;
+    *) exit 0 ;;
+  esac
+  emit_context "$msg"
+}
 do_attribute_drift() { :; }    # PR 2
 
 SUB="${1:-}"; [ $# -gt 0 ] && shift
