@@ -234,7 +234,31 @@ do_consult() {
   esac
   emit_context "$msg"
 }
-do_attribute_drift() { :; }    # PR 2
+do_attribute_drift() {
+  local sid="${1:-}" root="${2:-}" row
+  [ -n "$sid" ] && [ -n "$root" ] || exit 0
+  row=$(psql -X -qtA -F$'\x1f' -d "$LAB_DATABASE_URL" -v sid="$sid" -v root="$root" 2>/dev/null <<'SQL'
+SELECT session_id, session_kind, COALESCE(branch,'?'), last_seen_at
+FROM harness.session_registry
+WHERE session_id <> :'sid' AND repo_root = :'root' AND expires_at > now()
+ORDER BY last_seen_at DESC LIMIT 1;
+SQL
+  ) || exit 0
+  # psql itself failed silently -> $row empty AND rc hidden by || exit 0 above; a reachable
+  # DB with no match also yields empty. Disambiguate with a cheap liveness probe: only
+  # print the "no other session" line when the DB answered.
+  if [ -n "$row" ]; then
+    local osid okind obranch oseen
+    IFS=$'\x1f' read -r osid okind obranch oseen <<<"$row"
+    printf 'Attribution: session %s (%s, branch %s) is registered in this checkout, last seen %s.\n' \
+      "${osid:0:8}" "$okind" "$obranch" "$oseen"
+    log_event "drift-attributed" "$sid" "$osid" '{}' &
+  else
+    psql -X -q -d "$LAB_DATABASE_URL" -c 'SELECT 1' >/dev/null 2>&1 || exit 0
+    printf 'Attribution: no other live session registered here — likely your own manual git op or a stale baseline.\n'
+    log_event "drift-unattributed" "$sid" "" '{}' &
+  fi
+}
 
 SUB="${1:-}"; [ $# -gt 0 ] && shift
 case "$SUB" in

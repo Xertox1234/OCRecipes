@@ -259,4 +259,18 @@ assert_exit0 "stale-lock refresh exits 0" "$?"
 [ ! -d "/tmp/claude-session-coord-${MYSID}.refresh-lock" ] && echo "ok: lockdir released cleanly after stale-break" || { echo "FAIL: lockdir leaked after stale-break"; FAIL=1; }
 rm -f "$SNAP"
 
+# --- attribute-drift ---------------------------------------------------------------
+psql -X -q -d "$TEST_URL" >/dev/null <<'SQL'
+DELETE FROM harness.session_registry;
+INSERT INTO harness.session_registry (session_id, repo_root, session_kind, branch)
+VALUES ('drift-other', '/tmp/checkout-a', 'goal', 'main');
+SQL
+OUT=$(bash "$SCRIPT" attribute-drift "drift-me" "/tmp/checkout-a" 2>/dev/null)
+assert_contains "attribute: names other session" "$OUT" "drift-ot"
+assert_contains "attribute: names kind" "$OUT" "goal"
+OUT=$(bash "$SCRIPT" attribute-drift "drift-me" "/tmp/checkout-elsewhere" 2>/dev/null)
+assert_contains "attribute: empty registry -> own-op line" "$OUT" "no other live session"
+OUT=$(LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" bash "$SCRIPT" attribute-drift "x" "/y" 2>/dev/null); RC=$?
+assert_exit0 "attribute: PG down exit 0" "$RC"; assert_empty "attribute: PG down silent" "$OUT"
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

@@ -63,6 +63,14 @@ fi
 # HEAD moved without Claude recording it — external drift detected.
 MSG="Drift detected: repo HEAD moved externally since Claude's last git op. Stored: ${STORED_SHA} → Current: ${CURRENT_SHA}. Likely cause: parallel-terminal commit, rebase, or push by the user. Re-check \`git log --oneline -5\` and \`git status\` to reconcile before proceeding. Durable fix: give each session its own checkout via the superpowers:using-git-worktrees skill so parallel work can't move HEAD underneath you. (Warn-only.)"
 
+# Registry attribution (PG Lab session coordination, spec §6) — best-effort: empty when
+# Postgres is down or the script is absent, leaving today's message untouched.
+COORD="$(git rev-parse --show-toplevel 2>/dev/null)/scripts/pg-lab/session-coord.sh"
+if [ -f "$COORD" ]; then
+  ATTRIB=$(bash "$COORD" attribute-drift "$SESSION" "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || true)
+  [ -n "$ATTRIB" ] && MSG="$MSG $ATTRIB"
+fi
+
 jq -n --arg m "$MSG" '{
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
