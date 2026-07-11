@@ -59,9 +59,10 @@ export async function buildCoachContext(
   if (dueCommitments.length > 0) {
     suggestions.push(`How did "${dueCommitments[0].content}" go?`);
   }
-  if (todayIntake) {
-    const proteinGoal = user?.dailyProteinGoal ?? 150;
-    const proteinLeft = proteinGoal - (todayIntake.totalProtein ?? 0);
+  // No fabricated default: the system prompt forbids the model from citing
+  // numbers absent from USER CONTEXT, so a chip may only quote a real goal.
+  if (todayIntake && user?.dailyProteinGoal != null) {
+    const proteinLeft = user.dailyProteinGoal - (todayIntake.totalProtein ?? 0);
     if (proteinLeft > 30) {
       suggestions.push(`I need ${Math.round(proteinLeft)}g more protein today`);
     }
