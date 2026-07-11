@@ -35,6 +35,16 @@ const TOOL_DEFINITIONS = Object.freeze(getToolDefinitions());
  */
 export const SAFETY_OVERRIDE_SENTINEL = "\x00SAFETY_OVERRIDE\x00";
 
+/**
+ * Allergy at the prompt boundary. Severity is optional defense-in-depth:
+ * the jsonb column can carry legacy rows without one (or with a bogus value,
+ * which the context boundary drops).
+ */
+export interface CoachAllergy {
+  name: string;
+  severity?: "mild" | "moderate" | "severe";
+}
+
 export interface CoachContext {
   goals: {
     calories: number;
@@ -50,7 +60,7 @@ export interface CoachContext {
   };
   dietaryProfile: {
     dietType: string | null;
-    allergies: string[];
+    allergies: CoachAllergy[];
     dislikes: string[];
   };
   screenContext?: string;
@@ -266,8 +276,19 @@ function buildSystemPrompt(
   }
   if (context.dietaryProfile.allergies.length > 0) {
     parts.push(
-      `Allergies: ${context.dietaryProfile.allergies.map(sanitizeUserInput).join(", ")}`,
+      `Allergies: ${context.dietaryProfile.allergies
+        .map((a) =>
+          a.severity
+            ? `${sanitizeUserInput(a.name)} (${a.severity})`
+            : sanitizeUserInput(a.name),
+        )
+        .join(", ")}`,
     );
+    if (context.dietaryProfile.allergies.some((a) => a.severity === "severe")) {
+      parts.push(
+        "At least one allergy above is SEVERE — treat it as absolute: never suggest foods that contain or may contain it, and proactively flag cross-contamination risks (shared fryers, 'may contain' labels) when suggesting restaurant or packaged foods.",
+      );
+    }
   }
   if (context.dietaryProfile.dislikes.length > 0) {
     parts.push(

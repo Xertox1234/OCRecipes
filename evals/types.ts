@@ -113,16 +113,44 @@ const macroGoalsSchema = z.object({
   fat: z.number(),
 });
 
+/**
+ * Allergy entry: object form matches CoachAllergy; bare strings (the legacy
+ * dataset shape) are normalized to `{ name }` so existing cases stay valid.
+ */
+const coachAllergySchema = z.union([
+  z.string().transform((name) => ({ name })),
+  z.object({
+    name: z.string(),
+    severity: z.enum(["mild", "moderate", "severe"]).optional(),
+  }),
+]);
+
+/** Mirrors CoachContext.aboutUser — every field optional, omitted when unset. */
+const coachAboutUserSchema = z
+  .object({
+    primaryGoal: z.string(),
+    activityLevel: z.string(),
+    cookingSkillLevel: z.string(),
+    cookingTimeAvailable: z.string(),
+    cuisinePreferences: z.array(z.string()),
+    householdSize: z.number().int(),
+    weightKg: z.number(),
+    goalWeightKg: z.number(),
+    measurementUnit: z.enum(["metric", "imperial"]),
+  })
+  .partial();
+
 const coachContextSchema = z.object({
   goals: macroGoalsSchema.nullable(),
   todayIntake: macroGoalsSchema,
   dietaryProfile: z.object({
     dietType: z.string().nullable(),
-    allergies: z.array(z.string()),
+    allergies: z.array(coachAllergySchema),
     dislikes: z.array(z.string()),
   }),
   screenContext: z.string().optional(),
   notebookSummary: z.string().optional(),
+  aboutUser: coachAboutUserSchema.optional(),
 });
 
 export const evalTestCaseSchema = z.object({

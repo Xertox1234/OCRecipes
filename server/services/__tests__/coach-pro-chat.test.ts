@@ -518,6 +518,27 @@ describe("handleCoachChat", () => {
       });
     });
 
+    it("maps allergy severity through the context boundary, dropping invalid values", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        makeProfile({
+          // jsonb defense-in-depth: rows may carry a bogus or missing severity.
+          allergies: [
+            { name: "peanuts", severity: "severe" },
+            { name: "dairy", severity: "spicy" },
+            { name: "soy" },
+          ] as UserProfile["allergies"],
+        }),
+      );
+
+      await collectEvents(handleCoachChat(makeParams()));
+
+      expect(capturedProContext().dietaryProfile.allergies).toEqual([
+        { name: "peanuts", severity: "severe" },
+        { name: "dairy" },
+        { name: "soy" },
+      ]);
+    });
+
     it("ships aboutUser to the free tier too (both-tiers decision)", async () => {
       vi.mocked(storage.getUserProfile).mockResolvedValue(
         makeProfile({ primaryGoal: "gain_muscle" }),
@@ -1127,15 +1148,31 @@ describe("tryArchiveNotebook", () => {
 describe("buildMealPatternSummary", () => {
   /**
    * Helper to create a DailyLog-like object with a specific hour in a given day.
-   * `day` is a full ISO date string (YYYY-MM-DD), `hour` is 0–23 local time.
+   * `day` is a full ISO date string (YYYY-MM-DD), `hour` is 0–23 UTC — the
+   * summary defaults to tz "UTC", keeping these tests machine-TZ independent.
    */
   function makeLog(day: string, hour: number) {
-    const d = new Date(`${day}T${String(hour).padStart(2, "0")}:00:00`);
+    const d = new Date(`${day}T${String(hour).padStart(2, "0")}:00:00Z`);
     return { loggedAt: d };
   }
 
   it("returns null for empty logs", () => {
     expect(buildMealPatternSummary([])).toBeNull();
+  });
+
+  it("derives meal windows in the user's timezone, not server-local", () => {
+    // 15:00 UTC = 08:00 in Los Angeles (PDT). Three active days.
+    const logs = [
+      makeLog("2026-04-25", 15),
+      makeLog("2026-04-26", 15),
+      makeLog("2026-04-27", 15),
+    ];
+    // On a UTC clock 15:00 is the dinner window — breakfast reads as skipped.
+    expect(buildMealPatternSummary(logs, "UTC")).toContain("breakfast skipped");
+    // On the user's LA clock the same instants are 8 AM breakfasts.
+    expect(buildMealPatternSummary(logs, "America/Los_Angeles")).not.toContain(
+      "breakfast skipped",
+    );
   });
 
   it("returns null when fewer than 3 active-logging days", () => {

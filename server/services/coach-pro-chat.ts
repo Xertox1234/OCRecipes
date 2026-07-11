@@ -52,7 +52,9 @@ const log = createServiceLogger("coach-pro-chat");
  *
  * Exported for unit testing — all inputs are pure values, no storage calls.
  *
- * Detection logic (based on `loggedAt` hour, local time):
+ * Detection logic (based on `loggedAt` hour in the USER's timezone — the
+ * server runs UTC, so server-local hours would misclassify every window for
+ * most users):
  *  - Breakfast window: 05:00–10:59
  *  - Lunch window:     11:00–14:59
  *  - Dinner window:    15:00–20:59
@@ -69,19 +71,32 @@ const log = createServiceLogger("coach-pro-chat");
  */
 export function buildMealPatternSummary(
   logs: Pick<DailyLog, "loggedAt">[],
+  tz: string = "UTC",
 ): string | null {
   if (logs.length === 0) return null;
 
-  // Group logs by calendar day (YYYY-MM-DD in local time)
-  const byDay = new Map<string, Date[]>();
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+
+  // Group log hours by calendar day (YYYY-MM-DD in the user's timezone)
+  const byDay = new Map<string, number[]>();
   for (const log of logs) {
-    const date = new Date(log.loggedAt);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const parts = fmt.formatToParts(new Date(log.loggedAt));
+    const part = (type: Intl.DateTimeFormatPartTypes): string =>
+      parts.find((p) => p.type === type)?.value ?? "";
+    const key = `${part("year")}-${part("month")}-${part("day")}`;
+    const hour = Number(part("hour"));
     const existing = byDay.get(key);
     if (existing) {
-      existing.push(date);
+      existing.push(hour);
     } else {
-      byDay.set(key, [date]);
+      byDay.set(key, [hour]);
     }
   }
 
@@ -101,8 +116,7 @@ export function buildMealPatternSummary(
   let skippedDinner = 0;
   let lateNightDays = 0;
 
-  for (const dayLogs of activeDays) {
-    const hours = dayLogs.map((d) => d.getHours());
+  for (const hours of activeDays) {
     if (!hours.some(inBreakfast)) skippedBreakfast++;
     if (!hours.some(inLunch)) skippedLunch++;
     if (!hours.some(inDinner)) skippedDinner++;
@@ -534,11 +548,18 @@ export async function* handleCoachChat(
     dietaryProfile: {
       dietType: profile?.dietType || null,
       // Sanitize at the context boundary (M40 — 2026-04-18) so both the prompt
-      // builder and any future consumers see clean values.
+      // builder and any future consumers see clean values. Severity is
+      // enum-validated (jsonb defense-in-depth) — bogus values are dropped.
       allergies: (profile?.allergies || [])
-        .map((a) => a?.name)
-        .filter(Boolean)
-        .map((name) => sanitizeContextField(name, 100)),
+        .filter((a) => a?.name)
+        .map((a) => ({
+          name: sanitizeContextField(a.name, 100),
+          ...(a.severity === "mild" ||
+          a.severity === "moderate" ||
+          a.severity === "severe"
+            ? { severity: a.severity }
+            : {}),
+        })),
       dislikes: ((profile?.foodDislikes as string[]) || []).map((d) =>
         sanitizeContextField(d, 100),
       ),
@@ -554,7 +575,10 @@ export async function* handleCoachChat(
 
   // ── Coach Pro: meal pattern summary ────────────────
   if (tierConfig.fetchMealPatterns && recentLogsForPatterns.length > 0) {
-    const mealPatternSummary = buildMealPatternSummary(recentLogsForPatterns);
+    const mealPatternSummary = buildMealPatternSummary(
+      recentLogsForPatterns,
+      tz,
+    );
     if (mealPatternSummary) {
       context.mealPatternSummary = mealPatternSummary;
     }

@@ -149,6 +149,70 @@ describe("evalTestCaseSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("accepts object allergies with severity and normalizes legacy string allergies", () => {
+    const result = evalTestCaseSchema.safeParse({
+      id: "case-1",
+      category: "personalization",
+      description: "",
+      userMessage: "hello",
+      context: {
+        ...validContext,
+        dietaryProfile: {
+          dietType: null,
+          allergies: ["peanuts", { name: "dairy", severity: "severe" }],
+          dislikes: [],
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.context.dietaryProfile.allergies).toEqual([
+        { name: "peanuts" },
+        { name: "dairy", severity: "severe" },
+      ]);
+    }
+  });
+
+  it("rejects an unknown allergy severity", () => {
+    const result = evalTestCaseSchema.safeParse({
+      id: "case-1",
+      category: "personalization",
+      description: "",
+      userMessage: "hello",
+      context: {
+        ...validContext,
+        dietaryProfile: {
+          dietType: null,
+          allergies: [{ name: "dairy", severity: "spicy" }],
+          dislikes: [],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("allows the optional aboutUser context block", () => {
+    const result = evalTestCaseSchema.safeParse({
+      id: "case-1",
+      category: "personalization",
+      description: "",
+      userMessage: "hello",
+      context: {
+        ...validContext,
+        aboutUser: {
+          primaryGoal: "lose_weight",
+          cuisinePreferences: ["Thai"],
+          cookingSkillLevel: "beginner",
+          cookingTimeAvailable: "under_30_min",
+          weightKg: 82.5,
+          goalWeightKg: 75,
+          measurementUnit: "metric",
+        },
+      },
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("evalTestCasesSchema (real dataset)", () => {

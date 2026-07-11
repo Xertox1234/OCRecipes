@@ -887,6 +887,10 @@ describe("ABOUT THIS USER rendering", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+    // clearAllMocks does NOT undo mockImplementation overrides from earlier
+    // sanitization tests (USER:/CTX: prefixes) — restore identity explicitly.
+    vi.mocked(sanitizeUserInput).mockImplementation((text: string) => text);
+    vi.mocked(sanitizeContextField).mockImplementation((text: string) => text);
     const stream = createMockStream([
       { content: "Ok" },
       { finish_reason: "stop" },
@@ -963,6 +967,46 @@ describe("ABOUT THIS USER rendering", () => {
     expect(prompt).not.toContain("Activity level:");
     expect(prompt).not.toContain("Favorite cuisines:");
     expect(prompt).not.toContain("Cooks for:");
+  });
+
+  it("renders allergy severity labels and a severe-allergy caution", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      dietaryProfile: {
+        dietType: "balanced",
+        allergies: [
+          { name: "peanuts", severity: "severe" },
+          { name: "dairy", severity: "mild" },
+        ],
+        dislikes: [],
+      },
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain("Allergies: peanuts (severe), dairy (mild)");
+    expect(prompt).toContain("SEVERE");
+    expect(prompt).toContain("cross-contamination");
+  });
+
+  it("renders severity-less allergies as plain names with no severe caution", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      dietaryProfile: {
+        dietType: "balanced",
+        allergies: [{ name: "shellfish" }],
+        dislikes: [],
+      },
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain("Allergies: shellfish");
+    expect(prompt).not.toContain("cross-contamination");
   });
 
   it("renders no ABOUT THIS USER section when aboutUser is absent", async () => {

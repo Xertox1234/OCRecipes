@@ -18,7 +18,7 @@ export function formatContextSummary(context: {
   };
   dietaryProfile: {
     dietType: string | null;
-    allergies: string[];
+    allergies: { name: string; severity?: string }[];
     dislikes: string[];
   };
 }): string {
@@ -54,8 +54,15 @@ export function formatContextSummary(context: {
     lines.push(`Diet: ${sanitizeUserInput(context.dietaryProfile.dietType)}`);
   }
   if (context.dietaryProfile.allergies.length > 0) {
+    // Mirror the coach prompt's rendering so the judge sees what the model saw.
     lines.push(
-      `Allergies: ${context.dietaryProfile.allergies.map(sanitizeUserInput).join(", ")}`,
+      `Allergies: ${context.dietaryProfile.allergies
+        .map((a) =>
+          a.severity
+            ? `${sanitizeUserInput(a.name)} (${a.severity})`
+            : sanitizeUserInput(a.name),
+        )
+        .join(", ")}`,
     );
   }
   if (context.dietaryProfile.dislikes.length > 0) {
