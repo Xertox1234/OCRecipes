@@ -10,6 +10,7 @@ SCHEMA="$PROJECT_ROOT/scripts/pg-lab/schema/session-coordination.sql"
 FAIL=0
 assert_exit() { if [ "$2" -eq "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected exit $3, got $2"; FAIL=1; fi; }
 assert_contains() { if grep -qF -- "$3" <<<"$2"; then echo "ok: $1"; else echo "FAIL: $1 — missing: $3"; FAIL=1; fi; }
+assert_eq() { if [ "$2" = "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected '$3', got '$2'"; FAIL=1; fi; }
 
 command -v psql >/dev/null 2>&1 || { echo "skip: psql not installed"; exit 0; }
 
@@ -79,5 +80,16 @@ for _ in $(seq 1 20); do
   grep -q free <<<"$STATUS" && break; sleep 0.5
 done
 assert_contains "kill -9 holder frees the lock" "$STATUS" "free"
+
+# Handoff: A holds; B waits in background; A releases; B must ACQUIRE (exit 0), not die.
+bash "$LOCK" acquire --key "k-$$" --watch-pid $$ --wait-secs 10 >/dev/null 2>&1
+( WATCH_INTERVAL_SECS=1 bash "$LOCK" acquire --key "k-$$" --watch-pid $$ --wait-secs 15 >/dev/null 2>&1; echo $? > "/tmp/claude-db-serial-handoff-rc.$$" ) &
+HANDOFF_WAITER=$!
+sleep 2   # let B's holder queue on the advisory lock
+bash "$LOCK" release --key "k-$$" >/dev/null 2>&1
+wait "$HANDOFF_WAITER"
+assert_eq "release hands off to queued waiter (exit 0)" "$(cat "/tmp/claude-db-serial-handoff-rc.$$" 2>/dev/null)" "0"
+bash "$LOCK" release --key "k-$$" >/dev/null 2>&1
+rm -f "/tmp/claude-db-serial-handoff-rc.$$"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

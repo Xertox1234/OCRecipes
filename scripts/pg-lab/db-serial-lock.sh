@@ -26,7 +26,7 @@ DEFAULT_KEY="db-serial:nutricam"
 
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 SELF_DIR="$(dirname "$SELF")"
-. "$SELF_DIR/lib/ps-walk.sh" 2>/dev/null || exit 0
+. "$SELF_DIR/lib/ps-walk.sh" 2>/dev/null || { echo "WARN: ps-walk lib missing — proceeding unlocked" >&2; exit 0; }
 
 LAB_DB_PATH="${LAB_DATABASE_URL%%\?*}"; LAB_DB_PATH="${LAB_DB_PATH%%\#*}"
 case "${LAB_DB_PATH##*/}" in
@@ -61,6 +61,8 @@ parse_common() {
 
 do_acquire() {
   parse_common "$@"
+  # Floor the wait: --wait-secs 0 would set lock_timeout=0 = DISABLED = infinite queue.
+  [ "$WAIT_SECS" -ge 1 ] 2>/dev/null || WAIT_SECS=570
   psql -X -q -d "$LAB_DATABASE_URL" -c 'SELECT 1' >/dev/null 2>&1 || {
     echo "WARN: lock unavailable (Postgres down) — proceeding unlocked" >&2; exit 0; }
   if [ -z "$WATCH_PID" ]; then
@@ -78,7 +80,7 @@ do_acquire() {
   nohup bash "$SELF" __holder "$KEY" "$WATCH_PID" "$STATUSFILE" "$WAIT_SECS" "$sid" >/dev/null 2>&1 &
   local holder_pid=$!
   local waited=0
-  while [ "$waited" -le $(( WAIT_SECS + 15 )) ]; do
+  while [ "$waited" -le $(( WAIT_SECS + WATCH_INTERVAL_SECS + 15 )) ]; do
     if grep -q '^ACQUIRED$' "$STATUSFILE" 2>/dev/null; then
       # Pidfile written ONLY on success: a timeout loser must never clobber the winner's.
       echo "$holder_pid" > "$PIDFILE"
@@ -89,14 +91,17 @@ do_acquire() {
     if grep -q '^TIMEOUT$' "$STATUSFILE" 2>/dev/null; then
       local holder
       holder=$(psql -X -qtA -d "$LAB_DATABASE_URL" -c \
-        "SELECT application_name FROM pg_stat_activity WHERE application_name LIKE 'db-serial-holder-${KH}-%' LIMIT 1" 2>/dev/null)
+        "SELECT a.application_name FROM pg_stat_activity a WHERE a.datname = current_database() AND a.application_name LIKE 'db-serial-holder-${KH}-%' AND EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid = a.pid AND l.locktype = 'advisory' AND l.granted) LIMIT 1" 2>/dev/null)
       log_lock_event "lock-timeout" "$sid" "{\"key\":\"$KEY\",\"holder\":\"${holder:-unknown}\"}"
       echo "TIMEOUT: lock '$KEY' still held by ${holder:-db-serial-holder-(unknown)} after ${WAIT_SECS}s" >&2
       exit 2
     fi
     sleep 1; waited=$(( waited + 1 ))
   done
-  echo "TIMEOUT: no holder status after $(( WAIT_SECS + 15 ))s" >&2
+  # Identity-less timeout: the holder never reported. Kill it — an abandoned live holder
+  # could later silently ACQUIRE with no acquire wrapper and no pidfile (phantom holder).
+  kill "$holder_pid" 2>/dev/null
+  echo "TIMEOUT: no holder status after $(( WAIT_SECS + WATCH_INTERVAL_SECS + 15 ))s" >&2
   exit 2
 }
 
@@ -124,23 +129,27 @@ SQL
   # write TIMEOUT for it) or the 24h sleep/backend termination ended a stale winner (its
   # acquire is long gone and already removed the statusfile via trap — clean up, don't
   # recreate litter).
-  grep -q '^ACQUIRED$' "$status" 2>/dev/null && rm -f "$status" || echo "TIMEOUT" >> "$status"
+  grep -q '^ACQUIRED$' "$status" 2>/dev/null && rm -f "$status" || { [ -f "$status" ] && echo "TIMEOUT" >> "$status"; }
 }
 
 do_release() {
   parse_common "$@"
   local sid; sid=$(sid_or_pid "")
   # Server-side termination is the AUTHORITATIVE release (spec §5.2 / failure row 12):
-  # pg_terminate_backend by application_name is synchronous — the lock is free the moment
-  # it returns. A client-side kill alone leaves the backend holding the lock until the
-  # connection check fires. NEVER terminate by the registry's session pid, which is the
-  # Claude Code process.
+  # pg_terminate_backend is synchronous — the lock is free the moment it returns. A
+  # client-side kill alone leaves the backend holding the lock until the connection check
+  # fires. Terminate ONLY the backend actually HOLDING a granted advisory lock: a waiter
+  # queued in pg_advisory_lock carries the SAME application_name (same key hash), and
+  # killing it would fail the next-in-line acquirer at the exact moment the lock frees.
+  # NEVER terminate by the registry's session pid, which is the Claude Code process.
   psql -X -q -d "$LAB_DATABASE_URL" -c \
-    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name LIKE 'db-serial-holder-${KH}-%'" >/dev/null 2>&1 || true
+    "SELECT pg_terminate_backend(a.pid) FROM pg_stat_activity a WHERE a.datname = current_database() AND a.application_name LIKE 'db-serial-holder-${KH}-%' AND EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid = a.pid AND l.locktype = 'advisory' AND l.granted)" >/dev/null 2>&1 || true
   if [ -f "$PIDFILE" ]; then
-    # Local-process hygiene, no longer the correctness path: kill the holder wrapper AND
-    # its psql child (pkill -P), then the wrapper itself.
+    # Local-process hygiene, not the correctness path. Holder-death paths never rm the
+    # pidfile, so a stale pid may have been reused by an innocent process — only signal
+    # a process that is provably our holder wrapper; always clear the pidfile regardless.
     local hp; hp=$(cat "$PIDFILE" 2>/dev/null)
+    ps -o command= -p "$hp" 2>/dev/null | grep -q 'db-serial-lock.sh __holder' || hp=""
     [ -n "$hp" ] && { pkill -P "$hp" 2>/dev/null; kill "$hp" 2>/dev/null; }
     rm -f "$PIDFILE"
   fi
@@ -160,7 +169,7 @@ SQL
   if [ "$res" = "held" ]; then
     local holder
     holder=$(psql -X -qtA -d "$LAB_DATABASE_URL" -c \
-      "SELECT application_name FROM pg_stat_activity WHERE application_name LIKE 'db-serial-holder-${KH}-%' LIMIT 1" 2>/dev/null)
+      "SELECT a.application_name FROM pg_stat_activity a WHERE a.datname = current_database() AND a.application_name LIKE 'db-serial-holder-${KH}-%' AND EXISTS (SELECT 1 FROM pg_locks l WHERE l.pid = a.pid AND l.locktype = 'advisory' AND l.granted) LIMIT 1" 2>/dev/null)
     echo "held by ${holder:-db-serial-holder-(unknown)}"
   else
     echo "free"
