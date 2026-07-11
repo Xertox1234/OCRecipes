@@ -28,7 +28,7 @@ Merging is the irreversible step: squash-merge to protected `main` auto-deploys 
 | Rationalization                                                   | Reality                                                                                                                |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | "The user explicitly said merge; reviewing first would defy them" | They asked for the outcome (landed PR), not the shortcut. Review-then-merge delivers the outcome without them present. |
-| "It's tiny / not auth / not IAP / not health data"                | Small PRs in this repo have a track record of review findings (PR #14: 3 issues, PR #15: 2). Size doesn't exempt.      |
+| "It's tiny / not auth / not IAP / not health data"                | Reviews here catch real bugs CI missed (PR #14: 4 findings incl. a race condition; PR #15: 2). Size doesn't exempt.    |
 | "A revert is a one-liner if anything surfaces"                    | Merge auto-deploys to production. A bad merge is an incident, not a git command.                                       |
 | "CI is green, so review is redundant"                             | CI runs the tests that exist. Review catches the bug no test covers.                                                   |
 
