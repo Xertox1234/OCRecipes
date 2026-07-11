@@ -23,9 +23,11 @@ import {
   generateCoachProResponse,
   generateCoachResponse,
 } from "../nutrition-coach";
+import type { CoachContext } from "../nutrition-coach";
 import { parseBlocksFromContent } from "../coach-blocks";
 import { consumeWarmUp } from "../coach-warm-up";
 import { fireAndForget } from "../../lib/fire-and-forget";
+import { sanitizeContextField } from "../../lib/ai-safety";
 
 // ── Mocks ───────────────────────────────────────────────────
 
@@ -131,6 +133,9 @@ function makeParams(overrides: Partial<CoachChatParams> = {}): CoachChatParams {
       dailyProteinGoal: 150,
       dailyCarbsGoal: 250,
       dailyFatGoal: 65,
+      weight: null,
+      goalWeight: null,
+      measurementUnit: "metric",
     },
     isAborted: () => false,
     ...overrides,
@@ -284,6 +289,26 @@ describe("handleCoachChat", () => {
         hashCoachCacheContext(context, instant, "UTC"),
       );
     });
+
+    it("includes aboutUser in the context hash so profile edits invalidate same-day cache", () => {
+      const base = {
+        goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
+        todayIntake: { calories: 800, protein: 40, carbs: 100, fat: 30 },
+        dietaryProfile: {
+          dietType: "balanced",
+          allergies: [],
+          dislikes: [],
+        },
+      };
+      const instant = new Date("2026-04-29T09:15:00Z");
+
+      expect(hashCoachCacheContext(base, instant)).not.toBe(
+        hashCoachCacheContext(
+          { ...base, aboutUser: { primaryGoal: "lose_weight" } },
+          instant,
+        ),
+      );
+    });
   });
 
   // ── Warm-up consumption ───────────────────────────────────
@@ -407,6 +432,101 @@ describe("handleCoachChat", () => {
         (overrideEvents[0] as { type: "safety_override"; message: string })
           .message,
       ).toContain("careful");
+    });
+  });
+
+  // ── ABOUT THIS USER context boundary ───────────────────────
+
+  describe("ABOUT THIS USER context boundary", () => {
+    /** Context object handed to the (stubbed) Pro generator. */
+    function capturedProContext(): CoachContext {
+      return vi.mocked(generateCoachProResponse).mock.calls[0][1];
+    }
+
+    it("maps profile personalization fields and user weight into context.aboutUser", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        makeProfile({
+          primaryGoal: "lose_weight",
+          activityLevel: "lightly_active",
+          cookingSkillLevel: "beginner",
+          cookingTimeAvailable: "under_30_min",
+          cuisinePreferences: ["Mexican", "Thai"],
+          householdSize: 3,
+        }),
+      );
+      const params = makeParams({
+        user: {
+          dailyCalorieGoal: 2000,
+          dailyProteinGoal: 150,
+          dailyCarbsGoal: 250,
+          dailyFatGoal: 65,
+          weight: "82.50",
+          goalWeight: "75.00",
+          measurementUnit: "metric",
+        },
+      });
+
+      await collectEvents(handleCoachChat(params));
+
+      expect(capturedProContext().aboutUser).toEqual({
+        primaryGoal: "lose_weight",
+        activityLevel: "lightly_active",
+        cookingSkillLevel: "beginner",
+        cookingTimeAvailable: "under_30_min",
+        cuisinePreferences: ["Mexican", "Thai"],
+        householdSize: 3,
+        weightKg: 82.5,
+        goalWeightKg: 75,
+        measurementUnit: "metric",
+      });
+      // User-authored strings pass the M40 sanitize-at-context-boundary gate.
+      expect(sanitizeContextField).toHaveBeenCalledWith("lose_weight", 100);
+      expect(sanitizeContextField).toHaveBeenCalledWith("Mexican", 100);
+    });
+
+    it("omits aboutUser entirely when the profile has no personalization signal", async () => {
+      // Factory defaults: all personalization fields null, householdSize 1
+      // (the column default — carries no signal), cuisinePreferences [].
+      vi.mocked(storage.getUserProfile).mockResolvedValue(makeProfile());
+
+      await collectEvents(handleCoachChat(makeParams()));
+
+      expect(capturedProContext().aboutUser).toBeUndefined();
+    });
+
+    it("drops unparseable weight strings instead of rendering NaN", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        makeProfile({ primaryGoal: "maintain" }),
+      );
+      const params = makeParams({
+        user: {
+          dailyCalorieGoal: 2000,
+          dailyProteinGoal: 150,
+          dailyCarbsGoal: 250,
+          dailyFatGoal: 65,
+          weight: "abc",
+          goalWeight: null,
+          measurementUnit: "metric",
+        },
+      });
+
+      await collectEvents(handleCoachChat(params));
+
+      // No weight → no weightKg and no measurementUnit (only used for weights).
+      expect(capturedProContext().aboutUser).toEqual({
+        primaryGoal: "maintain",
+      });
+    });
+
+    it("ships aboutUser to the free tier too (both-tiers decision)", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        makeProfile({ primaryGoal: "gain_muscle" }),
+      );
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: false })));
+
+      const context = vi.mocked(generateCoachResponse).mock.calls[0][1];
+      expect(context.aboutUser).toEqual({ primaryGoal: "gain_muscle" });
     });
   });
 

@@ -15,6 +15,8 @@ import {
 } from "./coach-tools";
 import { classifyIntent, type CoachIntent } from "./coach-intent-classifier";
 import type { UserProfile } from "@shared/schema";
+import { weightFromKg, weightUnitLabel } from "@shared/lib/units";
+import type { MeasurementUnit } from "@shared/lib/units";
 
 const log = createServiceLogger("nutrition-coach");
 
@@ -59,6 +61,24 @@ export interface CoachContext {
    */
   mealPatternSummary?: string;
   blocksPrompt?: string;
+  /**
+   * Profile personalization signal (both tiers). Fields are omitted when the
+   * user hasn't set them; the whole object is omitted when nothing is set.
+   * Strings are sanitized at the context boundary (M40). Weights are kg
+   * (parsed from Drizzle decimal strings); measurementUnit is present only
+   * alongside a weight and controls the unit the prompt renders in.
+   */
+  aboutUser?: {
+    primaryGoal?: string;
+    activityLevel?: string;
+    cookingSkillLevel?: string;
+    cookingTimeAvailable?: string;
+    cuisinePreferences?: string[];
+    householdSize?: number;
+    weightKg?: number;
+    goalWeightKg?: number;
+    measurementUnit?: MeasurementUnit;
+  };
 }
 
 /** Returns intent-specific instruction block + examples (static strings only). */
@@ -149,6 +169,10 @@ function buildIntentBlock(intent: CoachIntent): string[] {
     "- Consider the time of day when making meal suggestions (breakfast vs dinner). If it's late and the user has eaten very little, address this gently.",
     "- If meal patterns show skipped meals or late-night eating, gently acknowledge these as context when relevant — but do not lecture unprompted.",
     "- Notebook entries are labelled with recency (recent/this week/this month/older). Weight recent entries more heavily than older ones.",
+    "- If ABOUT THIS USER lists cooking skill or available time, fit suggestions to them — never suggest a recipe that exceeds their stated time budget.",
+    "- When suggesting meals, default to the user's favorite cuisines when listed, unless they ask for variety.",
+    "- Frame advice around the user's primary goal when one is set (e.g. for weight loss, note when a choice supports their deficit) — never use shame framing.",
+    "- If current weight and goal weight are both present, you may reference the remaining gap encouragingly — never with urgency or deadline pressure.",
     "",
     "EXAMPLE EXCHANGES:",
     "",
@@ -249,6 +273,53 @@ function buildSystemPrompt(
     parts.push(
       `Food dislikes: ${context.dietaryProfile.dislikes.map(sanitizeUserInput).join(", ")}`,
     );
+  }
+
+  if (context.aboutUser) {
+    const au = context.aboutUser;
+    // Enum-ish profile values arrive snake_case ("lose_weight") — humanize so
+    // the model doesn't echo raw identifiers back at the user.
+    const humanize = (v: string) => v.replace(/_/g, " ");
+    const aboutLines: string[] = [];
+    if (au.primaryGoal) {
+      aboutLines.push(`Primary goal: ${humanize(au.primaryGoal)}`);
+    }
+    if (au.weightKg !== undefined || au.goalWeightKg !== undefined) {
+      const unit = au.measurementUnit ?? "metric";
+      const label = weightUnitLabel(unit);
+      // This is the leaf render site — round the converted value to 1 decimal.
+      const display = (kg: number) =>
+        Math.round(weightFromKg(kg, unit) * 10) / 10;
+      if (au.weightKg !== undefined && au.goalWeightKg !== undefined) {
+        aboutLines.push(
+          `Weight: ${display(au.weightKg)} ${label} (goal: ${display(au.goalWeightKg)} ${label})`,
+        );
+      } else if (au.weightKg !== undefined) {
+        aboutLines.push(`Weight: ${display(au.weightKg)} ${label}`);
+      } else if (au.goalWeightKg !== undefined) {
+        aboutLines.push(`Goal weight: ${display(au.goalWeightKg)} ${label}`);
+      }
+    }
+    if (au.activityLevel) {
+      aboutLines.push(`Activity level: ${humanize(au.activityLevel)}`);
+    }
+    if (au.cuisinePreferences && au.cuisinePreferences.length > 0) {
+      aboutLines.push(`Favorite cuisines: ${au.cuisinePreferences.join(", ")}`);
+    }
+    if (au.cookingSkillLevel) {
+      aboutLines.push(`Cooking skill: ${humanize(au.cookingSkillLevel)}`);
+    }
+    if (au.cookingTimeAvailable) {
+      aboutLines.push(
+        `Cooking time available: ${humanize(au.cookingTimeAvailable)}`,
+      );
+    }
+    if (au.householdSize !== undefined) {
+      aboutLines.push(`Cooks for: ${au.householdSize} people`);
+    }
+    if (aboutLines.length > 0) {
+      parts.push("", "ABOUT THIS USER:", ...aboutLines);
+    }
   }
 
   // Inject current time so the model can suggest contextually appropriate

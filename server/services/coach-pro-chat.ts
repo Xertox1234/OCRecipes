@@ -41,8 +41,9 @@ import {
   truncateHistoryToBudget,
   DEFAULT_HISTORY_TOKEN_BUDGET,
 } from "../lib/chat-history-truncate";
-import type { DailyLog } from "@shared/schema";
+import type { DailyLog, UserProfile } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import type { MeasurementUnit } from "@shared/lib/units";
 
 const log = createServiceLogger("coach-pro-chat");
 
@@ -168,6 +169,11 @@ export interface CoachChatParams {
     dailyProteinGoal: number | null;
     dailyCarbsGoal: number | null;
     dailyFatGoal: number | null;
+    /** Drizzle decimal column — arrives as a string, kg. */
+    weight: string | null;
+    /** Drizzle decimal column — arrives as a string, kg. */
+    goalWeight: string | null;
+    measurementUnit: MeasurementUnit;
   };
   /** Called each iteration to check if the client disconnected. */
   isAborted: () => boolean;
@@ -239,6 +245,62 @@ export function hashCoachCacheKey(
     .slice(0, 32);
 }
 
+/** Parse a Drizzle decimal string into a finite positive kg value, else undefined. */
+function parseDecimalKg(value: string | null): number | undefined {
+  if (value == null) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Assemble CoachContext.aboutUser from the profile row and users-table fields
+ * (M40: user-authored strings sanitized here, at the context boundary).
+ * Returns undefined when nothing carries signal so the prompt renders no
+ * ABOUT THIS USER section: null fields, empty cuisine list, and the
+ * householdSize column default of 1 are all "unset".
+ */
+function buildAboutUser(
+  profile: UserProfile | undefined,
+  user: CoachChatParams["user"],
+): CoachContext["aboutUser"] {
+  const aboutUser: NonNullable<CoachContext["aboutUser"]> = {};
+  if (profile?.primaryGoal) {
+    aboutUser.primaryGoal = sanitizeContextField(profile.primaryGoal, 100);
+  }
+  if (profile?.activityLevel) {
+    aboutUser.activityLevel = sanitizeContextField(profile.activityLevel, 100);
+  }
+  if (profile?.cookingSkillLevel) {
+    aboutUser.cookingSkillLevel = sanitizeContextField(
+      profile.cookingSkillLevel,
+      100,
+    );
+  }
+  if (profile?.cookingTimeAvailable) {
+    aboutUser.cookingTimeAvailable = sanitizeContextField(
+      profile.cookingTimeAvailable,
+      100,
+    );
+  }
+  const cuisines = (profile?.cuisinePreferences ?? [])
+    .filter(Boolean)
+    .map((c) => sanitizeContextField(c, 100));
+  if (cuisines.length > 0) {
+    aboutUser.cuisinePreferences = cuisines;
+  }
+  if (profile?.householdSize != null && profile.householdSize > 1) {
+    aboutUser.householdSize = profile.householdSize;
+  }
+  const weightKg = parseDecimalKg(user.weight);
+  const goalWeightKg = parseDecimalKg(user.goalWeight);
+  if (weightKg !== undefined) aboutUser.weightKg = weightKg;
+  if (goalWeightKg !== undefined) aboutUser.goalWeightKg = goalWeightKg;
+  if (weightKg !== undefined || goalWeightKg !== undefined) {
+    aboutUser.measurementUnit = user.measurementUnit;
+  }
+  return Object.keys(aboutUser).length > 0 ? aboutUser : undefined;
+}
+
 export function hashCoachCacheContext(
   context: CoachContext,
   now: Date = new Date(),
@@ -250,6 +312,9 @@ export function hashCoachCacheContext(
         goals: context.goals,
         todayIntake: context.todayIntake,
         dietaryProfile: context.dietaryProfile,
+        // Binding rule (ai-prompting): every context field the prompt renders
+        // must be in this hash, or same-day profile edits serve stale answers.
+        aboutUser: context.aboutUser ?? null,
         // User-local hour, matching the tz-aware day bucket — the prompt's
         // "Current time" line is rendered in the user's tz, so the cache
         // must bucket on the same clock. h23 avoids "24" at midnight.
@@ -480,6 +545,12 @@ export async function* handleCoachChat(
     },
     screenContext,
   };
+
+  // Both tiers: profile personalization signal (omitted when nothing is set).
+  const aboutUser = buildAboutUser(profile, user);
+  if (aboutUser) {
+    context.aboutUser = aboutUser;
+  }
 
   // ── Coach Pro: meal pattern summary ────────────────
   if (tierConfig.fetchMealPatterns && recentLogsForPatterns.length > 0) {
