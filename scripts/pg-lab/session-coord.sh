@@ -152,8 +152,17 @@ do_refresh_snapshot() {
   snap="/tmp/claude-session-coord-${sid}.json"
   lockdir="/tmp/claude-session-coord-${sid}.refresh-lock"  # script-scope, not local: the EXIT trap fires after this function returns
   # In-flight guard (spec §5.1 flock intent; mkdir because flock(1) is absent on stock
-  # macOS): losers exit silently, one refresh per burst.
-  mkdir "$lockdir" 2>/dev/null || exit 0
+  # macOS): losers exit silently, one refresh per burst. A SIGKILL-orphaned lockdir would
+  # otherwise disable refreshes forever, since nothing ever rmdir's it again -- break locks
+  # older than 60s (one retry; if that also loses the race, another process won it fairly).
+  mkdir "$lockdir" 2>/dev/null || {
+    local lock_mt lock_age
+    lock_mt=$(stat -c %Y "$lockdir" 2>/dev/null || stat -f %m "$lockdir" 2>/dev/null) || exit 0
+    lock_age=$(( $(date +%s) - lock_mt ))
+    [ "$lock_age" -gt 60 ] || exit 0
+    rmdir "$lockdir" 2>/dev/null
+    mkdir "$lockdir" 2>/dev/null || exit 0
+  }
   trap 'rmdir "$lockdir" 2>/dev/null' EXIT
   do_reap
   json=$(psql -X -qtA -d "$LAB_DATABASE_URL" -v sid="$sid" 2>/dev/null <<'SQL'
@@ -172,8 +181,86 @@ SQL
   jq -e '.sessions' "$tmp" >/dev/null 2>&1 || { rm -f "$tmp"; exit 0; }  # never install corrupt JSON
   mv -f "$tmp" "$snap" 2>/dev/null || rm -f "$tmp"
 }
-do_consult() { :; }            # PR 2
-do_attribute_drift() { :; }    # PR 2
+snapshot_age_secs() { # portable mtime age; huge number when file missing
+  local f="$1" mt
+  mt=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null) || { echo 999999; return; }
+  echo $(( $(date +%s) - mt ))
+}
+
+emit_context() { # $1 message -> PreToolUse additionalContext JSON (drift-detect shape)
+  jq -n --arg m "$1" '{ "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": $m } }'
+}
+
+do_consult() {
+  local input sid file snap age dir root rel match msg
+  input=$(cat)
+  sid=$(jq -re '.session_id // empty' <<<"$input" 2>/dev/null) || exit 0
+  file=$(jq -re '.tool_input.file_path // empty' <<<"$input" 2>/dev/null) || exit 0
+  [ -n "$file" ] || exit 0
+  snap="/tmp/claude-session-coord-${sid}.json"
+  age=$(snapshot_age_secs "$snap")
+  # Stale-while-revalidate (spec §5.1): use whatever we have NOW; refresh in background.
+  if [ "$age" -gt 25 ]; then
+    bash "$SELF_DIR/session-coord.sh" refresh-snapshot --session "$sid" >/dev/null 2>&1 &
+  fi
+  [ -f "$snap" ] || exit 0
+  # rel_path of the target, from the FILE's containing worktree (same walk as record).
+  dir=$(dirname "$file")
+  while [ ! -d "$dir" ] && [ "$dir" != "/" ]; do dir=$(dirname "$dir"); done
+  root=$(git_root_of "$dir") || root=""
+  rel=""; [ -n "$root" ] && rel="${file#"$root"/}"
+  # One jq pass: level|sid|kind|branch|last_seen_at for the first match, self excluded.
+  match=$(jq -r --arg f "$file" --arg rel "$rel" --arg root "$root" --arg me "$sid" '
+    [ .sessions[]? | select(.session_id != $me) | . as $s | .files[]?
+      | if .abs_path == $f then {lvl:"collision",s:$s}
+        elif ($rel != "" and .rel_path == $rel and $s.repo_root != $root) then {lvl:"worktree",s:$s}
+        else empty end
+    ] | .[0] // empty
+    | "\(.lvl)\u001f\(.s.session_id)\u001f\(.s.session_kind)\u001f\(.s.branch // "?")\u001f\(.s.last_seen_at)"
+  ' "$snap" 2>/dev/null) || exit 0
+  [ -n "$match" ] || exit 0
+  local lvl osid okind obranch oseen
+  IFS=$'\x1f' read -r lvl osid okind obranch oseen <<<"$match"
+  case "$lvl" in
+    collision)
+      msg="Session ${osid:0:8} (${okind}, branch ${obranch}, last seen ${oseen}) is mid-edit on this same file in this same checkout. Coordinate before editing — parallel same-file edits here produced tangled commits before. (Warn-only.)"
+      log_event "warn-collision" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" >/dev/null 2>&1 &
+      ;;
+    worktree)
+      msg="Session ${osid:0:8} (${okind}, branch ${obranch}) is editing the same file in another worktree — expect a merge conflict when both land. (Warn-only.)"
+      log_event "warn-worktree" "$sid" "$osid" "{\"file\":$(jq -Rn --arg v "$file" '$v')}" >/dev/null 2>&1 &
+      ;;
+    *) exit 0 ;;
+  esac
+  emit_context "$msg"
+}
+do_attribute_drift() {
+  local sid="${1:-}" root="${2:-}" row
+  [ -n "$sid" ] && [ -n "$root" ] || exit 0
+  row=$(psql -X -qtA -F$'\x1f' -d "$LAB_DATABASE_URL" -v sid="$sid" -v root="$root" 2>/dev/null <<'SQL'
+SELECT session_id, session_kind, COALESCE(branch,'?'), last_seen_at
+FROM harness.session_registry
+WHERE session_id <> :'sid' AND repo_root = :'root' AND expires_at > now()
+ORDER BY last_seen_at DESC LIMIT 1;
+SQL
+  ) || exit 0
+  # psql exits 0 on SQL errors unless ON_ERROR_STOP is set, so the plain query above can't
+  # be trusted to distinguish "DB unreachable" from "no match" via rc alone. Re-probe with
+  # ON_ERROR_STOP against the actual harness table (not a bare SELECT 1) so a reachable-but-
+  # schema-less lab DB fails the probe too, instead of being misattributed as "no other
+  # session" — only print that line when the table genuinely answered with no rows.
+  if [ -n "$row" ]; then
+    local osid okind obranch oseen
+    IFS=$'\x1f' read -r osid okind obranch oseen <<<"$row"
+    printf 'Attribution: session %s (%s, branch %s) is registered in this checkout, last seen %s.\n' \
+      "${osid:0:8}" "$okind" "$obranch" "$oseen"
+    log_event "drift-attributed" "$sid" "$osid" '{}' >/dev/null 2>&1 &
+  else
+    psql -X -q -v ON_ERROR_STOP=1 -d "$LAB_DATABASE_URL" -c 'SELECT 1 FROM harness.session_registry LIMIT 1' >/dev/null 2>&1 || exit 0
+    printf 'Attribution: no other live session registered here — likely your own manual git op or a stale baseline.\n'
+    log_event "drift-unattributed" "$sid" "" '{}' >/dev/null 2>&1 &
+  fi
+}
 
 SUB="${1:-}"; [ $# -gt 0 ] && shift
 case "$SUB" in

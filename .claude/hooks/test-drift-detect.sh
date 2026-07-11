@@ -62,6 +62,17 @@ assert_silent() {
   fi
 }
 
+assert_not_contains() {
+  local name="$1" needle="$2" out="$3"
+  if grep -qF "$needle" <<<"$out"; then
+    echo "FAIL: $name (unexpected substring: $needle)"
+    printf '  got: %s\n' "$(printf '%s' "$out" | head -3)"
+    FAIL=$((FAIL+1))
+  else
+    echo "PASS: $name"; PASS=$((PASS+1))
+  fi
+}
+
 # --- Set up a temp git repo ---
 TMPDIR_REPO=$(mktemp -d)
 git -C "$TMPDIR_REPO" init -q
@@ -175,6 +186,30 @@ assert_silent "npm command: detect is silent" "$OUT"
 
 OUT=$(run_detect "echo 'git commit is great'")
 assert_silent "echo with git commit text: detect is silent" "$OUT"
+
+# --- Test: attribution enrichment is fail-silent when the lab DB is unreachable ---
+# The rebase-update case above resynced baseline=HEAD, so drift there is gone — re-drift
+# with one more external commit (same technique as the earlier drift case) so this run
+# actually reaches the MSG line; only LAB_DATABASE_URL changes vs. that earlier case.
+echo "external2" > "$TMPDIR_REPO/external2.txt"
+git -C "$TMPDIR_REPO" add external2.txt
+git -C "$TMPDIR_REPO" -c commit.gpgsign=false commit -q -m "external commit 2"
+
+# drift-detect.sh resolves $COORD as "$(git rev-parse --show-toplevel)/scripts/pg-lab/
+# session-coord.sh" — under this fixture's GIT_WORK_TREE override that's $TMPDIR_REPO,
+# which has no scripts/pg-lab/ of its own. Symlink the real one in (whole dir, not just
+# the script — session-coord.sh sources lib/ps-walk.sh via $SELF_DIR) so the hook truly
+# invokes attribute-drift against the unreachable LAB_DATABASE_URL below, rather than
+# short-circuiting on a missing $COORD before ever touching the DB.
+REAL_PGLAB="$(cd "$HOOKS_DIR/../.." && pwd)/scripts/pg-lab"
+mkdir -p "$TMPDIR_REPO/scripts"
+ln -s "$REAL_PGLAB" "$TMPDIR_REPO/scripts/pg-lab"
+
+DRIFT_INPUT=$(jq -n --arg c "git commit -m claude-attrib" --arg s "$TEST_SESSION" \
+  '{"tool_name":"Bash","session_id":$s,"tool_input":{"command":$c}}')
+OUT=$(printf '%s' "$DRIFT_INPUT" | LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" bash "$DETECT_HOOK" 2>/dev/null)
+assert_contains "PG-down drift: classic message still fires" "Drift detected" "$OUT"
+assert_not_contains "PG-down drift: no attribution suffix leaked" "Attribution:" "$OUT"
 
 unset GIT_DIR GIT_WORK_TREE
 
