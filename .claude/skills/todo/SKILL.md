@@ -214,10 +214,17 @@ Determine which todos can safely run in parallel and which must run sequentially
    - Dependency has **no PR** (quality-dropped, previously failed, or never attempted): skip with reason `gated on <dependency> — not implemented yet` → Phase 5 "Gated on a dependency (not yet implemented)". The unblock is re-authoring or a future run of the dependency, not a merge.
    - Dependency is **scheduled in THIS run**: defer the wording — at Phase 5 time use the dependency's actual outcome (PR opened → first bullet; failed/blocked → second bullet).
 4. **Todos that mention NO specific files must run sequentially.** Unknown scope means they could potentially conflict with anything.
-5. **Independent todos** (disjoint file sets, and each mentions at least one file) can run in parallel.
-6. **Max 4 parallel agents per batch.** If more than 4 independent todos exist, split them into multiple batches.
-7. **Group into execution batches** ordered by the highest-priority todo in each batch. Within a batch, maintain the priority/date sort from Phase 2.
-8. Display the execution plan:
+5. **DB-serial todos get their own sequential batch.** A todo whose body mentions
+   `shared/schema.ts`, `migrations/`, `drizzle`, or `db:push` performs DDL against the
+   shared dev database — mark it `[db-serial]` in the plan display and schedule it alone
+   in a sequential batch (feedback_todo_parallel_shared_dev_db). The executor-side
+   advisory lock (`scripts/pg-lab/db-serial-lock.sh`, dispatched below) is the enforcement
+   backstop for the runs this planning rule cannot see (a second orchestrator, a manual
+   session); it does not replace this rule.
+6. **Independent todos** (disjoint file sets, and each mentions at least one file) can run in parallel.
+7. **Max 4 parallel agents per batch.** If more than 4 independent todos exist, split them into multiple batches.
+8. **Group into execution batches** ordered by the highest-priority todo in each batch. Within a batch, maintain the priority/date sort from Phase 2.
+9. Display the execution plan:
 
    ```
    Batch 1 (parallel — 3 todos):
@@ -233,11 +240,11 @@ Determine which todos can safely run in parallel and which must run sequentially
      - [low] Extract toDateString utility
    ```
 
-9. **Advisor review of the parallelization plan (gated).** Call the `advisor` tool before dispatching Phase 4 **only when the plan contains at least one parallel batch of 2+ todos**. Skip it for an all-sequential or single-todo plan — those run one executor at a time and cannot hit the parallel-collision failure this gate exists to catch, so the round-trip is not worth it. (If the advisor tool is not available in the session, skip this step.)
+10. **Advisor review of the parallelization plan (gated).** Call the `advisor` tool before dispatching Phase 4 **only when the plan contains at least one parallel batch of 2+ todos**. Skip it for an all-sequential or single-todo plan — those run one executor at a time and cannot hit the parallel-collision failure this gate exists to catch, so the round-trip is not worth it. (If the advisor tool is not available in the session, skip this step.)
 
-   The advisor sees this orchestrator's full transcript — the todo bodies, the file-overlap map from steps 1–2, and the batch plan — and reviews exactly one question: **is any parallel batch unsafe?** Could two todos in the same parallel batch touch the same file (a shared import, a barrel file, or a type the overlap analysis missed), and is anything marked parallel that should be sequential? Two executors editing one file in separate worktrees produce conflicting branches and stacked PRs — expensive and hard to unwind once agents are live.
+    The advisor sees this orchestrator's full transcript — the todo bodies, the file-overlap map from steps 1–2, and the batch plan — and reviews exactly one question: **is any parallel batch unsafe?** Could two todos in the same parallel batch touch the same file (a shared import, a barrel file, or a type the overlap analysis missed), and is anything marked parallel that should be sequential? Two executors editing one file in separate worktrees produce conflicting branches and stacked PRs — expensive and hard to unwind once agents are live.
 
-   Nothing has executed yet, so revising is cheap. If the advisor flags a risky pairing, split the conflicting todos into separate batches (or make the batch sequential), re-display the revised plan, then proceed. Weigh the advice seriously, but it is advisory: if a flag is clearly wrong (the files genuinely do not overlap), note why and continue.
+    Nothing has executed yet, so revising is cheap. If the advisor flags a risky pairing, split the conflicting todos into separate batches (or make the batch sequential), re-display the revised plan, then proceed. Weigh the advice seriously, but it is advisory: if a flag is clearly wrong (the files genuinely do not overlap), note why and continue.
 
 ## Phase 4 — Execute
 
@@ -252,11 +259,21 @@ Agent({
   description: "Execute todo: <todo title>",
   subagent_type: "general-purpose",
   isolation: "worktree",
-  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\nMain checkout: <MAIN_CHECKOUT>\n\nExecute all steps in order and report the result."
+  prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\nMain checkout: <MAIN_CHECKOUT>\n\nFirst action, before any other step: run `scripts/pg-lab/session-coord.sh register --kind todo-executor` (registers this session's kind in the coordination registry; silently no-ops if Postgres is down).\n\nExecute all steps in order and report the result."
 })
 ```
 
 Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` and the actual main checkout path (e.g., `/Users/williamtower/projects/OCRecipes`) for `<MAIN_CHECKOUT>`. Never pass the literal text `<BASE_BRANCH>` or `<MAIN_CHECKOUT>`.
+
+**DB-serial todos only** (marked `[db-serial]` in Phase 3): add this block to the dispatch prompt —
+
+> Before your first `db:push`/DDL step: resolve the session pid with
+> `WATCH_PID=$(bash -c '. scripts/pg-lab/lib/ps-walk.sh && resolve_claude_pid')`, then run
+> `scripts/pg-lab/db-serial-lock.sh acquire --watch-pid "$WATCH_PID"` with a Bash timeout of 600000. Exit 0 → proceed. Exit 2 → retry the acquire ONCE; a second exit 2 means another
+> session is live on the shared dev DB — mark this todo `blocked` with an ACTION NEEDED
+> reason quoting the holder identity the command printed, and stop. Exit 3 → proceed
+> unlocked and note "db-serial lock unavailable (watch-pid unresolvable)" in the PR body.
+> On completion — success OR failure — run `scripts/pg-lab/db-serial-lock.sh release`.
 
 ### Parallel Batches
 
