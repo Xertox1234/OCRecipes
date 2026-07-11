@@ -6,7 +6,7 @@ title: "PG Lab (spec-first): injection ranking layer — time decay + git-aware 
 status: blocked
 priority: low
 created: 2026-07-05
-updated: 2026-07-07
+updated: 2026-07-11
 assignee:
 labels: [deferred, harness, spec-first]
 github_issue:
@@ -62,3 +62,15 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`; evidence and the doob
   2 days before this triage — the temporal gate cannot be satisfied yet regardless of the spec
   question. Unblock once ~30 days of usage-telemetry data exists AND a human-led brainstorming
   session is run.
+
+### 2026-07-11
+
+- Telemetry gate checked (user-led, decision **WAIT**): 6 of ~30 days accumulated
+  (2026-07-06 → 2026-07-11; 583 rows, 29 sessions, 11/14 domains; 494 pointer / 74 injected /
+  15 deferred; 70 of ~620 solution docs ever delivered). Sample is workload-biased (daily rows
+  368→1 as the week shifted to harness work), dead-weight stats and the replay-eval corpus need
+  the full window.
+- **Do NOT flip this todo to `backlog` before 2026-08-05.** At re-check, re-run the volume
+  queries against `harness.injection_log` in `ocrecipes_lab` (row count / first-last day,
+  action mix, deferral-by-domain, distinct docs delivered), then unblock only for a human-led
+  brainstorming session per the Acceptance Criteria — never for autonomous execution.
