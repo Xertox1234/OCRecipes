@@ -262,6 +262,28 @@ describe("handleCoachChat", () => {
         ),
       );
     });
+
+    it("buckets the context-hash hour in the user's timezone, matching the tz-aware day bucket", () => {
+      const context = {
+        goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
+        todayIntake: { calories: 800, protein: 40, carbs: 100, fat: 30 },
+        dietaryProfile: { dietType: "balanced", allergies: [], dislikes: [] },
+      };
+      // 09:15 UTC = 02:15 in Los Angeles — different local hours, same instant.
+      const instant = new Date("2026-04-29T09:15:00Z");
+
+      expect(hashCoachCacheContext(context, instant, "UTC")).not.toBe(
+        hashCoachCacheContext(context, instant, "America/Los_Angeles"),
+      );
+      // Same tz twice — deterministic.
+      expect(
+        hashCoachCacheContext(context, instant, "America/Los_Angeles"),
+      ).toBe(hashCoachCacheContext(context, instant, "America/Los_Angeles"));
+      // Omitted tz behaves as UTC (backward compatible).
+      expect(hashCoachCacheContext(context, instant)).toBe(
+        hashCoachCacheContext(context, instant, "UTC"),
+      );
+    });
   });
 
   // ── Warm-up consumption ───────────────────────────────────

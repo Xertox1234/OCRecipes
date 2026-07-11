@@ -242,6 +242,7 @@ export function hashCoachCacheKey(
 export function hashCoachCacheContext(
   context: CoachContext,
   now: Date = new Date(),
+  tz: string = "UTC",
 ): string {
   return createHash("sha256")
     .update(
@@ -249,7 +250,16 @@ export function hashCoachCacheContext(
         goals: context.goals,
         todayIntake: context.todayIntake,
         dietaryProfile: context.dietaryProfile,
-        hour: now.getHours(),
+        // User-local hour, matching the tz-aware day bucket — the prompt's
+        // "Current time" line is rendered in the user's tz, so the cache
+        // must bucket on the same clock. h23 avoids "24" at midnight.
+        hour: Number(
+          new Intl.DateTimeFormat("en-US", {
+            timeZone: tz,
+            hour: "2-digit",
+            hourCycle: "h23",
+          }).format(now),
+        ),
       }),
     )
     .digest("hex")
@@ -551,7 +561,7 @@ export async function* handleCoachChat(
         content,
         isCoachPro,
         getDayBucketInTz(today, tz),
-        hashCoachCacheContext(context, today),
+        hashCoachCacheContext(context, today, tz),
         intent,
       )
     : null;
@@ -620,6 +630,7 @@ export async function* handleCoachChat(
       // Reuse the intent classified once at the top of the turn — skips a
       // redundant classifyIntent call inside the generator.
       intent,
+      tz,
     )) {
       if (isAborted()) break;
       if (chunk === SAFETY_OVERRIDE_SENTINEL) {

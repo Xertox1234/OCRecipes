@@ -876,3 +876,76 @@ describe("generateCoachResponse", () => {
     expect(systemMsg.content).toContain("---BOUNDARY---");
   });
 });
+
+describe("current time rendering", () => {
+  // 2026-07-11 01:12 UTC — Saturday 1:12 AM in UTC, Friday 6:12 PM in LA (PDT).
+  const FIXED_INSTANT = new Date(Date.UTC(2026, 6, 11, 1, 12));
+
+  function capturedSystemPrompt(): string {
+    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    return (callArgs as { messages: { role: string; content: string }[] })
+      .messages[0].content;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_INSTANT);
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("renders the current time in the user's timezone on the free path", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(
+      generateCoachResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        undefined,
+        undefined,
+        "America/Los_Angeles",
+      ),
+    );
+
+    expect(capturedSystemPrompt()).toContain(
+      "Current time for this user: Friday 6:12 PM",
+    );
+  });
+
+  it("defaults to UTC when the caller provides no timezone", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+
+    expect(capturedSystemPrompt()).toContain(
+      "Current time for this user: Saturday 1:12 AM",
+    );
+  });
+
+  it("renders the user's timezone on the Pro path (tz already a param)", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "America/Los_Angeles",
+      ),
+    );
+
+    expect(capturedSystemPrompt()).toContain(
+      "Current time for this user: Friday 6:12 PM",
+    );
+  });
+});

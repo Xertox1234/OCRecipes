@@ -175,10 +175,16 @@ function buildIntentBlock(intent: CoachIntent): string[] {
   ];
 }
 
+interface BuildPromptOptions {
+  now?: Date;
+  /** IANA timezone the "Current time" line is rendered in. */
+  tz?: string;
+}
+
 function buildSystemPrompt(
   context: CoachContext,
   intent: CoachIntent = "personalized_advice",
-  now: Date = new Date(),
+  { now = new Date(), tz = "UTC" }: BuildPromptOptions = {},
 ): string {
   const parts = [
     // ── Universal persona + safety rules (apply to every intent) ──────────
@@ -245,12 +251,23 @@ function buildSystemPrompt(
     );
   }
 
-  // Inject current time so the model can suggest contextually appropriate meals
-  const hours = now.getHours();
-  const minutes = now.getMinutes().toString().padStart(2, "0");
-  const period = hours >= 12 ? "PM" : "AM";
-  const displayHour = hours % 12 || 12;
-  parts.push(`Current time: ${displayHour}:${minutes} ${period}`);
+  // Inject current time so the model can suggest contextually appropriate
+  // meals. Rendered in the USER's timezone — the server runs in UTC, so
+  // server-local time would suppress dinner ideas for most users. Built from
+  // formatToParts (not format()) to avoid the U+202F narrow no-break space
+  // ICU emits before AM/PM. Weekday is free signal (weeknight vs weekend).
+  const timeParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(now);
+  const timePart = (type: Intl.DateTimeFormatPartTypes): string =>
+    timeParts.find((p) => p.type === type)?.value ?? "";
+  parts.push(
+    `Current time for this user: ${timePart("weekday")} ${timePart("hour")}:${timePart("minute")} ${timePart("dayPeriod")}`,
+  );
 
   if (context.screenContext) {
     parts.push(
@@ -307,7 +324,10 @@ export function getSystemPromptTemplateVersion(): string {
   ];
   const combined = allIntents
     .map((intent) =>
-      buildSystemPrompt(emptyContext, intent, TEMPLATE_REFERENCE_TIME),
+      buildSystemPrompt(emptyContext, intent, {
+        now: TEMPLATE_REFERENCE_TIME,
+        tz: "UTC",
+      }),
     )
     .join("\x00");
   _systemPromptTemplateVersion = createHash("sha256")
@@ -328,11 +348,13 @@ export async function* generateCoachResponse(
    * Callers that omit it self-classify the last user message.
    */
   intent?: CoachIntent,
+  /** IANA timezone of the requesting user — renders the prompt's "Current time" line. */
+  tz: string = "UTC",
 ): AsyncGenerator<string> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
   const resolvedIntent = intent ?? classifyIntent(lastUserMessage).intent;
-  const systemPrompt = buildSystemPrompt(context, resolvedIntent);
+  const systemPrompt = buildSystemPrompt(context, resolvedIntent, { tz });
 
   // Sanitize all persisted roles before including conversation history.
   const sanitizedMessages = messages.map((m) => ({
@@ -406,13 +428,13 @@ export async function* generateCoachProResponse(
    * Callers that omit it self-classify the last user message.
    */
   intent?: CoachIntent,
-  /** IANA timezone of the requesting user — threads through to day-bucketed tool calls. */
+  /** IANA timezone of the requesting user — threads through to day-bucketed tool calls and the prompt's "Current time" line. */
   tz: string = "UTC",
 ): AsyncGenerator<string> {
   const lastUserMessage =
     messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
   const resolvedIntent = intent ?? classifyIntent(lastUserMessage).intent;
-  const systemPrompt = buildSystemPrompt(context, resolvedIntent);
+  const systemPrompt = buildSystemPrompt(context, resolvedIntent, { tz });
   // Shallow-copy the frozen module-level array so the SDK can accept it
   // (its types require a mutable `ChatCompletionTool[]`). The copy is O(n)
   // over references, not over the full tool tree — still far cheaper than
