@@ -65,12 +65,14 @@ cited source:
 - **Count/precedent claims** ("PR #14: 3 review findings") → re-derive the number
   under one stated counting method applied uniformly to every cited instance. A
   count whose method you cannot state cannot be verified — cite the source commit
-  instead. (2026-07-11, PR #577: the `/land` skill's rationalization table shipped
+  instead. (2026-07-11, PR #577: the `/land` skill's draft rationalization table cited
   "PR #14: 3 issues" where a consistent method — bullets in the PR's review-fix
   commit, cross-checked against reviewer comments — gives 4, and its "small PRs"
   framing was contradicted by the cited PRs' own file counts. Load-bearing in a
   discipline doc: agents quote "Reality" cells verbatim, and wrong evidence
-  weakens the rule the first time a reader checks it.)
+  weakens the rule the first time a reader checks it. The miscount was caught by
+  the pre-merge fact-check review and corrected before merge — it never reached
+  `main`.)
 
 Per-claim adversarial verifiers (each prompted to _refute_ one claim) caught all four
 defects that the symbol-existence pass had approved.
