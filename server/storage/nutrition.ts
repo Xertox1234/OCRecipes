@@ -306,6 +306,45 @@ export async function getDailyLogsInRange(
     .orderBy(desc(dailyLogs.loggedAt));
 }
 
+/**
+ * The user's most frequently logged foods in a date range (inclusive start,
+ * exclusive end), grouped by name across both log sources: scanned-item
+ * `productName` and recipe `title`. Feeds the Coach's frequent-foods context.
+ *
+ * `HAVING count >= 3` is a deliberate noise floor — one-off foods carry no
+ * personalization signal. Discarded scanned items are excluded (mirrors
+ * `getDailySummary`); nameless logs (neither source joined) are skipped.
+ */
+export async function getMostEatenFoods(
+  userId: string,
+  from: Date,
+  to: Date,
+  limit = 5,
+): Promise<{ name: string; timesLogged: number }[]> {
+  const nameExpr = sql<string>`COALESCE(${scannedItems.productName}, ${mealPlanRecipes.title})`;
+  return db
+    .select({
+      name: nameExpr,
+      timesLogged: sql<number>`count(*)::int`,
+    })
+    .from(dailyLogs)
+    .leftJoin(scannedItems, eq(dailyLogs.scannedItemId, scannedItems.id))
+    .leftJoin(mealPlanRecipes, eq(dailyLogs.recipeId, mealPlanRecipes.id))
+    .where(
+      and(
+        eq(dailyLogs.userId, userId),
+        gte(dailyLogs.loggedAt, from),
+        lt(dailyLogs.loggedAt, to),
+        sql`(${scannedItems.discardedAt} IS NULL OR ${dailyLogs.scannedItemId} IS NULL)`,
+        sql`${nameExpr} IS NOT NULL`,
+      ),
+    )
+    .groupBy(nameExpr)
+    .having(sql`count(*) >= 3`)
+    .orderBy(desc(sql`count(*)`), nameExpr)
+    .limit(limit);
+}
+
 export async function createDailyLog(log: InsertDailyLog): Promise<DailyLog> {
   const [dailyLog] = await db.insert(dailyLogs).values(log).returning();
   return dailyLog;

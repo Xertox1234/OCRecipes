@@ -78,6 +78,11 @@ export interface CoachContext {
    */
   dueCommitmentsSummary?: string;
   /**
+   * The user's most frequently logged foods over the past 30 days
+   * (Coach Pro only). E.g. "Greek yogurt (12×), chicken breast (8×)".
+   */
+  frequentFoodsSummary?: string;
+  /**
    * Profile personalization signal (both tiers). Fields are omitted when the
    * user hasn't set them; the whole object is omitted when nothing is set.
    * Strings are sanitized at the context boundary (M40). Weights are kg
@@ -344,6 +349,11 @@ function buildSystemPrompt(
 
   if (context.mealPatternSummary) {
     parts.push(`Meal patterns (past 7 days): ${context.mealPatternSummary}`);
+  }
+  if (context.frequentFoodsSummary) {
+    parts.push(
+      `Frequently logged foods (past 30 days): ${context.frequentFoodsSummary}`,
+    );
   }
   if (context.dietaryProfile.dietType) {
     parts.push(

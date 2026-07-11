@@ -923,5 +923,22 @@
       ]
     },
     "scoreDimensions": ["helpfulness", "personalization", "tone"]
+  },
+  {
+    "id": "personalization-frequent-foods-01",
+    "category": "personalization",
+    "description": "User with a frequent-foods history asks for a higher-protein breakfast — suggestions should build on what they already eat rather than generic ideas",
+    "userMessage": "Ideas for a higher-protein breakfast?",
+    "context": {
+      "goals": { "calories": 2000, "protein": 150, "carbs": 250, "fat": 65 },
+      "todayIntake": { "calories": 0, "protein": 0, "carbs": 0, "fat": 0 },
+      "dietaryProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "frequentFoodsSummary": "Greek yogurt (12×), oatmeal (9×)"
+    },
+    "scoreDimensions": ["personalization", "helpfulness"]
   }
 ]

@@ -341,6 +341,7 @@ export function hashCoachCacheContext(
         // it's included so the invariant stays mechanical, not reasoned-about.)
         aboutUser: context.aboutUser ?? null,
         dueCommitmentsSummary: context.dueCommitmentsSummary ?? null,
+        frequentFoodsSummary: context.frequentFoodsSummary ?? null,
         // User-local hour, matching the tz-aware day bucket — the prompt's
         // "Current time" line is rendered in the user's tz, so the cache
         // must bucket on the same clock. h23 avoids "24" at midnight.
@@ -519,6 +520,9 @@ export async function* handleCoachChat(
   // For Coach Pro, also fetch 7 days of daily logs to derive meal patterns.
   const sevenDaysAgo = new Date(today);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  // 30-day window for the frequent-foods aggregate — stabler counts than 7d.
+  const thirtyDaysAgo = new Date(today);
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
   const [
     profile,
@@ -527,6 +531,7 @@ export async function* handleCoachChat(
     recentLogsForPatterns,
     notebookEntries,
     dueCommitments,
+    frequentFoods,
   ] = await Promise.all([
     storage.getUserProfile(userId),
     storage.getDailySummary(userId, today, tz),
@@ -547,6 +552,11 @@ export async function* handleCoachChat(
           [] as Awaited<
             ReturnType<typeof storage.getCommitmentsWithDueFollowUp>
           >,
+        ),
+    tierConfig.fetchMealPatterns
+      ? storage.getMostEatenFoods(userId, thirtyDaysAgo, today)
+      : Promise.resolve(
+          [] as Awaited<ReturnType<typeof storage.getMostEatenFoods>>,
         ),
   ]);
 
@@ -602,6 +612,13 @@ export async function* handleCoachChat(
     if (mealPatternSummary) {
       context.mealPatternSummary = mealPatternSummary;
     }
+  }
+
+  // ── Coach Pro: frequent foods (30-day aggregate) ────
+  if (tierConfig.fetchMealPatterns && frequentFoods.length > 0) {
+    context.frequentFoodsSummary = frequentFoods
+      .map((f) => `${sanitizeContextField(f.name, 100)} (${f.timesLogged}×)`)
+      .join(", ");
   }
 
   // ── Coach Pro: due-commitment follow-ups ────────────

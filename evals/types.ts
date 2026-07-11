@@ -152,6 +152,7 @@ const coachContextSchema = z.object({
   notebookSummary: z.string().optional(),
   aboutUser: coachAboutUserSchema.optional(),
   dueCommitmentsSummary: z.string().optional(),
+  frequentFoodsSummary: z.string().optional(),
 });
 
 export const evalTestCaseSchema = z.object({

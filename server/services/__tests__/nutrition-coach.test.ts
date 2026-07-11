@@ -991,6 +991,28 @@ describe("due-commitments follow-up rendering", () => {
       "COMMITMENTS DUE FOR FOLLOW-UP",
     );
   });
+
+  it("renders the frequent-foods line when present and omits it when absent", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      frequentFoodsSummary: "Greek yogurt (12×), chicken breast (8×)",
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+    expect(capturedSystemPrompt()).toContain(
+      "Frequently logged foods (past 30 days): Greek yogurt (12×), chicken breast (8×)",
+    );
+
+    vi.mocked(openai.chat.completions.create).mockClear();
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+    expect(capturedSystemPrompt()).not.toContain("Frequently logged foods");
+  });
 });
 
 describe("ABOUT THIS USER rendering", () => {

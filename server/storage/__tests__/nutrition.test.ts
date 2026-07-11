@@ -43,6 +43,7 @@ const {
   getDailyLogs,
   createDailyLog,
   getDailySummary,
+  getMostEatenFoods,
   getDailyScanCount,
   getSavedItems,
   getSavedItemCount,
@@ -83,7 +84,7 @@ async function insertScannedItem(
 
 async function insertDailyLog(
   userId: string,
-  overrides: Partial<schema.InsertDailyLog> = {},
+  overrides: Partial<schema.InsertDailyLog> & { loggedAt?: Date } = {},
 ) {
   const t = getTestTx();
   const [log] = await t
@@ -1028,6 +1029,127 @@ describe("nutrition storage", () => {
 
       expect(items).toHaveLength(3);
       expect(logs).toHaveLength(3);
+    });
+  });
+
+  // ==========================================================================
+  // MOST-EATEN FOODS (Coach frequent-foods context)
+  // ==========================================================================
+
+  describe("getMostEatenFoods", () => {
+    const daysAgo = (n: number) =>
+      new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+
+    it("aggregates repeat foods across scanned items and recipes, most-eaten first, with a >=3 floor", async () => {
+      const yogurt = await insertScannedItem(testUser.id, {
+        productName: "Greek Yogurt",
+      });
+      const banana = await insertScannedItem(testUser.id, {
+        productName: "Banana",
+      });
+      const recipe = await insertMealPlanRecipe(testUser.id, {
+        title: "Chicken Bowl",
+      });
+      for (let i = 0; i < 4; i++) {
+        await insertDailyLog(testUser.id, {
+          scannedItemId: yogurt.id,
+          loggedAt: daysAgo(i),
+        });
+      }
+      for (let i = 0; i < 3; i++) {
+        await insertDailyLog(testUser.id, {
+          recipeId: recipe.id,
+          loggedAt: daysAgo(i),
+        });
+      }
+      // Below the noise floor — must not appear.
+      for (let i = 0; i < 2; i++) {
+        await insertDailyLog(testUser.id, {
+          scannedItemId: banana.id,
+          loggedAt: daysAgo(i),
+        });
+      }
+      // Outside the window — must not count toward yogurt.
+      await insertDailyLog(testUser.id, {
+        scannedItemId: yogurt.id,
+        loggedAt: daysAgo(45),
+      });
+
+      const result = await getMostEatenFoods(
+        testUser.id,
+        daysAgo(30),
+        new Date(),
+      );
+
+      expect(result).toEqual([
+        { name: "Greek Yogurt", timesLogged: 4 },
+        { name: "Chicken Bowl", timesLogged: 3 },
+      ]);
+    });
+
+    it("excludes discarded scanned items and does not leak other users' logs", async () => {
+      const item = await insertScannedItem(testUser.id, {
+        productName: "Discarded Snack",
+        discardedAt: new Date(),
+      });
+      for (let i = 0; i < 3; i++) {
+        await insertDailyLog(testUser.id, {
+          scannedItemId: item.id,
+          loggedAt: daysAgo(i),
+        });
+      }
+
+      const otherUser = await createTestUser(tx);
+      const otherItem = await insertScannedItem(otherUser.id, {
+        productName: "Other User Food",
+      });
+      for (let i = 0; i < 3; i++) {
+        await insertDailyLog(otherUser.id, {
+          scannedItemId: otherItem.id,
+          loggedAt: daysAgo(i),
+        });
+      }
+
+      // IDOR dual-assertion: the owner sees their rows; the requester sees none.
+      const otherResult = await getMostEatenFoods(
+        otherUser.id,
+        daysAgo(30),
+        new Date(),
+      );
+      expect(otherResult).toEqual([
+        { name: "Other User Food", timesLogged: 3 },
+      ]);
+
+      const result = await getMostEatenFoods(
+        testUser.id,
+        daysAgo(30),
+        new Date(),
+      );
+      expect(result).toEqual([]);
+    });
+
+    it("caps results at the limit", async () => {
+      for (let f = 0; f < 7; f++) {
+        const item = await insertScannedItem(testUser.id, {
+          productName: `Food ${f}`,
+        });
+        for (let i = 0; i < 3 + f; i++) {
+          await insertDailyLog(testUser.id, {
+            scannedItemId: item.id,
+            loggedAt: daysAgo(i % 20),
+          });
+        }
+      }
+
+      const result = await getMostEatenFoods(
+        testUser.id,
+        daysAgo(30),
+        new Date(),
+        5,
+      );
+
+      expect(result).toHaveLength(5);
+      expect(result[0]).toEqual({ name: "Food 6", timesLogged: 9 });
     });
   });
 });

@@ -37,6 +37,7 @@ vi.mock("../../storage", () => ({
     getDailySummary: vi.fn(),
     getChatMessages: vi.fn(),
     getDailyLogsInRange: vi.fn(),
+    getMostEatenFoods: vi.fn(),
     getActiveNotebookEntries: vi.fn(),
     getCommitmentsWithDueFollowUp: vi.fn(),
     getCoachCachedResponse: vi.fn(),
@@ -173,6 +174,7 @@ function setupDefaultStorage() {
   });
   vi.mocked(storage.getChatMessages).mockResolvedValue([]);
   vi.mocked(storage.getDailyLogsInRange).mockResolvedValue([]);
+  vi.mocked(storage.getMostEatenFoods).mockResolvedValue([]);
   vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([]);
   vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue([]);
   vi.mocked(storage.getCoachCachedResponse).mockResolvedValue(null);
@@ -550,6 +552,39 @@ describe("handleCoachChat", () => {
 
       const context = vi.mocked(generateCoachResponse).mock.calls[0][1];
       expect(context.aboutUser).toEqual({ primaryGoal: "gain_muscle" });
+    });
+  });
+
+  // ── Frequent-foods injection into context ──────────────────
+
+  describe("frequent-foods injection", () => {
+    it("injects a sanitized frequent-foods summary for Pro", async () => {
+      vi.mocked(storage.getMostEatenFoods).mockResolvedValue([
+        { name: "Greek yogurt", timesLogged: 12 },
+        { name: "chicken breast", timesLogged: 8 },
+      ]);
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      const context = vi.mocked(generateCoachProResponse).mock.calls[0][1];
+      expect(context.frequentFoodsSummary).toBe(
+        "Greek yogurt (12×), chicken breast (8×)",
+      );
+      // productName/title are user-authored — must pass the M40 gate.
+      expect(sanitizeContextField).toHaveBeenCalledWith("Greek yogurt", 100);
+    });
+
+    it("omits the summary when there are no frequent foods", async () => {
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      const context = vi.mocked(generateCoachProResponse).mock.calls[0][1];
+      expect(context.frequentFoodsSummary).toBeUndefined();
+    });
+
+    it("does not fetch frequent foods for the free tier", async () => {
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: false })));
+
+      expect(storage.getMostEatenFoods).not.toHaveBeenCalled();
     });
   });
 

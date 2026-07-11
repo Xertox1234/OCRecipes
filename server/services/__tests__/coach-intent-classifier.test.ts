@@ -57,6 +57,7 @@ const EXPECTED: Record<string, CoachIntent> = {
   "personalization-vegetarian-high-protein-01": "personalized_advice",
   "personalization-about-user-skill-01": "personalized_advice",
   "personalization-severe-allergy-01": "personalized_advice",
+  "personalization-frequent-foods-01": "personalized_advice",
 
   // ── Edge cases ───────────────────────────────────────────────────
   "edge-minimal-context-01": "personalized_advice",
@@ -66,8 +67,8 @@ const EXPECTED: Record<string, CoachIntent> = {
 };
 
 describe("classifyIntent", () => {
-  it("covers all 40 eval cases in the expected-intent map", () => {
-    expect(Object.keys(EXPECTED)).toHaveLength(40);
+  it("covers all 41 eval cases in the expected-intent map", () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(41);
   });
 
   it("has an expected intent for every loaded eval case", () => {
