@@ -252,11 +252,11 @@ SQL
     IFS=$'\x1f' read -r osid okind obranch oseen <<<"$row"
     printf 'Attribution: session %s (%s, branch %s) is registered in this checkout, last seen %s.\n' \
       "${osid:0:8}" "$okind" "$obranch" "$oseen"
-    log_event "drift-attributed" "$sid" "$osid" '{}' &
+    log_event "drift-attributed" "$sid" "$osid" '{}' >/dev/null 2>&1 &
   else
     psql -X -q -d "$LAB_DATABASE_URL" -c 'SELECT 1' >/dev/null 2>&1 || exit 0
     printf 'Attribution: no other live session registered here — likely your own manual git op or a stale baseline.\n'
-    log_event "drift-unattributed" "$sid" "" '{}' &
+    log_event "drift-unattributed" "$sid" "" '{}' >/dev/null 2>&1 &
   fi
 }
 
