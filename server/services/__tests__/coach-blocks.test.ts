@@ -1,6 +1,10 @@
 // server/services/__tests__/coach-blocks.test.ts
 import { describe, it, expect } from "vitest";
-import { validateBlocks, parseBlocksFromContent } from "../coach-blocks";
+import {
+  validateBlocks,
+  parseBlocksFromContent,
+  BLOCKS_SYSTEM_PROMPT,
+} from "../coach-blocks";
 
 describe("Coach Blocks Service", () => {
   it("validates valid blocks array", () => {
@@ -46,6 +50,25 @@ describe("Coach Blocks Service", () => {
     const { text, blocks } = parseBlocksFromContent(content);
     expect(text).toBe("Just plain text response");
     expect(blocks).toEqual([]);
+  });
+
+  it("BLOCKS_SYSTEM_PROMPT contains a complete example whose blocks survive schema validation", () => {
+    // Models copy formatting from examples far more reliably than from schema
+    // descriptions — and validateBlocks drops malformed blocks silently in
+    // prod, so a drifted example would be an invisible feature failure. This
+    // test pins the embedded example to coachBlockSchema permanently.
+    const { blocks } = parseBlocksFromContent(BLOCKS_SYSTEM_PROMPT);
+    expect(blocks.length).toBeGreaterThanOrEqual(1);
+    expect(blocks.some((b) => b.type === "quick_replies")).toBe(true);
+  });
+
+  it("BLOCKS_SYSTEM_PROMPT does not both mandate and discourage blocks (contradiction fix)", () => {
+    // The old rules said "don't force them into every response" AND "Always
+    // include quick_replies" — the model resolved the conflict arbitrarily.
+    expect(BLOCKS_SYSTEM_PROMPT).not.toMatch(/Always include quick_replies/);
+    expect(BLOCKS_SYSTEM_PROMPT).toMatch(
+      /quick_replies.*(every|each).*fence|fence.*must contain.*quick_replies/i,
+    );
   });
 
   it("parses both fences when content contains two coach_blocks fences", () => {
