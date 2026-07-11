@@ -98,9 +98,10 @@ do_acquire() {
     fi
     sleep 1; waited=$(( waited + 1 ))
   done
-  # Identity-less timeout: the holder never reported. Kill it — an abandoned live holder
+  # Identity-less timeout: the holder never reported. Kill its psql child FIRST, then the
+  # wrapper — an abandoned live holder (or a psql orphaned by killing only the wrapper)
   # could later silently ACQUIRE with no acquire wrapper and no pidfile (phantom holder).
-  kill "$holder_pid" 2>/dev/null
+  pkill -P "$holder_pid" 2>/dev/null; kill "$holder_pid" 2>/dev/null
   echo "TIMEOUT: no holder status after $(( WAIT_SECS + WATCH_INTERVAL_SECS + 15 ))s" >&2
   exit 2
 }
