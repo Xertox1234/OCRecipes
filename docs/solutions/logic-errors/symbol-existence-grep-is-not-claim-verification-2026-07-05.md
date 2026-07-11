@@ -8,7 +8,7 @@ tags: [verification, fact-checking, agents, prompts, documentation, grep, review
 symptoms: [Doc or agent-file prose cites real symbols but states wrong relationships between them (order, exclusivity, tier assignment, wrong owning file), A pre-merge fact-check grepped every cited symbol and came back green, Adversarial review later confirms several claims false against source comments and existing tests]
 applies_to: [.claude/agents/**/*.md, .claude/skills/**/*.md, docs/**/*.md]
 created: '2026-07-05'
-last_updated: '2026-07-06'
+last_updated: '2026-07-11'
 ---
 
 # A symbol-existence grep passes while the claim about the symbol is wrong — verify the predicate at the source
@@ -62,6 +62,17 @@ cited source:
   and confirm the behavior is implemented there, not re-exported from elsewhere.
 - **Assignment claims** ("FAST = text, HEAVY = vision") → read the source-of-truth
   comments/config the claim cites.
+- **Count/precedent claims** ("PR #14: 3 review findings") → re-derive the number
+  under one stated counting method applied uniformly to every cited instance. A
+  count whose method you cannot state cannot be verified — cite the source commit
+  instead. (2026-07-11, PR #577: the `/land` skill's draft rationalization table cited
+  "PR #14: 3 issues" where a consistent method — bullets in the PR's review-fix
+  commit, cross-checked against reviewer comments — gives 4, and its "small PRs"
+  framing was contradicted by the cited PRs' own file counts. Load-bearing in a
+  discipline doc: agents quote "Reality" cells verbatim, and wrong evidence
+  weakens the rule the first time a reader checks it. The miscount was caught by
+  the pre-merge fact-check review and corrected before merge — it never reached
+  `main`.)
 
 Per-claim adversarial verifiers (each prompted to _refute_ one claim) caught all four
 defects that the symbol-existence pass had approved.
@@ -92,6 +103,7 @@ defects that the symbol-existence pass had approved.
 ## Related Files
 
 - `.claude/agents/prompt-engineer.md` — the agent definition whose convention section shipped the four defects
+- `.claude/skills/land/SKILL.md` — the discipline table whose precedent count needed the method-consistent recount (PR #577)
 - `.claude/agents/ai-reviewer.md` — Caching checklist; the 2026-07-06 fix for the original cache-bump staleness needed its own predicate-level correction (prompt-hash scope) before it was accurate
 - `server/services/nutrition-coach.ts` — boundary-last comment + test; the auto-hash the stale cache claim missed; `getSystemPromptTemplateVersion()` hashes prompt text only, not `TOOL_DEFINITIONS`
 - `server/lib/ai-safety.ts` — `sanitizeUserInput` vs `sanitizeContextField`
