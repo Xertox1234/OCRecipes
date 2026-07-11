@@ -4,6 +4,7 @@ import {
   escapeNotebookDelimiters,
   formatNotebookLine,
   getRecencyLabel,
+  sortNotebookEntriesByPriority,
   truncateNotebookToBudget,
   NOTEBOOK_ENTRY_OPEN,
   NOTEBOOK_ENTRY_CLOSE,
@@ -170,6 +171,88 @@ describe("notebook-budget", () => {
       expect(result).toContain("likes salads");
       expect(result).toContain("lose 5kg");
       expect(DEFAULT_NOTEBOOK_MAX_CHARS).toBeGreaterThan(100);
+    });
+  });
+
+  describe("sortNotebookEntriesByPriority", () => {
+    it("orders preference, commitment, goal before other types", () => {
+      const entries: NotebookBudgetEntry[] = [
+        { type: "insight", content: "i1", updatedAt: new Date("2026-07-10") },
+        { type: "goal", content: "g1", updatedAt: new Date("2026-05-01") },
+        {
+          type: "preference",
+          content: "p1",
+          updatedAt: new Date("2026-04-01"),
+        },
+        {
+          type: "commitment",
+          content: "c1",
+          updatedAt: new Date("2026-06-01"),
+        },
+      ];
+
+      expect(sortNotebookEntriesByPriority(entries).map((e) => e.type)).toEqual(
+        ["preference", "commitment", "goal", "insight"],
+      );
+    });
+
+    it("orders by updatedAt desc within a bucket and stays stable for ties", () => {
+      const entries: NotebookBudgetEntry[] = [
+        {
+          type: "preference",
+          content: "old",
+          updatedAt: new Date("2026-01-01"),
+        },
+        {
+          type: "insight",
+          content: "first-tie",
+          updatedAt: new Date("2026-03-01"),
+        },
+        {
+          type: "insight",
+          content: "second-tie",
+          updatedAt: new Date("2026-03-01"),
+        },
+        {
+          type: "preference",
+          content: "new",
+          updatedAt: new Date("2026-07-01"),
+        },
+      ];
+
+      expect(
+        sortNotebookEntriesByPriority(entries).map((e) => e.content),
+      ).toEqual(["new", "old", "first-tie", "second-tie"]);
+      // Input untouched (pure function).
+      expect(entries[0].content).toBe("old");
+    });
+
+    it("keeps an older preference inside the budget that recent insights would otherwise evict", () => {
+      const bigContent = "x".repeat(500);
+      const insights: NotebookBudgetEntry[] = Array.from(
+        { length: 10 },
+        (_, i) => ({
+          type: "insight",
+          content: `${bigContent}${i}`,
+          updatedAt: new Date("2026-07-10"),
+        }),
+      );
+      const preference: NotebookBudgetEntry = {
+        type: "preference",
+        content: "vegetarian, hates cilantro",
+        updatedAt: new Date("2026-05-01"),
+      };
+
+      // Storage order (updatedAt desc): the durable preference arrives last
+      // and falls past the 3200-char budget.
+      const unsorted = truncateNotebookToBudget([...insights, preference]);
+      expect(unsorted).not.toContain("vegetarian");
+
+      // Priority order: the preference renders first and survives.
+      const sorted = truncateNotebookToBudget(
+        sortNotebookEntriesByPriority([...insights, preference]),
+      );
+      expect(sorted).toContain("vegetarian");
     });
   });
 });

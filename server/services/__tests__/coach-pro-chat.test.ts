@@ -38,6 +38,7 @@ vi.mock("../../storage", () => ({
     getChatMessages: vi.fn(),
     getDailyLogsInRange: vi.fn(),
     getActiveNotebookEntries: vi.fn(),
+    getCommitmentsWithDueFollowUp: vi.fn(),
     getCoachCachedResponse: vi.fn(),
     setCoachCachedResponse: vi.fn(),
     createChatMessage: vi.fn(),
@@ -173,6 +174,7 @@ function setupDefaultStorage() {
   vi.mocked(storage.getChatMessages).mockResolvedValue([]);
   vi.mocked(storage.getDailyLogsInRange).mockResolvedValue([]);
   vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([]);
+  vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue([]);
   vi.mocked(storage.getCoachCachedResponse).mockResolvedValue(null);
   vi.mocked(storage.createChatMessage).mockResolvedValue(
     createMockChatMessage(),
@@ -551,9 +553,83 @@ describe("handleCoachChat", () => {
     });
   });
 
+  // ── Due-commitments injection into context ─────────────────
+
+  describe("due-commitments injection", () => {
+    it("injects sanitized, fenced due commitments into context for Pro", async () => {
+      vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue([
+        makeNotebookEntry({
+          type: "commitment",
+          content: "Try meal prepping on Sunday",
+          followUpDate: new Date("2026-07-10"),
+        }),
+      ]);
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      const context = vi.mocked(generateCoachProResponse).mock.calls[0][1];
+      expect(context.dueCommitmentsSummary).toContain(
+        "<notebook_entry>Try meal prepping on Sunday</notebook_entry>",
+      );
+      expect(sanitizeContextField).toHaveBeenCalledWith(
+        "Try meal prepping on Sunday",
+        500,
+      );
+    });
+
+    it("caps the injected commitments at three", async () => {
+      vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue(
+        ["one", "two", "three", "four"].map((content) =>
+          makeNotebookEntry({ type: "commitment", content }),
+        ),
+      );
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      const context = vi.mocked(generateCoachProResponse).mock.calls[0][1];
+      const lineCount = (context.dueCommitmentsSummary ?? "").split(
+        "\n",
+      ).length;
+      expect(lineCount).toBe(3);
+      expect(context.dueCommitmentsSummary).not.toContain("four");
+    });
+
+    it("does not fetch due commitments for the free tier", async () => {
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: false })));
+
+      expect(storage.getCommitmentsWithDueFollowUp).not.toHaveBeenCalled();
+      const context = vi.mocked(generateCoachResponse).mock.calls[0][1];
+      expect(context.dueCommitmentsSummary).toBeUndefined();
+    });
+  });
+
   // ── Notebook injection into context ───────────────────────
 
   describe("notebook injection", () => {
+    it("orders durable preference entries before recent insights in the summary", async () => {
+      // Storage returns updatedAt-desc (insight first); the budget layer must
+      // re-order so durable personalization renders first.
+      vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([
+        makeNotebookEntry({
+          type: "insight",
+          content: "ate late twice this week",
+          updatedAt: new Date("2026-07-10"),
+        }),
+        makeNotebookEntry({
+          type: "preference",
+          content: "vegetarian",
+          updatedAt: new Date("2026-05-01"),
+        }),
+      ]);
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      const context = vi.mocked(generateCoachProResponse).mock.calls[0][1];
+      const lines = (context.notebookSummary ?? "").split("\n");
+      expect(lines[0]).toContain("vegetarian");
+      expect(lines[1]).toContain("ate late twice");
+    });
+
     it("injects notebook entries into context when entries exist (CoachPro)", async () => {
       vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([
         makeNotebookEntry({
