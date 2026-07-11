@@ -1278,6 +1278,58 @@ describe("buildMealPatternSummary", () => {
     expect(buildMealPatternSummary(logs)).toBeNull();
   });
 
+  it("surfaces a consistent-logging streak as a positive pattern", () => {
+    // 7 of 7 window days with all meal windows hit — previously null; the
+    // summary only ever scolded. Reinforcement is free signal.
+    const days = [
+      "2026-04-22",
+      "2026-04-23",
+      "2026-04-24",
+      "2026-04-25",
+      "2026-04-26",
+      "2026-04-27",
+      "2026-04-28",
+    ];
+    const logs = days.flatMap((day) => [
+      makeLog(day, 8),
+      makeLog(day, 12),
+      makeLog(day, 18),
+    ]);
+
+    const summary = buildMealPatternSummary(logs);
+    expect(summary).toContain("logged food on 7/7 days");
+    expect(summary).not.toContain("skipped");
+  });
+
+  it("combines the logging streak with skip negatives", () => {
+    // 6 active days, breakfast only — streak positive (6 >= 7-2) plus skips.
+    const days = [
+      "2026-04-23",
+      "2026-04-24",
+      "2026-04-25",
+      "2026-04-26",
+      "2026-04-27",
+      "2026-04-28",
+    ];
+    const logs = days.map((day) => makeLog(day, 8));
+
+    const summary = buildMealPatternSummary(logs);
+    expect(summary).toContain("logged food on 6/7 days");
+    expect(summary).toContain("lunch skipped 6/6 days");
+  });
+
+  it("does not emit the streak below windowDays - 2 active days", () => {
+    // 4 full days (< 5): no streak, and full-window days mean no skips → null.
+    const days = ["2026-04-25", "2026-04-26", "2026-04-27", "2026-04-28"];
+    const logs = days.flatMap((day) => [
+      makeLog(day, 8),
+      makeLog(day, 12),
+      makeLog(day, 18),
+    ]);
+
+    expect(buildMealPatternSummary(logs)).toBeNull();
+  });
+
   it("detects breakfast skipped on majority of days", () => {
     // 4 days — breakfast (5-10) logged only on day 1
     const logs = [

@@ -226,7 +226,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "search_recipes",
         description:
-          "Search the recipe catalog for healthy meal ideas. Use this when the user asks for recipe suggestions, meal ideas, or specific dish types.",
+          "Search the recipe catalog for healthy meal ideas. Use this when the user asks for recipe suggestions, meal ideas, or specific dish types. Results are already filtered server-side to exclude the user's allergens — do not re-check or veto results for allergy reasons.",
         parameters: {
           type: "object",
           properties: {
@@ -360,7 +360,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "add_to_meal_plan",
         description:
-          "Propose scheduling a food item or recipe on the user's meal plan. Returns a proposal — the user must confirm before it is saved.",
+          "Propose scheduling a food item or recipe on the user's meal plan. Call this when the user agrees to a suggested meal or asks to schedule, plan, or save a meal for a specific day or week. Returns a proposal — the user must confirm before it is saved.",
         parameters: {
           type: "object",
           properties: {
@@ -388,7 +388,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
       function: {
         name: "add_to_grocery_list",
         description:
-          "Propose creating a grocery list with one or more items. Returns a proposal — the user must confirm before items are saved.",
+          "Propose creating a grocery list with one or more items. Call this when the user wants to buy ingredients for a discussed meal or asks for a shopping list. Returns a proposal — the user must confirm before items are saved.",
         parameters: {
           type: "object",
           properties: {

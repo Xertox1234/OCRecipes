@@ -74,6 +74,7 @@ const log = createServiceLogger("coach-pro-chat");
 export function buildMealPatternSummary(
   logs: Pick<DailyLog, "loggedAt">[],
   tz: string = "UTC",
+  windowDays: number = 7,
 ): string | null {
   if (logs.length === 0) return null;
 
@@ -126,6 +127,12 @@ export function buildMealPatternSummary(
   }
 
   const patterns: string[] = [];
+
+  // Positive signal first: a near-complete logging streak is free praise
+  // material — the summary previously only ever surfaced negatives.
+  if (totalDays >= windowDays - 2) {
+    patterns.push(`logged food on ${totalDays}/${windowDays} days`);
+  }
 
   // Only surface patterns that are notable (skipped on majority of days)
   const majorityThreshold = Math.ceil(totalDays / 2);
