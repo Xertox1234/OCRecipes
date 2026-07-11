@@ -269,11 +269,17 @@ Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition
 
 > Before your first `db:push`/DDL step: resolve the session pid with
 > `WATCH_PID=$(bash -c '. scripts/pg-lab/lib/ps-walk.sh && resolve_claude_pid')`, then run
-> `scripts/pg-lab/db-serial-lock.sh acquire --watch-pid "$WATCH_PID"` with a Bash timeout of 600000. Exit 0 → proceed. Exit 2 → retry the acquire ONCE; a second exit 2 means another
+> `WATCH_INTERVAL_SECS=10 scripts/pg-lab/db-serial-lock.sh acquire --watch-pid "$WATCH_PID"` with a Bash timeout of 600000. Exit 0 → proceed. Exit 2 → retry the acquire ONCE; a second exit 2 means another
 > session is live on the shared dev DB — mark this todo `blocked` with an ACTION NEEDED
-> reason quoting the holder identity the command printed, and stop. Exit 3 → proceed
-> unlocked and note "db-serial lock unavailable (watch-pid unresolvable)" in the PR body.
-> On completion — success OR failure — run `scripts/pg-lab/db-serial-lock.sh release`.
+> reason quoting the holder identity the command printed, and stop. If the printed holder
+> identity contains this session's own id, the lock was abandoned by an earlier executor
+> in this run — recovery is a manual `scripts/pg-lab/db-serial-lock.sh release`, not
+> waiting for another session. Exit 3 → proceed unlocked and note "db-serial lock
+> unavailable (watch-pid unresolvable)" in the PR body. If the Bash tool call itself
+> times out (600s) with no exit code, treat it exactly like exit 2. If the acquire exited 0,
+> run `scripts/pg-lab/db-serial-lock.sh release` on completion — success OR failure.
+> Never run release after exit 2 or exit 3: you do not hold the lock, and release
+> force-frees whoever does.
 
 ### Parallel Batches
 
