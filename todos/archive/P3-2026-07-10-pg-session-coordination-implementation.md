@@ -3,10 +3,10 @@
 ---
 
 title: "PG Lab: implement session coordination (registry + warnings + DB-serial mutex) per reviewed spec"
-status: backlog
+status: complete
 priority: low
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-10 (completed)
 assignee:
 labels: [deferred, harness, pg-lab]
 github_issue:
@@ -43,28 +43,28 @@ All warn-only outside the mutex; everything fail-silent when Postgres is down.
 Three individually-reviewed PRs, in order (spec §11 — hooks touched, so every PR is
 automerge-HELD and gets individual review; hook self-tests mandatory):
 
-- [ ] **PR 1 — write path:** `scripts/pg-lab/schema/session-coordination.sql`,
+- [x] **PR 1 — write path:** `scripts/pg-lab/schema/session-coordination.sql`,
       `session-coord.sh` (register/record/refresh-snapshot/deregister/reap + §5.1a bridge),
       SessionStart/PostToolUse/SessionEnd hook wiring, `.claude/hooks/test-session-coord.sh`
       covering lifecycle, TTL reaping, fail-silent (closed-port `LAB_DATABASE_URL`), and
       snapshot atomicity. No consumer-visible warnings yet — soak the write path. Verify
       during this PR: SessionEnd JSON-stdin contract (first SessionEnd hook in this repo)
       and whether `CLAUDE_SESSION_ID` exists in Bash env (would simplify the §5.1a bridge).
-- [ ] **PR 2 — read path:** `consult` warnings (same-abs_path collision + cross-worktree
+- [x] **PR 2 — read path:** `consult` warnings (same-abs_path collision + cross-worktree
       rel_path note, self-suppression), drift-detect enrichment via `attribute-drift`
       (same repo_root only), stale-while-revalidate snapshot with `flock -n` refresh guard,
       tests for both warning levels + suppression + corrupt-snapshot silence.
-- [ ] **PR 3 — mutex:** `db-serial-lock.sh` (acquire/release/status, `--watch-pid`
+- [x] **PR 3 — mutex:** `db-serial-lock.sh` (acquire/release/status, `--watch-pid`
       required from orchestrator dispatch, ps-walk fallback with exit-3 refuse,
       `application_name`-keyed server-side release fallback), /todo orchestrator
       dispatch-prompt update for schema/DDL todos (`register --kind todo-executor` first
       action; `acquire --watch-pid` before first DDL, `release` on completion), mutex test
       suite: competing holders, kill −9 release, **orphan test that kills the WATCHED pid**
       (proves resolution correctness), timeout exit 2, unresolvable exit 3.
-- [ ] **Live-fire kind check** (spec-review validation requirement): dispatch a real
+- [x] **Live-fire kind check** (spec-review validation requirement): dispatch a real
       todo-executor subagent and confirm post-hoc that `harness.session_registry.session_kind`
       reads `todo-executor` — not merely that the code path was written.
-- [ ] Value probe scheduled: ~60 days post-merge (align with injection-telemetry probe),
+- [x] Value probe scheduled: ~60 days post-merge (align with injection-telemetry probe),
       questions + prune rule in spec §10 — zero true-positive warnings AND zero
       `lock-waited` events by probe date → simplify to drift-attribution-only or drop.
 
@@ -99,3 +99,31 @@ automerge-HELD and gets individual review; hook self-tests mandatory):
 
 - Filed from the completed spec-phase brainstorm + `/spec-review` (approve-with-edits,
   edits applied same day). Decision recorded: PROCEED.
+
+### 2026-07-10 — COMPLETE
+
+All three PRs merged same day via subagent-driven execution of
+`docs/superpowers/plans/2026-07-10-pg-session-coordination.md` (local-only):
+
+- **PR 1 #571 (write path)** — squash e19cd7d4. SessionEnd contract VERIFIED live, best case:
+  a throwaway `claude -p` session registered a row (kind `unknown`, correct for headless) and
+  the row was GONE on exit — SessionEnd JSON delivers `session_id`; TTL fallback not needed.
+  No bridge files existed pre-merge, so `CLAUDE_SESSION_ID`-in-env simplification was not
+  pursued (ps-walk + bridge shipped per spec and verified working).
+- **PR 2 #572 (read path)** — squash 2422e0c9. Note: refresh guard shipped as atomic `mkdir`
+  (no `flock(1)` on stock macOS) + 60s mtime staleness recovery, not `flock -n`.
+- **PR 3 #573 (mutex)** — squash d9408a44.
+- **Live-fire kind check PASSED** (round 2): real Agent-tool executor's
+  `register --kind todo-executor` re-upserted `session_kind=todo-executor` through
+  ps-walk → bridge → CLI. Round-1 finding: sessions started before PR 1 merged have no
+  bridge until their next SessionStart — CLI register silently no-ops (fail-silent by
+  design, self-heals on restart).
+- **Value probe date: ~2026-09-10** (60 days post-merge). Spec §10 questions + prune rule;
+  note amendment: probe queries use `coordination_log.ts` (shipped naming), and
+  `lock-waited` is currently never emitted — probe on `lock-acquired`/`lock-timeout`
+  instead, or add `waited_secs` detail first.
+- Review-driven design fixes (recorded as spec Status amendments 1–6): Bash-ceiling wait
+  budget (570s + retry, WATCH_INTERVAL_SECS=10), `client_connection_check_interval=2s`
+  (stock PG never notices a dead client inside pg_sleep), server-side-first release with
+  granted-advisory predicate (plain app_name match killed queued waiters), ts/BIGSERIAL
+  naming, GNU-first stat order, refresh-lock staleness recovery.
