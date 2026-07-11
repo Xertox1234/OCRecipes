@@ -157,7 +157,7 @@ do_refresh_snapshot() {
   # older than 60s (one retry; if that also loses the race, another process won it fairly).
   mkdir "$lockdir" 2>/dev/null || {
     local lock_mt lock_age
-    lock_mt=$(stat -f %m "$lockdir" 2>/dev/null || stat -c %Y "$lockdir" 2>/dev/null) || exit 0
+    lock_mt=$(stat -c %Y "$lockdir" 2>/dev/null || stat -f %m "$lockdir" 2>/dev/null) || exit 0
     lock_age=$(( $(date +%s) - lock_mt ))
     [ "$lock_age" -gt 60 ] || exit 0
     rmdir "$lockdir" 2>/dev/null
@@ -183,7 +183,7 @@ SQL
 }
 snapshot_age_secs() { # portable mtime age; huge number when file missing
   local f="$1" mt
-  mt=$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null) || { echo 999999; return; }
+  mt=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null) || { echo 999999; return; }
   echo $(( $(date +%s) - mt ))
 }
 
@@ -209,7 +209,7 @@ do_consult() {
   while [ ! -d "$dir" ] && [ "$dir" != "/" ]; do dir=$(dirname "$dir"); done
   root=$(git_root_of "$dir") || root=""
   rel=""; [ -n "$root" ] && rel="${file#"$root"/}"
-  # One jq pass: level|sid|kind|branch|age-minutes for the first match, self excluded.
+  # One jq pass: level|sid|kind|branch|last_seen_at for the first match, self excluded.
   match=$(jq -r --arg f "$file" --arg rel "$rel" --arg root "$root" --arg me "$sid" '
     [ .sessions[]? | select(.session_id != $me) | . as $s | .files[]?
       | if .abs_path == $f then {lvl:"collision",s:$s}
@@ -244,9 +244,11 @@ WHERE session_id <> :'sid' AND repo_root = :'root' AND expires_at > now()
 ORDER BY last_seen_at DESC LIMIT 1;
 SQL
   ) || exit 0
-  # psql itself failed silently -> $row empty AND rc hidden by || exit 0 above; a reachable
-  # DB with no match also yields empty. Disambiguate with a cheap liveness probe: only
-  # print the "no other session" line when the DB answered.
+  # psql exits 0 on SQL errors unless ON_ERROR_STOP is set, so the plain query above can't
+  # be trusted to distinguish "DB unreachable" from "no match" via rc alone. Re-probe with
+  # ON_ERROR_STOP against the actual harness table (not a bare SELECT 1) so a reachable-but-
+  # schema-less lab DB fails the probe too, instead of being misattributed as "no other
+  # session" — only print that line when the table genuinely answered with no rows.
   if [ -n "$row" ]; then
     local osid okind obranch oseen
     IFS=$'\x1f' read -r osid okind obranch oseen <<<"$row"
@@ -254,7 +256,7 @@ SQL
       "${osid:0:8}" "$okind" "$obranch" "$oseen"
     log_event "drift-attributed" "$sid" "$osid" '{}' >/dev/null 2>&1 &
   else
-    psql -X -q -d "$LAB_DATABASE_URL" -c 'SELECT 1' >/dev/null 2>&1 || exit 0
+    psql -X -q -v ON_ERROR_STOP=1 -d "$LAB_DATABASE_URL" -c 'SELECT 1 FROM harness.session_registry LIMIT 1' >/dev/null 2>&1 || exit 0
     printf 'Attribution: no other live session registered here — likely your own manual git op or a stale baseline.\n'
     log_event "drift-unattributed" "$sid" "" '{}' >/dev/null 2>&1 &
   fi
