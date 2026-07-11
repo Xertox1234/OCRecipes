@@ -91,6 +91,57 @@ export interface CoachContext {
   };
 }
 
+/**
+ * Labeled prose lines for CoachContext.aboutUser. Shared by the system prompt
+ * AND the eval judge (evals/judge.ts) so the judge always sees exactly the
+ * personalization signal the model saw — a hand-duplicated renderer there
+ * would drift silently. Enum-ish profile values arrive snake_case
+ * ("lose_weight") — humanized so the model doesn't echo raw identifiers.
+ */
+export function formatAboutUserLines(
+  au: NonNullable<CoachContext["aboutUser"]>,
+): string[] {
+  const humanize = (v: string) => v.replace(/_/g, " ");
+  const aboutLines: string[] = [];
+  if (au.primaryGoal) {
+    aboutLines.push(`Primary goal: ${humanize(au.primaryGoal)}`);
+  }
+  if (au.weightKg !== undefined || au.goalWeightKg !== undefined) {
+    const unit = au.measurementUnit ?? "metric";
+    const label = weightUnitLabel(unit);
+    // This is the leaf render site — round the converted value to 1 decimal.
+    const display = (kg: number) =>
+      Math.round(weightFromKg(kg, unit) * 10) / 10;
+    if (au.weightKg !== undefined && au.goalWeightKg !== undefined) {
+      aboutLines.push(
+        `Weight: ${display(au.weightKg)} ${label} (goal: ${display(au.goalWeightKg)} ${label})`,
+      );
+    } else if (au.weightKg !== undefined) {
+      aboutLines.push(`Weight: ${display(au.weightKg)} ${label}`);
+    } else if (au.goalWeightKg !== undefined) {
+      aboutLines.push(`Goal weight: ${display(au.goalWeightKg)} ${label}`);
+    }
+  }
+  if (au.activityLevel) {
+    aboutLines.push(`Activity level: ${humanize(au.activityLevel)}`);
+  }
+  if (au.cuisinePreferences && au.cuisinePreferences.length > 0) {
+    aboutLines.push(`Favorite cuisines: ${au.cuisinePreferences.join(", ")}`);
+  }
+  if (au.cookingSkillLevel) {
+    aboutLines.push(`Cooking skill: ${humanize(au.cookingSkillLevel)}`);
+  }
+  if (au.cookingTimeAvailable) {
+    aboutLines.push(
+      `Cooking time available: ${humanize(au.cookingTimeAvailable)}`,
+    );
+  }
+  if (au.householdSize !== undefined) {
+    aboutLines.push(`Cooks for: ${au.householdSize} people`);
+  }
+  return aboutLines;
+}
+
 /** Returns intent-specific instruction block + examples (static strings only). */
 function buildIntentBlock(intent: CoachIntent): string[] {
   if (intent === "safety_refusal") {
@@ -297,47 +348,7 @@ function buildSystemPrompt(
   }
 
   if (context.aboutUser) {
-    const au = context.aboutUser;
-    // Enum-ish profile values arrive snake_case ("lose_weight") — humanize so
-    // the model doesn't echo raw identifiers back at the user.
-    const humanize = (v: string) => v.replace(/_/g, " ");
-    const aboutLines: string[] = [];
-    if (au.primaryGoal) {
-      aboutLines.push(`Primary goal: ${humanize(au.primaryGoal)}`);
-    }
-    if (au.weightKg !== undefined || au.goalWeightKg !== undefined) {
-      const unit = au.measurementUnit ?? "metric";
-      const label = weightUnitLabel(unit);
-      // This is the leaf render site — round the converted value to 1 decimal.
-      const display = (kg: number) =>
-        Math.round(weightFromKg(kg, unit) * 10) / 10;
-      if (au.weightKg !== undefined && au.goalWeightKg !== undefined) {
-        aboutLines.push(
-          `Weight: ${display(au.weightKg)} ${label} (goal: ${display(au.goalWeightKg)} ${label})`,
-        );
-      } else if (au.weightKg !== undefined) {
-        aboutLines.push(`Weight: ${display(au.weightKg)} ${label}`);
-      } else if (au.goalWeightKg !== undefined) {
-        aboutLines.push(`Goal weight: ${display(au.goalWeightKg)} ${label}`);
-      }
-    }
-    if (au.activityLevel) {
-      aboutLines.push(`Activity level: ${humanize(au.activityLevel)}`);
-    }
-    if (au.cuisinePreferences && au.cuisinePreferences.length > 0) {
-      aboutLines.push(`Favorite cuisines: ${au.cuisinePreferences.join(", ")}`);
-    }
-    if (au.cookingSkillLevel) {
-      aboutLines.push(`Cooking skill: ${humanize(au.cookingSkillLevel)}`);
-    }
-    if (au.cookingTimeAvailable) {
-      aboutLines.push(
-        `Cooking time available: ${humanize(au.cookingTimeAvailable)}`,
-      );
-    }
-    if (au.householdSize !== undefined) {
-      aboutLines.push(`Cooks for: ${au.householdSize} people`);
-    }
+    const aboutLines = formatAboutUserLines(context.aboutUser);
     if (aboutLines.length > 0) {
       parts.push("", "ABOUT THIS USER:", ...aboutLines);
     }
