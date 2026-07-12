@@ -99,6 +99,10 @@ export default defineConfig({
       "@shared": path.resolve(__dirname, "./shared"),
       "@": path.resolve(__dirname, "./client"),
       "react-native": path.resolve(__dirname, "./test/mocks/react-native.ts"),
+      "react-native-svg": path.resolve(
+        __dirname,
+        "./test/mocks/react-native-svg.ts",
+      ),
       "react-native-reanimated": path.resolve(
         __dirname,
         "./test/mocks/react-native-reanimated.ts",
