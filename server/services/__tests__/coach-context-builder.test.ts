@@ -42,7 +42,9 @@ function makeUser(
     username: "tester",
     email: "tester@example.com",
     dailyCalorieGoal: 2000,
-    dailyProteinGoal: overrides.dailyProteinGoal ?? 150,
+    // `in` check (not `??`) so tests can pass an explicit null goal.
+    dailyProteinGoal:
+      "dailyProteinGoal" in overrides ? overrides.dailyProteinGoal : 150,
     dailyCarbsGoal: 250,
     dailyFatGoal: 67,
     subscriptionTier: "free",
@@ -332,7 +334,7 @@ describe("buildCoachContext", () => {
     ).toBe(false);
   });
 
-  it("falls back to the default 150g protein goal when the user has no goal set", async () => {
+  it("suppresses the protein-deficit suggestion when the user has no protein goal set", async () => {
     mockStorage.getUserProfile.mockResolvedValue(undefined);
     mockStorage.getDailySummary.mockResolvedValue(
       makeDailySummary({ totalProtein: 50 }),
@@ -343,8 +345,11 @@ describe("buildCoachContext", () => {
 
     const result = await buildCoachContext("user-1", TIER_FEATURES.free);
 
-    // Default 150 - 50 = 100g remaining.
-    expect(result.suggestions).toContain("I need 100g more protein today");
+    // No goal set — the chip must not fabricate a number the system prompt
+    // forbids the model from citing (goals absent from USER CONTEXT).
+    expect(
+      result.suggestions.some((s) => s.includes("more protein today")),
+    ).toBe(false);
   });
 
   it("includes a breakfast suggestion before 11 AM", async () => {

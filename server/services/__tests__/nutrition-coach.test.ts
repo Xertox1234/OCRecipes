@@ -876,3 +876,231 @@ describe("generateCoachResponse", () => {
     expect(systemMsg.content).toContain("---BOUNDARY---");
   });
 });
+
+describe("ABOUT THIS USER rendering", () => {
+  function capturedSystemPrompt(): string {
+    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    return (callArgs as { messages: { role: string; content: string }[] })
+      .messages[0].content;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+    // clearAllMocks does NOT undo mockImplementation overrides from earlier
+    // sanitization tests (USER:/CTX: prefixes) — restore identity explicitly.
+    vi.mocked(sanitizeUserInput).mockImplementation((text: string) => text);
+    vi.mocked(sanitizeContextField).mockImplementation((text: string) => text);
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+  });
+
+  it("renders all set fields as labeled lines, humanizing snake_case values", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      aboutUser: {
+        primaryGoal: "lose_weight",
+        activityLevel: "lightly_active",
+        cookingSkillLevel: "beginner",
+        cookingTimeAvailable: "under_30_min",
+        cuisinePreferences: ["Mexican", "Thai"],
+        householdSize: 3,
+        weightKg: 82.5,
+        goalWeightKg: 75,
+        measurementUnit: "metric",
+      },
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain("ABOUT THIS USER:");
+    expect(prompt).toContain("Primary goal: lose weight");
+    expect(prompt).toContain("Weight: 82.5 kg (goal: 75 kg)");
+    expect(prompt).toContain("Activity level: lightly active");
+    expect(prompt).toContain("Favorite cuisines: Mexican, Thai");
+    expect(prompt).toContain("Cooking skill: beginner");
+    expect(prompt).toContain("Cooking time available: under 30 min");
+    expect(prompt).toContain("Cooks for: 3 people");
+  });
+
+  it("renders weights in the user's display unit for imperial users", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      aboutUser: {
+        weightKg: 82.5,
+        goalWeightKg: 75,
+        measurementUnit: "imperial",
+      },
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+
+    // kg → lbs conversion, rounded to 1 decimal at this leaf render site.
+    expect(capturedSystemPrompt()).toContain(
+      "Weight: 181.9 lbs (goal: 165.3 lbs)",
+    );
+  });
+
+  it("omits unset lines and renders a lone goal weight without a current weight", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      aboutUser: {
+        primaryGoal: "maintain",
+        goalWeightKg: 75,
+        measurementUnit: "metric",
+      },
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain("Primary goal: maintain");
+    expect(prompt).toContain("Goal weight: 75 kg");
+    expect(prompt).not.toContain("Weight: ");
+    expect(prompt).not.toContain("Activity level:");
+    expect(prompt).not.toContain("Favorite cuisines:");
+    expect(prompt).not.toContain("Cooks for:");
+  });
+
+  it("renders allergy severity labels and a severe-allergy caution", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      dietaryProfile: {
+        dietType: "balanced",
+        allergies: [
+          { name: "peanuts", severity: "severe" },
+          { name: "dairy", severity: "mild" },
+        ],
+        dislikes: [],
+      },
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain("Allergies: peanuts (severe), dairy (mild)");
+    expect(prompt).toContain("SEVERE");
+    expect(prompt).toContain("cross-contamination");
+  });
+
+  it("renders severity-less allergies as plain names with no severe caution", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      dietaryProfile: {
+        dietType: "balanced",
+        allergies: [{ name: "shellfish" }],
+        dislikes: [],
+      },
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain("Allergies: shellfish");
+    expect(prompt).not.toContain("cross-contamination");
+  });
+
+  it("renders no ABOUT THIS USER section when aboutUser is absent", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+
+    expect(capturedSystemPrompt()).not.toContain("ABOUT THIS USER");
+  });
+
+  it("includes the profile-fit coaching bullets in the personalized_advice block", async () => {
+    const messages = [
+      { role: "user" as const, content: "What should I eat for dinner?" },
+    ];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain(
+      "never suggest a recipe that exceeds their stated time budget",
+    );
+    expect(prompt).toContain("default to the user's favorite cuisines");
+    expect(prompt).toContain("never use shame framing");
+    expect(prompt).toContain("never with urgency or deadline pressure");
+  });
+});
+
+describe("current time rendering", () => {
+  // 2026-07-11 01:12 UTC — Saturday 1:12 AM in UTC, Friday 6:12 PM in LA (PDT).
+  const FIXED_INSTANT = new Date(Date.UTC(2026, 6, 11, 1, 12));
+
+  function capturedSystemPrompt(): string {
+    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    return (callArgs as { messages: { role: string; content: string }[] })
+      .messages[0].content;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_INSTANT);
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("renders the current time in the user's timezone on the free path", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(
+      generateCoachResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        undefined,
+        undefined,
+        "America/Los_Angeles",
+      ),
+    );
+
+    expect(capturedSystemPrompt()).toContain(
+      "Current time for this user: Friday 6:12 PM",
+    );
+  });
+
+  it("defaults to UTC when the caller provides no timezone", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+
+    expect(capturedSystemPrompt()).toContain(
+      "Current time for this user: Saturday 1:12 AM",
+    );
+  });
+
+  it("renders the user's timezone on the Pro path (tz already a param)", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "America/Los_Angeles",
+      ),
+    );
+
+    expect(capturedSystemPrompt()).toContain(
+      "Current time for this user: Friday 6:12 PM",
+    );
+  });
+});

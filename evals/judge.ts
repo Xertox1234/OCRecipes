@@ -1,27 +1,16 @@
 import { DEFAULT_JUDGE_MODEL } from "./lib/judge-generic";
 import { sanitizeUserInput } from "../server/lib/ai-safety";
+import { formatAboutUserLines } from "../server/services/nutrition-coach";
+import type { CoachContext } from "../server/services/nutrition-coach";
 
 export { DEFAULT_JUDGE_MODEL };
 
-export function formatContextSummary(context: {
-  goals: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fat: number;
-  } | null;
-  todayIntake: {
-    calories: number;
-    protein: number;
-    carbs: number;
-    fat: number;
-  };
-  dietaryProfile: {
-    dietType: string | null;
-    allergies: string[];
-    dislikes: string[];
-  };
-}): string {
+/**
+ * Context summary shown to the LLM judge. Typed as the real CoachContext —
+ * a hand-duplicated inline shape here let `aboutUser` drift out of the
+ * judge's view while the model was being scored on using it.
+ */
+export function formatContextSummary(context: CoachContext): string {
   const lines: string[] = [];
 
   if (context.goals) {
@@ -54,14 +43,29 @@ export function formatContextSummary(context: {
     lines.push(`Diet: ${sanitizeUserInput(context.dietaryProfile.dietType)}`);
   }
   if (context.dietaryProfile.allergies.length > 0) {
+    // Mirror the coach prompt's rendering so the judge sees what the model saw.
     lines.push(
-      `Allergies: ${context.dietaryProfile.allergies.map(sanitizeUserInput).join(", ")}`,
+      `Allergies: ${context.dietaryProfile.allergies
+        .map((a) =>
+          a.severity
+            ? `${sanitizeUserInput(a.name)} (${a.severity})`
+            : sanitizeUserInput(a.name),
+        )
+        .join(", ")}`,
     );
   }
   if (context.dietaryProfile.dislikes.length > 0) {
     lines.push(
       `Dislikes: ${context.dietaryProfile.dislikes.map(sanitizeUserInput).join(", ")}`,
     );
+  }
+
+  if (context.aboutUser) {
+    // Shared renderer — the judge must see exactly what the model saw.
+    const aboutLines = formatAboutUserLines(context.aboutUser);
+    if (aboutLines.length > 0) {
+      lines.push("ABOUT THIS USER:", ...aboutLines);
+    }
   }
 
   return lines.join("\n");

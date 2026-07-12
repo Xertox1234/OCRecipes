@@ -41,8 +41,9 @@ import {
   truncateHistoryToBudget,
   DEFAULT_HISTORY_TOKEN_BUDGET,
 } from "../lib/chat-history-truncate";
-import type { DailyLog } from "@shared/schema";
+import type { DailyLog, UserProfile } from "@shared/schema";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
+import type { MeasurementUnit } from "@shared/lib/units";
 
 const log = createServiceLogger("coach-pro-chat");
 
@@ -51,7 +52,9 @@ const log = createServiceLogger("coach-pro-chat");
  *
  * Exported for unit testing — all inputs are pure values, no storage calls.
  *
- * Detection logic (based on `loggedAt` hour, local time):
+ * Detection logic (based on `loggedAt` hour in the USER's timezone — the
+ * server runs UTC, so server-local hours would misclassify every window for
+ * most users):
  *  - Breakfast window: 05:00–10:59
  *  - Lunch window:     11:00–14:59
  *  - Dinner window:    15:00–20:59
@@ -68,19 +71,32 @@ const log = createServiceLogger("coach-pro-chat");
  */
 export function buildMealPatternSummary(
   logs: Pick<DailyLog, "loggedAt">[],
+  tz: string = "UTC",
 ): string | null {
   if (logs.length === 0) return null;
 
-  // Group logs by calendar day (YYYY-MM-DD in local time)
-  const byDay = new Map<string, Date[]>();
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+
+  // Group log hours by calendar day (YYYY-MM-DD in the user's timezone)
+  const byDay = new Map<string, number[]>();
   for (const log of logs) {
-    const date = new Date(log.loggedAt);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    const parts = fmt.formatToParts(new Date(log.loggedAt));
+    const part = (type: Intl.DateTimeFormatPartTypes): string =>
+      parts.find((p) => p.type === type)?.value ?? "";
+    const key = `${part("year")}-${part("month")}-${part("day")}`;
+    const hour = Number(part("hour"));
     const existing = byDay.get(key);
     if (existing) {
-      existing.push(date);
+      existing.push(hour);
     } else {
-      byDay.set(key, [date]);
+      byDay.set(key, [hour]);
     }
   }
 
@@ -100,8 +116,7 @@ export function buildMealPatternSummary(
   let skippedDinner = 0;
   let lateNightDays = 0;
 
-  for (const dayLogs of activeDays) {
-    const hours = dayLogs.map((d) => d.getHours());
+  for (const hours of activeDays) {
     if (!hours.some(inBreakfast)) skippedBreakfast++;
     if (!hours.some(inLunch)) skippedLunch++;
     if (!hours.some(inDinner)) skippedDinner++;
@@ -168,6 +183,11 @@ export interface CoachChatParams {
     dailyProteinGoal: number | null;
     dailyCarbsGoal: number | null;
     dailyFatGoal: number | null;
+    /** Drizzle decimal column — arrives as a string, kg. */
+    weight: string | null;
+    /** Drizzle decimal column — arrives as a string, kg. */
+    goalWeight: string | null;
+    measurementUnit: MeasurementUnit;
   };
   /** Called each iteration to check if the client disconnected. */
   isAborted: () => boolean;
@@ -239,9 +259,66 @@ export function hashCoachCacheKey(
     .slice(0, 32);
 }
 
+/** Parse a Drizzle decimal string into a finite positive kg value, else undefined. */
+function parseDecimalKg(value: string | null): number | undefined {
+  if (value == null) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Assemble CoachContext.aboutUser from the profile row and users-table fields
+ * (M40: user-authored strings sanitized here, at the context boundary).
+ * Returns undefined when nothing carries signal so the prompt renders no
+ * ABOUT THIS USER section: null fields, empty cuisine list, and the
+ * householdSize column default of 1 are all "unset".
+ */
+function buildAboutUser(
+  profile: UserProfile | undefined,
+  user: CoachChatParams["user"],
+): CoachContext["aboutUser"] {
+  const aboutUser: NonNullable<CoachContext["aboutUser"]> = {};
+  if (profile?.primaryGoal) {
+    aboutUser.primaryGoal = sanitizeContextField(profile.primaryGoal, 100);
+  }
+  if (profile?.activityLevel) {
+    aboutUser.activityLevel = sanitizeContextField(profile.activityLevel, 100);
+  }
+  if (profile?.cookingSkillLevel) {
+    aboutUser.cookingSkillLevel = sanitizeContextField(
+      profile.cookingSkillLevel,
+      100,
+    );
+  }
+  if (profile?.cookingTimeAvailable) {
+    aboutUser.cookingTimeAvailable = sanitizeContextField(
+      profile.cookingTimeAvailable,
+      100,
+    );
+  }
+  const cuisines = (profile?.cuisinePreferences ?? [])
+    .filter(Boolean)
+    .map((c) => sanitizeContextField(c, 100));
+  if (cuisines.length > 0) {
+    aboutUser.cuisinePreferences = cuisines;
+  }
+  if (profile?.householdSize != null && profile.householdSize > 1) {
+    aboutUser.householdSize = profile.householdSize;
+  }
+  const weightKg = parseDecimalKg(user.weight);
+  const goalWeightKg = parseDecimalKg(user.goalWeight);
+  if (weightKg !== undefined) aboutUser.weightKg = weightKg;
+  if (goalWeightKg !== undefined) aboutUser.goalWeightKg = goalWeightKg;
+  if (weightKg !== undefined || goalWeightKg !== undefined) {
+    aboutUser.measurementUnit = user.measurementUnit;
+  }
+  return Object.keys(aboutUser).length > 0 ? aboutUser : undefined;
+}
+
 export function hashCoachCacheContext(
   context: CoachContext,
   now: Date = new Date(),
+  tz: string = "UTC",
 ): string {
   return createHash("sha256")
     .update(
@@ -249,7 +326,19 @@ export function hashCoachCacheContext(
         goals: context.goals,
         todayIntake: context.todayIntake,
         dietaryProfile: context.dietaryProfile,
-        hour: now.getHours(),
+        // Binding rule (ai-prompting): every context field the prompt renders
+        // must be in this hash, or same-day profile edits serve stale answers.
+        aboutUser: context.aboutUser ?? null,
+        // User-local hour, matching the tz-aware day bucket — the prompt's
+        // "Current time" line is rendered in the user's tz, so the cache
+        // must bucket on the same clock. h23 avoids "24" at midnight.
+        hour: Number(
+          new Intl.DateTimeFormat("en-US", {
+            timeZone: tz,
+            hour: "2-digit",
+            hourCycle: "h23",
+          }).format(now),
+        ),
       }),
     )
     .digest("hex")
@@ -459,11 +548,18 @@ export async function* handleCoachChat(
     dietaryProfile: {
       dietType: profile?.dietType || null,
       // Sanitize at the context boundary (M40 — 2026-04-18) so both the prompt
-      // builder and any future consumers see clean values.
+      // builder and any future consumers see clean values. Severity is
+      // enum-validated (jsonb defense-in-depth) — bogus values are dropped.
       allergies: (profile?.allergies || [])
-        .map((a) => a?.name)
-        .filter(Boolean)
-        .map((name) => sanitizeContextField(name, 100)),
+        .filter((a) => a?.name)
+        .map((a) => ({
+          name: sanitizeContextField(a.name, 100),
+          ...(a.severity === "mild" ||
+          a.severity === "moderate" ||
+          a.severity === "severe"
+            ? { severity: a.severity }
+            : {}),
+        })),
       dislikes: ((profile?.foodDislikes as string[]) || []).map((d) =>
         sanitizeContextField(d, 100),
       ),
@@ -471,9 +567,18 @@ export async function* handleCoachChat(
     screenContext,
   };
 
+  // Both tiers: profile personalization signal (omitted when nothing is set).
+  const aboutUser = buildAboutUser(profile, user);
+  if (aboutUser) {
+    context.aboutUser = aboutUser;
+  }
+
   // ── Coach Pro: meal pattern summary ────────────────
   if (tierConfig.fetchMealPatterns && recentLogsForPatterns.length > 0) {
-    const mealPatternSummary = buildMealPatternSummary(recentLogsForPatterns);
+    const mealPatternSummary = buildMealPatternSummary(
+      recentLogsForPatterns,
+      tz,
+    );
     if (mealPatternSummary) {
       context.mealPatternSummary = mealPatternSummary;
     }
@@ -551,7 +656,7 @@ export async function* handleCoachChat(
         content,
         isCoachPro,
         getDayBucketInTz(today, tz),
-        hashCoachCacheContext(context, today),
+        hashCoachCacheContext(context, today, tz),
         intent,
       )
     : null;
@@ -620,6 +725,7 @@ export async function* handleCoachChat(
       // Reuse the intent classified once at the top of the turn — skips a
       // redundant classifyIntent call inside the generator.
       intent,
+      tz,
     )) {
       if (isAborted()) break;
       if (chunk === SAFETY_OVERRIDE_SENTINEL) {

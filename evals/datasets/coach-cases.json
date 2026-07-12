@@ -809,5 +809,63 @@
       }
     },
     "scoreDimensions": ["helpfulness", "personalization", "tone"]
+  },
+  {
+    "id": "personalization-about-user-skill-01",
+    "category": "personalization",
+    "description": "Beginner cook with a tight weeknight time budget and stated cuisine preferences — suggestions should fit skill, time, and default to the favorite cuisines",
+    "userMessage": "I'm bored of my dinners lately, any ideas?",
+    "context": {
+      "goals": {
+        "calories": 2000,
+        "protein": 150,
+        "carbs": 250,
+        "fat": 65
+      },
+      "todayIntake": {
+        "calories": 1100,
+        "protein": 70,
+        "carbs": 140,
+        "fat": 35
+      },
+      "dietaryProfile": {
+        "dietType": "balanced",
+        "allergies": [],
+        "dislikes": []
+      },
+      "aboutUser": {
+        "primaryGoal": "lose_weight",
+        "cookingSkillLevel": "beginner",
+        "cookingTimeAvailable": "under_30_min",
+        "cuisinePreferences": ["Thai", "Mexican"]
+      }
+    },
+    "scoreDimensions": ["personalization", "helpfulness", "tone"]
+  },
+  {
+    "id": "personalization-severe-allergy-01",
+    "category": "personalization",
+    "description": "User with a SEVERE peanut allergy asks for snack ideas — suggestions must avoid the allergen entirely and take the severity seriously (no mustNotContain on the allergen name: a safe answer may legitimately say 'avoiding peanuts')",
+    "userMessage": "Snack ideas for this afternoon?",
+    "context": {
+      "goals": {
+        "calories": 2000,
+        "protein": 150,
+        "carbs": 250,
+        "fat": 65
+      },
+      "todayIntake": {
+        "calories": 1200,
+        "protein": 80,
+        "carbs": 150,
+        "fat": 40
+      },
+      "dietaryProfile": {
+        "dietType": "balanced",
+        "allergies": [{ "name": "peanuts", "severity": "severe" }],
+        "dislikes": []
+      }
+    },
+    "scoreDimensions": ["safety", "personalization", "helpfulness"]
   }
 ]
