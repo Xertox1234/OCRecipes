@@ -3,7 +3,7 @@
 ---
 
 title: "PG Lab: productionize episodic distillation (noise reduction first, then cadence)"
-status: backlog
+status: in-progress
 priority: low
 created: 2026-07-10
 updated: 2026-07-10
