@@ -3,7 +3,7 @@
 ---
 
 title: "check-bottomsheet-backhandler.js misses BottomSheetModal usage under an aliased import"
-status: backlog
+status: done
 priority: low
 created: 2026-07-09
 updated: 2026-07-09
