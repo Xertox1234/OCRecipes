@@ -37,7 +37,7 @@ underlying gap is real and affects both files.
 
 ## Implementation Notes
 
-- `.claude/hooks/test-drift-detect.sh:23` — `cleanup()`
+- `.claude/hooks/test-drift-detect.sh:22` — `cleanup()`'s `DROP DATABASE` call (function opens at line 18)
 - `.claude/hooks/test-session-coord.sh:103` — `cleanup()` (same pattern, older)
 - `scripts/pg-lab/session-coord.sh:257` — `do_attribute_drift`'s backgrounded `log_event ... &`
   is the specific connection that can outlive the test and hold the drop open.
