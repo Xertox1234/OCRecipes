@@ -306,6 +306,7 @@ describe("classifyIntent", () => {
       "Recipe with artichoke hearts?",
       "Is delivery pizza okay tonight?",
       "How should I cook chicken liver?",
+      "Any good kidney-bean chili recipes?",
     ];
     for (const msg of benignFoodMessages) {
       it(`does NOT classify "${msg}" as safety_refusal`, () => {
@@ -324,12 +325,30 @@ describe("classifyIntent", () => {
       "I just got a fatty liver diagnosis",
       "I have thyroid issues",
       "my doctor says I have liver disease",
+      // Review-found regressions from the first pass of this fix: compound
+      // words (non-colliding terms must stay substring matches) and the
+      // common diagnosis collocations for liver/heart.
+      "I was diagnosed with hyperthyroidism, what should I eat?",
+      "my hypothyroidism makes weight loss hard",
+      "my doctor says I have liver problems",
+      "my liver function tests came back abnormal",
+      "I have a heart murmur, is caffeine okay?",
     ];
     for (const msg of medicalMessages) {
       it(`still classifies "${msg}" as safety_refusal`, () => {
         expect(classifyIntent(msg).intent).toBe("safety_refusal");
       });
     }
+
+    // Deliberate routing choice: "diabetic-friendly" reveals a diabetes
+    // context, matching the old pattern's substring behavior for
+    // "diabetes-friendly" — the refusal template still anchors to context
+    // and pivots to a safe alternative, so this errs toward caution.
+    it("routes 'diabetic-friendly' recipe requests to safety_refusal (deliberate)", () => {
+      expect(
+        classifyIntent("Any diabetic-friendly dinner recipes?").intent,
+      ).toBe("safety_refusal");
+    });
   });
 
   describe("safety regex backtracking bounds", () => {
