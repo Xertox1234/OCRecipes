@@ -125,4 +125,122 @@ describe("check-bottomsheet-backhandler.js", () => {
     const { status } = runCheck(file);
     expect(status).toBe(1);
   });
+
+  describe("aliased imports", () => {
+    it("catches an unwired sheet rendered under an import alias", () => {
+      const file = writeTsx(`
+        import { BottomSheetModal as Sheet } from "@gorhom/bottom-sheet";
+
+        function Screen() {
+          return <Sheet ref={sheetRef} />;
+        }
+      `);
+      const { status, stdout } = runCheck(file);
+      expect(status).toBe(1);
+      expect(stdout).toContain("useSheetBackHandler");
+    });
+
+    it("exits 0 when an alias-rendered sheet is wired to useSheetBackHandler", () => {
+      const file = writeTsx(`
+        import { BottomSheetModal as Sheet } from "@gorhom/bottom-sheet";
+
+        function Screen() {
+          useSheetBackHandler(sheetRef, isOpen);
+          return <Sheet ref={sheetRef} />;
+        }
+      `);
+      const { status } = runCheck(file);
+      expect(status).toBe(0);
+    });
+
+    it("catches an unwired aliased sheet from a multi-line import specifier list", () => {
+      const file = writeTsx(`
+        import {
+          BottomSheetBackdrop,
+          BottomSheetModal as Sheet,
+          BottomSheetView,
+        } from "@gorhom/bottom-sheet";
+
+        function Screen() {
+          return (
+            <Sheet
+              ref={sheetRef}
+            >
+              <Content />
+            </Sheet>
+          );
+        }
+      `);
+      const { status } = runCheck(file);
+      expect(status).toBe(1);
+    });
+
+    it("catches an unwired aliased sheet from a default + named import", () => {
+      const file = writeTsx(`
+        import BottomSheet, { BottomSheetModal as Sheet } from "@gorhom/bottom-sheet";
+
+        function Screen() {
+          return <Sheet ref={sheetRef} />;
+        }
+      `);
+      const { status } = runCheck(file);
+      expect(status).toBe(1);
+    });
+
+    it("does not flag a type-only aliased import used only as a ref type argument", () => {
+      const file = writeTsx(`
+        import type { BottomSheetModal as SheetType } from "@gorhom/bottom-sheet";
+
+        function useSomething() {
+          const ref = useRef<SheetType>(null);
+          return ref;
+        }
+      `);
+      const { status } = runCheck(file);
+      expect(status).toBe(0);
+    });
+
+    it("does not flag a specifier-level type-only alias inside a value import", () => {
+      const file = writeTsx(`
+        import { type BottomSheetModal as SheetType, BottomSheetView } from "@gorhom/bottom-sheet";
+
+        function useSomething() {
+          const ref = useRef<SheetType>(null);
+          return ref;
+        }
+      `);
+      const { status } = runCheck(file);
+      expect(status).toBe(0);
+    });
+
+    it("does not treat an `as` type cast outside an import as an alias", () => {
+      const file = writeTsx(`
+        import { BottomSheetModal } from "@gorhom/bottom-sheet";
+
+        const Mock = BottomSheetModal as unknown as typeof BottomSheetModal;
+
+        export function helper() {
+          return Mock;
+        }
+      `);
+      const { status } = runCheck(file);
+      expect(status).toBe(0);
+    });
+
+    it("does not flag a longer JSX tag that merely starts with the alias name", () => {
+      const file = writeTsx(`
+        import { BottomSheetModal as Sheet } from "@gorhom/bottom-sheet";
+
+        function App() {
+          return (
+            <SheetProvider>
+              <Screen />
+            </SheetProvider>
+          );
+        }
+      `);
+      const { status } = runCheck(file);
+      expect(status).toBe(0);
+    });
+  });
 });

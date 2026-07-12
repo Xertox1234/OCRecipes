@@ -28,10 +28,15 @@
  *     call exist in the same file as ANY BottomSheetModal JSX), not a
  *     per-ref correlation — a file with multiple sheets where only one is
  *     wired will not be caught.
- *   - The JSX match is on the literal name `BottomSheetModal`. An aliased
- *     import (`import { BottomSheetModal as Sheet } from "@gorhom/bottom-sheet"`)
- *     would render `<Sheet ...>` and silently bypass this check (fail-open
- *     false negative). No aliased import exists in the codebase today.
+ *   - The JSX match covers the literal name `BottomSheetModal` plus any local
+ *     alias bound by a value import of `@gorhom/bottom-sheet`
+ *     (`import { BottomSheetModal as Sheet } ...` renders `<Sheet ...>` and is
+ *     caught). Still uncovered: a wrapper component defined in a DIFFERENT
+ *     file (e.g. a styled/themed re-export) renders under its own name and
+ *     bypasses this single-file check — same class of limitation as the
+ *     per-ref correlation above. Namespace-import usage
+ *     (`import * as Gorhom ...` → `<Gorhom.BottomSheetModal>`) is also not
+ *     matched, deliberately, since the tag pattern excludes `.`-prefixed names.
  * See the todo that added this script, archived at
  * `todos/archive/P3-2026-07-07-usesheetbackhandler-edge-cases.md`.
  */
@@ -66,19 +71,61 @@ function shouldSkipFile(filePath) {
   return skipPatterns.some((pattern) => filePath.includes(pattern));
 }
 
-// Matches an actual JSX `<BottomSheetModal` opening/self-closing tag against
-// the WHOLE file content (not line-by-line, so a tag name immediately
-// followed by a line break — attributes on the next line — still matches).
+// Matches an `import ... from "@gorhom/bottom-sheet"` statement, capturing an
+// optional statement-level `type` keyword and the import clause (default
+// specifier and/or `{ ... }` list). `[^'"]*?` is a negated class, so it
+// crosses newlines — multi-line specifier lists match too.
+const GORHOM_IMPORT_PATTERN =
+  /import\s+(type\s+)?([^'"]*?)\bfrom\s*["']@gorhom\/bottom-sheet["']/g;
+
+// Matches a single `BottomSheetModal as <alias>` specifier (after splitting a
+// brace list on commas), capturing an optional specifier-level `type` keyword
+// and the alias identifier.
+const ALIAS_SPECIFIER_PATTERN =
+  /^\s*(type\s+)?BottomSheetModal\s+as\s+([A-Za-z_$][\w$]*)\s*$/;
+
+/**
+ * Local binding names under which `BottomSheetModal` can appear as a JSX tag
+ * in this file: always the literal name, plus any `as` alias from a VALUE
+ * import of `@gorhom/bottom-sheet`. Type-only imports (statement- or
+ * specifier-level) never render JSX and are skipped. Alias extraction is
+ * anchored inside import statements so an `as` TYPE CAST elsewhere in the
+ * file (`BottomSheetModal as unknown as ...`) can never register an alias.
+ */
+function getSheetModalLocalNames(content) {
+  const names = ["BottomSheetModal"];
+  for (const statement of content.matchAll(GORHOM_IMPORT_PATTERN)) {
+    if (statement[1]) continue; // `import type { ... }` — type-only
+    const braces = /\{([^}]*)\}/.exec(statement[2]);
+    if (!braces) continue;
+    for (const specifier of braces[1].split(",")) {
+      const alias = ALIAS_SPECIFIER_PATTERN.exec(specifier);
+      if (alias && !alias[1]) names.push(alias[2]);
+    }
+  }
+  return names;
+}
+
+// Matches an actual JSX `<name` opening/self-closing tag against the WHOLE
+// file content (not line-by-line, so a tag name immediately followed by a
+// line break — attributes on the next line — still matches).
 // The char before `<` must not be a word char or `.` (excludes
 // `useRef<BottomSheetModal>` generics and a hypothetical `Foo.BottomSheetModal`
 // namespaced usage); the char after the name must be whitespace, `/`, or `>`
-// (excludes `BottomSheetModalProvider`).
-const JSX_TAG_PATTERN = /(^|[^\w.])<BottomSheetModal(?=[\s/>])/;
+// (excludes `BottomSheetModalProvider`, and longer names starting with an
+// alias). `$` is the only regex metachar valid in a JS identifier — escape it.
+function jsxTagPattern(name) {
+  return new RegExp(`(^|[^\\w.])<${name.replace(/\$/g, "\\$")}(?=[\\s/>])`);
+}
+
 const HOOK_CALL_PATTERN = /useSheetBackHandler\(/;
 
 function checkFile(filePath) {
   const content = fs.readFileSync(filePath, "utf8");
-  if (!JSX_TAG_PATTERN.test(content)) return null;
+  const rendersSheetModal = getSheetModalLocalNames(content).some((name) =>
+    jsxTagPattern(name).test(content),
+  );
+  if (!rendersSheetModal) return null;
   if (HOOK_CALL_PATTERN.test(content)) return null;
   return filePath;
 }
