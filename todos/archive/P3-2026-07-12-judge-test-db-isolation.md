@@ -3,7 +3,7 @@
 ---
 
 title: "Isolate evals/**tests**/judge.test.ts from the live Postgres pool import chain"
-status: backlog
+status: done
 priority: low
 created: 2026-07-12
 updated: 2026-07-12
