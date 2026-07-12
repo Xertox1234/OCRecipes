@@ -9,10 +9,18 @@ import {
   formatZodError,
   parseTimezone,
   requireValidImage,
+  handleRouteError,
 } from "../_helpers";
 import type { AuthenticatedRequest } from "../../middleware/auth";
 
 vi.mock("../../storage", () => ({ storage: {} }));
+
+// _helpers.ts imports "../lib/error-reporter" (server/lib/error-reporter.ts);
+// this test file lives at server/routes/__tests__/, so the mock specifier
+// must resolve to the same module ID: "../../lib/error-reporter" — NOT
+// "../lib/error-reporter" (which would resolve to the non-existent
+// server/routes/lib/error-reporter and mock nothing).
+vi.mock("../../lib/error-reporter", () => ({ reportError: vi.fn() }));
 
 /** Minimal Express Response stub capturing status + json for guard helpers. */
 function createMockResponse() {
@@ -75,6 +83,49 @@ describe("requireValidImage", () => {
       error: "Invalid image content. Only JPEG, PNG, and WebP allowed.",
       code: "VALIDATION_ERROR",
     });
+  });
+});
+
+describe("handleRouteError", () => {
+  // No local afterEach needed: test/setup.ts already runs a global
+  // beforeEach(() => vi.clearAllMocks()) before every test in the suite.
+
+  it("calls reportError on the 500 branch (non-Zod error)", async () => {
+    const { reportError } = await import("../../lib/error-reporter");
+    const res = createMockResponse();
+    const error = new Error("db unreachable");
+
+    handleRouteError(res as unknown as Response, error, "fetch recipes");
+
+    expect(reportError).toHaveBeenCalledTimes(1);
+    expect(reportError).toHaveBeenCalledWith(error, "fetch recipes");
+    expect(res.statusCode).toBe(500);
+    expect(res.body).toMatchObject({
+      error: "Failed to fetch recipes",
+      code: "INTERNAL_ERROR",
+    });
+  });
+
+  it("does NOT call reportError on the 400 branch (ZodError)", async () => {
+    const { reportError } = await import("../../lib/error-reporter");
+    const res = createMockResponse();
+    const parsed = z.object({ name: z.string() }).safeParse({ name: 123 });
+
+    // Fail loudly (not vacuously) if this schema/input ever unexpectedly
+    // succeeds — the assertions below would otherwise pass trivially
+    // against createMockResponse()'s untouched defaults.
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      handleRouteError(
+        res as unknown as Response,
+        parsed.error,
+        "fetch recipes",
+      );
+    }
+
+    expect(reportError).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ code: "VALIDATION_ERROR" });
   });
 });
 

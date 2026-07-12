@@ -5,6 +5,23 @@ import type { ErrorEvent } from "@sentry/node";
 // Mock @sentry/node before the module under test loads it. This factory takes
 // precedence over the test/mocks/sentry-node.ts alias in vitest.config.ts
 // (the alias exists to keep the ~500ms real import out of route tests).
+//
+// DECISION (2026-07-12): no integration test runs this suite against the
+// REAL @sentry/node SDK (only vi.mock, as below). This was considered as
+// extra hardening — a future SDK upgrade that restructures where PII lands
+// on the outgoing event (the exact bug class scrubEvent/beforeSendHandler
+// exist to fix) wouldn't be caught by a mocked test. It was not pursued
+// because the obstacle is structural, not a missing test: vitest.config.ts's
+// `resolve.alias` for "@sentry/node" (line ~137) rewrites the specifier to
+// test/mocks/sentry-node.ts at the bundler level, before Vitest's mock layer
+// runs — `vi.unmock`/`vi.importActual` intercept `vi.mock()` factories, not
+// resolve.alias, so neither can recover the real package from inside this
+// file. Defeating it would require a per-file resolver override (e.g. a
+// second Vitest project/config, or a conditional alias keyed on the test
+// path) that touches shared config and risks the ~500ms cost this alias was
+// added to avoid for every route test. Left as a follow-up if the project
+// adopts per-file Vitest projects for another reason; not worth a
+// standalone config change for this alone.
 const sentryMocks = vi.hoisted(() => ({
   init: vi.fn(),
   captureException: vi.fn(),
@@ -328,5 +345,29 @@ describe("server/index.ts boot ordering invariant", () => {
     const source = await readFile(indexPath, "utf8");
     const imports = source.match(/^import\s+.*$/gm) ?? [];
     expect(imports[1]).toBe('import "./lib/error-reporter-boot";');
+  });
+
+  it("keeps registerRoutes -> attachExpressErrorReporter -> setupErrorHandler call ordering in startServer", async () => {
+    // Static source-order guard (same technique as the import-order test
+    // above): Sentry's Express error handler must be registered after all
+    // routes (so it can see their errors) and before the app's own JSON
+    // error handler (so it always forwards via next(err)) — this is
+    // currently correct only by inspection/comment, not enforced.
+    const { readFile } = await import("node:fs/promises");
+    const { fileURLToPath } = await import("node:url");
+    const indexPath = fileURLToPath(
+      new URL("../../index.ts", import.meta.url).href,
+    );
+    const source = await readFile(indexPath, "utf8");
+
+    const registerIdx = source.indexOf("registerRoutes(app)");
+    const attachIdx = source.indexOf("attachExpressErrorReporter(app)");
+    const setupIdx = source.indexOf("setupErrorHandler(app)");
+
+    expect(registerIdx).toBeGreaterThan(-1);
+    expect(attachIdx).toBeGreaterThan(-1);
+    expect(setupIdx).toBeGreaterThan(-1);
+    expect(registerIdx).toBeLessThan(attachIdx);
+    expect(attachIdx).toBeLessThan(setupIdx);
   });
 });
