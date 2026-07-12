@@ -1,15 +1,20 @@
 -- scripts/pg-lab/schema/memory-candidates.sql
 --
--- Schema for the episodic-distillation EXPERIMENT (PG Lab Phase D —
--- P3-2026-07-05-pg-episodic-distillation.md; spec:
--- docs/superpowers/specs/2026-07-09-pg-episodic-distillation-design.md). Owned entirely by
--- this item, per the PG Lab "one schema file per item" rail.
+-- PRODUCTION schema for the episodic-distillation pipeline (PG Lab Phase D). Started as an
+-- experiment (P3-2026-07-05-pg-episodic-distillation.md; spec:
+-- docs/superpowers/specs/2026-07-09-pg-episodic-distillation-design.md); the experiment
+-- concluded KEEP on 2026-07-10 (P3-2026-07-10-distill-productionization.md) and this is now
+-- durable production schema. Applied ONLY via `distill.sh --init-schema`, never implicitly —
+-- run_window() calls require_schema() and refuses to proceed (loud stderr naming
+-- --init-schema) if these tables are absent.
 --
--- EXPERIMENT-SCOPED: harness.memory_candidates is a working queue (candidates + review
--- status); harness.distill_runs and harness.distilled_sessions are append-only ledgers.
--- None is a source of truth — the canonical stores remain the markdown memory directory and
--- docs/solutions/. All three tables are dropped by hand when the experiment concludes
--- (keep/kill verdict recorded); nothing else may ever read them.
+-- harness.memory_candidates is a working queue (candidates + review status); harness.
+-- distill_runs and harness.distilled_sessions are append-only ledgers. harness.
+-- distilled_sessions is ALSO the at-most-once send bookmark — the original experiment
+-- tables were dropped by hand once on 2026-07-10 (keep verdict recorded first), and that
+-- silently reset the bookmark; a bare re-run at that point would have re-sent and re-billed
+-- the whole prior window. None of the three is a source of truth — the canonical stores
+-- remain the markdown memory directory and docs/solutions/.
 --
 -- Cost accounting lives in distill_runs.tokens_in/tokens_out (converted to USD by distill.sh
 -- pricing constants) — NOT in the cheap-worker usage.jsonl ledger, which carries no cost
