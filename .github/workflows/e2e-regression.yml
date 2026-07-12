@@ -119,6 +119,7 @@ jobs:
             if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then break; fi
             sleep 2
           done
+          curl -sf http://localhost:3000/api/health >/dev/null 2>&1 || { echo "::error::backend did not become ready within 60s"; cat server.log; exit 1; }
 
       # The debug build is a dev client that loads its JS bundle from Metro, so
       # Metro must be running for the app to render anything Maestro can drive.
@@ -131,6 +132,7 @@ jobs:
             if curl -sf http://localhost:8081/status >/dev/null 2>&1; then break; fi
             sleep 2
           done
+          curl -sf http://localhost:8081/status >/dev/null 2>&1 || { echo "::error::Metro did not become ready within 60s"; cat metro.log; exit 1; }
 
       # Build the native iOS app and install it on the booted simulator.
       # --no-bundler because Metro is already running in the background above.
@@ -230,6 +232,7 @@ jobs:
             if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then break; fi
             sleep 2
           done
+          curl -sf http://localhost:3000/api/health >/dev/null 2>&1 || { echo "::error::backend did not become ready within 60s"; cat server.log; exit 1; }
 
       # See the iOS job's Metro note. On Android the emulator's localhost is the
       # emulator itself, so `adb reverse` (below) tunnels the app's
@@ -241,6 +244,7 @@ jobs:
             if curl -sf http://localhost:8081/status >/dev/null 2>&1; then break; fi
             sleep 2
           done
+          curl -sf http://localhost:8081/status >/dev/null 2>&1 || { echo "::error::Metro did not become ready within 60s"; cat metro.log; exit 1; }
 
       # Boots the emulator, then builds + installs the app and runs the flows
       # against it. Same regression tag set and retry policy as the iOS job.
