@@ -102,6 +102,11 @@ const envSchema = z.object({
   GOOGLE_PUBSUB_AUDIENCE: z.string().optional(),
   GOOGLE_PUBSUB_SA_EMAIL: z.string().optional(),
 
+  // Server-side Sentry error tracking (optional — error tracking disabled
+  // without it; only active in NODE_ENV=production, mirroring the client
+  // reporter contract in client/lib/reporter.ts). See server/lib/error-reporter.ts.
+  SENTRY_DSN: z.string().optional(),
+
   // Admin
   ADMIN_USER_IDS: z.string().optional(),
 
@@ -155,6 +160,12 @@ export function validateEnv(): Env {
   if (!validated.EXPO_ACCESS_TOKEN) {
     warnings.push(
       "EXPO_ACCESS_TOKEN not set — server-driven push notifications disabled",
+    );
+  }
+  if (!validated.SENTRY_DSN) {
+    warnings.push(
+      "SENTRY_DSN not set — server-side error tracking disabled (production " +
+        "5xx errors and crashes are only visible in stdout logs)",
     );
   }
   if (!validated.RESEND_API_KEY) {
