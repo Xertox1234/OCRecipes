@@ -1,6 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { formatContextSummary } from "../judge";
 import type { CoachContext } from "../../server/services/nutrition-coach";
+
+// ../judge value-imports formatAboutUserLines from nutrition-coach.ts, whose
+// coach-tools import chains to server/storage → server/db.ts, which throws at
+// module load when DATABASE_URL is unset. Mock the collaborator so this pure
+// formatter test needs no database. getToolDefinitions must return an array:
+// nutrition-coach.ts runs Object.freeze(getToolDefinitions()) at module scope.
+vi.mock("../../server/services/coach-tools", () => ({
+  getToolDefinitions: () => [],
+  executeToolCall: vi.fn(),
+  MAX_TOOL_CALLS_PER_RESPONSE: 5,
+  serviceUnavailable: vi.fn(),
+}));
 
 const BASE: CoachContext = {
   goals: { calories: 2000, protein: 150, carbs: 250, fat: 65 },
