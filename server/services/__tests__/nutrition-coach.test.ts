@@ -915,6 +915,25 @@ describe("Pro tier prompt differentiation", () => {
     expect(prompt).not.toContain("Last week you mentioned");
     expect(prompt).not.toContain("inline_chart");
   });
+
+  it("renders the tool-confirm instruction only for the tool-bearing Pro tier", async () => {
+    // The free tier has no tools attached — describing confirm/cancel
+    // machinery it will never see burns tokens and confuses the model.
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+    expect(capturedSystemPrompt()).not.toContain("confirm or cancel");
+
+    vi.mocked(openai.chat.completions.create).mockClear();
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    await collectStream(
+      generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
+    );
+    expect(capturedSystemPrompt()).toContain("confirm or cancel");
+  });
 });
 
 describe("due-commitments follow-up rendering", () => {
@@ -971,6 +990,28 @@ describe("due-commitments follow-up rendering", () => {
     expect(capturedSystemPrompt()).not.toContain(
       "COMMITMENTS DUE FOR FOLLOW-UP",
     );
+  });
+
+  it("renders the frequent-foods line when present and omits it when absent", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      frequentFoodsSummary: "Greek yogurt (12×), chicken breast (8×)",
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+    expect(capturedSystemPrompt()).toContain(
+      "Frequently logged foods (past 30 days): Greek yogurt (12×), chicken breast (8×)",
+    );
+
+    vi.mocked(openai.chat.completions.create).mockClear();
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+    expect(capturedSystemPrompt()).not.toContain("Frequently logged foods");
   });
 });
 

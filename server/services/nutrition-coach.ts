@@ -78,6 +78,11 @@ export interface CoachContext {
    */
   dueCommitmentsSummary?: string;
   /**
+   * The user's most frequently logged foods over the past 30 days
+   * (Coach Pro only). E.g. "Greek yogurt (12×), chicken breast (8×)".
+   */
+  frequentFoodsSummary?: string;
+  /**
    * Profile personalization signal (both tiers). Fields are omitted when the
    * user hasn't set them; the whole object is omitted when nothing is set.
    * Strings are sanitized at the context boundary (M40). Weights are kg
@@ -235,6 +240,7 @@ function buildIntentBlock(intent: CoachIntent): string[] {
     "- If allergies or dislikes are listed, NEVER suggest those foods under any circumstances.",
     "- Consider the time of day when making meal suggestions (breakfast vs dinner). If it's late and the user has eaten very little, address this gently.",
     "- If meal patterns show skipped meals or late-night eating, gently acknowledge these as context when relevant — but do not lecture unprompted.",
+    "- If meal patterns show a consistent logging streak, acknowledge it briefly — reinforcement beats critique.",
     "- Notebook entries are labelled with recency (recent/this week/this month/older). Weight recent entries more heavily than older ones.",
     "- If ABOUT THIS USER lists cooking skill or available time, fit suggestions to them — never suggest a recipe that exceeds their stated time budget.",
     "- When suggesting meals, default to the user's favorite cuisines when listed, unless they ask for variety.",
@@ -293,11 +299,14 @@ function buildSystemPrompt(
           "You are this user's dedicated coach: you know their history, patterns, and goals, and your advice builds week over week.",
           "When a notebook entry is relevant, reference it naturally in passing ('Last week you mentioned…') so the user feels remembered — never recite entries or list what you know.",
           "For 'how am I doing' moments, prefer an inline_chart block of goal vs. actual over describing the numbers in prose.",
+          // Tool-confirm rule lives here because only the Pro generator
+          // attaches tools — the free tier must not read about machinery
+          // it will never see.
+          "When a tool call proposes an action (log food, add to meal plan, add to grocery list), tell the user what you are suggesting and that they can confirm or cancel. Do not say the action has been completed.",
         ]
       : []),
     "Be conversational, supportive, and evidence-based. Keep responses concise — aim for 2-4 sentences for simple questions, up to a short paragraph for complex topics. Use bullet points when listing foods or suggestions. Never write more than 150 words unless the user asks for detail.",
     "Use **bold** and *italic* for emphasis and bullet points for lists. Do not use headers, tables, or code blocks — they render poorly in chat.",
-    "When a tool call proposes an action (log food, add to meal plan, add to grocery list), tell the user what you are suggesting and that they can confirm or cancel. Do not say the action has been completed.",
     "Never diagnose medical conditions or replace professional medical advice.",
     "Never recommend extreme calorie restriction (below 1200 cal/day), extreme fasting protocols, or any advice that could promote disordered eating.",
     "If the user mentions symptoms, emotional distress about food, asks for medical advice, or references a medical condition (heart disease, diabetes, kidney disease, GLP-1 medication, etc.), acknowledge their concern and always explicitly recommend they see a healthcare professional, doctor, or registered dietitian.",
@@ -340,6 +349,11 @@ function buildSystemPrompt(
 
   if (context.mealPatternSummary) {
     parts.push(`Meal patterns (past 7 days): ${context.mealPatternSummary}`);
+  }
+  if (context.frequentFoodsSummary) {
+    parts.push(
+      `Frequently logged foods (past 30 days): ${context.frequentFoodsSummary}`,
+    );
   }
   if (context.dietaryProfile.dietType) {
     parts.push(

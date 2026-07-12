@@ -94,6 +94,33 @@ describe("Coach Tools Service", () => {
     expect(names).toContain("get_substitutions");
   });
 
+  it("proposal tools carry when-to-call clauses, not just what they do", () => {
+    // A description without a trigger condition leaves the model guessing
+    // about when to reach for the tool.
+    const byName = new Map(
+      getToolDefinitions().map((t) => {
+        const fn = (t as { function: { name: string; description: string } })
+          .function;
+        return [fn.name, fn.description] as const;
+      }),
+    );
+    expect(byName.get("add_to_meal_plan")).toMatch(/Call this when/);
+    expect(byName.get("add_to_grocery_list")).toMatch(/Call this when/);
+  });
+
+  it("search_recipes tells the model results are already allergen-filtered", () => {
+    const byName = new Map(
+      getToolDefinitions().map((t) => {
+        const fn = (t as { function: { name: string; description: string } })
+          .function;
+        return [fn.name, fn.description] as const;
+      }),
+    );
+    // The server filters the user's allergens via intolerances — the model
+    // should not waste words re-checking results for allergy conflicts.
+    expect(byName.get("search_recipes")).toMatch(/allergen/i);
+  });
+
   it("executes lookup_nutrition tool", async () => {
     const result = await executeToolCall(
       "lookup_nutrition",

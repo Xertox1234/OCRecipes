@@ -37,6 +37,7 @@ vi.mock("../../storage", () => ({
     getDailySummary: vi.fn(),
     getChatMessages: vi.fn(),
     getDailyLogsInRange: vi.fn(),
+    getMostEatenFoods: vi.fn(),
     getActiveNotebookEntries: vi.fn(),
     getCommitmentsWithDueFollowUp: vi.fn(),
     getCoachCachedResponse: vi.fn(),
@@ -173,6 +174,7 @@ function setupDefaultStorage() {
   });
   vi.mocked(storage.getChatMessages).mockResolvedValue([]);
   vi.mocked(storage.getDailyLogsInRange).mockResolvedValue([]);
+  vi.mocked(storage.getMostEatenFoods).mockResolvedValue([]);
   vi.mocked(storage.getActiveNotebookEntries).mockResolvedValue([]);
   vi.mocked(storage.getCommitmentsWithDueFollowUp).mockResolvedValue([]);
   vi.mocked(storage.getCoachCachedResponse).mockResolvedValue(null);
@@ -550,6 +552,39 @@ describe("handleCoachChat", () => {
 
       const context = vi.mocked(generateCoachResponse).mock.calls[0][1];
       expect(context.aboutUser).toEqual({ primaryGoal: "gain_muscle" });
+    });
+  });
+
+  // ── Frequent-foods injection into context ──────────────────
+
+  describe("frequent-foods injection", () => {
+    it("injects a sanitized frequent-foods summary for Pro", async () => {
+      vi.mocked(storage.getMostEatenFoods).mockResolvedValue([
+        { name: "Greek yogurt", timesLogged: 12 },
+        { name: "chicken breast", timesLogged: 8 },
+      ]);
+
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      const context = vi.mocked(generateCoachProResponse).mock.calls[0][1];
+      expect(context.frequentFoodsSummary).toBe(
+        "Greek yogurt (12×), chicken breast (8×)",
+      );
+      // productName/title are user-authored — must pass the M40 gate.
+      expect(sanitizeContextField).toHaveBeenCalledWith("Greek yogurt", 100);
+    });
+
+    it("omits the summary when there are no frequent foods", async () => {
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: true })));
+
+      const context = vi.mocked(generateCoachProResponse).mock.calls[0][1];
+      expect(context.frequentFoodsSummary).toBeUndefined();
+    });
+
+    it("does not fetch frequent foods for the free tier", async () => {
+      await collectEvents(handleCoachChat(makeParams({ isCoachPro: false })));
+
+      expect(storage.getMostEatenFoods).not.toHaveBeenCalled();
     });
   });
 
@@ -1275,6 +1310,84 @@ describe("buildMealPatternSummary", () => {
       makeLog("2026-04-28", 11),
       makeLog("2026-04-28", 20),
     ];
+    expect(buildMealPatternSummary(logs)).toBeNull();
+  });
+
+  it("surfaces a consistent-logging streak as a positive pattern", () => {
+    // 7 of 7 window days with all meal windows hit — previously null; the
+    // summary only ever scolded. Reinforcement is free signal.
+    const days = [
+      "2026-04-22",
+      "2026-04-23",
+      "2026-04-24",
+      "2026-04-25",
+      "2026-04-26",
+      "2026-04-27",
+      "2026-04-28",
+    ];
+    const logs = days.flatMap((day) => [
+      makeLog(day, 8),
+      makeLog(day, 12),
+      makeLog(day, 18),
+    ]);
+
+    const summary = buildMealPatternSummary(logs);
+    expect(summary).toContain("logged food on 7/7 days");
+    expect(summary).not.toContain("skipped");
+  });
+
+  it("combines the logging streak with skip negatives", () => {
+    // 6 active days, breakfast only — streak positive (6 >= 7-2) plus skips.
+    const days = [
+      "2026-04-23",
+      "2026-04-24",
+      "2026-04-25",
+      "2026-04-26",
+      "2026-04-27",
+      "2026-04-28",
+    ];
+    const logs = days.map((day) => makeLog(day, 8));
+
+    const summary = buildMealPatternSummary(logs);
+    expect(summary).toContain("logged food on 6/7 days");
+    expect(summary).toContain("lunch skipped 6/6 days");
+  });
+
+  it("clamps the streak numerator to the window (a rolling instant window spans 8 calendar days)", () => {
+    // The caller fetches [now-7d, now) — raw instants, which cover parts of
+    // EIGHT calendar dates in any timezone unless "now" is exactly midnight.
+    // A consistent logger hits all 8, and the prompt must never read
+    // "logged food on 8/7 days" (review finding).
+    const days = [
+      "2026-04-22",
+      "2026-04-23",
+      "2026-04-24",
+      "2026-04-25",
+      "2026-04-26",
+      "2026-04-27",
+      "2026-04-28",
+      "2026-04-29",
+    ];
+    const logs = days.flatMap((day) => [
+      makeLog(day, 8),
+      makeLog(day, 12),
+      makeLog(day, 18),
+    ]);
+
+    const summary = buildMealPatternSummary(logs);
+    expect(summary).toContain("logged food on 7/7 days");
+    expect(summary).not.toContain("8/7");
+  });
+
+  it("does not emit the streak below windowDays - 2 active days", () => {
+    // 4 full days (< 5): no streak, and full-window days mean no skips → null.
+    const days = ["2026-04-25", "2026-04-26", "2026-04-27", "2026-04-28"];
+    const logs = days.flatMap((day) => [
+      makeLog(day, 8),
+      makeLog(day, 12),
+      makeLog(day, 18),
+    ]);
+
     expect(buildMealPatternSummary(logs)).toBeNull();
   });
 
