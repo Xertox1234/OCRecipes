@@ -21,6 +21,20 @@
 // declaration order, so a future reorder of the 4 <BottomSheetModal>
 // blocks can't accidentally paper over a real wiring bug). For each sheet,
 // invoking its own onChange/onAnimate must dismiss ONLY its own ref.
+//
+// Coverage boundary: the above JSX-block-order robustness is a DIFFERENT
+// axis from the four `useSheetBackHandler(...)` CALL-SITE order in
+// MealPlanHomeScreen.tsx, which sets each hook's mount-time
+// `BackHandler.addEventListener` registration order and therefore Android's
+// reverse-registration (last-registered-first) dismiss precedence during a
+// same-screen handoff like handleChooseRecipe (see MealPlanHomeScreen.tsx's
+// "Declaration order below is load-bearing" comment, just above its own
+// four `useSheetBackHandler(...)` calls). `fireBackPress` below DOES
+// dispatch through the real registered listeners in reverse order, but
+// every test here opens only ONE sheet before firing — no test ever has two
+// sheets simultaneously "open" (the mid-handoff case where registration
+// order actually decides which listener wins), so reordering those 4 call
+// sites would NOT fail this test.
 import React from "react";
 import { act, cleanup } from "@testing-library/react";
 import * as RN from "react-native";
