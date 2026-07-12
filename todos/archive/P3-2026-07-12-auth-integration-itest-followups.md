@@ -25,7 +25,7 @@ MERGE-READY. Filed during the "review, fix, codify, close all open PRs" session,
 
 ## Acceptance Criteria
 
-- [ ] If this `.itest.ts` pattern is copied to future route groups with many register/login
+- [x] If this `.itest.ts` pattern is copied to future route groups with many register/login
       cases, add a test-only lower bcrypt cost factor via env override (never touching the
       production cost-12 path) to keep wall time bounded — not needed yet at current suite size.
 - [x] `test/integration/README.md`'s "Adding a new route group" section gets a one-line note
