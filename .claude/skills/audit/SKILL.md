@@ -77,6 +77,34 @@ Dispatched as a **single invocation** (not cluster-based — the lens is one min
 
 **Codification routing:** maintainability findings codify to existing rules files — `docs/rules/architecture.md` (boundary/layer rules), `docs/rules/typescript.md` (type-contract rules). There is no `docs/rules/maintainability.md`. The 600-line threshold and code-judo mindset live in `.claude/skills/audit/maintainability-checklist.md`, not in a rules file (it is a review lens, not a "never do X" rule).
 
+## Deterministic Scanners (ground truth before LLM discovery)
+
+Cheap, deterministic tools report certain finding classes instantly and without hallucination risk. They run **once per audit — after the manifest exists (Phase 1 step 6), before any reviewer agent launches (Phase 2 step 0)** — so the LLM passes spend their effort on judgment, not detection.
+
+| Scanner set     | Tools                                                                                                              | Scopes that run it                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| security        | `npm audit`, `gitleaks` (binary — skipped with an install hint if absent)                                          | `security`, `full`, `pre-launch`                |
+| maintainability | `npx knip` (dead files/exports), `npx jscpd` (duplication, min-tokens 100), `npx madge --circular`, 600-line sweep | `maintainability`, `code-quality`, `pre-launch` |
+
+(The routing mirrors which scopes dispatch the security domain / the maintainability lens. All other scopes run no scanners.)
+
+**Invocation** (from the audit worktree):
+
+```bash
+npx tsx scripts/audit-scanners.ts <scope>
+```
+
+The script prints a per-tool summary plus manifest-ready rows grouped by severity (same columns as the findings tables). Behavior contract:
+
+- **Fail-open:** a missing, failing, or timed-out tool is reported as `skipped — <reason>` in the summary and never blocks the audit — discovery degrades to LLM-only. Each tool is runtime-capped (120s default; `AUDIT_SCANNER_TIMEOUT_MS` overrides — the first `npx` run may need a higher cap while packages download).
+- **Skip switch (offline / speed):** run with `AUDIT_SKIP_SCANNERS=1` to skip all scanners for the run.
+- **Source field:** each row's `Agent` column carries `scanner:<tool>` — the finding's deterministic evidence source. `Research` is pre-filled `—` (Phase 2.5 dispatches no researcher for scanner rows).
+- **Verification = re-running the tool:** the row's Verification column carries the re-run command; Phase 3 step 6 verifies a scanner-sourced fix by re-running that command and confirming the finding is gone.
+- **Conservative caps:** findings are capped at 20 per tool (highest severity kept; the summary reports dropped counts — re-run the tool directly for the full list). jscpd runs with `--min-tokens 100` and the file-length sweep uses the project's 600-line threshold to keep noise below manifest-worthiness.
+- **Supply-chain pins:** the npx-run tools (knip/jscpd/madge) are pinned to exact versions in the script's `NPX_PINS` constant — never loosen a pin to `latest`; bump versions deliberately in the script. All scanners run against the repo root resolved via git (never the ambient cwd).
+
+Copy the printed rows into the manifest with status `open` before Phase 2 step 1. At dedup (Phase 2 step 2), **the scanner row wins as the evidence source** when an LLM agent re-reports the same issue.
+
 ## Phase 1: Setup
 
 The audit produces two classes of artifact:
@@ -150,6 +178,14 @@ Phase 1 sets up both correctly.
 
 ## Phase 2: Discovery
 
+0. **Run the deterministic scanners first** (see "Deterministic Scanners" above) and copy the printed rows into the manifest with status `open` — the ground truth must be in the manifest **before** any reviewer agent launches:
+
+   ```bash
+   npx tsx scripts/audit-scanners.ts <scope>   # AUDIT_SKIP_SCANNERS=1 to skip (offline / speed)
+   ```
+
+   Scanner rows carry `scanner:<tool>` in the Agent column and skip Phase 2 step 3 verification — the tool's output IS the evidence (no re-read/grep needed). Skipped tools (fail-open) cost nothing: discovery proceeds LLM-only for that finding class.
+
 1. **Launch reviewer agents in parallel** using the mapping table above:
    - `full`: launch one agent invocation per structural domain row (7 total) in two batches — first 4 domains, then 3. `full` does NOT include `reliability` or `maintainability`.
    - `pre-launch`: the 7 structural-domain invocations **plus** the 4 `reliability` cluster dispatches (see "Reliability Scope") **plus** the 1 `maintainability` dispatch (see "Maintainability Scope") — 12 total, batched 4+4+4
@@ -160,6 +196,7 @@ Phase 1 sets up both correctly.
    - Use the agent prompt template from the mapping section, specifying the domain and scope
    - Each agent runs as a subagent via the Agent tool with the corresponding `.claude/agents/*.md` agent type
 2. As each agent completes, **deduplicate** its findings against:
+   - The step 0 scanner rows — when an LLM finding duplicates a scanner row, merge it **into the scanner row** (scanner wins as the evidence source: keep `scanner:<tool>` in the Agent column and the scanner's re-run command in Verification; fold any extra context the agent added into the Finding text)
    - The Phase 1 dedup brief and the previous audit's manifest (if one exists) — mark already-fixed items as `false-positive` (cite-and-verify: confirm the cited manifest/CHANGELOG line inline before marking)
    - Other agents in this run — combine duplicates into single findings (agents with overlapping domains may flag the same issue)
 3. For each **genuinely new finding**, verify it exists in the current code:
@@ -179,6 +216,7 @@ Validate the Phase 2 findings against current documentation before the user tria
    - Named scope: launch one researcher for that domain
    - `reliability` scope: launch one researcher per _cluster_ that has findings (1-4 researchers), batched the same way
    - **Maintainability skip:** do **not** dispatch a researcher for maintainability findings — they are structural opportunities, not library-API-driven. Mark each maintainability finding `Research` = `not-applicable` directly and skip to Phase 3 triage for those rows.
+   - **Scanner skip:** rows with Agent = `scanner:<tool>` get no researcher — they are deterministic tool output, not judgment calls; their `Research` column is already `—`.
    - **Skip rule:** a domain with zero findings gets no researcher; if Phase 2 produced no findings at all, skip Phase 2.5 entirely
    - Each agent runs as a subagent via the Agent tool with the `general-purpose` agent type (the Context7 MCP tools are deferred — the researcher loads them with ToolSearch `select:mcp__claude_ai_Context7__resolve-library-id,mcp__claude_ai_Context7__query-docs` before first use)
 2. Use this dispatch prompt for each researcher (fill in `[DOMAIN]` and the findings list):
@@ -240,6 +278,7 @@ For **each** finding the user wants fixed:
 6. **Verify** the fix landed:
    - Grep/read the fixed code to confirm the change is present
    - For a **symbol-changing fix**, re-run `findReferences` to confirm the change propagated to every call site with no stale callers or dangling references — grep can miss alias-resolved usages.
+   - For a **scanner-sourced finding** (Agent = `scanner:<tool>`), re-run the tool named in the row's Verification column and confirm the finding no longer appears — the deterministic re-run IS the verification.
    - Run the specific test file(s) to confirm they pass
 7. **Review the fix** using the orchestrator-dispatched model in `docs/AI_WORKFLOW.md` → Review Policy, scoped to just the files this fix touched. The finding already carries a **domain** (the reviewer that discovered it), so the natural reviewer is that domain's reviewer — select it from the roster (usually **1**, cap **2** if the fix genuinely spans domains; content overrides the recorded domain). Dispatch via the Agent tool using the **canonical dispatch prompt and "Working-tree safety" procedure from `docs/AI_WORKFLOW.md` → Review Policy** — read them from that file; they are not restated here (a previous inline copy drifted — see `.claude/agents/todo-executor.md`). In your own (correct) cwd, capture `WORKTREE=$(git rev-parse --show-toplevel)` plus the audit branch and short HEAD, then fill the canonical prompt with these audit-specific substitutions:
    - **context label** — the finding ID
