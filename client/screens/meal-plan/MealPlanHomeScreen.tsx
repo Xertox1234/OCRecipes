@@ -881,6 +881,12 @@ export default function MealPlanHomeScreen() {
   // would silently flip that precedence with no type error and no test
   // coverage (each hook instance is unit-tested in isolation) — keep
   // addItemMenu first and the other three declared after it.
+  //
+  // Each of the 4 calls below independently subscribes to useIsFocused()
+  // rather than sharing one instance for the screen — an examined, deliberate
+  // trade-off, not an oversight. See useSheetBackHandler's JSDoc and
+  // todos/archive/P3-2026-07-09-usesheetbackhandler-duplicate-isfocused-listeners.md
+  // for why de-duplicating isn't worth it here.
   const {
     onSheetChange: onAddItemMenuSheetChange,
     onSheetAnimate: onAddItemMenuSheetAnimate,
