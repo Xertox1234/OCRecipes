@@ -3,10 +3,10 @@
 ---
 
 title: "Wire deterministic scanners into the /audit skill for zero-hallucination ground truth"
-status: backlog
+status: done
 priority: low
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-12
 assignee:
 labels: [deferred, harness, audit]
 github_issue:
