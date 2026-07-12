@@ -258,6 +258,7 @@ Every executor is a `todo-executor` agent spawned in an **isolated worktree** vi
 Agent({
   description: "Execute todo: <todo title>",
   subagent_type: "general-purpose",
+  model: "sonnet",
   isolation: "worktree",
   prompt: "You are a todo executor agent. Follow the instructions in .claude/agents/todo-executor.md exactly.\n\nYour todo file: todos/<filename>.md\nBase branch: <BASE_BRANCH>\nMain checkout: <MAIN_CHECKOUT>\n\nFirst action, before any other step: run `scripts/pg-lab/session-coord.sh register --kind todo-executor` (registers this session's kind in the coordination registry; silently no-ops if Postgres is down).\n\nExecute all steps in order and report the result."
 })
