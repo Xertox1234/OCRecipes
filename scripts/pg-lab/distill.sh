@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# scripts/pg-lab/distill.sh — episodic-distillation EXPERIMENT pipeline (PG Lab Phase D).
+# scripts/pg-lab/distill.sh — episodic-distillation pipeline (PG Lab Phase D), productionized
+# 2026-07-12 per P3-2026-07-10-distill-productionization.md.
 # Spec: docs/superpowers/specs/2026-07-09-pg-episodic-distillation-design.md
 #
 # Modes:
+#   --init-schema             Apply schema/memory-candidates.sql explicitly. Run once before
+#                              the first --window on a fresh DB; required — --window refuses
+#                              to run (require_schema) if the tables are absent.
 #   --window <start> <end>   Distill sessions (min ts date in [start,end], not yet in
 #                            harness.distilled_sessions) through the health gate to the
 #                            external model; candidates -> harness.memory_candidates.
@@ -30,13 +34,37 @@ DISTILL_PRICE_OUT_PER_MTOK="${DISTILL_PRICE_OUT_PER_MTOK:-1.20}"
 # memory corpus (spec: comparison protocol). Override via env elsewhere.
 DISTILL_MEMORY_DIR="${DISTILL_MEMORY_DIR:-$HOME/.claude/projects/-Users-williamtower-projects-OCRecipes/memory}"
 MAX_BUFFER_CHARS=400000
+# Volume control (AC3, P3-2026-07-10-distill-productionization.md): triage evidence showed
+# ~9% survival vs canon and near-zero near-dup catch rate on conceptual duplicates — a hard
+# structural cap is the backstop the prompt-only approach (below) cannot guarantee alone.
+DISTILL_MAX_CANDIDATES_PER_SESSION="${DISTILL_MAX_CANDIDATES_PER_SESSION:-1}"
+# Fail loudly on a non-numeric override rather than silently disabling the cap: inside an
+# `if` condition, `[ "$n" -ge "$DISTILL_MAX_CANDIDATES_PER_SESSION" ]` on a non-numeric value
+# would exit 2 (error), which set -e treats as "false" because it's a tested condition — the
+# cap would just never trip, with no error anywhere (found in code review, 2026-07-12).
+case "$DISTILL_MAX_CANDIDATES_PER_SESSION" in
+  ''|*[!0-9]*)
+    echo "distill.sh: DISTILL_MAX_CANDIDATES_PER_SESSION must be a non-negative integer, got '$DISTILL_MAX_CANDIDATES_PER_SESSION'" >&2
+    exit 1
+    ;;
+esac
+# Size cap (chars) on the canon-context file built by build_canon_context() — keeps the
+# second --paths file bounded regardless of corpus growth.
+DISTILL_CANON_CONTEXT_MAX_CHARS="${DISTILL_CANON_CONTEXT_MAX_CHARS:-20000}"
 
 # Distillation prompt (spec: "Distillation prompt + typed output"). Empty array is the
-# expected common case — noise control lives HERE, not in post-filtering.
+# expected common case — noise control lives HERE, not in post-filtering. A second file
+# (canon-context: existing docs/solutions + memory titles/summaries, see build_canon_context)
+# is sent alongside the transcript so the model can self-filter already-documented knowledge
+# instead of relying solely on post-hoc near-dup title matching.
 DISTILL_PROMPT=$(cat <<'EOF'
 You are distilling a Claude Code session transcript from the OCRecipes project into durable, reusable knowledge. Extract ONLY knowledge a future coding session would benefit from: decisions with their rationale, discovered constraints or gotchas, user preferences and corrections, recurring workflows.
 
 Most sessions contain NO durable knowledge. An empty JSON array [] is the expected common case. Do not manufacture candidates.
+
+A second file lists titles and summaries of EXISTING documented knowledge (docs/solutions entries and memory files). Check it before extracting anything: if the knowledge is already covered there, even under different wording, do NOT extract it — that is noise, not a new candidate.
+
+If more than one distinct, not-already-covered piece of durable knowledge remains, rank them by how novel, reusable, and load-bearing they are, and return ONLY the single best one. Return at most 1 element in the array — never more, even if several genuinely qualify.
 
 Never extract: secrets or credentials, personal or health data, session-specific trivia (file paths under active edit, transient test failures, one-off command output).
 
@@ -72,6 +100,20 @@ trap 'rm -rf "$WORK"' EXIT
 sql() { psql -X -q -v ON_ERROR_STOP=1 -d "$LAB_DATABASE_URL" "$@"; }
 
 apply_schema() { sql -f "$SCRIPT_DIR/schema/memory-candidates.sql"; }
+
+# AC2 (bookmark durability): --window must never silently proceed on a DB where the schema
+# (and therefore harness.distilled_sessions, the at-most-once send bookmark) doesn't exist —
+# that would re-select and re-send/re-bill every session in the window with no memory of
+# what was already sent. Bare statement (never `if !`-wrapped) — see
+# docs/solutions/logic-errors/bash-errexit-suspended-for-whole-function-under-if-not-2026-07-06.md.
+require_schema() {
+  local ok
+  ok=$(sql -tA -c "SELECT to_regclass('harness.distilled_sessions') IS NOT NULL")
+  if [ "$ok" != "t" ]; then
+    echo "distill.sh: harness schema not found (harness.distilled_sessions is missing) — run '$0 --init-schema' first, then retry" >&2
+    exit 1
+  fi
+}
 
 sha256_of() {
   # shasum on macOS, sha256sum on linux CI
@@ -128,6 +170,51 @@ build_memory_titles() {
   done
 }
 
+# AC3 (volume control — canon-aware dedup): project existing docs/solutions titles/summaries
+# (harness.solution_titles) and existing memory-file titles (build_memory_titles output,
+# call it first) into one size-capped text file. Sent to the model as a SEPARATE file (see
+# send_session) — never merged into the health-gated session artifact, so the gate-to-send
+# sha256 identity check (which only ever hashes the artifact) is untouched. Guards the
+# solution_titles read with to_regclass so a DB that hasn't run codify-neardup.sh --rebuild
+# yet degrades to memory-titles-only instead of erroring (harness.solution_titles is owned
+# by a different pg-lab item and may not exist).
+build_canon_context() {
+  local raw="$WORK/canon-context.raw" out="$WORK/canon-context.txt" has_solutions
+  : > "$raw"
+  has_solutions=$(sql -tA -c "SELECT to_regclass('harness.solution_titles') IS NOT NULL")
+  if [ "$has_solutions" = "t" ]; then
+    {
+      echo "== Existing docs/solutions (path — title) =="
+      # Title-only (summary dropped — more rows fit per char), round-robin across
+      # categories (path's first segment) so a plain ORDER BY path + byte-truncate can't
+      # zero out the largest categories: at 615 rows across 7 categories, a naive
+      # alphabetical cut under the default 20000-char budget included ONLY best-practices
+      # and part of code-quality, giving conventions/design-patterns/logic-errors (the 3
+      # largest, including "discovered constraints or gotchas" — exactly what the
+      # distillation prompt targets) zero representation (found in code review, 2026-07-12).
+      # row_number() PARTITION BY category, then ORDER BY rn — every category contributes
+      # its rn=1 row before any category's rn=2 row, so truncation degrades breadth (fewer
+      # rows per category) instead of coverage (missing categories entirely).
+      sql -tA <<'SQL'
+WITH ranked AS (
+  SELECT path, title,
+         row_number() OVER (PARTITION BY split_part(path, '/', 1) ORDER BY path) AS rn
+  FROM harness.solution_titles
+)
+SELECT path || ' — ' || title FROM ranked ORDER BY rn, split_part(path, '/', 1);
+SQL
+      echo
+    } >> "$raw"
+  fi
+  if [ -s "$WORK/memory-titles.tsv" ]; then
+    {
+      echo "== Existing memory files (path — name/description) =="
+      awk -F'\t' '{print $1 " — " $2}' "$WORK/memory-titles.tsv"
+    } >> "$raw"
+  fi
+  head -c "$DISTILL_CANON_CONTEXT_MAX_CHARS" "$raw" > "$out"
+}
+
 insert_candidate() {  # sid, store, subtype, title, content, uuids_csv
   local sid="$1" store="$2" subtype="$3" title="$4" content="$5" uuids="$6" nd=""
   if [ "$store" = "solution" ]; then
@@ -164,15 +251,26 @@ VALUES (:'sid', CASE WHEN :'uuids' = '' THEN NULL ELSE string_to_array(:'uuids',
 SQL
 }
 
-# Contract: args sid, run_id, artifact; writes "tokens_in tokens_out n_candidates
-# parse_failed(0|1)" to $WORK/send.result. Result goes via FILE and the caller uses a bare
-# call, NOT read <<<"$(send_session ...)": command substitution disables errexit inside the
-# function (bash default), which would silently swallow a failed candidate INSERT after a
-# paid send. Bare call keeps unguarded failures LOUD; the tolerated ones (send failure,
-# parse failure, near-dup lookup) are each explicitly guarded.
+# Contract: args sid, run_id, artifact, canon_context_path; writes "tokens_in tokens_out
+# n_candidates parse_failed(0|1)" to $WORK/send.result. Result goes via FILE and the caller
+# uses a bare call, NOT read <<<"$(send_session ...)": command substitution disables errexit
+# inside the function (bash default), which would silently swallow a failed candidate INSERT
+# after a paid send. Bare call keeps unguarded failures LOUD; the tolerated ones (send
+# failure, parse failure, near-dup lookup) are each explicitly guarded.
+#
+# canon_context_path is passed to $DISTILL_SEND_CMD as a SECOND path in the SAME --paths
+# flag (`--paths "$artifact" "$canon"`), not a second --paths flag: ask-kimi's argparse uses
+# `--paths PATHS [PATHS ...]` (nargs="+", default store action), so a repeated --paths flag
+# would silently OVERWRITE the first instead of accumulating (verified empirically). One
+# flag with two args achieves the intended "two distinct files, not merged into one buffer"
+# without that trap.
 send_session() {
-  local sid="$1" run_id="$2" artifact="$3" errf="$WORK/send.err" respf="$WORK/resp.txt"
-  if ! "$DISTILL_SEND_CMD" --paths "$artifact" --question "$DISTILL_PROMPT" >"$respf" 2>"$errf"; then
+  local sid="$1" run_id="$2" artifact="$3" canon="${4:-}" errf="$WORK/send.err" respf="$WORK/resp.txt"
+  local send_paths=("$artifact")
+  if [ -n "$canon" ] && [ -s "$canon" ]; then
+    send_paths+=("$canon")
+  fi
+  if ! "$DISTILL_SEND_CMD" --paths "${send_paths[@]}" --question "$DISTILL_PROMPT" >"$respf" 2>"$errf"; then
     echo "0 0 0 1" > "$WORK/send.result"; return
   fi
   local toks tin tout
@@ -212,6 +310,10 @@ PYEOF
   local n=0
   while IFS=$'\t' read -r store subtype title content uuids; do
     [ -n "$store" ] || continue
+    if [ "$n" -ge "$DISTILL_MAX_CANDIDATES_PER_SESSION" ]; then
+      echo "distill.sh: session $sid returned more candidates than the cap ($DISTILL_MAX_CANDIDATES_PER_SESSION) — discarding the rest" >&2
+      break
+    fi
     insert_candidate "$sid" "$store" "$subtype" "$title" "$(printf '%b' "$content")" "$uuids"
     n=$((n + 1))
   done < "$parsed"
@@ -232,9 +334,10 @@ SQL
 
 run_window() {
   local start="$1" end="$2"
-  apply_schema
+  require_schema
   check_cost_cap
   build_memory_titles
+  build_canon_context
   local run_id
   run_id=$(sql -tA -v s="$start" -v e="$end" <<'SQL'
 INSERT INTO harness.distill_runs (window_start, window_end) VALUES (:'s', :'e') RETURNING id;
@@ -274,7 +377,7 @@ SQL
       echo "distill.sh: artifact hash mismatch for $sid — refusing to send" >&2
       gated=$((gated + 1)); record_session "$sid" "$run_id" "gated"; continue
     fi
-    send_session "$sid" "$run_id" "$artifact"
+    send_session "$sid" "$run_id" "$artifact" "$WORK/canon-context.txt"
     read -r s_tin s_tout s_cands s_pfail < "$WORK/send.result"
     tin=$((tin + s_tin)); tout=$((tout + s_tout)); cands=$((cands + s_cands))
     if [ "$s_pfail" -ne 0 ]; then
@@ -297,13 +400,20 @@ run_review() {
   sql -tA <<'SQL' > "$WORK/pending.txt"
 SELECT id FROM harness.memory_candidates WHERE status = 'pending' ORDER BY id;
 SQL
-  local cid choice note
+  # AC4 (review UX): a #k of N progress marker so an interrupted session is visible — the
+  # silent-early-quit incident of 2026-07-10 (reviewer saw ~18 of 254 candidates with no way
+  # to tell from the transcript how far along they were) motivates this. total computed once
+  # up front; k increments per candidate shown.
+  local total
+  total=$(wc -l < "$WORK/pending.txt" | tr -d '[:space:]')
+  local cid choice note k=0
   # Candidate ids come in on fd 3 — stdin stays free for the reviewer's choices. Reading
   # both from fd 0 would make `read choice` consume the NEXT candidate id.
   while IFS= read -r cid <&3; do
     [ -n "$cid" ] || continue
-    sql -v id="$cid" <<'SQL'
-SELECT E'\n--- candidate #' || id || ' [' || target_store || '/' || subtype || ']'
+    k=$((k + 1))
+    sql -v id="$cid" -v k="$k" -v total="$total" <<'SQL'
+SELECT E'\n--- candidate #' || id || ' [' || :'k' || ' of ' || :'total' || '] [' || target_store || '/' || subtype || ']'
        || E'\ntitle:   ' || title
        || E'\nnear-dup: ' || COALESCE(near_dup_path || ' (' || near_dup_score || ')', '(none)')
        || E'\nsession: ' || session_id
@@ -403,6 +513,7 @@ SQL
 
 MODE="${1:-}"
 case "$MODE" in
+  --init-schema) apply_schema ;;
   --window)
     [ $# -eq 3 ] || { echo "usage: $0 --window <YYYY-MM-DD> <YYYY-MM-DD>" >&2; exit 1; }
     run_window "$2" "$3"
@@ -412,5 +523,5 @@ case "$MODE" in
     shift
     run_report "${1:-}" "${2:-}"
     ;;
-  *) echo "usage: $0 --window <start> <end> | --review | --report [start end]" >&2; exit 1 ;;
+  *) echo "usage: $0 --init-schema | --window <start> <end> | --review | --report [start end]" >&2; exit 1 ;;
 esac

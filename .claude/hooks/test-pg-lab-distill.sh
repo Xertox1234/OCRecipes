@@ -9,7 +9,6 @@ HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
 SCRIPT="$PROJECT_ROOT/scripts/pg-lab/distill.sh"
 GATE="$PROJECT_ROOT/scripts/pg-lab/distill-gate.py"
-SCHEMA="$PROJECT_ROOT/scripts/pg-lab/schema/memory-candidates.sql"
 FAIL=0
 assert_exit0()    { if [ "$2" -eq 0 ]; then echo "ok: $1"; else echo "FAIL: $1 — expected exit 0, got $2"; FAIL=1; fi; }
 assert_nonzero()  { if [ "$2" -ne 0 ]; then echo "ok: $1"; else echo "FAIL: $1 — expected non-zero exit, got 0"; FAIL=1; fi; }
@@ -179,11 +178,19 @@ psql -X -q -v ON_ERROR_STOP=1 -d postgres -c "CREATE DATABASE \"$TEST_DB\"" >/de
 assert_exit0 "creates the throwaway DB" "$?"
 FIX="$(mktemp -d)"
 
-# Schema applies idempotently (twice = still exit 0)
-psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" -f "$SCHEMA" >/dev/null 2>&1
-assert_exit0 "schema applies" "$?"
-psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" -f "$SCHEMA" >/dev/null 2>&1
-assert_exit0 "schema re-applies (idempotent)" "$?"
+# require_schema (AC2): --window on a schema-less DB must fail loudly, naming --init-schema.
+# Bound literal for DISTILL_SEND_CMD (not $STUB — not yet defined at this point in the
+# fixture, and the script runs under set -uo pipefail); require_schema exits before any send
+# is attempted, so the send command's value is irrelevant here.
+NOSCHEMA=$(LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD=true bash "$SCRIPT" --window 2026-07-01 2026-07-14 2>&1); RC=$?
+assert_nonzero "distill.sh --window fails when schema is absent" "$RC"
+assert_contains "schema-missing failure names --init-schema" "$NOSCHEMA" "--init-schema"
+
+# Schema applies via --init-schema, idempotently (twice = still exit 0)
+OUT=$(LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" --init-schema 2>&1); RC=$?
+assert_exit0 "--init-schema applies schema" "$RC"
+OUT2=$(LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" --init-schema 2>&1); RC=$?
+assert_exit0 "--init-schema re-applies (idempotent)" "$RC"
 TABLES=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT string_agg(tablename, ',' ORDER BY tablename) FROM pg_tables WHERE schemaname='harness'")
 assert_contains "memory_candidates exists" "$TABLES" "memory_candidates"
 assert_contains "distill_runs exists" "$TABLES" "distill_runs"
@@ -273,6 +280,21 @@ assert_eq "invented subtype: session still sent" "$SS" "sent"
 NVALID=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE session_id='subtype-session'")
 assert_eq "invented subtype rejected, valid sibling inserted" "$NVALID" "1"
 
+# Volume control (AC3): DISTILL_MAX_CANDIDATES_PER_SESSION caps insertion even when the
+# model returns multiple valid candidates for one session (default cap = 1).
+MULTISTUB="$FIX/multi-send.sh"; cat > "$MULTISTUB" <<'EOF'
+#!/usr/bin/env bash
+echo '[{"target_store":"memory","subtype":"feedback","title":"First candidate","content":"Content one.","evidence_msg_uuids":["mc-1"]},{"target_store":"memory","subtype":"feedback","title":"Second candidate","content":"Content two.","evidence_msg_uuids":["mc-1"]},{"target_store":"memory","subtype":"feedback","title":"Third candidate","content":"Content three.","evidence_msg_uuids":["mc-1"]}]'
+echo '[kimi: 900 in (0 cached) / 60 out | finish: stop]' >&2
+EOF
+chmod +x "$MULTISTUB"
+psql -X -q -d "$TEST_URL" -c "INSERT INTO harness.transcript_messages (msg_uuid, session_id, project_dir, ts, role, content) VALUES ('mc-1','multicand-session','fx','2026-07-08T10:00:00Z','user','Clean discussion, multiple takeaways.')" >/dev/null
+LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$MULTISTUB" bash "$SCRIPT" --window 2026-07-08 2026-07-08 >/dev/null 2>&1
+NMULTI=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE session_id='multicand-session'")
+assert_eq "per-session cap truncates multi-candidate response to default 1" "$NMULTI" "1"
+MULTICANDS_COL=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT candidates FROM harness.distill_runs ORDER BY id DESC LIMIT 1")
+assert_eq "run candidates column reflects capped count, not raw" "$MULTICANDS_COL" "1"
+
 # Cost cap: seed a run at the cap -> refusal before any send
 psql -X -q -d "$TEST_URL" -c "INSERT INTO harness.distill_runs (window_start,window_end,tokens_in) VALUES ('2026-01-01','2026-01-01', 20000000000)" >/dev/null
 CAPOUT=$(LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$STUB" bash "$SCRIPT" --window 2026-07-04 2026-07-04 2>&1); RC=$?
@@ -360,7 +382,9 @@ psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$EMPTY_DB\"" >/dev/null 2>&
 # Runs LAST: it resets review statuses, which the report assertions above depend on.
 psql -X -q -d "$TEST_URL" -c "UPDATE harness.memory_candidates SET status='pending', reviewer_note=NULL, reviewed_at=NULL" >/dev/null
 NPEND2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
-printf 'zz\n\na\nresilient note\nq\n' | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" --review >/dev/null 2>&1
+REVOUT2=$(printf 'zz\n\na\nresilient note\nq\n' | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" --review 2>&1)
+# AC4 (review UX): the first candidate shown must carry a [1 of N] progress marker.
+assert_contains "review shows k of N progress marker" "$REVOUT2" "[1 of $NPEND2]"
 NACC2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='accepted' AND reviewer_note='resilient note'")
 assert_eq "stray input re-prompts instead of quitting" "$NACC2" "1"
 NLEFT2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
