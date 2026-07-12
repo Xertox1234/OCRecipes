@@ -8,6 +8,7 @@ applies_to: [server/lib/error-reporter.ts, server/lib/error-reporter-boot.ts, se
 symptoms: ["Sentry events contain request bodies with passwords or health data despite sendDefaultPii: false", "bearer JWTs / x-api-key / cookie headers visible on Sentry error events", "verify-email token or API-key query strings appear in Sentry event URLs and breadcrumbs", "handled 500s from handleRouteError never appear in Sentry at all"]
 severity: critical
 created: '2026-07-11'
+last_updated: '2026-07-12'
 ---
 
 # @sentry/node: sendDefaultPii: false still ships request bodies, headers, cookies, and query strings
@@ -81,6 +82,30 @@ production-only) implements the real controls:
   false })` so the app's `uncaughtException` handler keeps owning the
   log/flush/exit sequence; bounded `Sentry.flush` in both the crash and
   graceful-shutdown exit paths.
+- `SENSITIVE_HEADER_SNIPPETS` (`server/lib/error-reporter.ts`) is a
+  case-insensitive substring deny-list on header NAMES, verified
+  byte-for-byte against the **installed** `@sentry/core`'s own
+  `SENSITIVE_KEY_SNIPPETS` (`node_modules/@sentry/node/node_modules/
+  @sentry/core/build/cjs/utils/data-collection/filtering-snippets.js`) —
+  not the SDK's public API surface or docs, which don't expose this list.
+  Sentry's own list is 19 entries (`auth`, `token`, `secret`, `session`,
+  `password`, `passwd`, `pwd`, `key`, `jwt`, `bearer`, `sso`, `saml`,
+  `csrf`, `xsrf`, `credentials`, `sid`, `identity`, `set-cookie`,
+  `cookie`) — a prior pass at this list (2026-07-11, PR #589) only had 6
+  of them, despite the docstring already claiming parity. Sentry also
+  ships a SEPARATE, narrower `PII_HEADER_SNIPPETS` list — do not conflate
+  the two: it is used only for filtering span attributes
+  (`httpHeadersToSpanAttributes`), which this module never emits, and has
+  no bearing on `event.request` header scrubbing.
+- Referer/Origin header VALUES (not just names) are a live gap ONLY if a
+  page that renders a token in its own URL (`GET /verify-email?token=…`,
+  `server/lib/verify-email-page.ts`) gains an outbound `http(s)://`
+  request (link, asset, redirect, analytics beacon) — that page is
+  server-rendered and opened in real browsers TODAY, so "mobile-only
+  clients" is not the actual protecting invariant; "zero external
+  subresources on that page" is. `Origin` structurally cannot carry a
+  token (scheme+host+port only per spec) — do not conflate it with
+  `Referer` when reasoning about this gap.
 
 ## Prevention
 
@@ -96,7 +121,39 @@ production-only) implements the real controls:
   not just an error-middleware hook.
 - Test-suite cost: `@sentry/node` costs ~500ms to import (OTel tree);
   `vitest.config.ts` aliases it to `test/mocks/sentry-node.ts` so the
-  `_helpers.ts → error-reporter` import doesn't tax every route test.
+  `_helpers.ts → error-reporter` import doesn't tax every route test. This
+  alias operates at the bundler (`resolve.alias`) level, BEFORE Vitest's
+  mock layer runs — `vi.unmock`/`vi.importActual` cannot recover the real
+  package inside a test file; defeating it needs a per-file resolver
+  override (e.g. a second Vitest project), which is why no test in this
+  codebase exercises the real SDK.
+- A process-exit path chained through a bounded async flush
+  (`flushErrorReporter(timeoutMs).finally(() => process.exit(1))`,
+  `.finally()`-style to avoid an implicit timing coupling between the
+  flush call and a separate exit timer) MUST still keep an independent,
+  unconditional backstop `setTimeout(() => process.exit(1), N)` running in
+  parallel. The flush promise's bound is a third-party SDK's internal
+  contract, not one this codebase controls — `Sentry.flush(timeoutMs)`
+  (`@sentry/core` `client.js`) sequentially awaits
+  `_isClientDoneProcessing(timeoutMs)` THEN `transport.flush(timeoutMs)`,
+  each independently bounded, so the REAL worst case is ~2x the passed
+  timeout, not the timeout value itself — a comment or backstop timer that
+  assumes the passed value is a strict ceiling is quietly wrong. Set the
+  backstop above that realistic worst case (e.g. 1000ms for a 400ms flush
+  call) so it fires only on a genuine hang. This mirrors the pattern this
+  codebase already uses for its graceful-shutdown exit path
+  (`server/index.ts`'s `shutdown()`: a chained `.finally()` through
+  `flushErrorReporter`/`pool.end()`, PLUS an independent
+  `setTimeout(..., 10_000)` force-exit backstop) — the crash path
+  (`uncaughtException`) needs the same two-tier shape, not just the
+  chain half of it. Separately: `flushErrorReporter` resolves INSTANTLY
+  when the reporter is inactive (dev, or prod without `SENTRY_DSN`) — a
+  bare `.finally()` on an already-resolved promise fires on the next
+  microtask, i.e. near-immediately, which can truncate a genuinely async
+  log transport (e.g. dev's `pino-pretty` worker-thread transport) that a
+  prior unconditional delay gave time to drain. Race the flush against a
+  `minDelay` timer (`Promise.all([flush, minDelay]).finally(...)`) to
+  restore that floor on the inactive path too.
 
 ## Related Files
 
