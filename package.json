@@ -53,6 +53,7 @@
     "backfill:community-nutrition": "tsx server/scripts/backfill-community-nutrition.ts",
     "backfill:email-verified": "tsx server/scripts/backfill-email-verified.ts",
     "e2e": "maestro test e2e/flows/",
+    "e2e:regression": "maestro test --tags regression e2e/flows/",
     "e2e:smoke": "maestro test --tags smoke e2e/flows/",
     "eval:coach": "npx tsx evals/runner.ts",
     "eval:recipe-chat": "npx tsx evals/runner-recipe-chat.ts",

@@ -1,6 +1,7 @@
 appId: com.ocrecipes.app
 name: "Scan - Photo analysis intent selection"
 tags:
+  - regression
   - scan
   - photo
 env:
