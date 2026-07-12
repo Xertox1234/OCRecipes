@@ -171,13 +171,21 @@ build_memory_titles() {
 }
 
 # AC3 (volume control — canon-aware dedup): project existing docs/solutions titles/summaries
-# (harness.solution_titles) and existing memory-file titles (build_memory_titles output,
-# call it first) into one size-capped text file. Sent to the model as a SEPARATE file (see
-# send_session) — never merged into the health-gated session artifact, so the gate-to-send
-# sha256 identity check (which only ever hashes the artifact) is untouched. Guards the
-# solution_titles read with to_regclass so a DB that hasn't run codify-neardup.sh --rebuild
-# yet degrades to memory-titles-only instead of erroring (harness.solution_titles is owned
-# by a different pg-lab item and may not exist).
+# (harness.solution_titles) into a size-capped text file. Sent to the model as a SEPARATE
+# file (see send_session) — never merged into the health-gated session artifact, so the
+# gate-to-send sha256 identity check (which only ever hashes the artifact) is untouched.
+# Guards the solution_titles read with to_regclass so a DB that hasn't run
+# codify-neardup.sh --rebuild yet degrades to an empty canon-context instead of erroring
+# (harness.solution_titles is owned by a different pg-lab item and may not exist).
+#
+# Deliberately does NOT include memory-file titles/descriptions: unlike docs/solutions
+# (curated, git-tracked, meant to be public), memory-file `description:` frontmatter can
+# carry sensitive content verbatim (e.g. the test-account credential in
+# user_test_account.md) — CLAUDE.md's cheap-worker rule forbids pointing ask-kimi at
+# security-sensitive content, absolute regardless of tier. Memory titles stay LOCAL: they're
+# still projected by build_memory_titles() and used only in insert_candidate()'s
+# word_similarity dedup query, which runs entirely inside psql and never leaves the DB
+# (found in code review, 2026-07-12).
 build_canon_context() {
   local raw="$WORK/canon-context.raw" out="$WORK/canon-context.txt" has_solutions
   : > "$raw"
@@ -204,12 +212,6 @@ WITH ranked AS (
 SELECT path || ' — ' || title FROM ranked ORDER BY rn, split_part(path, '/', 1);
 SQL
       echo
-    } >> "$raw"
-  fi
-  if [ -s "$WORK/memory-titles.tsv" ]; then
-    {
-      echo "== Existing memory files (path — name/description) =="
-      awk -F'\t' '{print $1 " — " $2}' "$WORK/memory-titles.tsv"
     } >> "$raw"
   fi
   head -c "$DISTILL_CANON_CONTEXT_MAX_CHARS" "$raw" > "$out"

@@ -346,6 +346,25 @@ LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$MEMSTUB" DISTILL_MEMORY_DIR="$ME
 MND=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT near_dup_path FROM harness.memory_candidates WHERE session_id='memdup-session'")
 assert_contains "memory near-dup flagged" "$MND" "some_memory.md"
 
+# Security: memory-file descriptions must stay LOCAL (used only in the in-DB word_similarity
+# dedup query) and must never leave the machine via canon-context sent to the external
+# cheap-worker stand-in — CLAUDE.md's cheap-worker rule forbids security-sensitive content,
+# absolute regardless of tier. Capture every file path the stub actually receives.
+CAPTURED_CANON="$FIX/captured-canon.txt"; : > "$CAPTURED_CANON"
+CAPSTUB="$FIX/cap-send.sh"; cat > "$CAPSTUB" <<'EOF'
+#!/usr/bin/env bash
+for a in "$@"; do
+  [ -f "$a" ] && cat "$a" >> "$CAPTURED_CANON"
+done
+echo '[]'
+echo '[kimi: 10 in (0 cached) / 5 out | finish: stop]' >&2
+EOF
+chmod +x "$CAPSTUB"
+psql -X -q -d "$TEST_URL" -c "INSERT INTO harness.transcript_messages (msg_uuid, session_id, project_dir, ts, role, content) VALUES ('cc-1','canonleak-session','fx','2026-07-08T10:00:00Z','user','Clean discussion, nothing sensitive.')" >/dev/null
+LAB_DATABASE_URL="$TEST_URL" DISTILL_SEND_CMD="$CAPSTUB" DISTILL_MEMORY_DIR="$MEMDIR" CAPTURED_CANON="$CAPTURED_CANON" bash "$SCRIPT" --window 2026-07-08 2026-07-08 >/dev/null 2>&1
+assert_not_contains "canon-context sent to external worker excludes memory descriptions" "$(cat "$CAPTURED_CANON" 2>/dev/null)" "highly similar memory description"
+assert_contains "canon-context sent to external worker still includes solutions" "$(cat "$CAPTURED_CANON" 2>/dev/null)" "prefer-pg-trgm-keyword-search"
+
 # Review: 'a' + note accepts; 'd' rejects with dup: prefix; 'q' quits leaving rest pending
 psql -X -q -d "$TEST_URL" -c "UPDATE harness.memory_candidates SET status='pending', reviewer_note=NULL, reviewed_at=NULL" >/dev/null
 NPEND=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.memory_candidates WHERE status='pending'")
