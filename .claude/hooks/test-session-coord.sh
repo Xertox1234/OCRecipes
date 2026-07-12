@@ -100,7 +100,7 @@ psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local P
 
 TEST_DB="pg_lab_session_coord_test_$$"
 TEST_URL="postgresql://localhost/$TEST_DB"
-cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; rm -f "/tmp/claude-session-coord-pid-${STUB_PID_B}.sid" "/tmp/claude-session-coord-pid-${STUB_PID}.sid" 2>/dev/null; rmdir "/tmp/claude-session-coord-${MYSID}.refresh-lock" 2>/dev/null; rm -f "/tmp/claude-session-coord-consult-me.json" 2>/dev/null; rmdir "/tmp/claude-session-coord-consult-me.refresh-lock" 2>/dev/null; }
+cleanup() { psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\" WITH (FORCE)" >/dev/null 2>&1; rm -f /tmp/claude-session-coord-*-test-$$* 2>/dev/null; rm -f "/tmp/claude-session-coord-pid-${STUB_PID_B}.sid" "/tmp/claude-session-coord-pid-${STUB_PID}.sid" 2>/dev/null; rmdir "/tmp/claude-session-coord-${MYSID}.refresh-lock" 2>/dev/null; rm -f "/tmp/claude-session-coord-consult-me.json" 2>/dev/null; rmdir "/tmp/claude-session-coord-consult-me.refresh-lock" 2>/dev/null; }
 trap cleanup EXIT
 
 LAB_DATABASE_URL="$TEST_URL" bash "$INIT" >/dev/null 2>&1
@@ -272,5 +272,33 @@ OUT=$(bash "$SCRIPT" attribute-drift "drift-me" "/tmp/checkout-elsewhere" 2>/dev
 assert_contains "attribute: empty registry -> own-op line" "$OUT" "no other live session"
 OUT=$(LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" bash "$SCRIPT" attribute-drift "x" "/y" 2>/dev/null); RC=$?
 assert_exit0 "attribute: PG down exit 0" "$RC"; assert_empty "attribute: PG down silent" "$OUT"
+
+# --- cleanup robustness: DROP DATABASE ... WITH (FORCE) must not leak the throwaway DB
+# when a backgrounded connection is still open at cleanup time (P3-2026-07-12) -----------
+# Reproduces the do_attribute_drift race named in the todo: log_event's INSERT is
+# backgrounded (`&`), so a connection to $TEST_DB can still be live when cleanup() runs.
+# A real log_event INSERT completes in milliseconds, too fast to reproduce reliably, so
+# simulate the race with a deliberately slow backgrounded connection instead. This test
+# destroys $TEST_DB, so it must run last.
+psql -X -q -d "$TEST_URL" -c "SELECT pg_sleep(15)" >/dev/null 2>&1 &
+HOLDER_PID=$!
+HELD=0
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  HELD=$(psql -X -qtA -d postgres -c "SELECT count(*) FROM pg_stat_activity WHERE datname='$TEST_DB' AND pid <> pg_backend_pid()")
+  [ "${HELD:-0}" -ge 1 ] && break
+  sleep 0.2
+done
+[ "${HELD:-0}" -ge 1 ] && echo "ok: force-drop: backgrounded connection is live before the drop" || { echo "FAIL: force-drop: backgrounded connection is live before the drop — expected >=1, got ${HELD:-0}"; FAIL=1; }
+FORCE_START=$(date +%s)
+psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\" WITH (FORCE)" >/dev/null 2>&1
+FORCE_ELAPSED=$(( $(date +%s) - FORCE_START ))
+# Plain (non-FORCE) DROP DATABASE against this connection blocks for the connection's full
+# lifetime instead of failing fast (verified empirically against local PG18) -- so the only
+# thing that discriminates a FORCE drop from a non-FORCE one here is speed, not just the
+# end state. FORCE must return well under the 15s pg_sleep, not wait it out.
+[ "$FORCE_ELAPSED" -le 5 ] && echo "ok: force-drop returned in ${FORCE_ELAPSED}s (did not wait on the in-flight connection)" || { echo "FAIL: force-drop took ${FORCE_ELAPSED}s"; FAIL=1; }
+GONE=$(psql -X -qtA -d postgres -c "SELECT 1 FROM pg_database WHERE datname='$TEST_DB'")
+assert_empty "force-drop: no throwaway DB left behind despite in-flight connection" "$GONE"
+kill "$HOLDER_PID" 2>/dev/null; wait "$HOLDER_PID" 2>/dev/null
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
