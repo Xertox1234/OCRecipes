@@ -73,6 +73,24 @@ export interface UseSheetBackHandlerResult {
  *   `onChange`/`onAnimate` props — presented state derives entirely from
  *   gorhom's snap-point index (`-1` = closed, `>= 0` = presented/animating
  *   open).
+ *
+ * Each call to this hook independently subscribes to `useIsFocused()` — a
+ * host with several sheets (e.g. `MealPlanHomeScreen`'s 4 hosts) gets one
+ * subscription per hook instance rather than one shared subscription per
+ * screen. This is a deliberate, examined trade-off (see
+ * `todos/archive/P3-2026-07-09-usesheetbackhandler-duplicate-isfocused-listeners.md`),
+ * not an oversight: `useIsFocused()` is a cheap context read with no
+ * re-render storm, and de-duplicating it would require either making
+ * `isFocused` a *required* hook parameter — which would force every
+ * single-sheet host (`HomeScreen`, `RecipeBrowserScreen`,
+ * `RecipeEntryHubScreen`, `BeveragePickerSheet`, `ConfirmationModal`) to
+ * also compute and pass it, for zero benefit to those call sites — or an
+ * *optional* override parameter, which reproduces the exact
+ * silently-dropped-safety-param footgun documented in `docs/LEARNINGS.md`
+ * (2026-04-28, "Optional Hook Safety Param Silently Dropped at Call Site"):
+ * a call site can omit the param with no TypeScript error, silently
+ * re-enabling a per-instance subscription no one intended. Sharing was not
+ * worth either cost for a cosmetic/perf-only P3 item.
  */
 export function useSheetBackHandler(
   sheetRef: React.RefObject<BottomSheetModal | null>,
