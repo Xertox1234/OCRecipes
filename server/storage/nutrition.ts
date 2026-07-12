@@ -314,6 +314,12 @@ export async function getDailyLogsInRange(
  * `HAVING count >= 3` is a deliberate noise floor — one-off foods carry no
  * personalization signal. Discarded scanned items are excluded (mirrors
  * `getDailySummary`); nameless logs (neither source joined) are skipped.
+ *
+ * The COALESCE ordering assumes a log row never has BOTH scannedItemId and
+ * recipeId set — the schema CHECK is an OR, not an XOR; mutual exclusivity
+ * is enforced at the route layer (meal-plan.ts rejects both). A future
+ * insert path that sets both would silently attribute the count to the
+ * scanned item's name.
  */
 export async function getMostEatenFoods(
   userId: string,

@@ -130,8 +130,13 @@ export function buildMealPatternSummary(
 
   // Positive signal first: a near-complete logging streak is free praise
   // material — the summary previously only ever surfaced negatives.
+  // Clamp the numerator: the caller's rolling [now-7d, now) instant window
+  // spans parts of EIGHT calendar dates in the user's tz (unless "now" is
+  // exactly midnight), so an unclamped count would render "8/7 days".
   if (totalDays >= windowDays - 2) {
-    patterns.push(`logged food on ${totalDays}/${windowDays} days`);
+    patterns.push(
+      `logged food on ${Math.min(totalDays, windowDays)}/${windowDays} days`,
+    );
   }
 
   // Only surface patterns that are notable (skipped on majority of days)

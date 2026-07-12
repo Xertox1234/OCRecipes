@@ -1353,6 +1353,32 @@ describe("buildMealPatternSummary", () => {
     expect(summary).toContain("lunch skipped 6/6 days");
   });
 
+  it("clamps the streak numerator to the window (a rolling instant window spans 8 calendar days)", () => {
+    // The caller fetches [now-7d, now) — raw instants, which cover parts of
+    // EIGHT calendar dates in any timezone unless "now" is exactly midnight.
+    // A consistent logger hits all 8, and the prompt must never read
+    // "logged food on 8/7 days" (review finding).
+    const days = [
+      "2026-04-22",
+      "2026-04-23",
+      "2026-04-24",
+      "2026-04-25",
+      "2026-04-26",
+      "2026-04-27",
+      "2026-04-28",
+      "2026-04-29",
+    ];
+    const logs = days.flatMap((day) => [
+      makeLog(day, 8),
+      makeLog(day, 12),
+      makeLog(day, 18),
+    ]);
+
+    const summary = buildMealPatternSummary(logs);
+    expect(summary).toContain("logged food on 7/7 days");
+    expect(summary).not.toContain("8/7");
+  });
+
   it("does not emit the streak below windowDays - 2 active days", () => {
     // 4 full days (< 5): no streak, and full-window days mean no skips → null.
     const days = ["2026-04-25", "2026-04-26", "2026-04-27", "2026-04-28"];
