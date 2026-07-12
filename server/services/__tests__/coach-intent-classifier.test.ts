@@ -44,6 +44,8 @@ const EXPECTED: Record<string, CoachIntent> = {
   "helpfulness-weight-plateau-01": "personalized_advice",
   "helpfulness-muscle-gain-surplus-01": "personalized_advice",
   "helpfulness-pre-workout-meal-01": "personalized_advice",
+  "helpfulness-kidney-beans-01": "personalized_advice",
+  "helpfulness-hearty-dinner-01": "personalized_advice",
 
   // ── Personalization ──────────────────────────────────────────────
   "personalization-keto-nut-allergy-01": "general_fact",
@@ -64,8 +66,8 @@ const EXPECTED: Record<string, CoachIntent> = {
 };
 
 describe("classifyIntent", () => {
-  it("covers all 38 eval cases in the expected-intent map", () => {
-    expect(Object.keys(EXPECTED)).toHaveLength(38);
+  it("covers all 40 eval cases in the expected-intent map", () => {
+    expect(Object.keys(EXPECTED)).toHaveLength(40);
   });
 
   it("has an expected intent for every loaded eval case", () => {
@@ -292,6 +294,60 @@ describe("classifyIntent", () => {
       const start = Date.now();
       classifyIntent(adversarial);
       expect(Date.now() - start).toBeLessThan(100);
+    });
+  });
+
+  describe("medical_condition food-word false positives", () => {
+    // Organ words that are also food words must not trigger a refusal-shaped
+    // prompt bundle for benign cooking questions.
+    const benignFoodMessages = [
+      "How do I cook kidney beans?",
+      "Any hearty dinner ideas for tonight?",
+      "Recipe with artichoke hearts?",
+      "Is delivery pizza okay tonight?",
+      "How should I cook chicken liver?",
+      "Any good kidney-bean chili recipes?",
+    ];
+    for (const msg of benignFoodMessages) {
+      it(`does NOT classify "${msg}" as safety_refusal`, () => {
+        expect(classifyIntent(msg).intent).not.toBe("safety_refusal");
+      });
+    }
+
+    // Regression pins: genuinely medical phrasings must keep routing to
+    // safety_refusal after the pattern is narrowed.
+    const medicalMessages = [
+      "I have a heart condition",
+      "my heart races after coffee",
+      "what should I eat for my kidney disease diet?",
+      "Do I have diabetes?",
+      "I'm pregnant, what should I be eating?",
+      "I just got a fatty liver diagnosis",
+      "I have thyroid issues",
+      "my doctor says I have liver disease",
+      // Review-found regressions from the first pass of this fix: compound
+      // words (non-colliding terms must stay substring matches) and the
+      // common diagnosis collocations for liver/heart.
+      "I was diagnosed with hyperthyroidism, what should I eat?",
+      "my hypothyroidism makes weight loss hard",
+      "my doctor says I have liver problems",
+      "my liver function tests came back abnormal",
+      "I have a heart murmur, is caffeine okay?",
+    ];
+    for (const msg of medicalMessages) {
+      it(`still classifies "${msg}" as safety_refusal`, () => {
+        expect(classifyIntent(msg).intent).toBe("safety_refusal");
+      });
+    }
+
+    // Deliberate routing choice: "diabetic-friendly" reveals a diabetes
+    // context, matching the old pattern's substring behavior for
+    // "diabetes-friendly" — the refusal template still anchors to context
+    // and pivots to a safe alternative, so this errs toward caution.
+    it("routes 'diabetic-friendly' recipe requests to safety_refusal (deliberate)", () => {
+      expect(
+        classifyIntent("Any diabetic-friendly dinner recipes?").intent,
+      ).toBe("safety_refusal");
     });
   });
 

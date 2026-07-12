@@ -15,8 +15,19 @@ export interface IntentClassification {
 const SAFETY_PATTERNS: { pattern: RegExp; name: string }[] = [
   {
     // Medical conditions — cardiovascular, diabetes, kidney, thyroid, etc.
+    // Only the organ words that collide with FOOD words get boundary +
+    // collocation guards: "kidney beans", "hearty", "artichoke hearts",
+    // "chicken liver", and "delivery" (substring liver) must NOT route a
+    // benign cooking question into the refusal prompt bundle. "heart" and
+    // "liver" therefore require a medical collocation or a possessive
+    // ("my heart"); "kidney" excludes the beans collocation (space or
+    // hyphen joined). All OTHER terms stay substring matches (like the
+    // original pattern) so compound words keep routing to safety:
+    // hyperthyroidism/hypothyroidism, cancerous, diabetic — none collide
+    // with food vocabulary. The model's own safety instructions remain
+    // the second line of defense for anything the router misses.
     pattern:
-      /(heart|cardiovascular|cardiac|diabetes|kidney|thyroid|liver|cancer|pregnan)/i,
+      /(?:cardiovascular|cardiac|diabet(?:es|ic)|thyroid|cancer|pregnan)|\bkidneys?\b(?![\s-]+beans?\b)|\bheart\s+(?:disease|condition|failure|attack|murmur|valve|surgery|problems?|issues?|health|rate|meds?|medications?)\b|\bmy\s+heart\b|\bliver\s+(?:disease|condition|damage|failure|enzymes?|function|problems?|issues?|health)\b|\bfatty\s+liver\b|\bmy\s+liver\b/i,
     name: "medical_condition",
   },
   {
