@@ -124,6 +124,38 @@ describe("validateEnv aggregated missing-vars report", () => {
   });
 });
 
+describe("validateEnv server error tracking (Sentry)", () => {
+  const saved = { ...process.env };
+  beforeEach(() => {
+    process.env = { ...saved, ...BASE };
+    process.env.NODE_ENV = "development";
+    delete process.env.SENTRY_DSN;
+    mockWarn.mockClear();
+  });
+  afterEach(() => {
+    process.env = saved;
+  });
+
+  it("warns (does not throw) when SENTRY_DSN is unset — error tracking dark must not be silent", async () => {
+    const { validateEnv } = await load();
+    expect(() => validateEnv()).not.toThrow();
+    const warnedAboutSentry = mockWarn.mock.calls.some((c) =>
+      String(c[1]).includes("SENTRY_DSN"),
+    );
+    expect(warnedAboutSentry).toBe(true);
+  });
+
+  it("does not warn about SENTRY_DSN when it is set", async () => {
+    process.env.SENTRY_DSN = "https://public-key@o0.ingest.sentry.io/1";
+    const { validateEnv } = await load();
+    validateEnv();
+    const warnedAboutSentry = mockWarn.mock.calls.some((c) =>
+      String(c[1]).includes("SENTRY_DSN"),
+    );
+    expect(warnedAboutSentry).toBe(false);
+  });
+});
+
 describe("validateEnv email verification (Resend)", () => {
   const saved = { ...process.env };
   beforeEach(() => {

@@ -1,6 +1,10 @@
 // MUST stay the first import: validates all env vars (aggregated report)
 // before ./routes / ./db evaluate — see server/lib/env-boot.ts.
 import "./lib/env-boot";
+// MUST stay the second import: initializes Sentry (no-op without SENTRY_DSN /
+// outside production) before express/./db/./routes evaluate, so its http
+// instrumentation is in place — see server/lib/error-reporter-boot.ts.
+import "./lib/error-reporter-boot";
 import express from "express";
 import helmet from "helmet";
 import type { Request, Response, NextFunction } from "express";
@@ -12,6 +16,10 @@ import { pool } from "./db";
 import { startCacheCleanupJob } from "./storage/cache";
 import { startPromotionJob } from "./services/canonical-promotion";
 import { logger, rootLogger, toError } from "./lib/logger";
+import {
+  attachExpressErrorReporter,
+  flushErrorReporter,
+} from "./lib/error-reporter";
 import { requestContextMiddleware } from "./lib/request-context";
 import { installContractSnapshotMiddleware } from "./lib/contract-snapshot";
 import { UUID_RE } from "./lib/identifier-patterns";
@@ -26,11 +34,17 @@ import crypto from "node:crypto";
 process.on("uncaughtException", (error) => {
   logger.fatal({ err: toError(error) }, "uncaught exception");
   rootLogger.flush();
+  // Sentry's OnUncaughtException integration has already captured the error
+  // (with exitEvenIfOtherHandlersAreRegistered: false, so this handler owns
+  // the exit); give its transport a bounded drain window alongside pino's.
+  void flushErrorReporter(400);
   // Give async transport time to drain before exiting
   setTimeout(() => process.exit(1), 500);
 });
 
 process.on("unhandledRejection", (reason) => {
+  // Sentry's default OnUnhandledRejection integration (mode: "warn")
+  // captures these; this handler only logs — it must never exit.
   logger.error({ err: toError(reason) }, "unhandled rejection");
 });
 
@@ -263,6 +277,12 @@ function startServer() {
 
   const server = registerRoutes(app);
 
+  // Sentry's Express error handler must sit after all routes and before our
+  // JSON error handler. It captures only 5xx by default, tags events with
+  // the ALS requestId (via beforeSend), and always forwards to the next
+  // error handler. No-op when the reporter is inactive.
+  attachExpressErrorReporter(app);
+
   setupErrorHandler(app);
 
   const port = parseInt(process.env.PORT || "3000", 10);
@@ -350,8 +370,14 @@ function startServer() {
       : Promise.resolve();
     void finishRetention.finally(() => {
       server.close(() => {
-        void pool.end().then(() => {
-          process.exit(0);
+        // Drain queued Sentry events (bounded) before the pool teardown — a
+        // 5xx captured from an in-flight request during a deploy cutover
+        // would otherwise be dropped with the process. No-op when inactive;
+        // fits well inside the 10s force-exit deadline below.
+        void flushErrorReporter(2_000).finally(() => {
+          void pool.end().then(() => {
+            process.exit(0);
+          });
         });
       });
     });

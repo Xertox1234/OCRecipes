@@ -132,6 +132,9 @@ export default defineConfig({
         __dirname,
         "./test/mocks/sentry-react-native.ts",
       ),
+      // Pure JS but ~500ms to import (OTel tree); _helpers.ts → error-reporter
+      // would make every route test pay it. See test/mocks/sentry-node.ts.
+      "@sentry/node": path.resolve(__dirname, "./test/mocks/sentry-node.ts"),
       "expo-blur": path.resolve(__dirname, "./test/mocks/expo-blur.ts"),
       "expo-linear-gradient": path.resolve(
         __dirname,

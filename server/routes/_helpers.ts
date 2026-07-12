@@ -17,6 +17,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { isAiConfigured } from "../lib/openai";
 import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
+import { reportError } from "../lib/error-reporter";
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -207,5 +208,9 @@ export function handleRouteError(
     return;
   }
   logger.error({ err: toError(error) }, `${context} error`);
+  // Handled 5xx capture chokepoint: this convention responds directly and
+  // never calls next(err), so Sentry's Express error handler never sees
+  // these — report here instead (no-op without SENTRY_DSN / outside prod).
+  reportError(error, context);
   sendError(res, 500, `Failed to ${context}`, ErrorCode.INTERNAL_ERROR);
 }
