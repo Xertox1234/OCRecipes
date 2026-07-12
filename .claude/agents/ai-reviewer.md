@@ -84,6 +84,7 @@ Every route calling OpenAI must first call `checkAiConfigured(res)` — it sends
 - [ ] `response_format: { type: "json_object" }` when expecting JSON
 - [ ] Eval/benchmark models pinned via env-overridable constant (`DEFAULT_JUDGE_MODEL = process.env.X || "..."`) AND recorded per-result in the persisted record (`judgeModel` in `EvalRunResult`) — an undated alias like `claude-sonnet-4-6` rolls silently and shifts historical scores (Ref: audit 2026-04-17 H8)
 - [ ] `temperature: 0` on eval judges and any LLM output consumed by automated comparison
+- [ ] Every field added to a prompt-context type that the eval judge scores against is rendered in `evals/judge.ts`'s `formatContextSummary` — via the shared renderer exported from the prompt builder (e.g. `formatAboutUserLines`), with the judge's parameter typed as the REAL context type, never a duplicated inline literal (structural typing makes that drift permanently invisible to tsc, and the judge silently scores personalization it cannot see). Ref: `docs/solutions/logic-errors/eval-judge-duplicated-context-type-hides-new-prompt-fields-2026-07-12.md`
 
 ### LLM Output Validation
 

@@ -6,6 +6,7 @@ module: server
 tags: [security, ai-safety, regex, prompt-injection, classifier]
 applies_to: [server/services/**/*.ts, server/lib/ai-safety.ts]
 created: '2026-05-13'
+last_updated: '2026-07-12'
 ---
 
 # Deterministic safety classifier regex gotchas
@@ -71,6 +72,19 @@ Safety patterns that match specific medication names must account for common spa
 ```
 
 **Rule:** for any pattern matching a compound term with a separator (hyphen, space, period), use `[-\s.]?` rather than `-?` unless you have a specific reason to exclude the space variant.
+
+### 4. Word-bound only the terms that collide — blanket `\b` breaks compound words
+
+When fixing false positives from terms that double as benign vocabulary (organ words that are also food words: "kidney beans", "hearty", "chicken liver", "delivery" contains `liver`), the reflex is to word-bound and collocation-guard the whole alternation. That silently drops coverage for compound words of the terms that never needed guarding:
+
+```
+\bthyroid\b   →  ❌ no longer matches "hyperthyroidism" / "hypothyroidism"
+                  (\b cannot fire between two word characters)
+```
+
+The 2026-07 PR #580 first pass did exactly this — verified regressions: `hyperthyroidism`, `hypothyroidism`, `liver problems`, `liver function`, `heart murmur` all stopped routing to `safety_refusal`, and nothing in the unit or eval suites covered them (a green suite is not evidence about phrasings no test exercises).
+
+**Rule:** guard only the colliding terms (here `heart`/`liver` via medical collocations or possessive, `kidney` via a beans lookahead accepting `[\s-]`); keep every non-colliding term (`thyroid`, `cancer`, `cardiac`, `diabet(es|ic)`, `pregnan`) as an unbounded substring match. When narrowing any safety pattern, enumerate what the OLD pattern matched that the new one doesn't (run both regexes over candidate phrasings in Node — don't reason by eye) and pin every intentionally-kept medical phrasing as a regression test before merging.
 
 ## Why
 
