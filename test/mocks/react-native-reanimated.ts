@@ -5,6 +5,9 @@ import { vi } from "vitest";
 
 export const useSharedValue = (init: number) => ({ value: init });
 export const useAnimatedStyle = (fn: () => Record<string, unknown>) => fn();
+// Same shape as useAnimatedStyle — SVG components (e.g. CalorieRing.tsx) pass
+// animated numeric props (strokeDashoffset, etc.) this way instead of style.
+export const useAnimatedProps = (fn: () => Record<string, unknown>) => fn();
 export const withSpring = (val: number) => val;
 export const withTiming = (
   val: number,
