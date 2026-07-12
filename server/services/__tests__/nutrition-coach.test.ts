@@ -877,6 +877,103 @@ describe("generateCoachResponse", () => {
   });
 });
 
+describe("Pro tier prompt differentiation", () => {
+  function capturedSystemPrompt(): string {
+    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    return (callArgs as { messages: { role: string; content: string }[] })
+      .messages[0].content;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+  });
+
+  it("adds the dedicated-coach persona and memory-display instructions to the Pro prompt", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(
+      generateCoachProResponse(messages, DEFAULT_CONTEXT, "user-1"),
+    );
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain("advice builds week over week");
+    expect(prompt).toContain("Last week you mentioned");
+    expect(prompt).toContain("inline_chart");
+  });
+
+  it("keeps the free prompt without the Pro persona lines", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).not.toContain("advice builds week over week");
+    expect(prompt).not.toContain("Last week you mentioned");
+    expect(prompt).not.toContain("inline_chart");
+  });
+});
+
+describe("due-commitments follow-up rendering", () => {
+  function capturedSystemPrompt(): string {
+    const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];
+    return (callArgs as { messages: { role: string; content: string }[] })
+      .messages[0].content;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(containsUnsafeCoachAdvice).mockReturnValue(false);
+    const stream = createMockStream([
+      { content: "Ok" },
+      { finish_reason: "stop" },
+    ]);
+    vi.mocked(openai.chat.completions.create).mockResolvedValue(stream as any);
+  });
+
+  it("renders the due-commitments section before the notebook, with untrusted-data fencing and check-in rules", async () => {
+    const context: CoachContext = {
+      ...DEFAULT_CONTEXT,
+      dueCommitmentsSummary:
+        "[commitment (this week)] <notebook_entry>Try meal prepping on Sunday</notebook_entry>",
+      notebookSummary:
+        "[preference (older)] <notebook_entry>vegetarian</notebook_entry>",
+    };
+
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, context));
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain("COMMITMENTS DUE FOR FOLLOW-UP:");
+    expect(prompt).toContain("Try meal prepping on Sunday");
+    // Behavioral rules: one natural check-in, skipped for loaded messages.
+    expect(prompt).toContain("ONE of these");
+    expect(prompt).toMatch(/urgent|emotionally loaded|safety/);
+    expect(prompt).toContain("twice in a row");
+    // Untrusted-data directive mirrors the notebook's (M12) and the section
+    // must render before the notebook section.
+    const sectionStart = prompt.indexOf("COMMITMENTS DUE FOR FOLLOW-UP:");
+    const notebookStart = prompt.indexOf("WHAT YOU KNOW ABOUT THIS USER");
+    expect(sectionStart).toBeGreaterThan(-1);
+    expect(notebookStart).toBeGreaterThan(sectionStart);
+    expect(
+      prompt.slice(sectionStart, notebookStart).includes("UNTRUSTED DATA"),
+    ).toBe(true);
+  });
+
+  it("renders no due-commitments section when the field is absent", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+
+    expect(capturedSystemPrompt()).not.toContain(
+      "COMMITMENTS DUE FOR FOLLOW-UP",
+    );
+  });
+});
+
 describe("ABOUT THIS USER rendering", () => {
   function capturedSystemPrompt(): string {
     const callArgs = vi.mocked(openai.chat.completions.create).mock.calls[0][0];

@@ -78,6 +78,41 @@ export function formatNotebookLine(entry: NotebookBudgetEntry): string {
 }
 
 /**
+ * Durable personalization types render (and therefore survive truncation)
+ * first. Anything unlisted shares the lowest bucket.
+ */
+const TYPE_PRIORITY: Record<string, number> = {
+  preference: 0,
+  commitment: 1,
+  goal: 2,
+};
+const DEFAULT_TYPE_PRIORITY = 3;
+
+/**
+ * Order entries so durable personalization (preference, commitment, goal)
+ * precedes transient types, with newest-first inside each bucket and stable
+ * order for ties. Storage returns entries newest-first, so without this a
+ * burst of recent insights evicts a months-old "vegetarian" preference at
+ * the truncation budget. Pure — returns a new array.
+ */
+export function sortNotebookEntriesByPriority<T extends NotebookBudgetEntry>(
+  entries: T[],
+): T[] {
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const pa = TYPE_PRIORITY[a.entry.type] ?? DEFAULT_TYPE_PRIORITY;
+      const pb = TYPE_PRIORITY[b.entry.type] ?? DEFAULT_TYPE_PRIORITY;
+      if (pa !== pb) return pa - pb;
+      const ta = a.entry.updatedAt?.getTime() ?? 0;
+      const tb = b.entry.updatedAt?.getTime() ?? 0;
+      if (ta !== tb) return tb - ta;
+      return a.index - b.index;
+    })
+    .map(({ entry }) => entry);
+}
+
+/**
  * Truncate a list of pre-formatted notebook lines so the total character
  * count (including newline separators between lines) does not exceed
  * `maxChars`. Entries are kept in their original order and the first entry

@@ -35,6 +35,8 @@ import { createServiceLogger } from "../lib/logger";
 import { consumeWarmUp } from "./coach-warm-up";
 import {
   truncateNotebookToBudget,
+  sortNotebookEntriesByPriority,
+  formatNotebookLine,
   DEFAULT_NOTEBOOK_MAX_CHARS,
 } from "./notebook-budget";
 import {
@@ -328,7 +330,10 @@ export function hashCoachCacheContext(
         dietaryProfile: context.dietaryProfile,
         // Binding rule (ai-prompting): every context field the prompt renders
         // must be in this hash, or same-day profile edits serve stale answers.
+        // (dueCommitmentsSummary is Pro-only and the cache is free-only, but
+        // it's included so the invariant stays mechanical, not reasoned-about.)
         aboutUser: context.aboutUser ?? null,
+        dueCommitmentsSummary: context.dueCommitmentsSummary ?? null,
         // User-local hour, matching the tz-aware day bucket — the prompt's
         // "Current time" line is rendered in the user's tz, so the cache
         // must bucket on the same clock. h23 avoids "24" at midnight.
@@ -514,6 +519,7 @@ export async function* handleCoachChat(
     history,
     recentLogsForPatterns,
     notebookEntries,
+    dueCommitments,
   ] = await Promise.all([
     storage.getUserProfile(userId),
     storage.getDailySummary(userId, today, tz),
@@ -527,6 +533,13 @@ export async function* handleCoachChat(
       ? storage.getActiveNotebookEntries(userId)
       : Promise.resolve(
           [] as Awaited<ReturnType<typeof storage.getActiveNotebookEntries>>,
+        ),
+    tierConfig.fetchNotebook
+      ? storage.getCommitmentsWithDueFollowUp(userId)
+      : Promise.resolve(
+          [] as Awaited<
+            ReturnType<typeof storage.getCommitmentsWithDueFollowUp>
+          >,
         ),
   ]);
 
@@ -584,6 +597,20 @@ export async function* handleCoachChat(
     }
   }
 
+  // ── Coach Pro: due-commitment follow-ups ────────────
+  if (tierConfig.fetchNotebook && dueCommitments.length > 0) {
+    // At most 3 — the prompt asks the model to check in on ONE; more rows
+    // only cost tokens. Same sanitize + fence treatment as notebook entries.
+    const dueLines = dueCommitments.slice(0, 3).map((e) =>
+      formatNotebookLine({
+        type: e.type,
+        content: sanitizeContextField(e.content, 500),
+        updatedAt: e.updatedAt,
+      }),
+    );
+    context.dueCommitmentsSummary = dueLines.join("\n");
+  }
+
   // ── Coach Pro: inject notebook context ──────────────
   if (tierConfig.fetchNotebook) {
     // Always provide blocks formatting instructions for Pro responses
@@ -599,8 +626,10 @@ export async function* handleCoachChat(
         content: sanitizeContextField(e.content, 500),
         updatedAt: e.updatedAt,
       }));
+      // Durable personalization first so the truncation budget can't evict a
+      // months-old preference in favor of a burst of recent insights.
       const joined = truncateNotebookToBudget(
-        sanitized,
+        sortNotebookEntriesByPriority(sanitized),
         DEFAULT_NOTEBOOK_MAX_CHARS,
       );
       if (joined.length > 0) {

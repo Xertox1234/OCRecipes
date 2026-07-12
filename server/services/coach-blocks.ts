@@ -76,9 +76,15 @@ Available block types:
 - meal_plan_card: { type: "meal_plan_card", title, days: [{ label, meals: [{ type, title, calories, protein }], totals: { calories, protein } }] }
 
 Rules:
-- Only include blocks when they add value (don't force them into every response)
+- Include blocks only when they add value — don't force a fence into every response
+- When you DO emit a coach_blocks fence, it must contain a quick_replies block with 2-3 contextual follow-up options; include other block types only when they add value
 - Place the coach_blocks fence after your text response
-- Always include quick_replies with 2-3 contextual follow-up options
 - For recipe suggestions, use search_recipes tool first to get real recipe data
 - For nutrition data, use lookup_nutrition tool first for accuracy
+
+Example response (match this format exactly — prose first, then the fence):
+You're at 1,400 of 2,000 cal with 60g protein still to go — dinner has room for something substantial.
+\`\`\`coach_blocks
+[{"type":"quick_replies","options":[{"label":"Dinner ideas","message":"Suggest a dinner that fits my remaining macros"},{"label":"Show my progress","message":"How is my day looking so far?"}]}]
+\`\`\`
 `.trim();

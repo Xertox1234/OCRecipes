@@ -40,6 +40,8 @@ vi.mock("../../storage", () => ({
     getCommunityRecipe: vi.fn(),
     getActiveNotebookEntries: vi.fn().mockResolvedValue([]),
     getDailyLogsInRange: vi.fn().mockResolvedValue([]),
+    getCommitmentsWithDueFollowUp: vi.fn().mockResolvedValue([]),
+    getMostEatenFoods: vi.fn().mockResolvedValue([]),
     createNotebookEntries: vi.fn().mockResolvedValue([]),
     archiveOldEntries: vi.fn().mockResolvedValue(0),
     pinChatConversation: vi.fn(),
