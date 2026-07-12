@@ -96,7 +96,13 @@ function getSheetModalLocalNames(content) {
   const names = ["BottomSheetModal"];
   for (const statement of content.matchAll(GORHOM_IMPORT_PATTERN)) {
     if (statement[1]) continue; // `import type { ... }` — type-only
-    const braces = /\{([^}]*)\}/.exec(statement[2]);
+    // Strip comments from the import clause only (not the whole file) so a
+    // trailing `/* ... */` or `//` after a specifier can't hide an alias
+    // from the brace/comma split below.
+    const clause = statement[2]
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*/g, "");
+    const braces = /\{([^}]*)\}/.exec(clause);
     if (!braces) continue;
     for (const specifier of braces[1].split(",")) {
       const alias = ALIAS_SPECIFIER_PATTERN.exec(specifier);

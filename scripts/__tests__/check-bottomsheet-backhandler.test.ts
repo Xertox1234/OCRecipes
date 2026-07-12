@@ -227,6 +227,22 @@ describe("check-bottomsheet-backhandler.js", () => {
       expect(status).toBe(0);
     });
 
+    it("catches an unwired aliased sheet with a trailing inline comment on the specifier", () => {
+      const file = writeTsx(`
+        import {
+          BottomSheetModal as Sheet /* primary */,
+          BottomSheetView,
+        } from "@gorhom/bottom-sheet";
+
+        function Screen() {
+          return <Sheet ref={sheetRef} />;
+        }
+      `);
+      const { status, stdout } = runCheck(file);
+      expect(status).toBe(1);
+      expect(stdout).toContain("useSheetBackHandler");
+    });
+
     it("does not flag a longer JSX tag that merely starts with the alias name", () => {
       const file = writeTsx(`
         import { BottomSheetModal as Sheet } from "@gorhom/bottom-sheet";
