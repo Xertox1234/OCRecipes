@@ -1,6 +1,7 @@
 appId: com.ocrecipes.app
 name: "Home - NutriCoach chat interaction"
 tags:
+  - regression
   - home
   - chat
 env:

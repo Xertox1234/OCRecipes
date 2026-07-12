@@ -2,6 +2,7 @@ appId: com.ocrecipes.app
 name: "Onboarding - Register and complete onboarding"
 tags:
   - smoke
+  - regression
   - onboarding
 ---
 # Launch fresh app

@@ -2,6 +2,7 @@ appId: com.ocrecipes.app
 name: "Home - Navigate between tabs"
 tags:
   - smoke
+  - regression
   - navigation
 env:
   USERNAME: ${USERNAME}
@@ -20,17 +21,25 @@ env:
     text: "Hello"
     timeout: 10000
 
-# Navigate to History tab
-- tapOn: "History"
+# Navigate to Plan tab
+- tapOn: "Plan"
 - assertVisible:
-    text: "Today"
+    text: "Recipes"
     timeout: 5000
 
-# Navigate to Scan tab
-- tapOn: "Scan"
+# Navigate to Coach tab. Free tier lands on the chat list ("NutriCoach"
+# header); Pro lands on the Coach Pro surface — so the assertion is optional.
+- tapOn: "Coach"
 - assertVisible:
-    text: "Enable camera access"
+    text: "NutriCoach"
     timeout: 5000
+  optional: true
+
+# Scan is a floating action button, not a tab — confirm it is present without
+# opening it (the scan menu is covered by the scan flows).
+- assertVisible:
+    text: "Open scan menu"
+    timeout: 3000
   optional: true
 
 # Navigate to Profile tab

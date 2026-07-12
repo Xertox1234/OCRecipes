@@ -1,6 +1,7 @@
 appId: com.ocrecipes.app
 name: "Plan - Meal plan home and pantry"
 tags:
+  - regression
   - plan
   - meal-plan
 env:

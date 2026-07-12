@@ -1,6 +1,7 @@
 appId: com.ocrecipes.app
 name: "Home - View item detail from history"
 tags:
+  - regression
   - history
 env:
   USERNAME: ${USERNAME}
@@ -14,10 +15,17 @@ env:
       USERNAME: ${USERNAME}
       PASSWORD: ${PASSWORD}
 
-# Navigate to History
-- tapOn: "History"
+# History is not a tab — it lives at Profile → Library → Scan History
+- tapOn: "Profile"
+- scrollUntilVisible:
+    element: "Scan History"
+    direction: DOWN
+  optional: true
+- tapOn: "Scan History"
+
+# Verify the history screen loads (header title)
 - assertVisible:
-    text: "Today"
+    text: "Scan History"
     timeout: 5000
 
 # Verify the scan CTA is visible (shown when no items today)

@@ -1,0 +1,271 @@
+# E2E Regression (Maestro)
+#
+# Nightly scheduled regression run (plus manual `workflow_dispatch`) of the
+# critical Maestro flows — tagged `regression` — on BOTH an iOS simulator and
+# an Android emulator. Flow inventory and coverage gaps: e2e/README.md → CI.
+#
+# Trigger decision (2026-07 — see todos/archive/P3-2026-07-09-e2e-regression-gating-maestro.md):
+#
+#   SCHEDULED, NOT PR-GATED. E2E runs are slow (~30-45 min of native build +
+#   simulator boot) and inherently flakier than unit tests; gating merges on an
+#   unproven suite would erode trust in required checks and add that latency to
+#   every PR. A nightly run catches regressions within a day of merge without
+#   blocking anyone. PR-gating stays a deliberate LATER step, to be revisited
+#   only once the nightly flake rate is proven low — and if it ever happens it
+#   must be a separate, clearly-labelled required check, never folded into the
+#   fast lint/type/test preflight path that gates PRs today.
+#
+#   This workflow is intentionally NOT in the branch-protection required-check
+#   list; a red run never blocks a merge. Failures surface on the Actions tab
+#   (and via GitHub's scheduled-workflow failure notifications).
+#
+#   Cost note: the repo is public, so standard GitHub-hosted runners — including
+#   macOS — are free; the previous "manual-only to save paid macOS minutes"
+#   rationale no longer applies.
+#
+# Flake tolerance: the Maestro step retries once before failing the job, so a
+# single transient flake doesn't produce a red night. A flow that fails twice
+# in a row is a real signal.
+#
+# NOTE: This workflow cannot be validated from a worktree — expect the first
+# scheduled/dispatched runs to need one or two iterations to settle the native
+# builds and simulator/emulator boot on the runners.
+
+name: E2E Regression
+
+on:
+  schedule:
+    # Nightly at 08:17 UTC (~00:17 PT). Off-hour minute avoids GitHub's
+    # top-of-the-hour scheduler congestion. Scheduled runs execute against the
+    # default branch (main) — this catches regressions after merge; it does not
+    # block them (see trigger decision above).
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-ios:
+    name: Maestro regression (iOS simulator)
+    runs-on: macos-14
+    timeout-minutes: 60
+
+    env:
+      # Backend env — mirrors .github/workflows/ci.yml so the server behaves the
+      # same here. The flows hit the backend (login needs a real user; most
+      # flows need a logged-in session), so the API must be up.
+      DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
+      JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
+      LOG_LEVEL: silent
+      AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
+      USDA_API_KEY: stub
+      API_NINJAS_KEY: stub
+      RECEIPT_VALIDATION_STUB: "true"
+      # Credentials consumed by the Maestro flows (see e2e/README.md).
+      USERNAME: testuser
+      PASSWORD: testpass123
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # macOS runners ship Postgres but leave it stopped; start it and provision
+      # the role + database the server expects.
+      - name: Start Postgres
+        run: |
+          brew services start postgresql@14 || brew services start postgresql
+          for i in $(seq 1 30); do
+            if pg_isready -q; then break; fi
+            sleep 2
+          done
+          createuser -s ocrecipes || true
+          psql -d postgres -c "ALTER USER ocrecipes WITH PASSWORD 'ocrecipes';"
+          createdb -O ocrecipes ocrecipes_test || true
+          psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+      - name: Push database schema
+        run: npm run db:push
+
+      # curl installer is faster and avoids brew rate limits on a cold runner.
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      # Boot an iOS simulator for Maestro to drive. macos-14 ships Xcode with
+      # iPhone simulators preinstalled.
+      - name: Boot iOS simulator
+        run: |
+          xcrun simctl boot "iPhone 15" || true
+          xcrun simctl bootstatus "iPhone 15" -b
+
+      # Start the backend the flows talk to; keep it running for the rest of the job.
+      - name: Start backend
+        run: |
+          npm run server:dev > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+
+      # The debug build is a dev client that loads its JS bundle from Metro, so
+      # Metro must be running for the app to render anything Maestro can drive.
+      # EXPO_PUBLIC_DOMAIN is deliberately unset: the client falls back to
+      # http://localhost:3000, which reaches the backend above from the simulator.
+      - name: Start Metro bundler
+        run: |
+          npx expo start --port 8081 > metro.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8081/status >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+
+      # Build the native iOS app and install it on the booted simulator.
+      # --no-bundler because Metro is already running in the background above.
+      - name: Build and install iOS app
+        run: npx expo run:ios --no-bundler
+
+      # Runs `maestro test --tags regression e2e/flows/` (see e2e/README.md for
+      # the tagged flow inventory). One retry absorbs a transient flake; two
+      # consecutive failures fail the job.
+      - name: Run Maestro regression flows
+        run: |
+          npm run e2e:regression || {
+            echo "::warning::Maestro regression flows failed once — retrying"
+            npm run e2e:regression
+          }
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-ios
+          path: |
+            server.log
+            metro.log
+          if-no-files-found: warn
+
+  e2e-android:
+    name: Maestro regression (Android emulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ocrecipes
+          POSTGRES_PASSWORD: ocrecipes
+          POSTGRES_DB: ocrecipes_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
+      JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
+      LOG_LEVEL: silent
+      AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
+      USDA_API_KEY: stub
+      API_NINJAS_KEY: stub
+      RECEIPT_VALIDATION_STUB: "true"
+      USERNAME: testuser
+      PASSWORD: testpass123
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Enable pg_trgm extension
+        run: psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+      - name: Push database schema
+        run: npm run db:push
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      # ubuntu-latest runners support hardware acceleration for the Android
+      # emulator, but /dev/kvm is not accessible by default.
+      - name: Enable KVM group permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Start backend
+        run: |
+          npm run server:dev > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+
+      # See the iOS job's Metro note. On Android the emulator's localhost is the
+      # emulator itself, so `adb reverse` (below) tunnels the app's
+      # localhost:8081 (Metro) and localhost:3000 (backend) back to the host.
+      - name: Start Metro bundler
+        run: |
+          npx expo start --port 8081 > metro.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8081/status >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+
+      # Boots the emulator, then builds + installs the app and runs the flows
+      # against it. Same regression tag set and retry policy as the iOS job.
+      - name: Build app and run Maestro regression flows
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb reverse tcp:3000 tcp:3000
+            adb reverse tcp:8081 tcp:8081
+            npx expo run:android --no-bundler
+            npm run e2e:regression || {
+              echo "::warning::Maestro regression flows failed once — retrying"
+              npm run e2e:regression
+            }
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-android
+          path: |
+            server.log
+            metro.log
+          if-no-files-found: warn

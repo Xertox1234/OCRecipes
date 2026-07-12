@@ -2,6 +2,7 @@ appId: com.ocrecipes.app
 name: "Auth - Login flow"
 tags:
   - smoke
+  - regression
   - auth
 ---
 # Launch the app
