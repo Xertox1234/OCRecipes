@@ -45,6 +45,8 @@ Merging is the irreversible step: squash-merge to protected `main` auto-deploys 
 
 Verification ladder, weakest → strongest: (1) `git cherry main <branch>` all `-` → (2) named squash commit on main (`git log --oneline main | grep '(#<pr>)'`) → (3) `git grep` shows the change live on main. Climb at least rung 1 before any `-D`; for safety-relevant code, climb all three.
 
+**Rung 1 doesn't apply to a branch with multiple commits squashed together.** `git cherry` compares per-commit patch-ids; a squash that combines N pre-existing commits (e.g. a `-B <local>` branch created from a remote PR head, then one more commit added on top) into ONE commit on `main` gives every individual commit a patch-id that matches nothing — `git cherry` reports all of them `+` (not found), never `-`, even though the content fully landed. This isn't the "false alarm" `-`-when-you-expected-`+` case the ladder above describes — it's the opposite surface (all `+`) on a genuinely-landed branch, and it's easy to misread as "nothing landed, don't delete." When a branch has more than one commit relative to its point of divergence from `main`, skip straight to rung 2 or 3.
+
 ## Common mistakes
 
 - Concluding "no CI" or "CI stuck" from an empty commit-status response.
