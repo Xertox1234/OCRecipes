@@ -3,10 +3,10 @@
 ---
 
 title: "symbol-graph.sh's dead-exports allowlist takes package.json main as a raw string while symbol-graph.ts normalizes it via path.join"
-status: backlog
+status: done
 priority: low
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-12
 assignee:
 labels: [deferred, harness, code-quality]
 github_issue:

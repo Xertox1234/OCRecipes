@@ -109,13 +109,28 @@ SQL
     # entrypoint (only a free-text "server:dev": "tsx server/index.ts" script string
     # exists), so it stays a hardcoded literal below -- there is no source of truth to
     # derive it from.
-    MAIN_ENTRY="$(node -p "require('$PROJECT_ROOT/package.json').main" 2>/dev/null)"
+    #
+    # PG_LAB_PACKAGE_JSON_DIR is the test seam (same shape as codify-neardup.sh's
+    # PG_LAB_SOLUTIONS_DIR): .claude/hooks/test-pg-lab-symbol-graph.sh points it at a
+    # throwaway package.json to exercise this derivation; everything else gets the repo's.
+    PKG_DIR="${PG_LAB_PACKAGE_JSON_DIR:-$PROJECT_ROOT}"
+    # The value is path.normalize()d INSIDE the node expression -- the same read-time
+    # normalization symbol-graph.ts's readMainEntrypoint applies -- because the SQL
+    # allowlist below compares it VERBATIM against repo.exports.path, which stores
+    # extractGraph's normalized repo-relative form (path.relative, no "./" prefix). A
+    # "./"-prefixed or doubled-segment "main" taken raw would silently never match: the
+    # TS side would keep resolving fine while this allowlist desynced. The typeof/length
+    # gate mirrors the TS side's readMainEntrypoint guard exactly, and keeps a
+    # missing/empty/non-string "main" printing the literal string "undefined" for the
+    # check below (rather than a missing field throwing, or path.normalize("") yielding
+    # the nonsense-but-nonempty allowlist entry ".").
+    MAIN_ENTRY="$(node -p "const m = require('$PKG_DIR/package.json').main; typeof m === 'string' && m.length > 0 ? path.normalize(m) : undefined" 2>/dev/null)"
     # A missing "main" field makes `node -p` print the literal string "undefined" (still
     # non-empty, still exit 0) -- `-z` alone would NOT catch that and would silently
     # allowlist the nonsense path "undefined" instead of refusing to run. Mirrors the TS
     # side's `typeof pkg.main !== "string"` guard (readMainEntrypoint in symbol-graph.ts).
     if [ -z "$MAIN_ENTRY" ] || [ "$MAIN_ENTRY" = "undefined" ]; then
-      echo "symbol-graph.sh: could not read package.json's \"main\" field at $PROJECT_ROOT/package.json -- refusing to run dead-exports without the entrypoint allowlist value" >&2
+      echo "symbol-graph.sh: could not read package.json's \"main\" field at $PKG_DIR/package.json -- refusing to run dead-exports without the entrypoint allowlist value" >&2
       exit 1
     fi
     # :'main_entry' is psql's quoted-literal substitution (safe for arbitrary string

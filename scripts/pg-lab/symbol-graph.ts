@@ -111,7 +111,15 @@ function getGitSha(cwd: string): string | null {
  * for "the" registered root entrypoint (Metro/Expo resolve it the same way), so a future
  * rename only requires editing package.json, not this script too. Only called for the
  * real-repo config (never the test fixture, which has no package.json and doesn't take
- * this code path -- see loadProject's isDefaultRepoConfig guard). */
+ * this code path -- see loadProject's isDefaultRepoConfig guard).
+ *
+ * The returned value is path.normalize()d at read time -- the SAME normalization
+ * symbol-graph.sh's MAIN_ENTRY derivation applies -- so a "main" carrying a "./" prefix
+ * (or a doubled/`.` path segment) yields the identical repo-relative form on both sides.
+ * Here loadProject's path.join() would normalize anyway; the sh side's SQL allowlist
+ * compares the derived string VERBATIM against extractGraph's stored path.relative()
+ * paths, so normalizing only one side would let the allowlist silently desync (the exact
+ * two-independent-forms drift this shared derivation exists to prevent). */
 function readMainEntrypoint(configDir: string): string {
   const packageJsonPath = path.join(configDir, "package.json");
   const pkg = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as {
@@ -122,7 +130,7 @@ function readMainEntrypoint(configDir: string): string {
       `readMainEntrypoint: package.json has no "main" field at ${packageJsonPath} -- symbol-graph.ts's loadProject depends on this to find the client entrypoint file.`,
     );
   }
-  return pkg.main;
+  return path.normalize(pkg.main);
 }
 
 /** Build the alias-prefix -> absolute-root-dir table from the SAME tsconfig ts-morph

@@ -44,9 +44,11 @@ psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local P
 TEST_DB="pg_lab_symbol_graph_test_$$"
 TEST_URL="postgresql://localhost/$TEST_DB"
 FIX=""
+PKGFIX=""
 cleanup() {
   psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1
   [ -z "$FIX" ] || rm -rf "$FIX"
+  [ -z "$PKGFIX" ] || rm -rf "$PKGFIX"
 }
 trap cleanup EXIT
 
@@ -185,6 +187,36 @@ DEAD_OUT=$(LAB_DATABASE_URL="$TEST_URL" bash "$SH_SCRIPT" dead-exports)
 assert_contains "dead-exports finds dead.ts's unusedHelper" "$DEAD_OUT" "unusedHelper"
 assert_not_contains "dead-exports does not flag getOrderInternal (namespace-import usage)" "$DEAD_OUT" "getOrderInternal"
 assert_contains "dead-exports finds reexportOnlyDead despite the barrel re-export" "$DEAD_OUT" "reexportOnlyDead"
+
+# Allowlist normalization regression: symbol-graph.sh derives the dead-exports allowlist
+# entry from package.json "main" and must normalize it the same way symbol-graph.ts's
+# readMainEntrypoint does (path.normalize at read time) -- the SQL compares the derived
+# string VERBATIM against repo.exports.path's normalized repo-relative form, so a
+# "./"-prefixed "main" taken raw would silently never match. Exercised through the
+# PG_LAB_PACKAGE_JSON_DIR seam with a synthetic zero-ref export row planted at the real
+# entrypoint's stored path.
+PKGFIX=$(mktemp -d)
+psql -X -q -d "$TEST_URL" -c "INSERT INTO repo.exports (path, name, ref_count) VALUES ('client/index.js', 'phantomEntrypointExport', 0)" >/dev/null
+
+# Control: with "main" pointing elsewhere, the synthetic row IS reported -- proving the
+# assertion after this one passes because of allowlist matching, not some other filter.
+printf '{"main": "somewhere/else.js"}' > "$PKGFIX/package.json"
+CTRL_OUT=$(LAB_DATABASE_URL="$TEST_URL" PG_LAB_PACKAGE_JSON_DIR="$PKGFIX" bash "$SH_SCRIPT" dead-exports)
+assert_contains "seam control: unrelated main leaves the synthetic entrypoint row reported" "$CTRL_OUT" "phantomEntrypointExport"
+
+# The regression proper: a "./"-prefixed, doubled-separator main must normalize to the
+# stored form (client/index.js) and be allowlisted away.
+printf '{"main": "./client//index.js"}' > "$PKGFIX/package.json"
+NORM_OUT=$(LAB_DATABASE_URL="$TEST_URL" PG_LAB_PACKAGE_JSON_DIR="$PKGFIX" bash "$SH_SCRIPT" dead-exports)
+assert_not_contains "dead-exports allowlist normalizes a ./-prefixed doubled-separator main" "$NORM_OUT" "phantomEntrypointExport"
+
+# Missing "main" must still refuse loudly (node -p prints the literal string "undefined"
+# for a missing field -- see docs/solutions/logic-errors/
+# node-p-require-missing-field-undefined-string-2026-07-09.md).
+printf '{}' > "$PKGFIX/package.json"
+GUARD_ERR=$(LAB_DATABASE_URL="$TEST_URL" PG_LAB_PACKAGE_JSON_DIR="$PKGFIX" bash "$SH_SCRIPT" dead-exports 2>&1 1>/dev/null); GUARD_RC=$?
+assert_nonzero "dead-exports refuses a package.json without main" "$GUARD_RC"
+assert_contains "missing-main refusal names the seam package.json" "$GUARD_ERR" "$PKGFIX/package.json"
 
 # cycles: a.ts and b.ts import each other (through the @fixture/* alias).
 CYCLES_OUT=$(LAB_DATABASE_URL="$TEST_URL" bash "$SH_SCRIPT" cycles)
