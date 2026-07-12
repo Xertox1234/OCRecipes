@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Tests for drift-detect.sh and drift-detect-update.sh — run from project root.
-# Hermetic: uses real git in a temp repo; no external tools needed beyond git + jq.
+# Hermetic: uses real git in a temp repo; no external tools needed beyond git + jq —
+# except the final attribution positive-path case, which needs psql + a live local
+# Postgres and SKIPS cleanly (suite still exits 0) when either is missing (CI's
+# Lint job has no Postgres service).
 set -uo pipefail
 
 HOOKS_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,6 +18,9 @@ BASELINE_FILE="/tmp/claude-drift-detect-${TEST_SESSION}"
 cleanup() {
   rm -f "$BASELINE_FILE" "${BASELINE_FILE}.tmp"
   [ -n "${TMPDIR_REPO:-}" ] && rm -rf "$TMPDIR_REPO"
+  # Throwaway lab DB from the attribution positive-path case (unset when that case skipped).
+  [ -n "${ATTRIB_TEST_DB:-}" ] && psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$ATTRIB_TEST_DB\"" >/dev/null 2>&1
+  return 0
 }
 trap cleanup EXIT
 
@@ -210,6 +216,45 @@ DRIFT_INPUT=$(jq -n --arg c "git commit -m claude-attrib" --arg s "$TEST_SESSION
 OUT=$(printf '%s' "$DRIFT_INPUT" | LAB_DATABASE_URL="postgresql://localhost/pg_lab_nope_$$" bash "$DETECT_HOOK" 2>/dev/null)
 assert_contains "PG-down drift: classic message still fires" "Drift detected" "$OUT"
 assert_not_contains "PG-down drift: no attribution suffix leaked" "Attribution:" "$OUT"
+
+# --- Test: attribution POSITIVE path — another live session registered at this root ---
+# Integration coverage for drift-detect.sh's `MSG="$MSG $ATTRIB"` enrichment (the unit
+# outcomes live in test-session-coord.sh): seed a throwaway lab DB (same harness as
+# test-session-coord.sh) with another live session at THIS fixture repo's resolved root,
+# re-trigger the same drifted state as the PG-down case above (baseline still trails HEAD —
+# detect never advances it), and assert the attribution suffix rides the drift message.
+# DB-gated: CI's Lint job has no Postgres service, so skip cleanly WITHOUT exiting — the
+# Results epilogue below must still run so earlier failures propagate.
+if command -v psql >/dev/null 2>&1 && psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1; then
+  ATTRIB_TEST_DB="pg_lab_drift_attrib_test_$$"
+  ATTRIB_TEST_URL="postgresql://localhost/$ATTRIB_TEST_DB"
+  LAB_DATABASE_URL="$ATTRIB_TEST_URL" bash "$REAL_PGLAB/init.sh" >/dev/null 2>&1 \
+    && psql -X -q -v ON_ERROR_STOP=1 -d "$ATTRIB_TEST_URL" -f "$REAL_PGLAB/schema/session-coordination.sql" >/dev/null 2>&1
+  if [ $? -eq 0 ]; then
+    echo "PASS: attribution DB: throwaway lab DB created and schema applied"; PASS=$((PASS+1))
+  else
+    echo "FAIL: attribution DB: init.sh/schema apply failed for $ATTRIB_TEST_URL"; FAIL=$((FAIL+1))
+  fi
+
+  # Seed another live session at the fixture's RESOLVED root. drift-detect.sh passes
+  # $(git rev-parse --show-toplevel) — evaluated under the exported GIT_WORK_TREE, and
+  # canonicalized by git (macOS: /tmp → /private/tmp) — and attribute-drift joins on
+  # exact repo_root equality, so seed with the same resolved value, not $TMPDIR_REPO.
+  # expires_at is omitted: the schema default (now() + 10 min) passes the > now() filter.
+  FIXTURE_ROOT=$(git rev-parse --show-toplevel)
+  OTHER_SID="drift-other-$$"
+  psql -X -q -v ON_ERROR_STOP=1 -d "$ATTRIB_TEST_URL" -v osid="$OTHER_SID" -v root="$FIXTURE_ROOT" >/dev/null <<'SQL'
+INSERT INTO harness.session_registry (session_id, repo_root, session_kind, branch)
+VALUES (:'osid', :'root', 'goal', 'main');
+SQL
+
+  OUT=$(printf '%s' "$DRIFT_INPUT" | LAB_DATABASE_URL="$ATTRIB_TEST_URL" bash "$DETECT_HOOK" 2>/dev/null)
+  assert_contains "attributed drift: classic message still fires" "Drift detected" "$OUT"
+  assert_contains "attributed drift: attribution suffix appended" "Attribution: session ${OTHER_SID:0:8}" "$OUT"
+  assert_contains "attributed drift: names the other session's kind and branch" "(goal, branch main)" "$OUT"
+else
+  echo "skip: psql or live local Postgres missing — attribution positive-path case not run"
+fi
 
 unset GIT_DIR GIT_WORK_TREE
 

@@ -3,7 +3,7 @@
 ---
 
 title: "Add positive-path integration test for drift-detect registry attribution"
-status: backlog
+status: done
 priority: low
 created: 2026-07-10
 updated: 2026-07-10
