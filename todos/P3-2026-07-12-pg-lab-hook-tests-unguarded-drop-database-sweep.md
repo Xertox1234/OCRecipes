@@ -30,12 +30,14 @@ retry window, gives up and leaves the database in place (the actual leak). `WITH
 Code review of the parent todo's PR narrowed the risk per file:
 
 - **Confirmed same race** (backgrounds a write to its own throwaway DB, exactly like
-  `do_attribute_drift`'s `log_event ... &`): `.claude/hooks/test-inject-patterns.sh:392`
-  (`{ printf '%s' "$LOG_TSV" | bash "$LOG_SCRIPT" ...; } &`, cleanup at :527) and
-  `.claude/hooks/test-session-recent-issues.sh:85` (`{ printf '%s\n' "$LOG_LINE" | bash
-"$LOG_SCRIPT" ...; } &`, cleanup at :110) — both write to their test's `$LOG_TEST_DB` via
-  `log-injection.sh` the same way session-coord.sh's log_event does. These two carry the
-  same demonstrated leak risk the parent todo fixed elsewhere.
+  `do_attribute_drift`'s `log_event ... &`): the hook under test at `.claude/hooks/inject-patterns.sh:392`
+  (`{ printf '%s' "$LOG_TSV" | bash "$LOG_SCRIPT" ...; } &`, exercised by
+  `.claude/hooks/test-inject-patterns.sh`, cleanup at :527) and
+  `.claude/hooks/session-recent-issues.sh:85` (`{ printf '%s\n' "$LOG_LINE" | bash
+"$LOG_SCRIPT" ...; } &`, exercised by `.claude/hooks/test-session-recent-issues.sh`, cleanup
+  at :110) — both write to their test's `$LOG_TEST_DB` via `log-injection.sh` the same way
+  session-coord.sh's log_event does. These two carry the same demonstrated leak risk the
+  parent todo fixed elsewhere.
 - **Generic pattern only, not a demonstrated race** (reviewed and confirmed no internal
   backgrounding in either the test file or `log-injection.sh`): the remaining ~8 files
   (`test-db-serial-lock.sh`, `test-pg-lab-codify-neardup.sh`, `test-pg-lab-contract-diff.sh`,

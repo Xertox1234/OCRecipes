@@ -283,14 +283,18 @@ assert_exit0 "attribute: PG down exit 0" "$RC"; assert_empty "attribute: PG down
 psql -X -q -d "$TEST_URL" -c "SELECT pg_sleep(15)" >/dev/null 2>&1 &
 HOLDER_PID=$!
 HELD=0
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
   HELD=$(psql -X -qtA -d postgres -c "SELECT count(*) FROM pg_stat_activity WHERE datname='$TEST_DB' AND pid <> pg_backend_pid()")
   [ "${HELD:-0}" -ge 1 ] && break
   sleep 0.2
 done
 [ "${HELD:-0}" -ge 1 ] && echo "ok: force-drop: backgrounded connection is live before the drop" || { echo "FAIL: force-drop: backgrounded connection is live before the drop — expected >=1, got ${HELD:-0}"; FAIL=1; }
+# Time the REAL cleanup() trap function itself (not an inline re-implementation of its
+# DROP DATABASE call) so this test actually regresses if cleanup()'s fix is ever reverted.
+# cleanup() is idempotent (IF EXISTS + 2>/dev/null-guarded rm/rmdir), so calling it early
+# here and letting the EXIT trap invoke it again afterward is harmless.
 FORCE_START=$(date +%s)
-psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\" WITH (FORCE)" >/dev/null 2>&1
+cleanup
 FORCE_ELAPSED=$(( $(date +%s) - FORCE_START ))
 # Plain (non-FORCE) DROP DATABASE against this connection blocks for the connection's full
 # lifetime instead of failing fast (verified empirically against local PG18) -- so the only

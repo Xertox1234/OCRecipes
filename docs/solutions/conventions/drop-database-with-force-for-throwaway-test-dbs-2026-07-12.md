@@ -47,6 +47,21 @@ on the happy path, a plain drop's multi-second stall — or its eventual failure
 invisible; the next run only notices when a stale database name collision or accumulated
 dev-DB clutter surfaces far downstream.
 
+**PG12 caveat:** this codebase's documented minimum dev Postgres is 12+ (`docs/DEV_SETUP.md`,
+`docs/ARCHITECTURE.md`), one version below `WITH (FORCE)`'s PG13+ floor. On a PG12 install,
+`WITH (FORCE)` is an unrecognized-option error — silently swallowed by the same `2>&1` that
+hid the original bug, reproducing this exact leak with zero signal that the fix didn't apply.
+If you're touching one of these cleanup traps and might be on PG12, check first
+(`psql -tAc 'SHOW server_version_num'`) and fall back to the `pg_terminate_backend`
+alternative under Exceptions below, which works on any version.
+
+**CI coverage caveat:** none of these hook self-tests run against Postgres in CI — the
+`checks` job that executes `scripts/run-hook-tests.sh` has no `postgres:` service (see each
+test file's own header comment); only the separate `test`/`integration-http`/`coverage` jobs
+run `postgres:16`, and they don't execute `.claude/hooks/test-*.sh`. So this fix, and any
+regression test for it, is verified locally by whoever touches the file — not by CI on every
+push.
+
 ## Examples
 
 ```bash
