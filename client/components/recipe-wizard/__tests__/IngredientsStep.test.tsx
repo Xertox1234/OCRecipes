@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { screen, fireEvent } from "@testing-library/react";
+import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import IngredientsStep from "../IngredientsStep";
 import {
@@ -9,6 +10,21 @@ import {
   hasIngredientText,
   shouldShowIngredientDelete,
 } from "../ingredients-step-utils";
+
+const { mockImpact, mockNotification, mockSelection } = vi.hoisted(() => ({
+  mockImpact: vi.fn(),
+  mockNotification: vi.fn(),
+  mockSelection: vi.fn(),
+}));
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: mockImpact,
+    notification: mockNotification,
+    selection: mockSelection,
+    disabled: false,
+  }),
+}));
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -106,6 +122,20 @@ describe("IngredientsStep — render", () => {
     expect(addIngredient).toHaveBeenCalledTimes(1);
   });
 
+  it("triggers haptic feedback via the centralized useHaptics hook when Add ingredient is pressed", () => {
+    renderComponent(
+      <IngredientsStep
+        ingredients={[row("ing_1", "")]}
+        addIngredient={vi.fn()}
+        removeIngredient={vi.fn()}
+        updateIngredient={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Add ingredient"));
+    expect(mockImpact).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
+  });
+
   it("calls removeIngredient with the row key when X is pressed", () => {
     const removeIngredient = vi.fn();
     renderComponent(
@@ -119,6 +149,21 @@ describe("IngredientsStep — render", () => {
     const deleteButtons = screen.getAllByLabelText("Remove ingredient");
     fireEvent.click(deleteButtons[1]);
     expect(removeIngredient).toHaveBeenCalledWith("ing_2");
+  });
+
+  it("triggers haptic feedback via the centralized useHaptics hook when an ingredient is removed", () => {
+    renderComponent(
+      <IngredientsStep
+        ingredients={[row("ing_1", "flour"), row("ing_2", "milk")]}
+        addIngredient={vi.fn()}
+        removeIngredient={vi.fn()}
+        updateIngredient={vi.fn()}
+      />,
+    );
+    const deleteButtons = screen.getAllByLabelText("Remove ingredient");
+    fireEvent.click(deleteButtons[1]);
+    expect(mockImpact).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
   });
 
   it("calls updateIngredient when the user types in a row", () => {

@@ -19,6 +19,7 @@ import {
   ImportRecipeSheetContent,
   IMPORT_RECIPE_SNAP_POINTS,
 } from "@/components/meal-plan/ImportRecipeSheet";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useTheme } from "@/hooks/useTheme";
 import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { Spacing, BorderRadius, FontFamily } from "@/constants/theme";
@@ -92,6 +93,7 @@ const CARDS: CardDef[] = [
 
 function ActionCard({ card, onPress }: { card: CardDef; onPress: () => void }) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -107,7 +109,7 @@ function ActionCard({ card, onPress }: { card: CardDef; onPress: () => void }) {
   };
 
   const handlePress = () => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     onPress();
   };
 

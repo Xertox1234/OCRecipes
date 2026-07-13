@@ -5,6 +5,8 @@ import {
   getProductChipVariant,
   getShutterClearanceStyle,
   getSmartConfirmLabel,
+  getChipConfidenceLabel,
+  getChipConfidenceColor,
 } from "../ProductChip-utils";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import type { ScanPhase } from "../../types/scan-phase";
@@ -229,5 +231,36 @@ describe("getChipAnnounceText", () => {
     expect(getChipAnnounceText("smart_photo", idle)).toBe(
       "Photo analyzed, tap to confirm",
     );
+  });
+});
+
+describe("getChipConfidenceLabel", () => {
+  it("returns High confidence at and above 0.8", () => {
+    expect(getChipConfidenceLabel(0.8)).toBe("High confidence");
+    expect(getChipConfidenceLabel(1)).toBe("High confidence");
+  });
+
+  it("returns Good match at and above 0.5, below 0.8", () => {
+    expect(getChipConfidenceLabel(0.5)).toBe("Good match");
+    expect(getChipConfidenceLabel(0.79)).toBe("Good match");
+  });
+
+  it("returns Possible match below 0.5", () => {
+    expect(getChipConfidenceLabel(0.49)).toBe("Possible match");
+    expect(getChipConfidenceLabel(0)).toBe("Possible match");
+  });
+});
+
+describe("getChipConfidenceColor", () => {
+  it("returns green for high confidence", () => {
+    expect(getChipConfidenceColor(0.9)).toBe("#4CD964");
+  });
+
+  it("returns amber for medium confidence", () => {
+    expect(getChipConfidenceColor(0.6)).toBe("#FFD60A");
+  });
+
+  it("returns a neutral overlay tone for low confidence, not an alarming color", () => {
+    expect(getChipConfidenceColor(0.2)).toBe("rgba(255,255,255,0.5)");
   });
 });

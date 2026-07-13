@@ -23,10 +23,16 @@ import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { ApiError } from "@/lib/api-error";
 import { uploadFrontLabelPhoto, confirmFrontLabel } from "@/lib/photo-upload";
+import {
+  getConfidenceTier,
+  getConfidenceHapticType,
+  getConfidenceColor,
+} from "@/lib/confidence";
 import { shouldReplaceWithAIFrontLabel } from "@/screens/front-label-confirm-utils";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -77,6 +83,7 @@ export default function FrontLabelConfirmScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ScreenRoute>();
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const insets = useSafeAreaInsets();
   const { imageUri, barcode, data: initialData } = route.params;
 
@@ -141,14 +148,16 @@ export default function FrontLabelConfirmScreen() {
   const confirmMutation = useMutation({
     mutationFn: () => confirmFrontLabel(sessionId!, barcode),
     onSuccess: () => {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.notification(
+        getConfidenceHapticType(getConfidenceTier(data.confidence)),
+      );
       AccessibilityInfo.announceForAccessibility(
         "Product details saved successfully",
       );
       navigation.pop(2);
     },
     onError: (err: Error) => {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      haptics.notification(Haptics.NotificationFeedbackType.Error);
       const message = frontLabelErrorMessage(
         err,
         "Failed to save product details",
@@ -161,15 +170,15 @@ export default function FrontLabelConfirmScreen() {
   });
 
   const handleConfirm = useCallback(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     setConfirmError(null);
     confirmMutation.mutate();
-  }, [confirmMutation]);
+  }, [confirmMutation, haptics]);
 
   const handleRetake = useCallback(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     navigation.replace("Scan", { mode: "front-label", verifyBarcode: barcode });
-  }, [navigation, barcode]);
+  }, [navigation, barcode, haptics]);
 
   const hasAnyData =
     data.brand || data.productName || data.netWeight || data.claims.length > 0;
@@ -242,20 +251,28 @@ export default function FrontLabelConfirmScreen() {
         )}
 
         {/* Confidence warning */}
-        {data.confidence < 0.7 && dataSource === "ai" && (
-          <View
-            style={[
-              styles.warningBanner,
-              { backgroundColor: withOpacity(theme.warning, 0.12) },
-            ]}
-            accessibilityRole="alert"
-          >
-            <Feather name="alert-triangle" size={16} color={theme.warning} />
-            <ThemedText style={[styles.warningText, { color: theme.warning }]}>
-              Low confidence — some details may be inaccurate
-            </ThemedText>
-          </View>
-        )}
+        {dataSource === "ai" &&
+          (() => {
+            const tier = getConfidenceTier(data.confidence);
+            if (tier === "high") return null;
+            const color = getConfidenceColor(theme, tier);
+            return (
+              <View
+                style={[
+                  styles.warningBanner,
+                  { backgroundColor: withOpacity(color, 0.12) },
+                ]}
+                accessibilityRole="alert"
+              >
+                <Feather name="alert-triangle" size={16} color={color} />
+                <ThemedText style={[styles.warningText, { color }]}>
+                  {tier === "low"
+                    ? "Low confidence — review carefully before saving"
+                    : "Low confidence — some details may be inaccurate"}
+                </ThemedText>
+              </View>
+            );
+          })()}
 
         {/* Waiting for AI hint */}
         {dataSource === "local" && !uploadError && (

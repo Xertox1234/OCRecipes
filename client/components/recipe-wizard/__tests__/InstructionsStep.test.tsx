@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { screen, fireEvent } from "@testing-library/react";
+import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import InstructionsStep from "../InstructionsStep";
 import {
@@ -9,6 +10,21 @@ import {
   canMoveStepUp,
   shouldShowStepDelete,
 } from "../instructions-step-utils";
+
+const { mockImpact, mockNotification, mockSelection } = vi.hoisted(() => ({
+  mockImpact: vi.fn(),
+  mockNotification: vi.fn(),
+  mockSelection: vi.fn(),
+}));
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: mockImpact,
+    notification: mockNotification,
+    selection: mockSelection,
+    disabled: false,
+  }),
+}));
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -102,6 +118,22 @@ describe("InstructionsStep — render", () => {
     expect(moveStep).toHaveBeenCalledWith("s_1", "down");
   });
 
+  it("triggers haptic feedback via the centralized useHaptics hook when a step is moved", () => {
+    renderComponent(
+      <InstructionsStep
+        steps={[step("s_1", "Mix"), step("s_2", "Bake")]}
+        addStep={vi.fn()}
+        removeStep={vi.fn()}
+        updateStep={vi.fn()}
+        moveStep={vi.fn()}
+      />,
+    );
+    const downButtons = screen.getAllByLabelText("Move step down");
+    fireEvent.click(downButtons[0]);
+    expect(mockImpact).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
+  });
+
   it("calls addStep when the Add row is pressed", () => {
     const addStep = vi.fn();
     renderComponent(
@@ -115,6 +147,38 @@ describe("InstructionsStep — render", () => {
     );
     fireEvent.click(screen.getByLabelText("Add step"));
     expect(addStep).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggers haptic feedback via the centralized useHaptics hook when Add step is pressed", () => {
+    renderComponent(
+      <InstructionsStep
+        steps={[step("s_1", "")]}
+        addStep={vi.fn()}
+        removeStep={vi.fn()}
+        updateStep={vi.fn()}
+        moveStep={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Add step"));
+    expect(mockImpact).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
+  });
+
+  it("triggers haptic feedback via the centralized useHaptics hook when a step is removed", () => {
+    const removeStep = vi.fn();
+    renderComponent(
+      <InstructionsStep
+        steps={[step("s_1", "Mix"), step("s_2", "Bake")]}
+        addStep={vi.fn()}
+        removeStep={removeStep}
+        updateStep={vi.fn()}
+        moveStep={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getAllByLabelText("Remove step")[0]);
+    expect(removeStep).toHaveBeenCalledWith("s_1");
+    expect(mockImpact).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
   });
 
   it("calls updateStep when a step's text is edited", () => {

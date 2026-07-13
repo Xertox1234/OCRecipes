@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { screen, fireEvent } from "@testing-library/react";
+import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import TimeServingsStep from "../TimeServingsStep";
 import {
@@ -13,6 +14,24 @@ import {
   isServingsAtMin,
   sanitizeMinutesInput,
 } from "../time-servings-step-utils";
+
+const { mockImpact, mockNotification, mockSelection } = vi.hoisted(() => ({
+  mockImpact: vi.fn(),
+  mockNotification: vi.fn(),
+  mockSelection: vi.fn(),
+}));
+
+// Asserts the servings stepper routes through the centralized useHaptics()
+// hook (reducedMotion gating + Android performAndroidHapticsAsync routing)
+// rather than calling expo-haptics directly.
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: mockImpact,
+    notification: mockNotification,
+    selection: mockSelection,
+    disabled: false,
+  }),
+}));
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -152,6 +171,34 @@ describe("TimeServingsStep — render", () => {
     expect(setTimeServings).toHaveBeenCalledWith(
       expect.objectContaining({ servings: 3 }),
     );
+  });
+
+  // Regression guard: the servings stepper must route through the
+  // centralized useHaptics() hook (reducedMotion gating + Android
+  // performAndroidHapticsAsync routing) rather than calling expo-haptics
+  // directly, which bypasses both.
+  it("fires haptics.impact via the centralized useHaptics hook on a servings change, not the raw expo-haptics call", () => {
+    const impactAsyncSpy = vi.spyOn(Haptics, "impactAsync");
+    renderComponent(
+      <TimeServingsStep
+        timeServings={makeData({ servings: 2 })}
+        setTimeServings={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Increase servings"));
+    expect(mockImpact).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+    expect(impactAsyncSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not fire haptics when the servings change is a no-op at the boundary", () => {
+    renderComponent(
+      <TimeServingsStep
+        timeServings={makeData({ servings: MAX_SERVINGS })}
+        setTimeServings={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("Increase servings"));
+    expect(mockImpact).not.toHaveBeenCalled();
   });
 
   it("sanitizes non-digit prep time input before calling setTimeServings", () => {

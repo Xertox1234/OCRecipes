@@ -12,6 +12,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import type { IngredientRow } from "@/hooks/useRecipeForm";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import {
   Spacing,
   BorderRadius,
@@ -101,19 +102,20 @@ export default function IngredientsStep({
   updateIngredient,
 }: IngredientsStepProps) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
 
   const handleAdd = useCallback(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     addIngredient();
-  }, [addIngredient]);
+  }, [addIngredient, haptics]);
 
   const handleRemove = useCallback(
     (key: string) => {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       removeIngredient(key);
       AccessibilityInfo.announceForAccessibility("Ingredient removed");
     },
-    [removeIngredient],
+    [removeIngredient, haptics],
   );
 
   // `showDelete` is the only row-level prop that depends on siblings; derive

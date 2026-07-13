@@ -9,6 +9,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { Spacing, FontFamily } from "@/constants/theme";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -31,6 +32,7 @@ export const AskCoachSection = React.memo(function AskCoachSection({
   const { theme } = useTheme();
   const { isPremium } = usePremiumContext();
   const navigation = useNavigation<NavProp>();
+  const haptics = useHaptics();
   const [showUpgrade, setShowUpgrade] = useState(false);
 
   const handlePress = useCallback(
@@ -41,14 +43,14 @@ export const AskCoachSection = React.memo(function AskCoachSection({
       }
       // Allow parent to intercept specific questions (e.g., remix)
       if (onCustomPress?.(q)) return;
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       navigation.navigate("CoachChat", {
         question: q.question,
         questionText: q.text,
         screenContext,
       });
     },
-    [isPremium, navigation, screenContext, onCustomPress],
+    [isPremium, navigation, screenContext, onCustomPress, haptics],
   );
 
   return (

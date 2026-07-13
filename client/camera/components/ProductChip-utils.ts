@@ -3,6 +3,30 @@ import type { ScanPhase } from "../types/scan-phase";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import { getContentTypeLabel } from "@/screens/scan-screen-utils";
 import { getShutterTopInset } from "./shutter-layout";
+import { getConfidenceTier } from "@/lib/confidence";
+
+/**
+ * Confidence copy for the smart-scan chip — kept distinct from
+ * getConfidenceLabel's "High"/"Medium"/"Low" (that wording belongs to the
+ * dedicated confidence badges on PhotoAnalysisScreen etc., not this
+ * camera-overlay chip).
+ */
+export function getChipConfidenceLabel(score: number): string {
+  const tier = getConfidenceTier(score);
+  if (tier === "high") return "High confidence";
+  if (tier === "medium") return "Good match";
+  return "Possible match";
+}
+
+// Hardcoded overlay-safe accents — this chip renders on a live camera feed
+// with no useTheme() access, not app chrome.
+export function getChipConfidenceColor(score: number): string {
+  const tier = getConfidenceTier(score);
+  if (tier === "high") return "#4CD964";
+  if (tier === "medium") return "#FFD60A";
+  // Low intentionally stays neutral, not alarming, on a live camera feed.
+  return "rgba(255,255,255,0.5)";
+}
 
 export type ProductChipVariant =
   | "barcode_lock"

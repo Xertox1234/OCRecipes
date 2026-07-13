@@ -11,6 +11,7 @@ import * as Haptics from "expo-haptics";
 import type { TagsData } from "@/hooks/useRecipeForm";
 import { DIET_TAG_OPTIONS, type DietTag } from "./types";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import {
   Spacing,
   BorderRadius,
@@ -30,6 +31,7 @@ interface TagsStepProps {
 
 export default function TagsStep({ tags, setTags }: TagsStepProps) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
 
   const handleCuisineChange = useCallback(
     (text: string) => {
@@ -40,10 +42,10 @@ export default function TagsStep({ tags, setTags }: TagsStepProps) {
 
   const handleTagToggle = useCallback(
     (tag: DietTag) => {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setTags({ ...tags, dietTags: toggleDietTag(tags.dietTags, tag) });
     },
-    [tags, setTags],
+    [tags, setTags, haptics],
   );
 
   return (
