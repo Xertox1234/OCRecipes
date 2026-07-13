@@ -1,5 +1,6 @@
-import type { Express, Response } from "express";
+import type { Express, Request, Response } from "express";
 import crypto from "crypto";
+import { rateLimit } from "express-rate-limit";
 import { storage, MAX_IMAGE_SIZE_BYTES } from "../storage";
 import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -37,7 +38,11 @@ import {
   requireValidImage,
   formatZodError,
 } from "./_helpers";
-import { photoRateLimit, crudRateLimit } from "./_rate-limiters";
+import {
+  photoRateLimit,
+  crudRateLimit,
+  ipKeyGenerator,
+} from "./_rate-limiters";
 import { upload, createImageUpload } from "./_upload";
 
 // Higher file size limit for label photos (5MB for text readability)
@@ -453,14 +458,31 @@ export function register(app: Express): void {
 
   // ── Recipe Text Structuring ──────────────────────────────────────────
   // Not premium-gated (unlike analyze-recipe above): this is a text-only
-  // completion, no vision call, so it's cheap — photoRateLimit is the abuse
+  // completion, no vision call, so it's cheap — rate limiting is the abuse
   // control instead of a paywall. See docs/superpowers/specs/
   // 2026-07-13-paste-text-import-and-normalization-design.md for provenance.
 
   app.post(
     "/api/photos/structure-recipe",
     requireAuth,
-    photoRateLimit,
+    // Limiter inlined here (rather than the photoRateLimit factory const used
+    // by the sibling photo routes above) so CodeQL's js/missing-rate-limiting
+    // query can trace it — the createRateLimiter factory-const indirection is
+    // invisible to its dataflow (the historically-dismissed #146–#215 cluster;
+    // see server/routes/recipe-search.ts's /api/recipes/trending route for the
+    // same pattern). Behavior is byte-identical to photoRateLimit: 10/min,
+    // user-keyed with the same Railway-aware IP fallback.
+    rateLimit({
+      windowMs: 60 * 1000,
+      max: 10,
+      message: {
+        error: "Too many photo uploads. Please wait.",
+        code: "RATE_LIMITED",
+      },
+      standardHeaders: true,
+      legacyHeaders: false,
+      keyGenerator: (req: Request) => req.userId || ipKeyGenerator(req),
+    }),
     async (req: AuthenticatedRequest, res: Response) => {
       try {
         const parsed = structureRecipeTextSchema.safeParse(req.body);
