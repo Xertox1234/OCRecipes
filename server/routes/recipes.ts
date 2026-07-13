@@ -183,29 +183,23 @@ export function register(app: Express): void {
           userProfile,
         });
 
-        // Normalize generated recipe data
-        const normalized = normalizeRecipeFields({
+        // Normalize title/ingredients here — not redundant — to match
+        // existing meal-type inference behavior. Full persistence
+        // normalization now happens inside storage.createRecipeWithLimitCheck
+        // (see Task 6).
+        const normalizedForMealTypes = normalizeRecipeFields({
           title: generatedRecipe.title,
-          description: generatedRecipe.description,
-          difficulty: generatedRecipe.difficulty,
-          instructions: generatedRecipe.instructions,
           ingredients: generatedRecipe.ingredients,
         });
-        generatedRecipe.title = normalized.title ?? generatedRecipe.title;
-        // Keep the AI-provided original when normalization yields null.
-        generatedRecipe.description =
-          normalized.description ?? generatedRecipe.description;
-        generatedRecipe.difficulty =
-          normalized.difficulty ?? generatedRecipe.difficulty;
-        generatedRecipe.instructions = normalized.instructions ?? [];
-        if (generatedRecipe.ingredients && normalized.ingredients) {
-          generatedRecipe.ingredients = normalized.ingredients;
-        }
 
         // Compute meal types at the route layer (storage-layer purity — M4)
         const mealTypes = inferMealTypes(
-          generatedRecipe.title,
-          (generatedRecipe.ingredients ?? []).map((i) => i.name),
+          normalizedForMealTypes.title ?? generatedRecipe.title,
+          (
+            normalizedForMealTypes.ingredients ??
+            generatedRecipe.ingredients ??
+            []
+          ).map((i) => i.name),
         );
 
         // Atomically re-check limit + create recipe + log generation in a transaction
@@ -249,7 +243,7 @@ export function register(app: Express): void {
         fireAndForget(
           "generate recipe image",
           generateAndPatchRecipeImage(recipe.id, {
-            title: generatedRecipe.title,
+            title: recipe.title,
             productName,
             cuisine: recipe.cuisineOrigin,
             mealTypes: recipe.mealTypes,

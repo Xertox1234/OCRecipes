@@ -226,39 +226,29 @@ export function register(app: Express): void {
           return;
         }
 
-        // Normalize data
-        const normalized = normalizeRecipeFields({
+        // normalizeRecipeFields is still called here — not redundant — to
+        // feed inferMealTypes with clean title/ingredient-name input.
+        // Persistence normalization now happens inside
+        // storage.createMealPlanRecipe (see Task 4), so raw recipeData /
+        // ingredients are passed to it directly below.
+        const normalizedForMealTypes = normalizeRecipeFields({
           title: recipeData.title,
-          description: recipeData.description ?? null,
-          difficulty: recipeData.difficulty ?? null,
-          instructions: recipeData.instructions,
           ingredients,
         });
-        const normalizedTitle = normalized.title ?? recipeData.title;
-        const normalizedDescription = normalized.description;
-        const normalizedDifficulty = normalized.difficulty;
-        const normalizedInstructions = normalized.instructions;
-        const normalizedIngredients = normalized.ingredients;
 
         // Infer meal types from title + ingredients (moved from storage layer to maintain layering)
         const mealTypes = inferMealTypes(
-          normalizedTitle,
-          normalizedIngredients?.map((i) => i.name),
+          normalizedForMealTypes.title ?? recipeData.title,
+          normalizedForMealTypes.ingredients?.map((i) => i.name),
         );
         const recipe = await storage.createMealPlanRecipe(
           {
             ...recipeData,
-            title: normalizedTitle,
-            description: normalizedDescription,
-            difficulty: normalizedDifficulty,
-            // recipeData.instructions is `string[] | undefined` (never null), so
-            // the helper's nullable instructions return is never null here.
-            instructions: normalizedInstructions ?? undefined,
             userId: req.userId,
             sourceType,
             mealTypes,
           },
-          normalizedIngredients?.map((ing) => ({
+          ingredients?.map((ing) => ({
             ...ing,
             recipeId: 0,
           })),
