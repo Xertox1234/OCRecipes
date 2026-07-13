@@ -12,7 +12,7 @@ created: '2026-07-13'
 
 ## Rule
 
-Any storage-layer write path that inserts a free-text or AI-generated quantity string into a nullable Postgres `decimal` column (e.g. `recipeIngredients.quantity`, `decimal(10,2)`) must first normalize the string via `normalizeIngredient` (`server/lib/recipe-normalization.ts`), then gate the normalized result through a `DECIMAL_QUANTITY_RE`-style check (`/^\d+(\.\d+)?$/`), coercing to `null` when it doesn't match. Never insert a raw quantity string into a decimal column.
+Any storage-layer write path that inserts a free-text or AI-generated quantity string into a nullable Postgres `decimal` column (e.g. `recipeIngredients.quantity`, `decimal(10,2)`) must first normalize the string via `normalizeIngredient` (`server/lib/recipe-normalization.ts`), then gate the normalized result through a `DECIMAL_QUANTITY_RE`-style check that bounds both format AND magnitude (`/^\d{1,8}(\.\d+)?$/` — the digit cap must match the column's integer-part precision: `decimal(p, s)` allows `p - s` integer digits, so `decimal(10,2)` allows 8), coercing to `null` when it doesn't match. Never insert a raw quantity string into a decimal column.
 
 ```typescript
 // ❌ BAD: raw quantity string reaches the decimal column
@@ -20,8 +20,8 @@ await tx.insert(recipeIngredients).values(
   ingredients.map((ing) => ({ ...ing, recipeId })),
 );
 
-// ✅ GOOD: normalize, then null-coerce anything that still isn't a clean decimal
-const DECIMAL_QUANTITY_RE = /^\d+(\.\d+)?$/;
+// ✅ GOOD: normalize, then null-coerce anything that still isn't a clean, in-range decimal
+const DECIMAL_QUANTITY_RE = /^\d{1,8}(\.\d+)?$/;
 const normalized = ingredients.map((ing) => {
   const n = normalizeIngredient({ name: ing.name, quantity: ing.quantity ?? "", unit: ing.unit ?? "" });
   return {
@@ -43,10 +43,6 @@ Postgres `decimal` columns reject any non-numeric string outright — there is n
 ## Exceptions
 
 A column that is JSONB (e.g. `communityRecipes.ingredients`) or `text` has no such constraint — free-text quantities are safe there and need no coercion. Only a numeric-typed column (`decimal`, `integer`, etc.) needs this treatment.
-
-## Known gap (not yet fixed)
-
-`DECIMAL_QUANTITY_RE` (`/^\d+(\.\d+)?$/`) bounds format but not magnitude — a quantity like `"100000000"` passes the regex but still overflows a `decimal(10,2)` column (`numeric field overflow`) at insert time. Both current call sites share this gap; tightening the regex to `/^\d{1,7}(\.\d+)?$/` (matching the column's 8-digit integer-part precision) would close it in one place if picked up.
 
 ## Related Files
 

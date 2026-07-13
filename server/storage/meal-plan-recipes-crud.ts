@@ -95,9 +95,11 @@ export async function getUserMealPlanRecipes(
   return { items, total: Number(countResult[0]?.count ?? 0) };
 }
 
-/** Matches a clean decimal string like "2" or "1.5" — anything else can't be
- * stored in `recipeIngredients.quantity` (a nullable `decimal(10,2)` column). */
-const DECIMAL_QUANTITY_RE = /^\d+(\.\d+)?$/;
+/** Matches a clean decimal string like "2" or "1.5" that fits `recipeIngredients.quantity`
+ * (a nullable `decimal(10,2)` column: precision 10, scale 2, so at most 8 integer digits —
+ * `99999999.99` is the largest value the column accepts). Anything else, including a
+ * numerically-shaped but over-magnitude string like "123456789", can't be stored. */
+const DECIMAL_QUANTITY_RE = /^\d{1,8}(\.\d+)?$/;
 
 export async function createMealPlanRecipe(
   recipe: InsertMealPlanRecipe,

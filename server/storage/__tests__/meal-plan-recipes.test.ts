@@ -395,6 +395,40 @@ describe("meal-plan-recipes storage", () => {
         .where(eq(recipeIngredients.recipeId, created.id));
       expect(ing.quantity).toBeNull();
     });
+
+    it("stores a null quantity instead of overflowing when the quantity exceeds the column's precision", async () => {
+      const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
+        {
+          recipeId: 0,
+          name: "Sugar",
+          quantity: "123456789",
+          unit: "g",
+          displayOrder: 0,
+        },
+      ]);
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, created.id));
+      expect(ing.quantity).toBeNull();
+    });
+
+    it("still accepts a quantity at the column's 8-digit integer-part boundary", async () => {
+      const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
+        {
+          recipeId: 0,
+          name: "Flour",
+          quantity: "99999999",
+          unit: "g",
+          displayOrder: 0,
+        },
+      ]);
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, created.id));
+      expect(ing.quantity).toBe("99999999.00");
+    });
   });
 
   // ==========================================================================
@@ -503,6 +537,50 @@ describe("meal-plan-recipes storage", () => {
         .from(recipeIngredients)
         .where(eq(recipeIngredients.recipeId, result[0].recipeId));
       expect(ing.quantity).toBeNull();
+    });
+
+    it("stores a null quantity instead of overflowing when the quantity exceeds the column's precision", async () => {
+      const result = await createMealPlanFromSuggestions([
+        {
+          recipe: makeRecipeInput(testUser.id),
+          ingredients: [
+            makeIngredient({ name: "Sugar", quantity: "123456789", unit: "g" }),
+          ],
+          planItem: {
+            userId: testUser.id,
+            plannedDate: "2026-05-15",
+            mealType: "dinner",
+          },
+        },
+      ]);
+
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, result[0].recipeId));
+      expect(ing.quantity).toBeNull();
+    });
+
+    it("still accepts a quantity at the column's 8-digit integer-part boundary", async () => {
+      const result = await createMealPlanFromSuggestions([
+        {
+          recipe: makeRecipeInput(testUser.id),
+          ingredients: [
+            makeIngredient({ name: "Flour", quantity: "99999999", unit: "g" }),
+          ],
+          planItem: {
+            userId: testUser.id,
+            plannedDate: "2026-05-15",
+            mealType: "dinner",
+          },
+        },
+      ]);
+
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, result[0].recipeId));
+      expect(ing.quantity).toBe("99999999.00");
     });
   });
 
