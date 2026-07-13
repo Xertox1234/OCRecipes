@@ -15,6 +15,7 @@ import {
   analyzePhoto,
   analyzeLabelPhoto,
   analyzeRecipePhoto,
+  structureRecipeFromText,
   classifyAndAnalyze,
   refineAnalysis,
   needsFollowUp,
@@ -34,6 +35,7 @@ import {
   getPremiumFeatures,
   parseStringParam,
   requireValidImage,
+  formatZodError,
 } from "./_helpers";
 import { photoRateLimit, crudRateLimit } from "./_rate-limiters";
 import { upload, createImageUpload } from "./_upload";
@@ -63,6 +65,15 @@ const confirmPhotoSchema = z.object({
   mealType: z.string().optional(),
   preparationMethods: z.array(preparationMethodSchema).optional(),
   analysisIntent: photoIntentSchema.optional(),
+});
+
+// Zod schema for text-based recipe structuring. `pageTexts` is an array (not
+// a single string) so a future OCR-first multi-page camera flow can reuse
+// this same endpoint without a signature change — paste-text always sends a
+// single-element array. Not premium-gated (see route below), so the 3-item
+// cap and per-item length cap are real abuse controls, not just validation.
+const structureRecipeTextSchema = z.object({
+  pageTexts: z.array(z.string().min(1).max(4000)).min(1).max(3),
 });
 
 /**
@@ -436,6 +447,37 @@ export function register(app: Express): void {
         res.json(result);
       } catch (error) {
         handleRouteError(res, error, "analyze recipe photo");
+      }
+    },
+  );
+
+  // ── Recipe Text Structuring ──────────────────────────────────────────
+  // Not premium-gated (unlike analyze-recipe above): this is a text-only
+  // completion, no vision call, so it's cheap — photoRateLimit is the abuse
+  // control instead of a paywall. See docs/superpowers/specs/
+  // 2026-07-13-paste-text-import-and-normalization-design.md for provenance.
+
+  app.post(
+    "/api/photos/structure-recipe",
+    requireAuth,
+    photoRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      try {
+        const parsed = structureRecipeTextSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return sendError(
+            res,
+            400,
+            formatZodError(parsed.error),
+            ErrorCode.VALIDATION_ERROR,
+          );
+        }
+
+        const result = await structureRecipeFromText(parsed.data.pageTexts);
+
+        res.json(result);
+      } catch (error) {
+        handleRouteError(res, error, "structure recipe from text");
       }
     },
   );
