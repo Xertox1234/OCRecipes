@@ -16,12 +16,17 @@
  * error-response path.
  *
  * PII posture (verified against the installed @sentry/node 10.65.0 source):
- * `sendDefaultPii: false` only withholds IP/user data. Request headers,
- * cookies, and query strings still attach raw to error events, and the
- * default httpIntegration buffers up to 10KB of every incoming request
- * body onto events regardless of that flag. The REAL controls here are
- * `maxIncomingRequestBodySize: "none"` (bodies are never even buffered)
- * and the `beforeSend` scrub below (headers/cookies/query stripped).
+ * `sendDefaultPii: false` only withholds IP/user data — including, as an
+ * SDK-internal side effect (not a documented contract — see
+ * SENSITIVE_HEADER_SNIPPETS below), a fixed 12-name exact-match set of
+ * IP-adjacent headers the default `requestDataIntegration` strips from
+ * `event.request.headers` when that flag is off. Everything else — the
+ * rest of the request headers, cookies, and query strings — still attaches
+ * raw to error events, and the default httpIntegration buffers up to 10KB
+ * of every incoming request body onto events regardless of that flag. The
+ * REAL controls here are `maxIncomingRequestBodySize: "none"` (bodies are
+ * never even buffered) and the `beforeSend` scrub below (headers/cookies/
+ * query stripped) — never the `sendDefaultPii` side effect above.
  */
 import * as Sentry from "@sentry/node";
 import type { Application } from "express";
@@ -69,24 +74,92 @@ function underRateCap(): boolean {
  * sensitive-key filtering applies only to span attributes, which we never
  * emit). This must cover `authorization` (bearer JWTs), `x-api-key` (the
  * B2B partner credential read by server/middleware/api-key-auth.ts), and
- * `cookie` (credential snippets mirror the SDK's SENSITIVE_KEY_SNIPPETS) —
- * plus client-IP headers (`x-forwarded-for`, `x-real-ip`,
- * `cf-connecting-ip`, `true-client-ip`): IPs are GDPR/CCPA PII, and
- * `sendDefaultPii: false` only withholds the SDK-inferred
- * `user.ip_address`, not the raw headers.
+ * `cookie`.
+ *
+ * The credential-oriented entries below (through `"cookie"`) are a verified
+ * reconciliation with the installed SDK's own deny-list — read directly from
+ * `node_modules/@sentry/node/node_modules/@sentry/core/.../filtering-snippets.js`
+ * `SENSITIVE_KEY_SNIPPETS` (@sentry/core 10.65.0, 2026-07-12), not from docs.
+ * Do NOT assume future parity — re-diff against the installed source on any
+ * @sentry/node major/minor bump.
+ *
+ * The client-IP entries after that are an OCRecipes-specific addition and
+ * are NOT part of Sentry's SENSITIVE_KEY_SNIPPETS. Two OTHER SDK mechanisms
+ * touch IP-adjacent headers when `sendDefaultPii: false`, but neither is a
+ * substitute for this list: `PII_HEADER_SNIPPETS` scrubs span attributes
+ * only (we never emit spans — tracesSampleRate is never set); the default
+ * `requestDataIntegration` (merged into every `Sentry.init` call here —
+ * array-form `integrations` ADDS to the SDK's defaults, per
+ * `getIntegrationsToSetup` in @sentry/core, it does not replace them)
+ * exact-name-strips a fixed 12-entry `ipHeaderNames` list
+ * (`x-forwarded-for`, `cf-connecting-ip`, `x-real-ip`, `true-client-ip`,
+ * etc. — see @sentry/core `vendor/getIpAddress.js`) from
+ * `event.request.headers` directly, but only as a side effect of
+ * `sendDefaultPii: false` gating its internal `include.ip` flag — an SDK
+ * implementation detail, not a documented contract, so it is NOT relied on
+ * here. This list is verified to be a case-insensitive substring superset
+ * of those 12 exact names, so IP headers stay scrubbed even if that
+ * internal SDK behavior ever changes or that integration is ever excluded.
+ * IPs are GDPR/CCPA PII regardless of which mechanism catches them.
+ *
+ * Referer/Origin header VALUES are deliberately NOT scrubbed today — see the
+ * DECISION note below.
  */
 const SENSITIVE_HEADER_SNIPPETS = [
+  // Verified parity with @sentry/core's SENSITIVE_KEY_SNIPPETS (see above).
   "auth",
   "token",
-  "key",
   "secret",
   "session",
+  "password",
+  "passwd",
+  "pwd",
+  "key",
+  "jwt",
+  "bearer",
+  "sso",
+  "saml",
+  "csrf",
+  "xsrf",
+  "credentials",
+  "sid",
+  "identity",
+  "set-cookie",
   "cookie",
+  // OCRecipes-specific: client-IP headers (GDPR/CCPA PII), not in Sentry's
+  // own list.
   "forwarded",
   "real-ip",
   "connecting-ip",
   "client-ip",
 ];
+
+/**
+ * DECISION (2026-07-12): header-NAME matching above is sufficient for now;
+ * header-VALUE scrubbing (e.g. stripping the query string out of a
+ * `Referer` value) is deliberately NOT implemented, because `referer`
+ * doesn't match any SENSITIVE_HEADER_SNIPPETS entry and passes through
+ * `scrubEvent` unmodified. `Origin` is excluded from this concern entirely —
+ * it is spec-defined as scheme+host+port only and structurally cannot carry
+ * a path or query string, so it can never carry a token regardless.
+ *
+ * `Referer` is the real vector: `GET /verify-email?token=…`
+ * (`server/lib/verify-email-page.ts`) already renders a live token in its
+ * own URL and is opened in real browsers today (it works in ANY browser by
+ * design — no app install required). It is safe ONLY because that page
+ * emits zero external subresource requests (inline CSS only, its one CTA
+ * link is a bare `ocrecipes://` scheme, not an `http(s)://` URL) — no
+ * subsequent request ever carries that page's URL as `Referer`. REVISIT the
+ * moment any page that renders a live token in its own URL gains an
+ * `http(s)://` link, asset, redirect, or analytics beacon — not "the day a
+ * web client ships" (that framing undersells the risk: the vector is any
+ * browser-rendered, token-bearing page gaining an outbound same-origin or
+ * cross-origin request, which could happen to `verify-email-page.ts` itself
+ * before a formal web client exists). At that point, either add `referer`
+ * to `SENSITIVE_HEADER_SNIPPETS` (blunt: drops the header entirely) or
+ * strip just the query string from its value in `scrubEvent` (surgical: the
+ * same treatment `request.url` already gets below).
+ */
 
 /**
  * PII scrubber for outbound events — the load-bearing control on this

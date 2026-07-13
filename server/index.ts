@@ -36,10 +36,40 @@ process.on("uncaughtException", (error) => {
   rootLogger.flush();
   // Sentry's OnUncaughtException integration has already captured the error
   // (with exitEvenIfOtherHandlersAreRegistered: false, so this handler owns
-  // the exit); give its transport a bounded drain window alongside pino's.
-  void flushErrorReporter(400);
-  // Give async transport time to drain before exiting
-  setTimeout(() => process.exit(1), 500);
+  // the exit); explicitly chain the bounded drain into the exit call itself
+  // (.finally()-style, matching the graceful-shutdown path below) instead of
+  // relying on the implicit 400ms-flush < 500ms-exit-delay timing coupling.
+  //
+  // flushErrorReporter resolves INSTANTLY when the reporter is inactive
+  // (dev — NODE_ENV !== "production" — or prod without SENTRY_DSN; see its
+  // docstring). A bare `.finally(() => process.exit(1))` on an
+  // already-resolved promise would fire on the very next microtask, i.e.
+  // near-immediately — collapsing the drain window the old unconditional
+  // 500ms setTimeout gave rootLogger.flush() above. That matters in dev,
+  // where rootLogger uses pino-pretty's worker-thread transport (genuinely
+  // async unlike production's synchronous stdout write): an instant exit
+  // could truncate this very "uncaught exception" fatal log before the
+  // worker thread processes the flush. `minDelay` restores that floor by
+  // requiring BOTH the flush and a 500ms timer to settle before exiting.
+  //
+  // Timing note: `flushErrorReporter(400)`'s "400" is a per-step timeout
+  // passed to @sentry/core's `client.flush()`, which sequentially awaits
+  // _isClientDoneProcessing(timeout) THEN transport.flush(timeout) — each
+  // independently bounded — so the real worst case is ~2x that (~800ms),
+  // not 400ms. The independent backstop below is set above that worst case
+  // so it only fires if the SDK's own internal bound is ever violated.
+  const minDelay = new Promise<void>((resolve) => setTimeout(resolve, 500));
+  void Promise.all([flushErrorReporter(400), minDelay]).finally(() =>
+    process.exit(1),
+  );
+  // Independent hard backstop (mirrors the graceful-shutdown path's own
+  // force-exit timer): guarantees exit even if flushErrorReporter's promise
+  // somehow never settles — Sentry.flush()'s bound is a third-party SDK
+  // implementation detail, not a contract this codebase controls. Set above
+  // the ~800ms realistic worst case above so it never fires under normal
+  // conditions. process.exit() only takes effect on its first call, so this
+  // is a no-op once the chain above has already exited.
+  setTimeout(() => process.exit(1), 1000);
 });
 
 process.on("unhandledRejection", (reason) => {

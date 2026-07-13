@@ -5,6 +5,23 @@ import type { ErrorEvent } from "@sentry/node";
 // Mock @sentry/node before the module under test loads it. This factory takes
 // precedence over the test/mocks/sentry-node.ts alias in vitest.config.ts
 // (the alias exists to keep the ~500ms real import out of route tests).
+//
+// DECISION (2026-07-12): no integration test runs this suite against the
+// REAL @sentry/node SDK (only vi.mock, as below). This was considered as
+// extra hardening — a future SDK upgrade that restructures where PII lands
+// on the outgoing event (the exact bug class scrubEvent/beforeSendHandler
+// exist to fix) wouldn't be caught by a mocked test. It was not pursued
+// because the obstacle is structural, not a missing test: vitest.config.ts's
+// `resolve.alias` for "@sentry/node" (line ~137) rewrites the specifier to
+// test/mocks/sentry-node.ts at the bundler level, before Vitest's mock layer
+// runs — `vi.unmock`/`vi.importActual` intercept `vi.mock()` factories, not
+// resolve.alias, so neither can recover the real package from inside this
+// file. Defeating it would require a per-file resolver override (e.g. a
+// second Vitest project/config, or a conditional alias keyed on the test
+// path) that touches shared config and risks the ~500ms cost this alias was
+// added to avoid for every route test. Left as a follow-up if the project
+// adopts per-file Vitest projects for another reason; not worth a
+// standalone config change for this alone.
 const sentryMocks = vi.hoisted(() => ({
   init: vi.fn(),
   captureException: vi.fn(),
@@ -192,6 +209,58 @@ describe("error-reporter", () => {
     });
   });
 
+  describe("SENSITIVE_HEADER_SNIPPETS drift guard", () => {
+    it("strips a header for every credential snippet in the INSTALLED @sentry/core SENSITIVE_KEY_SNIPPETS", async () => {
+      // Reads the installed SDK's real deny-list off disk (same static-read
+      // technique as the boot-ordering tests below) instead of importing
+      // "@sentry/node" — that specifier is aliased to test/mocks/sentry-node.ts
+      // in vitest.config.ts, so a live import here would resolve to the stub,
+      // not the real SDK. Path is the same one cited in error-reporter.ts's
+      // own doc comment: node_modules/@sentry/node's OWN nested @sentry/core
+      // copy (10.65.0) — NOT the top-level node_modules/@sentry/core, which
+      // a different dependency pins to 10.12.0, a version that predates this
+      // file existing entirely.
+      //
+      // Deliberately fragile: an unrelated dependency-tree restructuring (not
+      // just a @sentry/node bump) can break this path. That's the point — it
+      // fails LOUDLY and forces a re-verification, rather than silently
+      // drifting the way SENSITIVE_HEADER_SNIPPETS itself already did once
+      // (PR #589 shipped only 6 of the SDK's 19 real entries despite a
+      // docstring already claiming parity — see the docs/solutions writeup).
+      const { readFile } = await import("node:fs/promises");
+      const { fileURLToPath } = await import("node:url");
+      const snippetsPath = fileURLToPath(
+        new URL(
+          "../../../node_modules/@sentry/node/node_modules/@sentry/core/build/cjs/utils/data-collection/filtering-snippets.js",
+          import.meta.url,
+        ).href,
+      );
+      const source = await readFile(snippetsPath, "utf8");
+      const match = source.match(
+        /const SENSITIVE_KEY_SNIPPETS = \[([\s\S]*?)\];/,
+      );
+      expect(match).not.toBeNull();
+      const sdkSnippets = [...match![1].matchAll(/"([^"]+)"/g)].map(
+        (m) => m[1],
+      );
+      // Sanity floor: if the regex above ever silently stops matching (e.g.
+      // the SDK reformats the file), fail loudly here instead of the loop
+      // below vacuously passing over zero snippets.
+      expect(sdkSnippets.length).toBeGreaterThan(10);
+
+      const { scrubEvent } = await importReporter();
+      for (const snippet of sdkSnippets) {
+        const headerName = `x-probe-${snippet}-header`;
+        const event = {
+          type: undefined,
+          request: { headers: { [headerName]: "sensitive-value" } },
+        };
+        const scrubbed = scrubEvent(event as ErrorEvent);
+        expect(scrubbed.request?.headers).not.toHaveProperty(headerName);
+      }
+    });
+  });
+
   describe("beforeSendHandler", () => {
     it("tags events with the ALS requestId inside a request context", async () => {
       const { beforeSendHandler } = await importReporter();
@@ -328,5 +397,36 @@ describe("server/index.ts boot ordering invariant", () => {
     const source = await readFile(indexPath, "utf8");
     const imports = source.match(/^import\s+.*$/gm) ?? [];
     expect(imports[1]).toBe('import "./lib/error-reporter-boot";');
+  });
+
+  it("keeps registerRoutes -> attachExpressErrorReporter -> setupErrorHandler call ordering in startServer", async () => {
+    // Static source-order guard (same technique as the import-order test
+    // above): Sentry's Express error handler must be registered after all
+    // routes (so it can see their errors) and before the app's own JSON
+    // error handler (so it always forwards via next(err)) — this is
+    // currently correct only by inspection/comment, not enforced.
+    //
+    // Caveat: this is a textual tripwire, not a runtime guarantee — it
+    // verifies today's declaration order but can't catch a refactor that
+    // preserves that order while changing runtime semantics (e.g. wrapping
+    // one call in a conditional, or moving it into a helper invoked from a
+    // different branch). Cheap regression net, not proof the ordering holds
+    // at runtime.
+    const { readFile } = await import("node:fs/promises");
+    const { fileURLToPath } = await import("node:url");
+    const indexPath = fileURLToPath(
+      new URL("../../index.ts", import.meta.url).href,
+    );
+    const source = await readFile(indexPath, "utf8");
+
+    const registerIdx = source.indexOf("registerRoutes(app)");
+    const attachIdx = source.indexOf("attachExpressErrorReporter(app)");
+    const setupIdx = source.indexOf("setupErrorHandler(app)");
+
+    expect(registerIdx).toBeGreaterThan(-1);
+    expect(attachIdx).toBeGreaterThan(-1);
+    expect(setupIdx).toBeGreaterThan(-1);
+    expect(registerIdx).toBeLessThan(attachIdx);
+    expect(attachIdx).toBeLessThan(setupIdx);
   });
 });
