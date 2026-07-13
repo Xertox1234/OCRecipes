@@ -145,7 +145,7 @@ OCRecipes/
 | ------------ | ------- | ------------------ |
 | Express.js   | 5.0     | HTTP server        |
 | Drizzle ORM  | -       | Database ORM       |
-| PostgreSQL   | 12+     | Database           |
+| PostgreSQL   | 13+     | Database           |
 | bcrypt       | -       | Password hashing   |
 | jsonwebtoken | -       | JWT authentication |
 | OpenAI SDK   | -       | AI suggestions     |
