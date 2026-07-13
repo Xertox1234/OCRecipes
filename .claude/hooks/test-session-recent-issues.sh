@@ -107,7 +107,7 @@ fi
 
 if [ "$LOG_TEST_HAS_PG" = "1" ]; then
   OUT_ON=$(echo "$LOG_SESS" | RECENT_SOLUTIONS_DIR="$FIX" LAB_DATABASE_URL="$LOG_TEST_URL" bash "$HOOK")
-  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$LOG_TEST_DB\"" >/dev/null 2>&1
+  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$LOG_TEST_DB\" WITH (FORCE)" >/dev/null 2>&1
   if [ "$OUT_ON" = "$OUT_OFF" ] && [ "$OUT_ON" = "$OUT_DBDOWN" ]; then
     echo "ok: digest output byte-identical across logging on/off/DB-down"
   else

@@ -67,7 +67,7 @@ TEST_URL="postgresql://localhost/$TEST_DB"
 FIX=""
 EMPTY_FIX=""
 cleanup() {
-  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1
+  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\" WITH (FORCE)" >/dev/null 2>&1
   [ -z "$FIX" ] || rm -rf "$FIX"
   [ -z "$EMPTY_FIX" ] || rm -rf "$EMPTY_FIX"
 }

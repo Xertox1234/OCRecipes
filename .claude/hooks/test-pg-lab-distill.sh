@@ -170,7 +170,7 @@ TEST_DB="pg_lab_distill_test_$$"
 TEST_URL="postgresql://localhost/$TEST_DB"
 FIX=""
 cleanup() {
-  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1
+  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\" WITH (FORCE)" >/dev/null 2>&1
   [ -z "$FIX" ] || rm -rf "$FIX"
 }
 trap cleanup EXIT
@@ -393,7 +393,7 @@ psql -X -q -d postgres -c "CREATE DATABASE \"$EMPTY_DB\"" >/dev/null 2>&1
 HINT=$(LAB_DATABASE_URL="postgresql://localhost/$EMPTY_DB" bash "$SCRIPT" --report 2>&1)
 assert_contains "report: transcripts precondition hint" "$HINT" "transcripts.sh --import"
 assert_contains "report: solution_titles precondition hint" "$HINT" "codify-neardup.sh --rebuild"
-psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$EMPTY_DB\"" >/dev/null 2>&1
+psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$EMPTY_DB\" WITH (FORCE)" >/dev/null 2>&1
 
 # Unrecognized input must RE-PROMPT, not silently quit: pre-fix `q|*)` treated a typo or a
 # blank Enter as quit, ending a 254-candidate review after a stray keystroke (live,

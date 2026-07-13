@@ -27,7 +27,7 @@ assert_contains "denylist names nutricam" "$OUT" "nutricam"
 # Unresolvable watch-pid: no --watch-pid and no claude ancestor -> WARN + exit 3, no lock.
 psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local Postgres reachable"; exit 0; }
 TEST_DB="pg_lab_dbserial_test_$$"; TEST_URL="postgresql://localhost/$TEST_DB"
-cleanup() { bash "$LOCK" release --key "k-$$" >/dev/null 2>&1; rm -f /tmp/claude-db-serial-*-k-$$* 2>/dev/null; psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1; }
+cleanup() { bash "$LOCK" release --key "k-$$" >/dev/null 2>&1; rm -f /tmp/claude-db-serial-*-k-$$* 2>/dev/null; psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\" WITH (FORCE)" >/dev/null 2>&1; }
 trap cleanup EXIT
 LAB_DATABASE_URL="$TEST_URL" bash "$INIT" >/dev/null 2>&1
 psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" -f "$SCHEMA" >/dev/null 2>&1
