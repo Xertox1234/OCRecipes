@@ -16,12 +16,17 @@
  * error-response path.
  *
  * PII posture (verified against the installed @sentry/node 10.65.0 source):
- * `sendDefaultPii: false` only withholds IP/user data. Request headers,
- * cookies, and query strings still attach raw to error events, and the
- * default httpIntegration buffers up to 10KB of every incoming request
- * body onto events regardless of that flag. The REAL controls here are
- * `maxIncomingRequestBodySize: "none"` (bodies are never even buffered)
- * and the `beforeSend` scrub below (headers/cookies/query stripped).
+ * `sendDefaultPii: false` only withholds IP/user data — including, as an
+ * SDK-internal side effect (not a documented contract — see
+ * SENSITIVE_HEADER_SNIPPETS below), a fixed 12-name exact-match set of
+ * IP-adjacent headers the default `requestDataIntegration` strips from
+ * `event.request.headers` when that flag is off. Everything else — the
+ * rest of the request headers, cookies, and query strings — still attaches
+ * raw to error events, and the default httpIntegration buffers up to 10KB
+ * of every incoming request body onto events regardless of that flag. The
+ * REAL controls here are `maxIncomingRequestBodySize: "none"` (bodies are
+ * never even buffered) and the `beforeSend` scrub below (headers/cookies/
+ * query stripped) — never the `sendDefaultPii` side effect above.
  */
 import * as Sentry from "@sentry/node";
 import type { Application } from "express";
@@ -79,12 +84,23 @@ function underRateCap(): boolean {
  * @sentry/node major/minor bump.
  *
  * The client-IP entries after that are an OCRecipes-specific addition and
- * are NOT part of Sentry's SENSITIVE_KEY_SNIPPETS (Sentry keeps IP-adjacent
- * header matching in a separate, narrower `PII_HEADER_SNIPPETS` list used
- * only for its own span-attribute scrubbing, which we never emit): IPs are
- * GDPR/CCPA PII, and `sendDefaultPii: false` only withholds the SDK-inferred
- * `user.ip_address`, not raw `x-forwarded-for` / `x-real-ip` /
- * `cf-connecting-ip` / `true-client-ip` header values.
+ * are NOT part of Sentry's SENSITIVE_KEY_SNIPPETS. Two OTHER SDK mechanisms
+ * touch IP-adjacent headers when `sendDefaultPii: false`, but neither is a
+ * substitute for this list: `PII_HEADER_SNIPPETS` scrubs span attributes
+ * only (we never emit spans — tracesSampleRate is never set); the default
+ * `requestDataIntegration` (merged into every `Sentry.init` call here —
+ * array-form `integrations` ADDS to the SDK's defaults, per
+ * `getIntegrationsToSetup` in @sentry/core, it does not replace them)
+ * exact-name-strips a fixed 12-entry `ipHeaderNames` list
+ * (`x-forwarded-for`, `cf-connecting-ip`, `x-real-ip`, `true-client-ip`,
+ * etc. — see @sentry/core `vendor/getIpAddress.js`) from
+ * `event.request.headers` directly, but only as a side effect of
+ * `sendDefaultPii: false` gating its internal `include.ip` flag — an SDK
+ * implementation detail, not a documented contract, so it is NOT relied on
+ * here. This list is verified to be a case-insensitive substring superset
+ * of those 12 exact names, so IP headers stay scrubbed even if that
+ * internal SDK behavior ever changes or that integration is ever excluded.
+ * IPs are GDPR/CCPA PII regardless of which mechanism catches them.
  *
  * Referer/Origin header VALUES are deliberately NOT scrubbed today — see the
  * DECISION note below.

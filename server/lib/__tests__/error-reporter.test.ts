@@ -209,6 +209,58 @@ describe("error-reporter", () => {
     });
   });
 
+  describe("SENSITIVE_HEADER_SNIPPETS drift guard", () => {
+    it("strips a header for every credential snippet in the INSTALLED @sentry/core SENSITIVE_KEY_SNIPPETS", async () => {
+      // Reads the installed SDK's real deny-list off disk (same static-read
+      // technique as the boot-ordering tests below) instead of importing
+      // "@sentry/node" — that specifier is aliased to test/mocks/sentry-node.ts
+      // in vitest.config.ts, so a live import here would resolve to the stub,
+      // not the real SDK. Path is the same one cited in error-reporter.ts's
+      // own doc comment: node_modules/@sentry/node's OWN nested @sentry/core
+      // copy (10.65.0) — NOT the top-level node_modules/@sentry/core, which
+      // a different dependency pins to 10.12.0, a version that predates this
+      // file existing entirely.
+      //
+      // Deliberately fragile: an unrelated dependency-tree restructuring (not
+      // just a @sentry/node bump) can break this path. That's the point — it
+      // fails LOUDLY and forces a re-verification, rather than silently
+      // drifting the way SENSITIVE_HEADER_SNIPPETS itself already did once
+      // (PR #589 shipped only 6 of the SDK's 19 real entries despite a
+      // docstring already claiming parity — see the docs/solutions writeup).
+      const { readFile } = await import("node:fs/promises");
+      const { fileURLToPath } = await import("node:url");
+      const snippetsPath = fileURLToPath(
+        new URL(
+          "../../../node_modules/@sentry/node/node_modules/@sentry/core/build/cjs/utils/data-collection/filtering-snippets.js",
+          import.meta.url,
+        ).href,
+      );
+      const source = await readFile(snippetsPath, "utf8");
+      const match = source.match(
+        /const SENSITIVE_KEY_SNIPPETS = \[([\s\S]*?)\];/,
+      );
+      expect(match).not.toBeNull();
+      const sdkSnippets = [...match![1].matchAll(/"([^"]+)"/g)].map(
+        (m) => m[1],
+      );
+      // Sanity floor: if the regex above ever silently stops matching (e.g.
+      // the SDK reformats the file), fail loudly here instead of the loop
+      // below vacuously passing over zero snippets.
+      expect(sdkSnippets.length).toBeGreaterThan(10);
+
+      const { scrubEvent } = await importReporter();
+      for (const snippet of sdkSnippets) {
+        const headerName = `x-probe-${snippet}-header`;
+        const event = {
+          type: undefined,
+          request: { headers: { [headerName]: "sensitive-value" } },
+        };
+        const scrubbed = scrubEvent(event as ErrorEvent);
+        expect(scrubbed.request?.headers).not.toHaveProperty(headerName);
+      }
+    });
+  });
+
   describe("beforeSendHandler", () => {
     it("tags events with the ALS requestId inside a request context", async () => {
       const { beforeSendHandler } = await importReporter();
@@ -353,6 +405,13 @@ describe("server/index.ts boot ordering invariant", () => {
     // routes (so it can see their errors) and before the app's own JSON
     // error handler (so it always forwards via next(err)) — this is
     // currently correct only by inspection/comment, not enforced.
+    //
+    // Caveat: this is a textual tripwire, not a runtime guarantee — it
+    // verifies today's declaration order but can't catch a refactor that
+    // preserves that order while changing runtime semantics (e.g. wrapping
+    // one call in a conditional, or moving it into a helper invoked from a
+    // different branch). Cheap regression net, not proof the ordering holds
+    // at runtime.
     const { readFile } = await import("node:fs/promises");
     const { fileURLToPath } = await import("node:url");
     const indexPath = fileURLToPath(

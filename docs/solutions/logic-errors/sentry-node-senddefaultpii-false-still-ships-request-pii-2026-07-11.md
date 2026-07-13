@@ -50,8 +50,16 @@ Verified against installed `@sentry/node` 10.65.0 source, not docs:
   parsed cookies, raw `query_string`, and the full URL to every error
   event. The SDK's `SENSITIVE_KEY_SNIPPETS` filtering applies **only to
   span attributes** (`httpHeadersToSpanAttributes`), never to
-  `event.request`. `sendDefaultPii: false` only withholds IP-derived
-  `user.ip_address` and related user inference.
+  `event.request`. `sendDefaultPii: false` withholds IP-derived
+  `user.ip_address` and related user inference — and, as an SDK-internal
+  side effect of that same `requestDataIntegration` (not a documented
+  contract), also exact-name-strips a fixed 12-entry `ipHeaderNames` list
+  (`x-forwarded-for`, `cf-connecting-ip`, `x-real-ip`, `true-client-ip`,
+  etc. — `@sentry/core` `vendor/getIpAddress.js`) straight off
+  `event.request.headers` when `include.ip` is false. This is narrower
+  than and not a substitute for the manual scrub below: it's an
+  implementation detail of one default integration, not a contract, and
+  it does nothing for the 19 credential-oriented snippets.
 - Outbound http/fetch breadcrumbs attach the raw query string as
   `data["http.query"]` (`@sentry/node-core` `outgoingFetchRequest.js`).
 - Express-handler capture only fires on `next(err)` forwarding; a codebase
@@ -96,7 +104,16 @@ production-only) implements the real controls:
   ships a SEPARATE, narrower `PII_HEADER_SNIPPETS` list — do not conflate
   the two: it is used only for filtering span attributes
   (`httpHeadersToSpanAttributes`), which this module never emits, and has
-  no bearing on `event.request` header scrubbing.
+  no bearing on `event.request` header scrubbing. A THIRD mechanism —
+  the default `requestDataIntegration`'s exact-match `ipHeaderNames` list
+  (see Root Cause above) — does touch `event.request.headers` directly,
+  but only for 12 IP-adjacent names and only as a side effect of
+  `sendDefaultPii: false`, not a contract; don't conflate that one either.
+  A drift guard (`server/lib/__tests__/error-reporter.test.ts` →
+  "SENSITIVE_HEADER_SNIPPETS drift guard") now reads the installed SDK's
+  `SENSITIVE_KEY_SNIPPETS` off disk at test time and asserts `scrubEvent`
+  strips a header for every entry — the exact prior-silent-drift class
+  above now fails a test instead of waiting for the next manual re-diff.
 - Referer/Origin header VALUES (not just names) are a live gap ONLY if a
   page that renders a token in its own URL (`GET /verify-email?token=…`,
   `server/lib/verify-email-page.ts`) gains an outbound `http(s)://`
