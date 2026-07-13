@@ -4,6 +4,7 @@ status: backlog
 priority: low
 created: 2026-07-12
 updated: 2026-07-12
+pr: https://github.com/Xertox1234/OCRecipes/pull/608
 assignee:
 labels: [deferred, pg-lab, testing]
 github_issue:
@@ -48,14 +49,14 @@ Code review of the parent todo's PR narrowed the risk per file:
 
 ## Acceptance Criteria
 
-- [ ] Add `WITH (FORCE)` to the `DROP DATABASE IF EXISTS "$DB"` cleanup call in each of:
+- [x] Add `WITH (FORCE)` to the `DROP DATABASE IF EXISTS "$DB"` cleanup call in each of:
       `.claude/hooks/test-db-serial-lock.sh`, `.claude/hooks/test-inject-patterns.sh`,
       `.claude/hooks/test-pg-lab-codify-neardup.sh`, `.claude/hooks/test-pg-lab-contract-diff.sh`,
       `.claude/hooks/test-pg-lab-distill.sh` (two call sites — both `DROP DATABASE` lines),
       `.claude/hooks/test-pg-lab-git-mine.sh`, `.claude/hooks/test-pg-lab-log-injection.sh`,
       `.claude/hooks/test-pg-lab-symbol-graph.sh`, `.claude/hooks/test-pg-lab-transcripts.sh`,
       `.claude/hooks/test-session-recent-issues.sh`.
-- [ ] Re-run each modified hook test script directly (`bash .claude/hooks/test-*.sh`) and
+- [x] Re-run each modified hook test script directly (`bash .claude/hooks/test-*.sh`) and
       confirm it still passes (or cleanly skips when Postgres/psql is unavailable).
 
 ## Implementation Notes
@@ -85,3 +86,14 @@ hygiene/consistency fix, not a correctness fix for any currently-observed failur
 - Filed during execution of `P3-2026-07-12-pg-lab-throwaway-db-drop-force` — code review
   and implementation confirmed the same unguarded pattern recurs in ~10 sibling hook
   self-test files that were out of scope for that todo.
+- Implemented on branch `todo/pg-lab-drop-database-force-sweep`: `WITH (FORCE)` added at
+  all 11 call sites across the 10 listed files. All 10 modified scripts re-run individually
+  and pass (exit 0, full suite executed — psql/PG18 reachable, not the skip path). Sanity
+  grep confirms zero remaining unguarded `DROP DATABASE IF EXISTS` lines under
+  `.claude/hooks/test-*.sh`. `npm run preflight:fast` passed (stamp for commit `7eab8923`
+  clobbered once by a concurrent worktree session's own preflight run — known, documented
+  last-writer-wins residual in `scripts/lib/preflight-stamp-path.sh`; re-ran to re-stamp).
+  Opened PR #608. **Not guard-eligible for auto-merge** — `scripts/todo-automerge-guard.sh 608`
+  returns HOLD (no archived-todo file in the diff, and separately `.claude/hooks/` is not on
+  the guard's `SAFE_ALLOWLIST` regardless) — needs individual human review/merge. Status
+  stays `backlog` and this file stays un-archived until the PR actually merges.
