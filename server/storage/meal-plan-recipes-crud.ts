@@ -263,6 +263,21 @@ export async function updateMealPlanRecipe(
   userId: string,
   updates: Partial<UpdatableMealPlanRecipeFields>,
 ): Promise<MealPlanRecipe | undefined> {
+  // Normalize only the fields present in this partial update — a
+  // difficulty-only edit must not require a title. Spreading `normalized`
+  // after `updates` overrides just the title/description/difficulty keys
+  // that were actually present; every other field in `updates` (imageUrl,
+  // servings, etc.) passes through untouched.
+  const normalized = normalizeRecipeFields({
+    ...("title" in updates ? { title: updates.title } : {}),
+    ...("description" in updates ? { description: updates.description } : {}),
+    ...("difficulty" in updates ? { difficulty: updates.difficulty } : {}),
+  });
+  const normalizedUpdates: Partial<UpdatableMealPlanRecipeFields> = {
+    ...updates,
+    ...normalized,
+  };
+
   // Fetch the recipe's ingredient names first so we can recompute the
   // `allergens` cache in the same UPDATE — keeps the denormalized column
   // self-healing without a backfill re-run. `UpdatableMealPlanRecipeFields`
@@ -279,7 +294,7 @@ export async function updateMealPlanRecipe(
   // Capture the current imageUrl when it's being replaced so the old stored
   // object can be cleaned up — post-R2 these are durable, billed objects.
   let previousImageUrl: string | null = null;
-  if (updates.imageUrl !== undefined) {
+  if (normalizedUpdates.imageUrl !== undefined) {
     const [existing] = await db
       .select({ imageUrl: mealPlanRecipes.imageUrl })
       .from(mealPlanRecipes)
@@ -291,7 +306,7 @@ export async function updateMealPlanRecipe(
 
   const [recipe] = await db
     .update(mealPlanRecipes)
-    .set({ ...updates, allergens, updatedAt: new Date() })
+    .set({ ...normalizedUpdates, allergens, updatedAt: new Date() })
     .where(and(eq(mealPlanRecipes.id, id), eq(mealPlanRecipes.userId, userId)))
     .returning();
   if (recipe) {

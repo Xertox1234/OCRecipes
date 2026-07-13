@@ -480,6 +480,33 @@ describe("meal-plan-recipes storage", () => {
       expect(result).toBeUndefined();
       expect(searchIndex.addToIndex).not.toHaveBeenCalled();
     });
+
+    it("normalizes the title when updating", async () => {
+      const recipe = await seedRecipe(testUser.id, { title: "Old Title" });
+      const updated = await updateMealPlanRecipe(recipe.id, testUser.id, {
+        title: "new title lowercase",
+      });
+      expect(updated!.title).toBe("New Title Lowercase");
+    });
+
+    it("normalizes difficulty when updating", async () => {
+      const recipe = await seedRecipe(testUser.id);
+      const updated = await updateMealPlanRecipe(recipe.id, testUser.id, {
+        difficulty: "simple",
+      });
+      expect(updated!.difficulty).toBe("Easy");
+    });
+
+    it("does not throw on a title-omitting partial update (difficulty-only edit)", async () => {
+      const recipe = await seedRecipe(testUser.id, {
+        title: "Untouched Title",
+      });
+      const updated = await updateMealPlanRecipe(recipe.id, testUser.id, {
+        difficulty: "hard",
+      });
+      expect(updated!.difficulty).toBe("Hard");
+      expect(updated!.title).toBe("Untouched Title");
+    });
   });
 
   // ==========================================================================
