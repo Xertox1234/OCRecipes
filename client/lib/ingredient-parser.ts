@@ -1,3 +1,5 @@
+import { normalizeQuantityToDecimal } from "@shared/lib/quantity";
+
 export interface ParsedIngredientResult {
   name: string;
   quantity: string | null;
@@ -6,30 +8,6 @@ export interface ParsedIngredientResult {
 
 const UNITS =
   /^(cups?|tbsps?|tablespoons?|tsps?|teaspoons?|oz|ounces?|g|grams?|lbs?|pounds?|ml|kg|cloves?|pinch|dash|bunch|cans?|pkg|slices?|pieces?|whole)\b/i;
-
-/** Parse a fraction string like "1/2" or "1 1/2" to a decimal number */
-function fractionToDecimal(str: string): number | null {
-  // compound fraction: "1 1/2"
-  const compound = str.match(/^(\d+)\s+(\d+)\/(\d+)$/);
-  if (compound) {
-    const whole = parseInt(compound[1], 10);
-    const num = parseInt(compound[2], 10);
-    const den = parseInt(compound[3], 10);
-    if (den === 0) return null;
-    return whole + num / den;
-  }
-  // simple fraction: "1/2"
-  const frac = str.match(/^(\d+)\/(\d+)$/);
-  if (frac) {
-    const num = parseInt(frac[1], 10);
-    const den = parseInt(frac[2], 10);
-    if (den === 0) return null;
-    return num / den;
-  }
-  // plain number
-  const num = parseFloat(str);
-  return isNaN(num) ? null : num;
-}
 
 /**
  * Parse a natural-language ingredient string into structured parts.
@@ -53,8 +31,8 @@ export function parseIngredientText(raw: string): ParsedIngredientResult {
   remaining = remaining.slice(qtyMatch[0].length);
 
   // Convert quantity to decimal string for the DB
-  const decimal = fractionToDecimal(quantityStr);
-  const quantity = decimal !== null ? String(decimal) : quantityStr;
+  const converted = normalizeQuantityToDecimal(quantityStr);
+  const quantity = converted ?? quantityStr;
 
   // Try to match unit
   const unitMatch = remaining.match(UNITS);
