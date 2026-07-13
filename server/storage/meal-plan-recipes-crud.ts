@@ -107,10 +107,12 @@ export async function createMealPlanRecipe(
   // here from the ingredient names — new/edited recipes stay current without
   // a backfill re-run.
   //
-  // Normalization runs here (not in the route layer) so every creation path —
-  // import, AI-generate, manual entry, catalog save — is guaranteed to be
-  // normalized, structurally, rather than depending on each route remembering
-  // to call normalizeRecipeFields itself.
+  // Normalization runs here (not in the route layer) so every creation path
+  // routed through this function — import, manual entry, catalog save — is
+  // guaranteed to be normalized, structurally, rather than depending on each
+  // route remembering to call normalizeRecipeFields itself. Note:
+  // createMealPlanFromSuggestions and saveRecipeFromChat write mealPlanRecipes/
+  // communityRecipes independently and are NOT covered by this guarantee.
   const normalized = normalizeRecipeFields({
     title: recipe.title,
     description: recipe.description,
