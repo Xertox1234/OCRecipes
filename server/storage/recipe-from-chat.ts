@@ -8,6 +8,7 @@ import { db } from "../db";
 import { eq, and, sql } from "drizzle-orm";
 import { recipeChatMetadataSchema } from "@shared/schemas/recipe-chat";
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
+import { normalizeRecipeFields } from "../lib/recipe-normalization";
 
 // ============================================================================
 // CROSS-DOMAIN: RECIPE CHAT — SAVE RECIPE FROM CHAT
@@ -89,30 +90,48 @@ export async function saveRecipeFromChat(
     }
     const { recipe } = parsed.data;
 
-    // 5. Create communityRecipe (private by default). mealTypes must be
+    // 5. Normalize title/description/difficulty/instructions/ingredients —
+    //    matches the pattern used by createRecipeWithLimitCheck
+    //    (server/storage/community-recipes.ts) so a chat-saved recipe reads
+    //    identically to an imported or AI-generated one. `ingredients` is
+    //    JSONB with no format constraint, so no decimal-coercion step is
+    //    needed here (unlike createMealPlanRecipe's DECIMAL quantity column).
+    const normalized = normalizeRecipeFields({
+      title: recipe.title,
+      description: recipe.description,
+      difficulty: recipe.difficulty,
+      instructions: recipe.instructions,
+      ingredients: recipe.ingredients,
+    });
+    const normalizedTitle = normalized.title ?? recipe.title;
+    const normalizedIngredients = normalized.ingredients ?? recipe.ingredients;
+
+    // 6. Create communityRecipe (private by default). mealTypes must be
     //    pre-computed by the caller (storage-layer purity — M5).
     //    Idempotent via sourceMessageId conflict guard (P3-T21).
-    //    `allergens` is derived inline from ingredient names via the pure
-    //    `deriveRecipeAllergens` shared function — always a concrete array so
-    //    the recipe is never a fail-closed `null` row on the search filter.
+    //    `allergens` is derived inline from the normalized ingredient names
+    //    via the pure `deriveRecipeAllergens` shared function — always a
+    //    concrete array so the recipe is never a fail-closed `null` row on
+    //    the search filter. deriveRecipeAllergens lowercases internally, so
+    //    normalizing ingredient names (Title Case) does not change matching.
     const allergens = deriveRecipeAllergens(
-      recipe.ingredients.map((i) => i.name),
+      normalizedIngredients.map((i) => i.name),
     );
     const [created] = await tx
       .insert(communityRecipes)
       .values({
         authorId: userId,
-        normalizedProductName: recipe.title.toLowerCase(),
-        title: recipe.title,
-        description: recipe.description,
-        difficulty: recipe.difficulty,
+        normalizedProductName: normalizedTitle.toLowerCase(),
+        title: normalizedTitle,
+        description: normalized.description,
+        difficulty: normalized.difficulty,
         timeEstimate: recipe.timeEstimate,
         servings: recipe.servings ?? 2,
         dietTags: recipe.dietTags ?? [],
         mealTypes: mealTypes ?? [],
         allergens,
-        instructions: recipe.instructions,
-        ingredients: recipe.ingredients,
+        instructions: normalized.instructions ?? recipe.instructions,
+        ingredients: normalizedIngredients,
         imageUrl: parsed.data.imageUrl ?? null,
         isPublic: false,
         sourceMessageId: messageId,
@@ -133,7 +152,7 @@ export async function saveRecipeFromChat(
       return existing ?? null;
     }
 
-    // 6. Update message metadata with back-reference
+    // 7. Update message metadata with back-reference
     await tx
       .update(chatMessages)
       .set({
