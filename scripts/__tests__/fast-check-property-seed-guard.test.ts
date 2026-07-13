@@ -25,8 +25,11 @@ import { join, sep } from "node:path";
 
 // Directories that never contain first-party TypeScript source: dependency
 // trees, VCS internals, this harness's own worktrees, native/build output.
-// Mirrors vitest.config.ts's `test.exclude` (the repo's authoritative list of
-// what Vitest itself skips) plus a few more non-source roots.
+// A conservative superset of vitest.config.ts's `test.exclude` (the repo's
+// authoritative list of what Vitest itself skips) — deliberately broader,
+// since a directory this walker misses fails OPEN (a property test hiding
+// there is silently never checked), while an extra excluded directory only
+// costs a skipped subtree that never held source anyway.
 // Matched against each entry's basename (not a full path), so ".claude"
 // alone is sufficient to skip ".claude/worktrees" too.
 const EXCLUDED_DIRS = new Set([
@@ -128,6 +131,25 @@ function isInsideAnySpan(index: number, spans: [number, number][]): boolean {
 }
 
 /**
+ * Returns `src` with every string literal and comment span blanked out
+ * (each character replaced with a space, so length/offsets are unchanged).
+ * Used before running a bare `\bseed\s*:/` presence check so a `seed:`
+ * substring that only appears inside a trailing comment or an unrelated
+ * string value (e.g. `{ numRuns: 100 /* seed: omitted for now *\/ }` or
+ * `note: "seed: fixed elsewhere"`) cannot satisfy the requirement — mirrors
+ * `findOpaqueSpans`'s comment-awareness, which the structural parsing
+ * (`extractBalanced`/`splitTopLevelArgs`/the `const` scan) already had, but
+ * the seed-presence regex itself did not.
+ */
+function redactOpaqueSpans(src: string): string {
+  const chars = src.split("");
+  for (const [start, end] of findOpaqueSpans(src)) {
+    for (let i = start; i < end; i++) chars[i] = " ";
+  }
+  return chars.join("");
+}
+
+/**
  * Extracts the substring from `openIndex` (an opening bracket) to its
  * matching closing bracket, inclusive, by tracking nesting depth — skipping
  * over string literals and comments so their contents can't contribute stray
@@ -209,7 +231,7 @@ function findSeededIdentifiers(src: string): Set<string> {
     if (isInsideAnySpan(match.index, opaqueSpans)) continue;
     const braceStart = src.indexOf("{", match.index);
     const body = extractBalanced(src, braceStart, "{", "}");
-    if (/\bseed\s*:/.test(body)) seeded.add(match[1]);
+    if (/\bseed\s*:/.test(redactOpaqueSpans(body))) seeded.add(match[1]);
   }
   return seeded;
 }
@@ -246,9 +268,16 @@ function findUnseededCalls(filePath: string, src: string): string[] {
     const args = splitTopLevelArgs(src, openIndex + 1, closeIndex);
     const configArgs = args.slice(1); // drop the property/predicate argument
     const configText = configArgs.join(",");
-    const hasInlineSeed = /\bseed\s*:/.test(configText);
+    const redactedConfigText = redactOpaqueSpans(configText);
+    const hasInlineSeed = /\bseed\s*:/.test(redactedConfigText);
+    // Escape regex metacharacters in `id` (identifiers may contain `$`,
+    // which is otherwise read as an end-of-string anchor and would make the
+    // pattern unmatchable) before testing against the redacted config text,
+    // so a comment/string mentioning the identifier's bare name can't count.
     const referencesSeededIdentifier = [...seededIdentifiers].some((id) =>
-      new RegExp(`\\b${id}\\b`).test(configText),
+      new RegExp(`\\b${id.replace(/[$]/g, "\\$&")}\\b`).test(
+        redactedConfigText,
+      ),
     );
     if (!hasInlineSeed && !referencesSeededIdentifier) {
       const line = src.slice(0, match.index).split("\n").length;
@@ -371,6 +400,37 @@ describe("findUnseededCalls (unit, synthetic fixtures)", () => {
     `;
     expect(findUnseededCalls("virtual.ts", src)).toHaveLength(1);
   });
+
+  it("does not let a 'seed:' substring inside a comment in the call's config args satisfy the seed requirement", () => {
+    // Regression case: a naive `/\bseed\s*:/.test(configText)` check runs
+    // against unstripped source, so a comment mentioning "seed:" (without an
+    // actual seed key) would fail-open — silently pass a genuinely unseeded
+    // call.
+    const src = `
+      fc.assert(
+        fc.property(fc.integer(), (n) => {
+          expect(n).toBe(n);
+        }),
+        { numRuns: 100 /* seed: intentionally omitted for now */ },
+      );
+    `;
+    expect(findUnseededCalls("virtual.ts", src)).toHaveLength(1);
+  });
+
+  it("does not let a 'seed:' substring inside a string value of a referenced const's body satisfy the seed requirement", () => {
+    // Regression case: same fail-open risk as above, but inside the shared
+    // params object's own body rather than the call's config args.
+    const src = `
+      const FC_PARAMS = { numRuns: 100, note: "seed: fixed elsewhere" };
+      fc.assert(
+        fc.property(fc.integer(), (n) => {
+          expect(n).toBe(n);
+        }),
+        FC_PARAMS,
+      );
+    `;
+    expect(findUnseededCalls("virtual.ts", src)).toHaveLength(1);
+  });
 });
 
 describe("every *.property.test.ts file pins a seed on its fc.assert/fc.check calls (static guard)", () => {
@@ -380,6 +440,14 @@ describe("every *.property.test.ts file pins a seed on its fc.assert/fc.check ca
     expect(files.length).toBeGreaterThan(0);
   });
 
+  // Known limitation (not handled): a *.property.test.ts file written with
+  // `@fast-check/vitest`'s `test.prop()`/`it.prop()` sugar instead of a raw
+  // `fc.assert`/`fc.check` call fails this check with the generic
+  // "has no fc.assert()/fc.check() calls" message below — not a clearer
+  // "test.prop/it.prop isn't recognized yet" message. Not fixed here:
+  // `@fast-check/vitest` isn't a repo dependency and nothing uses it today,
+  // and the convention doc mandates raw `fc.assert`/`fc.check`, so this is a
+  // future-proofing gap rather than a current bug.
   it('every property test file makes at least one fc.assert/fc.check call (a `seed:` check on zero matched calls would pass vacuously — e.g. a file that imports fast-check under a non-`fc` alias, contrary to the convention doc\'s mandated `import * as fc from "fast-check"`)', () => {
     for (const file of files) {
       const src = readFileSync(file, "utf8");
