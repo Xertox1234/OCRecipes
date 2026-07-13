@@ -106,7 +106,13 @@ export async function createRecipeWithLimitCheck(
     ...data,
     title: normalized.title ?? data.title,
     description: normalized.description,
-    difficulty: normalized.difficulty,
+    // normalizeDifficulty maps only a fixed vocabulary (Easy/Medium/Hard +
+    // synonyms) and returns null for anything else — fall back to the raw
+    // value so an unmapped difficulty (legacy chat metadata, a remix's
+    // carried-forward value) is preserved verbatim instead of silently
+    // discarded, matching the title fallback above and the
+    // instructions/ingredients fallbacks below.
+    difficulty: normalized.difficulty ?? data.difficulty,
     instructions: normalized.instructions ?? data.instructions,
     // communityRecipes.ingredients is a non-nullable JSONB string column with
     // no format constraint — normalizeIngredient's output (never null; see

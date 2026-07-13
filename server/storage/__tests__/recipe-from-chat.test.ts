@@ -275,6 +275,24 @@ describe("recipe-from-chat storage", () => {
       );
     });
 
+    it("preserves an unmapped difficulty verbatim instead of discarding it", async () => {
+      const metadata = buildRecipeMetadata(
+        uniqueTitle("Odd Difficulty Recipe"),
+      );
+      metadata.recipe.difficulty = "Challenging";
+      const { conversationId, messageId } = await createConversationWithMessage(
+        { userId: testUser.id, metadata },
+      );
+
+      const recipe = await saveRecipeFromChat(
+        messageId,
+        conversationId,
+        testUser.id,
+      );
+      expect(recipe).not.toBeNull();
+      expect(recipe!.difficulty).toBe("Challenging");
+    });
+
     it("falls back to legacy savedRecipeId pointer when metadata fails validation", async () => {
       // Seed an existing community recipe owned by the user.
       const [existing] = await tx

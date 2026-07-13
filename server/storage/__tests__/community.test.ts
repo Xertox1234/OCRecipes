@@ -274,6 +274,18 @@ describe("community storage", () => {
         { name: "Salt", quantity: "a pinch", unit: "" },
       ]);
     });
+
+    it("preserves an unmapped difficulty verbatim instead of discarding it", async () => {
+      const recipe = await createRecipeWithLimitCheck(testUser.id, 3, {
+        authorId: testUser.id,
+        title: "Odd Difficulty Recipe",
+        normalizedProductName: "test-odd-difficulty",
+        instructions: ["Step"],
+        isPublic: false,
+        difficulty: "Challenging",
+      });
+      expect(recipe!.difficulty).toBe("Challenging");
+    });
   });
 
   // --------------------------------------------------------------------------
