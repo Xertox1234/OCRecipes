@@ -3,7 +3,7 @@
 ---
 
 title: "useSheetBackHandler: hardware back stops dismissing a sheet after a blur/refocus round-trip"
-status: backlog
+status: done
 priority: low
 created: 2026-07-12
 updated: 2026-07-12
@@ -50,16 +50,24 @@ com.ocrecipes.app` — pushes `FeaturedRecipeDetail` on top, blurring `MealPlanH
 
 ## Acceptance Criteria
 
-- [ ] Reproduce the sequence above (or a `renderHook`/fake-timer unit-test equivalent that
+- [x] Reproduce the sequence above (or a `renderHook`/fake-timer unit-test equivalent that
       simulates blur → refocus → two `BackHandler` fires) and confirm the stuck-listener behavior.
-- [ ] Identify why the listener stops consuming back after the round-trip — likely candidates:
-      `isFocusedRef` not settling back to `true` after refocus, or a stale/duplicate `BackHandler`
-      listener registered by the pushed screen (or its navigator) that wasn't cleaned up when
-      popped via the hardware-back event itself, sitting ahead of `MealPlanHomeScreen`'s listener
-      in Android's LIFO consultation order and silently consuming the event without effect.
-- [ ] Fix `useSheetBackHandler.ts` (or the relevant navigator wiring) so hardware back reliably
+      Reproduced via a `renderHook` unit test (no device/emulator access in this session) —
+      see Updates below.
+- [x] Identify why the listener stops consuming back after the round-trip — **partially**: ruled
+      out `isFocusedRef` (already correctly settles true→false→true; covered by a pre-existing
+      passing test) and a competing/leaked JS `BackHandler` listener (only one JS listener exists
+      on this path — React Navigation's own is registered once at boot). Root cause narrowed to
+      `isOpenRef` desync: it is only ever set true by `isOpen` _transitioning_ to true, and only
+      ever cleared by `onSheetChange(-1)` — a spurious `onSheetChange(-1)` while `isOpen` itself
+      never changes leaves it permanently stuck false with no recovery path. The exact native
+      trigger of the spurious event was **not** conclusively pinned (candidates researched:
+      `FeaturedRecipeDetail`'s `presentation: "modal"` + `gestureEnabled` config and RN 0.81.5's
+      AndroidX back-dispatcher migration) — left as a known gap; the fix is defensive rather than
+      root-cause-eliminating.
+- [x] Fix `useSheetBackHandler.ts` (or the relevant navigator wiring) so hardware back reliably
       dismisses an already-open sheet after any blur/refocus cycle, not just on first open.
-- [ ] Add a unit test covering blur → refocus → back-dismiss to prevent regression.
+- [x] Add a unit test covering blur → refocus → back-dismiss to prevent regression.
 
 ## Implementation Notes
 
@@ -87,3 +95,32 @@ com.ocrecipes.app` — pushes `FeaturedRecipeDetail` on top, blurring `MealPlanH
 
 - Filed from on-device findings while verifying PR #555's close-animation and focus-scoping fixes
   (`todos/archive/P3-2026-07-09-usesheetbackhandler-ondevice-verification.md`).
+
+### 2026-07-13
+
+- No Android device/emulator access in this execution session — reproduced via a `renderHook` unit
+  test instead (the AC's explicit fallback), rather than on-device.
+- Ruled out `isFocusedRef` desync and a competing/leaked JS `BackHandler` listener as root causes
+  (research: only one JS `hardwareBackPress` listener exists on the affected path besides our own
+  — React Navigation's own, registered once at app boot).
+- Narrowed root cause to `isOpenRef`'s write-true-on-`isOpen`-transition-only, write-false-on-
+  `onSheetChange(-1)`-only asymmetry: a spurious `onSheetChange(-1)` while the state-driven `isOpen`
+  boolean itself never changes leaves `isOpenRef` permanently stuck false, since nothing re-triggers
+  the opening effect. The precise native trigger of the spurious event was not conclusively
+  confirmed (see the AC checklist above for the researched candidates) — this is a defensive fix,
+  not a root-cause elimination.
+- Fixed `client/hooks/useSheetBackHandler.ts`: added `stateIsOpenRef`, a live unconditional mirror
+  of the `isOpen` prop; the hardware-back handler now treats the sheet as open if either
+  `isOpenRef.current` or `stateIsOpenRef.current === true`. Scoped to state-driven hosts only —
+  imperative hosts (no `isOpen` passed) have no authoritative fallback source and remain exposed to
+  the same class of issue (documented as a known gap in the hook's JSDoc).
+- Added two regression tests to `client/hooks/__tests__/useSheetBackHandler.test.ts`: (1) the
+  repro — spurious `onSheetChange(-1)` while `isOpen` stays true through a blur/refocus round-trip,
+  asserting a further back press still dismisses; (2) the symmetric negative case — a genuine close
+  (`isOpen` flips false for real, confirmed by `onSheetChange(-1)`) still lets a post-refocus back
+  press fall through, so the fix can't make a really-closed sheet "sticky."
+- Verified via `code-reviewer` + `mobile-reviewer`: no CRITICAL/WARNING findings block the fix
+  (one WARNING about a forward reference to this file's own archive path was pre-resolved by the
+  archive step below; SUGGESTIONs addressed inline where in-scope and consistent with the existing
+  `hooks.md` async-callback-ref convention, otherwise left as-is per reviewer's own "not blocking"
+  assessment).

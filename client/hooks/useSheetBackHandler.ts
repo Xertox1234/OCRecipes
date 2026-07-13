@@ -109,6 +109,29 @@ export function useSheetBackHandler(
     isFocusedRef.current = isFocused;
   }, [isFocused]);
 
+  // Live, unconditional mirror of the raw `isOpen` prop (both true AND
+  // false — unlike isOpenRef below, which is asymmetric). For a
+  // state-driven host, `isOpen` is the app's own authoritative source of
+  // truth for "should this sheet be open." isOpenRef can desync from it: a
+  // stray/duplicate onSheetChange(-1) can fire from gorhom without the
+  // sheet having actually closed (observed on-device during a deep-link
+  // blur/refocus round-trip — see
+  // todos/archive/P3-2026-07-12-sheetbackhandler-stale-listener-after-blur-refocus.md).
+  // Because isOpenRef is only ever re-opened by isOpen *transitioning* to
+  // true or by a fresh onSheetChange/onSheetAnimate, a spurious clear while
+  // isOpen stays true forever is otherwise unrecoverable. The handler below
+  // falls back to this ref so a genuinely-still-open state-driven sheet
+  // never gets permanently stuck ignoring back presses. Scoped to
+  // state-driven hosts only: imperative hosts (no isOpen passed) have no
+  // authoritative "should be open" source to fall back to, so they remain
+  // exposed to the same class of spurious-event issue with no recovery
+  // path — a future on-device repro against an imperative host is a known
+  // gap, not a regression of this fix.
+  const stateIsOpenRef = useRef(isOpen);
+  useEffect(() => {
+    stateIsOpenRef.current = isOpen;
+  }, [isOpen]);
+
   // Only ever opens the ref from the state-driven `isOpen` prop — never
   // closes it. Closing is confirmed exclusively by `onSheetChange(-1)`
   // below, so a state-driven host gets the same close-animation grace
@@ -136,7 +159,8 @@ export function useSheetBackHandler(
     const subscription = BackHandler.addEventListener(
       "hardwareBackPress",
       () => {
-        if (!isOpenRef.current || !isFocusedRef.current) return false;
+        const isOpenNow = isOpenRef.current || stateIsOpenRef.current === true;
+        if (!isOpenNow || !isFocusedRef.current) return false;
         sheetRef.current?.dismiss();
         return true;
       },
