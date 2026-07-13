@@ -12,7 +12,7 @@ The repo is a monorepo: `client/` (Expo app), `server/` (Express API), and `shar
 
 ## Quick Start
 
-Prerequisites: Node.js 18+, PostgreSQL 12+, and (for native camera builds) Xcode. See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for the full setup, including required environment variables (`DATABASE_URL`, `JWT_SECRET`, API keys).
+Prerequisites: Node.js 18+, PostgreSQL 13+, and (for native camera builds) Xcode. See [docs/DEV_SETUP.md](docs/DEV_SETUP.md) for the full setup, including required environment variables (`DATABASE_URL`, `JWT_SECRET`, API keys).
 
 ```bash
 # Install dependencies

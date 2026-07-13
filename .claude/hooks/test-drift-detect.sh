@@ -19,7 +19,7 @@ cleanup() {
   rm -f "$BASELINE_FILE" "${BASELINE_FILE}.tmp"
   [ -n "${TMPDIR_REPO:-}" ] && rm -rf "$TMPDIR_REPO"
   # Throwaway lab DB from the attribution positive-path case (unset when that case skipped).
-  [ -n "${ATTRIB_TEST_DB:-}" ] && psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$ATTRIB_TEST_DB\"" >/dev/null 2>&1
+  [ -n "${ATTRIB_TEST_DB:-}" ] && psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$ATTRIB_TEST_DB\" WITH (FORCE)" >/dev/null 2>&1
   return 0
 }
 trap cleanup EXIT

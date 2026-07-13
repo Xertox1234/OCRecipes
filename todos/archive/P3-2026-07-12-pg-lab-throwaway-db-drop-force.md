@@ -1,6 +1,6 @@
 ---
 title: "pg-lab test hooks' throwaway-DB cleanup can silently leak on an orphaned connection"
-status: backlog
+status: done
 priority: low
 created: 2026-07-12
 updated: 2026-07-12
@@ -29,10 +29,10 @@ underlying gap is real and affects both files.
 
 ## Acceptance Criteria
 
-- [ ] `DROP DATABASE IF EXISTS "$DB" WITH (FORCE)` (PG13+, matches local dev Postgres) or an
+- [x] `DROP DATABASE IF EXISTS "$DB" WITH (FORCE)` (PG13+, matches local dev Postgres) or an
       explicit `pg_terminate_backend` sweep on `datname = '$DB'` before the drop, in both
       `.claude/hooks/test-drift-detect.sh` and `.claude/hooks/test-session-coord.sh`.
-- [ ] Verify no throwaway DB is left behind after a run where the backgrounded write is
+- [x] Verify no throwaway DB is left behind after a run where the backgrounded write is
       still in flight at cleanup time (may need an artificial delay to reproduce reliably).
 
 ## Implementation Notes
@@ -56,3 +56,23 @@ leak occurs; this is a hygiene fix, not a correctness fix.
 ### 2026-07-12
 
 - Filed from code review of PR #590 during the "review, fix, codify, close all open PRs" session.
+
+### 2026-07-12 (execution)
+
+- Added `WITH (FORCE)` to the `DROP DATABASE IF EXISTS` cleanup call in both
+  `.claude/hooks/test-drift-detect.sh` and `.claude/hooks/test-session-coord.sh`.
+- Added a regression test to `test-session-coord.sh` that opens a deliberately slow
+  backgrounded connection to the throwaway test DB, then confirms `DROP DATABASE ...
+WITH (FORCE)` drops it in well under the connection's lifetime. Manually verified the
+  test goes RED (11s, DB left behind) without the fix and GREEN (0-3s, DB gone) with it —
+  on local PG18 a plain `DROP DATABASE` against an active connection blocks for the
+  connection's remaining lifetime rather than failing fast, and gives up (leaving the DB
+  in place) once its internal retry window expires — confirming the todo's premise.
+  `bash .claude/hooks/test-drift-detect.sh` (23/23) and `bash .claude/hooks/test-session-coord.sh`
+  (ALL PASS) both verified directly, since the standard `npm run test:run`/`check:types`/`lint`
+  triad does not exercise `.sh` files.
+- Code review (code-reviewer) found the identical unguarded pattern also recurs in
+  `.claude/hooks/test-inject-patterns.sh` and `.claude/hooks/test-session-recent-issues.sh`
+  (same demonstrated race — both background a write to their own throwaway DB) plus ~8
+  other pg-lab hook self-test files (generic pattern, not demonstrated) — filed as
+  `todos/P3-2026-07-12-pg-lab-hook-tests-unguarded-drop-database-sweep.md`.

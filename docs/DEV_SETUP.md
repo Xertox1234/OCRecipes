@@ -12,7 +12,7 @@ This guide covers everything needed to set up the OCRecipes development environm
 | ---------- | ------- | --------------------------------- |
 | Node.js    | 18+     | [nodejs.org](https://nodejs.org)  |
 | npm        | 9+      | Included with Node.js             |
-| PostgreSQL | 12+     | `brew install postgresql` (macOS) |
+| PostgreSQL | 13+     | `brew install postgresql` (macOS) |
 
 ### Optional Software
 
