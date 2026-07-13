@@ -195,6 +195,11 @@ assert_contains "dead-exports finds reexportOnlyDead despite the barrel re-expor
 # "./"-prefixed "main" taken raw would silently never match. Exercised through the
 # PG_LAB_PACKAGE_JSON_DIR seam with a synthetic zero-ref export row planted at the real
 # entrypoint's stored path.
+# NOTE: the control / normalization-proof / missing-main sub-cases below all overwrite
+# "$PKGFIX/package.json" in place rather than each getting a fresh mktemp -- intentional
+# today since nothing but that one file is read from PKGFIX, but a future sub-case that
+# needs isolation from the others (e.g. leftover state in PKGFIX itself) must mktemp -d
+# again rather than assume a clean directory.
 PKGFIX=$(mktemp -d)
 psql -X -q -d "$TEST_URL" -c "INSERT INTO repo.exports (path, name, ref_count) VALUES ('client/index.js', 'phantomEntrypointExport', 0)" >/dev/null
 
