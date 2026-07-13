@@ -20,6 +20,7 @@ import {
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
 import { deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { normalizeRecipeFields } from "../lib/recipe-normalization";
 
 // ============================================================================
 // MEAL PLAN RECIPES (CRUD)
@@ -91,6 +92,10 @@ export async function getUserMealPlanRecipes(
   return { items, total: Number(countResult[0]?.count ?? 0) };
 }
 
+/** Matches a clean decimal string like "2" or "1.5" — anything else can't be
+ * stored in `recipeIngredients.quantity` (a nullable `decimal(10,2)` column). */
+const DECIMAL_QUANTITY_RE = /^\d+(\.\d+)?$/;
+
 export async function createMealPlanRecipe(
   recipe: InsertMealPlanRecipe,
   ingredients?: InsertRecipeIngredient[],
@@ -101,17 +106,57 @@ export async function createMealPlanRecipe(
   // function (no service deps), so the denormalized cache is computed inline
   // here from the ingredient names — new/edited recipes stay current without
   // a backfill re-run.
+  //
+  // Normalization runs here (not in the route layer) so every creation path —
+  // import, AI-generate, manual entry, catalog save — is guaranteed to be
+  // normalized, structurally, rather than depending on each route remembering
+  // to call normalizeRecipeFields itself.
+  const normalized = normalizeRecipeFields({
+    title: recipe.title,
+    description: recipe.description,
+    difficulty: recipe.difficulty,
+    instructions: recipe.instructions,
+    ingredients: ingredients?.map((ing) => ({
+      name: ing.name,
+      quantity: ing.quantity,
+      unit: ing.unit,
+    })),
+  });
 
-  if (ingredients && ingredients.length > 0) {
-    const ingredientNames = ingredients.map((i) => i.name);
+  const normalizedRecipe: InsertMealPlanRecipe = {
+    ...recipe,
+    title: normalized.title ?? recipe.title,
+    description: normalized.description,
+    difficulty: normalized.difficulty,
+    instructions: normalized.instructions ?? recipe.instructions,
+  };
+
+  // normalizeIngredient never produces null (see recipe-normalization.ts) —
+  // the nullable-decimal coercion is this caller's own fallback policy,
+  // scoped here because this is the one write path targeting the nullable
+  // recipeIngredients.quantity decimal column (communityRecipes' JSONB
+  // ingredients column has no such constraint; see Task 6).
+  const normalizedIngredients = ingredients?.map((ing, i) => {
+    const n = normalized.ingredients?.[i];
+    if (!n) return ing;
+    return {
+      ...ing,
+      name: n.name,
+      unit: n.unit,
+      quantity: DECIMAL_QUANTITY_RE.test(n.quantity) ? n.quantity : null,
+    };
+  });
+
+  if (normalizedIngredients && normalizedIngredients.length > 0) {
+    const ingredientNames = normalizedIngredients.map((i) => i.name);
     const allergens = deriveRecipeAllergens(ingredientNames);
     const created = await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(mealPlanRecipes)
-        .values({ ...recipe, allergens })
+        .values({ ...normalizedRecipe, allergens })
         .returning();
       await tx.insert(recipeIngredients).values(
-        ingredients.map((ing, idx) => ({
+        normalizedIngredients.map((ing, idx) => ({
           ...ing,
           recipeId: row.id,
           displayOrder: ing.displayOrder ?? idx,
@@ -126,7 +171,7 @@ export async function createMealPlanRecipe(
 
   const [created] = await db
     .insert(mealPlanRecipes)
-    .values({ ...recipe, allergens: [] })
+    .values({ ...normalizedRecipe, allergens: [] })
     .returning();
   addToIndex(mealPlanToSearchable(created, []));
   return created;

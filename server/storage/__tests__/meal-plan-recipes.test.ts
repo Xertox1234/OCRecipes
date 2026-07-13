@@ -338,6 +338,63 @@ describe("meal-plan-recipes storage", () => {
         .orderBy(recipeIngredients.displayOrder);
       expect(ings.map((i) => i.displayOrder)).toEqual([0, 1]);
     });
+
+    it("normalizes the recipe title and ingredient name/unit before persisting", async () => {
+      const created = await createMealPlanRecipe(
+        makeRecipeInput(testUser.id, { title: "chicken parmesan" }),
+        [
+          {
+            recipeId: 0,
+            name: "chicken breast",
+            quantity: "2",
+            unit: "pounds",
+            displayOrder: 0,
+          },
+        ],
+      );
+      expect(created.title).toBe("Chicken Parmesan");
+
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, created.id));
+      expect(ing.name).toBe("Chicken Breast");
+      expect(ing.unit).toBe("lb");
+    });
+
+    it("converts a fraction ingredient quantity to a decimal string before persisting", async () => {
+      const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
+        {
+          recipeId: 0,
+          name: "Salt",
+          quantity: "1/2",
+          unit: "tsp",
+          displayOrder: 0,
+        },
+      ]);
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, created.id));
+      expect(ing.quantity).toBe("0.50");
+    });
+
+    it("stores a null quantity when the ingredient quantity is unparseable freeform text", async () => {
+      const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
+        {
+          recipeId: 0,
+          name: "Salt",
+          quantity: "a pinch",
+          unit: "",
+          displayOrder: 0,
+        },
+      ]);
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, created.id));
+      expect(ing.quantity).toBeNull();
+    });
   });
 
   // ==========================================================================
