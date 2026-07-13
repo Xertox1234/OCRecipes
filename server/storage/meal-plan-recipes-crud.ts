@@ -20,7 +20,10 @@ import {
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
 import { deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
-import { normalizeRecipeFields } from "../lib/recipe-normalization";
+import {
+  normalizeRecipeFields,
+  normalizeIngredient,
+} from "../lib/recipe-normalization";
 
 // ============================================================================
 // MEAL PLAN RECIPES (CRUD)
@@ -135,9 +138,10 @@ export async function createMealPlanRecipe(
 
   // normalizeIngredient never produces null (see recipe-normalization.ts) —
   // the nullable-decimal coercion is this caller's own fallback policy,
-  // scoped here because this is the one write path targeting the nullable
-  // recipeIngredients.quantity decimal column (communityRecipes' JSONB
-  // ingredients column has no such constraint; see Task 6).
+  // scoped here because this targets the nullable recipeIngredients.quantity
+  // decimal column (communityRecipes' JSONB ingredients column has no such
+  // constraint; see Task 6). createMealPlanFromSuggestions below applies the
+  // identical coercion for the same reason — it targets the same column.
   const normalizedIngredients = ingredients?.map((ing, i) => {
     const n = normalized.ingredients?.[i];
     if (!n) return ing;
@@ -194,13 +198,37 @@ export async function createMealPlanFromSuggestions(
 ): Promise<{ recipeId: number; mealPlanItemId: number }[]> {
   if (meals.length === 0) return [];
 
+  // Normalize each meal's ingredient name/unit/quantity the same way
+  // createMealPlanRecipe does. This is an independent AI-suggestion save path
+  // (see the note on createMealPlanRecipe above) that targets the same
+  // nullable recipeIngredients.quantity decimal(10,2) column — an
+  // AI-generated quantity like "1/2" or "½" must be normalized to a decimal
+  // or coerced to null, never inserted raw (it would throw "invalid input
+  // syntax for type numeric").
+  const normalizedMeals = meals.map((m) => ({
+    ...m,
+    ingredients: m.ingredients.map((ing) => {
+      const n = normalizeIngredient({
+        name: ing.name,
+        quantity: ing.quantity ?? "",
+        unit: ing.unit ?? "",
+      });
+      return {
+        ...ing,
+        name: n.name,
+        unit: n.unit,
+        quantity: DECIMAL_QUANTITY_RE.test(n.quantity) ? n.quantity : null,
+      };
+    }),
+  }));
+
   const result = await db.transaction(async (tx) => {
     // Batch-insert all recipes at once, deriving each recipe's allergen cache
     // from its ingredient names (pure shared function — no service deps).
     const recipes = await tx
       .insert(mealPlanRecipes)
       .values(
-        meals.map((m) => ({
+        normalizedMeals.map((m) => ({
           ...m.recipe,
           allergens: deriveRecipeAllergens(m.ingredients.map((i) => i.name)),
         })),
@@ -209,7 +237,7 @@ export async function createMealPlanFromSuggestions(
 
     // Batch-insert all ingredients at once (with correct recipeIds)
     const allIngredients = recipes.flatMap((recipe, i) =>
-      meals[i].ingredients.map((ing, idx) => ({
+      normalizedMeals[i].ingredients.map((ing, idx) => ({
         ...ing,
         recipeId: recipe.id,
         displayOrder: ing.displayOrder ?? idx,
@@ -224,7 +252,7 @@ export async function createMealPlanFromSuggestions(
       .insert(mealPlanItems)
       .values(
         recipes.map((recipe, i) => ({
-          ...meals[i].planItem,
+          ...normalizedMeals[i].planItem,
           recipeId: recipe.id,
         })),
       )

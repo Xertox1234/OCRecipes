@@ -454,6 +454,56 @@ describe("meal-plan-recipes storage", () => {
       // One index update per created recipe.
       expect(searchIndex.addToIndex).toHaveBeenCalledTimes(2);
     });
+
+    it("normalizes ingredient name/unit and converts a fraction quantity to a decimal string", async () => {
+      const result = await createMealPlanFromSuggestions([
+        {
+          recipe: makeRecipeInput(testUser.id),
+          ingredients: [
+            makeIngredient({
+              name: "chicken breast",
+              quantity: "1/2",
+              unit: "pounds",
+            }),
+          ],
+          planItem: {
+            userId: testUser.id,
+            plannedDate: "2026-05-15",
+            mealType: "dinner",
+          },
+        },
+      ]);
+
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, result[0].recipeId));
+      expect(ing.name).toBe("Chicken Breast");
+      expect(ing.unit).toBe("lb");
+      expect(ing.quantity).toBe("0.50");
+    });
+
+    it("stores a null quantity instead of crashing when the ingredient quantity is unparseable freeform text", async () => {
+      const result = await createMealPlanFromSuggestions([
+        {
+          recipe: makeRecipeInput(testUser.id),
+          ingredients: [
+            makeIngredient({ name: "Salt", quantity: "a pinch", unit: "" }),
+          ],
+          planItem: {
+            userId: testUser.id,
+            plannedDate: "2026-05-15",
+            mealType: "dinner",
+          },
+        },
+      ]);
+
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, result[0].recipeId));
+      expect(ing.quantity).toBeNull();
+    });
   });
 
   // ==========================================================================
