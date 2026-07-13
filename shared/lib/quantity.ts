@@ -65,8 +65,8 @@ export function normalizeQuantityToDecimal(raw: string): string | null {
     return String(num / den);
   }
 
-  if (/^\d+(\.\d+)?$/.test(trimmed)) {
-    return trimmed;
+  if (/^\d+(\.\d*)?$/.test(trimmed)) {
+    return String(Number(trimmed));
   }
 
   return null;

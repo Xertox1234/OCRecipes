@@ -42,4 +42,17 @@ describe("normalizeQuantityToDecimal", () => {
   it("trims surrounding whitespace before matching", () => {
     expect(normalizeQuantityToDecimal("  1/2  ")).toBe("0.5");
   });
+
+  // Regression tests: plain decimals must be normalized via float round-trip
+  it("normalizes trailing zeros in decimals (1.50 -> 1.5)", () => {
+    expect(normalizeQuantityToDecimal("1.50")).toBe("1.5");
+  });
+
+  it("normalizes bare decimal with trailing zero (3.0 -> 3)", () => {
+    expect(normalizeQuantityToDecimal("3.0")).toBe("3");
+  });
+
+  it("normalizes bare trailing dot (2. -> 2)", () => {
+    expect(normalizeQuantityToDecimal("2.")).toBe("2");
+  });
 });
