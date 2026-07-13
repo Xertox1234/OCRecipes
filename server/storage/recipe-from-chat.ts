@@ -152,7 +152,7 @@ export async function saveRecipeFromChat(
       return existing ?? null;
     }
 
-    // 6. Update message metadata with back-reference
+    // 7. Update message metadata with back-reference
     await tx
       .update(chatMessages)
       .set({

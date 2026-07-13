@@ -266,8 +266,13 @@ describe("recipe-from-chat storage", () => {
       expect(recipe!.difficulty).toBe("Easy");
       const ingredients = recipe!.ingredients as { name: string }[];
       expect(ingredients[0]!.name).toBe("Flour");
-      // normalizedProductName stays derived from the *normalized* title.
-      expect(recipe!.normalizedProductName).toBe(recipe!.title.toLowerCase());
+      // normalizedProductName stays derived from the *normalized* title —
+      // asserted against an independently-derived expected value (not
+      // recipe!.title.toLowerCase(), which would be tautological since both
+      // columns are written from the same normalizedTitle variable).
+      expect(recipe!.normalizedProductName).toMatch(
+        /^spicy thai basil chicken/,
+      );
     });
 
     it("falls back to legacy savedRecipeId pointer when metadata fails validation", async () => {
