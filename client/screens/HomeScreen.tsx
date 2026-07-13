@@ -176,6 +176,16 @@ export default function HomeScreen() {
     [navigation],
   );
 
+  const handleImportTextNavigate = useCallback(
+    (text: string) => {
+      navigation.navigate("MealPlanTab", {
+        screen: "RecipeTextImport",
+        params: { pastedText: text, fromHome: true },
+      });
+    },
+    [navigation],
+  );
+
   const importSheetChildren = useMemo(
     () => (
       <ImportRecipeSheetContent
@@ -183,12 +193,14 @@ export default function HomeScreen() {
         onDismiss={handleImportSheetDismiss}
         onNavigateUrlImport={handleImportUrlNavigate}
         onPhotoImport={handleImportPhotoNavigate}
+        onTextImport={handleImportTextNavigate}
       />
     ),
     [
       handleImportSheetDismiss,
       handleImportUrlNavigate,
       handleImportPhotoNavigate,
+      handleImportTextNavigate,
     ],
   );
 

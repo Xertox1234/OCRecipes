@@ -42,6 +42,11 @@ interface ImportRecipeSheetContentProps {
     mealType: MealType | null,
     date?: string,
   ) => void;
+  onTextImport: (
+    text: string,
+    mealType: MealType | null,
+    date?: string,
+  ) => void;
 }
 
 function ImportRecipeSheetContentInner({
@@ -50,6 +55,7 @@ function ImportRecipeSheetContentInner({
   onDismiss,
   onNavigateUrlImport,
   onPhotoImport,
+  onTextImport,
 }: ImportRecipeSheetContentProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
@@ -200,35 +206,50 @@ function ImportRecipeSheetContentInner({
   ]);
 
   const handleClipboard = useCallback(() => {
-    void handlePremiumAction(async () => {
+    void (async () => {
       haptics.impact(ImpactFeedbackStyle.Light);
       setClipboardError(null);
 
       const hasImage = await Clipboard.hasImageAsync();
-      if (!hasImage) {
-        setClipboardError("No image found in clipboard");
-        haptics.notification(NotificationFeedbackType.Error);
+      if (hasImage) {
+        await handlePremiumAction(async () => {
+          const clipboardImage = await Clipboard.getImageAsync({
+            format: "jpeg",
+          });
+          if (!clipboardImage?.data) {
+            setClipboardError("Could not read clipboard image");
+            haptics.notification(NotificationFeedbackType.Error);
+            return;
+          }
+
+          // Write base64 data to a temp file for upload
+          const tempUri = `${cacheDirectory}clipboard_recipe_${Date.now()}.jpg`;
+          await writeAsStringAsync(tempUri, clipboardImage.data, {
+            encoding: EncodingType.Base64,
+          });
+
+          onDismiss();
+          onPhotoImport(tempUri, mealType, plannedDate);
+        });
         return;
       }
 
-      const clipboardImage = await Clipboard.getImageAsync({
-        format: "jpeg",
-      });
-      if (!clipboardImage?.data) {
-        setClipboardError("Could not read clipboard image");
-        haptics.notification(NotificationFeedbackType.Error);
+      const hasText = await Clipboard.hasStringAsync();
+      if (hasText) {
+        const text = await Clipboard.getStringAsync();
+        if (!text.trim()) {
+          setClipboardError("Clipboard is empty");
+          haptics.notification(NotificationFeedbackType.Error);
+          return;
+        }
+        onDismiss();
+        onTextImport(text, mealType, plannedDate);
         return;
       }
 
-      // Write base64 data to a temp file for upload
-      const tempUri = `${cacheDirectory}clipboard_recipe_${Date.now()}.jpg`;
-      await writeAsStringAsync(tempUri, clipboardImage.data, {
-        encoding: EncodingType.Base64,
-      });
-
-      onDismiss();
-      onPhotoImport(tempUri, mealType, plannedDate);
-    });
+      setClipboardError("Clipboard is empty");
+      haptics.notification(NotificationFeedbackType.Error);
+    })();
   }, [
     handlePremiumAction,
     haptics,
@@ -236,6 +257,7 @@ function ImportRecipeSheetContentInner({
     plannedDate,
     onDismiss,
     onPhotoImport,
+    onTextImport,
   ]);
 
   const label = mealType ? MEAL_LABELS[mealType] || mealType : "";
@@ -247,7 +269,7 @@ function ImportRecipeSheetContentInner({
     url: { premium: false, onPress: handleUrlImport },
     camera: { premium: true, onPress: handleCamera },
     gallery: { premium: true, onPress: handleGallery },
-    clipboard: { premium: true, onPress: handleClipboard },
+    clipboard: { premium: false, onPress: handleClipboard },
   };
   const rows = RECIPE_IMPORT_OPTIONS.map((option) => ({
     key: option.key,

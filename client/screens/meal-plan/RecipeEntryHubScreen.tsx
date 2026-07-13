@@ -203,6 +203,16 @@ export default function RecipeEntryHubScreen() {
     [navigation, returnToMealPlan],
   );
 
+  const handleTextImport = useCallback(
+    (text: string) => {
+      navigation.navigate("RecipeTextImport", {
+        pastedText: text,
+        returnToMealPlan,
+      });
+    },
+    [navigation, returnToMealPlan],
+  );
+
   const importSheetChildren = useMemo(
     () => (
       <ImportRecipeSheetContent
@@ -210,9 +220,15 @@ export default function RecipeEntryHubScreen() {
         onDismiss={handleSheetDismiss}
         onNavigateUrlImport={handleNavigateUrlImport}
         onPhotoImport={handlePhotoImport}
+        onTextImport={handleTextImport}
       />
     ),
-    [handleSheetDismiss, handleNavigateUrlImport, handlePhotoImport],
+    [
+      handleSheetDismiss,
+      handleNavigateUrlImport,
+      handlePhotoImport,
+      handleTextImport,
+    ],
   );
 
   const handleCardPress = (id: string) => {

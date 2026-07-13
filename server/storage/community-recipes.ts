@@ -20,6 +20,7 @@ import {
 import { deriveRecipeAllergens } from "@shared/constants/allergens";
 import { deleteImage } from "../lib/image-store";
 import { fireAndForget } from "../lib/fire-and-forget";
+import { normalizeRecipeFields } from "../lib/recipe-normalization";
 
 // ============================================================================
 // COMMUNITY RECIPES
@@ -90,6 +91,31 @@ export async function createRecipeWithLimitCheck(
   data: Omit<InsertCommunityRecipe, "id" | "createdAt" | "updatedAt">,
   tz: string = "UTC",
 ): Promise<CommunityRecipe | null> {
+  const normalized = normalizeRecipeFields({
+    title: data.title,
+    description: data.description,
+    difficulty: data.difficulty,
+    instructions: data.instructions,
+    ingredients: data.ingredients,
+  });
+
+  const normalizedData: Omit<
+    InsertCommunityRecipe,
+    "id" | "createdAt" | "updatedAt"
+  > = {
+    ...data,
+    title: normalized.title ?? data.title,
+    description: normalized.description,
+    difficulty: normalized.difficulty,
+    instructions: normalized.instructions ?? data.instructions,
+    // communityRecipes.ingredients is a non-nullable JSONB string column with
+    // no format constraint — normalizeIngredient's output (never null; see
+    // server/lib/recipe-normalization.ts) is already valid here as-is. No
+    // decimal-specific coercion is needed, unlike createMealPlanRecipe
+    // (Task 4), which writes the nullable DECIMAL recipeIngredients.quantity.
+    ingredients: normalized.ingredients ?? data.ingredients,
+  };
+
   const recipe = await db.transaction(async (tx) => {
     // Check daily limit inside transaction
     const { startOfDay, endOfDay } = getDayBounds(new Date(), tz);
@@ -113,11 +139,11 @@ export async function createRecipeWithLimitCheck(
     // purity). `allergens` is derived inline from ingredient names via the
     // pure `deriveRecipeAllergens` shared function (no service deps).
     const allergens = deriveRecipeAllergens(
-      (data.ingredients ?? []).map((i) => i.name),
+      (normalizedData.ingredients ?? []).map((i) => i.name),
     );
     const [created] = await tx
       .insert(communityRecipes)
-      .values({ ...data, allergens })
+      .values({ ...normalizedData, allergens })
       .returning();
 
     // Log the generation

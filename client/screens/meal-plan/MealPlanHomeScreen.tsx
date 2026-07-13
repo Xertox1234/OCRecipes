@@ -927,6 +927,18 @@ export default function MealPlanHomeScreen() {
     [navigation],
   );
 
+  const handleTextImport = useCallback(
+    (text: string, mt: MealType | null, date?: string) => {
+      if (mt === null || date === undefined) return;
+      setImportRecipeMealType(null);
+      navigation.navigate("RecipeTextImport", {
+        pastedText: text,
+        returnToMealPlan: { mealType: mt, plannedDate: date },
+      });
+    },
+    [navigation],
+  );
+
   const handleNavigateCreate = useCallback(
     (mt: MealType, date: string) => {
       navigation.navigate("RecipeEntryHub", {
@@ -1107,6 +1119,7 @@ export default function MealPlanHomeScreen() {
         onDismiss={handleImportRecipeDismiss}
         onNavigateUrlImport={handleNavigateUrlImport}
         onPhotoImport={handlePhotoImport}
+        onTextImport={handleTextImport}
       />
     ),
     [
@@ -1115,6 +1128,7 @@ export default function MealPlanHomeScreen() {
       handleImportRecipeDismiss,
       handleNavigateUrlImport,
       handlePhotoImport,
+      handleTextImport,
     ],
   );
 

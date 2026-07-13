@@ -24,60 +24,39 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { useRecipeExtractionFlow } from "@/hooks/useRecipeExtractionFlow";
-import { useRecipePhotoImport } from "@/hooks/useRecipePhotoImport";
-import { mapPhotoResultToImportedRecipeData } from "@/lib/photo-upload";
-import { ApiError } from "@/lib/api-error";
-import { ErrorCode } from "@shared/constants/error-codes";
+import { useRecipeTextImport } from "@/hooks/useRecipeTextImport";
+import { mapTextResultToImportedRecipeData } from "@/lib/photo-upload";
+import { importErrorCopy } from "./RecipePhotoImportScreen";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
-import type { RecipePhotoImportScreenNavigationProp } from "@/types/navigation";
+import type { RecipeTextImportScreenNavigationProp } from "@/types/navigation";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
-/**
- * Map an import failure to static, user-safe copy. Never returns the raw
- * error.message — the upload helper throws ApiError("Upload failed: <status>",
- * code), so the message is not user-friendly. Branch on .code instead.
- * Exported: RecipeTextImportScreen (Task 14) reuses this exact mapping —
- * it's already source-agnostic (keyed off ApiError.code, not the source).
- */
-export function importErrorCopy(error: unknown): string {
-  if (error instanceof ApiError) {
-    switch (error.code) {
-      case ErrorCode.PREMIUM_REQUIRED:
-        return "Recipe photo import is a premium feature.";
-      case ErrorCode.VALIDATION_ERROR:
-        return "That input couldn't be used. Please try again.";
-      case ErrorCode.IMAGE_TOO_LARGE:
-        return "That image couldn't be used. Try a clearer photo.";
-      case ErrorCode.RATE_LIMITED:
-        return "Too many requests. Please wait a moment and try again.";
-    }
-  }
-  return "Couldn't import this recipe. Please try again.";
-}
-
-type RecipePhotoImportRouteProp = RouteProp<
+type RecipeTextImportRouteProp = RouteProp<
   MealPlanStackParamList,
-  "RecipePhotoImport"
+  "RecipeTextImport"
 >;
 
-export default function RecipePhotoImportScreen() {
-  const navigation = useNavigation<RecipePhotoImportScreenNavigationProp>();
-  const route = useRoute<RecipePhotoImportRouteProp>();
+export default function RecipeTextImportScreen() {
+  const navigation = useNavigation<RecipeTextImportScreenNavigationProp>();
+  const route = useRoute<RecipeTextImportRouteProp>();
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const haptics = useHaptics();
 
-  const { photoUri, returnToMealPlan, fromHome } = route.params;
+  const { pastedText, returnToMealPlan, fromHome } = route.params;
   useFromHomeBackRedirect(navigation, fromHome);
-  const photoImportMutation = useRecipePhotoImport();
+  const textImportMutation = useRecipeTextImport();
 
   const { state, result, errorMessage, retry } = useRecipeExtractionFlow({
-    input: photoUri,
-    mutationFn: (uri) => photoImportMutation.mutateAsync(uri),
-    gateCheck: (data) => data.confidence > 0.3 && !!data.title,
+    input: pastedText,
+    mutationFn: (text) => textImportMutation.mutateAsync(text),
+    gateCheck: (data) =>
+      !!data.title &&
+      data.ingredients.length > 0 &&
+      !!data.instructions?.length,
     gateFailureMessage:
-      "Could not extract a recipe from this image. Try a clearer photo.",
+      "Could not extract a recipe from this text. Try pasting the full recipe, including ingredients and instructions.",
     errorCopy: importErrorCopy,
   });
 
@@ -85,7 +64,7 @@ export default function RecipePhotoImportScreen() {
     if (Platform.OS !== "ios") return;
     if (state === "analyzing") {
       AccessibilityInfo.announceForAccessibility(
-        "Extracting recipe from photo",
+        "Extracting recipe from pasted text",
       );
     } else if (state === "review" && result) {
       AccessibilityInfo.announceForAccessibility(
@@ -101,7 +80,7 @@ export default function RecipePhotoImportScreen() {
   const handleSave = () => {
     if (!result) return;
     haptics.impact();
-    const prefill = mapPhotoResultToImportedRecipeData(result);
+    const prefill = mapTextResultToImportedRecipeData(result);
     navigation.replace("RecipeCreate", { prefill, returnToMealPlan, fromHome });
   };
 

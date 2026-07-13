@@ -29,9 +29,16 @@ vi.mock("expo-image-picker", () => ({
 // Unused by these tests, but ImportRecipeSheet.tsx imports these two native
 // modules for the clipboard-import row — leaving them unmocked pulls in
 // expo-modules-core's EventEmitter, which throws under jsdom.
+const mockHasImageAsync = vi.fn();
+const mockGetImageAsync = vi.fn();
+const mockHasStringAsync = vi.fn();
+const mockGetStringAsync = vi.fn();
+
 vi.mock("expo-clipboard", () => ({
-  hasImageAsync: vi.fn().mockResolvedValue(false),
-  getImageAsync: vi.fn(),
+  hasImageAsync: (...args: unknown[]) => mockHasImageAsync(...args),
+  getImageAsync: (...args: unknown[]) => mockGetImageAsync(...args),
+  hasStringAsync: (...args: unknown[]) => mockHasStringAsync(...args),
+  getStringAsync: (...args: unknown[]) => mockGetStringAsync(...args),
 }));
 
 vi.mock("expo-file-system/legacy", () => ({
@@ -75,11 +82,14 @@ describe("ImportRecipeSheet permission-denied handling", () => {
     onDismiss: vi.fn(),
     onNavigateUrlImport: vi.fn(),
     onPhotoImport: vi.fn(),
+    onTextImport: vi.fn(),
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockCanImportPhoto = true;
+    mockHasImageAsync.mockResolvedValue(false);
+    mockHasStringAsync.mockResolvedValue(false);
   });
 
   afterEach(() => {
@@ -314,5 +324,91 @@ describe("ImportRecipeSheet permission-denied handling", () => {
     expect(mockToastError).toHaveBeenCalledWith(
       expect.stringContaining("gallery"),
     );
+  });
+
+  describe("clipboard import", () => {
+    it("imports an image from clipboard when premium and an image is present", async () => {
+      mockHasImageAsync.mockResolvedValue(true);
+      mockGetImageAsync.mockResolvedValue({ data: "base64imagedata" });
+
+      renderComponent(<ImportRecipeSheetContent {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("From Clipboard"));
+
+      await waitFor(() => {
+        expect(defaultProps.onPhotoImport).toHaveBeenCalledWith(
+          expect.stringContaining("clipboard_recipe_"),
+          "lunch",
+          "2025-06-01",
+        );
+      });
+      expect(defaultProps.onDismiss).toHaveBeenCalledTimes(1);
+      expect(defaultProps.onTextImport).not.toHaveBeenCalled();
+    });
+
+    it("shows the upgrade modal when clipboard has an image but the user is free", async () => {
+      mockCanImportPhoto = false;
+      mockHasImageAsync.mockResolvedValue(true);
+
+      renderComponent(<ImportRecipeSheetContent {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("From Clipboard"));
+
+      await screen.findByText("UPGRADE_MODAL_SHOWN");
+      expect(defaultProps.onPhotoImport).not.toHaveBeenCalled();
+    });
+
+    it("imports text from clipboard when present, without a premium check", async () => {
+      mockCanImportPhoto = false;
+      mockHasImageAsync.mockResolvedValue(false);
+      mockHasStringAsync.mockResolvedValue(true);
+      mockGetStringAsync.mockResolvedValue("Grandma's chili: 1 lb beef...");
+
+      renderComponent(<ImportRecipeSheetContent {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("From Clipboard"));
+
+      await waitFor(() => {
+        expect(defaultProps.onTextImport).toHaveBeenCalledWith(
+          "Grandma's chili: 1 lb beef...",
+          "lunch",
+          "2025-06-01",
+        );
+      });
+      expect(defaultProps.onDismiss).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText("UPGRADE_MODAL_SHOWN")).toBeNull();
+    });
+
+    it("shows a clipboard-empty error when neither image nor text is present", async () => {
+      mockHasImageAsync.mockResolvedValue(false);
+      mockHasStringAsync.mockResolvedValue(false);
+
+      renderComponent(<ImportRecipeSheetContent {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("From Clipboard"));
+
+      await screen.findByText("Clipboard is empty");
+      expect(defaultProps.onPhotoImport).not.toHaveBeenCalled();
+      expect(defaultProps.onTextImport).not.toHaveBeenCalled();
+    });
+
+    it("shows a clipboard-empty error when clipboard text is whitespace-only", async () => {
+      mockHasImageAsync.mockResolvedValue(false);
+      mockHasStringAsync.mockResolvedValue(true);
+      mockGetStringAsync.mockResolvedValue("   ");
+
+      renderComponent(<ImportRecipeSheetContent {...defaultProps} />);
+      fireEvent.click(screen.getByLabelText("From Clipboard"));
+
+      await screen.findByText("Clipboard is empty");
+      expect(defaultProps.onTextImport).not.toHaveBeenCalled();
+    });
+
+    it("the clipboard tile is never shown as locked, even when the user is free", () => {
+      mockCanImportPhoto = false;
+
+      renderComponent(<ImportRecipeSheetContent {...defaultProps} />);
+
+      expect(screen.getByLabelText("From Clipboard")).toBeTruthy();
+      expect(
+        screen.queryByLabelText("From Clipboard, premium feature"),
+      ).toBeNull();
+    });
   });
 });

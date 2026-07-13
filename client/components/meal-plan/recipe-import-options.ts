@@ -31,6 +31,6 @@ export const RECIPE_IMPORT_OPTIONS: RecipeImportOption[] = [
     key: "clipboard",
     icon: "clipboard",
     title: "From Clipboard",
-    desc: "Use a copied recipe image",
+    desc: "Paste a copied image or recipe text",
   },
 ];

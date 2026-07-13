@@ -32,6 +32,7 @@ const {
   logRecipeGeneration,
   getCommunityRecipes,
   createCommunityRecipe,
+  createRecipeWithLimitCheck,
   updateRecipePublicStatus,
   getCommunityRecipe,
   getCommunityRecipeTitlesByIds,
@@ -212,6 +213,66 @@ describe("community storage", () => {
       expect(recipe.normalizedProductName).toBe("test-pasta");
       expect(recipe.dietTags).toEqual(["vegan"]);
       expect(recipe.createdAt).toBeInstanceOf(Date);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // createRecipeWithLimitCheck
+  // --------------------------------------------------------------------------
+  describe("createRecipeWithLimitCheck", () => {
+    it("creates a recipe when under the daily limit", async () => {
+      const recipe = await createRecipeWithLimitCheck(testUser.id, 3, {
+        authorId: testUser.id,
+        title: "My Generated Recipe",
+        normalizedProductName: "test-generated",
+        instructions: ["Mix and bake"],
+        isPublic: false,
+      });
+      expect(recipe).not.toBeNull();
+      expect(recipe!.title).toBe("My Generated Recipe");
+    });
+
+    it("returns null when the daily limit has been reached", async () => {
+      await createRecipeWithLimitCheck(testUser.id, 1, {
+        authorId: testUser.id,
+        title: "First",
+        normalizedProductName: "test-first",
+        instructions: ["Step"],
+        isPublic: false,
+      });
+      const second = await createRecipeWithLimitCheck(testUser.id, 1, {
+        authorId: testUser.id,
+        title: "Second",
+        normalizedProductName: "test-second",
+        instructions: ["Step"],
+        isPublic: false,
+      });
+      expect(second).toBeNull();
+    });
+
+    it("normalizes the title before persisting", async () => {
+      const recipe = await createRecipeWithLimitCheck(testUser.id, 3, {
+        authorId: testUser.id,
+        title: "chicken parmesan",
+        normalizedProductName: "test-chicken",
+        instructions: ["Mix and bake"],
+        isPublic: false,
+      });
+      expect(recipe!.title).toBe("Chicken Parmesan");
+    });
+
+    it("preserves a freeform (non-numeric) ingredient quantity unchanged", async () => {
+      const recipe = await createRecipeWithLimitCheck(testUser.id, 3, {
+        authorId: testUser.id,
+        title: "Soup",
+        normalizedProductName: "test-soup",
+        instructions: ["Simmer"],
+        isPublic: false,
+        ingredients: [{ name: "salt", quantity: "a pinch", unit: "" }],
+      });
+      expect(recipe!.ingredients).toEqual([
+        { name: "Salt", quantity: "a pinch", unit: "" },
+      ]);
     });
   });
 

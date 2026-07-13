@@ -3,12 +3,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   calculateTotals,
   uploadPhotoForAnalysis,
+  uploadRecipeTextForAnalysis,
   uploadFrontLabelPhoto,
   confirmFrontLabel,
   lookupNutritionByPrep,
   submitFollowUp,
   confirmPhotoAnalysis,
   mapPhotoResultToImportedRecipeData,
+  mapTextResultToImportedRecipeData,
   type FoodItem,
   type RecipePhotoResult,
 } from "../photo-upload";
@@ -596,6 +598,94 @@ describe("confirmPhotoAnalysis", () => {
     await expect(confirmPhotoAnalysis(mockConfirmRequest)).rejects.toThrow(
       "Confirm failed: 500",
     );
+  });
+});
+
+describe("uploadRecipeTextForAnalysis", () => {
+  it("throws if not authenticated", async () => {
+    vi.mocked(tokenStorage.get).mockResolvedValue(null);
+
+    await expect(
+      uploadRecipeTextForAnalysis("2 cups flour, mix and bake"),
+    ).rejects.toThrow("Not authenticated");
+  });
+
+  it("sends the pasted text and returns the structured recipe", async () => {
+    vi.mocked(tokenStorage.get).mockResolvedValue("test-token");
+    const mockResult: RecipePhotoResult = {
+      title: "Pancakes",
+      description: null,
+      ingredients: [],
+      instructions: null,
+      servings: null,
+      prepTimeMinutes: null,
+      cookTimeMinutes: null,
+      cuisine: null,
+      dietTags: [],
+      caloriesPerServing: null,
+      proteinPerServing: null,
+      carbsPerServing: null,
+      fatPerServing: null,
+      confidence: 0.8,
+    };
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(mockResult),
+    });
+
+    const result = await uploadRecipeTextForAnalysis("2 cups flour");
+
+    expect(result).toEqual(mockResult);
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:3000/api/photos/structure-recipe",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ pageTexts: ["2 cups flour"] }),
+      }),
+    );
+  });
+
+  it("throws an ApiError with the server's code on failure", async () => {
+    vi.mocked(tokenStorage.get).mockResolvedValue("test-token");
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: () =>
+        Promise.resolve({ error: "Invalid input", code: "VALIDATION_ERROR" }),
+    });
+
+    await expect(uploadRecipeTextForAnalysis("")).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+    });
+  });
+});
+
+describe("mapTextResultToImportedRecipeData", () => {
+  const fullResult: RecipePhotoResult = {
+    title: "Pasta Primavera",
+    description: "Light veggie pasta",
+    ingredients: [{ name: "penne pasta", quantity: "8", unit: "oz" }],
+    instructions: "1. Cook pasta\n2. Sauté veggies",
+    servings: 4,
+    prepTimeMinutes: 10,
+    cookTimeMinutes: 20,
+    cuisine: "Italian",
+    dietTags: ["vegetarian"],
+    caloriesPerServing: 320,
+    proteinPerServing: 12,
+    carbsPerServing: 48,
+    fatPerServing: 8,
+    confidence: 0.9,
+  };
+
+  it("maps fields like mapPhotoResultToImportedRecipeData, with a text_import sourceUrl", () => {
+    const mapped = mapTextResultToImportedRecipeData(fullResult);
+
+    expect(mapped.title).toBe("Pasta Primavera");
+    expect(mapped.instructions).toEqual(["1. Cook pasta", "2. Sauté veggies"]);
+    expect(mapped.imageUrl).toBeNull();
+    expect(mapped.sourceUrl).toBe("text_import");
   });
 });
 

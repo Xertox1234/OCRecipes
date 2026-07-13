@@ -74,7 +74,7 @@ export function register(app: Express): void {
           description: data.description ?? null,
           instructions: data.instructions,
         });
-        data.title = normalized.title;
+        data.title = normalized.title ?? data.title;
         data.description = normalized.description ?? "";
         if (data.instructions) {
           data.instructions = normalized.instructions ?? data.instructions;
@@ -148,30 +148,23 @@ export function register(app: Express): void {
           return;
         }
 
-        // Normalize imported data
-        const normalized = normalizeRecipeFields({
-          title: data.title,
-          description: data.description ?? null,
-          instructions: data.instructions,
-          ingredients: data.ingredients,
-        });
-        data.title = normalized.title;
-        data.description = normalized.description ?? "";
-        if (data.instructions) {
-          data.instructions = normalized.instructions ?? data.instructions;
-        }
+        // Normalize title here — not redundant — to match existing
+        // meal-type inference behavior (this route previously fed
+        // inferMealTypes a normalized title + raw ingredient names; that
+        // input shape is preserved exactly). Full persistence normalization
+        // now happens inside storage.createMealPlanRecipe (see Task 4).
+        const normalizedTitle =
+          normalizeRecipeFields({ title: data.title }).title ?? data.title;
 
         // Save to DB
-        const ingredientData = (normalized.ingredients ?? []).map(
-          (ing, idx) => ({
-            recipeId: 0,
-            name: ing.name,
-            quantity: ing.quantity,
-            unit: ing.unit,
-            category: "other" as const,
-            displayOrder: idx,
-          }),
-        );
+        const ingredientData = data.ingredients.map((ing, idx) => ({
+          recipeId: 0,
+          name: ing.name,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          category: "other" as const,
+          displayOrder: idx,
+        }));
         const recipe = await storage.createMealPlanRecipe(
           {
             userId: req.userId,
@@ -187,7 +180,7 @@ export function register(app: Express): void {
             instructions: data.instructions ?? undefined,
             dietTags: data.dietTags,
             mealTypes: inferMealTypes(
-              data.title,
+              normalizedTitle,
               data.ingredients.map((i) => i.name),
             ),
             caloriesPerServing: data.caloriesPerServing,

@@ -406,6 +406,39 @@ export async function uploadRecipePhotoForAnalysis(
 }
 
 /**
+ * Send pasted recipe text for AI structuring. Plain JSON POST (not a file
+ * upload like uploadRecipePhotoForAnalysis) — there's no image, just text.
+ * Not premium-gated server-side (see server/routes/photos.ts).
+ */
+export async function uploadRecipeTextForAnalysis(
+  text: string,
+): Promise<RecipePhotoResult> {
+  const token = await tokenStorage.get();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const response = await fetch(`${getApiUrl()}/api/photos/structure-recipe`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ pageTexts: [text] }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new ApiError(
+      errorData.error || `Structure failed: ${response.status}`,
+      errorData.code,
+    );
+  }
+
+  return response.json();
+}
+
+/**
  * Convert a RecipePhotoResult into ImportedRecipeData for RecipeCreateScreen prefill.
  */
 export function mapPhotoResultToImportedRecipeData(
@@ -429,6 +462,35 @@ export function mapPhotoResultToImportedRecipeData(
     carbsPerServing: result.carbsPerServing?.toString() ?? null,
     fatPerServing: result.fatPerServing?.toString() ?? null,
     sourceUrl: "photo_import",
+  };
+}
+
+/**
+ * Convert a RecipePhotoResult (from pasted-text extraction) into
+ * ImportedRecipeData for RecipeCreateScreen prefill. Same transforms as
+ * mapPhotoResultToImportedRecipeData — only the sourceUrl sentinel differs.
+ */
+export function mapTextResultToImportedRecipeData(
+  result: RecipePhotoResult,
+): ImportedRecipeData {
+  return {
+    title: result.title,
+    description: result.description,
+    servings: result.servings,
+    prepTimeMinutes: result.prepTimeMinutes,
+    cookTimeMinutes: result.cookTimeMinutes,
+    cuisine: result.cuisine,
+    dietTags: result.dietTags,
+    ingredients: result.ingredients,
+    instructions: result.instructions
+      ? result.instructions.split(/\n/).filter((s) => s.trim().length > 0)
+      : null,
+    imageUrl: null,
+    caloriesPerServing: result.caloriesPerServing?.toString() ?? null,
+    proteinPerServing: result.proteinPerServing?.toString() ?? null,
+    carbsPerServing: result.carbsPerServing?.toString() ?? null,
+    fatPerServing: result.fatPerServing?.toString() ?? null,
+    sourceUrl: "text_import",
   };
 }
 

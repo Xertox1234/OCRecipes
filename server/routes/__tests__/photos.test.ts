@@ -6,6 +6,7 @@ import { storage } from "../../storage";
 import {
   analyzePhoto,
   analyzeRecipePhoto,
+  structureRecipeFromText,
   refineAnalysis,
   needsFollowUp,
   getFollowUpQuestions,
@@ -64,6 +65,7 @@ vi.mock("../../lib/openai", () => ({
 vi.mock("../../services/photo-analysis", () => ({
   analyzePhoto: vi.fn(),
   analyzeRecipePhoto: vi.fn(),
+  structureRecipeFromText: vi.fn(),
   refineAnalysis: vi.fn(),
   needsFollowUp: vi.fn(),
   getFollowUpQuestions: vi.fn(),
@@ -734,6 +736,80 @@ describe("Photos Routes", () => {
         .post("/api/photos/analyze-recipe")
         .set("Authorization", "Bearer token")
         .attach("photo", Buffer.from("fake"), "test.jpg");
+
+      expect(res.status).toBe(500);
+    });
+  });
+
+  describe("POST /api/photos/structure-recipe", () => {
+    it("returns 200 with recipe data for a free user (no premium gate)", async () => {
+      vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+        tier: "free",
+        expiresAt: null,
+      });
+      vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+      vi.mocked(structureRecipeFromText).mockResolvedValue({
+        title: "Pancakes",
+        description: "Fluffy pancakes",
+        ingredients: [{ name: "flour", quantity: "2", unit: "cups" }],
+        instructions: "1. Mix\n2. Cook",
+        servings: 4,
+        prepTimeMinutes: 10,
+        cookTimeMinutes: 15,
+        cuisine: "American",
+        dietTags: [],
+        caloriesPerServing: 250,
+        proteinPerServing: 6,
+        carbsPerServing: 40,
+        fatPerServing: 8,
+        confidence: 0.9,
+      });
+
+      const res = await request(app)
+        .post("/api/photos/structure-recipe")
+        .set("Authorization", "Bearer token")
+        .send({ pageTexts: ["2 cups flour\n1. Mix\n2. Cook"] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.title).toBe("Pancakes");
+    });
+
+    it("returns 400 when pageTexts is empty", async () => {
+      const res = await request(app)
+        .post("/api/photos/structure-recipe")
+        .set("Authorization", "Bearer token")
+        .send({ pageTexts: [] });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when a page text exceeds the 4000-character cap", async () => {
+      const res = await request(app)
+        .post("/api/photos/structure-recipe")
+        .set("Authorization", "Bearer token")
+        .send({ pageTexts: ["a".repeat(4001)] });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 when more than 3 page texts are sent", async () => {
+      const res = await request(app)
+        .post("/api/photos/structure-recipe")
+        .set("Authorization", "Bearer token")
+        .send({ pageTexts: ["a", "b", "c", "d"] });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 500 when structureRecipeFromText throws", async () => {
+      vi.mocked(structureRecipeFromText).mockRejectedValue(
+        new Error("Model unavailable"),
+      );
+
+      const res = await request(app)
+        .post("/api/photos/structure-recipe")
+        .set("Authorization", "Bearer token")
+        .send({ pageTexts: ["some recipe text"] });
 
       expect(res.status).toBe(500);
     });

@@ -6,6 +6,7 @@ import RecipeBrowserScreen from "@/screens/meal-plan/RecipeBrowserScreen";
 import RecipeCreateScreen from "@/screens/meal-plan/RecipeCreateScreen";
 import RecipeImportScreen from "@/screens/meal-plan/RecipeImportScreen";
 import RecipePhotoImportScreen from "@/screens/meal-plan/RecipePhotoImportScreen";
+import RecipeTextImportScreen from "@/screens/meal-plan/RecipeTextImportScreen";
 import GroceryListsScreen from "@/screens/meal-plan/GroceryListsScreen";
 import GroceryListScreen from "@/screens/meal-plan/GroceryListScreen";
 import PantryScreen from "@/screens/meal-plan/PantryScreen";
@@ -49,6 +50,12 @@ export type MealPlanStackParamList = {
     | undefined;
   RecipePhotoImport: {
     photoUri: string;
+    returnToMealPlan?: { mealType: string; plannedDate: string };
+    /** Set when navigated to directly from Home — see useFromHomeBackRedirect. */
+    fromHome?: boolean;
+  };
+  RecipeTextImport: {
+    pastedText: string;
     returnToMealPlan?: { mealType: string; plannedDate: string };
     /** Set when navigated to directly from Home — see useFromHomeBackRedirect. */
     fromHome?: boolean;
@@ -124,6 +131,15 @@ export default function MealPlanStackNavigator() {
       <Stack.Screen
         name="RecipePhotoImport"
         component={RecipePhotoImportScreen}
+        options={{
+          headerTitle: () => (
+            <HeaderTitle title="Import Recipe" showIcon={false} />
+          ),
+        }}
+      />
+      <Stack.Screen
+        name="RecipeTextImport"
+        component={RecipeTextImportScreen}
         options={{
           headerTitle: () => (
             <HeaderTitle title="Import Recipe" showIcon={false} />

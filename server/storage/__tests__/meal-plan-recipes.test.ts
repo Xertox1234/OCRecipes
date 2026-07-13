@@ -338,6 +338,63 @@ describe("meal-plan-recipes storage", () => {
         .orderBy(recipeIngredients.displayOrder);
       expect(ings.map((i) => i.displayOrder)).toEqual([0, 1]);
     });
+
+    it("normalizes the recipe title and ingredient name/unit before persisting", async () => {
+      const created = await createMealPlanRecipe(
+        makeRecipeInput(testUser.id, { title: "chicken parmesan" }),
+        [
+          {
+            recipeId: 0,
+            name: "chicken breast",
+            quantity: "2",
+            unit: "pounds",
+            displayOrder: 0,
+          },
+        ],
+      );
+      expect(created.title).toBe("Chicken Parmesan");
+
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, created.id));
+      expect(ing.name).toBe("Chicken Breast");
+      expect(ing.unit).toBe("lb");
+    });
+
+    it("converts a fraction ingredient quantity to a decimal string before persisting", async () => {
+      const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
+        {
+          recipeId: 0,
+          name: "Salt",
+          quantity: "1/2",
+          unit: "tsp",
+          displayOrder: 0,
+        },
+      ]);
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, created.id));
+      expect(ing.quantity).toBe("0.50");
+    });
+
+    it("stores a null quantity when the ingredient quantity is unparseable freeform text", async () => {
+      const created = await createMealPlanRecipe(makeRecipeInput(testUser.id), [
+        {
+          recipeId: 0,
+          name: "Salt",
+          quantity: "a pinch",
+          unit: "",
+          displayOrder: 0,
+        },
+      ]);
+      const [ing] = await tx
+        .select()
+        .from(recipeIngredients)
+        .where(eq(recipeIngredients.recipeId, created.id));
+      expect(ing.quantity).toBeNull();
+    });
   });
 
   // ==========================================================================
@@ -422,6 +479,33 @@ describe("meal-plan-recipes storage", () => {
       });
       expect(result).toBeUndefined();
       expect(searchIndex.addToIndex).not.toHaveBeenCalled();
+    });
+
+    it("normalizes the title when updating", async () => {
+      const recipe = await seedRecipe(testUser.id, { title: "Old Title" });
+      const updated = await updateMealPlanRecipe(recipe.id, testUser.id, {
+        title: "new title lowercase",
+      });
+      expect(updated!.title).toBe("New Title Lowercase");
+    });
+
+    it("normalizes difficulty when updating", async () => {
+      const recipe = await seedRecipe(testUser.id);
+      const updated = await updateMealPlanRecipe(recipe.id, testUser.id, {
+        difficulty: "simple",
+      });
+      expect(updated!.difficulty).toBe("Easy");
+    });
+
+    it("does not throw on a title-omitting partial update (difficulty-only edit)", async () => {
+      const recipe = await seedRecipe(testUser.id, {
+        title: "Untouched Title",
+      });
+      const updated = await updateMealPlanRecipe(recipe.id, testUser.id, {
+        difficulty: "hard",
+      });
+      expect(updated!.difficulty).toBe("Hard");
+      expect(updated!.title).toBe("Untouched Title");
     });
   });
 
