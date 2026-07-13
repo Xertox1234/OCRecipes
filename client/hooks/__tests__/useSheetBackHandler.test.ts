@@ -192,6 +192,85 @@ describe("useSheetBackHandler", () => {
     expect(addEventListenerSpy).toHaveBeenCalledTimes(1);
   });
 
+  it("recovers from a spurious onSheetChange(-1) fired during a blur/refocus round-trip, when isOpen stays true throughout (state-driven host)", () => {
+    // Repro for
+    // todos/archive/P3-2026-07-12-sheetbackhandler-stale-listener-after-blur-refocus.md:
+    // a deep-link push blurs the host screen while a state-driven sheet is
+    // open (isOpen never changes — the host's own menu state is untouched by
+    // the round-trip), and a stray onSheetChange(-1) fires mid-round-trip
+    // (observed on-device; gorhom can emit this during a screen
+    // detach/reattach even though the sheet never visually closed). Without
+    // a live isOpen fallback, isOpenRef gets stuck false forever, since
+    // isOpen itself never transitions again to re-open it — only
+    // onSheetChange(-1) ever clears the ref, and only the isOpen prop
+    // transitioning to true ever sets it, so a spurious clear while isOpen
+    // stays true is unrecoverable without a live fallback.
+    RN.Platform.OS = "android";
+    const addEventListenerSpy = vi.spyOn(RN.BackHandler, "addEventListener");
+    const sheetRef = makeSheetRef();
+
+    const { result, rerender } = renderHook(
+      ({ isOpen }: { isOpen: boolean }) =>
+        useSheetBackHandler(sheetRef, isOpen),
+      { initialProps: { isOpen: true } },
+    );
+
+    const handler = addEventListenerSpy.mock.calls[0]?.[1] as () => boolean;
+
+    // Blur (deep link pushes a sibling screen on top).
+    useIsFocusedMock.mockReturnValue(false);
+    rerender({ isOpen: true });
+    expect(handler()).toBe(false);
+
+    // A stray onSheetChange(-1) fires during the round-trip, even though
+    // the sheet never actually closed and isOpen never changed.
+    result.current.onSheetChange(-1);
+
+    // Refocus (hardware back pops the sibling screen).
+    useIsFocusedMock.mockReturnValue(true);
+    rerender({ isOpen: true });
+
+    // A further back press should still dismiss the still-open sheet.
+    expect(handler()).toBe(true);
+    expect(sheetRef.current?.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it("still lets a back press fall through after a blur/refocus round-trip when the sheet genuinely closed (isOpen flips false for real)", () => {
+    // Symmetric counterpart to the spurious-event recovery test above: the
+    // live isOpen fallback must never make a genuinely-closed, state-driven
+    // sheet "sticky" after refocus — it should only rescue the case where
+    // isOpen stays true but isOpenRef desynced, not override a real close.
+    RN.Platform.OS = "android";
+    const addEventListenerSpy = vi.spyOn(RN.BackHandler, "addEventListener");
+    const sheetRef = makeSheetRef();
+
+    const { result, rerender } = renderHook(
+      ({ isOpen }: { isOpen: boolean }) =>
+        useSheetBackHandler(sheetRef, isOpen),
+      { initialProps: { isOpen: true } },
+    );
+
+    const handler = addEventListenerSpy.mock.calls[0]?.[1] as () => boolean;
+
+    // Blur (deep link pushes a sibling screen on top).
+    useIsFocusedMock.mockReturnValue(false);
+    rerender({ isOpen: true });
+
+    // The sheet genuinely closes during the round-trip — isOpen flips
+    // false and onSheetChange(-1) confirms it, exactly as a real dismiss
+    // does.
+    rerender({ isOpen: false });
+    result.current.onSheetChange(-1);
+
+    // Refocus (hardware back pops the sibling screen).
+    useIsFocusedMock.mockReturnValue(true);
+    rerender({ isOpen: false });
+
+    // A further back press must fall through — the sheet is really closed.
+    expect(handler()).toBe(false);
+    expect(sheetRef.current?.dismiss).not.toHaveBeenCalled();
+  });
+
   it("tracks presented state via onSheetChange for imperative hosts (no isOpen param)", () => {
     RN.Platform.OS = "android";
     const addEventListenerSpy = vi.spyOn(RN.BackHandler, "addEventListener");
