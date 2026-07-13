@@ -364,6 +364,111 @@ export async function analyzeRecipePhoto(
   return data;
 }
 
+const RECIPE_TEXT_PROMPT = `You are a recipe extraction assistant. Extract the full recipe from this text, which was captured from a cookbook page, recipe card, website, or pasted directly by the user.
+
+Extract:
+1. Recipe title
+2. Description (1-2 sentences)
+3. Ingredients list with name, quantity, and unit for each
+4. Instructions as numbered steps
+5. Servings count
+6. Prep time and cook time in minutes
+7. Cuisine type (e.g., "Italian", "Mexican")
+8. Diet tags (e.g., "vegetarian", "gluten-free")
+9. Estimated nutrition per serving (calories, protein, carbs, fat)
+
+Rules:
+- Be thorough with ingredients — include every item mentioned
+- Standardize units (tbsp, tsp, cup, oz, g, etc.)
+- If nutrition is not mentioned, estimate based on ingredients
+- If the text spans multiple pages (separated by "--- Page N ---" markers), treat them as one continuous recipe
+- Set confidence based on how complete and unambiguous the extracted recipe is (1.0 = fully clear, 0.0 = mostly unreadable/unusable)
+
+${SYSTEM_PROMPT_BOUNDARY}
+
+Respond with JSON only:
+{
+  "title": "recipe title",
+  "description": "brief description",
+  "ingredients": [
+    { "name": "ingredient name", "quantity": "amount", "unit": "unit or null" }
+  ],
+  "instructions": "1. Step one\\n2. Step two",
+  "servings": 4,
+  "prepTimeMinutes": 15,
+  "cookTimeMinutes": 30,
+  "cuisine": "Italian",
+  "dietTags": ["vegetarian"],
+  "caloriesPerServing": 350,
+  "proteinPerServing": 20,
+  "carbsPerServing": 40,
+  "fatPerServing": 12,
+  "confidence": 0.9
+}`;
+
+/**
+ * Structure a recipe from already-extracted page text — pasted directly by
+ * the user, or (in a future OCR-first camera flow) recognized on-device from
+ * one or more photos. Text-only completion, no vision call — cheaper and
+ * faster than `analyzeRecipePhoto`, which is why this endpoint is free
+ * rather than premium-gated (see server/routes/photos.ts).
+ */
+export async function structureRecipeFromText(
+  pageTexts: string[],
+): Promise<RecipePhotoResult> {
+  const startTime = Date.now();
+
+  const sanitizedPages = pageTexts.map((text) => sanitizeUserInput(text));
+  const combinedText =
+    sanitizedPages.length === 1
+      ? sanitizedPages[0]
+      : sanitizedPages
+          .map((text, i) => `--- Page ${i + 1} ---\n${text}`)
+          .join("\n\n");
+
+  let response;
+  try {
+    response = await openai.chat.completions.create(
+      {
+        model: MODEL_FAST,
+        max_completion_tokens: 2000,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: RECIPE_TEXT_PROMPT,
+          },
+          {
+            role: "user",
+            content: `Extract the full recipe from this text:\n\n${combinedText}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      },
+      { timeout: OPENAI_TIMEOUT_FAST_MS },
+    );
+  } catch (error) {
+    log.error({ err: toError(error) }, "recipe text structuring error");
+    throw new Error("Failed to structure recipe from text. Please try again.");
+  }
+
+  const data = parseVisionResponse(
+    response.choices[0]?.message?.content,
+    recipePhotoResultSchema,
+    {
+      noResponse: "No response from recipe text structuring",
+      invalid: "Recipe text extraction returned invalid data",
+      validationFailed: "recipe text extraction validation failed",
+    },
+  );
+
+  log.debug(
+    { duration: Date.now() - startTime, pageCount: pageTexts.length },
+    "recipe text structuring completed",
+  );
+  return data;
+}
+
 /**
  * Analyze a nutrition label photo to extract all visible values.
  * Uses detail: "high" for reading small label text.
