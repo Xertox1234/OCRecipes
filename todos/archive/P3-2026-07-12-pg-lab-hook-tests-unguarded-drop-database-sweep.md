@@ -1,6 +1,6 @@
 ---
 title: "Apply the WITH (FORCE) throwaway-DB drop fix to the remaining pg-lab hook self-tests"
-status: backlog
+status: done
 priority: low
 created: 2026-07-12
 updated: 2026-07-12
@@ -97,3 +97,5 @@ hygiene/consistency fix, not a correctness fix for any currently-observed failur
   returns HOLD (no archived-todo file in the diff, and separately `.claude/hooks/` is not on
   the guard's `SAFE_ALLOWLIST` regardless) — needs individual human review/merge. Status
   stays `backlog` and this file stays un-archived until the PR actually merges.
+- Reviewed via `/review 608` (clean verdict, no issues found) and merged (squash `9176408`,
+  #608) into `main`. Archiving.
