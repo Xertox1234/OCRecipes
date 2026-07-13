@@ -124,7 +124,11 @@ export async function saveRecipeFromChat(
         normalizedProductName: normalizedTitle.toLowerCase(),
         title: normalizedTitle,
         description: normalized.description,
-        difficulty: normalized.difficulty,
+        // Preserve an unmapped difficulty verbatim (see
+        // createRecipeWithLimitCheck in community-recipes.ts) instead of
+        // letting normalizeDifficulty's null wipe out a legacy or
+        // off-vocabulary value carried in chat metadata.
+        difficulty: normalized.difficulty ?? recipe.difficulty,
         timeEstimate: recipe.timeEstimate,
         servings: recipe.servings ?? 2,
         dietTags: recipe.dietTags ?? [],
