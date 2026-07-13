@@ -76,7 +76,7 @@ psql -X -q -d postgres -c 'SELECT 1' >/dev/null 2>&1 || { echo "skip: no local P
 TEST_DB="pg_lab_contract_diff_test_$$"
 TEST_URL="postgresql://localhost/$TEST_DB"
 cleanup() {
-  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\"" >/dev/null 2>&1
+  psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$TEST_DB\" WITH (FORCE)" >/dev/null 2>&1
 }
 trap cleanup EXIT
 
