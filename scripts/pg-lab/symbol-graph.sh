@@ -124,7 +124,7 @@ SQL
     # missing/empty/non-string "main" printing the literal string "undefined" for the
     # check below (rather than a missing field throwing, or path.normalize("") yielding
     # the nonsense-but-nonempty allowlist entry ".").
-    MAIN_ENTRY="$(node -p "const m = require('$PKG_DIR/package.json').main; typeof m === 'string' && m.length > 0 ? path.normalize(m) : undefined" 2>/dev/null)"
+    MAIN_ENTRY="$(node -p "const path = require('path'); const m = require('$PKG_DIR/package.json').main; typeof m === 'string' && m.length > 0 ? path.normalize(m) : undefined" 2>/dev/null)"
     # A missing "main" field makes `node -p` print the literal string "undefined" (still
     # non-empty, still exit 0) -- `-z` alone would NOT catch that and would silently
     # allowlist the nonsense path "undefined" instead of refusing to run. Mirrors the TS

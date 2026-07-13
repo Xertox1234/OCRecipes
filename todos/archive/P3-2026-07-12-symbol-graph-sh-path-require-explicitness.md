@@ -1,6 +1,6 @@
 ---
 title: "symbol-graph.sh's inline node -p expression relies on an implicit `path` global"
-status: backlog
+status: done
 priority: low
 created: 2026-07-12
 updated: 2026-07-12
