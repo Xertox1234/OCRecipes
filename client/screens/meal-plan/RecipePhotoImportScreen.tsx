@@ -45,6 +45,7 @@ export function importErrorCopy(error: unknown): string {
       case ErrorCode.PREMIUM_REQUIRED:
         return "Recipe photo import is a premium feature.";
       case ErrorCode.VALIDATION_ERROR:
+        return "That input couldn't be used. Please try again.";
       case ErrorCode.IMAGE_TOO_LARGE:
         return "That image couldn't be used. Try a clearer photo.";
       case ErrorCode.RATE_LIMITED:
