@@ -191,7 +191,7 @@ export function register(app: Express): void {
           instructions: generatedRecipe.instructions,
           ingredients: generatedRecipe.ingredients,
         });
-        generatedRecipe.title = normalized.title;
+        generatedRecipe.title = normalized.title ?? generatedRecipe.title;
         // Keep the AI-provided original when normalization yields null.
         generatedRecipe.description =
           normalized.description ?? generatedRecipe.description;

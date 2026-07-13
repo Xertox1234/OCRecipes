@@ -1,3 +1,5 @@
+import { normalizeQuantityToDecimal } from "@shared/lib/quantity";
+
 // ── Title Case ──────────────────────────────────────────────────────────────
 
 const LOWERCASE_WORDS = new Set([
@@ -145,9 +147,11 @@ export function normalizeIngredient(ing: IngredientInput): IngredientInput {
     }
   }
 
+  const trimmedQuantity = quantity.trim();
+
   return {
     name: normalizeTitle(name),
-    quantity: quantity.trim(),
+    quantity: normalizeQuantityToDecimal(trimmedQuantity) ?? trimmedQuantity,
     unit: normalizeUnit(unit),
   };
 }
@@ -161,7 +165,7 @@ interface RawIngredient {
 }
 
 export interface RecipeFieldsInput {
-  title: string;
+  title?: string;
   description?: string | null;
   difficulty?: string | null;
   instructions?: string[] | null;
@@ -169,7 +173,7 @@ export interface RecipeFieldsInput {
 }
 
 export interface NormalizedRecipeFields {
-  title: string;
+  title?: string;
   description?: string | null;
   difficulty?: string | null;
   instructions?: string[] | null;
@@ -181,7 +185,8 @@ export interface NormalizedRecipeFields {
  * object — no Express/req coupling. Only the keys present in the input appear in
  * the output, so the result is spread-friendly and preserves each caller's
  * presence semantics (e.g. an absent `instructions` stays absent rather than
- * becoming `[]`).
+ * becoming `[]`). `title` follows the same presence-guard pattern as the other
+ * four fields — a partial update (e.g. a difficulty-only edit) may omit it.
  *
  * Callers retain their own post-normalization fallback policy (`?? ""`,
  * `?? original`, store `null`) — the helper centralizes the normalization, not
@@ -190,10 +195,11 @@ export interface NormalizedRecipeFields {
 export function normalizeRecipeFields(
   data: RecipeFieldsInput,
 ): NormalizedRecipeFields {
-  const result: NormalizedRecipeFields = {
-    title: normalizeTitle(data.title),
-  };
+  const result: NormalizedRecipeFields = {};
 
+  if ("title" in data && data.title != null) {
+    result.title = normalizeTitle(data.title);
+  }
   if ("description" in data) {
     result.description = normalizeDescription(data.description);
   }

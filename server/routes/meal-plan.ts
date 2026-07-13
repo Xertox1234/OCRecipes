@@ -227,19 +227,18 @@ export function register(app: Express): void {
         }
 
         // Normalize data
-        const {
-          title: normalizedTitle,
-          description: normalizedDescription,
-          difficulty: normalizedDifficulty,
-          instructions: normalizedInstructions,
-          ingredients: normalizedIngredients,
-        } = normalizeRecipeFields({
+        const normalized = normalizeRecipeFields({
           title: recipeData.title,
           description: recipeData.description ?? null,
           difficulty: recipeData.difficulty ?? null,
           instructions: recipeData.instructions,
           ingredients,
         });
+        const normalizedTitle = normalized.title ?? recipeData.title;
+        const normalizedDescription = normalized.description;
+        const normalizedDifficulty = normalized.difficulty;
+        const normalizedInstructions = normalized.instructions;
+        const normalizedIngredients = normalized.ingredients;
 
         // Infer meal types from title + ingredients (moved from storage layer to maintain layering)
         const mealTypes = inferMealTypes(

@@ -176,15 +176,33 @@ describe("normalizeIngredient", () => {
     expect(result.unit).toBe("cup");
     expect(result.name).toBe("Diced Tomatoes");
   });
-  it("splits fractional measurement from name field", () => {
+  it("splits fractional measurement from name field and converts it to decimal", () => {
     const result = normalizeIngredient({
       name: "1/2 tsp salt",
       quantity: "",
       unit: "",
     });
-    expect(result.quantity).toBe("1/2");
+    expect(result.quantity).toBe("0.5");
     expect(result.unit).toBe("tsp");
     expect(result.name).toBe("Salt");
+  });
+
+  it("converts a unicode fraction glyph quantity to decimal", () => {
+    const result = normalizeIngredient({
+      name: "Flour",
+      quantity: "½",
+      unit: "cup",
+    });
+    expect(result.quantity).toBe("0.5");
+  });
+
+  it("preserves freeform (non-numeric) quantity text unchanged", () => {
+    const result = normalizeIngredient({
+      name: "Salt",
+      quantity: "a pinch",
+      unit: "",
+    });
+    expect(result.quantity).toBe("a pinch");
   });
   it("does not split if quantity is already provided", () => {
     const result = normalizeIngredient({
@@ -271,7 +289,7 @@ describe("normalizeRecipeFields", () => {
     });
     expect(result.ingredients).toEqual([
       { name: "Chicken Breast", quantity: "2", unit: "lb" },
-      { name: "Salt", quantity: "1/2", unit: "tsp" },
+      { name: "Salt", quantity: "0.5", unit: "tsp" },
     ]);
   });
 
@@ -290,5 +308,15 @@ describe("normalizeRecipeFields", () => {
     expect(
       normalizeRecipeFields({ title: "x", ingredients: [] }).ingredients,
     ).toEqual([]);
+  });
+
+  it("omits the title key entirely when not provided, without throwing", () => {
+    const result = normalizeRecipeFields({ difficulty: "easy" });
+    expect("title" in result).toBe(false);
+    expect(result.difficulty).toBe("Easy");
+  });
+
+  it("does not throw when title is absent (partial-update case)", () => {
+    expect(() => normalizeRecipeFields({ description: "test" })).not.toThrow();
   });
 });

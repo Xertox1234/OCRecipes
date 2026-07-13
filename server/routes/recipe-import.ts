@@ -74,7 +74,7 @@ export function register(app: Express): void {
           description: data.description ?? null,
           instructions: data.instructions,
         });
-        data.title = normalized.title;
+        data.title = normalized.title ?? data.title;
         data.description = normalized.description ?? "";
         if (data.instructions) {
           data.instructions = normalized.instructions ?? data.instructions;
@@ -155,7 +155,7 @@ export function register(app: Express): void {
           instructions: data.instructions,
           ingredients: data.ingredients,
         });
-        data.title = normalized.title;
+        data.title = normalized.title ?? data.title;
         data.description = normalized.description ?? "";
         if (data.instructions) {
           data.instructions = normalized.instructions ?? data.instructions;
