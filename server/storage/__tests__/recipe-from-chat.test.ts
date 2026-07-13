@@ -246,6 +246,30 @@ describe("recipe-from-chat storage", () => {
       expect(recipe!.mealTypes).toEqual(["dinner"]);
     });
 
+    it("normalizes title, difficulty, and ingredient names before persisting", async () => {
+      const metadata = buildRecipeMetadata(
+        uniqueTitle("spicy thai basil chicken"),
+      );
+      const { conversationId, messageId } = await createConversationWithMessage(
+        { userId: testUser.id, metadata },
+      );
+
+      const recipe = await saveRecipeFromChat(
+        messageId,
+        conversationId,
+        testUser.id,
+      );
+      expect(recipe).not.toBeNull();
+      // uniqueTitle appends a timestamp/seq suffix, so match the Title-Cased
+      // prefix rather than asserting exact equality.
+      expect(recipe!.title).toMatch(/^Spicy Thai Basil Chicken/);
+      expect(recipe!.difficulty).toBe("Easy");
+      const ingredients = recipe!.ingredients as { name: string }[];
+      expect(ingredients[0]!.name).toBe("Flour");
+      // normalizedProductName stays derived from the *normalized* title.
+      expect(recipe!.normalizedProductName).toBe(recipe!.title.toLowerCase());
+    });
+
     it("falls back to legacy savedRecipeId pointer when metadata fails validation", async () => {
       // Seed an existing community recipe owned by the user.
       const [existing] = await tx

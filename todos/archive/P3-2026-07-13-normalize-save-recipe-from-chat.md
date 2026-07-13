@@ -3,7 +3,7 @@
 ---
 
 title: "saveRecipeFromChat persists un-normalized recipes to communityRecipes"
-status: backlog
+status: done
 priority: low
 created: 2026-07-13
 updated: 2026-07-13
@@ -39,10 +39,10 @@ was surfaced separately, not auto-filed as low-severity).
 
 ## Acceptance Criteria
 
-- [ ] `saveRecipeFromChat` calls `normalizeRecipeFields` on title/description/difficulty/
+- [x] `saveRecipeFromChat` calls `normalizeRecipeFields` on title/description/difficulty/
       instructions/ingredients before inserting, matching the pattern already used in
       `createRecipeWithLimitCheck` (`server/storage/community-recipes.ts`)
-- [ ] Existing tests for `saveRecipeFromChat` still pass; add a normalization assertion
+- [x] Existing tests for `saveRecipeFromChat` still pass; add a normalization assertion
       (e.g. lowercase title input → Title Case output) if none exists
 
 ## Implementation Notes
@@ -68,3 +68,12 @@ was surfaced separately, not auto-filed as low-severity).
 
 - Filed from final whole-branch review finding on the paste-text-import-normalization
   branch (opus reviewer, "Completeness Check: Normalization Coverage" section).
+- Implemented: `saveRecipeFromChat` now calls `normalizeRecipeFields` on
+  title/description/difficulty/instructions/ingredients before inserting, mirroring
+  `createRecipeWithLimitCheck`'s fallback grammar exactly. `normalizedProductName` is
+  derived from the normalized title. `allergens` derivation now runs on normalized
+  ingredient names — confirmed behavior-neutral, since `deriveRecipeAllergens` lowercases
+  internally before matching. Added a TDD test
+  (`server/storage/__tests__/recipe-from-chat.test.ts`) asserting title-casing,
+  difficulty-label normalization, and ingredient-name normalization on save; all 8
+  pre-existing tests plus the new one pass. Branch: `fix/normalize-save-recipe-from-chat`.
