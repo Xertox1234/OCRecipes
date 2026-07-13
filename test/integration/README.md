@@ -104,3 +104,11 @@ carries ever being able to block a merge.
    `register()` export, exactly like `auth-routes.itest.ts`.
 4. No changes are needed to `vitest.integration.config.ts` — its `include`
    glob already covers the whole directory.
+5. `.itest.ts` files share one Vitest "forks" worker per file, so module-level
+   state (e.g. `tokenVersionCache` in `server/middleware/auth.ts`) persists
+   across `it()` blocks in the same file — give every fixture a unique ID per
+   test, the way `auth-routes.itest.ts`'s `uniqueCredentials()` does.
+6. If the new group has many register/login cases, add a test-only lower
+   bcrypt cost factor via an env override (prod stays at cost 12 regardless
+   of the env var) to keep wall time bounded — not needed yet at current
+   suite size.

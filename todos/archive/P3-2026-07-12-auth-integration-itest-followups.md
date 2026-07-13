@@ -1,6 +1,6 @@
 ---
 title: "Auth integration test harness: minor scaling/docs follow-ups"
-status: backlog
+status: done
 priority: low
 created: 2026-07-12
 updated: 2026-07-12
@@ -25,10 +25,10 @@ MERGE-READY. Filed during the "review, fix, codify, close all open PRs" session,
 
 ## Acceptance Criteria
 
-- [ ] If this `.itest.ts` pattern is copied to future route groups with many register/login
+- [x] If this `.itest.ts` pattern is copied to future route groups with many register/login
       cases, add a test-only lower bcrypt cost factor via env override (never touching the
       production cost-12 path) to keep wall time bounded — not needed yet at current suite size.
-- [ ] `test/integration/README.md`'s "Adding a new route group" section gets a one-line note
+- [x] `test/integration/README.md`'s "Adding a new route group" section gets a one-line note
       that `.itest.ts` files share one Vitest "forks" worker per file (module state like
       `tokenVersionCache` persists across `it()` blocks in the same file), so new fixtures
       must keep using unique IDs per test the way `auth-routes.itest.ts` already does.
