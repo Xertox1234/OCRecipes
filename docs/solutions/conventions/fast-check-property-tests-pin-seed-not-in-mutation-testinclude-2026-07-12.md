@@ -6,6 +6,7 @@ tags: [testing, property-based, fast-check, vitest, mutation-testing, flakiness]
 module: shared
 applies_to: ['**/__tests__/**/*.property.test.ts']
 created: 2026-07-12
+last_updated: 2026-07-12
 ---
 
 # fast-check property tests: pin the seed, keep them out of Stryker testInclude
@@ -48,6 +49,9 @@ Property-based tests are a powerful complement to example-based mutation testing
 - `server/lib/chat-history-truncate.ts` — module under test
 - `vitest.config.ts` — the `retry: 2` setting
 - `stryker.targets.mjs` — the `testInclude` registry
+- `scripts/__tests__/fast-check-property-seed-guard.test.ts` — automated grep-based guard test
+  enforcing Rule item 1 (seed pinning) across every `**/__tests__/**/*.property.test.ts` file,
+  wired into the normal Vitest suite via its `.test.ts` filename (no separate hook needed)
 
 ## See Also
 
