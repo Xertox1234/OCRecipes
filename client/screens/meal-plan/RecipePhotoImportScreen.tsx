@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useEffect } from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -14,7 +14,7 @@ import { useNavigation, useRoute } from "@react-navigation/native";
 import type { RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
-import { IngredientIcon } from "@/components/IngredientIcon";
+import { RecipeExtractionReviewCard } from "@/components/meal-plan/RecipeExtractionReviewCard";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -23,23 +23,23 @@ import {
   FontFamily,
   withOpacity,
 } from "@/constants/theme";
+import { useRecipeExtractionFlow } from "@/hooks/useRecipeExtractionFlow";
 import { useRecipePhotoImport } from "@/hooks/useRecipePhotoImport";
 import { mapPhotoResultToImportedRecipeData } from "@/lib/photo-upload";
-import type { RecipePhotoResult } from "@/lib/photo-upload";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";
 import type { RecipePhotoImportScreenNavigationProp } from "@/types/navigation";
 import { useFromHomeBackRedirect } from "@/hooks/useFromHomeBackRedirect";
 
-type ScreenState = "analyzing" | "review" | "error";
-
 /**
  * Map an import failure to static, user-safe copy. Never returns the raw
  * error.message — the upload helper throws ApiError("Upload failed: <status>",
  * code), so the message is not user-friendly. Branch on .code instead.
+ * Exported: RecipeTextImportScreen (Task 14) reuses this exact mapping —
+ * it's already source-agnostic (keyed off ApiError.code, not the source).
  */
-function importErrorCopy(error: unknown): string {
+export function importErrorCopy(error: unknown): string {
   if (error instanceof ApiError) {
     switch (error.code) {
       case ErrorCode.PREMIUM_REQUIRED:
@@ -71,41 +71,14 @@ export default function RecipePhotoImportScreen() {
   useFromHomeBackRedirect(navigation, fromHome);
   const photoImportMutation = useRecipePhotoImport();
 
-  const [state, setState] = useState<ScreenState>("analyzing");
-  const [result, setResult] = useState<RecipePhotoResult | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
-
-  // Analyze on mount
-  useEffect(() => {
-    let cancelled = false;
-
-    async function analyze() {
-      try {
-        const data = await photoImportMutation.mutateAsync(photoUri);
-        if (cancelled) return;
-
-        if (data.confidence > 0.3 && data.title) {
-          setResult(data);
-          setState("review");
-        } else {
-          setErrorMessage(
-            "Could not extract a recipe from this image. Try a clearer photo.",
-          );
-          setState("error");
-        }
-      } catch (error) {
-        if (cancelled) return;
-        setErrorMessage(importErrorCopy(error));
-        setState("error");
-      }
-    }
-
-    void analyze();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
-  }, []);
+  const { state, result, errorMessage, retry } = useRecipeExtractionFlow({
+    input: photoUri,
+    mutationFn: (uri) => photoImportMutation.mutateAsync(uri),
+    gateCheck: (data) => data.confidence > 0.3 && !!data.title,
+    gateFailureMessage:
+      "Could not extract a recipe from this image. Try a clearer photo.",
+    errorCopy: importErrorCopy,
+  });
 
   useEffect(() => {
     if (Platform.OS !== "ios") return;
@@ -124,40 +97,16 @@ export default function RecipePhotoImportScreen() {
     }
   }, [state, result, errorMessage]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = () => {
     if (!result) return;
     haptics.impact();
     const prefill = mapPhotoResultToImportedRecipeData(result);
     navigation.replace("RecipeCreate", { prefill, returnToMealPlan, fromHome });
-  }, [result, haptics, navigation, returnToMealPlan, fromHome]);
+  };
 
-  const handleTryAgain = useCallback(() => {
-    setState("analyzing");
-    setErrorMessage("");
-    setResult(null);
-
-    photoImportMutation.mutateAsync(photoUri).then(
-      (data) => {
-        if (data.confidence > 0.3 && data.title) {
-          setResult(data);
-          setState("review");
-        } else {
-          setErrorMessage(
-            "Could not extract a recipe from this image. Try a clearer photo.",
-          );
-          setState("error");
-        }
-      },
-      (error) => {
-        setErrorMessage(importErrorCopy(error));
-        setState("error");
-      },
-    );
-  }, [photoUri, photoImportMutation]);
-
-  const handleUrlImport = useCallback(() => {
+  const handleUrlImport = () => {
     navigation.navigate("RecipeImport", { returnToMealPlan, fromHome });
-  }, [navigation, returnToMealPlan, fromHome]);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
@@ -170,7 +119,6 @@ export default function RecipePhotoImportScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Analyzing State */}
         {state === "analyzing" && (
           <View accessibilityLiveRegion="polite" style={styles.centeredContent}>
             <ActivityIndicator size="large" color={theme.link} />
@@ -182,201 +130,10 @@ export default function RecipePhotoImportScreen() {
           </View>
         )}
 
-        {/* Review State */}
         {state === "review" && result && (
-          <View>
-            <View
-              style={[
-                styles.successIcon,
-                { backgroundColor: withOpacity(theme.success, 0.15) },
-              ]}
-            >
-              <Feather name="check" size={32} color={theme.success} />
-            </View>
-            <ThemedText style={styles.heading}>Recipe Extracted</ThemedText>
-            <View
-              style={[
-                styles.reviewCard,
-                { backgroundColor: withOpacity(theme.text, 0.04) },
-              ]}
-            >
-              <ThemedText style={styles.recipeTitle}>{result.title}</ThemedText>
-
-              {/* Servings & Times */}
-              <View style={styles.metaRow}>
-                {result.servings && (
-                  <View style={styles.metaItem}>
-                    <Feather
-                      name="users"
-                      size={14}
-                      color={theme.textSecondary}
-                    />
-                    <ThemedText
-                      style={[styles.metaText, { color: theme.textSecondary }]}
-                    >
-                      {result.servings} servings
-                    </ThemedText>
-                  </View>
-                )}
-                {result.prepTimeMinutes != null && (
-                  <View style={styles.metaItem}>
-                    <Feather
-                      name="clock"
-                      size={14}
-                      color={theme.textSecondary}
-                    />
-                    <ThemedText
-                      style={[styles.metaText, { color: theme.textSecondary }]}
-                    >
-                      {result.prepTimeMinutes}m prep
-                    </ThemedText>
-                  </View>
-                )}
-                {result.cookTimeMinutes != null && (
-                  <View style={styles.metaItem}>
-                    <Feather
-                      name="clock"
-                      size={14}
-                      color={theme.textSecondary}
-                    />
-                    <ThemedText
-                      style={[styles.metaText, { color: theme.textSecondary }]}
-                    >
-                      {result.cookTimeMinutes}m cook
-                    </ThemedText>
-                  </View>
-                )}
-              </View>
-
-              {/* Macros */}
-              {result.caloriesPerServing != null && (
-                <View
-                  style={[
-                    styles.macroRow,
-                    {
-                      backgroundColor: withOpacity(theme.text, 0.04),
-                    },
-                  ]}
-                >
-                  <View style={styles.macroItem}>
-                    <ThemedText style={styles.macroValue}>
-                      {Math.round(result.caloriesPerServing)}
-                    </ThemedText>
-                    <ThemedText
-                      style={[
-                        styles.macroLabel,
-                        { color: theme.textSecondary },
-                      ]}
-                    >
-                      cal
-                    </ThemedText>
-                  </View>
-                  {result.proteinPerServing != null && (
-                    <View style={styles.macroItem}>
-                      <ThemedText style={styles.macroValue}>
-                        {Math.round(result.proteinPerServing)}g
-                      </ThemedText>
-                      <ThemedText
-                        style={[
-                          styles.macroLabel,
-                          { color: theme.textSecondary },
-                        ]}
-                      >
-                        protein
-                      </ThemedText>
-                    </View>
-                  )}
-                  {result.carbsPerServing != null && (
-                    <View style={styles.macroItem}>
-                      <ThemedText style={styles.macroValue}>
-                        {Math.round(result.carbsPerServing)}g
-                      </ThemedText>
-                      <ThemedText
-                        style={[
-                          styles.macroLabel,
-                          { color: theme.textSecondary },
-                        ]}
-                      >
-                        carbs
-                      </ThemedText>
-                    </View>
-                  )}
-                  {result.fatPerServing != null && (
-                    <View style={styles.macroItem}>
-                      <ThemedText style={styles.macroValue}>
-                        {Math.round(result.fatPerServing)}g
-                      </ThemedText>
-                      <ThemedText
-                        style={[
-                          styles.macroLabel,
-                          { color: theme.textSecondary },
-                        ]}
-                      >
-                        fat
-                      </ThemedText>
-                    </View>
-                  )}
-                </View>
-              )}
-
-              {/* Ingredients preview */}
-              {result.ingredients.length > 0 && (
-                <View style={styles.ingredientsPreview}>
-                  <ThemedText
-                    style={[
-                      styles.ingredientsLabel,
-                      { color: theme.textSecondary },
-                    ]}
-                  >
-                    {result.ingredients.length} ingredient
-                    {result.ingredients.length !== 1 ? "s" : ""}
-                  </ThemedText>
-                  {result.ingredients.slice(0, 5).map((ing, idx) => (
-                    <View key={idx} style={styles.ingredientRow}>
-                      <IngredientIcon name={ing.name} size={20} />
-                      <ThemedText
-                        style={[
-                          styles.ingredientsList,
-                          { color: theme.textSecondary, flex: 1 },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {ing.quantity} {ing.unit} {ing.name}
-                      </ThemedText>
-                    </View>
-                  ))}
-                  {result.ingredients.length > 5 && (
-                    <ThemedText
-                      style={[
-                        styles.ingredientsList,
-                        { color: theme.textSecondary },
-                      ]}
-                    >
-                      +{result.ingredients.length - 5} more
-                    </ThemedText>
-                  )}
-                </View>
-              )}
-            </View>
-
-            {/* Actions */}
-            <Pressable
-              onPress={handleSave}
-              style={[
-                styles.actionButton,
-                { backgroundColor: theme.accentSolid },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Review and save recipe"
-            >
-              <ThemedText style={styles.actionButtonText}>
-                Review &amp; Save
-              </ThemedText>
-            </Pressable>
-          </View>
+          <RecipeExtractionReviewCard result={result} onSave={handleSave} />
         )}
 
-        {/* Error State */}
         {state === "error" && (
           <View
             accessibilityRole="alert"
@@ -398,7 +155,7 @@ export default function RecipePhotoImportScreen() {
               {errorMessage}
             </ThemedText>
             <Pressable
-              onPress={handleTryAgain}
+              onPress={retry}
               style={[
                 styles.actionButton,
                 { backgroundColor: theme.accentSolid },
@@ -449,74 +206,6 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.bold,
     textAlign: "center",
     marginBottom: Spacing.sm,
-  },
-  successIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "center",
-    marginBottom: Spacing.lg,
-  },
-  reviewCard: {
-    borderRadius: BorderRadius.card,
-    padding: Spacing.lg,
-    marginBottom: Spacing.lg,
-  },
-  recipeTitle: {
-    fontSize: 20,
-    fontFamily: FontFamily.bold,
-    marginBottom: Spacing.md,
-  },
-  metaRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  metaItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  metaText: {
-    fontSize: 13,
-  },
-  macroRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.sm,
-    marginBottom: Spacing.md,
-  },
-  macroItem: {
-    alignItems: "center",
-  },
-  macroValue: {
-    fontSize: 16,
-    fontFamily: FontFamily.semiBold,
-  },
-  macroLabel: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  ingredientsPreview: {
-    gap: 4,
-  },
-  ingredientsLabel: {
-    fontSize: 13,
-    fontFamily: FontFamily.semiBold,
-  },
-  ingredientRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 4,
-  },
-  ingredientsList: {
-    fontSize: 13,
-    lineHeight: 18,
   },
   actionButton: {
     paddingVertical: Spacing.md,
