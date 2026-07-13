@@ -13,6 +13,13 @@
 //
 // Renders simple SVG DOM equivalents so jsdom-based render assertions work
 // (mirrors the mockComponent pattern in test/mocks/react-native.ts).
+//
+// Coverage boundary: svgEl() below spreads incoming props straight onto a
+// plain DOM tag — it does not replicate Reanimated's native prop-application
+// layer. A future test that asserts on rendered SVG attributes
+// (`strokeDashoffset` etc.) from CalorieRing/ProgressRing/ScanSonarRing/
+// ScanReticle/AnimatedCheckmark must not trust this mock to reflect what
+// Reanimated would actually apply on a real native SVG node.
 import React from "react";
 
 function svgEl(tag: string, displayName: string) {
