@@ -17,7 +17,9 @@ import {
 import { apiRequest, resolveImageUrl } from "@/lib/query-client";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, withOpacity } from "@/constants/theme";
+import { safeGoBack } from "@/navigation/safeGoBack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { FeaturedRecipeDetailScreenNavigationProp } from "@/types/navigation";
 import type {
   CommunityRecipe,
   MealPlanRecipe,
@@ -62,7 +64,7 @@ export default function FeaturedRecipeDetailScreen() {
   const route = useRoute<FeaturedRecipeDetailRouteProp>();
   const { recipeId, recipeType, type } = route.params;
   const resolvedRecipeType = recipeType ?? type ?? "community";
-  const navigation = useNavigation();
+  const navigation = useNavigation<FeaturedRecipeDetailScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
 
@@ -176,7 +178,9 @@ export default function FeaturedRecipeDetailScreen() {
 
       {/* Close button */}
       <Pressable
-        onPress={() => navigation.goBack()}
+        onPress={() =>
+          safeGoBack(navigation, () => navigation.navigate("Main"))
+        }
         style={[
           styles.closeButton,
           {

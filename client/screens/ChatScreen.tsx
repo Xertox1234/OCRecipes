@@ -38,6 +38,7 @@ import {
   useSendMessage,
   useCreateConversation,
 } from "@/hooks/useChat";
+import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import {
   Spacing,
   FontFamily,
@@ -279,6 +280,10 @@ export default function ChatScreen() {
     requestError,
   } = useSendMessage(conversationId);
   const createConversation = useCreateConversation();
+  const { acknowledge } = useAcknowledgeReminders();
+  // Reminders clear when the user actually sends a message, not on mere
+  // screen focus — fire at most once per mount.
+  const hasAcknowledgedRef = useRef(false);
 
   const [inputText, setInputText] = useState("");
   const [pendingAssistantContent, setPendingAssistantContent] = useState<
@@ -409,6 +414,12 @@ export default function ChatScreen() {
         } else {
           await sendMessage(content);
         }
+        if (!hasAcknowledgedRef.current) {
+          hasAcknowledgedRef.current = true;
+          acknowledge().catch(() => {
+            hasAcknowledgedRef.current = false;
+          });
+        }
       } catch (e) {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         const message =
@@ -433,6 +444,7 @@ export default function ChatScreen() {
       createConversation,
       navigation,
       sendMessage,
+      acknowledge,
       toast,
     ],
   );

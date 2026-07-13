@@ -1,9 +1,12 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import type { NavigatorScreenParams } from "@react-navigation/native";
 import { ActivityIndicator, Pressable, View, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 
 import MainTabNavigator from "@/navigation/MainTabNavigator";
+import type { MainTabParamList } from "@/navigation/MainTabNavigator";
+import { safeGoBack } from "@/navigation/safeGoBack";
 import LoginScreen from "@/screens/LoginScreen";
 import VerifyEmailScreen from "@/screens/VerifyEmailScreen";
 import ScanScreen from "@/screens/ScanScreen";
@@ -68,7 +71,7 @@ export type RootStackParamList = {
       }
     | undefined;
   Onboarding: undefined;
-  Main: undefined;
+  Main: NavigatorScreenParams<MainTabParamList> | undefined;
   Scan:
     | {
         mode?: "label" | "front-label";
@@ -231,10 +234,22 @@ export default function RootStackNavigator() {
           <Stack.Screen
             name="NutritionDetail"
             component={NutritionDetailScreen}
-            options={{
+            options={({ navigation }) => ({
               headerTitle: "Nutrition Facts",
               presentation: "modal",
-            }}
+              headerLeft: () => (
+                <Pressable
+                  onPress={() =>
+                    safeGoBack(navigation, () => navigation.navigate("Main"))
+                  }
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
+                  <Feather name="x" size={24} color={theme.text} />
+                </Pressable>
+              ),
+            })}
           />
           <Stack.Screen
             name="PhotoIntent"

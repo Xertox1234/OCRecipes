@@ -75,6 +75,7 @@ import {
 } from "@/constants/theme";
 import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 
 const LOCK_THRESHOLD = 0.85; // confidence ≥ 0.85 ≈ 6+ stable frames (frameCount/7)
@@ -242,7 +243,7 @@ export default function ScanScreen() {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
       void refreshScanCount();
       toast.success(buildSuccessToastMessage(confirmCard));
-      navigation.goBack();
+      safeGoBack(navigation, () => navigation.navigate("Main"));
     } catch {
       setConfirmCard((prev) => prev && { ...prev, isLogging: false });
       toast.error("Failed to log item. Please try again.");
@@ -496,7 +497,9 @@ export default function ScanScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.permissionCancel}
-          onPress={() => navigation.goBack()}
+          onPress={() =>
+            safeGoBack(navigation, () => navigation.navigate("Main"))
+          }
           accessibilityLabel="Cancel and go back"
           accessibilityRole="button"
         >
@@ -555,7 +558,9 @@ export default function ScanScreen() {
       >
         <TouchableOpacity
           style={styles.closeBtn}
-          onPress={() => navigation.goBack()}
+          onPress={() =>
+            safeGoBack(navigation, () => navigation.navigate("Main"))
+          }
           accessibilityLabel="Close camera"
           accessibilityRole="button"
         >

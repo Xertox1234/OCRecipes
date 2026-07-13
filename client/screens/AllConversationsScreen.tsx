@@ -22,6 +22,7 @@ import {
 } from "@/hooks/useChat";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { AllConversationsNavigationProp } from "@/types/navigation";
+import { safeGoBack } from "@/navigation/safeGoBack";
 
 const MAX_PINNED = 3;
 
@@ -182,7 +183,11 @@ export default function AllConversationsScreen() {
           All Conversations
         </Text>
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={() =>
+            safeGoBack(navigation, () =>
+              navigation.navigate("Main", { screen: "CoachTab" }),
+            )
+          }
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Close"
