@@ -26,6 +26,7 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { QUERY_KEYS } from "@/lib/query-keys";
@@ -46,6 +47,7 @@ import {
   buildNutrientRows,
   localDataToExtractionResult,
   shouldReplaceWithAI,
+  getLogButtonPresentation,
 } from "./label-analysis-utils";
 
 type LabelAnalysisNavigationProp = NativeStackNavigationProp<
@@ -66,6 +68,7 @@ export default function LabelAnalysisScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<LabelAnalysisNavigationProp>();
   const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
@@ -83,6 +86,8 @@ export default function LabelAnalysisScreen() {
   const [showMicros, setShowMicros] = useState(false);
   const [dataSource, setDataSource] = useState<"local" | "ai" | null>(null);
   const [showUpdatedToast, setShowUpdatedToast] = useState(false);
+  const [uploadFailed, setUploadFailed] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
 
   const dataSourceRef = useRef<"local" | "ai" | null>(null);
   const labelDataRef = useRef<LabelExtractionResult | null>(null);
@@ -102,12 +107,18 @@ export default function LabelAnalysisScreen() {
     }
   }, [route.params.localOCRText]);
 
+  const retryUpload = useCallback(() => {
+    setUploadFailed(false);
+    setRetryToken((t) => t + 1);
+  }, []);
+
   // Upload to OpenAI (always, even with local preview)
   useEffect(() => {
     let cancelled = false;
     let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
     async function analyze() {
+      setUploadFailed(false);
       try {
         const result = await uploadLabelForAnalysis(imageUri, barcode);
         if (cancelled) return;
@@ -138,7 +149,11 @@ export default function LabelAnalysisScreen() {
         }
       } catch (err) {
         if (cancelled) return;
-        // If we have local data, keep showing it; only set error if no data at all
+        // If we have local data, keep showing it; only set the full-screen
+        // error if there's no data at all. Otherwise this is still a real
+        // failure — the button can't log without a server sessionId, so
+        // surface it as a retriable state instead of leaving the button
+        // silently (and indefinitely) disabled.
         if (!labelDataRef.current) {
           // Never surface the raw error.message — the upload helper throws
           // ApiError("Upload failed: <status>", code). Show static copy.
@@ -146,6 +161,12 @@ export default function LabelAnalysisScreen() {
             err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED
               ? "Too many requests. Please wait a moment and try again."
               : "Couldn't read this label. Try again with better lighting.",
+          );
+        } else {
+          setUploadFailed(true);
+          toast.error(
+            "Couldn't verify this label with AI. Retry before logging.",
+            { action: { label: "Retry", onPress: retryUpload } },
           );
         }
       } finally {
@@ -158,7 +179,7 @@ export default function LabelAnalysisScreen() {
       cancelled = true;
       if (toastTimer) clearTimeout(toastTimer);
     };
-  }, [imageUri, barcode]);
+  }, [imageUri, barcode, retryToken, toast, retryUpload]);
 
   const { mutate: confirmLog, isPending: isConfirming } = useMutation({
     mutationFn: () => {
@@ -175,6 +196,9 @@ export default function LabelAnalysisScreen() {
       // Never surface the raw error.message — confirmLabelAnalysis throws a
       // code-carrying ApiError. Branch on the codes /api/photos/confirm-label
       // actually emits: NOT_FOUND (session expired) and RATE_LIMITED.
+      // Toast, not setError: by the time this mutation can fire, the screen
+      // is always past the `error && !labelData` early-return below, so
+      // setError here would never render.
       let msg = "Couldn't log this item. Please try again.";
       if (err instanceof ApiError) {
         if (err.code === ErrorCode.NOT_FOUND) {
@@ -183,7 +207,7 @@ export default function LabelAnalysisScreen() {
           msg = "Too many requests. Please wait a moment and try again.";
         }
       }
-      setError(msg);
+      toast.error(msg);
     },
   });
 
@@ -205,7 +229,7 @@ export default function LabelAnalysisScreen() {
     onError: (err) => {
       // Never surface the raw error.message — apiRequest throws ApiError.
       // Show static copy and branch on .code for the already-verified case.
-      setError(
+      toast.error(
         err instanceof ApiError && err.code === ErrorCode.CONFLICT
           ? "You've already verified this product."
           : "Couldn't submit verification. Please try again.",
@@ -244,6 +268,30 @@ export default function LabelAnalysisScreen() {
   );
   const macroRows = useMemo(() => nutrientRows.slice(0, 11), [nutrientRows]);
   const microRows = useMemo(() => nutrientRows.slice(11), [nutrientRows]);
+
+  const logButtonPresentation = useMemo(
+    () =>
+      getLogButtonPresentation({
+        sessionId,
+        uploadFailed,
+        isSubmitting: isConfirming || isVerifying,
+        verificationMode: !!(verificationMode && verifyBarcode),
+        calories:
+          labelData?.calories != null
+            ? Math.round(labelData.calories * servings)
+            : null,
+      }),
+    [
+      sessionId,
+      uploadFailed,
+      isConfirming,
+      isVerifying,
+      verificationMode,
+      verifyBarcode,
+      labelData?.calories,
+      servings,
+    ],
+  );
 
   if (isAnalyzing) {
     return (
@@ -481,11 +529,25 @@ export default function LabelAnalysisScreen() {
           )}
         </Card>
 
-        {dataSource === "local" && !sessionId && (
+        {dataSource === "local" && !sessionId && !uploadFailed && (
           <View style={styles.aiProgressRow}>
             <ActivityIndicator size="small" color={theme.textSecondary} />
             <ThemedText type="small" style={{ color: theme.textSecondary }}>
               Verifying with AI...
+            </ThemedText>
+          </View>
+        )}
+
+        {uploadFailed && (
+          <View
+            style={[
+              styles.warningBanner,
+              { backgroundColor: withOpacity(theme.warning, 0.12) },
+            ]}
+          >
+            <Feather name="alert-triangle" size={16} color={theme.warning} />
+            <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
+              Couldn&apos;t verify with AI. Retry before logging.
             </ThemedText>
           </View>
         )}
@@ -599,14 +661,14 @@ export default function LabelAnalysisScreen() {
           </Button>
         ) : (
           <Button
-            onPress={handleLog}
-            disabled={!sessionId || isConfirming || isVerifying}
-            loading={isConfirming || isVerifying}
+            onPress={
+              logButtonPresentation.mode === "failed" ? retryUpload : handleLog
+            }
+            disabled={logButtonPresentation.disabled}
+            loading={logButtonPresentation.loading}
             style={{ flex: 1 }}
           >
-            {verificationMode
-              ? "Submit Verification"
-              : `Log ${labelData?.calories != null ? Math.round(labelData.calories * servings) : "—"} cal`}
+            {logButtonPresentation.label}
           </Button>
         )}
       </View>
