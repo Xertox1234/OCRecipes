@@ -6,8 +6,10 @@ import React, {
 } from "react";
 import { StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
+import { useAccessibility } from "@/hooks/useAccessibility";
 import {
   Camera,
   useCameraDevice,
@@ -26,6 +28,9 @@ import {
 } from "@shared/types/camera";
 import { Spacing } from "@/constants/theme";
 import { logger } from "@/lib/logger";
+import { useCameraFocusAndZoom } from "../hooks/useCameraFocusAndZoom";
+import { FocusRing } from "./FocusRing";
+import { ZoomLabel } from "./ZoomLabel";
 import type {
   CameraViewProps,
   CameraRef,
@@ -91,6 +96,11 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     const cameraRef = useRef<VisionCameraRef>(null);
     const device = useCameraDevice(facing);
 
+    const { reducedMotion } = useAccessibility();
+    const { zoom, focusPoint, zoomLabel, tapGesture, pinchGesture } =
+      useCameraFocusAndZoom({ cameraRef, device });
+    const composedGesture = Gesture.Simultaneous(tapGesture, pinchGesture);
+
     const photoOutput = usePhotoOutput({
       qualityPrioritization: mapQualityPrioritization(photoQuality),
       quality: photoQuality ?? 0.85,
@@ -144,22 +154,31 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     if (!device) return <CameraUnavailable />;
 
     return (
-      <Camera
-        ref={cameraRef}
-        style={[StyleSheet.absoluteFill, style]}
-        device={device}
-        isActive={isActive}
-        outputs={outputs}
-        // Declarative torch (v5) — the framework re-applies it when the
-        // session restarts (isActive false→true), unlike an imperative
-        // setTorchMode effect which left the hardware torch off on resume.
-        // undefined skips the lib's torch updater entirely — setTorchMode
-        // throws on torch-less devices and the lib doesn't catch it.
-        torchMode={device.hasTorch ? (enableTorch ? "on" : "off") : undefined}
-        onError={(error) => {
-          logger.warn("[CameraView] Camera error:", error.message);
-        }}
-      />
+      <GestureDetector gesture={composedGesture}>
+        <View style={[StyleSheet.absoluteFill, style]}>
+          <Camera
+            ref={cameraRef}
+            style={StyleSheet.absoluteFill}
+            device={device}
+            isActive={isActive}
+            outputs={outputs}
+            zoom={zoom}
+            // Declarative torch (v5) — the framework re-applies it when the
+            // session restarts (isActive false→true), unlike an imperative
+            // setTorchMode effect which left the hardware torch off on resume.
+            // undefined skips the lib's torch updater entirely — setTorchMode
+            // throws on torch-less devices and the lib doesn't catch it.
+            torchMode={
+              device.hasTorch ? (enableTorch ? "on" : "off") : undefined
+            }
+            onError={(error) => {
+              logger.warn("[CameraView] Camera error:", error.message);
+            }}
+          />
+          <FocusRing point={focusPoint} reducedMotion={reducedMotion} />
+          <ZoomLabel label={zoomLabel} />
+        </View>
+      </GestureDetector>
     );
   },
 );
