@@ -19,6 +19,7 @@ import { useAccessibility } from "@/hooks/useAccessibility";
 import type { ScanPhase } from "../types/scan-phase";
 import {
   getStepDotState,
+  getActiveStepIndex,
   shouldShowStepPill,
   type StepDotState,
 } from "./StepPill-utils";
@@ -141,18 +142,34 @@ interface Props {
   phase: ScanPhase;
 }
 
+const BAR_WIDTH = 64; // px — matches label column width incl. gap, tuned per STEP_LABELS
+
 export function StepPill({ phase }: Props) {
   const opacity = useSharedValue(0);
+  const barPosition = useSharedValue(0);
   const visible = shouldShowStepPill(phase);
+  const activeIndex = getActiveStepIndex(phase);
+  const { reducedMotion } = useAccessibility();
 
   useEffect(() => {
     opacity.value = withTiming(visible ? 1 : 0, { duration: 200 });
   }, [visible, opacity]);
 
-  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  useEffect(() => {
+    if (activeIndex === null) return;
+    barPosition.value = reducedMotion
+      ? activeIndex
+      : withTiming(activeIndex, { duration: 350 });
+  }, [activeIndex, barPosition, reducedMotion]);
+
+  const pillAnimStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  const barAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: barPosition.value * BAR_WIDTH }],
+  }));
 
   return (
-    <Animated.View style={[styles.pill, animStyle]} pointerEvents="none">
+    <Animated.View style={[styles.pill, pillAnimStyle]} pointerEvents="none">
+      <Animated.View style={[styles.slidingBar, barAnimStyle]} />
       {STEP_LABELS.map((label, i) => (
         <React.Fragment key={label}>
           {i > 0 && (
@@ -181,6 +198,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     alignSelf: "center",
+  },
+  slidingBar: {
+    position: "absolute",
+    top: 4,
+    left: 8,
+    width: BAR_WIDTH - 8,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   dotWrapper: {
     alignItems: "center",
