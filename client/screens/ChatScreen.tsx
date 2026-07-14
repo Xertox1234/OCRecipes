@@ -32,6 +32,7 @@ import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { useToast } from "@/context/ToastContext";
 import {
   useChatMessages,
@@ -255,6 +256,7 @@ export default function ChatScreen() {
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<ChatScreenNavigationProp>();
   const route = useRoute<ChatScreenRouteProp>();
+  const headerInset = useHeaderContentInset(Spacing.md);
 
   const sendButtonScale = useSharedValue(1);
   const sendButtonStyle = useAnimatedStyle(() => ({
@@ -472,7 +474,11 @@ export default function ChatScreen() {
           data={[]}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.messagesContent, styles.emptyContent]}
+          contentContainerStyle={[
+            styles.messagesContent,
+            styles.emptyContent,
+            { paddingTop: headerInset },
+          ]}
           ListEmptyComponent={
             <SuggestedPrompts onSelect={handlePromptSelect} />
           }
@@ -484,7 +490,10 @@ export default function ChatScreen() {
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           ListFooterComponent={streamingFooter}
-          contentContainerStyle={styles.messagesContent}
+          contentContainerStyle={[
+            styles.messagesContent,
+            { paddingTop: headerInset },
+          ]}
           keyboardDismissMode="interactive"
           {...FLATLIST_DEFAULTS}
           onContentSizeChange={() => {
@@ -578,7 +587,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   messagesContent: {
-    paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
   },
   emptyContent: {
