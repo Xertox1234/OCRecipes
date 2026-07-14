@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { ProductChip } from "../ProductChip";
 import type { ScanPhase } from "../../types/scan-phase";
 
@@ -67,15 +67,20 @@ describe("ProductChip — step2_review / step3_review auto-advance treatment", (
     expect(screen.getByText(/nutrition label captured/i)).toBeTruthy();
   });
 
-  it("review card has proper accessibility label indicating it can be tapped to edit", () => {
+  it("tapping the review card calls onEditStep2", () => {
+    let called = false;
     render(
       <ProductChip
         phase={step2Review}
         {...handlers}
+        onEditStep2={() => {
+          called = true;
+        }}
         screenReaderEnabled={false}
       />,
     );
-    expect(screen.getByLabelText(/nutrition label captured/i)).toBeTruthy();
+    screen.getByRole("button").click();
+    expect(called).toBe(true);
   });
 
   it("falls back to the explicit Confirm/Edit buttons when a screen reader is active", () => {
