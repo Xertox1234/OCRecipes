@@ -22,6 +22,13 @@ export const withDelay = (_delay: number, val: number) => val;
 export const withSequence = (...vals: number[]) => vals[vals.length - 1];
 export const cancelAnimation = () => {};
 export const interpolate = (val: number) => val;
+// Static stub — real interpolateColor blends across inputRange/outputRange;
+// tests here only need a render-safe color string, not a faithful blend.
+export const interpolateColor = (
+  _value: number,
+  _inputRange: number[],
+  outputRange: string[],
+) => outputRange[outputRange.length - 1];
 // vi.fn() so tests can `vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(true)`.
 // Default impl preserves the historical "always false" behaviour.
 // NOTE: useSharedValue is intentionally NOT a vi.fn() — a ref-backed implementation
