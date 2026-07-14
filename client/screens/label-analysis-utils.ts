@@ -81,6 +81,61 @@ export function localDataToExtractionResult(
   };
 }
 
+export type LogButtonMode = "verifying" | "failed" | "submitting" | "ready";
+
+export interface LogButtonPresentation {
+  mode: LogButtonMode;
+  label: string;
+  disabled: boolean;
+  loading: boolean;
+}
+
+/**
+ * Derives the Log/Submit-Verification button's visible state from the
+ * screen's async progress, so "can't log yet" is always legible (spinner +
+ * disabled) rather than a bare 50%-opacity dim, and a failed AI upload
+ * surfaces as a retriable state instead of an inert button.
+ */
+export function getLogButtonPresentation(params: {
+  sessionId: string | null;
+  uploadFailed: boolean;
+  isSubmitting: boolean;
+  verificationMode: boolean;
+  calories: number | null;
+}): LogButtonPresentation {
+  const { sessionId, uploadFailed, isSubmitting, verificationMode, calories } =
+    params;
+  const readyLabel = verificationMode
+    ? "Submit Verification"
+    : `Log ${calories != null ? calories : "—"} cal`;
+
+  if (uploadFailed) {
+    return {
+      mode: "failed",
+      label: "Retry Verification",
+      disabled: false,
+      loading: false,
+    };
+  }
+  if (!sessionId) {
+    return {
+      mode: "verifying",
+      label: "Verifying...",
+      disabled: true,
+      loading: true,
+    };
+  }
+  if (isSubmitting) {
+    return {
+      mode: "submitting",
+      label: readyLabel,
+      disabled: true,
+      loading: true,
+    };
+  }
+  return { mode: "ready", label: readyLabel, disabled: false, loading: false };
+}
+
 /** Check if AI data differs significantly from local OCR (>10% on any core field) */
 export function shouldReplaceWithAI(
   local: LabelExtractionResult,

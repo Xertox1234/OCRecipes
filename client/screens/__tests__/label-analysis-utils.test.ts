@@ -3,6 +3,7 @@ import {
   buildNutrientRows,
   localDataToExtractionResult,
   shouldReplaceWithAI,
+  getLogButtonPresentation,
 } from "../label-analysis-utils";
 import type { LabelExtractionResult } from "@/lib/photo-upload";
 import type { LocalNutritionData } from "@/lib/nutrition-ocr-parser";
@@ -135,5 +136,72 @@ describe("shouldReplaceWithAI", () => {
     const local = { ...baseLabelData, totalFat: 0 };
     const ai = { ...baseLabelData, totalFat: 1 }; // diff=1, base=max(0,1,1)=1, ratio=1.0 > 0.1
     expect(shouldReplaceWithAI(local, ai)).toBe(true);
+  });
+});
+
+describe("getLogButtonPresentation", () => {
+  const base = {
+    sessionId: "sess-1" as string | null,
+    uploadFailed: false,
+    isSubmitting: false,
+    verificationMode: false,
+    calories: 140 as number | null,
+  };
+
+  it("shows a disabled, loading 'Verifying' state while sessionId hasn't arrived yet", () => {
+    const result = getLogButtonPresentation({ ...base, sessionId: null });
+    expect(result).toEqual({
+      mode: "verifying",
+      label: "Verifying...",
+      disabled: true,
+      loading: true,
+    });
+  });
+
+  it("shows a retriable 'failed' state when the AI upload threw, even before sessionId would resolve", () => {
+    const result = getLogButtonPresentation({
+      ...base,
+      sessionId: null,
+      uploadFailed: true,
+    });
+    expect(result).toEqual({
+      mode: "failed",
+      label: "Retry Verification",
+      disabled: false,
+      loading: false,
+    });
+  });
+
+  it("shows a disabled, loading submitting state while the log/verify mutation is in flight", () => {
+    const result = getLogButtonPresentation({ ...base, isSubmitting: true });
+    expect(result).toEqual({
+      mode: "submitting",
+      label: "Log 140 cal",
+      disabled: true,
+      loading: true,
+    });
+  });
+
+  it("is enabled with the calorie count once sessionId has arrived and nothing is in flight", () => {
+    const result = getLogButtonPresentation(base);
+    expect(result).toEqual({
+      mode: "ready",
+      label: "Log 140 cal",
+      disabled: false,
+      loading: false,
+    });
+  });
+
+  it("falls back to an em-dash label when calories are unknown", () => {
+    const result = getLogButtonPresentation({ ...base, calories: null });
+    expect(result.label).toBe("Log — cal");
+  });
+
+  it("shows 'Submit Verification' in verification mode instead of the calorie count", () => {
+    const result = getLogButtonPresentation({
+      ...base,
+      verificationMode: true,
+    });
+    expect(result.label).toBe("Submit Verification");
   });
 });

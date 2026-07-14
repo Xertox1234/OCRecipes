@@ -10,6 +10,7 @@ import {
 import * as Haptics from "expo-haptics";
 
 import { useHaptics } from "@/hooks/useHaptics";
+import { useToast } from "@/context/ToastContext";
 import { useAuthContext } from "@/context/AuthContext";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
@@ -55,6 +56,7 @@ export function useNutritionLookup(params: {
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
   const queryClient = useQueryClient();
   const haptics = useHaptics();
+  const toast = useToast();
   const { user } = useAuthContext();
 
   const [nutrition, setNutrition] = useState<NutritionData | null>(null);
@@ -481,6 +483,7 @@ export function useNutritionLookup(params: {
     },
     onError: () => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
+      toast.error("Couldn't add this to your log. Please try again.");
     },
   });
 
