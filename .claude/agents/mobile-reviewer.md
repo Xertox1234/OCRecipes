@@ -185,6 +185,7 @@ The pre-commit script only catches: `Pressable`/`TouchableOpacity` with `onPress
 - `CameraRef` type (not `any`) for camera refs; the method is `takePicture()` (not `takePictureAsync`)
 - `CameraPermissionResult` has a `.status` field (`"granted"` | `"denied"`), NOT a `.granted` boolean
 - RN FormData file upload needs the `as unknown as Blob` cast — RN expects `{ uri, type, name }` but TS types it as `Blob`
+- [ ] **A discriminated-union case collapse (e.g. `ScanPhase`) must be audited for absorbed semantics, not just compiled clean.** When a union variant is deleted and its meaning folds into a surviving sibling (e.g. `STEP2_CAPTURING` removed, "armed and capturing" absorbed into `BARCODE_LOCKED`), every exhaustive `switch (phase.type)` over that union needs its surviving case's BODY re-read against the variant's NEW meaning — TypeScript's exhaustiveness check only proves the switch compiles, not that the case body still matches. Cross-check every file that switches on the same union (coach-message helper, reticle-target helper, step-indicator helper, etc.) for mutual agreement; a case whose test title describes the new semantics but whose assertions still check the old ones is the signature of this bug. (Ref: `docs/solutions/conventions/discriminated-union-case-collapse-audit-absorbed-semantics-2026-07-14.md`)
 
 ### Permissions & lifecycle
 
