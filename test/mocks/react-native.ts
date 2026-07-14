@@ -303,7 +303,47 @@ export const AccessibilityInfo = {
   addEventListener: () => ({ remove: () => {} }),
 };
 
-export const TouchableOpacity = mockComponent("button", "TouchableOpacity");
+export const TouchableOpacity = React.forwardRef<
+  unknown,
+  Record<string, unknown>
+>(
+  (
+    {
+      children,
+      onPress,
+      disabled,
+      testID,
+      accessibilityRole,
+      accessibilityLabel,
+      accessibilityHint,
+      accessibilityState,
+      accessibilityLiveRegion,
+      ...rest
+    },
+    ref,
+  ) => {
+    const a11y = accessibilityState as Record<string, unknown> | undefined;
+    return React.createElement(
+      "button",
+      {
+        ref,
+        onClick: disabled ? undefined : onPress,
+        disabled: disabled || undefined,
+        "data-testid": testID,
+        role: accessibilityRole,
+        "aria-label": accessibilityLabel,
+        "aria-hint": accessibilityHint,
+        "aria-live": accessibilityLiveRegion,
+        ...(a11y?.disabled != null && { "aria-disabled": a11y.disabled }),
+        ...(a11y?.selected != null && { "aria-selected": a11y.selected }),
+        ...(a11y?.busy != null && { "aria-busy": a11y.busy }),
+        ...rest,
+      } as Record<string, unknown>,
+      children as React.ReactNode,
+    );
+  },
+);
+TouchableOpacity.displayName = "TouchableOpacity";
 
 export const Switch = React.forwardRef<unknown, Record<string, unknown>>(
   (

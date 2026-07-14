@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { renderHook } from "@testing-library/react";
+import { renderHook, waitFor } from "@testing-library/react";
+import * as RN from "react-native";
 import * as Reanimated from "react-native-reanimated";
 
 import { useAccessibility } from "../useAccessibility";
@@ -38,5 +39,33 @@ describe("useAccessibility", () => {
     const { result } = renderHook(() => useAccessibility());
 
     expect(result.current.reducedMotion).toBe(false);
+  });
+
+  it("returns screenReaderEnabled false by default before the native query resolves", () => {
+    vi.spyOn(RN.AccessibilityInfo, "isScreenReaderEnabled").mockResolvedValue(
+      false,
+    );
+    vi.spyOn(RN.AccessibilityInfo, "addEventListener").mockReturnValue({
+      remove: vi.fn(),
+    } as unknown as ReturnType<typeof RN.AccessibilityInfo.addEventListener>);
+
+    const { result } = renderHook(() => useAccessibility());
+
+    expect(result.current.screenReaderEnabled).toBe(false);
+  });
+
+  it("updates screenReaderEnabled from the native query once it resolves", async () => {
+    vi.spyOn(RN.AccessibilityInfo, "isScreenReaderEnabled").mockResolvedValue(
+      true,
+    );
+    vi.spyOn(RN.AccessibilityInfo, "addEventListener").mockReturnValue({
+      remove: vi.fn(),
+    } as unknown as ReturnType<typeof RN.AccessibilityInfo.addEventListener>);
+
+    const { result } = renderHook(() => useAccessibility());
+
+    await waitFor(() => {
+      expect(result.current.screenReaderEnabled).toBe(true);
+    });
   });
 });

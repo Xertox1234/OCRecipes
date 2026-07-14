@@ -36,8 +36,6 @@ function confidenceLabel(score: number): string {
 interface Props {
   phase: ScanPhase;
   onConfirm: () => void;
-  onAddNutritionPhoto: () => void;
-  onAddFrontPhoto: () => void;
   onStepConfirmed: () => void;
   onEditStep2: () => void;
   onEditStep3: () => void;
@@ -50,6 +48,14 @@ interface Props {
    */
   isSmartConfirming?: boolean;
   /**
+   * True while VoiceOver/TalkBack is active. The auto-advancing review card
+   * (step2_review/step3_review) falls back to explicit Confirm/Edit buttons
+   * in this mode — the ~1s auto-advance timer in ScanScreen is suppressed for
+   * screen-reader users (see docs/rules/accessibility.md and the design spec),
+   * so this state needs its own explicit continue affordance instead.
+   */
+  screenReaderEnabled?: boolean;
+  /**
    * Forwarded to the chip's root view. ScanScreen sets this to
    * `"no-hide-descendants"` while the confirm overlay is up so the chip leaves
    * the Android TalkBack tree (the chip's own `accessibilityViewIsModal` only
@@ -61,8 +67,6 @@ interface Props {
 export function ProductChip({
   phase,
   onConfirm,
-  onAddNutritionPhoto,
-  onAddFrontPhoto,
   onStepConfirmed,
   onEditStep2,
   onEditStep3,
@@ -70,6 +74,7 @@ export function ProductChip({
   onRetry,
   importantForAccessibility,
   isSmartConfirming = false,
+  screenReaderEnabled = false,
 }: Props) {
   const insets = useSafeAreaInsets();
   const translateY = useSharedValue(200);
@@ -188,38 +193,47 @@ export function ProductChip({
           >
             <Text style={styles.btnPrimaryText}>Looks right →</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.btnSecondary}
-            onPress={onAddNutritionPhoto}
-            accessibilityLabel="Add nutrition photo"
-            accessibilityRole="button"
-          >
-            <Text style={styles.btnSecondaryText}>Add nutrition photo</Text>
-            <Text style={styles.optionalBadge}>Optional</Text>
-          </TouchableOpacity>
+          <Text style={styles.caption}>
+            Point at the Nutrition Facts panel to continue.
+          </Text>
         </>
       )}
 
-      {variant === "step2_review" && (
-        <>
+      {variant === "step2_review" &&
+        (screenReaderEnabled ? (
+          <>
+            <TouchableOpacity
+              style={styles.btnPrimary}
+              onPress={onStepConfirmed}
+              accessibilityLabel="Confirm nutrition values"
+              accessibilityRole="button"
+            >
+              <Text style={styles.btnPrimaryText}>Looks right →</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.btnSecondary}
+              onPress={onEditStep2}
+              accessibilityLabel="Edit nutrition values"
+              accessibilityRole="button"
+            >
+              <Text style={styles.btnSecondaryText}>Edit values</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
           <TouchableOpacity
-            style={styles.btnPrimary}
-            onPress={onStepConfirmed}
-            accessibilityLabel="Confirm nutrition values"
-            accessibilityRole="button"
-          >
-            <Text style={styles.btnPrimaryText}>Looks right →</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.btnSecondary}
+            style={styles.reviewCard}
             onPress={onEditStep2}
-            accessibilityLabel="Edit nutrition values"
+            accessibilityLabel="Nutrition label captured. Double tap to edit."
             accessibilityRole="button"
           >
-            <Text style={styles.btnSecondaryText}>Edit values</Text>
+            <View style={styles.reviewRow}>
+              <View style={styles.reviewCheck}>
+                <Text style={styles.reviewCheckText}>✓</Text>
+              </View>
+              <Text style={styles.reviewText}>Nutrition label captured</Text>
+            </View>
           </TouchableOpacity>
-        </>
-      )}
+        ))}
 
       {variant === "step2_confirmed" && (
         <>
@@ -231,38 +245,47 @@ export function ProductChip({
           >
             <Text style={styles.btnPrimaryText}>Looks right →</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.btnSecondary}
-            onPress={onAddFrontPhoto}
-            accessibilityLabel="Add front label photo"
-            accessibilityRole="button"
-          >
-            <Text style={styles.btnSecondaryText}>Add front label photo</Text>
-            <Text style={styles.optionalBadge}>Optional</Text>
-          </TouchableOpacity>
+          <Text style={styles.caption}>
+            Optional: point at the front of the package to continue.
+          </Text>
         </>
       )}
 
-      {variant === "step3_review" && (
-        <>
+      {variant === "step3_review" &&
+        (screenReaderEnabled ? (
+          <>
+            <TouchableOpacity
+              style={styles.btnPrimary}
+              onPress={onConfirm}
+              accessibilityLabel="Confirm product complete"
+              accessibilityRole="button"
+            >
+              <Text style={styles.btnPrimaryText}>Looks right →</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.btnSecondary}
+              onPress={onEditStep3}
+              accessibilityLabel="Edit front label values"
+              accessibilityRole="button"
+            >
+              <Text style={styles.btnSecondaryText}>Edit values</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
           <TouchableOpacity
-            style={styles.btnPrimary}
-            onPress={onConfirm}
-            accessibilityLabel="Confirm product complete"
-            accessibilityRole="button"
-          >
-            <Text style={styles.btnPrimaryText}>Looks right →</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.btnSecondary}
+            style={styles.reviewCard}
             onPress={onEditStep3}
-            accessibilityLabel="Edit front label values"
+            accessibilityLabel="Front label captured. Double tap to edit."
             accessibilityRole="button"
           >
-            <Text style={styles.btnSecondaryText}>Edit values</Text>
+            <View style={styles.reviewRow}>
+              <View style={styles.reviewCheck}>
+                <Text style={styles.reviewCheckText}>✓</Text>
+              </View>
+              <Text style={styles.reviewText}>Front label captured</Text>
+            </View>
           </TouchableOpacity>
-        </>
-      )}
+        ))}
 
       {variant === "session_complete" && (
         <TouchableOpacity
@@ -408,6 +431,41 @@ const styles = StyleSheet.create({
   btnLinkText: {
     color: "rgba(255,255,255,0.5)",
     fontSize: 13,
+  },
+  caption: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    textAlign: "center",
+    marginTop: 2,
+  },
+  reviewCard: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  reviewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  reviewCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#22c55e", // hardcoded — matches DONE_COLOR in StepPill.tsx
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  reviewCheckText: {
+    color: "#fff", // hardcoded — camera overlay
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  reviewText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 14,
+    fontWeight: "500",
   },
   errorText: {
     color: "rgba(255,255,255,0.7)",

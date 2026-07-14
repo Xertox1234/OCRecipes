@@ -25,17 +25,6 @@ describe("getProductChipVariant", () => {
     expect(
       getProductChipVariant({ type: "CLASSIFYING", imageUri: "x" }),
     ).toBeNull();
-    expect(
-      getProductChipVariant({ type: "STEP2_CAPTURING", barcode: "123" }),
-    ).toBeNull();
-    expect(
-      getProductChipVariant({
-        type: "STEP3_CAPTURING",
-        barcode: "123",
-        nutritionImageUri: "x",
-        ocrText: "",
-      }),
-    ).toBeNull();
   });
 
   it("returns barcode_lock for BARCODE_LOCKED", () => {

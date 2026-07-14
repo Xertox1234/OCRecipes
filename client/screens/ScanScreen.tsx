@@ -38,6 +38,7 @@ import {
   type BarcodeResult,
   type CameraRef,
 } from "@/camera";
+import { useAutoAdvanceTimer } from "@/camera/hooks/useAutoAdvanceTimer";
 
 import { scanPhaseReducer } from "@/camera/reducers/scan-phase-reducer";
 import { CoachHint } from "@/camera/components/CoachHint";
@@ -84,7 +85,7 @@ export default function ScanScreen() {
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { reducedMotion } = useAccessibility();
+  const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const { isPremium, remainingScans } = usePremiumCamera();
   const { refreshScanCount, features } = usePremiumContext();
   const queryClient = useQueryClient();
@@ -229,6 +230,13 @@ export default function ScanScreen() {
     return () => clearTimeout(timer);
   }, [scanPhase, navigation, refreshScanCount, reducedMotion, returnAfterLog]);
 
+  // Navigating away to edit (onEditStep2/onEditStep3) sets isFocused false,
+  // which the existing "Reset when screen loses focus" effect above already
+  // turns into a RESET → IDLE dispatch — that phase-type change is what
+  // cancels this hook's pending timer (see useAutoAdvanceTimer's own cleanup),
+  // so no extra cancellation logic is needed here.
+  useAutoAdvanceTimer(scanPhase, screenReaderEnabled, dispatch);
+
   const handleConfirmLog = useCallback(async () => {
     if (!confirmCard || !canLog(confirmCard)) return;
     setConfirmCard((prev) => prev && { ...prev, isLogging: true });
@@ -350,8 +358,8 @@ export default function ScanScreen() {
   const onShutterPress = useCallback(async () => {
     const phase = scanPhaseRef.current;
     if (
-      phase.type !== "STEP2_CAPTURING" &&
-      phase.type !== "STEP3_CAPTURING" &&
+      phase.type !== "BARCODE_LOCKED" &&
+      phase.type !== "STEP2_CONFIRMED" &&
       phase.type !== "HUNTING"
     )
       return;
@@ -418,7 +426,7 @@ export default function ScanScreen() {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setFlashCount((c) => c + 1);
 
-      if (phase.type === "STEP2_CAPTURING") {
+      if (phase.type === "BARCODE_LOCKED") {
         let ocrText = "";
         try {
           const ocrResult = await recognizeTextFromPhoto(photo.uri);
@@ -437,7 +445,7 @@ export default function ScanScreen() {
         }
         dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri, ocrText });
       } else {
-        // STEP3_CAPTURING — no OCR needed
+        // STEP2_CONFIRMED (front-label capture) — no OCR needed
         dispatch({ type: "STEP_PHOTO_CAPTURED", imageUri: photo.uri });
       }
     } finally {
@@ -520,6 +528,11 @@ export default function ScanScreen() {
   const productChipVisible = getProductChipVariant(scanPhase) !== null;
   const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
 
+  const shutterArmed =
+    scanPhase.type === "HUNTING" ||
+    scanPhase.type === "BARCODE_LOCKED" ||
+    scanPhase.type === "STEP2_CONFIRMED";
+
   return (
     <View style={styles.root} accessibilityViewIsModal>
       <CameraView
@@ -562,6 +575,13 @@ export default function ScanScreen() {
           <Text style={styles.closeBtnText}>✕</Text>
         </TouchableOpacity>
         <StepPill phase={scanPhase} />
+        {!isPremium && remainingScans !== null && (
+          <Text style={styles.scanCountText}>
+            {remainingScans > 0
+              ? `${remainingScans} scans remaining`
+              : "Daily limit reached"}
+          </Text>
+        )}
       </View>
 
       {/* Coach hint */}
@@ -589,27 +609,13 @@ export default function ScanScreen() {
           <Text style={styles.iconBtnText}>{torchEnabled ? "⚡" : "🔦"}</Text>
         </TouchableOpacity>
         <Pressable
-          style={styles.shutter}
+          style={[styles.shutter, shutterArmed && styles.shutterArmed]}
           onPress={onShutterPress}
           accessibilityLabel="Take photo"
           accessibilityRole="button"
         />
         <View style={styles.iconBtn} />
       </View>
-
-      {/* Scan count badge (free tier) */}
-      {!isPremium && remainingScans !== null && (
-        <View
-          style={styles.scanCount}
-          importantForAccessibility={overlayA11y.staticUI}
-        >
-          <Text style={styles.scanCountText}>
-            {remainingScans > 0
-              ? `${remainingScans} scans remaining`
-              : "Daily limit reached"}
-          </Text>
-        </View>
-      )}
 
       {showConfetti && (
         <ConfettiCannon
@@ -627,10 +633,9 @@ export default function ScanScreen() {
       <ProductChip
         importantForAccessibility={overlayA11y.productChip}
         isSmartConfirming={isSmartConfirming}
+        screenReaderEnabled={screenReaderEnabled}
         phase={scanPhase}
         onConfirm={() => dispatch({ type: "CONFIRM_PRODUCT" })}
-        onAddNutritionPhoto={() => dispatch({ type: "ADD_NUTRITION_PHOTO" })}
-        onAddFrontPhoto={() => dispatch({ type: "ADD_FRONT_PHOTO" })}
         onStepConfirmed={() => dispatch({ type: "STEP_CONFIRMED" })}
         onEditStep2={() => {
           if (
@@ -931,6 +936,14 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: "rgba(255,255,255,0.4)",
   },
+  shutterArmed: {
+    borderColor: "#FFD60A", // hardcoded — matches FocusRing's focus-ring yellow (Task 6)
+    shadowColor: "#FFD60A", // hardcoded — same focus-ring yellow, for the shadow glow
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
   permissionContainer: {
     flex: 1,
     alignItems: "center",
@@ -950,15 +963,6 @@ const styles = StyleSheet.create({
   permissionBtnText: { color: "#FFF", fontWeight: "700", fontSize: 16 }, // hardcoded — camera overlay
   permissionCancel: { paddingVertical: 12 },
   permissionCancelText: { fontSize: 15 },
-  scanCount: {
-    position: "absolute",
-    top: 120,
-    alignSelf: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
   scanCountText: { color: "rgba(255,255,255,0.7)", fontSize: 12 },
   confirmOverlay: {
     position: "absolute",

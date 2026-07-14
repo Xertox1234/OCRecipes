@@ -24,7 +24,6 @@ export type ScanPhase =
       bounds: Bounds;
       product?: ProductSummary;
     }
-  | { type: "STEP2_CAPTURING"; barcode: string; product?: ProductSummary }
   | {
       type: "STEP2_REVIEWING";
       barcode: string;
@@ -34,13 +33,6 @@ export type ScanPhase =
     }
   | {
       type: "STEP2_CONFIRMED";
-      barcode: string;
-      product?: ProductSummary;
-      nutritionImageUri: string;
-      ocrText: string;
-    }
-  | {
-      type: "STEP3_CAPTURING";
       barcode: string;
       product?: ProductSummary;
       nutritionImageUri: string;
@@ -77,8 +69,6 @@ export type ScanAction =
   | { type: "PRODUCT_LOADED"; product: ProductSummary }
   | { type: "BARCODE_LOST" }
   | { type: "CONFIRM_PRODUCT" }
-  | { type: "ADD_NUTRITION_PHOTO" }
-  | { type: "ADD_FRONT_PHOTO" }
   | { type: "STEP_PHOTO_CAPTURED"; imageUri: string; ocrText?: string }
   | { type: "STEP_CONFIRMED" }
   | { type: "SMART_PHOTO_INITIATED"; imageUri: string }

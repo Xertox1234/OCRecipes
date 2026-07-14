@@ -38,18 +38,12 @@ describe("getCoachMessage", () => {
     ).toBe("Hold steady…");
   });
 
-  it("returns empty string for BARCODE_LOCKED", () => {
+  it('returns "Frame the Nutrition Facts panel" for BARCODE_LOCKED', () => {
     expect(
       getCoachMessage(
         { type: "BARCODE_LOCKED", barcode: "123", bounds: BOUNDS },
         0,
       ),
-    ).toBe("");
-  });
-
-  it('returns "Frame the Nutrition Facts panel" for STEP2_CAPTURING', () => {
-    expect(
-      getCoachMessage({ type: "STEP2_CAPTURING", barcode: "123" }, 0),
     ).toBe("Frame the Nutrition Facts panel");
   });
 
@@ -62,11 +56,11 @@ describe("getCoachMessage", () => {
     ).toBe("");
   });
 
-  it('returns "Frame the front of the package" for STEP3_CAPTURING', () => {
+  it('returns "Frame the front of the package" for STEP2_CONFIRMED', () => {
     expect(
       getCoachMessage(
         {
-          type: "STEP3_CAPTURING",
+          type: "STEP2_CONFIRMED",
           barcode: "123",
           nutritionImageUri: "x",
           ocrText: "",
@@ -82,20 +76,6 @@ describe("getCoachMessage", () => {
 
   it('returns "Point at a barcode" for IDLE at 0s', () => {
     expect(getCoachMessage({ type: "IDLE" }, 0)).toBe("Point at a barcode");
-  });
-
-  it("returns empty string for STEP2_CONFIRMED", () => {
-    expect(
-      getCoachMessage(
-        {
-          type: "STEP2_CONFIRMED",
-          barcode: "123",
-          nutritionImageUri: "x",
-          ocrText: "",
-        },
-        0,
-      ),
-    ).toBe("");
   });
 
   it("returns empty string for SESSION_COMPLETE", () => {
