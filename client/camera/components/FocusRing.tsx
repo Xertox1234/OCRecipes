@@ -34,6 +34,7 @@ export function FocusRing({ point, reducedMotion }: Props) {
       withTiming(1, { duration: 120 }),
       withDelay(500, withTiming(0, { duration: 400 })),
     );
+    scale.value = 1.3;
     scale.value = withTiming(1, { duration: 250 });
   }, [point, opacity, scale, reducedMotion]);
 
