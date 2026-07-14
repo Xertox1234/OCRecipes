@@ -56,3 +56,4 @@ Router-mounted sub-apps (`express.Router()` + `app.use(mount, router)` — e.g. 
 
 - [../design-patterns/facade-only-enforced-by-source-grep-guard-test-2026-06-26.md](../design-patterns/facade-only-enforced-by-source-grep-guard-test-2026-06-26.md) — the generic source-grep guard mechanism (call-shape regex + definer allowlist) this applies to auth wiring
 - [../code-quality/codeql-missing-rate-limiting-on-auth-test-fixture-2026-06-27.md](../code-quality/codeql-missing-rate-limiting-on-auth-test-fixture-2026-06-27.md) — the real-middleware mount here trips CodeQL `js/missing-rate-limiting`; give the probe a traceable inline limiter
+- [pure-utils-extraction-tests-dont-prove-wiring-2026-07-14.md](pure-utils-extraction-tests-dont-prove-wiring-2026-07-14.md) — the client-side sibling of this same class of gap: a well-tested extracted pure function doesn't prove the component's effects/mutations wire it correctly
