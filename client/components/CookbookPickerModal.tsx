@@ -254,11 +254,17 @@ export function CookbookPickerModal({
                     ? "Check your connection and try again, or save this recipe to your favourites instead."
                     : "Create one to organize this recipe, or save it to your favourites for quick access."
                 }
-                actionLabel="New Cookbook"
-                onAction={handleShowNewInput}
-                secondaryLabel={isFavourited ? undefined : "Save to Favourites"}
+                actionLabel={showNewInput ? undefined : "New Cookbook"}
+                onAction={showNewInput ? undefined : handleShowNewInput}
+                secondaryLabel={
+                  showNewInput || isFavourited
+                    ? undefined
+                    : "Save to Favourites"
+                }
                 onSecondaryAction={
-                  isFavourited ? undefined : handleSaveToFavourites
+                  showNewInput || isFavourited
+                    ? undefined
+                    : handleSaveToFavourites
                 }
               />
             }

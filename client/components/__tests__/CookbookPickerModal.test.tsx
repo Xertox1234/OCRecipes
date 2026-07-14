@@ -107,6 +107,24 @@ describe("CookbookPickerModal — empty state actions", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("hides empty-state actions once the New Cookbook input is open", () => {
+    vi.mocked(useCookbooksModule.useCookbooks).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useCookbooksModule.useCookbooks>);
+
+    renderComponent(<CookbookPickerModal {...baseProps} onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByText("New Cookbook"));
+
+    expect(screen.queryByText("New Cookbook")).toBeNull();
+    expect(screen.queryByText("Save to Favourites")).toBeNull();
+    expect(
+      screen.getByPlaceholderText("Cookbook name (optional)"),
+    ).toBeTruthy();
+  });
+
   it("does not show Save to Favourites once a cookbook already exists", () => {
     vi.mocked(useCookbooksModule.useCookbooks).mockReturnValue({
       data: [existingCookbook],
