@@ -44,6 +44,25 @@ export function useCameraFocusAndZoom({
     [cameraRef],
   );
 
+  // Imperative controller.setZoom(), NOT the <Camera zoom={SharedValue}>
+  // prop — that path (VisionCamera's own useZoomUpdater) requires the
+  // separate `react-native-vision-camera-worklets` package, which this app
+  // doesn't install (it's snapshot-only OCR, no frame processors). Passing
+  // an animated zoom SharedValue as a prop throws inside Camera's own
+  // effect ("react-native-vision-camera-worklets is not installed"),
+  // silently killing the whole preview. Bridging via runOnJS on every pinch
+  // update costs a JS-thread hop per frame but avoids that dependency.
+  const setCameraZoom = useCallback(
+    (value: number) => {
+      cameraRef.current?.controller?.setZoom(value).catch(() => {
+        // Camera not ready yet / setZoom rejected — next gesture update
+        // (or the label, which already reflects the intended value) is the
+        // recovery; nothing user-facing to surface here.
+      });
+    },
+    [cameraRef],
+  );
+
   // Bridged from the pinch worklet on every update via runOnJS — shows a live
   // "1.8x" readout during the gesture, fades out ~600ms after it stops
   // changing. Re-arms the hide timer on each call rather than debouncing, so
@@ -78,8 +97,9 @@ export function useCameraFocusAndZoom({
         device.minZoom,
         device.maxZoom,
       );
+      runOnJS(setCameraZoom)(zoom.value);
       runOnJS(showZoomLabel)(zoom.value);
     });
 
-  return { zoom, focusPoint, zoomLabel, tapGesture, pinchGesture };
+  return { focusPoint, zoomLabel, tapGesture, pinchGesture };
 }

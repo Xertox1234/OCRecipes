@@ -97,7 +97,7 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
     const device = useCameraDevice(facing);
 
     const { reducedMotion } = useAccessibility();
-    const { zoom, focusPoint, zoomLabel, tapGesture, pinchGesture } =
+    const { focusPoint, zoomLabel, tapGesture, pinchGesture } =
       useCameraFocusAndZoom({ cameraRef, device });
     const composedGesture = Gesture.Simultaneous(tapGesture, pinchGesture);
 
@@ -162,7 +162,6 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
             device={device}
             isActive={isActive}
             outputs={outputs}
-            zoom={zoom}
             // Declarative torch (v5) — the framework re-applies it when the
             // session restarts (isActive false→true), unlike an imperative
             // setTorchMode effect which left the hardware torch off on resume.
