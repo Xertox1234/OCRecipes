@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 
 const {
   mockGoBack,
@@ -48,9 +50,6 @@ vi.mock("@/lib/token-storage", () => ({
   tokenStorage: { get: vi.fn(), set: vi.fn(), clear: vi.fn() },
 }));
 
-// This mutation has no client-visible failure path today — onError only fires
-// a haptic. These tests describe the intended behavior (a toast on failure,
-// silence on success) and are expected to fail until that's wired up.
 describe("useNutritionLookup — addToLogMutation error surfacing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -72,6 +71,29 @@ describe("useNutritionLookup — addToLogMutation error surfacing", () => {
 
     await waitFor(() => expect(mockToastError).toHaveBeenCalledTimes(1));
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("shows a rate-limit-specific message when the server throttles the request", async () => {
+    mockApiRequest.mockRejectedValueOnce(
+      new ApiError("429: Too Many Requests", ErrorCode.RATE_LIMITED),
+    );
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ imageUri: "photo.jpg" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      result.current.handleAddToLog();
+    });
+
+    await waitFor(() =>
+      expect(mockToastError).toHaveBeenCalledWith(
+        "Too many requests. Please wait a moment and try again.",
+      ),
+    );
   });
 
   it("does not show an error toast and navigates back on success", async () => {

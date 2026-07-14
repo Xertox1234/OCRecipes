@@ -112,7 +112,10 @@ export function getLogButtonPresentation(params: {
   if (uploadFailed) {
     return {
       mode: "failed",
-      label: "Retry Verification",
+      // "Retry Verification" would misread as re-submitting the barcode
+      // verification (verifyLog) rather than retrying the failed AI photo
+      // analysis — reserve that phrase for the actual verification flow.
+      label: verificationMode ? "Retry Verification" : "Retry Analysis",
       disabled: false,
       loading: false,
     };

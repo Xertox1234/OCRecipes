@@ -166,10 +166,20 @@ describe("getLogButtonPresentation", () => {
     });
     expect(result).toEqual({
       mode: "failed",
-      label: "Retry Verification",
+      label: "Retry Analysis",
       disabled: false,
       loading: false,
     });
+  });
+
+  it("labels the failed state 'Retry Verification' in verification mode, not 'Retry Analysis'", () => {
+    const result = getLogButtonPresentation({
+      ...base,
+      sessionId: null,
+      uploadFailed: true,
+      verificationMode: true,
+    });
+    expect(result.label).toBe("Retry Verification");
   });
 
   it("shows a disabled, loading submitting state while the log/verify mutation is in flight", () => {

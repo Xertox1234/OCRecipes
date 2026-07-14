@@ -13,6 +13,8 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useAuthContext } from "@/context/AuthContext";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import { logger } from "@/lib/logger";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { tokenStorage } from "@/lib/token-storage";
@@ -481,9 +483,13 @@ export function useNutritionLookup(params: {
       haptics.notification(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
     },
-    onError: () => {
+    onError: (err) => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
-      toast.error("Couldn't add this to your log. Please try again.");
+      toast.error(
+        err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED
+          ? "Too many requests. Please wait a moment and try again."
+          : "Couldn't add this to your log. Please try again.",
+      );
     },
   });
 
