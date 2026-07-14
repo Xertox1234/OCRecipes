@@ -28,8 +28,8 @@ describe("getStepDotState", () => {
       barcode: "123",
       bounds: BOUNDS,
     } as const;
-    expect(getStepDotState(phase, 0)).toBe("active");
-    expect(getStepDotState(phase, 1)).toBe("idle");
+    expect(getStepDotState(phase, 0)).toBe("done");
+    expect(getStepDotState(phase, 1)).toBe("active");
     expect(getStepDotState(phase, 2)).toBe("idle");
   });
 

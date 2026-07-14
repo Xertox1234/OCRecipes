@@ -23,7 +23,6 @@ export function getStepDotState(
     case "BARCODE_TRACKING":
       return stepIndex === 0 ? "active" : "idle";
     case "BARCODE_LOCKED":
-      return stepIndex === 0 ? "active" : "idle";
     case "STEP2_REVIEWING":
       if (stepIndex === 0) return "done";
       if (stepIndex === 1) return "active";
