@@ -145,8 +145,15 @@ export function CookbookPickerModal({
           haptics.notification(Haptics.NotificationFeedbackType.Success);
           onClose();
         },
-        onError: () => {
+        onError: (err) => {
           haptics.notification(Haptics.NotificationFeedbackType.Error);
+          // useToggleFavouriteRecipe already alerts for LIMIT_REACHED itself —
+          // avoid showing a second, redundant alert for that case.
+          if (
+            !(err instanceof ApiError && err.code === ErrorCode.LIMIT_REACHED)
+          ) {
+            Alert.alert("Error", "Failed to save recipe. Please try again.");
+          }
         },
       },
     );

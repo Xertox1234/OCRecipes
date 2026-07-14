@@ -1,10 +1,13 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { CookbookPickerModal } from "../CookbookPickerModal";
 import * as useCookbooksModule from "@/hooks/useCookbooks";
 import * as useFavouriteRecipesModule from "@/hooks/useFavouriteRecipes";
+import { ApiError } from "@/lib/api-error";
+import { ErrorCode } from "@shared/constants/error-codes";
 import type { CookbookWithCount } from "@shared/schema";
 
 const { mockCreateMutate, mockAddRecipeMutate, mockToggleFavouriteMutate } =
@@ -123,6 +126,48 @@ describe("CookbookPickerModal — empty state actions", () => {
     expect(
       screen.getByPlaceholderText("Cookbook name (optional)"),
     ).toBeTruthy();
+  });
+
+  it("shows an error alert when saving to favourites fails for a non-limit reason", () => {
+    vi.mocked(useCookbooksModule.useCookbooks).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useCookbooksModule.useCookbooks>);
+    mockToggleFavouriteMutate.mockImplementation(
+      (_vars: unknown, opts: { onError?: (err: unknown) => void }) => {
+        opts.onError?.(new Error("network down"));
+      },
+    );
+    const onClose = vi.fn();
+
+    renderComponent(<CookbookPickerModal {...baseProps} onClose={onClose} />);
+    fireEvent.click(screen.getByText("Save to Favourites"));
+
+    expect(RN.Alert.alert).toHaveBeenCalledWith("Error", expect.any(String));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("does not show its own alert when the favourites limit is reached", () => {
+    vi.mocked(useCookbooksModule.useCookbooks).mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    } as unknown as ReturnType<typeof useCookbooksModule.useCookbooks>);
+    mockToggleFavouriteMutate.mockImplementation(
+      (_vars: unknown, opts: { onError?: (err: unknown) => void }) => {
+        opts.onError?.(
+          new ApiError("Limit reached", ErrorCode.LIMIT_REACHED, 403),
+        );
+      },
+    );
+
+    renderComponent(<CookbookPickerModal {...baseProps} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByText("Save to Favourites"));
+
+    // The useToggleFavouriteRecipe hook itself already alerts for this code —
+    // the modal must not show a second, redundant alert.
+    expect(RN.Alert.alert).not.toHaveBeenCalled();
   });
 
   it("does not show Save to Favourites once a cookbook already exists", () => {
