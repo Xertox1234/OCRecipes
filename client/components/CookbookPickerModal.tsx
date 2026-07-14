@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { EmptyState } from "@/components/EmptyState";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import {
@@ -29,6 +30,10 @@ import {
   useCreateCookbook,
   useAddRecipeToCookbook,
 } from "@/hooks/useCookbooks";
+import {
+  useIsRecipeFavourited,
+  useToggleFavouriteRecipe,
+} from "@/hooks/useFavouriteRecipes";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -55,6 +60,8 @@ export function CookbookPickerModal({
     useCreateCookbook();
   const { mutate: addRecipeMutate, isPending: isAdding } =
     useAddRecipeToCookbook();
+  const isFavourited = useIsRecipeFavourited(recipeId, recipeType);
+  const { mutate: toggleFavouriteMutate } = useToggleFavouriteRecipe();
 
   const [showNewInput, setShowNewInput] = useState(false);
   const [newName, setNewName] = useState("");
@@ -123,6 +130,34 @@ export function CookbookPickerModal({
     setAddingToId(null);
     onClose();
   }, [onClose]);
+
+  const handleShowNewInput = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    setShowNewInput(true);
+  }, [haptics]);
+
+  const handleSaveToFavourites = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+    toggleFavouriteMutate(
+      { recipeId, recipeType },
+      {
+        onSuccess: () => {
+          haptics.notification(Haptics.NotificationFeedbackType.Success);
+          onClose();
+        },
+        onError: (err) => {
+          haptics.notification(Haptics.NotificationFeedbackType.Error);
+          // useToggleFavouriteRecipe already alerts for LIMIT_REACHED itself —
+          // avoid showing a second, redundant alert for that case.
+          if (
+            !(err instanceof ApiError && err.code === ErrorCode.LIMIT_REACHED)
+          ) {
+            Alert.alert("Error", "Failed to save recipe. Please try again.");
+          }
+        },
+      },
+    );
+  }, [haptics, toggleFavouriteMutate, recipeId, recipeType, onClose]);
 
   const renderItem = useCallback(
     ({ item }: { item: CookbookWithCount }) => {
@@ -215,20 +250,30 @@ export function CookbookPickerModal({
             renderItem={renderItem}
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Feather
-                  name={isError ? "alert-circle" : "book"}
-                  size={40}
-                  color={withOpacity(theme.text, 0.2)}
-                />
-                <ThemedText
-                  style={[styles.emptyText, { color: theme.textSecondary }]}
-                >
-                  {isError
-                    ? "Couldn't load your cookbooks. Check your connection, or create a new one below."
-                    : "No cookbooks yet. Create one to save this recipe."}
-                </ThemedText>
-              </View>
+              <EmptyState
+                variant="firstTime"
+                icon={isError ? "alert-circle" : "book"}
+                title={
+                  isError ? "Couldn't load your cookbooks" : "No cookbooks yet"
+                }
+                description={
+                  isError
+                    ? "Check your connection and try again, or save this recipe to your favourites instead."
+                    : "Create one to organize this recipe, or save it to your favourites for quick access."
+                }
+                actionLabel={showNewInput ? undefined : "New Cookbook"}
+                onAction={showNewInput ? undefined : handleShowNewInput}
+                secondaryLabel={
+                  showNewInput || isFavourited
+                    ? undefined
+                    : "Save to Favourites"
+                }
+                onSecondaryAction={
+                  showNewInput || isFavourited
+                    ? undefined
+                    : handleSaveToFavourites
+                }
+              />
             }
           />
         )}
@@ -277,22 +322,24 @@ export function CookbookPickerModal({
             </Pressable>
           </View>
         ) : (
-          <View style={[styles.footer, { borderTopColor: theme.border }]}>
-            <Pressable
-              onPress={() => {
-                haptics.impact(Haptics.ImpactFeedbackStyle.Light);
-                setShowNewInput(true);
-              }}
-              style={[styles.newButton, { borderColor: theme.link }]}
-              accessibilityRole="button"
-              accessibilityLabel="Create new cookbook"
-            >
-              <Feather name="plus" size={18} color={theme.link} />
-              <ThemedText style={[styles.newButtonText, { color: theme.link }]}>
-                New Cookbook
-              </ThemedText>
-            </Pressable>
-          </View>
+          cookbooks &&
+          cookbooks.length > 0 && (
+            <View style={[styles.footer, { borderTopColor: theme.border }]}>
+              <Pressable
+                onPress={handleShowNewInput}
+                style={[styles.newButton, { borderColor: theme.link }]}
+                accessibilityRole="button"
+                accessibilityLabel="Create new cookbook"
+              >
+                <Feather name="plus" size={18} color={theme.link} />
+                <ThemedText
+                  style={[styles.newButtonText, { color: theme.link }]}
+                >
+                  New Cookbook
+                </ThemedText>
+              </Pressable>
+            </View>
+          )
         )}
       </KeyboardAvoidingView>
     </Modal>
@@ -347,17 +394,6 @@ const styles = StyleSheet.create({
   listItemCount: {
     fontSize: 12,
     marginTop: 1,
-  },
-  emptyState: {
-    alignItems: "center",
-    paddingVertical: Spacing["3xl"],
-    paddingHorizontal: Spacing.xl,
-  },
-  emptyText: {
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: Spacing.md,
-    lineHeight: 20,
   },
   footer: {
     paddingHorizontal: Spacing.lg,
