@@ -26,8 +26,6 @@ const noop = () => {};
 
 const handlers = {
   onConfirm: noop,
-  onAddNutritionPhoto: noop,
-  onAddFrontPhoto: noop,
   onStepConfirmed: noop,
   onEditStep2: noop,
   onEditStep3: noop,
