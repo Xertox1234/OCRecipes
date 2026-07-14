@@ -42,14 +42,16 @@ describe("getReticleTarget", () => {
     expect(t.cy).toBeCloseTo(422);
   });
 
-  it("locks to barcode position in BARCODE_LOCKED", () => {
+  it("returns label-shaped centered target for BARCODE_LOCKED (armed for nutrition capture)", () => {
     const t = getReticleTarget(
       { type: "BARCODE_LOCKED", barcode: "123", bounds: BOUNDS },
       SW,
       SH,
     );
-    expect(t.cx).toBeCloseTo(195);
-    expect(t.cy).toBeCloseTo(422);
+    expect(t.cx).toBe(SW / 2);
+    expect(t.cy).toBe(SH / 2);
+    expect(t.width).toBe(LABEL_RETICLE.width);
+    expect(t.height).toBe(LABEL_RETICLE.height);
   });
 
   it("returns label-shaped centered target for STEP2_REVIEWING", () => {

@@ -39,14 +39,7 @@ export function getReticleTarget(
       );
       return { cx, cy, ...BARCODE_RETICLE };
     }
-    case "BARCODE_LOCKED": {
-      const { cx, cy } = boundsToTarget(
-        phase.bounds,
-        screenWidth,
-        screenHeight,
-      );
-      return { cx, cy, ...BARCODE_RETICLE };
-    }
+    case "BARCODE_LOCKED":
     case "STEP2_REVIEWING":
     case "STEP2_CONFIRMED":
     case "STEP3_REVIEWING":
