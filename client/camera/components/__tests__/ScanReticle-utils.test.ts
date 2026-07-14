@@ -52,9 +52,14 @@ describe("getReticleTarget", () => {
     expect(t.cy).toBeCloseTo(422);
   });
 
-  it("returns label-shaped centered target for STEP2_CAPTURING", () => {
+  it("returns label-shaped centered target for STEP2_REVIEWING", () => {
     const t = getReticleTarget(
-      { type: "STEP2_CAPTURING", barcode: "123" },
+      {
+        type: "STEP2_REVIEWING",
+        barcode: "123",
+        ocrText: "",
+        imageUri: "x",
+      },
       SW,
       SH,
     );
@@ -64,13 +69,14 @@ describe("getReticleTarget", () => {
     expect(t.height).toBe(LABEL_RETICLE.height);
   });
 
-  it("returns label-shaped target for STEP3_CAPTURING", () => {
+  it("returns label-shaped target for STEP3_REVIEWING", () => {
     const t = getReticleTarget(
       {
-        type: "STEP3_CAPTURING",
+        type: "STEP3_REVIEWING",
         barcode: "123",
         nutritionImageUri: "x",
         ocrText: "",
+        frontImageUri: "y",
       },
       SW,
       SH,
@@ -114,7 +120,12 @@ describe("getConfidenceFromPhase", () => {
       }),
     ).toBe(1.0);
     expect(
-      getConfidenceFromPhase({ type: "STEP2_CAPTURING", barcode: "123" }),
+      getConfidenceFromPhase({
+        type: "STEP2_CONFIRMED",
+        barcode: "123",
+        nutritionImageUri: "x",
+        ocrText: "",
+      }),
     ).toBe(1.0);
   });
 });

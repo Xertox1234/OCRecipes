@@ -103,23 +103,13 @@ describe("scanPhaseReducer", () => {
     });
   });
 
-  it("ADD_NUTRITION_PHOTO transitions BARCODE_LOCKED → STEP2_CAPTURING", () => {
+  it("STEP_PHOTO_CAPTURED from BARCODE_LOCKED → STEP2_REVIEWING (armed by lock, no separate arm action)", () => {
     const state: ScanPhase = {
       type: "BARCODE_LOCKED",
       barcode: "123",
       bounds: BOUNDS,
       product: { name: "Bar" },
     };
-    const result = scanPhaseReducer(state, { type: "ADD_NUTRITION_PHOTO" });
-    expect(result).toEqual({
-      type: "STEP2_CAPTURING",
-      barcode: "123",
-      product: { name: "Bar" },
-    });
-  });
-
-  it("STEP_PHOTO_CAPTURED from STEP2_CAPTURING → STEP2_REVIEWING", () => {
-    const state: ScanPhase = { type: "STEP2_CAPTURING", barcode: "123" };
     const result = scanPhaseReducer(state, {
       type: "STEP_PHOTO_CAPTURED",
       imageUri: "file://photo.jpg",
@@ -128,6 +118,7 @@ describe("scanPhaseReducer", () => {
     expect(result).toEqual({
       type: "STEP2_REVIEWING",
       barcode: "123",
+      product: { name: "Bar" },
       imageUri: "file://photo.jpg",
       ocrText: "Calories 200",
     });
@@ -165,25 +156,9 @@ describe("scanPhaseReducer", () => {
     });
   });
 
-  it("ADD_FRONT_PHOTO transitions STEP2_CONFIRMED → STEP3_CAPTURING", () => {
+  it("STEP_PHOTO_CAPTURED from STEP2_CONFIRMED → STEP3_REVIEWING (armed by nutrition confirm, no separate arm action)", () => {
     const state: ScanPhase = {
       type: "STEP2_CONFIRMED",
-      barcode: "123",
-      nutritionImageUri: "file://nutrition.jpg",
-      ocrText: "Calories 200",
-    };
-    const result = scanPhaseReducer(state, { type: "ADD_FRONT_PHOTO" });
-    expect(result).toEqual({
-      type: "STEP3_CAPTURING",
-      barcode: "123",
-      nutritionImageUri: "file://nutrition.jpg",
-      ocrText: "Calories 200",
-    });
-  });
-
-  it("STEP_PHOTO_CAPTURED from STEP3_CAPTURING → STEP3_REVIEWING", () => {
-    const state: ScanPhase = {
-      type: "STEP3_CAPTURING",
       barcode: "123",
       nutritionImageUri: "file://nutrition.jpg",
       ocrText: "Calories 200",
@@ -317,9 +292,12 @@ describe("scanPhaseReducer", () => {
       scanPhaseReducer(state, { type: "BARCODE_UPDATED", bounds: BOUNDS }),
     ).toEqual(state);
     expect(scanPhaseReducer(state, { type: "BARCODE_LOCKED" })).toEqual(state);
-    expect(scanPhaseReducer(state, { type: "ADD_NUTRITION_PHOTO" })).toEqual(
-      state,
-    );
+    expect(
+      scanPhaseReducer(state, {
+        type: "STEP_PHOTO_CAPTURED",
+        imageUri: "file://x.jpg",
+      }),
+    ).toEqual(state);
   });
 
   it("STEP_CONFIRMED is a no-op from STEP3_REVIEWING (use CONFIRM_PRODUCT instead)", () => {

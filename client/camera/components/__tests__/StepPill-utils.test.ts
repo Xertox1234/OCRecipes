@@ -22,16 +22,20 @@ describe("getStepDotState", () => {
     expect(getStepDotState(phase, 1)).toBe("idle");
   });
 
-  it("step 1 done, step 2 active in STEP2_CAPTURING", () => {
-    const phase = { type: "STEP2_CAPTURING", barcode: "123" } as const;
-    expect(getStepDotState(phase, 0)).toBe("done");
-    expect(getStepDotState(phase, 1)).toBe("active");
+  it("step 1 active in BARCODE_LOCKED (armed for nutrition capture)", () => {
+    const phase = {
+      type: "BARCODE_LOCKED",
+      barcode: "123",
+      bounds: BOUNDS,
+    } as const;
+    expect(getStepDotState(phase, 0)).toBe("active");
+    expect(getStepDotState(phase, 1)).toBe("idle");
     expect(getStepDotState(phase, 2)).toBe("idle");
   });
 
-  it("steps 1+2 done, step 3 active in STEP3_CAPTURING", () => {
+  it("steps 1+2 done, step 3 active in STEP2_CONFIRMED (armed for front capture)", () => {
     const phase = {
-      type: "STEP3_CAPTURING",
+      type: "STEP2_CONFIRMED",
       barcode: "123",
       nutritionImageUri: "x",
       ocrText: "",
@@ -48,17 +52,6 @@ describe("getStepDotState", () => {
     expect(getStepDotState(phase, 2)).toBe("done");
   });
 
-  it("step 1 active in BARCODE_LOCKED, steps 2+3 idle", () => {
-    const phase = {
-      type: "BARCODE_LOCKED",
-      barcode: "123",
-      bounds: BOUNDS,
-    } as const;
-    expect(getStepDotState(phase, 0)).toBe("active");
-    expect(getStepDotState(phase, 1)).toBe("idle");
-    expect(getStepDotState(phase, 2)).toBe("idle");
-  });
-
   it("step 1 done, step 2 active in STEP2_REVIEWING", () => {
     const phase = {
       type: "STEP2_REVIEWING",
@@ -68,18 +61,6 @@ describe("getStepDotState", () => {
     } as const;
     expect(getStepDotState(phase, 0)).toBe("done");
     expect(getStepDotState(phase, 1)).toBe("active");
-    expect(getStepDotState(phase, 2)).toBe("idle");
-  });
-
-  it("steps 1+2 done, step 3 idle in STEP2_CONFIRMED", () => {
-    const phase = {
-      type: "STEP2_CONFIRMED",
-      barcode: "123",
-      nutritionImageUri: "x",
-      ocrText: "",
-    } as const;
-    expect(getStepDotState(phase, 0)).toBe("done");
-    expect(getStepDotState(phase, 1)).toBe("done");
     expect(getStepDotState(phase, 2)).toBe("idle");
   });
 
@@ -116,7 +97,12 @@ describe("shouldShowStepPill", () => {
       }),
     ).toBe(true);
     expect(
-      shouldShowStepPill({ type: "STEP2_CAPTURING", barcode: "123" }),
+      shouldShowStepPill({
+        type: "STEP2_REVIEWING",
+        barcode: "123",
+        ocrText: "",
+        imageUri: "x",
+      }),
     ).toBe(true);
   });
 

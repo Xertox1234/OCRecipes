@@ -47,10 +47,8 @@ export function getReticleTarget(
       );
       return { cx, cy, ...BARCODE_RETICLE };
     }
-    case "STEP2_CAPTURING":
     case "STEP2_REVIEWING":
     case "STEP2_CONFIRMED":
-    case "STEP3_CAPTURING":
     case "STEP3_REVIEWING":
       return { ...center, ...LABEL_RETICLE };
     default:

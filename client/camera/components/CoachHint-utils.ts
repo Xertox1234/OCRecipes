@@ -14,13 +14,11 @@ export function getCoachMessage(
     }
     case "BARCODE_TRACKING":
       return "Hold steady…";
-    case "STEP2_CAPTURING":
-      return "Frame the Nutrition Facts panel";
-    case "STEP3_CAPTURING":
-      return "Frame the front of the package";
     case "BARCODE_LOCKED":
-    case "STEP2_REVIEWING":
+      return "Frame the Nutrition Facts panel";
     case "STEP2_CONFIRMED":
+      return "Frame the front of the package";
+    case "STEP2_REVIEWING":
     case "STEP3_REVIEWING":
     case "SESSION_COMPLETE":
     case "CLASSIFYING":

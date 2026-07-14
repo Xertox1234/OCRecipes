@@ -35,8 +35,7 @@ export function scanPhaseReducer(
       };
 
     case "PRODUCT_LOADED":
-      if (state.type !== "BARCODE_LOCKED" && state.type !== "STEP2_CAPTURING")
-        return state;
+      if (state.type !== "BARCODE_LOCKED") return state;
       return { ...state, product: action.product };
 
     case "BARCODE_LOST":
@@ -66,26 +65,8 @@ export function scanPhaseReducer(
       }
       return state;
 
-    case "ADD_NUTRITION_PHOTO":
-      if (state.type !== "BARCODE_LOCKED") return state;
-      return {
-        type: "STEP2_CAPTURING",
-        barcode: state.barcode,
-        product: state.product,
-      };
-
-    case "ADD_FRONT_PHOTO":
-      if (state.type !== "STEP2_CONFIRMED") return state;
-      return {
-        type: "STEP3_CAPTURING",
-        barcode: state.barcode,
-        product: state.product,
-        nutritionImageUri: state.nutritionImageUri,
-        ocrText: state.ocrText,
-      };
-
     case "STEP_PHOTO_CAPTURED":
-      if (state.type === "STEP2_CAPTURING") {
+      if (state.type === "BARCODE_LOCKED") {
         return {
           type: "STEP2_REVIEWING",
           barcode: state.barcode,
@@ -94,7 +75,7 @@ export function scanPhaseReducer(
           ocrText: action.ocrText ?? "",
         };
       }
-      if (state.type === "STEP3_CAPTURING") {
+      if (state.type === "STEP2_CONFIRMED") {
         return {
           type: "STEP3_REVIEWING",
           barcode: state.barcode,
@@ -140,8 +121,6 @@ export function scanPhaseReducer(
       return {
         type: "SMART_ERROR",
         imageUri: state.imageUri,
-        // error is not surfaced — the visible chip text and getChipAnnounceText
-        // both hardcode the smart_error copy and ignore phase.error. State-parity only.
         error: "unrecognized",
       };
 
