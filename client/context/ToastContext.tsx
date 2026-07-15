@@ -27,6 +27,7 @@ interface ToastContextType {
   success: (message: string, options?: ToastOptions) => void;
   error: (message: string, options?: ToastOptions) => void;
   info: (message: string, options?: ToastOptions) => void;
+  dismiss: () => void;
 }
 
 const ToastContext = createContext<ToastContextType | null>(null);
@@ -64,8 +65,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ success, error, info }),
-    [success, error, info],
+    () => ({ success, error, info, dismiss }),
+    [success, error, info, dismiss],
   );
 
   return (

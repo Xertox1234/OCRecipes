@@ -3,7 +3,7 @@
 ---
 
 title: "Expose a Toast dismiss API and clear stale toasts when a retry action fires"
-status: backlog
+status: done
 priority: low
 created: 2026-07-13
 updated: 2026-07-13
