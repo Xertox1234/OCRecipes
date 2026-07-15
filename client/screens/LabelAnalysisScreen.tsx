@@ -108,9 +108,10 @@ export default function LabelAnalysisScreen() {
   }, [route.params.localOCRText]);
 
   const retryUpload = useCallback(() => {
+    toast.dismiss();
     setUploadFailed(false);
     setRetryToken((t) => t + 1);
-  }, []);
+  }, [toast]);
 
   // Upload to OpenAI (always, even with local preview)
   useEffect(() => {
