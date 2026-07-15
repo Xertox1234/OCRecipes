@@ -185,7 +185,6 @@ The pre-commit script only catches: `Pressable`/`TouchableOpacity` with `onPress
 - `CameraRef` type (not `any`) for camera refs; the method is `takePicture()` (not `takePictureAsync`)
 - `CameraPermissionResult` has a `.status` field (`"granted"` | `"denied"`), NOT a `.granted` boolean
 - RN FormData file upload needs the `as unknown as Blob` cast — RN expects `{ uri, type, name }` but TS types it as `Blob`
-- [ ] **A discriminated-union case collapse (e.g. `ScanPhase`) must be audited for absorbed semantics, not just compiled clean.** When a union variant is deleted and its meaning folds into a surviving sibling (e.g. `STEP2_CAPTURING` removed, "armed and capturing" absorbed into `BARCODE_LOCKED`), every exhaustive `switch (phase.type)` over that union needs its surviving case's BODY re-read against the variant's NEW meaning — TypeScript's exhaustiveness check only proves the switch compiles, not that the case body still matches. Cross-check every file that switches on the same union (coach-message helper, reticle-target helper, step-indicator helper, etc.) for mutual agreement; a case whose test title describes the new semantics but whose assertions still check the old ones is the signature of this bug. (Ref: `docs/solutions/conventions/discriminated-union-case-collapse-audit-absorbed-semantics-2026-07-14.md`)
 
 ### Permissions & lifecycle
 
@@ -194,6 +193,7 @@ The pre-commit script only catches: `Pressable`/`TouchableOpacity` with `onPress
 - [ ] When an in-screen overlay logically pauses scanning (confirm card, result sheet, permission prompt), `isActive` is extended: `isActive={isFocused && !overlayState}` — `isFocused` alone won't stop the hardware pipeline while the screen stays focused (Ref: audit 2026-05-02 H4)
 - [ ] Camera stops when the app backgrounds
 - [ ] VisionCamera v5 lifecycle (2026-06-10 audit): prefer declarative session props (`torchMode`) over imperative controller calls — the framework re-applies them across session restarts (`isActive` false→true), where an imperative effect leaves hardware state stale. Gate `torchMode` on `device.hasTorch` (the lib's torch updater is an uncaught floating promise on torch-less devices; `undefined` skips it). v5 has NO `Camera.getCameraPermissionStatus()` — persisted permission state comes from `useCameraPermission().canRequestPermission`
+- [ ] **Zoom is the opposite of the torchMode guidance above — it must stay imperative.** Never pass a `SharedValue<number>` (or any animated value) as `<Camera zoom={...}>`'s prop — VisionCamera's internal `useZoomUpdater` requires the separate `react-native-vision-camera-worklets` package (not installed in this app; a different package from `react-native-worklets`/`react-native-worklets-core`), and its lazy `require()` throws inside `Camera`'s own effect, killing the ENTIRE preview (renders solid black, no visible crash screen). Drive zoom via `cameraRef.current?.controller?.setZoom(value)` (a plain `Promise<void>`, no worklets dependency), bridged from a pinch gesture with `runOnJS`. See `docs/solutions/runtime-errors/vision-camera-zoom-prop-requires-worklets-package-2026-07-14.md`
 
 ### Barcode scanning
 
