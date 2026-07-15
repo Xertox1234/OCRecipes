@@ -37,3 +37,4 @@ None for verification gates specifically — a subagent should never background 
 ## See Also
 
 - [fire-and-forget-non-critical-background](../design-patterns/fire-and-forget-non-critical-background-2026-05-13.md) — the inverse case: when backgrounding IS correct, because the caller doesn't need the result
+- [A backgrounded command's reported exit code is unreliable when the command includes a pipe](backgrounded-piped-command-exit-code-unreliable-2026-07-15.md) — a related but distinct backgrounding hazard (exit-code reliability, not notification timing)
