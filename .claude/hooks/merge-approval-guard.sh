@@ -1,20 +1,27 @@
 #!/usr/bin/env bash
-# PreToolUse — hard-block an IMMEDIATE PR merge (Bash `gh pr merge` without --auto, OR the
-# mcp__github__merge_pull_request tool) unless an explicit override is set. Landing a PR is
-# the irreversible step (squash-merge to protected `main` auto-deploys to Railway) — this
-# project's policy is that a human runs the actual merge, not an agent, UNLESS the PR is
-# already auto-merge-ARMED via `gh pr merge --auto` (the established /todo guard-eligible
-# path — see scripts/todo-automerge-guard.sh). `--auto` only ARMS GitHub's native
-# auto-merge; it does not merge anything itself — GitHub merges later, unattended, once
-# required checks pass. That distinction is exactly the carve-out this hook preserves.
+# PreToolUse — a TRIPWIRE (not an airtight control) for an IMMEDIATE PR merge issued as a
+# literal `gh pr merge` (Bash, without --auto) or the mcp__github__merge_pull_request tool.
+# Landing a PR is the irreversible step (squash-merge to protected `main` auto-deploys to
+# Railway) — this project's policy is that a human runs the actual merge, not an agent,
+# UNLESS the PR is already auto-merge-ARMED via `gh pr merge --auto` (the established
+# /todo guard-eligible path — see scripts/todo-automerge-guard.sh). `--auto` only ARMS
+# GitHub's native auto-merge; it does not merge anything itself — GitHub merges later,
+# unattended, once required checks pass. That distinction is the carve-out this hook
+# preserves.
 #
 # Incident: PR #626 (2026-07-14) — the `land` skill's own wording told the agent to
 # "review, then merge, autonomously" and its step 4 was literally `gh pr merge`, for an
-# ordinary (non-/todo) PR. The agent complied and merged without human sign-off. A
-# memory-only policy (recall it next time) already existed and did not prevent this — an
-# explicit instruction sitting at the point of action beat it. This hook is the
-# deterministic backstop; `.claude/skills/land/SKILL.md` wording was also corrected to
-# match, but don't rely on wording alone — that's the lesson.
+# ordinary (non-/todo) PR. The agent complied and merged without human sign-off. THE FIX
+# for that root cause is `.claude/skills/land/SKILL.md`'s corrected wording (review, fix,
+# push, then stop) — this hook only catches the literal-command recurrence of the exact
+# same mistake. It is NOT a security boundary: a command-string matcher against a
+# Turing-complete shell cannot be one. Confirmed non-exhaustive by review (`gh api`/`curl`
+# hitting the same REST/GraphQL endpoint, `bash -c "..."`, an alias, or simply `Edit`-ing
+# this very file — nothing gates edits to `.claude/hooks/*`) all reach the same outcome
+# ungated. Real enforcement against a determined-or-rationalizing agent needs a
+# server-side control (GitHub branch protection) that the agent cannot edit around — that
+# is a deliberate, human-made repo-settings decision, not something this hook attempts or
+# substitutes for.
 #
 # Escape (explicitly authorized direct merge): set ALLOW_DIRECT_MERGE=1 in the shell that
 # launched Claude Code.
@@ -31,12 +38,26 @@ case "$TOOL" in
     # Strip quoted spans first, so `gh pr merge` mentioned inside a quoted argument (a
     # commit message, an echo/grep string) is never mistaken for a real invocation.
     CMD_BARE=$(printf '%s' "$CMD" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g")
-    # Match `gh pr merge` only when `gh` is in command position (start-of-command or after
-    # a shell separator: ; & | ().
-    printf '%s' "$CMD_BARE" | grep -Eq '(^|[;&|(])[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' || exit 0
-    # `--auto` ARMS auto-merge (GitHub merges later, unattended) — the already-gated /todo
-    # path. Anything without it is an immediate merge — block.
-    printf '%s' "$CMD_BARE" | grep -Eq -- '--auto\b' && exit 0
+    # Strip an unquoted trailing shell comment — bash never executes text after it, so it
+    # must not influence detection either (a `# --auto` comment must not fake out the arm
+    # check below).
+    CMD_BARE=$(printf '%s' "$CMD_BARE" | sed -E 's/(^|[[:space:]])#.*$//')
+    # Examine each shell-separated segment independently — a single Bash call can chain
+    # multiple invocations (; && || | subshell-open), and each `gh pr merge` in it must be
+    # judged on its OWN --auto status, not the line as a whole: a decoy --auto sitting in
+    # an unrelated segment must not arm a merge segment that lacks it.
+    DENY=0
+    while IFS= read -r seg; do
+      [ -z "$seg" ] && continue
+      grep -Eq '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' <<< "$seg" || continue
+      # A read-only invocation never merges anything — never deny it (no equivalent escape
+      # otherwise exists for an agent that just wants to check `gh pr merge`'s flags).
+      grep -Eq -- '(^|[[:space:]])(--help|-h)([[:space:]]|$)' <<< "$seg" && continue
+      # --auto must appear WITHIN this segment to arm-not-merge; otherwise THIS invocation denies.
+      grep -Eq -- '--auto\b' <<< "$seg" && continue
+      DENY=1
+    done <<< "$(tr ';&|(' '\n\n\n\n' <<< "$CMD_BARE")"
+    [ "$DENY" -eq 1 ] || exit 0
     ;;
   mcp__github__merge_pull_request)
     : # this tool always merges immediately — there is no "arm for later" mode for it.

@@ -56,4 +56,26 @@ assert_empty "separator-in-quoted-string passes through" "" "$OUT"
 OUT=$(run_hook 'true; gh pr merge 626 --squash')
 assert_contains "unquoted separator+merge still denies" '"permissionDecision": "deny"' "$OUT"
 
+# 11. A trailing unquoted `#` comment mentioning --auto must NOT arm the check — the merge
+# itself carries no --auto flag once bash strips the comment, so it must still deny.
+OUT=$(run_hook 'gh pr merge 626 --squash --delete-branch # deliberately not using --auto here')
+assert_contains "decoy --auto in a trailing comment still denies" '"permissionDecision": "deny"' "$OUT"
+
+# 12. A decoy --auto in an unrelated chained segment must not arm the merge segment that
+# actually lacks it (each segment is judged on its own --auto status).
+OUT=$(run_hook 'gh pr merge 626 --squash --delete-branch && echo merged without --auto')
+assert_contains "decoy --auto in a later chained segment still denies" '"permissionDecision": "deny"' "$OUT"
+
+# 13. Two merges chained in one call: only the first is --auto-armed — the whole command
+# must still deny, since the second invocation would merge immediately, unarmed.
+OUT=$(run_hook 'gh pr merge 620 --auto; gh pr merge 621 --squash --delete-branch')
+assert_contains "one un-armed merge among several still denies the whole command" '"permissionDecision": "deny"' "$OUT"
+
+# 14. `gh pr merge --help` / `-h` never merges anything — must pass through, not deny (no
+# equivalent escape otherwise exists for an agent that just wants to check the command's flags).
+OUT=$(run_hook 'gh pr merge --help')
+assert_empty "gh pr merge --help passes through" "" "$OUT"
+OUT=$(run_hook 'gh pr merge -h')
+assert_empty "gh pr merge -h passes through" "" "$OUT"
+
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
