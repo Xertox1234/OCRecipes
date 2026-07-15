@@ -16,14 +16,14 @@ Merging is the irreversible step: squash-merge to protected `main` auto-deploys 
 1. **Review gate** — see below. No merge without a review verdict on the PR's final commits.
 2. **Clean tree** — `git status --porcelain`. Anything dirty that isn't this PR's work: `git stash push -m "..." -- <paths>` before the merge, `git stash pop` after. A dirty tree at `gh pr merge --squash` sweeps the user's parallel IDE edits into the squash commit (PR #320 incident).
 3. **CI truth** — `gh pr checks <n>` or the Checks-API MCP surfaces. The legacy commit-status API returns `total_count: 0` on this repo even when CI is fully green — an empty status response is a measurement artifact, never evidence of anything.
-4. **Merge** — `gh pr merge <n> --squash --delete-branch`. Never in the same step as `gh pr create`. If the PR already has auto-merge armed (guard-eligible /todo PRs), don't merge manually — it lands itself.
+4. **Merge** — this project requires a **human** to run the actual merge. Once the review gate passes, the tree is clean, and CI is green: push if not already pushed, report the review verdict, and **stop** — ask the user to run `gh pr merge <n> --squash --delete-branch` themselves. The one exception is a guard-eligible `/todo` PR with auto-merge already armed via `gh pr merge --auto` (see `scripts/todo-automerge-guard.sh`) — that lands itself once CI passes, no human step needed. This wording is the actual fix (incident: PR #626, 2026-07-14 — this skill's own prior wording told the agent to merge autonomously, and it did, unreviewed by a human). A PreToolUse hook (`.claude/hooks/merge-approval-guard.sh`) additionally catches a literal `gh pr merge` / `mcp__github__merge_pull_request` re-run of that same mistake, but it is a tripwire, not a security boundary — a command-string matcher can't be one (`gh api`/`curl` hit the same endpoint ungated, and nothing stops editing the hook file itself). Real, unbypassable enforcement would need a server-side control (GitHub branch protection); this skill doesn't assume one exists. Never run a merge in the same step as `gh pr create`, regardless.
 5. **Sync** — `git pull --ff-only` on main. A burst of "new" commits arriving is normal fast-forward catch-up, not squash pollution.
 6. **Branch sweep** — decision table below, then `git fetch --prune`.
 7. **Reconcile** — verify the PR contained only the expected commits (`gh pr view <n> --json commits`); copy any todos archived inside worktrees into the main checkout's `todos/archive/`.
 
 ## The Review Gate
 
-"Just merge it" means _land it without me_ — it is not permission to skip review. The user's deadline binds the user, not the work: they can leave; you review, then merge, autonomously. Only an explicit "skip the review" waives the gate — and then state plainly in your reply that it merged unreviewed. Security-labelled PRs never auto-merge and always get individual review.
+"Just merge it" means _land it without me_ — it is not permission to skip review, and it is not permission to execute the merge yourself. The user's deadline binds the user, not the work: they can leave; you review, fix, and push — then **stop** and hand the actual merge to them (see step 4; the only autonomous-merge path is a guard-eligible `/todo` PR with auto-merge already armed). Only an explicit "skip the review" waives the review gate itself — it never authorizes an agent-executed merge outside that one carve-out. If review is explicitly skipped, state plainly in your reply that it merged unreviewed. Security-labelled PRs never auto-merge and always get individual review.
 
 | Rationalization                                                   | Reality                                                                                                                |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -32,7 +32,7 @@ Merging is the irreversible step: squash-merge to protected `main` auto-deploys 
 | "A revert is a one-liner if anything surfaces"                    | Merge auto-deploys to production. A bad merge is an incident, not a git command.                                       |
 | "CI is green, so review is redundant"                             | CI runs the tests that exist. Review catches the bug no test covers.                                                   |
 
-**Red flags — STOP and run the review:** you're about to type `gh pr merge` and no review verdict exists for the PR's current head; you're citing diff size, CI greenness, or the user's departure as the justification.
+**Red flags — STOP:** you're about to type `gh pr merge` and no review verdict exists for the PR's current head; you're citing diff size, CI greenness, or the user's departure as the justification; you're about to run `gh pr merge` or `mcp__github__merge_pull_request` yourself on anything other than a guard-eligible `/todo` PR with auto-merge armed — that decision is the human's, not yours.
 
 ## Branch sweep
 
@@ -53,3 +53,4 @@ Verification ladder, weakest → strongest: (1) `git cherry main <branch>` all `
 - Merging over a dirty tree, or blanket `git add -A` while the user works in parallel.
 - Bulk-deleting branches without per-branch PR-state verification (`gh pr list --state all --json headRefName,state`).
 - Treating post-merge fast-forward catch-up commits as evidence the squash swept extra content.
+- Executing the merge yourself (`gh pr merge` or `mcp__github__merge_pull_request`) for anything other than a guard-eligible `/todo` PR with auto-merge armed — that decision belongs to the human (PR #626 incident, 2026-07-14: this skill's own earlier wording said "review, then merge, autonomously," and got followed literally).
