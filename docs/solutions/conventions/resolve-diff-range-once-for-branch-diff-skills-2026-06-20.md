@@ -6,7 +6,7 @@ module: shared
 tags: [codify, skill, diff-range, main-head, post-merge, squash, tooling, uncommitted, audit, review-dispatch]
 applies_to: [.claude/skills/codify/SKILL.md, .claude/skills/spec-review/SKILL.md, .claude/skills/audit/SKILL.md]
 created: '2026-06-20'
-last_updated: '2026-07-05'
+last_updated: '2026-07-15'
 source: 2026-06-20 todo P3-2026-06-19-codify-skill-handle-post-merge-diff
 ---
 
@@ -117,3 +117,4 @@ the resolved decision use `<resolved-range>`.
 ## See Also
 
 - [solutions-db-add worktree-relative path](solutions-db-add-worktree-relative-path-2026-06-18.md) — sibling /codify-mechanics convention
+- [A shell variable captured in one Phase's Bash call is gone by the next Phase's separate Bash call](orchestrator-phase-variables-dont-persist-across-bash-calls-2026-07-15.md) — the general form of this rule, beyond diff ranges

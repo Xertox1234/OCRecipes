@@ -11,6 +11,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Pressable,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -91,6 +92,29 @@ export default function LabelAnalysisScreen() {
 
   const dataSourceRef = useRef<"local" | "ai" | null>(null);
   const labelDataRef = useRef<LabelExtractionResult | null>(null);
+  const prevSessionIdRef = useRef<string | null>(null);
+
+  // Announce the Verifying → Ready transition for screen readers: a user who
+  // focused the log button while it read "Verifying..." (disabled) gets no
+  // signal when the background AI upload's sessionId arrives and the button
+  // becomes actionable. Announced on BOTH platforms — no accessibilityLiveRegion
+  // exists on this button, so per the project's announce-vs-live-region
+  // convention (docs/rules/accessibility.md) this imperative announce is the
+  // sole announcer on Android too (the Button's accessibilityState.disabled/busy
+  // trait is only read on-demand when TalkBack focus lands on the node, not
+  // proactively — see ProductChip.tsx for the same no-live-region shape).
+  // Edge-guarded on null→set via the prev-value ref so it never fires on mount
+  // (sessionId always starts null) or refires on unrelated re-renders.
+  useEffect(() => {
+    if (sessionId && !prevSessionIdRef.current) {
+      AccessibilityInfo.announceForAccessibility(
+        verificationMode && verifyBarcode
+          ? "Ready to submit verification"
+          : "Ready to log",
+      );
+    }
+    prevSessionIdRef.current = sessionId;
+  }, [sessionId, verificationMode, verifyBarcode]);
 
   // Parse local OCR data for instant preview (if available)
   useEffect(() => {
@@ -108,9 +132,10 @@ export default function LabelAnalysisScreen() {
   }, [route.params.localOCRText]);
 
   const retryUpload = useCallback(() => {
+    toast.dismiss();
     setUploadFailed(false);
     setRetryToken((t) => t + 1);
-  }, []);
+  }, [toast]);
 
   // Upload to OpenAI (always, even with local preview)
   useEffect(() => {
@@ -545,7 +570,12 @@ export default function LabelAnalysisScreen() {
               { backgroundColor: withOpacity(theme.warning, 0.12) },
             ]}
           >
-            <Feather name="alert-triangle" size={16} color={theme.warning} />
+            <Feather
+              name="alert-triangle"
+              size={16}
+              color={theme.warning}
+              accessible={false}
+            />
             <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
               Couldn&apos;t verify with AI. Retry before logging.
             </ThemedText>
@@ -560,7 +590,12 @@ export default function LabelAnalysisScreen() {
               { backgroundColor: withOpacity(theme.warning, 0.12) },
             ]}
           >
-            <Feather name="alert-triangle" size={16} color={theme.warning} />
+            <Feather
+              name="alert-triangle"
+              size={16}
+              color={theme.warning}
+              accessible={false}
+            />
             <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
               Some values may be inaccurate. Review before logging.
             </ThemedText>
