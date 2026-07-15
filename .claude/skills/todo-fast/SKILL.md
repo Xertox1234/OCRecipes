@@ -29,10 +29,13 @@ Create ONE worktree for the entire run — every subsequent agent (research, `Pl
 SLUG="<todo filename minus .md>"
 git worktree add ".claude/worktrees/agent-todo-fast-$SLUG" -b "todo/$SLUG" "$BASE_BRANCH"
 WORKTREE="$(cd ".claude/worktrees/agent-todo-fast-$SLUG" && pwd)"
+MAIN_CHECKOUT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
 ln -sf "$MAIN_CHECKOUT/node_modules" "$WORKTREE/node_modules"
 ```
 
 `.husky/post-checkout` auto-symlinks `.env*` and `docs/LEARNINGS.md` into a freshly-checked-out worktree, but NOT `node_modules` — that's normally provided by the Agent tool's own `isolation: "worktree"` dispatch mechanism (what `/todo`'s executor uses), which this Phase deliberately does not use (a shared multi-agent worktree needs one `git worktree add`, not a fresh worktree per dispatch). Without the explicit symlink above, Phase 6's `npm`/`vitest` commands fail with module-not-found errors — not a graceful test failure, a missing-dependency crash — on every run.
+
+`MAIN_CHECKOUT` is re-derived here rather than reused from Phase 0's capture of the same value — shell state (including `$BASE_BRANCH`) does not persist across separate tool calls, and re-deriving it keeps this block self-contained instead of depending on the orchestrator correctly substituting a second recorded literal.
 
 Record `$WORKTREE` (absolute path) — every dispatch prompt below substitutes it in literally, never the placeholder text.
 
