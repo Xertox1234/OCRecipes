@@ -570,7 +570,12 @@ export default function LabelAnalysisScreen() {
               { backgroundColor: withOpacity(theme.warning, 0.12) },
             ]}
           >
-            <Feather name="alert-triangle" size={16} color={theme.warning} />
+            <Feather
+              name="alert-triangle"
+              size={16}
+              color={theme.warning}
+              accessible={false}
+            />
             <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
               Couldn&apos;t verify with AI. Retry before logging.
             </ThemedText>
@@ -585,7 +590,12 @@ export default function LabelAnalysisScreen() {
               { backgroundColor: withOpacity(theme.warning, 0.12) },
             ]}
           >
-            <Feather name="alert-triangle" size={16} color={theme.warning} />
+            <Feather
+              name="alert-triangle"
+              size={16}
+              color={theme.warning}
+              accessible={false}
+            />
             <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
               Some values may be inaccurate. Review before logging.
             </ThemedText>

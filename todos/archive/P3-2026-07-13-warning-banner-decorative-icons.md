@@ -3,10 +3,10 @@
 ---
 
 title: "Add accessible={false} to decorative icons in LabelAnalysisScreen warning banners"
-status: backlog
+status: done
 priority: low
 created: 2026-07-13
-updated: 2026-07-13
+updated: 2026-07-14
 assignee:
 labels: [deferred, accessibility]
 github_issue:
@@ -25,8 +25,8 @@ Flagged by mobile-reviewer during the PR #617 code review. The new banner copied
 
 ## Acceptance Criteria
 
-- [ ] Both `Feather name="alert-triangle"` icons in `LabelAnalysisScreen.tsx` (the `uploadFailed` banner and the confidence-indicator banner) get `accessible={false}`
-- [ ] No change to visual appearance; VoiceOver/TalkBack no longer double-focuses the icon + text
+- [x] Both `Feather name="alert-triangle"` icons in `LabelAnalysisScreen.tsx` (the `uploadFailed` banner and the confidence-indicator banner) get `accessible={false}`
+- [x] No change to visual appearance; VoiceOver/TalkBack no longer double-focuses the icon + text
 
 ## Implementation Notes
 
@@ -46,3 +46,8 @@ Flagged by mobile-reviewer during the PR #617 code review. The new banner copied
 ### 2026-07-13
 
 - Filed from PR #617 mobile-reviewer finding
+
+### 2026-07-14
+
+- Implemented: added `accessible={false}` to both `Feather name="alert-triangle"` icons in `client/screens/LabelAnalysisScreen.tsx` (the `uploadFailed` banner and the confidence-indicator banner), following the established `AllergenWarningBanner.tsx` precedent (plain `View` banner + leaf-glyph icon, no `importantForAccessibility` pairing needed).
+- Reviewed by `code-reviewer` (No findings, minor frontmatter-date suggestion addressed here) and `mobile-reviewer` (No findings — confirmed `accessible={false}` alone is sufficient for TalkBack parity on this non-Pressable, leaf-icon shape).
