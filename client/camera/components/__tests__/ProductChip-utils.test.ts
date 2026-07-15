@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   getChipAnnounceText,
   getProductChipVariant,
+  getShutterClearanceStyle,
   getSmartConfirmLabel,
 } from "../ProductChip-utils";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
@@ -95,6 +96,55 @@ describe("getProductChipVariant", () => {
     expect(
       getProductChipVariant({ type: "SESSION_COMPLETE", barcode: "123" }),
     ).toBe("session_complete");
+  });
+});
+
+describe("getShutterClearanceStyle", () => {
+  it("raises non-session_complete variants by insetsBottom + 96, with flat 20 padding", () => {
+    expect(getShutterClearanceStyle("barcode_lock", 0)).toEqual({
+      bottom: 96,
+      paddingBottom: 20,
+    });
+    expect(getShutterClearanceStyle("barcode_lock", 34)).toEqual({
+      bottom: 130,
+      paddingBottom: 20,
+    });
+    expect(getShutterClearanceStyle("step2_review", 34)).toEqual({
+      bottom: 130,
+      paddingBottom: 20,
+    });
+    expect(getShutterClearanceStyle("step2_confirmed", 34)).toEqual({
+      bottom: 130,
+      paddingBottom: 20,
+    });
+    expect(getShutterClearanceStyle("step3_review", 34)).toEqual({
+      bottom: 130,
+      paddingBottom: 20,
+    });
+    expect(getShutterClearanceStyle("smart_photo", 34)).toEqual({
+      bottom: 130,
+      paddingBottom: 20,
+    });
+    expect(getShutterClearanceStyle("smart_error", 34)).toEqual({
+      bottom: 130,
+      paddingBottom: 20,
+    });
+  });
+
+  it("keeps session_complete flush-bottom (no bottom override) with insets-aware padding", () => {
+    expect(getShutterClearanceStyle("session_complete", 0)).toEqual({
+      paddingBottom: 20,
+    });
+    expect(getShutterClearanceStyle("session_complete", 34)).toEqual({
+      paddingBottom: 54,
+    });
+  });
+
+  it("treats a null variant (mid exit-animation) the same as a raised variant", () => {
+    expect(getShutterClearanceStyle(null, 34)).toEqual({
+      bottom: 130,
+      paddingBottom: 20,
+    });
   });
 });
 

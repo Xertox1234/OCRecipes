@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import * as ProductChipUtils from "../ProductChip-utils";
 import { ProductChip } from "../ProductChip";
 import type { ScanPhase } from "../../types/scan-phase";
 
@@ -105,5 +106,33 @@ describe("ProductChip — step2_review / step3_review auto-advance treatment", (
     );
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(screen.getByText(/front label captured/i)).toBeTruthy();
+  });
+});
+
+// Wiring-seam check: getShutterClearanceStyle's own derivation is unit-tested
+// in ProductChip-utils.test.ts, but that proves nothing about whether this
+// component still calls it, or calls it with the right arguments — the gap
+// docs/solutions/conventions/pure-utils-extraction-tests-dont-prove-wiring-2026-07-14.md
+// warns about. Assert the component threads the derived variant and
+// insets.bottom through on every render, for both a raised variant and the
+// session_complete exception.
+describe("ProductChip — shutter-clearance wiring", () => {
+  const sessionComplete: ScanPhase = {
+    type: "SESSION_COMPLETE",
+    barcode: "123",
+  };
+
+  it("calls getShutterClearanceStyle with the derived variant and insets.bottom", () => {
+    const spy = vi.spyOn(ProductChipUtils, "getShutterClearanceStyle");
+    render(<ProductChip phase={barcodeLock} {...handlers} />);
+    expect(spy).toHaveBeenCalledWith("barcode_lock", 0);
+    spy.mockRestore();
+  });
+
+  it("calls getShutterClearanceStyle with session_complete for the flush-bottom exception", () => {
+    const spy = vi.spyOn(ProductChipUtils, "getShutterClearanceStyle");
+    render(<ProductChip phase={sessionComplete} {...handlers} />);
+    expect(spy).toHaveBeenCalledWith("session_complete", 0);
+    spy.mockRestore();
   });
 });
