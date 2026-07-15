@@ -221,7 +221,21 @@ Execute the todo:
 
 ## Step 5 — Verify
 
-Run all three verification commands **synchronously, in the foreground** — never with `run_in_background: true`:
+Two passes: a scoped fast check after implementation and after every fix round (Step 5a), and the full CI-parity suite issued once per review round, overlapped with Step 6's reviewer dispatch rather than run serially before it (Step 5b).
+
+### Step 5a — Scoped fast check
+
+```bash
+scripts/preflight.sh --fast --uncommitted
+```
+
+This scopes lint and tests to files you've actually changed — working tree vs. `HEAD`, not `origin/main`, since your implementation isn't committed yet at this point (commit happens later, in Step 8). Whole-program `tsc` still runs in full; it can't be scoped. Must pass before proceeding to Step 5b.
+
+If it fails: read the error output, fix the issue, re-run until it passes.
+
+### Step 5b — Full suite, overlapped with review
+
+Once Step 5a passes, move to Step 6. In the SAME turn you dispatch Step 6's reviewer agents, ALSO issue these three commands as ordinary synchronous Bash tool calls — not backgrounded:
 
 ```bash
 npm run test:run
@@ -229,16 +243,11 @@ npm run check:types
 npm run lint
 ```
 
-**Never background these and wait.** Unlike the orchestrator (which gets an automatic notification when a dispatched _agent_ finishes), you get no equivalent notification when your _own_ backgrounded shell command finishes — nothing re-invokes you. If you background a verification command and then stop to "wait for it," you strand yourself: the harness sees no live background children and reports you as complete with no final result, while your real implementation sits uncommitted until the orchestrator notices and explicitly resumes you. Always block on the command and read its real output before proceeding.
+This is plain multiple-tool-calls-in-one-turn parallelism, the same pattern Step 6 already uses to dispatch several reviewer agents together in one message. **Do not add `run_in_background: true` to these** — that would strand you: unlike the orchestrator (which gets an automatic notification when a dispatched _agent_ finishes), you get no equivalent notification when your _own_ backgrounded shell command finishes — nothing re-invokes you. Issuing them as normal foreground calls alongside the reviewer `Agent()` calls in the same turn gets the same overlap without that risk: the turn simply completes once every call in it — agents and Bash alike — has returned.
 
-All three must pass with zero errors. If any fail:
+All three must pass with zero errors, same as Step 6's reviewers must return before you proceed to Step 7. If any of the three fail, treat it exactly like an unresolved CRITICAL review finding in Step 7: fix it, return to Step 5a to confirm, then repeat Step 5b if a second round is needed (same 2-round cap Step 7 already enforces).
 
-- Read the error output carefully.
-- Fix the issue in the implementation.
-- Re-run the failing command to confirm the fix.
-- Repeat until all three pass.
-
-After all commands pass, re-read every modified file and confirm the changes match each acceptance criterion. If a criterion is not met, go back to Step 4.
+After both the full suite passes and Step 7's feedback is addressed, re-read every modified file and confirm the changes match each acceptance criterion. If a criterion is not met, go back to Step 4.
 
 ---
 
@@ -262,7 +271,7 @@ Otherwise:
 
 1. **Inspect the diff** (`git diff HEAD -- .`) — file paths **and** content.
 2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain reviewers** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match reviewers by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a route, Drizzle query, or service-layering change → add `server-reviewer`; a screen, camera, accessibility, or client-perf change → add `mobile-reviewer`; an AI-service or nutrition-calculation change → add `ai-reviewer`; `any`/Zod/testing changes are already the `code-reviewer` baseline's lens). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
-3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run).
+3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash tool calls alongside these Agent calls — see Step 5b for why.
 
 4. **Merge** all reviewers' findings into one list (dedupe where two reviewers flag the same file:line). Store the merged result in working context as `review_output`, noting which agent reported each finding.
 
@@ -279,8 +288,8 @@ Process the code review findings. The project convention (see `CLAUDE.md` and `d
    - Also consider whether the WARNING reveals a reusable rule worth codifying — flag it for Step 9.
 3. **SUGGESTION** — informational only. Apply only if it lands in scope and is trivial; otherwise ignore.
 4. There is no tier below SUGGESTION — findings not marked CRITICAL, WARNING, or SUGGESTION can be ignored.
-5. After fixing, re-run Step 5 (verify) to ensure fixes did not break anything.
-6. If fixes were non-trivial, run Step 6 again (second review round).
+5. After fixing, re-run Step 5a (scoped fast check) to confirm the fix didn't break anything.
+6. If fixes were non-trivial, run Step 6 again (second review round) — overlapped with a second Step 5b (full suite) pass, per Step 5b.
 
 **Cap at 2 review rounds.** Only unresolved **CRITICAL** issues after 2 rounds count as failure (enter the Failure Path). Remaining WARNINGs at the round-2 boundary go into the `DEFERRED_WARNINGS` report field — never into a todo — and are not a blocker.
 
