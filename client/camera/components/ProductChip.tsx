@@ -29,10 +29,10 @@ const CHIP_SPRING = { damping: 18, stiffness: 280 };
 const SPINNER_COLOR = "#000"; // hardcoded — black spinner on the white camera-overlay primary button (styles.btnPrimary)
 // Off-screen distance for the enter/exit spring. Must clear the chip's own
 // rendered height PLUS the shutter-clearance raise (insets.bottom + 96, see
-// shutterClearanceStyle below) on every device — 200 alone (correct when the
-// chip rested flush at bottom: 0) no longer leaves enough margin now that
-// raised variants rest higher up; 400 comfortably covers the tallest variant
-// (~210px) plus the largest realistic raised offset (~136px) with headroom.
+// getShutterClearanceStyle below) on every device — every variant is raised
+// now, so 200 (correct when the chip rested flush at bottom: 0) no longer
+// leaves enough margin; 400 comfortably covers the tallest variant (~210px)
+// plus the largest realistic raised offset (~136px) with headroom.
 const OFF_SCREEN_Y = 400;
 
 function confidenceLabel(score: number): string {
@@ -161,21 +161,14 @@ export function ProductChip({
 
   const product = "product" in phase ? phase.product : undefined;
 
-  // Clear the shutter row: every variant except session_complete raises the
-  // chip above ScanScreen's bottom controls (shutter) instead of sitting
-  // flush behind it. See getShutterClearanceStyle for the derivation and the
-  // session_complete exception.
-  const { bottom: chipBottom, paddingBottom: chipPaddingBottom } =
-    getShutterClearanceStyle(variant, insets.bottom);
+  // Clear the shutter row: every variant raises the chip above ScanScreen's
+  // bottom controls (shutter) instead of sitting flush behind it. See
+  // getShutterClearanceStyle for the derivation.
+  const { bottom: chipBottom } = getShutterClearanceStyle(insets.bottom);
 
   return (
     <Animated.View
-      style={[
-        styles.chip,
-        chipBottom !== undefined && { bottom: chipBottom },
-        { paddingBottom: chipPaddingBottom },
-        animStyle,
-      ]}
+      style={[styles.chip, { bottom: chipBottom }, animStyle]}
       accessibilityViewIsModal
       // No `accessibilityLiveRegion` here: a polite region on this shared
       // container re-read the ENTIRE chip subtree on any descendant change —

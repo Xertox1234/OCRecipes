@@ -113,26 +113,27 @@ describe("ProductChip — step2_review / step3_review auto-advance treatment", (
 // in ProductChip-utils.test.ts, but that proves nothing about whether this
 // component still calls it, or calls it with the right arguments — the gap
 // docs/solutions/conventions/pure-utils-extraction-tests-dont-prove-wiring-2026-07-14.md
-// warns about. Assert the component threads the derived variant and
-// insets.bottom through on every render, for both a raised variant and the
-// session_complete exception.
+// warns about. Assert the component threads insets.bottom through on every
+// render, and that session_complete is no longer a special case (P2-2026-07-15:
+// it used to be excluded, which left the overlap unresolved for that phase
+// and caused a jump-cut on the transition into it).
 describe("ProductChip — shutter-clearance wiring", () => {
   const sessionComplete: ScanPhase = {
     type: "SESSION_COMPLETE",
     barcode: "123",
   };
 
-  it("calls getShutterClearanceStyle with the derived variant and insets.bottom", () => {
+  it("calls getShutterClearanceStyle with insets.bottom", () => {
     const spy = vi.spyOn(ProductChipUtils, "getShutterClearanceStyle");
     render(<ProductChip phase={barcodeLock} {...handlers} />);
-    expect(spy).toHaveBeenCalledWith("barcode_lock", 0);
+    expect(spy).toHaveBeenCalledWith(0);
     spy.mockRestore();
   });
 
-  it("calls getShutterClearanceStyle with session_complete for the flush-bottom exception", () => {
+  it("calls getShutterClearanceStyle identically for session_complete — no more flush-bottom exception", () => {
     const spy = vi.spyOn(ProductChipUtils, "getShutterClearanceStyle");
     render(<ProductChip phase={sessionComplete} {...handlers} />);
-    expect(spy).toHaveBeenCalledWith("session_complete", 0);
+    expect(spy).toHaveBeenCalledWith(0);
     spy.mockRestore();
   });
 });

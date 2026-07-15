@@ -100,51 +100,15 @@ describe("getProductChipVariant", () => {
 });
 
 describe("getShutterClearanceStyle", () => {
-  it("raises non-session_complete variants by insetsBottom + 96, with flat 20 padding", () => {
-    expect(getShutterClearanceStyle("barcode_lock", 0)).toEqual({
-      bottom: 96,
-      paddingBottom: 20,
-    });
-    expect(getShutterClearanceStyle("barcode_lock", 34)).toEqual({
-      bottom: 130,
-      paddingBottom: 20,
-    });
-    expect(getShutterClearanceStyle("step2_review", 34)).toEqual({
-      bottom: 130,
-      paddingBottom: 20,
-    });
-    expect(getShutterClearanceStyle("step2_confirmed", 34)).toEqual({
-      bottom: 130,
-      paddingBottom: 20,
-    });
-    expect(getShutterClearanceStyle("step3_review", 34)).toEqual({
-      bottom: 130,
-      paddingBottom: 20,
-    });
-    expect(getShutterClearanceStyle("smart_photo", 34)).toEqual({
-      bottom: 130,
-      paddingBottom: 20,
-    });
-    expect(getShutterClearanceStyle("smart_error", 34)).toEqual({
-      bottom: 130,
-      paddingBottom: 20,
-    });
-  });
-
-  it("keeps session_complete flush-bottom (no bottom override) with insets-aware padding", () => {
-    expect(getShutterClearanceStyle("session_complete", 0)).toEqual({
-      paddingBottom: 20,
-    });
-    expect(getShutterClearanceStyle("session_complete", 34)).toEqual({
-      paddingBottom: 54,
-    });
-  });
-
-  it("treats a null variant (mid exit-animation) the same as a raised variant", () => {
-    expect(getShutterClearanceStyle(null, 34)).toEqual({
-      bottom: 130,
-      paddingBottom: 20,
-    });
+  // Regression guard for P2-2026-07-15: session_complete used to stay
+  // flush-bottom (no `bottom` override), which both left the shutter overlap
+  // unresolved for that phase and caused an instant jump on the transition
+  // into it. The function no longer takes a `variant` param at all — every
+  // phase (including session_complete) now gets this same insets-derived
+  // offset, which is what makes both bugs disappear.
+  it("raises the chip by insetsBottom + 96", () => {
+    expect(getShutterClearanceStyle(0)).toEqual({ bottom: 96 });
+    expect(getShutterClearanceStyle(34)).toEqual({ bottom: 130 });
   });
 });
 
