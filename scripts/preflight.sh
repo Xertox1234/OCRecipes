@@ -66,6 +66,16 @@ if [ "$MODE" = "fast" ]; then
   CHANGED=()
   while IFS= read -r f; do [ -n "$f" ] && CHANGED+=("$f"); done \
     < <(git diff --name-only --diff-filter=ACMR "${DIFF_BASE_ARGS[@]}" -- '*.ts' '*.tsx' 2>/dev/null)
+  # --uncommitted also needs wholly untracked files: `git diff HEAD` never reports them
+  # (staged or not, they're absent until tracked), so a brand-new file created by a
+  # todo-executor implementation step (new test/impl files — this is a TDD-heavy repo)
+  # would otherwise be silently invisible to lint/tsc/related-tests scoping. `git diff`
+  # and `git ls-files --others` are disjoint by construction (diff never reports
+  # untracked, ls-files --others never reports tracked), so no dedup is needed.
+  if [ "$UNCOMMITTED" -eq 1 ]; then
+    while IFS= read -r f; do [ -n "$f" ] && CHANGED+=("$f"); done \
+      < <(git ls-files --others --exclude-standard -- '*.ts' '*.tsx' 2>/dev/null)
+  fi
 
   # Separate probe: hook/husky/scripts shell changes. The CHANGED array above only globs
   # *.ts/*.tsx, so an all-.sh push (hooks, husky, or a scripts/*.sh helper like
@@ -82,6 +92,12 @@ if [ "$MODE" = "fast" ]; then
   HOOK_CHANGED=()
   while IFS= read -r f; do [ -n "$f" ] && HOOK_CHANGED+=("$f"); done \
     < <(git diff --name-only --diff-filter=ACDMRT "${DIFF_BASE_ARGS[@]}" -- '.claude/hooks/' '.husky/' 'scripts/*.sh' 2>/dev/null)
+  # Same untracked-file gap as CHANGED above — disjoint from the git diff results by
+  # construction, no dedup needed.
+  if [ "$UNCOMMITTED" -eq 1 ]; then
+    while IFS= read -r f; do [ -n "$f" ] && HOOK_CHANGED+=("$f"); done \
+      < <(git ls-files --others --exclude-standard -- '.claude/hooks/' '.husky/' 'scripts/*.sh' 2>/dev/null)
+  fi
 
   # Cheap, deterministic, no-DB pattern checks first (fail fast).
   run npm run build:copilot-instructions:check || exit 1

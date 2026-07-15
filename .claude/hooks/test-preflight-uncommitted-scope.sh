@@ -30,6 +30,14 @@ make_repo_with_uncommitted_ts() {
   printf '%s' "$d"
 }
 
+make_repo_with_untracked_ts() {
+  local d; d=$(mktemp -d)
+  git -C "$d" init -q
+  git -C "$d" -c user.email=t@t -c user.name=t commit -q --allow-empty -m A
+  echo "export const y = 2" > "$d/bar.ts"   # NEVER git add'ed — fully untracked
+  printf '%s' "$d"
+}
+
 run_dry() { # $1 repo, remaining args = preflight flags. Captures dry-run stdout+stderr.
   local repo; repo="$1"; shift
   ( cd "$repo" && PATH="$BIN:$PATH" PREFLIGHT_DRY_RUN=1 PREFLIGHT_STAMP_FILE="$repo/.stamp" bash "$SCRIPT" "$@" 2>&1 )
@@ -50,6 +58,11 @@ rm -rf "$R"
 R=$(make_repo_with_uncommitted_ts)
 OUT=$(run_dry "$R" --fast)
 assert_not_contains "uncommitted ts file is NOT scoped without --uncommitted (push-gate semantics unchanged)" "$OUT" "foo.ts"
+rm -rf "$R"
+
+R=$(make_repo_with_untracked_ts)
+OUT=$(run_dry "$R" --fast --uncommitted)
+assert_contains "wholly untracked ts file IS scoped in with --uncommitted" "$OUT" "bar.ts"
 rm -rf "$R"
 
 echo; echo "Results: $PASS passed, $FAIL failed"; [ "$FAIL" -eq 0 ]
