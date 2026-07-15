@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
-# Local pre-push / pre-PR gate. Two modes:
+# Local pre-push / pre-PR gate. Two modes, plus a scope modifier:
 #   scripts/preflight.sh --fast   → fast subset (WIP pushes): tsc + changed-file
 #                                   type-aware lint + cheap pattern checks + related tests.
 #   scripts/preflight.sh          → full CI parity (PR-branch pushes + before gh pr create);
 #                                   writes a HEAD-keyed pass-stamp on success.
+#   --fast --uncommitted         → scope --fast's changed-file set off the working tree
+#                                   vs HEAD instead of committed BASE..HEAD — for
+#                                   mid-pipeline verification BEFORE a commit exists yet
+#                                   (see .claude/agents/todo-executor.md Step 5a). Writes
+#                                   no pass-stamp in this mode: HEAD hasn't received the
+#                                   implementation yet, so stamping it would certify the
+#                                   wrong commit.
 # Thin wrapper over the SAME npm scripts CI runs (no drift). Exit non-zero on any failure.
 set -uo pipefail
 
@@ -13,7 +20,13 @@ set -uo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/preflight-stamp-path.sh"
 STAMP_FILE="$(preflight_stamp_path)"
 MODE="full"
-[ "${1:-}" = "--fast" ] && MODE="fast"
+UNCOMMITTED=0
+for arg in "$@"; do
+  case "$arg" in
+    --fast) MODE="fast" ;;
+    --uncommitted) UNCOMMITTED=1 ;;
+  esac
+done
 
 # Run one step. Default: buffer output, print a ▶ breadcrumb then a one-line ✔ on success,
 # or ✗ + the full captured output on failure. This keeps the happy path quiet — the script's
@@ -36,12 +49,23 @@ run() {
 }
 
 if [ "$MODE" = "fast" ]; then
-  # Files this branch changed vs main (committed range — push gate semantics).
+  # Files this branch changed. Two scopes:
+  #   default:       vs main (committed range — push gate semantics).
+  #   --uncommitted: working tree vs HEAD (mid-pipeline verification BEFORE a commit
+  #                  exists — e.g. todo-executor.md Step 5a, which runs before Step 8
+  #                  commits the implementation). Comparing against origin/main here
+  #                  would see zero changes and silently no-op instead of checking
+  #                  anything.
   # NOTE: no `mapfile` — macOS default bash is 3.2, which lacks it. Use a read loop.
-  BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+  if [ "$UNCOMMITTED" -eq 1 ]; then
+    DIFF_BASE_ARGS=(HEAD)
+  else
+    BASE=$(git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+    DIFF_BASE_ARGS=("$BASE" HEAD)
+  fi
   CHANGED=()
   while IFS= read -r f; do [ -n "$f" ] && CHANGED+=("$f"); done \
-    < <(git diff --name-only --diff-filter=ACMR "$BASE" HEAD -- '*.ts' '*.tsx' 2>/dev/null)
+    < <(git diff --name-only --diff-filter=ACMR "${DIFF_BASE_ARGS[@]}" -- '*.ts' '*.tsx' 2>/dev/null)
 
   # Separate probe: hook/husky/scripts shell changes. The CHANGED array above only globs
   # *.ts/*.tsx, so an all-.sh push (hooks, husky, or a scripts/*.sh helper like
@@ -57,7 +81,7 @@ if [ "$MODE" = "fast" ]; then
   # (verified against commit 1c6c86e4, which only touched scripts/lib/preflight-stamp-path.sh).
   HOOK_CHANGED=()
   while IFS= read -r f; do [ -n "$f" ] && HOOK_CHANGED+=("$f"); done \
-    < <(git diff --name-only --diff-filter=ACDMRT "$BASE" HEAD -- '.claude/hooks/' '.husky/' 'scripts/*.sh' 2>/dev/null)
+    < <(git diff --name-only --diff-filter=ACDMRT "${DIFF_BASE_ARGS[@]}" -- '.claude/hooks/' '.husky/' 'scripts/*.sh' 2>/dev/null)
 
   # Cheap, deterministic, no-DB pattern checks first (fail fast).
   run npm run build:copilot-instructions:check || exit 1
@@ -102,9 +126,11 @@ if [ "$MODE" = "fast" ]; then
   # DB-free steps above — it still stamps. That's a conscious choice (nothing to verify →
   # nothing withheld), not an oversight; see .claude/hooks/test-preflight-fast-stamp.sh's
   # "docs-only → stamp" case.
-  if [ "$tests_skipped" -eq 0 ]; then
+  if [ "$tests_skipped" -eq 0 ] && [ "$UNCOMMITTED" -eq 0 ]; then
     git rev-parse HEAD > "$STAMP_FILE" 2>/dev/null || true
     echo "✔ pass-stamp written for $(git rev-parse --short HEAD 2>/dev/null)"
+  elif [ "$tests_skipped" -eq 0 ]; then
+    echo "✔ scoped check passed (--uncommitted mode — no pass-stamp; HEAD hasn't received these changes yet)"
   fi
   exit 0
 fi
