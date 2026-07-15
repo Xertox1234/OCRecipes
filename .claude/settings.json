@@ -91,6 +91,8 @@
       },
       { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-preflight-guard.sh", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
       { "matcher": "mcp__github__create_pull_request", "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-preflight-guard.sh", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash .claude/hooks/merge-approval-guard.sh", "timeout": 10, "statusMessage": "Checking merge approval..." }] },
+      { "matcher": "mcp__github__merge_pull_request", "hooks": [{ "type": "command", "command": "bash .claude/hooks/merge-approval-guard.sh", "timeout": 10, "statusMessage": "Checking merge approval..." }] },
       {
         "matcher": "Edit",
         "hooks": [
