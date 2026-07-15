@@ -10,7 +10,9 @@ For human contributor setup, see [DEV_SETUP.md](DEV_SETUP.md).
 
 ## Review Policy
 
-Code review is **orchestrator-dispatched, domain-selected, and scoped to the code in the current context** — the session's changed / working-tree files, never a repo-wide re-review. This section is the single source of truth; `/todo` (Step 6), `/audit` (Phases 3 + 6), `/codify` (Step 3), and on-demand reviews all follow it.
+Code review is **orchestrator-dispatched, domain-selected, and scoped to the code in the current context** — the session's changed / working-tree files, never a repo-wide re-review. This section is the single source of truth; `/todo` (Step 6), `/audit` (Phases 3 + 6), `/codify` (Step 3), on-demand reviews, and any subagent-dispatched **review** step inside a generic (non-OCRecipes-aware) skill — e.g. superpowers `subagent-driven-development`'s task-reviewer, `requesting-code-review` — all follow it: dispatch the roster below instead of the skill's default bare `general-purpose` reviewer.
+
+This does **not** extend to **implementation** steps in those same generic skills (e.g. `subagent-driven-development`'s implementer, `dispatching-parallel-agents`' fix-the-failing-tests dispatch): every roster agent below is **read-only** (no Edit/Write), so code-writing subagents keep `general-purpose` — this project's roster has no domain-specialized editor agent.
 
 At review time the orchestrator (the `todo-executor` for `/todo`, the `/audit` skill for its review phases, or the main session for an on-demand review):
 
