@@ -3,7 +3,7 @@
 ---
 
 title: "Announce Label Analysis 'Verifying' → 'Ready' button transition for screen readers"
-status: backlog
+status: done
 priority: low
 created: 2026-07-13
 updated: 2026-07-13
@@ -25,8 +25,8 @@ Flagged by mobile-reviewer during the PR #617 code review (fix for the silent no
 
 ## Acceptance Criteria
 
-- [ ] `LabelAnalysisScreen.tsx` announces something like "Ready to log" (iOS-gated per the project's announce-vs-live-region convention, matching sibling patterns) when `sessionId` transitions from `null` to set, guarded so it doesn't fire on mount
-- [ ] No double-announcement on platforms with an existing live region for this transition
+- [x] `LabelAnalysisScreen.tsx` announces something like "Ready to log" (iOS-gated per the project's announce-vs-live-region convention, matching sibling patterns) when `sessionId` transitions from `null` to set, guarded so it doesn't fire on mount
+- [x] No double-announcement on platforms with an existing live region for this transition
 
 ## Implementation Notes
 
@@ -46,3 +46,7 @@ Flagged by mobile-reviewer during the PR #617 code review (fix for the silent no
 ### 2026-07-13
 
 - Filed from PR #617 mobile-reviewer finding
+
+### 2026-07-14
+
+- Implemented. AC item 1's parenthetical "iOS-gated" was interpreted as its own citation — "per the project's announce-vs-live-region convention" (`docs/rules/accessibility.md` line 18: gate to iOS only when an Android live region covers the same change; with none, announce on BOTH platforms ungated). Grepped the button/screen for `accessibilityLiveRegion` — none exists — so the announce fires on both iOS and Android, matching the `ProductChip.tsx` precedent (same no-live-region async-transition shape). Advisor pre-check and both dispatched reviewers (code-reviewer, mobile-reviewer) independently confirmed this reading. code-reviewer raised one WARNING (no test coverage for the new announce effect — a screen render test mirroring `VerifyEmailScreen.test.tsx`/`ProductChip.a11y.test.tsx`); deferred rather than fixed inline since it requires a new ~150-300 line test file, not a small same-file change.
