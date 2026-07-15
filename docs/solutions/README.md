@@ -20,6 +20,8 @@ Issues where code runs but produces incorrect behavior.
 - **[native-stack-back-dispatches-pop-not-goback-2026-07-07.md](./logic-errors/native-stack-back-dispatches-pop-not-goback-2026-07-07.md)** — native-stack's back button/gesture dispatch POP, not GO_BACK
 - **[beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md](./logic-errors/beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md)** — Hand-rolled beforeRemove + preventDefault() desyncs native-stack from JS state; use usePreventRemove
 - **[always-armed-preventremove-early-return-skips-redirect-2026-07-07.md](./logic-errors/always-armed-preventremove-early-return-skips-redirect-2026-07-07.md)** — Every early-return branch in a multi-concern beforeRemove handler must reapply the same redirect condition
+- **[git-diff-invisible-to-untracked-files-2026-07-15.md](./logic-errors/git-diff-invisible-to-untracked-files-2026-07-15.md)** — `git diff` structurally cannot show wholly untracked files; scoping mid-pipeline verification off it alone silently misses new files
+- **[nested-worktree-defeats-isolation-guard-path-math-2026-07-15.md](./logic-errors/nested-worktree-defeats-isolation-guard-path-math-2026-07-15.md)** — Creating a worktree nested inside another worktree confuses guard-worktree-isolation.sh's main-checkout path arithmetic
 
 #### [runtime-errors/](./runtime-errors/)
 
@@ -75,6 +77,8 @@ Decomposition manifests live under [`_manifests/`](./_manifests/) (prefixed `_` 
 - **typescript**: unsafe-type-cast-zod-validation, react-native-style-typing
 - **zod**: unsafe-type-cast-zod-validation
 - **react-navigation**: native-stack-back-dispatches-pop-not-goback-2026-07-07, beforeremove-preventdefault-desyncs-native-stack-2026-07-07, always-armed-preventremove-early-return-skips-redirect-2026-07-07
+- **worktree**: adhoc-worktree-missing-node-modules-symlink-2026-07-06, nested-worktree-defeats-isolation-guard-path-math-2026-07-15
+- **bash / orchestrator**: orchestrator-phase-variables-dont-persist-across-bash-calls-2026-07-15, backgrounded-piped-command-exit-code-unreliable-2026-07-15, subagent-verification-must-run-synchronously-2026-07-06
 
 ## YAML Frontmatter Schema
 
