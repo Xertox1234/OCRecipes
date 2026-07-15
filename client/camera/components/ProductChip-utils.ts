@@ -12,6 +12,39 @@ export type ProductChipVariant =
   | "smart_photo"
   | "smart_error";
 
+/**
+ * Vertical placement for the chip's outer container, derived from the safe
+ * area inset rather than a static constant.
+ *
+ * ScanScreen's bottom shutter row has `paddingBottom: insets.bottom + 16`
+ * under a 72px shutter circle, so the shutter's top edge sits at
+ * `insets.bottom + 88` from the screen bottom. Every variant except
+ * `session_complete` raises the chip 8px above that (`insets.bottom + 96`)
+ * so its background never overlaps the shutter, on any device. A static
+ * offset (e.g. a fixed 92, as `ZoomLabel.tsx` uses for its much smaller
+ * transient label) would under-clear once `insetsBottom > 4`.
+ *
+ * `session_complete` keeps the pre-fix flush-bottom layout (`bottom`
+ * omitted, `paddingBottom: 20 + insetsBottom`) unchanged — it's a transient
+ * phase that auto-navigates away almost immediately, so a brief overlap
+ * there is an accepted tradeoff (see the todo's acceptance criteria).
+ *
+ * For a raised variant, `paddingBottom` is a flat 20 (matching the
+ * container's top padding) rather than `20 + insetsBottom` — the `bottom`
+ * offset above already accounts for insetsBottom, so adding it again to the
+ * padding would double-count it and leave dead whitespace below the last
+ * button/caption.
+ */
+export function getShutterClearanceStyle(
+  variant: ProductChipVariant | null,
+  insetsBottom: number,
+): { bottom?: number; paddingBottom: number } {
+  if (variant === "session_complete") {
+    return { paddingBottom: 20 + insetsBottom };
+  }
+  return { bottom: insetsBottom + 96, paddingBottom: 20 };
+}
+
 export function getProductChipVariant(
   phase: ScanPhase,
 ): ProductChipVariant | null {
