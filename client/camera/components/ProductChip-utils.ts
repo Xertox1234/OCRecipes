@@ -2,6 +2,7 @@
 import type { ScanPhase } from "../types/scan-phase";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import { getContentTypeLabel } from "@/screens/scan-screen-utils";
+import { getShutterTopInset } from "./shutter-layout";
 
 export type ProductChipVariant =
   | "barcode_lock"
@@ -11,6 +12,29 @@ export type ProductChipVariant =
   | "session_complete"
   | "smart_photo"
   | "smart_error";
+
+/**
+ * Vertical placement for the chip's outer container, derived from the safe
+ * area inset rather than a static constant.
+ *
+ * Every variant — including `session_complete` — raises the chip 8px above
+ * the shutter's top edge (`getShutterTopInset(insetsBottom) + 8`) so its
+ * background never overlaps the shutter, on any device. `session_complete`
+ * previously kept a flush-bottom exception, which both left the overlap
+ * unresolved for that phase AND caused an instant, non-animated jump on the
+ * transition into it (the `bottom` value changed between variants). Using
+ * the same offset for every variant fixes both: no overlap, and no layout
+ * property changes on that transition, so nothing to snap.
+ *
+ * `styles.chip`'s base `padding: 20` already covers bottom padding — no
+ * insets-aware padding override is needed here now that no variant sits
+ * flush against the screen edge.
+ */
+export function getShutterClearanceStyle(insetsBottom: number): {
+  bottom: number;
+} {
+  return { bottom: getShutterTopInset(insetsBottom) + 8 };
+}
 
 export function getProductChipVariant(
   phase: ScanPhase,

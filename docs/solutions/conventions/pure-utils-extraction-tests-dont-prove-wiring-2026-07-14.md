@@ -6,6 +6,7 @@ module: client
 tags: [testing, react-native, hooks, wiring-seam, integration-test]
 applies_to: ["client/**/*-utils.ts", "client/screens/**/*.tsx", "client/hooks/**/*.ts"]
 created: '2026-07-14'
+last_updated: '2026-07-15'
 ---
 
 # Testing an extracted pure function doesn't prove it's correctly wired into the component
@@ -27,7 +28,9 @@ This is the client-side sibling of [[route-tests-mock-auth-hide-wiring-seam]]'s 
 
 ## Examples
 
-Not yet built for the client side (PR #617 shipped without it, deliberately deferred given this project's RN-render-harness friction — `react-native-svg` Flow-syntax mock failures, `.test.ts`/`.test.tsx` basename collisions). The shape to reach for when it is: a `renderComponent`-based test (per `NotebookEntryScreen.test.tsx`'s pattern — mock `@react-navigation/native`, `@/context/ToastContext`, the network layer) that exercises the actual screen, triggers the failure path via a mocked rejected request, and asserts the mocked `toast.error` was called and/or the retry button becomes visible — not just that the pure derivation function returns the right object shape in isolation.
+Not yet built for the *screen-effect/mutation* shape described above (PR #617 shipped without it, deliberately deferred given this project's RN-render-harness friction — `react-native-svg` Flow-syntax mock failures, `.test.ts`/`.test.tsx` basename collisions). The shape to reach for when it is: a `renderComponent`-based test (per `NotebookEntryScreen.test.tsx`'s pattern — mock `@react-navigation/native`, `@/context/ToastContext`, the network layer) that exercises the actual screen, triggers the failure path via a mocked rejected request, and asserts the mocked `toast.error` was called and/or the retry button becomes visible — not just that the pure derivation function returns the right object shape in isolation.
+
+A lighter-weight instance of the same idea, for a component whose wiring is a *thin conditional* rather than an effect/mutation: `client/camera/components/ProductChip.tsx` calls `getShutterClearanceStyle(variant, insets.bottom)` and threads the result into a style array with one small conditional (`chipBottom !== undefined && {...}`) — thin, but real branching per the Exceptions section below, since it could silently stop passing the derived variant or inset through. Instead of a full screen-effect test, `client/camera/components/__tests__/ProductChip.test.tsx` uses `vi.spyOn(ProductChipUtils, "getShutterClearanceStyle")` and asserts the call arguments for two representative phases. This sidesteps a further constraint specific to this component: this codebase's RN→DOM test mocks don't flatten `style` arrays into real CSS (`StyleSheet.create`/`flatten` are no-op passthroughs in `test/mocks/react-native.ts`), so asserting the *rendered position* isn't feasible here at all — asserting the *call* is the available seam check. See `client/camera/components/ProductChip-utils.ts` and `docs/solutions/logic-errors/static-offset-must-derive-from-safe-area-inset-2026-07-15.md` for the bug this pairing of tests caught.
 
 ## Exceptions
 
@@ -43,3 +46,4 @@ Skipping the wiring test is a defensible, explicit trade-off (not a silent gap) 
 
 - [../conventions/route-tests-mock-auth-hide-wiring-seam-2026-06-26.md](route-tests-mock-auth-hide-wiring-seam-2026-06-26.md) — the server-side sibling of this same class of gap
 - [../logic-errors/toast-action-button-unreachable-by-screen-reader-2026-07-13.md](../logic-errors/toast-action-button-unreachable-by-screen-reader-2026-07-13.md) — another PR #617 finding, a wiring/integration defect this class of test would have caught
+- [../logic-errors/static-offset-must-derive-from-safe-area-inset-2026-07-15.md](../logic-errors/static-offset-must-derive-from-safe-area-inset-2026-07-15.md) — the bug this solution's `vi.spyOn` wiring-seam pattern was applied alongside

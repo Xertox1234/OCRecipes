@@ -21,11 +21,19 @@ import type { ScanPhase } from "../types/scan-phase";
 import {
   getChipAnnounceText,
   getProductChipVariant,
+  getShutterClearanceStyle,
   getSmartConfirmLabel,
 } from "./ProductChip-utils";
 
 const CHIP_SPRING = { damping: 18, stiffness: 280 };
 const SPINNER_COLOR = "#000"; // hardcoded — black spinner on the white camera-overlay primary button (styles.btnPrimary)
+// Off-screen distance for the enter/exit spring. Must clear the chip's own
+// rendered height PLUS the shutter-clearance raise (insets.bottom + 96, see
+// getShutterClearanceStyle below) on every device — every variant is raised
+// now, so 200 (correct when the chip rested flush at bottom: 0) no longer
+// leaves enough margin; 400 comfortably covers the tallest variant (~210px)
+// plus the largest realistic raised offset (~136px) with headroom.
+const OFF_SCREEN_Y = 400;
 
 function confidenceLabel(score: number): string {
   if (score >= 0.8) return "High confidence";
@@ -77,7 +85,7 @@ export function ProductChip({
   screenReaderEnabled = false,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const translateY = useSharedValue(200);
+  const translateY = useSharedValue(OFF_SCREEN_Y);
   const variant = getProductChipVariant(phase);
   // The product name can arrive AFTER the chip is shown: BARCODE_LOCKED renders
   // with no product (a "Product" placeholder), then an async PRODUCT_LOADED adds
@@ -105,7 +113,7 @@ export function ProductChip({
         getChipAnnounceText(variant, phase),
       );
     } else {
-      translateY.value = withSpring(200, CHIP_SPRING, () => {
+      translateY.value = withSpring(OFF_SCREEN_Y, CHIP_SPRING, () => {
         runOnJS(setShouldRender)(false);
       });
     }
@@ -153,9 +161,14 @@ export function ProductChip({
 
   const product = "product" in phase ? phase.product : undefined;
 
+  // Clear the shutter row: every variant raises the chip above ScanScreen's
+  // bottom controls (shutter) instead of sitting flush behind it. See
+  // getShutterClearanceStyle for the derivation.
+  const { bottom: chipBottom } = getShutterClearanceStyle(insets.bottom);
+
   return (
     <Animated.View
-      style={[styles.chip, { paddingBottom: 20 + insets.bottom }, animStyle]}
+      style={[styles.chip, { bottom: chipBottom }, animStyle]}
       accessibilityViewIsModal
       // No `accessibilityLiveRegion` here: a polite region on this shared
       // container re-read the ENTIRE chip subtree on any descendant change —

@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   getChipAnnounceText,
   getProductChipVariant,
+  getShutterClearanceStyle,
   getSmartConfirmLabel,
 } from "../ProductChip-utils";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
@@ -95,6 +96,19 @@ describe("getProductChipVariant", () => {
     expect(
       getProductChipVariant({ type: "SESSION_COMPLETE", barcode: "123" }),
     ).toBe("session_complete");
+  });
+});
+
+describe("getShutterClearanceStyle", () => {
+  // Regression guard for P2-2026-07-15: session_complete used to stay
+  // flush-bottom (no `bottom` override), which both left the shutter overlap
+  // unresolved for that phase and caused an instant jump on the transition
+  // into it. The function no longer takes a `variant` param at all — every
+  // phase (including session_complete) now gets this same insets-derived
+  // offset, which is what makes both bugs disappear.
+  it("raises the chip by insetsBottom + 96", () => {
+    expect(getShutterClearanceStyle(0)).toEqual({ bottom: 96 });
+    expect(getShutterClearanceStyle(34)).toEqual({ bottom: 130 });
   });
 });
 
