@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
@@ -114,5 +114,135 @@ describe("useNutritionLookup — addToLogMutation error surfacing", () => {
 
     await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
     expect(mockToastError).not.toHaveBeenCalled();
+  });
+});
+
+describe("useNutritionLookup — isPer100g regression (P2-2026-07-14)", () => {
+  const mockServerFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+    // Non-critical follow-up call inside fetchBarcodeData — resolve it so it
+    // doesn't throw noise; the hook already treats its failure as harmless.
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({ hasFrontLabelData: false }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("does not mark a real, scaled serving size as per-100g (Cherry Coke case)", async () => {
+    // Server response shaped like the fixed barcode-lookup service: a real
+    // serving size (355ml) was parsed and used to scale the values, and
+    // isServingDataTrusted correctly reflects that — independent of whether
+    // a secondary source (CNF/USDA) cross-validated the calorie count.
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        productName: "Cherry Coke",
+        brandName: "Coca-Cola",
+        barcode: "049000028911",
+        per100g: { calories: 23, protein: 0, carbs: 5.8, fat: 0 },
+        perServing: { calories: 82, protein: 0, carbs: 20.6, fat: 0 },
+        servingInfo: {
+          displayLabel: "355 ml",
+          grams: 355,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+      }),
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "049000028911" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // Formula under regression guard: !isServingDataTrusted && !wasCorrected
+    // = !true && !false = false — must NOT show "(per 100g)".
+    expect(result.current.isPer100g).toBe(false);
+  });
+
+  it("marks a product with no serving-size data at all as per-100g", async () => {
+    // No real serving data existed to scale — the legitimate case where the
+    // per-100g/"Check package" treatment must be preserved.
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        productName: "Mystery Snack",
+        brandName: "GenericBrand",
+        barcode: "012345678905",
+        per100g: { calories: 400, protein: 5, carbs: 60, fat: 10 },
+        perServing: { calories: 400, protein: 5, carbs: 60, fat: 10 },
+        servingInfo: {
+          displayLabel: "100g",
+          grams: 100,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: false,
+        source: "openfoodfacts",
+      }),
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "012345678905" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // Formula under regression guard: !isServingDataTrusted && !wasCorrected
+    // = !false && !false = true — the per-100g/Check-package treatment shows.
+    expect(result.current.isPer100g).toBe(true);
+  });
+
+  it("does not mark a corrected (estimated) serving as per-100g", async () => {
+    // Discriminates the full two-term formula from a `!isServingDataTrusted`-
+    // only simplification: isServingDataTrusted is false (correctly — the
+    // serving was estimated, not real), but wasCorrected is true, so the
+    // full formula (`!isServingDataTrusted && !wasCorrected`) still evaluates
+    // to false. A simplified `!isServingDataTrusted` alone would wrongly
+    // evaluate to true here and mislabel an already-scaled estimate as
+    // per-100g — this test fails under that regression.
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        productName: "Hot Chocolate K-Cup Pods",
+        brandName: undefined,
+        barcode: "0663447217174",
+        per100g: { calories: 400, protein: 5, carbs: 80, fat: 5 },
+        perServing: { calories: 60, protein: 0.8, carbs: 12, fat: 0.8 },
+        servingInfo: {
+          displayLabel: "~15g (estimated)",
+          grams: 15,
+          wasCorrected: true,
+          correctionReason:
+            "Original serving (236g) appears to be the full package — adjusted to ~15g.",
+        },
+        isServingDataTrusted: false,
+        source: "openfoodfacts",
+      }),
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "0663447217174" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // Formula under regression guard: !isServingDataTrusted && !wasCorrected
+    // = !false && !true = false — must NOT show "(per 100g)".
+    expect(result.current.isPer100g).toBe(false);
   });
 });
