@@ -4,6 +4,9 @@
 
 title: "PG Lab (spec-first): injection ranking layer — time decay + git-aware boosts + budget"
 status: blocked
+blocked_until: 2026-08-05
+blocked_reason: "30-day usage-telemetry window (2026-07-11 user decision); re-check is HUMAN-LED only — see 2026-07-16 reopen update"
+human_led: true
 priority: low
 created: 2026-07-05
 updated: 2026-07-16
