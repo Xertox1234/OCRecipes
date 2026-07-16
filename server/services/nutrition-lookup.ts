@@ -81,10 +81,20 @@ const usdaResponseSchema = z.object({
 
 // USDA branded-food (UPC) search returns the same food shape plus brand/gtin
 // fields. Validated so a malformed branded response can't poison the cache.
+// `servingSize`/`servingSizeUnit` are the label's real per-serving fields
+// (e.g. `2.0` + `"GRM"`) — GDSN-sourced branded data is inconsistent enough
+// (mixed casing, occasional bogus units) that these two must use `.catch()`,
+// not bare `.nullish()`: a present-but-wrong-typed value (e.g. a string)
+// would otherwise fail this one field, which fails the whole food object,
+// which fails the whole `foods` array parse — regressing the *existing*,
+// already-working USDA-by-UPC fallback for that barcode, not just the new
+// serving-size feature. `.catch(undefined)` isolates the bad field instead.
 const usdaUpcFoodSchema = usdaFoodSchema.extend({
   gtinUpc: z.string().optional(),
   brandOwner: z.string().optional(),
   brandName: z.string().optional(),
+  servingSize: z.number().nullish().catch(undefined),
+  servingSizeUnit: z.string().nullish().catch(undefined),
 });
 
 const usdaUpcResponseSchema = z.object({
@@ -587,13 +597,56 @@ async function lookupUSDA(query: string): Promise<NutritionData | null> {
 }
 
 /**
+ * USDA reports `servingSizeUnit` as a GDSN abbreviation ("GRM", "MLT") that
+ * doesn't always match the lowercase "g"/"ml" the barcode-lookup serving-size
+ * parser (`parseServingGrams`) expects — and sometimes returns plain "g"/"ml"
+ * directly. Normalize only the two units we can convert with confidence; any
+ * other unit (e.g. "MG", "OZ") is not safely convertible here (a wrong g/mg
+ * mixup would be a 1000x data error) and is treated as absent.
+ */
+function normalizeUsdaServingUnit(unit: string): "g" | "ml" | null {
+  const lower = unit.toLowerCase();
+  if (lower === "g" || lower === "grm") return "g";
+  if (lower === "ml" || lower === "mlt") return "ml";
+  return null;
+}
+
+/**
+ * Build a `parseServingGrams`-compatible serving-size string (e.g. "355ml")
+ * from USDA's branded-food `servingSize`/`servingSizeUnit` fields, when both
+ * are present and in a supported unit. Returns undefined when USDA has no
+ * per-serving metadata for this food, or it's in a unit this codebase doesn't
+ * convert — the caller then keeps its existing "no real serving data"
+ * fallback (per-100g, `isServingDataTrusted: false`), never a guess.
+ *
+ * Deliberately does NOT use `householdServingFullText` ("1 CAN", "3/4
+ * Teaspoon (2g)"): it's sometimes unit-free ("1 CAN"), which would show a
+ * serving-looking label while the values underneath are still scaled at the
+ * per-100g fallback — a label/scaling mismatch. `servingSize`+`servingSizeUnit`
+ * is what actually drives the scaling math, so it's the only source used here.
+ */
+function usdaLabelServingSize(food: {
+  servingSize?: number | null;
+  servingSizeUnit?: string | null;
+}): string | undefined {
+  if (!food.servingSize || food.servingSize <= 0 || !food.servingSizeUnit) {
+    return undefined;
+  }
+  const unit = normalizeUsdaServingUnit(food.servingSizeUnit);
+  if (!unit) return undefined;
+  return `${food.servingSize}${unit}`;
+}
+
+/**
  * Search USDA FoodData Central for a branded product by its UPC/GTIN barcode.
  * Tries multiple padding variants (raw, UPC-A with check digit, EAN-13).
  * Returns the product name + NutritionData if found.
  */
-export async function lookupUSDAByUPC(
-  code: string,
-): Promise<{ product: NutritionData; brandName?: string } | null> {
+export async function lookupUSDAByUPC(code: string): Promise<{
+  product: NutritionData;
+  brandName?: string;
+  labelServingSize?: string;
+} | null> {
   const variants = barcodeVariants(code);
 
   for (const variant of variants) {
@@ -630,6 +683,7 @@ export async function lookupUSDAByUPC(
       return {
         product: mapUsdaFoodToNutrition(match),
         brandName: match.brandOwner || match.brandName || undefined,
+        labelServingSize: usdaLabelServingSize(match),
       };
     } catch {
       // Continue to next variant
