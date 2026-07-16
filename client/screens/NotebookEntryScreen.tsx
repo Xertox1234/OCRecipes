@@ -27,6 +27,7 @@ import { notebookEntryTypes } from "@shared/schemas/coach-notebook";
 import { TYPE_COLORS } from "@/constants/notebook-colors";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NotebookEntryNavigationProp } from "@/types/navigation";
+import { safeGoBack } from "@/navigation/safeGoBack";
 
 type RouteProps = RouteProp<RootStackParamList, "NotebookEntry">;
 
@@ -46,6 +47,16 @@ export default function NotebookEntryScreen() {
   const toast = useToast();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NotebookEntryNavigationProp>();
+  const goBack = useCallback(
+    () =>
+      safeGoBack(navigation, () =>
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+        }),
+      ),
+    [navigation],
+  );
   const route = useRoute<RouteProps>();
   const entryId = route.params?.entryId;
   // `entryId` is omitted (undefined) for the in-app "new entry" flow; a deep
@@ -140,7 +151,7 @@ export default function NotebookEntryScreen() {
         await cancelCommitmentReminder(savedEntry.id);
       }
     }
-    navigation.goBack();
+    goBack();
   }, [
     isCreate,
     entryId,
@@ -151,7 +162,7 @@ export default function NotebookEntryScreen() {
     updateEntry,
     scheduleCommitmentReminder,
     cancelCommitmentReminder,
-    navigation,
+    goBack,
     toast,
   ]);
 
@@ -173,12 +184,12 @@ export default function NotebookEntryScreen() {
               return;
             }
             await cancelCommitmentReminder(entryId);
-            navigation.goBack();
+            goBack();
           })();
         },
       },
     ]);
-  }, [entryId, updateEntry, cancelCommitmentReminder, navigation, toast]);
+  }, [entryId, updateEntry, cancelCommitmentReminder, goBack, toast]);
 
   const handleArchive = useCallback(() => {
     if (!entryId) return;
@@ -198,12 +209,12 @@ export default function NotebookEntryScreen() {
               return;
             }
             await cancelCommitmentReminder(entryId);
-            navigation.goBack();
+            goBack();
           })();
         },
       },
     ]);
-  }, [entryId, updateEntry, cancelCommitmentReminder, navigation, toast]);
+  }, [entryId, updateEntry, cancelCommitmentReminder, goBack, toast]);
 
   const sourceLabel = isCreate
     ? "Added by you"
@@ -245,7 +256,7 @@ export default function NotebookEntryScreen() {
           </Pressable>
         ) : null}
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={goBack}
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Go back"
@@ -273,7 +284,7 @@ export default function NotebookEntryScreen() {
       >
         <View style={styles.headerRow}>
           <Pressable
-            onPress={() => navigation.goBack()}
+            onPress={goBack}
             hitSlop={12}
             accessibilityRole="button"
             accessibilityLabel="Go back"

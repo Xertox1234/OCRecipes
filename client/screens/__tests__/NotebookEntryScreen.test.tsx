@@ -10,6 +10,9 @@ const {
   mockCreateMutateAsync,
   mockUpdateMutateAsync,
   mockGoBack,
+  mockCanGoBack,
+  mockNavigate,
+  mockReset,
   mockRefetch,
   mockRouteParams,
   mockToast,
@@ -20,6 +23,9 @@ const {
   mockCreateMutateAsync: vi.fn(),
   mockUpdateMutateAsync: vi.fn(),
   mockGoBack: vi.fn(),
+  mockCanGoBack: vi.fn(),
+  mockNavigate: vi.fn(),
+  mockReset: vi.fn(),
   mockRefetch: vi.fn(),
   mockRouteParams: { params: undefined as { entryId?: number } | undefined },
   mockToast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -40,7 +46,12 @@ vi.mock("@/hooks/useChat", () => ({
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack }),
+  useNavigation: () => ({
+    goBack: mockGoBack,
+    canGoBack: mockCanGoBack,
+    navigate: mockNavigate,
+    reset: mockReset,
+  }),
   useRoute: () => mockRouteParams,
 }));
 
@@ -99,6 +110,7 @@ function setupEntries(
 beforeEach(() => {
   vi.clearAllMocks();
   mockRouteParams.params = undefined;
+  mockCanGoBack.mockReturnValue(true);
   mockScheduleReminder.mockResolvedValue(undefined);
   mockCancelReminder.mockResolvedValue(undefined);
 });
@@ -190,5 +202,75 @@ describe("NotebookEntryScreen — cold-load valid entry", () => {
 
     renderComponent(<NotebookEntryScreen />);
     expect(screen.getByText("Save")).toBeDefined();
+  });
+});
+
+describe("NotebookEntryScreen — safe back navigation", () => {
+  // A cold-start deep link (e.g. a push-notification tap) can land this
+  // screen as the stack's sole entry — goBack() would be a silent no-op.
+  it("goes back normally when a back stack exists", () => {
+    mockCanGoBack.mockReturnValue(true);
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([makeEntry({ id: 42 })]);
+
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.click(screen.getByLabelText("Go back"));
+
+    expect(mockGoBack).toHaveBeenCalledOnce();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the Coach tab when there is no back stack", () => {
+    mockCanGoBack.mockReturnValue(false);
+    mockRouteParams.params = { entryId: 42 };
+    setupEntries([makeEntry({ id: 42 })]);
+
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.click(screen.getByLabelText("Go back"));
+
+    expect(mockGoBack).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+    });
+  });
+
+  it("falls back to the Coach tab from the not-found screen when there is no back stack", () => {
+    mockCanGoBack.mockReturnValue(false);
+    mockRouteParams.params = { entryId: 0 };
+    setupEntries([], { isLoading: false });
+
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.click(screen.getByLabelText("Go back"));
+
+    expect(mockGoBack).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+    });
+  });
+
+  it("falls back after a successful save when there is no back stack", async () => {
+    mockCanGoBack.mockReturnValue(false);
+    mockRouteParams.params = undefined;
+    setupEntries([]);
+    mockCreateMutateAsync.mockResolvedValue(
+      makeEntry({ type: "insight", followUpDate: null }),
+    );
+
+    renderComponent(<NotebookEntryScreen />);
+    fireEvent.change(screen.getByDisplayValue(""), {
+      target: { value: "A new thought" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+
+    await Promise.resolve();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+    });
   });
 });

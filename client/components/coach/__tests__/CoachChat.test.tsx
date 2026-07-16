@@ -100,13 +100,14 @@ const warmUpHook = {
   reset: vi.fn(),
 };
 
-function renderCoachChat() {
+function renderCoachChat(overrides: { onMessageSent?: () => void } = {}) {
   return renderComponent(
     <CoachChat
       conversationId={1}
       onCreateConversation={vi.fn().mockResolvedValue(1)}
       isCoachPro={false}
       warmUpHook={warmUpHook}
+      {...overrides}
     />,
   );
 }
@@ -241,5 +242,26 @@ describe("CoachChat — daily-limit announce gating (C1)", () => {
     expect(announceSpy).not.toHaveBeenCalledWith(
       "Daily coaching limit reached",
     );
+  });
+});
+
+describe("CoachChat — onMessageSent", () => {
+  it("does not fire onMessageSent on mount", () => {
+    const onMessageSent = vi.fn();
+    renderCoachChat({ onMessageSent });
+
+    expect(onMessageSent).not.toHaveBeenCalled();
+  });
+
+  it("fires onMessageSent once a send commits", () => {
+    const onMessageSent = vi.fn();
+    renderCoachChat({ onMessageSent });
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Hello coach" },
+    });
+    fireEvent.click(screen.getByLabelText("Send message"));
+
+    expect(onMessageSent).toHaveBeenCalledOnce();
   });
 });

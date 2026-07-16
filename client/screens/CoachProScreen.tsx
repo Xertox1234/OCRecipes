@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -11,7 +17,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useNavigation,
   useRoute,
-  useFocusEffect,
   type RouteProp,
 } from "@react-navigation/native";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -62,14 +67,17 @@ export default function CoachProScreen() {
   const navigation = useNavigation<CoachChatNavigationProp>();
   const route = useRoute<RouteProp<ChatStackParamList, "CoachPro">>();
   const { acknowledge } = useAcknowledgeReminders();
-
-  useFocusEffect(
-    useCallback(() => {
-      acknowledge().catch((err) => {
-        logger.warn("[CoachProScreen] acknowledge failed", err);
-      });
-    }, [acknowledge]),
-  );
+  // Reminders clear when the user actually sends a message, not on mere
+  // screen focus — fire at most once per mount.
+  const hasAcknowledgedRef = useRef(false);
+  const handleMessageSent = useCallback(() => {
+    if (hasAcknowledgedRef.current) return;
+    hasAcknowledgedRef.current = true;
+    acknowledge().catch((err) => {
+      hasAcknowledgedRef.current = false;
+      logger.warn("[CoachProScreen] acknowledge failed", err);
+    });
+  }, [acknowledge]);
 
   const pinnedConversations = useMemo(
     () => coachConversations.filter((c) => c.isPinned),
@@ -319,6 +327,7 @@ export default function CoachProScreen() {
         warmUpHook={warmUpHook}
         initialMessage={pendingSuggestion}
         onInitialMessageSent={() => setPendingSuggestion(null)}
+        onMessageSent={handleMessageSent}
         inputBarStyle={{ paddingBottom: tabBarHeight }}
       />
     </View>

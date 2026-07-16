@@ -58,6 +58,8 @@ interface CoachChatProps {
   warmUpHook: ReturnType<typeof useCoachWarmUp>;
   initialMessage?: string | null;
   onInitialMessageSent?: () => void;
+  /** Called once a message send has actually committed (after startStream). */
+  onMessageSent?: () => void;
   inputBarStyle?: StyleProp<ViewStyle>;
 }
 
@@ -72,6 +74,7 @@ export default function CoachChat({
   warmUpHook,
   initialMessage,
   onInitialMessageSent,
+  onMessageSent,
   inputBarStyle,
 }: CoachChatProps) {
   const { theme } = useTheme();
@@ -264,7 +267,8 @@ export default function CoachChat({
 
   const handleSend = useCallback(
     async (text?: string) => {
-      const content = (text || inputText).trim();
+      // onPress/onSubmitEditing invoke this with an event object, not a string — only trust an explicit string arg (quick replies, voice).
+      const content = (typeof text === "string" ? text : inputText).trim();
       if (!content || isStreaming) return;
 
       setInputText("");
@@ -288,6 +292,7 @@ export default function CoachChat({
       const currentWarmUpId = isCoachPro ? warmUpHook.getWarmUpId() : null;
       startStream(convId, content, { warmUpId: currentWarmUpId });
       warmUpHook.reset();
+      onMessageSent?.();
     },
     [
       inputText,
@@ -298,6 +303,7 @@ export default function CoachChat({
       isCoachPro,
       ttsStop,
       startStream,
+      onMessageSent,
     ],
   );
 

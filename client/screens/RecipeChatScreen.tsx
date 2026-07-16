@@ -29,6 +29,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import { ThemedText } from "@/components/ThemedText";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { safeGoBack } from "@/navigation/safeGoBack";
 import type { RecipeChatScreenNavigationProp } from "@/types/navigation";
 import {
   useCreateConversation,
@@ -524,7 +525,11 @@ export default function RecipeChatScreen() {
         ]}
       >
         <Pressable
-          onPress={() => navigation.goBack()}
+          onPress={() =>
+            safeGoBack(navigation, () =>
+              navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
+            )
+          }
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="Close"

@@ -8,7 +8,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -26,7 +26,6 @@ import {
   useDeleteConversation,
   type ChatConversation,
 } from "@/hooks/useChat";
-import { useAcknowledgeReminders } from "@/hooks/useAcknowledgeReminders";
 import {
   Spacing,
   FontFamily,
@@ -35,7 +34,6 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
-import { logger } from "@/lib/logger";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -84,15 +82,6 @@ export default function ChatListScreen() {
   const { reducedMotion } = useAccessibility();
   const { confirm, ConfirmationModal } = useConfirmationModal();
   const navigation = useNavigation<ChatListNavigationProp>();
-  const { acknowledge } = useAcknowledgeReminders();
-
-  useFocusEffect(
-    useCallback(() => {
-      acknowledge().catch((err) => {
-        logger.warn("[ChatListScreen] acknowledge failed", err);
-      });
-    }, [acknowledge]),
-  );
 
   const [activeSegment, setActiveSegment] = useState<ChatSegment>("coach");
   const isRecipeMode = activeSegment === "recipe";
