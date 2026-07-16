@@ -480,6 +480,12 @@ export async function lookupBarcode(
 
   // ── Step 5: Determine serving size ───────────────────────────────
   let servingGrams = parseServingGrams(rawServing);
+  // Captured BEFORE the correction block below can reassign `servingGrams` —
+  // this must reflect whether the source actually gave us real serving data,
+  // not the (possibly estimated) value servingGrams holds afterward. `> 0`
+  // guards a pathological "0 ml" parse: `finalGrams = servingGrams || 100`
+  // already treats 0 as "no serving data" downstream, so trust must agree.
+  const hasServingData = servingGrams !== null && servingGrams > 0;
   let wasCorrected = false;
   let correctionReason: string | undefined;
 
@@ -535,7 +541,7 @@ export async function lookupBarcode(
       wasCorrected,
       correctionReason,
     },
-    isServingDataTrusted: !wasCorrected && source.includes("verified"),
+    isServingDataTrusted: hasServingData && !wasCorrected,
     source,
   };
 }

@@ -3,10 +3,10 @@
 ---
 
 title: "Nutrition detail screen mislabels correctly-scaled values as 'per 100g'"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-16
 assignee:
 labels: [nutrition, barcode, bug]
 github_issue:
@@ -56,3 +56,11 @@ Root cause (traced, not guessed — see the research below):
 ### 2026-07-14
 
 - Filed after user testing surfaced the mislabeling during scan-camera-overhaul verification; root cause traced via code research, not yet fixed
+
+### 2026-07-16
+
+- Fixed via `/todo-fast`. `git log -S` confirmed the buggy `isServingDataTrusted: !wasCorrected && source.includes("verified")` derivation was present since the feature's original commit — a from-inception design mismatch, not later drift.
+- Root cause confirmed: `source` only gains a `"+verified"` suffix when `reconcilePer100g` cross-validates the calorie count against CNF/USDA — an orthogonal signal from "did we have and use a real serving size." Fixed by capturing `hasServingData = servingGrams !== null && servingGrams > 0` before the implausibility-correction block can reassign `servingGrams`, and deriving `isServingDataTrusted: hasServingData && !wasCorrected` — decoupled entirely from cross-validation.
+- No client-side production change was needed: `client/hooks/useNutritionLookup.ts` and `client/screens/NutritionDetailScreen.tsx` already implemented the correct consumption logic; they were just being fed a wrong signal.
+- Added regression tests: new `server/services/__tests__/barcode-lookup.test.ts` (previously zero direct test coverage of `lookupBarcode`) covering the Cherry Coke case, the no-serving-data case, the corrected-estimate case, and the cross-validation-disagree-and-swap case; extended `client/hooks/__tests__/useNutritionLookup.test.ts` to lock the client's consumption formula against the same fixtures.
+- Two low-priority follow-ups filed (out of scope for this fix, both pre-existing edge cases surfaced during review): `P3-2026-07-16-barcode-quantity-fallback-weakens-serving-trust-signal.md`, `P3-2026-07-16-usda-upc-branch-discards-real-serving-size.md`.
