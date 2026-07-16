@@ -126,7 +126,7 @@ Follow `todo-executor.md` Step 10 exactly (branch naming, non-fast-forward colli
 **One addition, after the guard eligibility check resolves:**
 
 - `MERGE_ELIGIBLE: yes (auto-merge enabled)` → nothing further, exactly as today.
-- Any other outcome (`held`, `review-required`, `unknown`) → invoke the **`/land`** skill before Phase 11. `/land` assesses merge-readiness and handles branch cleanup — it does not change who decides to merge: `merge-approval-guard.sh` already blocks any agent-executed `gh pr merge` regardless of which skill leads there, so `/land`'s role here is strictly to present the readiness assessment and options.
+- Any other outcome (`held`, `review-required`, `unknown`) → invoke the **`/land`** skill before Phase 11. `/land` assesses merge-readiness and handles branch cleanup — it does not change who decides to merge: `/land`'s own ritual requires a human to run the actual merge regardless of which skill leads there, so `/land`'s role here is strictly to present the readiness assessment and options.
 
 ## Phase 11 — Report
 
