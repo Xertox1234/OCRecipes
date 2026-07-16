@@ -32,6 +32,10 @@ apply_domain_map() {
   [[ "$f" == */server/services/* || "$f" == server/services/* ]] && { _add architecture; }
   [[ "$f" == */client/screens/* || "$f" == client/screens/* ]] && { _add react-native; _add design-system; _add accessibility; }
   [[ "$f" == */client/components/* || "$f" == client/components/* ]] && { _add react-native; _add design-system; _add accessibility; _add performance; }
+  [[ "$f" == */client/camera/* || "$f" == client/camera/* ]] && { _add react-native; }
+  [[ "$f" == */client/camera/components/* || "$f" == client/camera/components/* ]] && { _add react-native; _add design-system; _add accessibility; _add performance; }
+  [[ "$f" == */client/camera/hooks/* || "$f" == client/camera/hooks/* ]] && { _add hooks; _add client-state; _add react-native; _add accessibility; }
+  [[ "$f" == */client/camera/reducers/* || "$f" == client/camera/reducers/* ]] && { _add client-state; }
   [[ "$f" == */client/navigation/* || "$f" == client/navigation/* ]] && { _add react-native; _add accessibility; }
   [[ "$f" == */client/hooks/* || "$f" == client/hooks/* ]] && { _add hooks; _add client-state; _add react-native; _add accessibility; }
   [[ "$f" == */client/context/* || "$f" == client/context/* ]] && { _add client-state; }

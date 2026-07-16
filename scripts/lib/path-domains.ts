@@ -162,11 +162,27 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     description: "`client/components/**`",
   },
   {
-    match: { kind: "recursive-dir", dir: "client/components/camera" },
-    // Routing-only: parent `client/components/**` supplies the rules-domains.
-    domains: [],
+    match: { kind: "recursive-dir", dir: "client/camera" },
+    // Baseline: root files, types/, utils/ — no parent rule to borrow
+    // rules-domains from, so this carries its own domains alongside the label.
+    domains: ["react-native"],
     routingLabels: ["camera"],
-    description: "`client/components/camera/**`",
+    description: "`client/camera/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "client/camera/components" },
+    domains: ["react-native", "design-system", "accessibility", "performance"], // mirrors client/components/**
+    description: "`client/camera/components/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "client/camera/hooks" },
+    domains: ["hooks", "client-state", "react-native", "accessibility"], // mirrors client/hooks/**
+    description: "`client/camera/hooks/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "client/camera/reducers" },
+    domains: ["client-state"], // mirrors client/context/**
+    description: "`client/camera/reducers/**`",
   },
   {
     match: { kind: "recursive-dir", dir: "client/navigation" },

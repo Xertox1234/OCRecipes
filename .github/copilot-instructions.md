@@ -20,6 +20,10 @@ When editing a file, identify its domain(s) using the table below. The correspon
 | `server/services/**` (base — architecture only) | architecture |
 | `client/screens/**` | react-native, design-system, accessibility |
 | `client/components/**` | react-native, design-system, accessibility, performance |
+| `client/camera/**` | react-native |
+| `client/camera/components/**` | react-native, design-system, accessibility, performance |
+| `client/camera/hooks/**` | hooks, client-state, react-native, accessibility |
+| `client/camera/reducers/**` | client-state |
 | `client/navigation/**` | react-native, accessibility |
 | `client/hooks/**` | hooks, client-state, react-native, accessibility |
 | `client/context/**` | client-state |
