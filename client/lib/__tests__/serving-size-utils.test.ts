@@ -171,6 +171,57 @@ describe("validateAndNormalizeNutrition", () => {
     expect(result.per100g.calories).toBe(380);
     expect(result.isServingDataTrusted).toBe(false);
   });
+
+  it("does not trust a `quantity`-only serving size, even when it falls under the correction thresholds (P3-2026-07-16)", () => {
+    // No `serving_size` (the real per-serving label) — only `quantity`, the
+    // whole package's net weight ("340g", a plausible-looking juice carton
+    // weight well under MAX_PLAUSIBLE_SERVING_GRAMS (500) and, at 45 kcal/100g,
+    // MAX_PLAUSIBLE_SERVING_CALORIES (800) too). Mirrors the server-side
+    // regression test added in PR #642 (server/services/barcode-lookup.ts).
+    const product = {
+      product_name: "Orange Juice Carton",
+      brands: "GenericBrand",
+      quantity: "340g", // whole-carton net weight, NOT a serving size
+      nutriments: {
+        "energy-kcal_100g": 45,
+        proteins_100g: 0.7,
+        carbohydrates_100g: 10,
+        fat_100g: 0.2,
+      },
+    };
+
+    const result = validateAndNormalizeNutrition(product, "040000000004");
+
+    // `quantity` is excluded from parsing entirely, so this must land on the
+    // plain "no serving data" fallback — not a corrected-estimate path and
+    // not a trusted, scaled 340g serving.
+    expect(result.servingInfo.wasCorrected).toBe(false);
+    expect(result.servingInfo.grams).toBe(100);
+    expect(result.perServing.calories).toBe(result.per100g.calories);
+    expect(result.isServingDataTrusted).toBe(false);
+  });
+
+  it("still uses the numeric `serving_quantity` field as a serving-weight fallback when `serving_size` is absent", () => {
+    // Distinct from `quantity` (removed above): `serving_quantity` IS a
+    // legitimate per-serving numeric field and must remain usable as the
+    // source of `servingGrams` when there's no parseable `serving_size`.
+    const product = {
+      product_name: "Test Snack",
+      serving_quantity: "30",
+      nutriments: {
+        "energy-kcal_100g": 400,
+        proteins_100g: 5,
+        carbohydrates_100g: 60,
+        fat_100g: 10,
+      },
+    };
+
+    const result = validateAndNormalizeNutrition(product, "0000000000001");
+
+    expect(result.servingInfo.grams).toBe(30);
+    expect(result.servingInfo.wasCorrected).toBe(false);
+    expect(result.isServingDataTrusted).toBe(true);
+  });
 });
 
 describe("scaleNutrition", () => {

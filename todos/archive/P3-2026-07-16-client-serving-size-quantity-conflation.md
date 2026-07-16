@@ -3,7 +3,7 @@
 ---
 
 title: "Client OFF-fallback path still conflates `serving_size` with package `quantity` (server-side fixed in #642)"
-status: backlog
+status: done
 priority: low
 created: 2026-07-16
 updated: 2026-07-16
@@ -27,11 +27,11 @@ Note the client path differs from the server's in one relevant way: it already r
 
 ## Acceptance Criteria
 
-- [ ] Remove `product.quantity` from the `rawServingSize` construction in `validateAndNormalizeNutrition` (`client/lib/serving-size-utils.ts:306`), mirroring #642's server-side decision — do NOT down-weight it or add a partial-trust middle ground
-- [ ] Keep the numeric `serving_quantity` fallback (lines 307–313) intact — it is a legitimate per-serving source, distinct from package `quantity`
-- [ ] A quantity-only product (no `serving_size`, no `serving_quantity`, no explicit per-serving nutriments) falls back to the per-100g/untrusted path; verify whatever trust flag this file derives (`isServingDataTrusted` in the parsed-serving-weight branch) reflects that
-- [ ] Add a regression test mirroring #642's server-side one: a product where only `quantity` is present and its value parses under the plausibility thresholds must NOT be treated as trusted serving data
-- [ ] Update the "known deferred gap" note in `docs/solutions/conventions/indicate-data-source-to-users-2026-05-13.md` to record the gap as closed
+- [x] Remove `product.quantity` from the `rawServingSize` construction in `validateAndNormalizeNutrition` (`client/lib/serving-size-utils.ts:306`), mirroring #642's server-side decision — do NOT down-weight it or add a partial-trust middle ground
+- [x] Keep the numeric `serving_quantity` fallback (lines 307–313) intact — it is a legitimate per-serving source, distinct from package `quantity`
+- [x] A quantity-only product (no `serving_size`, no `serving_quantity`, no explicit per-serving nutriments) falls back to the per-100g/untrusted path; verify whatever trust flag this file derives (`isServingDataTrusted` in the parsed-serving-weight branch) reflects that
+- [x] Add a regression test mirroring #642's server-side one: a product where only `quantity` is present and its value parses under the plausibility thresholds must NOT be treated as trusted serving data
+- [x] Update the "known deferred gap" note in `docs/solutions/conventions/indicate-data-source-to-users-2026-05-13.md` to record the gap as closed
 
 ## Implementation Notes
 
