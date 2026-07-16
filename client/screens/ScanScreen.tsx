@@ -28,7 +28,9 @@ import {
 import type { RouteProp } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useTheme } from "@/hooks/useTheme";
+import { getConfidenceTier, getConfidenceHapticType } from "@/lib/confidence";
 import { usePremiumCamera } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
 import {
@@ -86,6 +88,7 @@ export default function ScanScreen() {
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const { reducedMotion, screenReaderEnabled } = useAccessibility();
   const { isPremium, remainingScans } = usePremiumCamera();
   const { refreshScanCount, features } = usePremiumContext();
@@ -335,9 +338,7 @@ export default function ScanScreen() {
 
         if (confidence >= LOCK_THRESHOLD) {
           hasLockedRef.current = true;
-          void Haptics.notificationAsync(
-            Haptics.NotificationFeedbackType.Success,
-          );
+          haptics.notification(Haptics.NotificationFeedbackType.Success);
           if (!reducedMotionRef.current) {
             setFlashCount((c) => c + 1);
             setSonarPos({
@@ -355,7 +356,14 @@ export default function ScanScreen() {
         }
       }
     },
-    [isFocused, scanPhase, screenWidth, screenHeight, fetchProductInfo],
+    [
+      isFocused,
+      scanPhase,
+      screenWidth,
+      screenHeight,
+      fetchProductInfo,
+      haptics,
+    ],
   );
 
   const onShutterPress = useCallback(async () => {
@@ -379,7 +387,7 @@ export default function ScanScreen() {
           Alert.alert("Capture failed", "Please try again.");
           return;
         }
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
 
         // Label mode: skip smart classification, go directly to LabelAnalysis.
         // On-device snapshot OCR pre-fills an instant preview; the server does the
@@ -409,6 +417,11 @@ export default function ScanScreen() {
             type: "CLASSIFICATION_SUCCEEDED",
             classification: result,
           });
+          haptics.notification(
+            getConfidenceHapticType(
+              getConfidenceTier(result.overallConfidence),
+            ),
+          );
         } catch (err) {
           // Stale dispatch is safe — reducer no-ops CLASSIFICATION_FAILED when state !== CLASSIFYING
           dispatch({
@@ -426,7 +439,7 @@ export default function ScanScreen() {
       }
 
       // Haptic + flash immediately after capture, before async OCR
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
       setFlashCount((c) => c + 1);
 
       if (phase.type === "BARCODE_LOCKED") {
@@ -454,7 +467,7 @@ export default function ScanScreen() {
     } finally {
       isCapturingRef.current = false;
     }
-  }, [isLabelMode, navigation]);
+  }, [isLabelMode, navigation, haptics]);
 
   // Permission screens
   if (!permission || permission.status === "undetermined") {

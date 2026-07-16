@@ -4,12 +4,18 @@ import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
 import type { SharedValue } from "react-native-reanimated";
-import Animated, { useAnimatedStyle } from "react-native-reanimated";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  useAnimatedReaction,
+  runOnJS,
+} from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { SwipeAction } from "./SwipeAction";
 import { ThemedText } from "@/components/ThemedText";
+import { evaluateSwipeThresholdCrossing } from "./swipeable-row-utils";
 
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -61,11 +67,12 @@ export function SwipeableRow({
   );
 
   const renderRightActions = useCallback(
-    (progress: SharedValue<number>, _translation: SharedValue<number>) => {
+    (progress: SharedValue<number>, translation: SharedValue<number>) => {
       if (!rightAction) return null;
       return (
         <RightActionContainer
           progress={progress}
+          translation={translation}
           action={rightAction}
           onPress={() => {
             rightAction.onAction();
@@ -78,11 +85,12 @@ export function SwipeableRow({
   );
 
   const renderLeftActions = useCallback(
-    (progress: SharedValue<number>, _translation: SharedValue<number>) => {
+    (progress: SharedValue<number>, translation: SharedValue<number>) => {
       if (!leftAction) return null;
       return (
         <LeftActionContainer
           progress={progress}
+          translation={translation}
           action={leftAction}
           onPress={() => {
             leftAction.onAction();
@@ -177,15 +185,48 @@ function ReducedMotionActions({
   );
 }
 
+/** Fires a light tick once when a drag first crosses `swipeActionThreshold`. */
+function useSwipeThresholdHaptic(
+  translation: SharedValue<number>,
+  direction: "left" | "right",
+) {
+  const haptics = useHaptics();
+  const hasFiredThreshold = useSharedValue(false);
+
+  const triggerThresholdHaptic = useCallback(() => {
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
+  }, [haptics]);
+
+  useAnimatedReaction(
+    () => translation.value,
+    (current) => {
+      const { shouldFireHaptic, nextFired } = evaluateSwipeThresholdCrossing(
+        current,
+        swipeActionThreshold,
+        direction,
+        hasFiredThreshold.value,
+      );
+      hasFiredThreshold.value = nextFired;
+      if (shouldFireHaptic) {
+        runOnJS(triggerThresholdHaptic)();
+      }
+    },
+    [direction, triggerThresholdHaptic],
+  );
+}
+
 function RightActionContainer({
   progress,
+  translation,
   action,
   onPress,
 }: {
   progress: SharedValue<number>;
+  translation: SharedValue<number>;
   action: NonNullable<SwipeableRowProps["rightAction"]>;
   onPress: () => void;
 }) {
+  useSwipeThresholdHaptic(translation, "right");
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: Math.min(progress.value, 1),
   }));
@@ -204,13 +245,16 @@ function RightActionContainer({
 
 function LeftActionContainer({
   progress,
+  translation,
   action,
   onPress,
 }: {
   progress: SharedValue<number>;
+  translation: SharedValue<number>;
   action: NonNullable<SwipeableRowProps["leftAction"]>;
   onPress: () => void;
 }) {
+  useSwipeThresholdHaptic(translation, "left");
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: Math.min(progress.value, 1),
   }));

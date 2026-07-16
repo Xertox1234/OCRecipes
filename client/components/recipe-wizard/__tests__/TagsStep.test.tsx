@@ -2,6 +2,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { screen, fireEvent } from "@testing-library/react";
+import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 import TagsStep from "../TagsStep";
 import {
@@ -10,6 +11,21 @@ import {
   toggleDietTag,
 } from "../tags-step-utils";
 import { DIET_TAG_OPTIONS } from "../types";
+
+const { mockImpact, mockNotification, mockSelection } = vi.hoisted(() => ({
+  mockImpact: vi.fn(),
+  mockNotification: vi.fn(),
+  mockSelection: vi.fn(),
+}));
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: mockImpact,
+    notification: mockNotification,
+    selection: mockSelection,
+    disabled: false,
+  }),
+}));
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -100,6 +116,13 @@ describe("TagsStep — render", () => {
       cuisine: "",
       dietTags: ["Vegan"],
     });
+  });
+
+  it("triggers haptic feedback via the centralized useHaptics hook when a chip is pressed", () => {
+    renderComponent(<TagsStep tags={makeTags()} setTags={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText("Vegan"));
+    expect(mockImpact).toHaveBeenCalledWith(Haptics.ImpactFeedbackStyle.Light);
+    expect(Haptics.impactAsync).not.toHaveBeenCalled();
   });
 
   it("calls setTags with the tag removed when an active chip is pressed again", () => {

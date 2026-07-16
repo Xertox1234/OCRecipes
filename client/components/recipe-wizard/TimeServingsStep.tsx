@@ -10,6 +10,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import type { TimeServingsData } from "@/hooks/useRecipeForm";
+import { useHaptics } from "@/hooks/useHaptics";
 import { useTheme } from "@/hooks/useTheme";
 import {
   Spacing,
@@ -37,16 +38,17 @@ export default function TimeServingsStep({
   setTimeServings,
 }: TimeServingsStepProps) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const { servings, prepTime, cookTime } = timeServings;
 
   const handleServingsChange = useCallback(
     (delta: number) => {
       const next = clampServings(servings, delta);
       if (next === servings) return;
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       setTimeServings({ ...timeServings, servings: next });
     },
-    [servings, timeServings, setTimeServings],
+    [servings, timeServings, setTimeServings, haptics],
   );
 
   const handlePrepChange = useCallback(

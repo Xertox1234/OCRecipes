@@ -6,6 +6,7 @@ import * as Haptics from "expo-haptics";
 import * as FileSystem from "expo-file-system";
 
 import { useHaptics } from "@/hooks/useHaptics";
+import { getConfidenceTier, getConfidenceHapticType } from "@/lib/confidence";
 import { INTENT_CONFIG, type PhotoIntent } from "@shared/constants/preparation";
 import { useBeverageSheet } from "@/hooks/useBeverageSheet";
 import { formatBeverageConfirmation } from "@/components/beverage-picker-utils";
@@ -159,7 +160,9 @@ export function usePhotoAnalysis(imageUri: string, intent: PhotoIntent) {
           setShowFollowUp(true);
         }
 
-        haptics.notification(Haptics.NotificationFeedbackType.Success);
+        haptics.notification(
+          getConfidenceHapticType(getConfidenceTier(result.overallConfidence)),
+        );
       } catch (err) {
         if (abortController.signal.aborted || isAbortError(err)) return;
         const message = err instanceof Error ? err.message : "Analysis failed";

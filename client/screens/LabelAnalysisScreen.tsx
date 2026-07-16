@@ -29,6 +29,11 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import {
+  getConfidenceTier,
+  getConfidenceHapticType,
+  getConfidenceColor,
+} from "@/lib/confidence";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import {
@@ -212,7 +217,9 @@ export default function LabelAnalysisScreen() {
       return confirmLabelAnalysis(sessionId, servings);
     },
     onSuccess: () => {
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      haptics.notification(
+        getConfidenceHapticType(getConfidenceTier(labelData?.confidence ?? 0)),
+      );
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.dailySummary });
       navigation.goBack();
@@ -248,7 +255,9 @@ export default function LabelAnalysisScreen() {
       return (await response.json()) as VerificationSubmitResponse;
     },
     onSuccess: (data) => {
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      haptics.notification(
+        getConfidenceHapticType(getConfidenceTier(labelData?.confidence ?? 0)),
+      );
       setVerificationResult(data);
     },
     onError: (err) => {
@@ -583,24 +592,32 @@ export default function LabelAnalysisScreen() {
         )}
 
         {/* Confidence indicator */}
-        {labelData && labelData.confidence < 0.7 && (
-          <View
-            style={[
-              styles.warningBanner,
-              { backgroundColor: withOpacity(theme.warning, 0.12) },
-            ]}
-          >
-            <Feather
-              name="alert-triangle"
-              size={16}
-              color={theme.warning}
-              accessible={false}
-            />
-            <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
-              Some values may be inaccurate. Review before logging.
-            </ThemedText>
-          </View>
-        )}
+        {labelData &&
+          (() => {
+            const tier = getConfidenceTier(labelData.confidence);
+            if (tier === "high") return null;
+            const color = getConfidenceColor(theme, tier);
+            return (
+              <View
+                style={[
+                  styles.warningBanner,
+                  { backgroundColor: withOpacity(color, 0.12) },
+                ]}
+              >
+                <Feather
+                  name="alert-triangle"
+                  size={16}
+                  color={color}
+                  accessible={false}
+                />
+                <ThemedText type="small" style={{ color, flex: 1 }}>
+                  {tier === "low"
+                    ? "Low confidence — review carefully before logging."
+                    : "Some values may be inaccurate. Review before logging."}
+                </ThemedText>
+              </View>
+            );
+          })()}
       </ScrollView>
 
       {/* Verification success feedback */}

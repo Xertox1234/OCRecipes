@@ -2,11 +2,25 @@
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
+import * as Haptics from "expo-haptics";
 import { renderComponent } from "../../../../test/utils/render-component";
 
 // Import AFTER mocks so module-hoisted mocks are applied.
 import WizardShell from "../WizardShell";
 import { inferCuisine, inferDietTags } from "@/lib/recipe-tag-inference";
+
+const { mockNotification } = vi.hoisted(() => ({
+  mockNotification: vi.fn(),
+}));
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: vi.fn(),
+    notification: mockNotification,
+    selection: vi.fn(),
+    disabled: false,
+  }),
+}));
 
 // ── Test-only step stubs ─────────────────────────────────────────────────────
 // Replace the real step content with marker elements + tiny test harnesses so
@@ -394,6 +408,31 @@ describe("WizardShell", () => {
     await waitFor(() => expect(mutateCreate).toHaveBeenCalled());
     expect(mutateCreate.mock.calls[0][0]).toMatchObject({ title: "My Recipe" });
     await waitFor(() => expect(onSaveComplete).toHaveBeenCalled());
+  });
+
+  it("fires a success haptic via useHaptics (not raw expo-haptics) when save succeeds", async () => {
+    mutateCreate.mockResolvedValue({ id: 42 });
+    renderComponent(
+      <WizardShell onGoBack={vi.fn()} onSaveComplete={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByTestId("set-valid-title"));
+    clickNext();
+    fireEvent.click(screen.getByTestId("set-ingredient"));
+    clickNext();
+    fireEvent.click(screen.getByTestId("set-step"));
+    clickNext();
+    clickNext(); // 4 → 5
+    clickNext(); // 5 → 6
+    clickNext(); // 6 → 7
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Recipe" }));
+
+    await waitFor(() =>
+      expect(mockNotification).toHaveBeenCalledWith(
+        Haptics.NotificationFeedbackType.Success,
+      ),
+    );
+    expect(Haptics.notificationAsync).not.toHaveBeenCalled();
   });
 
   it("adds a meal plan item when returnToMealPlan is provided", async () => {

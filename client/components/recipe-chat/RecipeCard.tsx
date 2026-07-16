@@ -13,6 +13,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import { ThemedText } from "@/components/ThemedText";
 import { FallbackImage } from "@/components/FallbackImage";
@@ -48,6 +49,7 @@ function RecipeCardInner({
   isSaving,
 }: RecipeCardProps) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const [ingredientsExpanded, setIngredientsExpanded] = useState(false);
   const [instructionsExpanded, setInstructionsExpanded] = useState(false);
 
@@ -69,20 +71,20 @@ function RecipeCardInner({
   const toggleIngredients = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setIngredientsExpanded((prev) => !prev);
-    void Haptics.selectionAsync();
-  }, []);
+    haptics.selection();
+  }, [haptics]);
 
   const toggleInstructions = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setInstructionsExpanded((prev) => !prev);
-    void Haptics.selectionAsync();
-  }, []);
+    haptics.selection();
+  }, [haptics]);
 
   const handleSave = useCallback(() => {
     if (isSaved || isSaving || !onSave) return;
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     onSave();
-  }, [isSaved, isSaving, onSave]);
+  }, [isSaved, isSaving, onSave, haptics]);
 
   return (
     <View

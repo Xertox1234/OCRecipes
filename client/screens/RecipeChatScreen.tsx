@@ -26,6 +26,7 @@ import * as Haptics from "expo-haptics";
 import { useQuery } from "@tanstack/react-query";
 
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import { withOpacity, Spacing, BorderRadius } from "@/constants/theme";
 import { ThemedText } from "@/components/ThemedText";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -147,6 +148,7 @@ export default function RecipeChatScreen() {
   const navigation = useNavigation<RecipeChatScreenNavigationProp>();
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const haptics = useHaptics();
   const flatListRef = useRef<FlatList>(null);
 
   // Remix mode detection
@@ -284,16 +286,14 @@ export default function RecipeChatScreen() {
         await saveRecipeMutation.mutateAsync({ conversationId, messageId });
         savedMessageIdsRef.current.add(messageId);
         forceRender((n) => n + 1);
-        void Haptics.notificationAsync(
-          Haptics.NotificationFeedbackType.Success,
-        );
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
         AccessibilityInfo.announceForAccessibility("Recipe saved");
       } catch {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
         AccessibilityInfo.announceForAccessibility("Couldn't save recipe");
       }
     },
-    [conversationId, saveRecipeMutation],
+    [conversationId, saveRecipeMutation, haptics],
   );
 
   const handleSend = useCallback(
@@ -304,7 +304,7 @@ export default function RecipeChatScreen() {
       setInputText("");
       setHasStarted(true);
       setPendingUserMessage(content);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
 
       let convId = conversationId;
       if (!convId) {
@@ -338,6 +338,7 @@ export default function RecipeChatScreen() {
       sendMessage,
       isRemixMode,
       remixSourceRecipeId,
+      haptics,
     ],
   );
 

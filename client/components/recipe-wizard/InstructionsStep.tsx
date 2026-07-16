@@ -13,6 +13,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import type { StepRow } from "@/hooks/useRecipeForm";
 import { useTheme } from "@/hooks/useTheme";
+import { useHaptics } from "@/hooks/useHaptics";
 import {
   Spacing,
   BorderRadius,
@@ -157,30 +158,31 @@ export default function InstructionsStep({
   moveStep,
 }: InstructionsStepProps) {
   const { theme } = useTheme();
+  const haptics = useHaptics();
 
   const handleAdd = useCallback(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.impact(Haptics.ImpactFeedbackStyle.Light);
     addStep();
-  }, [addStep]);
+  }, [addStep, haptics]);
 
   const handleRemove = useCallback(
     (key: string) => {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       removeStep(key);
       AccessibilityInfo.announceForAccessibility("Step removed");
     },
-    [removeStep],
+    [removeStep, haptics],
   );
 
   const handleMove = useCallback(
     (key: string, direction: "up" | "down") => {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
       moveStep(key, direction);
       AccessibilityInfo.announceForAccessibility(
         direction === "up" ? "Step moved up" : "Step moved down",
       );
     },
-    [moveStep],
+    [moveStep, haptics],
   );
 
   const stepCount = steps.length;

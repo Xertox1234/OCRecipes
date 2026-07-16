@@ -81,7 +81,7 @@ export default function BatchScanScreen() {
       if (!isValidBarcode(result.data)) return;
       if (itemCount >= MAX_ITEMS) return;
 
-      haptics.notification(Haptics.NotificationFeedbackType.Success);
+      haptics.impact(Haptics.ImpactFeedbackStyle.Light);
 
       if (isRepeat) {
         incrementQuantity(result.data);
@@ -174,8 +174,9 @@ export default function BatchScanScreen() {
 
   // Handle "Done" press
   const handleDone = useCallback(() => {
+    haptics.notification(Haptics.NotificationFeedbackType.Success);
     navigation.replace("BatchSummary");
-  }, [navigation]);
+  }, [navigation, haptics]);
 
   // Handle close
   const handleClose = useCallback(() => {

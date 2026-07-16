@@ -23,6 +23,8 @@ import {
   getProductChipVariant,
   getShutterClearanceStyle,
   getSmartConfirmLabel,
+  getChipConfidenceLabel,
+  getChipConfidenceColor,
 } from "./ProductChip-utils";
 
 const CHIP_SPRING = { damping: 18, stiffness: 280 };
@@ -34,12 +36,6 @@ const SPINNER_COLOR = "#000"; // hardcoded — black spinner on the white camera
 // leaves enough margin; 400 comfortably covers the tallest variant (~210px)
 // plus the largest realistic raised offset (~136px) with headroom.
 const OFF_SCREEN_Y = 400;
-
-function confidenceLabel(score: number): string {
-  if (score >= 0.8) return "High confidence";
-  if (score >= 0.5) return "Good match";
-  return "Possible match";
-}
 
 interface Props {
   phase: ScanPhase;
@@ -317,8 +313,17 @@ export function ProductChip({
             <Text style={styles.classificationName}>
               {getSmartConfirmLabel(phase.classification)}
             </Text>
-            <Text style={styles.classificationConfidence}>
-              {confidenceLabel(phase.classification.overallConfidence)}
+            <Text
+              style={[
+                styles.classificationConfidence,
+                {
+                  color: getChipConfidenceColor(
+                    phase.classification.overallConfidence,
+                  ),
+                },
+              ]}
+            >
+              {getChipConfidenceLabel(phase.classification.overallConfidence)}
             </Text>
           </View>
           <TouchableOpacity
@@ -496,7 +501,6 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   classificationConfidence: {
-    color: "rgba(255,255,255,0.5)",
     fontSize: 13,
   },
 });
