@@ -246,4 +246,90 @@ describe("lookupBarcode — isServingDataTrusted regression (P2-2026-07-14)", ()
     expect(result!.servingInfo.grams).toBe(40);
     expect(result!.isServingDataTrusted).toBe(true);
   });
+
+  it("does not trust a `quantity`-only serving size, even when it falls under the correction thresholds (P3-2026-07-16)", async () => {
+    // OFF has NO `serving_size` (the real per-serving label) but DOES have a
+    // `quantity` (package net weight — here "340g", a plausible-looking juice
+    // carton weight that is well under both MAX_PLAUSIBLE_SERVING_GRAMS (500)
+    // and, at 45 kcal/100g, MAX_PLAUSIBLE_SERVING_CALORIES (800) too). A
+    // pre-fix bug treated this as a trusted, correctly-scaled 340g serving.
+    // The fix: `quantity` is no longer used for serving-size parsing at all,
+    // so this must behave identically to the no-serving-data case — fall
+    // back to per-100g values, uncorrected, untrusted.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Orange Juice Carton",
+              brands: "GenericBrand",
+              quantity: "340g", // whole-carton net weight, NOT a serving size
+              nutriments: {
+                "energy-kcal_100g": 45,
+                proteins_100g: 0.7,
+                carbohydrates_100g: 10,
+                fat_100g: 0.2,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("040000000004");
+    expect(result).not.toBeNull();
+    // No correction fires — there was never a servingGrams value to correct;
+    // `quantity` is excluded from parsing entirely, so this is NOT the
+    // "corrected estimate" path, it's the "no serving data" path.
+    expect(result!.servingInfo.wasCorrected).toBe(false);
+    expect(result!.servingInfo.grams).toBe(100);
+    expect(result!.perServing.calories).toBe(result!.per100g.calories);
+    expect(result!.isServingDataTrusted).toBe(false);
+  });
+
+  it("does not run the whole-package correction on an over-threshold `quantity`-only value either (P3-2026-07-16)", async () => {
+    // Before the fix, a `quantity` this large (1000g) WOULD have reached the
+    // Step 5 correction block via the `rawServing` fallback, producing
+    // `wasCorrected: true` and an estimated-serving display like
+    // "~15g (estimated)". After the fix, `quantity` never feeds
+    // `rawServing`/`servingGrams` at all, so this must land on the plain
+    // "no serving data" path instead — `wasCorrected: false`,
+    // `displayLabel: "100g"` — not the correction path with a different
+    // (also-untrusted) result.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Family-Size Trail Mix",
+              brands: "GenericBrand",
+              quantity: "1000g", // whole-bag net weight, well over both thresholds
+              nutriments: {
+                "energy-kcal_100g": 480,
+                proteins_100g: 12,
+                carbohydrates_100g: 45,
+                fat_100g: 28,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("040000000011");
+    expect(result).not.toBeNull();
+    expect(result!.servingInfo.wasCorrected).toBe(false);
+    expect(result!.servingInfo.correctionReason).toBeUndefined();
+    expect(result!.servingInfo.displayLabel).toBe("100g");
+    expect(result!.servingInfo.grams).toBe(100);
+    expect(result!.isServingDataTrusted).toBe(false);
+  });
 });

@@ -284,8 +284,20 @@ export async function lookupBarcode(
   const brandName: string | undefined = offProduct?.brands || undefined;
   const imageUrl: string | undefined =
     offProduct?.image_url || offProduct?.image_front_url || undefined;
-  const rawServing: string =
-    offProduct?.serving_size || offProduct?.quantity || "";
+  // `serving_size` is a labeled per-serving amount; `quantity` is usually the
+  // whole package's net weight, not a serving. Do NOT fall back to `quantity`
+  // here — it used to feed both the display label and the scaling math below,
+  // so a package quantity that happened to parse under the plausibility
+  // thresholds (see Step 5) could slip through untagged as a trusted,
+  // correctly-scaled serving. Omitting it makes a quantity-only product
+  // behave exactly like the (already-correct) "no serving data" case: falls
+  // back to per-100g values with `isServingDataTrusted: false`. There is no
+  // valid partial-trust middle ground for `quantity` — it's the wrong field
+  // semantically, not merely a weaker version of the right one. If real
+  // per-serving data needs recovering for quantity-only products in the
+  // future, OFF's numeric `serving_quantity` field is the correct source
+  // (currently unused here) — never re-add `quantity` as a fallback.
+  const rawServing: string = offProduct?.serving_size || "";
 
   // Build search terms for cross-validation (CNF + USDA).
   // OFF products often have French/local names (e.g. "Sucre") that pure-English
