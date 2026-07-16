@@ -264,7 +264,12 @@ export default function FrontLabelConfirmScreen() {
                 ]}
                 accessibilityRole="alert"
               >
-                <Feather name="alert-triangle" size={16} color={color} />
+                <Feather
+                  name="alert-triangle"
+                  size={16}
+                  color={color}
+                  accessible={false}
+                />
                 <ThemedText style={[styles.warningText, { color }]}>
                   {tier === "low"
                     ? "Low confidence — review carefully before saving"
