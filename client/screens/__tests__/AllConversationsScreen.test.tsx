@@ -4,19 +4,26 @@ import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import AllConversationsScreen from "../AllConversationsScreen";
 
-const { mockGoBack, mockCanGoBack, mockNavigate, mockUseChatConversations } =
-  vi.hoisted(() => ({
-    mockGoBack: vi.fn(),
-    mockCanGoBack: vi.fn(),
-    mockNavigate: vi.fn(),
-    mockUseChatConversations: vi.fn(),
-  }));
+const {
+  mockGoBack,
+  mockCanGoBack,
+  mockNavigate,
+  mockReset,
+  mockUseChatConversations,
+} = vi.hoisted(() => ({
+  mockGoBack: vi.fn(),
+  mockCanGoBack: vi.fn(),
+  mockNavigate: vi.fn(),
+  mockReset: vi.fn(),
+  mockUseChatConversations: vi.fn(),
+}));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     goBack: mockGoBack,
     canGoBack: mockCanGoBack,
     navigate: mockNavigate,
+    reset: mockReset,
   }),
 }));
 
@@ -56,6 +63,10 @@ describe("AllConversationsScreen — safe back navigation", () => {
     fireEvent.click(screen.getByLabelText("Close"));
 
     expect(mockGoBack).not.toHaveBeenCalled();
-    expect(mockNavigate).toHaveBeenCalledWith("Main", { screen: "CoachTab" });
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+    });
   });
 });

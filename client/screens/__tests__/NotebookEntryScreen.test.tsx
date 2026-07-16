@@ -12,6 +12,7 @@ const {
   mockGoBack,
   mockCanGoBack,
   mockNavigate,
+  mockReset,
   mockRefetch,
   mockRouteParams,
   mockToast,
@@ -24,6 +25,7 @@ const {
   mockGoBack: vi.fn(),
   mockCanGoBack: vi.fn(),
   mockNavigate: vi.fn(),
+  mockReset: vi.fn(),
   mockRefetch: vi.fn(),
   mockRouteParams: { params: undefined as { entryId?: number } | undefined },
   mockToast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -48,6 +50,7 @@ vi.mock("@react-navigation/native", () => ({
     goBack: mockGoBack,
     canGoBack: mockCanGoBack,
     navigate: mockNavigate,
+    reset: mockReset,
   }),
   useRoute: () => mockRouteParams,
 }));
@@ -226,7 +229,11 @@ describe("NotebookEntryScreen — safe back navigation", () => {
     fireEvent.click(screen.getByLabelText("Go back"));
 
     expect(mockGoBack).not.toHaveBeenCalled();
-    expect(mockNavigate).toHaveBeenCalledWith("Main", { screen: "CoachTab" });
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+    });
   });
 
   it("falls back to the Coach tab from the not-found screen when there is no back stack", () => {
@@ -238,7 +245,11 @@ describe("NotebookEntryScreen — safe back navigation", () => {
     fireEvent.click(screen.getByLabelText("Go back"));
 
     expect(mockGoBack).not.toHaveBeenCalled();
-    expect(mockNavigate).toHaveBeenCalledWith("Main", { screen: "CoachTab" });
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+    });
   });
 
   it("falls back after a successful save when there is no back stack", async () => {
@@ -256,6 +267,10 @@ describe("NotebookEntryScreen — safe back navigation", () => {
     fireEvent.click(screen.getByText("Save"));
 
     await Promise.resolve();
-    expect(mockNavigate).toHaveBeenCalledWith("Main", { screen: "CoachTab" });
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+    });
   });
 });

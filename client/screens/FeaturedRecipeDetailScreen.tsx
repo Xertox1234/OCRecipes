@@ -179,7 +179,9 @@ export default function FeaturedRecipeDetailScreen() {
       {/* Close button */}
       <Pressable
         onPress={() =>
-          safeGoBack(navigation, () => navigation.navigate("Main"))
+          safeGoBack(navigation, () =>
+            navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
+          )
         }
         style={[
           styles.closeButton,

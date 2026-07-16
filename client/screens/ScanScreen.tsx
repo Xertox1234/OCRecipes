@@ -243,7 +243,9 @@ export default function ScanScreen() {
       void queryClient.invalidateQueries({ queryKey: QUERY_KEYS.scannedItems });
       void refreshScanCount();
       toast.success(buildSuccessToastMessage(confirmCard));
-      safeGoBack(navigation, () => navigation.navigate("Main"));
+      safeGoBack(navigation, () =>
+        navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
+      );
     } catch {
       setConfirmCard((prev) => prev && { ...prev, isLogging: false });
       toast.error("Failed to log item. Please try again.");
@@ -498,7 +500,9 @@ export default function ScanScreen() {
         <TouchableOpacity
           style={styles.permissionCancel}
           onPress={() =>
-            safeGoBack(navigation, () => navigation.navigate("Main"))
+            safeGoBack(navigation, () =>
+              navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
+            )
           }
           accessibilityLabel="Cancel and go back"
           accessibilityRole="button"
@@ -559,7 +563,9 @@ export default function ScanScreen() {
         <TouchableOpacity
           style={styles.closeBtn}
           onPress={() =>
-            safeGoBack(navigation, () => navigation.navigate("Main"))
+            safeGoBack(navigation, () =>
+              navigation.reset({ index: 0, routes: [{ name: "Main" }] }),
+            )
           }
           accessibilityLabel="Close camera"
           accessibilityRole="button"

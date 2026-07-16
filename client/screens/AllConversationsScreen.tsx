@@ -185,7 +185,10 @@ export default function AllConversationsScreen() {
         <Pressable
           onPress={() =>
             safeGoBack(navigation, () =>
-              navigation.navigate("Main", { screen: "CoachTab" }),
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+              }),
             )
           }
           hitSlop={12}

@@ -240,7 +240,12 @@ export default function RootStackNavigator() {
               headerLeft: () => (
                 <Pressable
                   onPress={() =>
-                    safeGoBack(navigation, () => navigation.navigate("Main"))
+                    safeGoBack(navigation, () =>
+                      navigation.reset({
+                        index: 0,
+                        routes: [{ name: "Main" }],
+                      }),
+                    )
                   }
                   hitSlop={12}
                   accessibilityRole="button"

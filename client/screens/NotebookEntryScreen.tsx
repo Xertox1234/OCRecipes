@@ -50,7 +50,10 @@ export default function NotebookEntryScreen() {
   const goBack = useCallback(
     () =>
       safeGoBack(navigation, () =>
-        navigation.navigate("Main", { screen: "CoachTab" }),
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Main", params: { screen: "CoachTab" } }],
+        }),
       ),
     [navigation],
   );

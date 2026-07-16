@@ -4,17 +4,21 @@ import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import RecipeChatScreen from "../RecipeChatScreen";
 
-const { mockGoBack, mockCanGoBack, mockNavigate } = vi.hoisted(() => ({
-  mockGoBack: vi.fn(),
-  mockCanGoBack: vi.fn(),
-  mockNavigate: vi.fn(),
-}));
+const { mockGoBack, mockCanGoBack, mockNavigate, mockReset } = vi.hoisted(
+  () => ({
+    mockGoBack: vi.fn(),
+    mockCanGoBack: vi.fn(),
+    mockNavigate: vi.fn(),
+    mockReset: vi.fn(),
+  }),
+);
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     goBack: mockGoBack,
     canGoBack: mockCanGoBack,
     navigate: mockNavigate,
+    reset: mockReset,
   }),
   useRoute: () => ({ params: undefined }),
 }));
@@ -57,6 +61,10 @@ describe("RecipeChatScreen — safe back navigation", () => {
     fireEvent.click(screen.getByLabelText("Close"));
 
     expect(mockGoBack).not.toHaveBeenCalled();
-    expect(mockNavigate).toHaveBeenCalledWith("Main");
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockReset).toHaveBeenCalledWith({
+      index: 0,
+      routes: [{ name: "Main" }],
+    });
   });
 });
