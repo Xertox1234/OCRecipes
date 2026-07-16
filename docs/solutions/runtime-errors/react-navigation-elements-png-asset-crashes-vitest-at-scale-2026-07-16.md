@@ -19,7 +19,9 @@ The failure is scale-dependent: it did not reproduce in isolation, in a small ha
 
 ## Root Cause
 
-`@react-navigation/elements` ships a `.png` asset as part of its module graph. Every other native/asset-bearing dependency in this project (`react-native-svg`, `react-native-reanimated`, `react-native-gesture-handler`, `@expo/vector-icons`, `@gorhom/bottom-sheet`, `expo-haptics`, `@sentry/react-native`, `expo-blur`, `expo-linear-gradient`, `@react-native-community/netinfo`) is aliased in `vitest.config.ts` to a hand-written mock under `test/mocks/` — `@react-navigation/elements` was the one gap in that convention. At small scale, Vite's per-file transform handles the `.png` import fine; at full-shard scale, it doesn't reliably.
+`@react-navigation/elements` ships a `.png` asset as part of its module graph. Every other native/asset-bearing dependency in this project (`react-native-svg`, `react-native-reanimated`, `react-native-gesture-handler`, `@expo/vector-icons`, `@gorhom/bottom-sheet`, `expo-haptics`, `@sentry/react-native`, `expo-blur`, `expo-linear-gradient`, `@react-native-community/netinfo`) is aliased in `vitest.config.ts` to a hand-written mock under `test/mocks/` — `@react-navigation/elements` was the one gap in that convention.
+
+The blamed test file (`ChatScreen.test.tsx` here) is very likely an innocent bystander, not the trigger: Vitest attributes a shared-module-runner crash to whichever file happens to be mid-collection when it fires. The actual trigger is almost certainly a *different* file in the same shard that imports `@react-navigation/elements` for real (unmocked) and hits the asset at the wrong moment in Vite's dependency-optimization lifecycle. It didn't reproduce at small scale not because of file *count* per se, but because the specific real importer that triggers it wasn't co-located with the blamed file in any of the smaller local scenarios tried.
 
 ## Solution
 
@@ -53,4 +55,4 @@ When adding a new `react-native`/`@react-navigation/*`/Expo package to real sour
 ## See Also
 
 - [mock-native-svg-flow-syntax-transform-failure](mock-native-svg-flow-syntax-transform-failure-2026-07-12.md) — same class of gap, different package/symptom
-- [../conventions/ci-failure-must-reproduce-against-merge-ref-not-branch-head.md](../conventions/ci-failure-must-reproduce-against-merge-ref-not-branch-head-2026-07-16.md) — the debugging methodology that found this
+- [CI failure must reproduce against merge ref, not branch head](../conventions/ci-failure-must-reproduce-against-merge-ref-not-branch-head-2026-07-16.md) — the debugging methodology that found this
