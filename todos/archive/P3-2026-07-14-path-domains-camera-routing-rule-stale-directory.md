@@ -3,7 +3,7 @@
 ---
 
 title: "path-domains.ts's camera routing rule matches a nonexistent directory — client/camera/\*\* has zero domain coverage"
-status: backlog
+status: done
 priority: low
 created: 2026-07-14
 updated: 2026-07-16
@@ -90,3 +90,4 @@ Notes for the implementer:
 ### 2026-07-16
 
 - Re-authored at user request after being quality-flagged (thin-IN) by a `/todo` run: made the design call (baseline + role-scoped subrules mirroring sibling precedent, stale rule deleted), added Implementation Notes with the concrete rule shapes, and tightened Acceptance Criteria to TDD + regeneration + end-to-end CLI verification. Re-verified `client/components/camera` absent and inventoried `client/camera/**` contents.
+- Implemented per the locked design: failing tests written first in `scripts/lib/__tests__/path-domains.test.ts` (confirmed RED), then the stale `client/components/camera` rule removed from `PATH_TO_DOMAINS` and replaced with the four rules from Implementation Notes (baseline `client/camera/**` + role-scoped `components`/`hooks`/`reducers` subrules). Tests confirmed GREEN (100/100 across the three affected test files). Both derived artifacts regenerated (`npm run build:copilot-instructions`, `npm run build:domain-map`) and their `:check` variants pass. Ran the literal Background repro command (`git diff 1647390a^ 1647390a --name-only | xargs npx tsx scripts/lib/path-domains.ts --routing --typescript-crosscut`) — now yields `accessibility, camera, client-state, design-system, hooks, performance, react-native, typescript` instead of just `typescript`. `code-reviewer` returned no findings (0 review rounds). One unrelated pre-existing test failure (`server/lib/__tests__/error-reporter.test.ts` Sentry drift guard) confirmed via `git stash` to predate this change — a worktree-local `node_modules` layout quirk, not a regression.

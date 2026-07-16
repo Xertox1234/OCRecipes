@@ -65,6 +65,24 @@ describe("rulesDomainsForPath", () => {
       "client/components/Button.tsx",
       ["accessibility", "design-system", "performance", "react-native"],
     ],
+    // client/camera baseline: root files, types/, utils/ get react-native only.
+    ["client/camera/index.ts", ["react-native"]],
+    ["client/camera/types.ts", ["react-native"]],
+    // client/camera/components/**: baseline + components subrule union.
+    [
+      "client/camera/components/CameraView.tsx",
+      ["accessibility", "design-system", "performance", "react-native"],
+    ],
+    // client/camera/hooks/**: baseline + hooks subrule union.
+    [
+      "client/camera/hooks/useCameraZoom.ts",
+      ["accessibility", "client-state", "hooks", "react-native"],
+    ],
+    // client/camera/reducers/**: baseline + reducers subrule union.
+    [
+      "client/camera/reducers/cameraReducer.ts",
+      ["client-state", "react-native"],
+    ],
     ["client/navigation/RootNavigator.tsx", ["accessibility", "react-native"]],
     // D6 union: hooks keeps react-native + accessibility (matches the shell).
     [
@@ -109,10 +127,22 @@ describe("routingLabelsForPath", () => {
       routingLabelsForPath("client/screens/ScanScreen.tsx").sort(),
     ).toEqual(["accessibility", "camera", "design-system", "react-native"]);
   });
-  it("adds camera for client/components/camera files", () => {
+  it("adds camera for client/camera/** root files (baseline rule)", () => {
+    expect(routingLabelsForPath("client/camera/index.ts").sort()).toEqual([
+      "camera",
+      "react-native",
+    ]);
+  });
+  it("adds camera for client/camera/components/** files (baseline + components subrule)", () => {
     expect(
-      routingLabelsForPath("client/components/camera/CameraView.tsx"),
-    ).toContain("camera");
+      routingLabelsForPath("client/camera/components/CameraView.tsx").sort(),
+    ).toEqual([
+      "accessibility",
+      "camera",
+      "design-system",
+      "performance",
+      "react-native",
+    ]);
   });
   it("matches rulesDomainsForPath for non-camera paths (incl. D6 hooks)", () => {
     expect(routingLabelsForPath("client/hooks/useFoo.ts").sort()).toEqual([
@@ -142,7 +172,10 @@ const PARITY_CORPUS = [
   "server/services/recipe-chat.ts",
   "client/screens/HomeScreen.tsx",
   "client/screens/ScanScreen.tsx",
-  "client/components/camera/CameraView.tsx",
+  "client/camera/index.ts",
+  "client/camera/components/CameraView.tsx",
+  "client/camera/hooks/useX.ts",
+  "client/camera/reducers/cameraReducer.ts",
   "client/navigation/Root.tsx",
   "client/hooks/useX.ts",
   "client/context/X.tsx",
@@ -283,16 +316,28 @@ describe("LLM_TOUCHING_SERVICES drift detection", () => {
 });
 
 describe("routing-only rules (camera)", () => {
-  it("camera rules carry empty domains so they don't render in doc/shell", () => {
-    const cameraRules = PATH_TO_DOMAINS.filter((r) =>
-      r.routingLabels?.includes("camera"),
+  it("the Scan* overlay rule carries empty domains so it doesn't render in doc/shell", () => {
+    const scanRule = PATH_TO_DOMAINS.find(
+      (r) =>
+        r.match.kind === "file-prefix" &&
+        r.match.dir === "client/screens" &&
+        r.match.prefix === "Scan",
     );
-    expect(cameraRules.length).toBeGreaterThan(0);
-    for (const r of cameraRules) {
-      // The parent client/screens|components rule supplies the rules-domains;
-      // these contribute ONLY the camera routing label.
-      expect(r.domains).toEqual([]);
-    }
+    expect(scanRule?.routingLabels).toContain("camera");
+    // Routing-only overlay: the parent client/screens/** rule supplies the
+    // rules-domains; this row contributes only the camera routing label.
+    expect(scanRule?.domains).toEqual([]);
+  });
+
+  it("the client/camera baseline rule carries real domains alongside the camera label", () => {
+    const baseline = PATH_TO_DOMAINS.find(
+      (r) =>
+        r.match.kind === "recursive-dir" && r.match.dir === "client/camera",
+    );
+    expect(baseline?.routingLabels).toContain("camera");
+    // Unlike the Scan* overlay, this rule has no ancestor rule to borrow
+    // rules-domains from, so it carries its own baseline domains too.
+    expect(baseline?.domains).toEqual(["react-native"]);
   });
 
   it("every rule contributes something (rules-domains or routing labels)", () => {
