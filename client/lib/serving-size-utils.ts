@@ -303,7 +303,21 @@ export function validateAndNormalizeNutrition(
   };
 
   // Step 2: Determine serving size
-  const rawServingSize = product.serving_size || product.quantity || "";
+  //
+  // `serving_size` is a labeled per-serving amount; `quantity` is usually the
+  // whole package's net weight, not a serving. Do NOT fall back to `quantity`
+  // here — it used to feed both the display label and the scaling math below,
+  // so a package quantity that happened to parse under the plausibility
+  // thresholds (Step 4) could slip through untagged as a trusted,
+  // correctly-scaled serving. Omitting it makes a quantity-only product
+  // behave exactly like the (already-correct) "no serving data" case: falls
+  // back to per-100g values with `isServingDataTrusted: false`. There is no
+  // valid partial-trust middle ground for `quantity` — it's the wrong field
+  // semantically, not merely a weaker version of the right one. The
+  // `serving_quantity` fallback below is a legitimate per-serving source
+  // (kept), distinct from package `quantity`. Mirrors the server-side fix in
+  // `server/services/barcode-lookup.ts` (PR #642 / P3-2026-07-16).
+  const rawServingSize = product.serving_size || "";
   const servingQuantity =
     typeof product.serving_quantity === "string"
       ? parseFloat(product.serving_quantity)
