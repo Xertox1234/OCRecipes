@@ -604,7 +604,12 @@ export default function LabelAnalysisScreen() {
                   { backgroundColor: withOpacity(color, 0.12) },
                 ]}
               >
-                <Feather name="alert-triangle" size={16} color={color} />
+                <Feather
+                  name="alert-triangle"
+                  size={16}
+                  color={color}
+                  accessible={false}
+                />
                 <ThemedText type="small" style={{ color, flex: 1 }}>
                   {tier === "low"
                     ? "Low confidence — review carefully before logging."

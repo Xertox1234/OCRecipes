@@ -268,7 +268,7 @@ export default function FrontLabelConfirmScreen() {
                 <ThemedText style={[styles.warningText, { color }]}>
                   {tier === "low"
                     ? "Low confidence — review carefully before saving"
-                    : "Low confidence — some details may be inaccurate"}
+                    : "Some details may be inaccurate — review before saving"}
                 </ThemedText>
               </View>
             );
