@@ -3,7 +3,7 @@
 ---
 
 title: "Confidence-tier unification (client/lib/confidence.ts) left several screens on old, unmigrated thresholds"
-status: backlog
+status: done
 priority: low
 created: 2026-07-16
 updated: 2026-07-16
@@ -21,7 +21,7 @@ PR #607 added `client/lib/confidence.ts` to unify 3 previously-inconsistent conf
 
 ## Background
 
-Found during code review of PR #607 (2026-07-16). Not in scope for that PR since none of the affected files were touched by its diff, but the split-brain result is real: `PhotoAnalysisScreen.tsx` still hardcodes 0.8/0.6 thresholds (a *third*, different cutoff set) for its `ConfidenceBadge` and a separate `confidence < 0.7` warning banner — for a real confidence score like 0.55, a user now feels the new unified "medium" Warning haptic (via `usePhotoAnalysis`, which PR #607 did migrate) while seeing a red "Low" badge (old 0.6 cutoff) for the same score on the same screen. That's the exact inconsistency the unification was meant to eliminate.
+Found during code review of PR #607 (2026-07-16). Not in scope for that PR since none of the affected files were touched by its diff, but the split-brain result is real: `PhotoAnalysisScreen.tsx` still hardcodes 0.8/0.6 thresholds (a _third_, different cutoff set) for its `ConfidenceBadge` and a separate `confidence < 0.7` warning banner — for a real confidence score like 0.55, a user now feels the new unified "medium" Warning haptic (via `usePhotoAnalysis`, which PR #607 did migrate) while seeing a red "Low" badge (old 0.6 cutoff) for the same score on the same screen. That's the exact inconsistency the unification was meant to eliminate.
 
 ## Acceptance Criteria
 

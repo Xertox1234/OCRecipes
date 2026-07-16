@@ -122,7 +122,10 @@ export default function SubstitutionResultScreen() {
           />
         </View>
 
-        {/* Confidence */}
+        {/* Confidence — intentionally binary High/Medium, no "Low" tier.
+            Unlike OCR/nutrition confidence (client/lib/confidence.ts), a
+            substitution suggestion below 0.8 is still a viable food swap,
+            not a result that needs a red "review carefully" alarm state. */}
         <View style={styles.confidenceRow}>
           <View
             style={[

@@ -25,6 +25,11 @@ import { PreparationPicker } from "@/components/PreparationPicker";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import {
+  getConfidenceTier,
+  getConfidenceColor,
+  getConfidenceLabel,
+} from "@/lib/confidence";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { RecipeGenerationModal } from "@/components/RecipeGenerationModal";
 import { usePhotoAnalysis } from "@/hooks/usePhotoAnalysis";
@@ -44,34 +49,22 @@ type RouteParams = {
   intent: PhotoIntent;
 };
 
-/** Confidence threshold for showing follow-up questions */
-const CONFIDENCE_THRESHOLD = 0.7;
-
 function ConfidenceBadge({ confidence }: { confidence: number }) {
   const { theme } = useTheme();
-
-  const getConfidenceColor = () => {
-    if (confidence >= 0.8) return theme.success;
-    if (confidence >= 0.6) return theme.warning;
-    return theme.error;
-  };
-
-  const getConfidenceLabel = () => {
-    if (confidence >= 0.8) return "High";
-    if (confidence >= 0.6) return "Medium";
-    return "Low";
-  };
+  const tier = getConfidenceTier(confidence);
+  const color = getConfidenceColor(theme, tier);
+  const label = getConfidenceLabel(tier);
 
   return (
     <View
       style={[
         styles.confidenceBadge,
-        { backgroundColor: withOpacity(getConfidenceColor(), 0.12) },
+        { backgroundColor: withOpacity(color, 0.12) },
       ]}
       accessibilityLabel={`Confidence: ${Math.round(confidence * 100)}%`}
     >
-      <ThemedText type="small" style={{ color: getConfidenceColor() }}>
-        {getConfidenceLabel()} Confidence ({Math.round(confidence * 100)}%)
+      <ThemedText type="small" style={{ color }}>
+        {label} Confidence ({Math.round(confidence * 100)}%)
       </ThemedText>
     </View>
   );
@@ -530,27 +523,34 @@ export default function PhotoAnalysisScreen() {
               </View>
 
               {showNutrition &&
-                analysisResult.overallConfidence < CONFIDENCE_THRESHOLD && (
-                  <View
-                    style={[
-                      styles.warningBanner,
-                      { backgroundColor: withOpacity(theme.warning, 0.15) },
-                    ]}
-                  >
-                    <Feather
-                      name="alert-triangle"
-                      size={16}
-                      color={theme.warning}
-                    />
-                    <ThemedText
-                      type="small"
-                      style={{ color: theme.warning, flex: 1 }}
+                (() => {
+                  const overallTier = getConfidenceTier(
+                    analysisResult.overallConfidence,
+                  );
+                  if (overallTier === "high") return null;
+                  return (
+                    <View
+                      style={[
+                        styles.warningBanner,
+                        { backgroundColor: withOpacity(theme.warning, 0.15) },
+                      ]}
                     >
-                      AI confidence is low. Please review and edit items as
-                      needed.
-                    </ThemedText>
-                  </View>
-                )}
+                      <Feather
+                        name="alert-triangle"
+                        size={16}
+                        color={theme.warning}
+                      />
+                      <ThemedText
+                        type="small"
+                        style={{ color: theme.warning, flex: 1 }}
+                      >
+                        {overallTier === "low"
+                          ? "AI confidence is low. Please review and edit items as needed."
+                          : "AI confidence isn't high. Please review and edit items as needed."}
+                      </ThemedText>
+                    </View>
+                  );
+                })()}
 
               {/* Food Items */}
               {foods.map((food, index) => (

@@ -25,6 +25,11 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { usePremiumContext } from "@/context/PremiumContext";
+import {
+  getConfidenceTier,
+  getConfidenceColor,
+  getConfidenceLabel,
+} from "@/lib/confidence";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
 import {
@@ -178,22 +183,13 @@ export default function CookSessionReviewScreen() {
     ingredients,
   ]);
 
-  const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.8) return theme.success;
-    if (confidence >= 0.5) return theme.warning;
-    return theme.error;
-  };
-
-  const getConfidenceLabel = (confidence: number) => {
-    if (confidence >= 0.8) return "High";
-    if (confidence >= 0.5) return "Medium";
-    return "Low";
-  };
-
   const renderIngredient = ({ item }: { item: CookingSessionIngredient }) => {
     const prepOptions =
       PREPARATION_OPTIONS[item.category as FoodCategory] ??
       PREPARATION_OPTIONS.other;
+    const confidenceTier = getConfidenceTier(item.confidence);
+    const confidenceColor = getConfidenceColor(theme, confidenceTier);
+    const confidenceLabel = getConfidenceLabel(confidenceTier);
 
     return (
       <Card style={styles.ingredientCard}>
@@ -209,11 +205,11 @@ export default function CookSessionReviewScreen() {
               <View
                 style={[
                   styles.confidenceDot,
-                  { backgroundColor: getConfidenceColor(item.confidence) },
+                  { backgroundColor: confidenceColor },
                 ]}
               />
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                {getConfidenceLabel(item.confidence)} confidence
+                {confidenceLabel} confidence
               </ThemedText>
             </View>
           </View>
