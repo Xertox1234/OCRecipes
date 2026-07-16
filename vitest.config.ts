@@ -123,6 +123,10 @@ export default defineConfig({
         __dirname,
         "./test/mocks/expo-vector-icons.ts",
       ),
+      "@react-navigation/elements": path.resolve(
+        __dirname,
+        "./test/mocks/react-navigation-elements.ts",
+      ),
       "@gorhom/bottom-sheet": path.resolve(
         __dirname,
         "./test/mocks/gorhom-bottom-sheet.ts",
