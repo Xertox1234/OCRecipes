@@ -83,8 +83,11 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`; evidence and the doob
 - Telemetry re-check ran per the 2026-07-11 instructions: 2,476 rows / 73 sessions
   (2026-07-06 → 2026-07-16), action mix 2,180 pointer / 232 injected / 64 deferred (2.6% —
   **identical share to the 07-11 snapshot**, stable across 4× more data), 116 of 671 solution
-  docs ever delivered. The extra ~20 days to the full window had no realistic path to moving
-  the load-bearing numbers.
+  docs ever delivered. Stability is scoped to the **deferral share** — the one metric tied to
+  a numeric decision threshold (the >10% re-trigger); the injected share drifted 12.7% → 9.4%
+  between the two reads, but it is workload-dependent by construction (session dedup makes
+  injection a first-touch event) and was not a decision input. The extra ~20 days to the full
+  window would sharpen dead-weight stats without moving the decision.
 - Spec: `docs/superpowers/specs/2026-07-16-pg-injection-ranking-layer-design.md` (local-only
   path, per the specs convention). `/spec-review` verdict: approve.
 - **Decision: DROP.** R2's "all tag matches, unranked" premise is stale — applies_to promotion,
