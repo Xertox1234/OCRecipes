@@ -4,6 +4,7 @@ export function evaluateSwipeThresholdCrossing(
   direction: "left" | "right",
   alreadyFired: boolean,
 ): { shouldFireHaptic: boolean; nextFired: boolean } {
+  "worklet";
   const crossed =
     direction === "right"
       ? translationValue >= threshold
