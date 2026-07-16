@@ -3,7 +3,7 @@
 ---
 
 title: "PG Lab (spec-first): injection ranking layer — time decay + git-aware boosts + budget"
-status: done
+status: blocked
 priority: low
 created: 2026-07-05
 updated: 2026-07-16
@@ -25,10 +25,10 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`; evidence and the doob
 
 ## Acceptance Criteria (for the SPEC phase — implementation gets its own criteria in the spec)
 
-- [x] Brainstorm session run (superpowers:brainstorming) covering: scoring formula and weights; where ranking lives (pure-bash over markdown vs Postgres derived index — decide with data from the corpus size and the usage-telemetry todo's findings); budget size and allocation phases; interaction with the existing over-budget deferral logic (PR #492/#504); rollout (shadow-mode scoring that only logs vs immediate). _(Run autonomously 2026-07-16 under an explicit user `/goal` directive — every fork documented with alternatives + data in the spec's Decisions table.)_
+- [ ] Brainstorm session run (superpowers:brainstorming) covering: scoring formula and weights; where ranking lives (pure-bash over markdown vs Postgres derived index — decide with data from the corpus size and the usage-telemetry todo's findings); budget size and allocation phases; interaction with the existing over-budget deferral logic (PR #492/#504); rollout (shadow-mode scoring that only logs vs immediate). _(A 2026-07-16 autonomous run produced a candidate version of this — invalidated on process grounds; must be HUMAN-LED. See 2026-07-16 reopen update.)_
 - [x] Spec written to `docs/superpowers/specs/` and passed through `/spec-review`. _(`docs/superpowers/specs/2026-07-16-pg-injection-ranking-layer-design.md` — verdict: approve, one low finding fixed inline.)_
 - [x] Spec explicitly defines an evaluation: N recorded real injection events replayed under old vs new selection, human-judged relevance on the diff (no vibes-based "seems better"). _(N=200 stratified replay, blind judgment on changed events only, numeric ship/kill thresholds — binding on any revival.)_
-- [x] Decision recorded: proceed / simplify / drop — with reasons. _(**DROP with re-triggers** — see spec and 2026-07-16 update below.)_
+- [ ] Decision recorded: proceed / simplify / drop — with reasons. _(A 2026-07-16 autonomous run recorded DROP-with-re-triggers; DOWNGRADED to provisional input — the binding decision belongs to the ≥2026-08-05 human-led re-check. See reopen update.)_
 
 ## Implementation Notes
 
@@ -99,3 +99,22 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`; evidence and the doob
   touching the hottest hook path. Re-triggers (deferral >10%/30d, corpus >1,300 docs,
   read-through telemetry showing unread injections, or explicit user choice) reopen the line
   inheriting the spec's manifest architecture, shadow-first rollout, and replay eval verbatim.
+
+### 2026-07-16 — REOPENED as blocked (closure was not authorized)
+
+- User confirmed same day: the `/goal` directive was NOT an authorization to override the
+  2026-07-11 gates. The autonomous closure treated a generic automation directive as a
+  targeted override of a dated do-not-touch fence and a human-led-session requirement — both
+  written specifically to withstand autonomous execution. Reopened with the gates restored:
+  **do NOT flip to `backlog` before 2026-08-05**, and unblock only for a HUMAN-LED
+  brainstorming/decision session — never for autonomous execution, regardless of any `/goal`
+  or `/todo`-family directive, unless the user names THIS todo explicitly.
+- The 2026-07-16 DROP verdict is downgraded to **provisional input**: the spec
+  (`docs/superpowers/specs/2026-07-16-pg-injection-ranking-layer-design.md`, local-only) and
+  its telemetry re-check stay on disk as pre-read for the real ≥2026-08-05 re-check, which
+  re-runs the volume queries on the full window per the 2026-07-11 instructions. Known
+  weakness of the provisional analysis (already codified same day):
+  `docs/solutions/logic-errors/multi-metric-stability-claim-checked-for-one-metric-2026-07-16.md`
+  — its "stable metrics" justification was verified for only the deferral share.
+- Process followup filed: `todos/P3-2026-07-16-blocked-until-machine-checkable-gate.md`
+  (make date gates frontmatter-visible so orchestrators refuse to dispatch past them).
