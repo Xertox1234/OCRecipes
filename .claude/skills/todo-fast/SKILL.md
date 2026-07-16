@@ -21,7 +21,17 @@ You are running the todo-fast orchestrator for a single todo. Unlike `/todo`, th
 
 7. **Capture the base branch and main checkout**, same as `/todo`'s own Phase 1 step 3: `git branch --show-current` (or `git rev-parse --abbrev-ref HEAD` if empty; stop if that also returns `HEAD` — detached HEAD is not supported) → `BASE_BRANCH`. `git rev-parse --path-format=absolute --git-common-dir` → derive `MAIN_CHECKOUT` as its parent directory.
 
-8. **Local-environment escape hatch.** If the todo describes the defect as reproducing on this specific machine only rather than in tracked source or config — tells include phrasing like "local machine"/"this environment" in the Background, or an Acceptance Criterion of the shape "confirm the fix isn't needed repo-wide before changing tracked config" — treat it as a **local-diagnosis todo** and skip Phase 1's shared worktree (and Phases 3/5's decomposition/parallel-implementer machinery) entirely. Diagnose, and validate any fix, directly in the main checkout instead. Reason: Phase 1's worktree shares `node_modules` with the main checkout via a symlink, so a content-level fix there (`rm -rf node_modules && npm ci`, a cache clear, etc.) only unlinks the symlink and reinstalls a worktree-local copy that never reaches the main checkout — the fix could never land where the problem actually is. A fresh worktree also lacks the main checkout's untracked cache directories, so it can just as easily mask a cache-only bug (false green) as reproduce a `node_modules`-content one. If the investigation instead surfaces a genuine tracked-file/dependency defect (the todo's own higher-severity branch), fall back to the standard Phase 1-10 flow for that fix. Get advisor sign-off before committing to the local-diagnosis path if the todo's phrasing is ambiguous. Still open a PR (Phase 8/10) if any tracked file changes (e.g. the archived todo's Updates section, a codified solution) — skipping the worktree does not exempt tracked-file changes from branch/PR/review.
+8. **Local-environment escape hatch.** If the todo describes the defect as reproducing on this specific machine only rather than in tracked source or config — tells include phrasing like "local machine"/"this environment" in the Background, or an Acceptance Criterion of the shape "confirm the fix isn't needed repo-wide before changing tracked config" — treat it as a **local-diagnosis todo** and skip Phase 1's shared worktree (and Phases 3/5's decomposition/parallel-implementer machinery) entirely. Diagnose, and validate any fix, directly in the main checkout instead. Reason: Phase 1's worktree shares `node_modules` with the main checkout via a symlink, so a content-level fix there (`rm -rf node_modules && npm ci`, a cache clear, etc.) only unlinks the symlink and reinstalls a worktree-local copy that never reaches the main checkout — the fix could never land where the problem actually is. A fresh worktree also lacks the main checkout's untracked cache directories, so it can just as easily mask a cache-only bug (false green) as reproduce a `node_modules`-content one. If the investigation instead surfaces a genuine tracked-file/dependency defect (the todo's own higher-severity branch), fall back to the standard Phase 1-10 flow for that fix. Get advisor sign-off before committing to the local-diagnosis path if the todo's phrasing is ambiguous.
+
+   Before any tracked-file edit on this path, create the todo's branch directly in the main checkout — Phase 1 is the only place a branch normally gets created, and skipping it without this step leaves every later command running on `$BASE_BRANCH` itself (typically `main`), which Phase 10's `git branch -m todo/<todo-slug>` would then rename in place:
+
+   ```bash
+   SLUG="<todo filename minus .md>"
+   git checkout -b "todo/$SLUG" "$BASE_BRANCH"
+   WORKTREE="$MAIN_CHECKOUT"   # no worktree was created — every later `git -C "$WORKTREE"` / `cd "$WORKTREE"` now resolves to the main checkout
+   ```
+
+   Still open a PR (Phase 8/10) if any tracked file changes (e.g. the archived todo's Updates section, a codified solution) — skipping the worktree does not exempt tracked-file changes from branch/PR/review.
 
 ## Phase 1 — Shared Worktree Creation
 
@@ -82,6 +92,8 @@ Follow `todo-executor.md` Step 3.5's mechanism exactly (call `advisor()` with no
 
 Same verdict handling as `todo-executor.md` Step 3.5: `GREEN` → proceed silently; `YELLOW: <reason>` → proceed, record the reason in `DEFERRED_WARNINGS`; `RED: <reason>` → do not implement, report `blocked: advisor red-flag: <reason>` (Step 11's block-path format), todo stays at `backlog`. If the advisor flags the decomposition specifically (not the overall approach), discard `decomposition_plan` and fall back to one `todo-fast-implementer` for the whole todo rather than force the split. Same unparseable-response and advisor-unavailable fallbacks as Step 3.5 (`YELLOW: advisor returned prose without a verdict line`; `ADVISOR: skipped` if the tool errors).
 
+For a local-diagnosis todo (Phase 0 step 8), this phase still runs as the mandatory approach gate — step 8's own conditional advisor consult (triggered only when the todo's phrasing was ambiguous) does not substitute for it. Only the decomposition-specific addition above is skipped, exactly like the no-split case above.
+
 ## Phase 5 — Parallel Implementation
 
 Dispatch one `todo-fast-implementer` per entry in `decomposition_plan` (or exactly one, covering the whole todo, if Phase 3/4 found no safe split) — up to 4, all in the SAME message so they run concurrently:
@@ -115,7 +127,7 @@ Follow `todo-executor.md` Step 7 exactly — same CRITICAL/WARNING/SUGGESTION ti
 
 ## Phase 8 — Commit & Archive
 
-Follow `todo-executor.md` Step 8 exactly — mark `done`, move to `todos/archive/`, stage both paths, commit with the same label→type mapping. Use the **plain `mv` + a single combined `git add <old-path> <new-path>`** Step 8 specifies, not `git mv` — `git mv`'s implicit staging of a pre-edited file can have its content silently dropped by the lint-staged stash/restore cycle on commit (see `docs/solutions/logic-errors/git-mv-lint-staged-drops-content-edits-2026-07-05.md`); verify with a post-commit `git status --porcelain` regardless.
+Follow `todo-executor.md` Step 8 exactly — mark `done`, move to `todos/archive/`, stage both paths, commit with the same label→type mapping. Use the **plain `mv` + a single combined `git add <old-path> <new-path>`** that Step 8 specifies, not `git mv` — `git mv`'s implicit staging of a pre-edited file can have its content silently dropped by the lint-staged stash/restore cycle on commit (see `docs/solutions/logic-errors/git-mv-lint-staged-drops-content-edits-2026-07-05.md`); verify with a post-commit `git status --porcelain` regardless.
 
 ## Phase 9 — Codify
 
