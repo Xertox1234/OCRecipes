@@ -1,6 +1,6 @@
 ---
 title: "Add test coverage for ScanScreen's safeGoBack call sites"
-status: backlog
+status: done
 priority: low
 created: 2026-07-16
 updated: 2026-07-16
@@ -47,3 +47,4 @@ None — targets `main` directly, once PR #606 has merged.
 ### 2026-07-16
 
 - Filed after code review on PR #606 surfaced the gap; deferred rather than fixed in-branch to avoid an add/add merge conflict on a stale branch (see Background).
+- Implemented: added `describe("ScanScreen — safe back navigation", ...)` to `client/screens/__tests__/ScanScreen.test.tsx` covering all 3 call sites (permission-denied "Cancel and go back", "Close camera", post-log-success close in `handleConfirmLog`), each asserting both the `canGoBack: true` (goBack, not navigate/reset) and `canGoBack: false` (reset to Main, not goBack/navigate) branches. Converted the file's `@react-navigation/native` and `@/camera/hooks/useCameraPermissions` mocks to hoisted mutable values, added a mocked `@/lib/query-client` apiRequest for the post-log-success POST/GET calls, and added a `@/camera/reducers/scan-phase-reducer` mock that delegates to the real reducer except for one flagged shortcut used only by the post-log-success tests (to reach `handleConfirmLog`'s precondition without driving the full barcode-lock → confirm flow, which has its own dedicated coverage elsewhere). Reviewed clean by `code-reviewer` and `mobile-reviewer` (one trivial SUGGESTION applied: assert the log POST fired before the navigation assertion). Correction to this todo's Implementation Notes: the "Log It" button (site 1) is a `Pressable`, not a `TouchableOpacity` — doesn't change anything, both mocks were already correctly wired.
