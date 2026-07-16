@@ -69,6 +69,7 @@ Decomposition manifests live under [`_manifests/`](./_manifests/) (prefixed `_` 
 | beforeRemove back-button interception never fires on device        | [native-stack-back-dispatches-pop-not-goback-2026-07-07.md](./logic-errors/native-stack-back-dispatches-pop-not-goback-2026-07-07.md)                          |
 | "[Screen] was removed natively but didn't get removed from JS state" | [beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md](./logic-errors/beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md)                |
 | Redirect works for back-button but not after a successful save     | [always-armed-preventremove-early-return-skips-redirect-2026-07-07.md](./logic-errors/always-armed-preventremove-early-return-skips-redirect-2026-07-07.md)    |
+| A cached/persisted row's serving-size label and its calorie/macro values imply different serving amounts | [persisted-label-desyncs-from-its-scaled-companion-values-2026-07-16.md](./logic-errors/persisted-label-desyncs-from-its-scaled-companion-values-2026-07-16.md) |
 
 ### By Tag
 

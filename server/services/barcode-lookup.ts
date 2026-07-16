@@ -297,7 +297,14 @@ export async function lookupBarcode(
   // per-serving data needs recovering for quantity-only products in the
   // future, OFF's numeric `serving_quantity` field is the correct source
   // (currently unused here) — never re-add `quantity` as a fallback.
-  const rawServing: string = offProduct?.serving_size || "";
+  //
+  // `let`, not `const`: in the USDA-by-UPC branch below (Step 2b/4, no OFF
+  // product at all), this gets overridden with USDA's own confirmed
+  // per-serving label (`usdaByUPC.labelServingSize`) when USDA provides one.
+  // That is a DIFFERENT source than OFF's `quantity` — it's USDA's dedicated
+  // `servingSize`/`servingSizeUnit` label fields, not a package-weight guess
+  // — so this does not reintroduce the `quantity` conflation above.
+  let rawServing: string = offProduct?.serving_size || "";
 
   // Build search terms for cross-validation (CNF + USDA).
   // OFF products often have French/local names (e.g. "Sucre") that pure-English
@@ -361,7 +368,11 @@ export async function lookupBarcode(
 
   // ── Step 2b: If OFF has no product, try USDA branded food by UPC ─
   // Some products exist in USDA but not OFF (branded/US-market items).
-  let usdaByUPC: { product: NutritionData; brandName?: string } | null = null;
+  let usdaByUPC: {
+    product: NutritionData;
+    brandName?: string;
+    labelServingSize?: string;
+  } | null = null;
   if (!offProduct) {
     log.debug(
       { barcode: code },
@@ -474,6 +485,14 @@ export async function lookupBarcode(
     resolvedBrandName = usdaByUPC.brandName || undefined;
     per100g = normalizeToPerHundredGrams(usdaByUPC.product);
     source = "usda";
+    // USDA's own label serving size (from its `servingSize`/`servingSizeUnit`
+    // fields, in a unit we can convert) — when present, this is real
+    // per-serving data, not the per-100g default. Overrides the empty
+    // `rawServing` from the (absent) OFF product so Step 5 below scales and
+    // labels the result from it, same as an OFF `serving_size` would.
+    if (usdaByUPC.labelServingSize) {
+      rawServing = usdaByUPC.labelServingSize;
+    }
   } else {
     ({ per100g, source } = reconcilePer100g(
       offPer100g,
@@ -519,19 +538,38 @@ export async function lookupBarcode(
 
   const finalGrams = servingGrams || 100;
   const scale = finalGrams / 100;
+  // Hoisted so both the storage write below and the returned result use the
+  // SAME per-serving values as `servingSize` — writing `per100g` values next
+  // to a real per-serving `servingSize` label (e.g. "30g") would understate
+  // the true serving size's calorie mismatch by the scale factor (a 30g
+  // serving at 400 kcal/100g is ~120 kcal, not 400). Previously masked in the
+  // USDA-by-UPC branch only because `rawServing` was always "" there, so
+  // `servingSize` always fell back to `${finalGrams}g` (100g), which happens
+  // to equal the per100g denominator.
+  const perServing = scaleNutrients(per100g, scale);
 
   // Populate barcodeNutrition table for Public API (fire-and-forget).
   // First-write-wins: existing rows are not overwritten by newer scans.
+  // `servingSize` must track `finalGrams` (what `perServing` was actually
+  // scaled to), not the original `rawServing`, whenever the serving was
+  // corrected — `rawServing` still holds the pre-correction, implausible
+  // value (e.g. "236g" for a whole box), and pairing that stale label with
+  // the CORRECTED macro values (scaled to ~15g) would write a row that
+  // understates calories by ~15x relative to what its own label claims. No
+  // "~"/"(estimated)" cosmetic wrapper here (unlike `servingInfo.displayLabel`
+  // below) — this value may be parsed as a number by other consumers.
   storage
     .insertBarcodeNutritionIfAbsent({
       barcode: code,
       productName: resolvedProductName || null,
       brandName: resolvedBrandName || null,
-      servingSize: rawServing || `${finalGrams}g`,
-      calories: per100g.calories?.toFixed(2) ?? null,
-      protein: per100g.protein?.toFixed(2) ?? null,
-      carbs: per100g.carbs?.toFixed(2) ?? null,
-      fat: per100g.fat?.toFixed(2) ?? null,
+      servingSize: wasCorrected
+        ? `${finalGrams}g`
+        : rawServing || `${finalGrams}g`,
+      calories: perServing.calories?.toFixed(2) ?? null,
+      protein: perServing.protein?.toFixed(2) ?? null,
+      carbs: perServing.carbs?.toFixed(2) ?? null,
+      fat: perServing.fat?.toFixed(2) ?? null,
       source,
     })
     .catch((err) => {
@@ -544,7 +582,7 @@ export async function lookupBarcode(
     imageUrl,
     barcode: code,
     per100g,
-    perServing: scaleNutrients(per100g, scale),
+    perServing,
     servingInfo: {
       displayLabel: wasCorrected
         ? `~${finalGrams}g (estimated)`

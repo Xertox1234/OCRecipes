@@ -7,6 +7,22 @@ import {
 } from "../nutrition-lookup";
 import { lookupBarcode } from "../barcode-lookup";
 
+// `mockInsertValues` is hoisted so tests can assert on the args passed to
+// `db.insert(...).values(...)` — see the USDA-real-serving-size test below,
+// which proves the fire-and-forget `insertBarcodeNutritionIfAbsent` write
+// actually carries the new per-serving label through, not just the returned
+// `lookupBarcode()` result.
+const { mockInsertValues } = vi.hoisted(() => ({
+  mockInsertValues: vi.fn().mockReturnValue({
+    onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+    // `insertBarcodeNutritionIfAbsent` (server/storage/api-keys.ts) chains
+    // `.onConflictDoNothing()`, a different terminal method than the one
+    // above — both must be present or that call throws a TypeError that the
+    // production code's fire-and-forget `.catch()` silently swallows.
+    onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+  }),
+}));
+
 // Mock the db module so the cache functions don't hit a real database
 vi.mock("../../db", () => ({
   db: {
@@ -16,9 +32,7 @@ vi.mock("../../db", () => ({
       }),
     }),
     insert: vi.fn().mockReturnValue({
-      values: vi.fn().mockReturnValue({
-        onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
-      }),
+      values: mockInsertValues,
     }),
   },
 }));
@@ -326,6 +340,17 @@ describe("lookupBarcode", () => {
     expect(result!.servingInfo.grams).toBe(15);
     // 15g at 400 kcal/100g = 60 kcal
     expect(result!.perServing.calories).toBe(60);
+    // Regression guard (P3-2026-07-16): the stored `servingSize` must track
+    // the CORRECTED `finalGrams` (15g), not the original implausible
+    // `rawServing` ("236g") — pairing the stale "236g" label with the
+    // corrected 60-kcal value would understate calories ~15x relative to
+    // what the row's own serving-size label claims.
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        servingSize: "15g",
+        calories: "60.00",
+      }),
+    );
   });
 
   it("falls back to USDA branded food by UPC when OFF has no product", async () => {
@@ -513,6 +538,141 @@ describe("lookupBarcode", () => {
     // product). If a future refactor seeds a secondary into this path, the guard
     // throws in non-production and this test (which already drives the branch)
     // turns CI red — that is the self-enforcing regression tripwire.
+  });
+
+  it("wires through USDA's real per-serving size (P3-2026-07-16: correctly-scaled, trusted)", async () => {
+    // OFF has no product → USDA-UPC supplies the primary AND, now, its own
+    // real per-serving label (servingSize + servingSizeUnit) — previously
+    // discarded, always falling back to the per-100g default.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "Granola Bar",
+                brandOwner: "TestBrand",
+                gtinUpc: "008073114236",
+                servingSize: 30,
+                servingSizeUnit: "GRM",
+                foodNutrients: [
+                  { nutrientName: "Energy", value: 400 },
+                  { nutrientName: "Protein", value: 8 },
+                  { nutrientName: "Carbohydrate, by difference", value: 60 },
+                  { nutrientName: "Total lipid (fat)", value: 12 },
+                ],
+              },
+            ],
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("8073114236");
+    expect(result).not.toBeNull();
+    expect(result!.productName).toBe("Granola Bar");
+    expect(result!.source).toBe("usda");
+    // 30g is plausible (< 800 kcal, < 500g) — no correction applied.
+    expect(result!.servingInfo.wasCorrected).toBe(false);
+    expect(result!.servingInfo.grams).toBe(30);
+    // 400 kcal/100g * 30g = 120 kcal.
+    expect(result!.perServing.calories).toBe(120);
+    // Real per-serving data was used to scale the values — must be trusted,
+    // not the previous always-per-100g default.
+    expect(result!.isServingDataTrusted).toBe(true);
+    // Prove the fire-and-forget `insertBarcodeNutritionIfAbsent` write (not
+    // just the returned result) actually carries the real serving size
+    // through — the write used to always persist the finalGrams fallback
+    // label (e.g. "100g") for this branch. Also pins calories/protein/carbs/
+    // fat as PER-SERVING (perServing, scale=0.3), not per-100g — a regression
+    // guard: writing per100g values here (400/8/60/12) next to a "30g" label
+    // would be a 3.33x calorie overstatement.
+    expect(mockInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        servingSize: "30g",
+        calories: "120.00",
+        protein: "2.40",
+        carbs: "18.00",
+        fat: "3.60",
+      }),
+    );
+  });
+
+  it("does not guess a serving size from a USDA unit it can't convert (e.g. mg, oz)", async () => {
+    // servingSizeUnit "OZ" is real per-serving data but not one of the two
+    // units (g/ml) this codebase can safely convert — must NOT be treated as
+    // trusted serving data (a wrong unit conversion would be a bigger error
+    // than the honest per-100g fallback this preserves).
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "Spice Packet",
+                gtinUpc: "009073114236",
+                servingSize: 0.5,
+                servingSizeUnit: "OZ",
+                foodNutrients: [{ nutrientName: "Energy", value: 400 }],
+              },
+            ],
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("9073114236");
+    expect(result).not.toBeNull();
+    // Falls back to the per-100g default, exactly like the pre-fix behavior.
+    expect(result!.servingInfo.grams).toBe(100);
+    expect(result!.isServingDataTrusted).toBe(false);
+  });
+
+  it("a malformed USDA servingSize (wrong type) doesn't drop the whole food (schema regression guard)", async () => {
+    // `servingSize` is a present-but-wrong-typed string, not the number USDA
+    // normally sends. The schema must defang this ONE field (`.catch(undefined)`)
+    // rather than fail the whole food object / `foods` array parse — otherwise
+    // adding this feature would regress the pre-existing USDA-UPC fallback for
+    // any barcode whose GDSN data has a malformed servingSize.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({ ok: true, json: async () => ({ status: 0 }) }),
+      "fdc/v1/foods/search": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            foods: [
+              {
+                description: "Weird USDA Product",
+                gtinUpc: "007073114236",
+                servingSize: "30 g", // wrong type — USDA sends a number
+                servingSizeUnit: "GRM",
+                foodNutrients: [{ nutrientName: "Energy", value: 400 }],
+              },
+            ],
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+    });
+
+    const result = await lookupBarcode("7073114236");
+    // The food object (and its calories) must still come through — the bad
+    // servingSize field must not fail the whole parse.
+    expect(result).not.toBeNull();
+    expect(result!.productName).toBe("Weird USDA Product");
+    expect(result!.per100g.calories).toBe(400);
+    // No usable serving size → same honest per-100g fallback as before.
+    expect(result!.servingInfo.grams).toBe(100);
+    expect(result!.isServingDataTrusted).toBe(false);
   });
 
   it("keeps OFF data when the secondary source reports zero calories", async () => {
