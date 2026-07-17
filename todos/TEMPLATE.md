@@ -11,6 +11,16 @@ assignee:
 labels: []
 github_issue:
 
+# Optional — only add these when this todo carries a machine-checkable do-not-touch gate.
+
+# See "Date & Human-Led Gates" in todos/README.md for the full convention and semantics.
+
+# blocked_until: YYYY-MM-DD
+
+# blocked_reason: "why, and what to re-check before unblocking"
+
+# human_led: true
+
 ---
 
 # Title
