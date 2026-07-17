@@ -199,3 +199,39 @@ export function getPremiumGate(
 ): { feature: PremiumFeatureKey; label: string } | null {
   return PREMIUM_GATES[contentType] ?? null;
 }
+
+/** Barcode multi-frame tracking state read from `scanPhaseRef`, not the render closure. */
+export type BarcodeTrackingState =
+  | { status: "idle" }
+  | { status: "tracking"; barcode: string; frameCount: number };
+
+export type BarcodeTrackingDecision =
+  | { action: "start"; barcode: string; frameCount: 1 }
+  | { action: "update"; frameCount: number; confidence: number }
+  | { action: "lock"; frameCount: number };
+
+// confidence reaches 1.0 at 7 consecutive matching frames; lock fires at ≥0.85 (6 frames).
+const FRAMES_FOR_FULL_CONFIDENCE = 7;
+const LOCK_CONFIDENCE_THRESHOLD = 0.85;
+
+/**
+ * Decide what a newly-scanned barcode frame does to the current tracking state:
+ * start tracking a new barcode, accumulate confidence on the same one, or lock
+ * once confidence crosses the threshold. Pure so the frame-accumulation math
+ * (previously inline in ScanScreen.onBarcodeScanned) is unit-testable without a
+ * camera — the multi-frame lock had zero test coverage before this.
+ */
+export function evaluateBarcodeDetection(
+  tracking: BarcodeTrackingState,
+  scannedBarcode: string,
+): BarcodeTrackingDecision {
+  if (tracking.status === "idle" || scannedBarcode !== tracking.barcode) {
+    return { action: "start", barcode: scannedBarcode, frameCount: 1 };
+  }
+  const frameCount = tracking.frameCount + 1;
+  const confidence = Math.min(frameCount / FRAMES_FOR_FULL_CONFIDENCE, 1.0);
+  if (confidence >= LOCK_CONFIDENCE_THRESHOLD) {
+    return { action: "lock", frameCount };
+  }
+  return { action: "update", frameCount, confidence };
+}

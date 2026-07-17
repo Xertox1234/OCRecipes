@@ -3,6 +3,7 @@ import React, {
   useImperativeHandle,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
 import { StyleSheet, View } from "react-native";
 import { Feather } from "@expo/vector-icons";
@@ -150,7 +151,18 @@ export const CameraView = forwardRef<CameraRef, CameraViewProps>(
       [onBarcodeScanned],
     );
 
-    const objectTypes = mapBarcodeTypes(barcodeTypes);
+    // `barcodeTypes` is a fresh array from the caller every render even when its
+    // contents are unchanged. useObjectOutput's own useMemo keys on `types`
+    // identity to decide whether to recreate the native CameraObjectOutput
+    // (an AVCaptureSession reconfigure) — key this on content, not identity,
+    // or every ScanScreen re-render (i.e. every barcode frame processed) tears
+    // down and rebuilds the native output.
+    const barcodeTypesKey = barcodeTypes.join(",");
+    const objectTypes = useMemo(
+      () => mapBarcodeTypes(barcodeTypes),
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on barcodeTypesKey (content), not the barcodeTypes array reference
+      [barcodeTypesKey],
+    );
     const objectOutput = useObjectOutput({
       types: objectTypes,
       onObjectsScanned:
