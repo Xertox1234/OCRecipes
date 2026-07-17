@@ -7,6 +7,7 @@ module: server
 applies_to: [server/services/**/*.ts]
 symptoms: [Displayed calories wildly off (e.g. 98 shown for a package stating 310 per 90g) while the serving size is correct, The wrong value scales exactly as per100g x servingGrams/100 from a calorie density belonging to a DIFFERENT generic food, lookupBarcode result source is "cnf"/"usda" for a product whose barcode was found in OFF with complete nutriments]
 created: '2026-07-17'
+last_updated: '2026-07-17'
 severity: high
 ---
 
@@ -94,18 +95,72 @@ shielded. Both are pinned by guard tests, along with just-under/just-over
   trust signal; code that extracts only one basis throws that signal away.
 - Known accepted trade-off: an entry whose three fields are jointly wrong yet
   consistent (panel pasted from a sibling SKU) is now shielded from the
-  cross-check. Refinements (provenance `source` marker, low-calorie absolute
-  tolerance floor) tracked in
-  `todos/P3-2026-07-17-off-self-consistency-gate-refinements.md`.
+  cross-check.
 - The `barcodeNutrition` cache is first-write-wins: rows poisoned by the old
   policy do NOT self-heal after the fix deploys — remediation is a manual
-  delete/re-seed per affected barcode.
+  delete/re-seed per affected barcode. A follow-up sweep + delete/re-seed for
+  rows poisoned before this fix shipped remains a **manual, human-executed**
+  step — never run it autonomously (see `## Refinements shipped` below for
+  why an autonomous agent specifically could not complete it).
+
+## Refinements shipped (2026-07-17, todo P3-2026-07-17-off-self-consistency-gate-refinements)
+
+Both deferred refinements from the original fix were implemented:
+
+- **Provenance marker**: `reconcilePer100g` now emits
+  `"<primaryLabel>+self-consistent"` (not plain `"<primaryLabel>"`) in the
+  narrow case where a secondary was found, both calorie values were positive,
+  they disagreed, and the disagreement was rejected specifically because
+  `preferSecondaryOnDiscrepancy` was false. Consumer audit before shipping:
+  `client/hooks/useNutritionLookup.ts` never reads `.source` from the barcode
+  response at all; `server/routes/public-api.ts`'s `serializeFreeResponse`
+  forwards `row.source` verbatim with no matching (`FreeProductResponse.source`
+  is an unconstrained `z.string()`). No consumer does exact/substring matching
+  on `"openfoodfacts"` — safe to extend.
+- **Low-calorie absolute floor**: a 5 kcal absolute floor, OR'd alongside the
+  15% relative check, rescues low-calorie labels (spices, condiments) from
+  FDA/Codex nearest-5-kcal rounding noise that can exceed 15% relative
+  deviation even for a genuinely correct label.
+- **Numeric-agreement consolidation**: the gate's relative check now calls
+  `valuesMatch(scaledPer100g, offPerServingCal, 0.15)` from
+  `server/lib/verification-consensus.ts` instead of inline math, adding an
+  optional `tolerance` param (default `0.05`, preserving existing callers) to
+  that shared primitive.
+
+**Reusable gotcha surfaced by this refinement**: consolidating a
+hand-written relative-tolerance check onto a shared primitive is not
+automatically behavior-preserving even when the tolerance value itself is
+passed through unchanged. This gate's original inline check divided by
+`offPerServingCal` (a specific, fixed reference operand — the label value);
+`valuesMatch`'s relative branch divides by `max(|a|, |b|)` (symmetric,
+whichever operand is larger). When the two candidate values differ, these
+denominators diverge, silently shifting the exact tolerance boundary (here,
+≈269.6 → ≈263.5 for one fixture — a real, if small and fail-safe, widening).
+**Before adopting a shared tolerance/agreement primitive for an
+existing check, work out whether its denominator convention matches the
+one being replaced — and if you have boundary-pinning regression tests
+(this file's just-under/just-over fixtures), expect them to catch the
+drift; retune them to the new boundary rather than treat a suddenly-failing
+pin as a false positive.**
+
+A related, still-**deferred-to-a-human** item: the original fix's `## Prevention`
+called for a prod cache sweep + delete/re-seed of rows poisoned before this
+fix shipped. That could not be completed autonomously in the follow-up todo
+— not by choice, but because the session's own auto-mode permission
+classifier explicitly blocked every attempt to read production database
+credentials or run even a read-only query against prod (`railway variables`,
+`railway run -- psql ...`), independent of any judgment call made by the
+agent. The exact sweep query and remediation commands are documented in
+`todos/archive/P3-2026-07-17-off-self-consistency-gate-refinements.md`'s
+Updates section for whoever picks this up.
 
 ## Related Files
 
-- `server/services/barcode-lookup.ts` — `offSelfConsistent` + the demoted `reconcilePer100g` call
+- `server/services/barcode-lookup.ts` — `offSelfConsistent` + the demoted `reconcilePer100g` call; `+self-consistent` source marker; `ABSOLUTE_TOLERANCE_FLOOR_KCAL`
 - `server/services/nutrition-lookup.ts` — `offNutrimentsSchema` gained `energy-kcal_serving`/`energy_serving`
-- `server/services/__tests__/barcode-lookup.test.ts` — McSweeney's regression, kJ-only, boundary, and guard tests
+- `server/services/__tests__/barcode-lookup.test.ts` — McSweeney's regression, kJ-only, boundary, and guard tests; low-cal absolute-floor fixtures
+- `server/lib/verification-consensus.ts` — `valuesMatch`'s `tolerance` param, now shared between verification consensus and this gate
+- `server/lib/__tests__/verification-consensus.test.ts` — `tolerance`-param boundary tests
 
 ## See Also
 
