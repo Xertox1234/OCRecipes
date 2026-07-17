@@ -87,13 +87,15 @@ conversion) the trusted value was derived with, or trace values self-contradict
 - Test the special case with inputs that DIFFER from the prod repro along each
   guard dimension: the PR's original test used serving `"500g"` — the one
   format the inherited grams guard accepts — so the too-narrow failure was
-  invisible until review. (TDD red runs for all three review fixes confirmed
-  each was a live defect: 51 phantom kcal, and two wrongly-kept zeros.)
+  invisible until review. (TDD red runs for all four review fixes across two
+  rounds confirmed each was a live defect: 51 phantom kcal, two wrongly-kept
+  zeros, and a legitimate zero-cal product losing its shield to a 2 kJ
+  rounding artifact.)
 
 ## Related Files
 
 - `server/services/barcode-lookup.ts` — `offSelfConsistent` gate, `ZERO_CAL_MAX_MACRO_KCAL_100G`
-- `server/services/__tests__/barcode-lookup.test.ts` — "(PR #656 review)" tests: unparseable-serving shield, macro contradiction, kJ contradiction
+- `server/services/__tests__/barcode-lookup.test.ts` — "(PR #656 review)" tests: unparseable-serving shield, macro contradiction, kJ contradiction, plus the "round 2" trace-kJ (2 kJ) shield-retention test
 
 ## See Also
 
