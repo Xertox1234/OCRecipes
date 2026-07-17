@@ -333,3 +333,186 @@ describe("lookupBarcode — isServingDataTrusted regression (P2-2026-07-14)", ()
     expect(result!.isServingDataTrusted).toBe(false);
   });
 });
+
+describe("lookupBarcode — self-consistent OFF label vs name-matched secondary (McSweeney's case, 2026-07-17)", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("keeps OFF's calories when its per-serving, per-100g, and serving size corroborate each other, even if a CNF name-match disagrees >2x", async () => {
+    // Real-world case: McSweeney's Pepperoni & Cheddar Cheese Sticks
+    // (barcode 0778918011332). OFF has the package data exactly right and
+    // internally consistent: 344.4 kcal/100g × 90g/100 = 310 kcal/serving,
+    // matching energy-kcal_serving AND the physical package. But the CNF
+    // name-search (via the "cheese snack" category term) fuzzy-matched a
+    // generic cheese product at ~109 kcal/100g — a DIFFERENT food. The old
+    // preferSecondaryOnDiscrepancy policy replaced OFF's correct 344 with
+    // 109, displaying 98 kcal for a 310-kcal serving. A label that agrees
+    // with itself must not be overridden by a fuzzy name match.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Original Pep'n Ched",
+              product_name_en: "Pepperoni & Cheddar Cheese Sticks",
+              brands: "McSweeney's",
+              serving_size: "90 g",
+              serving_quantity: 90,
+              categories_tags: ["en:cheese-snack"],
+              nutriments: {
+                "energy-kcal_100g": 344.444444444444,
+                "energy-kcal_serving": 310,
+                proteins_100g: 21.1111111111111,
+                carbohydrates_100g: 1.11111111111111,
+                fat_100g: 28.8888888888889,
+                sodium_100g: 0.9,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 130,
+              food_description: "Cheese snack, processed cheese product",
+            },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 130,
+              nutrient_value: 109,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("0778918011332");
+    expect(result).not.toBeNull();
+    // OFF wins: the self-consistent label data is kept, not the CNF generic.
+    // (per100g passes through OFF's raw float unrounded — only perServing,
+    // the displayed value, is rounded.)
+    expect(result!.per100g.calories).toBeCloseTo(344.4, 1);
+    expect(result!.perServing.calories).toBe(310);
+    expect(result!.servingInfo.grams).toBe(90);
+    expect(result!.servingInfo.wasCorrected).toBe(false);
+    expect(result!.isServingDataTrusted).toBe(true);
+    // A rejected secondary is neither the source nor a verifier.
+    expect(result!.source).toBe("openfoodfacts");
+  });
+
+  it("still swaps to the secondary on discrepancy when OFF has NO per-serving energy to corroborate its per-100g (Sugar case must keep working)", async () => {
+    // Guard against over-correcting: the existing "OFF is wildly wrong" swap
+    // (50 kcal/100g sugar vs CNF's 387) must survive. Here OFF has no
+    // energy-kcal_serving, so there is no self-consistency signal and the
+    // secondary replacement stays active.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Sugar",
+              serving_size: "40g",
+              nutriments: {
+                "energy-kcal_100g": 50,
+                proteins_100g: 0,
+                carbohydrates_100g: 12,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 4318, food_description: "Sweets, sugars, granulated" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 4318,
+              nutrient_value: 387,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("999888777");
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("cnf");
+    expect(result!.per100g.calories).toBe(387);
+  });
+
+  it("does not treat a label as self-consistent when per-serving disagrees with per-100g x grams (garbage OFF entry)", async () => {
+    // OFF entry where someone entered per-serving calories that contradict
+    // the product's own per-100g × serving-size math (say a copy-paste from a
+    // different size variant). No self-consistency → the secondary still wins
+    // on discrepancy.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Sugar",
+              serving_size: "40g",
+              nutriments: {
+                "energy-kcal_100g": 50, // wrong
+                "energy-kcal_serving": 155, // implies 387/100g — contradicts the 50 above
+                proteins_100g: 0,
+                carbohydrates_100g: 12,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 4318, food_description: "Sweets, sugars, granulated" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 4318,
+              nutrient_value: 387,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("999888777");
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("cnf");
+    expect(result!.per100g.calories).toBe(387);
+  });
+});

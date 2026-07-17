@@ -366,6 +366,35 @@ export async function lookupBarcode(
         : undefined,
   };
 
+  // OFF's own per-serving energy, used only as a self-consistency signal below.
+  const offPerServingCal =
+    nm["energy-kcal_serving"] ??
+    (nm.energy_serving !== undefined
+      ? Math.round(nm.energy_serving / 4.1868)
+      : undefined);
+
+  // When OFF's per-serving, per-100g, and serving-size values corroborate each
+  // other (per100g × grams/100 ≈ perServing within 15%), the entry is
+  // near-certainly transcribed from the real package label — three
+  // independently-entered fields agreeing by accident is unlikely. The CNF/USDA
+  // cross-validation below is a NAME match that can land on a different food
+  // entirely (a "cheese snack" category search matching a ~109 kcal/100g
+  // generic against 344 kcal/100g cheese sticks — barcode 0778918011332), so a
+  // self-consistent label must demote the secondary to gap-fill only, never
+  // replacement. Entries missing per-serving energy (most of OFF) keep the
+  // existing replace-on-discrepancy behavior — self-agreement can't be checked.
+  const offLabelGrams = parseServingGrams(offProduct?.serving_size || "");
+  const offSelfConsistent =
+    offPerServingCal !== undefined &&
+    offPerServingCal > 0 &&
+    offLabelGrams !== null &&
+    offLabelGrams > 0 &&
+    offPer100g.calories !== undefined &&
+    offPer100g.calories > 0 &&
+    Math.abs((offPer100g.calories * offLabelGrams) / 100 - offPerServingCal) /
+      offPerServingCal <=
+      0.15;
+
   // ── Step 2b: If OFF has no product, try USDA branded food by UPC ─
   // Some products exist in USDA but not OFF (branded/US-market items).
   let usdaByUPC: {
@@ -494,12 +523,14 @@ export async function lookupBarcode(
       rawServing = usdaByUPC.labelServingSize;
     }
   } else {
+    // preferSecondaryOnDiscrepancy: a self-consistent OFF label (see Step 2)
+    // is authoritative — the name-matched secondary may only gap-fill.
     ({ per100g, source } = reconcilePer100g(
       offPer100g,
       secondaryPer100g,
       secondarySource,
       "openfoodfacts",
-      true,
+      !offSelfConsistent,
       code,
     ));
   }

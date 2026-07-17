@@ -119,6 +119,8 @@ export const offNutrimentsSchema = z
   .object({
     "energy-kcal_100g": offNumericField,
     energy_100g: offNumericField,
+    "energy-kcal_serving": offNumericField,
+    energy_serving: offNumericField,
     proteins_100g: offNumericField,
     carbohydrates_100g: offNumericField,
     fat_100g: offNumericField,
