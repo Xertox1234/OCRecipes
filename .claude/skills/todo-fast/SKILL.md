@@ -57,10 +57,16 @@ Skip this phase entirely for a local-diagnosis todo (Phase 0 step 9) — go dire
 
 ```bash
 SLUG="<todo filename minus .md>"
-git worktree add ".claude/worktrees/agent-todo-fast-$SLUG" -b "todo/$SLUG" "$BASE_BRANCH"
-WORKTREE="$(cd ".claude/worktrees/agent-todo-fast-$SLUG" && pwd)"
+# ABSOLUTE destination, derived from the true main checkout — a relative path
+# while cwd is already inside another worktree nests worktrees on disk, which
+# defeated the isolation guard's path math (see the guardrails spec §3.3).
 MAIN_CHECKOUT="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+WORKTREE="$MAIN_CHECKOUT/.claude/worktrees/agent-todo-fast-$SLUG"
+git worktree add "$WORKTREE" -b "todo/$SLUG" "$BASE_BRANCH"
 ln -sf "$MAIN_CHECKOUT/node_modules" "$WORKTREE/node_modules"
+# Register the worktree contract: while it exists, the PreToolUse guards DENY
+# mutating operations outside this worktree (wrong-checkout protection).
+bash scripts/declare-worktree.sh "$WORKTREE"
 ```
 
 `.husky/post-checkout` auto-symlinks `.env*` and `docs/LEARNINGS.md` into a freshly-checked-out worktree, but NOT `node_modules` — that's normally provided by the Agent tool's own `isolation: "worktree"` dispatch mechanism (what `/todo`'s executor uses), which this Phase deliberately does not use (a shared multi-agent worktree needs one `git worktree add`, not a fresh worktree per dispatch). Without the explicit symlink above, Phase 6's `npm`/`vitest` commands fail with module-not-found errors — not a graceful test failure, a missing-dependency crash — on every run.
@@ -72,7 +78,7 @@ Record `$WORKTREE` (absolute path) — every dispatch prompt below substitutes i
 **Dispatch contract, by agent type** — this determines whether an agent needs to `cd` or can use `git -C`:
 
 - **Read-only agents** (`Plan` in Phase 3, `todo-researcher` in Phase 2, reviewers in Phase 6): no `cd`. They only run read/diff commands — use `git -C "$WORKTREE"` for any git operation. No Edit/Write access, so `.claude/hooks/guard-worktree-isolation.sh` (the PreToolUse hook that blocks an edit escaping a worktree into the main checkout) never applies to them regardless.
-- **`todo-fast-implementer` agents (Phase 5):** the prompt's first instruction must be an explicit `cd "$WORKTREE"`, then `pwd` and `git rev-parse --show-toplevel` to confirm — mirroring `todo-executor.md` Step 0. This is required, not optional: a dispatched subagent does not inherit the parent session's cwd, and `git -C` never changes a session's _tracked_ cwd — but `guard-worktree-isolation.sh` keys its protection off exactly that tracked cwd (its `.cwd` field, matched against `*/.claude/worktrees/agent-*`). Skip the `cd` and the implementer loses the same structural protection `todo-executor` gets for free via `isolation: "worktree"`.
+- **`todo-fast-implementer` agents (Phase 5):** the prompt's first instruction must be an explicit `cd "$WORKTREE"`, then `pwd` and `git rev-parse --show-toplevel` to confirm — mirroring `todo-executor.md` Step 0. This is required, not optional: a dispatched subagent does not inherit the parent session's cwd, and `git -C` never changes a session's _tracked_ cwd — but `guard-worktree-isolation.sh` keys its protection off exactly that tracked cwd (its `.cwd` field, matched against `*/.claude/worktrees/agent-*`). Skip the `cd` and the implementer loses the same structural protection `todo-executor` gets for free via `isolation: "worktree"`. Immediately after the `cd`, the prompt must also run `bash scripts/declare-worktree.sh "$WORKTREE"` — idempotent (all implementers share this one worktree), and it arms the registry-mode guards for the implementer's own tool calls, which the cwd-based fallback alone does not guarantee.
 
 Naming the worktree under `.claude/worktrees/agent-*` is deliberate — it matches `/todo`'s own Phase 0/5 cleanup sweep glob, so a crashed `/todo-fast` run is also swept by the next `/todo` invocation as a backstop, on top of this skill's own cleanup (see the Cleanup section near the end of this file).
 
@@ -171,11 +177,14 @@ LAND_INVOKED: <yes | no (auto-merge enabled, not needed) | n/a (no PR)>
 
 ## Cleanup
 
-Force-remove the shared worktree at the end of the run, success or failure:
+Force-remove the shared worktree at the end of the run, success or failure. Before `git worktree remove`, release the contract: `bash scripts/declare-worktree.sh --remove "$WORKTREE"` (a stale entry would deny subsequent main-checkout operations for the rest of the session).
 
 ```bash
-git worktree unlock ".claude/worktrees/agent-todo-fast-$SLUG" 2>/dev/null
-git worktree remove --force ".claude/worktrees/agent-todo-fast-$SLUG" 2>/dev/null
+bash scripts/declare-worktree.sh --remove "$WORKTREE"
+# Absolute $WORKTREE here too — a relative path from the wrong cwd silently
+# no-ops (2>/dev/null) and leaks the worktree on disk.
+git worktree unlock "$WORKTREE" 2>/dev/null
+git worktree remove --force "$WORKTREE" 2>/dev/null
 git worktree prune
 ```
 

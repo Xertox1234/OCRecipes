@@ -6,6 +6,11 @@ set -uo pipefail
 HOOK="$(cd "$(dirname "$0")" && pwd)/guard-worktree-isolation.sh"
 PASS=0; FAIL=0
 
+# Hermeticity: an inherited GIT_DIR would make the real-git fixture below target
+# the CALLER's repo (docs/solutions/logic-errors/inherited-git-dir-overrides-git-c-in-hook-self-tests-2026-06-26.md).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+CALLER_STATE_BEFORE=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
+
 # Run the hook with $1 as stdin JSON; echo its stdout.
 run_hook() { echo "$1" | bash "$HOOK" 2>/dev/null; }
 
@@ -65,9 +70,102 @@ assert_allow "absolute path outside the repo is allowed" \
 assert_allow "empty MAIN_ROOT edge case fails open" \
   '{"cwd":"/.claude/worktrees/agent-abc","tool_input":{"file_path":"/etc/passwd"}}'
 
-# Fail open: malformed JSON input.
-assert_allow "malformed JSON fails open" \
+# Fail open: malformed JSON envelope — the session (and thus registry) is
+# unknowable, so this falls through to fallback mode and allows.
+assert_allow "malformed JSON envelope fails open (fallback mode)" \
   'not json at all'
+
+# ---------- REGISTRY MODE ----------
+SESSION="test-guard-$$"
+REG_DIR="/tmp/claude-worktree-contracts-$SESSION"
+WT_A='/Users/x/projects/OCRecipes/.claude/worktrees/agent-aaa'
+WT_B='/Users/x/projects/OCRecipes/.claude/worktrees/agent-bbb'
+MAIN='/Users/x/projects/OCRecipes'
+cleanup_registry() { rm -rf "$REG_DIR"; }
+trap cleanup_registry EXIT
+mkdir -p "$REG_DIR"
+printf '%s' "$WT_A" > "$REG_DIR/aaaa000000000001"
+printf '%s' "$WT_B" > "$REG_DIR/bbbb000000000002"
+
+# THE incident: cwd is the main checkout while an assignment is active.
+assert_deny "registry: main-checkout write while assignment active is denied" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"file_path\":\"$MAIN/server/app.ts\"}}"
+
+assert_deny "registry: RELATIVE path resolving into the main checkout is denied" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"file_path\":\"server/app.ts\"}}"
+
+assert_allow "registry: write inside worktree A is allowed" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"$WT_A/server/app.ts\"}}"
+
+# Concurrency: entry B must not poison agent A's legitimate writes, and vice versa.
+assert_allow "registry: concurrent worktree B write is allowed (no cross-contamination)" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_B\",\"tool_input\":{\"file_path\":\"$WT_B/client/App.tsx\"}}"
+
+assert_allow "registry: relative path inside a registered worktree is allowed" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"server/app.ts\"}}"
+
+assert_allow "registry: /tmp allowlist" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"file_path\":\"/tmp/scratch.txt\"}}"
+
+assert_allow "registry: ~/.claude allowlist" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"file_path\":\"$HOME/.claude/plans/x.md\"}}"
+
+# Path traversal: dot segments must fail closed while a contract is active — a
+# lexical prefix match would let $WT/../../.. escape into the main checkout, and
+# /tmp/../ would launder a main-checkout path through the allowlist.
+assert_deny "registry: absolute path with .. escaping a worktree is denied" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"$WT_A/../../../server/app.ts\"}}"
+assert_deny "registry: relative path with .. escaping the worktree is denied" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"../../../server/app.ts\"}}"
+assert_deny "registry: allowlist prefix with .. traversal is denied" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"/tmp/../Users/x/projects/OCRecipes/server/app.ts\"}}"
+
+# NotebookEdit uses notebook_path — must be covered too.
+assert_deny "registry: notebook_path into the main checkout is denied" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"notebook_path\":\"$MAIN/analysis.ipynb\"}}"
+
+# Malformed entry (relative content) → fail closed.
+printf '%s' 'not-absolute' > "$REG_DIR/cccc000000000003"
+assert_deny "registry: malformed entry fails closed" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"$WT_A/server/app.ts\"}}"
+rm -f "$REG_DIR/cccc000000000003"
+
+# Bypass.
+out=$(echo "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"file_path\":\"$MAIN/server/app.ts\"}}" \
+  | SKIP_WORKTREE_CONTRACT=1 bash "$HOOK" 2>/dev/null)
+if [ -z "$out" ]; then echo "PASS: SKIP_WORKTREE_CONTRACT=1 bypasses"; PASS=$((PASS+1));
+else echo "FAIL: SKIP_WORKTREE_CONTRACT=1 bypasses"; FAIL=$((FAIL+1)); fi
+
+cleanup_registry
+
+# ---------- FALLBACK MODE: nested-worktree fixture (real git) ----------
+# A worktree nested inside another worktree defeated the old sed path math
+# (MAIN_ROOT resolved to the OUTER worktree, so a main-checkout write was allowed).
+# The --git-common-dir derivation must deny it.
+# pwd -P: use the PHYSICAL path — macOS mktemp returns /var/folders/... (symlinked),
+# but git reports /private/var/..., and the hook compares prefixes literally.
+NEST_TMP=$(cd "$(mktemp -d)" && pwd -P)
+trap 'cleanup_registry; rm -rf "$NEST_TMP"' EXIT
+(
+  cd "$NEST_TMP"
+  git init -q main
+  cd main
+  git -c user.email=t@t -c user.name=t commit --allow-empty -q -m init
+  git worktree add -q ".claude/worktrees/agent-outer"
+  cd ".claude/worktrees/agent-outer"
+  git worktree add -q ".claude/worktrees/agent-inner"   # relative path → nests on disk
+) >/dev/null 2>&1
+NEST_MAIN="$NEST_TMP/main"
+NEST_INNER="$NEST_MAIN/.claude/worktrees/agent-outer/.claude/worktrees/agent-inner"
+assert_deny "fallback: nested worktree cannot write to the TRUE main checkout" \
+  "{\"cwd\":\"$NEST_INNER\",\"tool_input\":{\"file_path\":\"$NEST_MAIN/server/app.ts\"}}"
+
+CALLER_STATE_AFTER=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
+if [ "$CALLER_STATE_BEFORE" = "$CALLER_STATE_AFTER" ]; then
+  echo "PASS: caller repo untouched (hermetic)"; PASS=$((PASS+1))
+else
+  echo "FAIL: caller repo untouched (hermetic)"; FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
