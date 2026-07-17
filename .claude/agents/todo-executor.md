@@ -18,6 +18,7 @@ git rev-parse --show-toplevel
 
 - If `pwd` is **not** inside a `.claude/worktrees/agent-*` directory, report `blocked` with reason `"not running in an isolated worktree — pwd is <pwd>"` and stop. Do not edit files.
 - Every `Edit`, `Write`, and `MultiEdit` path must resolve **inside this worktree** (the directory `pwd` reported). When a todo's Implementation Notes reference a file like `server/routes/foo.ts`, that path is relative to your worktree root — never expand it to an absolute path under the main checkout (a `/Users/.../OCRecipes/...` path with no `.claude/worktrees/agent-*` segment). A `PreToolUse` guardrail will deny any edit that targets the main checkout from inside a worktree; if you hit that denial, you used a main-rooted path — re-issue the edit against your worktree.
+- **Declare your worktree contract** so the PreToolUse guards enforce your isolation mechanically (not just by convention): `bash scripts/declare-worktree.sh "$(git rev-parse --show-toplevel)"`. This registers your worktree in the session's contract registry; entries from parallel executors coexist. You release it in Step 11 (`--remove`), and the orchestrator runs `--clear` as a crash backstop.
 
 ### LSP warm-up (mandatory)
 
@@ -226,7 +227,8 @@ Execute the todo:
 3. Apply patterns discovered in Step 3, including any `verified_solutions` surfaced there — treat a glob-matched solution's `Solution`/`Prevention` (bug-track) or `Rule` (knowledge-track) as **authoritative guidance**, following it over re-derivation. If a solution conflicts with the todo, Acceptance Criteria win; flag the conflict in your Step 11 report rather than silently diverging. Follow established conventions — do not introduce new patterns without cause.
 4. Consider risks and constraints noted in the todo's **Risks** section. If a risk materializes during implementation, adapt the approach or escalate via the Failure Path.
 5. Keep changes minimal. Only modify what is necessary to satisfy the acceptance criteria. Do not refactor adjacent code, add features, or gold-plate.
-6. **Track all files you modify** during this step — you will need this list for scoped reverts in the Failure Path.
+6. **Honor the todo's Scope Contract section** (when present) as a hard boundary: use ONLY the mechanisms it lists and touch ONLY files within its stated scope. Introducing a mechanism, file, or abstraction the contract excludes is a CRITICAL (blocking) review finding per `docs/AI_WORKFLOW.md` → Tier handling — it will block you at Step 6, so do not write it at Step 4.
+7. **Track all files you modify** during this step — you will need this list for scoped reverts in the Failure Path.
 
 ---
 
@@ -282,7 +284,7 @@ Otherwise:
 
 1. **Inspect the diff** (`git diff HEAD -- .`) — file paths **and** content.
 2. **Always include `code-reviewer`** (cross-cutting baseline), then **add the relevant domain reviewers** from the Review Policy roster — typically **1–2 more, so ≤3 total for a single todo** (review runs inside an already-parallel `/todo` batch, so keep fan-out small). Match reviewers by domain: path is a hint, content overrides (a JWT/ownership change → add `security-auditor`; a route, Drizzle query, or service-layering change → add `server-reviewer`; a screen, camera, accessibility, or client-perf change → add `mobile-reviewer`; an AI-service or nutrition-calculation change → add `ai-reviewer`; `any`/Zod/testing changes are already the `code-reviewer` baseline's lens). For a docs/config-only or trivial diff, `code-reviewer` alone is enough.
-3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash tool calls alongside these Agent calls — see Step 5b for why.
+3. **Dispatch the selected reviewers in parallel** (one Agent call each, in a single message), using the dispatch prompt **from `docs/AI_WORKFLOW.md` → Review Policy — read it from that file; it is not restated here** (a previous inline copy drifted). Substitute the agent, its domain lens, the literal `$WORKTREE` path, `$BRANCH`/`$HEAD_SHORT`, the changed-file list, and `todo: <todo title>` as the context label. Each reviewer **must use `git -C "$WORKTREE"`** (its ambient cwd is the main checkout) — otherwise it reviews an empty diff and falsely returns "No findings". Do not use `cd` (a leading `cd` can trigger a permission prompt that stalls an autonomous run). **In this same message, also issue Step 5b's full-suite commands** (`npm run test:run`, `npm run check:types`, `npm run lint`) as parallel Bash tool calls alongside these Agent calls — see Step 5b for why. If the todo carries a **Scope Contract** section, paste it verbatim into every reviewer prompt, appending: "Diff every added mechanism/file against this Scope Contract; anything it excludes is a CRITICAL finding."
 
 4. **Merge** all reviewers' findings into one list (dedupe where two reviewers flag the same file:line). Store the merged result in working context as `review_output`, noting which agent reported each finding.
 
@@ -569,6 +571,8 @@ Todo: `todos/<filename>.md` (archived in this commit)
 ---
 
 ## Step 11 — Report
+
+Before composing the report, release your worktree contract: `bash scripts/declare-worktree.sh --remove "$(git rev-parse --show-toplevel)"`. (The orchestrator's Phase 5 `--clear` is the backstop if you crash before this line.)
 
 Return a structured result to the orchestrator.
 
