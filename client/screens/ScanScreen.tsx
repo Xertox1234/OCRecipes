@@ -127,17 +127,6 @@ export default function ScanScreen() {
   // no feature prop, so the copy is generic.
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-  // TEMPORARY DIAGNOSTIC — investigating a report that barcode auto-capture
-  // never locks on iOS. Remove this state + its render block (and the debug
-  // overlay + tally update in onBarcodeScanned) once the root cause is
-  // confirmed or this fix is verified to resolve it.
-  const [barcodeDebug, setBarcodeDebug] = useState({
-    calls: 0,
-    lastAction: "",
-    lastBarcode: "",
-    frameCount: 0,
-  });
-
   const cameraRef = useRef<CameraRef>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const barcodeAbsentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -356,14 +345,6 @@ export default function ScanScreen() {
           : { status: "idle" };
 
       const decision = evaluateBarcodeDetection(tracking, barcode);
-
-      // TEMPORARY DIAGNOSTIC — see barcodeDebug declaration above.
-      setBarcodeDebug((prev) => ({
-        calls: prev.calls + 1,
-        lastAction: decision.action,
-        lastBarcode: barcode,
-        frameCount: decision.frameCount,
-      }));
 
       if (decision.action === "start") {
         dispatch({ type: "FIRST_BARCODE_DETECTED", barcode, bounds });
@@ -635,22 +616,6 @@ export default function ScanScreen() {
               : "Daily limit reached"}
           </Text>
         )}
-      </View>
-
-      {/* TEMPORARY DIAGNOSTIC overlay — see barcodeDebug declaration above.
-          pointerEvents="none" only disables touch — the a11y props below keep
-          VoiceOver/TalkBack from landing on raw diagnostic text. */}
-      <View
-        style={styles.debugOverlay}
-        pointerEvents="none"
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
-      >
-        <Text style={styles.debugOverlayText}>
-          phase:{scanPhase.type} calls:{barcodeDebug.calls} fc:
-          {barcodeDebug.frameCount} last:{barcodeDebug.lastAction}(
-          {barcodeDebug.lastBarcode})
-        </Text>
       </View>
 
       {/* Coach hint */}
@@ -1033,21 +998,6 @@ const styles = StyleSheet.create({
   permissionCancel: { paddingVertical: 12 },
   permissionCancelText: { fontSize: 15 },
   scanCountText: { color: "rgba(255,255,255,0.7)", fontSize: 12 },
-  // TEMPORARY DIAGNOSTIC — remove alongside barcodeDebug state.
-  debugOverlay: {
-    position: "absolute",
-    top: 160,
-    left: 8,
-    right: 8,
-    alignItems: "center",
-  },
-  debugOverlayText: {
-    color: "#00FF00", // hardcoded — high-contrast debug text, intentional
-    fontSize: 10,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
   confirmOverlay: {
     position: "absolute",
     bottom: 0,
