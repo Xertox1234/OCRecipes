@@ -3,7 +3,9 @@ import type { ScanPhase } from "../types/scan-phase";
 
 export const BARCODE_RETICLE = { width: 260, height: 160 } as const;
 export const LABEL_RETICLE = { width: 200, height: 270 } as const;
-const LOCK_THRESHOLD_FRAMES = 7;
+// Shared with scan-screen-utils' lock decision — the reticle's confidence ring
+// and the actual barcode-lock math must derive from the same frame budget.
+export const LOCK_THRESHOLD_FRAMES = 7;
 
 export interface ReticleTarget {
   cx: number;

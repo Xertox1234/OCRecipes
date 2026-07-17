@@ -413,6 +413,176 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result!.source).toBe("openfoodfacts");
   });
 
+  it("treats deviation just under the 15% tolerance as self-consistent (label-rounding noise)", async () => {
+    // per100g 344.444 × 90g/100 = 310.0 derived; energy-kcal_serving 270 →
+    // |310 − 270| / 270 ≈ 14.8% — inside the tolerance. Pins the cutoff:
+    // tightening it to e.g. 0.05 (silently reverting real-world label-rounded
+    // entries to the old name-match replacement bug) must fail this test.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Original Pep'n Ched",
+              serving_size: "90 g",
+              categories_tags: ["en:cheese-snack"],
+              nutriments: {
+                "energy-kcal_100g": 344.444444444444,
+                "energy-kcal_serving": 270,
+                proteins_100g: 21.1,
+                carbohydrates_100g: 1.1,
+                fat_100g: 28.9,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 130,
+              food_description: "Cheese snack, processed cheese product",
+            },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 130,
+              nutrient_value: 109,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("0778918011332");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBeCloseTo(344.4, 1);
+    expect(result!.source).toBe("openfoodfacts");
+  });
+
+  it("treats deviation just over the 15% tolerance as NOT self-consistent — secondary swap stays active", async () => {
+    // Same fixture but energy-kcal_serving 267 → |310 − 267| / 267 ≈ 16.1% —
+    // outside the tolerance, so no shield: the >2x discrepancy path replaces
+    // with CNF as before. Pins the cutoff from the other side (loosening to
+    // e.g. 0.5 must fail this test).
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Original Pep'n Ched",
+              serving_size: "90 g",
+              categories_tags: ["en:cheese-snack"],
+              nutriments: {
+                "energy-kcal_100g": 344.444444444444,
+                "energy-kcal_serving": 267,
+                proteins_100g: 21.1,
+                carbohydrates_100g: 1.1,
+                fat_100g: 28.9,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 130,
+              food_description: "Cheese snack, processed cheese product",
+            },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 130,
+              nutrient_value: 109,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("0778918011332");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(109);
+    expect(result!.source).toBe("cnf");
+  });
+
+  it("derives the self-consistency signal from kJ-only energy_serving when energy-kcal_serving is absent", async () => {
+    // Same McSweeney's data, but the per-serving energy arrives only as kJ
+    // (energy_serving: 1297 kJ ≈ 310 kcal via /4.1868) — the conversion branch
+    // must still corroborate per-100g × grams and block the secondary swap.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Original Pep'n Ched",
+              product_name_en: "Pepperoni & Cheddar Cheese Sticks",
+              brands: "McSweeney's",
+              serving_size: "90 g",
+              categories_tags: ["en:cheese-snack"],
+              nutriments: {
+                "energy-kcal_100g": 344.444444444444,
+                energy_serving: 1297, // kJ only — no energy-kcal_serving
+                proteins_100g: 21.1111111111111,
+                carbohydrates_100g: 1.11111111111111,
+                fat_100g: 28.8888888888889,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 130,
+              food_description: "Cheese snack, processed cheese product",
+            },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 130,
+              nutrient_value: 109,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("0778918011332");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBeCloseTo(344.4, 1);
+    expect(result!.perServing.calories).toBe(310);
+    expect(result!.source).toBe("openfoodfacts");
+  });
+
   it("still swaps to the secondary on discrepancy when OFF has NO per-serving energy to corroborate its per-100g (Sugar case must keep working)", async () => {
     // Guard against over-correcting: the existing "OFF is wildly wrong" swap
     // (50 kcal/100g sugar vs CNF's 387) must survive. Here OFF has no

@@ -3,6 +3,7 @@ import type { PhotoIntent } from "@shared/constants/preparation";
 import type { PremiumFeatureKey, PremiumFeatures } from "@shared/types/premium";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
+import { LOCK_THRESHOLD_FRAMES } from "@/camera/components/ScanReticle-utils";
 import { logger } from "@/lib/logger";
 
 /** Screen routing target for auto-classification results */
@@ -210,8 +211,9 @@ export type BarcodeTrackingDecision =
   | { action: "update"; frameCount: number; confidence: number }
   | { action: "lock"; frameCount: number };
 
-// confidence reaches 1.0 at 7 consecutive matching frames; lock fires at ≥0.85 (6 frames).
-const FRAMES_FOR_FULL_CONFIDENCE = 7;
+// confidence reaches 1.0 at LOCK_THRESHOLD_FRAMES (7) consecutive matching
+// frames; lock fires at ≥0.85 (6 frames). Shared with ScanReticle-utils so the
+// reticle's visual confidence ring can never desync from the real lock math.
 const LOCK_CONFIDENCE_THRESHOLD = 0.85;
 
 /**
@@ -229,7 +231,7 @@ export function evaluateBarcodeDetection(
     return { action: "start", barcode: scannedBarcode, frameCount: 1 };
   }
   const frameCount = tracking.frameCount + 1;
-  const confidence = Math.min(frameCount / FRAMES_FOR_FULL_CONFIDENCE, 1.0);
+  const confidence = Math.min(frameCount / LOCK_THRESHOLD_FRAMES, 1.0);
   if (confidence >= LOCK_CONFIDENCE_THRESHOLD) {
     return { action: "lock", frameCount };
   }

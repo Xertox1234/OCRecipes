@@ -459,6 +459,17 @@ describe("scan-screen-utils", () => {
       expect(decision).toEqual({ action: "lock", frameCount: 6 });
     });
 
+    it("stays in update one frame below the lock threshold (5/7 ≈ 0.714 < 0.85)", () => {
+      // Pins the cutoff itself: lowering LOCK_CONFIDENCE_THRESHOLD to e.g. 0.7
+      // (locking one frame early on a less-stable read) must fail this test.
+      const decision = evaluateBarcodeDetection(
+        { status: "tracking", barcode: "012345", frameCount: 4 },
+        "012345",
+      );
+      expect(decision.action).toBe("update");
+      expect(decision).toMatchObject({ frameCount: 5 });
+    });
+
     it("restarts tracking (does not accumulate) when the scanned barcode changes mid-track", () => {
       const decision = evaluateBarcodeDetection(
         { status: "tracking", barcode: "012345", frameCount: 5 },

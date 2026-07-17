@@ -146,6 +146,10 @@ export default function ScanScreen() {
   const hasLockedRef = useRef(false);
   const sessionNavigatedRef = useRef(false);
   const scanPhaseRef = useRef(scanPhase);
+  // Render-time mirror (docs/rules/hooks.md): onBarcodeScanned reads this ref
+  // synchronously at native-camera-frame cadence, so an effect-based mirror's
+  // post-paint lag would replay a stale phase for a frame after every dispatch.
+  scanPhaseRef.current = scanPhase;
   const reducedMotionRef = useRef(reducedMotion);
   const isCapturingRef = useRef(false);
   // Re-entrancy guard for onSmartPhotoConfirm: it is async (on-device OCR for
@@ -172,11 +176,6 @@ export default function ScanScreen() {
   useEffect(() => {
     if (!isFocused) dispatch({ type: "RESET" });
   }, [isFocused]);
-
-  // Keep scanPhaseRef current so onShutterPress can read it without being in deps
-  useEffect(() => {
-    scanPhaseRef.current = scanPhase;
-  }, [scanPhase]);
 
   // Coach hint escalation timer
   useEffect(() => {
@@ -638,8 +637,15 @@ export default function ScanScreen() {
         )}
       </View>
 
-      {/* TEMPORARY DIAGNOSTIC overlay — see barcodeDebug declaration above */}
-      <View style={styles.debugOverlay} pointerEvents="none">
+      {/* TEMPORARY DIAGNOSTIC overlay — see barcodeDebug declaration above.
+          pointerEvents="none" only disables touch — the a11y props below keep
+          VoiceOver/TalkBack from landing on raw diagnostic text. */}
+      <View
+        style={styles.debugOverlay}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         <Text style={styles.debugOverlayText}>
           phase:{scanPhase.type} calls:{barcodeDebug.calls} fc:
           {barcodeDebug.frameCount} last:{barcodeDebug.lastAction}(

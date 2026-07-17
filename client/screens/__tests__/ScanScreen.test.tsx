@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, beforeEach } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 
 import ScanScreen from "../ScanScreen";
+import { useBarcodeScannerOutput } from "react-native-vision-camera-barcode-scanner";
 
 const {
   mockGoBack,
@@ -276,6 +277,48 @@ describe("ScanScreen — safe back navigation", () => {
       );
       expect(mockGoBack).not.toHaveBeenCalled();
       expect(mockNavigate).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe("ScanScreen — barcode lock wiring (stale-closure regression, PR #654)", () => {
+  it("locks a barcode driven entirely through the callback captured on the FIRST render", async () => {
+    // The native camera output can keep invoking the callback it captured at
+    // attach time across React commits. The old code read `scanPhase` from the
+    // render closure, so a first-render callback saw IDLE forever and never
+    // accumulated lock frames. The fix reads scanPhaseRef.current (mirrored at
+    // render time). This test drives ONLY the first-render callback: with the
+    // closure bug it never dispatches anything (no product fetch); with the
+    // ref read it must progress HUNTING → TRACKING → LOCKED and fetch the
+    // product (fetchProductInfo fires exactly on BARCODE_LOCKED).
+    renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    expect(firstHandler).toBeDefined();
+
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+
+    // Sequential calls with an effect flush between each — mirrors real frame
+    // cadence, where React commits between native callback invocations. Lock
+    // needs 6 matching frames (frameCount/7 ≥ 0.85).
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+
+    await waitFor(() => {
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "GET",
+        "/api/nutrition/barcode/0778918011332",
+      );
     });
   });
 });
