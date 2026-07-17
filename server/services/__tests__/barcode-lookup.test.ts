@@ -409,15 +409,20 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result!.servingInfo.grams).toBe(90);
     expect(result!.servingInfo.wasCorrected).toBe(false);
     expect(result!.isServingDataTrusted).toBe(true);
-    // A rejected secondary is neither the source nor a verifier.
-    expect(result!.source).toBe("openfoodfacts");
+    // A rejected secondary is neither the source nor a verifier — but the
+    // self-consistent rejection IS distinguishable from "no secondary found"
+    // (todo P3-2026-07-17-off-self-consistency-gate-refinements, AC1).
+    expect(result!.source).toBe("openfoodfacts+self-consistent");
   });
 
   it("treats deviation just under the 15% tolerance as self-consistent (label-rounding noise)", async () => {
-    // per100g 344.444 × 90g/100 = 310.0 derived; energy-kcal_serving 270 →
-    // |310 − 270| / 270 ≈ 14.8% — inside the tolerance. Pins the cutoff:
-    // tightening it to e.g. 0.05 (silently reverting real-world label-rounded
-    // entries to the old name-match replacement bug) must fail this test.
+    // per100g 344.444 × 90g/100 = 310.0 derived; energy-kcal_serving 264 →
+    // |310 − 264| / 310 ≈ 14.8% (relative check delegated to `valuesMatch`,
+    // whose denominator is max(derived, label) — see AC4) — inside the
+    // tolerance. Pins the cutoff from the other side of the "just over" test
+    // below (264/263 bracket the ≈263.5 boundary tightly): tightening it to
+    // e.g. 0.05 (silently reverting real-world label-rounded entries to the
+    // old name-match replacement bug) must fail this test.
     setupFetchMock({
       "openfoodfacts.org": () =>
         Promise.resolve({
@@ -430,7 +435,7 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
               categories_tags: ["en:cheese-snack"],
               nutriments: {
                 "energy-kcal_100g": 344.444444444444,
-                "energy-kcal_serving": 270,
+                "energy-kcal_serving": 264,
                 proteins_100g: 21.1,
                 carbohydrates_100g: 1.1,
                 fat_100g: 28.9,
@@ -466,14 +471,16 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     const result = await lookupBarcode("0778918011332");
     expect(result).not.toBeNull();
     expect(result!.per100g.calories).toBeCloseTo(344.4, 1);
-    expect(result!.source).toBe("openfoodfacts");
+    expect(result!.source).toBe("openfoodfacts+self-consistent");
   });
 
   it("treats deviation just over the 15% tolerance as NOT self-consistent — secondary swap stays active", async () => {
-    // Same fixture but energy-kcal_serving 267 → |310 − 267| / 267 ≈ 16.1% —
-    // outside the tolerance, so no shield: the >2x discrepancy path replaces
-    // with CNF as before. Pins the cutoff from the other side (loosening to
-    // e.g. 0.5 must fail this test).
+    // Same fixture but energy-kcal_serving 263 → |310 − 263| / 310 ≈ 15.2%
+    // (relative check delegated to `valuesMatch`, denominator max(310, 263) =
+    // 310 — see AC4) and |310 − 263| = 47 exceeds the 5 kcal absolute floor
+    // (AC2) too — outside both, so no shield: the >2x discrepancy path
+    // replaces with CNF as before. Pins the cutoff from the other side
+    // (loosening to e.g. 0.5 must fail this test).
     setupFetchMock({
       "openfoodfacts.org": () =>
         Promise.resolve({
@@ -486,7 +493,7 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
               categories_tags: ["en:cheese-snack"],
               nutriments: {
                 "energy-kcal_100g": 344.444444444444,
-                "energy-kcal_serving": 267,
+                "energy-kcal_serving": 263,
                 proteins_100g: 21.1,
                 carbohydrates_100g: 1.1,
                 fat_100g: 28.9,
@@ -522,6 +529,116 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     const result = await lookupBarcode("0778918011332");
     expect(result).not.toBeNull();
     expect(result!.per100g.calories).toBe(109);
+    expect(result!.source).toBe("cnf");
+  });
+
+  it("shields a low-calorie label past the 15% relative tolerance via the absolute floor (~20 kcal/serving, PR review follow-up)", async () => {
+    // FDA/Codex nearest-5-kcal label rounding can push a genuinely correct
+    // low-calorie label past 15% relative deviation even though the absolute
+    // gap is just rounding noise. Here 96 kcal/100g × 25g/100 = 24 derived vs.
+    // a 20 kcal/serving label: |24-20|/24 ≈ 16.7% (the `valuesMatch` relative
+    // check, denominator max(24,20)=24, fails alone) but |24-20| = 4 kcal is
+    // within the 5 kcal absolute floor — the
+    // label stays self-consistent and the disagreeing CNF name-match
+    // (200 kcal/100g, ratio 96/200 = 0.48, out of [0.5, 2.0]) is rejected.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Trail Mix Bar",
+              serving_size: "25g",
+              nutriments: {
+                "energy-kcal_100g": 96,
+                "energy-kcal_serving": 20,
+                proteins_100g: 2,
+                carbohydrates_100g: 14,
+                fat_100g: 3,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 777, food_description: "Trail mix, generic" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 777,
+              nutrient_value: 200,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("111222333");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(96);
+    expect(result!.source).toBe("openfoodfacts+self-consistent");
+  });
+
+  it("does NOT extend the absolute floor past ~5 kcal — a bigger low-calorie gap still swaps to the secondary", async () => {
+    // Same shape as the floor-rescue test above, but the derived value is 26
+    // (104 kcal/100g × 25g/100) vs. the 20 kcal/serving label: |26-20| = 6
+    // kcal exceeds the 5 kcal absolute floor, and the `valuesMatch` relative
+    // check (denominator max(26,20)=26) is 6/26 ≈ 23.1% — also over 15% — so
+    // this is a real discrepancy, not rounding noise: the secondary rescue
+    // must stay active.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Trail Mix Bar",
+              serving_size: "25g",
+              nutriments: {
+                "energy-kcal_100g": 104,
+                "energy-kcal_serving": 20,
+                proteins_100g: 2,
+                carbohydrates_100g: 14,
+                fat_100g: 3,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 778, food_description: "Trail mix, generic" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 778,
+              nutrient_value: 250,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("111222444");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(250);
     expect(result!.source).toBe("cnf");
   });
 
@@ -903,7 +1020,7 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result).not.toBeNull();
     expect(result!.per100g.calories).toBeCloseTo(344.4, 1);
     expect(result!.perServing.calories).toBe(310);
-    expect(result!.source).toBe("openfoodfacts");
+    expect(result!.source).toBe("openfoodfacts+self-consistent");
   });
 
   it("still swaps to the secondary on discrepancy when OFF has NO per-serving energy to corroborate its per-100g (Sugar case must keep working)", async () => {
