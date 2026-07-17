@@ -55,6 +55,7 @@ Agent({
 #### Tier handling (project convention)
 
 - **CRITICAL** blocks — must be fixed before the work proceeds.
+- **Scope-contract violation = CRITICAL.** When the task under review carries a stated Scope Contract (`todos/TEMPLATE.md` section), any added mechanism, file, or abstraction the contract excludes is treated as a correctness failure, not a style nit — it blocks like any other CRITICAL.
 - **WARNING** — fix inline if clearly in-scope and small; otherwise surface it (e.g. `DEFERRED_WARNINGS`) for the user to triage. Never auto-file a follow-up todo.
 - **SUGGESTION** — informational; apply only if trivial and in-scope.
 
