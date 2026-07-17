@@ -633,6 +633,167 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result!.source).toBe("cnf");
   });
 
+  it("shields an explicit 0-and-0 product even when serving_size is unparseable — zero-agreement needs no grams (PR #656 review)", async () => {
+    // Same spring-water shape, but serving_size "1 bottle" (no gram/ml amount —
+    // parseServingGrams → null). 0 × grams / 100 = 0 for ANY grams, so the
+    // zero-corroboration must not sit behind the ratio check's grams guard;
+    // otherwise the phantom-calorie bug recurs for every zero-cal product
+    // whose label serving isn't metric (US fl-oz labels, "1 bottle", absent).
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Natural Spring Water",
+              brands: "PC",
+              serving_size: "1 bottle",
+              nutriments: {
+                "energy-kcal_100g": 0,
+                "energy-kcal_serving": 0,
+                proteins_100g: 0,
+                carbohydrates_100g: 0,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 555, food_description: "Water, spring, bottled" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 555,
+              nutrient_value: 51,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("0060383653293");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(0);
+    expect(result!.source).toBe("openfoodfacts");
+  });
+
+  it("does NOT shield 0-and-0 energy when the entry's own macros say the food has calories — stub rescue stays active (PR #656 review)", async () => {
+    // Contributor stub: energy left at explicit 0s but real macros filled in
+    // (33 g fat + 22 g carbs ≈ 385 kcal/100g by Atwater). Zero energy only
+    // corroborates zero energy when the macros are also ~0 (water, diet soda);
+    // here the entry contradicts itself, so the CNF name-match must still
+    // replace it instead of caching an impossible 0-kcal/33g-fat row.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Peanut Butter",
+              serving_size: "32g",
+              nutriments: {
+                "energy-kcal_100g": 0, // stub
+                "energy-kcal_serving": 0, // stub
+                proteins_100g: 22,
+                carbohydrates_100g: 22,
+                fat_100g: 33,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 4053, food_description: "Peanut butter, smooth" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 4053,
+              nutrient_value: 588,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("999888777");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(588);
+    expect(result!.source).toBe("cnf");
+  });
+
+  it("does NOT shield 0-and-0 kcal fields when the entry's own kJ fields are nonzero — kcal/kJ contradiction stays rescuable (PR #656 review)", async () => {
+    // Explicit kcal 0s alongside real kJ values (energy_100g: 1700 kJ ≈ 406
+    // kcal). The kcal 0 wins the ?? fallback (0 is not nullish), but the
+    // entry's own kJ fields prove the zeros are transcription errors, not a
+    // zero-calorie product — the secondary rescue must stay active.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Granola Bar",
+              serving_size: "40g",
+              nutriments: {
+                "energy-kcal_100g": 0, // bad transcription
+                "energy-kcal_serving": 0, // bad transcription
+                energy_100g: 1700,
+                energy_serving: 680,
+                proteins_100g: 0,
+                carbohydrates_100g: 0,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 2588, food_description: "Granola bar, plain" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 2588,
+              nutrient_value: 471,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("999888777");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(471);
+    expect(result!.source).toBe("cnf");
+  });
+
   it("derives the self-consistency signal from kJ-only energy_serving when energy-kcal_serving is absent", async () => {
     // Same McSweeney's data, but the per-serving energy arrives only as kJ
     // (energy_serving: 1297 kJ ≈ 310 kcal via /4.1868) — the conversion branch
