@@ -384,16 +384,34 @@ export async function lookupBarcode(
   // replacement. Entries missing per-serving energy (most of OFF) keep the
   // existing replace-on-discrepancy behavior — self-agreement can't be checked.
   const offLabelGrams = parseServingGrams(offProduct?.serving_size || "");
-  const offSelfConsistent =
-    offPerServingCal !== undefined &&
-    offPerServingCal > 0 &&
-    offLabelGrams !== null &&
-    offLabelGrams > 0 &&
-    offPer100g.calories !== undefined &&
-    offPer100g.calories > 0 &&
-    Math.abs((offPer100g.calories * offLabelGrams) / 100 - offPerServingCal) /
-      offPerServingCal <=
-      0.15;
+  const offSelfConsistent = (() => {
+    if (
+      offPerServingCal === undefined ||
+      offPer100g.calories === undefined ||
+      offLabelGrams === null ||
+      offLabelGrams <= 0
+    ) {
+      return false;
+    }
+    // Explicit-zero corroboration: BOTH energy fields present and exactly 0
+    // (water, diet soda, black coffee) is agreement, not missing data —
+    // without this, reconcilePer100g's primaryMissing arm (pc === 0) replaces
+    // a true zero with a name-matched secondary's phantom calories (prod
+    // sweep 2026-07-17: spring water cached at 257 kcal). A zero per-100g
+    // paired with a NONZERO per-serving falls through to the ratio check's
+    // > 0 guards and stays unshielded (contradiction → likely unfilled entry).
+    if (offPerServingCal === 0 && offPer100g.calories === 0) {
+      return true;
+    }
+    if (offPerServingCal <= 0 || offPer100g.calories <= 0) {
+      return false;
+    }
+    return (
+      Math.abs((offPer100g.calories * offLabelGrams) / 100 - offPerServingCal) /
+        offPerServingCal <=
+      0.15
+    );
+  })();
 
   // ── Step 2b: If OFF has no product, try USDA branded food by UPC ─
   // Some products exist in USDA but not OFF (branded/US-market items).

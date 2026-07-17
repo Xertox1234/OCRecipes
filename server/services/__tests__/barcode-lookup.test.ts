@@ -525,6 +525,114 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result!.source).toBe("cnf");
   });
 
+  it("treats an explicitly zero-calorie product as self-consistent — CNF name-match must not invent calories for water", async () => {
+    // Real-world case (prod cache sweep 2026-07-17, barcode 0060383653293):
+    // PC Natural Spring Water — OFF correctly has 0 kcal in BOTH per-100g and
+    // per-serving fields with a real "500g" serving size. The old gate required
+    // calories > 0 to claim self-consistency, so reconcilePer100g's
+    // primaryMissing arm (pc === 0) replaced water's true zero with a CNF
+    // name-match (~51 kcal/100g × 5 = 257 kcal of phantom food). Explicit
+    // 0-and-0 agreement IS corroboration — water must stay 0.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Natural Spring Water",
+              brands: "PC",
+              serving_size: "500g",
+              nutriments: {
+                "energy-kcal_100g": 0,
+                "energy-kcal_serving": 0,
+                proteins_100g: 0,
+                carbohydrates_100g: 0,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 555, food_description: "Water, spring, bottled" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 555,
+              nutrient_value: 51,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("0060383653293");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(0);
+    expect(result!.perServing.calories).toBe(0);
+    expect(result!.source).toBe("openfoodfacts");
+  });
+
+  it("does NOT shield a zero per-100g when per-serving is nonzero (unfilled entry) — secondary rescue stays active", async () => {
+    // 0-kcal per-100g with a NONZERO per-serving is contradiction, not
+    // corroboration — likely an unfilled/partial OFF entry. The secondary
+    // replacement (primaryMissing arm) must still rescue it.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Sugar",
+              serving_size: "40g",
+              nutriments: {
+                "energy-kcal_100g": 0, // unfilled
+                "energy-kcal_serving": 155,
+                proteins_100g: 0,
+                carbohydrates_100g: 12,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 4318, food_description: "Sweets, sugars, granulated" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 4318,
+              nutrient_value: 387,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("999888777");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(387);
+    expect(result!.source).toBe("cnf");
+  });
+
   it("derives the self-consistency signal from kJ-only energy_serving when energy-kcal_serving is absent", async () => {
     // Same McSweeney's data, but the per-serving energy arrives only as kJ
     // (energy_serving: 1297 kJ ≈ 310 kcal via /4.1868) — the conversion branch
