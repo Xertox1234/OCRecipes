@@ -66,7 +66,8 @@ MAIN='/Users/x/projects/OCRecipes'
 mkdir -p "$REG_DIR"
 printf '%s' "$WT_A" > "$REG_DIR/aaaa000000000001"
 NEST_TMP=""
-cleanup() { rm -rf "$REG_DIR" "$FAKE_BIN" ${NEST_TMP:+"$NEST_TMP"}; }
+NOJQ_BIN=""
+cleanup() { rm -rf "$REG_DIR" "$FAKE_BIN" ${NEST_TMP:+"$NEST_TMP"} ${NOJQ_BIN:+"$NOJQ_BIN"}; }
 trap cleanup EXIT
 
 # ---------- fast path / no-op ----------
@@ -162,17 +163,19 @@ assert_allow "registry: main-checkout read plus /tmp rm is allowed (no cross-seg
 rm -f "$REG_DIR/dddd000000000004"
 
 # jq missing must fail CLOSED for git/write-shaped commands while any registry
-# exists (mirrors guard-worktree-isolation.sh) — never silently disable the contract.
-if env PATH=/usr/bin:/bin command -v jq >/dev/null 2>&1; then
-  echo "SKIP: jq exists in /usr/bin:/bin — cannot simulate a jq-less environment"
+# exists (mirrors guard-worktree-isolation.sh) — never silently disable the
+# contract. PATH-stripping is environment-dependent (Ubuntu ships /usr/bin/jq),
+# so build a PATH with exactly the binaries the jq-less path needs and no jq.
+NOJQ_BIN=$(mktemp -d)
+for b in bash cat ls grep; do
+  ln -s "$(command -v "$b")" "$NOJQ_BIN/$b"
+done
+out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | env PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null)
+if echo "$out" | grep -q '"permissionDecision":"deny"'; then
+  echo "PASS: jq-less environment fails closed for mutating git under a registry"; PASS=$((PASS+1))
 else
-  out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | env PATH=/usr/bin:/bin bash "$HOOK" 2>/dev/null)
-  if echo "$out" | grep -q '"permissionDecision":"deny"'; then
-    echo "PASS: jq-less environment fails closed for mutating git under a registry"; PASS=$((PASS+1))
-  else
-    echo "FAIL: jq-less environment fails closed for mutating git under a registry"
-    echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
-  fi
+  echo "FAIL: jq-less environment fails closed for mutating git under a registry"
+  echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
 fi
 
 # ---------- advisor branch (fires with or without a registry) ----------
