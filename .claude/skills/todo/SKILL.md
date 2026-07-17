@@ -29,7 +29,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    # (gh failure / limit cap) would otherwise leave stale lists for later steps to trust.
    rm -f /tmp/todo-open-prs.txt /tmp/todo-delete-branches.txt /tmp/todo-closed-unmerged-branches.txt \
      /tmp/todo-local-branches.txt /tmp/todo-delete-local-branches.txt /tmp/todo-local-closed-unmerged-branches.txt \
-     /tmp/todo-local-no-pr-branches.txt
+     /tmp/todo-local-no-pr-branches.txt /tmp/todo-delete-skipped.txt
    # ONE fetch of every PR; the open/merged/closed views below derive from it. gh returns
    # newest-first, so a truncated fetch silently drops the OLDEST PRs — exactly the ones
    # the sweep needs. If the returned count EQUALS the limit, treat the sweep as
@@ -59,7 +59,17 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
        comm -12 /tmp/todo-closed-prs.txt /tmp/todo-remote-branches.txt \
          | comm -23 - /tmp/todo-open-prs.txt > /tmp/todo-closed-unmerged-branches.txt
        if [ -s /tmp/todo-delete-branches.txt ]; then
-         xargs git push origin --delete < /tmp/todo-delete-branches.txt
+         # The snapshot only SELECTS candidates. A FRESH per-branch check gates each
+         # actual delete — the snapshot can go stale mid-run (the PR #520 incident
+         # class: a branch merged-in-snapshot can have a new open PR by delete time).
+         : > /tmp/todo-delete-skipped.txt
+         while read -r b; do
+           if bash scripts/verify-branch-merged.sh "$b"; then
+             git push origin --delete "$b"
+           else
+             echo "$b" >> /tmp/todo-delete-skipped.txt
+           fi
+         done < /tmp/todo-delete-branches.txt
          git fetch --prune --quiet
        fi
        # Local branch cleanup — mirror the remote sweep for local todo/* refs. `git worktree
@@ -73,6 +83,8 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
        merged_only /tmp/todo-local-branches.txt > /tmp/todo-delete-local-branches.txt
        if [ -s /tmp/todo-delete-local-branches.txt ]; then
          while read -r b; do
+           bash scripts/verify-branch-merged.sh "$b" \
+             || { echo "$b" >> /tmp/todo-delete-skipped.txt; continue; }
            out=$(git branch -D "$b" 2>&1) && echo "deleted local branch: $b" \
              || { echo "$out" | grep -qE "checked out at|used by worktree at" || echo "WARNING: could not delete local branch $b: $out"; }
          done < /tmp/todo-delete-local-branches.txt
@@ -96,7 +108,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
 
    If the `gh` call fails (unavailable, unauthenticated, network), the block above deletes the temp file and this step is **SKIPPED** — no stale `/tmp` lists survive for later phases to trust, no branch deletion happens, and Phase 2 fetches its own open-PR list (worktree cleanup in step 1 still ran). Continue.
 
-3. **Report** what was cleaned: count of worktrees removed, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If any `WARNING:` line was printed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere), carry it verbatim. If `/tmp/todo-closed-unmerged-branches.txt`, `/tmp/todo-local-closed-unmerged-branches.txt`, or `/tmp/todo-local-no-pr-branches.txt` is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces all of it.
+3. **Report** what was cleaned: count of worktrees removed, the list of remote branches deleted, and the list of local `todo/*` branches deleted (or "nothing to clean"). If any `WARNING:` line was printed (a `git branch -D` that failed for a reason other than the branch being checked out elsewhere), carry it verbatim. If `/tmp/todo-closed-unmerged-branches.txt`, `/tmp/todo-local-closed-unmerged-branches.txt`, `/tmp/todo-local-no-pr-branches.txt`, or `/tmp/todo-delete-skipped.txt` (branches whose FRESH merge-state check failed at delete time) is non-empty, or the sweep was skipped (gh failure or the `--limit` cap), carry that in orchestrator state — Phase 5 surfaces all of it.
 
 4. **Sync the local default branch (`main`).** PRs from prior runs land via auto-merge or the user's review (possibly from another session), so those todos may already be archived on `origin/main` while the local checkout still shows them at the old path — and the backlog would otherwise re-pick an already-merged todo. Fast-forward local `main`. Like the rest of Phase 0 this **never aborts** the run, and it is **ff-only so it never disturbs parallel work**:
 
@@ -310,6 +322,8 @@ For each batch marked sequential, spawn a **single** executor using the dispatch
 Proceed to the next batch in the execution plan.
 
 ## Phase 5 — Session Summary
+
+**First, release all worktree contracts:** run `bash scripts/declare-worktree.sh --clear`. Executors declare their worktrees at Step 0 and remove them at Step 11, but a crashed executor leaves a stale registry entry — and while ANY entry exists, the PreToolUse guards deny YOUR main-checkout git operations (reconciliation, archiving, branch cleanup). `--clear` is idempotent and safe here: all executors have returned by Phase 5.
 
 After all batches have been executed (or after early termination):
 
