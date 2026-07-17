@@ -87,3 +87,62 @@ describe("TextInput", () => {
     expect(TextInput.displayName).toBe("TextInput");
   });
 });
+
+describe("TextInput floating label & focus", () => {
+  it("renders the floating label text when label is provided", () => {
+    renderComponent(<TextInput label="Note title" />);
+    expect(screen.getByText("Note title")).toBeDefined();
+  });
+
+  it("uses the label as the input accessibility label by default", () => {
+    renderComponent(<TextInput label="Note title" />);
+    expect(screen.getByLabelText("Note title")).toBeDefined();
+  });
+
+  it("prefers an explicit accessibilityLabel over the label", () => {
+    renderComponent(
+      <TextInput label="Note title" accessibilityLabel="Custom" />,
+    );
+    expect(screen.getByLabelText("Custom")).toBeDefined();
+  });
+
+  it("suppresses the placeholder while the label is resting in its place", () => {
+    renderComponent(
+      <TextInput label="Note title" placeholder="e.g. Less salt" />,
+    );
+    expect(screen.queryByPlaceholderText("e.g. Less salt")).toBeNull();
+  });
+
+  it("shows the placeholder once the input is focused", () => {
+    renderComponent(
+      <TextInput label="Note title" placeholder="e.g. Less salt" />,
+    );
+    fireEvent.focus(screen.getByLabelText("Note title"));
+    expect(screen.getByPlaceholderText("e.g. Less salt")).toBeDefined();
+  });
+
+  it("keeps the label floated at rest when the input has a value", () => {
+    renderComponent(
+      <TextInput
+        label="Note title"
+        placeholder="e.g. Less salt"
+        value="Less salt"
+        onChangeText={() => {}}
+      />,
+    );
+    expect(screen.getByPlaceholderText("e.g. Less salt")).toBeDefined();
+  });
+
+  it("forwards onFocus and onBlur to callers", () => {
+    const onFocus = vi.fn();
+    const onBlur = vi.fn();
+    renderComponent(
+      <TextInput placeholder="Email" onFocus={onFocus} onBlur={onBlur} />,
+    );
+    const input = screen.getByPlaceholderText("Email");
+    fireEvent.focus(input);
+    fireEvent.blur(input);
+    expect(onFocus).toHaveBeenCalledOnce();
+    expect(onBlur).toHaveBeenCalledOnce();
+  });
+});
