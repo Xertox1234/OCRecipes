@@ -149,9 +149,13 @@ rename a heading there, update this enumeration too, and vice versa): "Awaiting 
 self-clears next run", "Auto-merging on green CI (no action needed)", "Auto-merge failed
 to arm" (needs manual `gh pr merge --auto`, or individual review), "Needs individual
 review" (held/unknown/review-required PRs), "Skipped — quality flags" (that one needs MY
-re-authoring), and "Blocked — needs a one-time manual fix" (this one also forces a STOP
-EARLY below, so it won't co-occur with a clean DONE). ("Deferred warnings" lists review
-findings, not todo outcomes, so it is not one of these groups.) A failed todo is
+re-authoring), "Gated — blocked_until/human_led" (a dated or human-led-only gate is
+active — this is expected and terminal, NEVER a signal to re-dispatch; the only way past
+it is me running `/todo-fast <path>` interactively and confirming the override there — see
+`todos/README.md` → "Date & Human-Led Gates"), and "Blocked — needs a one-time manual fix"
+(this one also forces a STOP EARLY below, so it won't co-occur with a clean DONE).
+("Deferred warnings" lists review findings, not todo outcomes, so it is not one of these
+groups.) A failed todo is
 terminal for the night too — leave it for my morning review. Never re-dispatch a listed
 or failed todo hoping its outcome changes. Evaluate
 DONE from the Phase 5 reports you already hold; do NOT re-run test:run / check:types /

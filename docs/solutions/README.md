@@ -21,6 +21,7 @@ Issues where code runs but produces incorrect behavior.
 - **[beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md](./logic-errors/beforeremove-preventdefault-desyncs-native-stack-2026-07-07.md)** — Hand-rolled beforeRemove + preventDefault() desyncs native-stack from JS state; use usePreventRemove
 - **[always-armed-preventremove-early-return-skips-redirect-2026-07-07.md](./logic-errors/always-armed-preventremove-early-return-skips-redirect-2026-07-07.md)** — Every early-return branch in a multi-concern beforeRemove handler must reapply the same redirect condition
 - **[git-diff-invisible-to-untracked-files-2026-07-15.md](./logic-errors/git-diff-invisible-to-untracked-files-2026-07-15.md)** — `git diff` structurally cannot show wholly untracked files; scoping mid-pipeline verification off it alone silently misses new files
+- **[guard-script-field-quote-strip-fail-closed-2026-07-16.md](./logic-errors/guard-script-field-quote-strip-fail-closed-2026-07-16.md)** — a bash guard script must strip quotes AND fail-closed on unrecognized values for EVERY gated field, not just the one you tested
 - **[nested-worktree-defeats-isolation-guard-path-math-2026-07-15.md](./logic-errors/nested-worktree-defeats-isolation-guard-path-math-2026-07-15.md)** — Creating a worktree nested inside another worktree confuses guard-worktree-isolation.sh's main-checkout path arithmetic
 
 #### [runtime-errors/](./runtime-errors/)

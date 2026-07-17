@@ -172,12 +172,24 @@ Establish a green baseline before touching any code.
 Build the work queue from the `todos/` backlog.
 
 1. Read all `.md` files in `todos/` — **exclude** `README.md`, `TEMPLATE.md`, anything inside `todos/archive/`, and anything inside `todos/deployment/` (deployment/scaling work is parked until launch is financially viable).
-2. Parse each file's YAML frontmatter. Extract: `title`, `status`, `priority`, `created`, `labels`.
+2. Parse each file's YAML frontmatter. Extract: `title`, `status`, `priority`, `created`, `labels`, `blocked_until`, `blocked_reason`, `human_led`.
 3. Filter to **actionable** todos: status is `backlog` or `planned`. Skip any todo with status `in-progress`, `blocked`, `review`, or `done`.
 
    > **Stuck todos**: If any file has `status: in-progress`, it was left mid-run by a crashed executor and is being skipped. To re-queue it, manually edit its frontmatter to `status: backlog` and re-run `/todo`.
 
    **Awaiting merge (skip).** A completed todo's archive move rides its unmerged PR branch, so the local `todos/*.md` still says `backlog` until that PR merges (auto-merge or the user's review) — triage must not re-pick it. Reuse **this run's** open-PR list from Phase 0 step 2 (`/tmp/todo-open-prs.txt`); only if Phase 0's gh step was skipped, fetch it now (`gh pr list --state open --limit 1000 --json headRefName --jq '.[].headRefName' | sort -u > /tmp/todo-open-prs.txt` — never trust a `/tmp` file left by a previous run; Phase 0 rewrites or deletes it every run precisely so this step can trust it). Skip any actionable todo whose slug (filename minus `.md`) **exactly matches** an open `todo/<branch-slug>` branch — executors are required to use the exact filename slug as the branch name, so exact match is the only join. A match means the todo is already implemented and its PR is awaiting merge; re-dispatching would re-implement it and collide with its own open PR. Carry the skipped set (with each todo's PR branch) in orchestrator state and list it in the Phase 5 summary under "Awaiting merge". If the list cannot be fetched at all, continue without this check (the executor's Step 2 remote-branch probe and Step 10 push-collision triage are the downstream backstops).
+
+3a. **Gate check (date / human-led) — status-independent, no override in this path.** Run once for the whole backlog, in scan mode (no argument):
+
+    ```bash
+    scripts/todo-gate-check.sh
+    ```
+
+    This reads `blocked_until`/`human_led` directly from every `todos/*.md` file — **independent of what `status` currently says**, so a todo whose `status` was edited away from `blocked` (by hand, by a prior session, or by an agent) is still caught. Exit 0 = no gated todos found, nothing to do. Exit 1 = at least one gated todo; stdout has one TSV line per gated file (`<path>\t<blocked_until-or-dash>\t<reason>`). Exit 2 = the check itself failed — **treat identically to exit 1** (fail-closed: an unverifiable actionable list is not a clean one).
+
+    Remove every todo whose path appears in the output from the actionable list — matching on the exact `todos/<filename>.md` path form `scripts/todo-gate-check.sh` emits (relative to the repo root, same form step 1 already reads files as), **regardless of `/goal` directive wording** ("drive every actionable todo," "clear the backlog," etc. is never a per-todo override — see `todos/README.md` → "Date & Human-Led Gates"). Carry the removed set (filename, `blocked_until`, `blocked_reason`/reason text) in orchestrator state for Phase 5's "Gated" heading.
+
+    **There is no override in this path — full stop.** `/todo`'s batch run never legitimately targets one specific gated todo by name; if the user wants to run a gated todo anyway, they invoke `/todo-fast <path>` directly, which has its own interactive-confirmation gate (`.claude/skills/todo-fast/SKILL.md` Phase 0). Never edit `blocked_until`, `human_led`, or `status` on a gated todo to make it pass this check — that edit is the exact bypass the 2026-07-16 incident exploited.
 
 4. **Quality check.** Catching authoring problems here is much cheaper than spawning a researcher + executor only to have them fail on an incoherent spec. For each actionable todo, scan the body and record any flag that fires:
    - **empty-AC** — the Acceptance Criteria section is missing or contains no `- [ ]` checkbox lines.
@@ -338,6 +350,8 @@ After all batches have been executed (or after early termination):
    ```
 
    Then **list quality-flagged todos that were skipped from this run.** Using the dropped set carried over from Phase 2 step 6, print them under the heading "Skipped — quality flags — re-author and re-run to include them:" with one line per todo (todo filename + comma-joined flag list). If none were dropped, omit the heading.
+
+   Then **list gated todos that were skipped from this run.** Using the gated set carried over from Phase 2 step 3a, print them under the heading "Gated — blocked_until/human_led (skip until the date passes or a human runs it directly via `/todo-fast`):" with one line per todo (todo filename + `blocked_until` date or `human_led: true` + reason). This is a terminal, expected state — not a failure, and never resolved by re-running `/todo` or by any `/goal` directive. If none were gated, omit the heading.
 
    Then **report auto-merge status.** For every `MERGE_ELIGIBLE: yes (auto-merge enabled)` PR, nothing further is needed — the executor already ran `gh pr merge --auto --squash --delete-branch`, so GitHub squash-merges it automatically the instant required CI checks pass. List these under "Auto-merging on green CI (no action needed):" with their PR URLs, for visibility only. For any `MERGE_ELIGIBLE: yes (auto-merge enable FAILED ...)` PR, the executor's `gh pr merge --auto` call itself failed — list it under "Auto-merge failed to arm — needs manual `gh pr merge --auto --squash --delete-branch <n>`, or individual review:". `held` / `unknown` / `review-required` PRs are unaffected by this change — list them exactly as before, under "Needs individual review:", for the user to review and merge by hand.
 

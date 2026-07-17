@@ -47,6 +47,17 @@ Store these in memory for all subsequent steps.
 Check whether this todo is eligible for execution:
 
 1. **Status gate**: If `status` is not `backlog` or `planned`, report `skipped` with reason `"status is <actual status>, expected backlog or planned"` and stop.
+
+1a. **Gate check (date / human-led) — status-independent backstop, NO override at this layer.** Run:
+
+    ```bash
+    scripts/todo-gate-check.sh todos/<filename>.md
+    ```
+
+    Exit 0 → proceed to item 2. Exit 1 (GATED) or exit 2 (ERROR — treat identically, fail-closed) → report `blocked` with `REASON_CODE: GATE_BLOCKED` and the script's reason verbatim, then stop.
+
+    You should almost never see this fire: `/todo` filters gated todos out in Phase 2 before ever dispatching an executor, and `/todo-fast` performs its own equivalent gate check (with the one legitimate interactive-override path) inline in its own session — it never spawns a separate `todo-executor` agent at all, so this check is genuinely a **backstop for a direct dispatch that bypassed both skills**. If it does fire, that is itself a signal something upstream is misconfigured. **There is no override here** — not a marker in your dispatch prompt, not the dispatch prompt naming this todo by filename, not "execute all steps in order" framing, not a `/goal` directive however worded. The one sanctioned way to run a gated todo is a human invoking `/todo-fast <path>` interactively and confirming the override there; that path never reaches you as a bare executor dispatch. Never edit `status`, `blocked_until`, or `human_led` to proceed.
+
 2. **Dependency check**: If the Dependencies section lists other todo files, check whether each specific dependency filename exists as a file at `todos/<dependency-filename>.md`. If it exists (not moved to `todos/archive/`), the dependency is still pending — report `blocked` with the list of blocking todo filenames and stop.
    - Dependencies that reference external services, APIs, or non-todo items are not blocking.
 3. **Legacy delegation gate**: If the todo has a `github_issue` frontmatter value, it predates the removal of the Copilot delegation pipeline (deleted 2026-07). Report `skipped` with reason `legacy github_issue todo: <url> — needs manual triage` unless the orchestrator explicitly tells you this is a manual takeover.
@@ -599,18 +610,19 @@ REASON: <the canonical reason text for the code, per the mapping below>
 
 `REASON_CODE` enum (shared with the /todo orchestrator's Phase 5 routing — never invent a new value):
 
-| REASON_CODE           | STATUS            | Canonical REASON text                                                                                                                                                            |
-| --------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OPEN_PR_COLLISION`   | skipped           | `already implemented — PR <url> (already auto-merging or awaiting individual review — check gh pr view <url> for its current state)` (Step 2 probe or Step 10 open-PR collision) |
-| `STALE_BRANCH_MERGED` | skipped           | `stale todo/<todo-slug> branch from a merged PR — Phase 0 sweeps it next run; re-run this todo afterward`                                                                        |
-| `PR_CLOSED_UNMERGED`  | blocked           | the full Step 10 closed-without-merge reason — keep its `ACTION NEEDED (human): …` line intact                                                                                   |
-| `ORPHAN_BRANCH`       | blocked           | the full Step 10 orphan reason (probe-adjusted wording if from Step 2) — keep its `ACTION NEEDED (human): …` line intact                                                         |
-| `PR_CHECK_FAILED`     | blocked           | the full Step 10 unknown-state reason — keep its `ACTION NEEDED (human): …` line intact                                                                                          |
-| `DEPENDENCY_GATED`    | blocked           | list of blocking dependency filenames (Step 2 dependency check)                                                                                                                  |
-| `ADVISOR_RED`         | blocked           | `advisor red-flag: <reason>` (Step 3.5)                                                                                                                                          |
-| `NONE`                | skipped or failed | any other skip — e.g. `status is <actual>, expected backlog or planned`, or the Step 2 legacy `github_issue` gate — and every plain `failed` report                              |
+| REASON_CODE           | STATUS            | Canonical REASON text                                                                                                                                                                                                                                         |
+| --------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPEN_PR_COLLISION`   | skipped           | `already implemented — PR <url> (already auto-merging or awaiting individual review — check gh pr view <url> for its current state)` (Step 2 probe or Step 10 open-PR collision)                                                                              |
+| `STALE_BRANCH_MERGED` | skipped           | `stale todo/<todo-slug> branch from a merged PR — Phase 0 sweeps it next run; re-run this todo afterward`                                                                                                                                                     |
+| `PR_CLOSED_UNMERGED`  | blocked           | the full Step 10 closed-without-merge reason — keep its `ACTION NEEDED (human): …` line intact                                                                                                                                                                |
+| `ORPHAN_BRANCH`       | blocked           | the full Step 10 orphan reason (probe-adjusted wording if from Step 2) — keep its `ACTION NEEDED (human): …` line intact                                                                                                                                      |
+| `PR_CHECK_FAILED`     | blocked           | the full Step 10 unknown-state reason — keep its `ACTION NEEDED (human): …` line intact                                                                                                                                                                       |
+| `DEPENDENCY_GATED`    | blocked           | list of blocking dependency filenames (Step 2 dependency check)                                                                                                                                                                                               |
+| `ADVISOR_RED`         | blocked           | `advisor red-flag: <reason>` (Step 3.5)                                                                                                                                                                                                                       |
+| `GATE_BLOCKED`        | blocked           | `scripts/todo-gate-check.sh`'s reason verbatim — a future `blocked_until` and/or `human_led: true` (Step 2 item 1a). See `todos/README.md` → "Date & Human-Led Gates"; the only override is a human running `/todo-fast` interactively on this specific todo. |
+| `NONE`                | skipped or failed | any other skip — e.g. `status is <actual>, expected backlog or planned`, or the Step 2 legacy `github_issue` gate — and every plain `failed` report                                                                                                           |
 
-(`QUALITY_FLAGS` also exists in this enum but is assigned by the /todo orchestrator in Phase 2 triage — an executor never emits it.)
+(`QUALITY_FLAGS` also exists in this enum but is assigned by the /todo orchestrator in Phase 2 triage — an executor never emits it. `GATE_BLOCKED` is likewise normally assigned by `/todo` Phase 2 triage or `/todo-fast` Phase 0 preflight, both of which filter/gate BEFORE an executor would ever be dispatched — an executor emitting it directly (Step 2 item 1a) means it was dispatched without going through either skill's own gate check.)
 
 The three `ACTION NEEDED` codes keep their canonical Step 10 texts as the recommended wording — the `ACTION NEEDED (human):` line doubles as the human-readable call to action and the legacy routing fallback for consumers that predate `REASON_CODE`.
 
