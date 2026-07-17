@@ -6,6 +6,7 @@ import {
   getPremiumGate,
   resolveMenuLocalOCRText,
   resolveSmartConfirmAction,
+  evaluateBarcodeDetection,
 } from "../scan-screen-utils";
 import { logger } from "@/lib/logger";
 import { TIER_FEATURES } from "@shared/types/premium";
@@ -425,6 +426,60 @@ describe("scan-screen-utils", () => {
         },
       });
       errorSpy.mockRestore();
+    });
+  });
+
+  describe("evaluateBarcodeDetection", () => {
+    it("starts tracking a barcode from idle", () => {
+      const decision = evaluateBarcodeDetection({ status: "idle" }, "012345");
+      expect(decision).toEqual({
+        action: "start",
+        barcode: "012345",
+        frameCount: 1,
+      });
+    });
+
+    it("increments frame count while confidence stays below the lock threshold", () => {
+      const decision = evaluateBarcodeDetection(
+        { status: "tracking", barcode: "012345", frameCount: 1 },
+        "012345",
+      );
+      expect(decision.action).toBe("update");
+      expect(decision).toMatchObject({ frameCount: 2 });
+      if (decision.action === "update") {
+        expect(decision.confidence).toBeCloseTo(2 / 7);
+      }
+    });
+
+    it("locks once frame count crosses the confidence threshold (0.85)", () => {
+      const decision = evaluateBarcodeDetection(
+        { status: "tracking", barcode: "012345", frameCount: 5 },
+        "012345",
+      );
+      expect(decision).toEqual({ action: "lock", frameCount: 6 });
+    });
+
+    it("stays in update one frame below the lock threshold (5/7 ≈ 0.714 < 0.85)", () => {
+      // Pins the cutoff itself: lowering LOCK_CONFIDENCE_THRESHOLD to e.g. 0.7
+      // (locking one frame early on a less-stable read) must fail this test.
+      const decision = evaluateBarcodeDetection(
+        { status: "tracking", barcode: "012345", frameCount: 4 },
+        "012345",
+      );
+      expect(decision.action).toBe("update");
+      expect(decision).toMatchObject({ frameCount: 5 });
+    });
+
+    it("restarts tracking (does not accumulate) when the scanned barcode changes mid-track", () => {
+      const decision = evaluateBarcodeDetection(
+        { status: "tracking", barcode: "012345", frameCount: 5 },
+        "999999",
+      );
+      expect(decision).toEqual({
+        action: "start",
+        barcode: "999999",
+        frameCount: 1,
+      });
     });
   });
 });

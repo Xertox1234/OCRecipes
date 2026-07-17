@@ -56,7 +56,11 @@ import { apiRequest } from "@/lib/query-client";
 import { QUERY_KEYS } from "@/lib/query-keys";
 import { logger } from "@/lib/logger";
 import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
-import { resolveSmartConfirmAction } from "@/screens/scan-screen-utils";
+import {
+  resolveSmartConfirmAction,
+  evaluateBarcodeDetection,
+  type BarcodeTrackingState,
+} from "@/screens/scan-screen-utils";
 import {
   buildLoadingConfirmCard,
   buildLoadedConfirmCard,
@@ -80,8 +84,6 @@ import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
-
-const LOCK_THRESHOLD = 0.85; // confidence ≥ 0.85 ≈ 6+ stable frames (frameCount/7)
 
 export default function ScanScreen() {
   const navigation = useNavigation<ScanScreenNavigationProp>();
@@ -125,6 +127,17 @@ export default function ScanScreen() {
   // no feature prop, so the copy is generic.
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
+  // TEMPORARY DIAGNOSTIC — investigating a report that barcode auto-capture
+  // never locks on iOS. Remove this state + its render block (and the debug
+  // overlay + tally update in onBarcodeScanned) once the root cause is
+  // confirmed or this fix is verified to resolve it.
+  const [barcodeDebug, setBarcodeDebug] = useState({
+    calls: 0,
+    lastAction: "",
+    lastBarcode: "",
+    frameCount: 0,
+  });
+
   const cameraRef = useRef<CameraRef>(null);
   const elapsedTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const barcodeAbsentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -133,6 +146,10 @@ export default function ScanScreen() {
   const hasLockedRef = useRef(false);
   const sessionNavigatedRef = useRef(false);
   const scanPhaseRef = useRef(scanPhase);
+  // Render-time mirror (docs/rules/hooks.md): onBarcodeScanned reads this ref
+  // synchronously at native-camera-frame cadence, so an effect-based mirror's
+  // post-paint lag would replay a stale phase for a frame after every dispatch.
+  scanPhaseRef.current = scanPhase;
   const reducedMotionRef = useRef(reducedMotion);
   const isCapturingRef = useRef(false);
   // Re-entrancy guard for onSmartPhotoConfirm: it is async (on-device OCR for
@@ -159,11 +176,6 @@ export default function ScanScreen() {
   useEffect(() => {
     if (!isFocused) dispatch({ type: "RESET" });
   }, [isFocused]);
-
-  // Keep scanPhaseRef current so onShutterPress can read it without being in deps
-  useEffect(() => {
-    scanPhaseRef.current = scanPhase;
-  }, [scanPhase]);
 
   // Coach hint escalation timer
   useEffect(() => {
@@ -321,49 +333,66 @@ export default function ScanScreen() {
         height: 0.2,
       };
 
-      if (scanPhase.type === "HUNTING") {
+      // Read from the ref, not the closed-over `scanPhase` — this callback can
+      // still be attached to the native camera output for a frame or two after
+      // a dispatch, before React re-renders and re-attaches the latest closure.
+      // Reading `scanPhase` directly would replay that stale frameCount forever
+      // (see docs/solutions for the same fix on onShutterPress/scanPhaseRef).
+      const currentPhase = scanPhaseRef.current;
+      if (
+        currentPhase.type !== "HUNTING" &&
+        currentPhase.type !== "BARCODE_TRACKING"
+      ) {
+        return;
+      }
+
+      const tracking: BarcodeTrackingState =
+        currentPhase.type === "BARCODE_TRACKING"
+          ? {
+              status: "tracking",
+              barcode: currentPhase.barcode,
+              frameCount: currentPhase.frameCount,
+            }
+          : { status: "idle" };
+
+      const decision = evaluateBarcodeDetection(tracking, barcode);
+
+      // TEMPORARY DIAGNOSTIC — see barcodeDebug declaration above.
+      setBarcodeDebug((prev) => ({
+        calls: prev.calls + 1,
+        lastAction: decision.action,
+        lastBarcode: barcode,
+        frameCount: decision.frameCount,
+      }));
+
+      if (decision.action === "start") {
         dispatch({ type: "FIRST_BARCODE_DETECTED", barcode, bounds });
         return;
       }
 
-      if (scanPhase.type === "BARCODE_TRACKING") {
-        if (barcode !== scanPhase.barcode) {
-          dispatch({ type: "FIRST_BARCODE_DETECTED", barcode, bounds });
-          return;
-        }
-        dispatch({ type: "BARCODE_UPDATED", bounds });
+      dispatch({ type: "BARCODE_UPDATED", bounds });
 
-        const newFrameCount = scanPhase.frameCount + 1;
-        const confidence = Math.min(newFrameCount / 7, 1.0);
-
-        if (confidence >= LOCK_THRESHOLD) {
-          hasLockedRef.current = true;
-          haptics.notification(Haptics.NotificationFeedbackType.Success);
-          if (!reducedMotionRef.current) {
-            setFlashCount((c) => c + 1);
-            setSonarPos({
-              cx: (bounds.x + bounds.width / 2) * screenWidth,
-              cy: (bounds.y + bounds.height / 2) * screenHeight,
-            });
-            setSonarVisible(true);
-          }
-          dispatch({ type: "BARCODE_LOCKED" });
-          void fetchProductInfo(barcode);
-        } else {
-          barcodeAbsentTimerRef.current = setTimeout(() => {
-            dispatch({ type: "BARCODE_LOST" });
-          }, 800);
+      if (decision.action === "lock") {
+        hasLockedRef.current = true;
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
+        if (!reducedMotionRef.current) {
+          setFlashCount((c) => c + 1);
+          setSonarPos({
+            cx: (bounds.x + bounds.width / 2) * screenWidth,
+            cy: (bounds.y + bounds.height / 2) * screenHeight,
+          });
+          setSonarVisible(true);
         }
+        dispatch({ type: "BARCODE_LOCKED" });
+        void fetchProductInfo(barcode);
+        return;
       }
+
+      barcodeAbsentTimerRef.current = setTimeout(() => {
+        dispatch({ type: "BARCODE_LOST" });
+      }, 800);
     },
-    [
-      isFocused,
-      scanPhase,
-      screenWidth,
-      screenHeight,
-      fetchProductInfo,
-      haptics,
-    ],
+    [isFocused, screenWidth, screenHeight, fetchProductInfo, haptics],
   );
 
   const onShutterPress = useCallback(async () => {
@@ -606,6 +635,22 @@ export default function ScanScreen() {
               : "Daily limit reached"}
           </Text>
         )}
+      </View>
+
+      {/* TEMPORARY DIAGNOSTIC overlay — see barcodeDebug declaration above.
+          pointerEvents="none" only disables touch — the a11y props below keep
+          VoiceOver/TalkBack from landing on raw diagnostic text. */}
+      <View
+        style={styles.debugOverlay}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
+        <Text style={styles.debugOverlayText}>
+          phase:{scanPhase.type} calls:{barcodeDebug.calls} fc:
+          {barcodeDebug.frameCount} last:{barcodeDebug.lastAction}(
+          {barcodeDebug.lastBarcode})
+        </Text>
       </View>
 
       {/* Coach hint */}
@@ -988,6 +1033,21 @@ const styles = StyleSheet.create({
   permissionCancel: { paddingVertical: 12 },
   permissionCancelText: { fontSize: 15 },
   scanCountText: { color: "rgba(255,255,255,0.7)", fontSize: 12 },
+  // TEMPORARY DIAGNOSTIC — remove alongside barcodeDebug state.
+  debugOverlay: {
+    position: "absolute",
+    top: 160,
+    left: 8,
+    right: 8,
+    alignItems: "center",
+  },
+  debugOverlayText: {
+    color: "#00FF00", // hardcoded — high-contrast debug text, intentional
+    fontSize: 10,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
   confirmOverlay: {
     position: "absolute",
     bottom: 0,
