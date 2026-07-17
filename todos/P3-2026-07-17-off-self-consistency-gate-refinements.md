@@ -56,6 +56,11 @@ deferred:
 - [ ] Add an absolute-error floor to the self-consistency tolerance OR document
       why the low-cal band stays on the old behavior; fixture test for a
       ~20 kcal/serving product in either case
+- [ ] Re-run the prod cache sweep (railway psql on `barcode_nutrition`, compare
+      non-OFF-sourced rows against OFF's public API) after PR #656 ships, and
+      check whether the `energy-kcal_100g: 0` + per-serving-ABSENT pattern
+      (unshielded by design in #656 — only explicit 0-and-0 is corroboration)
+      accounts for further phantom-calorie rows (ai-reviewer suggestion, PR #656)
 
 ## Implementation Notes
 
