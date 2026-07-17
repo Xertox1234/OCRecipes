@@ -105,6 +105,12 @@ assert_allow "registry: compound — both mutating segments target the worktree"
 assert_deny "registry: git -C with .. escaping the worktree is denied" \
   "$(json "$SESSION" "$MAIN" "git -C $WT_A/../.. commit -m x")"
 
+# Single-quoted -C targets must be extracted too (only double quotes were stripped).
+assert_deny "registry: single-quoted git -C main checkout is denied" \
+  "$(json "$SESSION" "$WT_A" "git -C '$MAIN' commit -m x")"
+assert_allow "registry: single-quoted git -C worktree is allowed" \
+  "$(json "$SESSION" "$MAIN" "git -C '$WT_A' commit -m x")"
+
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \
   "$(json "$SESSION" "$MAIN" 'git switch -c feature')"
@@ -160,6 +166,12 @@ assert_deny "registry: cp into main checkout with trailing benign -C token is de
   "$(json "$SESSION" "$R_WT" "cp secret.txt $R_MAIN/leaked.txt && git -C $R_WT status")"
 assert_allow "registry: main-checkout read plus /tmp rm is allowed (no cross-segment sweep)" \
   "$(json "$SESSION" "$R_WT" "cat $R_MAIN/server/app.ts && rm /tmp/harmless.txt")"
+# Dot-segment laundering: an allowlist-prefixed path that collapses INTO the main
+# checkout must be judged by where it lands, not its lexical prefix.
+assert_deny "registry: /tmp/..-laundered redirect into the main checkout is denied" \
+  "$(json "$SESSION" "$R_WT" "echo x > /tmp/..$R_MAIN/notes.txt")"
+assert_allow "registry: /tmp/.. path collapsing back into /tmp is allowed" \
+  "$(json "$SESSION" "$R_WT" 'echo x > /tmp/../tmp/scratch.txt')"
 rm -f "$REG_DIR/dddd000000000004"
 
 # jq missing must fail CLOSED for git/write-shaped commands while any registry
@@ -175,6 +187,16 @@ if echo "$out" | grep -q '"permissionDecision":"deny"'; then
   echo "PASS: jq-less environment fails closed for mutating git under a registry"; PASS=$((PASS+1))
 else
   echo "FAIL: jq-less environment fails closed for mutating git under a registry"
+  echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
+fi
+# The fail-open side of the same gate: benign commands must pass untouched even
+# jq-less with a registry present. (The no-registry-anywhere side is not
+# automatable here — other sessions' registries may legitimately exist in /tmp.)
+out=$(echo "$(json "$SESSION" "$MAIN" 'ls /tmp')" | env PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null)
+if [ -z "$out" ]; then
+  echo "PASS: jq-less benign command stays allowed"; PASS=$((PASS+1))
+else
+  echo "FAIL: jq-less benign command stays allowed"
   echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
 fi
 

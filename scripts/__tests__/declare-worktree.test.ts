@@ -7,6 +7,7 @@ import {
   realpathSync,
   rmSync,
   existsSync,
+  statSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -84,6 +85,11 @@ describe("declare-worktree.sh", () => {
     expect(readFileSync(join(REG_DIR, keyFor(worktree)), "utf8")).toBe(
       worktree,
     );
+  });
+
+  it("registry directory is private (0700 — /tmp is world-writable)", () => {
+    run([worktree]);
+    expect(statSync(REG_DIR).mode & 0o777).toBe(0o700);
   });
 
   it("is idempotent: declaring twice leaves one entry", () => {

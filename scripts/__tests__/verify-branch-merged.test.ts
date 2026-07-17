@@ -53,7 +53,11 @@ function run(branch: string[], env: Record<string, string>, cwd?: string) {
 }
 
 // Temp repo with branch todo/foo — for the headRefOid containment checks.
-function makeRepo(): { dir: string; oid: string } {
+// remoteOnly: only a remote-tracking ref exists (the /todo remote sweep shape).
+function makeRepo(opts: { remoteOnly?: boolean } = {}): {
+  dir: string;
+  oid: string;
+} {
   const dir = mkdtempSync(join(tmpdir(), "vbm-repo-"));
   tempDirs.push(dir);
   const g = (...args: string[]) =>
@@ -73,8 +77,12 @@ function makeRepo(): { dir: string; oid: string } {
     "-m",
     "init",
   );
-  g("branch", "todo/foo");
-  const oid = g("rev-parse", "refs/heads/todo/foo").stdout.trim();
+  const oid = g("rev-parse", "HEAD").stdout.trim();
+  if (opts.remoteOnly) {
+    g("update-ref", "refs/remotes/origin/todo/foo", oid);
+  } else {
+    g("branch", "todo/foo");
+  }
   return { dir, oid };
 }
 
@@ -100,6 +108,30 @@ describe("verify-branch-merged.sh", () => {
 
   it("exit 1 when MERGED but the local tip differs from the PR head (post-squash commit)", () => {
     const { dir } = makeRepo();
+    const r = run(
+      ["todo/foo"],
+      {
+        FAKE_GH_STATE: "MERGED",
+        FAKE_GH_OID: "0000000000000000000000000000000000000000",
+      },
+      dir,
+    );
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("NOT safe to delete");
+  });
+
+  it("exit 0 for a remote-only branch whose remote-tracking ref matches the PR head", () => {
+    const { dir, oid } = makeRepo({ remoteOnly: true });
+    const r = run(
+      ["todo/foo"],
+      { FAKE_GH_STATE: "MERGED", FAKE_GH_OID: oid },
+      dir,
+    );
+    expect(r.status).toBe(0);
+  });
+
+  it("exit 1 for a remote-only branch whose remote-tracking ref mismatches the PR head", () => {
+    const { dir } = makeRepo({ remoteOnly: true });
     const r = run(
       ["todo/foo"],
       {

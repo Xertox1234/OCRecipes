@@ -65,6 +65,22 @@ registry_active() { [ -n "$REG_DIR" ] && [ -d "$REG_DIR" ] && [ -n "$(ls -A "$RE
 # path containing them as matching nothing, which fails toward deny in the
 # contract branch.
 has_dot_segments() { case "${1}/" in */../*|*/./*) return 0 ;; *) return 1 ;; esac; }
+# Lexically collapse . and .. segments (string-only — no symlink resolution, for
+# the same reason has_dot_segments avoids realpath) so a laundered
+# /tmp/../<main>/x is judged by where it actually lands.
+lex_collapse() {
+  local rest="${1#/}" out="" seg
+  while [ -n "$rest" ]; do
+    seg="${rest%%/*}"
+    case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+    case "$seg" in
+      ''|'.') ;;
+      '..') out="${out%/*}" ;;
+      *) out="$out/$seg" ;;
+    esac
+  done
+  printf '%s' "${out:-/}"
+}
 allowlisted() {
   has_dot_segments "$1" && return 1
   case "$1" in
@@ -100,13 +116,15 @@ case "$CMD" in "SKIP_WORKTREE_CONTRACT=1 "*) INLINE_BYPASS=1 ;; esac
 if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_active; then
   # --- mutating git: EVERY mutating segment's effective repo must be a registered
   # worktree (or allowlisted scratch). Segments split on && || ; | & so a benign
-  # -C elsewhere in the command cannot launder a main-checkout mutation.
+  # cross-segment -C cannot launder a main-checkout mutation. (Shell-wrapped
+  # invocations — subshells, eval, xargs, find -exec — remain the accepted
+  # best-effort residual; the jq-less fallback's cruder grep catches some.)
   if printf '%s' "$CMD" | grep -qE "$MUTATING_GIT_RE"; then
     VIOLATION=""
     SEGS=$(printf '%s\n' "$CMD" | tr ';|&' '\n')
     while IFS= read -r seg; do
       printf '%s' "$seg" | grep -qE "$MUTATING_GIT_SEG_RE" || continue
-      C_TARGET=$(printf '%s' "$seg" | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+"?([^"[:space:]]+)"?.*/\1/p' | head -1)
+      C_TARGET=$(printf '%s' "$seg" | tr -d '\042\047' | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
       EFFECTIVE="${C_TARGET:-$CWD}"
       case "$EFFECTIVE" in
         "")
@@ -166,12 +184,17 @@ Run it inside the assigned worktree (or with git -C <worktree>). ${ESCAPES}"
     )
     while IFS= read -r t; do
       [ -n "$t" ] || continue
+      # Judge dot-segment targets by where they LAND: an allowlist-prefixed
+      # /tmp/../<main>/x lexically dodges the $MAIN_ROOT/* check below while
+      # resolving into the main checkout.
+      TC="$t"
+      case "${t}/" in */../*|*/./*) TC=$(lex_collapse "$t") ;; esac
       # No allowlist here (Global Constraints scope it to the file-tool guard +
       # mutating-git branch): a target outside MAIN_ROOT is never denied anyway,
       # and a write INTO the main checkout is the incident class even when the
       # checkout lives under a temp prefix (as in the self-test fixture).
-      in_registered "$t" && continue
-      case "$t" in
+      in_registered "$TC" && continue
+      case "$TC" in
         "$MAIN_ROOT"/*)
           deny "Worktree contract violation: a write-shaped command targets
   ${t}
