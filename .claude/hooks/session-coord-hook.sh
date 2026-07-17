@@ -10,8 +10,14 @@ set -uo pipefail
 SUB="${1:-}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SCRIPT="$ROOT/scripts/pg-lab/session-coord.sh"
-[ -f "$SCRIPT" ] || exit 0
 INPUT=$(cat)
+# SessionEnd: remove the session's worktree-contract registry (guardrails spec §3.1)
+# BEFORE the pg-lab existence gate — cleanup must not depend on pg-lab being present.
+if [ "$SUB" = "deregister" ] && command -v jq >/dev/null 2>&1; then
+  SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+  [ -n "$SESSION_ID" ] && rm -rf "/tmp/claude-worktree-contracts-${SESSION_ID}"
+fi
+[ -f "$SCRIPT" ] || exit 0
 case "$SUB" in
   consult)
     printf '%s' "$INPUT" | bash "$SCRIPT" consult --stdin-json

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash) — block git commit only when HEAD is detached.
 # A detached-HEAD commit is unreachable (silent data loss), so we hard-block it.
-# Committing on main/master is ALLOWED: enforce_admins is off, so the repo owner
-# can push directly to main (branch protection no longer rejects owner pushes).
+# Committing on main/master locally is not blocked HERE, but pushing main is
+# rejected by GitHub branch protection (enforce_admins: true, 8 required checks —
+# verified live 2026-07-16). All work reaches main via PR.
 # Escape: set SKIP_BRANCH_PREFLIGHT=1 in the shell that launched Claude Code.
 set -uo pipefail
 
