@@ -91,6 +91,7 @@
       },
       { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-preflight-guard.sh", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
       { "matcher": "mcp__github__create_pull_request", "hooks": [{ "type": "command", "command": "bash .claude/hooks/pr-preflight-guard.sh", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash .claude/hooks/git-safety.sh", "timeout": 15, "statusMessage": "Checking git safety..." }] },
       {
         "matcher": "Edit",
         "hooks": [
@@ -115,6 +116,17 @@
       },
       {
         "matcher": "MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/guard-worktree-isolation.sh",
+            "timeout": 10,
+            "statusMessage": "Checking worktree isolation..."
+          }
+        ]
+      },
+      {
+        "matcher": "NotebookEdit",
         "hooks": [
           {
             "type": "command",
