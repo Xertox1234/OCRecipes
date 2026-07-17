@@ -203,6 +203,7 @@ The barcode verification pipeline builds a verified product database intended to
 - [ ] NutritionData fields use correct units — g for macros, **mg for sodium** (not grams)
 - [ ] Serving sizes preserved and displayed correctly — nutrients must correspond to the stated serving size
 - [ ] Data source tracked in the `source` field
+- [ ] Source reconciliation respects provenance rank — a similarity-matched source (name/category search) may gap-fill an identity-matched one (barcode/UPC lookup) but must never REPLACE its values while the identity-matched entry is internally self-consistent (per-serving ≈ per-100g × grams). A name match can land on a different food entirely (Ref: `docs/solutions/logic-errors/name-matched-secondary-must-not-replace-self-consistent-label-2026-07-17.md`)
 - [ ] API Ninjas string values (non-premium tiers) coerced to 0, not NaN
 - [ ] Rate limiting applied for external API calls
 

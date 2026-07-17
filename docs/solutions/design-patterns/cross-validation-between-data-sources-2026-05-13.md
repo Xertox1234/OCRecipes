@@ -46,3 +46,4 @@ return {
 
 - [Multi-source nutrition lookup chain](multi-source-nutrition-lookup-chain-2026-05-13.md)
 - [Per-field fallback for partial data from external APIs](../conventions/per-field-fallback-partial-data-2026-05-13.md)
+- [A similarity-matched secondary source must never replace identity-matched, self-consistent label data](../logic-errors/name-matched-secondary-must-not-replace-self-consistent-label-2026-07-17.md) — the replace-on-discrepancy arm of this pattern produced a live 3× calorie error when the name-matched secondary was a different food; a self-consistent primary now demotes the secondary to gap-fill only
