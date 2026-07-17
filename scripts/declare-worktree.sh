@@ -24,6 +24,12 @@ if [ -z "$SESSION" ]; then
   echo "declare-worktree: CLAUDE_CODE_SESSION_ID is not set — cannot key the registry" >&2
   exit 1
 fi
+# Charset guard: SESSION keys /tmp paths that reach rm -rf — never allow
+# separators or traversal components.
+case "$SESSION" in *[!A-Za-z0-9._-]*)
+  echo "declare-worktree: CLAUDE_CODE_SESSION_ID contains invalid characters — refusing" >&2
+  exit 1 ;;
+esac
 REG_DIR="/tmp/claude-worktree-contracts-${SESSION}"
 
 key_for() { printf '%s' "$1" | shasum | cut -c1-16; }
@@ -66,6 +72,9 @@ case "${1:-}" in
       exit 1
     fi
     mkdir -p "$REG_DIR"
+    # /tmp is world-writable: keep the registry private so another local user
+    # cannot pre-seed or tamper with contract entries.
+    chmod 700 "$REG_DIR"
     printf '%s' "$P" > "$REG_DIR/$(key_for "$P")"
     echo "declared worktree: $P"
     ;;

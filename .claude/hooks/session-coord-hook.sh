@@ -15,6 +15,8 @@ INPUT=$(cat)
 # BEFORE the pg-lab existence gate — cleanup must not depend on pg-lab being present.
 if [ "$SUB" = "deregister" ] && command -v jq >/dev/null 2>&1; then
   SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+  # Charset guard: this value reaches rm -rf — never allow separators/traversal.
+  case "$SESSION_ID" in ''|*[!A-Za-z0-9._-]*) SESSION_ID="" ;; esac
   [ -n "$SESSION_ID" ] && rm -rf "/tmp/claude-worktree-contracts-${SESSION_ID}"
 fi
 [ -f "$SCRIPT" ] || exit 0

@@ -6,6 +6,11 @@ set -uo pipefail
 HOOK="$(cd "$(dirname "$0")" && pwd)/guard-worktree-isolation.sh"
 PASS=0; FAIL=0
 
+# Hermeticity: an inherited GIT_DIR would make the real-git fixture below target
+# the CALLER's repo (docs/solutions/logic-errors/inherited-git-dir-overrides-git-c-in-hook-self-tests-2026-06-26.md).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+CALLER_STATE_BEFORE=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
+
 # Run the hook with $1 as stdin JSON; echo its stdout.
 run_hook() { echo "$1" | bash "$HOOK" 2>/dev/null; }
 
@@ -105,6 +110,16 @@ assert_allow "registry: /tmp allowlist" \
 assert_allow "registry: ~/.claude allowlist" \
   "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"file_path\":\"$HOME/.claude/plans/x.md\"}}"
 
+# Path traversal: dot segments must fail closed while a contract is active — a
+# lexical prefix match would let $WT/../../.. escape into the main checkout, and
+# /tmp/../ would launder a main-checkout path through the allowlist.
+assert_deny "registry: absolute path with .. escaping a worktree is denied" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"$WT_A/../../../server/app.ts\"}}"
+assert_deny "registry: relative path with .. escaping the worktree is denied" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"../../../server/app.ts\"}}"
+assert_deny "registry: allowlist prefix with .. traversal is denied" \
+  "{\"session_id\":\"$SESSION\",\"cwd\":\"$WT_A\",\"tool_input\":{\"file_path\":\"/tmp/../Users/x/projects/OCRecipes/server/app.ts\"}}"
+
 # NotebookEdit uses notebook_path — must be covered too.
 assert_deny "registry: notebook_path into the main checkout is denied" \
   "{\"session_id\":\"$SESSION\",\"cwd\":\"$MAIN\",\"tool_input\":{\"notebook_path\":\"$MAIN/analysis.ipynb\"}}"
@@ -144,6 +159,13 @@ NEST_MAIN="$NEST_TMP/main"
 NEST_INNER="$NEST_MAIN/.claude/worktrees/agent-outer/.claude/worktrees/agent-inner"
 assert_deny "fallback: nested worktree cannot write to the TRUE main checkout" \
   "{\"cwd\":\"$NEST_INNER\",\"tool_input\":{\"file_path\":\"$NEST_MAIN/server/app.ts\"}}"
+
+CALLER_STATE_AFTER=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
+if [ "$CALLER_STATE_BEFORE" = "$CALLER_STATE_AFTER" ]; then
+  echo "PASS: caller repo untouched (hermetic)"; PASS=$((PASS+1))
+else
+  echo "FAIL: caller repo untouched (hermetic)"; FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

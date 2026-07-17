@@ -6,6 +6,11 @@ set -uo pipefail
 HOOK="$(cd "$(dirname "$0")" && pwd)/git-safety.sh"
 PASS=0; FAIL=0
 
+# Hermeticity: an inherited GIT_DIR would make the real-git fixture below target
+# the CALLER's repo (docs/solutions/logic-errors/inherited-git-dir-overrides-git-c-in-hook-self-tests-2026-06-26.md).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+CALLER_STATE_BEFORE=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
+
 run_hook() { echo "$1" | bash "$HOOK" 2>/dev/null; }
 
 assert_deny() {
@@ -86,6 +91,36 @@ assert_allow "registry: read-only git anywhere is allowed" \
 assert_allow "registry: git in /tmp scratch repo is allowlisted" \
   "$(json "$SESSION" '/tmp/scratch-repo' 'git commit -m probe')"
 
+# Compound commands: EVERY mutating segment's effective repo must validate — a
+# benign -C elsewhere in the command must not launder a main-checkout mutation.
+assert_deny "registry: compound — mutating -C main first, benign -C worktree second" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m x && git -C $WT_A status")"
+assert_deny "registry: compound — benign -C worktree first, mutating -C main second" \
+  "$(json "$SESSION" "$WT_A" "git -C $WT_A status && git -C $MAIN commit -m x")"
+assert_allow "registry: compound — both mutating segments target the worktree" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A mv a b && git -C $WT_A commit -m x")"
+
+# Dot segments in a -C target must not prefix-match a registered worktree.
+assert_deny "registry: git -C with .. escaping the worktree is denied" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A/../.. commit -m x")"
+
+# Modern/omitted mutating verbs.
+assert_deny "registry: git switch in main checkout is denied" \
+  "$(json "$SESSION" "$MAIN" 'git switch -c feature')"
+assert_deny "registry: git pull in main checkout is denied" \
+  "$(json "$SESSION" "$MAIN" 'git pull origin main')"
+assert_deny "registry: git revert in main checkout is denied" \
+  "$(json "$SESSION" "$MAIN" 'git revert HEAD')"
+
+# Unresolvable effective repo while a registry is active must fail CLOSED.
+assert_deny "registry: mutating git with empty cwd fails closed" \
+  "$(json "$SESSION" "" 'git commit -m x')"
+
+# Inline env-prefix bypass must work as documented ('one command'): the hook
+# process does not inherit inline assignments, so it must recognize the prefix.
+assert_allow "registry: inline SKIP_WORKTREE_CONTRACT=1 prefix bypasses" \
+  "$(json "$SESSION" "$MAIN" 'SKIP_WORKTREE_CONTRACT=1 git commit -m x')"
+
 # Bypass.
 out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | SKIP_WORKTREE_CONTRACT=1 bash "$HOOK" 2>/dev/null)
 if [ -z "$out" ]; then echo "PASS: SKIP_WORKTREE_CONTRACT=1 bypasses contract branch"; PASS=$((PASS+1));
@@ -112,7 +147,33 @@ assert_allow "registry: redirect inside the registered worktree is allowed" \
   "$(json "$SESSION" "$R_WT" "echo x > $R_WT/notes.txt")"
 assert_allow "registry: redirect to /tmp is allowed" \
   "$(json "$SESSION" "$R_WT" 'echo x > /tmp/scratch.txt')"
+# Quoted targets are the agent's default style — they must still be extracted.
+assert_deny "registry: double-quoted redirect into the main checkout is denied" \
+  "$(json "$SESSION" "$R_WT" "echo x > \\\"$R_MAIN/notes.txt\\\"")"
+assert_deny "registry: single-quoted sed -i on a main-checkout file is denied" \
+  "$(json "$SESSION" "$R_WT" "sed -i '' s/a/b/ '$R_MAIN/server/app.ts'")"
+# Target extraction must scope to the matched sub-command: a trailing absolute
+# token elsewhere must not shadow the real cp/mv destination, and an rm of /tmp
+# scratch must not sweep in unrelated read-only targets.
+assert_deny "registry: cp into main checkout with trailing benign -C token is denied" \
+  "$(json "$SESSION" "$R_WT" "cp secret.txt $R_MAIN/leaked.txt && git -C $R_WT status")"
+assert_allow "registry: main-checkout read plus /tmp rm is allowed (no cross-segment sweep)" \
+  "$(json "$SESSION" "$R_WT" "cat $R_MAIN/server/app.ts && rm /tmp/harmless.txt")"
 rm -f "$REG_DIR/dddd000000000004"
+
+# jq missing must fail CLOSED for git/write-shaped commands while any registry
+# exists (mirrors guard-worktree-isolation.sh) — never silently disable the contract.
+if env PATH=/usr/bin:/bin command -v jq >/dev/null 2>&1; then
+  echo "SKIP: jq exists in /usr/bin:/bin — cannot simulate a jq-less environment"
+else
+  out=$(echo "$(json "$SESSION" "$MAIN" 'git commit -m x')" | env PATH=/usr/bin:/bin bash "$HOOK" 2>/dev/null)
+  if echo "$out" | grep -q '"permissionDecision":"deny"'; then
+    echo "PASS: jq-less environment fails closed for mutating git under a registry"; PASS=$((PASS+1))
+  else
+    echo "FAIL: jq-less environment fails closed for mutating git under a registry"
+    echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
+  fi
+fi
 
 # ---------- advisor branch (fires with or without a registry) ----------
 FAKE_GH_STATE=MERGED assert_warn_contains "advisor: branch -D with MERGED PR reports safe" \
@@ -133,6 +194,9 @@ FAKE_GH_EXIT=8 FAKE_GH_STDERR="network down" assert_warn_contains "advisor: gh h
 FAKE_GH_STATE=OPEN assert_warn_contains "advisor: gh pr close is matched" \
   "$(json no-registry-session "$MAIN" 'gh pr close 520')" \
   "OPEN and NOT merged"
+FAKE_GH_STATE=OPEN assert_warn_contains "advisor: long-form branch --delete --force is matched" \
+  "$(json no-registry-session "$MAIN" 'git branch --delete --force todo/foo')" \
+  "OPEN and NOT merged"
 assert_warn_contains "advisor: worktree remove --force warns about uncommitted work" \
   "$(json no-registry-session "$MAIN" 'git worktree remove --force .claude/worktrees/agent-x')" \
   "uncommitted"
@@ -140,6 +204,13 @@ assert_warn_contains "advisor: worktree remove --force warns about uncommitted w
 # Non-destructive gh/git stays silent.
 assert_allow "advisor: gh pr view is not matched" \
   "$(json no-registry-session "$MAIN" 'gh pr view 520')"
+
+CALLER_STATE_AFTER=$({ git rev-parse HEAD 2>/dev/null; git status --porcelain 2>/dev/null; } || echo not-a-repo)
+if [ "$CALLER_STATE_BEFORE" = "$CALLER_STATE_AFTER" ]; then
+  echo "PASS: caller repo untouched (hermetic)"; PASS=$((PASS+1))
+else
+  echo "FAIL: caller repo untouched (hermetic)"; FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

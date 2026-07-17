@@ -21,10 +21,25 @@ function keyFor(absPath: string): string {
   return createHash("sha1").update(absPath).digest("hex").slice(0, 16);
 }
 
+// Inherited git env (GIT_DIR etc.) overrides `git -C` inside the script under
+// test — strip it (docs/solutions/logic-errors/inherited-git-dir-overrides-git-c-in-hook-self-tests-2026-06-26.md).
+const GIT_ENV_UNSET = {
+  GIT_DIR: undefined,
+  GIT_WORK_TREE: undefined,
+  GIT_INDEX_FILE: undefined,
+  GIT_OBJECT_DIRECTORY: undefined,
+  GIT_COMMON_DIR: undefined,
+} as const;
+
 function run(args: string[], env: Record<string, string | undefined> = {}) {
   return spawnSync("bash", [SCRIPT, ...args], {
     encoding: "utf8",
-    env: { ...process.env, CLAUDE_CODE_SESSION_ID: SESSION, ...env },
+    env: {
+      ...process.env,
+      ...GIT_ENV_UNSET,
+      CLAUDE_CODE_SESSION_ID: SESSION,
+      ...env,
+    },
   });
 }
 
@@ -39,7 +54,7 @@ beforeEach(() => {
     execFileSync("git", args, {
       cwd,
       encoding: "utf8",
-      env: { ...process.env, GIT_DIR: undefined },
+      env: { ...process.env, ...GIT_ENV_UNSET },
     });
   git(["init", "-q"]);
   git([

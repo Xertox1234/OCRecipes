@@ -181,8 +181,10 @@ Force-remove the shared worktree at the end of the run, success or failure. Befo
 
 ```bash
 bash scripts/declare-worktree.sh --remove "$WORKTREE"
-git worktree unlock ".claude/worktrees/agent-todo-fast-$SLUG" 2>/dev/null
-git worktree remove --force ".claude/worktrees/agent-todo-fast-$SLUG" 2>/dev/null
+# Absolute $WORKTREE here too — a relative path from the wrong cwd silently
+# no-ops (2>/dev/null) and leaks the worktree on disk.
+git worktree unlock "$WORKTREE" 2>/dev/null
+git worktree remove --force "$WORKTREE" 2>/dev/null
 git worktree prune
 ```
 

@@ -54,6 +54,14 @@ if [ -n "$REG_DIR" ] && [ -d "$REG_DIR" ] && [ -n "$(ls -A "$REG_DIR" 2>/dev/nul
       RESOLVED="$CWD/$FILE_PATH"
       ;;
   esac
+  # Lexical prefix matching cannot survive dot segments: $WT/../x would match
+  # "$WT"/* while landing outside it, and /tmp/../ would launder a main-checkout
+  # path through the allowlist below. Deny outright — no realpath: worktree
+  # provisioning symlinks shared gitignored dirs INTO worktrees by design, and
+  # resolving those would break legitimate writes.
+  case "${RESOLVED}/" in
+    */../*|*/./*) deny "guard-worktree-isolation: ${RESOLVED} contains . or .. path components while a worktree contract is active — failing closed. Re-issue with a normalized path, or bypass with SKIP_WORKTREE_CONTRACT=1." ;;
+  esac
   # Scratch + harness state stays writable from anywhere.
   case "$RESOLVED" in
     /tmp/*|/private/tmp/*|/var/folders/*|/private/var/folders/*|"${HOME:-/nonexistent}"/.claude/*) exit 0 ;;
