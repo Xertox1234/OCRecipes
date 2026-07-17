@@ -3,7 +3,7 @@
 ---
 
 title: "CameraView.ios.tsx (AVFoundation useObjectOutput path) has zero test coverage"
-status: backlog
+status: done
 priority: low
 created: 2026-07-17
 updated: 2026-07-17
@@ -48,7 +48,7 @@ device or iOS simulator with a real camera (which the simulator doesn't have).
 ## Scope Contract
 
 - **Mechanisms to use:** standard Vitest config + the existing `*-utils.ts` extraction pattern — nothing new
-- **Files in scope:** `client/camera/components/CameraView.ios.tsx`, a new `CameraView.ios-utils.ts` (optional), `vitest.config.ts`
+- **Files in scope:** `client/camera/components/CameraView.ios.tsx`, a new `CameraView.ios-utils.ts` (optional), `vitest.config.ts`, `client/camera/components/__tests__/CameraView.ios.test.tsx` (the AC2-mandated test file — omitted from the original list, added post-review to remove the contradiction with AC2)
 - No new mechanisms, files, or abstractions beyond those listed.
 
 ## Dependencies
@@ -65,3 +65,24 @@ device or iOS simulator with a real camera (which the simulator doesn't have).
 ### 2026-07-17
 
 - Filed during barcode-lock regression investigation (see PR for the accompanying fix)
+
+### 2026-07-17 (resolution)
+
+- Implemented `client/camera/components/__tests__/CameraView.ios.test.tsx`, mirroring
+  `CameraView.test.tsx`'s coverage: no-device guard, ExpoBarcodeType → AVFoundation
+  ScannedObjectType mapping (including `upc_a`→`ean-13` dedup), `objectTypes` referential
+  stability across content-equal rerenders, and `onObjectsScanned` wiring (the
+  `isScannedCode()` gate, missing-reverse-mapping skip, and first-match-wins early exit).
+- AC1 resolved via an explicit per-file import (`from "../CameraView.ios"`) rather than a
+  `vitest.config.ts` change: empirically confirmed Vite/Vitest only fails to auto-discover
+  `.ios.tsx` for an EXTENSIONLESS import (Metro's platform-resolution convention, which Vite
+  doesn't implement) — an explicit filename resolves and transforms through the normal
+  TS/JSX pipeline with zero config surgery. `vitest.config.ts` was left untouched. The utils-
+  extraction fallback in Implementation Notes proved unnecessary.
+- The `*-utils.ts` extraction fallback was not needed — full component-level coverage was
+  achievable via the explicit-import approach, so no `CameraView.ios-utils.ts` was created
+  (keeps parity with `CameraView.tsx`, which also doesn't extract to utils).
+- Reviewed by `code-reviewer` + `mobile-reviewer`: no CRITICAL/WARNING findings. One
+  SUGGESTION (Scope Contract's file list omitted the AC2-mandated test file path) applied
+  above.
+- Codified: `docs/solutions/conventions/vitest-resolves-platform-suffix-via-explicit-import-2026-07-17.md`
