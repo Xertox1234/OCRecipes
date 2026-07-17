@@ -56,6 +56,23 @@ deferred:
 - [ ] Add an absolute-error floor to the self-consistency tolerance OR document
       why the low-cal band stays on the old behavior; fixture test for a
       ~20 kcal/serving product in either case
+- [ ] Re-run the prod cache sweep (railway psql on `barcode_nutrition`, compare
+      non-OFF-sourced rows against OFF's public API) after PR #656 ships, and
+      check whether the `energy-kcal_100g: 0` + per-serving-ABSENT pattern
+      (unshielded by design in #656 — only explicit 0-and-0 is corroboration)
+      accounts for further phantom-calorie rows (ai-reviewer suggestion, PR #656);
+      then DELETE/re-seed the rows the sweep flags — the cache is
+      first-write-wins (`insertBarcodeNutritionIfAbsent`), so poisoned rows
+      never self-heal after the fix deploys (code-review finding, PR #656)
+- [ ] Consolidate the gate's numeric-agreement logic onto `valuesMatch` in
+      `server/lib/verification-consensus.ts` (add a `tolerance` param defaulting
+      to its current 0.05; pass 0.15 here) so the codebase keeps ONE agreement
+      policy for nutrition data — its `a === b` short-circuit subsumes the
+      explicit 0-and-0 branch and its <2 absolute floor covers most of the
+      low-cal-band criterion above. CAVEAT: that floor would also match 0 vs
+      1 kcal, which the gate deliberately leaves unshielded (zero-vs-tiny is
+      contradiction, not agreement) — keep the nonzero-per-serving passthrough
+      explicit when adopting it (code-review finding, PR #656)
 
 ## Implementation Notes
 
@@ -82,3 +99,7 @@ deferred:
 ### 2026-07-17
 
 - Filed from ai-reviewer LOW findings during PR #654 review
+- Added from PR #656 code review: delete/re-seed step on the sweep criterion
+  (first-write-wins cache) and the `valuesMatch` consolidation criterion; the
+  gate itself gained macro/kJ contradiction guards and grams-free zero
+  corroboration in #656 directly

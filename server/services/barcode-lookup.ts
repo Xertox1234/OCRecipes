@@ -49,6 +49,13 @@ export interface BarcodeLookupResult {
 
 const MAX_PLAUSIBLE_SERVING_GRAMS = 500;
 const MAX_PLAUSIBLE_SERVING_CALORIES = 800;
+// A "0 calorie" label is only credible when the entry's own macros are also
+// ~0 (Atwater: 4p + 4c + 9f per 100g). The 4 kcal/100g cutoff is a per-100g
+// heuristic loosely inspired by the US "<5 kcal per serving rounds to zero"
+// labeling rule — NOT equivalent to it (that rule is per serving, and a large
+// serving scales 4 kcal/100g well past 5 kcal). Water/diet soda/black coffee
+// pass; data-entry stubs with real macros but placeholder-zero energy don't.
+const ZERO_CAL_MAX_MACRO_KCAL_100G = 4;
 
 /**
  * Estimate a reasonable single-serving weight based on product category.
@@ -384,16 +391,47 @@ export async function lookupBarcode(
   // replacement. Entries missing per-serving energy (most of OFF) keep the
   // existing replace-on-discrepancy behavior — self-agreement can't be checked.
   const offLabelGrams = parseServingGrams(offProduct?.serving_size || "");
-  const offSelfConsistent =
-    offPerServingCal !== undefined &&
-    offPerServingCal > 0 &&
-    offLabelGrams !== null &&
-    offLabelGrams > 0 &&
-    offPer100g.calories !== undefined &&
-    offPer100g.calories > 0 &&
-    Math.abs((offPer100g.calories * offLabelGrams) / 100 - offPerServingCal) /
-      offPerServingCal <=
-      0.15;
+  const offSelfConsistent = (() => {
+    if (offPerServingCal === undefined || offPer100g.calories === undefined) {
+      return false;
+    }
+    // Explicit-zero corroboration: BOTH energy fields present and exactly 0
+    // (water, diet soda, black coffee) is agreement, not missing data —
+    // without this, reconcilePer100g's primaryMissing arm (pc === 0) replaces
+    // a true zero with a name-matched secondary's phantom calories (prod
+    // sweep 2026-07-17: spring water cached at 257 kcal). Zero-agreement
+    // needs no serving grams (0 × grams / 100 = 0 for any grams), so this
+    // runs BEFORE the grams guard — but the zeros must not be contradicted
+    // by the entry's own macros or kJ energy fields (placeholder-zero stubs).
+    // A zero per-100g paired with a NONZERO per-serving falls through to the
+    // ratio check's > 0 guards and stays unshielded (likely unfilled entry).
+    if (offPerServingCal === 0 && offPer100g.calories === 0) {
+      const macroKcalPer100g =
+        4 * (offPer100g.protein ?? 0) +
+        4 * (offPer100g.carbs ?? 0) +
+        9 * (offPer100g.fat ?? 0);
+      // Round kJ→kcal the same way the calories derivation above does — a
+      // trace kJ residual (2 kJ ≈ 0.48 kcal on some OFF water entries) rounds
+      // to 0 there and must not count as a contradiction here.
+      const kjContradicts =
+        Math.round((nm.energy_100g ?? 0) / 4.1868) > 0 ||
+        Math.round((nm.energy_serving ?? 0) / 4.1868) > 0;
+      return macroKcalPer100g <= ZERO_CAL_MAX_MACRO_KCAL_100G && !kjContradicts;
+    }
+    if (
+      offLabelGrams === null ||
+      offLabelGrams <= 0 ||
+      offPerServingCal <= 0 ||
+      offPer100g.calories <= 0
+    ) {
+      return false;
+    }
+    return (
+      Math.abs((offPer100g.calories * offLabelGrams) / 100 - offPerServingCal) /
+        offPerServingCal <=
+      0.15
+    );
+  })();
 
   // ── Step 2b: If OFF has no product, try USDA branded food by UPC ─
   // Some products exist in USDA but not OFF (branded/US-market items).
