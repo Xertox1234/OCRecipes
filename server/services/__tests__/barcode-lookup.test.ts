@@ -794,6 +794,60 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result!.source).toBe("cnf");
   });
 
+  it("keeps the zero shield when kJ fields hold only a sub-rounding trace (2 kJ < 0.5 kcal) — trace energy is not a contradiction (PR #656 review round 2)", async () => {
+    // Some OFF water entries carry a trace kJ residual (energy_100g: 2 ≈ 0.48
+    // kcal) beside explicit kcal zeros. The kcal derivation rounds that same
+    // field to 0, so the contradiction check must apply the same rounding —
+    // a raw `> 0` comparison would make the entry contradict itself and
+    // reopen the phantom-calorie path for legitimate zero-cal products.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Mineral Water",
+              serving_size: "500g",
+              nutriments: {
+                "energy-kcal_100g": 0,
+                "energy-kcal_serving": 0,
+                energy_100g: 2, // trace kJ — rounds to 0 kcal
+                proteins_100g: 0,
+                carbohydrates_100g: 0,
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 556, food_description: "Water, mineral, bottled" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 556,
+              nutrient_value: 48,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("0060383653293");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(0);
+    expect(result!.source).toBe("openfoodfacts");
+  });
+
   it("derives the self-consistency signal from kJ-only energy_serving when energy-kcal_serving is absent", async () => {
     // Same McSweeney's data, but the per-serving energy arrives only as kJ
     // (energy_serving: 1297 kJ ≈ 310 kcal via /4.1868) — the conversion branch

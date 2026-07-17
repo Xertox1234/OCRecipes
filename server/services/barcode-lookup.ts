@@ -50,9 +50,11 @@ export interface BarcodeLookupResult {
 const MAX_PLAUSIBLE_SERVING_GRAMS = 500;
 const MAX_PLAUSIBLE_SERVING_CALORIES = 800;
 // A "0 calorie" label is only credible when the entry's own macros are also
-// ~0 (Atwater: 4p + 4c + 9f per 100g). 4 kcal/100g mirrors the US labeling
-// rule that lets <5 kcal round to zero — water/diet soda/black coffee pass,
-// data-entry stubs with real macros but placeholder-zero energy don't.
+// ~0 (Atwater: 4p + 4c + 9f per 100g). The 4 kcal/100g cutoff is a per-100g
+// heuristic loosely inspired by the US "<5 kcal per serving rounds to zero"
+// labeling rule — NOT equivalent to it (that rule is per serving, and a large
+// serving scales 4 kcal/100g well past 5 kcal). Water/diet soda/black coffee
+// pass; data-entry stubs with real macros but placeholder-zero energy don't.
 const ZERO_CAL_MAX_MACRO_KCAL_100G = 4;
 
 /**
@@ -408,8 +410,12 @@ export async function lookupBarcode(
         4 * (offPer100g.protein ?? 0) +
         4 * (offPer100g.carbs ?? 0) +
         9 * (offPer100g.fat ?? 0);
+      // Round kJ→kcal the same way the calories derivation above does — a
+      // trace kJ residual (2 kJ ≈ 0.48 kcal on some OFF water entries) rounds
+      // to 0 there and must not count as a contradiction here.
       const kjContradicts =
-        (nm.energy_100g ?? 0) > 0 || (nm.energy_serving ?? 0) > 0;
+        Math.round((nm.energy_100g ?? 0) / 4.1868) > 0 ||
+        Math.round((nm.energy_serving ?? 0) / 4.1868) > 0;
       return macroKcalPer100g <= ZERO_CAL_MAX_MACRO_KCAL_100G && !kjContradicts;
     }
     if (

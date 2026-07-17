@@ -58,14 +58,22 @@ branch, where the zero branch has its OWN preconditions:
 if (offPerServingCal === undefined || offPer100g.calories === undefined) return false;
 if (offPerServingCal === 0 && offPer100g.calories === 0) {
   const macroKcalPer100g = 4 * (p ?? 0) + 4 * (c ?? 0) + 9 * (f ?? 0); // Atwater
-  const kjContradicts = (nm.energy_100g ?? 0) > 0 || (nm.energy_serving ?? 0) > 0;
+  // Round kJ→kcal the SAME way the calories derivation does — a trace kJ
+  // residual (2 kJ ≈ 0.48 kcal) rounds to 0 there and must not contradict here
+  const kjContradicts =
+    Math.round((nm.energy_100g ?? 0) / 4.1868) > 0 ||
+    Math.round((nm.energy_serving ?? 0) / 4.1868) > 0;
   return macroKcalPer100g <= ZERO_CAL_MAX_MACRO_KCAL_100G && !kjContradicts;
 }
 // grams guard + >0 guards + 15% ratio check — the nonzero path only
 ```
 
-`ZERO_CAL_MAX_MACRO_KCAL_100G = 4` mirrors the US labeling rule that lets <5
-kcal round to zero — water/diet soda/black coffee pass, stubs don't.
+`ZERO_CAL_MAX_MACRO_KCAL_100G = 4` is a per-100g heuristic loosely inspired by
+(not equivalent to) the US "<5 kcal per serving rounds to zero" labeling rule —
+water/diet soda/black coffee pass, stubs don't. A contradiction check on a
+redundant encoding must apply the SAME normalization (rounding, unit
+conversion) the trusted value was derived with, or trace values self-contradict
+(review round 2 caught exactly this in the first version of the kJ check).
 
 ## Prevention
 
