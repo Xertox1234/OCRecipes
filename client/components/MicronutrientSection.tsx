@@ -161,7 +161,7 @@ export function MicronutrientSection({
   const nutrientCount = micronutrients.length;
 
   return (
-    <Card>
+    <Card style={{ backgroundColor: theme.surface }}>
       <Pressable
         onPress={handleToggle}
         style={styles.header}
