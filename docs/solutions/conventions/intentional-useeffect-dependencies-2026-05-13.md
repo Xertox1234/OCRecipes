@@ -53,3 +53,4 @@ An unexplained `eslint-disable-next-line` line reads as a defect to anyone scann
 
 - [Multi-select checkbox lists with Set<number>](../design-patterns/multi-select-checkbox-set-state-2026-05-13.md)
 - [Reset derived state on prop change](reset-derived-state-on-prop-change-2026-05-13.md)
+- [DRY-ing a fresh-per-render object into a useEffect](per-render-object-into-effect-deps-dry-trap-2026-07-17.md) — the same family from the other direction: a "cleanup" that puts a per-render identity into the deps array

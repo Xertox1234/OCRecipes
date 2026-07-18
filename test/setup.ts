@@ -1,6 +1,5 @@
 // Load .env so integration tests can connect to the real dev database
 import "dotenv/config";
-import { createRequire } from "node:module";
 
 import {
   impactAsync,
@@ -8,6 +7,14 @@ import {
   selectionAsync,
 } from "./mocks/expo-haptics";
 import { useReducedMotion } from "./mocks/react-native-reanimated";
+
+// node:module must NOT be a static import here: under a shell-exported
+// NODE_ENV=production, vite processes this file with browser conditions and
+// externalizes the builtin into a stub that crashes collection with "No such
+// built-in module: node:". process.getBuiltinModule (Node ≥22.3) resolves it
+// at runtime, invisible to vite's static analysis. See
+// docs/solutions/runtime-errors/shell-node-env-production-breaks-vitest-jsdom-2026-07-17.md
+const { createRequire } = process.getBuiltinModule("node:module");
 
 // Stub binary static assets (images/fonts) so components that `require(...)` them
 // (e.g. `<Image source={require("...png")} />`) can render under jsdom. vite-node

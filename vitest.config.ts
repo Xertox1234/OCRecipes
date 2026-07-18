@@ -3,6 +3,17 @@ import path from "path";
 import os from "node:os";
 import { FlakeLedgerReporter } from "./scripts/pg-lab/vitest-flake-reporter";
 
+// Tests must never transform under production conditions. A shell-exported
+// NODE_ENV=production flips vite's resolve conditions for the jsdom module
+// graph: node builtins get externalized "for browser compatibility" (collection
+// crashes with `No such built-in module: node:`) and react resolves to its
+// production build (`React.act is not a function`). CI never sets NODE_ENV, so
+// this only defends local shells; normalize to vitest's own default. See
+// docs/solutions/runtime-errors/shell-node-env-production-breaks-vitest-jsdom-2026-07-17.md
+if (process.env.NODE_ENV === "production") {
+  process.env.NODE_ENV = "test";
+}
+
 export default defineConfig({
   esbuild: {
     jsx: "automatic",

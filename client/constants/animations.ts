@@ -48,6 +48,12 @@ export const toastExitTimingConfig: WithTimingConfig = {
   easing: Easing.in(Easing.cubic),
 };
 
+/** Timing configuration for input focus transitions (border color, floating label) */
+export const focusTimingConfig: WithTimingConfig = {
+  duration: 160,
+  easing: Easing.out(Easing.cubic),
+};
+
 /** Spring configuration for tab icon focus pop — allows overshoot for playful bounce */
 export const tabIconPopConfig: WithSpringConfig = {
   damping: 12,

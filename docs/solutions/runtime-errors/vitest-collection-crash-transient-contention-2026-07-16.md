@@ -11,6 +11,13 @@ created: '2026-07-16'
 
 # A vitest RN-component collection crash ("No such built-in module: node:") may be transient contention, not a regression
 
+> **SUPERSEDED (2026-07-17):** the real root cause was found — a
+> shell-exported `NODE_ENV=production` flips vite's resolve conditions for the
+> jsdom graph. The "transience" was which shell ran the probe. See
+> `docs/solutions/runtime-errors/shell-node-env-production-breaks-vitest-jsdom-2026-07-17.md`.
+> The elimination checklist below is still a useful triage path, but check
+> `echo $NODE_ENV` before any of it.
+
 ## Problem
 
 `npx vitest run <any RN component/hook test file>` (the jsdom-environment path — see `test/setup.ts`) crashed at collection time with `Error: No such built-in module: node:`, immediately preceded by a vite warning that `test/setup.ts`'s `node:module` import "has been externalized for browser compatibility." Pure-function tests (no jsdom, no RN shim) were unaffected. CI was green on the same commit the whole time.
