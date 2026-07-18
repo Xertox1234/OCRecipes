@@ -12,6 +12,10 @@ import { roundToOneDecimal } from "./math";
  * recomputes the aggregate authoritatively and must import `computeConsensus` /
  * `CONSENSUS_THRESHOLD`. The architecture rule forbids a storage module
  * importing from `services/`, so the shared pure-function logic belongs here.
+ * `valuesMatch` is now also imported by `server/services/barcode-lookup.ts`
+ * (a `services → lib` edge, always allowed) — `lib/` being a shared
+ * dependency of both `storage/` and `services/` is the fuller architectural
+ * justification for its placement.
  */
 
 /** Consensus threshold — number of matching verifications needed */
@@ -65,10 +69,14 @@ const COMPARISON_FIELDS = [
 ] as const;
 
 /**
- * Check if two numeric values match within 5% relative tolerance.
+ * Check if two numeric values match within a relative tolerance (default 5%).
  * Handles edge cases: both zero, one zero, very small values.
+ *
+ * `tolerance` lets other nutrition-agreement call sites (e.g. the OFF
+ * self-consistency gate in `server/services/barcode-lookup.ts`, which needs
+ * 15%) share this one relative-agreement policy instead of re-deriving it.
  */
-export function valuesMatch(a: number, b: number): boolean {
+export function valuesMatch(a: number, b: number, tolerance = 0.05): boolean {
   // Stryker disable next-line ConditionalExpression: equivalent for finite inputs — equal values also pass the downstream relative branch
   if (a === b) return true;
   // For very small values (< 2), use absolute tolerance of 1
@@ -76,7 +84,7 @@ export function valuesMatch(a: number, b: number): boolean {
     return Math.abs(a - b) <= 1;
   }
   const max = Math.max(Math.abs(a), Math.abs(b));
-  return Math.abs(a - b) / max <= 0.05;
+  return Math.abs(a - b) / max <= tolerance;
 }
 
 /**

@@ -97,6 +97,28 @@ describe("valuesMatch", () => {
     // |100-95|/max(100,95) = 5/100 = 0.05 -> true (<=). With min: 5/95 = 0.0526 > 0.05 -> would be false.
     expect(valuesMatch(100, 95)).toBe(true);
   });
+
+  describe("custom tolerance param", () => {
+    it("explicit 0.05 matches the same boundary as the default (existing callers unaffected)", () => {
+      // Same boundary as above, called with the explicit default for clarity.
+      // The omitted-argument default path itself is covered by the earlier
+      // top-level tests (lines 43-53), which call valuesMatch(a, b) directly.
+      expect(valuesMatch(100, 105, 0.05)).toBe(true);
+      expect(valuesMatch(100, 106, 0.05)).toBe(false);
+    });
+
+    it("widens the relative boundary at a caller-supplied tolerance (0.15, the OFF self-consistency gate's value)", () => {
+      // |100-115|/115 ≈ 13% <= 15% -> true; the same deviation fails at the
+      // default 5% tolerance, confirming the param actually threads through.
+      expect(valuesMatch(100, 115, 0.15)).toBe(true);
+      expect(valuesMatch(100, 115)).toBe(false);
+    });
+
+    it("rejects just outside a custom tolerance boundary (0.15)", () => {
+      // |100-118|/118 ≈ 15.25% > 15%.
+      expect(valuesMatch(100, 118, 0.15)).toBe(false);
+    });
+  });
 });
 
 describe("nutritionMatches", () => {

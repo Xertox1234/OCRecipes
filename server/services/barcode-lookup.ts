@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import { createServiceLogger, toError } from "../lib/logger";
 import { roundToOneDecimal } from "../lib/math";
+import { valuesMatch } from "../lib/verification-consensus";
 import {
   lookupCNF,
   lookupNutrition,
@@ -56,6 +57,12 @@ const MAX_PLAUSIBLE_SERVING_CALORIES = 800;
 // serving scales 4 kcal/100g well past 5 kcal). Water/diet soda/black coffee
 // pass; data-entry stubs with real macros but placeholder-zero energy don't.
 const ZERO_CAL_MAX_MACRO_KCAL_100G = 4;
+// FDA/Codex nearest-5-kcal label rounding can push a genuinely correct
+// low-calorie label (spices, condiments) past the 15% relative tolerance in
+// the offSelfConsistent ratio check — this absolute floor, OR'd alongside
+// the relative check, rescues that band. ~5 kcal stays inert above
+// ~33 kcal/serving, where 15% relative already exceeds it.
+const ABSOLUTE_TOLERANCE_FLOOR_KCAL = 5;
 
 /**
  * Estimate a reasonable single-serving weight based on product category.
@@ -136,7 +143,15 @@ function normalizeToPerHundredGrams(data: NutritionData): BarcodePer100g {
  *  - **Disagree** (out-of-range ratio, or the primary has no/zero calories):
  *    replace with the secondary *only when* `preferSecondaryOnDiscrepancy` is set
  *    (OFF primaries trust the secondary; USDA-UPC primaries never replace).
- *  - Otherwise keep the primary unchanged with the `primaryLabel` source.
+ *  - Otherwise keep the primary unchanged. If a REAL disagreement (both sides
+ *    positive) was rejected specifically because `preferSecondaryOnDiscrepancy`
+ *    was false (i.e. the primary's own self-consistency check overrode it),
+ *    the source becomes `"<primaryLabel>+self-consistent"` instead of the plain
+ *    label — this distinguishes "a disagreeing secondary was outright
+ *    rejected" from "no secondary was ever found" for API consumers (todo
+ *    P3-2026-07-17-off-self-consistency-gate-refinements). A secondary with no
+ *    usable (positive) calories never triggers this marker — there was no real
+ *    disagreement to reject.
  *
  * @param preferSecondaryOnDiscrepancy `true` for OFF primaries (replace on
  *   disagreement), `false` for USDA-UPC primaries (only ever gap-fill).
@@ -193,7 +208,19 @@ function reconcilePer100g(
     return { per100g: secondary, source: secondarySource };
   }
 
-  return { per100g: primary, source: primaryLabel };
+  // Reaching here with bothPositive true means a real (both-sides-positive)
+  // disagreement existed and was NOT replaced — the only way that happens is
+  // preferSecondaryOnDiscrepancy being false, i.e. the primary's own
+  // self-consistency check rejected the secondary. bothPositive false means
+  // the secondary simply had no usable calories — nothing was "rejected".
+  const rejectedDisagreeingSecondary =
+    !preferSecondaryOnDiscrepancy && bothPositive;
+  return {
+    per100g: primary,
+    source: rejectedDisagreeingSecondary
+      ? `${primaryLabel}+self-consistent`
+      : primaryLabel,
+  };
 }
 
 /**
@@ -426,10 +453,22 @@ export async function lookupBarcode(
     ) {
       return false;
     }
+    const scaledPer100g = (offPer100g.calories * offLabelGrams) / 100;
+    // The relative check is delegated to `valuesMatch` — the same
+    // numeric-agreement primitive `server/lib/verification-consensus.ts`
+    // uses for verification consensus — so this codebase keeps ONE agreement
+    // policy for nutrition data (todo P3-2026-07-17-off-self-consistency-
+    // gate-refinements). `valuesMatch`'s own small-value (<2) absolute floor
+    // is subsumed by the ABSOLUTE_TOLERANCE_FLOOR_KCAL check on the `||`'s
+    // left side: whenever both operands are <2, their difference is <2,
+    // which is always <= the 5 kcal floor, so that branch short-circuits
+    // before `valuesMatch` is ever reached — this floor stays 0-vs-tiny
+    // unshielded, exactly as before (the explicit 0-and-0 branch above is a
+    // separate, untouched code path).
     return (
-      Math.abs((offPer100g.calories * offLabelGrams) / 100 - offPerServingCal) /
-        offPerServingCal <=
-      0.15
+      Math.abs(scaledPer100g - offPerServingCal) <=
+        ABSOLUTE_TOLERANCE_FLOOR_KCAL ||
+      valuesMatch(scaledPer100g, offPerServingCal, 0.15)
     );
   })();
 
