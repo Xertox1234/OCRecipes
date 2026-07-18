@@ -19,7 +19,7 @@ import { getReticleTarget, getConfidenceFromPhase } from "./ScanReticle-utils";
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 const CORNER_LEN = 24;
-const STROKE_WIDTH = 2.5;
+const STROKE_WIDTH = 3;
 const SPRING_TRACK = { damping: 20, stiffness: 200 };
 const SPRING_MORPH = { damping: 16, stiffness: 220 };
 const SPRING_SNAP = { damping: 8, stiffness: 300 };

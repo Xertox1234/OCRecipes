@@ -1,18 +1,20 @@
 import React from "react";
-import {
-  StyleSheet,
-  View,
-  ScrollView,
-  Pressable,
-  TextInput as RNTextInput,
-} from "react-native";
+import { StyleSheet, View, ScrollView, Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
-import { Card } from "@/components/Card";
+import { TextInput } from "@/components/TextInput";
+import { Chip } from "@/components/Chip";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { useAccessibility } from "@/hooks/useAccessibility";
+import { Spacing } from "@/constants/theme";
+import { pressSpringConfig } from "@/constants/animations";
 
 interface ServingOption {
   label: string;
@@ -32,6 +34,51 @@ interface ServingControlsProps {
   recalculateNutrition: (grams: number, quantity: number) => void;
 }
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+function StepperButton({
+  icon,
+  onPress,
+  accessibilityLabel,
+}: {
+  icon: "minus" | "plus";
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  const { theme } = useTheme();
+  const { reducedMotion } = useAccessibility();
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <AnimatedPressable
+      style={[
+        styles.stepperButton,
+        { backgroundColor: theme.backgroundSecondary },
+        animatedStyle,
+      ]}
+      onPressIn={() => {
+        if (!reducedMotion) {
+          scale.value = withSpring(0.95, pressSpringConfig);
+        }
+      }}
+      onPressOut={() => {
+        if (!reducedMotion) {
+          scale.value = withSpring(1, pressSpringConfig);
+        }
+      }}
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+    >
+      <Feather name={icon} size={18} color={theme.text} accessible={false} />
+    </AnimatedPressable>
+  );
+}
+
 export const ServingControls = React.memo(function ServingControls({
   servingOptions,
   servingSizeGrams,
@@ -48,13 +95,10 @@ export const ServingControls = React.memo(function ServingControls({
   const haptics = useHaptics();
 
   return (
-    <Card elevation={1} style={styles.servingCard}>
+    <View style={styles.container}>
       {/* Serving Size */}
       <View style={styles.servingSection}>
-        <ThemedText
-          type="small"
-          style={[styles.servingSectionLabel, { color: theme.textSecondary }]}
-        >
+        <ThemedText type="small" style={styles.servingSectionLabel}>
           Serving Size
         </ThemedText>
         <ScrollView
@@ -68,17 +112,12 @@ export const ServingControls = React.memo(function ServingControls({
               servingSizeGrams !== null &&
               Math.abs(servingSizeGrams - opt.grams) < 0.1;
             return (
-              <Pressable
+              <Chip
                 key={opt.grams}
-                style={({ pressed }) => [
-                  styles.servingChip,
-                  {
-                    backgroundColor: isActive
-                      ? theme.accentSolid
-                      : withOpacity(theme.text, 0.06),
-                  },
-                  pressed && { opacity: 0.7 },
-                ]}
+                label={opt.label}
+                variant="tab"
+                selected={isActive}
+                style={styles.servingChip}
                 onPress={() => {
                   setShowCustomInput(false);
                   setServingSizeGrams(opt.grams);
@@ -87,62 +126,28 @@ export const ServingControls = React.memo(function ServingControls({
                 }}
                 accessibilityLabel={`Set serving to ${opt.label}`}
                 accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-              >
-                <ThemedText
-                  type="small"
-                  style={{
-                    color: isActive ? theme.buttonText : theme.text,
-                    fontWeight: isActive ? "600" : "400",
-                  }}
-                >
-                  {opt.label}
-                </ThemedText>
-              </Pressable>
+              />
             );
           })}
           {/* Custom option */}
-          <Pressable
-            style={({ pressed }) => [
-              styles.servingChip,
-              {
-                backgroundColor: showCustomInput
-                  ? theme.accentSolid
-                  : withOpacity(theme.text, 0.06),
-              },
-              pressed && { opacity: 0.7 },
-            ]}
+          <Chip
+            label="Custom"
+            variant="tab"
+            selected={showCustomInput}
+            style={styles.servingChip}
             onPress={() => {
               setShowCustomInput(true);
               haptics.selection();
             }}
             accessibilityLabel="Enter custom serving size"
             accessibilityRole="button"
-            accessibilityState={{ selected: showCustomInput }}
-          >
-            <ThemedText
-              type="small"
-              style={{
-                color: showCustomInput ? theme.buttonText : theme.text,
-                fontWeight: showCustomInput ? "600" : "400",
-              }}
-            >
-              Custom
-            </ThemedText>
-          </Pressable>
+          />
         </ScrollView>
 
         {showCustomInput ? (
           <View style={styles.customInputRow}>
-            <RNTextInput
-              style={[
-                styles.customInput,
-                {
-                  color: theme.text,
-                  backgroundColor: withOpacity(theme.text, 0.06),
-                  borderColor: theme.border,
-                },
-              ]}
+            <TextInput
+              containerStyle={styles.customInput}
               value={customGramsInput}
               onChangeText={setCustomGramsInput}
               onEndEditing={() => {
@@ -153,7 +158,6 @@ export const ServingControls = React.memo(function ServingControls({
                 }
               }}
               placeholder="grams"
-              placeholderTextColor={theme.textSecondary}
               keyboardType="decimal-pad"
               returnKeyType="done"
               accessibilityLabel="Custom serving size in grams"
@@ -165,26 +169,14 @@ export const ServingControls = React.memo(function ServingControls({
         ) : null}
       </View>
 
-      {/* Divider */}
-      <View
-        style={[styles.servingDivider, { backgroundColor: theme.border }]}
-      />
-
       {/* Servings quantity */}
       <View style={styles.quantityRow}>
-        <ThemedText
-          type="small"
-          style={[styles.servingSectionLabel, { color: theme.textSecondary }]}
-        >
+        <ThemedText type="small" style={styles.servingSectionLabel}>
           Servings
         </ThemedText>
         <View style={styles.quantityStepper}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.stepperButton,
-              { backgroundColor: withOpacity(theme.text, 0.08) },
-              pressed && { opacity: 0.7 },
-            ]}
+          <StepperButton
+            icon="minus"
             onPress={() => {
               const next = Math.max(0.5, servingQuantity - 0.5);
               setServingQuantity(next);
@@ -194,21 +186,14 @@ export const ServingControls = React.memo(function ServingControls({
               haptics.selection();
             }}
             accessibilityLabel="Decrease serving quantity"
-            accessibilityRole="button"
-          >
-            <Feather name="minus" size={18} color={theme.text} />
-          </Pressable>
-          <ThemedText type="h4" style={styles.quantityValue}>
+          />
+          <ThemedText style={styles.quantityValue}>
             {servingQuantity % 1 === 0
               ? servingQuantity
               : servingQuantity.toFixed(1)}
           </ThemedText>
-          <Pressable
-            style={({ pressed }) => [
-              styles.stepperButton,
-              { backgroundColor: withOpacity(theme.text, 0.08) },
-              pressed && { opacity: 0.7 },
-            ]}
+          <StepperButton
+            icon="plus"
             onPress={() => {
               const next = servingQuantity + 0.5;
               setServingQuantity(next);
@@ -218,23 +203,19 @@ export const ServingControls = React.memo(function ServingControls({
               haptics.selection();
             }}
             accessibilityLabel="Increase serving quantity"
-            accessibilityRole="button"
-          >
-            <Feather name="plus" size={18} color={theme.text} />
-          </Pressable>
+          />
         </View>
       </View>
-    </Card>
+    </View>
   );
 });
 
 const styles = StyleSheet.create({
-  servingCard: {
-    padding: Spacing.md,
+  container: {
     marginBottom: Spacing["2xl"],
   },
   servingSection: {
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.xl,
   },
   servingSectionLabel: {
     fontWeight: "500",
@@ -246,9 +227,6 @@ const styles = StyleSheet.create({
     paddingRight: Spacing.sm,
   },
   servingChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.xl,
     minHeight: 44,
   },
   customInputRow: {
@@ -259,15 +237,6 @@ const styles = StyleSheet.create({
   },
   customInput: {
     flex: 1,
-    height: 40,
-    borderRadius: BorderRadius.xs,
-    borderWidth: 1,
-    paddingHorizontal: Spacing.md,
-    fontSize: 16,
-  },
-  servingDivider: {
-    height: 1,
-    marginVertical: Spacing.sm,
   },
   quantityRow: {
     flexDirection: "row",
@@ -287,6 +256,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   quantityValue: {
+    fontSize: 18,
+    fontWeight: "600",
     minWidth: 32,
     textAlign: "center",
   },

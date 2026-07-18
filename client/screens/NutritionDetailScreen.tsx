@@ -22,7 +22,14 @@ import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import {
+  Spacing,
+  BorderRadius,
+  FontFamily,
+  Shadows,
+  withOpacity,
+} from "@/constants/theme";
+import { getServingContextLabel } from "@/screens/nutrition-detail-utils";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
@@ -36,48 +43,6 @@ type RouteParams = {
   itemId?: number;
 };
 
-function MacroCard({
-  label,
-  value,
-  unit,
-  color,
-  index,
-  reducedMotion,
-}: {
-  label: string;
-  value?: number;
-  unit: string;
-  color: string;
-  index: number;
-  reducedMotion: boolean;
-}) {
-  const { theme } = useTheme();
-
-  // Skip entrance animation when reduced motion is preferred
-  const enteringAnimation = reducedMotion
-    ? undefined
-    : FadeInUp.delay(index * 100).duration(400);
-
-  return (
-    <Animated.View entering={enteringAnimation} style={styles.macroCardWrapper}>
-      <Card elevation={1} style={styles.macroCard}>
-        <View style={[styles.macroAccent, { backgroundColor: color }]} />
-        <View style={styles.macroContent}>
-          <ThemedText type="h3" style={{ color }}>
-            {value !== undefined ? Math.round(value) : "—"}
-          </ThemedText>
-          <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            {unit}
-          </ThemedText>
-        </View>
-        <ThemedText type="small" style={styles.macroLabel}>
-          {label}
-        </ThemedText>
-      </Card>
-    </Animated.View>
-  );
-}
-
 function NutritionDetailSkeleton() {
   React.useEffect(() => {
     AccessibilityInfo.announceForAccessibility("Loading");
@@ -90,7 +55,11 @@ function NutritionDetailSkeleton() {
         style={{ alignItems: "center", padding: Spacing.lg }}
       >
         {/* Product image */}
-        <SkeletonBox width={160} height={160} borderRadius={BorderRadius.lg} />
+        <SkeletonBox
+          width="100%"
+          height={150}
+          borderRadius={BorderRadius.card}
+        />
         {/* Product name */}
         <SkeletonBox
           width="60%"
@@ -188,7 +157,7 @@ function NutritionDetailSkeleton() {
 export default function NutritionDetailScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { isOffline, offlineLabel } = useOfflineGuard();
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
@@ -230,6 +199,17 @@ export default function NutritionDetailScreen() {
     handleAddToLog,
   } = useNutritionLookup({ barcode, imageUri, itemId });
 
+  const showServingControls =
+    !itemId && !!barcode && nutrition?.calories !== undefined;
+  // Derived from the SAME serving state that scales the displayed values, so
+  // the hero caption can never desync from the numbers it describes.
+  const servingContextLabel = getServingContextLabel({
+    servingQuantity,
+    servingSizeGrams,
+    servingOptions,
+    isPer100g,
+  });
+
   if (isLoading) {
     return (
       <ThemedView style={styles.container} accessibilityViewIsModal>
@@ -262,21 +242,22 @@ export default function NutritionDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {nutrition?.imageUrl ? (
-          <Animated.View
-            entering={reducedMotion ? undefined : FadeIn.duration(400)}
-            style={styles.imageContainer}
-          >
-            <FallbackImage
-              source={{ uri: nutrition.imageUrl ?? undefined }}
-              style={styles.productImage}
-              fallbackIcon="package"
-              fallbackIconSize={40}
-              resizeMode="contain"
-              accessibilityLabel={`Image of ${nutrition.productName || "product"}`}
-            />
-          </Animated.View>
-        ) : null}
+        <Animated.View
+          entering={reducedMotion ? undefined : FadeIn.duration(400)}
+          style={[
+            styles.imageCard,
+            { backgroundColor: theme.backgroundSecondary },
+          ]}
+        >
+          <FallbackImage
+            source={{ uri: nutrition?.imageUrl ?? undefined }}
+            style={styles.productImage}
+            fallbackIcon="image"
+            fallbackIconSize={30}
+            resizeMode="contain"
+            accessibilityLabel={`Image of ${nutrition?.productName || "product"}`}
+          />
+        </Animated.View>
 
         <Animated.View
           entering={
@@ -288,13 +269,13 @@ export default function NutritionDetailScreen() {
           </ThemedText>
           {nutrition?.brandName ? (
             <ThemedText
-              type="body"
+              type="small"
               style={[styles.brandName, { color: theme.textSecondary }]}
             >
               {nutrition.brandName}
             </ThemedText>
           ) : null}
-          {nutrition?.servingSize ? (
+          {nutrition?.servingSize && !showServingControls ? (
             <ThemedText
               type="small"
               style={[styles.servingSize, { color: theme.textSecondary }]}
@@ -328,7 +309,7 @@ export default function NutritionDetailScreen() {
         ) : null}
 
         {/* ── Serving size & quantity controls ── */}
-        {!itemId && barcode && nutrition?.calories !== undefined ? (
+        {showServingControls ? (
           <ServingControls
             servingOptions={servingOptions}
             servingSizeGrams={servingSizeGrams}
@@ -429,24 +410,81 @@ export default function NutritionDetailScreen() {
           }
           style={styles.calorieCard}
         >
-          <Card
-            elevation={2}
-            style={[
-              styles.heroCalorieCard,
-              { borderColor: theme.calorieAccent, borderWidth: 2 },
-            ]}
-          >
+          <Card elevation={1} style={{ backgroundColor: theme.surface }}>
             <ThemedText
-              type="h1"
-              style={[styles.calorieValue, { color: theme.calorieAccent }]}
+              type="caption"
+              style={[styles.heroContext, { color: theme.textSecondary }]}
             >
-              {nutrition?.calories !== undefined
-                ? Math.round(nutrition.calories)
-                : "—"}
+              Per {servingContextLabel}
             </ThemedText>
-            <ThemedText type="body" style={{ color: theme.textSecondary }}>
-              Calories{isPer100g ? " (per 100g)" : ""}
-            </ThemedText>
+            <View style={styles.calorieRow}>
+              <ThemedText
+                style={[styles.calorieValue, { color: theme.calorieAccent }]}
+              >
+                {nutrition?.calories !== undefined
+                  ? Math.round(nutrition.calories)
+                  : "—"}
+              </ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                kcal
+              </ThemedText>
+            </View>
+            <View style={styles.macroTiles}>
+              {(
+                [
+                  {
+                    label: "Protein",
+                    value: nutrition?.protein,
+                    color: theme.proteinAccent,
+                  },
+                  {
+                    label: "Carbs",
+                    value: nutrition?.carbs,
+                    color: theme.carbsAccent,
+                  },
+                  {
+                    label: "Fat",
+                    value: nutrition?.fat,
+                    color: theme.fatAccent,
+                  },
+                ] as const
+              ).map((macro) => (
+                <View
+                  key={macro.label}
+                  style={[
+                    styles.macroTile,
+                    {
+                      backgroundColor: isDark
+                        ? theme.backgroundTertiary
+                        : theme.backgroundSecondary,
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    style={[
+                      styles.macroTileLabel,
+                      { color: theme.textSecondary },
+                    ]}
+                  >
+                    {macro.label}
+                  </ThemedText>
+                  <ThemedText
+                    style={[styles.macroTileValue, { color: macro.color }]}
+                  >
+                    {macro.value !== undefined ? Math.round(macro.value) : "—"}
+                    <ThemedText
+                      style={[
+                        styles.macroTileUnit,
+                        { color: theme.textSecondary },
+                      ]}
+                    >
+                      {" "}
+                      g
+                    </ThemedText>
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
           </Card>
         </Animated.View>
 
@@ -464,33 +502,6 @@ export default function NutritionDetailScreen() {
           </View>
         ) : null}
 
-        <View style={styles.macrosGrid}>
-          <MacroCard
-            label="Protein"
-            value={nutrition?.protein}
-            unit="g"
-            color={theme.proteinAccent}
-            index={0}
-            reducedMotion={reducedMotion}
-          />
-          <MacroCard
-            label="Carbs"
-            value={nutrition?.carbs}
-            unit="g"
-            color={theme.carbsAccent}
-            index={1}
-            reducedMotion={reducedMotion}
-          />
-          <MacroCard
-            label="Fat"
-            value={nutrition?.fat}
-            unit="g"
-            color={theme.fatAccent}
-            index={2}
-            reducedMotion={reducedMotion}
-          />
-        </View>
-
         {nutrition?.fiber !== undefined ||
         nutrition?.sugar !== undefined ||
         nutrition?.sodium !== undefined ? (
@@ -503,47 +514,50 @@ export default function NutritionDetailScreen() {
             <ThemedText type="h4" style={styles.sectionTitle}>
               Additional Nutrients
             </ThemedText>
-            <Card elevation={1} style={styles.nutrientsList}>
+            <View
+              style={[
+                styles.nutrientsList,
+                { backgroundColor: theme.surface },
+                !isDark && Shadows.small,
+              ]}
+            >
               {nutrition?.fiber !== undefined ? (
                 <View
-                  style={[
-                    styles.nutrientRow,
-                    { borderBottomColor: theme.border },
-                  ]}
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
                 >
-                  <ThemedText type="body">Fiber</ThemedText>
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Fiber
+                  </ThemedText>
                   <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {Math.round(nutrition.fiber)}g
+                    {Math.round(nutrition.fiber)} g
                   </ThemedText>
                 </View>
               ) : null}
               {nutrition?.sugar !== undefined ? (
                 <View
-                  style={[
-                    styles.nutrientRow,
-                    { borderBottomColor: theme.border },
-                  ]}
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
                 >
-                  <ThemedText type="body">Sugar</ThemedText>
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Sugar
+                  </ThemedText>
                   <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {Math.round(nutrition.sugar)}g
+                    {Math.round(nutrition.sugar)} g
                   </ThemedText>
                 </View>
               ) : null}
               {nutrition?.sodium !== undefined ? (
                 <View
-                  style={[
-                    styles.nutrientRow,
-                    { borderBottomColor: theme.border },
-                  ]}
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
                 >
-                  <ThemedText type="body">Sodium</ThemedText>
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Sodium
+                  </ThemedText>
                   <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {Math.round(nutrition.sodium)}mg
+                    {Math.round(nutrition.sodium)} mg
                   </ThemedText>
                 </View>
               ) : null}
-            </Card>
+            </View>
           </Animated.View>
         ) : null}
 
@@ -651,7 +665,7 @@ export default function NutritionDetailScreen() {
                 `Add ${nutrition?.productName || "item"} to today's food log`,
               )}
               accessibilityHint="Saves this item to your daily nutrition tracking"
-              style={[styles.addButton, { backgroundColor: theme.success }]}
+              style={styles.addButton}
             >
               {offlineLabel("Add to Today")}
             </Button>
@@ -684,16 +698,21 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: Spacing.lg,
   },
-  imageContainer: {
+  imageCard: {
+    height: 150,
+    borderRadius: BorderRadius.card,
     alignItems: "center",
-    marginBottom: Spacing["2xl"],
+    justifyContent: "center",
+    overflow: "hidden",
+    marginBottom: Spacing.lg,
   },
   productImage: {
-    width: 160,
-    height: 160,
-    borderRadius: BorderRadius.lg,
+    width: "100%",
+    height: 150,
   },
   productName: {
+    fontSize: 22,
+    lineHeight: 28,
     textAlign: "center",
     marginBottom: Spacing.xs,
   },
@@ -724,47 +743,50 @@ const styles = StyleSheet.create({
   calorieCard: {
     marginBottom: Spacing["2xl"],
   },
-  heroCalorieCard: {
-    alignItems: "center",
-    padding: Spacing["2xl"],
-    borderRadius: BorderRadius.lg,
+  heroContext: {
+    fontFamily: FontFamily.semiBold,
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
   },
-  calorieValue: {
-    fontSize: 56,
-    lineHeight: 64,
-    fontWeight: "700",
-  },
-  macrosGrid: {
-    flexDirection: "row",
-    gap: Spacing.md,
-    marginBottom: Spacing["2xl"],
-  },
-  macroCardWrapper: {
-    flex: 1,
-  },
-  macroCard: {
-    padding: Spacing.lg,
-    alignItems: "center",
-    position: "relative",
-    overflow: "hidden",
-  },
-  macroAccent: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: BorderRadius["2xl"],
-    borderBottomLeftRadius: BorderRadius["2xl"],
-  },
-  macroContent: {
+  calorieRow: {
     flexDirection: "row",
     alignItems: "baseline",
-    gap: 2,
-    marginBottom: Spacing.xs,
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
   },
-  macroLabel: {
-    fontWeight: "500",
+  calorieValue: {
+    fontSize: 40,
+    lineHeight: 44,
+    fontFamily: FontFamily.bold,
+  },
+  macroTiles: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    marginTop: Spacing.lg,
+  },
+  macroTile: {
+    flex: 1,
+    borderRadius: BorderRadius.sm,
+    paddingVertical: 10,
+    paddingHorizontal: Spacing.md,
+  },
+  macroTileLabel: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11,
+    lineHeight: 16,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  macroTileValue: {
+    fontFamily: FontFamily.bold,
+    fontSize: 18,
+    lineHeight: 26,
+    marginTop: 2,
+  },
+  macroTileUnit: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12,
   },
   additionalNutrients: {
     marginBottom: Spacing["2xl"],
@@ -773,14 +795,18 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   nutrientsList: {
-    padding: 0,
+    borderRadius: BorderRadius.card,
+    overflow: "hidden",
   },
   nutrientRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     paddingVertical: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    borderBottomWidth: 1,
+    borderTopWidth: 1,
+  },
+  nutrientLabel: {
+    fontWeight: "500",
   },
   buttonContainer: {
     marginTop: Spacing.lg,

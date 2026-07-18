@@ -23,6 +23,9 @@ export const Colors = {
     backgroundDefault: "#FAF6F0",
     backgroundSecondary: "#EEE6DA",
     backgroundTertiary: "#E2D7CA",
+    // Elevated card surface — pure white pops off the parchment root
+    // (2026-07 Nutrition & Scan redesign; dark mode reuses backgroundSecondary)
+    surface: "#FFFFFF",
     // Border
     border: "#D9CFC3",
     // Status colors
@@ -66,6 +69,8 @@ export const Colors = {
     backgroundDefault: "#1E1814",
     backgroundSecondary: "#2C2420",
     backgroundTertiary: "#3C302A",
+    // Elevated card surface — same tier as backgroundSecondary in dark
+    surface: "#2C2420",
     // Border
     border: "#4D3C34",
     // Status colors

@@ -371,13 +371,11 @@ const styles = StyleSheet.create({
   chip: {
     position: "absolute",
     bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(12,12,12,0.94)", // hardcoded — camera overlay
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.1)",
-    borderRadius: 18,
-    padding: 20,
+    left: 16,
+    right: 16,
+    backgroundColor: "rgba(20,16,13,0.82)", // hardcoded — camera overlay (warm ink glass)
+    borderRadius: 20,
+    padding: 14,
     gap: 10,
   },
   productRow: {
@@ -387,8 +385,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   thumb: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     borderRadius: 10,
   },
   thumbPlaceholder: {
@@ -402,18 +400,20 @@ const styles = StyleSheet.create({
   },
   name: {
     color: "#FFF", // hardcoded — camera overlay
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
   },
   btnPrimary: {
     backgroundColor: "#FFF", // hardcoded — camera overlay
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 999,
+    minHeight: 44,
+    paddingVertical: 12,
     alignItems: "center",
+    justifyContent: "center",
   },
   btnPrimaryText: {
-    color: "#000", // hardcoded — camera overlay
-    fontWeight: "700",
+    color: "#1C1410", // hardcoded — warm ink on the white camera-overlay button
+    fontWeight: "600",
     fontSize: 15,
   },
   btnPending: {
@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
   },
   caption: {
     color: "rgba(255,255,255,0.5)",
-    fontSize: 12,
+    fontSize: 11,
     textAlign: "center",
     marginTop: 2,
   },
@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: "#22c55e", // hardcoded — matches DONE_COLOR in StepPill.tsx
+    backgroundColor: "#4CAF7D", // hardcoded — matches DONE_COLOR in StepPill.tsx
     alignItems: "center",
     justifyContent: "center",
   },

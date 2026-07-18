@@ -20,6 +20,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import * as Haptics from "expo-haptics";
+import { Feather } from "@expo/vector-icons";
 import {
   useNavigation,
   useIsFocused,
@@ -42,7 +43,7 @@ import {
 } from "@/camera";
 import { useAutoAdvanceTimer } from "@/camera/hooks/useAutoAdvanceTimer";
 
-import { scanPhaseReducer } from "@/camera/reducers/scan-phase-reducer";
+import { scanPhaseReducer } from "@/camera/reducers/scan-phase-reducer"; // hardcoded — camera overlay
 import { CoachHint } from "@/camera/components/CoachHint";
 import { ScanReticle } from "@/camera/components/ScanReticle";
 import { StepPill } from "@/camera/components/StepPill";
@@ -84,6 +85,8 @@ import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
+
+const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
 
 export default function ScanScreen() {
   const navigation = useNavigation<ScanScreenNavigationProp>();
@@ -610,11 +613,13 @@ export default function ScanScreen() {
         </TouchableOpacity>
         <StepPill phase={scanPhase} />
         {!isPremium && remainingScans !== null && (
-          <Text style={styles.scanCountText}>
-            {remainingScans > 0
-              ? `${remainingScans} scans remaining`
-              : "Daily limit reached"}
-          </Text>
+          <View style={styles.scanCountPill}>
+            <Text style={styles.scanCountText}>
+              {remainingScans > 0
+                ? `${remainingScans} scans remaining`
+                : "Daily limit reached"}
+            </Text>
+          </View>
         )}
       </View>
 
@@ -631,24 +636,32 @@ export default function ScanScreen() {
         style={[styles.controls, { paddingBottom: insets.bottom + 16 }]}
         importantForAccessibility={overlayA11y.staticUI}
       >
-        <TouchableOpacity
-          style={styles.iconBtn}
-          onPress={() => setTorchEnabled((t) => !t)}
-          accessibilityLabel={
-            torchEnabled ? "Turn off flashlight" : "Turn on flashlight"
-          }
-          accessibilityRole="button"
-          accessibilityState={{ checked: torchEnabled }}
-        >
-          <Text style={styles.iconBtnText}>{torchEnabled ? "⚡" : "🔦"}</Text>
-        </TouchableOpacity>
+        <View style={styles.iconBtn} />
         <Pressable
           style={[styles.shutter, shutterArmed && styles.shutterArmed]}
           onPress={onShutterPress}
           accessibilityLabel="Take photo"
           accessibilityRole="button"
         />
-        <View style={styles.iconBtn} />
+        <TouchableOpacity
+          style={[styles.iconBtn, styles.iconBtnVisible]}
+          onPress={() => {
+            haptics.selection();
+            setTorchEnabled((t) => !t);
+          }}
+          accessibilityLabel={
+            torchEnabled ? "Turn off flashlight" : "Turn on flashlight"
+          }
+          accessibilityRole="button"
+          accessibilityState={{ checked: torchEnabled }}
+        >
+          <Feather
+            name={torchEnabled ? "zap" : "zap-off"}
+            size={20}
+            color={TORCH_ICON_COLOR}
+            accessible={false}
+          />
+        </TouchableOpacity>
       </View>
 
       {showConfetti && (
@@ -930,7 +943,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -954,21 +967,22 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
   },
-  iconBtnText: { fontSize: 18 },
+  iconBtnVisible: {
+    backgroundColor: "rgba(255,255,255,0.12)",
+  },
   shutter: {
     width: 72,
     height: 72,
     borderRadius: 36,
     backgroundColor: "#FFF", // hardcoded — camera overlay
     borderWidth: 4,
-    borderColor: "rgba(255,255,255,0.4)",
+    borderColor: "rgba(255,255,255,0.3)",
   },
   shutterArmed: {
     borderColor: "#FFD60A", // hardcoded — matches FocusRing's focus-ring yellow (Task 6)
@@ -997,7 +1011,13 @@ const styles = StyleSheet.create({
   permissionBtnText: { color: "#FFF", fontWeight: "700", fontSize: 16 }, // hardcoded — camera overlay
   permissionCancel: { paddingVertical: 12 },
   permissionCancelText: { fontSize: 15 },
-  scanCountText: { color: "rgba(255,255,255,0.7)", fontSize: 12 },
+  scanCountPill: {
+    backgroundColor: "rgba(0,0,0,0.4)",
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+  },
+  scanCountText: { color: "rgba(255,255,255,0.75)", fontSize: 12 },
   confirmOverlay: {
     position: "absolute",
     bottom: 0,

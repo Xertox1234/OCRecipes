@@ -9,42 +9,39 @@ import {
 import Animated, {
   useSharedValue,
   withSpring,
-  withRepeat,
   withTiming,
   useAnimatedStyle,
-  cancelAnimation,
-  interpolateColor,
 } from "react-native-reanimated";
+import { Feather } from "@expo/vector-icons";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import type { ScanPhase } from "../types/scan-phase";
 import {
   getStepDotState,
-  getActiveStepIndex,
   shouldShowStepPill,
   type StepDotState,
 } from "./StepPill-utils";
 
-const DONE_COLOR = "#22c55e"; // hardcoded — camera overlay, cannot use theme
+// hardcoded — camera overlay, cannot use theme. Matches the design's on-dark
+// check green (dark-mode `success`) and ProductChip's reviewCheck.
+const DONE_COLOR = "#4CAF7D"; // hardcoded — camera overlay
 
 const STEP_LABELS = ["Barcode", "Nutrition", "Front"];
 
-interface DotProps {
+interface SegmentProps {
   label: string;
   state: StepDotState;
 }
 
-function StepDot({ label, state }: DotProps) {
+function StepSegment({ label, state }: SegmentProps) {
   const { reducedMotion } = useAccessibility();
-  const scale = useSharedValue(1);
-  const ringScale = useSharedValue(1);
-  const ringOpacity = useSharedValue(0);
+  const checkScale = useSharedValue(1);
   const prevState = React.useRef<StepDotState>(state);
 
   useEffect(() => {
     if (prevState.current !== "done" && state === "done") {
       if (!reducedMotion) {
-        scale.value = withSpring(1.25, { damping: 10 }, () => {
-          scale.value = withSpring(1, { damping: 10 });
+        checkScale.value = withSpring(1.25, { damping: 10 }, () => {
+          checkScale.value = withSpring(1, { damping: 10 });
         });
       }
       if (Platform.OS === "ios") {
@@ -52,136 +49,67 @@ function StepDot({ label, state }: DotProps) {
       }
     }
     prevState.current = state;
-  }, [state, scale, label, reducedMotion]);
+  }, [state, checkScale, label, reducedMotion]);
 
   useEffect(() => {
-    if (state === "active") {
-      if (Platform.OS === "ios") {
-        AccessibilityInfo.announceForAccessibility(`${label} step in progress`);
-      }
-      if (reducedMotion) {
-        ringOpacity.value = 0;
-      } else {
-        ringOpacity.value = withTiming(1, { duration: 200 });
-        ringScale.value = withRepeat(
-          withTiming(1.5, { duration: 700 }),
-          -1,
-          true,
-        );
-      }
-    } else {
-      cancelAnimation(ringScale);
-      cancelAnimation(ringOpacity);
-      ringOpacity.value = withTiming(0, { duration: 200 });
-      ringScale.value = withTiming(1, { duration: 200 });
+    if (state === "active" && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(`${label} step in progress`);
     }
-  }, [state, ringScale, ringOpacity, reducedMotion, label]);
+  }, [state, label]);
 
-  const dotAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  const ringAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: ringScale.value }],
-    opacity: ringOpacity.value,
+  const checkAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: checkScale.value }],
   }));
 
-  const isDone = state === "done";
   const isActive = state === "active";
 
   return (
-    <View style={styles.dotWrapper}>
-      <Animated.View
-        style={[
-          styles.dot,
-          isDone && styles.dotDone,
-          isActive && styles.dotActive,
-          dotAnimStyle,
-        ]}
-        accessibilityLiveRegion="polite"
-        accessibilityLabel={`${label}: ${state}`}
-      >
-        {isDone && <Text style={styles.checkmark}>✓</Text>}
-      </Animated.View>
-      {isActive && (
-        <Animated.View
-          style={[StyleSheet.absoluteFill, styles.ring, ringAnimStyle]}
-        />
+    <View
+      style={[styles.segment, isActive && styles.segmentActive]}
+      accessibilityLiveRegion="polite"
+      accessibilityLabel={`${label}: ${state}`}
+    >
+      {state === "done" && (
+        <Animated.View style={checkAnimStyle}>
+          <Feather
+            name="check"
+            size={13}
+            color={DONE_COLOR}
+            accessible={false}
+          />
+        </Animated.View>
       )}
-      <Text style={[styles.label, isActive && styles.labelActive]}>
+      <Text
+        style={[styles.segmentLabel, isActive && styles.segmentLabelActive]}
+      >
         {label}
       </Text>
     </View>
   );
 }
 
-interface ConnectorProps {
-  precedingDotState: StepDotState;
-}
-
-function Connector({ precedingDotState }: ConnectorProps) {
-  const { reducedMotion } = useAccessibility();
-  const progress = useSharedValue(0);
-
-  useEffect(() => {
-    const target = precedingDotState === "done" ? 1 : 0;
-    progress.value = withTiming(target, { duration: reducedMotion ? 0 : 300 });
-  }, [precedingDotState, progress, reducedMotion]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(
-      progress.value,
-      [0, 1],
-      ["rgba(255,255,255,0.2)", DONE_COLOR],
-    ),
-  }));
-
-  return <Animated.View style={[styles.connector, animStyle]} />;
-}
-
 interface Props {
   phase: ScanPhase;
 }
 
-const BAR_WIDTH = 64; // px — matches label column width incl. gap, tuned per STEP_LABELS
-
 export function StepPill({ phase }: Props) {
   const opacity = useSharedValue(0);
-  const barPosition = useSharedValue(0);
   const visible = shouldShowStepPill(phase);
-  const activeIndex = getActiveStepIndex(phase);
-  const { reducedMotion } = useAccessibility();
 
   useEffect(() => {
     opacity.value = withTiming(visible ? 1 : 0, { duration: 200 });
   }, [visible, opacity]);
 
-  useEffect(() => {
-    if (activeIndex === null) return;
-    barPosition.value = reducedMotion
-      ? activeIndex
-      : withTiming(activeIndex, { duration: 350 });
-  }, [activeIndex, barPosition, reducedMotion]);
-
   const pillAnimStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  const barAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: barPosition.value * BAR_WIDTH }],
-  }));
 
   return (
     <Animated.View style={[styles.pill, pillAnimStyle]} pointerEvents="none">
-      <Animated.View style={[styles.slidingBar, barAnimStyle]} />
       {STEP_LABELS.map((label, i) => (
-        <React.Fragment key={label}>
-          {i > 0 && (
-            <Connector
-              precedingDotState={getStepDotState(phase, (i - 1) as 0 | 1 | 2)}
-            />
-          )}
-          <StepDot
-            label={label}
-            state={getStepDotState(phase, i as 0 | 1 | 2)}
-          />
-        </React.Fragment>
+        <StepSegment
+          key={label}
+          label={label}
+          state={getStepDotState(phase, i as 0 | 1 | 2)}
+        />
       ))}
     </Animated.View>
   );
@@ -191,67 +119,29 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 2,
     backgroundColor: "rgba(0,0,0,0.5)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderRadius: 999,
+    padding: 4,
     alignSelf: "center",
   },
-  slidingBar: {
-    position: "absolute",
-    top: 4,
-    left: 8,
-    width: BAR_WIDTH - 8,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "rgba(255,255,255,0.08)",
-  },
-  dotWrapper: {
+  segment: {
+    flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
   },
-  dot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    alignItems: "center",
-    justifyContent: "center",
+  segmentActive: {
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
-  dotActive: {
-    borderColor: "rgba(255,255,255,0.7)",
-    backgroundColor: "rgba(255,255,255,0.1)",
+  segmentLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(255,255,255,0.6)",
   },
-  dotDone: {
-    backgroundColor: DONE_COLOR,
-    borderColor: DONE_COLOR,
-  },
-  checkmark: {
-    color: "#fff", // hardcoded
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  ring: {
-    borderRadius: 11,
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.3)",
-  },
-  connector: {
-    width: 20,
-    height: 1,
-    marginHorizontal: 4,
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 9,
-    color: "rgba(255,255,255,0.4)",
-    letterSpacing: 0.3,
-  },
-  labelActive: {
-    color: "rgba(255,255,255,0.8)",
+  segmentLabelActive: {
+    color: "#FFFFFF", // hardcoded — camera overlay
   },
 });
