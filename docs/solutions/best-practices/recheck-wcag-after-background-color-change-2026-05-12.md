@@ -5,9 +5,10 @@ category: best-practices
 module: client
 severity: medium
 tags: [accessibility, wcag, theme, colors, contrast, rebrand]
-symptoms: [Background colour changed (e.g. white → cream) without revisiting foreground contrast, Greens or mid-greys that 'looked fine on white' appearing low-contrast on the new background, WCAG ratio comments in theme.ts not updated to match the new background]
+symptoms: [Background colour changed (e.g. white → cream) without revisiting foreground contrast, Greens or mid-greys that 'looked fine on white' appearing low-contrast on the new background, WCAG ratio comments in theme.ts not updated to match the new background, A verified text token reused on a darker nested fill (tile/chip inside a card) without re-checking the new pair]
 applies_to: [client/constants/theme.ts, client/constants/**/*colors*.ts]
 created: '2026-05-12'
+last_updated: '2026-07-17'
 ---
 
 # Re-verify WCAG contrast for every foreground after a background color change
@@ -15,6 +16,15 @@ created: '2026-05-12'
 ## When this applies
 
 Any change to `backgroundRoot`, `backgroundDefault`, or `backgroundSecondary` in `client/constants/theme.ts`, or to any other root-surface colour anywhere in the app. The check is required even for "small" luminance shifts (white → cream) because foreground colours near the 4.5:1 boundary — especially greens and mid-greys — flip from pass to fail with shifts that look visually trivial.
+
+**It applies equally to a NEW pairing with no colour change at all**: placing an already-"verified" foreground token on a darker *existing* surface (a tile or chip fill nested inside a card) is the same event — contrast is a property of the pair, not the token, and a token's documented AA ratio only holds for the background it was measured against.
+
+```text
+// Example from the 2026-07-17 Nutrition redesign (PR #661 review):
+// textSecondary #6B6B6B on backgroundRoot #FAF6F0 → 4.8:1  ✓ (the documented rating)
+// textSecondary #6B6B6B on backgroundSecondary #EEE6DA (macro tile fill) → 4.31:1 ✗
+// Fix: small tile labels use theme.text in light mode; dark mode's pairing passes.
+```
 
 ## Why it fails silently
 
@@ -43,6 +53,7 @@ The lesson is not "this colour was passing before the rebrand" — it wasn't. Th
 ## Related Files
 
 - `client/constants/theme.ts` — theme colour definitions with WCAG ratio comments
+- `client/screens/NutritionDetailScreen.tsx` — macro tile labels: the nested-fill pairing case (light mode uses `theme.text`)
 
 ## See Also
 
