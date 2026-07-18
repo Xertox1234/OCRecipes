@@ -8,7 +8,8 @@ import { FlakeLedgerReporter } from "./scripts/pg-lab/vitest-flake-reporter";
 // graph: node builtins get externalized "for browser compatibility" (collection
 // crashes with `No such built-in module: node:`) and react resolves to its
 // production build (`React.act is not a function`). CI never sets NODE_ENV, so
-// this only defends local shells; normalize to vitest's own default.
+// this only defends local shells; normalize to vitest's own default. See
+// docs/solutions/runtime-errors/shell-node-env-production-breaks-vitest-jsdom-2026-07-17.md
 if (process.env.NODE_ENV === "production") {
   process.env.NODE_ENV = "test";
 }

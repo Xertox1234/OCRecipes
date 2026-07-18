@@ -8,12 +8,12 @@ import {
 } from "./mocks/expo-haptics";
 import { useReducedMotion } from "./mocks/react-native-reanimated";
 
-// node:module must NOT be a static import here: under the jsdom environment
-// vite processes this file with browser conditions and externalizes the
-// builtin into a stub that crashes collection with "No such built-in module:
-// node:". process.getBuiltinModule (Node ≥22.3) resolves it at runtime,
-// invisible to vite's static analysis. See
-// docs/solutions/runtime-errors/vitest-collection-crash-transient-contention-2026-07-16.md
+// node:module must NOT be a static import here: under a shell-exported
+// NODE_ENV=production, vite processes this file with browser conditions and
+// externalizes the builtin into a stub that crashes collection with "No such
+// built-in module: node:". process.getBuiltinModule (Node ≥22.3) resolves it
+// at runtime, invisible to vite's static analysis. See
+// docs/solutions/runtime-errors/shell-node-env-production-breaks-vitest-jsdom-2026-07-17.md
 const { createRequire } = process.getBuiltinModule("node:module");
 
 // Stub binary static assets (images/fonts) so components that `require(...)` them

@@ -101,6 +101,9 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
     };
 
     useEffect(() => {
+      // Deliberately duplicates focusTiming rather than referencing it: the
+      // local is a fresh object every render, and depending on it would make
+      // this effect re-fire per render.
       labelProgress.value = withTiming(floated ? 1 : 0, {
         ...focusTimingConfig,
         duration: reducedMotion ? 0 : focusTimingConfig.duration,
@@ -290,6 +293,9 @@ const styles = StyleSheet.create({
   },
   inputWithLabel: {
     paddingTop: 14,
+    // Android EditText default font padding can clip/off-center text inside
+    // the height-constrained label box; iOS ignores this prop.
+    textAlignVertical: "center",
   },
   label: {
     position: "absolute",

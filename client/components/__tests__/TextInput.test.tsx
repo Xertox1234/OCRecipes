@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
+import * as Reanimated from "react-native-reanimated";
 import { renderComponent } from "../../../test/utils/render-component";
 import { TextInput } from "../TextInput";
 
@@ -131,6 +132,32 @@ describe("TextInput floating label & focus", () => {
       />,
     );
     expect(screen.getByPlaceholderText("e.g. Less salt")).toBeDefined();
+  });
+
+  it("keeps the label floated after typing and blurring (uncontrolled)", () => {
+    renderComponent(
+      <TextInput label="Note title" placeholder="e.g. Less salt" />,
+    );
+    const input = screen.getByLabelText("Note title");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "Less salt" } });
+    fireEvent.blur(input);
+    // internalValue tracking keeps the label floated once content exists
+    expect(screen.getByPlaceholderText("e.g. Less salt")).toBeDefined();
+  });
+
+  it("still reveals the placeholder on focus when reduced motion is enabled", () => {
+    const spy = vi.spyOn(Reanimated, "useReducedMotion").mockReturnValue(true);
+    try {
+      renderComponent(
+        <TextInput label="Note title" placeholder="e.g. Less salt" />,
+      );
+      fireEvent.focus(screen.getByLabelText("Note title"));
+      // reduced motion snaps the transition but must never drop the state
+      expect(screen.getByPlaceholderText("e.g. Less salt")).toBeDefined();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("forwards onFocus and onBlur to callers", () => {
