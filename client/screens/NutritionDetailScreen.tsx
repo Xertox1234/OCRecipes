@@ -79,44 +79,42 @@ function NutritionDetailSkeleton() {
           style={{ marginTop: Spacing.sm }}
         />
 
-        {/* Hero calorie card */}
+        {/* Hero calorie card: caption, calorie figure, macro tile row */}
         <View
           style={{
             width: "100%",
-            alignItems: "center",
-            padding: Spacing["2xl"],
+            alignItems: "flex-start",
+            gap: Spacing.sm,
+            padding: Spacing.xl,
             marginTop: Spacing.xl,
             marginBottom: Spacing["2xl"],
           }}
         >
-          <SkeletonBox width={120} height={48} />
-          <SkeletonBox
-            width={80}
-            height={16}
-            style={{ marginTop: Spacing.sm }}
-          />
-        </View>
-
-        {/* Macro cards row */}
-        <View
-          style={{
-            flexDirection: "row",
-            gap: Spacing.md,
-            width: "100%",
-            marginBottom: Spacing["2xl"],
-          }}
-        >
-          <View style={{ flex: 1, alignItems: "center", gap: Spacing.xs }}>
-            <SkeletonBox width="80%" height={28} />
-            <SkeletonBox width="60%" height={14} />
-          </View>
-          <View style={{ flex: 1, alignItems: "center", gap: Spacing.xs }}>
-            <SkeletonBox width="80%" height={28} />
-            <SkeletonBox width="60%" height={14} />
-          </View>
-          <View style={{ flex: 1, alignItems: "center", gap: Spacing.xs }}>
-            <SkeletonBox width="80%" height={28} />
-            <SkeletonBox width="60%" height={14} />
+          <SkeletonBox width={120} height={12} />
+          <SkeletonBox width={140} height={44} />
+          <View
+            style={{
+              flexDirection: "row",
+              gap: Spacing.sm,
+              width: "100%",
+              marginTop: Spacing.sm,
+            }}
+          >
+            <SkeletonBox
+              width="31%"
+              height={56}
+              borderRadius={BorderRadius.sm}
+            />
+            <SkeletonBox
+              width="31%"
+              height={56}
+              borderRadius={BorderRadius.sm}
+            />
+            <SkeletonBox
+              width="31%"
+              height={56}
+              borderRadius={BorderRadius.sm}
+            />
           </View>
         </View>
 
@@ -255,7 +253,11 @@ export default function NutritionDetailScreen() {
             fallbackIcon="image"
             fallbackIconSize={30}
             resizeMode="contain"
-            accessibilityLabel={`Image of ${nutrition?.productName || "product"}`}
+            accessibilityLabel={
+              nutrition?.imageUrl
+                ? `Image of ${nutrition.productName || "product"}`
+                : "No product image available"
+            }
           />
         </Animated.View>
 
@@ -411,14 +413,20 @@ export default function NutritionDetailScreen() {
           style={styles.calorieCard}
         >
           <Card elevation={1} style={{ backgroundColor: theme.surface }}>
-            <ThemedText
-              type="caption"
-              style={[styles.heroContext, { color: theme.textSecondary }]}
-            >
-              Per {servingContextLabel}
-            </ThemedText>
+            {/* Only the scan flow populates the serving state this caption is
+                derived from — saved items store already-scaled totals, so a
+                "Per …" claim there would misdescribe the numbers. */}
+            {showServingControls ? (
+              <ThemedText
+                type="caption"
+                style={[styles.heroContext, { color: theme.textSecondary }]}
+              >
+                Per {servingContextLabel}
+              </ThemedText>
+            ) : null}
             <View style={styles.calorieRow}>
               <ThemedText
+                accessibilityRole="header"
                 style={[styles.calorieValue, { color: theme.calorieAccent }]}
               >
                 {nutrition?.calories !== undefined
@@ -460,10 +468,13 @@ export default function NutritionDetailScreen() {
                     },
                   ]}
                 >
+                  {/* textSecondary fails AA (4.31:1) on the light-mode tile
+                      fill (backgroundSecondary) — use full text there; the
+                      dark tile passes with textSecondary. */}
                   <ThemedText
                     style={[
                       styles.macroTileLabel,
-                      { color: theme.textSecondary },
+                      { color: isDark ? theme.textSecondary : theme.text },
                     ]}
                   >
                     {macro.label}
@@ -475,7 +486,7 @@ export default function NutritionDetailScreen() {
                     <ThemedText
                       style={[
                         styles.macroTileUnit,
-                        { color: theme.textSecondary },
+                        { color: isDark ? theme.textSecondary : theme.text },
                       ]}
                     >
                       {" "}

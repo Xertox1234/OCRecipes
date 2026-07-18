@@ -15,9 +15,9 @@ interface ServingContextInput {
   isPer100g: boolean;
 }
 
-/** Tolerance for matching a selected grams value back to a chip option — must
- * stay in sync with the active-chip check in ServingControls. */
-const OPTION_MATCH_TOLERANCE = 0.1;
+/** Tolerance for matching a selected grams value back to a chip option —
+ * shared with the active-chip check in ServingControls. */
+export const OPTION_MATCH_TOLERANCE = 0.1;
 
 function formatQuantity(quantity: number): string {
   return quantity % 1 === 0 ? String(quantity) : quantity.toFixed(1);

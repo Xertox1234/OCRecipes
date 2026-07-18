@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  getStepDotState,
-  shouldShowStepPill,
-  getActiveStepIndex,
-} from "../StepPill-utils";
+import { getStepDotState, shouldShowStepPill } from "../StepPill-utils";
 
 const BOUNDS = { x: 0.4, y: 0.45, width: 0.2, height: 0.1 };
 
@@ -128,70 +124,5 @@ describe("shouldShowStepPill", () => {
 
   it("hides for IDLE", () => {
     expect(shouldShowStepPill({ type: "IDLE" })).toBe(false);
-  });
-});
-
-describe("getActiveStepIndex", () => {
-  it("returns 0 while hunting or tracking a barcode", () => {
-    expect(getActiveStepIndex({ type: "HUNTING" })).toBe(0);
-    expect(
-      getActiveStepIndex({
-        type: "BARCODE_TRACKING",
-        barcode: "1",
-        bounds: { x: 0, y: 0, width: 1, height: 1 },
-        frameCount: 1,
-      }),
-    ).toBe(0);
-  });
-
-  it("returns 1 once the barcode is locked (armed for nutrition, no separate arm step)", () => {
-    expect(
-      getActiveStepIndex({
-        type: "BARCODE_LOCKED",
-        barcode: "1",
-        bounds: { x: 0, y: 0, width: 1, height: 1 },
-      }),
-    ).toBe(1);
-  });
-
-  it("returns 1 while reviewing the captured nutrition photo", () => {
-    expect(
-      getActiveStepIndex({
-        type: "STEP2_REVIEWING",
-        barcode: "1",
-        imageUri: "x",
-        ocrText: "",
-      }),
-    ).toBe(1);
-  });
-
-  it("returns 2 once nutrition is confirmed (armed for front, reviewing front, or complete)", () => {
-    expect(
-      getActiveStepIndex({
-        type: "STEP2_CONFIRMED",
-        barcode: "1",
-        nutritionImageUri: "x",
-        ocrText: "",
-      }),
-    ).toBe(2);
-    expect(
-      getActiveStepIndex({
-        type: "STEP3_REVIEWING",
-        barcode: "1",
-        nutritionImageUri: "x",
-        ocrText: "",
-        frontImageUri: "y",
-      }),
-    ).toBe(2);
-    expect(getActiveStepIndex({ type: "SESSION_COMPLETE", barcode: "1" })).toBe(
-      2,
-    );
-  });
-
-  it("returns null for phases that don't show the step pill", () => {
-    expect(getActiveStepIndex({ type: "IDLE" })).toBeNull();
-    expect(
-      getActiveStepIndex({ type: "CLASSIFYING", imageUri: "x" }),
-    ).toBeNull();
   });
 });

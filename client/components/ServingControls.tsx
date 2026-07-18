@@ -15,6 +15,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { Spacing } from "@/constants/theme";
 import { pressSpringConfig } from "@/constants/animations";
+import { OPTION_MATCH_TOLERANCE } from "@/screens/nutrition-detail-utils";
 
 interface ServingOption {
   label: string;
@@ -110,7 +111,7 @@ export const ServingControls = React.memo(function ServingControls({
             const isActive =
               !showCustomInput &&
               servingSizeGrams !== null &&
-              Math.abs(servingSizeGrams - opt.grams) < 0.1;
+              Math.abs(servingSizeGrams - opt.grams) < OPTION_MATCH_TOLERANCE;
             return (
               <Chip
                 key={opt.grams}

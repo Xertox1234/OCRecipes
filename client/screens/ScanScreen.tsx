@@ -43,7 +43,7 @@ import {
 } from "@/camera";
 import { useAutoAdvanceTimer } from "@/camera/hooks/useAutoAdvanceTimer";
 
-import { scanPhaseReducer } from "@/camera/reducers/scan-phase-reducer"; // hardcoded — camera overlay
+import { scanPhaseReducer } from "@/camera/reducers/scan-phase-reducer";
 import { CoachHint } from "@/camera/components/CoachHint";
 import { ScanReticle } from "@/camera/components/ScanReticle";
 import { StepPill } from "@/camera/components/StepPill";

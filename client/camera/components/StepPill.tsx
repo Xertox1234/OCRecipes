@@ -21,9 +21,9 @@ import {
   type StepDotState,
 } from "./StepPill-utils";
 
-// hardcoded — camera overlay, cannot use theme. Matches the design's on-dark
-// check green (dark-mode `success`) and ProductChip's reviewCheck.
-const DONE_COLOR = "#4CAF7D"; // hardcoded — camera overlay
+// Matches the design's on-dark check green (dark `success`) and ProductChip's
+// reviewCheck.
+const DONE_COLOR = "#4CAF7D"; // hardcoded — camera overlay, cannot use theme
 
 const STEP_LABELS = ["Barcode", "Nutrition", "Front"];
 
