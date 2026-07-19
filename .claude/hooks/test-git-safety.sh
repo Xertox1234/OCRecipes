@@ -43,6 +43,13 @@ assert_warn_contains() {
 json() {  # $1=session $2=cwd $3=command
   printf '{"tool_name":"Bash","session_id":"%s","cwd":"%s","tool_input":{"command":"%s"}}' "$1" "$2" "$3"
 }
+# jq-encoded envelope for commands containing backslashes / bash $'…' where hand-escaping
+# into printf's %s is error-prone (a lone \' is invalid JSON and makes the hook bail to a
+# spurious ALLOW). Pass the RAW command; jq handles JSON escaping.
+jsonc() {  # $1=session $2=cwd $3=raw command
+  jq -cn --arg s "$1" --arg c "$2" --arg cmd "$3" \
+    '{tool_name:"Bash",session_id:$s,cwd:$c,tool_input:{command:$cmd}}'
+}
 
 # ---------- fake gh ----------
 FAKE_BIN=$(mktemp -d)
@@ -149,6 +156,20 @@ assert_allow "registry: read-only 'git log | grep' stays allowed under the permi
 assert_allow "registry: worktree -C commit with a ';'-containing quoted message stays allowed" \
   "$(json "$SESSION" "$MAIN" "git -C $WT_A commit -m \\\"fixed a; also b\\\"")"
 
+# Quote-torture corpus (shared with split_segments + git_c_target + emit_write_targets so
+# the three scanners cannot drift — the drift that caused the $'…' regression). Bash ANSI-C
+# $'…' quoting: \' is an ESCAPED apostrophe that does NOT close the span. A $'…'-blind
+# scanner inverts state on it and swallows real separators, hiding a main-checkout mutation.
+assert_deny "registry: $'…' message before && cannot hide a -C-main reset (was BYPASS)" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$'don\\'t' && git -C $MAIN reset --hard HEAD~1")"
+assert_deny "registry: ANSI-C $'…' inside a -c value does not fracture the segment" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $MAIN -c core.pager=\$'a;b' commit -m x")"
+assert_deny "registry: $'…' env-assignment value does not desync the -C extractor" \
+  "$(jsonc "$SESSION" "$WT_A" "FOO=\$'a\\'b' git -C $MAIN commit -m x")"
+# Guards: a benign $'…' message (with an escaped apostrophe) on a worktree -C stays ALLOWED.
+assert_allow "registry: benign $'…' apostrophe message on a worktree -C stays allowed" \
+  "$(jsonc "$SESSION" "$MAIN" "git -C $WT_A commit -m \$'don\\'t ship'")"
+
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \
   "$(json "$SESSION" "$MAIN" 'git switch -c feature')"
@@ -241,6 +262,17 @@ assert_deny "registry: sed --in-place=.bak on a main-checkout file is denied" \
 # PATH merely contains '-i' must be allowed (the old 'sed …-i' regex matched the path).
 assert_allow "registry: read-only sed on a '-i'-containing main path is allowed" \
   "$(json "$SESSION" "$R_WT" "sed -n s/a/b/ $R_MAIN/file-i.txt")"
+# ANSI-C $'…' quote-completeness (same corpus class as the mutating tests): a $'…\'…'
+# span before a redirect/rm must NOT desync emit_write_targets and hide the write target.
+# `echo $'\'' > <main>/f` was a PRE-EXISTING write-shaped bypass (#664) — must now DENY.
+assert_deny "registry: $'…' before a redirect into main is denied (was pre-existing BYPASS)" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$'\\'' > $R_MAIN/f.txt")"
+assert_deny "registry: $'a\\'b' then a redirect into main is denied" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$'a\\'b' > $R_MAIN/g.txt")"
+assert_deny "registry: $'…' then ';' then rm of a main file is denied (no desync)" \
+  "$(jsonc "$SESSION" "$R_WT" "printf \$'x\\'y' ; rm $R_MAIN/z.txt")"
+assert_allow "registry: benign $'…' redirect to /tmp stays allowed" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$'hi' > /tmp/scratch-ansic.txt")"
 rm -f "$REG_DIR/dddd000000000004"
 
 # jq missing must fail CLOSED for git/write-shaped commands while any registry

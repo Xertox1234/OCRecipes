@@ -89,9 +89,11 @@ lex_collapse() {
 # op/command mentioned inside a commit MESSAGE (`git commit -m "writes > /main/out"`) is
 # never mined — the false-DENY this replaces. Emission mirrors the prior extractors:
 # rm/tee/sed -i → every abs-path arg; cp/mv → the last abs path (destination); redirect
-# → the following path. Residuals (guardrail, not sandbox): fd-dup `>&`/`2>&1` split on
-# the `&`; arg-taking wrappers still expose the command word; $'…' is a plain
-# single-quote span. Bypass remains SKIP_WORKTREE_CONTRACT=1.
+# → the following path. Quote-AWARE incl. bash ANSI-C `$'…'` (st==3) — a `$'…\'…'` used to
+# desync the scanner and hide a `>` into the main checkout (a pre-existing false-negative).
+# Residuals (guardrail, not sandbox): fd-dup `>&`/`2>&1` split on the `&`; arg-taking
+# wrappers still expose the command word; `$(…)`/`${…}`/here-docs unmodeled (over-split =
+# false-POSITIVE, not a bypass). Bypass remains SKIP_WORKTREE_CONTRACT=1.
 emit_write_targets() {
   awk '
     function addc(ch){ word = word ch; wstart = 1 }
@@ -126,6 +128,7 @@ emit_write_targets() {
         c = substr(buf, i, 1)
         if (st == 0) {
           if (c == BS) { i++; if (i <= n) { ch = substr(buf, i, 1); if (ch != "\n") addc(ch) } }
+          else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { i++; st = 3; wstart = 1 }
           else if (c == SQ) { st = 1; wstart = 1 }
           else if (c == DQ) { st = 2; wstart = 1 }
           else if (c == ">") { endword(); if (i < n) { nx = substr(buf, i + 1, 1); if (nx == ">" || nx == "|") i++ } redir = 1 }
@@ -135,9 +138,14 @@ emit_write_targets() {
           else addc(c)
         } else if (st == 1) {
           if (c == SQ) st = 0; else addcq(c)
-        } else {
+        } else if (st == 2) {
           if (c == BS) { i++; if (i <= n) addcq(substr(buf, i, 1)) }
           else if (c == DQ) st = 0
+          else addcq(c)
+        } else {
+          # st==3 ANSI-C dollar-quote: BS escapes next (incl. the quote); only an unescaped quote closes
+          if (c == BS) { i++; if (i <= n) addcq(substr(buf, i, 1)) }
+          else if (c == SQ) st = 0
           else addcq(c)
         }
       }
@@ -161,19 +169,19 @@ emit_write_targets() {
 # false-negative); `git`/`-C` recognition is taint-STRICT — safe ONLY because the
 # quote-blind MUTATING_GIT_SEG_RE below also rejects a quoted `-C` flag, so the
 # tokenizer never runs on `git '-C' <main>` (if that regex is ever hardened, make the
-# `-C` recognition taint-tolerant too). Residuals (guardrail, not sandbox — all tracked in
+# `-C` recognition taint-tolerant too). This tokenizer, split_segments, and
+# emit_write_targets all handle `'…'`, `"…"`, and bash ANSI-C `$'…'` (st==3) — a
+# `$'…\'…'` used to desync the scanner and swallow real separators (a false-NEGATIVE that
+# a PARTIAL quote model, worse than none on a gate, reintroduced). The three share NO code
+# but ARE pinned against one quote-torture corpus in test-git-safety.sh so they cannot
+# drift. Residuals (guardrail, not sandbox — NOT "complete"; tracked in
 # todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md):
-#   - The upstream `tr ';|&'` segment split is quote-BLIND: a `;`/`&`/`|` inside a quoted
-#     `-c name=value` global option fractures a real `git -C <main> … commit` so no fragment
-#     matches — a false-NEGATIVE. (A quote-aware split was attempted and reverted: a PARTIAL
-#     quote model REGRESSED on bash `$'…'` ANSI-C strings — worse than the blind split — so
-#     the follow-up must `$'…'`-complete split AND both tokenizers together.)
-#   - This tokenizer is itself blind to `$'…'` ANSI-C quoting (st==1 toggles on every `'`,
-#     ignoring the `\'` escape), so a `$'…\'…'` value can desync it. Pre-existing; same follow-up.
 #   - WITHIN-segment quote-blindness: a quoted `-C` flag/keyword or glued `-C<path>` isn't
 #     recognized by SEG_RE, so such a segment is skipped — shell-wrapper residual class.
 #   - Chained `-C` (`git -C a -C b …`, git honors the last) fails SEG_RE's `(-C…)?` group
 #     entirely → the whole command is invisible to the gate. Same class.
+#   - `$(…)`/`${…}` substitution, here-docs, `\`-newline continuation are unmodeled: they
+#     over-split (a false-POSITIVE/extra DENY), never an inversion-swallow false-negative.
 git_c_target() {
   awk '
     function endword(   w, tnt){
@@ -199,19 +207,71 @@ git_c_target() {
         c = substr(buf, i, 1)
         if (st == 0) {
           if (c == BS) { i++; if (i <= n) { ch = substr(buf, i, 1); if (ch != "\n") { word = word ch; wstart = 1 } } }
+          else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { i++; st = 3; wstart = 1 }
           else if (c == SQ) { st = 1; wstart = 1 }
           else if (c == DQ) { st = 2; wstart = 1 }
           else if (c == " " || c == "\t" || c == "\n") { endword() }
           else { word = word c; wstart = 1 }
         } else if (st == 1) {
           if (c == SQ) st = 0; else { word = word c; wstart = 1; wtaint = 1 }
-        } else {
+        } else if (st == 2) {
           if (c == BS) { i++; if (i <= n) { word = word substr(buf, i, 1); wstart = 1; wtaint = 1 } }
           else if (c == DQ) st = 0
+          else { word = word c; wstart = 1; wtaint = 1 }
+        } else {
+          # st==3 ANSI-C dollar-quote: BS escapes next char (incl. the quote); only an unescaped quote closes
+          if (c == BS) { i++; if (i <= n) { word = word substr(buf, i, 1); wstart = 1; wtaint = 1 } }
+          else if (c == SQ) st = 0
           else { word = word c; wstart = 1; wtaint = 1 }
         }
       }
       endword()
+    }
+  '
+}
+# split_segments: read a shell command on STDIN and emit each top-level segment on its
+# own line, split on UNQUOTED `;` `|` `&` and newline — QUOTE/ESCAPE-AWARE incl. bash
+# ANSI-C `$'...'` (see the shared quote-torture corpus in test-git-safety.sh, which pins
+# all three scanners against the SAME strings so they cannot drift again — the drift that
+# caused the `$'...'` regression). Quoted spans + escapes are emitted VERBATIM so the
+# downstream quote-aware git_c_target re-parses them. A PARTIAL quote model is worse than
+# none here: `$'…\'…'` used to invert the state and swallow real separators (a
+# false-negative), so `$'...'` (st==3) is handled. Residuals (guardrail, not sandbox;
+# documented, NOT "complete"): `$(…)`/`${…}` command/param substitution, here-docs
+# (`<<`/`<<<`), and `\`-newline continuation are not modeled — over-splitting there is a
+# false-POSITIVE (extra DENY), never an inversion-swallow; `$"…"` needs no handling
+# (double-quote escaping already covers it). Tracked in
+# todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md.
+split_segments() {
+  awk '
+    function flush(){ print seg; seg = "" }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\" }
+    { buf = buf $0 "\n" }
+    END {
+      n = length(buf); st = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(buf, i, 1)
+        if (st == 0) {
+          if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1) }
+          else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { seg = seg c substr(buf, i + 1, 1); i++; st = 3 }
+          else if (c == SQ) { seg = seg c; st = 1 }
+          else if (c == DQ) { seg = seg c; st = 2 }
+          else if (c == ";" || c == "|" || c == "&" || c == "\n") { flush() }
+          else seg = seg c
+        } else if (st == 1) {
+          seg = seg c; if (c == SQ) st = 0
+        } else if (st == 2) {
+          if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1) }
+          else if (c == DQ) { seg = seg c; st = 0 }
+          else seg = seg c
+        } else {
+          # st==3 ANSI-C dollar-quote: BS escapes next (incl. the quote); only an unescaped quote closes
+          if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1) }
+          else if (c == SQ) { seg = seg c; st = 0 }
+          else seg = seg c
+        }
+      }
+      flush()
     }
   '
 }
@@ -254,16 +314,15 @@ case "$CMD" in "SKIP_WORKTREE_CONTRACT=1 "*) INLINE_BYPASS=1 ;; esac
 if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_active; then
   # --- mutating git: EVERY mutating segment's effective repo must be a registered
   # worktree (or allowlisted scratch). A cheap permissive `*git*` pre-filter gates the
-  # loop (see MUTATING_GIT_SEG_RE above for why permissive), then segments split on
-  # ; | & so a benign cross-segment -C cannot launder a main-checkout mutation.
-  # (Shell-wrapped invocations — subshells, eval, xargs, find -exec — remain the accepted
-  # best-effort residual, as does a metachar inside a QUOTED arg fracturing a segment:
-  # this split is quote-BLIND. A quote-AWARE split plus $'…'-complete tokenizers is a
-  # tracked follow-up — todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md;
-  # the jq-less fallback's cruder grep catches some.)
+  # loop (see MUTATING_GIT_SEG_RE above for why permissive), then split_segments splits
+  # QUOTE-AWARE on ; | & (unquoted — incl. metachars inside `'…'`, `"…"`, and `$'…'`) so a
+  # benign cross-segment -C cannot launder a main-checkout mutation AND a metachar inside a
+  # quoted arg cannot fracture a real one. (Shell-wrapped invocations — subshells, eval,
+  # xargs, find -exec, `$(…)`, here-docs — remain the accepted best-effort residual; the
+  # jq-less fallback's cruder grep catches some.)
   if [[ "$CMD" == *git* ]]; then
     VIOLATION=""
-    SEGS=$(printf '%s\n' "$CMD" | tr ';|&' '\n')
+    SEGS=$(printf '%s' "$CMD" | split_segments)
     while IFS= read -r seg; do
       printf '%s' "$seg" | grep -qE "$MUTATING_GIT_SEG_RE" || continue
       # Quote-AWARE -C extraction (git_c_target, defined above). The prior
