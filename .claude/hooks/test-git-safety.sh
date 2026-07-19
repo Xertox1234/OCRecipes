@@ -169,6 +169,15 @@ assert_deny "registry: $'…' env-assignment value does not desync the -C extrac
 # Guards: a benign $'…' message (with an escaped apostrophe) on a worktree -C stays ALLOWED.
 assert_allow "registry: benign $'…' apostrophe message on a worktree -C stays allowed" \
   "$(jsonc "$SESSION" "$MAIN" "git -C $WT_A commit -m \$'don\\'t ship'")"
+# $$'…' — bash pairs a run of $ into $$ (PID); only an UNPAIRED $ before ' is ANSI-C. An
+# EVEN run ($$'…\\') is a NORMAL single quote in bash (\\' closes), so a scanner that enters
+# ANSI-C on the 2nd $ desyncs and swallows the real && separator (an auditor-found regression).
+assert_deny "registry: even-dollar-run \$\$'…\\' cannot hide a -C-main reset (was BYPASS)" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$'a\\' && git -C $MAIN reset --hard HEAD~1")"
+assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' also cannot hide a -C-main reset" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$\$\$'a\\' && git -C $MAIN reset --hard HEAD~1")"
+assert_allow "registry: benign \$\$'ok' (PID + normal single quote) stays allowed" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$'ok'")"
 
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \
@@ -273,6 +282,8 @@ assert_deny "registry: $'…' then ';' then rm of a main file is denied (no desy
   "$(jsonc "$SESSION" "$R_WT" "printf \$'x\\'y' ; rm $R_MAIN/z.txt")"
 assert_allow "registry: benign $'…' redirect to /tmp stays allowed" \
   "$(jsonc "$SESSION" "$R_WT" "echo \$'hi' > /tmp/scratch-ansic.txt")"
+assert_deny "registry: even-dollar-run \$\$'…\\' before a redirect into main is denied" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$\$'a\\' > $R_MAIN/dd.txt")"
 rm -f "$REG_DIR/dddd000000000004"
 
 # jq missing must fail CLOSED for git/write-shaped commands while any registry

@@ -128,6 +128,7 @@ emit_write_targets() {
         c = substr(buf, i, 1)
         if (st == 0) {
           if (c == BS) { i++; if (i <= n) { ch = substr(buf, i, 1); if (ch != "\n") addc(ch) } }
+          else if (c == "$" && i < n && substr(buf, i + 1, 1) == "$") { addc(c); addc(substr(buf, i + 1, 1)); i++ }
           else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { i++; st = 3; wstart = 1 }
           else if (c == SQ) { st = 1; wstart = 1 }
           else if (c == DQ) { st = 2; wstart = 1 }
@@ -176,12 +177,19 @@ emit_write_targets() {
 # but ARE pinned against one quote-torture corpus in test-git-safety.sh so they cannot
 # drift. Residuals (guardrail, not sandbox — NOT "complete"; tracked in
 # todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md):
+#   (`$$` PID pairing IS modeled — a run of `$` is consumed in pairs before the `$'` check,
+#   so only an UNPAIRED `$` before `'` enters ANSI-C, matching bash; an even run `$$'…\'` is a
+#   normal single quote.) Remaining residuals:
 #   - WITHIN-segment quote-blindness: a quoted `-C` flag/keyword or glued `-C<path>` isn't
 #     recognized by SEG_RE, so such a segment is skipped — shell-wrapper residual class.
 #   - Chained `-C` (`git -C a -C b …`, git honors the last) fails SEG_RE's `(-C…)?` group
 #     entirely → the whole command is invisible to the gate. Same class.
 #   - `$(…)`/`${…}` substitution, here-docs, `\`-newline continuation are unmodeled: they
 #     over-split (a false-POSITIVE/extra DENY), never an inversion-swallow false-negative.
+#   - ANSI-C escape DECODING is not modeled: `$'\x2f…'`/`\nnn`/`\uHHHH` read as literal chars,
+#     so `git -C $'\x2fmain'` (bash decodes to `/main`) is seen as non-absolute → resolves
+#     under cwd → a FALSE-NEGATIVE (decode-divergence, not inversion-swallow). Pre-existing,
+#     obscure (deliberate hex-encoding); SKIP_WORKTREE_CONTRACT=1 / the file-tool guard backstop.
 git_c_target() {
   awk '
     function endword(   w, tnt){
@@ -207,6 +215,7 @@ git_c_target() {
         c = substr(buf, i, 1)
         if (st == 0) {
           if (c == BS) { i++; if (i <= n) { ch = substr(buf, i, 1); if (ch != "\n") { word = word ch; wstart = 1 } } }
+          else if (c == "$" && i < n && substr(buf, i + 1, 1) == "$") { word = word c substr(buf, i + 1, 1); wstart = 1; i++ }
           else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { i++; st = 3; wstart = 1 }
           else if (c == SQ) { st = 1; wstart = 1 }
           else if (c == DQ) { st = 2; wstart = 1 }
@@ -253,6 +262,7 @@ split_segments() {
         c = substr(buf, i, 1)
         if (st == 0) {
           if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1) }
+          else if (c == "$" && i < n && substr(buf, i + 1, 1) == "$") { seg = seg c substr(buf, i + 1, 1); i++ }
           else if (c == "$" && i < n && substr(buf, i + 1, 1) == SQ) { seg = seg c substr(buf, i + 1, 1); i++; st = 3 }
           else if (c == SQ) { seg = seg c; st = 1 }
           else if (c == DQ) { seg = seg c; st = 2 }

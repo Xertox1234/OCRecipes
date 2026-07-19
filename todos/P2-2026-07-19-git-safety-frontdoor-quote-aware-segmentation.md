@@ -96,6 +96,22 @@ ship' && git reset --hard HEAD~1` (cwd = main) → bash runs the `reset --hard` 
      **Partial quote-awareness is worse than none on a security scanner** — fix `$'…'` in all
      three scanners in ONE change, ideally by factoring a single shared quote scanner so the
      three copies cannot drift (the root cause of this whole residual family).
+     - **Sub-finding (`$$'…\'` even-dollar-run) — a SECOND regression in the `$'…'` fix, caught by
+       the PR #666 re-review and FIXED in the same PR.** `$'` detection was context-free (any `$`
+       before `'` → ANSI-C), but bash pairs a run of `$` into `$$` (PID); only an UNPAIRED `$`
+       before `'` is ANSI-C. An even run (`$$'a\'`) is a NORMAL single quote in bash, so entering
+       ANSI-C on the 2nd `$` desynced and swallowed the real `&&`. Fixed by consuming `$$` pairs
+       before the `$'` check in all three scanners; regression tests added. Lesson: a hand corpus
+       AND a hand differential both miss `$`-context you don't enumerate — the auditor's fuzz found
+       it. (Reinforces the codified doc.)
+
+6. **ANSI-C escape DECODING not modeled — decode-divergence FALSE-NEGATIVE (pre-existing residual).**
+   `git -C $'\x2fmain' commit` / `rm $'\x2fmain\x2fx'` — bash decodes `\x2f`→`/`, mutating/writing
+   `/main…`, but the scanners read `\xHH`/`\nnn`/`\uHHHH` as literal chars → a non-absolute string →
+   resolves under cwd → ALLOW. Confirmed identical on `main` (pre-existing, NOT introduced). Obscure
+   (needs deliberate hex/octal/unicode encoding); documented in the scanner docstrings. Fix (if ever):
+   decode ANSI-C escapes in `st==3`, or a targeted defense (treat a decoded leading `/` as absolute).
+   Same guardrail-not-sandbox class as chained-`-C`/wrappers; SKIP_WORKTREE_CONTRACT=1 is the backstop.
 
 ## Acceptance Criteria
 
@@ -122,7 +138,7 @@ ship' && git reset --hard HEAD~1` (cwd = main) → bash runs the `reset --hard` 
 - [ ] Handle chained `-C`: allow ≥1 `-C` in `MUTATING_GIT_SEG_RE` (the `?`→`*` change) AND
       teach `git_c_target` cumulative last-absolute-wins resolution (mirror real git) in the SAME
       change — relaxing the regex alone makes it WORSE (SEG_RE would match `git -C /tmp -C /main
-  commit` while `git_c_target` still emits the first `-C` `/tmp`, allowlisted → ALLOW). Add a
+commit` while `git_c_target` still emits the first `-C` `/tmp`, allowlisted → ALLOW). Add a
       red test: `git -C /tmp -C <MAIN> commit` → DENY. (`MUTATING_GIT_RE` no longer exists — #666
       deleted it — so this is SEG_RE only.)
 - [ ] Decide (fix or explicitly document as accepted residual, with a test either way) the
