@@ -143,6 +143,8 @@ Phase 1 sets up both correctly.
    git worktree remove .worktrees/audit-YYYY-MM-DD
    ```
 
+   > **Contract note (2026-07-18 harness audit):** do NOT declare a worktree contract (`scripts/declare-worktree.sh`) for the audit worktree — Phases 1–6 write the manifest/CHANGELOG into the MAIN checkout (`$MAIN_CHECKOUT/docs/audits/…`), and an active contract DENIES those cross-checkout writes on both the file-tool path (guard-worktree-isolation registry mode) and the Bash path (git-safety write-shaped deny); gitignored status is not consulted. Audit isolation comes from the branch + worktree alone. Also: `worktree-deps.sh` provisions node_modules only for `.claude/worktrees/*` worktrees — symlink it before the step 4 baseline: `ln -s "$MAIN_CHECKOUT/node_modules" .worktrees/audit-YYYY-MM-DD/node_modules`.
+
 4. **Record the baseline** (inside the worktree, which is at HEAD of the base branch):
    - Run `npm run test:run` — note pass count
    - Run `npm run check:types` — note error count
@@ -458,4 +460,4 @@ After the fix commit (Phase 7) and the codification commit (Phase 8) both exist 
 - **Per-fix review is not optional.** Every fix in Phase 3 must pass its selected reviewer(s) (the finding's domain reviewer, per the Review Policy roster) before being marked `verified`. It catches what test-based verification misses and gives Phase 8 the full context needed for codification and agent updates.
 - **Deferred is not dropped.** Findings the user explicitly chose to defer at Phase 2.5 triage get a todo (Phase 4) with priority and rationale. Surfaced WARNING/MEDIUM/LOW findings from Phases 3 and 6 stay in the manifest's Deferred Items table — they are NOT auto-filed as todos. The manifest is their record; the user decides at close whether any warrant a todo. "We'll get to it" is not a rationale.
 - **The changelog is append-only.** Never edit previous entries.
-- **Codification is not optional.** Every audit must run Phase 8 to extract knowledge. Do not spawn `.claude/agents/pattern-codifier.md`; codify directly from the manifest after fixes are committed.
+- **Codification is not optional.** Every audit must run Phase 8 to extract knowledge. Codify directly from the manifest after fixes are committed — no codifier subagent.

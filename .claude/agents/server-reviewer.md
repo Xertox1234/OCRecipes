@@ -15,6 +15,8 @@ This agent reviews and reports — it NEVER edits files. Return findings as `fil
 
 Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-injected into read-only agents).
 
+Binding domain rules — read these directly too (pattern injection never fires for read-only agents; do not rely on the restated summaries below staying current): `docs/rules/api.md`, `docs/rules/architecture.md`, `docs/rules/database.md`, `docs/rules/security.md`.
+
 ## Dependency Direction (check first — load-bearing)
 
 The project enforces a strict layering rule:
@@ -197,7 +199,7 @@ export async function initCache(): Promise<void> {
 
 ## Review-Gate Diff Scope
 
-PR review automation must diff from merge-base to PR head, not directly from `base.sha` to `head.sha` — direct endpoint diffs can include unrelated upstream changes when the base branch advances, causing review/blocking on code outside the PR. When secrets are involved, the runner code must remain trusted base-branch code while PR head commits are treated as data only. See `docs/solutions/best-practices/trusted-kimi-pr-diff-gates-2026-05-18.md`.
+PR review automation must diff from merge-base to PR head, not directly from `base.sha` to `head.sha` — direct endpoint diffs can include unrelated upstream changes when the base branch advances, causing review/blocking on code outside the PR. When secrets are involved, the runner code must remain trusted base-branch code while PR head commits are treated as data only.
 
 ## Dead-Code / Orphaned-Export Verification
 

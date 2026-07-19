@@ -54,6 +54,9 @@ jobs:
       - name: JSDOM pragma check
         run: node scripts/check-jsdom-pragma.js
 
+      - name: Rules file size cap (docs/rules/*.md)
+        run: node scripts/check-rules-file-size.js
+
       - name: Verify .github/copilot-instructions.md is current
         run: npm run build:copilot-instructions:check
 

@@ -89,6 +89,33 @@ rm -f "$STAMP_FILE"
 OUT=$(run_hook 'true; gh pr create --title x')
 assert_contains "unquoted separator+create still denies" '"permissionDecision": "deny"' "$OUT"
 
+# 12b. Env-assignment prefixes must not evade the gate (2026-07-18 harness-audit M6).
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'FOO=1 gh pr create --title x')
+assert_contains "env-prefixed create still denies" '"permissionDecision": "deny"' "$OUT"
+
+# 12c. Quoted env value — quote-strip leaves `FOO= ` — still denies.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'GH_TOKEN="x" gh pr create --title x')
+assert_contains "quoted-env-prefixed create still denies" '"permissionDecision": "deny"' "$OUT"
+
+# 12d. Separator + env prefix still denies.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'cd /tmp && FOO=1 gh pr create --title x')
+assert_contains "chained env-prefixed create denies" '"permissionDecision": "deny"' "$OUT"
+
+# 12e. Escaped-quote GLUE must not evade the gate (Phase 6 review of the 2026-07-18 audit):
+# a naive quote-strip pairs the \" inside the first arg with the quote opening --title's arg,
+# deleting the separator AND `gh pr create` — the hook then falls through to allow.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'echo "escaped \" quote" && gh pr create --title "x"')
+assert_contains "escaped-quote glue still denies" '"permissionDecision": "deny"' "$OUT"
+
+# 12f. Subshell form with no args after create (closing paren, no trailing space) still denies.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook '(FOO=1 gh pr create)')
+assert_contains "parenthesized bare create denies" '"permissionDecision": "deny"' "$OUT"
+
 # 13. Helper UN-SOURCEABLE → DENY. Locks the fail-safe: if the shared stamp-path helper
 # can't be found at the repo root, the guard must block (never silently allow a PR with no
 # stamp). Run in a throwaway repo that HAS a HEAD but NO scripts/lib helper, with the env
