@@ -81,6 +81,70 @@ lex_collapse() {
   done
   printf '%s' "${out:-/}"
 }
+# emit_write_targets: read a shell command on STDIN, emit each ABSOLUTE-path write
+# TARGET on its own line, quote/escape-AWARE in a single pass. A redirect (> >> N> &>)
+# or write command (rm/tee/cp/mv/sed -i) counts ONLY when its operator/command word is
+# UNQUOTED — the target PATH may still be quoted (the agent-default style the previous
+# `tr -d` strip was added for). Because quoted content stays inside its word, a write
+# op/command mentioned inside a commit MESSAGE (`git commit -m "writes > /main/out"`) is
+# never mined — the false-DENY this replaces. Emission mirrors the prior extractors:
+# rm/tee/sed -i → every abs-path arg; cp/mv → the last abs path (destination); redirect
+# → the following path. Residuals (guardrail, not sandbox): fd-dup `>&`/`2>&1` split on
+# the `&`; arg-taking wrappers still expose the command word; $'…' is a plain
+# single-quote span. Bypass remains SKIP_WORKTREE_CONTRACT=1.
+emit_write_targets() {
+  awk '
+    function addc(ch){ word = word ch; wstart = 1 }
+    function addcq(ch){ word = word ch; wstart = 1; wtaint = 1 }
+    function seg_reset(){ np = 0; has_rm = 0; has_tee = 0; has_cp = 0; has_mv = 0; has_sed = 0; has_sedi = 0 }
+    function endword(   w, tnt){
+      if (!wstart) return
+      w = word; tnt = wtaint; word = ""; wstart = 0; wtaint = 0
+      if (skipword) { skipword = 0; return }
+      if (redir)    { redir = 0; if (substr(w, 1, 1) == "/") print w; return }
+      if (!tnt) {
+        if (w == "rm") has_rm = 1
+        else if (w == "tee") has_tee = 1
+        else if (w == "cp") has_cp = 1
+        else if (w == "mv") has_mv = 1
+        else if (w == "sed") has_sed = 1
+        else if (substr(w, 1, 2) == "-i" || substr(w, 1, 10) == "--in-place") has_sedi = 1
+      }
+      if (substr(w, 1, 1) == "/") paths[++np] = w
+    }
+    function segend(   k){
+      endword()
+      if (has_rm || has_tee || (has_sed && has_sedi)) { for (k = 1; k <= np; k++) print paths[k] }
+      else if (has_cp || has_mv) { if (np > 0) print paths[np] }
+      redir = 0; skipword = 0; seg_reset()
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; seg_reset() }
+    { buf = buf $0 "\n" }
+    END {
+      n = length(buf); st = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(buf, i, 1)
+        if (st == 0) {
+          if (c == BS) { i++; if (i <= n) { ch = substr(buf, i, 1); if (ch != "\n") addc(ch) } }
+          else if (c == SQ) { st = 1; wstart = 1 }
+          else if (c == DQ) { st = 2; wstart = 1 }
+          else if (c == ">") { endword(); if (i < n) { nx = substr(buf, i + 1, 1); if (nx == ">" || nx == "|") i++ } redir = 1 }
+          else if (c == "<") { endword(); skipword = 1 }
+          else if (c == "|" || c == ";" || c == "&" || c == "(" || c == ")" || c == "\n") { segend() }
+          else if (c == " " || c == "\t") { endword() }
+          else addc(c)
+        } else if (st == 1) {
+          if (c == SQ) st = 0; else addcq(c)
+        } else {
+          if (c == BS) { i++; if (i <= n) addcq(substr(buf, i, 1)) }
+          else if (c == DQ) st = 0
+          else addcq(c)
+        }
+      }
+      segend()
+    }
+  '
+}
 allowlisted() {
   has_dot_segments "$1" && return 1
   case "$1" in
@@ -158,30 +222,14 @@ Run it inside the assigned worktree (or with git -C <worktree>). ${ESCAPES}"
   COMMON=$(git -C "${CWD:-/nonexistent}" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "")
   [ -n "$COMMON" ] && MAIN_ROOT=$(dirname "$COMMON")
   if [ -n "$MAIN_ROOT" ]; then
-    # Quote-stripped copy for target extraction: quoting absolute paths is the
-    # default agent style, and a quote char in front of the / made every
-    # extractor below blind to the target.
-    CMD_UNQ=$(printf '%s' "$CMD" | tr -d '\042\047')
-    WRITE_TARGETS=$(
-      {
-        # >/>> redirect targets (the target follows the operator, so command-wide is positional)
-        printf '%s' "$CMD_UNQ" | grep -oE '>>?[[:space:]]*/[^[:space:];|&]+' | sed -E 's/^>>?[[:space:]]*//'
-        # tee targets
-        printf '%s' "$CMD_UNQ" | grep -oE '(^|[[:space:]|;&])tee([[:space:]]+-[a-zA-Z]+)*[[:space:]]+/[^[:space:];|&]+' | grep -oE '/[^[:space:];|&]+$'
-        # rm / sed -i / cp / mv: scope the token scan to the SUB-COMMAND that
-        # matched — a command-wide scan let a trailing absolute token elsewhere
-        # shadow the real cp/mv destination, and swept unrelated read targets
-        # into rm's deny.
-        printf '%s\n' "$CMD_UNQ" | tr ';|&' '\n' | while IFS= read -r wseg; do
-          if printf '%s' "$wseg" | grep -qE '(^|[[:space:]])rm[[:space:]]' || printf '%s' "$wseg" | grep -qE '(^|[[:space:]])sed[[:space:]][^|;]*-i'; then
-            printf '%s\n' "$wseg" | tr ' ' '\n' | grep -E '^/' || true
-          fi
-          if printf '%s' "$wseg" | grep -qE '(^|[[:space:]])(cp|mv)[[:space:]]'; then
-            printf '%s\n' "$wseg" | tr ' ' '\n' | grep -E '^/' | tail -1 || true
-          fi
-        done
-      } | sort -u
-    )
+    # Quote-AWARE target extraction (emit_write_targets, defined above). The prior
+    # `tr -d '\042\047'` strip DELETED quote chars but kept their CONTENT, so a commit
+    # message like `git commit -m "writes > /main/out"` was mined as a real redirect →
+    # false-DENY (2026-07-18 audit follow-up). A write is real only when its OPERATOR or
+    # COMMAND word is UNQUOTED; the target PATH may still be quoted (the agent-default
+    # style the old strip existed for). See
+    # docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md.
+    WRITE_TARGETS=$(printf '%s' "$CMD" | emit_write_targets | sort -u)
     while IFS= read -r t; do
       [ -n "$t" ] || continue
       # Judge dot-segment targets by where they LAND: an allowlist-prefixed

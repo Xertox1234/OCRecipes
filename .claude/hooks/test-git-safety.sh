@@ -172,6 +172,37 @@ assert_deny "registry: /tmp/..-laundered redirect into the main checkout is deni
   "$(json "$SESSION" "$R_WT" "echo x > /tmp/..$R_MAIN/notes.txt")"
 assert_allow "registry: /tmp/.. path collapsing back into /tmp is allowed" \
   "$(json "$SESSION" "$R_WT" 'echo x > /tmp/../tmp/scratch.txt')"
+
+# Quote-AWARE write extraction: a commit MESSAGE that merely MENTIONS a write
+# operator/command is NOT a real write — the operator/command is quoted, so it must
+# not be mined (the CONFIRMED false-DENY class; see quote-strip-escape-glue solution).
+# A write is real only when its OPERATOR/COMMAND is UNQUOTED; the target may be quoted.
+assert_allow "registry: commit msg mentioning a '>' redirect into main is allowed" \
+  "$(json "$SESSION" "$R_WT" "git commit -m \\\"writes > $R_MAIN/out\\\"")"
+assert_allow "registry: commit msg mentioning 'tee' into main is allowed" \
+  "$(json "$SESSION" "$R_WT" "git commit -m \\\"pipe to tee $R_MAIN/log\\\"")"
+assert_allow "registry: commit msg with space-preceded 'rm' + main path is allowed" \
+  "$(json "$SESSION" "$R_WT" "git commit -m \\\"then rm $R_MAIN/x happens\\\"")"
+assert_allow "registry: backslash-escaped redirect is literal, not a real write" \
+  "$(json "$SESSION" "$R_WT" "printf x \\\\> $R_MAIN/out")"
+
+# Real writes must STILL deny — operator/command unquoted, target quoted or not.
+assert_deny "registry: real fd-redirect (2>) into main is denied" \
+  "$(json "$SESSION" "$R_WT" "build 2> $R_MAIN/err")"
+assert_deny "registry: real 'tee -a' into main is denied" \
+  "$(json "$SESSION" "$R_WT" "echo x | tee -a $R_MAIN/log")"
+assert_deny "registry: real quoted rm of a main-checkout file is denied" \
+  "$(json "$SESSION" "$R_WT" "rm \\\"$R_MAIN/x\\\"")"
+assert_deny "registry: wrapper-prefixed 'sudo rm' into main is denied" \
+  "$(json "$SESSION" "$R_WT" "sudo rm $R_MAIN/x")"
+# GNU long-form in-place with a suffix is a real in-place edit — must still deny
+# (the loose old regex caught the '-i' inside '--in-place'; the tokenizer must too).
+assert_deny "registry: sed --in-place=.bak on a main-checkout file is denied" \
+  "$(json "$SESSION" "$R_WT" "sed --in-place=.bak s/a/b/ $R_MAIN/app.ts")"
+# Precise detection also FIXES a pre-existing false-positive: a read-only sed whose
+# PATH merely contains '-i' must be allowed (the old 'sed …-i' regex matched the path).
+assert_allow "registry: read-only sed on a '-i'-containing main path is allowed" \
+  "$(json "$SESSION" "$R_WT" "sed -n s/a/b/ $R_MAIN/file-i.txt")"
 rm -f "$REG_DIR/dddd000000000004"
 
 # jq missing must fail CLOSED for git/write-shaped commands while any registry

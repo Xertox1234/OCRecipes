@@ -2,7 +2,7 @@
 title: "Quoted-span stripping without an escape pre-pass glues spans together and hides a real command from a matcher hook"
 track: bug
 category: logic-errors
-tags: [bash, hooks, awk, quote-aware, quote-stripping, command-matcher, pr-gate, fail-closed, regex]
+tags: [bash, hooks, awk, quote-aware, quote-stripping, tokenizer, command-matcher, pr-gate, fail-closed, regex]
 module: shared
 applies_to: [".claude/hooks/**/*.sh", "scripts/**/*.sh"]
 symptoms: ["A command-matching hook that strips quoted spans before matching silently allows or ignores a REAL invocation when an earlier argument contains a backslash-escaped quote or a bare apostrophe inside a double-quoted word", "Independent per-quote-type span substitutions pair a quote inside one argument with the quote opening a LATER argument and delete the separator and command between them", "A deny gate falls through its final match-or-exit-0 line on input that visibly contains the gated command"]
@@ -91,6 +91,24 @@ fail-open*. Encode the fallback: the blocking gate matches the raw command
 Test it: run a copy of the hook from a dir with no `lib/` and assert the
 fallback direction (see `test-pr-preflight-guard.sh` #14).
 
+### When the extracted value can itself be quoted: tokenize, don't just blank
+
+`cmd_bare` **blanks** all quoted content — the right primitive when you only need to
+know *whether* a command word is present (the PR/commit matchers). git-safety's
+write-shaped branch (`emit_write_targets`) has the harder job: it must **reject** a
+write operator/command that is quoted (a `>` or `tee` inside a commit message) *while
+still* **reading** a write TARGET that is quoted (`> "/main/out"`, `rm "/main/x"` — the
+agent-default style). The two quoted spans need OPPOSITE treatment based on grammatical
+role, so no single transform works: blanking (`cmd_bare`) drops the target with the
+message; the old `tr -d '\042\047'` (delete quote chars, keep content) did the reverse
+and mined the message → the CONFIRMED false-DENY. The fix is one shell-aware
+**tokenizer**: quote delimiters drop, quoted content stays inside its word, and
+`>`/`>>`/`|`/`;`/`&` are operators only when UNQUOTED. A write is then real iff its
+operator/command word is *untainted by quotes*; the target path may be quoted.
+**Rule of thumb: detect *presence* with the quote-aware blank scan, but if the VALUE
+you extract can itself be legitimately quoted, you need tokenization (role-aware), not
+blanking (presence-only).**
+
 ## Prevention
 
 - **Detect commands with the shared scanner, never a bespoke per-hook quote
@@ -125,6 +143,7 @@ fallback direction (see `test-pr-preflight-guard.sh` #14).
 ## Related Files
 
 - `.claude/hooks/lib/cmd-detect.sh` — the shared quote-aware scanner + predicates (the fix)
+- `.claude/hooks/git-safety.sh` (`emit_write_targets`) — the role-aware TOKENIZER variant: same root cause (`tr -d` kept quoted content and mined a commit message), but the target path must survive quoting, so it tokenizes instead of blanking
 - `.claude/hooks/pr-preflight-guard.sh` — the gate (deny-side); `commit-verify.sh`, `pr-verify.sh` — advisory
 - `.claude/hooks/test-pr-preflight-guard.sh` (12e–12h, 14), `test-commit-verify.sh` (7–11), `test-pr-verify.sh` (11–14) — per-class regression tests
 
