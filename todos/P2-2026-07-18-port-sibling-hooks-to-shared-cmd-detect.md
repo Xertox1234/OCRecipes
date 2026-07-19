@@ -95,14 +95,24 @@ Repro script archived in the 2026-07-18 audit notes (scratchpad, not committed).
       escaped `\>`) codified in `test-git-safety.sh` — 51/51 green. `rm`/`cp`/`mv`/`sed -i`
       coverage determined: they false-DENY only when the command word is space-preceded inside a
       quoted message; the tokenizer handles all write ops/commands uniformly.
-- [ ] **NEW — CONFIRMED 2026-07-18, land as its OWN PR.** The mutating-git branch has the SAME
-      quote-blind bug in its `-C` extraction (line ~127: `tr -d '\042\047'` + greedy `sed`): a
-      commit whose MESSAGE merely mentions `git -C <main-abs-path>` false-DENYs (truth-table probe:
-      `git commit -m "see git -C /main commit"` → DENY). Fix must read a real `-C` FLAG while
-      ignoring `-C` buried in a quoted argument — WITHOUT reddening the `git -C '<main>' commit` →
-      DENY guard test (`test-git-safety.sh` ~line 109). SEPARATE PR: this is git-safety's
-      highest-stakes, best-tested branch (the actual worktree-contract protection) and gets its own
-      clean landing per the 2026-07-18 advisor review. Never delegate.
+- [x] **DONE (PR `fix/git-safety-C-extraction-quote-aware`).** Replaced the greedy quote-blind
+      `-C` extraction (`tr -d '\042\047' | sed 's/.*git…-C ([^ ]+)/\1/'`) with a role-aware
+      tokenizer `git_c_target` that emits ONLY the FIRST command-position `git`'s `-C` argument
+      (flag must be UNQUOTED; value may be quoted). **The bug was BIDIRECTIONAL** (advisor catch,
+      not in the original CONFIRMED probe): greedy `.*git…-C` grabbed the _last_ `git -C` anywhere,
+      so a message decoy naming a MAIN path fabricated a violation (the confirmed false-DENY) AND a
+      message decoy naming a REGISTERED-WORKTREE path SUBSTITUTED for the real target, laundering a
+      genuine main-checkout mutation past the gate (**BYPASS / false-negative** — e.g.
+      `git commit -m "ref git -C <worktree>"` run in the main checkout). Locked with a 2x2 truth
+      table (`test-git-safety.sh`, 4 new assertions: main-decoy → must-ALLOW, worktree-decoy →
+      must-DENY, in both "real -C present" and "no real -C" rows) — all 4 RED before, 57/57 green
+      after; all 8 pre-existing `-C` guards (incl. single-quoted `git -C '<main>'` → DENY at ~L109)
+      preserved; full 29-suite hook sweep green. Solution doc extended with the bidirectional
+      "last-match decoy substitutes the real value" lesson. Residual (documented, safe direction
+      only): the upstream `tr ';|&'` segment split stays quote-blind — a metachar in a message can
+      fragment into a spurious matching segment, but that is false-POSITIVE only (over-splitting
+      adds validation), never a false-negative, so it is intentionally left to avoid introducing
+      false-negative risk on the crown-jewel branch.
 - [ ] Port `core-bare-guard.sh`, `drift-detect.sh`, `branch-preflight.sh` to source
       `cmd-detect.sh` and use `cmd_is_git_commit` / a shared mutating-git predicate, so
       quoted mentions stop false-positiving. Each gets a "quoted mention stays silent"
@@ -162,4 +172,13 @@ Repro script archived in the 2026-07-18 audit notes (scratchpad, not committed).
   itself be quoted" rule.
 - **`-C` mutating-branch false-DENY CONFIRMED** via the same truth-table probe and split out to
   its own AC + its own future PR (highest-stakes branch, own clean landing — advisor guidance).
-- Sibling-hook port (`core-bare-guard`/`drift-detect`/`branch-preflight`) still pending.
+- **`-C` FIXED** (PR `fix/git-safety-C-extraction-quote-aware`). Building the truth table first
+  surfaced that the bug is **bidirectional**, not just the confirmed false-DENY: the pre-write
+  advisor pass flagged that greedy last-match `.*git…-C` also lets a registered-worktree path
+  named in a commit MESSAGE SUBSTITUTE for the real target, laundering a genuine main-checkout
+  mutation past the gate (a BYPASS — the dangerous direction the original probe missed). Shipped
+  the `git_c_target` tokenizer (first command-position git's `-C` arg; flag untainted, value may
+  be quoted) with a 2x2 must-ALLOW/must-DENY table (4 new tests, all RED first). 57/57 git-safety
+  - 29-suite hook sweep green; all pre-existing `-C` guards preserved.
+- Sibling-hook port (`core-bare-guard`/`drift-detect`/`branch-preflight`) still pending — the ONLY
+  remaining AC in this todo.
