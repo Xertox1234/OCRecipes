@@ -1,6 +1,6 @@
 ---
 title: "radiogroup (and other group roles) announce nothing on iOS Fabric — decide per-role mitigation for the 13+ screens using the codified chip-row pattern"
-status: backlog
+status: done
 priority: low
 created: 2026-07-19
 updated: 2026-07-19
@@ -38,13 +38,16 @@ Known affected call sites (13+): `SettingsScreen.tsx:329`, `BatchSummaryScreen.t
 
 ## Acceptance Criteria
 
-- [ ] Decision recorded: mitigate (e.g. supplement the wrapper with an
+- [x] Decision recorded: mitigate (e.g. supplement the wrapper with an
       iOS-audible grouping cue such as a positional "x of y" in each chip's label or an
       `accessibilityLabel` on a true accessibility element) or accept-and-document the
       iOS asymmetry in `docs/rules/accessibility.md` + the codified pattern doc
-- [ ] If mitigated: applied uniformly via the shared pattern (one mechanism, not
-      per-screen hand edits), with a test pinning the chosen behavior
-- [ ] `docs/solutions/design-patterns/radio-checkbox-group-container-pattern-2026-05-13.md`
+      — **accept-and-document** chosen, for the whole group-role class
+      (`radiogroup`, `tablist`, etc.), not radiogroup alone.
+- [x] If mitigated: applied uniformly via the shared pattern (one mechanism, not
+      per-screen hand edits), with a test pinning the chosen behavior — N/A,
+      accept-and-document was chosen, not mitigate.
+- [x] `docs/solutions/design-patterns/radio-checkbox-group-container-pattern-2026-05-13.md`
       and `docs/rules/accessibility.md` updated to match the decision
 
 ## Implementation Notes

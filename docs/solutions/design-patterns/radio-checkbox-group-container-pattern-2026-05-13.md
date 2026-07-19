@@ -6,6 +6,7 @@ module: client
 tags: [react-native, accessibility, radio, checkbox, role, group]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx]
 created: '2026-05-13'
+last_updated: '2026-07-19'
 ---
 
 # Radio/checkbox group container pattern
@@ -50,9 +51,11 @@ When rendering lists of radio buttons or checkboxes, wrap them in a container wi
 
 Screen readers use the `radiogroup` role to understand that only one option can be selected. This provides proper context and navigation behavior for assistive technology users.
 
-## Platform caveat (verified 2026-07-19, PR #668 review)
+## Platform caveat (verified 2026-07-19, PR #668 review; decision recorded 2026-07-19)
 
-On iOS **Fabric** (this app: `newArchEnabled: true`), the wrapper's `radiogroup` role announces **nothing** — Fabric's role→VoiceOver mapping (`RCTViewComponentView.mm`, `accessibilityValue` getter) special-cases only `checkbox` and `radio`; the legacy Paper mapping that spoke "radio group" explicitly does not run on Fabric. Android is unaffected (`ReactAccessibilityDelegate.java` handles `RADIOGROUP` via `setRoleDescription`). Per-chip semantics still work on both platforms (each option announces "radio button, selected/not selected" from its own `radio` role + `selected` state), so the pattern remains the correct baseline — but do not expect an iOS "radio group" announcement from the wrapper, and don't rely on a wrapper `accessibilityLabel` being spoken unless the wrapper is itself an accessibility element. Codebase-wide follow-up: `todos/P3-2026-07-19-fabric-radiogroup-ios-voiceover-gap.md`.
+On iOS **Fabric** (this app: `newArchEnabled: true`), the wrapper's `radiogroup` role announces **nothing** — Fabric's role→VoiceOver mapping (`RCTViewComponentView.mm`, `accessibilityValue` getter) special-cases only `checkbox` and `radio`; the legacy Paper mapping that spoke "radio group" explicitly does not run on Fabric. Android is unaffected (`ReactAccessibilityDelegate.java` handles `RADIOGROUP` via `setRoleDescription`). Fabric drops the wrapper announcement for other ARIA group roles the same way (e.g. `tablist`) — this is a class of gap, not a `radiogroup`-only bug.
+
+Per-chip semantics still work on both platforms (each option announces "radio button" — VoiceOver's spoken text for the `radio` role via `accessibilityValue`, which is `RCTLocalizedString`'s default value `@"" string`, i.e. the literal string `"radio button"`, NOT the longer "a checkable input... only one of which can be checked at a time" text, which is only the translator-context argument baked into the localization key and is never spoken — plus the Selected trait when `accessibilityState.selected` is true; RN's own source comment explains only that screen-reader users are assumed already familiar with radio/checkbox controls from using the web, which is why RN announces the control name at all — the single-select-from-affordance inference below is this doc's reasoning, not RN's), so the pattern remains the correct baseline. **Decision: accept-and-document, not mitigate.** A supplemental iOS-only grouping cue (e.g. a positional "x of y" per chip) can't be verified without a live VoiceOver device pass and risks double-announcing against the group's own container navigation. Keep using the `radiogroup`/group-role wrapper for structure, Android correctness, and forward-compat with a future RN Fabric fix — don't add per-screen compensating cues for the iOS gap. Codified in `docs/rules/accessibility.md`.
 
 ## Exceptions
 
