@@ -107,28 +107,22 @@ ship' && git reset --hard HEAD~1` (cwd = main) → bash runs the `reset --hard` 
       (over-firing harmless; a non-git segment can't match `^…git…verb`) — removing the
       boundary-completeness bug class and deleting the buggy `MUTATING_GIT_RE`. Validation loop
       unchanged. 2 red tests (piped, backgrounded) + 2 guards — 61/61 green, 29-suite sweep green.
-- [ ] **Quote-AWARE segmentation — STILL OPEN, first attempt REVERTED.** A `split_segments` AWK
-      that split on _unquoted_ `;`/`|`/`&` was written and closed bypass #1, but the PR #666
-      security review caught a HIGH **regression**: a PARTIAL quote model is worse than none on a
-      security splitter. `split_segments` was blind to bash `$'…'` (ANSI-C) quoting — inside
-      `$'…\'…'` the `\'` is an _escaped_ quote that does NOT close, but the scanner closed on it,
-      INVERTING its quote state and then swallowing real unquoted `;`/`|`/`&`. Live-hook repro
-      (old-code DENY → new-code ALLOW = regression):
-      `git -C <WT> commit -m $'don\'t ship' && git reset --hard HEAD~1` (cwd = main) — bash runs
-      the `reset --hard` in main; the splitter merged it into the prior segment. Reverted to the
-      quote-blind `tr ';|&'` split for #666. The redo MUST make split `$'…'`-complete AND do the
-      same to the two sibling tokenizers in the SAME change (next AC) — a partial fix regresses.
-- [ ] **`$'…'`-complete ALL THREE quote scanners in ONE change** (bypass #5): `split_segments`
-      (the redo above), `git_c_target`, and `emit_write_targets`. The write-shaped `$'…'` hole is
-      a **pre-existing bypass in merged code** (#664), not just a blocker for the segmentation redo.
-      Strongly prefer factoring a single shared quote scanner (awk snippet or helper) that all
-      three consume, so a fix cannot land in one copy and be forgotten in the others — that drift
-      IS the root cause. Red tests: `echo $'\''; git -C <MAIN> commit` → DENY (split desync) and
-      `echo $'\'' > <MAIN>/f.txt` → DENY (write-shaped).
+- [x] **Quote-AWARE segmentation DONE** (redo, in PR #666's `$'…'` version). Re-added
+      `split_segments` (splits on _unquoted_ `;`/`|`/`&`/newline), now `$'…'`-complete so the
+      earlier regression cannot recur. Closes bypass #1 (the `-c`-value fracture).
+- [x] **`$'…'`-complete ALL THREE quote scanners DONE** (bypass #5): `split_segments`,
+      `git_c_target`, and `emit_write_targets` each gained an explicit ANSI-C state (`st==3`:
+      `\` escapes next incl. the apostrophe; only an unescaped apostrophe closes; BS checked
+      BEFORE `$'` so `\$'…'` is a normal quote; `$"…"` needs nothing). Closes the pre-existing
+      write-shaped `$'…'` bypass in merged #664 code. Drift guard is a SHARED TEST CORPUS (not a
+      shared scanner — a shared-loop bug would break all three permissively; not a comment —
+      comments are what failed), and a DIFFERENTIAL harness (old vs new hook over the corpus)
+      confirmed **0 DENY→ALLOW regressions, 6 bypasses closed**. 69/69 + 29-suite green. Lesson
+      codified: `docs/solutions/logic-errors/partial-parse-regresses-crude-total-safety-scanner-2026-07-19.md`.
 - [ ] Handle chained `-C`: allow ≥1 `-C` in `MUTATING_GIT_SEG_RE` (the `?`→`*` change) AND
       teach `git_c_target` cumulative last-absolute-wins resolution (mirror real git) in the SAME
       change — relaxing the regex alone makes it WORSE (SEG_RE would match `git -C /tmp -C /main
-    commit` while `git_c_target` still emits the first `-C` `/tmp`, allowlisted → ALLOW). Add a
+  commit` while `git_c_target` still emits the first `-C` `/tmp`, allowlisted → ALLOW). Add a
       red test: `git -C /tmp -C <MAIN> commit` → DENY. (`MUTATING_GIT_RE` no longer exists — #666
       deleted it — so this is SEG_RE only.)
 - [ ] Decide (fix or explicitly document as accepted residual, with a test either way) the
