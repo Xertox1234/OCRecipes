@@ -1,6 +1,6 @@
 ---
 title: "worktree-deps.sh provisions only .claude/worktrees/* — decide scope for .worktrees/ (audit) trees"
-status: backlog
+status: done
 priority: low
 created: 2026-07-18
 updated: 2026-07-18
@@ -21,10 +21,10 @@ Found by the 2026-07-18 harness audit (finding M5, manifest `docs/audits/2026-07
 
 ## Acceptance Criteria
 
-- [ ] Decision recorded: widen `worktree-deps.sh` to `.worktrees/*` (or any linked worktree with a `package.json`), or keep the restriction and make each skill self-provision
-- [ ] If widened: `.claude/hooks/test-worktree-deps.sh` covers the `.worktrees/` case
-- [ ] The stopgap symlink note in `.claude/skills/audit/SKILL.md` Phase 1 step 3 updated/removed to match
-- [ ] Memory `project_worktree_provisioning` stays accurate
+- [x] Decision recorded: widen `worktree-deps.sh` to `.worktrees/*` (or any linked worktree with a `package.json`), or keep the restriction and make each skill self-provision
+- [x] If widened: `.claude/hooks/test-worktree-deps.sh` covers the `.worktrees/` case
+- [x] The stopgap symlink note in `.claude/skills/audit/SKILL.md` Phase 1 step 3 updated/removed to match
+- [x] Memory `project_worktree_provisioning` stays accurate
 
 ## Implementation Notes
 
@@ -51,3 +51,10 @@ Found by the 2026-07-18 harness audit (finding M5, manifest `docs/audits/2026-07
 ### 2026-07-18
 
 - Initial creation from harness-audit finding M5 (deferred at triage: design decision).
+
+### 2026-07-19
+
+- **Decision: widen.** `worktree-deps.sh`'s path predicate (line 44) now covers both harness-managed roots — `.claude/worktrees/*` and `.worktrees/*` — not every linked worktree (the Risk section's concern about a user's ad hoc worktree wanting a clean install still holds).
+- Widening the predicate alone does not fully close the audit gap: `/audit` creates its worktree via plain Bash `git worktree add` + `cd` mid-session, so neither `SessionStart` nor `PostToolUse:EnterWorktree` fires. `.claude/skills/audit/SKILL.md` Phase 1 step 3's stopgap note was converted (not deleted) to an explicit `bash .claude/hooks/worktree-deps.sh` invocation run from inside the fresh worktree.
+- `.claude/hooks/test-worktree-deps.sh` gained two new cases: a `.worktrees/*` tree gets symlinked, and a worktree outside both roots does not.
+- `project_worktree_provisioning` memory updated to reflect the widened predicate, the explicit-invocation fix for the audit trigger gap, and a distinct pre-existing bug that bit all three `/todo` executor worktrees this run (two siblings plus this todo's own): the symlink guard `[ ! -e "$path/node_modules" ]` (worktree-deps.sh:53) skips symlinking whenever ANY `node_modules` dir already exists, including a near-empty one from a test runner's own cache. That bug is outside this todo's Acceptance Criteria — surfaced here, then **RESOLVED by commit `83ddc57d` on this same PR** (orchestrator review-cycle commit): dot-entry-only `node_modules` dirs are now replaced with the shared symlink, real installs never touched, both pinned in `test-worktree-deps.sh`.

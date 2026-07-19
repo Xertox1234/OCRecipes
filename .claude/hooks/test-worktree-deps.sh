@@ -70,6 +70,44 @@ assert_not "precondition: dangling symlink does not resolve" test -e "$STALE/nod
 ( cd "$REPO" && bash "$HOOK" )
 assert "dangling symlink is repaired" test -e "$STALE/node_modules/.marker"
 
+# The /audit skill's harness-managed root, .worktrees/ (sibling to .claude/worktrees/),
+# must also get provisioned.
+AUDIT_WT="$REPO/.worktrees/audit-sample"
+git -C "$REPO" worktree add -q "$AUDIT_WT" -b audit-sample
+assert_not "fresh .worktrees/ tree starts without node_modules" test -e "$AUDIT_WT/node_modules"
+( cd "$REPO" && bash "$HOOK" )
+assert "hook symlinks node_modules into .worktrees/" test -L "$AUDIT_WT/node_modules"
+assert "symlink into .worktrees/ resolves" test -e "$AUDIT_WT/node_modules/.marker"
+
+# A node_modules that exists but holds ONLY tool-cache dot-entries (e.g. vitest
+# creating node_modules/.vite/ before the hook ever ran) is not an install — it
+# must be replaced with the symlink, or the worktree silently runs against a
+# broken dependency tree (bit three /todo executors live on 2026-07-19).
+NOISE_WT="$REPO/.claude/worktrees/cache-noise"
+git -C "$REPO" worktree add -q "$NOISE_WT" -b cache-noise
+mkdir -p "$NOISE_WT/node_modules/.vite/vitest"
+touch "$NOISE_WT/node_modules/.vite/vitest/results.json"
+( cd "$REPO" && bash "$HOOK" )
+assert "cache-noise-only node_modules is replaced by the symlink" test -L "$NOISE_WT/node_modules"
+assert "replacement symlink resolves" test -e "$NOISE_WT/node_modules/.marker"
+
+# A REAL install (any non-hidden entry = an actual package) must never be
+# clobbered — the replace path applies to dot-entry-only noise exclusively.
+REAL_WT="$REPO/.claude/worktrees/real-install"
+git -C "$REPO" worktree add -q "$REAL_WT" -b real-install
+mkdir -p "$REAL_WT/node_modules/leftpad"
+echo 'module.exports = 1' > "$REAL_WT/node_modules/leftpad/index.js"
+( cd "$REPO" && bash "$HOOK" )
+assert_not "real node_modules install is NOT replaced" test -L "$REAL_WT/node_modules"
+assert "real install's package survives the hook" test -f "$REAL_WT/node_modules/leftpad/index.js"
+
+# A worktree outside both harness-managed roots (a user's own ad hoc `git worktree
+# add`) must NOT get a node_modules symlink — that scope boundary is deliberate.
+ADHOC_WT="$REPO/adhoc-sample"
+git -C "$REPO" worktree add -q "$ADHOC_WT" -b adhoc-sample
+( cd "$REPO" && bash "$HOOK" )
+assert_not "ad hoc worktree outside both roots is NOT symlinked" test -e "$ADHOC_WT/node_modules"
+
 # Fail-open: outside any git repo the hook is a silent no-op.
 assert "no-op outside a git repo" bash -c "cd '$TMP' && bash '$HOOK'"
 

@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # PostToolUse(EnterWorktree) + SessionStart hook — give every git worktree under
-# .claude/worktrees/ the gitignored, local-only files it needs but that
-# `git worktree add` does not copy:
+# the two harness-managed roots, .claude/worktrees/ (Agent isolation, e.g. /todo
+# executors) and .worktrees/ (the /audit skill), the gitignored, local-only files
+# it needs but that `git worktree add` does not copy:
 #   - node_modules — so the TypeScript language server can resolve dependencies.
 #   - docs/LEARNINGS.md — gitignored local learnings file the todo-executor
 #     research step greps.
+#
+# Scope is deliberately these two roots, not every linked worktree: a user's own
+# ad hoc `git worktree add` (elsewhere) may want a clean install, not a shared
+# symlink. Ad hoc worktrees are covered separately by .husky/post-checkout for
+# .env* and docs/LEARNINGS.md (that hook has no path predicate).
 #
 # `git worktree add` copies tracked files only, so a fresh worktree has no
 # node_modules. Without it the worktree's own tsconfig.json — which does
@@ -35,7 +41,7 @@ MAIN_ROOT=$(dirname "$GIT_COMMON")
 git worktree list --porcelain 2>/dev/null | while read -r key path; do
   [ "$key" = "worktree" ] || continue          # skip HEAD/branch/blank lines
   case "$path" in
-    "$MAIN_ROOT"/.claude/worktrees/*) ;;        # a worktree under .claude/worktrees/
+    "$MAIN_ROOT"/.claude/worktrees/*|"$MAIN_ROOT"/.worktrees/*) ;;  # harness-managed roots
     *) continue ;;                              # the main checkout, or elsewhere
   esac
   [ -f "$path/package.json" ] || continue       # not a JS project worktree
@@ -44,8 +50,20 @@ git worktree list --porcelain 2>/dev/null | while read -r key path; do
   # dangling symlink left by an earlier run (e.g. the main source was moved).
   # Each link is independent and guarded: create only when the main checkout
   # has the source and the worktree lacks a resolvable copy.
-  if [ -d "$MAIN_ROOT/node_modules" ] && [ ! -e "$path/node_modules" ]; then
-    ln -sfn "$MAIN_ROOT/node_modules" "$path/node_modules" 2>/dev/null || true
+  #
+  # A node_modules holding ONLY dot-entries is tool-cache noise (vitest creates
+  # node_modules/.vite/ on its own), not an install — no resolvable package
+  # lives at a hidden name, so replacing it loses nothing. Anything with a
+  # non-hidden entry is treated as a real install and never touched.
+  if [ -d "$MAIN_ROOT/node_modules" ]; then
+    nm="$path/node_modules"
+    if [ -d "$nm" ] && [ ! -L "$nm" ] \
+      && ! find "$nm" -mindepth 1 -maxdepth 1 -not -name '.*' -print -quit 2>/dev/null | grep -q .; then
+      rm -rf "$nm" 2>/dev/null || true
+    fi
+    if [ ! -e "$nm" ]; then
+      ln -sfn "$MAIN_ROOT/node_modules" "$nm" 2>/dev/null || true
+    fi
   fi
   if [ -f "$MAIN_ROOT/docs/LEARNINGS.md" ] && [ ! -e "$path/docs/LEARNINGS.md" ]; then
     mkdir -p "$path/docs" 2>/dev/null || true

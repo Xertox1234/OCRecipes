@@ -143,7 +143,11 @@ Phase 1 sets up both correctly.
    git worktree remove .worktrees/audit-YYYY-MM-DD
    ```
 
-   > **Contract note (2026-07-18 harness audit):** do NOT declare a worktree contract (`scripts/declare-worktree.sh`) for the audit worktree — Phases 1–6 write the manifest/CHANGELOG into the MAIN checkout (`$MAIN_CHECKOUT/docs/audits/…`), and an active contract DENIES those cross-checkout writes on both the file-tool path (guard-worktree-isolation registry mode) and the Bash path (git-safety write-shaped deny); gitignored status is not consulted. Audit isolation comes from the branch + worktree alone. Also: `worktree-deps.sh` provisions node_modules only for `.claude/worktrees/*` worktrees — symlink it before the step 4 baseline: `ln -s "$MAIN_CHECKOUT/node_modules" .worktrees/audit-YYYY-MM-DD/node_modules`.
+   > **Contract note (2026-07-18 harness audit):** do NOT declare a worktree contract (`scripts/declare-worktree.sh`) for the audit worktree — Phases 1–6 write the manifest/CHANGELOG into the MAIN checkout (`$MAIN_CHECKOUT/docs/audits/…`), and an active contract DENIES those cross-checkout writes on both the file-tool path (guard-worktree-isolation registry mode) and the Bash path (git-safety write-shaped deny); gitignored status is not consulted. Audit isolation comes from the branch + worktree alone. Also: `worktree-deps.sh`'s path predicate now covers `.worktrees/*` too (widened 2026-07-19, todo `P3-2026-07-18-worktree-deps-provisioning-scope`), but the hook only _fires_ on `SessionStart`/`PostToolUse:EnterWorktree` — a worktree created here via plain Bash `git worktree add` gets neither trigger. Invoke the hook explicitly (from inside the new worktree, right after the `cd` above, before the step 4 baseline) instead of a manual symlink:
+   >
+   > ```bash
+   > bash .claude/hooks/worktree-deps.sh
+   > ```
 
 4. **Record the baseline** (inside the worktree, which is at HEAD of the base branch):
    - Run `npm run test:run` — note pass count

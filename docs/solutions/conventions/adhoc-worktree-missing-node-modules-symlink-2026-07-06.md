@@ -6,7 +6,7 @@ module: shared
 tags: [git, worktree, tooling, husky]
 applies_to: [.husky/post-checkout]
 created: '2026-07-06'
-last_updated: '2026-07-16'
+last_updated: '2026-07-19'
 ---
 
 # Ad hoc git worktrees outside .claude/worktrees/ get no node_modules symlink
@@ -43,10 +43,22 @@ Worktrees created via the Agent tool's native `isolation: "worktree"` dispatch p
 
 A second confirmed counter-case: during the `USDA-by-UPC barcode branch discards real serving size` todo (P3-2026-07-16), a todo-executor agent dispatched via the Agent tool with `isolation:"worktree"` (matching the `.claude/worktrees/agent-*` naming convention exactly, a single per-call worktree, NOT a shared multi-agent one) had a `node_modules` directory that was a REAL (not symlinked) directory containing only `.cache/` and `.vite/` — zero actual npm packages, confirmed via `ls`/`du` (44K total). This was not caught earlier because Node's ancestor-directory module resolution walk-up (since the worktree is nested inside the main checkout's directory tree) transparently resolves ordinary `require`/`import` calls up to the main checkout's real `node_modules`, so almost everything still works. The ONLY thing that broke was a single vitest test (`server/lib/__tests__/error-reporter.test.ts`'s Sentry-source-drift guard) that builds an explicit cwd-anchored file path to an installed package's source file (`readFile` on a path derived from `import.meta.resolve` or similar, anchored to `process.cwd()`) rather than using an ordinary import — that ENOENT'd in the worktree but passed cleanly when the identical test was run from the main checkout.
 
+**RESOLVED at the hook level (2026-07-19, same branch as the `.worktrees/` widening):** `worktree-deps.sh` now treats an existing `node_modules` that contains ONLY dot-entries as tool-cache noise — no resolvable package can live at a hidden name — and replaces it with the shared symlink; any directory with a non-hidden entry is treated as a real install and never touched (both cases covered in `test-worktree-deps.sh`). The manual `ln -sf` recovery below remains relevant only for worktrees outside the two harness-managed roots.
+
+A third confirmed counter-case, distinct from the first two: `worktree-deps.sh`'s trigger registration (`SessionStart` + `PostToolUse:EnterWorktree` only) means even a worktree living squarely under one of its two covered path roots (`.claude/worktrees/*`, and `.worktrees/*` as of `P3-2026-07-18-worktree-deps-provisioning-scope`) gets skipped if it's created via a plain Bash `git worktree add` mid-session — neither trigger fires (`SessionStart` already ran; `EnterWorktree` was never invoked). The `/audit` skill hits this on every run: Phase 1 step 3 creates `.worktrees/audit-YYYY-MM-DD` with raw `git worktree add` + `cd`. The fix is neither a manual `ln -s` nor a predicate change — it's an **explicit invocation of the hook itself** right after entering the new worktree, before any toolchain command runs:
+
+```bash
+bash .claude/hooks/worktree-deps.sh
+```
+
+Because the hook enumerates worktrees via `git worktree list --porcelain` rather than acting only on its own trigger payload, invoking it from inside the new worktree (or from anywhere in the repo) symlinks it correctly — the trigger and the mechanism are decoupled, so an explicit call is a legitimate substitute for a missed trigger, not a workaround-of-a-workaround.
+
 ## Related Files
 
 - `.husky/post-checkout` — the symlink list that doesn't include `node_modules`
+- `.claude/hooks/worktree-deps.sh` — the node_modules-symlinking hook itself; its path predicate covers `.claude/worktrees/*` and `.worktrees/*`, but it only *fires* on `SessionStart`/`PostToolUse:EnterWorktree`, not on a Bash-invoked `git worktree add`
 - `.claude/skills/todo-fast/SKILL.md` — Phase 1, the shared-worktree creation block: `ln -sf "$MAIN_CHECKOUT/node_modules" "$WORKTREE/node_modules"` immediately after `git worktree add`, with an inline comment citing this file
+- `.claude/skills/audit/SKILL.md` — Phase 1 step 3, the third counter-case's fix: `bash .claude/hooks/worktree-deps.sh` invoked explicitly right after entering the new `.worktrees/audit-YYYY-MM-DD` worktree
 - `server/lib/__tests__/error-reporter.test.ts` — the concrete cwd-anchored-path test that surfaces this artifact; passes from the main checkout, ENOENTs in an under-provisioned worktree
 
 ## See Also
