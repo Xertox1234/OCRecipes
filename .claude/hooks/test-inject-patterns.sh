@@ -312,6 +312,60 @@ fi
 
 rm -f /tmp/ocrecipes-pattern-inject-itest-dedup-A /tmp/ocrecipes-pattern-inject-itest-dedup-B
 
+# --- Per-context-window dedup (agent_id-qualified key) ---
+# A dispatched subagent shares its parent's session_id (hook JSON AND the Bash
+# CLAUDE_CODE_SESSION_ID env var — verified 2026-07-17), but the hook JSON also carries a
+# per-dispatch `agent_id` field, absent at the top level and distinct per Agent-tool
+# invocation (verified 2026-07-19). Regression guard for 2026-07-18 harness audit finding M1:
+# a freshly spawned subagent's first Edit/Write must get the FULL payload even though it
+# shares session_id with a context that already exhausted that session's dedup state — same
+# session_id, different agent_id must be a fresh key. "getEffectiveTierForUser" is the same
+# security-body sentinel used by the session-scoped dedup checks above.
+AGENTID_TOPLEVEL='{"session_id":"itest-agentid-A","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+AGENTID_SUBAGENT='{"session_id":"itest-agentid-A","agent_id":"itest-sub-1","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+rm -f /tmp/ocrecipes-pattern-inject-itest-agentid-A /tmp/ocrecipes-pattern-inject-itest-agentid-A-agent-itest-sub-1
+
+top1=$(inline_ctx "$AGENTID_TOPLEVEL")
+if echo "$top1" | grep -qF "getEffectiveTierForUser" && ! echo "$top1" | grep -qF "already injected"; then
+  echo "PASS: agent-id dedup → top-level (no agent_id) first edit injects full rules"; PASS=$((PASS + 1))
+else
+  echo "FAIL: agent-id dedup → top-level (no agent_id) first edit injects full rules"; FAIL=$((FAIL + 1))
+fi
+
+sub1=$(inline_ctx "$AGENTID_SUBAGENT")
+if echo "$sub1" | grep -qF "getEffectiveTierForUser" && ! echo "$sub1" | grep -qF "already injected"; then
+  echo "PASS: agent-id dedup → subagent's first touch (shared session_id, distinct agent_id) still gets full rules"; PASS=$((PASS + 1))
+else
+  echo "FAIL: agent-id dedup → subagent's first touch (shared session_id, distinct agent_id) still gets full rules"; FAIL=$((FAIL + 1))
+fi
+
+sub2=$(inline_ctx "$AGENTID_SUBAGENT")
+if echo "$sub2" | grep -qF "already injected" && ! echo "$sub2" | grep -qF "getEffectiveTierForUser"; then
+  echo "PASS: agent-id dedup → subagent's repeat edit (same agent_id) emits pointer, cost bound preserved"; PASS=$((PASS + 1))
+else
+  echo "FAIL: agent-id dedup → subagent's repeat edit (same agent_id) emits pointer, cost bound preserved"; FAIL=$((FAIL + 1))
+fi
+
+rm -f /tmp/ocrecipes-pattern-inject-itest-agentid-A /tmp/ocrecipes-pattern-inject-itest-agentid-A-agent-itest-sub-1
+
+# Same coverage for the DISCIPLINE preamble — M1 named the preamble alongside domain rules,
+# and it dedups via the same `__preamble__` marker in DEDUP_STATE. package.json maps to no
+# domain, isolating the preamble from domain payloads. "Surgical changes" is the preamble
+# sentinel used by the preamble dedup tests below.
+AGENTID_PRE_TOP='{"session_id":"itest-agentid-pre","tool_name":"Edit","tool_input":{"file_path":"package.json"}}'
+AGENTID_PRE_SUB='{"session_id":"itest-agentid-pre","agent_id":"itest-sub-pre","tool_name":"Edit","tool_input":{"file_path":"package.json"}}'
+rm -f /tmp/ocrecipes-pattern-inject-itest-agentid-pre /tmp/ocrecipes-pattern-inject-itest-agentid-pre-agent-itest-sub-pre
+
+pretop=$(inline_ctx "$AGENTID_PRE_TOP")
+presub=$(inline_ctx "$AGENTID_PRE_SUB")
+if echo "$pretop" | grep -qF "Surgical changes" && echo "$presub" | grep -qF "Surgical changes" && ! echo "$presub" | grep -qF "injected earlier"; then
+  echo "PASS: agent-id dedup → subagent's first touch still gets the full preamble after top-level already consumed it"; PASS=$((PASS + 1))
+else
+  echo "FAIL: agent-id dedup → subagent's first touch still gets the full preamble after top-level already consumed it"; FAIL=$((FAIL + 1))
+fi
+
+rm -f /tmp/ocrecipes-pattern-inject-itest-agentid-pre /tmp/ocrecipes-pattern-inject-itest-agentid-pre-agent-itest-sub-pre
+
 # --- Preamble session dedup ---
 # The ~1.1KB DISCIPLINE preamble is injected in full at most once per session (marker
 # `__preamble__` in the dedup state file); later edits get a one-line pointer. A wiped

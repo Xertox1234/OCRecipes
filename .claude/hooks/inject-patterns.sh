@@ -140,10 +140,10 @@ doc_ids_for_log() {
   printf '%s' "$ids"
 }
 
-# Per-session dedup: inject each payload (the DISCIPLINE preamble, and each domain's full
-# rules + solution refs) only the FIRST time it appears in a session; on later edits emit a
-# one-line pointer instead. This bounds the repeated cost of editing many files in one
-# session (e.g. a /todo loop).
+# Per-context-window dedup: inject each payload (the DISCIPLINE preamble, and each domain's
+# full rules + solution refs) only the FIRST time it appears in a given context window; on
+# later edits emit a one-line pointer instead. This bounds the repeated cost of editing many
+# files in one context window (e.g. a /todo loop).
 # Requires a real session_id — when it's absent (or PATTERN_INJECT_NO_DEDUP=1) dedup is OFF and
 # full payloads are always injected (fail-safe: more context, not less; also keeps session-less
 # test runs deterministic).
@@ -151,9 +151,28 @@ doc_ids_for_log() {
 # key (and -e only changes the exit code, not the output), which would make session-less
 # callers share a "/tmp/...-null" state file and wrongly dedup. `// empty` yields "" instead.
 SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
+# A dispatched subagent (Agent tool) shares its parent's session_id in both the hook JSON and
+# the Bash CLAUDE_CODE_SESSION_ID env var — verified 2026-07-17 (see the
+# reference_subagent_shared_session_id memory note) — so session_id ALONE is not a
+# per-context-window key: a freshly spawned implementer subagent's first Edit/Write would key
+# onto the SAME dedup state the orchestrator (or a sibling subagent) already populated and get
+# the "already injected" pointer instead of the full payload (2026-07-18 harness audit, finding
+# M1). The hook JSON DOES carry a per-dispatch `agent_id` field, though (verified empirically
+# 2026-07-19 — absent at the top level, present and distinct per Agent-tool invocation,
+# including for parallel sibling subagents). Folding it into the dedup key when present gives
+# every context window — orchestrator OR any subagent, nested or parallel — its own partition:
+# a fresh agent_id is a fresh key (full payload), while repeat edits from the SAME agent_id
+# still dedup (pointer), preserving the original cost bound. When agent_id is absent (top
+# level, or a future Claude Code version without the field) the key falls back to session_id
+# alone — today's behavior, correct there since the top level IS one context window. The one
+# residual: a hypothetical subagent dispatch that also lacks agent_id would still collide with
+# its parent's key — no worse than the pre-fix status quo, and the fail-open default (session-
+# less runs always get full payloads) means the failure mode stays "extra context", never
+# starvation.
+AGENT_ID=$(printf '%s' "$INPUT" | jq -r '.agent_id // empty' 2>/dev/null || echo "")
 DEDUP=1
 { [ -z "$SESSION" ] || [ "${PATTERN_INJECT_NO_DEDUP:-0}" = "1" ]; } && DEDUP=0
-DEDUP_STATE="/tmp/ocrecipes-pattern-inject-${SESSION}"
+DEDUP_STATE="/tmp/ocrecipes-pattern-inject-${SESSION}${AGENT_ID:+-agent-$AGENT_ID}"
 
 # Discipline preamble — applies to every Edit/Write regardless of domain match, but is
 # injected in FULL at most once per session (marker line `__preamble__` in the dedup state;
