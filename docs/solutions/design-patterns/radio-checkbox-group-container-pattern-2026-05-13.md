@@ -50,6 +50,10 @@ When rendering lists of radio buttons or checkboxes, wrap them in a container wi
 
 Screen readers use the `radiogroup` role to understand that only one option can be selected. This provides proper context and navigation behavior for assistive technology users.
 
+## Platform caveat (verified 2026-07-19, PR #668 review)
+
+On iOS **Fabric** (this app: `newArchEnabled: true`), the wrapper's `radiogroup` role announces **nothing** — Fabric's role→VoiceOver mapping (`RCTViewComponentView.mm`, `accessibilityValue` getter) special-cases only `checkbox` and `radio`; the legacy Paper mapping that spoke "radio group" explicitly does not run on Fabric. Android is unaffected (`ReactAccessibilityDelegate.java` handles `RADIOGROUP` via `setRoleDescription`). Per-chip semantics still work on both platforms (each option announces "radio button, selected/not selected" from its own `radio` role + `selected` state), so the pattern remains the correct baseline — but do not expect an iOS "radio group" announcement from the wrapper, and don't rely on a wrapper `accessibilityLabel` being spoken unless the wrapper is itself an accessibility element. Codebase-wide follow-up: `todos/P3-2026-07-19-fabric-radiogroup-ios-voiceover-gap.md`.
+
 ## Exceptions
 
 When to use:
