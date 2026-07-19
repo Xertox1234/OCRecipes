@@ -30,8 +30,6 @@ Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-inj
 
 For `pull_request_target` workflows, repository secrets are available in the base repository context. The safe pattern is: checkout `github.event.pull_request.base.sha`, fetch the PR head only as Git diff data, and run only scripts from trusted base-branch code. Never checkout, source, import, install from, or execute PR-head files while secrets such as `WORKER_API_KEY`, `OPENROUTER_API_KEY`, or `MOONSHOT_API_KEY` are in scope.
 
-See `docs/solutions/best-practices/trusted-kimi-pr-diff-gates-2026-05-18.md`.
-
 ### 1. IDOR Protection (Critical)
 
 **Route level:** Verify both authentication AND ownership:
@@ -254,7 +252,7 @@ When you find a security weakness, classify it before deciding severity:
 - The route layer Zod-omits `healthDataConsentAt` from client input and only ever passes `new Date()` server-side.
 - **Exploitable today?** No — no code path forwards client input to the storage parameter.
 - **Footgun?** Yes — a future internal caller could accidentally backdate the initial consent stamp.
-- **Triage:** WARNING/deferred. Filed `todos/2026-05-11-harden-consent-timestamp-storage-signature.md` to change the storage signature to `recordConsent: boolean` so the timestamp is generated internally.
+- **Triage:** WARNING/deferred. Filed `todos/archive/2026-05-11-harden-consent-timestamp-storage-signature.md` (since resolved and archived) to change the storage signature to `recordConsent: boolean` so the timestamp is generated internally.
 
 **Anti-pattern:** flagging every signature footgun as CRITICAL conflates "will break in production" with "could break under refactor." This wastes engineering time and erodes trust in CRITICAL findings. Reserve CRITICAL for findings that have an actual exploit path through the _current_ code; use WARNING + deferred-todo for hardening opportunities.
 

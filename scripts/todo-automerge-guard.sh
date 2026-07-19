@@ -42,7 +42,8 @@
 # instead of silently auto-merging.
 #
 # Usage:  scripts/todo-automerge-guard.sh <pr-number>
-# Exit 0 = eligible for the user's batch-merge (MERGE_ELIGIBLE: yes) — NOT a merge command
+# Exit 0 = eligible (MERGE_ELIGIBLE: yes) — NOT a merge command; the executor arms native
+#          GitHub auto-merge (gh pr merge --auto) for eligible PRs after PR creation
 # Exit 1 = HOLD: needs individual review — a changed file is sensitive / not on the
 #          allowlist, or the TODO gate failed (no archived todo in the diff, an archive
 #          file absent from the PR head, priority not low/medium, 'security' in its
@@ -50,7 +51,8 @@
 # Exit 2 = ERROR: could not evaluate (gh failure / empty diff) — fail-closed, treat as HOLD
 # The caller distinguishes a real HOLD (1) from a tooling error (2): a HOLD means the PR
 # needs individual review; an error means eligibility couldn't be decided (e.g. gh unauth).
-# Nothing in this script merges anything; the user batch-merges eligible PRs themselves.
+# Nothing in this script merges anything; the executor arms auto-merge for eligible PRs
+# (todo-executor.md Step 10) and held PRs wait for individual human review.
 set -euo pipefail
 
 PR="${1:?usage: todo-automerge-guard.sh <pr-number>}"

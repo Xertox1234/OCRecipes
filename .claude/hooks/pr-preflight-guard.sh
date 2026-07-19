@@ -18,16 +18,20 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 case "$TOOL" in
   Bash)
     CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
-    # First strip single/double-quoted spans, so `gh pr create` mentioned INSIDE a quoted
-    # argument (a commit message, an `echo`/`grep` string) is never mistaken for a real
-    # invocation. A real `gh pr create` is a command, never inside quotes — so this removes only
-    # false positives. (Handles the common non-nested/non-escaped cases; a buried separator like
-    # `echo "x ; gh pr create"` no longer false-denies.)
-    CMD_BARE=$(printf '%s' "$CMD" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g")
+    # First neutralize backslash-escaped quotes, THEN strip single/double-quoted spans, so
+    # `gh pr create` mentioned INSIDE a quoted argument (a commit message, an `echo`/`grep`
+    # string) is never mistaken for a real invocation. The escape pre-pass is load-bearing:
+    # without it a \" inside one argument pairs with the quote OPENING a later argument, and
+    # the strip deletes the separator plus a REAL `gh pr create` between them — a silent allow
+    # on the gate (2026-07-18 harness-audit Phase 6 review). Residual mis-strips fail
+    # deny-side: leftover text can only make the match MORE likely.
+    CMD_BARE=$(printf '%s' "$CMD" | sed "s/\\\\[\"']//g; s/'[^']*'//g; s/\"[^\"]*\"//g")
     # Then match `gh pr create` only when `gh` is in command position (start-of-command or after a
-    # shell separator: ; & | (). Intentionally stricter than pr-verify.sh's detector (that hook is
-    # non-blocking and can afford looser matching; we diverge here on purpose).
-    printf '%s' "$CMD_BARE" | grep -Eq '(^|[;&|(])[[:space:]]*gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' || exit 0
+    # shell separator: ; & | ( ), allowing env-assignment prefixes (`FOO=1 gh pr create`) so they
+    # cannot evade the gate — the value class is `*` not `+` because quote-stripping can leave
+    # `FOO= `. Intentionally stricter than pr-verify.sh's detector (that hook is non-blocking and
+    # can afford looser matching; we diverge here on purpose).
+    printf '%s' "$CMD_BARE" | grep -Eq '(^|[;&|(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+create([[:space:]]|[)]|$)' || exit 0
     ;;
   mcp__github__create_pull_request)
     : # the tool call IS the PR-create (default /todo + "prefer MCP" path) — no arg parsing needed.

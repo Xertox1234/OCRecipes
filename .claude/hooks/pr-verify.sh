@@ -12,15 +12,21 @@ PR_REF=""
 
 if [ "$TOOL" = "Bash" ]; then
   CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
+  # Neutralize backslash-escaped quotes, then strip quoted spans, so a gh pr write command
+  # merely MENTIONED inside a quoted argument never fires a false-positive WARNING — and a
+  # \" cannot glue spans together and hide a REAL write command (2026-07-18 audit Phase 6
+  # review). Parity with pr-preflight-guard.sh's strip; positional matching below stays
+  # deliberately looser than the guard's.
+  CMD_BARE=$(printf '%s' "$CMD" | sed "s/\\\\[\"']//g; s/'[^']*'//g; s/\"[^\"]*\"//g")
   # Match write-side gh pr commands only (not gh pr view/list/checks/etc).
-  printf '%s' "$CMD" | grep -Eq '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|$)' || exit 0
+  printf '%s' "$CMD_BARE" | grep -Eq '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|$)' || exit 0
   # For create: no PR number exists yet, use no-args (resolves from current branch).
   # For merge/close/edit: extract the PR number from the command and pass it
   # explicitly — no-args would return the current branch's PR (wrong after
   # --delete-branch or when operating on a different branch's PR by number).
-  SUBCOMMAND=$(printf '%s' "$CMD" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)' | grep -oE '(create|merge|close|edit)' | head -1)
+  SUBCOMMAND=$(printf '%s' "$CMD_BARE" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)' | grep -oE '(create|merge|close|edit)' | head -1)
   if [ "$SUBCOMMAND" != "create" ]; then
-    PR_REF=$(printf '%s' "$CMD" | grep -oE '(^|[[:space:]])[0-9]+' | grep -oE '[0-9]+' | head -1)
+    PR_REF=$(printf '%s' "$CMD_BARE" | grep -oE '(^|[[:space:]])[0-9]+' | grep -oE '[0-9]+' | head -1)
   fi
 elif [ "$TOOL" = "mcp__github__create_pull_request" ]; then
   # The MCP create tool is the preferred PR-creation path (see CLAUDE.md). It
@@ -29,6 +35,12 @@ elif [ "$TOOL" = "mcp__github__create_pull_request" ]; then
   # The MCP tool_response shape is server-specific, so re-derive rather than
   # parse it — and the verified-from-source message is the whole point here.
   SUBCOMMAND="create"
+elif [ "$TOOL" = "mcp__github__merge_pull_request" ]; then
+  # The MCP merge tool is the CLAUDE.md-preferred merge path. Its input carries the
+  # PR number explicitly — use it (no-args gh pr view would resolve the current
+  # branch's PR, wrong after a squash-merge deletes the branch).
+  SUBCOMMAND="merge"
+  PR_REF=$(printf '%s' "$INPUT" | jq -re '.tool_input.pullNumber // .tool_input.pull_number // empty' 2>/dev/null || echo "")
 else
   exit 0
 fi

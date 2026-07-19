@@ -75,6 +75,30 @@ assert_silent "non-commit command is silent" "$OUT"
 OUT=$(run_hook "echo 'git commit is great'")
 assert_silent "substring false match is silent" "$OUT"
 
+# Test 5: compound command — the most common agent form — must still be verified
+# (2026-07-18 harness-audit M7: start-anchored regex missed `git add && git commit`).
+echo "more" > "$TMPDIR_REPO/staged2.ts"
+git -C "$TMPDIR_REPO" add staged2.ts
+OUT=$(run_hook "git add -A && git commit -m 'x'")
+assert_contains "compound commit: warns silently blocked" "silently blocked" "$OUT"
+git -C "$TMPDIR_REPO" commit -q -m "clean2" 2>/dev/null || true
+
+# Test 6: separator+commit text inside quotes stays silent even with files staged
+# (quote-strip parity with pr-preflight-guard — guards the compound fix against noise).
+echo "more2" > "$TMPDIR_REPO/staged3.ts"
+git -C "$TMPDIR_REPO" add staged3.ts
+OUT=$(run_hook 'echo "x; git commit inside quotes"')
+assert_silent "quoted separator substring is silent" "$OUT"
+git -C "$TMPDIR_REPO" commit -q -m "clean3" 2>/dev/null || true
+
+# Test 7: escaped-quote glue must not hide a real commit (Phase 6 review, 2026-07-18 audit) —
+# a naive quote-strip pairs \" with the next opening quote, deleting `&& git commit` entirely.
+echo "more3" > "$TMPDIR_REPO/staged4.ts"
+git -C "$TMPDIR_REPO" add staged4.ts
+OUT=$(run_hook 'echo "escaped \" quote" && git commit -m "second"')
+assert_contains "escaped-quote glue: still verified" "silently blocked" "$OUT"
+git -C "$TMPDIR_REPO" commit -q -m "clean4" 2>/dev/null || true
+
 unset GIT_DIR GIT_WORK_TREE
 
 echo ""

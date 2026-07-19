@@ -108,6 +108,31 @@ assert_contains "MCP create_pull_request: PR number present" "42" "$OUT"
 OUT=$(run_hook_mcp "mcp__github__get_me" "success")
 assert_silent "other MCP tool does not trigger pr-verify" "$OUT"
 
+# Test 9: MCP merge_pull_request → verified message, PR number from tool_input.pullNumber
+# (2026-07-18 harness-audit M8: the CLAUDE.md-preferred MCP merge path had no verification).
+run_hook_mcp_merge() {
+  local gh_mode="${1:-success}"
+  local input stubdir out
+  input=$(jq -n '{"tool_name":"mcp__github__merge_pull_request","tool_input":{"owner":"x","repo":"y","pullNumber":42},"tool_response":{"merged":true}}')
+  stubdir=$(make_stub_gh "$gh_mode")
+  out=$(echo "$input" | PATH="$stubdir:$PATH" bash "$HOOK" 2>/dev/null)
+  rm -rf "$stubdir"
+  printf '%s' "$out"
+}
+OUT=$(run_hook_mcp_merge "success")
+assert_contains "MCP merge_pull_request triggers pr-verify" "PR state verified" "$OUT"
+assert_contains "MCP merge_pull_request: PR number present" "42" "$OUT"
+
+# Test 10: a quoted MENTION of a gh pr write command must stay silent
+# (2026-07-18 harness-audit L10: loose matcher fired on strings inside quoted args).
+OUT=$(run_hook 'echo "jq arg containing gh pr create text"' "success")
+assert_silent "quoted gh-pr-create mention stays silent" "$OUT"
+
+# Test 11: escaped-quote glue must not hide a real gh pr write (Phase 6 review, 2026-07-18
+# audit) — naive quote-strip deletes `&& gh pr merge …` by pairing \" with the next quote.
+OUT=$(run_hook 'echo "escaped \" quote" && gh pr merge 42 --squash --title "x"' "success")
+assert_contains "escaped-quote glue: merge still verified" "PR state verified" "$OUT"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
