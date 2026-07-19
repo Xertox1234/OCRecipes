@@ -8,6 +8,7 @@ assignee:
 labels: [deferred, harness, hooks, security]
 github_issue:
 human_led: true
+blocked_reason: "Never delegate — live blocking git gate protecting the main checkout; changes must be truth-table-first TDD, verified fail-closed, primary session only"
 ---
 
 # git-safety mutating-git front door is quote-blind — close the pre-existing bypasses

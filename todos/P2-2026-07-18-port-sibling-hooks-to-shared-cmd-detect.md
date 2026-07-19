@@ -7,6 +7,8 @@ updated: 2026-07-18
 assignee:
 labels: [deferred, harness, hooks, security]
 github_issue:
+human_led: true
+blocked_reason: "Risks: never delegate — touches git-safety / branch guards; keep in the primary session (gate made machine-visible 2026-07-19 after the /todo orchestrator had to judgment-skip it)"
 ---
 
 # Port command-matching sibling hooks onto the shared quote-aware cmd-detect.sh
