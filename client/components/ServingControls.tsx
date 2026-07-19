@@ -106,6 +106,8 @@ export const ServingControls = React.memo(function ServingControls({
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.servingChips}
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Serving size"
         >
           {servingOptions.map((opt) => {
             const isActive =
@@ -126,7 +128,7 @@ export const ServingControls = React.memo(function ServingControls({
                   haptics.selection();
                 }}
                 accessibilityLabel={`Set serving to ${opt.label}`}
-                accessibilityRole="button"
+                accessibilityRole="radio"
               />
             );
           })}
@@ -141,7 +143,7 @@ export const ServingControls = React.memo(function ServingControls({
               haptics.selection();
             }}
             accessibilityLabel="Enter custom serving size"
-            accessibilityRole="button"
+            accessibilityRole="radio"
           />
         </ScrollView>
 

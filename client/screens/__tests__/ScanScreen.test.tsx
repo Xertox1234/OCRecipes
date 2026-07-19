@@ -281,6 +281,22 @@ describe("ScanScreen — safe back navigation", () => {
   });
 });
 
+describe("ScanScreen — torch toggle accessibility", () => {
+  it("exposes a switch with a static label and a checked state that flips on press", () => {
+    renderComponent(<ScanScreen />);
+
+    const torchButton = screen.getByLabelText("Flashlight");
+    expect(torchButton.getAttribute("role")).toBe("switch");
+    expect(torchButton.getAttribute("aria-checked")).toBe("false");
+
+    fireEvent.click(torchButton);
+
+    // Same element, same static label — only the checked state flips.
+    expect(screen.getByLabelText("Flashlight")).toBe(torchButton);
+    expect(torchButton.getAttribute("aria-checked")).toBe("true");
+  });
+});
+
 describe("ScanScreen — barcode lock wiring (stale-closure regression, PR #654)", () => {
   it("locks a barcode driven entirely through the callback captured on the FIRST render", async () => {
     // The native camera output can keep invoking the callback it captured at
