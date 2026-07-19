@@ -129,6 +129,29 @@ assert_allow "registry: real -C <worktree> is not overridden by a main decoy in 
 assert_deny "registry: main-checkout commit is not laundered by a worktree decoy in the message (was BYPASS)" \
   "$(json "$SESSION" "$MAIN" "git commit -m \\\"ref git -C $WT_A\\\"")"
 
+# Quote-AWARE segmentation + separator-complete gate (the mutating-git "front door").
+# Two pre-existing FALSE-NEGATIVES the old quote-blind `tr ';|&'` split + the
+# MUTATING_GIT_RE gate (boundary `(^|&&|\|\||;)`, no single | or &) let through:
+#   (a) a metachar INSIDE a quoted `-c name=value` global option fractured the
+#       segment so neither fragment matched → a real `git -C <main> … commit` slipped;
+#   (b) a mutating git preceded by a single pipe/background (`… | git commit -F -`)
+#       never fired the gate at all.
+# See todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md.
+assert_deny "registry: metachar inside a -c value no longer fractures the segment (was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN -c core.pager='a;b' commit -m x")"
+assert_deny "registry: '&' inside a -c value no longer fractures the segment (was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN -c foo='a&b' commit -m x")"
+assert_deny "registry: piped mutating git in main checkout is denied (gate boundary, was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'echo msg | git commit -F -')"
+assert_deny "registry: backgrounded mutating git in main checkout is denied (gate boundary, was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'foo & git commit -m x')"
+# Guards: an after-verb metachar in a message (fragment keeps `git … <verb>`) and a
+# benign read-only pipe must stay ALLOWED — the fix must not over-DENY.
+assert_allow "registry: read-only 'git log | grep' stays allowed under the permissive gate" \
+  "$(json "$SESSION" "$MAIN" 'git log | grep x')"
+assert_allow "registry: worktree -C commit with a ';'-containing quoted message stays allowed" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A commit -m \\\"fixed a; also b\\\"")"
+
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \
   "$(json "$SESSION" "$MAIN" 'git switch -c feature')"

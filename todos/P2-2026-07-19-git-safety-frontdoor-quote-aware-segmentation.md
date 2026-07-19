@@ -69,13 +69,37 @@ must not weaken any existing mutating-git guard test.
      These are the same class as the already-accepted shell-wrapper residuals
      (`sudo`/`env`/`command`/`xargs`/subshell/`eval`) — decide per-case: close or document.
 
+4. **Gate separator boundary — single `|`/`&` before a mutating git — FALSE-NEGATIVE**
+   (surfaced by the PR #665 pre-write advisor pass, not the original enumeration).
+   `echo msg | git commit -F -` and `foo & git commit -m x` (cwd = main checkout) →
+   **ALLOW**. The old whole-command `MUTATING_GIT_RE` gate anchored the command position
+   on `(^|&&|\|\||;)`, which omits single `|` and single `&`, so the gate never fired and
+   the per-segment check never ran. `… | git commit -F -` is normal (non-adversarial)
+   usage. **FIXED in the `fix/git-safety-frontdoor-segmentation` PR** by demoting the gate
+   to a permissive `*git*` pre-filter (the anchored per-segment SEG_RE is the real
+   decision), which removes the boundary bug class outright.
+
 ## Acceptance Criteria
 
-- [ ] Replace the quote-blind `tr ';|&' '\n'` pre-split with quote-AWARE segmentation.
-      Reuse the state machine already in this file — `emit_write_targets`' internal
-      `segend()` splits on `|;&()` only when `st == 0` (outside quotes). Preferred shape:
-      one quote-aware AWK pass over the whole `$CMD` that yields per-segment effective-repo
-      decisions, replacing both the `tr` split and the per-segment `git_c_target` call.
+- [x] **DONE (PR `fix/git-safety-frontdoor-segmentation`).** Replaced the quote-blind
+      `tr ';|&' '\n'` pre-split with a quote-aware `split_segments` AWK (splits on unquoted
+      `;`/`|`/`&`/newline; quoted spans + escapes emitted verbatim for the downstream
+      quote-aware `git_c_target`). Closes bypass #1 (metachar inside a `-c name=value`
+      value no longer fractures a real `git -C <main> … commit`). **Also folded in a
+      SEPARATE gate-boundary false-negative surfaced by the pre-write advisor pass:**
+      the old whole-command `MUTATING_GIT_RE` gate anchored on `(^|&&|\|\||;)` — omitting
+      single `|`/`&` — so `echo msg | git commit -F -` (a normal, non-adversarial pattern)
+      run in the main checkout NEVER fired the gate. Fixed by demoting the gate to a cheap
+      permissive `[[ "$CMD" == *git* ]]` pre-filter and letting the anchored, quote-aware
+      per-segment `MUTATING_GIT_SEG_RE` be the sole precise decision (over-firing is
+      harmless; a non-git segment can't match `^…git…verb`) — which removes the
+      boundary-completeness bug class entirely and deletes the buggy `MUTATING_GIT_RE`.
+      Kept the well-tested validation loop (allowlist/registry/dot-segment/fail-closed)
+      unchanged. 4 red tests (`-c`-value `;` and `&`, piped, backgrounded) + 2 guards
+      (read-only pipe, after-verb `;` in a worktree-`-C` message) — 63/63 green, full
+      29-suite hook sweep green. Did NOT adopt the "one unified AWK yielding per-segment
+      decisions" preferred shape — the surgical split_segments + existing regex/extractor
+      keeps the diff comprehensible and the validation loop untouched.
 - [ ] Handle chained `-C`: allow ≥1 `-C` in `MUTATING_GIT_SEG_RE`/`MUTATING_GIT_RE` AND
       teach `git_c_target` cumulative last-absolute-wins resolution (mirror real git). Add
       a red test: `git -C /tmp -C <MAIN> commit` → DENY.
@@ -113,3 +137,10 @@ must not weaken any existing mutating-git guard test.
   extraction fix shipped correctly; these front-door false-negatives are pre-existing
   (the split + regex are byte-identical on `main`) and deferred here for their own clean,
   fully-tested landing.
+- **Segmentation + gate boundary FIXED** (PR `fix/git-safety-frontdoor-segmentation`).
+  Quote-aware `split_segments` closes bypass #1; the pre-write advisor pass surfaced a
+  fourth, more-common bypass (single-`|`/`&` gate boundary, #4) which was fixed in the
+  same PR by making the gate a permissive `*git*` pre-filter. Verified all four bypasses
+  DENY (hermetic probe) and 63/63 + 29-suite green. **Remaining for a follow-up PR (B):**
+  chained `-C` (AC bullet 2 — regex `?`→`*` AND `git_c_target` cumulative resolution
+  together, or it gets WORSE) and the within-segment quote-blind residuals (AC bullet 3).
