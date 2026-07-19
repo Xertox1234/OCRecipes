@@ -50,8 +50,20 @@ git worktree list --porcelain 2>/dev/null | while read -r key path; do
   # dangling symlink left by an earlier run (e.g. the main source was moved).
   # Each link is independent and guarded: create only when the main checkout
   # has the source and the worktree lacks a resolvable copy.
-  if [ -d "$MAIN_ROOT/node_modules" ] && [ ! -e "$path/node_modules" ]; then
-    ln -sfn "$MAIN_ROOT/node_modules" "$path/node_modules" 2>/dev/null || true
+  #
+  # A node_modules holding ONLY dot-entries is tool-cache noise (vitest creates
+  # node_modules/.vite/ on its own), not an install — no resolvable package
+  # lives at a hidden name, so replacing it loses nothing. Anything with a
+  # non-hidden entry is treated as a real install and never touched.
+  if [ -d "$MAIN_ROOT/node_modules" ]; then
+    nm="$path/node_modules"
+    if [ -d "$nm" ] && [ ! -L "$nm" ] \
+      && ! find "$nm" -mindepth 1 -maxdepth 1 -not -name '.*' -print -quit 2>/dev/null | grep -q .; then
+      rm -rf "$nm" 2>/dev/null || true
+    fi
+    if [ ! -e "$nm" ]; then
+      ln -sfn "$MAIN_ROOT/node_modules" "$nm" 2>/dev/null || true
+    fi
   fi
   if [ -f "$MAIN_ROOT/docs/LEARNINGS.md" ] && [ ! -e "$path/docs/LEARNINGS.md" ]; then
     mkdir -p "$path/docs" 2>/dev/null || true
