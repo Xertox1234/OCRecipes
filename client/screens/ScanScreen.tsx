@@ -649,10 +649,8 @@ export default function ScanScreen() {
             haptics.selection();
             setTorchEnabled((t) => !t);
           }}
-          accessibilityLabel={
-            torchEnabled ? "Turn off flashlight" : "Turn on flashlight"
-          }
-          accessibilityRole="button"
+          accessibilityLabel="Flashlight"
+          accessibilityRole="switch"
           accessibilityState={{ checked: torchEnabled }}
         >
           <Feather

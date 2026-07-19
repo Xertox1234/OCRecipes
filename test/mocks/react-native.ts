@@ -90,6 +90,9 @@ function mockComponent(
           ...(a11y?.busy != null && {
             "aria-busy": a11y.busy,
           }),
+          ...(a11y?.checked != null && {
+            "aria-checked": a11y.checked,
+          }),
           ...rest,
         } as Record<string, unknown>,
         children as React.ReactNode,
@@ -149,6 +152,7 @@ export const Pressable = React.forwardRef<unknown, Record<string, unknown>>(
             ...(a11y?.disabled != null && { "aria-disabled": a11y.disabled }),
             ...(a11y?.selected != null && { "aria-selected": a11y.selected }),
             ...(a11y?.busy != null && { "aria-busy": a11y.busy }),
+            ...(a11y?.checked != null && { "aria-checked": a11y.checked }),
           };
         })(),
         ...rest,
@@ -337,6 +341,7 @@ export const TouchableOpacity = React.forwardRef<
         ...(a11y?.disabled != null && { "aria-disabled": a11y.disabled }),
         ...(a11y?.selected != null && { "aria-selected": a11y.selected }),
         ...(a11y?.busy != null && { "aria-busy": a11y.busy }),
+        ...(a11y?.checked != null && { "aria-checked": a11y.checked }),
         ...rest,
       } as Record<string, unknown>,
       children as React.ReactNode,

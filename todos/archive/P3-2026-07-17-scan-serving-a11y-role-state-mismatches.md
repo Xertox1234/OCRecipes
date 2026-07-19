@@ -1,9 +1,9 @@
 ---
 title: "Fix pre-existing a11y role/state mismatches on torch toggle and serving chips"
-status: backlog
+status: done
 priority: low
 created: 2026-07-17
-updated: 2026-07-17
+updated: 2026-07-19
 assignee:
 labels: [deferred, accessibility]
 github_issue:
@@ -31,12 +31,12 @@ context notes, not new defects:
 
 ## Acceptance Criteria
 
-- [ ] Torch control announces its on/off state correctly on both VoiceOver and
+- [x] Torch control announces its on/off state correctly on both VoiceOver and
       TalkBack (e.g. switch role + `checked`, or button + state in the label).
-- [ ] Serving chips use `accessibilityRole="radio"` +
+- [x] Serving chips use `accessibilityRole="radio"` +
       `accessibilityState={{ selected }}` inside a `role="radiogroup"` wrapper
       (shared `Chip` already accepts `accessibilityRole="radio"`).
-- [ ] docs/rules/accessibility.md rules re-checked for both changes.
+- [x] docs/rules/accessibility.md rules re-checked for both changes.
 
 ## Implementation Notes
 
