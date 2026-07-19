@@ -70,6 +70,22 @@ assert_not "precondition: dangling symlink does not resolve" test -e "$STALE/nod
 ( cd "$REPO" && bash "$HOOK" )
 assert "dangling symlink is repaired" test -e "$STALE/node_modules/.marker"
 
+# The /audit skill's harness-managed root, .worktrees/ (sibling to .claude/worktrees/),
+# must also get provisioned.
+AUDIT_WT="$REPO/.worktrees/audit-sample"
+git -C "$REPO" worktree add -q "$AUDIT_WT" -b audit-sample
+assert_not "fresh .worktrees/ tree starts without node_modules" test -e "$AUDIT_WT/node_modules"
+( cd "$REPO" && bash "$HOOK" )
+assert "hook symlinks node_modules into .worktrees/" test -L "$AUDIT_WT/node_modules"
+assert "symlink into .worktrees/ resolves" test -e "$AUDIT_WT/node_modules/.marker"
+
+# A worktree outside both harness-managed roots (a user's own ad hoc `git worktree
+# add`) must NOT get a node_modules symlink — that scope boundary is deliberate.
+ADHOC_WT="$REPO/adhoc-sample"
+git -C "$REPO" worktree add -q "$ADHOC_WT" -b adhoc-sample
+( cd "$REPO" && bash "$HOOK" )
+assert_not "ad hoc worktree outside both roots is NOT symlinked" test -e "$ADHOC_WT/node_modules"
+
 # Fail-open: outside any git repo the hook is a silent no-op.
 assert "no-op outside a git repo" bash -c "cd '$TMP' && bash '$HOOK'"
 
