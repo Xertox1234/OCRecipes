@@ -116,6 +116,22 @@ rm -f "$STAMP_FILE"
 OUT=$(run_hook '(FOO=1 gh pr create)')
 assert_contains "parenthesized bare create denies" '"permissionDecision": "deny"' "$OUT"
 
+# 12g. Apostrophe-GLUE must not evade the gate (2026-07-18 audit /code-review, finding #1):
+# a bare `'` inside a DOUBLE-quoted span (e.g. the word "don't") is a literal, NOT a delimiter —
+# but the two-independent-sed strip pairs it with the next single quote and deletes the real
+# `&& gh pr create` between them. A context-AWARE single-pass scan must keep the `'` literal.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook "echo \"don't\" && gh pr create --title 'fix'")
+assert_contains "apostrophe-glue create still denies" '"permissionDecision": "deny"' "$OUT"
+
+# 12h. A command-position runner word (env/command/nohup/...) before the target must not evade
+# the gate (2026-07-18 audit /code-review, finding #2): `env NAME=val gh pr create` runs gh in
+# command position, but a prefix that only accepts `NAME=val` assignments (not the bare word
+# `env`) falls through to allow.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'env GH_TOKEN=x gh pr create --title x')
+assert_contains "env-runner-word create still denies" '"permissionDecision": "deny"' "$OUT"
+
 # 13. Helper UN-SOURCEABLE → DENY. Locks the fail-safe: if the shared stamp-path helper
 # can't be found at the repo root, the guard must block (never silently allow a PR with no
 # stamp). Run in a throwaway repo that HAS a HEAD but NO scripts/lib helper, with the env
@@ -127,5 +143,19 @@ OUT=$( cd "$TMP_REPO" && printf '{"tool_name":"Bash","tool_input":{"command":"gh
         -u PREFLIGHT_STAMP_FILE bash "$HOOK" )
 assert_contains "missing helper denies (fail-safe)" '"permissionDecision": "deny"' "$OUT"
 rm -rf "$TMP_REPO"
+
+# 14. Lib UNSOURCEABLE → still DENY (fail-CLOSED). The sourced-scanner refactor must not
+# reintroduce a fail-OPEN: run a COPY of the hook from a dir with NO lib/ subdir (so
+# cmd-detect.sh can't be sourced) while CWD stays in the real repo (git + stamp helper still
+# resolve). A plain `gh pr create` with no stamp must still deny via the raw-substring fallback.
+rm -f "$STAMP_FILE"
+NOLIB=$(mktemp -d)
+cp "$HOOK" "$NOLIB/pr-preflight-guard.sh"
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x"}}' | bash "$NOLIB/pr-preflight-guard.sh")
+assert_contains "lib-missing still denies (fail-closed)" '"permissionDecision": "deny"' "$OUT"
+# ...but lib-missing must NOT block unrelated Bash (the fallback is scoped to plausible creates).
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}' | bash "$NOLIB/pr-preflight-guard.sh")
+assert_empty "lib-missing leaves unrelated bash alone" "" "$OUT"
+rm -rf "$NOLIB"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

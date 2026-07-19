@@ -18,20 +18,25 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 case "$TOOL" in
   Bash)
     CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
-    # First neutralize backslash-escaped quotes, THEN strip single/double-quoted spans, so
-    # `gh pr create` mentioned INSIDE a quoted argument (a commit message, an `echo`/`grep`
-    # string) is never mistaken for a real invocation. The escape pre-pass is load-bearing:
-    # without it a \" inside one argument pairs with the quote OPENING a later argument, and
-    # the strip deletes the separator plus a REAL `gh pr create` between them — a silent allow
-    # on the gate (2026-07-18 harness-audit Phase 6 review). Residual mis-strips fail
-    # deny-side: leftover text can only make the match MORE likely.
-    CMD_BARE=$(printf '%s' "$CMD" | sed "s/\\\\[\"']//g; s/'[^']*'//g; s/\"[^\"]*\"//g")
-    # Then match `gh pr create` only when `gh` is in command position (start-of-command or after a
-    # shell separator: ; & | ( ), allowing env-assignment prefixes (`FOO=1 gh pr create`) so they
-    # cannot evade the gate — the value class is `*` not `+` because quote-stripping can leave
-    # `FOO= `. Intentionally stricter than pr-verify.sh's detector (that hook is non-blocking and
-    # can afford looser matching; we diverge here on purpose).
-    printf '%s' "$CMD_BARE" | grep -Eq '(^|[;&|(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*gh[[:space:]]+pr[[:space:]]+create([[:space:]]|[)]|$)' || exit 0
+    # Necessary-substring fast path: `cmd_bare` only BLANKS characters (never inserts or moves
+    # them), so any command the precise matcher would DENY must contain the literals `gh`, `pr`
+    # and `create`, in order, in the RAW command. If they are absent, no match is possible — skip
+    # the subshell + lib source. This hook runs on EVERY Bash tool call, so keep the hot path
+    # cheap (per project_per_bash_hook_overhead). This is a SAFE fast path, not a lossy pre-guard:
+    # being a strict superset of the matcher, it can only short-circuit commands the matcher would
+    # also miss — never a bypass.
+    case "$CMD" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+    # Precise detection via the shared, quote-AWARE scanner (.claude/hooks/lib/cmd-detect.sh) — the
+    # single source of the strip + command-position matcher across all three PR/commit hooks, so
+    # this gate no longer re-derives (and can no longer re-break) a context-free quote strip (the
+    # apostrophe-glue / env-runner bypasses of the 2026-07-18 audit /code-review). It rejects a
+    # `gh pr create` merely MENTIONED inside a quoted argument. If the lib is UNSOURCEABLE (broken
+    # install), FAIL TOWARD DENY: skip the precise check and fall through to the stamp gate (the
+    # fast path already established the raw command plausibly contains `gh pr create`).
+    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_gh_pr_create >/dev/null; then
+      cmd_is_gh_pr_create "$CMD" || exit 0
+    fi
     ;;
   mcp__github__create_pull_request)
     : # the tool call IS the PR-create (default /todo + "prefer MCP" path) — no arg parsing needed.

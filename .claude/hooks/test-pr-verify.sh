@@ -133,6 +133,43 @@ assert_silent "quoted gh-pr-create mention stays silent" "$OUT"
 OUT=$(run_hook 'echo "escaped \" quote" && gh pr merge 42 --squash --title "x"' "success")
 assert_contains "escaped-quote glue: merge still verified" "PR state verified" "$OUT"
 
+# Test 12: the PR number must be the one FOLLOWING `gh pr <subcommand>`, not the first number
+# anywhere in the command (2026-07-18 audit /code-review, findings #3/#4). A wrapper like
+# `timeout 30 gh pr merge 42` must resolve PR 42, not the wrapper's argument 30. The stub here
+# REFLECTS the numeric arg it was called with (the fixed-42 stub above would mask the bug).
+run_hook_reflect() {
+  local cmd="$1" dir out
+  dir=$(mktemp -d)
+  cat > "$dir/gh" <<'GHEOF'
+#!/usr/bin/env bash
+for a in "$@"; do case "$a" in [0-9]*) printf '{"number":%s,"url":"u","state":"OPEN","title":"t"}\n' "$a"; exit 0;; esac; done
+printf '{"number":"NOARG","url":"u","state":"OPEN","title":"t"}\n'; exit 0
+GHEOF
+  chmod +x "$dir/gh"
+  out=$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$cmd" '$c')" \
+        | PATH="$dir:$PATH" bash "$HOOK" 2>/dev/null)
+  rm -rf "$dir"
+  printf '%s' "$out"
+}
+OUT=$(run_hook_reflect "timeout 30 gh pr merge 42 --squash")
+assert_contains "PR number follows the subcommand, not the wrapper arg" "#42" "$OUT"
+
+# Test 13: apostrophe-glue must not hide a real gh pr write (2026-07-18 audit /code-review,
+# finding #1) — a bare `'` inside a double-quoted word is a literal, not a delimiter. The
+# trailing `--body 'x'` supplies the single quote the lone apostrophe wrongly pairs with.
+OUT=$(run_hook "echo \"don't\" && gh pr merge 42 --squash --body 'x'" "success")
+assert_contains "apostrophe-glue: merge still verified" "PR state verified" "$OUT"
+
+# Test 14: lib UNSOURCEABLE → silent (safe direction for a NON-blocking verifier). Run a COPY of
+# the hook from a dir with no lib/ subdir; a real `gh pr create` must stay silent rather than
+# emit a (possibly wrong) verification message with the scanner unavailable.
+NOLIB=$(mktemp -d)
+cp "$HOOK" "$NOLIB/pr-verify.sh"
+stubdir=$(make_stub_gh "success")
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x"}}' | PATH="$stubdir:$PATH" bash "$NOLIB/pr-verify.sh" 2>/dev/null)
+assert_silent "lib-missing stays silent (non-blocking safe direction)" "$OUT"
+rm -rf "$stubdir" "$NOLIB"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

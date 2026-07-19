@@ -99,6 +99,44 @@ OUT=$(run_hook 'echo "escaped \" quote" && git commit -m "second"')
 assert_contains "escaped-quote glue: still verified" "silently blocked" "$OUT"
 git -C "$TMPDIR_REPO" commit -q -m "clean4" 2>/dev/null || true
 
+# Test 8: NEWLINE-separated compound commit must be verified (2026-07-18 audit /code-review,
+# finding #5) — a bash [[ =~ ]] matcher anchors `^` to STRING start, so `git commit` on a second
+# line (separated by a newline, not `;&|`) was silently missed. Grep's per-line `^` fixes it.
+echo "more4" > "$TMPDIR_REPO/staged5.ts"
+git -C "$TMPDIR_REPO" add staged5.ts
+OUT=$(run_hook "$(printf 'git add -A\ngit commit -m x')")
+assert_contains "newline-compound commit: still verified" "silently blocked" "$OUT"
+git -C "$TMPDIR_REPO" commit -q -m "clean5" 2>/dev/null || true
+
+# Test 9: apostrophe-glue must not hide a real commit (2026-07-18 audit /code-review, finding #1)
+# — a bare `'` inside a double-quoted word is a literal, not a delimiter. The trailing `-m 'x'`
+# supplies the single quote the lone apostrophe wrongly pairs with under the naive two-sed strip.
+echo "more5" > "$TMPDIR_REPO/staged6.ts"
+git -C "$TMPDIR_REPO" add staged6.ts
+OUT=$(run_hook "echo \"don't\" && git commit -m 'x'")
+assert_contains "apostrophe-glue commit: still verified" "silently blocked" "$OUT"
+git -C "$TMPDIR_REPO" commit -q -m "clean6" 2>/dev/null || true
+
+# Test 10: a command-position runner word before git must be verified (2026-07-18 audit
+# /code-review, finding #2) — `env FOO=1 git commit` runs git in command position.
+echo "more6" > "$TMPDIR_REPO/staged7.ts"
+git -C "$TMPDIR_REPO" add staged7.ts
+OUT=$(run_hook "env FOO=1 git commit -m x")
+assert_contains "env-runner-word commit: still verified" "silently blocked" "$OUT"
+git -C "$TMPDIR_REPO" commit -q -m "clean7" 2>/dev/null || true
+
+# Test 11: lib UNSOURCEABLE → silent (safe direction for a NON-blocking hook). Run a COPY of the
+# hook from a dir with no lib/ subdir; a staged file + real `git commit` must NOT emit a warning
+# (matching raw would fire false context on quoted mentions — silence is the correct fallback).
+echo "more7" > "$TMPDIR_REPO/staged8.ts"
+git -C "$TMPDIR_REPO" add staged8.ts
+NOLIB=$(mktemp -d)
+cp "$HOOK" "$NOLIB/commit-verify.sh"
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"}}' | bash "$NOLIB/commit-verify.sh" 2>/dev/null)
+assert_silent "lib-missing stays silent (non-blocking safe direction)" "$OUT"
+rm -rf "$NOLIB"
+git -C "$TMPDIR_REPO" commit -q -m "clean8" 2>/dev/null || true
+
 unset GIT_DIR GIT_WORK_TREE
 
 echo ""
