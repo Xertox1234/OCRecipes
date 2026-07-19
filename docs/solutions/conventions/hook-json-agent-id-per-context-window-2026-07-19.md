@@ -92,5 +92,5 @@ same-session/different-`agent_id` request is treated as a fresh key.
 
 ## See Also
 
-- [priority-order-context-injection-under-size-cap](priority-order-context-injection-under-size-cap-2026-06-05.md)
+- [priority-order-context-injection-under-size-cap](../design-patterns/priority-order-context-injection-under-size-cap-2026-06-05.md)
 - [mirror-inject-patterns.sh applies_to matching](mirror-inject-patterns-applies-to-with-bash-glob-not-globstar-2026-06-13.md)
