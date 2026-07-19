@@ -145,6 +145,75 @@ emit_write_targets() {
     }
   '
 }
+# git_c_target: read ONE shell segment (already matched MUTATING_GIT_SEG_RE) on
+# STDIN and emit the argument of the REAL `git -C <path>` global option — the -C
+# immediately following the command-position `git`, per that regex's grammar —
+# quote/escape-AWARE, one line, empty when there is no real -C. Replaces a greedy
+# `tr -d '\042\047' | sed 's/.*git…-C ([^ ]+)/\1/'` that kept quoted CONTENT and
+# matched the LAST `git -C` anywhere, so a commit MESSAGE mentioning `git -C <path>`
+# was mined as a real override. That was BIDIRECTIONAL: a main-path decoy fabricated
+# a violation (false-DENY) and a registered-worktree decoy laundered a real
+# main-checkout mutation past the gate (BYPASS). Tokenizing reads a quoted -C VALUE
+# (`git -C '/main'` still DENYs) while a quoted -m message tokenizes as one atomic
+# word and is ignored — the role-aware distinction the write-shaped fix used
+# (docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md).
+# Env-assignment recognition is taint-TOLERANT (so `FOO='x' git -C /main` is not a
+# false-negative); `git`/`-C` recognition is taint-STRICT — safe ONLY because the
+# quote-blind MUTATING_GIT_SEG_RE below also rejects a quoted `-C` flag, so the
+# tokenizer never runs on `git '-C' <main>` (if that regex is ever hardened, make the
+# `-C` recognition taint-tolerant too). Residuals (guardrail, not sandbox — all live in
+# the UNCHANGED quote-blind regex/split "front door" ABOVE the tokenizer, tracked in
+# todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md):
+#   - The `tr ';|&'` segment split (below) is quote-blind. A split char AFTER the verb
+#     (inside a `-m` message) is false-POSITIVE only — the fragment keeps `git … <verb>`,
+#     still matches, still DENYs. But a split char BEFORE the verb (inside a `-c name=val`
+#     global option, e.g. `-c core.pager='a;b'`) fractures the segment so NEITHER fragment
+#     matches — a genuine FALSE-NEGATIVE (a real main mutation slips). Accepted best-effort
+#     residual, same class as the shell-wrapper residuals; `SKIP_WORKTREE_CONTRACT=1` and
+#     the file-tool guard are the backstops.
+#   - Chained `-C` (`git -C a -C b …`, git honors the last) fails SEG_RE's `(-C…)?` group
+#     entirely → the whole command is invisible to the gate. Same front-door class.
+git_c_target() {
+  awk '
+    function endword(   w, tnt){
+      if (!wstart) return
+      w = word; tnt = wtaint; word = ""; wstart = 0; wtaint = 0
+      if (done) return
+      if (emit_next) { print w; done = 1; return }
+      if (phase == 0) {                              # command position
+        if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) return   #   env assignment (value may be quoted): stay
+        if (!tnt && w == "git") { phase = 1; return } #   the real git
+        phase = 2; return                             #   some other command: stop looking
+      }
+      if (phase == 1) {                              # word right after git
+        if (!tnt && w == "-C") { emit_next = 1; return } #   real -C flag: its arg is the next word
+        phase = 2                                      #   git with no immediate -C (e.g. git commit)
+      }
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; phase = 0 }
+    { buf = buf $0 "\n" }
+    END {
+      n = length(buf); st = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(buf, i, 1)
+        if (st == 0) {
+          if (c == BS) { i++; if (i <= n) { ch = substr(buf, i, 1); if (ch != "\n") { word = word ch; wstart = 1 } } }
+          else if (c == SQ) { st = 1; wstart = 1 }
+          else if (c == DQ) { st = 2; wstart = 1 }
+          else if (c == " " || c == "\t" || c == "\n") { endword() }
+          else { word = word c; wstart = 1 }
+        } else if (st == 1) {
+          if (c == SQ) st = 0; else { word = word c; wstart = 1; wtaint = 1 }
+        } else {
+          if (c == BS) { i++; if (i <= n) { word = word substr(buf, i, 1); wstart = 1; wtaint = 1 } }
+          else if (c == DQ) st = 0
+          else { word = word c; wstart = 1; wtaint = 1 }
+        }
+      }
+      endword()
+    }
+  '
+}
 allowlisted() {
   has_dot_segments "$1" && return 1
   case "$1" in
@@ -188,7 +257,12 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     SEGS=$(printf '%s\n' "$CMD" | tr ';|&' '\n')
     while IFS= read -r seg; do
       printf '%s' "$seg" | grep -qE "$MUTATING_GIT_SEG_RE" || continue
-      C_TARGET=$(printf '%s' "$seg" | tr -d '\042\047' | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+([^[:space:]]+).*/\1/p' | head -1)
+      # Quote-AWARE -C extraction (git_c_target, defined above). The prior
+      # `tr -d '\042\047' | sed 's/.*git…-C ([^ ]+)/\1/'` kept quoted CONTENT and
+      # matched the LAST `git -C` in the string, so a commit message mentioning
+      # `git -C <path>` was mined — false-DENY on a main decoy, and BYPASS on a
+      # registered-worktree decoy (a real main-checkout mutation laundered through).
+      C_TARGET=$(printf '%s' "$seg" | git_c_target)
       EFFECTIVE="${C_TARGET:-$CWD}"
       case "$EFFECTIVE" in
         "")

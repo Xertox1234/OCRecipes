@@ -111,6 +111,24 @@ assert_deny "registry: single-quoted git -C main checkout is denied" \
 assert_allow "registry: single-quoted git -C worktree is allowed" \
   "$(json "$SESSION" "$MAIN" "git -C '$WT_A' commit -m x")"
 
+# Quote-AWARE -C extraction (git_c_target). The old `tr -d` + greedy `.*git…-C`
+# strip mined the LAST `git -C` anywhere in the string, so a commit MESSAGE that
+# mentions `git -C <path>` was read as a real -C override. That is a BIDIRECTIONAL
+# bug: a main-path decoy fabricates a violation (false-DENY), and a registered-
+# worktree decoy launders a real main-checkout mutation past the gate (BYPASS).
+# The tokenizer emits ONLY the FIRST command-position git's -C arg (flag must be
+# UNQUOTED; value may be quoted), so a quoted message — one atomic token — is
+# ignored. See docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md.
+# 2x2: {real -C present?} x {message decoys main | worktree}.
+assert_allow "registry: commit msg mentioning 'git -C <main>' is not a real -C (was false-DENY)" \
+  "$(json "$SESSION" "$WT_A" "git commit -m \\\"see git -C $MAIN commit\\\"")"
+assert_deny "registry: real -C <main> wins over a worktree decoy in the message (was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN commit -m \\\"see git -C $WT_A\\\"")"
+assert_allow "registry: real -C <worktree> is not overridden by a main decoy in the message (was false-DENY)" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A commit -m \\\"see git -C $MAIN\\\"")"
+assert_deny "registry: main-checkout commit is not laundered by a worktree decoy in the message (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" "git commit -m \\\"ref git -C $WT_A\\\"")"
+
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \
   "$(json "$SESSION" "$MAIN" 'git switch -c feature')"

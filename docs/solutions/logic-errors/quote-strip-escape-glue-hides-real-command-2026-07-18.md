@@ -109,6 +109,23 @@ operator/command word is *untainted by quotes*; the target path may be quoted.
 you extract can itself be legitimately quoted, you need tokenization (role-aware), not
 blanking (presence-only).**
 
+**A greedy "last-match" extraction over a mixed command+message string is
+BIDIRECTIONALLY unsafe — not only a false-positive.** git-safety's `-C` extractor
+(`git_c_target`, the sibling that reads the effective repo of a mutating `git`) used
+`tr -d '\042\047' | sed 's/.*git…-C ([^ ]+)/\1/'` — greedy `.*` grabs the *last*
+`git -C` anywhere in the string. A commit *message* mentioning `git -C <path>` is
+therefore read as a real `-C` override, and the direction of harm depends on what the
+message names: a **main-checkout** path fabricates a violation (false-DENY), but a
+**registered-worktree** path SUBSTITUTES for the real target and launders a genuine
+main-checkout mutation past the gate (false-NEGATIVE / BYPASS — e.g.
+`git commit -m "ref git -C <worktree>"` run in the main checkout). The tokenizer fix
+emits only the FIRST command-position `git`'s `-C` argument (flag untainted, value may
+be quoted), so a quoted message — one atomic token — can neither fabricate nor
+substitute a target. Lesson: on a gate, a decoy in free-text isn't just noise that
+adds a false-positive; "last match wins" lets the decoy REPLACE the real value, which
+is the bypass direction. Test both directions (see `test-git-safety.sh`: main-decoy →
+must-ALLOW, worktree-decoy → must-DENY).
+
 ## Prevention
 
 - **Detect commands with the shared scanner, never a bespoke per-hook quote
@@ -143,7 +160,7 @@ blanking (presence-only).**
 ## Related Files
 
 - `.claude/hooks/lib/cmd-detect.sh` — the shared quote-aware scanner + predicates (the fix)
-- `.claude/hooks/git-safety.sh` (`emit_write_targets`) — the role-aware TOKENIZER variant: same root cause (`tr -d` kept quoted content and mined a commit message), but the target path must survive quoting, so it tokenizes instead of blanking
+- `.claude/hooks/git-safety.sh` (`emit_write_targets`, `git_c_target`) — two role-aware TOKENIZER variants, same root cause (`tr -d` kept quoted content and mined a commit message) where the extracted value must survive quoting so it tokenizes instead of blanking: `emit_write_targets` for write-shaped targets (false-DENY only), `git_c_target` for the mutating-git `-C` repo override (BIDIRECTIONAL — greedy last-match also laundered a real main mutation past the gate; see the bidirectional note above)
 - `.claude/hooks/pr-preflight-guard.sh` — the gate (deny-side); `commit-verify.sh`, `pr-verify.sh` — advisory
 - `.claude/hooks/test-pr-preflight-guard.sh` (12e–12h, 14), `test-commit-verify.sh` (7–11), `test-pr-verify.sh` (11–14) — per-class regression tests
 
