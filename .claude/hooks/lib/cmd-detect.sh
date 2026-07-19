@@ -25,6 +25,13 @@
 #     forms (`env NAME=v`, `command`, `builtin`, `exec`, `nohup`, `setsid`) are skipped.
 #   * $'…' ANSI-C quoting is treated as a plain single-quote span (its \' does not
 #     close the span in a real shell). This errs toward OVER-blanking = the deny side.
+#   * A keyword character split mid-word by a quote or backslash — `g\h pr create`,
+#     `g"h" pr create` — defeats detection: a real shell concatenates the word back to
+#     `gh`, but cmd_bare BLANKS the quoted/escaped char (it does not unescape), so the
+#     matcher sees the keyword broken by spaces and misses it. This is DELIBERATE:
+#     unescaping-then-rejoining would re-introduce the `echo "gh pr create"` false match
+#     this scan exists to kill. Suppressing false positives is the chosen tradeoff;
+#     catching every mid-word evasion is out of scope (that is the SKIP_* bypass's job).
 
 # Command-position building blocks, shared by the STRICT matchers (guard + commit).
 # Separator class opens a command: start-of-line (grep's ^ is per-line, so newline-

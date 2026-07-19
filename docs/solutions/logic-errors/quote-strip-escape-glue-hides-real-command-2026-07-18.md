@@ -110,9 +110,14 @@ fallback direction (see `test-pr-preflight-guard.sh` #14).
   each command-position wrapper's own argument grammar, so arg-taking wrappers
   are NOT skipped: `timeout 30 gh pr create`, `nice -n 10 …`, `sudo -u x …`
   still bypass. `$'…'` ANSI-C quoting is treated as a plain single-quote span
-  (errs toward over-blanking = the deny side). These are acceptable for a
-  guardrail whose escape hatch is `SKIP_PR_PREFLIGHT=1` — document them in the
-  helper, do not pretend a regex closes them.
+  (errs toward over-blanking = the deny side). And because the scan *blanks*
+  quoted/escaped content instead of unescaping it, a keyword split mid-word
+  (`g\h pr create`, `g"h" pr create`) is rejoined to `gh` by a real shell but
+  missed by the matcher — the deliberate cost of suppressing the
+  `echo "gh pr create"` false positive (unescaping-then-rejoining would bring it
+  back). These are acceptable for a guardrail whose escape hatch is
+  `SKIP_PR_PREFLIGHT=1` — document them in the helper, do not pretend a regex
+  closes them.
 - **Red test per class**, in the hook's `test-*.sh`: escaped-quote glue,
   apostrophe glue, env-runner-word, newline-compound, and lib-missing
   fail-safe.
