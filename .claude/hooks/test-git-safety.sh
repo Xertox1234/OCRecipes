@@ -43,6 +43,13 @@ assert_warn_contains() {
 json() {  # $1=session $2=cwd $3=command
   printf '{"tool_name":"Bash","session_id":"%s","cwd":"%s","tool_input":{"command":"%s"}}' "$1" "$2" "$3"
 }
+# jq-encoded envelope for commands containing backslashes / bash $'…' where hand-escaping
+# into printf's %s is error-prone (a lone \' is invalid JSON and makes the hook bail to a
+# spurious ALLOW). Pass the RAW command; jq handles JSON escaping.
+jsonc() {  # $1=session $2=cwd $3=raw command
+  jq -cn --arg s "$1" --arg c "$2" --arg cmd "$3" \
+    '{tool_name:"Bash",session_id:$s,cwd:$c,tool_input:{command:$cmd}}'
+}
 
 # ---------- fake gh ----------
 FAKE_BIN=$(mktemp -d)
@@ -128,6 +135,49 @@ assert_allow "registry: real -C <worktree> is not overridden by a main decoy in 
   "$(json "$SESSION" "$MAIN" "git -C $WT_A commit -m \\\"see git -C $MAIN\\\"")"
 assert_deny "registry: main-checkout commit is not laundered by a worktree decoy in the message (was BYPASS)" \
   "$(json "$SESSION" "$MAIN" "git commit -m \\\"ref git -C $WT_A\\\"")"
+
+# Separator-complete gate (the mutating-git "front door"). The old whole-command
+# MUTATING_GIT_RE gate anchored the command position on `(^|&&|\|\||;)` — no single
+# `|` or `&` — so a mutating git preceded by a pipe/background (`echo x | git commit -F -`,
+# a normal pattern) NEVER fired the gate. Fixed by a cheap permissive `*git*` pre-filter
+# plus the anchored, precise per-segment SEG_RE. (Quote-AWARE segmentation — the `-c`-value
+# fracture — and `$'…'` completeness are a separate tracked follow-up, deferred because a
+# PARTIAL quote-aware split regressed on `$'…'`:
+# todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md.)
+assert_deny "registry: piped mutating git in main checkout is denied (gate boundary, was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'echo msg | git commit -F -')"
+assert_deny "registry: backgrounded mutating git in main checkout is denied (gate boundary, was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" 'foo & git commit -m x')"
+# Guards: the permissive gate must not over-DENY a benign read-only pipe, and an
+# after-verb metachar in a message (the quote-blind split's fragment keeps `git … <verb>`,
+# so it still resolves the real -C) must stay ALLOWED.
+assert_allow "registry: read-only 'git log | grep' stays allowed under the permissive gate" \
+  "$(json "$SESSION" "$MAIN" 'git log | grep x')"
+assert_allow "registry: worktree -C commit with a ';'-containing quoted message stays allowed" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A commit -m \\\"fixed a; also b\\\"")"
+
+# Quote-torture corpus (shared with split_segments + git_c_target + emit_write_targets so
+# the three scanners cannot drift — the drift that caused the $'…' regression). Bash ANSI-C
+# $'…' quoting: \' is an ESCAPED apostrophe that does NOT close the span. A $'…'-blind
+# scanner inverts state on it and swallows real separators, hiding a main-checkout mutation.
+assert_deny "registry: $'…' message before && cannot hide a -C-main reset (was BYPASS)" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$'don\\'t' && git -C $MAIN reset --hard HEAD~1")"
+assert_deny "registry: ANSI-C $'…' inside a -c value does not fracture the segment" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $MAIN -c core.pager=\$'a;b' commit -m x")"
+assert_deny "registry: $'…' env-assignment value does not desync the -C extractor" \
+  "$(jsonc "$SESSION" "$WT_A" "FOO=\$'a\\'b' git -C $MAIN commit -m x")"
+# Guards: a benign $'…' message (with an escaped apostrophe) on a worktree -C stays ALLOWED.
+assert_allow "registry: benign $'…' apostrophe message on a worktree -C stays allowed" \
+  "$(jsonc "$SESSION" "$MAIN" "git -C $WT_A commit -m \$'don\\'t ship'")"
+# $$'…' — bash pairs a run of $ into $$ (PID); only an UNPAIRED $ before ' is ANSI-C. An
+# EVEN run ($$'…\\') is a NORMAL single quote in bash (\\' closes), so a scanner that enters
+# ANSI-C on the 2nd $ desyncs and swallows the real && separator (an auditor-found regression).
+assert_deny "registry: even-dollar-run \$\$'…\\' cannot hide a -C-main reset (was BYPASS)" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$'a\\' && git -C $MAIN reset --hard HEAD~1")"
+assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' also cannot hide a -C-main reset" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$\$\$'a\\' && git -C $MAIN reset --hard HEAD~1")"
+assert_allow "registry: benign \$\$'ok' (PID + normal single quote) stays allowed" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$'ok'")"
 
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \
@@ -221,6 +271,21 @@ assert_deny "registry: sed --in-place=.bak on a main-checkout file is denied" \
 # PATH merely contains '-i' must be allowed (the old 'sed …-i' regex matched the path).
 assert_allow "registry: read-only sed on a '-i'-containing main path is allowed" \
   "$(json "$SESSION" "$R_WT" "sed -n s/a/b/ $R_MAIN/file-i.txt")"
+# ANSI-C $'…' quote-completeness (same corpus class as the mutating tests): a $'…\'…'
+# span before a redirect/rm must NOT desync emit_write_targets and hide the write target.
+# `echo $'\'' > <main>/f` was a PRE-EXISTING write-shaped bypass (#664) — must now DENY.
+assert_deny "registry: $'…' before a redirect into main is denied (was pre-existing BYPASS)" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$'\\'' > $R_MAIN/f.txt")"
+assert_deny "registry: $'a\\'b' then a redirect into main is denied" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$'a\\'b' > $R_MAIN/g.txt")"
+assert_deny "registry: $'…' then ';' then rm of a main file is denied (no desync)" \
+  "$(jsonc "$SESSION" "$R_WT" "printf \$'x\\'y' ; rm $R_MAIN/z.txt")"
+assert_allow "registry: benign $'…' redirect to /tmp stays allowed" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$'hi' > /tmp/scratch-ansic.txt")"
+assert_deny "registry: even-dollar-run \$\$'…\\' before a redirect into main is denied" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$\$'a\\' > $R_MAIN/dd.txt")"
+assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' before a redirect into main is denied" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$\$\$\$'a\\' > $R_MAIN/ee.txt")"
 rm -f "$REG_DIR/dddd000000000004"
 
 # jq missing must fail CLOSED for git/write-shaped commands while any registry
