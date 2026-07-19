@@ -84,11 +84,25 @@ Repro script archived in the 2026-07-18 audit notes (scratchpad, not committed).
 - [x] ~~Reproduce-or-refute the git-safety false-DENY with a hermetic test.~~ **CONFIRMED
       2026-07-18** — `>`/`tee` in a commit message under an active contract false-DENY (see the
       section above for the table + root cause).
-- [ ] Fix git-safety's write-shaped extraction to run over quote-AWARE output WITHOUT breaking
-      the intentional quoted-`-C`-path detection (see the "design constraint" above) — extract
-      `-C` targets from the raw command first, then mine write targets from `cmd_bare` output.
-      Add a red test per confirmed case (`>`/`tee` message) and a guard test that the
-      quoted-`-C`-main-checkout DENY still fires. Determine `rm`/`cp`/`mv`/`sed -i` coverage.
+- [x] **DONE (PR `fix/git-safety-false-deny-quote-aware`).** Fixed git-safety's write-shaped
+      extraction to be quote-AWARE. The originally-planned approach ("mine write targets from
+      `cmd_bare` output") proved INSUFFICIENT: `cmd_bare` blanks the quoted target PATH too, so a
+      real `rm "/main/x"` / `> "/main/out"` would be MISSED (a safety regression — trading the
+      false-positive for a false-negative on the exact threat). Shipped instead a role-aware
+      TOKENIZER (`emit_write_targets`): a write is real only when its operator/command word is
+      UNQUOTED; the target path may still be quoted. Truth table (must-ALLOW message-mentions +
+      must-DENY real writes, incl. the quoted-`-C` guard, fd-redirects, `tee -a`, wrapper `sudo rm`,
+      escaped `\>`) codified in `test-git-safety.sh` — 51/51 green. `rm`/`cp`/`mv`/`sed -i`
+      coverage determined: they false-DENY only when the command word is space-preceded inside a
+      quoted message; the tokenizer handles all write ops/commands uniformly.
+- [ ] **NEW — CONFIRMED 2026-07-18, land as its OWN PR.** The mutating-git branch has the SAME
+      quote-blind bug in its `-C` extraction (line ~127: `tr -d '\042\047'` + greedy `sed`): a
+      commit whose MESSAGE merely mentions `git -C <main-abs-path>` false-DENYs (truth-table probe:
+      `git commit -m "see git -C /main commit"` → DENY). Fix must read a real `-C` FLAG while
+      ignoring `-C` buried in a quoted argument — WITHOUT reddening the `git -C '<main>' commit` →
+      DENY guard test (`test-git-safety.sh` ~line 109). SEPARATE PR: this is git-safety's
+      highest-stakes, best-tested branch (the actual worktree-contract protection) and gets its own
+      clean landing per the 2026-07-18 advisor review. Never delegate.
 - [ ] Port `core-bare-guard.sh`, `drift-detect.sh`, `branch-preflight.sh` to source
       `cmd-detect.sh` and use `cmd_is_git_commit` / a shared mutating-git predicate, so
       quoted mentions stop false-positiving. Each gets a "quoted mention stays silent"
@@ -134,3 +148,18 @@ Repro script archived in the 2026-07-18 audit notes (scratchpad, not committed).
   naive `cmd_bare` swap (would break the intentional quoted-`-C`-path DENY). Title + Summary +
   AC updated from "verify" to "fix". Fix deferred to deliberate P2 execution (live git gate,
   never delegate) rather than tacked onto the PR-hook fix.
+
+### 2026-07-19
+
+- **Write-shaped branch FIXED** (PR `fix/git-safety-false-deny-quote-aware`). Built the truth
+  table first (hermetic probe): confirmed the `>`/`tee`/space-preceded-`rm`/escaped-`\>`
+  false-DENYs and confirmed every real write (bare/quoted redirect, `>>`, `2>`, `tee -a`,
+  quoted `rm`, `cp`, `sudo rm`, quoted-`-C`) still DENYs. The planned "`cmd_bare` output"
+  approach was rejected mid-design — `cmd_bare` blanks the quoted target path too, which would
+  turn the false-positive into a false-NEGATIVE on the real threat. Implemented a role-aware
+  tokenizer (`emit_write_targets`) instead; downstream dot-segment/`in_registered`/`MAIN_ROOT`
+  deny loop unchanged. Solution doc extended with the "tokenize when the extracted value can
+  itself be quoted" rule.
+- **`-C` mutating-branch false-DENY CONFIRMED** via the same truth-table probe and split out to
+  its own AC + its own future PR (highest-stakes branch, own clean landing — advisor guidance).
+- Sibling-hook port (`core-bare-guard`/`drift-detect`/`branch-preflight`) still pending.
