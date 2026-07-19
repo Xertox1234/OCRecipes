@@ -11,16 +11,21 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 [ "$TOOL" = "Bash" ] || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 
-# Match only real `git commit` invocations — in command position (start of command or after a
-# shell separator, so compound forms like `git add -A && git commit` are covered), with optional
-# env-assignment and `git -c` prefixes. Backslash-escaped quotes are neutralized BEFORE the
-# quoted-span strip (a \" would otherwise pair with a later opening quote and delete a real
-# `&& git commit` between them — 2026-07-18 audit Phase 6 review), then quoted spans are
-# stripped so `echo "x; git commit"` never false-matches (parity with pr-preflight-guard.sh;
-# env value class is `*` for the same quote-strip reason).
-CMD_BARE=$(printf '%s' "$CMD" | sed "s/\\\\[\"']//g; s/'[^']*'//g; s/\"[^\"]*\"//g")
-GIT_COMMIT_RE='(^|[;&|(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
-[[ "$CMD_BARE" =~ $GIT_COMMIT_RE ]] || exit 0
+# Cheap pre-guard: `commit` is a NECESSARY substring of any match (quote-blanking only removes
+# characters, never inserts them), so a command lacking it cannot be a git commit — skip the
+# scan. Safe because this hook is NON-blocking: a wrongly-skipped command just stays silent.
+case "$CMD" in *commit*) : ;; *) exit 0 ;; esac
+
+# Detect `git [-c k=v]* commit` in command position via the shared, quote-AWARE scanner
+# (.claude/hooks/lib/cmd-detect.sh) — the single source of the strip + command-position matcher
+# across the three PR/commit hooks. Using grep's per-line `^` (via the helper) fixes the
+# newline-separated-compound miss of the old `[[ =~ ]]` string-anchored matcher, and the shared
+# scan fixes the apostrophe-glue / env-runner misses (2026-07-18 audit /code-review). Lib
+# UNSOURCEABLE → exit 0 (silent): the safe direction for a non-blocking advisory hook (matching
+# raw would fire false context on quoted mentions).
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit >/dev/null || exit 0
+cmd_is_git_commit "$CMD" || exit 0
 
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 

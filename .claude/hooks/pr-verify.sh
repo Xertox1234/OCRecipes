@@ -12,21 +12,24 @@ PR_REF=""
 
 if [ "$TOOL" = "Bash" ]; then
   CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
-  # Neutralize backslash-escaped quotes, then strip quoted spans, so a gh pr write command
-  # merely MENTIONED inside a quoted argument never fires a false-positive WARNING — and a
-  # \" cannot glue spans together and hide a REAL write command (2026-07-18 audit Phase 6
-  # review). Parity with pr-preflight-guard.sh's strip; positional matching below stays
-  # deliberately looser than the guard's.
-  CMD_BARE=$(printf '%s' "$CMD" | sed "s/\\\\[\"']//g; s/'[^']*'//g; s/\"[^\"]*\"//g")
-  # Match write-side gh pr commands only (not gh pr view/list/checks/etc).
-  printf '%s' "$CMD_BARE" | grep -Eq '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|$)' || exit 0
-  # For create: no PR number exists yet, use no-args (resolves from current branch).
-  # For merge/close/edit: extract the PR number from the command and pass it
-  # explicitly — no-args would return the current branch's PR (wrong after
-  # --delete-branch or when operating on a different branch's PR by number).
-  SUBCOMMAND=$(printf '%s' "$CMD_BARE" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)' | grep -oE '(create|merge|close|edit)' | head -1)
+  # Cheap pre-guard: `gh` is a NECESSARY substring of any gh-pr match (quote-blanking only removes
+  # characters, never inserts them) — skip the scan otherwise. Safe: this hook is NON-blocking.
+  case "$CMD" in *gh*) : ;; *) exit 0 ;; esac
+  # Detect a WRITE-side gh pr command (create|merge|close|edit) via the shared, quote-AWARE
+  # scanner (.claude/hooks/lib/cmd-detect.sh) — the single source of the strip + matcher across
+  # the PR/commit hooks. This fixes the apostrophe-glue miss and the first-number-wins PR-number
+  # bug (`timeout 30 gh pr merge 42` used to resolve 30) of the 2026-07-18 audit /code-review.
+  # Lib UNSOURCEABLE → exit 0 (silent), the safe direction for this non-blocking verifier.
+  HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_gh_pr_write_subcommand >/dev/null || exit 0
+  SUBCOMMAND=$(cmd_gh_pr_write_subcommand "$CMD")
+  [ -n "$SUBCOMMAND" ] || exit 0
+  # For create: no PR number exists yet — no-args gh pr view resolves from the current branch.
+  # For merge/close/edit: pass the number that FOLLOWS the subcommand (never the first number
+  # anywhere) — no-args would return the current branch's PR, wrong after --delete-branch or when
+  # operating on another branch's PR by number.
   if [ "$SUBCOMMAND" != "create" ]; then
-    PR_REF=$(printf '%s' "$CMD_BARE" | grep -oE '(^|[[:space:]])[0-9]+' | grep -oE '[0-9]+' | head -1)
+    PR_REF=$(cmd_gh_pr_number "$CMD")
   fi
 elif [ "$TOOL" = "mcp__github__create_pull_request" ]; then
   # The MCP create tool is the preferred PR-creation path (see CLAUDE.md). It
@@ -40,7 +43,7 @@ elif [ "$TOOL" = "mcp__github__merge_pull_request" ]; then
   # PR number explicitly — use it (no-args gh pr view would resolve the current
   # branch's PR, wrong after a squash-merge deletes the branch).
   SUBCOMMAND="merge"
-  PR_REF=$(printf '%s' "$INPUT" | jq -re '.tool_input.pullNumber // .tool_input.pull_number // empty' 2>/dev/null || echo "")
+  PR_REF=$(printf '%s' "$INPUT" | jq -re '.tool_input.pullNumber // empty' 2>/dev/null || echo "")
 else
   exit 0
 fi
