@@ -284,6 +284,8 @@ assert_allow "registry: benign $'…' redirect to /tmp stays allowed" \
   "$(jsonc "$SESSION" "$R_WT" "echo \$'hi' > /tmp/scratch-ansic.txt")"
 assert_deny "registry: even-dollar-run \$\$'…\\' before a redirect into main is denied" \
   "$(jsonc "$SESSION" "$R_WT" "echo \$\$'a\\' > $R_MAIN/dd.txt")"
+assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' before a redirect into main is denied" \
+  "$(jsonc "$SESSION" "$R_WT" "echo \$\$\$\$'a\\' > $R_MAIN/ee.txt")"
 rm -f "$REG_DIR/dddd000000000004"
 
 # jq missing must fail CLOSED for git/write-shaped commands while any registry
