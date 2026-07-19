@@ -79,30 +79,58 @@ must not weaken any existing mutating-git guard test.
    to a permissive `*git*` pre-filter (the anchored per-segment SEG_RE is the real
    decision), which removes the boundary bug class outright.
 
+5. **`$'…'` (ANSI-C) quote blindness in ALL THREE quote scanners — FALSE-NEGATIVE**
+   (found by the PR #666 security review). None of `split_segments`, `git_c_target`, or
+   `emit_write_targets` recognize bash `$'…'`: their single-quote state toggles on every
+   `'` and ignores the `\'` escape, so inside `$'…\'…'` (a `\'` that bash treats as a
+   literal apostrophe, NOT a close) their quote state INVERTS and they then mis-handle
+   every following char. Confirmed live:
+   - Mutating branch (was the split-attempt REGRESSION): `git -C <WT> commit -m $'don\'t
+ship' && git reset --hard HEAD~1` (cwd = main) → bash runs the `reset --hard` in main;
+     a `$'…'`-blind split merges it into the prior segment → **ALLOW**. (The blind `tr` split
+     shipped in #666 does NOT have this — it splits everything — so #666 is safe; the
+     quote-aware redo must handle `$'…'`.)
+   - Write-shaped branch (**pre-existing bypass in already-merged code**, #664's
+     `emit_write_targets`): `echo $'\'' > <MAIN>/f.txt` → the `>` is consumed inside the
+     scanner's perceived quote, no target emitted → **ALLOW** (real bash writes into main).
+     **Partial quote-awareness is worse than none on a security scanner** — fix `$'…'` in all
+     three scanners in ONE change, ideally by factoring a single shared quote scanner so the
+     three copies cannot drift (the root cause of this whole residual family).
+
 ## Acceptance Criteria
 
-- [x] **DONE (PR `fix/git-safety-frontdoor-segmentation`).** Replaced the quote-blind
-      `tr ';|&' '\n'` pre-split with a quote-aware `split_segments` AWK (splits on unquoted
-      `;`/`|`/`&`/newline; quoted spans + escapes emitted verbatim for the downstream
-      quote-aware `git_c_target`). Closes bypass #1 (metachar inside a `-c name=value`
-      value no longer fractures a real `git -C <main> … commit`). **Also folded in a
-      SEPARATE gate-boundary false-negative surfaced by the pre-write advisor pass:**
-      the old whole-command `MUTATING_GIT_RE` gate anchored on `(^|&&|\|\||;)` — omitting
-      single `|`/`&` — so `echo msg | git commit -F -` (a normal, non-adversarial pattern)
-      run in the main checkout NEVER fired the gate. Fixed by demoting the gate to a cheap
-      permissive `[[ "$CMD" == *git* ]]` pre-filter and letting the anchored, quote-aware
-      per-segment `MUTATING_GIT_SEG_RE` be the sole precise decision (over-firing is
-      harmless; a non-git segment can't match `^…git…verb`) — which removes the
-      boundary-completeness bug class entirely and deletes the buggy `MUTATING_GIT_RE`.
-      Kept the well-tested validation loop (allowlist/registry/dot-segment/fail-closed)
-      unchanged. 4 red tests (`-c`-value `;` and `&`, piped, backgrounded) + 2 guards
-      (read-only pipe, after-verb `;` in a worktree-`-C` message) — 63/63 green, full
-      29-suite hook sweep green. Did NOT adopt the "one unified AWK yielding per-segment
-      decisions" preferred shape — the surgical split_segments + existing regex/extractor
-      keeps the diff comprehensible and the validation loop untouched.
-- [ ] Handle chained `-C`: allow ≥1 `-C` in `MUTATING_GIT_SEG_RE`/`MUTATING_GIT_RE` AND
-      teach `git_c_target` cumulative last-absolute-wins resolution (mirror real git). Add
-      a red test: `git -C /tmp -C <MAIN> commit` → DENY.
+- [x] **Gate boundary (#4) DONE (PR #666 `fix/git-safety-frontdoor-segmentation`).** The old
+      whole-command `MUTATING_GIT_RE` gate anchored on `(^|&&|\|\||;)` — omitting single `|`/`&`
+      — so `echo msg | git commit -F -` (a normal pattern) in the main checkout NEVER fired the
+      gate. Fixed by demoting the gate to a cheap permissive `[[ "$CMD" == *git* ]]` pre-filter,
+      letting the anchored per-segment `MUTATING_GIT_SEG_RE` be the sole precise decision
+      (over-firing harmless; a non-git segment can't match `^…git…verb`) — removing the
+      boundary-completeness bug class and deleting the buggy `MUTATING_GIT_RE`. Validation loop
+      unchanged. 2 red tests (piped, backgrounded) + 2 guards — 61/61 green, 29-suite sweep green.
+- [ ] **Quote-AWARE segmentation — STILL OPEN, first attempt REVERTED.** A `split_segments` AWK
+      that split on _unquoted_ `;`/`|`/`&` was written and closed bypass #1, but the PR #666
+      security review caught a HIGH **regression**: a PARTIAL quote model is worse than none on a
+      security splitter. `split_segments` was blind to bash `$'…'` (ANSI-C) quoting — inside
+      `$'…\'…'` the `\'` is an _escaped_ quote that does NOT close, but the scanner closed on it,
+      INVERTING its quote state and then swallowing real unquoted `;`/`|`/`&`. Live-hook repro
+      (old-code DENY → new-code ALLOW = regression):
+      `git -C <WT> commit -m $'don\'t ship' && git reset --hard HEAD~1` (cwd = main) — bash runs
+      the `reset --hard` in main; the splitter merged it into the prior segment. Reverted to the
+      quote-blind `tr ';|&'` split for #666. The redo MUST make split `$'…'`-complete AND do the
+      same to the two sibling tokenizers in the SAME change (next AC) — a partial fix regresses.
+- [ ] **`$'…'`-complete ALL THREE quote scanners in ONE change** (bypass #5): `split_segments`
+      (the redo above), `git_c_target`, and `emit_write_targets`. The write-shaped `$'…'` hole is
+      a **pre-existing bypass in merged code** (#664), not just a blocker for the segmentation redo.
+      Strongly prefer factoring a single shared quote scanner (awk snippet or helper) that all
+      three consume, so a fix cannot land in one copy and be forgotten in the others — that drift
+      IS the root cause. Red tests: `echo $'\''; git -C <MAIN> commit` → DENY (split desync) and
+      `echo $'\'' > <MAIN>/f.txt` → DENY (write-shaped).
+- [ ] Handle chained `-C`: allow ≥1 `-C` in `MUTATING_GIT_SEG_RE` (the `?`→`*` change) AND
+      teach `git_c_target` cumulative last-absolute-wins resolution (mirror real git) in the SAME
+      change — relaxing the regex alone makes it WORSE (SEG_RE would match `git -C /tmp -C /main
+    commit` while `git_c_target` still emits the first `-C` `/tmp`, allowlisted → ALLOW). Add a
+      red test: `git -C /tmp -C <MAIN> commit` → DENY. (`MUTATING_GIT_RE` no longer exists — #666
+      deleted it — so this is SEG_RE only.)
 - [ ] Decide (fix or explicitly document as accepted residual, with a test either way) the
       quoted-`-C`-flag, glued `-C<path>`, env-value-with-space, and quoted-keyword cases.
       If the regex is hardened to catch a quoted `-C` flag, make `git_c_target`'s `-C`
@@ -137,10 +165,17 @@ must not weaken any existing mutating-git guard test.
   extraction fix shipped correctly; these front-door false-negatives are pre-existing
   (the split + regex are byte-identical on `main`) and deferred here for their own clean,
   fully-tested landing.
-- **Segmentation + gate boundary FIXED** (PR `fix/git-safety-frontdoor-segmentation`).
-  Quote-aware `split_segments` closes bypass #1; the pre-write advisor pass surfaced a
-  fourth, more-common bypass (single-`|`/`&` gate boundary, #4) which was fixed in the
-  same PR by making the gate a permissive `*git*` pre-filter. Verified all four bypasses
-  DENY (hermetic probe) and 63/63 + 29-suite green. **Remaining for a follow-up PR (B):**
-  chained `-C` (AC bullet 2 — regex `?`→`*` AND `git_c_target` cumulative resolution
-  together, or it gets WORSE) and the within-segment quote-blind residuals (AC bullet 3).
+- **Gate boundary (#4) FIXED; segmentation attempt REVERTED** (PR #666
+  `fix/git-safety-frontdoor-segmentation`). Implemented quote-aware `split_segments` (closed
+  bypass #1) AND the permissive-`*git*` gate (closed bypass #4, the advisor-found single-`|`/`&`
+  boundary). The PR #666 security-auditor pass then caught a HIGH **regression**: `split_segments`
+  was `$'…'`-blind, so `$'…\'…'` inverted its quote state and swallowed real separators — a
+  partial quote model is worse than the blind `tr` split on a security gate. **Narrowed #666 to
+  the gate fix only** (reverted `split_segments`, kept the permissive gate — provably a strict
+  widening, both reviewers confirmed) and filed the whole `$'…'` class as its own AC (#5, now
+  spanning all three scanners incl. a pre-existing write-shaped bypass in merged #664 code).
+  #666: 61/61 + 29-suite green; P3/P4 (gate) DENY, P1/P2 (segmentation) deferred.
+- **Lesson:** replacing a crude-but-total mechanism (`tr` splits at every separator) with a
+  smarter partial one is a REGRESSION wherever the partial model has a hole. On a safety gate a
+  conservative over-approximation beats a precise-but-incomplete one. The redo must be quote-COMPLETE
+  (incl. `$'…'`) across all three scanners at once — hence the shared-scanner AC.

@@ -161,14 +161,17 @@ emit_write_targets() {
 # false-negative); `git`/`-C` recognition is taint-STRICT — safe ONLY because the
 # quote-blind MUTATING_GIT_SEG_RE below also rejects a quoted `-C` flag, so the
 # tokenizer never runs on `git '-C' <main>` (if that regex is ever hardened, make the
-# `-C` recognition taint-tolerant too). Residuals (guardrail, not sandbox — the ones
-# left live in the still-quote-blind per-segment MUTATING_GIT_SEG_RE, tracked in
-# todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md; the segment
-# SPLIT itself is now quote-aware — see split_segments below):
-#   - WITHIN-segment quote-blindness: a quoted `-C` flag/keyword (`git '-C' <main>`) or a
-#     glued `-C<path>` isn't recognized by SEG_RE, so such a segment is skipped — same
-#     best-effort class as the shell-wrapper residuals (`SKIP_WORKTREE_CONTRACT=1` and the
-#     file-tool guard are the backstops).
+# `-C` recognition taint-tolerant too). Residuals (guardrail, not sandbox — all tracked in
+# todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md):
+#   - The upstream `tr ';|&'` segment split is quote-BLIND: a `;`/`&`/`|` inside a quoted
+#     `-c name=value` global option fractures a real `git -C <main> … commit` so no fragment
+#     matches — a false-NEGATIVE. (A quote-aware split was attempted and reverted: a PARTIAL
+#     quote model REGRESSED on bash `$'…'` ANSI-C strings — worse than the blind split — so
+#     the follow-up must `$'…'`-complete split AND both tokenizers together.)
+#   - This tokenizer is itself blind to `$'…'` ANSI-C quoting (st==1 toggles on every `'`,
+#     ignoring the `\'` escape), so a `$'…\'…'` value can desync it. Pre-existing; same follow-up.
+#   - WITHIN-segment quote-blindness: a quoted `-C` flag/keyword or glued `-C<path>` isn't
+#     recognized by SEG_RE, so such a segment is skipped — shell-wrapper residual class.
 #   - Chained `-C` (`git -C a -C b …`, git honors the last) fails SEG_RE's `(-C…)?` group
 #     entirely → the whole command is invisible to the gate. Same class.
 git_c_target() {
@@ -212,48 +215,6 @@ git_c_target() {
     }
   '
 }
-# split_segments: read a shell command on STDIN and emit each top-level segment on
-# its own line, split on UNQUOTED `;` `|` `&` (the same separators the prior
-# `tr ';|&'` used) and unquoted newlines — but QUOTE/ESCAPE-AWARE. The prior
-# `printf … | tr ';|&' '\n'` was quote-blind, so a metachar INSIDE a quoted argument
-# (`git … -c core.pager='a;b' commit`) fractured the command into fragments that
-# no longer matched MUTATING_GIT_SEG_RE — a real `git -C <main> … commit` then
-# slipped the contract (a CONFIRMED false-negative;
-# todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md). Quoted spans
-# and escaped chars are emitted VERBATIM (delimiters included) so the downstream
-# quote-aware git_c_target re-parses them. Residuals (guardrail, not sandbox): a
-# literal newline inside a quoted span is re-split by the shell `read -r` consumer
-# (same as the prior tr split); `()` subshell grouping is NOT a separator (unchanged
-# from tr) — subshell/eval/xargs-wrapped invocations remain the accepted best-effort
-# residual. WITHIN-segment quote-blindness (a quoted `-C` flag/keyword) is a separate
-# residual owned by MUTATING_GIT_SEG_RE, tracked in the same todo.
-split_segments() {
-  awk '
-    function flush(){ print seg; seg = "" }
-    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\" }
-    { buf = buf $0 "\n" }
-    END {
-      n = length(buf); st = 0
-      for (i = 1; i <= n; i++) {
-        c = substr(buf, i, 1)
-        if (st == 0) {
-          if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1) }
-          else if (c == SQ) { seg = seg c; st = 1 }
-          else if (c == DQ) { seg = seg c; st = 2 }
-          else if (c == ";" || c == "|" || c == "&" || c == "\n") { flush() }
-          else seg = seg c
-        } else if (st == 1) {
-          seg = seg c; if (c == SQ) st = 0
-        } else {
-          if (c == BS) { seg = seg c; i++; if (i <= n) seg = seg substr(buf, i, 1) }
-          else if (c == DQ) { seg = seg c; st = 0 }
-          else seg = seg c
-        }
-      }
-      flush()
-    }
-  '
-}
 allowlisted() {
   has_dot_segments "$1" && return 1
   case "$1" in
@@ -293,14 +254,16 @@ case "$CMD" in "SKIP_WORKTREE_CONTRACT=1 "*) INLINE_BYPASS=1 ;; esac
 if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_active; then
   # --- mutating git: EVERY mutating segment's effective repo must be a registered
   # worktree (or allowlisted scratch). A cheap permissive `*git*` pre-filter gates the
-  # loop (see MUTATING_GIT_SEG_RE above for why permissive), then split_segments splits
-  # QUOTE-AWARE on ; | & (unquoted) so a benign cross-segment -C cannot launder a
-  # main-checkout mutation AND a metachar inside a quoted arg cannot fracture a real one.
+  # loop (see MUTATING_GIT_SEG_RE above for why permissive), then segments split on
+  # ; | & so a benign cross-segment -C cannot launder a main-checkout mutation.
   # (Shell-wrapped invocations — subshells, eval, xargs, find -exec — remain the accepted
-  # best-effort residual; the jq-less fallback's cruder grep catches some.)
+  # best-effort residual, as does a metachar inside a QUOTED arg fracturing a segment:
+  # this split is quote-BLIND. A quote-AWARE split plus $'…'-complete tokenizers is a
+  # tracked follow-up — todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md;
+  # the jq-less fallback's cruder grep catches some.)
   if [[ "$CMD" == *git* ]]; then
     VIOLATION=""
-    SEGS=$(printf '%s' "$CMD" | split_segments)
+    SEGS=$(printf '%s\n' "$CMD" | tr ';|&' '\n')
     while IFS= read -r seg; do
       printf '%s' "$seg" | grep -qE "$MUTATING_GIT_SEG_RE" || continue
       # Quote-AWARE -C extraction (git_c_target, defined above). The prior
