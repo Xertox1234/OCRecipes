@@ -158,10 +158,21 @@ emit_write_targets() {
 # word and is ignored — the role-aware distinction the write-shaped fix used
 # (docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md).
 # Env-assignment recognition is taint-TOLERANT (so `FOO='x' git -C /main` is not a
-# false-negative); `git`/`-C` recognition is taint-STRICT. Residual (guardrail, not
-# sandbox): the upstream `tr ';|&'` segment split is quote-blind, so a `;`/`&`/`|`
-# inside a message can fragment it into a spurious matching segment — a false-POSITIVE
-# (extra DENY, SKIP_WORKTREE_CONTRACT=1 escapes), never a false-negative.
+# false-negative); `git`/`-C` recognition is taint-STRICT — safe ONLY because the
+# quote-blind MUTATING_GIT_SEG_RE below also rejects a quoted `-C` flag, so the
+# tokenizer never runs on `git '-C' <main>` (if that regex is ever hardened, make the
+# `-C` recognition taint-tolerant too). Residuals (guardrail, not sandbox — all live in
+# the UNCHANGED quote-blind regex/split "front door" ABOVE the tokenizer, tracked in
+# todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md):
+#   - The `tr ';|&'` segment split (below) is quote-blind. A split char AFTER the verb
+#     (inside a `-m` message) is false-POSITIVE only — the fragment keeps `git … <verb>`,
+#     still matches, still DENYs. But a split char BEFORE the verb (inside a `-c name=val`
+#     global option, e.g. `-c core.pager='a;b'`) fractures the segment so NEITHER fragment
+#     matches — a genuine FALSE-NEGATIVE (a real main mutation slips). Accepted best-effort
+#     residual, same class as the shell-wrapper residuals; `SKIP_WORKTREE_CONTRACT=1` and
+#     the file-tool guard are the backstops.
+#   - Chained `-C` (`git -C a -C b …`, git honors the last) fails SEG_RE's `(-C…)?` group
+#     entirely → the whole command is invisible to the gate. Same front-door class.
 git_c_target() {
   awk '
     function endword(   w, tnt){

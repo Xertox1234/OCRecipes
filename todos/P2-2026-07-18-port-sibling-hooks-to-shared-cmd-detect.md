@@ -108,11 +108,17 @@ Repro script archived in the 2026-07-18 audit notes (scratchpad, not committed).
       must-DENY, in both "real -C present" and "no real -C" rows) — all 4 RED before, 57/57 green
       after; all 8 pre-existing `-C` guards (incl. single-quoted `git -C '<main>'` → DENY at ~L109)
       preserved; full 29-suite hook sweep green. Solution doc extended with the bidirectional
-      "last-match decoy substitutes the real value" lesson. Residual (documented, safe direction
-      only): the upstream `tr ';|&'` segment split stays quote-blind — a metachar in a message can
-      fragment into a spurious matching segment, but that is false-POSITIVE only (over-splitting
-      adds validation), never a false-negative, so it is intentionally left to avoid introducing
-      false-negative risk on the crown-jewel branch.
+      "last-match decoy substitutes the real value" lesson. **The `-C` EXTRACTION is fixed and
+      strictly-improving** (confirmed by a post-implementation code-reviewer + security-auditor
+      pass on PR #665). That review surfaced that the UNCHANGED quote-blind "front door" (the
+      `tr ';|&'` split + `MUTATING_GIT_SEG_RE`) still admits **pre-existing** main-mutation
+      bypasses — most notably a metachar INSIDE a `-c name=val` global option (before the verb)
+      fractures the segment so a real `git -C <main> … commit` slips (a genuine FALSE-NEGATIVE,
+      NOT false-positive-only as an earlier draft of this note wrongly claimed), plus chained `-C`,
+      quoted `-C` flag, glued `-C/path`, and env-value-with-space. Those live upstream of the
+      extractor this AC fixed and are tracked separately in
+      **`todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md`** (own clean landing,
+      never delegate). PR #665 corrects the claim in-place and does not pretend to close them.
 - [ ] Port `core-bare-guard.sh`, `drift-detect.sh`, `branch-preflight.sh` to source
       `cmd-detect.sh` and use `cmd_is_git_commit` / a shared mutating-git predicate, so
       quoted mentions stop false-positiving. Each gets a "quoted mention stays silent"
