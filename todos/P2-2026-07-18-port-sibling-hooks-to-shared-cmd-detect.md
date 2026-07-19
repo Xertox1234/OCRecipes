@@ -1,5 +1,5 @@
 ---
-title: "Port command-matching sibling hooks onto the shared quote-aware cmd-detect.sh (and verify git-safety's hypothesized false-DENY)"
+title: "Port command-matching sibling hooks onto the shared quote-aware cmd-detect.sh (and fix git-safety's CONFIRMED false-DENY)"
 status: backlog
 priority: medium
 created: 2026-07-18
@@ -16,8 +16,9 @@ github_issue:
 The 2026-07-18 harness audit fixed quote-handling in the three PR/commit hooks by
 introducing a shared quote-aware scanner (`.claude/hooks/lib/cmd-detect.sh`). Several
 SIBLING hooks still do their own command-matching with cruder, quote-unaware approaches.
-Port them onto the shared helper — and, as step 1, verify (or refute) a hypothesized live
-false-DENY in `git-safety.sh` that the PR #662 `/code-review` flagged out-of-scope.
+Port them onto the shared helper — and fix a **now-CONFIRMED** false-DENY in `git-safety.sh`
+(a legitimate commit is blocked when its message mentions a redirect/tee to a main-checkout
+path) that the PR #662 `/code-review` flagged out-of-scope.
 
 ## Background
 
@@ -39,30 +40,55 @@ distinct quote-handling architectures** across its matcher hooks; the remaining 
    This is a blocking, worktree-contract-gated DENY, so its false-match class is the
    highest-severity of the group.
 
-## The git-safety false-DENY — UNVERIFIED, verify FIRST
+## The git-safety false-DENY — CONFIRMED (2026-07-18, hermetic repro)
 
-The PR #662 review asserted git-safety.sh has a "live false-DENY." That claim was
-out-of-diff-scope and is **NOT reproduced**. Primary-source reading of the hook shows the
-DENY paths are all **worktree-contract-gated** (they fire only while a `declare-worktree.sh`
-registry entry is active) — so it is _not_ the "one hook invocation" repro the reviewer
-assumed; it needs registry setup, which is why it was deferred rather than repro'd live
-(a live repro risks perturbing the active session's contract state).
+Reproduced with a hermetic fixture (real temp main-checkout + a real registered worktree +
+an isolated `/tmp/claude-worktree-contracts-<session>` registry — **never** the live session).
+Under an ACTIVE contract, with cwd = a registered worktree (so the mutating-git branch
+correctly ALLOWS the commit), a benign commit whose MESSAGE contains a write-verb + a
+main-checkout absolute path is DENIED by the write-shaped branch:
 
-**Hypothesized mechanism** (to confirm or refute): because `tr -d '\042\047'` keeps quoted
-CONTENT, a benign command whose quoted argument contains a main-checkout absolute path plus a
-write verb — e.g. `git commit -m "removed rm /Users/…/OCRecipes/x"` under an ACTIVE contract —
-could have the write-shaped matcher (`>>?|(tee|rm|cp|mv)…|sed …-i`) fire on the string INSIDE
-the message and DENY a legitimate commit. Confirm with a hermetic contract-registry fixture
-(mirror `test-git-safety.sh`'s setup) before writing it up as fact.
+| Command (cwd = registered worktree)                                | Result           |
+| ------------------------------------------------------------------ | ---------------- |
+| `git commit -m "writes > /…/OCRecipes/out"`                        | **DENY** (false) |
+| `git commit -m "pipe to tee /…/OCRecipes/log"`                     | **DENY** (false) |
+| `git commit -m "mv /…/OCRecipes/a /…/OCRecipes/b"`                 | allow            |
+| `git commit -m "rm /…/OCRecipes/x"`                                | allow            |
+| `git commit -m fixed-a-bug` (control)                              | allow            |
+| `git commit -m x` in the MAIN checkout (contract feature, control) | DENY (correct)   |
+
+**Root cause:** `tr -d '\042\047'` (git-safety.sh:164) deletes quote CHARACTERS but keeps
+their CONTENTS, so the write-shaped extractors run over the commit message. The `>`/`>>`
+(line 168) and `tee` (line 170) extractors are **command-wide / positional** — they match a
+target anywhere in the string — so they mine the message. The `rm`/`cp`/`mv`/`sed -i`
+extractors (lines 175-182) are **segment-scoped** with tighter token rules and did NOT fire
+on the single-segment message form tested (the fix must determine their full coverage).
+
+**IMPORTANT design constraint (the naive fix is WRONG):** you cannot simply swap `tr -d` for
+the shared `cmd_bare` (which BLANKS quoted content). git-safety intentionally relies on seeing
+quoted `-C` PATHS — `test-git-safety.sh` asserts `git -C '$MAIN' commit` is DENIED (line ~109);
+blanking that quoted path would break it. The fix must distinguish `-C` **arguments** (a real
+git argument that MUST be read even when quoted) from `-m` **message** content (must never be
+mined for write targets) — e.g. extract `-C` targets from the raw command, then run the
+write-shaped extractors over `cmd_bare` output. This is real design work — hence P2, not a
+tack-on, and **never delegate** (live blocking git gate).
+
+**Severity:** Medium — narrow trigger (active contract + message containing a redirect/tee to
+a main-checkout absolute path), and `SKIP_WORKTREE_CONTRACT=1` bypasses it — but it blocks
+_legitimate_ work, so it outranks the (weaker) PR-gate bypasses on blast-to-the-user.
+
+Repro script archived in the 2026-07-18 audit notes (scratchpad, not committed).
 
 ## Acceptance Criteria
 
-- [ ] Reproduce-or-refute the git-safety false-DENY with a hermetic test (active-contract
-      registry + a benign git command whose quoted arg contains a main-checkout path + write
-      verb). Record the verdict in this todo's Updates before any fix.
-- [ ] If confirmed: fix git-safety's quote handling by adopting `cmd-detect.sh` (extend the
-      helper with the predicates it needs — e.g. a quote-aware write-redirect/target
-      extractor — rather than re-deriving), with a red test for the false-DENY case.
+- [x] ~~Reproduce-or-refute the git-safety false-DENY with a hermetic test.~~ **CONFIRMED
+      2026-07-18** — `>`/`tee` in a commit message under an active contract false-DENY (see the
+      section above for the table + root cause).
+- [ ] Fix git-safety's write-shaped extraction to run over quote-AWARE output WITHOUT breaking
+      the intentional quoted-`-C`-path detection (see the "design constraint" above) — extract
+      `-C` targets from the raw command first, then mine write targets from `cmd_bare` output.
+      Add a red test per confirmed case (`>`/`tee` message) and a guard test that the
+      quoted-`-C`-main-checkout DENY still fires. Determine `rm`/`cp`/`mv`/`sed -i` coverage.
 - [ ] Port `core-bare-guard.sh`, `drift-detect.sh`, `branch-preflight.sh` to source
       `cmd-detect.sh` and use `cmd_is_git_commit` / a shared mutating-git predicate, so
       quoted mentions stop false-positiving. Each gets a "quoted mention stays silent"
@@ -101,5 +127,10 @@ the message and DENY a legitimate commit. Confirm with a hermetic contract-regis
 ### 2026-07-18
 
 - Initial creation, deferred from the `fix/quote-aware-cmd-detect-hooks` PR (Option 1 of the
-  2026-07-18 harness-audit `/code-review` follow-up). git-safety false-DENY recorded as
-  UNVERIFIED pending a hermetic contract-registry repro.
+  2026-07-18 harness-audit `/code-review` follow-up).
+- git-safety false-DENY **CONFIRMED** via a hermetic repro (real temp checkout + registered
+  worktree + isolated registry; live session untouched, no litter). `>`/`tee` in a commit
+  message under an active contract false-DENY. Found the design constraint that rules out a
+  naive `cmd_bare` swap (would break the intentional quoted-`-C`-path DENY). Title + Summary +
+  AC updated from "verify" to "fix". Fix deferred to deliberate P2 execution (live git gate,
+  never delegate) rather than tacked onto the PR-hook fix.
