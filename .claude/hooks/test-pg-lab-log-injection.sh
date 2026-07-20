@@ -66,12 +66,10 @@ assert_exit0 "init.sh creates the throwaway DB" "$?"
 psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" -f "$SCHEMA" >/dev/null 2>&1
 assert_exit0 "injection-log.sql applies cleanly" "$?"
 
-# Round 1: a normal domain-scoped record with a doc_paths array AND a populated agent_id (the
-# 8th, trailing field) — a subagent's row, distinguishable from the orchestrator's for the
-# same session_id (see docs/solutions/conventions/hook-json-agent-id-per-context-window-
-# 2026-07-19.md). NOTE: `$(...)` strips the trailing newline this printf writes — every REC#
-# below is implicitly a no-trailing-newline input, which is exactly the case the
-# `|| [ -n "$session_id" ]` read-loop guard exists for.
+# Round 1: exercises a populated agent_id (the 8th, trailing field) — see log-injection.sh's
+# header for the full wire-format contract. NOTE: `$(...)` strips the trailing newline this
+# printf writes — every REC# below is implicitly a no-trailing-newline input, which is
+# exactly the case the `|| [ -n "$session_id" ]` read-loop guard exists for.
 REC1=$(printf 'sess-a\x1fEdit\x1fserver/routes/foo.ts\x1fapi\x1finjected\x1f1234\x1fdocs/rules/api.md,docs/solutions/api/foo-2026-01-01.md\x1fitest-sub-1\n')
 printf '%s' "$REC1" | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" >/dev/null 2>&1
 ROWCOUNT=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.injection_log")
@@ -85,14 +83,12 @@ assert_eq "round 1: payload_bytes" "$(printf '%s' "$ROW" | cut -d'|' -f6)" "1234
 assert_eq "round 1: doc_paths array" "$(printf '%s' "$ROW" | cut -d'|' -f7)" "{docs/rules/api.md,docs/solutions/api/foo-2026-01-01.md}"
 assert_eq "round 1: agent_id" "$(printf '%s' "$ROW" | cut -d'|' -f8)" "itest-sub-1"
 
-# Round 2: a SessionStart-shaped record — edited_path AND domain both empty, i.e. TWO
-# adjacent empty fields (exactly why the delimiter is \x1f, not \t: bash's `read` collapses
-# adjacent tab-delimited empty fields even with IFS set to tab alone, which would otherwise
-# misalign every field after them — verified empirically during implementation). Also has NO
-# trailing agent_id field at all (an old-shape 7-field line — the backward-compat case for a
-# stale checkout's producer; the shipped session-recent-issues.sh now sends 8 fields with a
-# trailing empty, which `read` parses identically) — proves `read`'s trailing-field behavior
-# leaves agent_id empty without disturbing any earlier field's alignment.
+# Round 2: a SessionStart-shaped record — edited_path AND domain both empty (TWO adjacent
+# empty fields) and NO trailing agent_id field (an old-shape 7-field line, the backward-compat
+# case for a stale checkout's producer). See log-injection.sh's header for why \x1f (not \t)
+# and the trailing-agent_id contract exist; this round proves both hold in practice — adjacent
+# empties don't misalign, and `read` leaves a missing trailing agent_id empty without
+# disturbing any earlier field's alignment.
 REC2=$(printf 'sess-b\x1fSessionStart\x1f\x1f\x1finjected\x1f42\x1fdocs/solutions/conventions/foo.md')
 printf '%s' "$REC2" | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" >/dev/null 2>&1
 ROWCOUNT2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.injection_log")

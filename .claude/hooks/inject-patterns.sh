@@ -281,6 +281,20 @@ domain_rank() {
   esac
 }
 
+# Format one \x1f-delimited telemetry record for the domain currently being processed by the
+# loop below (see log-injection.sh's header for the full 8-field wire-format contract).
+# $SESSION/$TOOL_NAME/$FILE_PATH/$AGENT_ID are fixed for the whole hook invocation; $DOMAIN is
+# read dynamically from the enclosing loop iteration — safe because every call site sits
+# directly in the loop body (never inside an explicit subshell), so it always reflects the
+# CURRENT domain. Callers append the result to $LOG_TSV followed by $'\n' OUTSIDE this command
+# substitution, exactly as before: `$(...)` strips a trailing newline, so one emitted INSIDE the
+# helper would vanish (docs/solutions/logic-errors/bash-read-tab-ifs-collapse-and-trailing-newline-strip-2026-07-06.md).
+append_log_record() {
+  local action="$1" bytes="$2" doc_ids="$3"
+  printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
+    "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "$action" "$bytes" "$doc_ids" "$AGENT_ID"
+}
+
 # Repo-relative path of the edited file — used by both solution-source functions for
 # applies_to: glob matching. FILE_PATH may be absolute; strip the PROJECT_ROOT prefix.
 _FILE_REL="${FILE_PATH#"$PROJECT_ROOT"/}"
@@ -301,7 +315,7 @@ if [ -n "$DOMAINS" ]; then
     # Already injected this session? Emit a one-line pointer and skip the full payload.
     if [ "$DEDUP" = "1" ] && grep -qxF "$DOMAIN" "$DEDUP_STATE" 2>/dev/null; then
       printf '\n[RULES — %s] already injected earlier this session — re-read docs/rules/%s.md if the rules are no longer in context.\n' "$DOMAIN" "$DOMAIN" >> "$TMPFILE"
-      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "pointer" 0 "" "$AGENT_ID")"$'\n'
+      LOG_TSV="${LOG_TSV}$(append_log_record "pointer" 0 "")"$'\n'
       continue
     fi
 
@@ -333,7 +347,7 @@ if [ -n "$DOMAINS" ]; then
       # rules-only here (not doc_ids_for_log, which assumes $SOLUTION_LINES is fresh).
       PRE_EST_DOC_IDS=""
       [ -f "$RULES_FILE" ] && PRE_EST_DOC_IDS="${RULES_FILE#"$PROJECT_ROOT"/}"
-      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$PRE_EST_DOC_IDS" "$AGENT_ID")"$'\n'
+      LOG_TSV="${LOG_TSV}$(append_log_record "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$PRE_EST_DOC_IDS")"$'\n'
       continue
     fi
 
@@ -363,13 +377,13 @@ if [ -n "$DOMAINS" ]; then
       [ $(($(wc -c < "$TMPFILE") + $(wc -c < "$BLOCKFILE"))) -gt "$DOMAIN_BUDGET" ]; then
       printf '\n[RULES — %s] deferred (inline size cap) — full payload in %s now; auto-injects on a later edit this session.\n' "$DOMAIN" "$SPILL_FILE" >> "$TMPFILE"
       cat "$BLOCKFILE" >> "$DEFER_FILE"
-      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)" "$AGENT_ID")"$'\n'
+      LOG_TSV="${LOG_TSV}$(append_log_record "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)")"$'\n'
       continue
     fi
 
     cat "$BLOCKFILE" >> "$TMPFILE"
     EMITTED_FULL=1
-    LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "injected" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)" "$AGENT_ID")"$'\n'
+    LOG_TSV="${LOG_TSV}$(append_log_record "injected" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)")"$'\n'
 
     # Record this domain as injected so later edits in the session get the one-line pointer.
     [ "$DEDUP" = "1" ] && printf '%s\n' "$DOMAIN" >> "$DEDUP_STATE"
