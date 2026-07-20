@@ -55,9 +55,18 @@ git worktree list --porcelain 2>/dev/null | while read -r key path; do
   # node_modules/.vite/ on its own), not an install — no resolvable package
   # lives at a hidden name, so replacing it loses nothing. Anything with a
   # non-hidden entry is treated as a real install and never touched.
+  #
+  # The noise check requires the directory to actually be inspectable first
+  # ([ -r ] + [ -x ]): `find` on an unreadable dir (restrictive permissions,
+  # root-owned residue) also prints nothing, which is indistinguishable from
+  # a genuinely empty/dot-only dir — without this guard that case would be
+  # misread as noise, and an `rm -rf` would be attempted against it (whether
+  # that attempt actually succeeds depends on the underlying `rm`'s own
+  # permission handling). This guard makes the leave-alone behavior explicit
+  # and implementation-independent, matching pre-#669 behavior for that case.
   if [ -d "$MAIN_ROOT/node_modules" ]; then
     nm="$path/node_modules"
-    if [ -d "$nm" ] && [ ! -L "$nm" ] \
+    if [ -d "$nm" ] && [ ! -L "$nm" ] && [ -r "$nm" ] && [ -x "$nm" ] \
       && ! find "$nm" -mindepth 1 -maxdepth 1 -not -name '.*' -print -quit 2>/dev/null | grep -q .; then
       rm -rf "$nm" 2>/dev/null || true
     fi
