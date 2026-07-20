@@ -55,6 +55,28 @@ OUT=$(run_hook "echo git status")
   || { echo "FAIL: acted on a non-git command"; FAIL=$((FAIL+1)); }
 git config core.bare false
 
+# Test 3b: a quoted MENTION of "; git" is NOT a real git command → must not trigger the heal.
+# (The raw COMPOUND_RE matched the ';' inside the quotes; the quote-aware port ignores it.)
+git config core.bare true
+OUT=$(run_hook 'echo "wip; git status"')
+{ [ "$(git config --bool core.bare)" = "true" ] && [ -z "$OUT" ]; } \
+  && { echo "PASS: ignores a quoted git mention"; PASS=$((PASS+1)); } \
+  || { echo "FAIL: acted on a quoted git mention"; FAIL=$((FAIL+1)); }
+git config core.bare false
+
+# Test 3c: lib/cmd-detect.sh unsourceable → advisory hook fails SILENT (no heal, no output).
+# Copy just the hook into a dir with no lib/ sibling so the source fails.
+git config core.bare true
+NOLIB=$(mktemp -d)
+cp "$HOOK" "$NOLIB/core-bare-guard.sh"
+NOLIB_INPUT=$(jq -n --arg c "git status" '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/core-bare-guard.sh" 2>/dev/null)
+[ -z "$OUT" ] \
+  && { echo "PASS: lib-missing advisory fails silent"; PASS=$((PASS+1)); } \
+  || { echo "FAIL: lib-missing advisory not silent"; FAIL=$((FAIL+1)); }
+rm -rf "$NOLIB"
+git config core.bare false
+
 # Test 4: compound 'cd foo && git status' heals core.bare
 git config core.bare true
 OUT=$(run_hook "cd foo && git status")

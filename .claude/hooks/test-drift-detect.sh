@@ -6,6 +6,20 @@
 # Lint job has no Postgres service).
 set -uo pipefail
 
+# --- Hermeticity (todos P2 git-churn) -----------------------------------------
+# An inherited absolute GIT_DIR/GIT_WORK_TREE (VS Code's Git integration, a worktree context)
+# OVERRIDES `git -C <dir>`, so the temp-repo setup below would silently run against the REAL
+# repo — writing test@test into its config and phantom commits into it. Clear them up front so
+# every `git` here resolves only via the temp repo we create; never touch the user's real config.
+# (The run-hook-tests.sh runner also strips these; this is the belt for a direct `bash` run.)
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
+
+# Snapshot the caller's real repo so the end-of-run guard can prove we never touched it.
+CALLER_EMAIL_BEFORE=$(git config user.email 2>/dev/null || true)
+CALLER_HEAD_BEFORE="$(git rev-parse HEAD 2>/dev/null || true)|$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+CALLER_STATUS_BEFORE=$(git status --porcelain 2>/dev/null || true)
+
 HOOKS_DIR="$(cd "$(dirname "$0")" && pwd)"
 DETECT_HOOK="$HOOKS_DIR/drift-detect.sh"
 UPDATE_HOOK="$HOOKS_DIR/drift-detect-update.sh"
@@ -157,6 +171,23 @@ assert_contains "external drift: points to the worktree-isolation durable fix" "
 OUT=$(run_detect "git push -u origin main")
 assert_contains "git push: drift warning fires" "Drift detected" "$OUT"
 
+# --- Test: a quoted MENTION of "; git push" must NOT trip drift (quote-aware port) ---
+# Drift is active (baseline=V2_SHA ≠ HEAD=EXT_SHA), so a real match WOULD warn. The raw
+# COMPOUND_RE matched the ';' inside the quotes and false-warned; the port stays silent.
+OUT=$(run_detect 'git status -m "done; git push origin main"')
+assert_silent "quoted 'git push' mention does not trip drift (quote-aware)" "$OUT"
+
+# --- Test: lib/cmd-detect.sh unsourceable → advisory drift hook fails SILENT ---
+# Copy just the hook into a lib-less dir so the source fails. Even with drift active + a real
+# git commit, the advisory hook must stay silent (never fail-open on a warning it can't scope).
+NOLIB=$(mktemp -d)
+cp "$DETECT_HOOK" "$NOLIB/drift-detect.sh"
+NOLIB_INPUT=$(jq -n --arg c "git commit -m real" --arg s "$TEST_SESSION" \
+  '{"tool_name":"Bash","session_id":$s,"tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/drift-detect.sh" 2>/dev/null)
+assert_silent "lib-missing: advisory drift hook fails silent" "$OUT"
+rm -rf "$NOLIB"
+
 # --- Test: read-only git op (status) does NOT update baseline ---
 # Baseline is still V2_SHA (drift state). Run update hook with git status — must not change it.
 run_update "git status" >/dev/null
@@ -167,6 +198,35 @@ else
   echo "FAIL: git status should not update baseline, got '$RECORDED'"
   FAIL=$((FAIL+1))
 fi
+
+# --- Test: a quoted MENTION of a HEAD-mover verb must NOT stamp the baseline ---
+# Baseline is still V2_SHA. `git status -m "...; git reset ..."` is NOT a real HEAD-mover; the
+# raw COMPOUND_MOVER_RE matched the quoted ';git reset' and wrongly wrote HEAD, which would
+# silently absorb the active drift. The quote-aware port leaves the baseline untouched.
+run_update 'git status -m "wip; git reset --hard"' >/dev/null
+RECORDED=$(cat "$BASELINE_FILE" 2>/dev/null || echo "")
+if [ "$RECORDED" = "$V2_SHA" ]; then
+  echo "PASS: quoted HEAD-mover mention does not update baseline"; PASS=$((PASS+1))
+else
+  echo "FAIL: quoted mention wrongly updated baseline to '$RECORDED'"; FAIL=$((FAIL+1))
+fi
+
+# --- Test: lib/cmd-detect.sh unsourceable → the writer fails SILENT (skips the stamp) ---
+# Copy just the hook into a lib-less dir so the source fails. A stale baseline only costs a
+# false drift WARNING next time (safe); writing on an unclear match would absorb a real drift.
+# A real git commit must therefore leave the baseline at V2_SHA.
+NOLIB=$(mktemp -d)
+cp "$UPDATE_HOOK" "$NOLIB/drift-detect-update.sh"
+NOLIB_INPUT=$(jq -n --arg c "git commit -m real" --arg s "$TEST_SESSION" \
+  '{"tool_name":"Bash","session_id":$s,"tool_input":{"command":$c}}')
+echo "$NOLIB_INPUT" | bash "$NOLIB/drift-detect-update.sh" 2>/dev/null
+RECORDED=$(cat "$BASELINE_FILE" 2>/dev/null || echo "")
+if [ "$RECORDED" = "$V2_SHA" ]; then
+  echo "PASS: lib-missing: writer fails silent (baseline unchanged)"; PASS=$((PASS+1))
+else
+  echo "FAIL: lib-missing: writer changed baseline to '$RECORDED'"; FAIL=$((FAIL+1))
+fi
+rm -rf "$NOLIB"
 
 # --- Test: Claude's own rebase/reset/pull → update hook records new SHA ---
 # Simulate Claude running git rebase (HEAD already at EXT_SHA — just re-record).
@@ -257,6 +317,24 @@ else
 fi
 
 unset GIT_DIR GIT_WORK_TREE
+
+# --- Hermeticity guard: prove the caller's real repo is byte-for-byte untouched. ---
+# If an inherited GIT_DIR ever defeats the temp-repo isolation, this fails loudly in
+# CI/preflight instead of silently corrupting the working repo (the todos P2 git-churn bug).
+CALLER_EMAIL_AFTER=$(git config user.email 2>/dev/null || true)
+CALLER_HEAD_AFTER="$(git rev-parse HEAD 2>/dev/null || true)|$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+CALLER_STATUS_AFTER=$(git status --porcelain 2>/dev/null || true)
+if [ "$CALLER_EMAIL_AFTER" = "$CALLER_EMAIL_BEFORE" ] \
+  && [ "$CALLER_HEAD_AFTER" = "$CALLER_HEAD_BEFORE" ] \
+  && [ "$CALLER_STATUS_AFTER" = "$CALLER_STATUS_BEFORE" ]; then
+  echo "PASS: caller repo untouched (hermetic — no inherited-GIT_DIR leak)"; PASS=$((PASS+1))
+else
+  echo "FAIL: HERMETICITY — this test mutated the caller's real repo (inherited GIT_DIR leak)"
+  [ "$CALLER_EMAIL_AFTER" != "$CALLER_EMAIL_BEFORE" ] && printf '  user.email: [%s] -> [%s]\n' "$CALLER_EMAIL_BEFORE" "$CALLER_EMAIL_AFTER"
+  [ "$CALLER_HEAD_AFTER" != "$CALLER_HEAD_BEFORE" ] && printf '  HEAD: [%s] -> [%s]\n' "$CALLER_HEAD_BEFORE" "$CALLER_HEAD_AFTER"
+  [ "$CALLER_STATUS_AFTER" != "$CALLER_STATUS_BEFORE" ] && printf '  working tree changed (porcelain differs)\n'
+  FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

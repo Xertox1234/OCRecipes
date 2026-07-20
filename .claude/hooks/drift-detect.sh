@@ -25,13 +25,14 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 [ "$TOOL" = "Bash" ] || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 
-# Match git commit or git push (possibly prefixed by env-var assignments or git -c flags).
-GIT_COMMIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push)([[:space:]]|$)'
-COMPOUND_RE='(&&|\|\||;)[[:space:]]*git[[:space:]]+(commit|push)([[:space:]]|$)'
-
-if ! [[ "$CMD" =~ $GIT_COMMIT_RE ]] && ! printf '%s' "$CMD" | grep -qE "$COMPOUND_RE"; then
-  exit 0
-fi
+# Match git commit or git push via the shared quote-AWARE matcher (lib/cmd-detect.sh) — a quoted
+# mention like `-m "…; git push …"` must not trip a drift warning. Cheap superset first.
+# Advisory hook → fail SILENT if the lib is unsourceable: a missed warning is the safe direction,
+# whereas matching the raw command would re-open the false warning on quoted mentions.
+case "$CMD" in *git*) : ;; *) exit 0 ;; esac
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit_or_push >/dev/null || exit 0
+cmd_is_git_commit_or_push "$CMD" || exit 0
 
 # Ensure we're inside a git repo.
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0

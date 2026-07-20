@@ -24,15 +24,16 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 [ "$TOOL" = "Bash" ] || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 
-# Match git ops that may move HEAD (any compound form as well).
-# Includes: commit (+ --amend), push, rebase, reset (all forms — bare reset is
-# idempotent here: it writes the same SHA already stored), pull, merge, cherry-pick.
-HEAD_MOVER_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push|rebase|reset|pull|merge|cherry-pick)([[:space:]]|$)'
-COMPOUND_MOVER_RE='(&&|\|\||;)[[:space:]]*git[[:space:]]+(commit|push|rebase|reset|pull|merge|cherry-pick)([[:space:]]|$)'
-
-if ! [[ "$CMD" =~ $HEAD_MOVER_RE ]] && ! printf '%s' "$CMD" | grep -qE "$COMPOUND_MOVER_RE"; then
-  exit 0
-fi
+# Match git ops that may move HEAD via the shared quote-AWARE matcher (lib/cmd-detect.sh):
+# commit (+ --amend), push, rebase, reset (bare reset is idempotent here — re-writes the same
+# SHA), pull, merge, cherry-pick. A quoted mention of one of these verbs must NOT stamp the
+# baseline (that would silently absorb a real drift). Cheap superset first. This hook WRITES the
+# baseline, so on an unsourceable lib fail SILENT (skip the stamp): a stale baseline only causes
+# a false drift warning next time, whereas a wrongful write absorbs a real drift.
+case "$CMD" in *git*) : ;; *) exit 0 ;; esac
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_head_mover >/dev/null || exit 0
+cmd_is_git_head_mover "$CMD" || exit 0
 
 # Ensure we're inside a git repo.
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0

@@ -162,7 +162,8 @@ must-ALLOW, worktree-decoy → must-DENY).
 - `.claude/hooks/lib/cmd-detect.sh` — the shared quote-aware scanner + predicates (the fix)
 - `.claude/hooks/git-safety.sh` (`emit_write_targets`, `git_c_target`) — two role-aware TOKENIZER variants, same root cause (`tr -d` kept quoted content and mined a commit message) where the extracted value must survive quoting so it tokenizes instead of blanking: `emit_write_targets` for write-shaped targets (false-DENY only), `git_c_target` for the mutating-git `-C` repo override (BIDIRECTIONAL — greedy last-match also laundered a real main mutation past the gate; see the bidirectional note above)
 - `.claude/hooks/pr-preflight-guard.sh` — the gate (deny-side); `commit-verify.sh`, `pr-verify.sh` — advisory
-- `.claude/hooks/test-pr-preflight-guard.sh` (12e–12h, 14), `test-commit-verify.sh` (7–11), `test-pr-verify.sh` (11–14) — per-class regression tests
+- `.claude/hooks/{core-bare-guard,drift-detect,drift-detect-update,branch-preflight}.sh` — the git-state sibling hooks, ported onto the same helper (2026-07-20) so quoted mentions stop false-firing. New predicates added to `cmd-detect.sh`: `cmd_is_git`, `cmd_is_git_commit_or_push`, `cmd_is_git_head_mover` (plus the existing `cmd_is_git_commit` for branch-preflight). Fail-safe is contract-specific: the three advisory hooks fail SILENT on an unsourceable lib (a skipped heal/warning is safe — git's own errors are the backstop, and a false warning beats absorbing a real drift); the blocking `branch-preflight.sh` fails CLOSED via a retained raw-regex fallback (never fail-OPEN on the detached-HEAD deny)
+- `.claude/hooks/test-pr-preflight-guard.sh` (12e–12h, 14), `test-commit-verify.sh` (7–11), `test-pr-verify.sh` (11–14) — per-class regression tests; `test-{branch-preflight,core-bare-guard,drift-detect}.sh` carry the quoted-mention + lib-missing fail-safe tests for the ported git-state hooks
 
 ## See Also
 

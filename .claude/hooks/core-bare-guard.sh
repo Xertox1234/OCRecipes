@@ -21,13 +21,15 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 [ "$TOOL" = "Bash" ] || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 
-# Only act when the command actually invokes git (optionally prefixed by env assignments or
-# `git -c` flags), at the start or after a shell operator. Avoids false matches like `echo git`.
-GIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]'
-COMPOUND_RE='(&&|\|\||;)[[:space:]]*git[[:space:]]'
-if ! [[ "$CMD" =~ $GIT_RE ]] && ! printf '%s' "$CMD" | grep -qE "$COMPOUND_RE"; then
-  exit 0
-fi
+# Only act when the command actually invokes git, via the shared quote-AWARE matcher
+# (lib/cmd-detect.sh) — a quoted mention like `echo "…; git …"` must not trigger the heal.
+# Cheap necessary-condition superset first. Advisory hook → fail SILENT if the lib is
+# unsourceable: a skipped heal is not silent breakage (git's own "must be run in a work tree"
+# error is the loud backstop), whereas matching the raw command would re-open the false match.
+case "$CMD" in *git*) : ;; *) exit 0 ;; esac
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git >/dev/null || exit 0
+cmd_is_git "$CMD" || exit 0
 
 # Must be inside a git repo (config read works even when core.bare is wrongly true).
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
