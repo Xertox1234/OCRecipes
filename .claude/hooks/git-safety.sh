@@ -235,7 +235,7 @@ git_c_target() {
     }
     function resolve_target(t){                      # --git-dir/--work-tree/GIT_DIR/GIT_WORK_TREE target:
       if (substr(t, 1, 1) == "/") return t           #   absolute → as-is; relative → resolve against the -C fold
-      return (eff == "" ? t : eff "/" t)             #   (relative + a LATER -C is a documented ordering residual)
+      return (eff == "" ? t : eff "/" t)             #   (mirrors fold above; relative + a LATER -C = ordering residual)
     }
     function setgd(t){ if (t != "") { gitdir = resolve_target(t); gotgd = 1 } }   # --git-dir / GIT_DIR redirect
     function setwt(t){ if (t != "") { worktree = resolve_target(t); gotwt = 1 } } # --work-tree / GIT_WORK_TREE redirect
@@ -477,6 +477,7 @@ INNER
           0) VIOLATION="$RESOLVED"; break ;;
           2) UNRESOLVABLE=1; break ;;
         esac
+        [ "$WT" = "$GD" ] && break   # git-dir and work-tree identical (no redirect / plain -C) → 2nd check redundant
       done
       [ -n "$VIOLATION$UNRESOLVABLE" ] && break
     done <<EOF
