@@ -89,9 +89,10 @@ assert_eq "round 1: agent_id" "$(printf '%s' "$ROW" | cut -d'|' -f8)" "itest-sub
 # adjacent empty fields (exactly why the delimiter is \x1f, not \t: bash's `read` collapses
 # adjacent tab-delimited empty fields even with IFS set to tab alone, which would otherwise
 # misalign every field after them — verified empirically during implementation). Also has NO
-# trailing agent_id field at all (an old-shape 7-field line, exactly what
-# session-recent-issues.sh's SessionStart digest sends) — proves `read`'s trailing-field
-# behavior leaves agent_id empty without disturbing any earlier field's alignment.
+# trailing agent_id field at all (an old-shape 7-field line — the backward-compat case for a
+# stale checkout's producer; the shipped session-recent-issues.sh now sends 8 fields with a
+# trailing empty, which `read` parses identically) — proves `read`'s trailing-field behavior
+# leaves agent_id empty without disturbing any earlier field's alignment.
 REC2=$(printf 'sess-b\x1fSessionStart\x1f\x1f\x1finjected\x1f42\x1fdocs/solutions/conventions/foo.md')
 printf '%s' "$REC2" | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" >/dev/null 2>&1
 ROWCOUNT2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.injection_log")
