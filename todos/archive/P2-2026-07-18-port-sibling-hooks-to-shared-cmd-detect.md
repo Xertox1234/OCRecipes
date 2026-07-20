@@ -1,6 +1,6 @@
 ---
 title: "Port command-matching sibling hooks onto the shared quote-aware cmd-detect.sh (and fix git-safety's CONFIRMED false-DENY)"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-18
 updated: 2026-07-18
