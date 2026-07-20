@@ -301,7 +301,7 @@ if [ -n "$DOMAINS" ]; then
     # Already injected this session? Emit a one-line pointer and skip the full payload.
     if [ "$DEDUP" = "1" ] && grep -qxF "$DOMAIN" "$DEDUP_STATE" 2>/dev/null; then
       printf '\n[RULES — %s] already injected earlier this session — re-read docs/rules/%s.md if the rules are no longer in context.\n' "$DOMAIN" "$DOMAIN" >> "$TMPFILE"
-      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "pointer" 0 "")"$'\n'
+      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "pointer" 0 "" "$AGENT_ID")"$'\n'
       continue
     fi
 
@@ -333,7 +333,7 @@ if [ -n "$DOMAINS" ]; then
       # rules-only here (not doc_ids_for_log, which assumes $SOLUTION_LINES is fresh).
       PRE_EST_DOC_IDS=""
       [ -f "$RULES_FILE" ] && PRE_EST_DOC_IDS="${RULES_FILE#"$PROJECT_ROOT"/}"
-      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$PRE_EST_DOC_IDS")"$'\n'
+      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$PRE_EST_DOC_IDS" "$AGENT_ID")"$'\n'
       continue
     fi
 
@@ -363,13 +363,13 @@ if [ -n "$DOMAINS" ]; then
       [ $(($(wc -c < "$TMPFILE") + $(wc -c < "$BLOCKFILE"))) -gt "$DOMAIN_BUDGET" ]; then
       printf '\n[RULES — %s] deferred (inline size cap) — full payload in %s now; auto-injects on a later edit this session.\n' "$DOMAIN" "$SPILL_FILE" >> "$TMPFILE"
       cat "$BLOCKFILE" >> "$DEFER_FILE"
-      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)")"$'\n'
+      LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "deferred" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)" "$AGENT_ID")"$'\n'
       continue
     fi
 
     cat "$BLOCKFILE" >> "$TMPFILE"
     EMITTED_FULL=1
-    LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "injected" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)")"$'\n'
+    LOG_TSV="${LOG_TSV}$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SESSION" "$TOOL_NAME" "$FILE_PATH" "$DOMAIN" "injected" "$(( $(wc -c < "$BLOCKFILE") ))" "$(doc_ids_for_log)" "$AGENT_ID")"$'\n'
 
     # Record this domain as injected so later edits in the session get the one-line pointer.
     [ "$DEDUP" = "1" ] && printf '%s\n' "$DOMAIN" >> "$DEDUP_STATE"

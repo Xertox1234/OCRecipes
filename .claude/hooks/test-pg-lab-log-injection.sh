@@ -66,32 +66,41 @@ assert_exit0 "init.sh creates the throwaway DB" "$?"
 psql -X -q -v ON_ERROR_STOP=1 -d "$TEST_URL" -f "$SCHEMA" >/dev/null 2>&1
 assert_exit0 "injection-log.sql applies cleanly" "$?"
 
-# Round 1: a normal domain-scoped record with a doc_paths array. NOTE: `$(...)` strips the
-# trailing newline this printf writes — every REC# below is implicitly a no-trailing-newline
-# input, which is exactly the case the `|| [ -n "$session_id" ]` read-loop guard exists for.
-REC1=$(printf 'sess-a\x1fEdit\x1fserver/routes/foo.ts\x1fapi\x1finjected\x1f1234\x1fdocs/rules/api.md,docs/solutions/api/foo-2026-01-01.md\n')
+# Round 1: a normal domain-scoped record with a doc_paths array AND a populated agent_id (the
+# 8th, trailing field) — a subagent's row, distinguishable from the orchestrator's for the
+# same session_id (see docs/solutions/conventions/hook-json-agent-id-per-context-window-
+# 2026-07-19.md). NOTE: `$(...)` strips the trailing newline this printf writes — every REC#
+# below is implicitly a no-trailing-newline input, which is exactly the case the
+# `|| [ -n "$session_id" ]` read-loop guard exists for.
+REC1=$(printf 'sess-a\x1fEdit\x1fserver/routes/foo.ts\x1fapi\x1finjected\x1f1234\x1fdocs/rules/api.md,docs/solutions/api/foo-2026-01-01.md\x1fitest-sub-1\n')
 printf '%s' "$REC1" | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" >/dev/null 2>&1
 ROWCOUNT=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.injection_log")
 assert_eq "round 1: one row inserted" "$ROWCOUNT" "1"
 
-ROW=$(psql -X -q -tA -F'|' -d "$TEST_URL" -c "SELECT session_id, tool, edited_path, domain, action, payload_bytes, doc_paths FROM harness.injection_log ORDER BY id LIMIT 1")
+ROW=$(psql -X -q -tA -F'|' -d "$TEST_URL" -c "SELECT session_id, tool, edited_path, domain, action, payload_bytes, doc_paths, agent_id FROM harness.injection_log ORDER BY id LIMIT 1")
 assert_eq "round 1: session_id" "$(printf '%s' "$ROW" | cut -d'|' -f1)" "sess-a"
 assert_eq "round 1: domain" "$(printf '%s' "$ROW" | cut -d'|' -f4)" "api"
 assert_eq "round 1: action" "$(printf '%s' "$ROW" | cut -d'|' -f5)" "injected"
 assert_eq "round 1: payload_bytes" "$(printf '%s' "$ROW" | cut -d'|' -f6)" "1234"
 assert_eq "round 1: doc_paths array" "$(printf '%s' "$ROW" | cut -d'|' -f7)" "{docs/rules/api.md,docs/solutions/api/foo-2026-01-01.md}"
+assert_eq "round 1: agent_id" "$(printf '%s' "$ROW" | cut -d'|' -f8)" "itest-sub-1"
 
 # Round 2: a SessionStart-shaped record — edited_path AND domain both empty, i.e. TWO
 # adjacent empty fields (exactly why the delimiter is \x1f, not \t: bash's `read` collapses
 # adjacent tab-delimited empty fields even with IFS set to tab alone, which would otherwise
-# misalign every field after them — verified empirically during implementation).
+# misalign every field after them — verified empirically during implementation). Also has NO
+# trailing agent_id field at all (an old-shape 7-field line — the backward-compat case for a
+# stale checkout's producer; the shipped session-recent-issues.sh now sends 8 fields with a
+# trailing empty, which `read` parses identically) — proves `read`'s trailing-field behavior
+# leaves agent_id empty without disturbing any earlier field's alignment.
 REC2=$(printf 'sess-b\x1fSessionStart\x1f\x1f\x1finjected\x1f42\x1fdocs/solutions/conventions/foo.md')
 printf '%s' "$REC2" | LAB_DATABASE_URL="$TEST_URL" bash "$SCRIPT" >/dev/null 2>&1
 ROWCOUNT2=$(psql -X -q -tA -d "$TEST_URL" -c "SELECT count(*) FROM harness.injection_log")
 assert_eq "round 2: SessionStart row (no trailing newline) still inserted" "$ROWCOUNT2" "2"
 
-ROW2=$(psql -X -q -tA -F'|' -d "$TEST_URL" -c "SELECT session_id, tool, edited_path, domain, action, payload_bytes FROM harness.injection_log ORDER BY id OFFSET 1 LIMIT 1")
+ROW2=$(psql -X -q -tA -F'|' -d "$TEST_URL" -c "SELECT session_id, tool, edited_path, domain, action, payload_bytes, agent_id FROM harness.injection_log ORDER BY id OFFSET 1 LIMIT 1")
 assert_eq "round 2: session_id" "$(printf '%s' "$ROW2" | cut -d'|' -f1)" "sess-b"
+assert_eq "round 2: agent_id empty (old 7-field line, no trailing agent_id)" "$(printf '%s' "$ROW2" | cut -d'|' -f7)" ""
 assert_eq "round 2: tool" "$(printf '%s' "$ROW2" | cut -d'|' -f2)" "SessionStart"
 assert_eq "round 2: edited_path empty" "$(printf '%s' "$ROW2" | cut -d'|' -f3)" ""
 assert_eq "round 2: domain empty" "$(printf '%s' "$ROW2" | cut -d'|' -f4)" ""

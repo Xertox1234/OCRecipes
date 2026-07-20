@@ -81,7 +81,11 @@ if [ "${PATTERN_INJECT_NO_LOG:-0}" != "1" ]; then
     # (a SessionStart digest is not scoped to a file or a domain) — bash's `read` collapses
     # adjacent tab-delimited empty fields even with IFS set to tab alone, which would
     # misalign every field after them. See log-injection.sh's header comment.
-    LOG_LINE=$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SID" "SessionStart" "" "" "injected" "$(( $(printf '%s' "$DIGEST" | wc -c) ))" "$DOC_PATHS")
+    # Trailing empty field is agent_id: always empty here — SessionStart is definitionally
+    # always the top-level context (a subagent dispatch never fires its own SessionStart),
+    # so there is nothing to extract; the literal empty keeps this producer on the same
+    # 8-field contract as inject-patterns.sh's LOG_TSV lines.
+    LOG_LINE=$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SID" "SessionStart" "" "" "injected" "$(( $(printf '%s' "$DIGEST" | wc -c) ))" "$DOC_PATHS" "")
     { printf '%s\n' "$LOG_LINE" | bash "$LOG_SCRIPT" >/dev/null 2>&1; } &
     disown 2>/dev/null || true
   fi

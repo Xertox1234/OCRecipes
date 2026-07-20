@@ -77,6 +77,18 @@ psql -X -q -d "$LAB_DATABASE_URL" -c 'SELECT 1' >/dev/null 2>&1 || {
   exit 1
 }
 
+# Self-apply the schema idempotently before querying (mirrors eval-report.sh /
+# flake-report.sh / codify-neardup.sh / transcripts.sh / git-mine.sh). This is the
+# mechanical path by which column adds in schema/injection-log.sql reach the standing
+# lab DB — the fail-silent writers (log-injection.sh behind the hooks) can never apply
+# or report schema drift themselves; without this, a schema change turns every hook
+# INSERT into a silently swallowed error until someone hand-applies the file.
+# client_min_messages=warning: the idempotent IF NOT EXISTS re-apply raises benign
+# NOTICEs; suppress those without hiding a genuine WARNING/ERROR (still aborts via
+# ON_ERROR_STOP + set -e).
+PGOPTIONS='-c client_min_messages=warning' \
+  psql -X -q -v ON_ERROR_STOP=1 -d "$LAB_DATABASE_URL" -f "$SCRIPT_DIR/schema/injection-log.sql" >/dev/null
+
 # --- Corpus scan: every repo-relative doc path that COULD be delivered -------------------
 TMP_CORPUS="$(mktemp)"
 trap 'rm -f "$TMP_CORPUS"' EXIT
