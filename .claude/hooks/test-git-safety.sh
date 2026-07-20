@@ -221,6 +221,12 @@ assert_allow "registry: global -C worktree then post-verb '-C HEAD' still resolv
 # silently start (mis)treating the glued form as a real -C without a deliberate test update.
 assert_allow "registry: glued -C<main> (git rejects the form, EXIT 129) stays allowed (documented residual)" \
   "$(json "$SESSION" "$MAIN" "git -C$MAIN commit -m x")"
+# Empty -C is a git no-op (`git -C "" …` runs in cwd). fold() skips it, so a trailing empty
+# -C neither masks the real effective repo nor emits a stray trailing slash on the path.
+assert_deny "registry: git -C main -C '' — empty -C is a no-op, effective stays main (DENY)" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN -C '' commit -m x")"
+assert_allow "registry: git -C '' resolves to cwd (worktree) — empty -C ignored (ALLOW)" \
+  "$(json "$SESSION" "$WT_A" "git -C '' commit -m x")"
 
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \

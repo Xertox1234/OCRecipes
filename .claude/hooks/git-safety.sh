@@ -188,8 +188,7 @@ emit_write_targets() {
 #     (same as sudo/env/command/xargs/subshell/eval; SKIP_WORKTREE_CONTRACT is not needed to
 #     hit it, but the file-tool guard is a second layer and this is a guardrail, not a sandbox).
 #     Glued `-C<path>` is NOT in this class: real git REJECTS it (`unknown option`, EXIT 129) —
-#     no mutation happens. Chained/interleaved `-C` (`git -C a -C b …`, `git -c x=y -C <main>`)
-#     is now HANDLED: SEG_RE allows ≥1 -C in any order and this fold resolves cumulatively.
+#     no mutation happens. (Chained/interleaved `-C` is HANDLED — see the function summary above.)
 #   - UNMODELED git global options: SEG_RE knows only -C/-c, so `--git-dir=<main>/.git` and
 #     `--work-tree=<main>` (direct repo redirects, no -C) — and a benign global BEFORE the -C
 #     (`git --no-pager -C <main> commit`) that stops the regex reaching the verb — are skipped
@@ -204,6 +203,7 @@ emit_write_targets() {
 git_c_target() {
   awk '
     function fold(t){                                # cumulative -C: last absolute wins, relatives append (mirrors git chdir)
+      if (t == "") return                            #   empty -C is a git no-op; skip it (no gotc, no trailing slash)
       if (substr(t, 1, 1) == "/") eff = t
       else eff = (eff == "" ? t : eff "/" t)
       gotc = 1
@@ -254,7 +254,11 @@ git_c_target() {
         }
       }
       endword()
-      if (!done && gotc) print eff   # defensive: a chained -C with no trailing verb (SEG_RE normally guarantees one)
+      # Fail-safe, currently UNREACHABLE: git_c_target only runs on SEG_RE-matched segments,
+      # which always contain a verb, so the verb branch sets done=1 first. Kept as defense in
+      # depth — if a future SEG_RE relaxation ever admitted a verbless segment, this still emits
+      # its -C target instead of silently falling back to cwd (which could launder a main mutation).
+      if (!done && gotc) print eff
     }
   '
 }
