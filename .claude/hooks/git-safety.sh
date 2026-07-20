@@ -202,8 +202,17 @@ emit_write_targets() {
 #     Glued `-C<path>` is NOT a bypass: real git REJECTS it (`unknown option`, EXIT 129) — no
 #     mutation happens. The broadened SEG_RE matches its single token as a generic global, so
 #     with cwd=main it (harmlessly) DENYs. (Chained/interleaved -C, --git-dir/--work-tree [glued
-#     + separate], GIT_DIR/GIT_WORK_TREE env, and an unmodeled global before the verb are all
-#     HANDLED now — see the function summary above and MUTATING_GIT_SEG_RE.)
+#     + separate], the INLINE GIT_DIR=/GIT_WORK_TREE= env prefix, and an unmodeled global before
+#     the verb are all HANDLED now — see the function summary above and MUTATING_GIT_SEG_RE.)
+#   - QUOTED redirect VALUE under an UNQUOTED flag/name (`git --git-dir='<main>/.git' commit`,
+#     `GIT_DIR='<main>/.git' git commit`): taint-STRICT capture reads nothing, so the git-dir falls
+#     to cwd → ALLOW from a worktree cwd (verified). The UNQUOTED flag/env forms ARE closed; only
+#     this quoted-value variant remains — the same within-segment quote-blindness class.
+#   - CROSS-SEGMENT / exported env: each `;`/`|`/`&`-separated segment is validated independently,
+#     so an assignment or `export` in an EARLIER segment (`export GIT_DIR=<main>/.git && git commit`)
+#     is not applied to git in a later one → ALLOW (verified); a truly ambient exported
+#     GIT_DIR/GIT_WORK_TREE in the hook's own environment is likewise unseeable. Only the INLINE
+#     same-segment prefix is closed. Structurally out of scope at the command-string layer.
 #   (SPLIT `--git-dir`≠`--work-tree` at DIFFERENT checkouts is now CLOSED: the caller validates the
 #   git-dir target AND the work-tree target independently and DENYs if EITHER is outside the
 #   worktrees — conservative for a commit whose refs go to the safe side, but never a bypass.)

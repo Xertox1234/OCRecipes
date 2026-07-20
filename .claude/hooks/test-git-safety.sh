@@ -178,6 +178,13 @@ assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' also cannot hide a -C-main r
   "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$\$\$'a\\' && git -C $MAIN reset --hard HEAD~1")"
 assert_allow "registry: benign \$\$'ok' (PID + normal single quote) stays allowed" \
   "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$'ok'")"
+# The new --git-dir/--work-tree/GIT_DIR/GIT_WORK_TREE recognizers must compose with the SAME $'…'
+# quote machine as the -C cases above: a $'…'-quoted separator must not fracture a LATER redirect,
+# and that redirect must still resolve to a DENY (drift-guard for the constructs this PR added).
+assert_deny "registry: $'a;b' message before && cannot hide a later --git-dir=<main> commit" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$'a;b' && git --git-dir=$MAIN/.git commit -m x")"
+assert_deny "registry: $'a&b' message before && cannot hide a later GIT_WORK_TREE=<main> commit" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$'a&b' && GIT_WORK_TREE=$MAIN git commit -m x")"
 
 # ---------- chained / interleaved global -C (bypass #2 + the -c-before-C sibling) ----------
 # Real git applies each -C as a CUMULATIVE chdir — empirically `git -C /a -C /b` targets
@@ -320,11 +327,19 @@ assert_deny "registry: tainted short decoy then real -C <main> is denied" \
 assert_deny "registry: split --git-dir=<worktree> --work-tree=<main> is denied (multi-target, was residual)" \
   "$(json "$SESSION" "$WT_A" "git --git-dir=$WT_A/.git --work-tree=$MAIN commit -m x")"
 #
-# Documented residual (a test either way, per the todo): a QUOTED env/flag VALUE is taint-strict
-# (same within-segment quote-blindness class as a quoted -C flag) — not captured, so the git-dir
-# falls to cwd. From a worktree cwd → ALLOW.
+# Documented residuals (a test either way, per the todo):
+#  - A QUOTED redirect VALUE under an UNQUOTED flag/name is taint-strict (same within-segment
+#    quote-blindness class as a quoted -C flag) — not captured, so the git-dir falls to cwd. From a
+#    worktree cwd → ALLOW. The UNQUOTED forms are closed; only the quoted-VALUE variant remains.
 assert_allow "registry: quoted GIT_DIR value (taint-strict residual) from a worktree cwd stays allowed" \
   "$(json "$SESSION" "$WT_A" "GIT_DIR='$MAIN/.git' git commit -m x")"
+assert_allow "registry: quoted --git-dir VALUE (taint-strict residual) from a worktree cwd stays allowed" \
+  "$(json "$SESSION" "$WT_A" "git --git-dir='$MAIN/.git' commit -m x")"
+#  - CROSS-SEGMENT env: each ;/|/& segment is validated independently, so an export/assignment in
+#    an EARLIER segment does not reach git in a later one → ALLOW. Only the INLINE same-segment
+#    GIT_DIR=… prefix is closed; ambient/exported env is unseeable at the command-string layer.
+assert_allow "registry: export GIT_DIR in an earlier segment (cross-segment residual) stays allowed" \
+  "$(json "$SESSION" "$WT_A" "export GIT_DIR=$MAIN/.git && git commit -m x")"
 
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \
