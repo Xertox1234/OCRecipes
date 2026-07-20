@@ -3,7 +3,11 @@
 # worktrees and asserts the hook symlinks node_modules into them.
 set -uo pipefail
 
-HOOK="$(cd "$(dirname "$0")" && pwd)/worktree-deps.sh"
+# ${HOOK:-...}: overridable so a pre-fix copy can be tested against this suite
+# (the RED-verification recipe in docs/solutions/conventions/
+# chmod-000-regression-test-os-may-already-block-guarded-behavior-2026-07-19.md
+# depends on this).
+HOOK="${HOOK:-$(cd "$(dirname "$0")" && pwd)/worktree-deps.sh}"
 PASS=0; FAIL=0
 
 # assert NAME CMD... — CMD must exit 0.
@@ -20,7 +24,9 @@ assert_not() {
 }
 
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+# chmod before rm: an abort mid-test can leave a mode-000 fixture dir (the
+# unreadable case below), which a non-root `rm -rf` refuses to delete.
+trap 'chmod -R u+rwx "$TMP" 2>/dev/null; rm -rf "$TMP"' EXIT
 
 REPO="$TMP/repo"
 mkdir -p "$REPO"
@@ -104,7 +110,8 @@ assert "real install's package survives the hook" test -f "$REAL_WT/node_modules
 # An existing-but-UNREADABLE node_modules (restrictive permissions, root-owned
 # residue) must be left alone, not treated as cache-noise-and-replaced: `find`
 # on a directory it cannot read/search also prints nothing, indistinguishable
-# from a genuinely empty/dot-only dir, without the readability guard.
+# from a genuinely empty/dot-only dir by output alone — the hook now gates the
+# noise classification on the probe's own exit status instead.
 #
 # Note: on at least one `rm` implementation (BSD, macOS), `rm -rf` already
 # no-ops on a mode-000 directory regardless of this guard, since it can't be
@@ -124,6 +131,32 @@ else
   assert_not "unreadable node_modules is NOT symlinked" test -L "$UNREADABLE_WT/node_modules"
   chmod 755 "$UNREADABLE_WT/node_modules"
   assert "unreadable node_modules is NOT removed (still a real dir)" test -d "$UNREADABLE_WT/node_modules"
+fi
+
+# An EMPTY node_modules with partial permissions (mode 644: readable, not
+# searchable). Whether `find` can prove it empty is PLATFORM-DEPENDENT (BSD
+# find refuses without the x bit; some implementations succeed when there are
+# no entries to stat), so pin the platform-appropriate outcome of the
+# probe-status gate: probe inspectable → healed to the symlink; probe refused →
+# left alone entirely. Either way the invariant holds: never removed without a
+# symlink taking its place. Probe BEFORE the hook run — the hook may replace
+# the dir, changing what the probe would see.
+LOWMODE_WT="$REPO/.claude/worktrees/lowmode"
+git -C "$REPO" worktree add -q "$LOWMODE_WT" -b lowmode
+mkdir -p "$LOWMODE_WT/node_modules"
+chmod 644 "$LOWMODE_WT/node_modules"
+if find "$LOWMODE_WT/node_modules" -mindepth 1 -maxdepth 1 -not -name '.*' -print -quit >/dev/null 2>&1; then
+  LOWMODE_INSPECTABLE=1
+else
+  LOWMODE_INSPECTABLE=0
+fi
+( cd "$REPO" && bash "$HOOK" )
+if [ "$LOWMODE_INSPECTABLE" = "1" ]; then
+  assert "empty mode-644 node_modules is healed to the symlink (probe inspectable here)" test -L "$LOWMODE_WT/node_modules"
+  assert "healed mode-644 symlink resolves" test -e "$LOWMODE_WT/node_modules/.marker"
+else
+  assert_not "mode-644 node_modules is NOT symlinked (probe refused here)" test -L "$LOWMODE_WT/node_modules"
+  assert "mode-644 node_modules is NOT removed (still a real dir)" test -d "$LOWMODE_WT/node_modules"
 fi
 
 # A worktree outside both harness-managed roots (a user's own ad hoc `git worktree

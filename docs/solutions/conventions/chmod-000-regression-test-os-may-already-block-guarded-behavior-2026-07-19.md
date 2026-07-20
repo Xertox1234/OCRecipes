@@ -61,7 +61,7 @@ environment, because `rm -rf` on the mode-000 directory already no-oped.
 ```bash
 # Before trusting a new chmod-000 test case, prove it can fail:
 cp .claude/hooks/worktree-deps.sh /tmp/pre-fix.sh
-# ...revert the [ -r ]/[ -x ] guard in /tmp/pre-fix.sh...
+# ...revert the uninspectable-dir guard (probe-status gate) in /tmp/pre-fix.sh...
 HOOK=/tmp/pre-fix.sh bash .claude/hooks/test-worktree-deps.sh   # does the new case go RED?
 ```
 
@@ -72,19 +72,24 @@ any environment where that isn't true (e.g. running as root)."
 
 ## Exceptions
 
-- If the destructive operation under test is something that root's bypass also
-  can't route around (e.g. an immutable-flag check, a network-mediated permission
-  check, an explicit application-level `[ -r ]` gate with no underlying OS retry),
-  a `chmod 000` fixture may discriminate correctly without this caveat — verify per
-  case rather than assuming the caveat always applies.
+- The caveat applies exactly when the OS itself already blocks the guarded
+  operation on the fixture. If the destructive step would otherwise SUCCEED on a
+  mode-000 fixture (an immutable-flag check, a network-mediated permission check,
+  an operation that never opens the directory), a `chmod 000` fixture can
+  discriminate. An application-level `[ -r ]`-style gate in front of `rm -rf` is
+  NOT such a case — that is this file's own empirical result: stripping the gate
+  re-exposes `rm`'s own open() refusal, so the fixture stays green either way.
+  Verify per case rather than assuming either direction.
 - Don't over-invest in fixing this for a low-severity/harness-tooling test — a
   same-platform empirical check (revert the guard, rerun) is enough; standing up
   cross-platform CI just to validate one self-test fixture is disproportionate.
 
 ## Related Files
 
-- `.claude/hooks/worktree-deps.sh` — the `[ -r "$nm" ] && [ -x "$nm" ]` guard this
-  pattern was found while testing
+- `.claude/hooks/worktree-deps.sh` — the uninspectable-node_modules guard this
+  pattern was found while testing (originally `[ -r ] && [ -x ]` bit checks, since
+  replaced by gating on the probe's own exit status — the empirical history above
+  describes the original form)
 - `.claude/hooks/test-worktree-deps.sh` — the "unreadable node_modules" test case
   that could not be made to fail against the reverted guard on macOS/BSD `rm`
 

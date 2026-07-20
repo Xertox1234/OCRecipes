@@ -56,19 +56,25 @@ git worktree list --porcelain 2>/dev/null | while read -r key path; do
   # lives at a hidden name, so replacing it loses nothing. Anything with a
   # non-hidden entry is treated as a real install and never touched.
   #
-  # The noise check requires the directory to actually be inspectable first
-  # ([ -r ] + [ -x ]): `find` on an unreadable dir (restrictive permissions,
-  # root-owned residue) also prints nothing, which is indistinguishable from
-  # a genuinely empty/dot-only dir — without this guard that case would be
-  # misread as noise, and an `rm -rf` would be attempted against it (whether
-  # that attempt actually succeeds depends on the underlying `rm`'s own
-  # permission handling). This guard makes the leave-alone behavior explicit
-  # and implementation-independent, matching pre-#669 behavior for that case.
+  # The noise classification is gated on the probe's OWN exit status: "noise"
+  # means the inspection SUCCEEDED and found nothing non-hidden. `find` on a dir
+  # it cannot inspect (restrictive permissions, root-owned residue, I/O error)
+  # also prints nothing — indistinguishable from a genuinely empty/dot-only dir
+  # by output alone — but it exits non-zero, so gating on its status covers
+  # every inspection-failure mode, not just the ones visible as missing
+  # permission bits. Anything uninspectable is left alone (never destroy what
+  # you couldn't inspect), with a printed notice: stdout on purpose — the
+  # SessionStart hook wiring surfaces stdout only.
   if [ -d "$MAIN_ROOT/node_modules" ]; then
     nm="$path/node_modules"
-    if [ -d "$nm" ] && [ ! -L "$nm" ] && [ -r "$nm" ] && [ -x "$nm" ] \
-      && ! find "$nm" -mindepth 1 -maxdepth 1 -not -name '.*' -print -quit 2>/dev/null | grep -q .; then
-      rm -rf "$nm" 2>/dev/null || true
+    if [ -d "$nm" ] && [ ! -L "$nm" ]; then
+      if entries=$(find "$nm" -mindepth 1 -maxdepth 1 -not -name '.*' -print -quit 2>/dev/null); then
+        if [ -z "$entries" ]; then
+          rm -rf "$nm" 2>/dev/null || true
+        fi
+      else
+        echo "worktree-deps: cannot inspect $nm — left alone; fix permissions, then re-run: bash .claude/hooks/worktree-deps.sh"
+      fi
     fi
     if [ ! -e "$nm" ]; then
       ln -sfn "$MAIN_ROOT/node_modules" "$nm" 2>/dev/null || true
