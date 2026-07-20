@@ -154,16 +154,15 @@ emit_write_targets() {
     }
   '
 }
-# git_c_target: read ONE shell segment (already matched MUTATING_GIT_SEG_RE) on STDIN and emit
-# every directory the mutating git command could write to, one per TAGGED line, for the caller to
-# validate. git offers several repo redirects and they do NOT collapse to a single target:
-#   D <path>  the git-dir/-C target — refs/objects mutations (commit, reset refs, …). Resolved as
-#             --git-dir / GIT_DIR, else the cumulative -C fold (last absolute wins, relatives append).
-#   W <path>  an explicit --work-tree / GIT_WORK_TREE — working-FILE mutations (checkout, reset
-#             --hard, restore, clean, …). The git-dir is UNAFFECTED by it, so it is an ADDITIONAL
-#             target, never a replacement (a work-tree redirect does NOT move where a commit lands
-#             — verified by scratch probe). When NO D is emitted the git-dir is discovered from cwd,
-#             which the caller validates itself.
+# git_c_target: read ONE shell segment (already matched MUTATING_GIT_SEG_RE) on STDIN and emit the
+# repo-redirect COMPONENTS present, one per TAGGED line, for the caller to reconstruct git's TWO
+# INDEPENDENT write targets from (see emit_effective + the caller loop):
+#   g <path>  --git-dir / GIT_DIR   (the git-dir: refs/objects — commit, reset refs, …)
+#   c <path>  the cumulative -C fold (last absolute wins, relatives append — the default for BOTH targets)
+#   w <path>  --work-tree / GIT_WORK_TREE (the work-tree: working FILES — checkout, reset --hard, …)
+# git resolves the git-dir and the work-tree INDEPENDENTLY (git-dir = g else c else cwd; work-tree =
+# w else c else cwd), so a --git-dir redirect does NOT move the work-tree — verified: `git
+# --git-dir=<other>/.git reset --hard` from cwd=main destroys MAIN files. The caller validates both.
 # Any OTHER global (--no-pager/-p/…) is skipped so a later real redirect is still reached. Quote/
 # escape-AWARE. A subcommand's own post-verb -C (`git commit -C HEAD` reuses a message) is never
 # mined: collection STOPS at the verb. The -C fold replaces a greedy
@@ -239,15 +238,18 @@ git_c_target() {
     }
     function setgd(t){ if (t != "") { gitdir = resolve_target(t); gotgd = 1 } }   # --git-dir / GIT_DIR redirect
     function setwt(t){ if (t != "") { worktree = resolve_target(t); gotwt = 1 } } # --work-tree / GIT_WORK_TREE redirect
-    function emit_effective(){                       # emit every dir the command could write to, TAGGED:
-      # D = git-dir/-C target (refs/objects: commit, reset refs, …); W = an explicit --work-tree /
-      # GIT_WORK_TREE (working files: checkout, reset --hard, restore, clean, …). The caller DENYs
-      # if ANY tagged target is outside the worktrees, and when NO D is emitted it also checks cwd
-      # (the git-dir is then discovered from cwd). A work-tree is an ADDITIONAL target, NEVER a
-      # replacement for the git-dir — a work-tree redirect does NOT move where a commit lands.
-      if (gotgd)     print "D " gitdir
-      else if (gotc) print "D " eff
-      if (gotwt)     print "W " worktree
+    function emit_effective(){                       # emit the redirect COMPONENTS; the caller
+      # reconstructs the TWO INDEPENDENT targets git mutates and validates BOTH of them:
+      #   git-dir (refs/objects) = --git-dir/GIT_DIR (g), else the -C fold (c), else cwd.
+      #   work-tree (working FILES: checkout, reset --hard, restore, clean, …) = --work-tree/
+      #     GIT_WORK_TREE (w), else the -C fold (c), else cwd.
+      # git resolves these INDEPENDENTLY: a --git-dir redirect moves ONLY the git-dir — the work-tree
+      # still defaults to -C/cwd — so `git --git-dir=<worktree>/.git reset --hard` from cwd=main
+      # destroys MAIN files (verified). Hence BOTH targets are checked; the -C fold (c) is emitted
+      # even alongside a git-dir so it can still serve as the implicit work-tree.
+      if (gotgd) print "g " gitdir
+      if (gotc)  print "c " eff
+      if (gotwt) print "w " worktree
     }
     function endword(   w, tnt){
       if (!wstart) return
@@ -415,10 +417,10 @@ MUTATING_GIT_VERBS='commit|mv|rm|restore|checkout|switch|pull|revert|stash|reset
 # repo resolution. Modeling only `-C`/`-c` used to let three false-negatives slip: a chained
 # `-C` failed the regex (single-`?`), an unmodeled global before the -C stopped it reaching the
 # verb, and --git-dir/--work-tree redirects were never recognized. This grammar is a STRICT
-# SUPERSET of the old one (it only adds matches), so the REGEX can only ADD DENYs. Verified by an
-# old-vs-new differential over the whole hook: every MAIN-target transition is ALLOW→DENY; the
-# sole DENY→ALLOW targets a registered worktree (`GIT_DIR=<worktree>` from a main cwd — a git-dir
-# redirect the old hook wrongly denied by falling back to cwd, a false-positive the extractor now fixes).
+# SUPERSET of the old one (it only adds matches), so the REGEX can only ADD DENYs. The caller
+# validating TWO independent targets (git-dir + work-tree) is likewise a superset of the old single
+# cwd/-C check, so the whole change is strictly-tightening: an old-vs-new differential over the whole
+# hook (630+ cases) finds ZERO DENY→ALLOW transitions — every transition is ALLOW→DENY.
 MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--git-dir[[:space:]]+[^[:space:]]+|--work-tree[[:space:]]+[^[:space:]]+|-[^[:space:]]+))*[[:space:]]+(${MUTATING_GIT_VERBS})([[:space:]]|\$)"
 
 # The hook process does not inherit inline assignments from the tool command, so
@@ -441,33 +443,41 @@ if [ -z "${SKIP_WORKTREE_CONTRACT:-}" ] && [ -z "$INLINE_BYPASS" ] && registry_a
     SEGS=$(printf '%s' "$CMD" | split_segments)
     while IFS= read -r seg; do
       printf '%s' "$seg" | grep -qE "$MUTATING_GIT_SEG_RE" || continue
-      # Quote-AWARE effective-repo resolution (git_c_target, defined above) emits every dir the
-      # command could write to, TAGGED: `D <path>` = the git-dir/-C target (refs mutations), `W
-      # <path>` = an explicit --work-tree/GIT_WORK_TREE (working-file mutations). A work-tree is
-      # an ADDITIONAL target, not a replacement for the git-dir — so validate EACH tagged target,
-      # and when NO `D` is emitted also validate cwd (the git-dir is then discovered from cwd).
-      # The old greedy `tr -d '\042\047' | sed 's/.*git…-C ([^ ]+)/\1/'` matched the LAST `git -C`
-      # anywhere and kept quoted CONTENT, so a commit message mentioning `git -C <path>` was mined.
-      HAVE_DIR=0
+      # git_c_target (defined above) emits the redirect COMPONENTS of this segment, quote-AWARE:
+      #   g <path> = --git-dir/GIT_DIR   c <path> = the cumulative -C fold   w <path> = --work-tree/GIT_WORK_TREE
+      # git resolves the git-dir and the work-tree INDEPENDENTLY, so we reconstruct BOTH and validate
+      # each: git-dir (refs) = g else c else cwd; work-tree (files) = w else c else cwd. A --git-dir
+      # that points at a safe worktree does NOT move the work-tree — `git --git-dir=<wt>/.git reset
+      # --hard` from cwd=main still destroys MAIN files — so checking only the git-dir would be a
+      # bypass. We check both for EVERY mutating verb (conservative: `commit` alone does not write the
+      # work-tree, so `--git-dir=<wt> commit` from a main cwd is over-DENYed — a rare pattern, fails safe).
+      GITDIR=""; CDIR=""; WORKTREE=""; HAVE_GD=0; HAVE_C=0; HAVE_WT=0
       while IFS= read -r line; do
         [ -n "$line" ] || continue
-        case "$line" in "D "*) HAVE_DIR=1 ;; esac
-        check_repo_target "${line#? }"   # strip the 2-char "D "/"W " tag
-        case $? in
-          0) VIOLATION="$RESOLVED"; break ;;
-          2) UNRESOLVABLE=1; break ;;
+        case "${line%% *}" in
+          g) GITDIR="${line#* }";   HAVE_GD=1 ;;
+          c) CDIR="${line#* }";     HAVE_C=1 ;;
+          w) WORKTREE="${line#* }"; HAVE_WT=1 ;;
         esac
       done <<INNER
 $(printf '%s' "$seg" | git_c_target)
 INNER
-      [ -n "$VIOLATION$UNRESOLVABLE" ] && break
-      if [ "$HAVE_DIR" -eq 0 ]; then     # no git-dir/-C redirect → the git-dir is discovered from cwd
-        check_repo_target ""
+      # git-dir target: explicit --git-dir/GIT_DIR, else the -C fold, else cwd (empty → helper uses cwd).
+      if   [ "$HAVE_GD" = 1 ]; then GD="$GITDIR"
+      elif [ "$HAVE_C"  = 1 ]; then GD="$CDIR"
+      else GD=""; fi
+      # work-tree target: explicit --work-tree/GIT_WORK_TREE, else the -C fold, else cwd.
+      if   [ "$HAVE_WT" = 1 ]; then WT="$WORKTREE"
+      elif [ "$HAVE_C"  = 1 ]; then WT="$CDIR"
+      else WT=""; fi
+      for tgt in "$GD" "$WT"; do
+        check_repo_target "$tgt"
         case $? in
           0) VIOLATION="$RESOLVED"; break ;;
           2) UNRESOLVABLE=1; break ;;
         esac
-      fi
+      done
+      [ -n "$VIOLATION$UNRESOLVABLE" ] && break
     done <<EOF
 $SEGS
 EOF

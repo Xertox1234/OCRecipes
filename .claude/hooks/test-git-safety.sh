@@ -244,12 +244,13 @@ assert_allow "registry: git -C '' resolves to cwd (worktree) — empty -C ignore
 # commit` BOTH mutate <main> from any cwd; git accepts --git-dir/--work-tree glued (=) AND
 # separate; a benign global (--no-pager/-p/-P) before a real -C still honors that -C.
 #
-# (A) --git-dir / --work-tree FLAGS and GIT_DIR / GIT_WORK_TREE env vars redirect which repo a
-#     command targets. Verified by scratch probe: a COMMIT writes to the GIT-DIR (refs/objects),
-#     which git discovers from --git-dir / GIT_DIR / -C / cwd — NEVER from the work-tree; a
-#     work-tree redirect only steers WORKING-FILE mutations (checkout/reset --hard/restore/clean).
-#     So the gate validates BOTH the git-dir target AND the work-tree target: DENY if EITHER is
-#     outside the registered worktrees. (cwd = the registered worktree unless noted; contract active.)
+# (A) --git-dir / --work-tree FLAGS and GIT_DIR / GIT_WORK_TREE env vars each redirect ONE of git's
+#     two INDEPENDENT write targets. Verified by scratch probe: refs/objects go to the GIT-DIR
+#     (--git-dir/GIT_DIR, else the -C fold, else cwd); working FILES go to the WORK-TREE
+#     (--work-tree/GIT_WORK_TREE, else the -C fold, else cwd) — a --git-dir redirect does NOT move
+#     the work-tree. The gate reconstructs BOTH targets and DENYs if EITHER is outside the registered
+#     worktrees. `commit` is the only verb that does not write the work-tree, but we check both
+#     anyway (conservative). (cwd = the registered worktree unless noted; contract active.)
 #
 # git-dir redirect to <main> → DENY (commit lands in main's refs):
 assert_deny "registry: --git-dir=<main>/.git commit is denied (git-dir redirect, was BYPASS)" \
@@ -275,14 +276,32 @@ assert_deny "registry: --work-tree=<worktree> from a main cwd is denied (git-dir
 # both redirects at main → DENY (either target alone suffices):
 assert_deny "registry: --git-dir=<main>/.git --work-tree=<main> commit is denied" \
   "$(json "$SESSION" "$WT_A" "git --git-dir=$MAIN/.git --work-tree=$MAIN commit -m x")"
-# Fail-open guards: a git-dir redirect to the REGISTERED worktree (or /tmp scratch) makes cwd
-# irrelevant (the git-dir IS the redirect) → ALLOW even from a main cwd:
-assert_allow "registry: --git-dir=<worktree>/.git commit is allowed (git-dir redirect to worktree)" \
+# CRITICAL (2nd review): a --git-dir/GIT_DIR redirect to a SAFE worktree does NOT move the
+# work-tree — a working-file verb (reset --hard/checkout/restore/clean) still writes cwd. Verified:
+# `git --git-dir=<other>/.git reset --hard` from cwd=main overwrites main's tracked files. These
+# were ALLOW before the fix (one is a regression this PR's GIT_DIR capture introduced):
+assert_deny "registry: GIT_DIR=<worktree> reset --hard from a main cwd is denied (work-tree=cwd=main, was regression)" \
+  "$(json "$SESSION" "$MAIN" "GIT_DIR=$WT_A/.git git reset --hard HEAD~1")"
+assert_deny "registry: --git-dir=<worktree> checkout from a main cwd is denied (work-tree=cwd=main)" \
+  "$(json "$SESSION" "$MAIN" "git --git-dir=$WT_A/.git checkout -- f.txt")"
+assert_deny "registry: -C main + --git-dir=<worktree> reset --hard is denied (work-tree=-C fold=main)" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN --git-dir=$WT_A/.git reset --hard HEAD~1")"
+# Conservative over-block (fail-safe): even `commit` (which does NOT write the work-tree) is DENYed
+# when a --git-dir/GIT_DIR redirect leaves the implicit work-tree at a main cwd. The proper form,
+# `git -C <worktree> …`, sets BOTH targets to the worktree and is allowed (below).
+assert_deny "registry: --git-dir=<worktree> commit from a main cwd is denied (work-tree=cwd=main, over-block)" \
   "$(json "$SESSION" "$MAIN" "git --git-dir=$WT_A/.git commit -m x")"
-assert_allow "registry: GIT_DIR=<worktree>/.git git commit is allowed" \
+assert_deny "registry: GIT_DIR=<worktree> git commit from a main cwd is denied (over-block)" \
   "$(json "$SESSION" "$MAIN" "GIT_DIR=$WT_A/.git git commit -m x")"
-assert_allow "registry: --git-dir=/tmp/x/.git commit is allowlisted scratch" \
+assert_deny "registry: --git-dir=/tmp/scratch commit from a main cwd is denied (work-tree=cwd=main)" \
   "$(json "$SESSION" "$MAIN" "git --git-dir=/tmp/scratch/.git commit -m x")"
+# Fail-open guards — BOTH targets safe:
+assert_allow "registry: git -C <worktree> reset --hard is allowed (git-dir AND work-tree = worktree)" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A reset --hard HEAD~1")"
+assert_allow "registry: --git-dir=<worktree>/.git commit from the worktree cwd is allowed" \
+  "$(json "$SESSION" "$WT_A" "git --git-dir=$WT_A/.git commit -m x")"
+assert_allow "registry: --git-dir=/tmp/scratch commit from a /tmp cwd is allowed (both allowlisted)" \
+  "$(json "$SESSION" "/tmp/scratch" "git --git-dir=/tmp/scratch/.git commit -m x")"
 # work-tree to the worktree AND cwd is the worktree (so the git-dir target is safe too) → ALLOW:
 assert_allow "registry: --work-tree=<worktree> from the worktree cwd is allowed" \
   "$(json "$SESSION" "$WT_A" "git --work-tree=$WT_A commit -m x")"
