@@ -103,6 +103,31 @@ git -C "$REPO" checkout --detach HEAD -q 2>/dev/null
 OUT=$(run_hook "git add -A && git commit -m 'oops'")
 assert_deny "compound 'git add && git commit' on detached HEAD is denied" "$OUT"
 
+# Test 8b: forms the OLD compound regex MISSED but the shared command-position prefix now catches
+# — subshell `(` and pipe `|` — must also deny on detached HEAD. Guards the deliberate broadening
+# of the match set (separator class (^|[;&|(]) is wider than the old (&&|\|\||;)) against a future
+# prefix-narrowing that would silently reopen the unreachable-commit data-loss.
+OUT=$(run_hook '(git commit -m oops)')
+assert_deny "subshell '(git commit)' on detached HEAD is denied" "$OUT"
+OUT=$(run_hook 'true | git commit -m oops')
+assert_deny "piped 'true | git commit' on detached HEAD is denied" "$OUT"
+
+# Test 9: a quoted MENTION of "; git commit" inside a -m message must NOT be read as a real
+# commit — silent even on detached HEAD (quote-aware port; the raw COMPOUND_COMMIT_RE matched
+# the ';' inside the quotes and false-DENYd). Still detached from Test 8.
+OUT=$(run_hook 'git status -m "wip; git commit now"')
+assert_silent "quoted 'git commit' mention is not a real commit (detached HEAD)" "$OUT"
+
+# Test 10: lib/cmd-detect.sh unsourceable → BLOCKING gate fails CLOSED. Copy just the hook into
+# a dir with no lib/ sibling so the source fails, then a real detached-HEAD commit must STILL
+# deny (raw-regex fallback). Guards the fail-safe direction against a future fail-OPEN refactor.
+NOLIB=$(mktemp -d)
+cp "$HOOK" "$NOLIB/branch-preflight.sh"
+NOLIB_INPUT=$(jq -n --arg c "git commit -m 'oops'" '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: real detached-HEAD commit still denied (fail-closed)" "$OUT"
+rm -rf "$NOLIB"
+
 unset GIT_DIR GIT_WORK_TREE
 
 # --- Hermeticity guard: prove the caller's real repo is byte-for-byte untouched. ---

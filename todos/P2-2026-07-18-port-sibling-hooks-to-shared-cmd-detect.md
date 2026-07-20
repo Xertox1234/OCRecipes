@@ -121,13 +121,21 @@ Repro script archived in the 2026-07-18 audit notes (scratchpad, not committed).
       extractor this AC fixed and are tracked separately in
       **`todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md`** (own clean landing,
       never delegate). PR #665 corrects the claim in-place and does not pretend to close them.
-- [ ] Port `core-bare-guard.sh`, `drift-detect.sh`, `branch-preflight.sh` to source
-      `cmd-detect.sh` and use `cmd_is_git_commit` / a shared mutating-git predicate, so
-      quoted mentions stop false-positiving. Each gets a "quoted mention stays silent"
-      regression test.
-- [ ] Any BLOCKING hook that adopts the helper encodes an explicit fail-CLOSED fallback for
-      an unsourceable lib (never fail-open); advisory hooks fall back to silent. Test both.
-- [ ] All existing `test-*.sh` suites for the touched hooks stay green.
+- [x] **DONE (PR `fix/port-sibling-hooks-cmd-detect`, 2026-07-20).** Ported `core-bare-guard.sh`
+      (→ `cmd_is_git`), `drift-detect.sh` (→ `cmd_is_git_commit_or_push`), `branch-preflight.sh`
+      (→ existing `cmd_is_git_commit`), **and the companion `drift-detect-update.sh`**
+      (→ `cmd_is_git_head_mover`; folded in by user decision — same quote-unaware matcher, and its
+      false-positive is _worse_: a quoted HEAD-mover mention wrongly stamped the drift baseline →
+      silently absorbed a real drift). Three predicates added to `cmd-detect.sh` (pure additions,
+      mirroring `cmd_is_git_commit`). Each hook got a "quoted mention stays silent" regression test,
+      red-first (verified failing on the pre-port hook, then green).
+- [x] **DONE.** `branch-preflight.sh` (the one blocking hook) fails CLOSED via a retained raw-regex
+      else-branch — a real detached-HEAD commit still denies when the lib is unsourceable. The three
+      advisory hooks fail SILENT (`exit 0`). Both directions carry a lib-missing test (copy the hook
+      into a `lib`-less temp dir so the `source` fails and the fallback branch runs).
+- [x] **DONE.** Full 29-suite hook sweep green (`bash scripts/run-hook-tests.sh`, exit 0), including
+      the existing lib consumers (`git-safety`, `pr-preflight-guard`, `commit-verify`, `pr-verify`) —
+      confirms the additive-only predicate change didn't regress them.
 
 ## Implementation Notes
 
@@ -190,3 +198,18 @@ Repro script archived in the 2026-07-18 audit notes (scratchpad, not committed).
   - 29-suite hook sweep green; all pre-existing `-C` guards preserved.
 - Sibling-hook port (`core-bare-guard`/`drift-detect`/`branch-preflight`) still pending — the ONLY
   remaining AC in this todo.
+
+### 2026-07-20
+
+- **Sibling-hook port DONE** (PR `fix/port-sibling-hooks-cmd-detect`) — closes the last remaining
+  AC. Added `cmd_is_git`, `cmd_is_git_commit_or_push`, `cmd_is_git_head_mover` to `cmd-detect.sh`
+  (pure additions; existing `cmd_bare`/`_CMD_POS_*`/predicates untouched, so the three current
+  consumers can't regress). Ported all three enumerated hooks **and folded in the companion
+  `drift-detect-update.sh`** (user-confirmed scope call: same-class quote-unaware sibling whose
+  false-positive is worse — a quoted HEAD-mover mention wrongly stamped the drift baseline and
+  silently absorbed a real external drift, defeating its own read-only-ops exclusion). Strict TDD:
+  each quoted-mention red test verified failing on the pre-port hook first. Fail-safe directions:
+  advisory hooks (`core-bare-guard`, `drift-detect`, `drift-detect-update`) → SILENT on an
+  unsourceable lib; `branch-preflight` (blocking) → CLOSED via a retained raw-regex fallback.
+  29/29 hook suites green. Solution doc `quote-strip-escape-glue-hides-real-command-2026-07-18.md`
+  extended (Related Files) with the ported hooks. Closes pending PR merge (human_led — user merges).

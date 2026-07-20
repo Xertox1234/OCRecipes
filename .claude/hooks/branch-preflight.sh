@@ -14,11 +14,22 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 [ "$TOOL" = "Bash" ] || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 
-GIT_COMMIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
-COMPOUND_COMMIT_RE='(&&|\|\||;)[[:space:]]*git[[:space:]]+commit([[:space:]]|$)'
-
-if ! [[ "$CMD" =~ $GIT_COMMIT_RE ]] && ! printf '%s' "$CMD" | grep -qE "$COMPOUND_COMMIT_RE"; then
-  exit 0
+# Only proceed for an actual `git commit`. Cheap necessary-condition superset first, then the
+# shared quote-AWARE matcher (lib/cmd-detect.sh) so a quoted mention — `-m "…; git commit …"` —
+# never false-DENYs a legitimate command.
+case "$CMD" in *commit*) : ;; *) exit 0 ;; esac
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit >/dev/null; then
+  cmd_is_git_commit "$CMD" || exit 0
+else
+  # Lib unsourceable → this is a BLOCKING gate, so fail CLOSED: keep the raw (quote-unaware)
+  # match so a real detached-HEAD commit is still caught. Behaviour is then identical to the
+  # pre-port hook; a quoted mention may false-DENY, the accepted cost of never fail-OPENing.
+  GIT_COMMIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
+  COMPOUND_COMMIT_RE='(&&|\|\||;)[[:space:]]*git[[:space:]]+commit([[:space:]]|$)'
+  if ! [[ "$CMD" =~ $GIT_COMMIT_RE ]] && ! printf '%s' "$CMD" | grep -qE "$COMPOUND_COMMIT_RE"; then
+    exit 0
+  fi
 fi
 
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0

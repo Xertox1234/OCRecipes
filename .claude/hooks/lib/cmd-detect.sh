@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Shared, quote-AWARE command detection for the PR/commit matcher hooks
-# (pr-preflight-guard.sh, commit-verify.sh, pr-verify.sh). SOURCE this file; it
-# defines functions, runs nothing on its own.
+# (pr-preflight-guard.sh, commit-verify.sh, pr-verify.sh) and the git-state hooks
+# (core-bare-guard.sh, drift-detect.sh, drift-detect-update.sh, branch-preflight.sh).
+# SOURCE this file; it defines functions, runs nothing on its own.
 #
 # WHY THIS EXISTS (2026-07-18 harness audit + /code-review of PR #662):
 #   Shell quoting is CONTEXT-SENSITIVE — a `'` inside a "…" span is a literal, and a
@@ -87,6 +88,28 @@ cmd_is_gh_pr_create() {
 cmd_is_git_commit() {
   printf '%s' "$1" | cmd_bare \
     | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit${_CMD_POS_SUFFIX}"
+}
+
+# cmd_is_git <command>  → exit 0 if it invokes `git` in command position (ANY subcommand, or
+# bare git). Used by core-bare-guard.sh, which heals core.bare before ANY git op.
+cmd_is_git() {
+  printf '%s' "$1" | cmd_bare \
+    | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_POS_SUFFIX}"
+}
+
+# cmd_is_git_commit_or_push <command>  → exit 0 if it invokes `git [-c k=v]* (commit|push)`
+# in command position. Used by drift-detect.sh (the two HEAD-movers it warns on).
+cmd_is_git_commit_or_push() {
+  printf '%s' "$1" | cmd_bare \
+    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push)${_CMD_POS_SUFFIX}"
+}
+
+# cmd_is_git_head_mover <command>  → exit 0 if it invokes a HEAD-moving
+# `git [-c k=v]* (commit|push|rebase|reset|pull|merge|cherry-pick)` in command position.
+# Used by drift-detect-update.sh (the PostToolUse baseline writer).
+cmd_is_git_head_mover() {
+  printf '%s' "$1" | cmd_bare \
+    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push|rebase|reset|pull|merge|cherry-pick)${_CMD_POS_SUFFIX}"
 }
 
 # cmd_gh_pr_write_subcommand <command>  → echo the gh pr WRITE subcommand
