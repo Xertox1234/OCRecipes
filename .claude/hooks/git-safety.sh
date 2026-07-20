@@ -155,11 +155,14 @@ emit_write_targets() {
   '
 }
 # git_c_target: read ONE shell segment (already matched MUTATING_GIT_SEG_RE) on
-# STDIN and emit the EFFECTIVE `git -C` directory — folding EVERY command-position
-# `-C` global option in order (last absolute wins, relatives append), mirroring how
-# real git applies cumulative -C — quote/escape-AWARE, one line, empty when there is
-# no real -C. A subcommand's own post-verb -C (`git commit -C HEAD` reuses a message)
-# is never mined: collection STOPS at the verb. Replaces a greedy
+# STDIN and emit the EFFECTIVE repository directory the mutating git command targets,
+# resolving EVERY repo-redirecting git global with git's own precedence:
+#   --git-dir / GIT_DIR  >  --work-tree / GIT_WORK_TREE  >  cumulative -C (last absolute
+#   wins, relatives append)  >  cwd.
+# Any OTHER global (--no-pager/-p/…) is skipped so a later real redirect is still reached.
+# Quote/escape-AWARE, ONE line, empty when the segment carries no redirect (caller falls
+# back to cwd). A subcommand's own post-verb -C (`git commit -C HEAD` reuses a message)
+# is never mined: collection STOPS at the verb. The -C fold replaces a greedy
 # `tr -d '\042\047' | sed 's/.*git…-C ([^ ]+)/\1/'` that kept quoted CONTENT and
 # matched the LAST `git -C` anywhere, so a commit MESSAGE mentioning `git -C <path>`
 # was mined as a real override. That was BIDIRECTIONAL: a main-path decoy fabricated
@@ -168,11 +171,13 @@ emit_write_targets() {
 # (`git -C '/main'` still DENYs) while a quoted -m message tokenizes as one atomic
 # word and is ignored — the role-aware distinction the write-shaped fix used
 # (docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md).
-# Env-assignment recognition is taint-TOLERANT (so `FOO='x' git -C /main` is not a
-# false-negative); `git`/`-C` recognition is taint-STRICT — safe ONLY because the
-# quote-blind MUTATING_GIT_SEG_RE below also rejects a quoted `-C` flag, so the
-# tokenizer never runs on `git '-C' <main>` (if that regex is ever hardened, make the
-# `-C` recognition taint-tolerant too). This tokenizer, split_segments, and
+# The env-assignment PREFIX is taint-TOLERANT (so `FOO='x' git -C /main` is not a
+# false-negative), but every recognized token — `git`, `-C`, `--git-dir`, `--work-tree`,
+# and the GIT_DIR/GIT_WORK_TREE values — is taint-STRICT: a quoted flag or value is left
+# opaque for the documented quote-blindness residual below. Safe because the quote-blind
+# MUTATING_GIT_SEG_RE either skips a quoted-flag segment (`git '-C' <main>`) or, when it
+# does match a quoted redirect VALUE (`--git-dir='<v>'`), the strict recognition captures
+# nothing and the effective repo falls to cwd. This tokenizer, split_segments, and
 # emit_write_targets all handle `'…'`, `"…"`, and bash ANSI-C `$'…'` (st==3) — a
 # `$'…\'…'` used to desync the scanner and swallow real separators (a false-NEGATIVE that
 # a PARTIAL quote model, worse than none on a gate, reintroduced). The three share NO code
@@ -187,13 +192,18 @@ emit_write_targets() {
 #     quote-blind SEG_RE, so such a segment is skipped — the shell-wrapper residual class
 #     (same as sudo/env/command/xargs/subshell/eval; SKIP_WORKTREE_CONTRACT is not needed to
 #     hit it, but the file-tool guard is a second layer and this is a guardrail, not a sandbox).
-#     Glued `-C<path>` is NOT in this class: real git REJECTS it (`unknown option`, EXIT 129) —
-#     no mutation happens. (Chained/interleaved `-C` is HANDLED — see the function summary above.)
-#   - UNMODELED git global options: SEG_RE knows only -C/-c, so `--git-dir=<main>/.git` and
-#     `--work-tree=<main>` (direct repo redirects, no -C) — and a benign global BEFORE the -C
-#     (`git --no-pager -C <main> commit`) that stops the regex reaching the verb — are skipped
-#     (→ ALLOW). Same "a global redirects/hides the repo" family; tracked in
-#     todos/P3-2026-07-20-git-safety-unmodeled-global-options-repo-redirect.md.
+#     Glued `-C<path>` is NOT a bypass: real git REJECTS it (`unknown option`, EXIT 129) — no
+#     mutation happens. The broadened SEG_RE matches its single token as a generic global, so
+#     with cwd=main it (harmlessly) DENYs. (Chained/interleaved -C, --git-dir/--work-tree [glued
+#     + separate], GIT_DIR/GIT_WORK_TREE env, and an unmodeled global before the verb are all
+#     HANDLED now — see the function summary above and MUTATING_GIT_SEG_RE.)
+#   - SPLIT `--git-dir`≠`--work-tree` at DIFFERENT checkouts: single-emit resolves ONE target by
+#     the precedence above, so a git-dir at a worktree with a `--work-tree` at main (or vice-versa)
+#     is judged by the winner only. Closing it needs multi-target emit (a caller change) — out of
+#     scope; the escape hatch + file-tool guard backstop it.
+#   - A RELATIVE `--git-dir`/`--work-tree` with a LATER `-C` resolves against cwd, not the -C'd dir
+#     (order-dependent); an unmodeled SEPARATE-arg global (`--namespace foo`) mis-reads its arg as
+#     the verb and stops early. Both obscure; SKIP_WORKTREE_CONTRACT=1 / the file-tool guard backstop.
 #   - `$(…)`/`${…}` substitution, here-docs, `\`-newline continuation are unmodeled: they
 #     over-split (a false-POSITIVE/extra DENY), never an inversion-swallow false-negative.
 #   - ANSI-C escape DECODING is not modeled: `$'\x2f…'`/`\nnn`/`\uHHHH` read as literal chars,
@@ -208,23 +218,46 @@ git_c_target() {
       else eff = (eff == "" ? t : eff "/" t)
       gotc = 1
     }
+    function resolve_target(t){                      # --git-dir/--work-tree/GIT_DIR/GIT_WORK_TREE target:
+      if (substr(t, 1, 1) == "/") return t           #   absolute → as-is; relative → resolve against the -C fold
+      return (eff == "" ? t : eff "/" t)             #   (relative + a LATER -C is a documented ordering residual)
+    }
+    function setgd(t){ if (t != "") { gitdir = resolve_target(t); gotgd = 1 } }   # --git-dir / GIT_DIR redirect
+    function setwt(t){ if (t != "") { worktree = resolve_target(t); gotwt = 1 } } # --work-tree / GIT_WORK_TREE redirect
+    function emit_effective(){                       # which checkout is mutated: git-dir > work-tree > -C fold > cwd
+      if (gotgd) print gitdir
+      else if (gotwt) print worktree
+      else if (gotc) print eff
+    }
     function endword(   w, tnt){
       if (!wstart) return
       w = word; tnt = wtaint; word = ""; wstart = 0; wtaint = 0
       if (done) return
       if (phase == 0) {                              # command position
-        if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) return   #   env assignment (value may be quoted): stay
+        if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {        #   env assignment (value may be quoted): stay in phase 0,
+          if (!tnt && w ~ /^GIT_DIR=/)            setgd(substr(w, 9))   #   but capture a repo-REDIRECTING one:
+          else if (!tnt && w ~ /^GIT_WORK_TREE=/) setwt(substr(w, 15))  #   GIT_DIR/GIT_WORK_TREE mutate <target>
+          return
+        }
         if (!tnt && w == "git") { phase = 1; return } #   the real git
         done = 1; return                              #   some other command: stop looking
       }
-      # phase 1: scan the git global options, folding EVERY -C target (any order, incl. -c
-      # interleaved) until the verb. git honors cumulative -C, so the last absolute wins.
-      if (pend == "C") { fold(w); pend = ""; return } #   -C arg (value may be quoted): accumulate
-      if (pend == "c") { pend = ""; return }          #   -c value: skip (its name=value token)
-      if (!tnt && w == "-C") { pend = "C"; return }   #   real -C flag: next word is its arg
-      if (!tnt && w == "-c") { pend = "c"; return }   #   real -c flag: skip its value
-      if (gotc) print eff                             #   first non-option word = the verb: emit & stop
-      done = 1                                        #   (git commit -C HEAD: a -C after the verb is never mined)
+      # phase 1: walk the git global options until the verb, resolving EVERY repo redirect.
+      # git honors cumulative -C (last absolute wins) and --git-dir/--work-tree redirects; a
+      # benign unmodeled global (--no-pager/-p/…) must be skipped so a later real -C is reached.
+      if (pend == "C")  { fold(w);  pend = ""; return } #   -C arg (value may be quoted): accumulate
+      if (pend == "c")  { pend = ""; return }           #   -c value: skip (its name=value token)
+      if (pend == "gd") { setgd(w); pend = ""; return } #   --git-dir arg (separate form)
+      if (pend == "wt") { setwt(w); pend = ""; return } #   --work-tree arg (separate form)
+      if (!tnt && w == "-C") { pend = "C"; return }     #   real -C flag: next word is its arg
+      if (!tnt && w == "-c") { pend = "c"; return }     #   real -c flag: skip its value
+      if (!tnt && w == "--git-dir")   { pend = "gd"; return }   #   separate: --git-dir <path>
+      if (!tnt && w == "--work-tree") { pend = "wt"; return }   #   separate: --work-tree <path>
+      if (!tnt && w ~ /^--git-dir=/)   { setgd(substr(w, 11)); return } #   glued: --git-dir=<path>
+      if (!tnt && w ~ /^--work-tree=/) { setwt(substr(w, 13)); return } #   glued: --work-tree=<path>
+      if (!tnt && substr(w, 1, 1) == "-") return        #   any other global (no-arg): skip, keep scanning
+      emit_effective()                                  #   first non-option word = the verb: emit & stop
+      done = 1                                           #   (git commit -C HEAD: a -C after the verb is never mined)
     }
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; phase = 0 }
     { buf = buf $0 "\n" }
@@ -257,8 +290,8 @@ git_c_target() {
       # Fail-safe, currently UNREACHABLE: git_c_target only runs on SEG_RE-matched segments,
       # which always contain a verb, so the verb branch sets done=1 first. Kept as defense in
       # depth — if a future SEG_RE relaxation ever admitted a verbless segment, this still emits
-      # its -C target instead of silently falling back to cwd (which could launder a main mutation).
-      if (!done && gotc) print eff
+      # its redirect target instead of silently falling back to cwd (which could launder a main mutation).
+      if (!done) emit_effective()
     }
   '
 }
@@ -336,12 +369,15 @@ MUTATING_GIT_VERBS='commit|mv|rm|restore|checkout|switch|pull|revert|stash|reset
 # whole-command MUTATING_GIT_RE used to gate, but its separator boundary
 # `(^|&&|\|\||;)` omitted single `|`/`&`, so `… | git commit` never fired it (a
 # boundary false-negative). Making the gate permissive removes that whole bug class.
-# The global-options group allows any number of -C and -c in ANY order (real git honors
-# cumulative -C, last absolute winning; git_c_target does that resolution). A single-`?`
-# -C used to make a chained `git -C a -C b commit` fail the regex entirely (skipped →
-# ALLOW), and `-C-before-c` ordering rejected `git -c x=y -C <main> commit` — both
-# pre-existing false-negatives. This grammar is a strict superset of the old one.
-MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+))*[[:space:]]+(${MUTATING_GIT_VERBS})([[:space:]]|\$)"
+# The global-options group allows any number of -C/-c, --git-dir/--work-tree (glued OR
+# separate), and a generic single-token `-…` no-arg global (--no-pager/-p/…), in ANY order.
+# It only needs to REACH the verb so the segment enters the loop; git_c_target does the real
+# repo resolution. Modeling only `-C`/`-c` used to let three false-negatives slip: a chained
+# `-C` failed the regex (single-`?`), an unmodeled global before the -C stopped it reaching the
+# verb, and --git-dir/--work-tree redirects were never recognized. This grammar is a STRICT
+# SUPERSET of the old one (it only adds matches), so it can only ADD DENYs — the safety argument
+# is the superset property, verified by an old-vs-new differential (only ALLOW→DENY transitions).
+MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--git-dir[[:space:]]+[^[:space:]]+|--work-tree[[:space:]]+[^[:space:]]+|-[^[:space:]]+))*[[:space:]]+(${MUTATING_GIT_VERBS})([[:space:]]|\$)"
 
 # The hook process does not inherit inline assignments from the tool command, so
 # a leading SKIP_WORKTREE_CONTRACT=1 in the command string is recognized here as
