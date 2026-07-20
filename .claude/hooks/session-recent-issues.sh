@@ -77,14 +77,12 @@ if [ "${PATTERN_INJECT_NO_LOG:-0}" != "1" ]; then
   if [ -f "$LOG_SCRIPT" ]; then
     INPUT=$(cat)
     SID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
-    # \x1f (ASCII Unit Separator), NOT \t: this line has edited_path AND domain both empty
-    # (a SessionStart digest is not scoped to a file or a domain) — bash's `read` collapses
-    # adjacent tab-delimited empty fields even with IFS set to tab alone, which would
-    # misalign every field after them. See log-injection.sh's header comment.
-    # Trailing empty field is agent_id: always empty here — SessionStart is definitionally
-    # always the top-level context (a subagent dispatch never fires its own SessionStart),
-    # so there is nothing to extract; the literal empty keeps this producer on the same
-    # 8-field contract as inject-patterns.sh's LOG_TSV lines.
+    # Full 8-field \x1f-delimited wire-format contract (why \x1f not \t, and the trailing
+    # agent_id field): see log-injection.sh's header comment. Site-specific here: this line
+    # has edited_path AND domain both empty (a SessionStart digest is not scoped to a file or
+    # a domain) — exactly the adjacent-empty-fields case \x1f exists for. Trailing agent_id is
+    # always empty too: SessionStart is definitionally always the top-level context (a
+    # subagent dispatch never fires its own SessionStart), so there is nothing to extract.
     LOG_LINE=$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' "$SID" "SessionStart" "" "" "injected" "$(( $(printf '%s' "$DIGEST" | wc -c) ))" "$DOC_PATHS" "")
     { printf '%s\n' "$LOG_LINE" | bash "$LOG_SCRIPT" >/dev/null 2>&1; } &
     disown 2>/dev/null || true

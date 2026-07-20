@@ -29,9 +29,8 @@ CREATE TABLE IF NOT EXISTS harness.injection_log (
     payload_bytes INT NOT NULL DEFAULT 0
 );
 
--- Added 2026-07-19: the per-dispatch agent discriminator from the hook JSON (see
--- docs/solutions/conventions/hook-json-agent-id-per-context-window-2026-07-19.md) — lets a
--- subagent's rows be told apart from the orchestrator's for the same session_id.
+-- Added 2026-07-19: agent_id column — see scripts/pg-lab/log-injection.sh's header for the
+-- full wire-format contract (what the field is, and why it's the trailing one).
 -- '' (empty string, the single canonical encoding — never NULL) for the top-level context
 -- (no agent_id in the hook JSON) or a SessionStart digest, which is always top-level.
 -- ALTER-only, deliberately NOT restated in CREATE TABLE above (the eval-results.sql

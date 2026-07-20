@@ -1,6 +1,6 @@
 ---
 title: "inject-patterns.sh: extract an append_log_record() helper for the 4 duplicated LOG_TSV printf sites; consolidate the agent_id contract prose"
-status: backlog
+status: done
 priority: low
 created: 2026-07-20
 updated: 2026-07-20
