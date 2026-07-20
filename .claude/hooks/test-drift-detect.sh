@@ -219,7 +219,7 @@ NOLIB=$(mktemp -d)
 cp "$UPDATE_HOOK" "$NOLIB/drift-detect-update.sh"
 NOLIB_INPUT=$(jq -n --arg c "git commit -m real" --arg s "$TEST_SESSION" \
   '{"tool_name":"Bash","session_id":$s,"tool_input":{"command":$c}}')
-echo "$NOLIB_INPUT" | bash "$NOLIB/drift-detect-update.sh" 2>/dev/null
+echo "$NOLIB_INPUT" | bash "$NOLIB/drift-detect-update.sh" >/dev/null 2>&1
 RECORDED=$(cat "$BASELINE_FILE" 2>/dev/null || echo "")
 if [ "$RECORDED" = "$V2_SHA" ]; then
   echo "PASS: lib-missing: writer fails silent (baseline unchanged)"; PASS=$((PASS+1))

@@ -103,6 +103,15 @@ git -C "$REPO" checkout --detach HEAD -q 2>/dev/null
 OUT=$(run_hook "git add -A && git commit -m 'oops'")
 assert_deny "compound 'git add && git commit' on detached HEAD is denied" "$OUT"
 
+# Test 8b: forms the OLD compound regex MISSED but the shared command-position prefix now catches
+# — subshell `(` and pipe `|` — must also deny on detached HEAD. Guards the deliberate broadening
+# of the match set (separator class (^|[;&|(]) is wider than the old (&&|\|\||;)) against a future
+# prefix-narrowing that would silently reopen the unreachable-commit data-loss.
+OUT=$(run_hook '(git commit -m oops)')
+assert_deny "subshell '(git commit)' on detached HEAD is denied" "$OUT"
+OUT=$(run_hook 'true | git commit -m oops')
+assert_deny "piped 'true | git commit' on detached HEAD is denied" "$OUT"
+
 # Test 9: a quoted MENTION of "; git commit" inside a -m message must NOT be read as a real
 # commit — silent even on detached HEAD (quote-aware port; the raw COMPOUND_COMMIT_RE matched
 # the ';' inside the quotes and false-DENYd). Still detached from Test 8.
