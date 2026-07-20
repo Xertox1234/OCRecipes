@@ -178,6 +178,13 @@ assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' also cannot hide a -C-main r
   "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$\$\$'a\\' && git -C $MAIN reset --hard HEAD~1")"
 assert_allow "registry: benign \$\$'ok' (PID + normal single quote) stays allowed" \
   "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$'ok'")"
+# The new --git-dir/--work-tree/GIT_DIR/GIT_WORK_TREE recognizers must compose with the SAME $'…'
+# quote machine as the -C cases above: a $'…'-quoted separator must not fracture a LATER redirect,
+# and that redirect must still resolve to a DENY (drift-guard for the constructs this PR added).
+assert_deny "registry: $'a;b' message before && cannot hide a later --git-dir=<main> commit" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$'a;b' && git --git-dir=$MAIN/.git commit -m x")"
+assert_deny "registry: $'a&b' message before && cannot hide a later GIT_WORK_TREE=<main> commit" \
+  "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$'a&b' && GIT_WORK_TREE=$MAIN git commit -m x")"
 
 # ---------- chained / interleaved global -C (bypass #2 + the -c-before-C sibling) ----------
 # Real git applies each -C as a CUMULATIVE chdir — empirically `git -C /a -C /b` targets
@@ -215,11 +222,13 @@ assert_allow "registry: post-verb 'commit -C HEAD' is the subcommand's -C, not a
 assert_allow "registry: global -C worktree then post-verb '-C HEAD' still resolves to the worktree" \
   "$(json "$SESSION" "$MAIN" "git -C $WT_A commit -C HEAD")"
 
-# Documented residual (a test either way, per the todo): glued -C<path> with no space. Real
-# git REJECTS this form (`unknown option: -C<path>`, EXIT 129) — no mutation happens — so
-# leaving it unmatched (→ ALLOW) is SAFE, not a bypass. Pinned so a future change cannot
-# silently start (mis)treating the glued form as a real -C without a deliberate test update.
-assert_allow "registry: glued -C<main> (git rejects the form, EXIT 129) stays allowed (documented residual)" \
+# Glued -C<path> with no space. Real git REJECTS this form (`unknown option: -C<path>`,
+# EXIT 129 — verified by scratch probe) so NOTHING mutates. The broadened options group
+# (below) now matches the single `-C<path>` token as a generic global; git_c_target does
+# not recognize it as a real -C and skips it, so the effective repo falls to cwd — and with
+# cwd=main that DENYs. A harmless over-DENY on a form git will not run anyway (was ALLOW; the
+# ALLOW→DENY flip is the permitted, strict-superset direction).
+assert_deny "registry: glued -C<main> → generic-global + cwd=main → deny (git rejects the form anyway)" \
   "$(json "$SESSION" "$MAIN" "git -C$MAIN commit -m x")"
 # Empty -C is a git no-op (`git -C "" …` runs in cwd). fold() skips it, so a trailing empty
 # -C neither masks the real effective repo nor emits a stray trailing slash on the path.
@@ -227,6 +236,129 @@ assert_deny "registry: git -C main -C '' — empty -C is a no-op, effective stay
   "$(json "$SESSION" "$WT_A" "git -C $MAIN -C '' commit -m x")"
 assert_allow "registry: git -C '' resolves to cwd (worktree) — empty -C ignored (ALLOW)" \
   "$(json "$SESSION" "$WT_A" "git -C '' commit -m x")"
+
+# ---------- unmodeled git global options: repo-redirect + generic-global skip ----------
+# `-C` is only ONE of several ways git redirects which repo a command targets. The gate
+# used to model only -C/-c, so other repo-redirecting globals slipped past the contract.
+# Scratch probe (verified): `git --git-dir=<main>/.git commit` and `GIT_DIR=<main>/.git git
+# commit` BOTH mutate <main> from any cwd; git accepts --git-dir/--work-tree glued (=) AND
+# separate; a benign global (--no-pager/-p/-P) before a real -C still honors that -C.
+#
+# (A) --git-dir / --work-tree FLAGS and GIT_DIR / GIT_WORK_TREE env vars each redirect ONE of git's
+#     two INDEPENDENT write targets. Verified by scratch probe: refs/objects go to the GIT-DIR
+#     (--git-dir/GIT_DIR, else the -C fold, else cwd); working FILES go to the WORK-TREE
+#     (--work-tree/GIT_WORK_TREE, else the -C fold, else cwd) — a --git-dir redirect does NOT move
+#     the work-tree. The gate reconstructs BOTH targets and DENYs if EITHER is outside the registered
+#     worktrees. `commit` is the only verb that does not write the work-tree, but we check both
+#     anyway (conservative). (cwd = the registered worktree unless noted; contract active.)
+#
+# git-dir redirect to <main> → DENY (commit lands in main's refs):
+assert_deny "registry: --git-dir=<main>/.git commit is denied (git-dir redirect, was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "git --git-dir=$MAIN/.git commit -m x")"
+assert_deny "registry: --git-dir <main>/.git (separate form) commit is denied" \
+  "$(json "$SESSION" "$WT_A" "git --git-dir $MAIN/.git commit -m x")"
+assert_deny "registry: GIT_DIR=<main>/.git git commit is denied (env git-dir redirect, was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "GIT_DIR=$MAIN/.git git commit -m x")"
+# work-tree redirect to <main> → DENY (working-file mutations land in main):
+assert_deny "registry: --work-tree=<main> commit is denied (work-tree redirect, was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "git --work-tree=$MAIN commit -m x")"
+assert_deny "registry: --work-tree <main> (separate form) commit is denied" \
+  "$(json "$SESSION" "$WT_A" "git --work-tree $MAIN commit -m x")"
+assert_deny "registry: GIT_WORK_TREE=<main> git commit is denied (env work-tree redirect, was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "GIT_WORK_TREE=$MAIN git commit -m x")"
+# CRITICAL (review): a work-tree pointing at a SAFE worktree must NOT mask a commit whose git-dir
+# (from cwd) is main. cwd=main + GIT_WORK_TREE/--work-tree=<worktree> → the git-dir target (cwd)
+# is main → DENY. (The rejected single-target "work-tree wins" precedence would wrongly ALLOW this.)
+assert_deny "registry: GIT_WORK_TREE=<worktree> from a main cwd is denied (git-dir=cwd=main, was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" "GIT_WORK_TREE=$WT_A git commit -m x")"
+assert_deny "registry: --work-tree=<worktree> from a main cwd is denied (git-dir=cwd=main)" \
+  "$(json "$SESSION" "$MAIN" "git --work-tree=$WT_A commit -m x")"
+# both redirects at main → DENY (either target alone suffices):
+assert_deny "registry: --git-dir=<main>/.git --work-tree=<main> commit is denied" \
+  "$(json "$SESSION" "$WT_A" "git --git-dir=$MAIN/.git --work-tree=$MAIN commit -m x")"
+# CRITICAL (2nd review): a --git-dir/GIT_DIR redirect to a SAFE worktree does NOT move the
+# work-tree — a working-file verb (reset --hard/checkout/restore/clean) still writes cwd. Verified:
+# `git --git-dir=<other>/.git reset --hard` from cwd=main overwrites main's tracked files. These
+# were ALLOW before the fix (one is a regression this PR's GIT_DIR capture introduced):
+assert_deny "registry: GIT_DIR=<worktree> reset --hard from a main cwd is denied (work-tree=cwd=main, was regression)" \
+  "$(json "$SESSION" "$MAIN" "GIT_DIR=$WT_A/.git git reset --hard HEAD~1")"
+assert_deny "registry: --git-dir=<worktree> checkout from a main cwd is denied (work-tree=cwd=main)" \
+  "$(json "$SESSION" "$MAIN" "git --git-dir=$WT_A/.git checkout -- f.txt")"
+assert_deny "registry: -C main + --git-dir=<worktree> reset --hard is denied (work-tree=-C fold=main)" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN --git-dir=$WT_A/.git reset --hard HEAD~1")"
+# Conservative over-block (fail-safe): even `commit` (which does NOT write the work-tree) is DENYed
+# when a --git-dir/GIT_DIR redirect leaves the implicit work-tree at a main cwd. The proper form,
+# `git -C <worktree> …`, sets BOTH targets to the worktree and is allowed (below).
+assert_deny "registry: --git-dir=<worktree> commit from a main cwd is denied (work-tree=cwd=main, over-block)" \
+  "$(json "$SESSION" "$MAIN" "git --git-dir=$WT_A/.git commit -m x")"
+assert_deny "registry: GIT_DIR=<worktree> git commit from a main cwd is denied (over-block)" \
+  "$(json "$SESSION" "$MAIN" "GIT_DIR=$WT_A/.git git commit -m x")"
+assert_deny "registry: --git-dir=/tmp/scratch commit from a main cwd is denied (work-tree=cwd=main)" \
+  "$(json "$SESSION" "$MAIN" "git --git-dir=/tmp/scratch/.git commit -m x")"
+# Fail-open guards — BOTH targets safe:
+assert_allow "registry: git -C <worktree> reset --hard is allowed (git-dir AND work-tree = worktree)" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A reset --hard HEAD~1")"
+assert_allow "registry: --git-dir=<worktree>/.git commit from the worktree cwd is allowed" \
+  "$(json "$SESSION" "$WT_A" "git --git-dir=$WT_A/.git commit -m x")"
+assert_allow "registry: --git-dir=/tmp/scratch commit from a /tmp cwd is allowed (both allowlisted)" \
+  "$(json "$SESSION" "/tmp/scratch" "git --git-dir=/tmp/scratch/.git commit -m x")"
+# work-tree to the worktree AND cwd is the worktree (so the git-dir target is safe too) → ALLOW:
+assert_allow "registry: --work-tree=<worktree> from the worktree cwd is allowed" \
+  "$(json "$SESSION" "$WT_A" "git --work-tree=$WT_A commit -m x")"
+assert_allow "registry: GIT_WORK_TREE=<worktree> from the worktree cwd is allowed" \
+  "$(json "$SESSION" "$WT_A" "GIT_WORK_TREE=$WT_A git commit -m x")"
+#
+# (B) A benign global BEFORE the -C (--no-pager/-p/-P) must not stop the gate reaching the
+#     verb — the -C is real and git honors it. Regex must skip the global; git_c_target must
+#     fold past it to the real -C.
+assert_deny "registry: --no-pager -C <main> commit is denied (regex-skip gap, was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "git --no-pager -C $MAIN commit -m x")"
+assert_deny "registry: -p -C <main> commit is denied" \
+  "$(json "$SESSION" "$WT_A" "git -p -C $MAIN commit -m x")"
+assert_deny "registry: -P -C <main> commit is denied" \
+  "$(json "$SESSION" "$WT_A" "git -P -C $MAIN commit -m x")"
+assert_allow "registry: --no-pager -C <worktree> commit is allowed (fail-open guard)" \
+  "$(json "$SESSION" "$MAIN" "git --no-pager -C $WT_A commit -m x")"
+# Compose with chained -C: generic-skip and the cumulative last-absolute-wins fold coexist.
+assert_deny "registry: --no-pager then chained -C, last absolute main, is denied" \
+  "$(json "$SESSION" "$MAIN" "git --no-pager -C $WT_A -C $MAIN commit -m x")"
+assert_allow "registry: --no-pager then chained -C, last absolute worktree, is allowed" \
+  "$(json "$SESSION" "$WT_A" "git --no-pager -C $MAIN -C $WT_A commit -m x")"
+#
+# Bonus (falls out of B): a no-arg global with NO -C — the gate must still reach the verb,
+# then cwd decides. Old regex broke on --no-pager → skipped → ALLOW even in the main checkout.
+assert_deny "registry: --no-pager commit in the main checkout (no -C) is denied" \
+  "$(json "$SESSION" "$MAIN" "git --no-pager commit -m x")"
+assert_allow "registry: --no-pager commit in the registered worktree (no -C) is allowed" \
+  "$(json "$SESSION" "$WT_A" "git --no-pager commit -m x")"
+#
+# Tainted decoy before a real redirect (review CRITICAL): a spliced/quoted dash-token
+# (`--no-adv'i'ce`, which bash reassembles to the real flag `--no-advice`) must be SKIPPED, not
+# mistaken for the verb — otherwise the scan halts before a later, plainly-unquoted `-C <main>`.
+# The generic global-skip is taint-INDEPENDENT (no mutating verb starts with `-`).
+assert_deny "registry: tainted decoy global then real -C <main> is denied (was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "git --no-adv'i'ce -C $MAIN commit -m x")"
+assert_deny "registry: tainted short decoy then real -C <main> is denied" \
+  "$(json "$SESSION" "$WT_A" "git -x'y' -C $MAIN commit -m x")"
+# Split --git-dir≠--work-tree at DIFFERENT checkouts is CLOSED by multi-target validation: a
+# git-dir at the worktree with a --work-tree at main is DENIED (the work-tree target is main).
+# Conservative (over-denies an exotic commit whose refs go to the worktree) but never a bypass.
+assert_deny "registry: split --git-dir=<worktree> --work-tree=<main> is denied (multi-target, was residual)" \
+  "$(json "$SESSION" "$WT_A" "git --git-dir=$WT_A/.git --work-tree=$MAIN commit -m x")"
+#
+# Documented residuals (a test either way, per the todo):
+#  - A QUOTED redirect VALUE under an UNQUOTED flag/name is taint-strict (same within-segment
+#    quote-blindness class as a quoted -C flag) — not captured, so the git-dir falls to cwd. From a
+#    worktree cwd → ALLOW. The UNQUOTED forms are closed; only the quoted-VALUE variant remains.
+assert_allow "registry: quoted GIT_DIR value (taint-strict residual) from a worktree cwd stays allowed" \
+  "$(json "$SESSION" "$WT_A" "GIT_DIR='$MAIN/.git' git commit -m x")"
+assert_allow "registry: quoted --git-dir VALUE (taint-strict residual) from a worktree cwd stays allowed" \
+  "$(json "$SESSION" "$WT_A" "git --git-dir='$MAIN/.git' commit -m x")"
+#  - CROSS-SEGMENT env: each ;/|/& segment is validated independently, so an export/assignment in
+#    an EARLIER segment does not reach git in a later one → ALLOW. Only the INLINE same-segment
+#    GIT_DIR=… prefix is closed; ambient/exported env is unseeable at the command-string layer.
+assert_allow "registry: export GIT_DIR in an earlier segment (cross-segment residual) stays allowed" \
+  "$(json "$SESSION" "$WT_A" "export GIT_DIR=$MAIN/.git && git commit -m x")"
 
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \

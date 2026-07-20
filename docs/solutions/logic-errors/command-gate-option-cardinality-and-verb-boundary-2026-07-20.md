@@ -5,8 +5,9 @@ category: logic-errors
 tags: [bash, hooks, awk, safety-gate, false-negative, git, command-matcher, tokenizer, security]
 module: shared
 applies_to: [".claude/hooks/**/*.sh", "scripts/**/*.sh"]
-symptoms: ["A command-safety gate ALLOWS a command whose EFFECTIVE target is dangerous because a repeated/chained option (git -C a -C b) is modeled as 0-or-1", "The gate's regex forces a fixed option order the real tool does not require (-C before -c), so a legal reordering slips the gate", "An option that belongs to the SUBCOMMAND (git commit -C HEAD) is mined as if it were the global option of the same name", "Relaxing the matcher regex alone makes the gate WORSE because the extractor still resolves only the first occurrence"]
+symptoms: ["A command-safety gate ALLOWS a command whose EFFECTIVE target is dangerous because a repeated/chained option (git -C a -C b) is modeled as 0-or-1", "The gate's regex forces a fixed option order the real tool does not require (-C before -c), so a legal reordering slips the gate", "An option that belongs to the SUBCOMMAND (git commit -C HEAD) is mined as if it were the global option of the same name", "Relaxing the matcher regex alone makes the gate WORSE because the extractor still resolves only the first occurrence", "A tool resolves two related targets independently (git-dir vs work-tree) and the gate validates only one, so redirecting the checked target to a safe place masks a mutation of the unchecked one", "A safety gate is declared safe on the strength of an old-vs-new differential, which is blind to a new bug that is ALLOW-then-ALLOW"]
 created: 2026-07-20
+last_updated: 2026-07-20
 severity: medium
 ---
 
@@ -90,11 +91,58 @@ Change the matcher and the extractor **together**, and validate against the real
   are the same "a global redirects/hides the repo" family — document them as accepted
   residuals with the escape hatch named, and track a follow-up rather than pretend "complete."
 
+## Extension (2026-07-20): the same gate, more redirect vectors, and the two-target lesson
+
+Closing the chained-`-C` cardinality bug (above) was step one. Extending the SAME gate to the rest of
+git's repo-redirect grammar surfaced a deeper, recurring shape — two review rounds each found a CRITICAL
+that was the *mirror* of the bug just fixed.
+
+**1. One family, many vectors.** `-C` is only one of several ways git redirects which repo a command
+targets: `--git-dir`/`GIT_DIR` (the git-dir), `--work-tree`/`GIT_WORK_TREE` (the work-tree), and the `-C`
+chdir. A gate that models one vector leaks the others. Enumerate the whole family from the tool's own
+usage/grammar, and recognize each in BOTH the matcher (so the regex reaches the verb) and the extractor
+(so the target is resolved) — a matcher change without the paired extractor change is false coverage.
+
+**2. Two targets, resolved INDEPENDENTLY — validate both.** git resolves the **git-dir** (refs/objects)
+and the **work-tree** (working files) independently:
+- git-dir = `--git-dir`/`GIT_DIR`, else the `-C` fold, else cwd.
+- work-tree = `--work-tree`/`GIT_WORK_TREE`, else the `-C` fold, else cwd.
+
+A redirect of ONE does not move the OTHER. So `git --git-dir=<safe-worktree>/.git reset --hard` from a
+main cwd still destroys MAIN's files (work-tree defaults to cwd=main) even though the git-dir is safe —
+and the symmetric `GIT_WORK_TREE=<safe-worktree> git commit` from a main cwd writes MAIN's refs (git-dir
+defaults to cwd=main). The gate must reconstruct BOTH targets and DENY if EITHER is dangerous; emitting a
+single "effective repo" with any precedence is structurally unable to express this. (Implementation:
+`git_c_target` emits the raw redirect COMPONENTS — `g`/`c`/`w` — and the caller reconstructs both targets.)
+
+**3. The recurring mirror.** Each fix opened the mirror on the other vector: fixing "work-tree as a
+replacement for the git-dir target" (round 1) still left "an explicit git-dir suppresses the work-tree/cwd
+check" (round 2). When you close a redirect on target A, immediately ask whether the same class is now
+open on target B.
+
+**4. A differential proves NON-REGRESSION, not NO-BYPASS.** The old-vs-new differential (assert no
+old-DENY→new-ALLOW) is a strong *strict-superset* check, but it is BLIND to a new bug that is ALLOW→ALLOW
+— exactly what the taint-gated decoy-skip bug was (both old and new ALLOWed `git --no-adv'i'ce -C <main>
+commit`). Do not cite the differential as proof the gate is safe. The real safety argument is: adversarial
+review found the holes, and positive tests assert that inputs *empirically confirmed to mutate main* now
+DENY — run the tool in a scratch repo, watch it destroy a marker file, then assert the gate blocks that
+exact command.
+
+**5. Crude-but-total beats clever-partial (again).** `commit` is the one mutating verb that does not write
+the work-tree, so a verb-aware gate could ALLOW `--git-dir=<worktree> commit` from main. The conservative
+choice — validate BOTH targets for EVERY verb — over-DENYs that one exotic safe pattern but has no
+verb-classing special case to get wrong, and makes the whole change a provable strict superset (zero
+DENY→ALLOW over 600+ differential cases). On a safety gate, prefer the total check —
+[[partial-parse-regresses-crude-total-safety-scanner]].
+
+Also verify what is NOT a vector: `-c core.worktree=<path>` / `-c core.bare` on the command line are
+IGNORED by git (confirmed by scratch probe), so the gate correctly skipping `-c` values is safe.
+
 ## Related Files
 
-- `.claude/hooks/git-safety.sh` — `MUTATING_GIT_SEG_RE` (the `(-C…|-c…)*` grammar) and `git_c_target` (the cumulative fold + stop-at-verb).
+- `.claude/hooks/git-safety.sh` — `MUTATING_GIT_SEG_RE` (the broadened `(-C…|-c…|--git-dir…|--work-tree…|-…)*` grammar), `git_c_target` (emits `g`/`c`/`w` redirect components), and the caller loop that reconstructs the two independent git-dir/work-tree targets and validates both.
 - `.claude/hooks/test-git-safety.sh` — the chained/interleaved `-C` truth table, the stop-at-verb invariant guards, and the glued/empty-`-C` residual pins.
-- `todos/P3-2026-07-20-git-safety-unmodeled-global-options-repo-redirect.md` — the tracked follow-up for `--git-dir`/`--work-tree` and the unmodeled-global-before-`-C` residual.
+- `todos/archive/P3-2026-07-20-git-safety-unmodeled-global-options-repo-redirect.md` — the (now closed) todo this extension resolved: `--git-dir`/`--work-tree`/`GIT_DIR`/`GIT_WORK_TREE` redirects + the unmodeled-global-before-`-C` gap.
 
 ## See Also
 

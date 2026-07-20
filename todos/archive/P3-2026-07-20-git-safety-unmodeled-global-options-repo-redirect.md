@@ -1,6 +1,6 @@
 ---
 title: "git-safety gate models only -C/-c among git global options — --git-dir/--work-tree (and a global before -C) redirect the repo past the contract"
-status: backlog
+status: done
 priority: low
 created: 2026-07-20
 updated: 2026-07-20
@@ -54,19 +54,19 @@ All verified `old=ALLOW new=ALLOW` by the auditor against the current hook:
 
 ## Acceptance Criteria
 
-- [ ] Decide (fix or explicitly document as accepted residual, with a test either way)
+- [x] Decide (fix or explicitly document as accepted residual, with a test either way)
       each case. `--git-dir`/`--work-tree` are direct repo redirects and arguably deserve
       closing; `--no-pager`/`-p`-before-`-C` is a regex-skip gap in the same family.
-- [ ] If fixing `--git-dir`/`--work-tree`: teach the effective-repo resolution about
+- [x] If fixing `--git-dir`/`--work-tree`: teach the effective-repo resolution about
       `GIT_DIR`/`GIT_WORK_TREE` semantics (they differ from `-C`'s cwd model — resolve
       the work-tree/git-dir target, not a chdir). Truth-table-first: a red test per closed
       case (`git --git-dir=<MAIN>/.git commit` → DENY), fail-open guards for worktree targets.
-- [ ] If fixing the unmodeled-global-skip: let the options group tolerate other known git
+- [x] If fixing the unmodeled-global-skip: let the options group tolerate other known git
       globals (`--no-pager`/`-p`/`-P`/`--bare`/`--namespace=…`/`--exec-path[=…]`/…) so a
       real `-C <MAIN>` after them is still reached. Keep it a strict superset (never a new
       DENY→ALLOW).
-- [ ] All existing mutating-git guards stay green; full hook self-test sweep green.
-- [ ] Update the `git_c_target` docstring residual list as the residuals actually shrink.
+- [x] All existing mutating-git guards stay green; full hook self-test sweep green.
+- [x] Update the `git_c_target` docstring residual list as the residuals actually shrink.
 
 ## Scope Contract
 
@@ -91,3 +91,27 @@ All verified `old=ALLOW new=ALLOW` by the auditor against the current hook:
   (behavior identical before/after that PR), backstopped by `SKIP_WORKTREE_CONTRACT=1`
   and the file-tool guard — a guardrail residual, not a sandbox breach — hence deferred
   for its own deliberate, fully-tested landing.
+
+### 2026-07-20 (worked + closed) — branch `fix/git-safety-global-repo-redirect`
+
+DONE. Worked in the primary session (human_led), truth-table-first TDD, verified fail-closed.
+Scope grew during review: the original single-target plan was replaced after two review rounds
+found real CRITICALs.
+
+- **Closed:** `--git-dir`/`--work-tree` flags (glued + separate); inline `GIT_DIR=`/`GIT_WORK_TREE=`
+  env; the unmodeled-global-before-`-C` regex-skip gap; the glued `-C<path>` form (now harmlessly
+  DENYs — git rejects it EXIT 129 anyway).
+- **Deeper fix (review-driven):** git resolves the git-dir (refs) and work-tree (files)
+  INDEPENDENTLY — a `--git-dir`/`GIT_DIR` redirect does NOT move the work-tree, so
+  `git --git-dir=<worktree>/.git reset --hard` from a main cwd still destroys main files. Final
+  design: `git_c_target` emits redirect COMPONENTS (`g`/`c`/`w`); the caller reconstructs BOTH
+  targets (git-dir = g else c else cwd; work-tree = w else c else cwd) and validates each for every
+  mutating verb (conservative — no verb-classing).
+- **Verified:** 122/122 git-safety assertions + the 29-suite hook sweep; old-vs-new differential
+  over 636 cases → ZERO DENY→ALLOW (pure strict superset); both reviewers (security-auditor +
+  code-reviewer) CLEARED the final head across 3 rounds.
+- **Accepted residuals** (documented + backstopped by `SKIP_WORKTREE_CONTRACT=1`/file-tool guard):
+  a quoted redirect VALUE under an unquoted flag/name; cross-segment/exported/ambient env (unseeable
+  at the command-string layer). Both require deliberate quoting/`export`.
+- Lesson codified into `docs/solutions/logic-errors/command-gate-option-cardinality-and-verb-boundary-2026-07-20.md`
+  (extended) + security-auditor.md rule #22 (dimension (d)).
