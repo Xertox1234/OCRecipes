@@ -1,6 +1,6 @@
 ---
 title: "git-safety mutating-git 'front door' is quote-blind — close the pre-existing main-mutation false-negatives (segment split + chained/quoted -C)"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-19
 updated: 2026-07-19
@@ -136,22 +136,31 @@ ship' && git reset --hard HEAD~1` (cwd = main) → bash runs the `reset --hard` 
       comments are what failed), and a DIFFERENTIAL harness (old vs new hook over the corpus)
       confirmed **0 DENY→ALLOW regressions, 6 bypasses closed**. 69/69 + 29-suite green. Lesson
       codified: `docs/solutions/logic-errors/partial-parse-regresses-crude-total-safety-scanner-2026-07-19.md`.
-- [ ] Handle chained `-C`: allow ≥1 `-C` in `MUTATING_GIT_SEG_RE` (the `?`→`*` change) AND
-      teach `git_c_target` cumulative last-absolute-wins resolution (mirror real git) in the SAME
-      change — relaxing the regex alone makes it WORSE (SEG_RE would match `git -C /tmp -C /main
-commit` while `git_c_target` still emits the first `-C` `/tmp`, allowlisted → ALLOW). Add a
-      red test: `git -C /tmp -C <MAIN> commit` → DENY. (`MUTATING_GIT_RE` no longer exists — #666
-      deleted it — so this is SEG_RE only.)
-- [ ] Decide (fix or explicitly document as accepted residual, with a test either way) the
-      quoted-`-C`-flag, glued `-C<path>`, env-value-with-space, and quoted-keyword cases.
-      If the regex is hardened to catch a quoted `-C` flag, make `git_c_target`'s `-C`
-      recognition taint-TOLERANT in the same change (currently taint-strict and coupled to
-      the regex's weakness — see the docstring note added in PR #665).
-- [ ] Truth-table-first TDD in `test-git-safety.sh`: a red test per closed bypass, and the
-      documented-residual cases asserted at their intended verdict. All existing
-      mutating-git guards stay green; full 29-suite hook sweep green.
-- [ ] Update the `git_c_target` docstring residual list + the solution doc as the residuals
-      actually shrink (don't leave stale "tracked in this todo" pointers for closed items).
+- [x] **Chained/interleaved `-C` DONE** (branch `fix/git-safety-chained-c-resolution`).
+      `MUTATING_GIT_SEG_RE`'s global-options group went `-C?-c*` → `(-C…|-c…)*` (≥1 `-C`, any
+      order, interleaved with `-c` — a strict superset), AND `git_c_target` now folds EVERY
+      command-position `-C` to the cumulative effective repo (last absolute wins, relatives
+      append — empirically matches real git `chdir`), stopping at the verb. Red tests (all were
+      ALLOW, now DENY): `git -C /tmp -C <MAIN> commit`, `git -C <WT> -C <MAIN> commit`, and the
+      interleaved sibling `git -c x=y -C <MAIN> commit`.
+- [x] **Quote-blind-flag family DECIDED → documented as ACCEPTED residuals.** Closing them means
+      making the quote-BLIND SEG_RE quote-aware — new matching architecture (scoped out) or a
+      partial quote-strip that reopens the decoy false-DENY class this chain fought to close
+      ([[partial-parse-regresses-crude-total-safety-scanner]]). Quoted `-C` flag (`git '-C'
+    <MAIN>`), space-bearing env value (`FOO='a b' git …`), quoted keyword (`g"i"t`) stay the
+      same shell-wrapper residual class already accepted (sudo/env/subshell). **Glued `-C<path>`
+      is a non-issue** — real git REJECTS it (`unknown option`, EXIT 129); pinned by a test at its
+      ALLOW verdict. `git_c_target` `-C` recognition stays taint-STRICT (consistent with the
+      un-hardened SEG_RE, per its docstring coupling note).
+- [x] **Truth-table-first TDD DONE.** Red-first (3 chained/interleaved DENYs failed against the
+      LIVE hook before the fix), + fail-open guards (last-`-C`-wins-to-worktree ALLOW), the
+      `-C`-before-`-c` ordering control, stop-at-verb invariant guards (`git commit -C HEAD`),
+      and the glued-form residual pin. 84/84 git-safety + full 29-suite hook sweep green; NO
+      existing DENY flipped to ALLOW.
+- [x] **Docstrings updated.** `git_c_target` opening rewritten (cumulative effective + stop-at-verb),
+      chained-`-C` removed from its residual list, glued-form noted as git-rejected; the stale
+      "tracked in this todo" pointers in both `git_c_target` and `split_segments` replaced with
+      "ACCEPTED residual". Neither solution doc listed chained-`-C` as open, so no stale claim there.
 
 ## Scope Contract
 
@@ -190,3 +199,18 @@ commit` while `git_c_target` still emits the first `-C` `/tmp`, allowlisted → 
   smarter partial one is a REGRESSION wherever the partial model has a hole. On a safety gate a
   conservative over-approximation beats a precise-but-incomplete one. The redo must be quote-COMPLETE
   (incl. `$'…'`) across all three scanners at once — hence the shared-scanner AC.
+
+### 2026-07-20
+
+- **Chained/interleaved `-C` CLOSED; residual family ACCEPTED → todo complete** (branch
+  `fix/git-safety-chained-c-resolution`, worked by hand in the primary session per the
+  `human_led` / never-delegate contract — the `/todo` batch orchestrator would have gated it out
+  AND delegated to a subagent, both forbidden here). Empirically confirmed real git's cumulative
+  `-C` (`git -C /a -C /b` → `/b`; `git -C /a -C rel` → `/a/rel`) and that glued `-C<path>` is
+  git-REJECTED (EXIT 129, not a bypass). Changes: SEG_RE `-C?-c*` → interleaved `(-C…|-c…)*`;
+  `git_c_target` first-`-C` → cumulative fold with stop-at-verb. The remaining quote-blind-gate
+  cases (#3) are ACCEPTED guardrail residuals documented in the scanner docstrings; the ANSI-C
+  escape-decode case (#6) stays the pre-existing documented residual — closing either would need
+  the quote-aware-GATE architecture this todo scopes out. All 6 enumerated bypasses now either
+  closed (#1,#2,#4,#5) or accepted-and-documented (#3,#6). Verification: red-first TDD, 84/84
+  git-safety, full 29-suite hook sweep green, no DENY→ALLOW regression.

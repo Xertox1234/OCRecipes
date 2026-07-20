@@ -179,6 +179,49 @@ assert_deny "registry: 4-dollar-run \$\$\$\$'…\\' also cannot hide a -C-main r
 assert_allow "registry: benign \$\$'ok' (PID + normal single quote) stays allowed" \
   "$(jsonc "$SESSION" "$WT_A" "git -C $WT_A commit -m \$\$'ok'")"
 
+# ---------- chained / interleaved global -C (bypass #2 + the -c-before-C sibling) ----------
+# Real git applies each -C as a CUMULATIVE chdir — empirically `git -C /a -C /b` targets
+# /b and `git -C /a -C rel` targets /a/rel — so the LAST absolute -C wins. The old
+# MUTATING_GIT_SEG_RE had `(-C…)?` (0-or-1) and the old git_c_target emitted only the
+# FIRST -C, so a chained -C either failed the regex entirely (skipped → ALLOW) or resolved
+# to the wrong (first, often allowlisted) target. Both are FALSE-NEGATIVES. Truth table
+# (all -C absolute; last absolute wins → the effective repo the gate must judge):
+#   -C /tmp   -C <main>  → <main>  DENY   (was ALLOW: bypass #2)
+#   -C <wt>   -C <main>  → <main>  DENY   (was ALLOW)
+#   -C <main> -C <wt>    → <wt>    ALLOW  (fail-open guard: last wins to the worktree)
+#   -C /tmp   -C <wt>    → <wt>    ALLOW
+assert_deny "registry: chained -C, last absolute is main (-C /tmp -C main) is denied (was BYPASS)" \
+  "$(json "$SESSION" "$WT_A" "git -C /tmp -C $MAIN commit -m x")"
+assert_deny "registry: chained -C, last absolute is main (-C wt -C main) is denied (was BYPASS)" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A -C $MAIN commit -m x")"
+assert_allow "registry: chained -C, last absolute is the worktree (-C main -C wt) is allowed" \
+  "$(json "$SESSION" "$MAIN" "git -C $MAIN -C $WT_A commit -m x")"
+assert_allow "registry: chained -C, last absolute is the worktree (-C /tmp -C wt) is allowed" \
+  "$(json "$SESSION" "$MAIN" "git -C /tmp -C $WT_A commit -m x")"
+# Interleaved: a -c value BEFORE the -C. Real git accepts global options in any order; the
+# old `-C-before-c` regex rejected this (→ skipped → ALLOW) — a sibling of the same grammar gap.
+assert_deny "registry: interleaved -c value then -C main is denied (was BYPASS, sibling of chained -C)" \
+  "$(json "$SESSION" "$WT_A" "git -c core.pager=x -C $MAIN commit -m x")"
+assert_allow "registry: interleaved -c value then -C worktree is allowed" \
+  "$(json "$SESSION" "$MAIN" "git -c core.pager=x -C $WT_A commit -m x")"
+# Control (already worked before this change): -C before -c must STAY denied for a main target.
+assert_deny "registry: -C main then -c value (original ordering) stays denied" \
+  "$(json "$SESSION" "$WT_A" "git -C $MAIN -c core.pager=x commit -m x")"
+# Invariant guard (git_c_target's only fail-open surface): a -C AFTER the verb is the
+# SUBCOMMAND's own option — `git commit -C HEAD` reuses a commit's message — NOT git's
+# global -C, so it must never be mined as a directory target. Extraction stops at the verb.
+assert_allow "registry: post-verb 'commit -C HEAD' is the subcommand's -C, not a repo (stops at verb)" \
+  "$(json "$SESSION" "$WT_A" "git commit -C HEAD")"
+assert_allow "registry: global -C worktree then post-verb '-C HEAD' still resolves to the worktree" \
+  "$(json "$SESSION" "$MAIN" "git -C $WT_A commit -C HEAD")"
+
+# Documented residual (a test either way, per the todo): glued -C<path> with no space. Real
+# git REJECTS this form (`unknown option: -C<path>`, EXIT 129) — no mutation happens — so
+# leaving it unmatched (→ ALLOW) is SAFE, not a bypass. Pinned so a future change cannot
+# silently start (mis)treating the glued form as a real -C without a deliberate test update.
+assert_allow "registry: glued -C<main> (git rejects the form, EXIT 129) stays allowed (documented residual)" \
+  "$(json "$SESSION" "$MAIN" "git -C$MAIN commit -m x")"
+
 # Modern/omitted mutating verbs.
 assert_deny "registry: git switch in main checkout is denied" \
   "$(json "$SESSION" "$MAIN" 'git switch -c feature')"

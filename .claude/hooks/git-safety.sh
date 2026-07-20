@@ -155,9 +155,11 @@ emit_write_targets() {
   '
 }
 # git_c_target: read ONE shell segment (already matched MUTATING_GIT_SEG_RE) on
-# STDIN and emit the argument of the REAL `git -C <path>` global option — the -C
-# immediately following the command-position `git`, per that regex's grammar —
-# quote/escape-AWARE, one line, empty when there is no real -C. Replaces a greedy
+# STDIN and emit the EFFECTIVE `git -C` directory — folding EVERY command-position
+# `-C` global option in order (last absolute wins, relatives append), mirroring how
+# real git applies cumulative -C — quote/escape-AWARE, one line, empty when there is
+# no real -C. A subcommand's own post-verb -C (`git commit -C HEAD` reuses a message)
+# is never mined: collection STOPS at the verb. Replaces a greedy
 # `tr -d '\042\047' | sed 's/.*git…-C ([^ ]+)/\1/'` that kept quoted CONTENT and
 # matched the LAST `git -C` anywhere, so a commit MESSAGE mentioning `git -C <path>`
 # was mined as a real override. That was BIDIRECTIONAL: a main-path decoy fabricated
@@ -175,15 +177,24 @@ emit_write_targets() {
 # `$'…\'…'` used to desync the scanner and swallow real separators (a false-NEGATIVE that
 # a PARTIAL quote model, worse than none on a gate, reintroduced). The three share NO code
 # but ARE pinned against one quote-torture corpus in test-git-safety.sh so they cannot
-# drift. Residuals (guardrail, not sandbox — NOT "complete"; tracked in
-# todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md):
+# drift. Residuals (ACCEPTED — guardrail, not sandbox; NOT "complete" — the same
+# shell-wrapper residual class, backstopped by SKIP_WORKTREE_CONTRACT=1 + the file-tool guard):
 #   (`$$` PID pairing IS modeled — a run of `$` is consumed in pairs before the `$'` check,
 #   so only an UNPAIRED `$` before `'` enters ANSI-C, matching bash; an even run `$$'…\'` is a
 #   normal single quote.) Remaining residuals:
-#   - WITHIN-segment quote-blindness: a quoted `-C` flag/keyword or glued `-C<path>` isn't
-#     recognized by SEG_RE, so such a segment is skipped — shell-wrapper residual class.
-#   - Chained `-C` (`git -C a -C b …`, git honors the last) fails SEG_RE's `(-C…)?` group
-#     entirely → the whole command is invisible to the gate. Same class.
+#   - WITHIN-segment quote-blindness: a quoted `-C` flag/keyword (`git '-C' <main>`, `g"i"t`)
+#     or a space-bearing env value (`FOO='a b' git -C <main>`) isn't recognized by the
+#     quote-blind SEG_RE, so such a segment is skipped — the shell-wrapper residual class
+#     (same as sudo/env/command/xargs/subshell/eval; SKIP_WORKTREE_CONTRACT is not needed to
+#     hit it, but the file-tool guard is a second layer and this is a guardrail, not a sandbox).
+#     Glued `-C<path>` is NOT in this class: real git REJECTS it (`unknown option`, EXIT 129) —
+#     no mutation happens. Chained/interleaved `-C` (`git -C a -C b …`, `git -c x=y -C <main>`)
+#     is now HANDLED: SEG_RE allows ≥1 -C in any order and this fold resolves cumulatively.
+#   - UNMODELED git global options: SEG_RE knows only -C/-c, so `--git-dir=<main>/.git` and
+#     `--work-tree=<main>` (direct repo redirects, no -C) — and a benign global BEFORE the -C
+#     (`git --no-pager -C <main> commit`) that stops the regex reaching the verb — are skipped
+#     (→ ALLOW). Same "a global redirects/hides the repo" family; tracked in
+#     todos/P3-2026-07-20-git-safety-unmodeled-global-options-repo-redirect.md.
 #   - `$(…)`/`${…}` substitution, here-docs, `\`-newline continuation are unmodeled: they
 #     over-split (a false-POSITIVE/extra DENY), never an inversion-swallow false-negative.
 #   - ANSI-C escape DECODING is not modeled: `$'\x2f…'`/`\nnn`/`\uHHHH` read as literal chars,
@@ -192,20 +203,28 @@ emit_write_targets() {
 #     obscure (deliberate hex-encoding); SKIP_WORKTREE_CONTRACT=1 / the file-tool guard backstop.
 git_c_target() {
   awk '
+    function fold(t){                                # cumulative -C: last absolute wins, relatives append (mirrors git chdir)
+      if (substr(t, 1, 1) == "/") eff = t
+      else eff = (eff == "" ? t : eff "/" t)
+      gotc = 1
+    }
     function endword(   w, tnt){
       if (!wstart) return
       w = word; tnt = wtaint; word = ""; wstart = 0; wtaint = 0
       if (done) return
-      if (emit_next) { print w; done = 1; return }
       if (phase == 0) {                              # command position
         if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) return   #   env assignment (value may be quoted): stay
         if (!tnt && w == "git") { phase = 1; return } #   the real git
-        phase = 2; return                             #   some other command: stop looking
+        done = 1; return                              #   some other command: stop looking
       }
-      if (phase == 1) {                              # word right after git
-        if (!tnt && w == "-C") { emit_next = 1; return } #   real -C flag: its arg is the next word
-        phase = 2                                      #   git with no immediate -C (e.g. git commit)
-      }
+      # phase 1: scan the git global options, folding EVERY -C target (any order, incl. -c
+      # interleaved) until the verb. git honors cumulative -C, so the last absolute wins.
+      if (pend == "C") { fold(w); pend = ""; return } #   -C arg (value may be quoted): accumulate
+      if (pend == "c") { pend = ""; return }          #   -c value: skip (its name=value token)
+      if (!tnt && w == "-C") { pend = "C"; return }   #   real -C flag: next word is its arg
+      if (!tnt && w == "-c") { pend = "c"; return }   #   real -c flag: skip its value
+      if (gotc) print eff                             #   first non-option word = the verb: emit & stop
+      done = 1                                        #   (git commit -C HEAD: a -C after the verb is never mined)
     }
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; phase = 0 }
     { buf = buf $0 "\n" }
@@ -235,6 +254,7 @@ git_c_target() {
         }
       }
       endword()
+      if (!done && gotc) print eff   # defensive: a chained -C with no trailing verb (SEG_RE normally guarantees one)
     }
   '
 }
@@ -249,8 +269,7 @@ git_c_target() {
 # documented, NOT "complete"): `$(…)`/`${…}` command/param substitution, here-docs
 # (`<<`/`<<<`), and `\`-newline continuation are not modeled — over-splitting there is a
 # false-POSITIVE (extra DENY), never an inversion-swallow; `$"…"` needs no handling
-# (double-quote escaping already covers it). Tracked in
-# todos/P2-2026-07-19-git-safety-frontdoor-quote-aware-segmentation.md.
+# (double-quote escaping already covers it). These are ACCEPTED (they fail toward DENY).
 split_segments() {
   awk '
     function flush(){ print seg; seg = "" }
@@ -313,7 +332,12 @@ MUTATING_GIT_VERBS='commit|mv|rm|restore|checkout|switch|pull|revert|stash|reset
 # whole-command MUTATING_GIT_RE used to gate, but its separator boundary
 # `(^|&&|\|\||;)` omitted single `|`/`&`, so `… | git commit` never fired it (a
 # boundary false-negative). Making the gate permissive removes that whole bug class.
-MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(${MUTATING_GIT_VERBS})([[:space:]]|\$)"
+# The global-options group allows any number of -C and -c in ANY order (real git honors
+# cumulative -C, last absolute winning; git_c_target does that resolution). A single-`?`
+# -C used to make a chained `git -C a -C b commit` fail the regex entirely (skipped →
+# ALLOW), and `-C-before-c` ordering rejected `git -c x=y -C <main> commit` — both
+# pre-existing false-negatives. This grammar is a strict superset of the old one.
+MUTATING_GIT_SEG_RE="^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+))*[[:space:]]+(${MUTATING_GIT_VERBS})([[:space:]]|\$)"
 
 # The hook process does not inherit inline assignments from the tool command, so
 # a leading SKIP_WORKTREE_CONTRACT=1 in the command string is recognized here as
