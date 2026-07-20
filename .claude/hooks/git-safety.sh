@@ -191,8 +191,9 @@ emit_write_targets() {
 #   so only an UNPAIRED `$` before `'` enters ANSI-C, matching bash; an even run `$$'…\'` is a
 #   normal single quote.) Remaining residuals:
 #   - WITHIN-segment quote-blindness: a WHOLLY quoted `-C` flag/keyword (`git '-C' <main>`, `g"i"t`)
-#     or a space-bearing env value (`FOO='a b' git -C <main>`) isn't recognized by the
-#     quote-blind SEG_RE, so such a segment is skipped — the shell-wrapper residual class
+#     or a space-bearing flag/env VALUE (`git -C '/a b' …`, `--git-dir='/a b/.git'`, `FOO='a b' git
+#     -C <main>`) isn't recognized by the quote-blind SEG_RE (its value class is `[^space]+`), so
+#     such a segment is skipped — the shell-wrapper residual class
 #     (same as sudo/env/command/xargs/subshell/eval; SKIP_WORKTREE_CONTRACT is not needed to
 #     hit it, but the file-tool guard is a second layer and this is a guardrail, not a sandbox).
 #     A tainted DECOY global followed by a real UNQUOTED redirect (`git --no-adv'i'ce -C <main>`) is
