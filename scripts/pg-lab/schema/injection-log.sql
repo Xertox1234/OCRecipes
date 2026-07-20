@@ -26,8 +26,18 @@ CREATE TABLE IF NOT EXISTS harness.injection_log (
     domain        TEXT,
     doc_paths     TEXT[] NOT NULL DEFAULT '{}',
     action        TEXT NOT NULL,
-    payload_bytes INT NOT NULL DEFAULT 0
+    payload_bytes INT NOT NULL DEFAULT 0,
+    agent_id      TEXT
 );
+
+-- Added 2026-07-19: the per-dispatch agent discriminator from the hook JSON (see
+-- docs/solutions/conventions/hook-json-agent-id-per-context-window-2026-07-19.md) — lets a
+-- subagent's rows be told apart from the orchestrator's for the same session_id. Empty for
+-- the top-level context (no agent_id in the hook JSON) or a SessionStart digest, which is
+-- always top-level. ADD COLUMN IF NOT EXISTS keeps this idempotent against a database that
+-- already ran an earlier version of this file, where CREATE TABLE IF NOT EXISTS above is a
+-- no-op and would never add the column on its own.
+ALTER TABLE harness.injection_log ADD COLUMN IF NOT EXISTS agent_id TEXT;
 
 -- Supports scripts/pg-lab/injection-report.sh's "top domains by payload bytes" and
 -- "defer frequency" GROUP BY domain queries.

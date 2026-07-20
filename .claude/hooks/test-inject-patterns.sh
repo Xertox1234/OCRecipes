@@ -578,6 +578,30 @@ fi
 if [ "$LOG_TEST_HAS_PG" = "1" ]; then
   rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-eq
   OUT_ON=$(echo "$LOG_TEST_INPUT" | PATTERN_INJECT_NO_LOG=0 LAB_DATABASE_URL="$LOG_TEST_URL" bash "$HOOK" 2>/dev/null)
+
+  # Producer-side coverage: test-pg-lab-log-injection.sh proves the CONSUMER
+  # (log-injection.sh + schema) correctly stores a hand-crafted agent_id field, but
+  # nothing proves inject-patterns.sh's own LOG_TSV call sites actually POPULATE
+  # $AGENT_ID end-to-end. Own session_id/agent_id (and own dedup-state file) so this
+  # doesn't disturb the byte-identical OUT_ON assertion below. The tail call is
+  # backgrounded + disowned (fire-and-forget, see inject-patterns.sh), so poll briefly
+  # instead of asserting immediately.
+  AGENTID_LOG_INPUT='{"session_id":"itest-hook-log-aid","agent_id":"itest-hook-log-aid-sub","tool_name":"Edit","tool_input":{"file_path":"server/routes/recipes.ts"}}'
+  rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-aid-agent-itest-hook-log-aid-sub
+  echo "$AGENTID_LOG_INPUT" | PATTERN_INJECT_NO_LOG=0 LAB_DATABASE_URL="$LOG_TEST_URL" bash "$HOOK" >/dev/null 2>&1
+  rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-aid-agent-itest-hook-log-aid-sub
+  AID_ROW=""
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    AID_ROW=$(psql -X -q -tA -d "$LOG_TEST_URL" -c "SELECT agent_id FROM harness.injection_log WHERE session_id='itest-hook-log-aid' LIMIT 1" 2>/dev/null)
+    [ -n "$AID_ROW" ] && break
+    sleep 0.2
+  done
+  if [ "$AID_ROW" = "itest-hook-log-aid-sub" ]; then
+    echo "PASS: producer wiring — inject-patterns.sh's LOG_TSV populates agent_id end-to-end"; PASS=$((PASS + 1))
+  else
+    echo "FAIL: producer wiring — inject-patterns.sh's LOG_TSV populates agent_id end-to-end — got: $AID_ROW"; FAIL=$((FAIL + 1))
+  fi
+
   psql -X -q -d postgres -c "DROP DATABASE IF EXISTS \"$LOG_TEST_DB\" WITH (FORCE)" >/dev/null 2>&1
   if [ "$OUT_ON" = "$OUT_OFF" ] && [ "$OUT_ON" = "$OUT_DBDOWN" ]; then
     echo "PASS: hook output byte-identical across logging on/off/DB-down"; PASS=$((PASS + 1))
@@ -592,6 +616,7 @@ else
   fi
 fi
 rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-eq
+rm -f /tmp/ocrecipes-pattern-inject-itest-hook-log-aid-agent-itest-hook-log-aid-sub
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

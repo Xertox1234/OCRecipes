@@ -10,7 +10,7 @@
 #
 # Input: one line per (domain, action) record on stdin, fields separated by ASCII Unit
 # Separator (0x1F, \x1f) — NOT a tab:
-#   session_id<US>tool<US>edited_path<US>domain<US>action<US>payload_bytes<US>doc_paths
+#   session_id<US>tool<US>edited_path<US>domain<US>action<US>payload_bytes<US>doc_paths<US>agent_id
 # \x1f, not \t: bash's `read` treats tab (like space/newline) as IFS "whitespace" and
 # collapses RUNS of it even when IFS is set to tab alone, silently merging adjacent empty
 # fields (verified: two consecutive empty tab-delimited fields vanish, shifting every field
@@ -21,6 +21,12 @@
 # doc_paths is a comma-joined list of repo-relative doc ids (docs/rules/*.md,
 # docs/solutions/**/*.md) delivered (or that would have been delivered) for that
 # domain/action; empty for a dedup pointer (nothing new delivered this call).
+# agent_id is the per-dispatch discriminator from the hook JSON (see
+# docs/solutions/conventions/hook-json-agent-id-per-context-window-2026-07-19.md) — empty for
+# the top-level context, or for a caller (like session-recent-issues.sh's SessionStart digest)
+# that is definitionally always top-level. It is the LAST field: a caller still emitting the
+# older 7-field line (no trailing agent_id) parses unaffected — `read` leaves an unspecified
+# trailing variable empty, so column alignment for every earlier field is unchanged.
 #
 # PGCONNECT_TIMEOUT bounds the connection phase — the only phase that can hang against a
 # local Postgres (query execution for one INSERT is near-instant) — this is the "hard time
@@ -57,7 +63,7 @@ command -v psql >/dev/null 2>&1 || exit 0
 # caller (verified empirically — a caller that forgets the trailing newline on its one and
 # only record loses that record with no error anywhere, since this script never prints to
 # stdout and always exits 0).
-while IFS=$'\x1f' read -r session_id tool edited_path domain action payload_bytes doc_paths || [ -n "$session_id" ]; do
+while IFS=$'\x1f' read -r session_id tool edited_path domain action payload_bytes doc_paths agent_id || [ -n "$session_id" ]; do
   [ -n "$domain" ] || [ -n "$action" ] || continue
 
   # Build a Postgres text[] literal from the comma-joined doc_paths (empty -> '{}').
@@ -89,9 +95,10 @@ while IFS=$'\x1f' read -r session_id tool edited_path domain action payload_byte
   psql -X -q -d "$LAB_DATABASE_URL" \
     -v sid="$session_id" -v tool="$tool" -v path="$edited_path" \
     -v dom="$domain" -v act="$action" -v bytes="$bytes" -v docs="$docs_pg" \
+    -v aid="$agent_id" \
     >/dev/null 2>&1 <<'SQL' || true
-INSERT INTO harness.injection_log (session_id, tool, edited_path, domain, doc_paths, action, payload_bytes)
-VALUES (:'sid', :'tool', :'path', :'dom', :'docs'::text[], :'act', :bytes);
+INSERT INTO harness.injection_log (session_id, tool, edited_path, domain, doc_paths, action, payload_bytes, agent_id)
+VALUES (:'sid', :'tool', :'path', :'dom', :'docs'::text[], :'act', :bytes, :'aid');
 SQL
 done
 
