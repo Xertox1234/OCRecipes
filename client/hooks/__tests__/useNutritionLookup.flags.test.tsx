@@ -158,4 +158,31 @@ describe("useNutritionLookup — flags (Task 7)", () => {
     ]);
     expect(result.current.flags.some((f) => f.kind === "allergen")).toBe(false);
   });
+
+  it("sets the same couldn't-verify flag on total outage (server AND direct-OFF both fail)", async () => {
+    // First call (server lookup) throws; second call (direct-OFF fallback)
+    // also throws — the outer catch's fail-open [] left the screen looking
+    // allergen-clean. It must be just as fail-safe as the single-failure path.
+    mockServerFetch
+      .mockRejectedValueOnce(new Error("server unreachable"))
+      .mockRejectedValueOnce(new Error("OFF unreachable"));
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "000000000004" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.error).toBe("Failed to fetch product data");
+    expect(result.current.flags).toEqual([
+      expect.objectContaining({
+        id: "allergen-unavailable",
+        kind: "allergen-unavailable",
+        severity: "warn",
+        tier: "safety",
+      }),
+    ]);
+  });
 });

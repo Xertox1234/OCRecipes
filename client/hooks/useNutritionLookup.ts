@@ -366,6 +366,21 @@ export function useNutritionLookup(params: {
     } catch {
       setError("Failed to fetch product data");
       setNutrition({ productName: "Unknown Product", barcode: code });
+      // Total outage: server AND the direct-OFF fallback both failed, so we
+      // genuinely couldn't check this against the user's allergies. Same
+      // fail-safe flag as the direct-OFF fallback branch above — see its
+      // comment for the full rationale.
+      setFlags([
+        {
+          id: "allergen-unavailable",
+          kind: "allergen-unavailable",
+          severity: "warn",
+          tier: "safety",
+          title: "Couldn't verify allergens",
+          detail:
+            "We couldn't reach our service to check this against your allergies — check the package label.",
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
