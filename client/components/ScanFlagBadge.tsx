@@ -39,6 +39,7 @@ export const ScanFlagBadge = React.memo(function ScanFlagBadge({
   return (
     <View
       style={[styles.badge, { backgroundColor: withOpacity(color, 0.1) }]}
+      accessible={true}
       accessibilityLabel={a11y}
       accessibilityRole="text"
     >
@@ -64,7 +65,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
+    paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
     alignSelf: "flex-start",
   },

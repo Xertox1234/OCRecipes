@@ -31,4 +31,18 @@ describe("ScanFlagBadge", () => {
     );
     expect(getByText("Couldn't verify allergens")).toBeTruthy();
   });
+
+  it("composes title + detail into the accessibility label", () => {
+    const { getByLabelText } = renderComponent(
+      <ScanFlagBadge
+        flag={flag({
+          title: "Contains Peanuts",
+          detail: "You listed a severe peanut allergy",
+        })}
+      />,
+    );
+    expect(
+      getByLabelText("Contains Peanuts. You listed a severe peanut allergy"),
+    ).toBeTruthy();
+  });
 });
