@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Platform,
   StyleSheet,
   View,
   Text,
@@ -88,9 +89,17 @@ export function ProductChip({
   // it while keeping the same phase type (so `variant` is unchanged). Track it so
   // the loaded name can be announced — the variant-keyed effect below won't.
   const productName = "product" in phase ? phase.product?.name : undefined;
+  // Same async-load timing as productName above (both arrive together in the
+  // PRODUCT_LOADED dispatch) — tracked separately so its announce is
+  // content-keyed on the flag itself, not the product name.
+  const safetyFlagTitle =
+    "product" in phase ? phase.product?.safetyFlag?.title : undefined;
+  const safetyFlagDetail =
+    "product" in phase ? phase.product?.safetyFlag?.detail : undefined;
   const [shouldRender, setShouldRender] = useState(variant !== null);
   const prevSmartConfirmingRef = useRef(false);
   const prevProductNameRef = useRef<string | undefined>(undefined);
+  const prevSafetyFlagTitleRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (variant !== null) {
@@ -149,6 +158,28 @@ export function ProductChip({
     prevProductNameRef.current = productName;
   }, [productName]);
 
+  // Announce a safety flag that loads AFTER the chip is already shown (same
+  // PRODUCT_LOADED update as productName above). The badge below carries its
+  // own `accessibilityLiveRegion="assertive"`, but that prop is Android-only —
+  // iOS posts no announcement from it — so this imperative announce is iOS's
+  // ONLY signal for the flag. Gated to iOS so Android doesn't hear it twice
+  // (live region + imperative). Edge-guarded on undefined→title so it fires
+  // once per newly-loaded flag, not on every re-render.
+  useEffect(() => {
+    if (
+      Platform.OS === "ios" &&
+      safetyFlagTitle &&
+      !prevSafetyFlagTitleRef.current
+    ) {
+      AccessibilityInfo.announceForAccessibility(
+        safetyFlagDetail
+          ? `${safetyFlagTitle}. ${safetyFlagDetail}`
+          : safetyFlagTitle,
+      );
+    }
+    prevSafetyFlagTitleRef.current = safetyFlagTitle;
+  }, [safetyFlagTitle, safetyFlagDetail]);
+
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
   }));
@@ -186,6 +217,7 @@ export function ProductChip({
                   : "rgba(240,171,58,0.20)",
             },
           ]}
+          accessible={true}
           accessibilityLiveRegion="assertive"
           accessibilityRole="text"
           accessibilityLabel={
