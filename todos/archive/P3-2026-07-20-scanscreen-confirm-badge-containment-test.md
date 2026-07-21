@@ -1,6 +1,6 @@
 ---
 title: "Add DOM containment + a11y regression test for the returnAfterLog confirm-card safety badge"
-status: backlog
+status: done
 priority: low
 created: 2026-07-20
 updated: 2026-07-20
