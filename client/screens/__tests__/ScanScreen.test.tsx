@@ -6,6 +6,7 @@ import { renderComponent } from "../../../test/utils/render-component";
 
 import ScanScreen from "../ScanScreen";
 import { useBarcodeScannerOutput } from "react-native-vision-camera-barcode-scanner";
+import * as Haptics from "expo-haptics";
 
 const {
   mockGoBack,
@@ -278,6 +279,91 @@ describe("ScanScreen — safe back navigation", () => {
       expect(mockGoBack).not.toHaveBeenCalled();
       expect(mockNavigate).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("ScanScreen — confirm-card safety badge (returnAfterLog)", () => {
+  // Mirrors client/camera/components/__tests__/ProductChip.safetyFlag.test.tsx
+  // (commit 8892c990) for the confirm-card version of the same badge.
+  const dangerFlag = {
+    id: "allergen:tree_nuts",
+    kind: "allergen",
+    severity: "danger",
+    tier: "safety",
+    title: "Contains Tree Nuts",
+    detail: "You listed a severe tree nut allergy",
+  };
+  const composedLabel = `${dangerFlag.title}. ${dangerFlag.detail}`;
+
+  beforeEach(() => {
+    // Reuses the "post-log-success close" shortcut above: drives straight to
+    // SESSION_COMPLETE without any barcode-frame simulation.
+    mockRouteParams.value = { returnAfterLog: true };
+    mockShortcutToSessionComplete.value = true;
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Trail Mix",
+            calories: 210,
+            flags: [dangerFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+  });
+
+  // Guards the flex-trap: `styles.confirmSafetyFlag` AND `styles.confirmButtons`
+  // are BOTH `flexDirection: "row"` siblings under `styles.confirmCard` (a
+  // plain column). A badge accidentally nested inside the buttons row would
+  // render squished beside Dismiss/Log It instead of as a full-width banner
+  // above them — `getByLabelText` alone can't catch that. Walk UP from the
+  // Log It button (not down from the container) so the badge's own row isn't
+  // mistaken for the buttons row by a naive descending querySelector.
+  it("renders the badge as a sibling ABOVE the confirm buttons row, not nested inside it", async () => {
+    renderComponent(<ScanScreen />);
+
+    const badge = await screen.findByLabelText(composedLabel);
+    const logButton = screen.getByLabelText("Log It");
+    const confirmButtonsRow = logButton.closest(
+      '[style*="flex-direction: row"]',
+    );
+
+    expect(confirmButtonsRow).not.toBeNull();
+    expect(confirmButtonsRow?.contains(badge)).toBe(false);
+  });
+
+  it("exposes exactly one accessible node with the composed title+detail label", async () => {
+    renderComponent(<ScanScreen />);
+
+    // This jsdom harness doesn't model RN's `accessible={true}` subtree
+    // collapse (VoiceOver/TalkBack behavior), so it can't verify that
+    // mechanism itself — same ceiling as the ProductChip precedent this
+    // mirrors. What IS verifiable here: getByLabelText throws if the
+    // composed label resolves to more than one element (a single match
+    // proves no duplicate), and the icon/text children carry no separate
+    // aria-label of their own — confirmed by the absence of any nested
+    // [aria-label] below the wrapper.
+    const badge = await screen.findByLabelText(composedLabel);
+    expect(badge.querySelector("[aria-label]")).toBeNull();
+  });
+
+  it("keeps Log It enabled when a severe safety flag is present", async () => {
+    renderComponent(<ScanScreen />);
+
+    await screen.findByLabelText(composedLabel);
+    const logButton = screen.getByLabelText("Log It") as HTMLButtonElement;
+    expect(logButton.disabled).toBe(false);
+  });
+
+  it("fires a Warning notification haptic for a danger-severity flag", async () => {
+    renderComponent(<ScanScreen />);
+
+    await screen.findByLabelText(composedLabel);
+    expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Warning,
+    );
   });
 });
 
