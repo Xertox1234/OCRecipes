@@ -50,6 +50,9 @@ for that step.
     (title + detail), not separate nodes for the icon and text
   - the "Log It" button remains enabled (`canLog` not gated by
     `safetyFlag`) when a severe flag is present
+  - a `danger`-severity flag fires `haptics.notification` with
+    `Haptics.NotificationFeedbackType.Warning` (mirrors the untested
+    `fetchProductInfo` ProductChip-path haptic — also has no test today)
 
 ## Implementation Notes
 
