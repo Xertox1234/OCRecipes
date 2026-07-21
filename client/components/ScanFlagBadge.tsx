@@ -10,16 +10,11 @@ import {
   withOpacity,
   MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
-import type { ScanFlag, ScanFlagSeverity } from "@shared/types/scan-flags";
-
-const ICON: Record<
-  ScanFlagSeverity,
-  "alert-triangle" | "alert-circle" | "info"
-> = {
-  danger: "alert-triangle",
-  warn: "alert-circle",
-  info: "info",
-};
+import {
+  getScanFlagBadgeVisuals,
+  SCAN_FLAG_BADGE_FILL_OPACITY,
+} from "./scan-flag-badge-utils";
+import type { ScanFlag } from "@shared/types/scan-flags";
 
 /** Severity-coded pill for a single ScanFlag. */
 export const ScanFlagBadge = React.memo(function ScanFlagBadge({
@@ -28,27 +23,23 @@ export const ScanFlagBadge = React.memo(function ScanFlagBadge({
   flag: ScanFlag;
 }) {
   const { theme } = useTheme();
-  const color =
-    flag.severity === "danger"
-      ? theme.error
-      : flag.severity === "warn"
-        ? theme.warning
-        : theme.info;
+  const { colorKey, icon } = getScanFlagBadgeVisuals(flag.severity);
+  const color = theme[colorKey];
   const a11y = flag.detail ? `${flag.title}. ${flag.detail}` : flag.title;
 
   return (
     <View
-      style={[styles.badge, { backgroundColor: withOpacity(color, 0.1) }]}
+      style={[
+        styles.badge,
+        {
+          backgroundColor: withOpacity(color, SCAN_FLAG_BADGE_FILL_OPACITY),
+        },
+      ]}
       accessible={true}
       accessibilityLabel={a11y}
       accessibilityRole="text"
     >
-      <Feather
-        name={ICON[flag.severity]}
-        size={14}
-        color={color}
-        accessible={false}
-      />
+      <Feather name={icon} size={14} color={color} accessible={false} />
       <ThemedText
         type="caption"
         maxScale={MAX_FONT_SCALE_CONSTRAINED}

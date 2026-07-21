@@ -12,21 +12,21 @@ describe("verification-badge-utils", () => {
       const config = getBadgeConfig("unverified");
       expect(config.label).toBe("Unverified");
       expect(config.icon).toBe("help-circle");
-      expect(config.colorKey).toBe("textSecondary");
+      expect(config.colorKey).toBe("badgeNeutralText");
     });
 
     it("returns blue config for single_verified", () => {
       const config = getBadgeConfig("single_verified");
       expect(config.label).toBe("Partly Verified");
       expect(config.icon).toBe("check-circle");
-      expect(config.colorKey).toBe("info");
+      expect(config.colorKey).toBe("badgeInfoText");
     });
 
     it("returns green config for verified", () => {
       const config = getBadgeConfig("verified");
       expect(config.label).toBe("Verified");
       expect(config.icon).toBe("shield");
-      expect(config.colorKey).toBe("success");
+      expect(config.colorKey).toBe("badgeSuccessText");
     });
 
     it("includes accessibility labels for all levels", () => {

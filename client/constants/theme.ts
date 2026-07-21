@@ -33,6 +33,20 @@ export const Colors = {
     warning: "#F57C00",
     success: "#007A30", // WCAG AA: 5.1:1 on #FAF6F0 (#008A38 fails at 4.2:1 on cream)
     info: "#2196F3",
+    // Badge text/icon tokens — darker, same-hue variants of the status colors
+    // above, tuned for the low-opacity "pill" fill pattern used by
+    // AllergenBadge/ScanFlagBadge/VerificationBadge (color drives BOTH the
+    // withOpacity() fill and the full-strength text/icon). The plain error/
+    // warning/info/success/textSecondary values above fail WCAG AA at that
+    // fill opacity (as low as 2.3:1) because the effective background stays
+    // close to the page color; these pass >=4.5:1 against backgroundRoot AND
+    // surface at both 0.10 and 0.12 fill opacity. See
+    // docs/solutions/conventions/wcag-color-contrast-2026-05-13.md.
+    badgeErrorText: "#BD2828", // WCAG AA: 4.62:1 on backgroundRoot, 4.94:1 on surface @ 0.12 fill
+    badgeWarningText: "#9D5000", // WCAG AA: 4.60:1 on backgroundRoot, 4.93:1 on surface @ 0.12 fill
+    badgeInfoText: "#0A66B0", // WCAG AA: 4.65:1 on backgroundRoot, 4.99:1 on surface @ 0.12 fill
+    badgeSuccessText: "#00742E", // WCAG AA: 4.63:1 on backgroundRoot, 4.96:1 on surface @ 0.12 fill
+    badgeNeutralText: "#656565", // WCAG AA: 4.64:1 on backgroundRoot, 4.98:1 on surface @ 0.12 fill
     // Nutrition accents
     calorieAccent: "#C94E1A",
     proteinAccent: "#007A30",
@@ -78,6 +92,18 @@ export const Colors = {
     warning: "#FFB74D",
     success: "#4CAF7D", // herb green, WCAG AA: 6.5:1 on #1E1814
     info: "#64B5F6",
+    // Badge text/icon tokens — see the light-mode block above for the
+    // pattern. `error` was verified only against backgroundRoot (5.8:1); the
+    // lighter `surface` pairing drops to 4.24:1 (fails), so badgeErrorText is
+    // lightened. warning/info/success/textSecondary already clear 4.5:1
+    // against both backgroundRoot and surface at 0.10-0.12 fill opacity, so
+    // their badge tokens are unchanged (same hex, distinct name for the
+    // dedicated badge-fill role).
+    badgeErrorText: "#F37774", // WCAG AA: 5.39:1 on backgroundRoot, 4.61:1 on surface @ 0.12 fill
+    badgeWarningText: "#FFB74D", // same as `warning` — already compliant (8.25:1 / 7.03:1)
+    badgeInfoText: "#64B5F6", // same as `info` — already compliant (6.69:1 / 5.71:1)
+    badgeSuccessText: "#4CAF7D", // same as `success` — already compliant (5.42:1 / 4.63:1)
+    badgeNeutralText: "#B8A898", // same as `textSecondary` — already compliant (6.19:1 / 5.26:1)
     // Nutrition accents
     calorieAccent: "#FF8A65",
     proteinAccent: "#4CAF7D",

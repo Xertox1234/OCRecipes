@@ -10,7 +10,10 @@ import {
   withOpacity,
   MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
-import { getBadgeConfig } from "./verification-badge-utils";
+import {
+  getBadgeConfig,
+  VERIFICATION_BADGE_FILL_OPACITY,
+} from "./verification-badge-utils";
 import type { VerificationLevel } from "@shared/types/verification";
 
 interface VerificationBadgeProps {
@@ -26,7 +29,13 @@ export const VerificationBadge = React.memo(function VerificationBadge({
 
   return (
     <View
-      style={[styles.badge, { backgroundColor: withOpacity(color, 0.12) }]}
+      style={[
+        styles.badge,
+        {
+          backgroundColor: withOpacity(color, VERIFICATION_BADGE_FILL_OPACITY),
+        },
+      ]}
+      accessible={true}
       accessibilityLabel={config.a11yLabel}
       accessibilityRole="text"
     >
