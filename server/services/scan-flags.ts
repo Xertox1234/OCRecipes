@@ -5,7 +5,11 @@ import {
   type AllergenId,
   type AllergySeverity,
 } from "@shared/constants/allergens";
-import type { ScanFlag, ScanFlagSeverity } from "@shared/types/scan-flags";
+import {
+  createAllergenUnavailableFlag,
+  type ScanFlag,
+  type ScanFlagSeverity,
+} from "@shared/types/scan-flags";
 import { mapOffAllergenTags } from "./off-allergen-tags";
 
 export interface ScanFlagProductInput {
@@ -24,26 +28,20 @@ const SEVERITY_TO_FLAG: Record<AllergySeverity, ScanFlagSeverity> = {
 };
 
 /** Fail-dangerous flag when we have allergies but no product allergen data. */
-const ALLERGEN_UNAVAILABLE_FLAG: ScanFlag = {
-  id: "allergen-unavailable",
-  kind: "allergen-unavailable",
-  severity: "warn",
-  tier: "safety",
-  title: "Couldn't verify allergens",
+const ALLERGEN_UNAVAILABLE_FLAG: ScanFlag = createAllergenUnavailableFlag({
   detail:
     "We don't have allergen data for this product — check the package label.",
-};
+});
 
 /** Fail-dangerous flag when the user's profile couldn't be read at all. */
-export const PROFILE_UNAVAILABLE_FLAG: ScanFlag = {
-  id: "profile-unavailable",
-  kind: "allergen-unavailable",
-  severity: "warn",
-  tier: "safety",
-  title: "Couldn't check against your profile",
-  detail:
-    "We couldn't load your allergy profile just now — check the package label.",
-};
+export const PROFILE_UNAVAILABLE_FLAG: ScanFlag = createAllergenUnavailableFlag(
+  {
+    id: "profile-unavailable",
+    title: "Couldn't check against your profile",
+    detail:
+      "We couldn't load your allergy profile just now — check the package label.",
+  },
+);
 
 /** Split OFF ingredient text into rough ingredient names for keyword matching. */
 function splitIngredientsText(text: string | null): string[] {

@@ -1,6 +1,6 @@
 ---
 title: "Share the 'couldn't verify allergens' flag shape (now duplicated in 3 places)"
-status: backlog
+status: done
 priority: low
 created: 2026-07-21
 updated: 2026-07-21

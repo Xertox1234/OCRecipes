@@ -31,7 +31,10 @@ import {
 } from "@/lib/serving-size-utils";
 import { enqueue } from "@/lib/offline-queue";
 import type { ScannedItemResponse } from "@/types/api";
-import type { ScanFlag } from "@shared/types/scan-flags";
+import {
+  createAllergenUnavailableFlag,
+  type ScanFlag,
+} from "@shared/types/scan-flags";
 
 interface NutritionData {
   id?: number;
@@ -349,15 +352,10 @@ export function useNutritionLookup(params: {
         // allergy-having users who need it most. This does NOT compute
         // client-side allergen matching — that stays server-only (Phase 1).
         setFlags([
-          {
-            id: "allergen-unavailable",
-            kind: "allergen-unavailable",
-            severity: "warn",
-            tier: "safety",
-            title: "Couldn't verify allergens",
+          createAllergenUnavailableFlag({
             detail:
               "We couldn't reach our service to check this against your allergies — check the package label.",
-          },
+          }),
         ]);
       } else {
         setError("Product not found in database");
@@ -371,15 +369,10 @@ export function useNutritionLookup(params: {
       // fail-safe flag as the direct-OFF fallback branch above — see its
       // comment for the full rationale.
       setFlags([
-        {
-          id: "allergen-unavailable",
-          kind: "allergen-unavailable",
-          severity: "warn",
-          tier: "safety",
-          title: "Couldn't verify allergens",
+        createAllergenUnavailableFlag({
           detail:
             "We couldn't reach our service to check this against your allergies — check the package label.",
-        },
+        }),
       ]);
     } finally {
       setIsLoading(false);
