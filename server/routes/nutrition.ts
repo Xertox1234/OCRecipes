@@ -138,8 +138,22 @@ export function register(app: Express): void {
           profileOutcome,
         );
 
+        // Raw OFF allergen/ingredient fields are consumed here to build
+        // `flags` — no client reads them directly, so trim them off the
+        // response body before spreading (`flags` already carries the
+        // computed result).
+        const {
+          ingredientsText: _ingredientsText,
+          allergenTags: _allergenTags,
+          allergenDataAvailable: _allergenDataAvailable,
+          ...clientResult
+        } = result;
+        void _ingredientsText;
+        void _allergenTags;
+        void _allergenDataAvailable;
+
         res.json({
-          ...result,
+          ...clientResult,
           flags,
           verificationLevel: verification?.verificationLevel ?? "unverified",
           verificationCount: verification?.verificationCount ?? 0,
