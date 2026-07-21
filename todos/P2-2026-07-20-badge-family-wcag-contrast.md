@@ -13,6 +13,16 @@ github_issue:
 
 ## Summary
 
+This todo covers TWO related badge-family accessibility gaps: (1) WCAG AA
+contrast (below), and (2) a screen-reader grouping bug — `AllergenBadge.tsx`
+(~49-54) and likely `VerificationBadge.tsx` set a composed `accessibilityLabel`
+
+- `accessibilityRole="text"` on their container `View` but are **missing
+  `accessible={true}`**, so a screen reader can drill into the child `Text` and
+  read only part of the label (the same defect fixed for `ScanFlagBadge` in the
+  Phase 1 PR — see `docs/solutions/design-patterns/accessibility-grouping-pattern-2026-05-13.md`).
+  Fix the grouping (`accessible={true}`) on the siblings in the same pass.
+
 The app's small "pill" badges render **severity/status-colored text on a
 same-hue background at ~10% opacity** (`withOpacity(color, 0.1)`). Because the
 background is mostly the light page color and the text is a mid-tone color of
@@ -60,6 +70,9 @@ safety warning.
       simulator practice) — not by eyeballing in code.
 - [ ] No regression to the existing `accessible={true}` grouping or the
       severity→color/icon mappings.
+- [ ] `AllergenBadge` (and `VerificationBadge` if it shares the pattern) get
+      `accessible={true}` on their container `View` so their composed labels are
+      announced as one unit — mirroring the `ScanFlagBadge` fix.
 
 ## Implementation Notes
 
