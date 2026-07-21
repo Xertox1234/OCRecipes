@@ -93,6 +93,18 @@ generic pluralization/stemming step in the matcher — Option B). Rationale:
   anyway for documentation/explicitness, label the test as confirmation, not
   regression coverage (this file's own PR made that exact mistake with
   `"sesame seeds"` and `"egg whites"` before catching it — do not repeat it).
+- **...but do NOT delete the redundant multi-word plurals as "cleanup"
+  either.** Their redundancy is a property of *today's* matcher, not an
+  invariant: multi-word keywords match via `includes()`, so `"egg white"`
+  substring-matches `"egg whites"` *only because* the multi-word path has no
+  word-boundary anchor. The day someone hardens that path to boundary
+  matching (a reasonable-looking symmetry fix with the single-word regex),
+  every deleted multi-word plural silently becomes a fail-**dangerous**
+  under-detection. On a fail-dangerous file the additive-only invariant cuts
+  both ways: a review finding of "these entries are redundant" is answered by
+  a comment or this note, never by a deletion. They are cheap
+  belt-and-suspenders on a safety surface — keep them. (Surfaced by the
+  `/code-review` of PR #684.)
 - Regression tests for a specific keyword's plural must **isolate** the
   ingredient string to just that keyword — no other allergen keyword may be
   present in the same test ingredient. A case like `["whole wheat crackers",
