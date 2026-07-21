@@ -36,3 +36,32 @@ export function pickTopSafetyFlag(flags: ScanFlag[]): ScanFlag | undefined {
   }
   return top;
 }
+
+export interface AllergenUnavailableFlagOptions {
+  /** Overrides the default `"allergen-unavailable"` id (e.g. a profile-read failure uses `"profile-unavailable"`). */
+  id?: string;
+  /** Overrides the default `"Couldn't verify allergens"` title. */
+  title?: string;
+  /** Situation-specific detail copy — server (no data), client (connectivity down), and profile-read-failure are legitimately different messages. */
+  detail: string;
+}
+
+/**
+ * Shared shape for the fail-dangerous "couldn't verify allergens" flag.
+ * `kind`/`severity`/`tier` are fixed here so every call site stays in sync;
+ * `id`/`title`/`detail` are parameterized because the situations that raise
+ * this flag (server has no allergen data, client can't reach the server,
+ * the user's profile couldn't be read) legitimately need different copy.
+ */
+export function createAllergenUnavailableFlag(
+  options: AllergenUnavailableFlagOptions,
+): ScanFlag {
+  return {
+    id: options.id ?? "allergen-unavailable",
+    kind: "allergen-unavailable",
+    severity: "warn",
+    tier: "safety",
+    title: options.title ?? "Couldn't verify allergens",
+    detail: options.detail,
+  };
+}
