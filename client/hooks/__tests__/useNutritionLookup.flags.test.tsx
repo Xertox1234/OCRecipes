@@ -113,7 +113,7 @@ describe("useNutritionLookup — flags (Task 7)", () => {
     expect(result.current.flags).toEqual([]);
   });
 
-  it("leaves flags empty on the direct-OFF fallback path (server unreachable)", async () => {
+  it("sets a couldn't-verify flag (not a client-computed allergen match) on the direct-OFF fallback path", async () => {
     // First call (server lookup) throws — hook falls through to the direct
     // Open Food Facts fetch. Second call is the OFF response.
     mockServerFetch
@@ -143,9 +143,19 @@ describe("useNutritionLookup — flags (Task 7)", () => {
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    // Phase 1 does not compute client-side allergen flags — the fallback
-    // path must never populate flags, even if the product would otherwise
-    // match an allergen.
-    expect(result.current.flags).toEqual([]);
+    // The server-side allergen check never ran (server was unreachable), so
+    // the fallback surfaces an honest "couldn't verify" warn flag instead of
+    // leaving `flags` empty (which would look allergen-clean). Phase 1 still
+    // does not compute client-side allergen MATCHING — assert there is no
+    // "allergen"-kind flag, only the unavailable signal.
+    expect(result.current.flags).toEqual([
+      expect.objectContaining({
+        id: "allergen-unavailable",
+        kind: "allergen-unavailable",
+        severity: "warn",
+        tier: "safety",
+      }),
+    ]);
+    expect(result.current.flags.some((f) => f.kind === "allergen")).toBe(false);
   });
 });

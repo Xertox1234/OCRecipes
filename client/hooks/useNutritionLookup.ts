@@ -191,6 +191,10 @@ export function useNutritionLookup(params: {
     });
 
   const fetchBarcodeData = useCallback(async (code: string) => {
+    // Defense-in-depth: clear any prior product's allergen flags before this
+    // fetch resolves, so a future in-screen re-fetch can never render a stale
+    // danger flag against a different product while the new data loads.
+    setFlags([]);
     try {
       // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
       // Use raw fetch (not apiRequest) so we can inspect 404 responses
@@ -323,6 +327,35 @@ export function useNutritionLookup(params: {
           imageUrl: product.image_url || product.image_front_url,
           barcode: code,
         });
+
+        // This branch only runs when OUR server is unreachable, so the
+        // server-side allergen check (buildScanResponseFlags) never ran for
+        // this product — `flags` would otherwise stay `[]` and the screen
+        // would look allergen-clean when we simply couldn't check. Surface a
+        // "couldn't verify" warn flag instead (fail-safe, not fail-open).
+        //
+        // Gating: ideally this would show only for users with ≥1 declared
+        // allergy, but the server is down in this branch, so we can't add a
+        // network call to fetch the profile. `useAuthContext().user` (the
+        // `User` type in shared/types/auth.ts) does NOT carry allergies —
+        // that data lives only on the separate user-profile record, which is
+        // fetched server-side via `storage.getUserProfile`. With no cheap
+        // offline source for the user's allergies, show this flag
+        // unconditionally on the fallback: it's honest ("we couldn't check")
+        // and fail-safe rather than silently omitting the warning for the
+        // allergy-having users who need it most. This does NOT compute
+        // client-side allergen matching — that stays server-only (Phase 1).
+        setFlags([
+          {
+            id: "allergen-unavailable",
+            kind: "allergen-unavailable",
+            severity: "warn",
+            tier: "safety",
+            title: "Couldn't verify allergens",
+            detail:
+              "We couldn't reach our service to check this against your allergies — check the package label.",
+          },
+        ]);
       } else {
         setError("Product not found in database");
         setNutrition({ productName: "Unknown Product", barcode: code });
