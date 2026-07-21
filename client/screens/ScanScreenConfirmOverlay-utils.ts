@@ -1,3 +1,6 @@
+import type { ScanFlag } from "@shared/types/scan-flags";
+import { pickTopSafetyFlag } from "@shared/types/scan-flags";
+
 export type ConfirmCardState = {
   barcode: string;
   name: string;
@@ -5,11 +8,13 @@ export type ConfirmCardState = {
   isLoading: boolean;
   isLogging: boolean;
   isError: boolean;
+  safetyFlag?: ScanFlag;
 };
 
 export type ProductInfoResponse = {
   productName?: string;
   calories?: number;
+  flags?: ScanFlag[];
 };
 
 export type ScannedItemPayload = {
@@ -41,6 +46,7 @@ export function buildLoadedConfirmCard(
     isLoading: false,
     isLogging: false,
     isError: false,
+    safetyFlag: pickTopSafetyFlag(Array.isArray(data.flags) ? data.flags : []),
   };
 }
 

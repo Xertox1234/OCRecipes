@@ -86,6 +86,7 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
 import { pickTopSafetyFlag } from "@shared/types/scan-flags";
+import type { ScanFlag } from "@shared/types/scan-flags";
 
 const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
 
@@ -220,9 +221,22 @@ export default function ScanScreen() {
         signal: controller.signal,
       })
         .then((res) => res.json())
-        .then((data: { productName?: string; calories?: number }) => {
-          setConfirmCard(buildLoadedConfirmCard(barcode, data));
-        })
+        .then(
+          (data: {
+            productName?: string;
+            calories?: number;
+            flags?: ScanFlag[];
+          }) => {
+            const card = buildLoadedConfirmCard(barcode, data);
+            setConfirmCard(card);
+            // Raise salience on a severe flag WITHOUT blocking the flow (badges
+            // only) — mirrors fetchProductInfo's ProductChip-path haptic below,
+            // since this path never opens NutritionDetail to carry it instead.
+            if (card.safetyFlag?.severity === "danger") {
+              haptics.notification(Haptics.NotificationFeedbackType.Warning);
+            }
+          },
+        )
         .catch((err: unknown) => {
           if (err instanceof Error && err.name === "AbortError") return;
           setConfirmCard(buildFetchErrorConfirmCard(barcode));
@@ -237,7 +251,20 @@ export default function ScanScreen() {
       });
     }, 700);
     return () => clearTimeout(timer);
-  }, [scanPhase, navigation, refreshScanCount, reducedMotion, returnAfterLog]);
+  }, [
+    scanPhase,
+    navigation,
+    refreshScanCount,
+    reducedMotion,
+    returnAfterLog,
+    // `haptics` itself is a NEW object every render (useHaptics returns an
+    // object literal) — depending on it directly would re-run this effect on
+    // every unrelated ScanScreen re-render and abort the in-flight
+    // returnAfterLog fetch via the cleanup's controller.abort(). Depend on
+    // the specific useCallback-memoized function instead, which is stable
+    // across renders unless `reducedMotion` (already a dep above) changes.
+    haptics.notification,
+  ]);
 
   // Navigating away to edit (onEditStep2/onEditStep3) sets isFocused false,
   // which the existing "Reset when screen loses focus" effect above already
@@ -276,9 +303,17 @@ export default function ScanScreen() {
 
   // Announce loading state transitions to screen readers (iOS VoiceOver only —
   // Android TalkBack is handled by accessibilityLiveRegion on the loading view).
+  // The loaded-name branch also folds in the safety badge (when present): the
+  // badge's own `accessibilityLiveRegion="assertive"` is Android-only, so this
+  // imperative announce is iOS's ONLY signal for the flag. Name and flag arrive
+  // together in the same buildLoadedConfirmCard transition (a single fetch, not
+  // ProductChip's multi-variant lifecycle), so one combined announcement covers
+  // both without needing a separate edge-guarded effect.
   const confirmIsLoading = confirmCard?.isLoading;
   const confirmIsError = confirmCard?.isError;
   const confirmName = confirmCard?.name;
+  const confirmSafetyFlagTitle = confirmCard?.safetyFlag?.title;
+  const confirmSafetyFlagDetail = confirmCard?.safetyFlag?.detail;
   useEffect(() => {
     if (confirmIsLoading === undefined) return; // confirmCard is null
     if (Platform.OS !== "ios") return;
@@ -287,9 +322,20 @@ export default function ScanScreen() {
     } else if (confirmIsError) {
       AccessibilityInfo.announceForAccessibility("Nutrition data unavailable");
     } else if (confirmName) {
-      AccessibilityInfo.announceForAccessibility(confirmName);
+      const safetySuffix = confirmSafetyFlagTitle
+        ? ` ${confirmSafetyFlagDetail ? `${confirmSafetyFlagTitle}. ${confirmSafetyFlagDetail}` : confirmSafetyFlagTitle}`
+        : "";
+      AccessibilityInfo.announceForAccessibility(
+        `${confirmName}.${safetySuffix}`,
+      );
     }
-  }, [confirmIsLoading, confirmIsError, confirmName]);
+  }, [
+    confirmIsLoading,
+    confirmIsError,
+    confirmName,
+    confirmSafetyFlagTitle,
+    confirmSafetyFlagDetail,
+  ]);
 
   const fetchProductInfo = useCallback(
     async (barcode: string) => {
@@ -867,6 +913,52 @@ export default function ScanScreen() {
                   </ThemedText>
                 )}
               </View>
+              {confirmCard.safetyFlag ? (
+                <View
+                  style={[
+                    styles.confirmSafetyFlag,
+                    {
+                      backgroundColor: withOpacity(
+                        confirmCard.safetyFlag.severity === "danger"
+                          ? theme.error
+                          : theme.warning,
+                        0.12,
+                      ),
+                    },
+                  ]}
+                  accessible={true}
+                  accessibilityRole="text"
+                  accessibilityLiveRegion="assertive"
+                  accessibilityLabel={
+                    confirmCard.safetyFlag.detail
+                      ? `${confirmCard.safetyFlag.title}. ${confirmCard.safetyFlag.detail}`
+                      : confirmCard.safetyFlag.title
+                  }
+                >
+                  <Feather
+                    name="alert-triangle"
+                    size={16}
+                    color={
+                      confirmCard.safetyFlag.severity === "danger"
+                        ? theme.error
+                        : theme.warning
+                    }
+                  />
+                  <ThemedText
+                    type="small"
+                    style={{
+                      marginLeft: Spacing.sm,
+                      fontWeight: "700",
+                      color:
+                        confirmCard.safetyFlag.severity === "danger"
+                          ? theme.error
+                          : theme.warning,
+                    }}
+                  >
+                    {confirmCard.safetyFlag.title}
+                  </ThemedText>
+                </View>
+              ) : null}
               <View style={styles.confirmButtons}>
                 <Pressable
                   onPress={handleConfirmDismiss}
@@ -1053,6 +1145,13 @@ const styles = StyleSheet.create({
   },
   confirmInfo: {
     gap: 4,
+  },
+  confirmSafetyFlag: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
   confirmButtons: {
     flexDirection: "row",
