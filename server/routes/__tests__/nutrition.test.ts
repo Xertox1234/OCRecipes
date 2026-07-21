@@ -10,6 +10,7 @@ import { register } from "../nutrition";
 import {
   createMockScannedItem,
   createMockNutritionData,
+  createMockUserProfile,
 } from "../../__tests__/factories";
 
 vi.mock("../../storage", () => ({
@@ -160,6 +161,76 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(404);
       expect(res.body.code).toBe("NOT_FOUND");
+    });
+  });
+
+  describe("GET /api/nutrition/barcode/:code — allergen safety flags", () => {
+    it("flags a danger allergen match when the profile has a declared severe allergy", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({
+          allergies: [{ name: "peanuts", severity: "severe" }],
+        }),
+      );
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Peanut Butter Cups",
+        barcode: "1234567890",
+        per100g: { calories: 120, protein: 18 },
+        perServing: { calories: 120, protein: 18 },
+        servingInfo: {
+          displayLabel: "1 serving",
+          grams: 170,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+        allergenTags: ["en:peanuts"],
+        allergenDataAvailable: true,
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/1234567890")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.flags).toContainEqual(
+        expect.objectContaining({
+          allergenId: "peanuts",
+          kind: "allergen",
+          severity: "danger",
+        }),
+      );
+    });
+
+    it("fails dangerous (200, not 500) with a profile-unavailable flag when the profile read rejects", async () => {
+      vi.mocked(storage.getUserProfile).mockRejectedValueOnce(
+        new Error("db down"),
+      );
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Greek Yogurt",
+        barcode: "1234567890",
+        per100g: { calories: 120, protein: 18 },
+        perServing: { calories: 120, protein: 18 },
+        servingInfo: {
+          displayLabel: "1 serving",
+          grams: 170,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+        allergenDataAvailable: false,
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/1234567890")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.flags).toContainEqual(
+        expect.objectContaining({
+          id: "profile-unavailable",
+          kind: "allergen-unavailable",
+        }),
+      );
     });
   });
 
