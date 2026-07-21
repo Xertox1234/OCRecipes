@@ -274,6 +274,50 @@ describe("ingredientContainsKeyword — plant-substitute guard", () => {
 });
 
 // ============================================================================
+// PLANT-SUBSTITUTE GUARD INVARIANT (map ↔ guard-set consistency)
+// ============================================================================
+
+describe("plant-substitute guard invariant", () => {
+  // The four guard-sensitive dairy/wheat base words + their registered plurals.
+  // For the guard to hold, every form that is a detection keyword (in the map)
+  // must ALSO be suppressible after a plant modifier (in MODIFIER_SENSITIVE_KEYWORDS).
+  // These behavioral checks pin the INVARIANT, not just point-in-time strings: a
+  // future desync — a plural dropped from the guard set, or a typo in either list —
+  // would let "almond <form>" over-flag dairy/wheat (the dangerous false positive)
+  // and MUST turn a test red. `MODIFIER_SENSITIVE_KEYWORDS` is module-private, so we
+  // assert the observable suppression behavior via `ingredientContainsKeyword`.
+  const dairyWheatDirect = new Set([
+    ...ALLERGEN_INGREDIENT_MAP.milk.directIngredients,
+    ...ALLERGEN_INGREDIENT_MAP.wheat.directIngredients,
+  ]);
+  const guardSensitiveForms = [
+    "milk",
+    "milks",
+    "cream",
+    "creams",
+    "butter",
+    "butters",
+    "flour",
+    "flours",
+  ];
+
+  it("keeps every guard-sensitive base word and its plural registered for detection", () => {
+    for (const form of guardSensitiveForms) {
+      expect(dairyWheatDirect.has(form)).toBe(true);
+    }
+  });
+
+  it("suppresses every registered guard-sensitive form after a plant modifier, but not on its own", () => {
+    for (const form of guardSensitiveForms) {
+      // Plant modifier present → dairy/wheat keyword suppressed (guard fires).
+      expect(ingredientContainsKeyword(`almond ${form}`, form)).toBe(false);
+      // Bare staple → still matches (guard must not over-suppress genuine dairy/wheat).
+      expect(ingredientContainsKeyword(form, form)).toBe(true);
+    }
+  });
+});
+
+// ============================================================================
 // DETECT ALLERGENS
 // ============================================================================
 
