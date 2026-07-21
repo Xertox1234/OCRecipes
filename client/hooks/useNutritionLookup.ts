@@ -328,11 +328,14 @@ export function useNutritionLookup(params: {
           barcode: code,
         });
 
-        // This branch only runs when OUR server is unreachable, so the
-        // server-side allergen check (buildScanResponseFlags) never ran for
-        // this product — `flags` would otherwise stay `[]` and the screen
-        // would look allergen-clean when we simply couldn't check. Surface a
-        // "couldn't verify" warn flag instead (fail-safe, not fail-open).
+        // Runs whenever the primary server request didn't yield a usable
+        // result — a network error, a 5xx, an unparseable/non-notInDatabase
+        // 404, or any other case where the inner server `try` above didn't
+        // already return — so the server-side allergen check
+        // (buildScanResponseFlags) never ran for this product. `flags` would
+        // otherwise stay `[]` and the screen would look allergen-clean when
+        // we simply couldn't check. Surface a "couldn't verify" warn flag
+        // instead (fail-safe, not fail-open).
         //
         // Gating: ideally this would show only for users with ≥1 declared
         // allergy, but the server is down in this branch, so we can't add a

@@ -176,7 +176,30 @@ describe("ProductChip safety flag — accessibility", () => {
   // they must be folded into ONE combined utterance on iOS.
   it("combines name + flag into ONE announce on iOS when they arrive in the same commit", () => {
     RN.Platform.OS = "ios";
-    renderComponent(
+    // Mount with a product-LESS locked phase (no `product` key at all) — this
+    // is the real reducer sequence: BARCODE_LOCKED always starts with no
+    // product, and a later PRODUCT_LOADED dispatch adds name + flag together
+    // in the SAME commit. `lockedPhase(undefined)` is NOT used for the mount
+    // here because it bakes in `name: "Trail Mix"`, which would make the
+    // mount itself carry a product and exercise the name-only branch instead
+    // of the merge branch this test targets.
+    const { rerender } = renderComponent(
+      <ProductChip
+        phase={{
+          type: "BARCODE_LOCKED",
+          barcode: "12345",
+          bounds: { x: 0, y: 0, width: 1, height: 1 },
+        }}
+        onConfirm={noop}
+        onStepConfirmed={noop}
+        onEditStep2={noop}
+        onEditStep3={noop}
+        onSmartPhotoConfirm={noop}
+        onRetry={noop}
+      />,
+    );
+    announceSpy.mockClear(); // drop the mount-time "Product found…" announce
+    rerender(
       <ProductChip
         phase={lockedPhase(dangerFlag)}
         onConfirm={noop}
@@ -190,6 +213,7 @@ describe("ProductChip safety flag — accessibility", () => {
     expect(announceSpy).toHaveBeenCalledWith("Trail Mix. Contains Tree Nuts");
     expect(announceSpy).not.toHaveBeenCalledWith("Trail Mix");
     expect(announceSpy).not.toHaveBeenCalledWith("Contains Tree Nuts");
+    expect(announceSpy).toHaveBeenCalledTimes(1);
   });
 
   it("still announces only the name on Android when name+flag arrive together (badge live region covers the flag)", () => {
