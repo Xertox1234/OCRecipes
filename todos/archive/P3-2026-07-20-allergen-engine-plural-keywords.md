@@ -1,6 +1,6 @@
 ---
 title: "Allergen engine ingredient-text keywords are singular-only (plurals under-detected)"
-status: backlog
+status: done
 priority: low
 created: 2026-07-20
 updated: 2026-07-20

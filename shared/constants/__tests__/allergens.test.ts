@@ -281,6 +281,56 @@ describe("detectAllergens", () => {
     expect(matches.some((m) => m.allergenId === "peanuts")).toBe(true);
   });
 
+  it("matches common plural ingredient-text forms across allergens (regression: single-word keyword was singular-only)", () => {
+    // Each of these is a single-word keyword (e.g. "almond") gaining an explicit
+    // plural entry ("almonds") — the actual bug: the word-boundary regex requires
+    // a boundary character immediately after the keyword, so "almond" alone never
+    // matched "almonds". Covers every allergen (peanuts, tree_nuts, milk, eggs,
+    // wheat, soy, fish, shellfish); sesame's *single-word* keyword ("sesame")
+    // already had no plural gap — see the multi-word test below for that tier.
+    const cases: [string, string][] = [
+      ["a bag of roasted almonds", "tree_nuts"],
+      ["chopped cashews", "tree_nuts"],
+      ["candied walnuts", "tree_nuts"],
+      ["toasted hazelnuts", "tree_nuts"],
+      ["roasted groundnuts", "peanuts"],
+      ["ground soybeans", "soy"],
+      ["homemade omelettes", "eggs"],
+      ["crushed crackers", "wheat"],
+      ["canned sardines", "fish"],
+      ["steamed mussels", "shellfish"],
+      ["shredded cheeses", "milk"],
+    ];
+    for (const [ingredient, allergenId] of cases) {
+      const matches = detectAllergens(
+        [ingredient],
+        [{ name: allergenId, severity: "severe" }],
+      );
+      expect(matches.some((m) => m.allergenId === allergenId)).toBe(true);
+    }
+  });
+
+  it("matches plural forms of multi-word keywords (already worked pre-fix via substring match — verified per AC)", () => {
+    // Multi-word keywords go through `ingredientContainsKeyword`'s simple
+    // `.includes()` path, not the word-boundary regex — so "sesame seed" was
+    // ALREADY a substring of "sesame seeds" before this change (same for "egg
+    // white(s)"). Kept as an explicit assertion because the todo's Acceptance
+    // Criteria names "sesame seeds" as a required verification case, but this
+    // is confirmation, not a regression fix — see the single-word test above
+    // for the cases that actually depended on this change.
+    const cases: [string, string][] = [
+      ["a sprinkle of sesame seeds", "sesame"],
+      ["whipped egg whites", "eggs"],
+    ];
+    for (const [ingredient, allergenId] of cases) {
+      const matches = detectAllergens(
+        [ingredient],
+        [{ name: allergenId, severity: "severe" }],
+      );
+      expect(matches.some((m) => m.allergenId === allergenId)).toBe(true);
+    }
+  });
+
   it("mild severity only flags direct dairy ingredients", () => {
     const matches = detectAllergens(
       ["whole milk", "whey protein", "rice"],
@@ -424,6 +474,45 @@ describe("deriveRecipeAllergens", () => {
     expect(deriveRecipeAllergens(["butter"]).map((a) => a.id)).toContain(
       "milk",
     );
+  });
+
+  it("derives allergens from plural ingredient-text forms (regression: single-word keyword was singular-only)", () => {
+    // Same single-word-keyword bug as the detectAllergens test above — see that
+    // test's comment for why sesame's bare keyword isn't here. Each ingredient
+    // string is isolated to just the keyword under test (no other allergen
+    // keyword present) so the assertion actually depends on the plural addition
+    // — e.g. NOT "whole wheat crackers", which would pass via the pre-existing
+    // "wheat" keyword alone regardless of whether "crackers" matched.
+    const cases: [string, string][] = [
+      ["roasted almonds", "tree_nuts"],
+      ["chopped cashews", "tree_nuts"],
+      ["candied walnuts", "tree_nuts"],
+      ["toasted hazelnuts", "tree_nuts"],
+      ["roasted groundnuts", "peanuts"],
+      ["ground soybeans", "soy"],
+      ["homemade omelettes", "eggs"],
+      ["crushed crackers", "wheat"],
+      ["canned sardines", "fish"],
+      ["steamed mussels", "shellfish"],
+      ["shredded cheeses", "milk"],
+    ];
+    for (const [ingredient, allergenId] of cases) {
+      const ids = deriveRecipeAllergens([ingredient]).map((a) => a.id);
+      expect(ids).toContain(allergenId);
+    }
+  });
+
+  it("derives allergens from plural forms of multi-word keywords (already worked pre-fix via substring match — verified per AC)", () => {
+    // Confirmation, not a regression fix — see the detectAllergens test's
+    // comment on the equivalent multi-word case for the full explanation.
+    const cases: [string, string][] = [
+      ["toasted sesame seeds", "sesame"],
+      ["whipped egg whites", "eggs"],
+    ];
+    for (const [ingredient, allergenId] of cases) {
+      const ids = deriveRecipeAllergens([ingredient]).map((a) => a.id);
+      expect(ids).toContain(allergenId);
+    }
   });
 });
 
