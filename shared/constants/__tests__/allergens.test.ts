@@ -273,6 +273,14 @@ describe("detectAllergens", () => {
     expect(matches[0].isDerived).toBe(false);
   });
 
+  it("matches the plural 'peanuts' in ingredient text (regression: keyword was singular-only)", () => {
+    const matches = detectAllergens(
+      ["roasted peanuts"],
+      [{ name: "peanuts", severity: "severe" }],
+    );
+    expect(matches.some((m) => m.allergenId === "peanuts")).toBe(true);
+  });
+
   it("mild severity only flags direct dairy ingredients", () => {
     const matches = detectAllergens(
       ["whole milk", "whey protein", "rice"],

@@ -9,6 +9,11 @@ import { insertScannedItemSchema } from "@shared/schema";
 import { logger, toError } from "../lib/logger";
 import { lookupNutrition } from "../services/nutrition-lookup";
 import { lookupBarcode } from "../services/barcode-lookup";
+import {
+  buildScanResponseFlags,
+  type ProfileOutcome,
+} from "../services/scan-flags";
+import { parseUserAllergies } from "@shared/constants/allergens";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
 import { numericStringField } from "./_schemas";
 import {
@@ -99,17 +104,57 @@ export function register(app: Express): void {
       }
 
       try {
-        const [result, verification] = await Promise.all([
+        const [result, verification, profileOutcome] = await Promise.all([
           lookupBarcode(code),
           storage.getVerification(code),
+          // Fail-dangerous, NOT fatal: a profile-read hiccup must never break
+          // scanning. On rejection we degrade to a "couldn't check" flag — never
+          // silence, never a 500 (Global Constraint: allergen flags fail-dangerous).
+          storage.getUserProfile(req.userId).then(
+            (profile): ProfileOutcome => ({
+              ok: true,
+              allergies: parseUserAllergies(profile?.allergies),
+            }),
+            (err): ProfileOutcome => {
+              logger.warn(
+                { err: toError(err) },
+                "scan-flags: profile read failed",
+              );
+              return { ok: false };
+            },
+          ),
         ]);
         if (!result) {
           sendError(res, 404, "Product not found", ErrorCode.NOT_FOUND);
           return;
         }
 
+        const flags = buildScanResponseFlags(
+          {
+            allergenTags: result.allergenTags ?? [],
+            ingredientsText: result.ingredientsText ?? null,
+            allergenDataAvailable: result.allergenDataAvailable,
+          },
+          profileOutcome,
+        );
+
+        // Raw OFF allergen/ingredient fields are consumed here to build
+        // `flags` — no client reads them directly, so trim them off the
+        // response body before spreading (`flags` already carries the
+        // computed result).
+        const {
+          ingredientsText: _ingredientsText,
+          allergenTags: _allergenTags,
+          allergenDataAvailable: _allergenDataAvailable,
+          ...clientResult
+        } = result;
+        void _ingredientsText;
+        void _allergenTags;
+        void _allergenDataAvailable;
+
         res.json({
-          ...result,
+          ...clientResult,
+          flags,
           verificationLevel: verification?.verificationLevel ?? "unverified",
           verificationCount: verification?.verificationCount ?? 0,
         });

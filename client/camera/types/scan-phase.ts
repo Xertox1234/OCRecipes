@@ -1,10 +1,13 @@
 import type { BarcodeResult } from "../types";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
+import type { ScanFlag } from "@shared/types/scan-flags";
 
 export interface ProductSummary {
   name: string;
   brand?: string;
   imageUri?: string;
+  /** Top safety flag for the scan-lock chip (highest severity), if any. */
+  safetyFlag?: ScanFlag;
 }
 
 type Bounds = NonNullable<BarcodeResult["bounds"]>;

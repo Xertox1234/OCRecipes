@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Platform,
   StyleSheet,
   View,
   Text,
@@ -88,9 +89,17 @@ export function ProductChip({
   // it while keeping the same phase type (so `variant` is unchanged). Track it so
   // the loaded name can be announced — the variant-keyed effect below won't.
   const productName = "product" in phase ? phase.product?.name : undefined;
+  // Same async-load timing as productName above (both arrive together in the
+  // PRODUCT_LOADED dispatch) — tracked separately so its announce is
+  // content-keyed on the flag itself, not the product name.
+  const safetyFlagTitle =
+    "product" in phase ? phase.product?.safetyFlag?.title : undefined;
+  const safetyFlagDetail =
+    "product" in phase ? phase.product?.safetyFlag?.detail : undefined;
   const [shouldRender, setShouldRender] = useState(variant !== null);
   const prevSmartConfirmingRef = useRef(false);
   const prevProductNameRef = useRef<string | undefined>(undefined);
+  const prevSafetyFlagTitleRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (variant !== null) {
@@ -133,21 +142,63 @@ export function ProductChip({
     prevSmartConfirmingRef.current = isSmartConfirming;
   }, [isSmartConfirming]);
 
-  // Announce a product name that loads AFTER the chip is already shown. The
-  // BARCODE_LOCKED → PRODUCT_LOADED update keeps the same phase type, so the
-  // variant-keyed effect above does NOT re-fire — yet the visible product row
-  // changes from a "Product" placeholder to the real name. The old container
-  // live region re-read the subtree on this change (so Android spoke the loaded
-  // name); with it removed, announce the name explicitly on BOTH platforms.
-  // Edge-guarded on undefined→name so it fires once on load, not on the initial
-  // appear (where the name is absent and the variant announce already spoke) nor
-  // on later variant transitions that merely carry the name forward.
+  // Announce a product name and/or safety flag that load AFTER the chip is
+  // already shown. The BARCODE_LOCKED → PRODUCT_LOADED update keeps the same
+  // phase type, so the variant-keyed effect above does NOT re-fire — yet the
+  // visible product row changes from a "Product" placeholder to the real name,
+  // and a safety flag badge may appear alongside it. The old container live
+  // region re-read the subtree on this change (so Android spoke both); with it
+  // removed, this single effect drives the announcement explicitly.
+  //
+  // Platform split (do NOT unconditionally fire both announces — see below):
+  // - Android: only the name is announced imperatively here. The safety flag
+  //   badge below carries its own `accessibilityLiveRegion="assertive"`, which
+  //   TalkBack reads on its own — announcing the flag here too would double it.
+  // - iOS: `accessibilityLiveRegion` posts NO announcement at all, so this
+  //   effect is iOS's ONLY signal for both the name and the flag. Name and
+  //   flag arrive together in the same PRODUCT_LOADED commit, so firing two
+  //   separate `announceForAccessibility` calls in the same JS tick makes
+  //   VoiceOver drop one of them (confirmed pattern — see the confirm-card
+  //   announce effect in ScanScreen.tsx, which folds the same two pieces of
+  //   state into one utterance for the same reason). Fold them into ONE
+  //   combined utterance when they arrive together; fall back to a flag-only
+  //   announce only if the flag lands on a LATER commit than the name
+  //   (currently theoretical — both fields come from the same dispatch today).
+  //
+  // Edge-guarded via the prev refs so each piece announces once, on its own
+  // undefined→defined transition, not on every render.
   useEffect(() => {
-    if (productName && !prevProductNameRef.current) {
-      AccessibilityInfo.announceForAccessibility(productName);
+    const nameJustArrived = !!productName && !prevProductNameRef.current;
+    const flagJustArrived =
+      !!safetyFlagTitle && !prevSafetyFlagTitleRef.current;
+
+    if (Platform.OS === "ios") {
+      if (nameJustArrived && flagJustArrived) {
+        const flagText = safetyFlagDetail
+          ? `${safetyFlagTitle}. ${safetyFlagDetail}`
+          : safetyFlagTitle;
+        AccessibilityInfo.announceForAccessibility(
+          `${productName}. ${flagText}`,
+        );
+      } else {
+        if (nameJustArrived) {
+          AccessibilityInfo.announceForAccessibility(productName!);
+        }
+        if (flagJustArrived) {
+          AccessibilityInfo.announceForAccessibility(
+            safetyFlagDetail
+              ? `${safetyFlagTitle}. ${safetyFlagDetail}`
+              : safetyFlagTitle!,
+          );
+        }
+      }
+    } else if (nameJustArrived) {
+      AccessibilityInfo.announceForAccessibility(productName!);
     }
+
     prevProductNameRef.current = productName;
-  }, [productName]);
+    prevSafetyFlagTitleRef.current = safetyFlagTitle;
+  }, [productName, safetyFlagTitle, safetyFlagDetail]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -174,6 +225,35 @@ export function ProductChip({
       // transition (see the two effects above) on both platforms.
       importantForAccessibility={importantForAccessibility}
     >
+      {/* Safety flag row (badges only — never blocks the flow) */}
+      {product?.safetyFlag ? (
+        <View
+          style={[
+            styles.safetyFlag,
+            {
+              backgroundColor:
+                product.safetyFlag.severity === "danger"
+                  ? "rgba(229,72,77,0.22)"
+                  : product.safetyFlag.severity === "warn"
+                    ? "rgba(240,171,58,0.20)"
+                    : "rgba(100,181,246,0.20)",
+            },
+          ]}
+          accessible={true}
+          accessibilityLiveRegion="assertive"
+          accessibilityRole="text"
+          accessibilityLabel={
+            product.safetyFlag.detail
+              ? `${product.safetyFlag.title}. ${product.safetyFlag.detail}`
+              : product.safetyFlag.title
+          }
+        >
+          <Text style={styles.safetyFlagText}>
+            ⚠ {product.safetyFlag.title}
+          </Text>
+        </View>
+      ) : null}
+
       {/* Product info row */}
       <View style={styles.productRow}>
         {product?.imageUri ? (
@@ -383,6 +463,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     marginBottom: 4,
+  },
+  safetyFlag: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
+  },
+  safetyFlagText: {
+    color: "#FFF", // hardcoded — camera overlay
+    fontSize: 13,
+    fontWeight: "700",
   },
   thumb: {
     width: 44,

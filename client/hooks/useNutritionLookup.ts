@@ -31,6 +31,7 @@ import {
 } from "@/lib/serving-size-utils";
 import { enqueue } from "@/lib/offline-queue";
 import type { ScannedItemResponse } from "@/types/api";
+import type { ScanFlag } from "@shared/types/scan-flags";
 
 interface NutritionData {
   id?: number;
@@ -62,6 +63,7 @@ export function useNutritionLookup(params: {
   const { user } = useAuthContext();
 
   const [nutrition, setNutrition] = useState<NutritionData | null>(null);
+  const [flags, setFlags] = useState<ScanFlag[]>([]);
   const [verificationLevel, setVerificationLevel] =
     useState<VerificationLevel>("unverified");
   const [hasFrontLabelData, setHasFrontLabelData] = useState(false);
@@ -189,6 +191,10 @@ export function useNutritionLookup(params: {
     });
 
   const fetchBarcodeData = useCallback(async (code: string) => {
+    // Defense-in-depth: clear any prior product's allergen flags before this
+    // fetch resolves, so a future in-screen re-fetch can never render a stale
+    // danger flag against a different product while the new data loads.
+    setFlags([]);
     try {
       // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
       // Use raw fetch (not apiRequest) so we can inspect 404 responses
@@ -240,6 +246,8 @@ export function useNutritionLookup(params: {
             imageUrl: data.imageUrl,
             barcode: code,
           });
+
+          setFlags(Array.isArray(data.flags) ? (data.flags as ScanFlag[]) : []);
 
           // Set verification level from barcode lookup response
           if (data.verificationLevel) {
@@ -319,6 +327,38 @@ export function useNutritionLookup(params: {
           imageUrl: product.image_url || product.image_front_url,
           barcode: code,
         });
+
+        // Runs whenever the primary server request didn't yield a usable
+        // result — a network error, a 5xx, an unparseable/non-notInDatabase
+        // 404, or any other case where the inner server `try` above didn't
+        // already return — so the server-side allergen check
+        // (buildScanResponseFlags) never ran for this product. `flags` would
+        // otherwise stay `[]` and the screen would look allergen-clean when
+        // we simply couldn't check. Surface a "couldn't verify" warn flag
+        // instead (fail-safe, not fail-open).
+        //
+        // Gating: ideally this would show only for users with ≥1 declared
+        // allergy, but the server is down in this branch, so we can't add a
+        // network call to fetch the profile. `useAuthContext().user` (the
+        // `User` type in shared/types/auth.ts) does NOT carry allergies —
+        // that data lives only on the separate user-profile record, which is
+        // fetched server-side via `storage.getUserProfile`. With no cheap
+        // offline source for the user's allergies, show this flag
+        // unconditionally on the fallback: it's honest ("we couldn't check")
+        // and fail-safe rather than silently omitting the warning for the
+        // allergy-having users who need it most. This does NOT compute
+        // client-side allergen matching — that stays server-only (Phase 1).
+        setFlags([
+          {
+            id: "allergen-unavailable",
+            kind: "allergen-unavailable",
+            severity: "warn",
+            tier: "safety",
+            title: "Couldn't verify allergens",
+            detail:
+              "We couldn't reach our service to check this against your allergies — check the package label.",
+          },
+        ]);
       } else {
         setError("Product not found in database");
         setNutrition({ productName: "Unknown Product", barcode: code });
@@ -326,6 +366,21 @@ export function useNutritionLookup(params: {
     } catch {
       setError("Failed to fetch product data");
       setNutrition({ productName: "Unknown Product", barcode: code });
+      // Total outage: server AND the direct-OFF fallback both failed, so we
+      // genuinely couldn't check this against the user's allergies. Same
+      // fail-safe flag as the direct-OFF fallback branch above — see its
+      // comment for the full rationale.
+      setFlags([
+        {
+          id: "allergen-unavailable",
+          kind: "allergen-unavailable",
+          severity: "warn",
+          tier: "safety",
+          title: "Couldn't verify allergens",
+          detail:
+            "We couldn't reach our service to check this against your allergies — check the package label.",
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -500,6 +555,7 @@ export function useNutritionLookup(params: {
   return {
     nutrition,
     setNutrition,
+    flags,
     verificationLevel,
     hasFrontLabelData,
     isLoading,

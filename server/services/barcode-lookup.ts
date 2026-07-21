@@ -2,6 +2,7 @@ import { storage } from "../storage";
 import { createServiceLogger, toError } from "../lib/logger";
 import { roundToOneDecimal } from "../lib/math";
 import { valuesMatch } from "../lib/verification-consensus";
+import { mapOffAllergenTags } from "./off-allergen-tags";
 import {
   lookupCNF,
   lookupNutrition,
@@ -46,6 +47,53 @@ export interface BarcodeLookupResult {
   servingInfo: BarcodeServingInfo;
   isServingDataTrusted: boolean;
   source: string;
+  // Phase 1 (Smart Scan): OFF-derived allergen data. Read live, NEVER persisted
+  // to barcodeNutrition (ODbL). allergenDataAvailable === false is the
+  // fail-dangerous signal for the flag evaluator. Availability means we have
+  // ingredient text or an in-model allergen tag we can actually check
+  // against — a tag outside our 9-allergen model doesn't count.
+  ingredientsText?: string;
+  allergenTags?: string[];
+  allergenDataAvailable: boolean;
+}
+
+/**
+ * Pull OFF allergen/ingredient content off the raw product. Pure + exported so
+ * it can be unit-tested without mocking the OFF fetch. `allergenDataAvailable`
+ * is true ONLY when we have ingredient text or an in-model allergen tag we can
+ * actually check against — it is the fail-dangerous signal the flag evaluator
+ * keys on. An in-model tag present but not matching the user's allergen is
+ * still 'available' (we trust OFF's structured declaration for the allergens
+ * it does model); only out-of-model-only tags with no ingredient text make it
+ * 'unavailable', since OFF's raw `allergens_tags` includes tags outside our
+ * 9-allergen model (e.g. mustard) that don't tell us anything we can check.
+ */
+export function extractOffAllergenData(
+  offProduct: Record<string, any> | null,
+): {
+  ingredientsText?: string;
+  allergenTags: string[];
+  allergenDataAvailable: boolean;
+} {
+  const allergenTags: string[] = Array.isArray(offProduct?.allergens_tags)
+    ? offProduct!.allergens_tags.filter(
+        (t: unknown): t is string => typeof t === "string",
+      )
+    : [];
+  const enText = offProduct?.ingredients_text_en;
+  const rawText: unknown =
+    typeof enText === "string" && enText.trim().length > 0
+      ? enText
+      : offProduct?.ingredients_text;
+  const ingredientsText =
+    typeof rawText === "string" && rawText.trim().length > 0
+      ? rawText
+      : undefined;
+  const allergenDataAvailable =
+    offProduct != null &&
+    (ingredientsText !== undefined ||
+      mapOffAllergenTags(allergenTags).length > 0);
+  return { ingredientsText, allergenTags, allergenDataAvailable };
 }
 
 const MAX_PLAUSIBLE_SERVING_GRAMS = 500;
@@ -379,6 +427,10 @@ export async function lookupBarcode(
   const usdaSearchTerm =
     searchTermCandidates.find((t) => t.trim().length > 0)?.trim() || "";
 
+  // Phase 1 (Smart Scan): OFF allergen/ingredient data, read live and surfaced
+  // on the result only — NEVER persisted (see barcodeNutrition insert below).
+  const offAllergenData = extractOffAllergenData(offProduct);
+
   // ── Step 2: Extract OFF per-100g values ──────────────────────────
   // Validate nutriments at the boundary: drop non-numeric/garbage values rather
   // than writing them to the monetized cache (under-report is the safe direction).
@@ -701,5 +753,8 @@ export async function lookupBarcode(
     },
     isServingDataTrusted: hasServingData && !wasCorrected,
     source,
+    ingredientsText: offAllergenData.ingredientsText,
+    allergenTags: offAllergenData.allergenTags,
+    allergenDataAvailable: offAllergenData.allergenDataAvailable,
   };
 }

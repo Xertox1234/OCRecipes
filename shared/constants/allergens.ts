@@ -50,6 +50,7 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
     label: "Peanuts",
     directIngredients: [
       "peanut",
+      "peanuts",
       "peanut butter",
       "peanut oil",
       "groundnut",
@@ -594,7 +595,7 @@ const ALLERGEN_LABEL_MAP: Record<string, AllergenId> = {
  * Normalise the allergy name from the user profile (e.g. "Dairy/Milk", "milk",
  * "Wheat/Gluten") to our canonical AllergenId.
  */
-function normalizeAllergenId(name: string): AllergenId | null {
+export function normalizeAllergenId(name: string): AllergenId | null {
   const lower = name.toLowerCase().trim();
 
   // Direct ID match (e.g. stored as "peanuts", "tree_nuts")
