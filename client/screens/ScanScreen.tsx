@@ -358,7 +358,9 @@ export default function ScanScreen() {
           },
         });
         // Raise salience on a severe flag WITHOUT blocking the flow (badges only).
-        if (safetyFlag?.severity === "danger") {
+        // In returnAfterLog mode the confirm-card branch above owns this haptic
+        // for the same barcode — skip here to avoid a double buzz.
+        if (safetyFlag?.severity === "danger" && !returnAfterLog) {
           haptics.notification(Haptics.NotificationFeedbackType.Warning);
         }
       } catch (err) {
@@ -366,7 +368,7 @@ export default function ScanScreen() {
         // Non-critical — ProductChip renders without product data
       }
     },
-    [haptics],
+    [haptics, returnAfterLog],
   );
 
   const onBarcodeScanned = useCallback(
@@ -921,7 +923,9 @@ export default function ScanScreen() {
                       backgroundColor: withOpacity(
                         confirmCard.safetyFlag.severity === "danger"
                           ? theme.error
-                          : theme.warning,
+                          : confirmCard.safetyFlag.severity === "warn"
+                            ? theme.warning
+                            : theme.info,
                         0.12,
                       ),
                     },
@@ -941,7 +945,9 @@ export default function ScanScreen() {
                     color={
                       confirmCard.safetyFlag.severity === "danger"
                         ? theme.error
-                        : theme.warning
+                        : confirmCard.safetyFlag.severity === "warn"
+                          ? theme.warning
+                          : theme.info
                     }
                   />
                   <ThemedText
@@ -952,7 +958,9 @@ export default function ScanScreen() {
                       color:
                         confirmCard.safetyFlag.severity === "danger"
                           ? theme.error
-                          : theme.warning,
+                          : confirmCard.safetyFlag.severity === "warn"
+                            ? theme.warning
+                            : theme.info,
                     }}
                   >
                     {confirmCard.safetyFlag.title}

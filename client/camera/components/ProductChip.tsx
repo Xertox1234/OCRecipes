@@ -234,7 +234,9 @@ export function ProductChip({
               backgroundColor:
                 product.safetyFlag.severity === "danger"
                   ? "rgba(229,72,77,0.22)"
-                  : "rgba(240,171,58,0.20)",
+                  : product.safetyFlag.severity === "warn"
+                    ? "rgba(240,171,58,0.20)"
+                    : "rgba(100,181,246,0.20)",
             },
           ]}
           accessible={true}
