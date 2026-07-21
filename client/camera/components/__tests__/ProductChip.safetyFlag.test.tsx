@@ -169,4 +169,46 @@ describe("ProductChip safety flag — accessibility", () => {
     );
     expect(announceSpy).not.toHaveBeenCalled();
   });
+
+  // Regression for the iOS same-tick collision: productName and safetyFlag
+  // arrive together in the same PRODUCT_LOADED commit. Two separate
+  // `announceForAccessibility` calls in one JS tick makes VoiceOver drop one —
+  // they must be folded into ONE combined utterance on iOS.
+  it("combines name + flag into ONE announce on iOS when they arrive in the same commit", () => {
+    RN.Platform.OS = "ios";
+    renderComponent(
+      <ProductChip
+        phase={lockedPhase(dangerFlag)}
+        onConfirm={noop}
+        onStepConfirmed={noop}
+        onEditStep2={noop}
+        onEditStep3={noop}
+        onSmartPhotoConfirm={noop}
+        onRetry={noop}
+      />,
+    );
+    expect(announceSpy).toHaveBeenCalledWith("Trail Mix. Contains Tree Nuts");
+    expect(announceSpy).not.toHaveBeenCalledWith("Trail Mix");
+    expect(announceSpy).not.toHaveBeenCalledWith("Contains Tree Nuts");
+  });
+
+  it("still announces only the name on Android when name+flag arrive together (badge live region covers the flag)", () => {
+    RN.Platform.OS = "android";
+    renderComponent(
+      <ProductChip
+        phase={lockedPhase(dangerFlag)}
+        onConfirm={noop}
+        onStepConfirmed={noop}
+        onEditStep2={noop}
+        onEditStep3={noop}
+        onSmartPhotoConfirm={noop}
+        onRetry={noop}
+      />,
+    );
+    expect(announceSpy).toHaveBeenCalledWith("Trail Mix");
+    expect(announceSpy).not.toHaveBeenCalledWith("Contains Tree Nuts");
+    expect(announceSpy).not.toHaveBeenCalledWith(
+      "Trail Mix. Contains Tree Nuts",
+    );
+  });
 });

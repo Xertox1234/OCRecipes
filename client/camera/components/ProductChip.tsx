@@ -142,43 +142,63 @@ export function ProductChip({
     prevSmartConfirmingRef.current = isSmartConfirming;
   }, [isSmartConfirming]);
 
-  // Announce a product name that loads AFTER the chip is already shown. The
-  // BARCODE_LOCKED → PRODUCT_LOADED update keeps the same phase type, so the
-  // variant-keyed effect above does NOT re-fire — yet the visible product row
-  // changes from a "Product" placeholder to the real name. The old container
-  // live region re-read the subtree on this change (so Android spoke the loaded
-  // name); with it removed, announce the name explicitly on BOTH platforms.
-  // Edge-guarded on undefined→name so it fires once on load, not on the initial
-  // appear (where the name is absent and the variant announce already spoke) nor
-  // on later variant transitions that merely carry the name forward.
+  // Announce a product name and/or safety flag that load AFTER the chip is
+  // already shown. The BARCODE_LOCKED → PRODUCT_LOADED update keeps the same
+  // phase type, so the variant-keyed effect above does NOT re-fire — yet the
+  // visible product row changes from a "Product" placeholder to the real name,
+  // and a safety flag badge may appear alongside it. The old container live
+  // region re-read the subtree on this change (so Android spoke both); with it
+  // removed, this single effect drives the announcement explicitly.
+  //
+  // Platform split (do NOT unconditionally fire both announces — see below):
+  // - Android: only the name is announced imperatively here. The safety flag
+  //   badge below carries its own `accessibilityLiveRegion="assertive"`, which
+  //   TalkBack reads on its own — announcing the flag here too would double it.
+  // - iOS: `accessibilityLiveRegion` posts NO announcement at all, so this
+  //   effect is iOS's ONLY signal for both the name and the flag. Name and
+  //   flag arrive together in the same PRODUCT_LOADED commit, so firing two
+  //   separate `announceForAccessibility` calls in the same JS tick makes
+  //   VoiceOver drop one of them (confirmed pattern — see the confirm-card
+  //   announce effect in ScanScreen.tsx, which folds the same two pieces of
+  //   state into one utterance for the same reason). Fold them into ONE
+  //   combined utterance when they arrive together; fall back to a flag-only
+  //   announce only if the flag lands on a LATER commit than the name
+  //   (currently theoretical — both fields come from the same dispatch today).
+  //
+  // Edge-guarded via the prev refs so each piece announces once, on its own
+  // undefined→defined transition, not on every render.
   useEffect(() => {
-    if (productName && !prevProductNameRef.current) {
-      AccessibilityInfo.announceForAccessibility(productName);
-    }
-    prevProductNameRef.current = productName;
-  }, [productName]);
+    const nameJustArrived = !!productName && !prevProductNameRef.current;
+    const flagJustArrived =
+      !!safetyFlagTitle && !prevSafetyFlagTitleRef.current;
 
-  // Announce a safety flag that loads AFTER the chip is already shown (same
-  // PRODUCT_LOADED update as productName above). The badge below carries its
-  // own `accessibilityLiveRegion="assertive"`, but that prop is Android-only —
-  // iOS posts no announcement from it — so this imperative announce is iOS's
-  // ONLY signal for the flag. Gated to iOS so Android doesn't hear it twice
-  // (live region + imperative). Edge-guarded on undefined→title so it fires
-  // once per newly-loaded flag, not on every re-render.
-  useEffect(() => {
-    if (
-      Platform.OS === "ios" &&
-      safetyFlagTitle &&
-      !prevSafetyFlagTitleRef.current
-    ) {
-      AccessibilityInfo.announceForAccessibility(
-        safetyFlagDetail
+    if (Platform.OS === "ios") {
+      if (nameJustArrived && flagJustArrived) {
+        const flagText = safetyFlagDetail
           ? `${safetyFlagTitle}. ${safetyFlagDetail}`
-          : safetyFlagTitle,
-      );
+          : safetyFlagTitle;
+        AccessibilityInfo.announceForAccessibility(
+          `${productName}. ${flagText}`,
+        );
+      } else {
+        if (nameJustArrived) {
+          AccessibilityInfo.announceForAccessibility(productName!);
+        }
+        if (flagJustArrived) {
+          AccessibilityInfo.announceForAccessibility(
+            safetyFlagDetail
+              ? `${safetyFlagTitle}. ${safetyFlagDetail}`
+              : safetyFlagTitle!,
+          );
+        }
+      }
+    } else if (nameJustArrived) {
+      AccessibilityInfo.announceForAccessibility(productName!);
     }
+
+    prevProductNameRef.current = productName;
     prevSafetyFlagTitleRef.current = safetyFlagTitle;
-  }, [safetyFlagTitle, safetyFlagDetail]);
+  }, [productName, safetyFlagTitle, safetyFlagDetail]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
