@@ -33,6 +33,7 @@ import { getServingContextLabel } from "@/screens/nutrition-detail-utils";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
+import { ScanFlagBadge } from "@/components/ScanFlagBadge";
 import { useNutritionLookup } from "@/hooks/useNutritionLookup";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
@@ -170,6 +171,7 @@ export default function NutritionDetailScreen() {
 
   const {
     nutrition,
+    flags,
     verificationLevel,
     hasFrontLabelData,
     isLoading,
@@ -286,6 +288,30 @@ export default function NutritionDetailScreen() {
             </ThemedText>
           ) : null}
         </Animated.View>
+
+        {flags.length > 0 ? (
+          <Animated.View
+            entering={
+              reducedMotion ? undefined : FadeInUp.delay(450).duration(400)
+            }
+            style={styles.additionalNutrients}
+          >
+            <ThemedText type="h4" style={styles.sectionTitle}>
+              For you
+            </ThemedText>
+            <View style={{ gap: Spacing.sm }}>
+              {flags.map((f) => (
+                <ScanFlagBadge key={f.id} flag={f} />
+              ))}
+            </View>
+            <ThemedText
+              type="caption"
+              style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
+            >
+              Informational only — not medical advice.
+            </ThemedText>
+          </Animated.View>
+        ) : null}
 
         {correctionNotice && !itemId ? (
           <View

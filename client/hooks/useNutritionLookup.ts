@@ -31,6 +31,7 @@ import {
 } from "@/lib/serving-size-utils";
 import { enqueue } from "@/lib/offline-queue";
 import type { ScannedItemResponse } from "@/types/api";
+import type { ScanFlag } from "@shared/types/scan-flags";
 
 interface NutritionData {
   id?: number;
@@ -62,6 +63,7 @@ export function useNutritionLookup(params: {
   const { user } = useAuthContext();
 
   const [nutrition, setNutrition] = useState<NutritionData | null>(null);
+  const [flags, setFlags] = useState<ScanFlag[]>([]);
   const [verificationLevel, setVerificationLevel] =
     useState<VerificationLevel>("unverified");
   const [hasFrontLabelData, setHasFrontLabelData] = useState(false);
@@ -240,6 +242,8 @@ export function useNutritionLookup(params: {
             imageUrl: data.imageUrl,
             barcode: code,
           });
+
+          setFlags(Array.isArray(data.flags) ? (data.flags as ScanFlag[]) : []);
 
           // Set verification level from barcode lookup response
           if (data.verificationLevel) {
@@ -500,6 +504,7 @@ export function useNutritionLookup(params: {
   return {
     nutrition,
     setNutrition,
+    flags,
     verificationLevel,
     hasFrontLabelData,
     isLoading,
