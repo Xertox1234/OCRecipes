@@ -130,6 +130,7 @@ describe("Nutrition Routes", () => {
         },
         isServingDataTrusted: true,
         source: "openfoodfacts",
+        allergenDataAvailable: false,
       } satisfies BarcodeLookupResult);
 
       const res = await request(app)

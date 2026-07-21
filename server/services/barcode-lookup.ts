@@ -46,6 +46,42 @@ export interface BarcodeLookupResult {
   servingInfo: BarcodeServingInfo;
   isServingDataTrusted: boolean;
   source: string;
+  // Phase 1 (Smart Scan): OFF-derived allergen data. Read live, NEVER persisted
+  // to barcodeNutrition (ODbL). allergenDataAvailable === false is the
+  // fail-dangerous signal for the flag evaluator.
+  ingredientsText?: string;
+  allergenTags?: string[];
+  allergenDataAvailable: boolean;
+}
+
+/**
+ * Pull OFF allergen/ingredient content off the raw product. Pure + exported so
+ * it can be unit-tested without mocking the OFF fetch. `allergenDataAvailable`
+ * is true ONLY when OFF actually returned tags or ingredient text — it is the
+ * fail-dangerous signal the flag evaluator keys on.
+ */
+export function extractOffAllergenData(
+  offProduct: Record<string, any> | null,
+): {
+  ingredientsText?: string;
+  allergenTags: string[];
+  allergenDataAvailable: boolean;
+} {
+  const allergenTags: string[] = Array.isArray(offProduct?.allergens_tags)
+    ? offProduct!.allergens_tags.filter(
+        (t: unknown): t is string => typeof t === "string",
+      )
+    : [];
+  const rawText: unknown =
+    offProduct?.ingredients_text_en || offProduct?.ingredients_text;
+  const ingredientsText =
+    typeof rawText === "string" && rawText.trim().length > 0
+      ? rawText
+      : undefined;
+  const allergenDataAvailable =
+    offProduct != null &&
+    (allergenTags.length > 0 || ingredientsText !== undefined);
+  return { ingredientsText, allergenTags, allergenDataAvailable };
 }
 
 const MAX_PLAUSIBLE_SERVING_GRAMS = 500;
@@ -379,6 +415,10 @@ export async function lookupBarcode(
   const usdaSearchTerm =
     searchTermCandidates.find((t) => t.trim().length > 0)?.trim() || "";
 
+  // Phase 1 (Smart Scan): OFF allergen/ingredient data, read live and surfaced
+  // on the result only — NEVER persisted (see barcodeNutrition insert below).
+  const offAllergenData = extractOffAllergenData(offProduct);
+
   // ── Step 2: Extract OFF per-100g values ──────────────────────────
   // Validate nutriments at the boundary: drop non-numeric/garbage values rather
   // than writing them to the monetized cache (under-report is the safe direction).
@@ -701,5 +741,8 @@ export async function lookupBarcode(
     },
     isServingDataTrusted: hasServingData && !wasCorrected,
     source,
+    ingredientsText: offAllergenData.ingredientsText,
+    allergenTags: offAllergenData.allergenTags,
+    allergenDataAvailable: offAllergenData.allergenDataAvailable,
   };
 }
