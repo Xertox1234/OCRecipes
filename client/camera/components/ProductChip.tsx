@@ -174,6 +174,32 @@ export function ProductChip({
       // transition (see the two effects above) on both platforms.
       importantForAccessibility={importantForAccessibility}
     >
+      {/* Safety flag row (badges only — never blocks the flow) */}
+      {product?.safetyFlag ? (
+        <View
+          style={[
+            styles.safetyFlag,
+            {
+              backgroundColor:
+                product.safetyFlag.severity === "danger"
+                  ? "rgba(229,72,77,0.22)"
+                  : "rgba(240,171,58,0.20)",
+            },
+          ]}
+          accessibilityLiveRegion="assertive"
+          accessibilityRole="text"
+          accessibilityLabel={
+            product.safetyFlag.detail
+              ? `${product.safetyFlag.title}. ${product.safetyFlag.detail}`
+              : product.safetyFlag.title
+          }
+        >
+          <Text style={styles.safetyFlagText}>
+            ⚠ {product.safetyFlag.title}
+          </Text>
+        </View>
+      ) : null}
+
       {/* Product info row */}
       <View style={styles.productRow}>
         {product?.imageUri ? (
@@ -383,6 +409,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     marginBottom: 4,
+  },
+  safetyFlag: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
+  },
+  safetyFlagText: {
+    color: "#FFF", // hardcoded — camera overlay
+    fontSize: 13,
+    fontWeight: "700",
   },
   thumb: {
     width: 44,

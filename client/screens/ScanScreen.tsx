@@ -85,6 +85,7 @@ import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
+import { pickTopSafetyFlag } from "@shared/types/scan-flags";
 
 const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
 
@@ -290,23 +291,37 @@ export default function ScanScreen() {
     }
   }, [confirmIsLoading, confirmIsError, confirmName]);
 
-  const fetchProductInfo = useCallback(async (barcode: string) => {
-    try {
-      const res = await apiRequest("GET", `/api/nutrition/barcode/${barcode}`);
-      const data = await res.json();
-      dispatch({
-        type: "PRODUCT_LOADED",
-        product: {
-          name: data.productName ?? "Unknown product",
-          brand: data.brandName ?? undefined,
-          imageUri: data.imageUrl ?? undefined,
-        },
-      });
-    } catch (err) {
-      logger.error("[fetchProductInfo] product info fetch failed", err);
-      // Non-critical — ProductChip renders without product data
-    }
-  }, []);
+  const fetchProductInfo = useCallback(
+    async (barcode: string) => {
+      try {
+        const res = await apiRequest(
+          "GET",
+          `/api/nutrition/barcode/${barcode}`,
+        );
+        const data = await res.json();
+        const safetyFlag = pickTopSafetyFlag(
+          Array.isArray(data.flags) ? data.flags : [],
+        );
+        dispatch({
+          type: "PRODUCT_LOADED",
+          product: {
+            name: data.productName ?? "Unknown product",
+            brand: data.brandName ?? undefined,
+            imageUri: data.imageUrl ?? undefined,
+            safetyFlag,
+          },
+        });
+        // Raise salience on a severe flag WITHOUT blocking the flow (badges only).
+        if (safetyFlag?.severity === "danger") {
+          haptics.notification(Haptics.NotificationFeedbackType.Warning);
+        }
+      } catch (err) {
+        logger.error("[fetchProductInfo] product info fetch failed", err);
+        // Non-critical — ProductChip renders without product data
+      }
+    },
+    [haptics],
+  );
 
   const onBarcodeScanned = useCallback(
     (result: BarcodeResult) => {
