@@ -14,6 +14,13 @@ type RGB = [number, number, number];
 
 function hexToRgb(hex: string): RGB {
   const h = hex.replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) {
+    // Fail loudly rather than silently returning NaN channels (which would
+    // propagate a NaN ratio into an opaque `expected NaN to be >= 4.5`).
+    throw new Error(
+      `hexToRgb expects a 6-digit hex color (e.g. "#1a2b3c"), got "${hex}"`,
+    );
+  }
   return [0, 2, 4].map((i) => parseInt(h.substring(i, i + 2), 16)) as RGB;
 }
 
