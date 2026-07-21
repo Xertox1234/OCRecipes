@@ -33,4 +33,28 @@ describe("extractOffAllergenData", () => {
     });
     expect(r.allergenDataAvailable).toBe(false);
   });
+
+  it("data is UNAVAILABLE when the only tags are out of our 9-allergen model and there is no ingredient text", () => {
+    const r = extractOffAllergenData({
+      allergens_tags: ["en:mustard"],
+      ingredients_text: "",
+    });
+    expect(r.allergenDataAvailable).toBe(false);
+  });
+
+  it("data is AVAILABLE when at least one tag maps to an in-model allergen, even with no ingredient text", () => {
+    const r = extractOffAllergenData({
+      allergens_tags: ["en:milk"],
+      ingredients_text: undefined,
+    });
+    expect(r.allergenDataAvailable).toBe(true);
+  });
+
+  it("falls back to the base-language ingredients text when the English text is whitespace-only", () => {
+    const r = extractOffAllergenData({
+      ingredients_text_en: "  ",
+      ingredients_text: "sugar, milk",
+    });
+    expect(r.ingredientsText).toBe("sugar, milk");
+  });
 });
