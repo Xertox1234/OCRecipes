@@ -10,6 +10,10 @@ import {
   withOpacity,
   MAX_FONT_SCALE_CONSTRAINED,
 } from "@/constants/theme";
+import {
+  getAllergenBadgeVisuals,
+  ALLERGEN_BADGE_FILL_OPACITY,
+} from "./allergen-badge-utils";
 import type { AllergySeverity } from "@shared/constants/allergens";
 
 interface AllergenBadgeProps {
@@ -25,19 +29,8 @@ export const AllergenBadge = React.memo(function AllergenBadge({
 }: AllergenBadgeProps) {
   const { theme } = useTheme();
 
-  const color =
-    severity === "severe"
-      ? theme.error
-      : severity === "moderate"
-        ? theme.warning
-        : theme.info;
-
-  const icon: "alert-triangle" | "alert-circle" | "info" =
-    severity === "severe"
-      ? "alert-triangle"
-      : severity === "moderate"
-        ? "alert-circle"
-        : "info";
+  const { colorKey, icon } = getAllergenBadgeVisuals(severity);
+  const color = theme[colorKey];
 
   const label =
     severity === "severe"
@@ -48,7 +41,11 @@ export const AllergenBadge = React.memo(function AllergenBadge({
 
   return (
     <View
-      style={[styles.badge, { backgroundColor: withOpacity(color, 0.1) }]}
+      style={[
+        styles.badge,
+        { backgroundColor: withOpacity(color, ALLERGEN_BADGE_FILL_OPACITY) },
+      ]}
+      accessible={true}
       accessibilityLabel={label}
       accessibilityRole="text"
     >

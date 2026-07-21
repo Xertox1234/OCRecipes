@@ -1,6 +1,6 @@
 ---
 title: "Badge family fails WCAG AA text/background contrast (AllergenBadge, VerificationBadge, ScanFlagBadge)"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-20
 updated: 2026-07-20
@@ -57,19 +57,26 @@ safety warning.
 
 ## Acceptance Criteria
 
-- [ ] All three badges meet WCAG AA contrast (>= 4.5:1 for the caption text) in
+- [x] All three badges meet WCAG AA contrast (>= 4.5:1 for the caption text) in
       BOTH light and dark themes, against BOTH `backgroundRoot` and `surface`
       (badges appear on both).
-- [ ] Approach chosen and applied consistently across the family: e.g. a darker
+- [x] Approach chosen and applied consistently across the family: e.g. a darker
       per-severity text shade, a solid (full-opacity) fill with white/near-white
       text, or a raised-opacity fill paired with a darker text token — whatever
       passes the checker while staying visually coherent with the app.
-- [ ] Verified with a contrast checker (WebAIM or equivalent) AND on device /
-      emulator in both themes (this repo has a documented TalkBack-via-logcat /
-      simulator practice) — not by eyeballing in code.
-- [ ] No regression to the existing `accessible={true}` grouping or the
+- [~] Verified with a contrast checker (WebAIM or equivalent) AND on device /
+  emulator in both themes (this repo has a documented TalkBack-via-logcat /
+  simulator practice) — not by eyeballing in code. **Checker half DONE**:
+  `client/components/__tests__/badge-contrast.test.ts` is a deterministic,
+  CI-enforced WCAG contrast checker (sRGB relative-luminance + alpha
+  compositing, same math WebAIM uses) covering every badge × theme ×
+  surface combination — stronger than a one-time manual WebAIM check.
+  **On-device/emulator visual sign-off in both themes NOT done** — this
+  headless executor session cannot drive a simulator/TalkBack; deferred to
+  human review per the dispatching orchestrator's explicit instruction.
+- [x] No regression to the existing `accessible={true}` grouping or the
       severity→color/icon mappings.
-- [ ] `AllergenBadge` (and `VerificationBadge` if it shares the pattern) get
+- [x] `AllergenBadge` (and `VerificationBadge` if it shares the pattern) get
       `accessible={true}` on their container `View` so their composed labels are
       announced as one unit — mirroring the `ScanFlagBadge` fix.
 
@@ -106,3 +113,27 @@ safety warning.
 - Filed from Smart Scan Phase 1 (Task 6 review, mobile-reviewer). ScanFlagBadge
   got its `accessible={true}` fix in that PR; the family-wide contrast fix is
   tracked here.
+
+- Implemented by the `/todo` executor. Approach: added 5 new WCAG-safe theme
+  tokens to `client/constants/theme.ts` (`badgeErrorText`/`badgeWarningText`/
+  `badgeInfoText`/`badgeSuccessText`/`badgeNeutralText`) — same-hue, darker
+  (light mode) or lightened (dark `error`) variants of the existing status
+  colors, computed to clear >=4.5:1 against BOTH `backgroundRoot` and
+  `surface` at each badge's actual fill opacity, with margin. Extracted each
+  badge's severity/level → `{colorKey, icon}` mapping into a small
+  `-utils.ts` file (`allergen-badge-utils.ts`, `scan-flag-badge-utils.ts`;
+  `verification-badge-utils.ts` already existed and was repointed) — the
+  same token still drives both the icon/text color and the `withOpacity()`
+  fill, unchanged visual mechanism, just a WCAG-safe color. Added
+  `accessible={true}` to `AllergenBadge`/`VerificationBadge` containers
+  (`ScanFlagBadge` already had it). Added a deterministic, CI-enforced WCAG
+  contrast test (`test/utils/wcag-contrast.ts` + `badge-contrast.test.ts`)
+  computing the real sRGB-composited contrast ratio for every badge
+  severity/level × {light, dark} × {backgroundRoot, surface} combination —
+  this is the checker-verification half of AC item 3. **On-device/emulator
+  visual sign-off in both themes was explicitly NOT performed** (headless
+  executor session, no simulator access) — flagged in the PR for human
+  review before merge, per the dispatching orchestrator's instruction. No
+  regressions: severity→color/icon mappings, the decorative-icon
+  `accessible={false}` pattern, and all 6655 existing tests are unchanged/
+  passing.
