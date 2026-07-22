@@ -77,6 +77,26 @@ describe("nutrition-detail-flags-utils", () => {
       expect(p.universal).toEqual([]);
       expect(p.nutriScore).toBeUndefined();
     });
+
+    // Final-review fix (latent crash guard): `grade` is optional on ScanFlag.
+    // A gradeless nutriscore flag must NOT populate `nutriScore` — downstream,
+    // NutritionDetailScreen renders `NutriScoreChip` from `nutriScore.grade`,
+    // which calls `.toUpperCase()` on it; a gradeless flag flowing through
+    // would throw at render time.
+    it("does not populate nutriScore for a gradeless nutriscore flag", () => {
+      const flags = [
+        {
+          id: "nutriscore:unknown",
+          kind: "nutriscore",
+          severity: "info",
+          tier: "nutrition",
+          title: "Nutri-Score unavailable",
+          // no `grade` field
+        },
+      ] as any;
+      const p = partitionScanFlags(flags);
+      expect(p.nutriScore).toBeUndefined();
+    });
   });
 
   describe("headsUpSummaryLabel", () => {

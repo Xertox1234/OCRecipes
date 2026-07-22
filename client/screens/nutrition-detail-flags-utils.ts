@@ -45,7 +45,11 @@ export function partitionScanFlags(flags: ScanFlag[]): PartitionedScanFlags {
       personal.push(flag);
     } else if (UNIVERSAL_KINDS.has(flag.kind)) {
       universal.push(flag);
-    } else if (flag.kind === "nutriscore") {
+    } else if (flag.kind === "nutriscore" && flag.grade) {
+      // `grade` is optional on ScanFlag — a gradeless nutriscore flag must
+      // not flow through, since NutritionDetailScreen renders it via
+      // `NutriScoreChip`, which calls `.toUpperCase()` on the grade
+      // (final-review fix, Smart Scan Universal Nutrition Flags v1).
       nutriScore = flag;
     }
   }

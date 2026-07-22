@@ -355,8 +355,8 @@ export default function NutritionDetailScreen() {
                   ))}
                 </View>
               ) : null}
-              {partition.nutriScore ? (
-                <NutriScoreChip grade={partition.nutriScore.grade!} />
+              {partition.nutriScore?.grade ? (
+                <NutriScoreChip grade={partition.nutriScore.grade} />
               ) : null}
             </View>
             <ThemedText

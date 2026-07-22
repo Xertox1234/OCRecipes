@@ -486,3 +486,89 @@ describe("ScanScreen — barcode-lock chip shows the top flag (Task 14)", () => 
     expect(screen.queryByText(/High in sugar/)).toBeNull();
   });
 });
+
+describe("ScanScreen — scan-lock chip filters info-level flags (final-review fix)", () => {
+  // Reviewer-flagged blocker: `pickTopFlag` has no severity filter, so a
+  // clean healthy product whose only flag is `nutriscore:a` (severity
+  // "info") rendered "⚠ Nutri-Score A" with an assertive announce — a
+  // warning glyph + interrupt on neutral/good info. fetchProductInfo now
+  // filters out info-level flags before picking the chip's topFlag; warn/
+  // danger flags (allergens, high sugar/sat-fat/sodium, etc.) are unaffected.
+  const infoNutriscoreFlag = {
+    id: "nutriscore:a",
+    kind: "nutriscore",
+    severity: "info",
+    tier: "nutrition",
+    title: "Nutri-Score A",
+    grade: "a",
+  };
+  const warnSugarFlag = {
+    id: "nutrient:sugar",
+    kind: "nutrient",
+    severity: "warn",
+    tier: "nutrition",
+    title: "High in sugar",
+  };
+
+  const driveBarcodeLock = async () => {
+    renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    expect(firstHandler).toBeDefined();
+
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+  };
+
+  it("shows no topFlag badge when the only flag is info severity", async () => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Clean Snack",
+            calories: 100,
+            flags: [infoNutriscoreFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    expect(await screen.findByText("Clean Snack")).toBeTruthy();
+    expect(screen.queryByText(/⚠/)).toBeNull();
+  });
+
+  it("still surfaces a warn-level flag alongside an info-level one", async () => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Sugary Snack",
+            calories: 250,
+            flags: [infoNutriscoreFlag, warnSugarFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    expect(await screen.findByText("⚠ High in sugar")).toBeTruthy();
+    expect(screen.queryByText(/Nutri-Score/)).toBeNull();
+  });
+});
