@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { lookupBarcode, scaleNutrients } from "../barcode-lookup";
+import {
+  lookupBarcode,
+  scaleNutrients,
+  extractOffUniversalData,
+} from "../barcode-lookup";
 import { _resetCNFCacheForTesting } from "../nutrition-lookup";
 
 // Mock the db module so the cache functions don't hit a real database
@@ -1178,5 +1182,26 @@ describe("lookupBarcode — OFF nutriment mapping (Universal Nutrition Flags v1,
     expect(result).not.toBeNull();
     expect(result!.per100g.saturatedFat).toBe(0);
     expect(result!.per100g.caffeine).toBe(32); // 0.032 g → 32 mg
+  });
+});
+
+describe("extractOffUniversalData", () => {
+  it("pulls nova/nutriscore/additives/categories from an OFF product", () => {
+    const out = extractOffUniversalData({
+      nova_group: 4,
+      nutriscore_grade: "e",
+      additives_tags: ["en:e951", "en:e150d"],
+      categories_tags: ["en:beverages", "en:energy-drinks"],
+    });
+    expect(out.novaGroup).toBe(4);
+    expect(out.nutriScore).toBe("e");
+    expect(out.additivesTags).toEqual(["en:e951", "en:e150d"]);
+    expect(out.categoriesTags).toContain("en:beverages");
+  });
+
+  it("returns empty arrays and undefined grades for a null product", () => {
+    const out = extractOffUniversalData(null);
+    expect(out.additivesTags).toEqual([]);
+    expect(out.novaGroup).toBeUndefined();
   });
 });
