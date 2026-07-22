@@ -35,9 +35,12 @@ async function loadDotenv(): Promise<void> {
   }
 }
 
-async function loadSharp(): Promise<typeof import("sharp")> {
+async function loadSharp(): Promise<(typeof import("sharp"))["default"]> {
+  // sharp ships CJS (`export = sharp`) with ESM type declarations (0.35+); under
+  // ESM interop the callable constructor is the `.default` export, not the
+  // (non-callable) module namespace.
   const mod = await import("sharp");
-  return mod.default ?? mod;
+  return mod.default;
 }
 
 async function loadRunware(): Promise<typeof import("../server/lib/runware")> {
