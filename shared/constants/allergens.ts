@@ -764,10 +764,15 @@ function getSubstituteModifierPattern(keyword: string): RegExp {
   let pattern = substituteModifierPatternCache.get(keyword);
   if (!pattern) {
     const mods = SUBSTITUTE_MODIFIERS.join("|");
-    // <plant qualifier><space|hyphen><keyword> at word boundaries, e.g.
-    // "almond milk", "unsweetened oat-milk", "coconut flour".
+    // <plant qualifier><within-token joiner><keyword> at word boundaries, e.g.
+    // "almond milk", "unsweetened oat-milk", "coconut flour", "almond/milk".
+    // The inner join accepts only WITHIN-TOKEN joiners — space, hyphen, slash —
+    // that bind one compound substitute name. It deliberately EXCLUDES the
+    // ingredient delimiters "," and ";" (which separate distinct list items:
+    // "almond, milk" is almond AND genuine milk, so the milk must still flag)
+    // and parentheses (ambiguous — over-flagging is the safe default).
     pattern = new RegExp(
-      `(?:^|[\\s,;/()\\-])(?:${mods})[\\s\\-]${keyword}(?:$|[\\s,;/()\\-])`,
+      `(?:^|[\\s,;/()\\-])(?:${mods})[\\s/\\-]${keyword}(?:$|[\\s,;/()\\-])`,
       "i",
     );
     substituteModifierPatternCache.set(keyword, pattern);
