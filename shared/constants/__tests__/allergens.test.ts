@@ -175,7 +175,6 @@ describe("ingredientContainsKeyword — plant-substitute guard", () => {
       ["cashew milk", "milk"],
       ["rice milk", "milk"],
       ["oat-milk", "milk"],
-      ["almond/milk", "milk"], // slash is a within-token joiner, like the hyphen
       ["coconut cream", "cream"],
       ["peanut butter", "butter"],
       ["almond butter", "butter"],
@@ -199,7 +198,6 @@ describe("ingredientContainsKeyword — plant-substitute guard", () => {
       "tapioca flour",
       "cassava flour",
       "buckwheat flour",
-      "oat/flour", // slash joiner — same single-substitute semantics as a space
     ];
     for (const ingredient of flours) {
       expect(ingredientContainsKeyword(ingredient, "flour")).toBe(false);
@@ -318,13 +316,17 @@ describe("plant-substitute guard invariant", () => {
     }
   });
 
-  it("suppresses every guard-sensitive form joined to the modifier by a SLASH (within-token joiner), same as a space", () => {
-    // The keyword matcher treats "/" as a word boundary, so "almond/milk" matches
-    // the `milk` keyword; the suppressor must recognise "/" as a within-token joiner
-    // too, or the slash form over-flags dairy/wheat. Mirrors the space/hyphen loop
-    // above across all eight forms so a future desync goes red here.
+  it("does NOT suppress a slash-joined form — slash is ambiguous, so over-flag is the safe default", () => {
+    // "/" is deliberately NOT a suppression joiner. "almond/milk" reads as one
+    // substitute, but "/" is also a list / "and-or" delimiter ("soy/milk",
+    // "water/sugar/salt"), so suppressing on it could hide real dairy/wheat.
+    // Suppression is the DANGEROUS direction (it removes an allergen flag), so an
+    // ambiguous separator must over-flag rather than risk a miss. Every
+    // guard-sensitive form joined to a plant modifier by a slash therefore STILL
+    // flags — a safe false positive. See PR #688 review. A future change that
+    // makes "/" suppress must revisit that safety tradeoff, and will go red here.
     for (const form of guardSensitiveForms) {
-      expect(ingredientContainsKeyword(`almond/${form}`, form)).toBe(false);
+      expect(ingredientContainsKeyword(`almond/${form}`, form)).toBe(true);
     }
   });
 
