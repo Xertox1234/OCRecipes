@@ -1145,3 +1145,38 @@ describe("scaleNutrients — new nutrient fields (Universal Nutrition Flags v1)"
     expect(scaled.caffeine).toBe(64);
   });
 });
+
+describe("lookupBarcode — OFF nutriment mapping (Universal Nutrition Flags v1, Task 3)", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("maps OFF saturated-fat and caffeine (g→mg) into per100g", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Energy Drink",
+              nutriments: {
+                "energy-kcal_100g": 45,
+                "saturated-fat_100g": 0,
+                caffeine_100g: 0.032,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000000");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.saturatedFat).toBe(0);
+    expect(result!.per100g.caffeine).toBe(32); // 0.032 g → 32 mg
+  });
+});

@@ -465,6 +465,18 @@ export async function lookupBarcode(
       nm.sodium_100g !== undefined
         ? roundToOneDecimal(nm.sodium_100g * 1000)
         : undefined,
+    saturatedFat: nm["saturated-fat_100g"],
+    transFat: nm["trans-fat_100g"],
+    cholesterol:
+      nm.cholesterol_100g !== undefined
+        ? roundToOneDecimal(nm.cholesterol_100g * 1000) // OFF cholesterol_100g is g → mg
+        : undefined,
+    caffeine:
+      nm.caffeine_100g !== undefined
+        ? nm.caffeine_unit === "mg"
+          ? nm.caffeine_100g // rare: already in mg
+          : roundToOneDecimal(nm.caffeine_100g * 1000) // OFF default caffeine unit is g → mg
+        : undefined,
   };
 
   // OFF's own per-serving energy, used only as a self-consistency signal below.
