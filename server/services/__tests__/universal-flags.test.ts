@@ -67,3 +67,43 @@ describe("evaluateUniversalFlags — NOVA", () => {
     );
   });
 });
+
+describe("evaluateUniversalFlags — caffeine ladder", () => {
+  it("HIGH with mg when a trusted serving is >=150mg", () => {
+    const f = evaluateUniversalFlags({
+      ...base,
+      perServing: { caffeine: 160 },
+    }).find((x) => x.id === "nutrient:caffeine");
+    expect(f?.severity).toBe("warn");
+    expect(f?.title).toContain("High in caffeine");
+    expect(f?.value).toEqual({ amount: 160, unit: "mg" });
+  });
+  it("CONTAINS (info, no mg) when serving mg is present but <150", () => {
+    const f = evaluateUniversalFlags({
+      ...base,
+      perServing: { caffeine: 34 },
+    }).find((x) => x.id === "nutrient:caffeine");
+    expect(f?.severity).toBe("info");
+    expect(f?.title).toBe("Contains caffeine");
+    expect(f?.value).toBeUndefined();
+  });
+  it("CONTAINS via multilingual ingredient text when no mg (German 'Koffein')", () => {
+    const f = evaluateUniversalFlags({
+      ...base,
+      ingredientsText: "Wasser, Zucker, Koffein",
+    }).find((x) => x.id === "nutrient:caffeine");
+    expect(f?.severity).toBe("info");
+  });
+  it("CONTAINS via category when no mg and no ingredient match", () => {
+    const f = evaluateUniversalFlags({
+      ...base,
+      categoriesTags: ["en:beverages", "en:energy-drinks"],
+    }).find((x) => x.id === "nutrient:caffeine");
+    expect(f?.severity).toBe("info");
+  });
+  it("NO flag with no mg and no signal (untrusted serving fails safe to nothing here)", () => {
+    expect(evaluateUniversalFlags(base).map((x) => x.id)).not.toContain(
+      "nutrient:caffeine",
+    );
+  });
+});

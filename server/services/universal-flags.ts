@@ -4,6 +4,9 @@ import {
   FSA_DRINK,
   FSA_PORTION,
   isBeverageCategory,
+  CAFFEINE_HIGH_MG,
+  CAFFEINE_CATEGORY_TAGS,
+  CAFFEINE_INGREDIENT_RE,
 } from "./nutrition-flag-rules";
 
 export interface UniversalNutrients {
@@ -122,5 +125,38 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
       detail: "NOVA group 4 — made largely from industrial ingredients.",
     });
   }
+
+  // Caffeine ladder: High mg (trusted per-serving only) → Contains (any presence signal) → none.
+  const servingMg = input.perServing?.caffeine;
+  const hasCaffeineSignal =
+    servingMg !== undefined ||
+    input.per100g.caffeine !== undefined ||
+    (input.ingredientsText != null &&
+      CAFFEINE_INGREDIENT_RE.test(input.ingredientsText)) ||
+    input.categoriesTags.some((t) => CAFFEINE_CATEGORY_TAGS.includes(t));
+
+  if (servingMg !== undefined && servingMg >= CAFFEINE_HIGH_MG) {
+    flags.push({
+      id: "nutrient:caffeine",
+      kind: "nutrient",
+      severity: "warn",
+      tier: "nutrition",
+      nutrient: "caffeine",
+      title: "High in caffeine",
+      detail: "Contains a high dose of caffeine.",
+      value: { amount: Math.round(servingMg), unit: "mg" },
+    });
+  } else if (hasCaffeineSignal) {
+    flags.push({
+      id: "nutrient:caffeine",
+      kind: "nutrient",
+      severity: "info",
+      tier: "nutrition",
+      nutrient: "caffeine",
+      title: "Contains caffeine",
+      detail: "This product contains caffeine.",
+    });
+  }
+
   return flags;
 }
