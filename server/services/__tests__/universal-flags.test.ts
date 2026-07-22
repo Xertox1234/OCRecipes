@@ -101,6 +101,15 @@ describe("evaluateUniversalFlags — caffeine ladder", () => {
     }).find((x) => x.id === "nutrient:caffeine");
     expect(f?.severity).toBe("info");
   });
+  it("CONTAINS (info, no mg) when only per100g caffeine is high and no serving is set", () => {
+    const f = evaluateUniversalFlags({
+      ...base,
+      per100g: { ...base.per100g, caffeine: 200 },
+    }).find((x) => x.id === "nutrient:caffeine");
+    expect(f?.severity).toBe("info");
+    expect(f?.title).toBe("Contains caffeine");
+    expect(f?.value).toBeUndefined();
+  });
   it("NO flag with no mg and no signal (untrusted serving fails safe to nothing here)", () => {
     expect(evaluateUniversalFlags(base).map((x) => x.id)).not.toContain(
       "nutrient:caffeine",
