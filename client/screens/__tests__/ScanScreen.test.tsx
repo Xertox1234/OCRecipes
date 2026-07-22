@@ -571,4 +571,39 @@ describe("ScanScreen — scan-lock chip filters info-level flags (final-review f
     expect(await screen.findByText("⚠ High in sugar")).toBeTruthy();
     expect(screen.queryByText(/Nutri-Score/)).toBeNull();
   });
+
+  // Regression (fix round 2): a MILD allergy maps to `severity: "info"` while
+  // keeping `tier: "safety"` (server/services/scan-flags.ts SEVERITY_TO_FLAG).
+  // The severity-based filter above (`f.severity !== "info"`) dropped this —
+  // silencing the ONLY signal a mild-allergen match gets (no haptic fires for
+  // mild; that's `pickTopSafetyFlag`'s "danger"-only gate). The chip must
+  // still surface it; only info-level NON-safety flags (Nutri-Score,
+  // "Contains caffeine", etc.) should be dropped.
+  const mildAllergenFlag = {
+    id: "allergen:milk",
+    kind: "allergen",
+    tier: "safety",
+    severity: "info",
+    title: "Contains Milk",
+    allergenId: "milk",
+  };
+
+  it("still surfaces a MILD allergen flag (safety tier, info severity)", async () => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Yogurt Bar",
+            calories: 150,
+            flags: [mildAllergenFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    expect(await screen.findByText("⚠ Contains Milk")).toBeTruthy();
+  });
 });

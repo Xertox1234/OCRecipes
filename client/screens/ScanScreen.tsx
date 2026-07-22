@@ -352,15 +352,23 @@ export default function ScanScreen() {
         // kept for its safety-tier-only semantics but has no reader today.
         // topFlag is additive: highest severity across ALL kinds (allergen
         // OR universal/nutrition), ties broken toward allergen — Task 14.
-        // Info-level flags (Nutri-Score grades, "Contains caffeine", etc.)
-        // are filtered out before picking — a clean product whose only flag
-        // is info-severity must not surface a "⚠" warning glyph + assertive
-        // announce on this compact chip. Those flags still render on the
-        // detail screen's "Heads up" section (final-review fix, Smart Scan
-        // Universal Nutrition Flags v1).
+        // Info-level NON-safety flags (Nutri-Score grades, "Contains
+        // caffeine", "Contains artificial sweeteners" — all tier:
+        // "nutrition") are filtered out before picking — a clean product
+        // whose only flag is one of those must not surface a "⚠" warning
+        // glyph + assertive announce on this compact chip. Those flags still
+        // render on the detail screen's "Heads up" section. Filtering on
+        // SEVERITY alone would also drop safety-tier flags: a MILD allergy
+        // maps to `severity: "info"` while keeping `tier: "safety"`
+        // (server/services/scan-flags.ts SEVERITY_TO_FLAG) — this chip is the
+        // ONLY signal for a mild allergen match (no haptic fires for mild),
+        // so every safety-tier flag must survive regardless of severity
+        // (fix round 2, Smart Scan Universal Nutrition Flags v1).
         const safetyFlag = pickTopSafetyFlag(flags);
         const topFlag = pickTopFlag(
-          flags.filter((f: ScanFlag) => f.severity !== "info"),
+          flags.filter(
+            (f: ScanFlag) => f.tier === "safety" || f.severity !== "info",
+          ),
         );
         dispatch({
           type: "PRODUCT_LOADED",
