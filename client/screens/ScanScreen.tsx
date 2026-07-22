@@ -350,26 +350,28 @@ export default function ScanScreen() {
         // semantics) — this LOCAL variable drives the haptic below,
         // unchanged; the field of the same name on the dispatched product is
         // kept for its safety-tier-only semantics but has no reader today.
-        // topFlag is additive: highest severity across ALL kinds (allergen
-        // OR universal/nutrition), ties broken toward allergen — Task 14.
-        // Info-level NON-safety flags (Nutri-Score grades, "Contains
-        // caffeine", "Contains artificial sweeteners" — all tier:
-        // "nutrition") are filtered out before picking — a clean product
-        // whose only flag is one of those must not surface a "⚠" warning
-        // glyph + assertive announce on this compact chip. Those flags still
-        // render on the detail screen's "Heads up" section. Filtering on
-        // SEVERITY alone would also drop safety-tier flags: a MILD allergy
-        // maps to `severity: "info"` while keeping `tier: "safety"`
-        // (server/services/scan-flags.ts SEVERITY_TO_FLAG) — this chip is the
-        // ONLY signal for a mild allergen match (no haptic fires for mild),
-        // so every safety-tier flag must survive regardless of severity
-        // (fix round 2, Smart Scan Universal Nutrition Flags v1).
+        // topFlag ranks TIER before severity (fix round 3): show the top
+        // safety-tier flag if ANY safety flag is present, else the top
+        // warn-level non-safety (nutrition) flag, else nothing. Ranking by
+        // pure severity (the old `pickTopFlag` over an unpartitioned list)
+        // let a warn-level nutrition flag ("High in sugar") outrank and
+        // DISPLACE a MILD allergen match ("Contains Milk", severity "info",
+        // tier "safety" — server/services/scan-flags.ts SEVERITY_TO_FLAG),
+        // dropping the allergen off the chip entirely. This chip is the ONLY
+        // signal for a mild allergen match (no haptic fires for mild), so a
+        // personal allergen must never be hidden behind a universal
+        // nutrition heads-up. Info-level NON-safety flags (Nutri-Score
+        // grades, "Contains caffeine", "Contains artificial sweeteners" —
+        // all tier: "nutrition") still never reach the chip; they render on
+        // the detail screen's "Heads up" section instead.
         const safetyFlag = pickTopSafetyFlag(flags);
-        const topFlag = pickTopFlag(
-          flags.filter(
-            (f: ScanFlag) => f.tier === "safety" || f.severity !== "info",
-          ),
-        );
+        const topFlag =
+          pickTopSafetyFlag(flags) ??
+          pickTopFlag(
+            flags.filter(
+              (f: ScanFlag) => f.tier !== "safety" && f.severity !== "info",
+            ),
+          );
         dispatch({
           type: "PRODUCT_LOADED",
           product: {
