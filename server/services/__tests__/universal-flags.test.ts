@@ -47,6 +47,28 @@ describe("evaluateUniversalFlags — FSA nutrient flags", () => {
   });
 });
 
+describe("evaluateUniversalFlags — FSA per-portion escalation (perServing > portionLine)", () => {
+  it("escalates a food whose per100g is below the red line but perServing exceeds the portion line at servingGrams>100", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { sugar: 20 }, // below FSA_FOOD.sugar (22.5)
+      perServing: { sugar: 30 }, // above FSA_PORTION.sugar (27)
+      servingGrams: 250, // > 100
+    });
+    expect(ids(flags)).toContain("nutrient:sugar");
+  });
+
+  it("does NOT escalate when servingGrams <= 100, even with the same exceeding perServing value", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { sugar: 20 },
+      perServing: { sugar: 30 },
+      servingGrams: 100, // not > 100 — escalation gate does not open
+    });
+    expect(ids(flags)).not.toContain("nutrient:sugar");
+  });
+});
+
 describe("evaluateUniversalFlags — NOVA", () => {
   it("flags ultra-processed for NOVA 4", () => {
     const flags = evaluateUniversalFlags({ ...base, novaGroup: 4 });

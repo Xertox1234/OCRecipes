@@ -13,6 +13,7 @@ import {
   buildScanResponseFlags,
   type ProfileOutcome,
 } from "../services/scan-flags";
+import { evaluateUniversalFlags } from "../services/universal-flags";
 import { parseUserAllergies } from "@shared/constants/allergens";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
 import { numericStringField } from "./_schemas";
@@ -138,23 +139,65 @@ export function register(app: Express): void {
           profileOutcome,
         );
 
-        // Raw OFF allergen/ingredient fields are consumed here to build
-        // `flags` — no client reads them directly, so trim them off the
-        // response body before spreading (`flags` already carries the
-        // computed result).
+        // Universal nutrition flags (Phase 2): NOVA/Nutri-Score/caffeine/
+        // sweetener/FSA-threshold evaluation. `perServing` is only passed
+        // when `isServingDataTrusted` is true — an untrusted (estimated)
+        // serving must not feed the caffeine-High-mg or FSA per-portion
+        // escalation checks, both of which key specifically on real
+        // per-serving data. `result.perServing` itself is always a populated
+        // object (never undefined) — `BarcodeLookupResult.perServing` is a
+        // required field, scaled from per100g even when untrusted — so no
+        // optional-chaining is needed on the individual nutrient reads below.
+        const universalFlags = evaluateUniversalFlags({
+          per100g: {
+            sugar: result.per100g.sugar,
+            saturatedFat: result.per100g.saturatedFat,
+            sodium: result.per100g.sodium,
+            caffeine: result.per100g.caffeine,
+          },
+          perServing: result.isServingDataTrusted
+            ? {
+                sugar: result.perServing.sugar,
+                saturatedFat: result.perServing.saturatedFat,
+                sodium: result.perServing.sodium,
+                caffeine: result.perServing.caffeine,
+              }
+            : undefined,
+          servingGrams: result.servingInfo.grams,
+          categoriesTags: result.categoriesTags ?? [],
+          novaGroup: result.novaGroup,
+          nutriScore: result.nutriScore,
+          additivesTags: result.additivesTags ?? [],
+          ingredientsText: result.ingredientsText ?? null,
+        });
+        // Allergen (Phase 1, safety tier) flags first, then universal
+        // (Phase 2, nutrition tier) flags.
+        const orderedFlags = [...flags, ...universalFlags];
+
+        // Raw OFF allergen/ingredient/additive/category fields are consumed
+        // here to build `flags`/`universalFlags` — no client reads them
+        // directly, and additivesTags/categoriesTags are OFF-licensed
+        // (ODbL) content that must never reach the client or be persisted —
+        // so trim them all off the response body before spreading
+        // (`orderedFlags` already carries the computed result; `novaGroup`
+        // and `nutriScore` are kept — they are displayed).
         const {
           ingredientsText: _ingredientsText,
           allergenTags: _allergenTags,
           allergenDataAvailable: _allergenDataAvailable,
+          additivesTags: _additivesTags,
+          categoriesTags: _categoriesTags,
           ...clientResult
         } = result;
         void _ingredientsText;
         void _allergenTags;
         void _allergenDataAvailable;
+        void _additivesTags;
+        void _categoriesTags;
 
         res.json({
           ...clientResult,
-          flags,
+          flags: orderedFlags,
           verificationLevel: verification?.verificationLevel ?? "unverified",
           verificationCount: verification?.verificationCount ?? 0,
         });
