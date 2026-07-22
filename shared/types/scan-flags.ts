@@ -1,10 +1,17 @@
 import type { AllergenId } from "@shared/constants/allergens";
 
-/** Phase 1 kinds. Later phases add "nutrient" | "processing". */
-export type ScanFlagKind = "allergen" | "allergen-unavailable";
+export type ScanFlagKind =
+  | "allergen"
+  | "allergen-unavailable"
+  | "nutrient"
+  | "processing"
+  | "sweetener"
+  | "nutriscore";
 export type ScanFlagSeverity = "danger" | "warn" | "info";
-/** "insight" is reserved for later (premium) phases; Phase 1 emits only "safety". */
-export type ScanFlagTier = "safety" | "insight";
+/** "nutrition" = free universal (Phase 2). "insight" stays RESERVED for the v2 premium boost. */
+export type ScanFlagTier = "safety" | "nutrition" | "insight";
+
+export type NutrientKind = "sugar" | "saturated_fat" | "sodium" | "caffeine";
 
 export interface ScanFlag {
   /** Stable id, e.g. "allergen:peanuts" or "allergen-unavailable". */
@@ -18,6 +25,12 @@ export interface ScanFlag {
   detail?: string;
   /** Present on positive allergen matches. */
   allergenId?: AllergenId;
+  /** Present on kind==="nutrient". */
+  nutrient?: NutrientKind;
+  /** Optional numeric detail, e.g. { amount: 160, unit: "mg" } for caffeine. */
+  value?: { amount: number; unit: string };
+  /** Present on kind==="nutriscore". */
+  grade?: "a" | "b" | "c" | "d" | "e";
 }
 
 const SEVERITY_RANK: Record<ScanFlagSeverity, number> = {
@@ -64,4 +77,21 @@ export function createAllergenUnavailableFlag(
     title: options.title ?? "Couldn't verify allergens",
     detail: options.detail,
   };
+}
+
+/** Highest-severity flag across ALL kinds; severity ties break toward allergen (safety). */
+export function pickTopFlag(flags: ScanFlag[]): ScanFlag | undefined {
+  let top: ScanFlag | undefined;
+  const isAllergen = (fl: ScanFlag) =>
+    fl.kind === "allergen" || fl.kind === "allergen-unavailable";
+  for (const fl of flags) {
+    if (!top) {
+      top = fl;
+      continue;
+    }
+    const delta = SEVERITY_RANK[fl.severity] - SEVERITY_RANK[top.severity];
+    if (delta > 0 || (delta === 0 && isAllergen(fl) && !isAllergen(top)))
+      top = fl;
+  }
+  return top;
 }
