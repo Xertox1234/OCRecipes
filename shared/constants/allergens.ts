@@ -122,10 +122,13 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
     label: "Dairy/Milk",
     directIngredients: [
       "milk",
+      "milks",
       "cheese",
       "cheeses",
       "butter",
+      "butters",
       "cream",
+      "creams",
       "yogurt",
       "yogurts",
       "yoghurt",
@@ -227,6 +230,7 @@ export const ALLERGEN_INGREDIENT_MAP: Record<AllergenId, AllergenDefinition> = {
     directIngredients: [
       "wheat",
       "flour",
+      "flours",
       "bread",
       "pasta",
       "noodle",
@@ -694,9 +698,13 @@ for (const def of Object.values(ALLERGEN_INGREDIENT_MAP)) {
  */
 const MODIFIER_SENSITIVE_KEYWORDS = new Set([
   "milk",
+  "milks",
   "cream",
+  "creams",
   "butter",
+  "butters",
   "flour",
+  "flours",
 ]);
 
 /**

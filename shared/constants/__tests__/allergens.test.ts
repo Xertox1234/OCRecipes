@@ -232,6 +232,89 @@ describe("ingredientContainsKeyword — plant-substitute guard", () => {
   it("'buttermilk' still flags milk via its explicit keyword (one word)", () => {
     expect(ingredientContainsKeyword("buttermilk", "buttermilk")).toBe(true);
   });
+
+  it("does NOT match bare dairy/wheat PLURAL keywords inside plant-substitute plurals", () => {
+    // The guard-sensitive base words (milk/cream/butter/flour) gained explicit
+    // plural keywords (milks/creams/butters/flours). Each plural must ALSO be a
+    // MODIFIER_SENSITIVE_KEYWORD so the plant-substitute suppression fires — a
+    // plural in the map but not the guard set would let "almond milks" flag dairy.
+    const cases: [string, string][] = [
+      ["almond milks", "milks"],
+      ["unsweetened oat milks", "milks"],
+      ["coconut creams", "creams"],
+      ["cashew creams", "creams"],
+      ["shea butters", "butters"],
+      ["sunflower butters", "butters"],
+      ["cocoa butters", "butters"],
+      ["almond flours", "flours"],
+      ["oat flours", "flours"],
+      ["rice flours", "flours"],
+      ["cassava flours", "flours"],
+    ];
+    for (const [ingredient, keyword] of cases) {
+      expect(ingredientContainsKeyword(ingredient, keyword)).toBe(false);
+    }
+  });
+
+  it("STILL matches genuine dairy/wheat plural staples (must not under-flag)", () => {
+    // The plural guard must not over-suppress real dairy/wheat plurals. "wheat
+    // flours" MUST flag — wheat is a gluten grain, deliberately excluded from the
+    // substitute-modifier list.
+    const mustMatch: [string, string][] = [
+      ["milks", "milks"],
+      ["fresh creams", "creams"],
+      ["cultured butters", "butters"],
+      ["enriched flours", "flours"],
+      ["wheat flours", "flours"],
+    ];
+    for (const [ingredient, keyword] of mustMatch) {
+      expect(ingredientContainsKeyword(ingredient, keyword)).toBe(true);
+    }
+  });
+});
+
+// ============================================================================
+// PLANT-SUBSTITUTE GUARD INVARIANT (map ↔ guard-set consistency)
+// ============================================================================
+
+describe("plant-substitute guard invariant", () => {
+  // The four guard-sensitive dairy/wheat base words + their registered plurals.
+  // For the guard to hold, every form that is a detection keyword (in the map)
+  // must ALSO be suppressible after a plant modifier (in MODIFIER_SENSITIVE_KEYWORDS).
+  // These behavioral checks pin the INVARIANT, not just point-in-time strings: a
+  // future desync — a plural dropped from the guard set, or a typo in either list —
+  // would let "almond <form>" over-flag dairy/wheat (the dangerous false positive)
+  // and MUST turn a test red. `MODIFIER_SENSITIVE_KEYWORDS` is module-private, so we
+  // assert the observable suppression behavior via `ingredientContainsKeyword`.
+  const dairyWheatDirect = new Set([
+    ...ALLERGEN_INGREDIENT_MAP.milk.directIngredients,
+    ...ALLERGEN_INGREDIENT_MAP.wheat.directIngredients,
+  ]);
+  const guardSensitiveForms = [
+    "milk",
+    "milks",
+    "cream",
+    "creams",
+    "butter",
+    "butters",
+    "flour",
+    "flours",
+  ];
+
+  it("keeps every guard-sensitive base word and its plural registered for detection", () => {
+    for (const form of guardSensitiveForms) {
+      expect(dairyWheatDirect.has(form)).toBe(true);
+    }
+  });
+
+  it("suppresses every registered guard-sensitive form after a plant modifier, but not on its own", () => {
+    for (const form of guardSensitiveForms) {
+      // Plant modifier present → dairy/wheat keyword suppressed (guard fires).
+      expect(ingredientContainsKeyword(`almond ${form}`, form)).toBe(false);
+      // Bare staple → still matches (guard must not over-suppress genuine dairy/wheat).
+      expect(ingredientContainsKeyword(form, form)).toBe(true);
+    }
+  });
 });
 
 // ============================================================================
@@ -328,6 +411,41 @@ describe("detectAllergens", () => {
         [{ name: allergenId, severity: "severe" }],
       );
       expect(matches.some((m) => m.allergenId === allergenId)).toBe(true);
+    }
+  });
+
+  it("matches guard-sensitive dairy/wheat plural base words WITHOUT weakening the plant-substitute guard", () => {
+    // Genuine dairy/wheat plurals must flag. Each string is caught ONLY by the
+    // new plural keyword — text a multi-word keyword already matches ("heavy
+    // creams" → "heavy cream", "ice creams" → "ice cream", "almond butters" →
+    // tree-nut "almond butter") would pass pre-change and prove nothing.
+    const positives: [string, string][] = [
+      ["cultured milks", "milk"],
+      ["fresh creams", "milk"],
+      ["cultured butters", "milk"],
+      ["enriched flours", "wheat"],
+    ];
+    for (const [ingredient, allergenId] of positives) {
+      const matches = detectAllergens(
+        [ingredient],
+        [{ name: allergenId, severity: "severe" }],
+      );
+      expect(matches.some((m) => m.allergenId === allergenId)).toBe(true);
+    }
+
+    // Plant-substitute plurals must NOT flag dairy/wheat — the guard still fires.
+    const suppressed: [string, string][] = [
+      ["almond milks", "milk"],
+      ["coconut creams", "milk"],
+      ["shea butters", "milk"],
+      ["oat flours", "wheat"],
+    ];
+    for (const [ingredient, allergenId] of suppressed) {
+      const matches = detectAllergens(
+        [ingredient],
+        [{ name: allergenId, severity: "severe" }],
+      );
+      expect(matches.some((m) => m.allergenId === allergenId)).toBe(false);
     }
   });
 
@@ -513,6 +631,37 @@ describe("deriveRecipeAllergens", () => {
       const ids = deriveRecipeAllergens([ingredient]).map((a) => a.id);
       expect(ids).toContain(allergenId);
     }
+  });
+
+  it("derives guard-sensitive dairy/wheat plural base words, keeping the plant-substitute guard", () => {
+    // Recipe-side mirror of the detectAllergens plural guard test — both paths
+    // share `ingredientContainsKeyword`, but the AC requires proving both suites.
+    // Genuine dairy/wheat plurals derive their allergen:
+    expect(
+      deriveRecipeAllergens(["cultured milks"]).map((a) => a.id),
+    ).toContain("milk");
+    expect(deriveRecipeAllergens(["fresh creams"]).map((a) => a.id)).toContain(
+      "milk",
+    );
+    expect(
+      deriveRecipeAllergens(["cultured butters"]).map((a) => a.id),
+    ).toContain("milk");
+    expect(
+      deriveRecipeAllergens(["enriched flours"]).map((a) => a.id),
+    ).toContain("wheat");
+
+    // Plant-substitute plurals derive only their OWN allergen, not dairy/wheat:
+    const almondMilks = deriveRecipeAllergens(["almond milks"]).map(
+      (a) => a.id,
+    );
+    expect(almondMilks).toContain("tree_nuts");
+    expect(almondMilks).not.toContain("milk");
+    expect(
+      deriveRecipeAllergens(["coconut creams"]).map((a) => a.id),
+    ).not.toContain("milk");
+    expect(
+      deriveRecipeAllergens(["oat flours"]).map((a) => a.id),
+    ).not.toContain("wheat");
   });
 });
 
