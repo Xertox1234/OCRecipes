@@ -234,6 +234,86 @@ describe("Nutrition Routes", () => {
     });
   });
 
+  describe("GET /api/nutrition/barcode/:code — universal nutrition flags", () => {
+    it("attaches universal flags and strips raw OFF content", async () => {
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Monster",
+        barcode: "070847811169",
+        source: "off",
+        per100g: { sugar: 11.4, caffeine: 34 },
+        perServing: { sugar: 13, caffeine: 160 },
+        servingInfo: {
+          displayLabel: "1 can",
+          grams: 473,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        allergenDataAvailable: false,
+        novaGroup: 4,
+        nutriScore: "e",
+        additivesTags: ["en:e951"],
+        categoriesTags: ["en:beverages"],
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/070847811169")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      const ids = res.body.flags.map((f: { id: string }) => f.id);
+      expect(ids).toEqual(
+        expect.arrayContaining([
+          "processing:ultra",
+          "nutrient:caffeine",
+          "sweetener:artificial",
+          "nutriscore:e",
+        ]),
+      );
+      expect(res.body.novaGroup).toBe(4);
+      expect(res.body.nutriScore).toBe("e");
+      expect(res.body.additivesTags).toBeUndefined();
+      expect(res.body.categoriesTags).toBeUndefined();
+    });
+
+    it("orders allergen (Phase 1) flags before universal flags", async () => {
+      vi.mocked(storage.getUserProfile).mockResolvedValue(
+        createMockUserProfile({
+          allergies: [{ name: "peanuts", severity: "severe" }],
+        }),
+      );
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Peanut Energy Bar",
+        barcode: "070847811169",
+        source: "off",
+        per100g: { sugar: 11.4, caffeine: 34 },
+        perServing: { sugar: 13, caffeine: 160 },
+        servingInfo: {
+          displayLabel: "1 bar",
+          grams: 473,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        allergenTags: ["en:peanuts"],
+        allergenDataAvailable: true,
+        novaGroup: 4,
+        nutriScore: "e",
+        additivesTags: ["en:e951"],
+        categoriesTags: ["en:beverages"],
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/070847811169")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      const ids: string[] = res.body.flags.map((f: { id: string }) => f.id);
+      const allergenIndex = ids.indexOf("allergen:peanuts");
+      const universalIndex = ids.indexOf("processing:ultra");
+      expect(allergenIndex).toBeGreaterThanOrEqual(0);
+      expect(universalIndex).toBeGreaterThan(allergenIndex);
+    });
+  });
+
   describe("GET /api/scanned-items", () => {
     it("returns scanned items list", async () => {
       (storage.getScannedItems as Mock).mockResolvedValue([mockScannedItem]);

@@ -29,11 +29,19 @@ import {
   Shadows,
   withOpacity,
 } from "@/constants/theme";
-import { getServingContextLabel } from "@/screens/nutrition-detail-utils";
+import {
+  getServingContextLabel,
+  roundToOneDecimal,
+} from "@/screens/nutrition-detail-utils";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
 import { ScanFlagBadge } from "@/components/ScanFlagBadge";
+import { NutriScoreChip } from "@/components/NutriScoreChip";
+import {
+  partitionScanFlags,
+  headsUpSummaryLabel,
+} from "@/screens/nutrition-detail-flags-utils";
 import { useNutritionLookup } from "@/hooks/useNutritionLookup";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
@@ -201,6 +209,10 @@ export default function NutritionDetailScreen() {
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;
+  // Splits the server's mixed flags[] into the "For you" (personal
+  // allergen) and "Heads up" (universal nutrition) sections, plus the
+  // Nutri-Score chip rendered separately from the badge list.
+  const partition = partitionScanFlags(flags);
   // Derived from the SAME serving state that scales the displayed values, so
   // the hero caption can never desync from the numbers it describes.
   const servingContextLabel = getServingContextLabel({
@@ -289,7 +301,7 @@ export default function NutritionDetailScreen() {
           ) : null}
         </Animated.View>
 
-        {flags.length > 0 ? (
+        {partition.personal.length > 0 ? (
           <Animated.View
             entering={
               reducedMotion ? undefined : FadeInUp.delay(450).duration(400)
@@ -300,9 +312,52 @@ export default function NutritionDetailScreen() {
               For you
             </ThemedText>
             <View style={{ gap: Spacing.sm }}>
-              {flags.map((f) => (
+              {partition.personal.map((f) => (
                 <ScanFlagBadge key={f.id} flag={f} />
               ))}
+            </View>
+            <ThemedText
+              type="caption"
+              style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
+            >
+              Informational only — not medical advice.
+            </ThemedText>
+          </Animated.View>
+        ) : null}
+
+        {partition.universal.length > 0 || partition.nutriScore ? (
+          <Animated.View
+            entering={
+              reducedMotion ? undefined : FadeInUp.delay(475).duration(400)
+            }
+            style={styles.additionalNutrients}
+          >
+            <ThemedText type="h4" style={styles.sectionTitle}>
+              Heads up
+            </ThemedText>
+            <View style={{ gap: Spacing.sm }}>
+              {/* The Nutri-Score chip renders OUTSIDE this wrapper — an
+                  accessible={true} group collapses its subtree into a
+                  single VoiceOver/TalkBack node using only this label, so
+                  anything nested inside that isn't reflected in
+                  headsUpSummaryLabel's text (the grade letter isn't) would
+                  be silently dropped from the announcement. The badges'
+                  titles ARE all in the composed label, so only they are
+                  grouped here. */}
+              {partition.universal.length > 0 ? (
+                <View
+                  accessible={true}
+                  accessibilityLabel={headsUpSummaryLabel(partition.universal)}
+                  style={{ gap: Spacing.sm }}
+                >
+                  {partition.universal.slice(0, 6).map((f) => (
+                    <ScanFlagBadge key={f.id} flag={f} />
+                  ))}
+                </View>
+              ) : null}
+              {partition.nutriScore?.grade ? (
+                <NutriScoreChip grade={partition.nutriScore.grade} />
+              ) : null}
             </View>
             <ThemedText
               type="caption"
@@ -541,7 +596,11 @@ export default function NutritionDetailScreen() {
 
         {nutrition?.fiber !== undefined ||
         nutrition?.sugar !== undefined ||
-        nutrition?.sodium !== undefined ? (
+        nutrition?.sodium !== undefined ||
+        nutrition?.saturatedFat !== undefined ||
+        nutrition?.transFat !== undefined ||
+        nutrition?.cholesterol !== undefined ||
+        nutrition?.caffeine !== undefined ? (
           <Animated.View
             entering={
               reducedMotion ? undefined : FadeInUp.delay(500).duration(400)
@@ -591,6 +650,54 @@ export default function NutritionDetailScreen() {
                   </ThemedText>
                   <ThemedText type="body" style={{ fontWeight: "600" }}>
                     {Math.round(nutrition.sodium)} mg
+                  </ThemedText>
+                </View>
+              ) : null}
+              {nutrition?.saturatedFat !== undefined ? (
+                <View
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
+                >
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Saturated Fat
+                  </ThemedText>
+                  <ThemedText type="body" style={{ fontWeight: "600" }}>
+                    {roundToOneDecimal(nutrition.saturatedFat)} g
+                  </ThemedText>
+                </View>
+              ) : null}
+              {nutrition?.transFat !== undefined ? (
+                <View
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
+                >
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Trans Fat
+                  </ThemedText>
+                  <ThemedText type="body" style={{ fontWeight: "600" }}>
+                    {roundToOneDecimal(nutrition.transFat)} g
+                  </ThemedText>
+                </View>
+              ) : null}
+              {nutrition?.cholesterol !== undefined ? (
+                <View
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
+                >
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Cholesterol
+                  </ThemedText>
+                  <ThemedText type="body" style={{ fontWeight: "600" }}>
+                    {roundToOneDecimal(nutrition.cholesterol)} mg
+                  </ThemedText>
+                </View>
+              ) : null}
+              {nutrition?.caffeine !== undefined ? (
+                <View
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
+                >
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Caffeine
+                  </ThemedText>
+                  <ThemedText type="body" style={{ fontWeight: "600" }}>
+                    {roundToOneDecimal(nutrition.caffeine)} mg
                   </ThemedText>
                 </View>
               ) : null}

@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { lookupBarcode } from "../barcode-lookup";
+import {
+  lookupBarcode,
+  scaleNutrients,
+  extractOffUniversalData,
+} from "../barcode-lookup";
 import { _resetCNFCacheForTesting } from "../nutrition-lookup";
 
 // Mock the db module so the cache functions don't hit a real database
@@ -1124,5 +1128,147 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result).not.toBeNull();
     expect(result!.source).toBe("cnf");
     expect(result!.per100g.calories).toBe(387);
+  });
+});
+
+describe("scaleNutrients — new nutrient fields (Universal Nutrition Flags v1)", () => {
+  it("scales the new nutrients with the serving factor", () => {
+    const scaled = scaleNutrients(
+      {
+        calories: 100,
+        saturatedFat: 2,
+        transFat: 0.5,
+        cholesterol: 10,
+        caffeine: 32,
+      },
+      2,
+    );
+    expect(scaled.saturatedFat).toBe(4);
+    expect(scaled.transFat).toBe(1);
+    expect(scaled.cholesterol).toBe(20);
+    expect(scaled.caffeine).toBe(64);
+  });
+});
+
+describe("lookupBarcode — OFF nutriment mapping (Universal Nutrition Flags v1, Task 3)", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("maps OFF saturated-fat and caffeine (g→mg) into per100g", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Energy Drink",
+              nutriments: {
+                "energy-kcal_100g": 45,
+                "saturated-fat_100g": 0,
+                caffeine_100g: 0.032,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000000");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.saturatedFat).toBe(0);
+    expect(result!.per100g.caffeine).toBe(32); // 0.032 g → 32 mg
+  });
+
+  it("converts cholesterol_100g g→mg by default (no cholesterol_unit)", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Whole Eggs",
+              nutriments: {
+                "energy-kcal_100g": 143,
+                cholesterol_100g: 0.01,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000001");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.cholesterol).toBe(10); // 0.01 g → 10 mg
+  });
+
+  it("passes cholesterol_100g through unconverted when cholesterol_unit is 'mg'", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Whole Eggs",
+              nutriments: {
+                "energy-kcal_100g": 143,
+                cholesterol_100g: 10,
+                cholesterol_unit: "mg",
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000002");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.cholesterol).toBe(10); // already mg, NOT 10000
+  });
+});
+
+describe("extractOffUniversalData", () => {
+  it("pulls nova/nutriscore/additives/categories from an OFF product", () => {
+    const out = extractOffUniversalData({
+      nova_group: 4,
+      nutriscore_grade: "e",
+      additives_tags: ["en:e951", "en:e150d"],
+      categories_tags: ["en:beverages", "en:energy-drinks"],
+    });
+    expect(out.novaGroup).toBe(4);
+    expect(out.nutriScore).toBe("e");
+    expect(out.additivesTags).toEqual(["en:e951", "en:e150d"]);
+    expect(out.categoriesTags).toContain("en:beverages");
+  });
+
+  it("returns empty arrays and undefined grades for a null product", () => {
+    const out = extractOffUniversalData(null);
+    expect(out.additivesTags).toEqual([]);
+    expect(out.novaGroup).toBeUndefined();
+  });
+
+  it("coerces an in-range numeric-string nova_group to a number", () => {
+    const out = extractOffUniversalData({ nova_group: "4" });
+    expect(out.novaGroup).toBe(4);
+  });
+
+  it("rejects an out-of-range or garbage string nova_group", () => {
+    expect(
+      extractOffUniversalData({ nova_group: "9" }).novaGroup,
+    ).toBeUndefined();
+    expect(
+      extractOffUniversalData({ nova_group: "N/A" }).novaGroup,
+    ).toBeUndefined();
   });
 });

@@ -85,7 +85,7 @@ import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
-import { pickTopSafetyFlag } from "@shared/types/scan-flags";
+import { pickTopSafetyFlag, pickTopFlag } from "@shared/types/scan-flags";
 import type { ScanFlag } from "@shared/types/scan-flags";
 
 const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
@@ -345,9 +345,33 @@ export default function ScanScreen() {
           `/api/nutrition/barcode/${barcode}`,
         );
         const data = await res.json();
-        const safetyFlag = pickTopSafetyFlag(
-          Array.isArray(data.flags) ? data.flags : [],
-        );
+        const flags = Array.isArray(data.flags) ? data.flags : [];
+        // safetyFlag: tier==="safety"-only (Phase-1 fail-dangerous allergen
+        // semantics) — this LOCAL variable drives the haptic below,
+        // unchanged; the field of the same name on the dispatched product is
+        // kept for its safety-tier-only semantics but has no reader today.
+        // topFlag ranks TIER before severity (fix round 3): show the top
+        // safety-tier flag if ANY safety flag is present, else the top
+        // warn-level non-safety (nutrition) flag, else nothing. Ranking by
+        // pure severity (the old `pickTopFlag` over an unpartitioned list)
+        // let a warn-level nutrition flag ("High in sugar") outrank and
+        // DISPLACE a MILD allergen match ("Contains Milk", severity "info",
+        // tier "safety" — server/services/scan-flags.ts SEVERITY_TO_FLAG),
+        // dropping the allergen off the chip entirely. This chip is the ONLY
+        // signal for a mild allergen match (no haptic fires for mild), so a
+        // personal allergen must never be hidden behind a universal
+        // nutrition heads-up. Info-level NON-safety flags (Nutri-Score
+        // grades, "Contains caffeine", "Contains artificial sweeteners" —
+        // all tier: "nutrition") still never reach the chip; they render on
+        // the detail screen's "Heads up" section instead.
+        const safetyFlag = pickTopSafetyFlag(flags);
+        const topFlag =
+          pickTopSafetyFlag(flags) ??
+          pickTopFlag(
+            flags.filter(
+              (f: ScanFlag) => f.tier !== "safety" && f.severity !== "info",
+            ),
+          );
         dispatch({
           type: "PRODUCT_LOADED",
           product: {
@@ -355,6 +379,7 @@ export default function ScanScreen() {
             brand: data.brandName ?? undefined,
             imageUri: data.imageUrl ?? undefined,
             safetyFlag,
+            topFlag,
           },
         });
         // Raise salience on a severe flag WITHOUT blocking the flow (badges only).

@@ -24,6 +24,15 @@ function formatQuantity(quantity: number): string {
 }
 
 /**
+ * Rounds to one decimal place. Used for the sub-gram Additional Nutrients
+ * rows (saturated fat, trans fat) where whole-number rounding would hide a
+ * present-but-small value as a false "0 g".
+ */
+export function roundToOneDecimal(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
  * Label for the hero card's "Per …" caption, derived from the SAME serving
  * state that scales the displayed nutrition values so the caption can never
  * desync from the numbers (e.g. "1.5 × 250 ml", "2 × 75 g", "100 g").

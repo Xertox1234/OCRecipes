@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { getServingContextLabel } from "../nutrition-detail-utils";
+import {
+  getServingContextLabel,
+  roundToOneDecimal,
+} from "../nutrition-detail-utils";
 
 const OPTIONS = [
   { label: "250 ml", grams: 250 },
@@ -73,6 +76,25 @@ describe("nutrition-detail-utils", () => {
           isPer100g: false,
         }),
       ).toBe("serving");
+    });
+  });
+
+  describe("roundToOneDecimal", () => {
+    it("rounds to the nearest one-decimal value", () => {
+      expect(roundToOneDecimal(2.34)).toBe(2.3);
+      expect(roundToOneDecimal(2.36)).toBe(2.4);
+    });
+
+    it("preserves a value that already has one decimal", () => {
+      expect(roundToOneDecimal(3.5)).toBe(3.5);
+    });
+
+    it("does not round a sub-one-gram value down to zero", () => {
+      expect(roundToOneDecimal(0.4)).toBe(0.4);
+    });
+
+    it("passes through a whole number unchanged", () => {
+      expect(roundToOneDecimal(40)).toBe(40);
     });
   });
 });

@@ -28,6 +28,10 @@ export interface BarcodePer100g {
   fiber?: number;
   sugar?: number;
   sodium?: number;
+  saturatedFat?: number; // g
+  transFat?: number; // g
+  cholesterol?: number; // mg
+  caffeine?: number; // mg
 }
 
 export interface BarcodeServingInfo {
@@ -55,6 +59,13 @@ export interface BarcodeLookupResult {
   ingredientsText?: string;
   allergenTags?: string[];
   allergenDataAvailable: boolean;
+  // Phase 1 (Smart Scan): OFF-derived product-level NOVA/Nutri-Score/additive/
+  // category data. Read live, NEVER persisted to barcodeNutrition (ODbL) —
+  // same treatment as the allergen fields above.
+  novaGroup?: number;
+  nutriScore?: string;
+  additivesTags?: string[];
+  categoriesTags?: string[];
 }
 
 /**
@@ -94,6 +105,39 @@ export function extractOffAllergenData(
     (ingredientsText !== undefined ||
       mapOffAllergenTags(allergenTags).length > 0);
   return { ingredientsText, allergenTags, allergenDataAvailable };
+}
+
+/**
+ * Pull OFF product-level NOVA group, Nutri-Score grade, additives, and
+ * category tags off the raw product. Pure + exported, mirroring
+ * `extractOffAllergenData`'s defensive style so it can be unit-tested
+ * without mocking the OFF fetch. `nutriScore` is lowercased (OFF's raw grade
+ * casing is inconsistent); `novaGroup` is only set when OFF actually returns
+ * a number. Both tag arrays default to `[]` for a null/absent product.
+ */
+export function extractOffUniversalData(
+  offProduct: Record<string, any> | null,
+): {
+  novaGroup?: number;
+  nutriScore?: string;
+  additivesTags: string[];
+  categoriesTags: string[];
+} {
+  const strArr = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((t): t is string => typeof t === "string") : [];
+  const nova = offProduct?.nova_group;
+  const grade = offProduct?.nutriscore_grade;
+  return {
+    novaGroup:
+      typeof nova === "number"
+        ? nova
+        : typeof nova === "string" && /^[1-4]$/.test(nova.trim())
+          ? Number(nova)
+          : undefined,
+    nutriScore: typeof grade === "string" ? grade.toLowerCase() : undefined,
+    additivesTags: strArr(offProduct?.additives_tags),
+    categoriesTags: strArr(offProduct?.categories_tags),
+  };
 }
 
 const MAX_PLAUSIBLE_SERVING_GRAMS = 500;
@@ -147,7 +191,10 @@ function parseServingGrams(raw: string): number | null {
 /**
  * Scale all nutrition values by a factor, rounding to 1 decimal.
  */
-function scaleNutrients(n: BarcodePer100g, factor: number): BarcodePer100g {
+export function scaleNutrients(
+  n: BarcodePer100g,
+  factor: number,
+): BarcodePer100g {
   const s = (v: number | undefined) =>
     v !== undefined ? roundToOneDecimal(v * factor) : undefined;
   return {
@@ -159,6 +206,10 @@ function scaleNutrients(n: BarcodePer100g, factor: number): BarcodePer100g {
     fiber: s(n.fiber),
     sugar: s(n.sugar),
     sodium: s(n.sodium),
+    saturatedFat: s(n.saturatedFat),
+    transFat: s(n.transFat),
+    cholesterol: s(n.cholesterol),
+    caffeine: s(n.caffeine),
   };
 }
 
@@ -234,6 +285,10 @@ function reconcilePer100g(
         fiber: primary.fiber ?? secondary.fiber,
         sugar: primary.sugar ?? secondary.sugar,
         sodium: primary.sodium ?? secondary.sodium,
+        saturatedFat: primary.saturatedFat ?? secondary.saturatedFat,
+        transFat: primary.transFat ?? secondary.transFat,
+        cholesterol: primary.cholesterol ?? secondary.cholesterol,
+        caffeine: primary.caffeine ?? secondary.caffeine,
       },
       source: `${primaryLabel}+verified`,
     };
@@ -430,6 +485,9 @@ export async function lookupBarcode(
   // Phase 1 (Smart Scan): OFF allergen/ingredient data, read live and surfaced
   // on the result only — NEVER persisted (see barcodeNutrition insert below).
   const offAllergenData = extractOffAllergenData(offProduct);
+  // Phase 1 (Smart Scan): OFF product-level NOVA/Nutri-Score/additives/
+  // categories, same read-live-only treatment as offAllergenData above.
+  const offUniversalData = extractOffUniversalData(offProduct);
 
   // ── Step 2: Extract OFF per-100g values ──────────────────────────
   // Validate nutriments at the boundary: drop non-numeric/garbage values rather
@@ -449,6 +507,20 @@ export async function lookupBarcode(
     sodium:
       nm.sodium_100g !== undefined
         ? roundToOneDecimal(nm.sodium_100g * 1000)
+        : undefined,
+    saturatedFat: nm["saturated-fat_100g"],
+    transFat: nm["trans-fat_100g"],
+    cholesterol:
+      nm.cholesterol_100g !== undefined
+        ? nm.cholesterol_unit === "mg"
+          ? nm.cholesterol_100g // rare: already in mg
+          : roundToOneDecimal(nm.cholesterol_100g * 1000) // OFF default cholesterol unit is g → mg
+        : undefined,
+    caffeine:
+      nm.caffeine_100g !== undefined
+        ? nm.caffeine_unit === "mg"
+          ? nm.caffeine_100g // rare: already in mg
+          : roundToOneDecimal(nm.caffeine_100g * 1000) // OFF default caffeine unit is g → mg
         : undefined,
   };
 
@@ -756,5 +828,6 @@ export async function lookupBarcode(
     ingredientsText: offAllergenData.ingredientsText,
     allergenTags: offAllergenData.allergenTags,
     allergenDataAvailable: offAllergenData.allergenDataAvailable,
+    ...offUniversalData,
   };
 }

@@ -424,3 +424,253 @@ describe("ScanScreen — barcode lock wiring (stale-closure regression, PR #654)
     });
   });
 });
+
+describe("ScanScreen — barcode-lock chip shows the top flag (Task 14)", () => {
+  // Same-severity allergen vs. universal/nutrient flag — exercises
+  // pickTopFlag's tie-break-toward-allergen through the REAL fetchProductInfo
+  // wiring (not just a directly-constructed phase, as in
+  // ProductChip.topFlag.test.tsx), so a regression that dropped the `topFlag:
+  // pickTopFlag(...)` line from the PRODUCT_LOADED dispatch would fail here.
+  const nutrientWarn = {
+    id: "nutrient:sugar",
+    kind: "nutrient",
+    severity: "warn",
+    tier: "nutrition",
+    title: "High in sugar",
+  };
+  const allergenWarn = {
+    id: "allergen:milk",
+    kind: "allergen",
+    severity: "warn",
+    tier: "safety",
+    title: "Contains Milk",
+  };
+
+  beforeEach(() => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Energy Blast",
+            calories: 110,
+            flags: [nutrientWarn, allergenWarn],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+  });
+
+  it("surfaces the allergen flag on the scan-lock chip after a real barcode lock", async () => {
+    renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    expect(firstHandler).toBeDefined();
+
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+
+    expect(await screen.findByText("⚠ Contains Milk")).toBeTruthy();
+    expect(screen.queryByText(/High in sugar/)).toBeNull();
+  });
+});
+
+describe("ScanScreen — scan-lock chip filters info-level flags (final-review fix)", () => {
+  // Reviewer-flagged blocker: `pickTopFlag` has no severity filter, so a
+  // clean healthy product whose only flag is `nutriscore:a` (severity
+  // "info") rendered "⚠ Nutri-Score A" with an assertive announce — a
+  // warning glyph + interrupt on neutral/good info. fetchProductInfo now
+  // filters out info-level flags before picking the chip's topFlag; warn/
+  // danger flags (allergens, high sugar/sat-fat/sodium, etc.) are unaffected.
+  const infoNutriscoreFlag = {
+    id: "nutriscore:a",
+    kind: "nutriscore",
+    severity: "info",
+    tier: "nutrition",
+    title: "Nutri-Score A",
+    grade: "a",
+  };
+  const warnSugarFlag = {
+    id: "nutrient:sugar",
+    kind: "nutrient",
+    severity: "warn",
+    tier: "nutrition",
+    title: "High in sugar",
+  };
+
+  const driveBarcodeLock = async () => {
+    renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    expect(firstHandler).toBeDefined();
+
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+  };
+
+  it("shows no topFlag badge when the only flag is info severity", async () => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Clean Snack",
+            calories: 100,
+            flags: [infoNutriscoreFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    expect(await screen.findByText("Clean Snack")).toBeTruthy();
+    expect(screen.queryByText(/⚠/)).toBeNull();
+  });
+
+  it("still surfaces a warn-level flag alongside an info-level one", async () => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Sugary Snack",
+            calories: 250,
+            flags: [infoNutriscoreFlag, warnSugarFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    expect(await screen.findByText("⚠ High in sugar")).toBeTruthy();
+    expect(screen.queryByText(/Nutri-Score/)).toBeNull();
+  });
+
+  // Regression (fix round 2): a MILD allergy maps to `severity: "info"` while
+  // keeping `tier: "safety"` (server/services/scan-flags.ts SEVERITY_TO_FLAG).
+  // The severity-based filter above (`f.severity !== "info"`) dropped this —
+  // silencing the ONLY signal a mild-allergen match gets (no haptic fires for
+  // mild; that's `pickTopSafetyFlag`'s "danger"-only gate). The chip must
+  // still surface it; only info-level NON-safety flags (Nutri-Score,
+  // "Contains caffeine", etc.) should be dropped.
+  const mildAllergenFlag = {
+    id: "allergen:milk",
+    kind: "allergen",
+    tier: "safety",
+    severity: "info",
+    title: "Contains Milk",
+    allergenId: "milk",
+  };
+
+  it("still surfaces a MILD allergen flag (safety tier, info severity)", async () => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Yogurt Bar",
+            calories: 150,
+            flags: [mildAllergenFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    await driveBarcodeLock();
+
+    expect(await screen.findByText("⚠ Contains Milk")).toBeTruthy();
+  });
+});
+
+describe("ScanScreen — scan-lock chip ranks safety tier before severity (fix round 3)", () => {
+  // Regression (fix round 3): a mild allergen (severity "info", tier
+  // "safety") survives the info-level filter above, but the old computation
+  // fed both surviving flags into `pickTopFlag`, which ranks by pure
+  // SEVERITY (allergen tie-break only at EQUAL severity). A warn-level
+  // nutrition flag ("High in sugar", severity "warn") therefore outranked
+  // and DISPLACED the milder allergen match — the allergen dropped off the
+  // chip entirely. A personal allergen must never be hidden behind a
+  // universal nutrition heads-up: the chip must show the top SAFETY flag
+  // whenever any safety flag is present, regardless of its severity
+  // relative to a nutrition flag.
+  const mildAllergenFlag = {
+    id: "allergen:milk",
+    kind: "allergen",
+    tier: "safety",
+    severity: "info",
+    title: "Contains Milk",
+    allergenId: "milk",
+  };
+  const warnSugarFlag = {
+    id: "nutrient:sugar",
+    kind: "nutrient",
+    tier: "nutrition",
+    severity: "warn",
+    title: "High in sugar",
+    nutrient: "sugar",
+  };
+
+  it("surfaces the mild allergen over a warn-level nutrition flag", async () => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Milk Sugar Bar",
+            calories: 200,
+            flags: [warnSugarFlag, mildAllergenFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    expect(firstHandler).toBeDefined();
+
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+
+    expect(await screen.findByText("⚠ Contains Milk")).toBeTruthy();
+    expect(screen.queryByText(/High in sugar/)).toBeNull();
+  });
+});

@@ -127,6 +127,21 @@ export const offNutrimentsSchema = z
     fiber_100g: offNumericField,
     sugars_100g: offNumericField,
     sodium_100g: offNumericField,
+    // Universal Nutrition Flags v1 (Task 2): carried/scaled here for typed
+    // access; the actual OFF→per100g mapping + unit conversion (caffeine
+    // g→mg, cholesterol g→mg) happens in a later task. `offNumericField`
+    // (not `z.number().optional()`) is deliberate — this schema ends in a
+    // top-level `.catch(() => ({}))`, so a strict field that throws on OFF's
+    // occasional "N/A"/string garbage would wipe every nutrient (energy,
+    // protein, …) for the product, not just this one. `offNumericField`
+    // never throws and infers the same `number | undefined` output type.
+    "saturated-fat_100g": offNumericField,
+    "trans-fat_100g": offNumericField,
+    cholesterol_100g: offNumericField,
+    cholesterol_unit: z.string().optional().catch(undefined),
+    caffeine_100g: offNumericField,
+    caffeine_serving: offNumericField,
+    caffeine_unit: z.string().optional().catch(undefined),
   })
   .passthrough()
   .catch(() => ({}));

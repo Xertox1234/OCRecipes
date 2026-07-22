@@ -260,6 +260,15 @@ describe("scaleNutrition", () => {
     expect(scaled.fiber).toBeUndefined();
     expect(scaled.sugar).toBeUndefined();
   });
+
+  it("scales the new nutrients with serving quantity", () => {
+    const scaled = scaleNutrition(
+      { calories: 100, saturatedFat: 2, caffeine: 32 } as any,
+      2,
+    );
+    expect(scaled.saturatedFat).toBe(4);
+    expect(scaled.caffeine).toBe(64);
+  });
 });
 
 describe("estimateReasonableServingGrams", () => {

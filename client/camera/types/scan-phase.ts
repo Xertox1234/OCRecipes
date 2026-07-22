@@ -8,6 +8,17 @@ export interface ProductSummary {
   imageUri?: string;
   /** Top safety flag for the scan-lock chip (highest severity), if any. */
   safetyFlag?: ScanFlag;
+  /**
+   * Top flag across ALL kinds (allergen OR universal/nutrition), for the
+   * scan-lock chip badge — severity ties break toward allergen via
+   * `pickTopFlag`. Additive alongside `safetyFlag` (Task 14, Smart Scan
+   * Universal Nutrition Flags v1). `safetyFlag` is kept for its
+   * safety-tier-only semantics (allergen fail-dangerous fields don't get
+   * diluted by lower-priority universal flags in a shared field) — note it
+   * is currently write-only on this type: ScanScreen's Phase-1 haptic reads
+   * its own locally-computed `pickTopSafetyFlag` result, not this field.
+   */
+  topFlag?: ScanFlag;
 }
 
 type Bounds = NonNullable<BarcodeResult["bounds"]>;

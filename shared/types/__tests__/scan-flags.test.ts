@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   pickTopSafetyFlag,
+  pickTopFlag,
   createAllergenUnavailableFlag,
   type ScanFlag,
 } from "@shared/types/scan-flags";
@@ -67,5 +68,38 @@ describe("createAllergenUnavailableFlag", () => {
       title: "Couldn't check against your profile",
       detail: "We couldn't load your allergy profile just now.",
     });
+  });
+});
+
+const f = (over: Partial<ScanFlag>): ScanFlag => ({
+  id: "x",
+  kind: "nutrient",
+  severity: "info",
+  tier: "nutrition",
+  title: "t",
+  ...over,
+});
+
+describe("pickTopFlag", () => {
+  it("returns the highest-severity flag", () => {
+    const top = pickTopFlag([
+      f({ severity: "info" }),
+      f({ severity: "danger" }),
+      f({ severity: "warn" }),
+    ]);
+    expect(top?.severity).toBe("danger");
+  });
+  it("breaks severity ties toward the allergen flag", () => {
+    const allergen = f({
+      id: "a",
+      kind: "allergen",
+      severity: "warn",
+      tier: "safety",
+    });
+    const nutrient = f({ id: "n", kind: "nutrient", severity: "warn" });
+    expect(pickTopFlag([nutrient, allergen])?.id).toBe("a");
+  });
+  it("returns undefined for an empty list", () => {
+    expect(pickTopFlag([])).toBeUndefined();
   });
 });
