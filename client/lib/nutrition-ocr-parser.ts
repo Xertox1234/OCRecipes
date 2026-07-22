@@ -45,9 +45,10 @@ interface FieldPattern {
 
 // Canadian/bilingual labels put the English name first with the French name
 // after a slash ("Fat / Lipides", "Sugars / Sucres") or use the French name
-// alone ("Glucides", "Protéines"). Only the four fields the label-override
-// feature reads and compares (fat, sugars, carbs, protein) plus serving size
-// are extended for bilingual labels; the other fields keep their US-only form.
+// alone ("Glucides", "Protéines"). Only the five fields the label-override
+// feature reads (fat, saturated fat, sugars, carbs, protein) plus serving size
+// are extended for bilingual labels; trans fat, cholesterol, sodium, and fiber
+// (none read by the feature) keep their US-only form.
 //
 // Two additions vs. the US patterns, both regression-safe:
 //   1. `(?:\s*\/\s*[a-zà-ÿ]+)?` — an OPTIONAL alternate-name group that steps
@@ -65,14 +66,18 @@ const FIELD_PATTERNS: FieldPattern[] = [
     pattern:
       /(?:total\s+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
   },
-  { key: "saturatedFat", pattern: /saturated\s+fat\s+<?(\S+?)g/i },
+  {
+    key: "saturatedFat",
+    pattern:
+      /(?:saturated\s+fat|(?:^|\n)\s*(?:saturated|satur[ée]s))(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+  },
   { key: "transFat", pattern: /trans\s+fat\s+<?(\S+?)g/i },
   { key: "cholesterol", pattern: /cholesterol\s+<?(\S+?)mg/i },
   { key: "sodium", pattern: /sodium\s+<?(\S+?)mg/i },
   {
     key: "totalCarbs",
     pattern:
-      /(?:total\s+carb(?:ohydrate|s|\.?)?|carbohydrate|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+      /(?:total\s+carb(?:ohydrate|s|\.?)?|carbohydrates?|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
   },
   { key: "dietaryFiber", pattern: /dietary\s+fiber\s+<?(\S+?)g/i },
   {
