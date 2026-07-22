@@ -39,6 +39,10 @@ export interface NutritionPer100g {
   fiber?: number;
   sugar?: number;
   sodium?: number;
+  saturatedFat?: number;
+  transFat?: number;
+  cholesterol?: number;
+  caffeine?: number;
 }
 
 export interface ValidatedNutrition {
@@ -457,6 +461,10 @@ export function scaleNutrition(
     fiber: scale(base.fiber),
     sugar: scale(base.sugar),
     sodium: scale(base.sodium),
+    saturatedFat: scale(base.saturatedFat),
+    transFat: scale(base.transFat),
+    cholesterol: scale(base.cholesterol),
+    caffeine: scale(base.caffeine),
   };
 }
 

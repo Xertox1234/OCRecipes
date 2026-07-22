@@ -48,8 +48,16 @@ interface NutritionData {
   fiber?: number;
   sugar?: number;
   sodium?: number;
+  saturatedFat?: number;
+  transFat?: number;
+  cholesterol?: number;
+  caffeine?: number;
   imageUrl?: string;
   barcode?: string;
+  /** Product-level NOVA processing classification (1-4) — not scaled by serving. */
+  novaGroup?: number;
+  /** Product-level Nutri-Score grade (e.g. "a"-"e") — not scaled by serving. */
+  nutriScore?: string;
 }
 
 export function useNutritionLookup(params: {
@@ -161,6 +169,10 @@ export function useNutritionLookup(params: {
               fiber: scaled.fiber,
               sugar: scaled.sugar,
               sodium: scaled.sodium,
+              saturatedFat: scaled.saturatedFat,
+              transFat: scaled.transFat,
+              cholesterol: scaled.cholesterol,
+              caffeine: scaled.caffeine,
               servingSize: `${grams}g`,
             }
           : prev,
@@ -246,8 +258,14 @@ export function useNutritionLookup(params: {
             fiber: data.perServing.fiber,
             sugar: data.perServing.sugar,
             sodium: data.perServing.sodium,
+            saturatedFat: data.perServing.saturatedFat,
+            transFat: data.perServing.transFat,
+            cholesterol: data.perServing.cholesterol,
+            caffeine: data.perServing.caffeine,
             imageUrl: data.imageUrl,
             barcode: code,
+            novaGroup: data.novaGroup,
+            nutriScore: data.nutriScore,
           });
 
           setFlags(Array.isArray(data.flags) ? (data.flags as ScanFlag[]) : []);
