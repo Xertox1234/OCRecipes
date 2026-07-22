@@ -128,7 +128,12 @@ export function extractOffUniversalData(
   const nova = offProduct?.nova_group;
   const grade = offProduct?.nutriscore_grade;
   return {
-    novaGroup: typeof nova === "number" ? nova : undefined,
+    novaGroup:
+      typeof nova === "number"
+        ? nova
+        : typeof nova === "string" && /^[1-4]$/.test(nova.trim())
+          ? Number(nova)
+          : undefined,
     nutriScore: typeof grade === "string" ? grade.toLowerCase() : undefined,
     additivesTags: strArr(offProduct?.additives_tags),
     categoriesTags: strArr(offProduct?.categories_tags),

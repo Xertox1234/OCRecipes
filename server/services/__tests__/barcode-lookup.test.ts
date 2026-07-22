@@ -1204,4 +1204,18 @@ describe("extractOffUniversalData", () => {
     expect(out.additivesTags).toEqual([]);
     expect(out.novaGroup).toBeUndefined();
   });
+
+  it("coerces an in-range numeric-string nova_group to a number", () => {
+    const out = extractOffUniversalData({ nova_group: "4" });
+    expect(out.novaGroup).toBe(4);
+  });
+
+  it("rejects an out-of-range or garbage string nova_group", () => {
+    expect(
+      extractOffUniversalData({ nova_group: "9" }).novaGroup,
+    ).toBeUndefined();
+    expect(
+      extractOffUniversalData({ nova_group: "N/A" }).novaGroup,
+    ).toBeUndefined();
+  });
 });
