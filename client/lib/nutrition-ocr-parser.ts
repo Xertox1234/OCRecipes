@@ -43,23 +43,55 @@ interface FieldPattern {
   pattern: RegExp;
 }
 
+// Canadian/bilingual labels put the English name first with the French name
+// after a slash ("Fat / Lipides", "Sugars / Sucres") or use the French name
+// alone ("Glucides", "Protéines"). Only the four fields the label-override
+// feature reads and compares (fat, sugars, carbs, protein) plus serving size
+// are extended for bilingual labels; the other fields keep their US-only form.
+//
+// Two additions vs. the US patterns, both regression-safe:
+//   1. `(?:\s*\/\s*[a-zà-ÿ]+)?` — an OPTIONAL alternate-name group that steps
+//      over the "/ Lipides" half without over-consuming the value.
+//   2. `(\S+?)\s*g` — a loose capture (so fixOCRDigits still repairs OCR
+//      misreads like "l2" -> 12) followed by an optional space before the unit
+//      (for the Canadian "0 g" spacing).
+// The bare English tokens "fat" and "sugars" are substrings of "saturated/
+// trans fat" and "total sugars", so their bilingual forms are line-anchored
+// (`(?:^|\n)\s*`) to keep them from stealing another field's value.
 const FIELD_PATTERNS: FieldPattern[] = [
   { key: "calories", pattern: /calories\s+(?!from\b)<?(\S+)/i },
-  { key: "totalFat", pattern: /total\s+fat\s+<?(\S+?)g/i },
+  {
+    key: "totalFat",
+    pattern:
+      /(?:total\s+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+  },
   { key: "saturatedFat", pattern: /saturated\s+fat\s+<?(\S+?)g/i },
   { key: "transFat", pattern: /trans\s+fat\s+<?(\S+?)g/i },
   { key: "cholesterol", pattern: /cholesterol\s+<?(\S+?)mg/i },
   { key: "sodium", pattern: /sodium\s+<?(\S+?)mg/i },
   {
     key: "totalCarbs",
-    pattern: /total\s+carb(?:ohydrate|s|\.?)?\s+<?(\S+?)g/i,
+    pattern:
+      /(?:total\s+carb(?:ohydrate|s|\.?)?|carbohydrate|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
   },
   { key: "dietaryFiber", pattern: /dietary\s+fiber\s+<?(\S+?)g/i },
-  { key: "totalSugars", pattern: /total\s+sugars?\s+<?(\S+?)g/i },
-  { key: "protein", pattern: /protein\s+<?(\S+?)g/i },
+  {
+    key: "totalSugars",
+    pattern:
+      /(?:total\s+sugars?|(?:^|\n)\s*(?:sugars?|sucres?))(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+  },
+  {
+    key: "protein",
+    pattern: /(?:protein|prot[ée]ines?)(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+  },
 ];
 
 const SERVING_SIZE_PATTERN = /serving\s+size\s+(.+)/i;
+// Canadian/bilingual labels head the column with "Per 355 mL" / "pour 250 mL" /
+// "Portion". Only accept this form when the capture carries a g/ml token, so a
+// stray "Amount per serving" line can't hijack the serving size.
+const SERVING_PER_PATTERN =
+  /(?:^|\n)\s*(?:per|pour|portion)\s+([^\n]*\d[^\n]*(?:g|ml)[^\n]*)/i;
 
 /** Total number of numeric fields used to calculate confidence */
 const TOTAL_FIELDS = FIELD_PATTERNS.length;
@@ -82,8 +114,11 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
 
   if (!text.trim()) return result;
 
-  // Extract serving size (free-form text, not numeric)
-  const servingMatch = text.match(SERVING_SIZE_PATTERN);
+  // Extract serving size (free-form text, not numeric). Prefer the US
+  // "Serving Size" label; fall back to the Canadian "Per X mL" form only when
+  // that capture contains a g/ml token (see SERVING_PER_PATTERN).
+  const servingMatch =
+    text.match(SERVING_SIZE_PATTERN) ?? text.match(SERVING_PER_PATTERN);
   if (servingMatch) {
     result.servingSize = servingMatch[1].trim().slice(0, 100);
   }

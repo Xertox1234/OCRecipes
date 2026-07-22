@@ -193,3 +193,43 @@ Calories 100`;
     expect(result.servingSize).toHaveLength(100);
   });
 });
+
+describe("Canadian / bilingual labels", () => {
+  it('extracts "Per 355 mL" serving', () => {
+    const r = parseNutritionFromOCR(
+      "Nutrition Facts\nPer 355 mL\nCalories 150",
+    );
+    expect(r.servingSize).toBe("355 mL");
+    expect(r.calories).toBe(150);
+  });
+
+  it('extracts bilingual "Sugars / Sucres" and "Fat / Lipides"', () => {
+    const r = parseNutritionFromOCR(
+      "Per 355 mL\nCalories 150\nFat / Lipides 0 g\nSugars / Sucres 39 g",
+    );
+    expect(r.totalFat).toBe(0);
+    expect(r.totalSugars).toBe(39);
+  });
+
+  it("handles accented French field names", () => {
+    const r = parseNutritionFromOCR(
+      "pour 250 mL\nProtéines 3 g\nGlucides 26 g",
+    );
+    expect(r.protein).toBe(3);
+    expect(r.totalCarbs).toBe(26);
+  });
+
+  it('falls back to "Per" only when the capture carries a g/ml token', () => {
+    // a stray "per serving" line without a unit must NOT become the serving size
+    const r = parseNutritionFromOCR("Amount per serving\nServing Size 30 g");
+    expect(r.servingSize).toBe("30 g");
+  });
+
+  it("keeps US-format labels working (no regression)", () => {
+    const r = parseNutritionFromOCR(
+      "Serving Size 1 cup (240g)\nCalories 100\nTotal Fat 2g\nTotal Sugars 12g",
+    );
+    expect(r.servingSize).toBe("1 cup (240g)");
+    expect(r.totalSugars).toBe(12);
+  });
+});
