@@ -46,3 +46,24 @@ describe("evaluateUniversalFlags — FSA nutrient flags", () => {
     expect(evaluateUniversalFlags(base)).toEqual([]);
   });
 });
+
+describe("evaluateUniversalFlags — NOVA", () => {
+  it("flags ultra-processed for NOVA 4", () => {
+    const flags = evaluateUniversalFlags({ ...base, novaGroup: 4 });
+    const f = flags.find((x) => x.id === "processing:ultra");
+    expect(f).toBeDefined();
+    expect(f?.kind).toBe("processing");
+    expect(f?.severity).toBe("warn");
+    expect(f?.tier).toBe("nutrition");
+  });
+  it("does NOT flag NOVA 3 in v1", () => {
+    expect(
+      evaluateUniversalFlags({ ...base, novaGroup: 3 }).map((x) => x.id),
+    ).not.toContain("processing:ultra");
+  });
+  it("does NOT flag when nova is absent", () => {
+    expect(evaluateUniversalFlags(base).map((x) => x.id)).not.toContain(
+      "processing:ultra",
+    );
+  });
+});

@@ -112,5 +112,15 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
   );
 
   // Later tasks (6-8) append additional flag families here before the return.
+  if (input.novaGroup === 4) {
+    flags.push({
+      id: "processing:ultra",
+      kind: "processing",
+      severity: "warn",
+      tier: "nutrition",
+      title: "Ultra-processed",
+      detail: "NOVA group 4 — made largely from industrial ingredients.",
+    });
+  }
   return flags;
 }
