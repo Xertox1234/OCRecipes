@@ -28,6 +28,10 @@ export interface BarcodePer100g {
   fiber?: number;
   sugar?: number;
   sodium?: number;
+  saturatedFat?: number; // g
+  transFat?: number; // g
+  cholesterol?: number; // mg
+  caffeine?: number; // mg
 }
 
 export interface BarcodeServingInfo {
@@ -147,7 +151,10 @@ function parseServingGrams(raw: string): number | null {
 /**
  * Scale all nutrition values by a factor, rounding to 1 decimal.
  */
-function scaleNutrients(n: BarcodePer100g, factor: number): BarcodePer100g {
+export function scaleNutrients(
+  n: BarcodePer100g,
+  factor: number,
+): BarcodePer100g {
   const s = (v: number | undefined) =>
     v !== undefined ? roundToOneDecimal(v * factor) : undefined;
   return {
@@ -159,6 +166,10 @@ function scaleNutrients(n: BarcodePer100g, factor: number): BarcodePer100g {
     fiber: s(n.fiber),
     sugar: s(n.sugar),
     sodium: s(n.sodium),
+    saturatedFat: s(n.saturatedFat),
+    transFat: s(n.transFat),
+    cholesterol: s(n.cholesterol),
+    caffeine: s(n.caffeine),
   };
 }
 
@@ -234,6 +245,10 @@ function reconcilePer100g(
         fiber: primary.fiber ?? secondary.fiber,
         sugar: primary.sugar ?? secondary.sugar,
         sodium: primary.sodium ?? secondary.sodium,
+        saturatedFat: primary.saturatedFat ?? secondary.saturatedFat,
+        transFat: primary.transFat ?? secondary.transFat,
+        cholesterol: primary.cholesterol ?? secondary.cholesterol,
+        caffeine: primary.caffeine ?? secondary.caffeine,
       },
       source: `${primaryLabel}+verified`,
     };

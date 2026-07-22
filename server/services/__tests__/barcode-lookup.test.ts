@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { lookupBarcode } from "../barcode-lookup";
+import { lookupBarcode, scaleNutrients } from "../barcode-lookup";
 import { _resetCNFCacheForTesting } from "../nutrition-lookup";
 
 // Mock the db module so the cache functions don't hit a real database
@@ -1124,5 +1124,24 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result).not.toBeNull();
     expect(result!.source).toBe("cnf");
     expect(result!.per100g.calories).toBe(387);
+  });
+});
+
+describe("scaleNutrients — new nutrient fields (Universal Nutrition Flags v1)", () => {
+  it("scales the new nutrients with the serving factor", () => {
+    const scaled = scaleNutrients(
+      {
+        calories: 100,
+        saturatedFat: 2,
+        transFat: 0.5,
+        cholesterol: 10,
+        caffeine: 32,
+      },
+      2,
+    );
+    expect(scaled.saturatedFat).toBe(4);
+    expect(scaled.transFat).toBe(1);
+    expect(scaled.cholesterol).toBe(20);
+    expect(scaled.caffeine).toBe(64);
   });
 });
