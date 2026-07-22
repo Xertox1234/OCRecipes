@@ -323,8 +323,8 @@ describe("plant-substitute guard invariant", () => {
     // Suppression is the DANGEROUS direction (it removes an allergen flag), so an
     // ambiguous separator must over-flag rather than risk a miss. Every
     // guard-sensitive form joined to a plant modifier by a slash therefore STILL
-    // flags — a safe false positive. See PR #688 review. A future change that
-    // makes "/" suppress must revisit that safety tradeoff, and will go red here.
+    // flags — a safe false positive. A future change that makes "/" suppress must
+    // revisit that safety tradeoff, and will go red here.
     for (const form of guardSensitiveForms) {
       expect(ingredientContainsKeyword(`almond/${form}`, form)).toBe(true);
     }

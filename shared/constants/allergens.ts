@@ -778,7 +778,7 @@ function getSubstituteModifierPattern(keyword: string): RegExp {
     //   - "/" is ambiguous: "almond/milk" reads as one substitute, but "/" is
     //     also a list / "and-or" delimiter ("soy/milk", "water/sugar/salt"), so
     //     treating it as a joiner could suppress real milk. Left out on purpose
-    //     — safety beats fixing the "almond/milk" over-flag (see PR #688 review).
+    //     — safety beats fixing the "almond/milk" over-flag.
     //   - parentheses are ambiguous too; over-flagging is the safe default.
     pattern = new RegExp(
       `(?:^|[\\s,;/()\\-])(?:${mods})[\\s\\-]${escaped}(?:$|[\\s,;/()\\-])`,
