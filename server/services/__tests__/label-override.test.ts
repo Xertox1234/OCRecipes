@@ -1,0 +1,97 @@
+import { describe, it, expect } from "vitest";
+import {
+  buildLabelConflict,
+  type LabelNutritionInput,
+} from "../label-override";
+import type { BarcodeLookupResult } from "../barcode-lookup";
+
+// DB result shaped like OFF's wrong Cherry Coke entry (per-100 ml).
+function cherryCokeDb(): BarcodeLookupResult {
+  return {
+    productName: "Cherry Coke",
+    barcode: "06772408",
+    per100g: { calories: 11.11, sugar: 3.09, fat: 0, caffeine: undefined },
+    perServing: { calories: 39, sugar: 11, fat: 0 },
+    servingInfo: { displayLabel: "355 ml", grams: 355, wasCorrected: false },
+    isServingDataTrusted: true,
+    source: "openfoodfacts+self-consistent",
+    allergenDataAvailable: true,
+    novaGroup: 4,
+    categoriesTags: ["en:colas", "en:beverages"],
+  };
+}
+
+const goodLabel: LabelNutritionInput = {
+  calories: 150,
+  totalSugars: 39,
+  totalFat: 0,
+  saturatedFat: null,
+  servingSize: "355 mL",
+};
+
+it("flags a conflict on calories AND sugar for the Cherry Coke case", () => {
+  const r = buildLabelConflict(cherryCokeDb(), goodLabel);
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(expect.arrayContaining(["calories", "sugar"]));
+});
+
+it("label result is a TRUSTED per-serving entry with servingGrams from the label", () => {
+  const { labelResult } = buildLabelConflict(cherryCokeDb(), goodLabel);
+  expect(labelResult).toBeDefined();
+  expect(labelResult!.isServingDataTrusted).toBe(true);
+  expect(labelResult!.servingInfo.grams).toBe(355);
+  // per-serving sugar comes back to ~39 (label value), per-100 ml ~11
+  expect(labelResult!.perServing.sugar).toBeCloseTo(39, 0);
+  expect(labelResult!.per100g.sugar).toBeCloseTo(11, 0);
+});
+
+it("keeps OFF-only enrichment from the DB on the label result", () => {
+  const { labelResult } = buildLabelConflict(cherryCokeDb(), goodLabel);
+  expect(labelResult!.novaGroup).toBe(4);
+  expect(labelResult!.categoriesTags).toEqual(["en:colas", "en:beverages"]);
+});
+
+it("no conflict when the label agrees within 25%", () => {
+  const db = cherryCokeDb();
+  db.per100g = { calories: 42, sugar: 11, fat: 0 };
+  db.perServing = { calories: 149, sugar: 39, fat: 0 };
+  expect(buildLabelConflict(db, goodLabel).conflict).toBe(false);
+});
+
+it("no conflict (not comparable) when the label serving is unparseable", () => {
+  const r = buildLabelConflict(cherryCokeDb(), {
+    ...goodLabel,
+    servingSize: "1 bottle",
+  });
+  expect(r.conflict).toBe(false);
+  expect(r.labelResult).toBeUndefined();
+});
+
+it("presence gate: no conflict when calories or all macros are unread", () => {
+  const noCals = buildLabelConflict(cherryCokeDb(), {
+    ...goodLabel,
+    calories: null,
+  });
+  expect(noCals.conflict).toBe(false);
+  const noMacros = buildLabelConflict(cherryCokeDb(), {
+    calories: 150,
+    totalSugars: null,
+    totalFat: null,
+    saturatedFat: null,
+    servingSize: "355 mL",
+  });
+  expect(noMacros.conflict).toBe(false);
+});
+
+it("compares only fields the OCR read (sugar-only disagreement still conflicts)", () => {
+  const label: LabelNutritionInput = {
+    calories: 43,
+    totalSugars: 39,
+    totalFat: null,
+    saturatedFat: null,
+    servingSize: "355 mL",
+  }; // calories agree (~11 vs 12 per-100 once 43/355mL is normalized), sugar disagrees
+  const r = buildLabelConflict(cherryCokeDb(), label);
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["sugar"]);
+});

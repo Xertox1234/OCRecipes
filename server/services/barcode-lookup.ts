@@ -179,7 +179,7 @@ function estimateServingGrams(
 /**
  * Parse numeric grams from a serving size string like "30g" or "1 cup (240g)".
  */
-function parseServingGrams(raw: string): number | null {
+export function parseServingGrams(raw: string): number | null {
   if (!raw) return null;
   const lower = raw.toLowerCase();
   const m =
