@@ -29,7 +29,10 @@ import {
   Shadows,
   withOpacity,
 } from "@/constants/theme";
-import { getServingContextLabel } from "@/screens/nutrition-detail-utils";
+import {
+  getServingContextLabel,
+  roundToOneDecimal,
+} from "@/screens/nutrition-detail-utils";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
@@ -541,7 +544,11 @@ export default function NutritionDetailScreen() {
 
         {nutrition?.fiber !== undefined ||
         nutrition?.sugar !== undefined ||
-        nutrition?.sodium !== undefined ? (
+        nutrition?.sodium !== undefined ||
+        nutrition?.saturatedFat !== undefined ||
+        nutrition?.transFat !== undefined ||
+        nutrition?.cholesterol !== undefined ||
+        nutrition?.caffeine !== undefined ? (
           <Animated.View
             entering={
               reducedMotion ? undefined : FadeInUp.delay(500).duration(400)
@@ -591,6 +598,54 @@ export default function NutritionDetailScreen() {
                   </ThemedText>
                   <ThemedText type="body" style={{ fontWeight: "600" }}>
                     {Math.round(nutrition.sodium)} mg
+                  </ThemedText>
+                </View>
+              ) : null}
+              {nutrition?.saturatedFat !== undefined ? (
+                <View
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
+                >
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Saturated Fat
+                  </ThemedText>
+                  <ThemedText type="body" style={{ fontWeight: "600" }}>
+                    {roundToOneDecimal(nutrition.saturatedFat)} g
+                  </ThemedText>
+                </View>
+              ) : null}
+              {nutrition?.transFat !== undefined ? (
+                <View
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
+                >
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Trans Fat
+                  </ThemedText>
+                  <ThemedText type="body" style={{ fontWeight: "600" }}>
+                    {roundToOneDecimal(nutrition.transFat)} g
+                  </ThemedText>
+                </View>
+              ) : null}
+              {nutrition?.cholesterol !== undefined ? (
+                <View
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
+                >
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Cholesterol
+                  </ThemedText>
+                  <ThemedText type="body" style={{ fontWeight: "600" }}>
+                    {roundToOneDecimal(nutrition.cholesterol)} mg
+                  </ThemedText>
+                </View>
+              ) : null}
+              {nutrition?.caffeine !== undefined ? (
+                <View
+                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
+                >
+                  <ThemedText type="body" style={styles.nutrientLabel}>
+                    Caffeine
+                  </ThemedText>
+                  <ThemedText type="body" style={{ fontWeight: "600" }}>
+                    {roundToOneDecimal(nutrition.caffeine)} mg
                   </ThemedText>
                 </View>
               ) : null}
