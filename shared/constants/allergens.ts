@@ -764,10 +764,24 @@ function getSubstituteModifierPattern(keyword: string): RegExp {
   let pattern = substituteModifierPatternCache.get(keyword);
   if (!pattern) {
     const mods = SUBSTITUTE_MODIFIERS.join("|");
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     // <plant qualifier><space|hyphen><keyword> at word boundaries, e.g.
     // "almond milk", "unsweetened oat-milk", "coconut flour".
+    //
+    // The inner join accepts ONLY space and hyphen — the separators that
+    // unambiguously bind one compound substitute name. It deliberately excludes
+    // every other boundary character, because suppression is the DANGEROUS
+    // direction (it removes an allergen flag), so an ambiguous separator must
+    // over-flag rather than risk suppressing real dairy/wheat:
+    //   - "," and ";" separate distinct list items ("almond, milk" = almond AND
+    //     genuine milk), so the milk must still flag.
+    //   - "/" is ambiguous: "almond/milk" reads as one substitute, but "/" is
+    //     also a list / "and-or" delimiter ("soy/milk", "water/sugar/salt"), so
+    //     treating it as a joiner could suppress real milk. Left out on purpose
+    //     — safety beats fixing the "almond/milk" over-flag.
+    //   - parentheses are ambiguous too; over-flagging is the safe default.
     pattern = new RegExp(
-      `(?:^|[\\s,;/()\\-])(?:${mods})[\\s\\-]${keyword}(?:$|[\\s,;/()\\-])`,
+      `(?:^|[\\s,;/()\\-])(?:${mods})[\\s\\-]${escaped}(?:$|[\\s,;/()\\-])`,
       "i",
     );
     substituteModifierPatternCache.set(keyword, pattern);

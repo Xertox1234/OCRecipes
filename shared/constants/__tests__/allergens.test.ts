@@ -315,6 +315,45 @@ describe("plant-substitute guard invariant", () => {
       expect(ingredientContainsKeyword(form, form)).toBe(true);
     }
   });
+
+  it("does NOT suppress a slash-joined form — slash is ambiguous, so over-flag is the safe default", () => {
+    // "/" is deliberately NOT a suppression joiner. "almond/milk" reads as one
+    // substitute, but "/" is also a list / "and-or" delimiter ("soy/milk",
+    // "water/sugar/salt"), so suppressing on it could hide real dairy/wheat.
+    // Suppression is the DANGEROUS direction (it removes an allergen flag), so an
+    // ambiguous separator must over-flag rather than risk a miss. Every
+    // guard-sensitive form joined to a plant modifier by a slash therefore STILL
+    // flags — a safe false positive. A future change that makes "/" suppress must
+    // revisit that safety tradeoff, and will go red here.
+    for (const form of guardSensitiveForms) {
+      expect(ingredientContainsKeyword(`almond/${form}`, form)).toBe(true);
+    }
+  });
+
+  it("does NOT suppress a genuine dairy/wheat item after an ingredient DELIMITER (comma/semicolon)", () => {
+    // Fail-DANGEROUS sentinel: "," and ";" separate distinct list items, so
+    // "almond,milk" is almond AND real milk — the milk MUST still flag. Adding a
+    // delimiter to the suppressor's single-character join class would silently
+    // suppress genuine dairy listed after a plant ingredient.
+    //
+    // The effective canaries are the NO-SPACE forms ("almond,milk", "oat;milk").
+    // The join class matches exactly ONE character, so "almond, milk" (comma +
+    // space) survives even a comma-in-join mutation — the join can't span both
+    // the comma and the space. Packaged-food / OCR ingredient panels routinely
+    // omit spaces ("water,sugar,salt"), so the no-space form is both realistic
+    // and the assertion that actually goes RED the day "," or ";" is added.
+    const mustStillFlag: [string, string][] = [
+      ["almond,milk", "milk"], // no-space canary: RED if "," enters the join
+      ["oat;milk", "milk"], // no-space canary: RED if ";" enters the join
+      ["almond, milk", "milk"], // human-readable two-ingredient form (comma+space)
+      ["almond; milk", "milk"],
+      ["oat; wheat flour", "flour"], // wheat is a gluten grain, not a substitute modifier
+      ["cashew, cream", "cream"],
+    ];
+    for (const [ingredient, keyword] of mustStillFlag) {
+      expect(ingredientContainsKeyword(ingredient, keyword)).toBe(true);
+    }
+  });
 });
 
 // ============================================================================
