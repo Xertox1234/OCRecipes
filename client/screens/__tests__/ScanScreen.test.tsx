@@ -424,3 +424,65 @@ describe("ScanScreen — barcode lock wiring (stale-closure regression, PR #654)
     });
   });
 });
+
+describe("ScanScreen — barcode-lock chip shows the top flag (Task 14)", () => {
+  // Same-severity allergen vs. universal/nutrient flag — exercises
+  // pickTopFlag's tie-break-toward-allergen through the REAL fetchProductInfo
+  // wiring (not just a directly-constructed phase, as in
+  // ProductChip.topFlag.test.tsx), so a regression that dropped the `topFlag:
+  // pickTopFlag(...)` line from the PRODUCT_LOADED dispatch would fail here.
+  const nutrientWarn = {
+    id: "nutrient:sugar",
+    kind: "nutrient",
+    severity: "warn",
+    tier: "nutrition",
+    title: "High in sugar",
+  };
+  const allergenWarn = {
+    id: "allergen:milk",
+    kind: "allergen",
+    severity: "warn",
+    tier: "safety",
+    title: "Contains Milk",
+  };
+
+  beforeEach(() => {
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Energy Blast",
+            calories: 110,
+            flags: [nutrientWarn, allergenWarn],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+  });
+
+  it("surfaces the allergen flag on the scan-lock chip after a real barcode lock", async () => {
+    renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    expect(firstHandler).toBeDefined();
+
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+
+    expect(await screen.findByText("⚠ Contains Milk")).toBeTruthy();
+    expect(screen.queryByText(/High in sugar/)).toBeNull();
+  });
+});

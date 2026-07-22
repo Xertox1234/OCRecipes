@@ -92,10 +92,17 @@ export function ProductChip({
   // Same async-load timing as productName above (both arrive together in the
   // PRODUCT_LOADED dispatch) — tracked separately so its announce is
   // content-keyed on the flag itself, not the product name.
+  //
+  // Reads `topFlag` (Task 14: highest-severity flag across ALL kinds —
+  // allergen OR universal/nutrition, ties broken toward allergen), not the
+  // narrower Phase-1 `safetyFlag` (tier==="safety" only) — that field still
+  // exists on ProductSummary for its safety-tier-only semantics but has no
+  // reader today; ScanScreen's fail-dangerous haptic uses its own local
+  // `pickTopSafetyFlag` result, not the field on the dispatched product.
   const safetyFlagTitle =
-    "product" in phase ? phase.product?.safetyFlag?.title : undefined;
+    "product" in phase ? phase.product?.topFlag?.title : undefined;
   const safetyFlagDetail =
-    "product" in phase ? phase.product?.safetyFlag?.detail : undefined;
+    "product" in phase ? phase.product?.topFlag?.detail : undefined;
   const [shouldRender, setShouldRender] = useState(variant !== null);
   const prevSmartConfirmingRef = useRef(false);
   const prevProductNameRef = useRef<string | undefined>(undefined);
@@ -225,16 +232,18 @@ export function ProductChip({
       // transition (see the two effects above) on both platforms.
       importantForAccessibility={importantForAccessibility}
     >
-      {/* Safety flag row (badges only — never blocks the flow) */}
-      {product?.safetyFlag ? (
+      {/* Top flag row (badges only — never blocks the flow). Surfaces the
+          highest-severity flag across ALL kinds (allergen OR
+          universal/nutrition) — Task 14. */}
+      {product?.topFlag ? (
         <View
           style={[
             styles.safetyFlag,
             {
               backgroundColor:
-                product.safetyFlag.severity === "danger"
+                product.topFlag.severity === "danger"
                   ? "rgba(229,72,77,0.22)"
-                  : product.safetyFlag.severity === "warn"
+                  : product.topFlag.severity === "warn"
                     ? "rgba(240,171,58,0.20)"
                     : "rgba(100,181,246,0.20)",
             },
@@ -243,14 +252,12 @@ export function ProductChip({
           accessibilityLiveRegion="assertive"
           accessibilityRole="text"
           accessibilityLabel={
-            product.safetyFlag.detail
-              ? `${product.safetyFlag.title}. ${product.safetyFlag.detail}`
-              : product.safetyFlag.title
+            product.topFlag.detail
+              ? `${product.topFlag.title}. ${product.topFlag.detail}`
+              : product.topFlag.title
           }
         >
-          <Text style={styles.safetyFlagText}>
-            ⚠ {product.safetyFlag.title}
-          </Text>
+          <Text style={styles.safetyFlagText}>⚠ {product.topFlag.title}</Text>
         </View>
       ) : null}
 

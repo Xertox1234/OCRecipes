@@ -12,11 +12,17 @@ import type { ScanPhase } from "@/camera/types/scan-phase";
 // ProductChip-utils helper and unit-test that instead.
 
 const noop = () => {};
-const lockedPhase = (safetyFlag?: any): ScanPhase => ({
+// Builds a phase carrying the given flag as `product.topFlag` — the badge's
+// render source since Task 14 (ProductChip reads `topFlag`, the
+// highest-severity flag across ALL kinds; `safetyFlag` on ProductSummary
+// still exists but only drives ScanScreen's Phase-1 fail-dangerous haptic,
+// it is no longer what this badge renders). The fixtures below are all
+// allergen/safety-tier flags, so their rendered behavior is unchanged.
+const lockedPhase = (flag?: any): ScanPhase => ({
   type: "BARCODE_LOCKED",
   barcode: "12345",
   bounds: { x: 0, y: 0, width: 1, height: 1 },
-  product: { name: "Trail Mix", safetyFlag },
+  product: { name: "Trail Mix", topFlag: flag },
 });
 
 describe("ProductChip safety flag", () => {
