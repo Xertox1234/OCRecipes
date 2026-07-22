@@ -1,5 +1,6 @@
 import type { BarcodeLookupResult, BarcodePer100g } from "./barcode-lookup";
 import { parseServingGrams, scaleNutrients } from "./barcode-lookup";
+import { valuesMatch } from "../lib/verification-consensus";
 
 export interface LabelNutritionInput {
   calories: number | null;
@@ -17,16 +18,20 @@ export interface LabelConflict {
   labelResult?: BarcodeLookupResult;
 }
 
-/** Relative-difference threshold (25%) and an absolute floor to ignore
- *  rounding noise on near-zero values. Tunable. */
+/** Relative-difference threshold (25%) for calling a label-vs-DB macro a
+ *  material conflict. Comparison itself reuses the codebase's single nutrition
+ *  agreement policy (`valuesMatch`), which also applies the shared near-zero
+ *  absolute floor — so label-override and verification/OFF-consistency can't
+ *  drift into two different notions of "these numbers agree". */
 const REL_THRESHOLD = 0.25;
-const ABS_FLOOR = 2; // kcal or g — below this on BOTH sides, skip the field
 
-function differs(a: number, b: number): boolean {
-  if (a <= ABS_FLOOR && b <= ABS_FLOOR) return false;
-  const denom = Math.max(Math.abs(a), Math.abs(b), 1e-6);
-  return Math.abs(a - b) / denom > REL_THRESHOLD;
-}
+/** Upper plausibility bound for a label-derived serving (grams/ml). A single
+ *  beverage serving tops out around a 2 L bottle; a larger value is almost
+ *  certainly an OCR digit-insertion misread ("355" → "3550"). Per the spec's
+ *  "on doubt, fail toward the DB result" rule we then decline to override.
+ *  Deliberately more generous than barcode-lookup's 500 g bound, which targets
+ *  DB per-serving sanity, not user-scanned beverage labels. */
+const MAX_PLAUSIBLE_LABEL_SERVING_GRAMS = 2000;
 
 /**
  * Compare a scanned label against the DB result and, on a material conflict,
@@ -48,7 +53,12 @@ export function buildLabelConflict(
   const labelGrams = label.servingSize
     ? parseServingGrams(label.servingSize)
     : null;
-  if (labelGrams == null || labelGrams <= 0) return none;
+  if (
+    labelGrams == null ||
+    labelGrams <= 0 ||
+    labelGrams > MAX_PLAUSIBLE_LABEL_SERVING_GRAMS
+  )
+    return none;
   const factor = 100 / labelGrams;
 
   // Normalize the label's per-serving reads to per-100.
@@ -69,7 +79,11 @@ export function buildLabelConflict(
     ["fat", per100.fat, dbResult.per100g.fat],
   ];
   for (const [name, labelVal, dbVal] of cmp) {
-    if (labelVal != null && dbVal != null && differs(labelVal, dbVal))
+    if (
+      labelVal != null &&
+      dbVal != null &&
+      !valuesMatch(labelVal, dbVal, REL_THRESHOLD)
+    )
       fields.push(name);
   }
   if (fields.length === 0) return none;

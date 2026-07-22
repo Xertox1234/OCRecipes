@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { it, expect } from "vitest";
 import {
   buildLabelConflict,
   type LabelNutritionInput,
@@ -94,4 +94,15 @@ it("compares only fields the OCR read (sugar-only disagreement still conflicts)"
   const r = buildLabelConflict(cherryCokeDb(), label);
   expect(r.conflict).toBe(true);
   expect(r.fields).toEqual(["sugar"]);
+});
+
+it("no override when the label serving is implausibly large (likely OCR misread)", () => {
+  // "355 mL" with an inserted digit → 3550, beyond any real single serving.
+  // Per the spec's "on doubt, fail toward the DB result", decline to override.
+  const r = buildLabelConflict(cherryCokeDb(), {
+    ...goodLabel,
+    servingSize: "3550 mL",
+  });
+  expect(r.conflict).toBe(false);
+  expect(r.labelResult).toBeUndefined();
 });
