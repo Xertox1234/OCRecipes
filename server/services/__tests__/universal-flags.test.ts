@@ -116,3 +116,36 @@ describe("evaluateUniversalFlags — caffeine ladder", () => {
     );
   });
 });
+
+describe("evaluateUniversalFlags — sweeteners & nutriscore", () => {
+  it("flags artificial sweeteners for aspartame (E951)", () => {
+    const f = evaluateUniversalFlags({
+      ...base,
+      additivesTags: ["en:e951", "en:e150d"],
+    }).find((x) => x.id === "sweetener:artificial");
+    expect(f?.kind).toBe("sweetener");
+    expect(f?.title).toBe("Contains artificial sweeteners");
+  });
+  it("does NOT flag natural stevia (E960) or caramel color (E150d)", () => {
+    expect(
+      evaluateUniversalFlags({
+        ...base,
+        additivesTags: ["en:e960", "en:e150d"],
+      }).map((x) => x.id),
+    ).not.toContain("sweetener:artificial");
+  });
+  it("emits a nutriscore grade flag carrying the grade", () => {
+    const f = evaluateUniversalFlags({ ...base, nutriScore: "e" }).find(
+      (x) => x.kind === "nutriscore",
+    );
+    expect(f?.id).toBe("nutriscore:e");
+    expect(f?.grade).toBe("e");
+  });
+  it("ignores an unknown nutriscore value", () => {
+    expect(
+      evaluateUniversalFlags({ ...base, nutriScore: "unknown" }).some(
+        (x) => x.kind === "nutriscore",
+      ),
+    ).toBe(false);
+  });
+});

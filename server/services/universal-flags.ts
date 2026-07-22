@@ -7,6 +7,7 @@ import {
   CAFFEINE_HIGH_MG,
   CAFFEINE_CATEGORY_TAGS,
   CAFFEINE_INGREDIENT_RE,
+  ARTIFICIAL_SWEETENER_ETAGS,
 } from "./nutrition-flag-rules";
 
 export interface UniversalNutrients {
@@ -114,7 +115,6 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
     FSA_PORTION.sodium,
   );
 
-  // Later tasks (6-8) append additional flag families here before the return.
   if (input.novaGroup === 4) {
     flags.push({
       id: "processing:ultra",
@@ -155,6 +155,29 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
       nutrient: "caffeine",
       title: "Contains caffeine",
       detail: "This product contains caffeine.",
+    });
+  }
+
+  if (input.additivesTags.some((t) => ARTIFICIAL_SWEETENER_ETAGS.has(t))) {
+    flags.push({
+      id: "sweetener:artificial",
+      kind: "sweetener",
+      severity: "info",
+      tier: "nutrition",
+      title: "Contains artificial sweeteners",
+      detail: "Sweetened with one or more artificial sweeteners.",
+    });
+  }
+
+  const grade = input.nutriScore;
+  if (grade && ["a", "b", "c", "d", "e"].includes(grade)) {
+    flags.push({
+      id: `nutriscore:${grade}`,
+      kind: "nutriscore",
+      severity: "info",
+      tier: "nutrition",
+      title: `Nutri-Score ${grade.toUpperCase()}`,
+      grade: grade as "a" | "b" | "c" | "d" | "e",
     });
   }
 
