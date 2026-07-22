@@ -106,3 +106,15 @@ it("no override when the label serving is implausibly large (likely OCR misread)
   expect(r.conflict).toBe(false);
   expect(r.labelResult).toBeUndefined();
 });
+
+it("no override when the label serving grossly disagrees with a trusted DB serving", () => {
+  // True 80 g serving whose grams OCR-misreads to "800 mL" (stray zero, < the
+  // 2000 cap): the label per-100 would deflate and suppress a flag the base
+  // result gets right. The trusted DB serving (80 g) is the anchor — a 10x
+  // disagreement means the label grams are a misread, so decline to override.
+  const db = cherryCokeDb();
+  db.servingInfo = { displayLabel: "80 g", grams: 80, wasCorrected: false };
+  const r = buildLabelConflict(db, { ...goodLabel, servingSize: "800 mL" });
+  expect(r.conflict).toBe(false);
+  expect(r.labelResult).toBeUndefined();
+});

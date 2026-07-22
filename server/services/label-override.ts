@@ -59,6 +59,23 @@ export function buildLabelConflict(
     labelGrams > MAX_PLAUSIBLE_LABEL_SERVING_GRAMS
   )
     return none;
+
+  // Cross-check the label's parsed serving against a TRUSTED DB serving. For the
+  // same barcode the serving is a property of the product, so a >4x disagreement
+  // means the label's grams were OCR-misread — which would make the per-100
+  // comparison below garbage-in (a misread-large serving deflates label per-100
+  // and suppresses a flag the base result already gets right). A trusted DB
+  // serving already passed barcode-lookup's plausibility gate, so it's a
+  // legitimate anchor. Per the spec's "on doubt, fail toward the DB result" we
+  // decline to override — rejecting an untrustworthy computed comparison, NOT
+  // overriding the label's nutrient readings. When the DB serving is untrusted
+  // there is no anchor; the MAX_PLAUSIBLE bound above is the only backstop.
+  const dbGrams = dbResult.servingInfo.grams;
+  if (dbResult.isServingDataTrusted && dbGrams > 0) {
+    const ratio = labelGrams / dbGrams;
+    if (ratio > 4 || ratio < 0.25) return none;
+  }
+
   const factor = 100 / labelGrams;
 
   // Normalize the label's per-serving reads to per-100.
