@@ -512,7 +512,9 @@ export async function lookupBarcode(
     transFat: nm["trans-fat_100g"],
     cholesterol:
       nm.cholesterol_100g !== undefined
-        ? roundToOneDecimal(nm.cholesterol_100g * 1000) // OFF cholesterol_100g is g → mg
+        ? nm.cholesterol_unit === "mg"
+          ? nm.cholesterol_100g // rare: already in mg
+          : roundToOneDecimal(nm.cholesterol_100g * 1000) // OFF default cholesterol unit is g → mg
         : undefined,
     caffeine:
       nm.caffeine_100g !== undefined

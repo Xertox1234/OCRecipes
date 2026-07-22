@@ -137,6 +137,46 @@ describe("evaluateUniversalFlags — caffeine ladder", () => {
       "nutrient:caffeine",
     );
   });
+  it("does NOT flag a German caffeine-free declaration ('koffeinfrei')", () => {
+    expect(
+      evaluateUniversalFlags({
+        ...base,
+        ingredientsText: "Wasser, koffeinfrei",
+      }).map((x) => x.id),
+    ).not.toContain("nutrient:caffeine");
+  });
+  it("does NOT flag an English 'caffeine-free' declaration", () => {
+    expect(
+      evaluateUniversalFlags({
+        ...base,
+        ingredientsText: "caffeine-free cola",
+      }).map((x) => x.id),
+    ).not.toContain("nutrient:caffeine");
+  });
+  it("does NOT flag a Spanish 'sin cafeína' declaration", () => {
+    expect(
+      evaluateUniversalFlags({
+        ...base,
+        ingredientsText: "café sin cafeína",
+      }).map((x) => x.id),
+    ).not.toContain("nutrient:caffeine");
+  });
+  it("does NOT flag when per100g caffeine is explicitly 0", () => {
+    expect(
+      evaluateUniversalFlags({
+        ...base,
+        per100g: { ...base.per100g, caffeine: 0 },
+      }).map((x) => x.id),
+    ).not.toContain("nutrient:caffeine");
+  });
+  it("does NOT flag when perServing caffeine is explicitly 0", () => {
+    expect(
+      evaluateUniversalFlags({
+        ...base,
+        perServing: { caffeine: 0 },
+      }).map((x) => x.id),
+    ).not.toContain("nutrient:caffeine");
+  });
 });
 
 describe("evaluateUniversalFlags — sweeteners & nutriscore", () => {

@@ -1183,6 +1183,59 @@ describe("lookupBarcode — OFF nutriment mapping (Universal Nutrition Flags v1,
     expect(result!.per100g.saturatedFat).toBe(0);
     expect(result!.per100g.caffeine).toBe(32); // 0.032 g → 32 mg
   });
+
+  it("converts cholesterol_100g g→mg by default (no cholesterol_unit)", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Whole Eggs",
+              nutriments: {
+                "energy-kcal_100g": 143,
+                cholesterol_100g: 0.01,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000001");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.cholesterol).toBe(10); // 0.01 g → 10 mg
+  });
+
+  it("passes cholesterol_100g through unconverted when cholesterol_unit is 'mg'", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Whole Eggs",
+              nutriments: {
+                "energy-kcal_100g": 143,
+                cholesterol_100g: 10,
+                cholesterol_unit: "mg",
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000002");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.cholesterol).toBe(10); // already mg, NOT 10000
+  });
 });
 
 describe("extractOffUniversalData", () => {

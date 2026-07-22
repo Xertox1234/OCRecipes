@@ -7,6 +7,7 @@ import {
   CAFFEINE_HIGH_MG,
   CAFFEINE_CATEGORY_TAGS,
   CAFFEINE_INGREDIENT_RE,
+  CAFFEINE_FREE_RE,
   ARTIFICIAL_SWEETENER_ETAGS,
 } from "./nutrition-flag-rules";
 
@@ -128,12 +129,21 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
 
   // Caffeine ladder: High mg (trusted per-serving only) → Contains (any presence signal) → none.
   const servingMg = input.perServing?.caffeine;
-  const hasCaffeineSignal =
-    servingMg !== undefined ||
-    input.per100g.caffeine !== undefined ||
+  const per100Mg = input.per100g.caffeine;
+  // A product that explicitly declares zero caffeine, or whose ingredient text says
+  // caffeine-free/decaf, is NOT a caffeine signal (would otherwise false-positive).
+  const caffeineFree =
+    servingMg === 0 ||
+    per100Mg === 0 ||
     (input.ingredientsText != null &&
-      CAFFEINE_INGREDIENT_RE.test(input.ingredientsText)) ||
-    input.categoriesTags.some((t) => CAFFEINE_CATEGORY_TAGS.includes(t));
+      CAFFEINE_FREE_RE.test(input.ingredientsText));
+  const hasCaffeineSignal =
+    !caffeineFree &&
+    ((servingMg !== undefined && servingMg > 0) ||
+      (per100Mg !== undefined && per100Mg > 0) ||
+      (input.ingredientsText != null &&
+        CAFFEINE_INGREDIENT_RE.test(input.ingredientsText)) ||
+      input.categoriesTags.some((t) => CAFFEINE_CATEGORY_TAGS.includes(t)));
 
   if (servingMg !== undefined && servingMg >= CAFFEINE_HIGH_MG) {
     flags.push({

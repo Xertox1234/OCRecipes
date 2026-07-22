@@ -138,6 +138,7 @@ export const offNutrimentsSchema = z
     "saturated-fat_100g": offNumericField,
     "trans-fat_100g": offNumericField,
     cholesterol_100g: offNumericField,
+    cholesterol_unit: z.string().optional().catch(undefined),
     caffeine_100g: offNumericField,
     caffeine_serving: offNumericField,
     caffeine_unit: z.string().optional().catch(undefined),
