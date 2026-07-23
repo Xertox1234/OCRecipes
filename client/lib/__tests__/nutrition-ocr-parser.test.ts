@@ -193,3 +193,76 @@ Calories 100`;
     expect(result.servingSize).toHaveLength(100);
   });
 });
+
+describe("Canadian / bilingual labels", () => {
+  it('extracts "Per 355 mL" serving', () => {
+    const r = parseNutritionFromOCR(
+      "Nutrition Facts\nPer 355 mL\nCalories 150",
+    );
+    expect(r.servingSize).toBe("355 mL");
+    expect(r.calories).toBe(150);
+  });
+
+  it('extracts bilingual "Sugars / Sucres" and "Fat / Lipides"', () => {
+    const r = parseNutritionFromOCR(
+      "Per 355 mL\nCalories 150\nFat / Lipides 0 g\nSugars / Sucres 39 g",
+    );
+    expect(r.totalFat).toBe(0);
+    expect(r.totalSugars).toBe(39);
+  });
+
+  it("handles accented French field names", () => {
+    const r = parseNutritionFromOCR(
+      "pour 250 mL\nProtéines 3 g\nGlucides 26 g",
+    );
+    expect(r.protein).toBe(3);
+    expect(r.totalCarbs).toBe(26);
+  });
+
+  it("prefers 'Serving Size' over a 'Per' line when both are present", () => {
+    const r = parseNutritionFromOCR("Amount per serving\nServing Size 30 g");
+    expect(r.servingSize).toBe("30 g");
+  });
+
+  it("ignores a unit-less 'Per' line (the guard requires a g/ml token)", () => {
+    // A "Per" line with no gram/ml token must NOT become the serving size.
+    // With no "Serving Size" line present, the `??` cannot short-circuit, so
+    // this actually exercises SERVING_PER_PATTERN's digit+unit guard.
+    expect(
+      parseNutritionFromOCR("Per serving\nCalories 100").servingSize,
+    ).toBeNull();
+  });
+
+  it("keeps US-format labels working (no regression)", () => {
+    const r = parseNutritionFromOCR(
+      "Serving Size 1 cup (240g)\nCalories 100\nTotal Fat 2g\nTotal Sugars 12g",
+    );
+    expect(r.servingSize).toBe("1 cup (240g)");
+    expect(r.totalSugars).toBe(12);
+  });
+
+  it("extracts all read fields from a full bilingual label without cross-field bleed", () => {
+    // Distinct value per field so a line-anchor failure (bare "Fat" stealing the
+    // "Saturated"/"Trans" sub-line, or "Sugars" stealing the "Carbohydrate"
+    // value) flips an assertion. Mirrors the US full-label test for the
+    // Canadian/bilingual format.
+    const text = `Nutrition Facts / Valeur nutritive
+Per 355 mL / pour 355 mL
+Calories 150
+Fat / Lipides 2 g
+Saturated / saturés 1 g
+Trans / trans 0.5 g
+Carbohydrate / Glucides 39 g
+Sugars / Sucres 38 g
+Protein / Protéines 3 g`;
+    const r = parseNutritionFromOCR(text);
+    expect(r.calories).toBe(150);
+    expect(r.totalFat).toBe(2); // not 1 (saturated) or 0.5 (trans) — bleed guard
+    expect(r.saturatedFat).toBe(1); // bilingual sat-fat now parsed
+    expect(r.totalCarbs).toBe(39); // not 38 (sugars)
+    expect(r.totalSugars).toBe(38);
+    expect(r.protein).toBe(3);
+    expect(r.transFat).toBeNull(); // trans fat kept US-only (not read by feature)
+    expect(r.servingSize).toContain("355 mL");
+  });
+});

@@ -248,6 +248,10 @@ export default function ScanScreen() {
       void refreshScanCount();
       navigation.navigate("NutritionDetail", {
         barcode,
+        // Present only when a STEP2 nutrition-label photo was captured; the
+        // detail screen parses it for label-vs-DB override. `undefined` on a
+        // barcode-only scan → unchanged behavior.
+        ocrText: "ocrText" in scanPhase ? scanPhase.ocrText : undefined,
       });
     }, 700);
     return () => clearTimeout(timer);
