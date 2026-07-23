@@ -246,3 +246,180 @@ describe("useNutritionLookup — isPer100g regression (P2-2026-07-14)", () => {
     expect(result.current.isPer100g).toBe(false);
   });
 });
+
+describe("useNutritionLookup — trust-the-label override (Task 5)", () => {
+  const mockServerFetch = vi.fn();
+
+  // Minimal-but-complete buildBarcodeResponseBody-shaped body — the hook
+  // reads perServing/servingInfo/etc. off the OK response before it ever
+  // looks at `conflict`, so a partial body would throw before assertions run.
+  function baseBody(overrides: Record<string, unknown> = {}) {
+    return {
+      productName: "Cherry Coke",
+      brandName: "Coca-Cola",
+      barcode: "06772408",
+      perServing: {
+        calories: 39,
+        protein: 0,
+        carbs: 10,
+        fat: 0,
+        fiber: 0,
+        sugar: 10,
+        sodium: 5,
+        saturatedFat: 0,
+        transFat: 0,
+        cholesterol: 0,
+        caffeine: 10,
+      },
+      per100g: { calories: 11, protein: 0, carbs: 2.8, fat: 0 },
+      servingInfo: { displayLabel: "355 ml", grams: 355, wasCorrected: false },
+      isServingDataTrusted: true,
+      imageUrl: undefined,
+      novaGroup: 4,
+      nutriScore: "e",
+      flags: [{ id: "processing:ultra" }],
+      verificationLevel: "unverified",
+      ...overrides,
+    };
+  }
+
+  function mockBarcodeFetch(overrides: Record<string, unknown> = {}) {
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => baseBody(overrides),
+    });
+    return mockServerFetch;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+    // Non-critical follow-up call inside fetchBarcodeData — resolve it so it
+    // doesn't derail the barcode-path assertions under test.
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({ hasFrontLabelData: false }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("POSTs to the barcode endpoint with labelNutrition when the label is readable", async () => {
+    const fetchSpy = mockBarcodeFetch();
+    const { wrapper } = createQueryWrapper();
+    renderHook(
+      () =>
+        useNutritionLookup({
+          barcode: "06772408",
+          ocrText: "Per 355 mL\nCalories 150\nSugars / Sucres 39 g",
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    const call = fetchSpy.mock.calls.at(-1)!;
+    expect(call[1]?.method).toBe("POST");
+    const body = JSON.parse(call[1]!.body as string);
+    expect(body.labelNutrition.totalSugars).toBe(39);
+    // All five keys must be present (server schema is .nullable() but not
+    // .optional() — an omitted key 400s the whole request).
+    expect(Object.keys(body.labelNutrition).sort()).toEqual(
+      [
+        "calories",
+        "saturatedFat",
+        "servingSize",
+        "totalFat",
+        "totalSugars",
+      ].sort(),
+    );
+  });
+
+  it("GETs (no POST) when ocrText is absent or unreadable", async () => {
+    const fetchSpy = mockBarcodeFetch();
+    const { wrapper } = createQueryWrapper();
+    renderHook(
+      () =>
+        useNutritionLookup({ barcode: "06772408", ocrText: "blurry nothing" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    expect(fetchSpy.mock.calls.at(-1)![1]?.method ?? "GET").toBe("GET");
+  });
+
+  it("GETs (no POST) when ocrText param is not provided at all", async () => {
+    const fetchSpy = mockBarcodeFetch();
+    const { wrapper } = createQueryWrapper();
+    renderHook(() => useNutritionLookup({ barcode: "06772408" }), { wrapper });
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    expect(fetchSpy.mock.calls.at(-1)![1]?.method ?? "GET").toBe("GET");
+  });
+
+  it("exposes conflict and toggles nutrition+flags between DB and label", async () => {
+    mockBarcodeFetch({
+      conflict: {
+        fields: ["sugar"],
+        label: baseBody({
+          perServing: {
+            calories: 150,
+            protein: 0,
+            carbs: 39,
+            fat: 0,
+            fiber: 0,
+            sugar: 39,
+            sodium: 5,
+            saturatedFat: 0,
+            transFat: 0,
+            cholesterol: 0,
+            caffeine: 10,
+          },
+          flags: [{ id: "processing:ultra" }, { id: "nutrient:sugar" }],
+        }),
+      },
+    });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () =>
+        useNutritionLookup({
+          barcode: "06772408",
+          ocrText: "Per 355 mL\nCalories 150\nSugars / Sucres 39 g",
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    // Health-facing default: trust the label.
+    expect(result.current.activeSource).toBe("label");
+    expect(result.current.nutrition?.calories).toBe(150);
+    expect(result.current.flags.map((f) => f.id)).toContain("nutrient:sugar");
+    expect(result.current.dbNutrition?.calories).toBe(39);
+
+    act(() => result.current.chooseSource("database"));
+    expect(result.current.nutrition?.calories).toBe(39);
+    expect(result.current.activeSource).toBe("database");
+
+    act(() => result.current.chooseSource("label"));
+    expect(result.current.nutrition?.calories).toBe(150);
+    expect(result.current.activeSource).toBe("label");
+  });
+
+  it("does not surface a conflict when the server returns none", async () => {
+    mockBarcodeFetch();
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () =>
+        useNutritionLookup({
+          barcode: "06772408",
+          ocrText: "Per 355 mL\nCalories 150\nSugars / Sucres 39 g",
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.conflict).toBeNull();
+    expect(result.current.activeSource).toBe("database");
+  });
+});
