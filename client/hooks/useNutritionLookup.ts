@@ -98,10 +98,18 @@ export function useNutritionLookup(params: {
     fields: string[];
     labelNutrition: NutritionData;
     labelFlags: ScanFlag[];
+    // The label result's serving-control state, so a toggle to the label also
+    // rescales serving edits from the LABEL per-100g (not the DB's).
+    labelValidated: ValidatedNutrition;
+    labelGrams: number;
+    labelIsPer100g: boolean;
   } | null>(null);
   const [dbSnapshot, setDbSnapshot] = useState<{
     nutrition: NutritionData;
     flags: ScanFlag[];
+    validated: ValidatedNutrition;
+    servingGrams: number;
+    isPer100g: boolean;
   } | null>(null);
   const [activeSource, setActiveSource] = useState<"database" | "label">(
     "database",
@@ -270,11 +278,11 @@ export function useNutritionLookup(params: {
               isServingDataTrusted: data.isServingDataTrusted,
             };
 
+            const dbIsPer100g =
+              !data.isServingDataTrusted && !data.servingInfo.wasCorrected;
             setValidatedData(validated);
             setServingSizeGrams(data.servingInfo.grams);
-            setIsPer100g(
-              !data.isServingDataTrusted && !data.servingInfo.wasCorrected,
-            );
+            setIsPer100g(dbIsPer100g);
 
             if (
               data.servingInfo.wasCorrected &&
@@ -311,8 +319,16 @@ export function useNutritionLookup(params: {
             setFlags(dbFlags);
             setActiveSource("database");
             setConflict(null);
-            // Capture the DB result so a later toggle can restore it.
-            setDbSnapshot({ nutrition: dbNutrition, flags: dbFlags });
+            // Capture the DB result so a later toggle can restore it —
+            // including the serving-control state so a serving edit under the
+            // "Database" choice rescales from the DB per-100g.
+            setDbSnapshot({
+              nutrition: dbNutrition,
+              flags: dbFlags,
+              validated,
+              servingGrams: data.servingInfo.grams,
+              isPer100g: dbIsPer100g,
+            });
 
             if (data.conflict?.label) {
               const lbl = data.conflict.label;
@@ -339,15 +355,31 @@ export function useNutritionLookup(params: {
               const labelFlags: ScanFlag[] = Array.isArray(lbl.flags)
                 ? (lbl.flags as ScanFlag[])
                 : [];
+              const labelValidated: ValidatedNutrition = {
+                perServing: lbl.perServing,
+                per100g: lbl.per100g,
+                servingInfo: lbl.servingInfo,
+                isServingDataTrusted: lbl.isServingDataTrusted,
+              };
+              const labelIsPer100g =
+                !lbl.isServingDataTrusted && !lbl.servingInfo.wasCorrected;
               setConflict({
                 fields: data.conflict.fields ?? [],
                 labelNutrition,
                 labelFlags,
+                labelValidated,
+                labelGrams: lbl.servingInfo.grams,
+                labelIsPer100g,
               });
-              // Health-facing default: trust the label.
+              // Health-facing default: trust the label — swap the serving-control
+              // state too, so a serving edit rescales from the LABEL per-100g,
+              // not the DB's (which is the wrong data we're correcting).
               setActiveSource("label");
               setNutrition(labelNutrition);
               setFlags(labelFlags);
+              setValidatedData(labelValidated);
+              setServingSizeGrams(lbl.servingInfo.grams);
+              setIsPer100g(labelIsPer100g);
             }
 
             // Set verification level from barcode lookup response
@@ -491,9 +523,15 @@ export function useNutritionLookup(params: {
       if (s === "label" && conflict) {
         setNutrition(conflict.labelNutrition);
         setFlags(conflict.labelFlags);
+        setValidatedData(conflict.labelValidated);
+        setServingSizeGrams(conflict.labelGrams);
+        setIsPer100g(conflict.labelIsPer100g);
       } else if (s === "database" && dbSnapshot) {
         setNutrition(dbSnapshot.nutrition);
         setFlags(dbSnapshot.flags);
+        setValidatedData(dbSnapshot.validated);
+        setServingSizeGrams(dbSnapshot.servingGrams);
+        setIsPer100g(dbSnapshot.isPer100g);
       }
     },
     [conflict, dbSnapshot],

@@ -406,6 +406,56 @@ describe("useNutritionLookup — trust-the-label override (Task 5)", () => {
     expect(result.current.activeSource).toBe("label");
   });
 
+  it("swaps serving-control state so a serving edit rescales from the ACTIVE source's per-100g", async () => {
+    mockBarcodeFetch({
+      // DB per-100g calories = 11 (baseBody default = the wrong Cherry Coke entry)
+      conflict: {
+        fields: ["calories", "sugar"],
+        label: baseBody({
+          perServing: {
+            calories: 150,
+            protein: 0,
+            carbs: 39,
+            fat: 0,
+            fiber: 0,
+            sugar: 39,
+            sodium: 5,
+            saturatedFat: 0,
+            transFat: 0,
+            cholesterol: 0,
+            caffeine: 10,
+          },
+          // Label per-100g is DISTINCT from the DB's (42 vs 11) so a rescale
+          // reveals which source's per-100g the serving controls are using.
+          per100g: { calories: 42, protein: 0, carbs: 11, fat: 0 },
+          flags: [{ id: "processing:ultra" }, { id: "nutrient:sugar" }],
+        }),
+      },
+    });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () =>
+        useNutritionLookup({
+          barcode: "06772408",
+          ocrText: "Per 355 mL\nCalories 150\nSugars / Sucres 39 g",
+        }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.conflict).not.toBeNull());
+    // Default is the label → serving controls must scale from the LABEL per-100g.
+    expect(result.current.activeSource).toBe("label");
+    expect(result.current.validatedData?.per100g.calories).toBe(42);
+    act(() => result.current.recalculateNutrition(100, 1));
+    expect(result.current.nutrition?.calories).toBe(42); // label per-100g, NOT the DB's 11
+
+    // Toggling to the DB moves the serving-control source with it.
+    act(() => result.current.chooseSource("database"));
+    expect(result.current.validatedData?.per100g.calories).toBe(11);
+    act(() => result.current.recalculateNutrition(100, 1));
+    expect(result.current.nutrition?.calories).toBe(11);
+  });
+
   it("does not surface a conflict when the server returns none", async () => {
     mockBarcodeFetch();
     const { wrapper } = createQueryWrapper();
