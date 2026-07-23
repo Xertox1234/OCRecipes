@@ -40,6 +40,9 @@ it("label result is a TRUSTED per-serving entry with servingGrams from the label
   expect(labelResult).toBeDefined();
   expect(labelResult!.isServingDataTrusted).toBe(true);
   expect(labelResult!.servingInfo.grams).toBe(355);
+  // Corrected per-serving is the label's EXACT reading (no round-trip drift):
+  // 150 kcal stays 150, not 149.
+  expect(labelResult!.perServing.calories).toBe(150);
   // per-serving sugar comes back to ~39 (label value), per-100 ml ~11
   expect(labelResult!.perServing.sugar).toBeCloseTo(39, 0);
   expect(labelResult!.per100g.sugar).toBeCloseTo(11, 0);

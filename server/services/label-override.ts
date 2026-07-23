@@ -1,7 +1,6 @@
 import type { BarcodeLookupResult, BarcodePer100g } from "./barcode-lookup";
 import { parseServingGrams, scaleNutrients } from "./barcode-lookup";
 import { valuesMatch } from "../lib/verification-consensus";
-import { roundToOneDecimal } from "../lib/math";
 
 export interface LabelNutritionInput {
   calories: number | null;
@@ -79,21 +78,21 @@ export function buildLabelConflict(
 
   const factor = 100 / labelGrams;
 
-  // Normalize the label's per-serving reads to per-100, rounded the same way
-  // the DB-derived per100g is (barcode-lookup's scaleNutrients/GET path):
-  // calories to the nearest integer, macros to one decimal — so per100g never
-  // carries a ragged float like 42.2535.
+  // Normalize the label's per-serving reads to per-100. Keep these UNROUNDED:
+  // the factor round-trips exactly (×100/labelGrams then ×labelGrams/100 = 1),
+  // so `scaleNutrients` below lands the corrected per-serving back on the
+  // label's exact value (150 kcal stays 150, not 149). Rounding per-100 here
+  // would drift the per-serving off the label — and per-100g is never shown
+  // raw (the macro grid Math.rounds at render; recalculateNutrition rounds its
+  // output), so there's no ragged-float display to guard against.
   const per100: Partial<
     Record<"calories" | "sugar" | "fat" | "saturatedFat", number>
   > = {};
-  if (label.calories != null)
-    per100.calories = Math.round(label.calories * factor);
-  if (label.totalSugars != null)
-    per100.sugar = roundToOneDecimal(label.totalSugars * factor);
-  if (label.totalFat != null)
-    per100.fat = roundToOneDecimal(label.totalFat * factor);
+  if (label.calories != null) per100.calories = label.calories * factor;
+  if (label.totalSugars != null) per100.sugar = label.totalSugars * factor;
+  if (label.totalFat != null) per100.fat = label.totalFat * factor;
   if (label.saturatedFat != null)
-    per100.saturatedFat = roundToOneDecimal(label.saturatedFat * factor);
+    per100.saturatedFat = label.saturatedFat * factor;
 
   // Compare the read fields against the DB per-100.
   const fields: ConflictField[] = [];
