@@ -37,7 +37,7 @@ import {
 } from "@shared/types/scan-flags";
 import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
 
-interface NutritionData {
+export interface NutritionData {
   id?: number;
   productName: string;
   brandName?: string;
@@ -229,10 +229,17 @@ export function useNutritionLookup(params: {
 
   const fetchBarcodeData = useCallback(
     async (code: string) => {
-      // Defense-in-depth: clear any prior product's allergen flags before this
-      // fetch resolves, so a future in-screen re-fetch can never render a stale
-      // danger flag against a different product while the new data loads.
+      // Defense-in-depth: clear any prior product's allergen flags AND
+      // label/DB conflict state before this fetch resolves, so a future
+      // in-screen re-fetch (new barcode on a reused screen instance) can
+      // never render a stale danger flag or a stale conflict card left over
+      // from the PRIOR product when this fetch's 404/OFF-fallback/outer-catch
+      // path never repopulates conflict state itself (only the server-ok
+      // branch below does).
       setFlags([]);
+      setConflict(null);
+      setDbSnapshot(null);
+      setActiveSource("database");
       try {
         // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
         // Use raw fetch (not apiRequest) so we can inspect 404 responses
@@ -520,18 +527,25 @@ export function useNutritionLookup(params: {
   const chooseSource = useCallback(
     (s: "database" | "label") => {
       setActiveSource(s);
+      // Both snapshots (conflict.label* / dbSnapshot) are qty-1 baselines —
+      // reset the stepper alongside them so it can never desync from the
+      // hero values it's supposed to describe (e.g. bump to 2 servings,
+      // toggle source, and the stepper would otherwise still read "2" while
+      // the hero shows the freshly-restored qty-1 numbers).
       if (s === "label" && conflict) {
         setNutrition(conflict.labelNutrition);
         setFlags(conflict.labelFlags);
         setValidatedData(conflict.labelValidated);
         setServingSizeGrams(conflict.labelGrams);
         setIsPer100g(conflict.labelIsPer100g);
+        setServingQuantity(1);
       } else if (s === "database" && dbSnapshot) {
         setNutrition(dbSnapshot.nutrition);
         setFlags(dbSnapshot.flags);
         setValidatedData(dbSnapshot.validated);
         setServingSizeGrams(dbSnapshot.servingGrams);
         setIsPer100g(dbSnapshot.isPer100g);
+        setServingQuantity(1);
       }
     },
     [conflict, dbSnapshot],

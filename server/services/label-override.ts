@@ -1,6 +1,7 @@
 import type { BarcodeLookupResult, BarcodePer100g } from "./barcode-lookup";
 import { parseServingGrams, scaleNutrients } from "./barcode-lookup";
 import { valuesMatch } from "../lib/verification-consensus";
+import { roundToOneDecimal } from "../lib/math";
 
 export interface LabelNutritionInput {
   calories: number | null;
@@ -78,15 +79,21 @@ export function buildLabelConflict(
 
   const factor = 100 / labelGrams;
 
-  // Normalize the label's per-serving reads to per-100.
+  // Normalize the label's per-serving reads to per-100, rounded the same way
+  // the DB-derived per100g is (barcode-lookup's scaleNutrients/GET path):
+  // calories to the nearest integer, macros to one decimal — so per100g never
+  // carries a ragged float like 42.2535.
   const per100: Partial<
     Record<"calories" | "sugar" | "fat" | "saturatedFat", number>
   > = {};
-  if (label.calories != null) per100.calories = label.calories * factor;
-  if (label.totalSugars != null) per100.sugar = label.totalSugars * factor;
-  if (label.totalFat != null) per100.fat = label.totalFat * factor;
+  if (label.calories != null)
+    per100.calories = Math.round(label.calories * factor);
+  if (label.totalSugars != null)
+    per100.sugar = roundToOneDecimal(label.totalSugars * factor);
+  if (label.totalFat != null)
+    per100.fat = roundToOneDecimal(label.totalFat * factor);
   if (label.saturatedFat != null)
-    per100.saturatedFat = label.saturatedFat * factor;
+    per100.saturatedFat = roundToOneDecimal(label.saturatedFat * factor);
 
   // Compare the read fields against the DB per-100.
   const fields: ConflictField[] = [];
@@ -105,10 +112,21 @@ export function buildLabelConflict(
   }
   if (fields.length === 0) return none;
 
-  // Build the label-corrected result: label macros over the DB per-100, keep
-  // all OFF enrichment, mark serving trusted so evaluateUniversalFlags gets the
-  // per-portion path.
-  const mergedPer100g: BarcodePer100g = { ...dbResult.per100g, ...per100 };
+  // Build the label-corrected result: mark serving trusted so
+  // evaluateUniversalFlags gets the per-portion path.
+  //
+  // Trust-the-label: the corrected macro block is EXACTLY what the label read.
+  // This entry was DETECTED as materially wrong (Cherry Coke's error is uniform
+  // across the whole entry), so its other macros can't be trusted and would
+  // create impossible relationships (sugar > carbs, transFat > fat). Blank the
+  // un-read macros rather than inheriting DB values. Keep caffeine + OFF
+  // enrichment (NOVA/Nutri-Score/category tags) — caffeine is a spec-acknowledged
+  // separate limitation and doesn't participate in a macro sub-relationship, and
+  // the "Contains caffeine" flag is category-derived, not numeric.
+  const mergedPer100g: BarcodePer100g = {
+    ...per100, // calories/sugar/fat/saturatedFat that the label actually read
+    caffeine: dbResult.per100g.caffeine,
+  };
   const labelResult: BarcodeLookupResult = {
     ...dbResult,
     per100g: mergedPer100g,

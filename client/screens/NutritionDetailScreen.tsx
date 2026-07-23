@@ -310,18 +310,8 @@ export default function NutritionDetailScreen() {
         {conflict && dbNutrition && (
           <ScanConflictPrompt
             conflictFields={conflict.fields}
-            labelNutrition={
-              conflict.labelNutrition as unknown as Record<
-                string,
-                number | string | undefined
-              >
-            }
-            dbNutrition={
-              dbNutrition as unknown as Record<
-                string,
-                number | string | undefined
-              >
-            }
+            labelNutrition={conflict.labelNutrition}
+            dbNutrition={dbNutrition}
             activeSource={activeSource}
             onChoose={chooseSource}
           />

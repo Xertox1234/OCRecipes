@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useTheme } from "@/hooks/useTheme";
 import { withOpacity } from "@/constants/theme";
+import type { NutritionData } from "@/hooks/useNutritionLookup";
 
 const FIELD_LABEL: Record<string, string> = {
   calories: "Calories",
@@ -11,7 +12,6 @@ const FIELD_LABEL: Record<string, string> = {
 };
 
 type Source = "database" | "label";
-type NutritionLike = Record<string, number | string | undefined>;
 
 // Hoisted to module scope (not defined inside ScanConflictPrompt's body) so it
 // keeps a stable component identity across renders — an in-body definition
@@ -33,11 +33,13 @@ function Column({
   conflictFields: string[];
   source: Source;
   title: string;
-  data: NutritionLike;
+  data: NutritionData;
 }) {
   const selected = activeSource === source;
   const rows = conflictFields
-    .map((f) => `${FIELD_LABEL[f] ?? f} ${data[f] ?? "—"}`)
+    .map(
+      (f) => `${FIELD_LABEL[f] ?? f} ${data[f as keyof NutritionData] ?? "—"}`,
+    )
     .join(", ");
   return (
     <Pressable
@@ -76,7 +78,9 @@ function Column({
       {conflictFields.map((f) => (
         <Text key={f} style={{ color: theme.textSecondary }}>
           {FIELD_LABEL[f] ?? f}:{" "}
-          <Text style={{ color: theme.text }}>{String(data[f] ?? "—")}</Text>
+          <Text style={{ color: theme.text }}>
+            {String(data[f as keyof NutritionData] ?? "—")}
+          </Text>
         </Text>
       ))}
     </Pressable>
@@ -85,8 +89,8 @@ function Column({
 
 export function ScanConflictPrompt(props: {
   conflictFields: string[];
-  labelNutrition: NutritionLike;
-  dbNutrition: NutritionLike;
+  labelNutrition: NutritionData;
+  dbNutrition: NutritionData;
   activeSource: Source;
   onChoose: (s: Source) => void;
 }) {

@@ -144,10 +144,12 @@ function buildBarcodeResponseBody(
 
 const labelNutritionSchema = z.object({
   labelNutrition: z.object({
-    calories: z.number().finite().nullable(),
-    totalSugars: z.number().finite().nullable(),
-    totalFat: z.number().finite().nullable(),
-    saturatedFat: z.number().finite().nullable(),
+    // Defense-in-depth: nutrition values are never negative; cap at a sane
+    // upper bound too (100000 covers any plausible per-serving reading).
+    calories: z.number().finite().nonnegative().max(100000).nullable(),
+    totalSugars: z.number().finite().nonnegative().max(100000).nullable(),
+    totalFat: z.number().finite().nonnegative().max(100000).nullable(),
+    saturatedFat: z.number().finite().nonnegative().max(100000).nullable(),
     servingSize: z.string().max(120).nullable(),
   }),
 });

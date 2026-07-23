@@ -865,6 +865,10 @@ describe("Nutrition Routes", () => {
       );
       expect(labelFlagIds).toContain("nutrient:sugar"); // High in Sugar now fires
       expect(labelFlagIds).toContain("processing:ultra"); // NOVA-4 retained from DB
+      // Category-derived (en:colas, from the DB's categoriesTags, retained
+      // on the label result) — fires even though the label never read a
+      // caffeine value and the blanked label per100g has no numeric caffeine.
+      expect(labelFlagIds).toContain("nutrient:caffeine");
       expect(res.body.conflict.label.servingInfo.grams).toBe(355);
     });
 

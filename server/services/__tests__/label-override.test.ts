@@ -107,6 +107,46 @@ it("no override when the label serving is implausibly large (likely OCR misread)
   expect(r.labelResult).toBeUndefined();
 });
 
+it("blanks un-read DB macros on the label result — no impossible sugar > carbs", () => {
+  // The DB entry HAS a (wrong) carbs value; the label never reads carbs at
+  // all (LabelNutritionInput has no carbs field — that's the whole DoD-label
+  // shape: "Per 355 mL / Calories 150 / Sugars / Sucres 39 g" has no carbs
+  // line). The label-corrected result must NOT inherit the DB's carbs — that
+  // would create sugar (39) > carbs (~11), a nutritionally impossible
+  // relationship for a result we're claiming is trustworthy.
+  const db = cherryCokeDb();
+  db.per100g = { ...db.per100g, carbs: 3 };
+  const { labelResult } = buildLabelConflict(db, goodLabel);
+  expect(labelResult).toBeDefined();
+  expect(labelResult!.perServing.carbs).toBeUndefined();
+  expect(labelResult!.per100g.carbs).toBeUndefined();
+  expect(labelResult!.perServing.sugar).toBeCloseTo(39, 0);
+});
+
+it("partial DoD-shorthand label (calories + sugar only) never produces carbs < sugar", () => {
+  // The exact DoD-shorthand shape OCR field-drop produces: calories + sugar
+  // read, totalFat explicitly 0, saturatedFat unread. Carbs is never part of
+  // LabelNutritionInput, so it can only come from the DB — which here HAS a
+  // (wrong, uniformly-mis-scaled) carbs value. Assert the numeric invariant
+  // directly (not just "carbs is undefined") so a future change that starts
+  // defaulting carbs to 0 instead of leaving it undefined still gets caught.
+  const db = cherryCokeDb();
+  db.per100g = { ...db.per100g, carbs: 3 };
+  const dodLabel: LabelNutritionInput = {
+    calories: 150,
+    totalSugars: 39,
+    totalFat: 0,
+    saturatedFat: null,
+    servingSize: "355 mL",
+  };
+  const { labelResult } = buildLabelConflict(db, dodLabel);
+  expect(labelResult).toBeDefined();
+  const { carbs, sugar } = labelResult!.perServing;
+  expect(carbs !== undefined && sugar !== undefined && sugar > carbs).toBe(
+    false,
+  );
+});
+
 it("no override when the label serving grossly disagrees with a trusted DB serving", () => {
   // True 80 g serving whose grams OCR-misreads to "800 mL" (stray zero, < the
   // 2000 cap): the label per-100 would deflate and suppress a flag the base
