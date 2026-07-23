@@ -307,6 +307,26 @@ export default function NutritionDetailScreen() {
           ) : null}
         </Animated.View>
 
+        {conflict && dbNutrition && (
+          <ScanConflictPrompt
+            conflictFields={conflict.fields}
+            labelNutrition={
+              conflict.labelNutrition as unknown as Record<
+                string,
+                number | string | undefined
+              >
+            }
+            dbNutrition={
+              dbNutrition as unknown as Record<
+                string,
+                number | string | undefined
+              >
+            }
+            activeSource={activeSource}
+            onChoose={chooseSource}
+          />
+        )}
+
         {partition.personal.length > 0 ? (
           <Animated.View
             entering={
@@ -492,26 +512,6 @@ export default function NutritionDetailScreen() {
             </View>
           </Card>
         ) : null}
-
-        {conflict && dbNutrition && (
-          <ScanConflictPrompt
-            conflictFields={conflict.fields}
-            labelNutrition={
-              conflict.labelNutrition as unknown as Record<
-                string,
-                number | string | undefined
-              >
-            }
-            dbNutrition={
-              dbNutrition as unknown as Record<
-                string,
-                number | string | undefined
-              >
-            }
-            activeSource={activeSource}
-            onChoose={chooseSource}
-          />
-        )}
 
         <Animated.View
           entering={

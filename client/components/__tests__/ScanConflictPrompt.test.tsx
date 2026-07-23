@@ -44,4 +44,33 @@ describe("ScanConflictPrompt", () => {
     fireEvent.click(getByLabelText(/use database/i));
     expect(onChoose).toHaveBeenCalledWith("database");
   });
+
+  it("calls onChoose('label') when the label option is tapped", () => {
+    const onChoose = vi.fn();
+    const { getByLabelText } = renderComponent(
+      <ScanConflictPrompt
+        conflictFields={["calories"]}
+        labelNutrition={label}
+        dbNutrition={db}
+        activeSource="database"
+        onChoose={onChoose}
+      />,
+    );
+    fireEvent.click(getByLabelText(/use label/i));
+    expect(onChoose).toHaveBeenCalledWith("label");
+  });
+
+  it("follows activeSource in both directions — database selected flips which column reports selected", () => {
+    const { getByLabelText } = renderComponent(
+      <ScanConflictPrompt
+        conflictFields={["calories"]}
+        labelNutrition={label}
+        dbNutrition={db}
+        activeSource="database"
+        onChoose={() => {}}
+      />,
+    );
+    expect(getByLabelText(/database.*selected/i)).toBeTruthy();
+    expect(getByLabelText(/label.*not selected/i)).toBeTruthy();
+  });
 });
