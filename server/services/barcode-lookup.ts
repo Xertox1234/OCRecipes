@@ -28,9 +28,10 @@ const FETCH_TIMEOUT_MS = 10_000;
 // ---------------------------------------------------------------------------
 
 // Pure policy pieces (barcodeVariants, offMacrosCorroborateEnergy,
-// ATWATER_MACRO_TOLERANCE, offEnergyKcal, BarcodePer100g) live in the db-free
-// barcode-policy.ts so operator tooling can import them without DATABASE_URL;
-// re-exported here so existing consumers keep their import path.
+// offEnergyKcal, BarcodePer100g, ZERO_CAL_MAX_MACRO_KCAL_100G) live in the
+// db-free barcode-policy.ts so operator tooling can import them without
+// DATABASE_URL; the previously-public ones are re-exported below so existing
+// consumers keep their import path.
 export {
   barcodeVariants,
   offEnergyKcal,
