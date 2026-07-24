@@ -31,6 +31,7 @@ import {
   RecipeInstructions,
 } from "@/components/recipe-detail";
 import { AskCoachSection } from "@/components/AskCoachSection";
+import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
 import type { NutritionData, IngredientItem } from "@/components/recipe-detail";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -43,6 +44,7 @@ import { useToast } from "@/context/ToastContext";
 import { resolveImageUrl } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
 import {
   Spacing,
   FontFamily,
@@ -70,6 +72,11 @@ export interface RecipeDetailContentProps {
   instructions?: string[] | null;
   contentPaddingTop?: number;
   contentPaddingBottom?: number;
+  /**
+   * Recipe's own derived allergen cache — universal, NOT filtered by the
+   * viewer's declared allergies. Renders the "Contains: <allergens>" label.
+   */
+  allergens?: DerivedRecipeAllergen[] | null;
   /** ID of the recipe this was remixed from (null if original was deleted) */
   remixedFromId?: number | null;
   /** Title snapshot of the original recipe (preserved even if original is deleted) */
@@ -249,6 +256,10 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
           <ThemedText type="h3" style={styles.title}>
             {props.title}
           </ThemedText>
+
+          {/* 2a. Universal allergen label — profile-independent, distinct
+              from the personalized AllergenWarningBanner further down. */}
+          <RecipeAllergenLabel allergens={props.allergens} />
 
           {/* 2b. Remix lineage */}
           {props.remixedFromTitle && (
