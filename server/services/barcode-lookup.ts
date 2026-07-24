@@ -7,6 +7,7 @@ import {
   barcodeVariants,
   offEnergyKcal,
   offMacrosCorroborateEnergy,
+  ZERO_CAL_MAX_MACRO_KCAL_100G,
 } from "./barcode-policy";
 import { mapOffAllergenTags } from "./off-allergen-tags";
 import {
@@ -31,7 +32,6 @@ const FETCH_TIMEOUT_MS = 10_000;
 // barcode-policy.ts so operator tooling can import them without DATABASE_URL;
 // re-exported here so existing consumers keep their import path.
 export {
-  ATWATER_MACRO_TOLERANCE,
   barcodeVariants,
   offEnergyKcal,
   offMacrosCorroborateEnergy,
@@ -146,13 +146,6 @@ export function extractOffUniversalData(
 
 const MAX_PLAUSIBLE_SERVING_GRAMS = 500;
 const MAX_PLAUSIBLE_SERVING_CALORIES = 800;
-// A "0 calorie" label is only credible when the entry's own macros are also
-// ~0 (Atwater: 4p + 4c + 9f per 100g). The 4 kcal/100g cutoff is a per-100g
-// heuristic loosely inspired by the US "<5 kcal per serving rounds to zero"
-// labeling rule — NOT equivalent to it (that rule is per serving, and a large
-// serving scales 4 kcal/100g well past 5 kcal). Water/diet soda/black coffee
-// pass; data-entry stubs with real macros but placeholder-zero energy don't.
-const ZERO_CAL_MAX_MACRO_KCAL_100G = 4;
 // FDA/Codex nearest-5-kcal label rounding can push a genuinely correct
 // low-calorie label (spices, condiments) past the 15% relative tolerance in
 // the offSelfConsistent ratio check — this absolute floor, OR'd alongside

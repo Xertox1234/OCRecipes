@@ -39,7 +39,17 @@ export interface BarcodePer100g {
 // vary) that a tight tolerance would misfire on for genuinely correct
 // entries. 30% still catches grossly wrong entries — a realistically
 // mismatched product's energy is off by 80%+ from its stated macros, not 30%.
-export const ATWATER_MACRO_TOLERANCE = 0.3;
+// Deliberately NOT exported: the calibration is specific to this
+// corroboration; consumers get the policy via offMacrosCorroborateEnergy.
+const ATWATER_MACRO_TOLERANCE = 0.3;
+
+// A "0 calorie" label is only credible when the entry's own macros are also
+// ~0 (Atwater: 4p + 4c + 9f per 100g). The 4 kcal/100g cutoff is a per-100g
+// heuristic loosely inspired by the US "<5 kcal per serving rounds to zero"
+// labeling rule — NOT equivalent to it (that rule is per serving, and a large
+// serving scales 4 kcal/100g well past 5 kcal). Water/diet soda/black coffee
+// pass; data-entry stubs with real macros but placeholder-zero energy don't.
+export const ZERO_CAL_MAX_MACRO_KCAL_100G = 4;
 
 /**
  * Atwater energy-vs-own-macros corroboration: does an OFF entry's stated

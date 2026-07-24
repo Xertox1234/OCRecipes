@@ -7,9 +7,13 @@
 // stores PER-SERVING values — hence the serving-grams argument needed to
 // normalise it to per-100g for comparison against OFF.
 //
-// Read-only: fetches Open Food Facts, never touches any database — the policy
-// functions are imported from the db-free server/services/barcode-policy.ts,
-// so the verdicts ARE the server's current shielding policy, not a mirror.
+// Read-only: fetches Open Food Facts, never touches any database. The policy
+// primitives (offMacrosCorroborateEnergy, offEnergyKcal, barcodeVariants,
+// ZERO_CAL_MAX_MACRO_KCAL_100G) are imported from the db-free
+// server/services/barcode-policy.ts, so they cannot drift from production;
+// classify() composes them into a verdict and its zero-calorie arm is a
+// deliberately conservative approximation of production's explicit-zero
+// shield (see the classify JSDoc).
 //
 // PRECONDITION: every candidate fed to this script is a secondary-source row
 // (the sweep SQL filters `source IN ('cnf','usda','api-ninjas')` — see the
@@ -28,6 +32,7 @@ import {
   barcodeVariants,
   offEnergyKcal,
   offMacrosCorroborateEnergy,
+  ZERO_CAL_MAX_MACRO_KCAL_100G,
 } from "../server/services/barcode-policy";
 
 export const num = (v: unknown): number | undefined =>
@@ -112,6 +117,15 @@ export interface ClassifyResult {
  * cached per-serving pair. Pure — `cal`/`grams` are the validated numbers from
  * `parseArgs` (or null when the barcode was passed bare), so the division here
  * cannot produce NaN or Infinity.
+ *
+ * The Atwater arm ("yes") is the real production policy via
+ * offMacrosCorroborateEnergy. The zero arm ("zero-path") is an APPROXIMATION
+ * of production's explicit-zero shield: it applies the same own-macros guard
+ * (ZERO_CAL_MAX_MACRO_KCAL_100G), but not the per-serving-zero and
+ * kJ-contradiction checks, which need fields this classifier doesn't take.
+ * The approximation errs toward POISONED → delete, which self-heals: a
+ * deleted row production would not shield re-seeds with the same secondary
+ * value on the next scan.
  */
 export function classify({
   off100,
@@ -121,9 +135,13 @@ export function classify({
   cal,
   grams,
 }: ClassifyInput): ClassifyResult {
+  // Atwater sum, same 4/4/9 formula as production's zero-shield guard.
+  const macroKcal = 4 * (P ?? 0) + 4 * (C ?? 0) + 9 * (F ?? 0);
   const shielded =
     off100 === 0
-      ? "zero-path"
+      ? macroKcal <= ZERO_CAL_MAX_MACRO_KCAL_100G
+        ? "zero-path"
+        : "no"
       : offMacrosCorroborateEnergy({
             calories: off100,
             protein: P,
@@ -336,6 +354,9 @@ async function main(argv: string[]): Promise<number> {
   console.table(table);
   console.log(`\n${summaryLine}`);
   if (warningLine) console.error(`\n${warningLine}`);
+  // The DELETE goes to stdout but the coverage warning goes to stderr — an
+  // operator piping stdout to a file must check the exit code (2 = partial
+  // coverage) before running the emitted SQL.
   if (deleteSql) console.log(`\n${deleteSql}`);
   return exitCode;
 }

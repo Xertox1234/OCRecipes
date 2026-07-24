@@ -153,6 +153,24 @@ describe("classify — verdicts", () => {
     expect(r.verdict).toBe("POISONED");
   });
 
+  it("does not zero-shield an entry whose own macros contradict the zero", () => {
+    // Production's explicit-zero shield only engages when the entry's own
+    // macros are also ~0 (ZERO_CAL_MAX_MACRO_KCAL_100G). A placeholder-zero
+    // stub with real macros (here Atwater 55 kcal) would NOT be shielded by
+    // the current code, so deleting the cached row would re-seed the same
+    // secondary answer — not poisoned.
+    const r = classify({
+      off100: 0,
+      P: 0.5,
+      C: 2,
+      F: 5,
+      cal: 257,
+      grams: 500,
+    });
+    expect(r.shielded).toBe("no");
+    expect(r.verdict).toBe("ok");
+  });
+
   it("leaves a barcode OFF no longer resolves alone (Kinder Bueno)", () => {
     // off100 undefined → nothing to corroborate → the secondary source stands.
     const r = classify({
