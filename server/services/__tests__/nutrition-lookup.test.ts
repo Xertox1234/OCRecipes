@@ -209,7 +209,12 @@ describe("lookupBarcode", () => {
               nutriments: {
                 "energy-kcal_100g": 50, // WRONG — should be ~400
                 proteins_100g: 0,
-                carbohydrates_100g: 12, // WRONG
+                // Real granulated sugar (~100 g carbs/100 g). Only the ENERGY
+                // field is the typo, which is what this test is about — and it
+                // makes the entry contradict ITSELF (Atwater 400 vs 50), so the
+                // macro↔energy fallback added in P2-2026-07-22 cannot shield it
+                // and the CNF rescue below stays active.
+                carbohydrates_100g: 100,
                 fat_100g: 0,
               },
             },
@@ -244,7 +249,7 @@ describe("lookupBarcode", () => {
               nutriments: {
                 "energy-kcal_100g": 50, // WRONG
                 proteins_100g: 0,
-                carbohydrates_100g: 12,
+                carbohydrates_100g: 100, // real sugar — only the ENERGY is wrong
                 fat_100g: 0,
               },
             },

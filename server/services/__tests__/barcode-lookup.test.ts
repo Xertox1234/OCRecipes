@@ -4,6 +4,7 @@ import {
   lookupBarcode,
   scaleNutrients,
   extractOffUniversalData,
+  offMacrosCohereWithEnergy,
 } from "../barcode-lookup";
 import { _resetCNFCacheForTesting } from "../nutrition-lookup";
 
@@ -204,7 +205,12 @@ describe("lookupBarcode — isServingDataTrusted regression (P2-2026-07-14)", ()
               nutriments: {
                 "energy-kcal_100g": 50, // wrong — CNF has the real value
                 proteins_100g: 0,
-                carbohydrates_100g: 12,
+                // Real granulated sugar: ~100 g carbs/100 g. Keeping the macros
+                // CORRECT is what makes this fixture match its own premise —
+                // the ENERGY field is the typo. The entry then contradicts
+                // itself (Atwater 400 vs the stated 50), so no coherence check
+                // can shield it and the CNF rescue stays active (P2-2026-07-22).
+                carbohydrates_100g: 100,
                 fat_100g: 0,
               },
             },
@@ -1029,9 +1035,12 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
 
   it("still swaps to the secondary on discrepancy when OFF has NO per-serving energy to corroborate its per-100g (Sugar case must keep working)", async () => {
     // Guard against over-correcting: the existing "OFF is wildly wrong" swap
-    // (50 kcal/100g sugar vs CNF's 387) must survive. Here OFF has no
-    // energy-kcal_serving, so there is no self-consistency signal and the
-    // secondary replacement stays active.
+    // (50 kcal/100g sugar vs CNF's 387) must survive. OFF has no
+    // energy-kcal_serving, so the per-serving corroboration path cannot run —
+    // but the entry still contradicts ITSELF (100 g carbs ⇒ ~400 kcal by
+    // Atwater, against the stated 50), so the macro↔energy fallback added in
+    // P2-2026-07-22 does not shield it either and the secondary replacement
+    // stays active. This is the exact case the replace-arm exists for.
     setupFetchMock({
       "openfoodfacts.org": () =>
         Promise.resolve({
@@ -1044,7 +1053,7 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
               nutriments: {
                 "energy-kcal_100g": 50,
                 proteins_100g: 0,
-                carbohydrates_100g: 12,
+                carbohydrates_100g: 100, // real sugar — only the ENERGY is wrong
                 fat_100g: 0,
               },
             },
@@ -1128,6 +1137,240 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result).not.toBeNull();
     expect(result!.source).toBe("cnf");
     expect(result!.per100g.calories).toBe(387);
+  });
+});
+
+describe("offMacrosCohereWithEnergy (P2-2026-07-22)", () => {
+  it("accepts a real label whose macros corroborate its energy (Nutella)", () => {
+    // 4×6.3 + 4×57.5 + 9×30.9 = 533.3 vs the stated 539 → 1.1% off.
+    expect(
+      offMacrosCohereWithEnergy({
+        calories: 539,
+        protein: 6.3,
+        carbs: 57.5,
+        fat: 30.9,
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects an entry whose energy is typo'd but whose macros are real", () => {
+    // Granulated sugar with a wrong energy field: Atwater 400 vs the stated 50.
+    // This is the case the secondary rescue exists for — it must NOT be shielded.
+    expect(
+      offMacrosCohereWithEnergy({
+        calories: 50,
+        protein: 0,
+        carbs: 100,
+        fat: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a zero-energy entry outright — the explicit-zero path owns those", () => {
+    // A placeholder-zero stub reads as `0 ≈ 0` under a naive check. Zero-energy
+    // entries must stay with lookupBarcode's explicit-zero branch, which has the
+    // kJ-contradiction guard this function deliberately does not replicate.
+    expect(
+      offMacrosCohereWithEnergy({ calories: 0, protein: 0, carbs: 0, fat: 0 }),
+    ).toBe(false);
+  });
+
+  it("rejects an entry missing any one macro rather than treating it as zero", () => {
+    // `calories: 1` with no macros would compute an estimate of 0, and
+    // valuesMatch's <2 absolute floor (|1-0| <= 1) would shield a data-free entry.
+    expect(offMacrosCohereWithEnergy({ calories: 1 })).toBe(false);
+    expect(
+      offMacrosCohereWithEnergy({ calories: 400, carbs: 50, fat: 20 }),
+    ).toBe(false);
+    expect(
+      offMacrosCohereWithEnergy({ calories: 400, protein: 5, fat: 20 }),
+    ).toBe(false);
+    expect(
+      offMacrosCohereWithEnergy({ calories: 400, protein: 5, carbs: 50 }),
+    ).toBe(false);
+  });
+
+  it("accepts a US-convention label where carbs INCLUDE fiber (plain sum over-counts)", () => {
+    // High-fiber cereal, US panel: 70 g total carbs of which 25 g fiber.
+    // Plain sum 4×10 + 4×70 + 9×3 = 347 vs a stated 240 → 30.8% off, outside
+    // tolerance. Discounting fiber to ~2 kcal/g gives 347 − 50 = 297 → 19.2% ✓.
+    expect(
+      offMacrosCohereWithEnergy({
+        calories: 240,
+        protein: 10,
+        carbs: 70,
+        fat: 3,
+        fiber: 25,
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts an EU-convention label where carbs EXCLUDE fiber (plain sum under-counts)", () => {
+    // Psyllium husk: ~80 g fiber against ~2 g carbs — fiber legitimately
+    // EXCEEDS carbs here, which is why the additive endpoint must not be
+    // clamped to carbs. Plain sum 4×2 + 4×2 + 9×0.5 = 20.5 vs a stated 180 is
+    // wildly off; adding fiber's 2 kcal/g (+160) lands at 180.5 ✓.
+    expect(
+      offMacrosCohereWithEnergy({
+        calories: 180,
+        protein: 2,
+        carbs: 2,
+        fat: 0.5,
+        fiber: 80,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not let a garbage fiber value rescue an incoherent entry", () => {
+    // fiber > carbs on a US-style over-count would drag the subtractive endpoint
+    // below the real floor if unclamped. Stated 800 kcal is unreachable from
+    // these macros by either endpoint.
+    expect(
+      offMacrosCohereWithEnergy({
+        calories: 800,
+        protein: 1,
+        carbs: 5,
+        fat: 1,
+        fiber: 999,
+      }),
+    ).toBe(false);
+    // Negative fiber must not flip the adjustment's sign either.
+    expect(
+      offMacrosCohereWithEnergy({
+        calories: 50,
+        protein: 0,
+        carbs: 100,
+        fat: 0,
+        fiber: -40,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("lookupBarcode — macro↔energy coherence when OFF has no serving data (Nutella case, P2-2026-07-22)", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("keeps OFF's per-100g when its own macros corroborate its energy, even with NO serving_size and NO per-serving energy", async () => {
+    // Real-world case: Nutella 750g jar (barcode 3017620422003). Verified live
+    // 2026-07-24: OFF has the per-100g block exactly right (539 kcal, 56.3 g
+    // sugar, 30.9 g fat) but carries NO `serving_size` and NO
+    // `energy-kcal_serving` — so the per-serving corroboration gate could not
+    // run and the CNF name-match (182 kcal, a DIFFERENT food) replaced the
+    // whole block. The 400 g SKU (3017620425035) has the same macros AND a
+    // serving size, so it was already correct — trust must not depend on which
+    // jar you scanned. The entry's own macros corroborate its energy
+    // (4×6.3 + 4×57.5 + 9×30.9 = 533.3 ≈ 539), which is the same class of
+    // signal as the per-serving check: internal arithmetic coherence.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Nutella",
+              product_name_en: "Nutella",
+              brands: "Ferrero",
+              // NOTE: no serving_size, no energy-kcal_serving — the whole point.
+              categories_tags: ["en:breakfasts", "en:spreads"],
+              nutriments: {
+                "energy-kcal_100g": 539,
+                energy_100g: 2252,
+                proteins_100g: 6.3,
+                carbohydrates_100g: 57.5,
+                fat_100g: 30.9,
+                sugars_100g: 56.3,
+                "saturated-fat_100g": 10.6,
+                sodium_100g: 0.0428,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 7777, food_description: "Nutella, generic mismatch" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 7777,
+              nutrient_value: 182, // the polluting value seen in production
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("3017620422003");
+    expect(result).not.toBeNull();
+    // OFF wins: 539/182 ≈ 2.96x disagreement, but OFF corroborates itself.
+    expect(result!.per100g.calories).toBe(539);
+    expect(result!.per100g.sugar).toBe(56.3);
+    expect(result!.per100g.saturatedFat).toBe(10.6);
+    expect(result!.source).toBe("openfoodfacts+self-consistent");
+    // OFF genuinely has no serving_size for this SKU — that stays untrusted,
+    // and is the SAME missing field that disabled the old gate.
+    expect(result!.isServingDataTrusted).toBe(false);
+    expect(result!.servingInfo.grams).toBe(100);
+  });
+
+  it("leaves an OFF entry with incomplete macros on the existing replace-on-discrepancy path", async () => {
+    // Documented residual: with no serving data AND a missing macro there is no
+    // corroboration signal of either kind, so the secondary still replaces.
+    // Same fixture as above minus proteins_100g.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Nutella",
+              product_name_en: "Nutella",
+              nutriments: {
+                "energy-kcal_100g": 539,
+                carbohydrates_100g: 57.5,
+                fat_100g: 30.9,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 7777, food_description: "Nutella, generic mismatch" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 7777,
+              nutrient_value: 182,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("3017620422003");
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("cnf");
+    expect(result!.per100g.calories).toBe(182);
   });
 });
 

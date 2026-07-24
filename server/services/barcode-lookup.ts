@@ -155,6 +155,82 @@ const ZERO_CAL_MAX_MACRO_KCAL_100G = 4;
 // the relative check, rescues that band. ~5 kcal stays inert above
 // ~33 kcal/serving, where 15% relative already exceeds it.
 const ABSOLUTE_TOLERANCE_FLOOR_KCAL = 5;
+// Tolerance for the macro↔energy coherence check below. Deliberately wider than
+// the per-serving gate's 0.15: the Atwater model carries systematic error the
+// per-serving arithmetic check does not — sugar alcohols (~2.4 kcal/g), ethanol
+// (7 kcal/g, absent from the macro sum entirely), organic acids, and OFF's own
+// rounding. A live 14-product probe (2026-07-24) put the worst-case deviation at
+// ~6%, so 25% has real headroom. The fail direction is safe: over-shielding
+// keeps identity-matched barcode data.
+const ATWATER_TOLERANCE = 0.25;
+
+/**
+ * Does this per-100g block's own macro breakdown corroborate its stated energy?
+ *
+ * Same class of signal as the per-serving corroboration in `lookupBarcode`
+ * (Step 2) — internal arithmetic coherence — but it reads ONLY the per-100g
+ * block, so it still works for the many OFF entries carrying no `serving_size`
+ * and no `energy-kcal_serving` at all (e.g. the Nutella 750 g jar, barcode
+ * 3017620422003, whose 400 g sibling SKU has the same macros *and* a serving
+ * size and was therefore already correct). It is what separates "a real label
+ * transcribed" from "one field typo'd or left as a placeholder": an entry whose
+ * energy is wrong but whose macros are real FAILS this check and stays eligible
+ * for the secondary rescue.
+ *
+ * Deliberately NOT framed as "independently entered fields agreeing" — OFF
+ * frequently derives one basis from another (per-serving from per-100g, kcal
+ * from kJ), so that claim would be partly tautological. Coherence is the honest
+ * claim.
+ *
+ * Two requirements, both load-bearing:
+ *  - `calories > 0`. Zero-energy entries are handled exclusively by the
+ *    explicit-zero branch in `lookupBarcode` and its kJ-contradiction guard; a
+ *    naive check reads a placeholder-zero stub as `0 ≈ 0` and would shield a
+ *    known-bad entry from the secondary rescue.
+ *  - protein/carbs/fat all PRESENT (zeros fine, `undefined` not). Treating a
+ *    missing macro as 0 yields an estimate of 0 for a macro-less entry, and
+ *    `valuesMatch`'s < 2 absolute floor would then shield e.g. `calories: 1`
+ *    with no macro data at all.
+ *
+ * Fiber: whether OFF's `carbohydrates_100g` INCLUDES fiber (US convention —
+ * fiber contributes ~2 kcal/g, not 4, so the plain sum over-counts) or EXCLUDES
+ * it (EU convention — the plain sum under-counts) is not knowable per product;
+ * OFF carries both. So accept a band, `plain ± 2 × fiber`, not a one-sided
+ * correction. A one-sided subtraction would be worse than inert here: the same
+ * live probe found the plain sum UNDER-counts stated energy in 11 of 14
+ * products — the signature of the EU convention dominating OFF.
+ */
+export function offMacrosCohereWithEnergy(n: BarcodePer100g): boolean {
+  const { calories, protein, carbs, fat, fiber } = n;
+  if (calories === undefined || calories <= 0) return false;
+  if (protein === undefined || carbs === undefined || fat === undefined) {
+    return false;
+  }
+  const plain = 4 * protein + 4 * carbs + 9 * fat;
+  const fiberG = fiber !== undefined && fiber > 0 ? fiber : 0;
+  // US convention — carbs INCLUDE fiber, so the plain sum charges fiber at
+  // 4 kcal/g when it yields ~2 and therefore OVER-counts. Clamped to `carbs`:
+  // under this convention fiber is a subset of carbs and cannot exceed it, so a
+  // garbage `fiber > carbs` must not drag the endpoint below the real floor.
+  const overCount = 2 * Math.min(fiberG, carbs);
+  // EU convention — carbs EXCLUDE fiber, so fiber's ~2 kcal/g is missing from
+  // the plain sum entirely and it UNDER-counts. Deliberately NOT clamped to
+  // `carbs`: here fiber is disjoint from carbs and legitimately exceeds it
+  // (psyllium husk is ~80 g fiber to ~2 g carbs), and clamping would collapse
+  // the adjustment for exactly the products this endpoint exists to serve.
+  const underCount = 2 * fiberG;
+  // Endpoints go through the shared relative-agreement primitive rather than an
+  // interval test, so a `calories` sitting deep inside a very wide band could in
+  // principle miss all three probes — that needs an extreme fiber fraction and
+  // fails safe (no shield).
+  return (
+    valuesMatch(plain, calories, ATWATER_TOLERANCE) ||
+    (overCount > 0 &&
+      valuesMatch(plain - overCount, calories, ATWATER_TOLERANCE)) ||
+    (underCount > 0 &&
+      valuesMatch(plain + underCount, calories, ATWATER_TOLERANCE))
+  );
+}
 
 /**
  * Estimate a reasonable single-serving weight based on product category.
@@ -533,67 +609,86 @@ export async function lookupBarcode(
 
   // When OFF's per-serving, per-100g, and serving-size values corroborate each
   // other (per100g × grams/100 ≈ perServing within 15%), the entry is
-  // near-certainly transcribed from the real package label — three
-  // independently-entered fields agreeing by accident is unlikely. The CNF/USDA
+  // near-certainly transcribed from the real package label. The CNF/USDA
   // cross-validation below is a NAME match that can land on a different food
   // entirely (a "cheese snack" category search matching a ~109 kcal/100g
   // generic against 344 kcal/100g cheese sticks — barcode 0778918011332), so a
   // self-consistent label must demote the secondary to gap-fill only, never
-  // replacement. Entries missing per-serving energy (most of OFF) keep the
-  // existing replace-on-discrepancy behavior — self-agreement can't be checked.
+  // replacement.
+  //
+  // Two corroboration paths, in strict precedence order (P2-2026-07-22):
+  //
+  //  A. Per-serving × grams ≈ per-100g, when OFF gives us the fields to run it.
+  //     Its verdict is TERMINAL — including a negative one. A detected
+  //     contradiction outranks any other agreement the entry might show: an OFF
+  //     "Sugar" entry at 50 kcal/100g with 12 g carbs is internally coherent on
+  //     the per-100g basis alone (Atwater 48 ≈ 50) yet its own per-serving field
+  //     proves the entry is garbage, and the secondary rescue must stay active.
+  //
+  //  B. Macro↔energy coherence on the per-100g block alone — consulted ONLY
+  //     when path A could not be evaluated at all (no per-serving energy, or no
+  //     parseable serving grams). This is the many OFF entries that carry no
+  //     serving data whatsoever; before this existed they were categorically
+  //     unshielded, so a name-matched secondary replaced correct barcode data
+  //     (Nutella 750 g, barcode 3017620422003 → CNF's 182 kcal). Because B only
+  //     ever runs where A returned no verdict, adding it cannot change the
+  //     outcome for any entry that has per-serving data.
   const offLabelGrams = parseServingGrams(offProduct?.serving_size || "");
   const offSelfConsistent = (() => {
-    if (offPerServingCal === undefined || offPer100g.calories === undefined) {
-      return false;
+    if (offPerServingCal !== undefined && offPer100g.calories !== undefined) {
+      // Explicit-zero corroboration: BOTH energy fields present and exactly 0
+      // (water, diet soda, black coffee) is agreement, not missing data —
+      // without this, reconcilePer100g's primaryMissing arm (pc === 0) replaces
+      // a true zero with a name-matched secondary's phantom calories (prod
+      // sweep 2026-07-17: spring water cached at 257 kcal). Zero-agreement
+      // needs no serving grams (0 × grams / 100 = 0 for any grams), so this
+      // runs BEFORE the grams guard — but the zeros must not be contradicted
+      // by the entry's own macros or kJ energy fields (placeholder-zero stubs).
+      if (offPerServingCal === 0 && offPer100g.calories === 0) {
+        const macroKcalPer100g =
+          4 * (offPer100g.protein ?? 0) +
+          4 * (offPer100g.carbs ?? 0) +
+          9 * (offPer100g.fat ?? 0);
+        // Round kJ→kcal the same way the calories derivation above does — a
+        // trace kJ residual (2 kJ ≈ 0.48 kcal on some OFF water entries) rounds
+        // to 0 there and must not count as a contradiction here.
+        const kjContradicts =
+          Math.round((nm.energy_100g ?? 0) / 4.1868) > 0 ||
+          Math.round((nm.energy_serving ?? 0) / 4.1868) > 0;
+        return (
+          macroKcalPer100g <= ZERO_CAL_MAX_MACRO_KCAL_100G && !kjContradicts
+        );
+      }
+      if (
+        offLabelGrams !== null &&
+        offLabelGrams > 0 &&
+        offPerServingCal > 0 &&
+        offPer100g.calories > 0
+      ) {
+        const scaledPer100g = (offPer100g.calories * offLabelGrams) / 100;
+        // The relative check is delegated to `valuesMatch` — the same
+        // numeric-agreement primitive `server/lib/verification-consensus.ts`
+        // uses for verification consensus — so this codebase keeps ONE
+        // agreement policy for nutrition data (todo P3-2026-07-17-off-self-
+        // consistency-gate-refinements). `valuesMatch`'s own small-value (<2)
+        // absolute floor is subsumed by the ABSOLUTE_TOLERANCE_FLOOR_KCAL check
+        // on the `||`'s left side: whenever both operands are <2, their
+        // difference is <2, which is always <= the 5 kcal floor, so that branch
+        // short-circuits before `valuesMatch` is ever reached — this floor stays
+        // 0-vs-tiny unshielded, exactly as before (the explicit 0-and-0 branch
+        // above is a separate, untouched code path).
+        return (
+          Math.abs(scaledPer100g - offPerServingCal) <=
+            ABSOLUTE_TOLERANCE_FLOOR_KCAL ||
+          valuesMatch(scaledPer100g, offPerServingCal, 0.15)
+        );
+      }
+      // Per-serving energy present but the check is not evaluable (unparseable
+      // serving size, or a placeholder 0 beside a positive per-100g). No
+      // contradiction was detected, so fall through to path B rather than
+      // declaring the entry suspect.
     }
-    // Explicit-zero corroboration: BOTH energy fields present and exactly 0
-    // (water, diet soda, black coffee) is agreement, not missing data —
-    // without this, reconcilePer100g's primaryMissing arm (pc === 0) replaces
-    // a true zero with a name-matched secondary's phantom calories (prod
-    // sweep 2026-07-17: spring water cached at 257 kcal). Zero-agreement
-    // needs no serving grams (0 × grams / 100 = 0 for any grams), so this
-    // runs BEFORE the grams guard — but the zeros must not be contradicted
-    // by the entry's own macros or kJ energy fields (placeholder-zero stubs).
-    // A zero per-100g paired with a NONZERO per-serving falls through to the
-    // ratio check's > 0 guards and stays unshielded (likely unfilled entry).
-    if (offPerServingCal === 0 && offPer100g.calories === 0) {
-      const macroKcalPer100g =
-        4 * (offPer100g.protein ?? 0) +
-        4 * (offPer100g.carbs ?? 0) +
-        9 * (offPer100g.fat ?? 0);
-      // Round kJ→kcal the same way the calories derivation above does — a
-      // trace kJ residual (2 kJ ≈ 0.48 kcal on some OFF water entries) rounds
-      // to 0 there and must not count as a contradiction here.
-      const kjContradicts =
-        Math.round((nm.energy_100g ?? 0) / 4.1868) > 0 ||
-        Math.round((nm.energy_serving ?? 0) / 4.1868) > 0;
-      return macroKcalPer100g <= ZERO_CAL_MAX_MACRO_KCAL_100G && !kjContradicts;
-    }
-    if (
-      offLabelGrams === null ||
-      offLabelGrams <= 0 ||
-      offPerServingCal <= 0 ||
-      offPer100g.calories <= 0
-    ) {
-      return false;
-    }
-    const scaledPer100g = (offPer100g.calories * offLabelGrams) / 100;
-    // The relative check is delegated to `valuesMatch` — the same
-    // numeric-agreement primitive `server/lib/verification-consensus.ts`
-    // uses for verification consensus — so this codebase keeps ONE agreement
-    // policy for nutrition data (todo P3-2026-07-17-off-self-consistency-
-    // gate-refinements). `valuesMatch`'s own small-value (<2) absolute floor
-    // is subsumed by the ABSOLUTE_TOLERANCE_FLOOR_KCAL check on the `||`'s
-    // left side: whenever both operands are <2, their difference is <2,
-    // which is always <= the 5 kcal floor, so that branch short-circuits
-    // before `valuesMatch` is ever reached — this floor stays 0-vs-tiny
-    // unshielded, exactly as before (the explicit 0-and-0 branch above is a
-    // separate, untouched code path).
-    return (
-      Math.abs(scaledPer100g - offPerServingCal) <=
-        ABSOLUTE_TOLERANCE_FLOOR_KCAL ||
-      valuesMatch(scaledPer100g, offPerServingCal, 0.15)
-    );
+    return offMacrosCohereWithEnergy(offPer100g);
   })();
 
   // ── Step 2b: If OFF has no product, try USDA branded food by UPC ─
