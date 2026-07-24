@@ -17,8 +17,8 @@ an audit helper) needs to apply the SAME policy the production code applies —
 tolerances, matching rules, normalization — and the module that owns that policy
 has load-time side effects in its import graph. In this repo the canonical side
 effect is `server/db.ts`, which **throws at module load when `DATABASE_URL` is
-unset** and is reached by `server/storage/index.ts` (32 modules deep) from
-almost every service.
+unset** and is reached via `server/storage/index.ts` (32 storage modules
+import `db` directly) from almost every service.
 
 ## Rule
 
@@ -27,8 +27,9 @@ almost every service.
    tool keeps reporting verdicts production would not produce, which defeats its
    purpose entirely.
 2. **If the real module is importable side-effect-free, just import it.**
-   (`server/lib/verification-consensus.ts` was relocated for exactly this
-   reason and is the precedent.)
+   (`server/lib/verification-consensus.ts` — relocated in #219 for
+   import-direction reasons — is the precedent for policy living in a pure,
+   freely importable module.)
 3. **If the import graph is tainted, extract the pure policy into a leaf
    module** (e.g. `server/services/barcode-policy.ts`): verbatim moves only, no
    behavior edits. The leaf may import only other pure leaves.
@@ -54,7 +55,7 @@ a facade with a source-grep guard test.
 ## Exceptions
 
 - Scripts that genuinely need the database (`scripts/cleanup-junk-recipes.ts`,
-  `scripts/canonicalize-recipe.ts`) use the other sanctioned pattern:
+  `scripts/migrate-recipe-ingredients.ts`) use the other sanctioned pattern:
   `import "dotenv/config"` first, then relative imports into `server/`. Don't
   extract a leaf for a consumer that legitimately wants the runtime.
 - Don't move a symbol into the leaf just because it's near the policy — only
