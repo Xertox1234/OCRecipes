@@ -1,27 +1,43 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 import {
   classify,
-  corroborates,
-  offPer100gCalories,
   parseArgs,
-  valuesMatch,
-} from "../verify-barcode-cache-candidates.mjs";
+  resolveOffProduct,
+  runSweep,
+  summarize,
+  type FetchLike,
+} from "../verify-barcode-cache-candidates";
 
-const SCRIPT = join(__dirname, "..", "verify-barcode-cache-candidates.mjs");
+const ROOT = join(__dirname, "..", "..");
+const SCRIPT = join(ROOT, "scripts", "verify-barcode-cache-candidates.ts");
 
 /**
  * Every test here is hermetic. The CLI cases below only exercise argument
  * rejection, which returns BEFORE the first Open Food Facts request — that
  * ordering is the property under test, so a test that reached the network
  * would be evidence of a regression, not a flaky test.
+ *
+ * DATABASE_URL is stripped from the spawn env: the script imports the real
+ * production policy from server/services/barcode-policy.ts, and booting
+ * without a database is part of its contract (it is a read-only OFF checker).
+ *
+ * The policy functions themselves (offMacrosCorroborateEnergy, valuesMatch,
+ * offEnergyKcal) are no longer mirrored here — they are imported, and their
+ * behaviour is pinned by server/services/__tests__/barcode-lookup.test.ts,
+ * server/lib/__tests__/verification-consensus.test.ts, and
+ * server/services/__tests__/barcode-policy.test.ts.
  */
 function runCli(args: string[]): { status: number | null; stderr: string } {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
+  const env = { ...process.env };
+  delete env.DATABASE_URL;
+  const r = spawnSync(process.execPath, ["--import=tsx", SCRIPT, ...args], {
     encoding: "utf8",
     timeout: 15_000,
+    cwd: ROOT,
+    env,
   });
   return { status: r.status, stderr: r.stderr ?? "" };
 }
@@ -137,6 +153,24 @@ describe("classify — verdicts", () => {
     expect(r.verdict).toBe("POISONED");
   });
 
+  it("does not zero-shield an entry whose own macros contradict the zero", () => {
+    // Production's explicit-zero shield only engages when the entry's own
+    // macros are also ~0 (ZERO_CAL_MAX_MACRO_KCAL_100G). A placeholder-zero
+    // stub with real macros (here Atwater 55 kcal) would NOT be shielded by
+    // the current code, so deleting the cached row would re-seed the same
+    // secondary answer — not poisoned.
+    const r = classify({
+      off100: 0,
+      P: 0.5,
+      C: 2,
+      F: 5,
+      cal: 257,
+      grams: 500,
+    });
+    expect(r.shielded).toBe("no");
+    expect(r.verdict).toBe("ok");
+  });
+
   it("leaves a barcode OFF no longer resolves alone (Kinder Bueno)", () => {
     // off100 undefined → nothing to corroborate → the secondary source stands.
     const r = classify({
@@ -164,14 +198,14 @@ describe("classify — verdicts", () => {
     expect(r.verdict).toContain("review");
   });
 
-  // CHARACTERIZATION, not endorsement: this pins a KNOWN limitation reported by
-  // /code-review and deliberately left unfixed. The `materially` gate compares
-  // calories only, so Cherry Coke's cached 6.5 vs OFF's 11.1 (a 4.6 delta,
-  // inside max(5, off*0.25)) scores `ok` — even though that row carried 1.0 g
-  // fat and 0.2 g protein for a cola, i.e. macros from a different food. If the
-  // criterion is ever corrected to "would the current code produce a better
-  // row?", this expectation SHOULD flip to POISONED; update it, don't preserve it.
-  it("does NOT flag macro-only pollution when calories happen to be close", () => {
+  // The Cherry Coke prod case: cached 6.5 vs OFF's 11.1 kcal/100ml is inside
+  // any reasonable calorie threshold, but the row carried 1.0 g fat and 0.2 g
+  // protein for a cola — macros from a different food. The criterion is not
+  // "do the calories differ materially?" but "would the current code produce a
+  // better row?": the source is a secondary AND OFF now shields the entry.
+  // (This flips the former characterization test that pinned the calorie-only
+  // limitation.)
+  it("flags macro-only pollution even when calories are close (Cherry Coke prod case)", () => {
     const r = classify({
       off100: 11.1,
       P: 0,
@@ -180,67 +214,211 @@ describe("classify — verdicts", () => {
       cal: 23,
       grams: 355,
     });
+    expect(r.verdict).toBe("POISONED");
+  });
+
+  it("flags a shielded row even when cached energy matches OFF exactly (bias toward delete)", () => {
+    // Deleting costs nothing — the row re-seeds identically on next scan — so
+    // any secondary-source row the current policy would shield is worth
+    // re-seeding; matching calories are a symptom, not the criterion.
+    const r = classify({
+      off100: 539,
+      P: 6.3,
+      C: 57.5,
+      F: 30.9,
+      cal: 539,
+      grams: 100,
+    });
+    expect(r.shielded).toBe("yes");
+    expect(r.verdict).toBe("POISONED");
+  });
+
+  it("leaves an unshielded OFF entry alone even when values differ wildly", () => {
+    // Energy contradicts its own macros (Atwater 400 vs stated 50): the
+    // current code would NOT shield this entry, so deleting the cached row
+    // would just re-seed the same secondary answer. Not poisoned.
+    const r = classify({
+      off100: 50,
+      P: 0,
+      C: 100,
+      F: 0,
+      cal: 400,
+      grams: 100,
+    });
+    expect(r.shielded).toBe("no");
     expect(r.verdict).toBe("ok");
   });
 });
 
-describe("corroborates — mirrors offMacrosCorroborateEnergy", () => {
-  it("returns false for absent or non-positive energy", () => {
-    // Zero-energy entries belong to the explicit-zero path, which carries a kJ
-    // contradiction guard this function deliberately does not replicate.
-    expect(corroborates(undefined, 1, 1, 1)).toBe(false);
-    expect(corroborates(0, 1, 1, 1)).toBe(false);
-    expect(corroborates(-5, 1, 1, 1)).toBe(false);
+/** Fake OFF: resolves the given variants, cleanly misses everything else. */
+function offWith(
+  hits: Record<
+    string,
+    { product_name?: string; nutriments?: Record<string, unknown> }
+  >,
+  log?: string[],
+): FetchLike {
+  return (url) => {
+    const code = /product\/(\d+)\.json$/.exec(String(url))?.[1] ?? "";
+    log?.push(code);
+    const product = hits[code];
+    return Promise.resolve({
+      json: () =>
+        Promise.resolve(product ? { status: 1, product } : { status: 0 }),
+    });
+  };
+}
+
+describe("resolveOffProduct — OFF padding variants", () => {
+  it("tries variants in production order and stops at the first hit", async () => {
+    // Production (lookupBarcode) takes the FIRST variant OFF resolves; the
+    // sweep must replicate that or it classifies a different product.
+    const requested: string[] = [];
+    const fetchImpl = offWith(
+      { "0000006772408": { product_name: "Cherry Coke" } },
+      requested,
+    );
+    const r = await resolveOffProduct("06772408", { fetchImpl });
+    expect(r.product?.product_name).toBe("Cherry Coke");
+    expect(r.matchedVariant).toBe("0000006772408");
+    // Exactly the variants BEFORE the hit, in production order — no extras.
+    expect(requested).toEqual(["06772408", "000006772408", "0000006772408"]);
   });
 
-  it("returns false when there are no macros to compare against", () => {
-    expect(corroborates(400, undefined, undefined, undefined)).toBe(false);
-    expect(corroborates(400, 0, 0, 0)).toBe(false);
+  it("resolves a row cached under a form OFF does not index via its padded variant", async () => {
+    // The dev cache's spring-water pair: a row cached as `060383653293` while
+    // OFF indexes `0060383653293`. Literal-only querying reported
+    // "(not in OFF)" → LEGITIMATE and the poisoned row survived forever.
+    const fetchImpl = offWith({
+      "0060383653293": { product_name: "Natural Spring Water" },
+    });
+    const r = await resolveOffProduct("060383653293", { fetchImpl });
+    expect(r.product?.product_name).toBe("Natural Spring Water");
+    expect(r.matchedVariant).toBe("0060383653293");
   });
 
-  it("accepts a coherent label and rejects a typo'd energy field", () => {
-    // Nutella: 4(6.3) + 4(57.5) + 9(30.9) = 533.3 vs a stated 539.
-    expect(corroborates(539, 6.3, 57.5, 30.9)).toBe(true);
-    // Granulated sugar with a wrong energy field: Atwater 400 vs a stated 50.
-    expect(corroborates(50, 0, 100, 0)).toBe(false);
+  it("returns no product and no errors when every variant is a clean miss", async () => {
+    const r = await resolveOffProduct("8000500037560", {
+      fetchImpl: offWith({}),
+    });
+    expect(r.product).toBeNull();
+    expect(r.errors).toEqual([]);
   });
 
-  it("holds the 30% tolerance boundary", () => {
-    // macroKcal 400: valuesMatch divides by max(|a|,|b|).
-    expect(corroborates(400 * 0.75, 0, 100, 0)).toBe(true); // 25% off → inside
-    expect(corroborates(400 * 0.5, 0, 100, 0)).toBe(false); // 50% off → outside
+  it("records an error when a variant rejects and nothing resolves", async () => {
+    const fetchImpl: FetchLike = () =>
+      Promise.reject(new Error("socket hang up"));
+    const r = await resolveOffProduct("06772408", { fetchImpl });
+    expect(r.product).toBeNull();
+    expect(r.errors.length).toBeGreaterThan(0);
+    expect(r.errors[0]).toContain("socket hang up");
+  });
+
+  it("keeps going past an early variant error when a later variant resolves", async () => {
+    // Mirrors production: a per-variant fetch error is logged and the loop
+    // continues — an error on the literal form must not mask a padded hit.
+    let calls = 0;
+    const fetchImpl: FetchLike = (url) => {
+      calls++;
+      if (calls === 1) return Promise.reject(new Error("timeout"));
+      return offWith({ "000006772408": { product_name: "Cherry Coke" } })(url);
+    };
+    const r = await resolveOffProduct("06772408", { fetchImpl });
+    expect(r.product?.product_name).toBe("Cherry Coke");
+    expect(r.matchedVariant).toBe("000006772408");
   });
 });
 
-describe("valuesMatch — mirrors verification-consensus", () => {
-  it("treats identical values as matching", () => {
-    expect(valuesMatch(0, 0, 0.3)).toBe(true);
+describe("runSweep / summarize — fetch-error surfacing", () => {
+  // Nutella resolves (shielded → POISONED); everything else hard-errors.
+  const nutellaHit = {
+    "3017620422003": {
+      product_name: "Nutella",
+      nutriments: {
+        "energy-kcal_100g": 539,
+        proteins_100g: 6.3,
+        carbohydrates_100g: 57.5,
+        fat_100g: 30.9,
+      },
+    },
+  };
+  const mixedFetch: FetchLike = (url) =>
+    url.includes("3017620422003")
+      ? offWith(nutellaHit)(url)
+      : Promise.reject(new Error("ECONNRESET"));
+  const noopSleep = () => Promise.resolve();
+
+  const MIXED = [
+    { code: "3017620422003", cal: 182, grams: 100 }, // → POISONED
+    { code: "0060410079430", cal: 505, grams: 250 }, // → all variants error
+  ];
+
+  it("renders a fetch-error row with the same columns as normal rows", async () => {
+    // The old shape pushed a 3-key row that console.table rendered as mostly
+    // `undefined`, visually indistinguishable from a checked row.
+    const { rows } = await runSweep(MIXED, {
+      fetchImpl: mixedFetch,
+      sleep: noopSleep,
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[1].verdict).toContain("FETCH ERROR");
+    expect(rows[1].note).toContain("ECONNRESET");
+    expect(Object.keys(rows[1]).sort()).toEqual(Object.keys(rows[0]).sort());
   });
 
-  it("uses an absolute floor when both values are below 2", () => {
-    expect(valuesMatch(0.2, 1.0, 0.3)).toBe(true); // relative would fail
-    expect(valuesMatch(0.2, 1.9, 0.3)).toBe(false); // diff > 1
+  it("sleeps after every candidate, including the error path", async () => {
+    // The error branch used to `continue` before the 900 ms pause, so a
+    // rate-limited run hammered OFF at full speed exactly when it shouldn't.
+    const sleep = vi.fn(() => Promise.resolve());
+    await runSweep(MIXED, { fetchImpl: mixedFetch, sleep });
+    expect(sleep).toHaveBeenCalledTimes(MIXED.length);
   });
 
-  it("uses the larger operand as the relative denominator", () => {
-    expect(valuesMatch(75, 100, 0.25)).toBe(true); // 25/100
-    expect(valuesMatch(70, 100, 0.25)).toBe(false); // 30/100
-  });
-});
-
-describe("offPer100gCalories", () => {
-  it("prefers the kcal field", () => {
-    expect(
-      offPer100gCalories({ "energy-kcal_100g": 539, energy_100g: 9999 }),
-    ).toBe(539);
-  });
-
-  it("falls back to kJ with the same divisor the server uses", () => {
-    expect(offPer100gCalories({ energy_100g: 2252 })).toBe(538); // 2252/4.1868
+  it("excludes unchecked candidates from the POISONED denominator and calls them out", async () => {
+    const result = await runSweep(MIXED, {
+      fetchImpl: mixedFetch,
+      sleep: noopSleep,
+    });
+    const s = summarize(result);
+    expect(s.summaryLine).toBe(
+      "POISONED: 1 of 1 checked; 1 fetch error(s) (unchecked)",
+    );
+    expect(s.warningLine).toContain("INCOMPLETE");
   });
 
-  it("returns undefined when neither field is usable", () => {
-    expect(offPer100gCalories({})).toBeUndefined();
-    expect(offPer100gCalories({ "energy-kcal_100g": "N/A" })).toBeUndefined();
+  it("returns exit code 2 when any candidate could not be checked, 0 when clean", async () => {
+    const errored = await runSweep(MIXED, {
+      fetchImpl: mixedFetch,
+      sleep: noopSleep,
+    });
+    expect(summarize(errored).exitCode).toBe(2);
+
+    const clean = await runSweep([MIXED[0]], {
+      fetchImpl: mixedFetch,
+      sleep: noopSleep,
+    });
+    expect(summarize(clean).exitCode).toBe(0);
+    expect(summarize(clean).warningLine).toBeUndefined();
+  });
+
+  it("emits DELETE SQL only for POISONED rows", async () => {
+    const result = await runSweep(
+      [...MIXED, { code: "8000500037560", cal: 548.8, grams: 100 }], // clean miss → LEGITIMATE
+      {
+        fetchImpl: (url) =>
+          url.includes("8000500037560") ? offWith({})(url) : mixedFetch(url),
+        sleep: noopSleep,
+      },
+    );
+    const s = summarize(result);
+    expect(s.deleteSql).toBe(
+      "DELETE FROM barcode_nutrition WHERE barcode IN ('3017620422003');",
+    );
+
+    const nonePoisoned = await runSweep(
+      [{ code: "8000500037560", cal: 548.8, grams: 100 }],
+      { fetchImpl: offWith({}), sleep: noopSleep },
+    );
+    expect(summarize(nonePoisoned).deleteSql).toBeUndefined();
   });
 });

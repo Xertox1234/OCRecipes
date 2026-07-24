@@ -55,7 +55,7 @@ railway run --service Postgres -- sh -c 'psql "$DATABASE_PUBLIC_URL" -f /tmp/swe
 
 # 2. Classify each candidate against live OFF (read-only, no DB).
 #    `calories` from step 1 is PER SERVING, hence the grams argument.
-node scripts/verify-barcode-cache-candidates.mjs <barcode>:<calories>:<servingGrams> ...
+npx tsx scripts/verify-barcode-cache-candidates.ts <barcode>:<calories>:<servingGrams> ...
 
 # 3. Targeted delete — explicit barcode list ONLY.
 cat > /tmp/remediate.sql <<'SQL'
