@@ -7,7 +7,7 @@ module: server
 applies_to: [server/services/**/*.ts]
 symptoms: [Displayed calories wildly off (e.g. 98 shown for a package stating 310 per 90g) while the serving size is correct, The wrong value scales exactly as per100g x servingGrams/100 from a calorie density belonging to a DIFFERENT generic food, lookupBarcode result source is "cnf"/"usda" for a product whose barcode was found in OFF with complete nutriments]
 created: '2026-07-17'
-last_updated: '2026-07-17'
+last_updated: '2026-07-24'
 severity: high
 ---
 
@@ -154,9 +154,126 @@ agent. The exact sweep query and remediation commands are documented in
 `todos/archive/P3-2026-07-17-off-self-consistency-gate-refinements.md`'s
 Updates section for whoever picks this up.
 
+## Widened 2026-07-24 (todo P2-2026-07-22): the gate's trigger was too narrow
+
+The 2026-07-17 fix made the gate depend on **per-serving energy**, and the
+original write-up accepted that "entries missing per-serving energy (most of
+OFF) keep the existing replace-on-discrepancy behavior." That residual was the
+bug's next incarnation.
+
+Live case: `3017620422003` (Nutella 750 g). OFF has the per-100g block exactly
+right — 539 kcal, 56.3 g sugar, 30.9 g fat, 10.6 g sat-fat — but carries **no
+`serving_size` and no `energy-kcal_serving`**. The gate could not run, so a CNF
+name match at 182 kcal (539/182 ≈ 2.96×) replaced the whole block. Users saw a
+different food's macros, and the FSA nutrient flags added in PR #694 emitted no
+`nutrient:sugar` because they correctly evaluated the wrong `sugar: 3.1`.
+
+The tell that this was a gate hole and not bad OFF data: the **400 g sibling
+SKU** (`3017620425035`) has identical macros *plus* a serving size, and was
+always correct. Trust depended on which jar you scanned.
+
+**Fix**: a second corroboration path, `offMacrosCohereWithEnergy` — Atwater
+macro↔energy coherence (4·protein + 4·carbs + 9·fat ≈ `energy-kcal_100g`) on the
+per-100g block alone.
+
+### Precedence is fallback, NOT a boolean OR
+
+The obvious implementation — OR the new term into the existing expression — is
+wrong twice over:
+
+1. The existing IIFE returns `false` on its **first line** when per-serving
+   energy is absent, which is exactly the broken case. An OR'd term
+   short-circuits and silently does nothing.
+2. More importantly, a **detected contradiction must outrank a passed coherence
+   check**. An OFF "Sugar" entry at 50 kcal/100g with 12 g carbs is coherent on
+   the per-100g basis alone (Atwater 48 ≈ 50) yet its own per-serving field
+   proves it garbage. An OR shields it and kills the rescue arm.
+
+So: path A (per-serving) runs first and its verdict is **terminal, including a
+negative one**; path B (Atwater) is consulted only where A could not be
+evaluated at all. Because B only runs where A returned no verdict, adding it
+cannot change the outcome for any entry that has per-serving data.
+
+### Why Atwater is the right discriminator, not just coverage
+
+The replace-arm exists to rescue genuinely broken OFF entries, and this
+preserves that:
+
+| OFF entry | Atwater | Outcome |
+|---|---|---|
+| Energy typo'd, macros real ("sugar at 50 kcal/100 g") | 400 vs 50 → mismatch | still replaced ✓ |
+| Coherent real label (Nutella 533 vs 539) | match | shielded ✓ |
+| All fields jointly wrong but coherent | match | shielded — the trade-off this doc already accepted, now wider |
+
+Frame the property as **internal arithmetic coherence**, not "independently
+entered fields agreeing" (the original write-up's phrasing above). OFF often
+derives per-serving from per-100g and kcal from kJ, so that claim is partly
+tautological for *both* paths. Coherence is the honest claim.
+
+### Two load-bearing guards
+
+- **`calories > 0`.** Zero-energy entries must stay with the explicit-zero
+  branch and its `kjContradicts` guard. A naive check reads a placeholder-zero
+  stub as `0 ≈ 0` and would shield known-bad entries — this alone would have
+  broken three existing fixtures (peanut-butter stub, granola bar with kcal 0
+  beside `energy_100g: 1700`, mineral water with trace kJ).
+- **protein/carbs/fat all PRESENT** (zeros fine, `undefined` not). Treating a
+  missing macro as `0` yields an estimate of 0 for a macro-less entry, and
+  `valuesMatch`'s `<2` absolute floor (`|1-0| <= 1`) would then shield a
+  `calories: 1` entry with no macro data at all.
+
+### The fiber band must be clamped asymmetrically
+
+Whether OFF's `carbohydrates_100g` includes fiber is not knowable per product —
+OFF carries both conventions — so accept a band rather than a one-sided
+correction. The two endpoints need **different** guards:
+
+- **US convention** (carbs INCLUDE fiber → plain sum over-counts): subtract
+  `2 × min(fiber, carbs)`. Clamping to carbs is correct because fiber is a
+  subset of carbs here.
+- **EU convention** (carbs EXCLUDE fiber → plain sum under-counts): add
+  `2 × fiber`, **unclamped**. Fiber is disjoint from carbs here and legitimately
+  exceeds it — psyllium husk is ~80 g fiber to ~2 g carbs — so reusing the carbs
+  clamp collapses the adjustment for exactly the products this endpoint serves.
+
+A one-sided *subtraction* would be worse than inert: a live 14-product probe
+found the plain sum **under**-counts stated energy in 11 of 14 products (muesli
+433 vs 462, crisps 504 vs 536, Nutella 533 vs 539), the signature of the EU
+convention dominating OFF.
+
+Tolerance is 0.25, wider than path A's 0.15, because the Atwater model carries
+systematic error path A's pure arithmetic does not: sugar alcohols (~2.4 kcal/g),
+ethanol (7 kcal/g, absent from the macro sum entirely), organic acids, rounding.
+
+### Reusable gotcha: a fixture can silently stop testing its own premise
+
+Four pre-existing fixtures across two files claimed to test "OFF's energy is
+wildly wrong, CNF rescues" but set `carbohydrates_100g: 12` for granulated sugar
+(~100 g/100 g in reality) — the carbs were scaled down by the same ~8× as the
+energy, one even annotated `// WRONG`. Written before any coherence check
+existed, nothing constrained them to be realistic, so they actually modelled a
+*uniformly* wrong, self-coherent entry: a scenario no internal check can detect
+by construction, and one this doc had already accepted as shielded.
+
+They were corrected to realistic macros so they model an energy-only error and
+now pin the rescue via a genuine self-contradiction. **When adding a consistency
+check, audit existing fixtures for values that were arbitrary when written and
+have since become load-bearing** — a fixture that fails a new check may be
+telling you it never encoded the scenario its name claims, not that the check is
+wrong. Distinguish the two by re-deriving the fixture from the real-world product
+it names.
+
+### Still true, still human-only
+
+The `barcodeNutrition` first-write-wins cache does not self-heal. Verified
+2026-07-24: after the fix the API returns 539 while the row still reads
+`source: cnf, calories: 182.00`. The app scan path is unaffected (`lookupBarcode`
+only ever writes that cache), but `server/routes/public-api.ts` serves the stale
+row. Remediation remains a manual, human-executed sweep — see the note above.
+
 ## Related Files
 
-- `server/services/barcode-lookup.ts` — `offSelfConsistent` + the demoted `reconcilePer100g` call; `+self-consistent` source marker; `ABSOLUTE_TOLERANCE_FLOOR_KCAL`
+- `server/services/barcode-lookup.ts` — `offSelfConsistent` + the demoted `reconcilePer100g` call; `+self-consistent` source marker; `ABSOLUTE_TOLERANCE_FLOOR_KCAL`; `offMacrosCohereWithEnergy` + `ATWATER_TOLERANCE` (2026-07-24 path B)
 - `server/services/nutrition-lookup.ts` — `offNutrimentsSchema` gained `energy-kcal_serving`/`energy_serving`
 - `server/services/__tests__/barcode-lookup.test.ts` — McSweeney's regression, kJ-only, boundary, and guard tests; low-cal absolute-floor fixtures
 - `server/lib/verification-consensus.ts` — `valuesMatch`'s `tolerance` param, now shared between verification consensus and this gate
