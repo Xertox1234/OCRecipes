@@ -1262,6 +1262,113 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result!.per100g.calories).toBe(50);
     expect(result!.source).toBe("openfoodfacts+self-consistent");
   });
+
+  it("falls back to Atwater when per-serving energy IS present but serving grams are unparseable (P3-2026-07-24)", async () => {
+    // `serving_size: "1 bottle"` parses to no grams, so per-100g × grams cannot
+    // be checked against energy-kcal_serving — the ratio arm is unavailable.
+    // That is a MISSING signal, not a detected contradiction, so the entry's own
+    // macros get to corroborate it instead of it being handed to a name-matched
+    // secondary. Macros here imply 4*0 + 4*11 + 9*0.2 = 45.8 ≈ the stated 46.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Iced Tea",
+              product_name_en: "Iced Tea",
+              serving_size: "1 bottle", // no parseable grams
+              nutriments: {
+                "energy-kcal_100g": 46,
+                "energy-kcal_serving": 230, // present and positive
+                proteins_100g: 0,
+                carbohydrates_100g: 11,
+                fat_100g: 0.2,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 5150, food_description: "Iced tea, generic mismatch" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 5150,
+              nutrient_value: 250, // disagrees >2x with OFF's 46
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("777666555");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(46);
+    expect(result!.source).toBe("openfoodfacts+self-consistent");
+  });
+
+  it("still rejects a contradictory entry when serving grams DO parse — the ratio check stays authoritative (P3-2026-07-24)", async () => {
+    // Same shape as above but with parseable grams, so the per-serving check CAN
+    // run and it disagrees (46 × 500/100 = 230 vs a stated 99). Atwater would
+    // have shielded this entry (45.8 ≈ 46); the ratio arm's verdict must win, or
+    // the fallback would have swallowed the contradiction it exists to surface.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Iced Tea",
+              product_name_en: "Iced Tea",
+              serving_size: "500 ml",
+              nutriments: {
+                "energy-kcal_100g": 46,
+                "energy-kcal_serving": 99, // contradicts 46 × 500/100 = 230
+                proteins_100g: 0,
+                carbohydrates_100g: 11,
+                fat_100g: 0.2,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 5150, food_description: "Iced tea, generic mismatch" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 5150,
+              nutrient_value: 250,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("777666554");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.calories).toBe(250);
+    expect(result!.source).toBe("cnf");
+  });
 });
 
 describe("offMacrosCorroborateEnergy (P2-2026-07-22)", () => {
