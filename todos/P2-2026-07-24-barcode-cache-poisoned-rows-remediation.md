@@ -55,3 +55,25 @@ This mirrors the manual-sweep step the 2026-07-17 sibling fix already establishe
 ### 2026-07-24
 
 - Filed as a review follow-up to the P2-2026-07-22 barcode source-pollution fix (server-reviewer WARNING: poisoned first-write-wins rows are not self-healing).
+
+### 2026-07-24 — dev sweep executed; procedure validated end-to-end
+
+Ran the full identify → verify → delete → re-seed cycle against the **dev** DB. Prod remains outstanding and human-led (the auto-mode classifier denied `railway variables`, re-confirming this todo's `blocked_reason` — the block is at the harness layer, not a judgement call).
+
+**Dev results: 6 candidate rows, 5 genuinely poisoned, 1 legitimate.**
+
+| Barcode                                       | Cached kcal/100g     | OFF actual   | Verdict                     |
+| --------------------------------------------- | -------------------- | ------------ | --------------------------- |
+| `3017620422003` Nutella                       | 182                  | 539          | poisoned → deleted          |
+| `0018627102588` Honey Oat Flax                | 150                  | 425          | poisoned → deleted          |
+| `070847811169` Monster Energy                 | 4.9                  | 48.6         | poisoned → deleted          |
+| `0060383653293` + `060383653293` Spring Water | 51.4 (with 16 g fat) | 0            | poisoned → deleted (2 rows) |
+| `8000500037560` Kinder Bueno                  | 548.8                | _not in OFF_ | **legitimate — kept**       |
+
+After deletion, a single re-lookup per barcode re-seeded all four correctly: Nutella 539/`openfoodfacts+self-consistent`, Spring Water 0/0/0/`openfoodfacts`, Monster 49/`openfoodfacts+self-consistent`, Honey Oat Flax 170 per 40 g/`openfoodfacts+verified`.
+
+**The load-bearing lesson for the prod run — do NOT blanket-delete by source.** `8000500037560` no longer resolves in OFF at all, so its `cnf` source is _correct_. A `DELETE ... WHERE source IN ('cnf','usda','api-ninjas')` would evict a right answer (it re-seeds identically, so the blast radius is low — but it hides the fact that candidate ≠ poisoned). Verify each candidate against live OFF first; the discriminator is a large cached-vs-OFF delta **plus** the post-fix policy now shielding that entry.
+
+**Prerequisite that is not ceremony (AC1).** `GET /api/health` on prod returns only `{"status":"ok"}` — no commit/version — so deployment could not be confirmed from outside. Deleting rows before the fix is live re-seeds _the same poison_, because the next scan runs the old code. Confirm Railway has deployed past `14146b9c` before any prod DELETE.
+
+Remaining ACs are prod-only; dev is fully remediated.
