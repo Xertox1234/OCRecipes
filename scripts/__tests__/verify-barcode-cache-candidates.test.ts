@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
@@ -6,6 +6,8 @@ import {
   classify,
   parseArgs,
   resolveOffProduct,
+  runSweep,
+  summarize,
   type FetchLike,
 } from "../verify-barcode-cache-candidates";
 
@@ -232,7 +234,10 @@ describe("classify — verdicts", () => {
 
 /** Fake OFF: resolves the given variants, cleanly misses everything else. */
 function offWith(
-  hits: Record<string, { product_name?: string }>,
+  hits: Record<
+    string,
+    { product_name?: string; nutriments?: Record<string, unknown> }
+  >,
   log?: string[],
 ): FetchLike {
   return (url) => {
@@ -303,5 +308,99 @@ describe("resolveOffProduct — OFF padding variants", () => {
     const r = await resolveOffProduct("06772408", { fetchImpl });
     expect(r.product?.product_name).toBe("Cherry Coke");
     expect(r.matchedVariant).toBe("000006772408");
+  });
+});
+
+describe("runSweep / summarize — fetch-error surfacing", () => {
+  // Nutella resolves (shielded → POISONED); everything else hard-errors.
+  const nutellaHit = {
+    "3017620422003": {
+      product_name: "Nutella",
+      nutriments: {
+        "energy-kcal_100g": 539,
+        proteins_100g: 6.3,
+        carbohydrates_100g: 57.5,
+        fat_100g: 30.9,
+      },
+    },
+  };
+  const mixedFetch: FetchLike = (url) =>
+    url.includes("3017620422003")
+      ? offWith(nutellaHit)(url)
+      : Promise.reject(new Error("ECONNRESET"));
+  const noopSleep = () => Promise.resolve();
+
+  const MIXED = [
+    { code: "3017620422003", cal: 182, grams: 100 }, // → POISONED
+    { code: "0060410079430", cal: 505, grams: 250 }, // → all variants error
+  ];
+
+  it("renders a fetch-error row with the same columns as normal rows", async () => {
+    // The old shape pushed a 3-key row that console.table rendered as mostly
+    // `undefined`, visually indistinguishable from a checked row.
+    const { rows } = await runSweep(MIXED, {
+      fetchImpl: mixedFetch,
+      sleep: noopSleep,
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows[1].verdict).toContain("FETCH ERROR");
+    expect(rows[1].note).toContain("ECONNRESET");
+    expect(Object.keys(rows[1]).sort()).toEqual(Object.keys(rows[0]).sort());
+  });
+
+  it("sleeps after every candidate, including the error path", async () => {
+    // The error branch used to `continue` before the 900 ms pause, so a
+    // rate-limited run hammered OFF at full speed exactly when it shouldn't.
+    const sleep = vi.fn(() => Promise.resolve());
+    await runSweep(MIXED, { fetchImpl: mixedFetch, sleep });
+    expect(sleep).toHaveBeenCalledTimes(MIXED.length);
+  });
+
+  it("excludes unchecked candidates from the POISONED denominator and calls them out", async () => {
+    const result = await runSweep(MIXED, {
+      fetchImpl: mixedFetch,
+      sleep: noopSleep,
+    });
+    const s = summarize(result);
+    expect(s.summaryLine).toBe(
+      "POISONED: 1 of 1 checked; 1 fetch error(s) (unchecked)",
+    );
+    expect(s.warningLine).toContain("INCOMPLETE");
+  });
+
+  it("returns exit code 2 when any candidate could not be checked, 0 when clean", async () => {
+    const errored = await runSweep(MIXED, {
+      fetchImpl: mixedFetch,
+      sleep: noopSleep,
+    });
+    expect(summarize(errored).exitCode).toBe(2);
+
+    const clean = await runSweep([MIXED[0]], {
+      fetchImpl: mixedFetch,
+      sleep: noopSleep,
+    });
+    expect(summarize(clean).exitCode).toBe(0);
+    expect(summarize(clean).warningLine).toBeUndefined();
+  });
+
+  it("emits DELETE SQL only for POISONED rows", async () => {
+    const result = await runSweep(
+      [...MIXED, { code: "8000500037560", cal: 548.8, grams: 100 }], // clean miss → LEGITIMATE
+      {
+        fetchImpl: (url) =>
+          url.includes("8000500037560") ? offWith({})(url) : mixedFetch(url),
+        sleep: noopSleep,
+      },
+    );
+    const s = summarize(result);
+    expect(s.deleteSql).toBe(
+      "DELETE FROM barcode_nutrition WHERE barcode IN ('3017620422003');",
+    );
+
+    const nonePoisoned = await runSweep(
+      [{ code: "8000500037560", cal: 548.8, grams: 100 }],
+      { fetchImpl: offWith({}), sleep: noopSleep },
+    );
+    expect(summarize(nonePoisoned).deleteSql).toBeUndefined();
   });
 });

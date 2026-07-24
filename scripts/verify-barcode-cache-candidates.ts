@@ -205,6 +205,118 @@ export async function resolveOffProduct(
   return { product: null, errors };
 }
 
+/** One uniform output row — every path fills every column, so a fetch-error
+ * row can never masquerade as a checked one in the console.table output. */
+export interface SweepRow {
+  barcode: string;
+  product: string;
+  cached_kcal100: number | "-";
+  off_kcal100: number | "-";
+  shielded_now: string;
+  verdict: string;
+  note: string;
+}
+
+export interface SweepResult {
+  rows: SweepRow[];
+  poisoned: string[];
+  fetchErrors: number;
+}
+
+export async function runSweep(
+  candidates: Candidate[],
+  deps: SweepDeps = {},
+): Promise<SweepResult> {
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const rows: SweepRow[] = [];
+  let fetchErrors = 0;
+  for (const { code, cal: cachedServCal, grams: servG } of candidates) {
+    const { product: p, errors } = await resolveOffProduct(code, deps);
+    if (!p && errors.length > 0) {
+      // Coverage soundness: a barcode whose variants ERRORED (vs cleanly
+      // missed) was never actually checked — it must surface as unchecked,
+      // never as "(not in OFF)" → LEGITIMATE.
+      fetchErrors++;
+      rows.push({
+        barcode: code,
+        product: "-",
+        cached_kcal100: "-",
+        off_kcal100: "-",
+        shielded_now: "-",
+        verdict: "FETCH ERROR — recheck",
+        note: errors.join("; "),
+      });
+    } else if (!p) {
+      rows.push({
+        barcode: code,
+        product: "(not in OFF)",
+        cached_kcal100: "-",
+        off_kcal100: "-",
+        shielded_now: "-",
+        verdict: "LEGITIMATE",
+        note: "no OFF product — the secondary source is correct; do NOT delete",
+      });
+    } else {
+      const nm = p.nutriments ?? {};
+      const off100 = offEnergyKcal(
+        num(nm["energy-kcal_100g"]),
+        num(nm.energy_100g),
+      );
+      const { shielded, cached100, verdict } = classify({
+        off100,
+        P: num(nm.proteins_100g),
+        C: num(nm.carbohydrates_100g),
+        F: num(nm.fat_100g),
+        cal: cachedServCal,
+        grams: servG,
+      });
+      rows.push({
+        barcode: code,
+        product: (p.product_name ?? "").slice(0, 22),
+        cached_kcal100: cached100,
+        off_kcal100: off100 ?? "-",
+        shielded_now: shielded,
+        verdict,
+        note: "",
+      });
+    }
+    // Rate-limit pause on EVERY path — the error branch used to skip it, so a
+    // rate-limited run retried at full speed.
+    await sleep(900);
+  }
+  const poisoned = rows
+    .filter((r) => r.verdict === "POISONED")
+    .map((r) => r.barcode);
+  return { rows, poisoned, fetchErrors };
+}
+
+/** Pure rendering decisions, unit-testable without capturing console. */
+export function summarize({ rows, poisoned, fetchErrors }: SweepResult): {
+  table: SweepRow[];
+  summaryLine: string;
+  warningLine?: string;
+  deleteSql?: string;
+  exitCode: 0 | 2;
+} {
+  const checked = rows.length - fetchErrors;
+  return {
+    table: rows,
+    summaryLine:
+      fetchErrors > 0
+        ? `POISONED: ${poisoned.length} of ${checked} checked; ${fetchErrors} fetch error(s) (unchecked)`
+        : `POISONED: ${poisoned.length} of ${checked} checked`,
+    warningLine:
+      fetchErrors > 0
+        ? `WARNING: coverage is INCOMPLETE — ${fetchErrors} candidate(s) could not be checked; do not treat unchecked rows as legitimate.`
+        : undefined,
+    deleteSql: poisoned.length
+      ? `DELETE FROM barcode_nutrition WHERE barcode IN (${poisoned.map((b) => `'${b}'`).join(",")});`
+      : undefined,
+    exitCode: fetchErrors > 0 ? 2 : 0,
+  };
+}
+
 async function main(argv: string[]): Promise<number> {
   if (argv.length === 0) {
     console.error(USAGE);
@@ -218,66 +330,14 @@ async function main(argv: string[]): Promise<number> {
     return 1;
   }
 
-  const rows: Record<string, unknown>[] = [];
-  for (const { code, cal: cachedServCal, grams: servG } of candidates) {
-    const { product: p, errors } = await resolveOffProduct(code);
-    // Coverage soundness: a barcode whose variants ERRORED (vs cleanly
-    // missed) was never actually checked — it must surface as unchecked,
-    // never as "(not in OFF)" → LEGITIMATE.
-    if (!p && errors.length > 0) {
-      rows.push({
-        barcode: code,
-        verdict: "FETCH ERROR — recheck",
-        note: errors.join("; "),
-      });
-      continue;
-    }
-    if (!p) {
-      rows.push({
-        barcode: code,
-        product: "(not in OFF)",
-        verdict: "LEGITIMATE",
-        note: "no OFF product — the secondary source is correct; do NOT delete",
-      });
-      await new Promise((r) => setTimeout(r, 900));
-      continue;
-    }
-    const nm = p.nutriments ?? {};
-    const off100 = offEnergyKcal(
-      num(nm["energy-kcal_100g"]),
-      num(nm.energy_100g),
-    );
-    const { shielded, cached100, verdict } = classify({
-      off100,
-      P: num(nm.proteins_100g),
-      C: num(nm.carbohydrates_100g),
-      F: num(nm.fat_100g),
-      cal: cachedServCal,
-      grams: servG,
-    });
-
-    rows.push({
-      barcode: code,
-      product: (p.product_name ?? "").slice(0, 22),
-      cached_kcal100: cached100,
-      off_kcal100: off100 ?? "-",
-      shielded_now: shielded,
-      verdict,
-    });
-    await new Promise((r) => setTimeout(r, 900));
-  }
-
-  console.table(rows);
-  const poisoned = rows
-    .filter((r) => r.verdict === "POISONED")
-    .map((r) => r.barcode as string);
-  console.log(`\nPOISONED: ${poisoned.length} of ${rows.length}`);
-  if (poisoned.length) {
-    console.log(
-      `\nDELETE FROM barcode_nutrition WHERE barcode IN (${poisoned.map((b) => `'${b}'`).join(",")});`,
-    );
-  }
-  return 0;
+  const { table, summaryLine, warningLine, deleteSql, exitCode } = summarize(
+    await runSweep(candidates),
+  );
+  console.table(table);
+  console.log(`\n${summaryLine}`);
+  if (warningLine) console.error(`\n${warningLine}`);
+  if (deleteSql) console.log(`\n${deleteSql}`);
+  return exitCode;
 }
 
 // Only run the CLI when invoked directly — importing this module (e.g. from the
