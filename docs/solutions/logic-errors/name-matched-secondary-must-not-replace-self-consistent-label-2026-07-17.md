@@ -214,6 +214,41 @@ from `## Prevention` above now covers this wider set. Follow-up:
 `todos/P2-2026-07-24-barcode-cache-poisoned-rows-remediation.md` (human-led;
 never run autonomously, same guardrail as the 2026-07-17 sweep).
 
+## Follow-up shipped (2026-07-24, todo P3-2026-07-24-atwater-fallback-when-serving-grams-unparseable)
+
+The Atwater fallback above was initially reached only when per-serving energy
+was **absent**. A second population was still falling through to `return false`:
+entries whose per-serving energy IS present and positive, but whose
+`serving_size` yields no parseable grams (`"1 bottle"`, a fl-oz-only US label).
+The ratio check cannot run there either, so those entries were declared
+unshielded and handed to a name-matched secondary.
+
+The distinction that resolves it — and the reusable one:
+
+> **A signal that could not be evaluated is not a signal that failed.** Unparseable
+> grams are a *missing* input, not a detected contradiction. Only a check that
+> actually ran and disagreed should override a corroboration path; a check that
+> could not run should defer to whatever weaker signal remains.
+
+So the compound guard was split by which condition means what:
+
+```typescript
+if (offPerServingCal <= 0 || offPer100g.calories <= 0) {
+  return false;                                  // unchanged
+}
+if (offLabelGrams === null || offLabelGrams <= 0) {
+  return offMacrosCorroborateEnergy(offPer100g); // missing input → weaker signal
+}
+// grams parse → the per-serving × grams ratio check stays authoritative,
+// INCLUDING when it disagrees.
+```
+
+The load-bearing test here is not the happy path but its mirror: an entry with
+**parseable** grams and a contradictory `energy-kcal_serving` whose macros *would*
+have satisfied Atwater. Without it, nothing pins that the ratio arm's verdict
+still outranks the fallback, and a later refactor could quietly let the fallback
+swallow the contradictions the replace-arm exists to surface.
+
 ## Related Files
 
 - `server/services/barcode-lookup.ts` — `offSelfConsistent` + the demoted `reconcilePer100g` call; `+self-consistent` source marker; `ABSOLUTE_TOLERANCE_FLOOR_KCAL`; (2026-07-24) `offMacrosCorroborateEnergy` + `ATWATER_MACRO_TOLERANCE` Atwater fallback for the no-per-serving-energy population

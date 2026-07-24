@@ -627,13 +627,19 @@ export async function lookupBarcode(
         Math.round((nm.energy_serving ?? 0) / 4.1868) > 0;
       return macroKcalPer100g <= ZERO_CAL_MAX_MACRO_KCAL_100G && !kjContradicts;
     }
-    if (
-      offLabelGrams === null ||
-      offLabelGrams <= 0 ||
-      offPerServingCal <= 0 ||
-      offPer100g.calories <= 0
-    ) {
+    if (offPerServingCal <= 0 || offPer100g.calories <= 0) {
       return false;
+    }
+    // Per-serving energy is usable, but the serving size carries no parseable
+    // grams ("1 bottle", a fl-oz-only US label) so the ratio check below cannot
+    // run. That is a MISSING signal, not a detected contradiction — fall back to
+    // the same Atwater corroboration the no-per-serving-energy case uses rather
+    // than declaring the entry unshielded and handing it to a name-matched
+    // secondary (todo P3-2026-07-24). Cases where grams DO parse are untouched:
+    // the per-serving × grams check stays authoritative there, including when
+    // it disagrees.
+    if (offLabelGrams === null || offLabelGrams <= 0) {
+      return offMacrosCorroborateEnergy(offPer100g);
     }
     const scaledPer100g = (offPer100g.calories * offLabelGrams) / 100;
     // The relative check is delegated to `valuesMatch` — the same
