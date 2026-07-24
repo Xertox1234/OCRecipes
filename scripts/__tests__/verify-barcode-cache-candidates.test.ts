@@ -2,26 +2,35 @@ import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
-import {
-  classify,
-  corroborates,
-  offPer100gCalories,
-  parseArgs,
-  valuesMatch,
-} from "../verify-barcode-cache-candidates.mjs";
+import { classify, parseArgs } from "../verify-barcode-cache-candidates";
 
-const SCRIPT = join(__dirname, "..", "verify-barcode-cache-candidates.mjs");
+const ROOT = join(__dirname, "..", "..");
+const SCRIPT = join(ROOT, "scripts", "verify-barcode-cache-candidates.ts");
 
 /**
  * Every test here is hermetic. The CLI cases below only exercise argument
  * rejection, which returns BEFORE the first Open Food Facts request — that
  * ordering is the property under test, so a test that reached the network
  * would be evidence of a regression, not a flaky test.
+ *
+ * DATABASE_URL is stripped from the spawn env: the script imports the real
+ * production policy from server/services/barcode-policy.ts, and booting
+ * without a database is part of its contract (it is a read-only OFF checker).
+ *
+ * The policy functions themselves (offMacrosCorroborateEnergy, valuesMatch,
+ * offEnergyKcal) are no longer mirrored here — they are imported, and their
+ * behaviour is pinned by server/services/__tests__/barcode-lookup.test.ts,
+ * server/lib/__tests__/verification-consensus.test.ts, and
+ * server/services/__tests__/barcode-policy.test.ts.
  */
 function runCli(args: string[]): { status: number | null; stderr: string } {
-  const r = spawnSync(process.execPath, [SCRIPT, ...args], {
+  const env = { ...process.env };
+  delete env.DATABASE_URL;
+  const r = spawnSync(process.execPath, ["--import=tsx", SCRIPT, ...args], {
     encoding: "utf8",
     timeout: 15_000,
+    cwd: ROOT,
+    env,
   });
   return { status: r.status, stderr: r.stderr ?? "" };
 }
@@ -181,66 +190,5 @@ describe("classify — verdicts", () => {
       grams: 355,
     });
     expect(r.verdict).toBe("ok");
-  });
-});
-
-describe("corroborates — mirrors offMacrosCorroborateEnergy", () => {
-  it("returns false for absent or non-positive energy", () => {
-    // Zero-energy entries belong to the explicit-zero path, which carries a kJ
-    // contradiction guard this function deliberately does not replicate.
-    expect(corroborates(undefined, 1, 1, 1)).toBe(false);
-    expect(corroborates(0, 1, 1, 1)).toBe(false);
-    expect(corroborates(-5, 1, 1, 1)).toBe(false);
-  });
-
-  it("returns false when there are no macros to compare against", () => {
-    expect(corroborates(400, undefined, undefined, undefined)).toBe(false);
-    expect(corroborates(400, 0, 0, 0)).toBe(false);
-  });
-
-  it("accepts a coherent label and rejects a typo'd energy field", () => {
-    // Nutella: 4(6.3) + 4(57.5) + 9(30.9) = 533.3 vs a stated 539.
-    expect(corroborates(539, 6.3, 57.5, 30.9)).toBe(true);
-    // Granulated sugar with a wrong energy field: Atwater 400 vs a stated 50.
-    expect(corroborates(50, 0, 100, 0)).toBe(false);
-  });
-
-  it("holds the 30% tolerance boundary", () => {
-    // macroKcal 400: valuesMatch divides by max(|a|,|b|).
-    expect(corroborates(400 * 0.75, 0, 100, 0)).toBe(true); // 25% off → inside
-    expect(corroborates(400 * 0.5, 0, 100, 0)).toBe(false); // 50% off → outside
-  });
-});
-
-describe("valuesMatch — mirrors verification-consensus", () => {
-  it("treats identical values as matching", () => {
-    expect(valuesMatch(0, 0, 0.3)).toBe(true);
-  });
-
-  it("uses an absolute floor when both values are below 2", () => {
-    expect(valuesMatch(0.2, 1.0, 0.3)).toBe(true); // relative would fail
-    expect(valuesMatch(0.2, 1.9, 0.3)).toBe(false); // diff > 1
-  });
-
-  it("uses the larger operand as the relative denominator", () => {
-    expect(valuesMatch(75, 100, 0.25)).toBe(true); // 25/100
-    expect(valuesMatch(70, 100, 0.25)).toBe(false); // 30/100
-  });
-});
-
-describe("offPer100gCalories", () => {
-  it("prefers the kcal field", () => {
-    expect(
-      offPer100gCalories({ "energy-kcal_100g": 539, energy_100g: 9999 }),
-    ).toBe(539);
-  });
-
-  it("falls back to kJ with the same divisor the server uses", () => {
-    expect(offPer100gCalories({ energy_100g: 2252 })).toBe(538); // 2252/4.1868
-  });
-
-  it("returns undefined when neither field is usable", () => {
-    expect(offPer100gCalories({})).toBeUndefined();
-    expect(offPer100gCalories({ "energy-kcal_100g": "N/A" })).toBeUndefined();
   });
 });

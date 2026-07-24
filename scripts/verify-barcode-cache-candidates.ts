@@ -1,13 +1,15 @@
 // Classify barcode_nutrition sweep candidates as POISONED vs legitimate.
 //
-// Usage:  node scripts/verify-barcode-cache-candidates.mjs <barcode>:<cachedKcalPerServing>:<servingGrams> ...
-//   or:   node scripts/verify-barcode-cache-candidates.mjs 3017620422003 0018627102588 ...  (verdict from OFF only)
+// Usage:  npx tsx scripts/verify-barcode-cache-candidates.ts <barcode>:<cachedKcalPerServing>:<servingGrams> ...
+//   or:   npx tsx scripts/verify-barcode-cache-candidates.ts 3017620422003 0018627102588 ...  (verdict from OFF only)
 //
 // `cachedKcalPerServing` is the `calories` column of barcode_nutrition, which
 // stores PER-SERVING values — hence the serving-grams argument needed to
 // normalise it to per-100g for comparison against OFF.
 //
-// Read-only: fetches Open Food Facts, never touches any database.
+// Read-only: fetches Open Food Facts, never touches any database — the policy
+// functions are imported from the db-free server/services/barcode-policy.ts,
+// so the verdicts ARE the server's current shielding policy, not a mirror.
 // A candidate is POISONED when OFF resolves it AND the post-fix policy would now
 // shield that entry (macros corroborate energy, or it's an explicit zero) AND the
 // cached value differs materially from OFF. A candidate that no longer resolves in
@@ -15,36 +17,22 @@
 
 import { pathToFileURL } from "node:url";
 
-export const num = (v) =>
+import {
+  offEnergyKcal,
+  offMacrosCorroborateEnergy,
+} from "../server/services/barcode-policy";
+
+export const num = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? v : undefined;
 
-// Mirrors server/lib/verification-consensus.ts valuesMatch
-export function valuesMatch(a, b, tol) {
-  if (a === b) return true;
-  if (Math.abs(a) < 2 && Math.abs(b) < 2) return Math.abs(a - b) <= 1;
-  return Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b)) <= tol;
-}
-
-// Mirrors offMacrosCorroborateEnergy (server/services/barcode-lookup.ts), 0.3 tolerance
-export function corroborates(cal, P, C, F) {
-  if (cal === undefined || cal <= 0) return false;
-  const macroKcal = 4 * (P ?? 0) + 4 * (C ?? 0) + 9 * (F ?? 0);
-  if (macroKcal <= 0) return false;
-  return valuesMatch(macroKcal, cal, 0.3);
-}
-
-/** OFF per-100g energy, preferring kcal and falling back to the kJ field. */
-export function offPer100gCalories(nm) {
-  return (
-    num(nm["energy-kcal_100g"]) ??
-    (num(nm.energy_100g) !== undefined
-      ? Math.round(nm.energy_100g / 4.1868)
-      : undefined)
-  );
-}
-
 export const USAGE =
-  "usage: node scripts/verify-barcode-cache-candidates.mjs <barcode>[:<cachedKcalPerServing>:<servingGrams>] ...";
+  "usage: npx tsx scripts/verify-barcode-cache-candidates.ts <barcode>[:<cachedKcalPerServing>:<servingGrams>] ...";
+
+export interface Candidate {
+  code: string;
+  cal: number | null;
+  grams: number | null;
+}
 
 /**
  * Parse and validate every argument BEFORE any network call.
@@ -58,9 +46,12 @@ export const USAGE =
  * Neither surfaced as an error. Validating up front also means a malformed
  * batch costs zero OFF requests.
  */
-export function parseArgs(args) {
-  const candidates = [];
-  const errors = [];
+export function parseArgs(args: string[]): {
+  candidates: Candidate[];
+  errors: string[];
+} {
+  const candidates: Candidate[] = [];
+  const errors: string[] = [];
   for (const arg of args) {
     const parts = arg.split(":");
     const [code, rawCal, rawGrams] = parts;
@@ -93,15 +84,46 @@ export function parseArgs(args) {
   return { candidates, errors };
 }
 
+export interface ClassifyInput {
+  off100: number | undefined;
+  P: number | undefined;
+  C: number | undefined;
+  F: number | undefined;
+  cal: number | null;
+  grams: number | null;
+}
+
+export interface ClassifyResult {
+  shielded: "zero-path" | "yes" | "no";
+  cached100: number | "-";
+  verdict: string;
+}
+
 /**
  * Decide the verdict for one candidate from OFF's per-100g values and the
  * cached per-serving pair. Pure — `cal`/`grams` are the validated numbers from
  * `parseArgs` (or null when the barcode was passed bare), so the division here
  * cannot produce NaN or Infinity.
  */
-export function classify({ off100, P, C, F, cal, grams }) {
+export function classify({
+  off100,
+  P,
+  C,
+  F,
+  cal,
+  grams,
+}: ClassifyInput): ClassifyResult {
   const shielded =
-    off100 === 0 ? "zero-path" : corroborates(off100, P, C, F) ? "yes" : "no";
+    off100 === 0
+      ? "zero-path"
+      : offMacrosCorroborateEnergy({
+            calories: off100,
+            protein: P,
+            carbs: C,
+            fat: F,
+          })
+        ? "yes"
+        : "no";
   if (cal === null || grams === null) {
     return {
       shielded,
@@ -120,7 +142,12 @@ export function classify({ off100, P, C, F, cal, grams }) {
   };
 }
 
-async function main(argv) {
+interface OffProduct {
+  product_name?: string;
+  nutriments?: Record<string, unknown>;
+}
+
+async function main(argv: string[]): Promise<number> {
   if (argv.length === 0) {
     console.error(USAGE);
     return 1;
@@ -133,21 +160,21 @@ async function main(argv) {
     return 1;
   }
 
-  const rows = [];
+  const rows: Record<string, unknown>[] = [];
   for (const { code, cal: cachedServCal, grams: servG } of candidates) {
-    let p = null;
+    let p: OffProduct | null = null;
     try {
       const r = await fetch(
         `https://world.openfoodfacts.org/api/v0/product/${code}.json`,
         { signal: AbortSignal.timeout(20000) },
       );
-      const j = await r.json();
+      const j = (await r.json()) as { status?: number; product?: OffProduct };
       if (j.status === 1 && j.product) p = j.product;
     } catch (e) {
       rows.push({
         barcode: code,
         verdict: "FETCH ERROR — recheck",
-        note: e.message,
+        note: e instanceof Error ? e.message : String(e),
       });
       continue;
     }
@@ -161,9 +188,13 @@ async function main(argv) {
       await new Promise((r) => setTimeout(r, 900));
       continue;
     }
-    const nm = p.nutriments || {};
+    const nm = p.nutriments ?? {};
+    const off100 = offEnergyKcal(
+      num(nm["energy-kcal_100g"]),
+      num(nm.energy_100g),
+    );
     const { shielded, cached100, verdict } = classify({
-      off100: offPer100gCalories(nm),
+      off100,
       P: num(nm.proteins_100g),
       C: num(nm.carbohydrates_100g),
       F: num(nm.fat_100g),
@@ -173,9 +204,9 @@ async function main(argv) {
 
     rows.push({
       barcode: code,
-      product: (p.product_name || "").slice(0, 22),
+      product: (p.product_name ?? "").slice(0, 22),
       cached_kcal100: cached100,
-      off_kcal100: offPer100gCalories(nm) ?? "-",
+      off_kcal100: off100 ?? "-",
       shielded_now: shielded,
       verdict,
     });
@@ -185,7 +216,7 @@ async function main(argv) {
   console.table(rows);
   const poisoned = rows
     .filter((r) => r.verdict === "POISONED")
-    .map((r) => r.barcode);
+    .map((r) => r.barcode as string);
   console.log(`\nPOISONED: ${poisoned.length} of ${rows.length}`);
   if (poisoned.length) {
     console.log(
@@ -201,5 +232,7 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
-  process.exit(await main(process.argv.slice(2)));
+  void (async () => {
+    process.exit(await main(process.argv.slice(2)));
+  })();
 }
