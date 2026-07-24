@@ -25,6 +25,7 @@
 import { pathToFileURL } from "node:url";
 
 import {
+  barcodeVariants,
   offEnergyKcal,
   offMacrosCorroborateEnergy,
 } from "../server/services/barcode-policy";
@@ -151,9 +152,57 @@ export function classify({
   };
 }
 
-interface OffProduct {
+export interface OffProduct {
   product_name?: string;
   nutriments?: Record<string, unknown>;
+}
+
+/**
+ * Minimal structural fetch type so tests can inject a fake without dragging
+ * in full DOM Response typing; the global `fetch` satisfies it.
+ */
+export type FetchLike = (
+  url: string,
+  init?: { signal?: AbortSignal },
+) => Promise<{ json(): Promise<unknown> }>;
+
+export interface SweepDeps {
+  fetchImpl?: FetchLike;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Resolve a barcode against OFF exactly the way production does
+ * (lookupBarcode): try every padding/check-digit variant in order, first
+ * `status === 1` hit wins, and a per-variant fetch error is recorded but does
+ * not stop the loop. Errors only matter when NOTHING resolves — the caller
+ * must treat that as "unchecked", never as "(not in OFF)".
+ */
+export async function resolveOffProduct(
+  code: string,
+  deps: SweepDeps = {},
+): Promise<{
+  product: OffProduct | null;
+  matchedVariant?: string;
+  errors: string[];
+}> {
+  const fetchImpl = deps.fetchImpl ?? (fetch as FetchLike);
+  const errors: string[] = [];
+  for (const variant of barcodeVariants(code)) {
+    try {
+      const r = await fetchImpl(
+        `https://world.openfoodfacts.org/api/v0/product/${variant}.json`,
+        { signal: AbortSignal.timeout(20000) },
+      );
+      const j = (await r.json()) as { status?: number; product?: OffProduct };
+      if (j.status === 1 && j.product) {
+        return { product: j.product, matchedVariant: variant, errors };
+      }
+    } catch (e) {
+      errors.push(`${variant}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { product: null, errors };
 }
 
 async function main(argv: string[]): Promise<number> {
@@ -171,19 +220,15 @@ async function main(argv: string[]): Promise<number> {
 
   const rows: Record<string, unknown>[] = [];
   for (const { code, cal: cachedServCal, grams: servG } of candidates) {
-    let p: OffProduct | null = null;
-    try {
-      const r = await fetch(
-        `https://world.openfoodfacts.org/api/v0/product/${code}.json`,
-        { signal: AbortSignal.timeout(20000) },
-      );
-      const j = (await r.json()) as { status?: number; product?: OffProduct };
-      if (j.status === 1 && j.product) p = j.product;
-    } catch (e) {
+    const { product: p, errors } = await resolveOffProduct(code);
+    // Coverage soundness: a barcode whose variants ERRORED (vs cleanly
+    // missed) was never actually checked — it must surface as unchecked,
+    // never as "(not in OFF)" → LEGITIMATE.
+    if (!p && errors.length > 0) {
       rows.push({
         barcode: code,
         verdict: "FETCH ERROR — recheck",
-        note: e instanceof Error ? e.message : String(e),
+        note: errors.join("; "),
       });
       continue;
     }

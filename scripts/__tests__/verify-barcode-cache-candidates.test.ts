@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
-import { classify, parseArgs } from "../verify-barcode-cache-candidates";
+import {
+  classify,
+  parseArgs,
+  resolveOffProduct,
+  type FetchLike,
+} from "../verify-barcode-cache-candidates";
 
 const ROOT = join(__dirname, "..", "..");
 const SCRIPT = join(ROOT, "scripts", "verify-barcode-cache-candidates.ts");
@@ -222,5 +227,81 @@ describe("classify — verdicts", () => {
     });
     expect(r.shielded).toBe("no");
     expect(r.verdict).toBe("ok");
+  });
+});
+
+/** Fake OFF: resolves the given variants, cleanly misses everything else. */
+function offWith(
+  hits: Record<string, { product_name?: string }>,
+  log?: string[],
+): FetchLike {
+  return (url) => {
+    const code = /product\/(\d+)\.json$/.exec(String(url))?.[1] ?? "";
+    log?.push(code);
+    const product = hits[code];
+    return Promise.resolve({
+      json: () =>
+        Promise.resolve(product ? { status: 1, product } : { status: 0 }),
+    });
+  };
+}
+
+describe("resolveOffProduct — OFF padding variants", () => {
+  it("tries variants in production order and stops at the first hit", async () => {
+    // Production (lookupBarcode) takes the FIRST variant OFF resolves; the
+    // sweep must replicate that or it classifies a different product.
+    const requested: string[] = [];
+    const fetchImpl = offWith(
+      { "0000006772408": { product_name: "Cherry Coke" } },
+      requested,
+    );
+    const r = await resolveOffProduct("06772408", { fetchImpl });
+    expect(r.product?.product_name).toBe("Cherry Coke");
+    expect(r.matchedVariant).toBe("0000006772408");
+    // Exactly the variants BEFORE the hit, in production order — no extras.
+    expect(requested).toEqual(["06772408", "000006772408", "0000006772408"]);
+  });
+
+  it("resolves a row cached under a form OFF does not index via its padded variant", async () => {
+    // The dev cache's spring-water pair: a row cached as `060383653293` while
+    // OFF indexes `0060383653293`. Literal-only querying reported
+    // "(not in OFF)" → LEGITIMATE and the poisoned row survived forever.
+    const fetchImpl = offWith({
+      "0060383653293": { product_name: "Natural Spring Water" },
+    });
+    const r = await resolveOffProduct("060383653293", { fetchImpl });
+    expect(r.product?.product_name).toBe("Natural Spring Water");
+    expect(r.matchedVariant).toBe("0060383653293");
+  });
+
+  it("returns no product and no errors when every variant is a clean miss", async () => {
+    const r = await resolveOffProduct("8000500037560", {
+      fetchImpl: offWith({}),
+    });
+    expect(r.product).toBeNull();
+    expect(r.errors).toEqual([]);
+  });
+
+  it("records an error when a variant rejects and nothing resolves", async () => {
+    const fetchImpl: FetchLike = () =>
+      Promise.reject(new Error("socket hang up"));
+    const r = await resolveOffProduct("06772408", { fetchImpl });
+    expect(r.product).toBeNull();
+    expect(r.errors.length).toBeGreaterThan(0);
+    expect(r.errors[0]).toContain("socket hang up");
+  });
+
+  it("keeps going past an early variant error when a later variant resolves", async () => {
+    // Mirrors production: a per-variant fetch error is logged and the loop
+    // continues — an error on the literal form must not mask a padded hit.
+    let calls = 0;
+    const fetchImpl: FetchLike = (url) => {
+      calls++;
+      if (calls === 1) return Promise.reject(new Error("timeout"));
+      return offWith({ "000006772408": { product_name: "Cherry Coke" } })(url);
+    };
+    const r = await resolveOffProduct("06772408", { fetchImpl });
+    expect(r.product?.product_name).toBe("Cherry Coke");
+    expect(r.matchedVariant).toBe("000006772408");
   });
 });
