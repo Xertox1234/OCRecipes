@@ -4,6 +4,7 @@ import {
   lookupBarcode,
   scaleNutrients,
   extractOffUniversalData,
+  offMacrosCorroborateEnergy,
 } from "../barcode-lookup";
 import { _resetCNFCacheForTesting } from "../nutrition-lookup";
 
@@ -192,6 +193,11 @@ describe("lookupBarcode — isServingDataTrusted regression (P2-2026-07-14)", ()
     // from the "no secondary at all" branch the other cases in this file
     // exercise) with a real, uncorrected serving size — isServingDataTrusted
     // must still be true, and `source` ("cnf") never contains "verified" either.
+    // carbohydrates_100g is 100 (realistic granulated sugar), not a lower
+    // placeholder — the swap survives here because the entry's stated 50 kcal
+    // also contradicts its OWN macros (Atwater: 100g carbs ≈ 400 kcal, not 50),
+    // i.e. it fails the Atwater self-consistency fallback (P2-2026-07-22), not
+    // merely because per-serving energy is absent.
     setupFetchMock({
       "openfoodfacts.org": () =>
         Promise.resolve({
@@ -204,7 +210,7 @@ describe("lookupBarcode — isServingDataTrusted regression (P2-2026-07-14)", ()
               nutriments: {
                 "energy-kcal_100g": 50, // wrong — CNF has the real value
                 proteins_100g: 0,
-                carbohydrates_100g: 12,
+                carbohydrates_100g: 100,
                 fat_100g: 0,
               },
             },
@@ -1030,8 +1036,12 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
   it("still swaps to the secondary on discrepancy when OFF has NO per-serving energy to corroborate its per-100g (Sugar case must keep working)", async () => {
     // Guard against over-correcting: the existing "OFF is wildly wrong" swap
     // (50 kcal/100g sugar vs CNF's 387) must survive. Here OFF has no
-    // energy-kcal_serving, so there is no self-consistency signal and the
-    // secondary replacement stays active.
+    // energy-kcal_serving, so the per-serving self-consistency signal is
+    // unavailable — but no-per-serving alone no longer keeps the swap
+    // (P2-2026-07-22 added an Atwater energy-vs-own-macros fallback for
+    // exactly this case). The swap survives here because the entry is ALSO
+    // Atwater-inconsistent: 100g carbs implies ≈400 kcal, contradicting the
+    // stated 50 — a realistic wrong-sugar entry, not a merely-incomplete one.
     setupFetchMock({
       "openfoodfacts.org": () =>
         Promise.resolve({
@@ -1044,7 +1054,7 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
               nutriments: {
                 "energy-kcal_100g": 50,
                 proteins_100g: 0,
-                carbohydrates_100g: 12,
+                carbohydrates_100g: 100,
                 fat_100g: 0,
               },
             },
@@ -1128,6 +1138,181 @@ describe("lookupBarcode — self-consistent OFF label vs name-matched secondary 
     expect(result).not.toBeNull();
     expect(result!.source).toBe("cnf");
     expect(result!.per100g.calories).toBe(387);
+  });
+
+  it("keeps OFF's self-consistent macros when it has NO per-serving energy and a name-matched secondary disagrees >2x (Nutella 3017620422003, P2-2026-07-22)", async () => {
+    // Real-world regression: OFF's Nutella entry has NO serving_size and NO
+    // per-serving energy at all (so the per-serving corroboration path above
+    // can't run), but its per-100g energy (539) agrees with its own macros
+    // via Atwater (4*6.3 + 4*57.5 + 9*30.9 ≈ 533.3 ≈ 539) — self-consistent.
+    // A CNF category-term search ("spreads") fuzzy-matches an unrelated
+    // generic spread at 182 kcal/100g (539/182 ≈ 2.96x, outside [0.5, 2.0]).
+    // Before the Atwater fallback, "no per-serving energy" meant "cannot
+    // check self-consistency" and the wrong 182-kcal/low-sugar secondary
+    // replaced OFF's correct label wholesale — exactly the bug this test
+    // pins closed.
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Nutella",
+              categories_tags: [
+                "en:breakfasts",
+                "en:spreads",
+                "en:sweet-spreads",
+              ],
+              nutriments: {
+                "energy-kcal_100g": 539,
+                proteins_100g: 6.3,
+                carbohydrates_100g: 57.5,
+                fat_100g: 30.9,
+                sugars_100g: 56.3,
+                sodium_100g: 0.0428,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 990, food_description: "Spreads, chocolate hazelnut" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 990,
+              nutrient_value: 182,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("3017620422003");
+    expect(result).not.toBeNull();
+    // OFF's self-consistent label wins — the CNF generic never replaces it.
+    expect(result!.per100g.calories).toBe(539);
+    expect(result!.per100g.sugar).toBe(56.3);
+    expect(result!.per100g.fat).toBe(30.9);
+    expect(result!.source).toBe("openfoodfacts+self-consistent");
+  });
+
+  it("shields a jointly-wrong-but-Atwater-consistent OFF entry lacking per-serving energy — accepted tradeoff (P2-2026-07-22)", async () => {
+    // Documents the deliberate widened-shield side effect of the Atwater
+    // fallback: an OFF entry whose per-100g energy agrees with its OWN macros
+    // (50 kcal ≈ 4*12g carbs) but is jointly wrong for the scanned product is
+    // now KEPT rather than replaced by a disagreeing name-matched secondary —
+    // the same "jointly wrong yet consistent → shielded" tradeoff the
+    // 2026-07-17 solution doc already accepts for the per-serving path, now
+    // extended to the no-per-serving population. (Contrast the two Sugar
+    // fixtures elsewhere in this suite whose realistic carbohydrates_100g: 100
+    // make them Atwater-INconsistent, so the CNF rescue still fires there.)
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Sugar",
+              serving_size: "40g",
+              nutriments: {
+                "energy-kcal_100g": 50, // wrong for real sugar, but…
+                proteins_100g: 0,
+                carbohydrates_100g: 12, // …Atwater-consistent with it (4*12 = 48)
+                fat_100g: 0,
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 4318, food_description: "Sweets, sugars, granulated" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 4318,
+              nutrient_value: 387,
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("999888777");
+    expect(result).not.toBeNull();
+    // Atwater-consistent (50 ≈ 4*12) → shielded; CNF's 387 is rejected.
+    expect(result!.per100g.calories).toBe(50);
+    expect(result!.source).toBe("openfoodfacts+self-consistent");
+  });
+});
+
+describe("offMacrosCorroborateEnergy (P2-2026-07-22)", () => {
+  it("returns false when calories are absent or non-positive", () => {
+    expect(offMacrosCorroborateEnergy({})).toBe(false);
+    expect(offMacrosCorroborateEnergy({ calories: 0, carbs: 10 })).toBe(false);
+    expect(offMacrosCorroborateEnergy({ calories: -5, carbs: 10 })).toBe(false);
+  });
+
+  it("returns false when there are no usable macros to corroborate against", () => {
+    expect(offMacrosCorroborateEnergy({ calories: 200 })).toBe(false);
+    expect(
+      offMacrosCorroborateEnergy({
+        calories: 200,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+      }),
+    ).toBe(false); // macroKcal 0 → false
+  });
+
+  it("corroborates when stated energy agrees with its own macros (Nutella shape)", () => {
+    // 4*6.3 + 4*57.5 + 9*30.9 = 533.3 vs stated 539 → ~1% → within 30%.
+    expect(
+      offMacrosCorroborateEnergy({
+        calories: 539,
+        protein: 6.3,
+        carbs: 57.5,
+        fat: 30.9,
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a grossly mismatched entry (wrong energy vs realistic macros)", () => {
+    // Realistic sugar: 100g carbs ⇒ ~400 kcal, but stated 50 → ~87% off.
+    expect(
+      offMacrosCorroborateEnergy({
+        calories: 50,
+        protein: 0,
+        carbs: 100,
+        fat: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("pins the 30% tolerance boundary (valuesMatch denominator = larger operand)", () => {
+    // macroKcal = 4*25 = 100. valuesMatch's relative branch divides by
+    // max(macroKcal, cal) = 100 here. Just inside: cal 78 → 22/100 = 22% → true.
+    expect(offMacrosCorroborateEnergy({ calories: 78, carbs: 25 })).toBe(true);
+    // Just outside: cal 68 → 32/100 = 32% > 30% → false.
+    expect(offMacrosCorroborateEnergy({ calories: 68, carbs: 25 })).toBe(false);
   });
 });
 

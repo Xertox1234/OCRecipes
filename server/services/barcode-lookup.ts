@@ -156,6 +156,55 @@ const ZERO_CAL_MAX_MACRO_KCAL_100G = 4;
 // ~33 kcal/serving, where 15% relative already exceeds it.
 const ABSOLUTE_TOLERANCE_FLOOR_KCAL = 5;
 
+// Tolerance for the Atwater energy-vs-own-macros corroboration fallback (see
+// `offMacrosCorroborateEnergy` below), used only when an OFF entry has no
+// per-serving energy to self-check against. Deliberately loose (30%, vs. the
+// 15% per-serving ratio check above): it errs toward SHIELDING an
+// identity-matched OFF entry from being overwritten by a name-matched
+// secondary — replacement is what corrupts the data (P2-2026-07-22 Nutella
+// regression), so a false "consistent" costs far less than a false
+// "inconsistent". The 4/4/9 kcal-per-gram approximation also has inherent
+// slop of its own (fiber is often counted at 4 rather than 2, sugar alcohols
+// vary) that a tight tolerance would misfire on for genuinely correct
+// entries. 30% still catches grossly wrong entries — a realistically
+// mismatched product's energy is off by 80%+ from its stated macros, not 30%.
+const ATWATER_MACRO_TOLERANCE = 0.3;
+
+/**
+ * Atwater energy-vs-own-macros corroboration: does an OFF entry's stated
+ * per-100g energy roughly agree with the energy implied by its OWN per-100g
+ * macros (4 kcal/g protein + 4 kcal/g carbs + 9 kcal/g fat)? Pure + exported,
+ * mirroring `extractOffAllergenData`'s exported+testable style. Used as a
+ * fallback self-consistency signal in `offSelfConsistent` when an entry has
+ * no per-serving energy to corroborate against (most of OFF) — an entry
+ * whose energy agrees with its own macros is self-consistent even without a
+ * per-serving field, and must not be replaced by a name/similarity-matched
+ * secondary source.
+ *
+ * Returns false (cannot corroborate) when calories are absent/non-positive —
+ * that case is handled by the existing explicit-zero and "missing" branches
+ * elsewhere in `offSelfConsistent`, unchanged — or when there are no usable
+ * macros to compare against.
+ *
+ * Fiber is deliberately excluded from the macro sum. OFF aggregates labels
+ * from multiple regulatory regimes — EU 1169/2011 ("carbohydrate" EXCLUDES
+ * fibre) and US FDA ("Total Carbohydrate" INCLUDES fibre) — and stores
+ * whichever was transcribed, so the sign of any per-entry fiber correction is
+ * unknowable. Ignoring fiber caps the worst-case error at 2·fiber kcal either
+ * way; adding OR subtracting it would be off by 4·fiber for the wrong
+ * convention. The 30% tolerance absorbs that residual for all but
+ * extreme-fiber products (near-pure psyllium/bran), which stay an accepted
+ * unshielded residual rather than be shielded by a convention-guessing term.
+ */
+export function offMacrosCorroborateEnergy(p: BarcodePer100g): boolean {
+  const cal = p.calories;
+  if (cal === undefined || cal <= 0) return false;
+  const macroKcal =
+    4 * (p.protein ?? 0) + 4 * (p.carbs ?? 0) + 9 * (p.fat ?? 0);
+  if (macroKcal <= 0) return false;
+  return valuesMatch(macroKcal, cal, ATWATER_MACRO_TOLERANCE);
+}
+
 /**
  * Estimate a reasonable single-serving weight based on product category.
  */
@@ -539,12 +588,21 @@ export async function lookupBarcode(
   // entirely (a "cheese snack" category search matching a ~109 kcal/100g
   // generic against 344 kcal/100g cheese sticks — barcode 0778918011332), so a
   // self-consistent label must demote the secondary to gap-fill only, never
-  // replacement. Entries missing per-serving energy (most of OFF) keep the
-  // existing replace-on-discrepancy behavior — self-agreement can't be checked.
+  // replacement. Entries missing per-serving energy (most of OFF) fall back
+  // to an Atwater energy-vs-own-macros corroboration instead (see
+  // `offMacrosCorroborateEnergy` / P2-2026-07-22) — self-agreement can still
+  // be checked without a per-serving field, just via a looser signal.
   const offLabelGrams = parseServingGrams(offProduct?.serving_size || "");
   const offSelfConsistent = (() => {
-    if (offPerServingCal === undefined || offPer100g.calories === undefined) {
-      return false;
+    if (offPer100g.calories === undefined) return false;
+    // No per-serving energy to corroborate per-100g against (most of OFF) —
+    // fall back to the entry's own macros (Atwater). An identity-matched
+    // (barcode) OFF entry whose energy agrees with its own macros is
+    // self-consistent and must not be overwritten by a name/similarity-
+    // matched secondary source (Nutella 3017620422003 regression,
+    // P2-2026-07-22).
+    if (offPerServingCal === undefined) {
+      return offMacrosCorroborateEnergy(offPer100g);
     }
     // Explicit-zero corroboration: BOTH energy fields present and exactly 0
     // (water, diet soda, black coffee) is agreement, not missing data —

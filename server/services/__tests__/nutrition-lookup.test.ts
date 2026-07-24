@@ -209,7 +209,11 @@ describe("lookupBarcode", () => {
               nutriments: {
                 "energy-kcal_100g": 50, // WRONG — should be ~400
                 proteins_100g: 0,
-                carbohydrates_100g: 12, // WRONG
+                // 100g carbs is realistic for granulated sugar; it's the 50
+                // kcal energy above that's wrong (Atwater implies ~400 kcal
+                // from these macros) — that contradiction is what keeps the
+                // secondary swap active (P2-2026-07-22 Atwater fallback).
+                carbohydrates_100g: 100,
                 fat_100g: 0,
               },
             },
@@ -244,7 +248,11 @@ describe("lookupBarcode", () => {
               nutriments: {
                 "energy-kcal_100g": 50, // WRONG
                 proteins_100g: 0,
-                carbohydrates_100g: 12,
+                // 100g carbs is realistic for sugar; the 50 kcal energy is
+                // what's wrong (Atwater implies ~400 kcal) — that
+                // contradiction keeps the secondary swap active
+                // (P2-2026-07-22 Atwater fallback).
+                carbohydrates_100g: 100,
                 fat_100g: 0,
               },
             },
