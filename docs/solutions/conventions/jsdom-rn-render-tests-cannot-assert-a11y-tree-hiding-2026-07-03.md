@@ -6,7 +6,7 @@ module: client
 tags: [testing, accessibility, jsdom, render-tests, mocks]
 applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts]
 created: '2026-07-03'
-last_updated: '2026-07-21'
+last_updated: '2026-07-24'
 ---
 
 # jsdom RN render tests cannot assert a11y-tree hiding OR grouping — assert label absence/uniqueness and exact full-label composition instead
@@ -18,7 +18,9 @@ In jsdom render tests, never write (or name) a test as verifying that `accessibl
 1. Assert **label absence** (`queryByLabelText(...)` is null) to guard against a decorative child re-acquiring its own `accessibilityLabel` (the `accessible={false}`/hiding case).
 2. For a grouping wrapper (`accessible={true}`), assert the **exact composed `accessibilityLabel` string** — a single `getByLabelText`/`findByLabelText` match already proves uniqueness (it throws if the label resolves to more than one element). Optionally strengthen it by asserting the wrapper's icon/text children carry no independent `aria-label` of their own (e.g. `wrapper.querySelector("[aria-label]")` is `null`) — the closest verifiable proxy to "children don't have separate accessible identities." Neither check proves the real subtree-collapse the harness can't model; the composed-label content is the actual regression guard.
 3. Assert composed `accessibilityLabel` strings with **exact full-string matches, one per input combination** — never a start-anchored regex, which silently stops pinning the tail's spacing/punctuation.
-4. Name the test for what it proves (e.g. "does not carry a redundant label", "exposes exactly one accessible node with the composed label"), and leave on-device VoiceOver/TalkBack verification to the emulator-logcat procedure.
+4. **Accessibility actions** (`accessibilityActions` and `onAccessibilityAction`) suffer the same mock limitation: `accessibilityActions` is an array that is not destructured by the mock, so it falls through the `...rest` spread onto the DOM element, producing a useless attribute like `accessibilityactions="[object Object]"` (with a React dev warning). `onAccessibilityAction` is a function prop matching the `/^on[A-Z]/` pattern; React treats it as an unrecognized DOM event handler and **drops it entirely**, logging `Unknown event handler property ... It will be ignored.` — it never reaches the DOM node, so there is no way to invoke it via `fireEvent` or any other jsdom-based trigger. Therefore, never assert the contents of the `accessibilityActions` array or attempt to invoke `onAccessibilityAction` from a jsdom test. Instead, rely on the same label-based assertions (absence, exact composition) and verify that the visible Pressable's `onPress`, label, and role still work via `fireEvent.click`.
+
+5. Name the test for what it proves (e.g. "does not carry a redundant label", "exposes exactly one accessible node with the composed label"), and leave on-device VoiceOver/TalkBack verification to the emulator-logcat procedure.
 
 ## Why
 
@@ -28,12 +30,15 @@ The `accessible={true}` side of the same gap surfaced a second time in the confi
 
 An empirical debug test (rendering `<View accessible={true}>` and `<View accessible={false}>` side by side and inspecting `container.querySelector(...).getAttributeNames()`) confirmed that the `accessible` attribute **never appears** in the rendered DOM for either boolean value. React logs a dev warning (`'Received \`false\` for a non-boolean attribute \`accessible\`'`) for the `false` case only; the `true` case produces no attribute and no warning. Therefore, DOM-based inspection cannot verify the `accessible={true}` intent any more than it can verify `accessible={false}` hiding — both are invisible to jsdom.
 
+The same mock gap applies to `accessibilityActions` and `onAccessibilityAction`. Empirically confirmed: when a react-native `Pressable` with `accessibilityActions={[{name:'toggleFavourite', label:'Add to favourites'}]}` and `onAccessibilityAction={fn}` is rendered in the jsdom harness, `accessibilityActions` — an array not destructured by `mockComponent` — falls through the `...rest` spread and is stringified to `[object Object]` by React, with a dev warning that the prop is unrecognized. `onAccessibilityAction`, being a function prop that matches the `/^on[A-Z]/` convention, is treated by React as an unrecognized DOM event handler and is silently dropped (with a separate dev warning). No attribute or event listener for it appears on the DOM element. Consequently, any test that tries to assert the presence of a specific action name or to fire an accessibility action event will either check a meaningless string or trigger nothing at all. The correct pattern (proven in `client/components/home/__tests__/CarouselRecipeCard.test.tsx` and `client/screens/__tests__/FavouriteRecipesScreen.test.tsx`) is to assert only what is provable: the composed `accessibilityLabel` is unchanged/correct, and the pre-existing visible Pressable's own `onPress`, `label`, and `role` still work via `fireEvent.click`. Any verification of custom accessibility actions must be done on-device via the emulator-logcat procedure.
+
 The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Pasta/` accepts a label whose tail has broken spacing, a dropped segment, or is deleted outright — a template-literal regression after the anchored prefix passes CI silently.
 
 ## Examples
 
-- `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — exact full-label assertions across all 4 `isRemix` × `prepTimeMinutes` combinations, plus a label-absence guard whose comment states the harness limitation explicitly (the `accessible={false}`/hiding case).
+- `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — exact full-label assertions across all 4 `isRemix` × `prepTimeMinutes` combinations, plus a label-absence guard whose comment states the harness limitation explicitly (the `accessible={false}`/hiding case). Also demonstrates the pattern for `accessibilityActions`/`onAccessibilityAction`: no assertions on the actions array or event, only label and `onPress` verification.
 - `client/screens/__tests__/ScanScreen.test.tsx` (`describe("ScanScreen — confirm-card safety badge (returnAfterLog)")`, `"exposes exactly one accessible node with the composed title+detail label"`) — the `accessible={true}`/grouping case: a single `findByLabelText` match on the composed label plus `badge.querySelector("[aria-label]")` being `null`, with a comment stating the same limitation.
+- `client/screens/__tests__/FavouriteRecipesScreen.test.tsx` — applies the same `accessible` and `accessibilityActions` avoidance pattern: asserts only the visible Pressable's label and click behavior, never the custom action.
 
 `client/components/__tests__/AllergenBadge.test.tsx` and `client/components/__tests__/VerificationBadge.test.tsx` — tests for the `accessible={true}` grouping fix on allergen and verification badges. Both rely solely on exact composed `accessibilityLabel` strings; inline comments note that `accessible` is not DOM-observable in jsdom and that the on-device a11y-tree behavior is verified separately via emulator logcat.
 
@@ -44,14 +49,17 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 
 ## Related Files
 
-- `test/mocks/react-native.ts` — `mockComponent` spreads `accessible` through untranslated in both directions (the harness gap)
-- `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — the exemplar test file for the hiding case
+- `test/mocks/react-native.ts` — `mockComponent` spreads `accessible`, `accessibilityActions`, and `onAccessibilityAction` through untranslated (the harness gap)
+- `client/components/home/__tests__/CarouselRecipeCard.test.tsx` — the exemplar test file for the hiding case and the accessibilityActions avoidance pattern
 - `client/components/home/CarouselRecipeCard.tsx` — the fix under test (label prefix + `accessible={false}` badge)
 - `client/components/__tests__/AllergenBadge.test.tsx` — test for `accessible={true}` grouping fix on AllergenBadge
 - `client/components/__tests__/VerificationBadge.test.tsx` — test for `accessible={true}` grouping fix on VerificationBadge
 - `client/screens/__tests__/ScanScreen.test.tsx` — the exemplar test file for the grouping case
 - `client/screens/ScanScreen.tsx` — the `confirmSafetyFlag` badge (`accessible={true}`) under test
 - `client/camera/components/__tests__/ProductChip.safetyFlag.test.tsx` — the earlier ProductChip precedent for the same grouping pattern (commit `8892c990`)
+- `client/screens/__tests__/FavouriteRecipesScreen.test.tsx` — test file applying the same avoidance pattern for accessibilityActions
+- `client/screens/FavouriteRecipesScreen.tsx` — production screen using `accessibilityActions`/`onAccessibilityAction` on a favourite‑heart button
+- `client/screens/meal-plan/RecipeBrowserScreen.tsx` — uses the same `accessibilityActions`/`onAccessibilityAction` pattern; jsdom tests follow the label‑only assertion rule
 
 ## See Also
 
