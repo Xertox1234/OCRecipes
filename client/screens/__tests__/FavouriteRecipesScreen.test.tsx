@@ -51,6 +51,7 @@ const baseRecipe: ResolvedFavouriteRecipe = {
   servings: null,
   difficulty: null,
   favouritedAt: "2026-07-24T00:00:00.000Z",
+  allergens: null,
 };
 
 describe("FavouriteRecipesScreen favourite-heart accessibility", () => {
@@ -83,5 +84,44 @@ describe("FavouriteRecipesScreen favourite-heart accessibility", () => {
       recipeId: 42,
       recipeType: "mealPlan",
     });
+  });
+});
+
+// Coverage for the universal "Contains: <allergen>" label
+// (todos/archive/P3-2026-07-24-universal-allergen-label-remaining-surfaces.md).
+// The card Pressable is accessible by default, which collapses the nested
+// RecipeAllergenLabel's own container into the card's single focus stop, so
+// the fix folds the allergen text into the card's own composed label — same
+// pattern verified by RecipeBrowserScreen/CarouselRecipeCard.
+describe("FavouriteRecipesScreen universal allergen label", () => {
+  it("folds the recipe's derived allergens into the card's composed accessibilityLabel", () => {
+    mockUseFavouriteRecipes.mockReturnValue({
+      data: [
+        {
+          ...baseRecipe,
+          allergens: [{ id: "peanuts", viaDerived: false }],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      isRefetching: false,
+    });
+    renderComponent(<FavouriteRecipesScreen />);
+    expect(
+      screen.getByLabelText("Pasta Carbonara. Contains Peanuts"),
+    ).toBeDefined();
+  });
+
+  it("does not add an allergen suffix when allergens is null (never a false 'safe' signal)", () => {
+    mockUseFavouriteRecipes.mockReturnValue({
+      data: [{ ...baseRecipe, allergens: null }],
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+      isRefetching: false,
+    });
+    renderComponent(<FavouriteRecipesScreen />);
+    expect(screen.getByLabelText("Pasta Carbonara")).toBeDefined();
   });
 });

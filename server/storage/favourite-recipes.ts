@@ -191,6 +191,7 @@ export async function getResolvedFavouriteRecipes(
             imageUrl: mealPlanRecipes.imageUrl,
             servings: mealPlanRecipes.servings,
             difficulty: mealPlanRecipes.difficulty,
+            allergens: mealPlanRecipes.allergens,
           })
           .from(mealPlanRecipes)
           .where(
@@ -211,6 +212,7 @@ export async function getResolvedFavouriteRecipes(
             imageUrl: communityRecipes.imageUrl,
             servings: communityRecipes.servings,
             difficulty: communityRecipes.difficulty,
+            allergens: communityRecipes.allergens,
           })
           .from(communityRecipes)
           // Fetch by ID first so hidden-but-existing recipes are not mistaken
@@ -238,6 +240,7 @@ export async function getResolvedFavouriteRecipes(
           servings: recipe.servings ?? null,
           difficulty: recipe.difficulty ?? null,
           favouritedAt: row.createdAt.toISOString(),
+          allergens: recipe.allergens,
         });
       } else orphanIds.push(row.id);
     } else if (row.recipeType === "community") {
@@ -253,6 +256,7 @@ export async function getResolvedFavouriteRecipes(
             servings: recipe.servings ?? null,
             difficulty: recipe.difficulty ?? null,
             favouritedAt: row.createdAt.toISOString(),
+            allergens: recipe.allergens,
           });
         }
       } else orphanIds.push(row.id);

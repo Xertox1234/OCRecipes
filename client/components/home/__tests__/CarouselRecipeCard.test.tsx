@@ -12,6 +12,7 @@ const baseCard: CarouselCardType = {
   imageUrl: null,
   prepTimeMinutes: 20,
   recommendationReason: "High protein",
+  allergens: null,
 };
 
 describe("CarouselRecipeCard remix badge accessibility", () => {
@@ -199,5 +200,44 @@ describe("CarouselRecipeCard favourite-heart accessibility", () => {
       />,
     );
     expect(screen.queryByLabelText("Add to favourites")).toBeNull();
+  });
+});
+
+// Coverage for the universal "Contains: <allergen>" label
+// (todos/archive/P3-2026-07-24-universal-allergen-label-remaining-surfaces.md).
+// The card AnimatedPressable is accessible by default, which collapses the
+// nested RecipeAllergenLabel's own container into the card's single focus
+// stop, so the fix folds the allergen text into the card's own composed
+// label — same pattern verified for the remix/curated badges above.
+describe("CarouselRecipeCard universal allergen label", () => {
+  it("folds the recipe's derived allergens into the card's composed accessibilityLabel", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{
+          ...baseCard,
+          allergens: [{ id: "peanuts", viaDerived: false }],
+        }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText(
+        "Pasta Carbonara, 20 min prep. High protein. Contains Peanuts. Double tap to view recipe.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("does not add an allergen suffix when allergens is null (never a false 'safe' signal)", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{ ...baseCard, allergens: null }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText(
+        "Pasta Carbonara, 20 min prep. High protein. Double tap to view recipe.",
+      ),
+    ).toBeDefined();
   });
 });

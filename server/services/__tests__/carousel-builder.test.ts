@@ -62,6 +62,7 @@ const mockCommunityRecipes = [
     isCanonical: false,
     remixedFromId: null,
     remixedFromTitle: null,
+    allergens: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   },
@@ -88,6 +89,7 @@ const mockCommunityRecipes = [
     isCanonical: false,
     remixedFromId: null,
     remixedFromTitle: null,
+    allergens: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   },
@@ -114,6 +116,30 @@ describe("carousel-builder", () => {
     expect(cards[0].recommendationReason).toBe("Matches your keto diet");
     // Strict boolean, not merely falsy — recipe 1's remixedFromId is null.
     expect(cards[0].isRemix).toBe(false);
+  });
+
+  it("threads the recipe's derived allergens through unmodified (no re-derivation)", async () => {
+    const allergenRecipe = {
+      ...mockCommunityRecipes[0],
+      allergens: [{ id: "peanuts" as const, viaDerived: false }],
+    };
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      allergenRecipe,
+    ]);
+
+    const cards = await buildCarousel("1", mockProfile);
+
+    expect(cards[0].allergens).toEqual([{ id: "peanuts", viaDerived: false }]);
+  });
+
+  it("preserves null allergens (never coerces to [] — fail-dangerous contract)", async () => {
+    vi.mocked(storage.getRecentCommunityRecipes).mockResolvedValue([
+      { ...mockCommunityRecipes[0], allergens: null },
+    ]);
+
+    const cards = await buildCarousel("1", mockProfile);
+
+    expect(cards[0].allergens).toBeNull();
   });
 
   it("marks isRemix strictly true (not merely truthy) for a remixed recipe", async () => {

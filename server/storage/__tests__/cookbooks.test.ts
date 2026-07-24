@@ -693,6 +693,54 @@ describe("cookbooks storage", () => {
       expect(byTitle.get("Community Salad")?.servings).toBe(2);
     });
 
+    it("threads the recipe's derived allergens through unmodified, preserving null vs [] vs non-empty", async () => {
+      const cookbook = await createCookbook({
+        userId: testUser.id,
+        name: "C",
+      });
+      const withAllergens = await createTestMealPlanRecipe(testUser.id, {
+        title: "Allergen Recipe",
+        allergens: [{ id: "peanuts", viaDerived: false }],
+      });
+      const withEmptyAllergens = await createTestMealPlanRecipe(testUser.id, {
+        title: "No Allergen Recipe",
+        allergens: [],
+      });
+      const withNullAllergens = await createTestCommunityRecipe(testUser.id, {
+        title: "Undetermined Recipe",
+        allergens: null,
+      });
+      await addRecipeToCookbook(
+        cookbook.id,
+        withAllergens.id,
+        "mealPlan",
+        testUser.id,
+      );
+      await addRecipeToCookbook(
+        cookbook.id,
+        withEmptyAllergens.id,
+        "mealPlan",
+        testUser.id,
+      );
+      await addRecipeToCookbook(
+        cookbook.id,
+        withNullAllergens.id,
+        "community",
+        testUser.id,
+      );
+
+      const result = await getResolvedCookbookRecipes(cookbook.id, testUser.id);
+      const byTitle = new Map(result.map((r) => [r.title, r]));
+
+      expect(byTitle.get("Allergen Recipe")?.allergens).toEqual([
+        { id: "peanuts", viaDerived: false },
+      ]);
+      expect(byTitle.get("No Allergen Recipe")?.allergens).toEqual([]);
+      // Never coerced to [] — a genuinely un-derived recipe must stay null so
+      // the fail-dangerous display never renders a false "safe" signal.
+      expect(byTitle.get("Undetermined Recipe")?.allergens).toBeNull();
+    });
+
     it("omits orphaned mealPlan junction rows and fires cleanup", async () => {
       const cookbook = await createCookbook({
         userId: testUser.id,

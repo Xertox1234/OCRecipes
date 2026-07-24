@@ -8,6 +8,15 @@ interface Props {
   onAction?: (action: Record<string, unknown>) => void;
 }
 
+// Intentionally does NOT render the universal "Contains: <allergen>" label
+// (RecipeAllergenLabel): `block.recipe` (shared/schemas/coach-blocks.ts) is
+// authored directly by the LLM's JSON output, not built by a server-side DB
+// lookup keyed on recipeId — it carries no ingredient/allergen data. Wiring
+// this would need the coach-block generator to look up the referenced
+// recipe by recipeId (only possible when source === "community") and attach
+// its derived allergens — a new enrichment step this todo's Scope Contract
+// excludes. See
+// todos/archive/P3-2026-07-24-universal-allergen-label-remaining-surfaces.md.
 const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
   const { theme } = useTheme();
   const { recipe } = block;

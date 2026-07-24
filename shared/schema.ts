@@ -1626,6 +1626,12 @@ export interface ResolvedCookbookRecipe {
   servings: number | null;
   difficulty: string | null;
   addedAt: string;
+  // Threaded straight from the source table's derived-allergen cache — `null`
+  // means "not yet derived" (fail-closed), `[]` means "derived, none found".
+  // Never coerce with `?? []`; that would silently render a false "safe"
+  // signal for un-derived recipes. See
+  // docs/solutions/conventions/nullable-not-empty-for-derived-safety-columns-2026-05-17.md.
+  allergens: DerivedRecipeAllergen[] | null;
 }
 
 export type FavouriteRecipe = typeof favouriteRecipes.$inferSelect;
@@ -1639,6 +1645,8 @@ export interface ResolvedFavouriteRecipe {
   servings: number | null;
   difficulty: string | null;
   favouritedAt: string;
+  // See ResolvedCookbookRecipe.allergens above — same fail-dangerous contract.
+  allergens: DerivedRecipeAllergen[] | null;
 }
 
 // ============================================================================

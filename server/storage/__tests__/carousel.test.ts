@@ -209,6 +209,32 @@ describe("getRecentCommunityRecipes", () => {
     expect(idsInOrder).toEqual([newer.id, older.id]);
   });
 
+  it("selects the recipe's derived allergens, preserving null vs [] vs non-empty", async () => {
+    const withAllergens = await createCommunityRecipe({
+      title: "Allergen Recipe",
+      allergens: [{ id: "peanuts", viaDerived: false }],
+    });
+    const withEmptyAllergens = await createCommunityRecipe({
+      title: "No Allergen Recipe",
+      allergens: [],
+    });
+    const withNullAllergens = await createCommunityRecipe({
+      title: "Undetermined Recipe",
+      allergens: null,
+    });
+
+    const rows = await getRecentCommunityRecipes(testUserId, { limit: 1000 });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+
+    expect(byId.get(withAllergens.id)?.allergens).toEqual([
+      { id: "peanuts", viaDerived: false },
+    ]);
+    expect(byId.get(withEmptyAllergens.id)?.allergens).toEqual([]);
+    // Never coerced to [] — a genuinely un-derived recipe must stay null so
+    // the fail-dangerous display never renders a false "safe" signal.
+    expect(byId.get(withNullAllergens.id)?.allergens).toBeNull();
+  });
+
   it("excludes dismissed recipe IDs", async () => {
     const keep = await createCommunityRecipe({ title: "Keep" });
     const drop = await createCommunityRecipe({ title: "Drop" });

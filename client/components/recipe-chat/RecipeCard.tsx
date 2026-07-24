@@ -29,6 +29,16 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// This pre-persist streaming card intentionally does NOT render the
+// universal "Contains: <allergen>" label (RecipeAllergenLabel):
+// deriveRecipeAllergens only runs server-side at *save* time, so there is no
+// persisted derived-allergen array to read here — adding one would require a
+// new SSE payload field computed pre-save, a new mechanism this todo's Scope
+// Contract excludes (see
+// todos/archive/P3-2026-07-24-universal-allergen-label-remaining-surfaces.md).
+// `allergenWarning` below is a different, pre-existing feature — a
+// *personalized* per-viewer warning computed from the viewer's own declared
+// allergies, not the universal label.
 interface RecipeCardProps {
   recipe: StreamingRecipe;
   allergenWarning?: string | null;

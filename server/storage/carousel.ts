@@ -19,6 +19,9 @@ const CAROUSEL_COLUMNS = {
   dietTags: communityRecipes.dietTags,
   isCanonical: communityRecipes.isCanonical,
   mealTypes: communityRecipes.mealTypes,
+  // Threaded through for the universal "Contains: <allergen>" carousel label
+  // (todos/archive/P3-2026-07-24-universal-allergen-label-remaining-surfaces.md).
+  allergens: communityRecipes.allergens,
 } as const;
 
 // ============================================================================

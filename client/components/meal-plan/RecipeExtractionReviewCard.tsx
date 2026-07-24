@@ -22,6 +22,13 @@ interface RecipeExtractionReviewCardProps {
  * pasted-text extraction, before the user hands off to the create wizard.
  * Shared between RecipePhotoImportScreen and RecipeTextImportScreen so the
  * two flows can't visually drift apart.
+ *
+ * Intentionally does NOT render the universal "Contains: <allergen>" label
+ * (RecipeAllergenLabel): `result` is a pre-save extraction — the same class
+ * as recipe-chat/RecipeCard — and deriveRecipeAllergens only runs
+ * server-side at save time. No persisted derived-allergen data exists yet
+ * for this surface. See
+ * todos/archive/P3-2026-07-24-universal-allergen-label-remaining-surfaces.md.
  */
 export function RecipeExtractionReviewCard({
   result,

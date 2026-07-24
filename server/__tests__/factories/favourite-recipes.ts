@@ -23,6 +23,7 @@ const resolvedFavouriteRecipeDefaults: ResolvedFavouriteRecipe = {
   servings: 2,
   difficulty: null,
   favouritedAt: new Date("2024-01-01").toISOString(),
+  allergens: null,
 };
 
 export function createMockResolvedFavouriteRecipe(
