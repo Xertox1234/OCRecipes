@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   AccessibilityInfo,
   StyleSheet,
@@ -87,6 +87,40 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
     onFavourite?.(card.id);
   }, [haptics, onFavourite, card.id]);
 
+  // The card AnimatedPressable is accessible by default, which collapses its
+  // whole subtree into a single VoiceOver/TalkBack focus stop — the nested
+  // favourite Pressable below (in the actions row) is never independently
+  // reachable. Expose it as an accessibilityAction on the card instead (same
+  // pattern as RecipeBrowserScreen's UnifiedRecipeCard and BatchSummaryScreen's
+  // BatchItemRow) so the primary "open recipe" label stays the single focus
+  // stop while the favourite toggle is still independently activatable via
+  // the screen reader's actions/rotor. Scoped to the favourite-heart swallow
+  // only — the adjacent "Dismiss recipe" button has the identical shape but
+  // is out of this todo's scope.
+  const accessibilityActions = useMemo(
+    () =>
+      showActions
+        ? [
+            {
+              name: "toggleFavourite",
+              label: isFavourited
+                ? "Remove from favourites"
+                : "Add to favourites",
+            },
+          ]
+        : undefined,
+    [showActions, isFavourited],
+  );
+
+  const handleAccessibilityAction = useCallback(
+    (event: { nativeEvent: { actionName: string } }) => {
+      if (event.nativeEvent.actionName === "toggleFavourite") {
+        handleFavourite();
+      }
+    },
+    [handleFavourite],
+  );
+
   const imageUri = card.imageUrl ? resolveImageUrl(card.imageUrl) : null;
   // Truthy check is deliberate: 0 is not a meaningful prep duration, so it
   // renders like null (no badge, no label segment).
@@ -101,6 +135,8 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
       accessibilityRole="button"
       accessibilityLabel={`${card.isRemix ? "Remixed recipe. " : ""}${card.isCanonical ? "Curated recipe. " : ""}${card.title}${prepLabel ? `, ${prepLabel} prep` : ""}. ${card.recommendationReason}. Double tap to view recipe.`}
       accessibilityHint="Opens recipe details"
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={handleAccessibilityAction}
     >
       <Animated.View
         exiting={reducedMotion ? undefined : FadeOut.duration(300)}

@@ -119,15 +119,50 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
   const { theme } = useTheme();
   const haptics = useHaptics();
 
+  const triggerFavourite = useCallback(() => {
+    haptics.impact();
+    const numericId = parseInt(item.id.split(":")[1], 10);
+    const recipeType = item.source === "community" ? "community" : "mealPlan";
+    onFavourite(numericId, recipeType);
+  }, [haptics, onFavourite, item.id, item.source]);
+
   const handleFavourite = useCallback(
     (e: GestureResponderEvent) => {
       e.stopPropagation();
-      haptics.impact();
-      const numericId = parseInt(item.id.split(":")[1], 10);
-      const recipeType = item.source === "community" ? "community" : "mealPlan";
-      onFavourite(numericId, recipeType);
+      triggerFavourite();
     },
-    [haptics, onFavourite, item.id, item.source],
+    [triggerFavourite],
+  );
+
+  // The card Pressable is accessible by default, which collapses its whole
+  // subtree into a single VoiceOver/TalkBack focus stop — the nested
+  // favourite Pressable below is never independently reachable. Expose it as
+  // an accessibilityAction on the card instead (same pattern as
+  // BatchSummaryScreen's BatchItemRow) so the primary "open recipe" label
+  // stays the single focus stop while the favourite toggle is still
+  // independently activatable via the screen reader's actions/rotor.
+  const accessibilityActions = useMemo(
+    () =>
+      item.source === "spoonacular"
+        ? undefined
+        : [
+            {
+              name: "toggleFavourite",
+              label: isFavourited
+                ? "Remove from favourites"
+                : "Add to favourites",
+            },
+          ],
+    [item.source, isFavourited],
+  );
+
+  const handleAccessibilityAction = useCallback(
+    (event: { nativeEvent: { actionName: string } }) => {
+      if (event.nativeEvent.actionName === "toggleFavourite") {
+        triggerFavourite();
+      }
+    },
+    [triggerFavourite],
   );
 
   const isCommunity = item.source === "community";
@@ -188,6 +223,8 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
       accessibilityRole="button"
       accessibilityState={{ disabled: adding }}
       accessibilityLabel={`${baseA11yLabel}${allergenA11ySuffix}`}
+      accessibilityActions={accessibilityActions}
+      onAccessibilityAction={handleAccessibilityAction}
     >
       <FallbackImage
         source={{ uri: imageUri ?? undefined }}

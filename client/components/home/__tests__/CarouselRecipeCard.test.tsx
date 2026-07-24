@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { CarouselRecipeCard } from "../CarouselRecipeCard";
 import type { CarouselRecipeCard as CarouselCardType } from "@shared/types/carousel";
@@ -139,5 +139,65 @@ describe("CarouselRecipeCard curated badge accessibility", () => {
     // Same guard as the remix badge: curated status is conveyed via the
     // parent label prefix, never by the badge's own label.
     expect(screen.queryByLabelText("Curated recipe")).toBeNull();
+  });
+});
+
+// Regression coverage for the favourite-heart accessibility fix. The card
+// AnimatedPressable is accessible by default, so its whole subtree —
+// including the nested favourite Pressable — collapses into one
+// VoiceOver/TalkBack focus stop. The fix exposes the favourite toggle as an
+// `accessibilityActions` entry on the card instead of restructuring the
+// layout.
+//
+// jsdom cannot model either the collapse itself or the accessibilityActions/
+// onAccessibilityAction wiring: the RN mock stringifies `accessibilityActions`
+// to `"[object Object]"` and React drops `onAccessibilityAction` outright
+// ("Unknown event handler property... It will be ignored" — it doesn't match
+// a real DOM event). See
+// docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md.
+// These tests assert only what's provable: the composed card label is
+// unchanged by the fix, and the visible favourite Pressable's own label/role/
+// onPress (the pre-existing touch path) still work. Real screen-reader
+// reachability is verified on-device, not here.
+describe("CarouselRecipeCard favourite-heart accessibility", () => {
+  it("keeps the card's composed accessibilityLabel unchanged by the fix", () => {
+    renderComponent(<CarouselRecipeCard card={baseCard} onPress={vi.fn()} />);
+    expect(
+      screen.getByLabelText(
+        "Pasta Carbonara, 20 min prep. High protein. Double tap to view recipe.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("keeps the visible favourite button independently reachable by touch, unaffected by the fix", () => {
+    const onFavourite = vi.fn();
+    renderComponent(
+      <CarouselRecipeCard
+        card={baseCard}
+        onPress={vi.fn()}
+        onFavourite={onFavourite}
+      />,
+    );
+    const favouriteButton = screen.getByLabelText("Add to favourites");
+    fireEvent.click(favouriteButton);
+    expect(onFavourite).toHaveBeenCalledWith(42);
+  });
+
+  it("labels the favourite button as remove when already favourited", () => {
+    renderComponent(
+      <CarouselRecipeCard card={baseCard} onPress={vi.fn()} isFavourited />,
+    );
+    expect(screen.getByLabelText("Remove from favourites")).toBeDefined();
+  });
+
+  it("does not render a favourite button when actions are hidden", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={baseCard}
+        onPress={vi.fn()}
+        showActions={false}
+      />,
+    );
+    expect(screen.queryByLabelText("Add to favourites")).toBeNull();
   });
 });

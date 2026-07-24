@@ -70,6 +70,25 @@ export default function FavouriteRecipesScreen() {
           ]}
           accessibilityRole="button"
           accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}`}
+          // The card Pressable is accessible by default, which collapses its
+          // whole subtree into a single VoiceOver/TalkBack focus stop — the
+          // nested "remove from favourites" Pressable below is never
+          // independently reachable. Expose it as an accessibilityAction on
+          // the card instead (same pattern as RecipeBrowserScreen's
+          // UnifiedRecipeCard) so the primary "open recipe" label stays the
+          // single focus stop while the toggle is still independently
+          // activatable via the screen reader's actions/rotor.
+          accessibilityActions={[
+            {
+              name: "removeFavourite",
+              label: `Remove ${item.title} from favourites`,
+            },
+          ]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === "removeFavourite") {
+              handleUnfavourite(item);
+            }
+          }}
         >
           <FallbackImage
             source={{ uri: imageUri ?? undefined }}
