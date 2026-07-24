@@ -190,9 +190,20 @@ wrong twice over:
    proves it garbage. An OR shields it and kills the rescue arm.
 
 So: path A (per-serving) runs first and its verdict is **terminal, including a
-negative one**; path B (Atwater) is consulted only where A could not be
-evaluated at all. Because B only runs where A returned no verdict, adding it
-cannot change the outcome for any entry that has per-serving data.
+negative one**; path B (Atwater) is consulted only where A produced **no
+verdict** — per-serving fields absent, or present but non-evaluable (unparseable
+serving grams, a placeholder-zero per-serving beside a positive per-100g). Any
+entry whose per-serving check actually yields a verdict, agree or disagree, is
+unaffected.
+
+Be precise about the scope here — the tempting shorthand "adding B cannot change
+the outcome for any entry that has per-serving data" is **false**. The old code
+returned `false` for the present-but-non-evaluable cases; the new code falls them
+through to B. An entry with `serving_size: "1 cup"` (unparseable) plus a
+per-serving energy, whose macros cohere, flips unshielded → shielded. That is
+intended — no *contradiction* was detected there, and deferring to macro
+coherence beats deferring to an unreliable name match — but it is a **widening,
+not a no-op**, and a doc that claims otherwise will mislead the next reader.
 
 ### Why Atwater is the right discriminator, not just coverage
 

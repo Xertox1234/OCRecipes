@@ -626,13 +626,16 @@ export async function lookupBarcode(
   //     proves the entry is garbage, and the secondary rescue must stay active.
   //
   //  B. Macro↔energy coherence on the per-100g block alone — consulted ONLY
-  //     when path A could not be evaluated at all (no per-serving energy, or no
-  //     parseable serving grams). This is the many OFF entries that carry no
-  //     serving data whatsoever; before this existed they were categorically
-  //     unshielded, so a name-matched secondary replaced correct barcode data
-  //     (Nutella 750 g, barcode 3017620422003 → CNF's 182 kcal). Because B only
-  //     ever runs where A returned no verdict, adding it cannot change the
-  //     outcome for any entry that has per-serving data.
+  //     where path A produced NO VERDICT: per-serving fields absent, or present
+  //     but non-evaluable (unparseable serving grams, placeholder-zero
+  //     per-serving beside a positive per-100g). Any entry whose per-serving
+  //     check actually yields a verdict, agree or disagree, is unaffected by B.
+  //     This covers the many OFF entries carrying no serving data whatsoever;
+  //     before B existed they were categorically unshielded, so a name-matched
+  //     secondary replaced correct barcode data (Nutella 750 g, barcode
+  //     3017620422003 → CNF's 182 kcal). Note this is a WIDENING, not a no-op:
+  //     an entry that previously defaulted to unshielded because the
+  //     per-serving check could not run now gets the coherence check instead.
   const offLabelGrams = parseServingGrams(offProduct?.serving_size || "");
   const offSelfConsistent = (() => {
     if (offPerServingCal !== undefined && offPer100g.calories !== undefined) {
