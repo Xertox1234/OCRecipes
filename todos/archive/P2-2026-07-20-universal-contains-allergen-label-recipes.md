@@ -1,9 +1,9 @@
 ---
 title: "Universal 'Contains: <allergen>' label on all recipes (profile-independent)"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-24
 assignee:
 labels: [deferred, client, allergen, safety]
 github_issue:
@@ -118,3 +118,26 @@ task, not a data or matching task.
 
 - Initial creation. Filed from the Smart Scan personalization brainstorming
   session as an out-of-scope, user-requested followup.
+
+### 2026-07-24
+
+- Implemented via `/todo-fast`. Added `RecipeAllergenLabel` component +
+  `recipe-allergen-label-utils.ts` (pure, fail-dangerous by construction:
+  `null`/`undefined`/`[]` all render nothing — no "safe"/"allergen-free" signal
+  ever), reusing the existing `AllergenBadge`. Wired into the recipe display
+  surfaces whose recipe object already carries the derived `allergens` field:
+  `RecipeDetailContent`, `FeaturedRecipeDetailScreen`, and `RecipeBrowserScreen`'s
+  `UnifiedRecipeCard`. Personalized `AllergenWarningBanner` left untouched.
+- Accessibility: composed-label + decorative-children pattern so a screen reader
+  hears one coherent "Contains: Peanuts, Tree Nuts". Code review CRITICAL caught
+  that the browse-card `Pressable` (`accessible={true}`) swallows the nested
+  label's own a11y container — fixed by folding the allergen text into the card's
+  own `accessibilityLabel`.
+- **Partial AC #1 coverage (surfaced for review, not silently closed):** surfaces
+  whose DTO lacks the derived `allergens` field need server-side plumbing (or a
+  new pre-persist channel for the streaming card), which this todo's client-only
+  Scope Contract excluded — `recipe-chat/RecipeCard` (listed here but structurally
+  unreachable within this Scope Contract — an internal contradiction), plus
+  Favourites, Cookbook, Carousel, coach-summary card, extraction-review card, and
+  the MealPlanHome slot. Deferred to follow-up
+  `todos/P3-2026-07-24-universal-allergen-label-remaining-surfaces.md`.

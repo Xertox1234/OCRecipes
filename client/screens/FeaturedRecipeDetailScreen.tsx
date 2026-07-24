@@ -25,6 +25,7 @@ import type {
   MealPlanRecipe,
   RecipeIngredient,
 } from "@shared/schema";
+import type { DerivedRecipeAllergen } from "@shared/constants/allergens";
 
 const HANDLE_WIDTH = 36;
 const HANDLE_HEIGHT = 5;
@@ -49,6 +50,7 @@ interface NormalizedRecipe {
   ingredients: IngredientItem[];
   imageUrl?: string | null;
   nutrition?: ReturnType<typeof parseNutritionData>;
+  allergens?: DerivedRecipeAllergen[] | null;
   remixedFromId?: number | null;
   remixedFromTitle?: string | null;
   // Curated recipe fields
@@ -109,6 +111,7 @@ export default function FeaturedRecipeDetailScreen() {
         ingredients: mealPlanRecipe.ingredients as IngredientItem[],
         imageUrl: mealPlanRecipe.imageUrl,
         nutrition: parseNutritionData(mealPlanRecipe),
+        allergens: mealPlanRecipe.allergens,
         isCanonical: false,
         canonicalImages: [],
         instructionDetails: [],
@@ -129,6 +132,7 @@ export default function FeaturedRecipeDetailScreen() {
         instructions: communityRecipe.instructions ?? [],
         ingredients: (communityRecipe.ingredients ?? []) as IngredientItem[],
         imageUrl: communityRecipe.imageUrl,
+        allergens: communityRecipe.allergens,
         remixedFromId: communityRecipe.remixedFromId,
         remixedFromTitle: communityRecipe.remixedFromTitle,
         isCanonical: communityRecipe.isCanonical,
@@ -222,6 +226,7 @@ export default function FeaturedRecipeDetailScreen() {
           servings={normalized.servings}
           dietTags={normalized.dietTags}
           nutrition={normalized.nutrition ?? null}
+          allergens={normalized.allergens}
           ingredients={normalized.ingredients}
           instructions={normalized.instructions}
           contentPaddingBottom={insets.bottom + Spacing.xl}
