@@ -8,12 +8,16 @@ import { ErrorCode } from "@shared/constants/error-codes";
 import { insertScannedItemSchema } from "@shared/schema";
 import { logger, toError } from "../lib/logger";
 import { lookupNutrition } from "../services/nutrition-lookup";
-import { lookupBarcode } from "../services/barcode-lookup";
+import {
+  lookupBarcode,
+  type BarcodeLookupResult,
+} from "../services/barcode-lookup";
 import {
   buildScanResponseFlags,
   type ProfileOutcome,
 } from "../services/scan-flags";
 import { evaluateUniversalFlags } from "../services/universal-flags";
+import { buildLabelConflict } from "../services/label-override";
 import { parseUserAllergies } from "@shared/constants/allergens";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
 import { numericStringField } from "./_schemas";
@@ -55,6 +59,99 @@ const scannedItemInputSchema = insertScannedItemSchema.extend({
   fiber: numericStringField,
   sugar: numericStringField,
   sodium: numericStringField,
+});
+
+// Builds the client response body for one BarcodeLookupResult: allergen +
+// universal flags, ODbL strip, verification fields. Used by GET and POST so
+// the flag-build + strip logic never drifts between the two branches.
+function buildBarcodeResponseBody(
+  result: BarcodeLookupResult,
+  profileOutcome: ProfileOutcome,
+  verification: Awaited<ReturnType<typeof storage.getVerification>>,
+) {
+  const flags = buildScanResponseFlags(
+    {
+      allergenTags: result.allergenTags ?? [],
+      ingredientsText: result.ingredientsText ?? null,
+      allergenDataAvailable: result.allergenDataAvailable,
+    },
+    profileOutcome,
+  );
+
+  // Universal nutrition flags (Phase 2): NOVA/Nutri-Score/caffeine/
+  // sweetener/FSA-threshold evaluation. `perServing` is only passed
+  // when `isServingDataTrusted` is true — an untrusted (estimated)
+  // serving must not feed the caffeine-High-mg or FSA per-portion
+  // escalation checks, both of which key specifically on real
+  // per-serving data. `result.perServing` itself is always a populated
+  // object (never undefined) — `BarcodeLookupResult.perServing` is a
+  // required field, scaled from per100g even when untrusted — so no
+  // optional-chaining is needed on the individual nutrient reads below.
+  const universalFlags = evaluateUniversalFlags({
+    per100g: {
+      sugar: result.per100g.sugar,
+      saturatedFat: result.per100g.saturatedFat,
+      sodium: result.per100g.sodium,
+      caffeine: result.per100g.caffeine,
+    },
+    perServing: result.isServingDataTrusted
+      ? {
+          sugar: result.perServing.sugar,
+          saturatedFat: result.perServing.saturatedFat,
+          sodium: result.perServing.sodium,
+          caffeine: result.perServing.caffeine,
+        }
+      : undefined,
+    servingGrams: result.servingInfo.grams,
+    categoriesTags: result.categoriesTags ?? [],
+    novaGroup: result.novaGroup,
+    nutriScore: result.nutriScore,
+    additivesTags: result.additivesTags ?? [],
+    ingredientsText: result.ingredientsText ?? null,
+  });
+  // Allergen (Phase 1, safety tier) flags first, then universal
+  // (Phase 2, nutrition tier) flags.
+  const orderedFlags = [...flags, ...universalFlags];
+
+  // Raw OFF allergen/ingredient/additive/category fields are consumed
+  // here to build `flags`/`universalFlags` — no client reads them
+  // directly, and additivesTags/categoriesTags are OFF-licensed
+  // (ODbL) content that must never reach the client or be persisted —
+  // so trim them all off the response body before spreading
+  // (`orderedFlags` already carries the computed result; `novaGroup`
+  // and `nutriScore` are kept — they are displayed).
+  const {
+    ingredientsText: _ingredientsText,
+    allergenTags: _allergenTags,
+    allergenDataAvailable: _allergenDataAvailable,
+    additivesTags: _additivesTags,
+    categoriesTags: _categoriesTags,
+    ...clientResult
+  } = result;
+  void _ingredientsText;
+  void _allergenTags;
+  void _allergenDataAvailable;
+  void _additivesTags;
+  void _categoriesTags;
+
+  return {
+    ...clientResult,
+    flags: orderedFlags,
+    verificationLevel: verification?.verificationLevel ?? "unverified",
+    verificationCount: verification?.verificationCount ?? 0,
+  };
+}
+
+const labelNutritionSchema = z.object({
+  labelNutrition: z.object({
+    // Defense-in-depth: nutrition values are never negative; cap at a sane
+    // upper bound too (100000 covers any plausible per-serving reading).
+    calories: z.number().finite().nonnegative().max(100000).nullable(),
+    totalSugars: z.number().finite().nonnegative().max(100000).nullable(),
+    totalFat: z.number().finite().nonnegative().max(100000).nullable(),
+    saturatedFat: z.number().finite().nonnegative().max(100000).nullable(),
+    servingSize: z.string().max(120).nullable(),
+  }),
 });
 
 export function register(app: Express): void {
@@ -130,77 +227,85 @@ export function register(app: Express): void {
           return;
         }
 
-        const flags = buildScanResponseFlags(
-          {
-            allergenTags: result.allergenTags ?? [],
-            ingredientsText: result.ingredientsText ?? null,
-            allergenDataAvailable: result.allergenDataAvailable,
-          },
+        const body = buildBarcodeResponseBody(
+          result,
           profileOutcome,
+          verification,
         );
+        res.json(body);
+      } catch (error) {
+        handleRouteError(res, error, "look up barcode");
+      }
+    },
+  );
 
-        // Universal nutrition flags (Phase 2): NOVA/Nutri-Score/caffeine/
-        // sweetener/FSA-threshold evaluation. `perServing` is only passed
-        // when `isServingDataTrusted` is true — an untrusted (estimated)
-        // serving must not feed the caffeine-High-mg or FSA per-portion
-        // escalation checks, both of which key specifically on real
-        // per-serving data. `result.perServing` itself is always a populated
-        // object (never undefined) — `BarcodeLookupResult.perServing` is a
-        // required field, scaled from per100g even when untrusted — so no
-        // optional-chaining is needed on the individual nutrient reads below.
-        const universalFlags = evaluateUniversalFlags({
-          per100g: {
-            sugar: result.per100g.sugar,
-            saturatedFat: result.per100g.saturatedFat,
-            sodium: result.per100g.sodium,
-            caffeine: result.per100g.caffeine,
-          },
-          perServing: result.isServingDataTrusted
-            ? {
-                sugar: result.perServing.sugar,
-                saturatedFat: result.perServing.saturatedFat,
-                sodium: result.perServing.sodium,
-                caffeine: result.perServing.caffeine,
-              }
-            : undefined,
-          servingGrams: result.servingInfo.grams,
-          categoriesTags: result.categoriesTags ?? [],
-          novaGroup: result.novaGroup,
-          nutriScore: result.nutriScore,
-          additivesTags: result.additivesTags ?? [],
-          ingredientsText: result.ingredientsText ?? null,
-        });
-        // Allergen (Phase 1, safety tier) flags first, then universal
-        // (Phase 2, nutrition tier) flags.
-        const orderedFlags = [...flags, ...universalFlags];
+  // Trust-the-label override: POST because the client sends OCR'd label
+  // nutrition for in-memory comparison against the DB result (never
+  // persisted). Reuses the same auth + rate limiter as the GET above. On a
+  // material conflict, returns today's GET body plus a `conflict` object
+  // whose `label` is a fully client-shaped result (own recomputed flags) so
+  // the client can toggle between DB and label values without a second call.
+  app.post(
+    "/api/nutrition/barcode/:code",
+    requireAuth,
+    nutritionLookupRateLimit,
+    async (req: AuthenticatedRequest, res: Response) => {
+      const rawCode = req.params.code;
+      const code = typeof rawCode === "string" ? rawCode.trim() : "";
+      if (!code || code.length > 50 || !/^\d+$/.test(code)) {
+        sendError(res, 400, "Invalid barcode", ErrorCode.VALIDATION_ERROR);
+        return;
+      }
 
-        // Raw OFF allergen/ingredient/additive/category fields are consumed
-        // here to build `flags`/`universalFlags` — no client reads them
-        // directly, and additivesTags/categoriesTags are OFF-licensed
-        // (ODbL) content that must never reach the client or be persisted —
-        // so trim them all off the response body before spreading
-        // (`orderedFlags` already carries the computed result; `novaGroup`
-        // and `nutriScore` are kept — they are displayed).
-        const {
-          ingredientsText: _ingredientsText,
-          allergenTags: _allergenTags,
-          allergenDataAvailable: _allergenDataAvailable,
-          additivesTags: _additivesTags,
-          categoriesTags: _categoriesTags,
-          ...clientResult
-        } = result;
-        void _ingredientsText;
-        void _allergenTags;
-        void _allergenDataAvailable;
-        void _additivesTags;
-        void _categoriesTags;
+      const parsed = labelNutritionSchema.safeParse(req.body);
+      if (!parsed.success) {
+        sendError(res, 400, "Invalid label data", ErrorCode.VALIDATION_ERROR);
+        return;
+      }
 
-        res.json({
-          ...clientResult,
-          flags: orderedFlags,
-          verificationLevel: verification?.verificationLevel ?? "unverified",
-          verificationCount: verification?.verificationCount ?? 0,
-        });
+      try {
+        const [result, verification, profileOutcome] = await Promise.all([
+          lookupBarcode(code),
+          storage.getVerification(code),
+          // Fail-dangerous, NOT fatal — same rationale as the GET handler.
+          storage.getUserProfile(req.userId).then(
+            (profile): ProfileOutcome => ({
+              ok: true,
+              allergies: parseUserAllergies(profile?.allergies),
+            }),
+            (err): ProfileOutcome => {
+              logger.warn(
+                { err: toError(err) },
+                "scan-flags: profile read failed",
+              );
+              return { ok: false };
+            },
+          ),
+        ]);
+        if (!result) {
+          sendError(res, 404, "Product not found", ErrorCode.NOT_FOUND);
+          return;
+        }
+
+        const body = buildBarcodeResponseBody(
+          result,
+          profileOutcome,
+          verification,
+        );
+        const { conflict, fields, labelResult } = buildLabelConflict(
+          result,
+          parsed.data.labelNutrition,
+        );
+        if (conflict && labelResult) {
+          const labelBody = buildBarcodeResponseBody(
+            labelResult,
+            profileOutcome,
+            verification,
+          );
+          res.json({ ...body, conflict: { fields, label: labelBody } });
+          return;
+        }
+        res.json(body);
       } catch (error) {
         handleRouteError(res, error, "look up barcode");
       }

@@ -38,6 +38,7 @@ import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
 import { ScanFlagBadge } from "@/components/ScanFlagBadge";
 import { NutriScoreChip } from "@/components/NutriScoreChip";
+import { ScanConflictPrompt } from "@/components/ScanConflictPrompt";
 import {
   partitionScanFlags,
   headsUpSummaryLabel,
@@ -50,6 +51,7 @@ type RouteParams = {
   barcode?: string;
   imageUri?: string;
   itemId?: number;
+  ocrText?: string;
 };
 
 function NutritionDetailSkeleton() {
@@ -170,7 +172,7 @@ export default function NutritionDetailScreen() {
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
   const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
 
-  const { barcode, imageUri, itemId } = route.params || {};
+  const { barcode, imageUri, itemId, ocrText } = route.params || {};
 
   // Offline transitions are announced by the always-mounted global OfflineBanner
   // (client/components/OfflineBanner.tsx) — iOS via announceForAccessibility,
@@ -205,7 +207,11 @@ export default function NutritionDetailScreen() {
     handleManualSearch,
     addToLogMutation,
     handleAddToLog,
-  } = useNutritionLookup({ barcode, imageUri, itemId });
+    conflict,
+    activeSource,
+    chooseSource,
+    dbNutrition,
+  } = useNutritionLookup({ barcode, imageUri, itemId, ocrText });
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;
@@ -300,6 +306,16 @@ export default function NutritionDetailScreen() {
             </ThemedText>
           ) : null}
         </Animated.View>
+
+        {conflict && dbNutrition && (
+          <ScanConflictPrompt
+            conflictFields={conflict.fields}
+            labelNutrition={conflict.labelNutrition}
+            dbNutrition={dbNutrition}
+            activeSource={activeSource}
+            onChoose={chooseSource}
+          />
+        )}
 
         {partition.personal.length > 0 ? (
           <Animated.View

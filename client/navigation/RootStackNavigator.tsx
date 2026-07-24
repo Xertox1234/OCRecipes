@@ -91,6 +91,7 @@ export type RootStackParamList = {
     barcode?: string;
     imageUri?: string;
     itemId?: number;
+    ocrText?: string; // STEP2 nutrition-label OCR, for label-vs-DB override
   };
   PhotoIntent:
     | {

@@ -38,15 +38,61 @@ vi.mock("../../services/nutrition-lookup", () => ({
   lookupNutrition: vi.fn(),
 }));
 
-vi.mock("../../services/barcode-lookup", () => ({
-  lookupBarcode: vi.fn(),
-}));
+// Partial mock: `lookupBarcode` (I/O) is a test double, but `buildLabelConflict`
+// (imported for real by the POST route) calls this module's own
+// `parseServingGrams`/`scaleNutrients` pure helpers — those must stay real or
+// the label-override math breaks with an "export not defined on mock" error.
+vi.mock("../../services/barcode-lookup", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../services/barcode-lookup")>();
+  return {
+    ...actual,
+    lookupBarcode: vi.fn(),
+  };
+});
 
 function createApp() {
   const app = express();
   app.use(express.json());
   register(app);
   return app;
+}
+
+const mockLookup = vi.mocked(lookupBarcode);
+
+// DB result shaped like OFF's wrong Cherry Coke entry (per-100 ml) — mirrors
+// Task 2's server/services/__tests__/label-override.test.ts cherryCokeDb()
+// fixture so the conflict math (calories AND sugar) matches exactly.
+function cherryCokeDbResult(): BarcodeLookupResult {
+  return {
+    productName: "Cherry Coke",
+    barcode: "06772408",
+    per100g: { calories: 11.11, sugar: 3.09, fat: 0 },
+    perServing: { calories: 39, sugar: 11, fat: 0 },
+    servingInfo: { displayLabel: "355 ml", grams: 355, wasCorrected: false },
+    isServingDataTrusted: true,
+    source: "openfoodfacts+self-consistent",
+    allergenDataAvailable: true,
+    novaGroup: 4,
+    categoriesTags: ["en:colas", "en:beverages"],
+  } satisfies BarcodeLookupResult;
+}
+
+// Same product, but the DB per-100 already agrees with the label (within the
+// 25% valuesMatch threshold) — used for the no-conflict case.
+function correctCokeDbResult(): BarcodeLookupResult {
+  return {
+    productName: "Cherry Coke",
+    barcode: "06772408",
+    per100g: { calories: 42, sugar: 11, fat: 0 },
+    perServing: { calories: 149, sugar: 39, fat: 0 },
+    servingInfo: { displayLabel: "355 ml", grams: 355, wasCorrected: false },
+    isServingDataTrusted: true,
+    source: "openfoodfacts+self-consistent",
+    allergenDataAvailable: true,
+    novaGroup: 4,
+    categoriesTags: ["en:colas", "en:beverages"],
+  } satisfies BarcodeLookupResult;
 }
 
 const mockScannedItem = createMockScannedItem({
@@ -65,6 +111,15 @@ const mockScannedItem = createMockScannedItem({
 
 describe("Nutrition Routes", () => {
   let app: express.Express;
+
+  // Closes over the `app` reassigned in beforeEach below — declared here
+  // (not module scope) so every nested it() sees the current test's app.
+  function authedPost(path: string, body: object) {
+    return request(app)
+      .post(path)
+      .set("Authorization", "Bearer token")
+      .send(body);
+  }
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -786,6 +841,72 @@ describe("Nutrition Routes", () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe("Invalid barcode");
+    });
+  });
+
+  describe("POST /api/nutrition/barcode/:code (label override)", () => {
+    it("returns a conflict with a label result whose flags include High-in-Sugar", async () => {
+      mockLookup.mockResolvedValue(cherryCokeDbResult()); // per-100 11.11 kcal / 3.09 sugar, nova 4, en:colas
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: {
+          calories: 150,
+          totalSugars: 39,
+          totalFat: 0,
+          saturatedFat: null,
+          servingSize: "355 mL",
+        },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.conflict.fields).toEqual(
+        expect.arrayContaining(["calories", "sugar"]),
+      );
+      const labelFlagIds = res.body.conflict.label.flags.map(
+        (f: { id: string }) => f.id,
+      );
+      expect(labelFlagIds).toContain("nutrient:sugar"); // High in Sugar now fires
+      expect(labelFlagIds).toContain("processing:ultra"); // NOVA-4 retained from DB
+      // Category-derived (en:colas, from the DB's categoriesTags, retained
+      // on the label result) — fires even though the label never read a
+      // caffeine value and the blanked label per100g has no numeric caffeine.
+      expect(labelFlagIds).toContain("nutrient:caffeine");
+      expect(res.body.conflict.label.servingInfo.grams).toBe(355);
+    });
+
+    it("strips ODbL fields (categoriesTags/additivesTags) on BOTH branches", async () => {
+      mockLookup.mockResolvedValue(cherryCokeDbResult());
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: {
+          calories: 150,
+          totalSugars: 39,
+          totalFat: 0,
+          saturatedFat: null,
+          servingSize: "355 mL",
+        },
+      });
+      expect(res.body.categoriesTags).toBeUndefined();
+      expect(res.body.conflict.label.categoriesTags).toBeUndefined();
+      expect(res.body.conflict.label.additivesTags).toBeUndefined();
+    });
+
+    it("no conflict key when the label agrees (today's shape)", async () => {
+      mockLookup.mockResolvedValue(correctCokeDbResult()); // per-100 ~42 kcal / ~11 sugar
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: {
+          calories: 150,
+          totalSugars: 39,
+          totalFat: 0,
+          saturatedFat: null,
+          servingSize: "355 mL",
+        },
+      });
+      expect(res.body.conflict).toBeUndefined();
+    });
+
+    it("rejects a malformed labelNutrition body (zod 400)", async () => {
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: { calories: "lots" },
+      });
+      expect(res.status).toBe(400);
     });
   });
 

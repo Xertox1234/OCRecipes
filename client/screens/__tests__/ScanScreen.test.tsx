@@ -13,35 +13,68 @@ const {
   mockCanGoBack,
   mockNavigate,
   mockReset,
+  mockNavigationObject,
   mockRouteParams,
   mockPermissionStatus,
   mockShortcutToSessionComplete,
+  mockSessionCompleteOcrText,
+  mockRefreshScanCount,
   mockApiRequest,
-} = vi.hoisted(() => ({
-  mockGoBack: vi.fn(),
-  mockCanGoBack: vi.fn(),
-  mockNavigate: vi.fn(),
-  mockReset: vi.fn(),
-  mockRouteParams: {
-    value: undefined as
-      | {
-          mode?: "label" | "front-label";
-          verifyBarcode?: string;
-          returnAfterLog?: boolean;
-        }
-      | undefined,
-  },
-  mockPermissionStatus: {
-    value: "granted" as "granted" | "denied" | "undetermined",
-  },
-  // Set to true only by the post-log-success tests: shortcuts the very first
-  // CAMERA_READY dispatch straight to SESSION_COMPLETE so handleConfirmLog's
-  // confirm-card precondition can be reached without driving the full
-  // barcode-lock → ProductChip "Confirm product" flow (which has its own
-  // dedicated coverage in scan-phase-reducer.test.ts / ProductChip.test.tsx).
-  mockShortcutToSessionComplete: { value: false },
-  mockApiRequest: vi.fn(),
-}));
+} = vi.hoisted(() => {
+  const mockGoBack = vi.fn();
+  const mockCanGoBack = vi.fn();
+  const mockNavigate = vi.fn();
+  const mockReset = vi.fn();
+  return {
+    mockGoBack,
+    mockCanGoBack,
+    mockNavigate,
+    mockReset,
+    // A stable object identity across renders — the real useNavigation() from
+    // React Navigation returns a memoized object, and the session-complete
+    // navigate effect depends on `navigation` itself (not just `.navigate`).
+    // A fresh object literal per useNavigation() call (the original shape of
+    // this mock) would make that dependency "change" every render and re-fire
+    // the effect, canceling its own setTimeout via cleanup before it elapses.
+    mockNavigationObject: {
+      navigate: mockNavigate,
+      goBack: mockGoBack,
+      canGoBack: mockCanGoBack,
+      reset: mockReset,
+      isFocused: () => true,
+    },
+    mockRouteParams: {
+      value: undefined as
+        | {
+            mode?: "label" | "front-label";
+            verifyBarcode?: string;
+            returnAfterLog?: boolean;
+          }
+        | undefined,
+    },
+    mockPermissionStatus: {
+      value: "granted" as "granted" | "denied" | "undetermined",
+    },
+    // Set to true only by the post-log-success tests: shortcuts the very first
+    // CAMERA_READY dispatch straight to SESSION_COMPLETE so handleConfirmLog's
+    // confirm-card precondition can be reached without driving the full
+    // barcode-lock → ProductChip "Confirm product" flow (which has its own
+    // dedicated coverage in scan-phase-reducer.test.ts / ProductChip.test.tsx).
+    mockShortcutToSessionComplete: { value: false },
+    // Only read when mockShortcutToSessionComplete is true. `undefined` (the
+    // default) reproduces a barcode-only session — the shortcut SESSION_COMPLETE
+    // object omits the `ocrText` key entirely, same as the real reducer's
+    // BARCODE_LOCKED→CONFIRM_PRODUCT branch (scan-phase-reducer.ts:47).
+    mockSessionCompleteOcrText: { value: undefined as string | undefined },
+    // Stable across renders (unlike a fresh vi.fn() per usePremiumContext()
+    // call) — mirrors the real PremiumContext, which memoizes refreshScanCount
+    // via useCallback. The session-complete navigate effect depends on this
+    // function reference; an unstable mock would re-fire the effect on every
+    // render and cancel its own setTimeout via cleanup before it ever elapses.
+    mockRefreshScanCount: vi.fn(),
+    mockApiRequest: vi.fn(),
+  };
+});
 
 // react-native-confetti-cannon ships Flow/JSX source that Vite's transform
 // cannot parse under jsdom (same class of problem as the native-only camera
@@ -80,13 +113,7 @@ vi.mock("@/camera/hooks/useCameraPermissions", () => ({
 // (`SyntaxError: Unexpected token 'typeof'` from deep inside a dependency) —
 // reproduced in isolation outside ScanScreen, so it is not specific to this file.
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({
-    navigate: mockNavigate,
-    goBack: mockGoBack,
-    canGoBack: mockCanGoBack,
-    reset: mockReset,
-    isFocused: () => true,
-  }),
+  useNavigation: () => mockNavigationObject,
   useIsFocused: () => true,
   useRoute: () => ({ params: mockRouteParams.value }),
 }));
@@ -95,7 +122,7 @@ vi.mock("@/hooks/usePremiumFeatures", () => ({
 }));
 vi.mock("@/context/PremiumContext", () => ({
   usePremiumContext: () => ({
-    refreshScanCount: vi.fn(),
+    refreshScanCount: mockRefreshScanCount,
     features: {},
   }),
 }));
@@ -142,7 +169,14 @@ vi.mock("@/camera/reducers/scan-phase-reducer", async (importOriginal) => {
         mockShortcutToSessionComplete.value &&
         action.type === "CAMERA_READY"
       ) {
-        return { type: "SESSION_COMPLETE" as const, barcode: "0000000000000" };
+        return mockSessionCompleteOcrText.value === undefined
+          ? { type: "SESSION_COMPLETE" as const, barcode: "0000000000000" }
+          : {
+              type: "SESSION_COMPLETE" as const,
+              barcode: "0000000000000",
+              nutritionImageUri: "file:///nutrition-label.jpg",
+              ocrText: mockSessionCompleteOcrText.value,
+            };
       }
       return actual.scanPhaseReducer(state, action);
     },
@@ -155,6 +189,7 @@ beforeEach(() => {
   mockRouteParams.value = undefined;
   mockPermissionStatus.value = "granted";
   mockShortcutToSessionComplete.value = false;
+  mockSessionCompleteOcrText.value = undefined;
   mockApiRequest.mockImplementation(async (_method: string, url: string) => {
     if (url.startsWith("/api/nutrition/barcode/")) {
       return {
@@ -421,6 +456,39 @@ describe("ScanScreen — barcode lock wiring (stale-closure regression, PR #654)
         "GET",
         "/api/nutrition/barcode/0778918011332",
       );
+    });
+  });
+});
+
+describe("ScanScreen — session-complete navigate forwards ocrText (Task 4)", () => {
+  // Non-returnAfterLog path only — the setTimeout → navigate("NutritionDetail")
+  // branch at ScanScreen.tsx:~247-255. returnAfterLog has its own coverage
+  // above (post-log-success close) and never reaches this branch.
+  beforeEach(() => {
+    mockShortcutToSessionComplete.value = true;
+  });
+
+  it("forwards ocrText when SESSION_COMPLETE carries it (STEP2 label captured)", async () => {
+    mockSessionCompleteOcrText.value = "Calories 210, Total Fat 8g";
+
+    renderComponent(<ScanScreen />);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("NutritionDetail", {
+        barcode: "0000000000000",
+        ocrText: "Calories 210, Total Fat 8g",
+      });
+    });
+  });
+
+  it("forwards ocrText as undefined on a barcode-only session (no label photo)", async () => {
+    renderComponent(<ScanScreen />);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("NutritionDetail", {
+        barcode: "0000000000000",
+        ocrText: undefined,
+      });
     });
   });
 });

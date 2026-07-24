@@ -35,8 +35,9 @@ import {
   createAllergenUnavailableFlag,
   type ScanFlag,
 } from "@shared/types/scan-flags";
+import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
 
-interface NutritionData {
+export interface NutritionData {
   id?: number;
   productName: string;
   brandName?: string;
@@ -64,8 +65,9 @@ export function useNutritionLookup(params: {
   barcode?: string;
   imageUri?: string;
   itemId?: number;
+  ocrText?: string;
 }) {
-  const { barcode, imageUri, itemId } = params;
+  const { barcode, imageUri, itemId, ocrText } = params;
 
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
   const queryClient = useQueryClient();
@@ -92,6 +94,26 @@ export function useNutritionLookup(params: {
   const [showManualSearch, setShowManualSearch] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [conflict, setConflict] = useState<{
+    fields: string[];
+    labelNutrition: NutritionData;
+    labelFlags: ScanFlag[];
+    // The label result's serving-control state, so a toggle to the label also
+    // rescales serving edits from the LABEL per-100g (not the DB's).
+    labelValidated: ValidatedNutrition;
+    labelGrams: number;
+    labelIsPer100g: boolean;
+  } | null>(null);
+  const [dbSnapshot, setDbSnapshot] = useState<{
+    nutrition: NutritionData;
+    flags: ScanFlag[];
+    validated: ValidatedNutrition;
+    servingGrams: number;
+    isPer100g: boolean;
+  } | null>(null);
+  const [activeSource, setActiveSource] = useState<"database" | "label">(
+    "database",
+  );
 
   useEffect(() => {
     if (Platform.OS === "ios" && correctionNotice) {
@@ -205,197 +227,329 @@ export function useNutritionLookup(params: {
         !isLoading,
     });
 
-  const fetchBarcodeData = useCallback(async (code: string) => {
-    // Defense-in-depth: clear any prior product's allergen flags before this
-    // fetch resolves, so a future in-screen re-fetch can never render a stale
-    // danger flag against a different product while the new data loads.
-    setFlags([]);
-    try {
-      // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
-      // Use raw fetch (not apiRequest) so we can inspect 404 responses
-      // without them being thrown as errors.
+  const fetchBarcodeData = useCallback(
+    async (code: string) => {
+      // Defense-in-depth: clear any prior product's allergen flags AND
+      // label/DB conflict state before this fetch resolves, so a future
+      // in-screen re-fetch (new barcode on a reused screen instance) can
+      // never render a stale danger flag or a stale conflict card left over
+      // from the PRIOR product when this fetch's 404/OFF-fallback/outer-catch
+      // path never repopulates conflict state itself (only the server-ok
+      // branch below does).
+      setFlags([]);
+      setConflict(null);
+      setDbSnapshot(null);
+      setActiveSource("database");
       try {
-        const baseUrl = getApiUrl();
-        const url = new URL(`/api/nutrition/barcode/${code}`, baseUrl);
-        const token = await tokenStorage.get();
-        const headers: Record<string, string> = {};
-        if (token) headers["Authorization"] = `Bearer ${token}`;
+        // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
+        // Use raw fetch (not apiRequest) so we can inspect 404 responses
+        // without them being thrown as errors.
+        try {
+          const baseUrl = getApiUrl();
+          const url = new URL(`/api/nutrition/barcode/${code}`, baseUrl);
+          const token = await tokenStorage.get();
+          const headers: Record<string, string> = {};
+          if (token) headers["Authorization"] = `Bearer ${token}`;
 
-        const serverRes = await fetch(url, { headers });
+          const parsedLabel = ocrText ? parseNutritionFromOCR(ocrText) : null;
+          const labelReady =
+            parsedLabel != null &&
+            parsedLabel.calories != null &&
+            (parsedLabel.totalSugars != null || parsedLabel.totalFat != null) &&
+            parsedLabel.servingSize != null;
 
-        if (serverRes.ok) {
-          const data = await serverRes.json();
+          const serverRes = labelReady
+            ? await fetch(url, {
+                method: "POST",
+                headers: { ...headers, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  labelNutrition: {
+                    calories: parsedLabel!.calories,
+                    totalSugars: parsedLabel!.totalSugars,
+                    totalFat: parsedLabel!.totalFat,
+                    saturatedFat: parsedLabel!.saturatedFat,
+                    servingSize: parsedLabel!.servingSize,
+                  },
+                }),
+              })
+            : await fetch(url, { headers });
 
-          // Map server response into ValidatedNutrition for serving controls
-          const validated: ValidatedNutrition = {
-            perServing: data.perServing,
-            per100g: data.per100g,
-            servingInfo: data.servingInfo,
-            isServingDataTrusted: data.isServingDataTrusted,
-          };
+          if (serverRes.ok) {
+            const data = await serverRes.json();
+
+            // Map server response into ValidatedNutrition for serving controls
+            const validated: ValidatedNutrition = {
+              perServing: data.perServing,
+              per100g: data.per100g,
+              servingInfo: data.servingInfo,
+              isServingDataTrusted: data.isServingDataTrusted,
+            };
+
+            const dbIsPer100g =
+              !data.isServingDataTrusted && !data.servingInfo.wasCorrected;
+            setValidatedData(validated);
+            setServingSizeGrams(data.servingInfo.grams);
+            setIsPer100g(dbIsPer100g);
+
+            if (
+              data.servingInfo.wasCorrected &&
+              data.servingInfo.correctionReason
+            ) {
+              setCorrectionNotice(data.servingInfo.correctionReason);
+            }
+
+            const dbNutrition: NutritionData = {
+              productName: data.productName,
+              brandName: data.brandName,
+              servingSize: data.servingInfo.displayLabel,
+              calories: data.perServing.calories,
+              protein: data.perServing.protein,
+              carbs: data.perServing.carbs,
+              fat: data.perServing.fat,
+              fiber: data.perServing.fiber,
+              sugar: data.perServing.sugar,
+              sodium: data.perServing.sodium,
+              saturatedFat: data.perServing.saturatedFat,
+              transFat: data.perServing.transFat,
+              cholesterol: data.perServing.cholesterol,
+              caffeine: data.perServing.caffeine,
+              imageUrl: data.imageUrl,
+              barcode: code,
+              novaGroup: data.novaGroup,
+              nutriScore: data.nutriScore,
+            };
+            const dbFlags: ScanFlag[] = Array.isArray(data.flags)
+              ? (data.flags as ScanFlag[])
+              : [];
+
+            setNutrition(dbNutrition);
+            setFlags(dbFlags);
+            setActiveSource("database");
+            setConflict(null);
+            // Capture the DB result so a later toggle can restore it —
+            // including the serving-control state so a serving edit under the
+            // "Database" choice rescales from the DB per-100g.
+            setDbSnapshot({
+              nutrition: dbNutrition,
+              flags: dbFlags,
+              validated,
+              servingGrams: data.servingInfo.grams,
+              isPer100g: dbIsPer100g,
+            });
+
+            if (data.conflict?.label) {
+              const lbl = data.conflict.label;
+              const labelNutrition: NutritionData = {
+                productName: lbl.productName,
+                brandName: lbl.brandName,
+                servingSize: lbl.servingInfo.displayLabel,
+                calories: lbl.perServing.calories,
+                protein: lbl.perServing.protein,
+                carbs: lbl.perServing.carbs,
+                fat: lbl.perServing.fat,
+                fiber: lbl.perServing.fiber,
+                sugar: lbl.perServing.sugar,
+                sodium: lbl.perServing.sodium,
+                saturatedFat: lbl.perServing.saturatedFat,
+                transFat: lbl.perServing.transFat,
+                cholesterol: lbl.perServing.cholesterol,
+                caffeine: lbl.perServing.caffeine,
+                imageUrl: lbl.imageUrl,
+                barcode: code,
+                novaGroup: lbl.novaGroup,
+                nutriScore: lbl.nutriScore,
+              };
+              const labelFlags: ScanFlag[] = Array.isArray(lbl.flags)
+                ? (lbl.flags as ScanFlag[])
+                : [];
+              const labelValidated: ValidatedNutrition = {
+                perServing: lbl.perServing,
+                per100g: lbl.per100g,
+                servingInfo: lbl.servingInfo,
+                isServingDataTrusted: lbl.isServingDataTrusted,
+              };
+              const labelIsPer100g =
+                !lbl.isServingDataTrusted && !lbl.servingInfo.wasCorrected;
+              setConflict({
+                fields: data.conflict.fields ?? [],
+                labelNutrition,
+                labelFlags,
+                labelValidated,
+                labelGrams: lbl.servingInfo.grams,
+                labelIsPer100g,
+              });
+              // Health-facing default: trust the label — swap the serving-control
+              // state too, so a serving edit rescales from the LABEL per-100g,
+              // not the DB's (which is the wrong data we're correcting).
+              setActiveSource("label");
+              setNutrition(labelNutrition);
+              setFlags(labelFlags);
+              setValidatedData(labelValidated);
+              setServingSizeGrams(lbl.servingInfo.grams);
+              setIsPer100g(labelIsPer100g);
+            }
+
+            // Set verification level from barcode lookup response
+            if (data.verificationLevel) {
+              setVerificationLevel(data.verificationLevel as VerificationLevel);
+            }
+
+            // Fetch front-label status from verification endpoint
+            try {
+              const verRes = await apiRequest(
+                "GET",
+                `/api/verification/${code}`,
+              );
+              if (verRes.ok) {
+                const verData = await verRes.json();
+                setHasFrontLabelData(verData.hasFrontLabelData ?? false);
+              }
+            } catch {
+              // Non-critical — front-label CTA just won't show
+            }
+            return;
+          }
+
+          // Server returned an error — check if it's a definitive "not in database"
+          if (serverRes.status === 404) {
+            try {
+              const errData = await serverRes.json();
+              if (errData.notInDatabase) {
+                // Product barcode not found in any database — show manual search
+                setShowManualSearch(true);
+                setNutrition({
+                  productName: "Product Not Found",
+                  barcode: code,
+                });
+                return;
+              }
+            } catch {
+              // Couldn't parse error body — fall through to OFF
+            }
+          }
+        } catch (err) {
+          logger.warn(
+            "Server barcode lookup unavailable, falling back to OFF:",
+            err,
+          );
+        }
+
+        // ── Fallback: direct Open Food Facts (when server is unreachable) ──
+        const response = await fetch(
+          `https://world.openfoodfacts.org/api/v0/product/${code}.json`,
+        );
+        const data = await response.json();
+
+        if (data.status === 1 && data.product) {
+          const product = data.product;
+          const validated = validateAndNormalizeNutrition(product, code);
 
           setValidatedData(validated);
-          setServingSizeGrams(data.servingInfo.grams);
+          setServingSizeGrams(validated.servingInfo.grams ?? 100);
           setIsPer100g(
-            !data.isServingDataTrusted && !data.servingInfo.wasCorrected,
+            !validated.isServingDataTrusted &&
+              !validated.servingInfo.wasCorrected,
           );
 
           if (
-            data.servingInfo.wasCorrected &&
-            data.servingInfo.correctionReason
+            validated.servingInfo.wasCorrected &&
+            validated.servingInfo.correctionReason
           ) {
-            setCorrectionNotice(data.servingInfo.correctionReason);
+            setCorrectionNotice(validated.servingInfo.correctionReason);
           }
 
+          const perServing = validated.perServing;
           setNutrition({
-            productName: data.productName,
-            brandName: data.brandName,
-            servingSize: data.servingInfo.displayLabel,
-            calories: data.perServing.calories,
-            protein: data.perServing.protein,
-            carbs: data.perServing.carbs,
-            fat: data.perServing.fat,
-            fiber: data.perServing.fiber,
-            sugar: data.perServing.sugar,
-            sodium: data.perServing.sodium,
-            saturatedFat: data.perServing.saturatedFat,
-            transFat: data.perServing.transFat,
-            cholesterol: data.perServing.cholesterol,
-            caffeine: data.perServing.caffeine,
-            imageUrl: data.imageUrl,
+            productName: product.product_name || "Unknown Product",
+            brandName: product.brands,
+            servingSize: validated.servingInfo.displayLabel,
+            calories: perServing.calories,
+            protein: perServing.protein,
+            carbs: perServing.carbs,
+            fat: perServing.fat,
+            fiber: perServing.fiber,
+            sugar: perServing.sugar,
+            sodium: perServing.sodium,
+            imageUrl: product.image_url || product.image_front_url,
             barcode: code,
-            novaGroup: data.novaGroup,
-            nutriScore: data.nutriScore,
           });
 
-          setFlags(Array.isArray(data.flags) ? (data.flags as ScanFlag[]) : []);
-
-          // Set verification level from barcode lookup response
-          if (data.verificationLevel) {
-            setVerificationLevel(data.verificationLevel as VerificationLevel);
-          }
-
-          // Fetch front-label status from verification endpoint
-          try {
-            const verRes = await apiRequest("GET", `/api/verification/${code}`);
-            if (verRes.ok) {
-              const verData = await verRes.json();
-              setHasFrontLabelData(verData.hasFrontLabelData ?? false);
-            }
-          } catch {
-            // Non-critical — front-label CTA just won't show
-          }
-          return;
+          // Runs whenever the primary server request didn't yield a usable
+          // result — a network error, a 5xx, an unparseable/non-notInDatabase
+          // 404, or any other case where the inner server `try` above didn't
+          // already return — so the server-side allergen check
+          // (buildScanResponseFlags) never ran for this product. `flags` would
+          // otherwise stay `[]` and the screen would look allergen-clean when
+          // we simply couldn't check. Surface a "couldn't verify" warn flag
+          // instead (fail-safe, not fail-open).
+          //
+          // Gating: ideally this would show only for users with ≥1 declared
+          // allergy, but the server is down in this branch, so we can't add a
+          // network call to fetch the profile. `useAuthContext().user` (the
+          // `User` type in shared/types/auth.ts) does NOT carry allergies —
+          // that data lives only on the separate user-profile record, which is
+          // fetched server-side via `storage.getUserProfile`. With no cheap
+          // offline source for the user's allergies, show this flag
+          // unconditionally on the fallback: it's honest ("we couldn't check")
+          // and fail-safe rather than silently omitting the warning for the
+          // allergy-having users who need it most. This does NOT compute
+          // client-side allergen matching — that stays server-only (Phase 1).
+          setFlags([
+            createAllergenUnavailableFlag({
+              detail:
+                "We couldn't reach our service to check this against your allergies — check the package label.",
+            }),
+          ]);
+        } else {
+          setError("Product not found in database");
+          setNutrition({ productName: "Unknown Product", barcode: code });
         }
-
-        // Server returned an error — check if it's a definitive "not in database"
-        if (serverRes.status === 404) {
-          try {
-            const errData = await serverRes.json();
-            if (errData.notInDatabase) {
-              // Product barcode not found in any database — show manual search
-              setShowManualSearch(true);
-              setNutrition({ productName: "Product Not Found", barcode: code });
-              return;
-            }
-          } catch {
-            // Couldn't parse error body — fall through to OFF
-          }
-        }
-      } catch (err) {
-        logger.warn(
-          "Server barcode lookup unavailable, falling back to OFF:",
-          err,
-        );
-      }
-
-      // ── Fallback: direct Open Food Facts (when server is unreachable) ──
-      const response = await fetch(
-        `https://world.openfoodfacts.org/api/v0/product/${code}.json`,
-      );
-      const data = await response.json();
-
-      if (data.status === 1 && data.product) {
-        const product = data.product;
-        const validated = validateAndNormalizeNutrition(product, code);
-
-        setValidatedData(validated);
-        setServingSizeGrams(validated.servingInfo.grams ?? 100);
-        setIsPer100g(
-          !validated.isServingDataTrusted &&
-            !validated.servingInfo.wasCorrected,
-        );
-
-        if (
-          validated.servingInfo.wasCorrected &&
-          validated.servingInfo.correctionReason
-        ) {
-          setCorrectionNotice(validated.servingInfo.correctionReason);
-        }
-
-        const perServing = validated.perServing;
-        setNutrition({
-          productName: product.product_name || "Unknown Product",
-          brandName: product.brands,
-          servingSize: validated.servingInfo.displayLabel,
-          calories: perServing.calories,
-          protein: perServing.protein,
-          carbs: perServing.carbs,
-          fat: perServing.fat,
-          fiber: perServing.fiber,
-          sugar: perServing.sugar,
-          sodium: perServing.sodium,
-          imageUrl: product.image_url || product.image_front_url,
-          barcode: code,
-        });
-
-        // Runs whenever the primary server request didn't yield a usable
-        // result — a network error, a 5xx, an unparseable/non-notInDatabase
-        // 404, or any other case where the inner server `try` above didn't
-        // already return — so the server-side allergen check
-        // (buildScanResponseFlags) never ran for this product. `flags` would
-        // otherwise stay `[]` and the screen would look allergen-clean when
-        // we simply couldn't check. Surface a "couldn't verify" warn flag
-        // instead (fail-safe, not fail-open).
-        //
-        // Gating: ideally this would show only for users with ≥1 declared
-        // allergy, but the server is down in this branch, so we can't add a
-        // network call to fetch the profile. `useAuthContext().user` (the
-        // `User` type in shared/types/auth.ts) does NOT carry allergies —
-        // that data lives only on the separate user-profile record, which is
-        // fetched server-side via `storage.getUserProfile`. With no cheap
-        // offline source for the user's allergies, show this flag
-        // unconditionally on the fallback: it's honest ("we couldn't check")
-        // and fail-safe rather than silently omitting the warning for the
-        // allergy-having users who need it most. This does NOT compute
-        // client-side allergen matching — that stays server-only (Phase 1).
+      } catch {
+        setError("Failed to fetch product data");
+        setNutrition({ productName: "Unknown Product", barcode: code });
+        // Total outage: server AND the direct-OFF fallback both failed, so we
+        // genuinely couldn't check this against the user's allergies. Same
+        // fail-safe flag as the direct-OFF fallback branch above — see its
+        // comment for the full rationale.
         setFlags([
           createAllergenUnavailableFlag({
             detail:
               "We couldn't reach our service to check this against your allergies — check the package label.",
           }),
         ]);
-      } else {
-        setError("Product not found in database");
-        setNutrition({ productName: "Unknown Product", barcode: code });
+      } finally {
+        setIsLoading(false);
       }
-    } catch {
-      setError("Failed to fetch product data");
-      setNutrition({ productName: "Unknown Product", barcode: code });
-      // Total outage: server AND the direct-OFF fallback both failed, so we
-      // genuinely couldn't check this against the user's allergies. Same
-      // fail-safe flag as the direct-OFF fallback branch above — see its
-      // comment for the full rationale.
-      setFlags([
-        createAllergenUnavailableFlag({
-          detail:
-            "We couldn't reach our service to check this against your allergies — check the package label.",
-        }),
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    },
+    [ocrText],
+  );
+
+  const chooseSource = useCallback(
+    (s: "database" | "label") => {
+      setActiveSource(s);
+      // Both snapshots (conflict.label* / dbSnapshot) are qty-1 baselines —
+      // reset the stepper alongside them so it can never desync from the
+      // hero values it's supposed to describe (e.g. bump to 2 servings,
+      // toggle source, and the stepper would otherwise still read "2" while
+      // the hero shows the freshly-restored qty-1 numbers).
+      if (s === "label" && conflict) {
+        setNutrition(conflict.labelNutrition);
+        setFlags(conflict.labelFlags);
+        setValidatedData(conflict.labelValidated);
+        setServingSizeGrams(conflict.labelGrams);
+        setIsPer100g(conflict.labelIsPer100g);
+        setServingQuantity(1);
+      } else if (s === "database" && dbSnapshot) {
+        setNutrition(dbSnapshot.nutrition);
+        setFlags(dbSnapshot.flags);
+        setValidatedData(dbSnapshot.validated);
+        setServingSizeGrams(dbSnapshot.servingGrams);
+        setIsPer100g(dbSnapshot.isPer100g);
+        setServingQuantity(1);
+      }
+    },
+    [conflict, dbSnapshot],
+  );
 
   // Manual product name search — when barcode isn't in any database,
   // let the user type what the product is (e.g. "coffee whitener")
@@ -593,5 +747,9 @@ export function useNutritionLookup(params: {
     handleManualSearch,
     addToLogMutation,
     handleAddToLog,
+    conflict,
+    activeSource,
+    chooseSource,
+    dbNutrition: dbSnapshot?.nutrition ?? null,
   };
 }
