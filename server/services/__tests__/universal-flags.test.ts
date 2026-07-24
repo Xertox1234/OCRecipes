@@ -187,6 +187,9 @@ describe("evaluateUniversalFlags — sweeteners & nutriscore", () => {
     }).find((x) => x.id === "sweetener:artificial");
     expect(f?.kind).toBe("sweetener");
     expect(f?.title).toBe("Contains artificial sweeteners");
+    // Guards against an "insight" regression — this flag must stay on the
+    // "nutrition" tier alongside the other universal flags.
+    expect(f?.tier).toBe("nutrition");
   });
   it("does NOT flag natural stevia (E960) or caramel color (E150d)", () => {
     expect(

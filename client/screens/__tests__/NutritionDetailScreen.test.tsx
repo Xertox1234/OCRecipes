@@ -81,6 +81,10 @@ describe("NutritionDetailScreen — Additional Nutrients card", () => {
     expect(queryByText("Additional Nutrients")).toBeTruthy();
     expect(queryByText("Saturated Fat")).toBeTruthy();
     expect(queryByText("Caffeine")).toBeTruthy();
+    // Locks the roundToOneDecimal wiring end-to-end — not just that the row
+    // renders, but that the displayed value+unit is correct.
+    expect(queryByText("2.5 g")).toBeTruthy();
+    expect(queryByText("95 mg")).toBeTruthy();
     // Only the two set fields should render — no "0 g"/"0 mg" row for the
     // undefined ones.
     expect(queryByText("Trans Fat")).toBeNull();
@@ -96,6 +100,10 @@ describe("NutritionDetailScreen — Additional Nutrients card", () => {
 
     expect(queryByText("Trans Fat")).toBeTruthy();
     expect(queryByText("Cholesterol")).toBeTruthy();
+    // Locks the roundToOneDecimal wiring end-to-end — not just that the row
+    // renders, but that the displayed value+unit is correct.
+    expect(queryByText("0.4 g")).toBeTruthy();
+    expect(queryByText("15 mg")).toBeTruthy();
     expect(queryByText("Saturated Fat")).toBeNull();
     expect(queryByText("Caffeine")).toBeNull();
   });

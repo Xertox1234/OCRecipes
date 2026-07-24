@@ -6,7 +6,10 @@ import {
   extractOffUniversalData,
   offMacrosCorroborateEnergy,
 } from "../barcode-lookup";
-import { _resetCNFCacheForTesting } from "../nutrition-lookup";
+import {
+  _resetCNFCacheForTesting,
+  offNutrimentsSchema,
+} from "../nutrition-lookup";
 
 // Mock the db module so the cache functions don't hit a real database
 vi.mock("../../db", () => ({
@@ -1527,6 +1530,159 @@ describe("lookupBarcode — OFF nutriment mapping (Universal Nutrition Flags v1,
     const result = await lookupBarcode("5000000000002");
     expect(result).not.toBeNull();
     expect(result!.per100g.cholesterol).toBe(10); // already mg, NOT 10000
+  });
+
+  it("passes caffeine_100g through unconverted when caffeine_unit is 'mg'", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Energy Drink",
+              nutriments: {
+                "energy-kcal_100g": 45,
+                caffeine_100g: 32,
+                caffeine_unit: "mg",
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000003");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.caffeine).toBe(32); // already mg, NOT 32000
+  });
+
+  it("leaves saturatedFat/transFat/cholesterol/caffeine undefined when OFF omits them entirely", async () => {
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Plain Bread",
+              nutriments: {
+                "energy-kcal_100g": 250,
+                proteins_100g: 9,
+                carbohydrates_100g: 49,
+                fat_100g: 3,
+                // No saturated-fat_100g, trans-fat_100g, cholesterol_100g, or
+                // caffeine_100g at all — the missing-field direction, distinct
+                // from the "present but garbage" direction covered elsewhere.
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": emptyCNFEN,
+      "food/?lang=fr": emptyCNFFR,
+      "fdc/v1/foods/search": emptyUSDASearch,
+    });
+
+    const result = await lookupBarcode("5000000000004");
+    expect(result).not.toBeNull();
+    expect(result!.per100g.saturatedFat).toBeUndefined();
+    expect(result!.per100g.transFat).toBeUndefined();
+    expect(result!.per100g.cholesterol).toBeUndefined();
+    expect(result!.per100g.caffeine).toBeUndefined();
+  });
+});
+
+describe("offNutrimentsSchema — garbage-value isolation (Universal Nutrition Flags v1)", () => {
+  it("drops a garbage trans-fat_100g value without wiping sibling nutriments", () => {
+    // offNumericField never throws (parseFloat("N/A") → NaN → undefined via
+    // the Number.isFinite guard), so the top-level `.catch(() => ({}))` on
+    // offNutrimentsSchema never fires here — proteins_100g must survive
+    // untouched. This pins the field-level isolation so a future refactor
+    // that swaps offNumericField for a strict z.number() (which WOULD throw
+    // on "N/A" and trip the top-level catch, wiping every sibling field)
+    // fails this test immediately.
+    const parsed = offNutrimentsSchema.parse({
+      "trans-fat_100g": "N/A",
+      proteins_100g: 5,
+    });
+    expect(parsed.proteins_100g).toBe(5);
+    expect(parsed["trans-fat_100g"]).toBeUndefined();
+  });
+});
+
+describe("reconcilePer100g — new nutrient fields in the agree/+verified branch (Universal Nutrition Flags v1)", () => {
+  beforeEach(() => {
+    mockFetch.mockReset();
+    _resetCNFCacheForTesting();
+  });
+
+  it("keeps OFF's saturatedFat/transFat/cholesterol/caffeine when a secondary source agrees on calories", async () => {
+    // The 4 new nutrient fields' `primary ?? secondary` gap-fill expressions
+    // (server/services/barcode-lookup.ts:286-289) live ONLY inside
+    // reconcilePer100g's "agree" branch (source gets a "+verified" suffix) —
+    // the early `!secondary` return above it skips them entirely, and no
+    // other test in this file lands in the agree branch. A CNF secondary
+    // whose calories agree with OFF's (ratio within [0.5, 2.0]) triggers it.
+    // CNF/USDA secondaries structurally never carry these 4 fields
+    // (normalizeToPerHundredGrams only maps calories/protein/carbs/fat/
+    // fiber/sugar/sodium — see the NutritionData interface), so this proves
+    // the "primary present" side of `??` survives the merge unharmed; the
+    // "secondary supplies the value" side is unreachable through any public
+    // API call today (server never populates it, so there's nothing to gap-
+    // fill from in practice).
+    setupFetchMock({
+      "openfoodfacts.org": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 1,
+            product: {
+              product_name: "Sugar",
+              nutriments: {
+                "energy-kcal_100g": 380,
+                proteins_100g: 0,
+                carbohydrates_100g: 95,
+                fat_100g: 0,
+                "saturated-fat_100g": 4,
+                "trans-fat_100g": 0.3,
+                cholesterol_100g: 0.005, // → 5 mg (default g unit)
+                caffeine_100g: 0.02, // → 20 mg (default g unit)
+              },
+            },
+          }),
+        }),
+      "food/?lang=en": () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            { food_code: 4318, food_description: "Sweets, sugars, granulated" },
+          ],
+        }),
+      "food/?lang=fr": emptyCNFFR,
+      nutrientamount: () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => [
+            {
+              food_code: 4318,
+              nutrient_value: 387, // ratio 380/387 ≈ 0.98 — within [0.5, 2.0] → agree
+              nutrient_name_id: 208,
+              nutrient_web_name: "Energy (kcal)",
+            },
+          ],
+        }),
+    });
+
+    const result = await lookupBarcode("5000000000005");
+    expect(result).not.toBeNull();
+    expect(result!.source).toBe("openfoodfacts+verified");
+    expect(result!.per100g.calories).toBe(380);
+    expect(result!.per100g.saturatedFat).toBe(4);
+    expect(result!.per100g.transFat).toBe(0.3);
+    expect(result!.per100g.cholesterol).toBe(5);
+    expect(result!.per100g.caffeine).toBe(20);
   });
 });
 
