@@ -7,7 +7,7 @@ module: server
 applies_to: [server/services/**/*.ts]
 symptoms: [Displayed calories wildly off (e.g. 98 shown for a package stating 310 per 90g) while the serving size is correct, The wrong value scales exactly as per100g x servingGrams/100 from a calorie density belonging to a DIFFERENT generic food, lookupBarcode result source is "cnf"/"usda" for a product whose barcode was found in OFF with complete nutriments]
 created: '2026-07-17'
-last_updated: '2026-07-17'
+last_updated: '2026-07-24'
 severity: high
 ---
 
@@ -81,7 +81,10 @@ replace-on-discrepancy behavior — the swap still rescues genuinely wrong OFF
 entries (the "sugar at 50 kcal/100g vs CNF 387" case), and an internally
 contradictory entry (per-serving disagreeing with per-100g × grams) is not
 shielded. Both are pinned by guard tests, along with just-under/just-over
-15%-boundary fixtures.
+15%-boundary fixtures. **(Superseded 2026-07-24: "entries missing per-serving
+energy (most of OFF)" is the MAJORITY of the corpus, not a rare edge — leaving
+them replace-on-discrepancy was a systematic hole. See
+`## Refinements shipped (2026-07-24)` below.)**
 
 ## Prevention
 
@@ -154,9 +157,66 @@ agent. The exact sweep query and remediation commands are documented in
 `todos/archive/P3-2026-07-17-off-self-consistency-gate-refinements.md`'s
 Updates section for whoever picks this up.
 
+## Refinements shipped (2026-07-24, todo P2-2026-07-22-barcode-nutriment-source-pollution)
+
+The per-serving-only gate above left a **systematic hole**: "entries missing
+per-serving energy (most of OFF)" is the majority of the database, not a rare
+edge. Live failure (Nutella, barcode `3017620422003`): OFF had the per-100g
+exactly right (539 kcal, 6.3 protein, 57.5 carbs, 30.9 fat, 56.3 sugar) but no
+`serving_size` and no per-serving energy, so `offSelfConsistent` returned false
+on its first guard, `preferSecondaryOnDiscrepancy` stayed true, and a CNF
+category name-match ("spreads", 182 kcal — a different food) replaced OFF's
+correct label wholesale. Downstream, PR #694's FSA flags mis-fired (no
+`nutrient:sugar` for a 56 g-sugar product, because they evaluated the polluted
+3.1 g).
+
+**Fix — a second, independent corroboration path** (`server/services/barcode-lookup.ts`):
+when per-serving energy is absent, fall back to an **Atwater
+energy-vs-own-macros** check — `offMacrosCorroborateEnergy`, `4·protein +
+4·carbs + 9·fat` vs the stated per-100g energy, within
+`ATWATER_MACRO_TOLERANCE = 0.3`. An entry whose energy agrees with its own
+macros is self-consistent even without a per-serving field, so the
+name-matched secondary is demoted to gap-fill. The existing per-serving,
+zero-agreement, and kJ-contradiction branches are byte-preserved (they run only
+when both per-serving and per-100g energy are defined).
+
+**Reusable lesson — a self-consistency gate keyed on ONE corroboration field
+fails OPEN for every record lacking that field.** The original gate required
+per-serving energy (three independently-entered fields agreeing); most of OFF
+carries only per-100g, so the gate silently degraded to "no protection" for the
+majority. When a gate's premise is "these independent fields corroborate each
+other," check what fraction of REAL records carry ALL those fields — and supply
+a fallback corroboration from a DIFFERENT independent field set (here, the
+entry's own macros) for the records that don't.
+
+**Fiber is deliberately excluded from the Atwater sum.** OFF aggregates labels
+from multiple regulatory regimes — EU 1169/2011 ("carbohydrate" EXCLUDES fibre)
+and US FDA ("Total Carbohydrate" INCLUDES fibre) — and stores whichever was
+transcribed, so the sign of any per-entry fiber correction is unknowable.
+Ignoring fiber caps worst-case error at 2·fiber kcal either way; adding OR
+subtracting would be off by 4·fiber for the wrong convention. The 30% tolerance
+absorbs the residual for all but extreme-fiber products (near-pure
+psyllium/bran), an accepted unshielded residual. (A reviewer initially proposed
+*subtracting* fiber, assuming the US convention — verifying the data source's
+actual, mixed provenance before applying the suggestion was load-bearing.)
+
+**Accepted trade-off, now widened.** As with the 2026-07-17 per-serving gate,
+an entry whose energy and macros are jointly wrong yet mutually consistent is
+now shielded from the cross-check — previously confined to per-serving entries,
+this now covers the no-per-serving population too. Pinned by a dedicated
+"jointly-wrong-but-Atwater-consistent" guard test.
+
+**Cache remediation — the poisoned population is now WIDER.** Because the
+fallback protects most of OFF (not just per-serving entries), more historical
+`barcodeNutrition` rows were written wrong under the old policy. First-write-wins
+means they do NOT self-heal — the manual, human-executed sweep + delete/re-seed
+from `## Prevention` above now covers this wider set. Follow-up:
+`todos/P2-2026-07-24-barcode-cache-poisoned-rows-remediation.md` (human-led;
+never run autonomously, same guardrail as the 2026-07-17 sweep).
+
 ## Related Files
 
-- `server/services/barcode-lookup.ts` — `offSelfConsistent` + the demoted `reconcilePer100g` call; `+self-consistent` source marker; `ABSOLUTE_TOLERANCE_FLOOR_KCAL`
+- `server/services/barcode-lookup.ts` — `offSelfConsistent` + the demoted `reconcilePer100g` call; `+self-consistent` source marker; `ABSOLUTE_TOLERANCE_FLOOR_KCAL`; (2026-07-24) `offMacrosCorroborateEnergy` + `ATWATER_MACRO_TOLERANCE` Atwater fallback for the no-per-serving-energy population
 - `server/services/nutrition-lookup.ts` — `offNutrimentsSchema` gained `energy-kcal_serving`/`energy_serving`
 - `server/services/__tests__/barcode-lookup.test.ts` — McSweeney's regression, kJ-only, boundary, and guard tests; low-cal absolute-floor fixtures
 - `server/lib/verification-consensus.ts` — `valuesMatch`'s `tolerance` param, now shared between verification consensus and this gate

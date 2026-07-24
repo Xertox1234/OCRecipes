@@ -211,3 +211,25 @@ describe("evaluateUniversalFlags — sweeteners & nutriscore", () => {
     ).toBe(false);
   });
 });
+
+describe("evaluateUniversalFlags — regression: fixed Nutella data now flags high sugar (P2-2026-07-22)", () => {
+  it("fires nutrient:sugar (plus processing:ultra and nutriscore:e) once the source pollution fix corrects Nutella's per100g", () => {
+    // Before the barcode-lookup fix (P2-2026-07-22), a name-matched secondary
+    // replaced OFF's self-consistent Nutella label wholesale, so the flag
+    // evaluator only ever saw the wrong low-sugar (3.1 g) data and never
+    // fired nutrient:sugar. With the corrected data (56.3 g/100g, well above
+    // the FSA food red line of 22.5), the sugar flag now fires alongside the
+    // already-correct NOVA and Nutri-Score flags.
+    const flags = evaluateUniversalFlags({
+      ...base,
+      // 10.6 = Nutella's real saturated fat/100g (30.9 is its TOTAL fat).
+      per100g: { sugar: 56.3, saturatedFat: 10.6, sodium: 42.8 },
+      categoriesTags: ["en:spreads"],
+      novaGroup: 4,
+      nutriScore: "e",
+    });
+    expect(ids(flags)).toContain("nutrient:sugar");
+    expect(ids(flags)).toContain("processing:ultra");
+    expect(ids(flags)).toContain("nutriscore:e");
+  });
+});
