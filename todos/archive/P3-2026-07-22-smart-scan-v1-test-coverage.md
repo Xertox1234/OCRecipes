@@ -1,6 +1,6 @@
 ---
 title: "Smart Scan v1 — close universal-flags test-coverage gaps"
-status: backlog
+status: done
 priority: low
 created: 2026-07-22
 updated: 2026-07-22
