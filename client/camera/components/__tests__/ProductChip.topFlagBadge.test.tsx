@@ -25,7 +25,7 @@ const lockedPhase = (flag?: any): ScanPhase => ({
   product: { name: "Trail Mix", topFlag: flag },
 });
 
-describe("ProductChip safety flag", () => {
+describe("ProductChip top flag badge", () => {
   it("renders the top safety flag on the locked chip", () => {
     const { getByText } = renderComponent(
       <ProductChip
@@ -99,7 +99,7 @@ describe("ProductChip safety flag", () => {
 // flag arriving after the chip is already shown needs its own imperative
 // announce on iOS, gated off on Android since the badge's own live region
 // already covers that platform (mirrors the productName pattern above it).
-describe("ProductChip safety flag — accessibility", () => {
+describe("ProductChip top flag badge — accessibility", () => {
   const originalOS = RN.Platform.OS;
   let announceSpy: ReturnType<typeof vi.spyOn>;
 

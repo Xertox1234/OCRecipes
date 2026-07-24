@@ -97,6 +97,32 @@ describe("nutrition-detail-flags-utils", () => {
       const p = partitionScanFlags(flags);
       expect(p.nutriScore).toBeUndefined();
     });
+
+    // Defensive default: a flag kind outside PERSONAL_KINDS/UNIVERSAL_KINDS
+    // and not "nutriscore" — e.g. a future ScanFlagKind addition, or an
+    // "insight"-tier flag once that tier ships — has no bucket here. It must
+    // not silently vanish from both sections without a trace.
+    it("warns and drops a flag with an unmodeled kind from both sections", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const flags = [
+        {
+          id: "insight:mystery",
+          kind: "insight-mystery",
+          severity: "info",
+          tier: "insight",
+          title: "Unmodeled flag",
+        },
+      ] as any;
+
+      const p = partitionScanFlags(flags);
+
+      expect(p.personal).toEqual([]);
+      expect(p.universal).toEqual([]);
+      expect(p.nutriScore).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0][0]).toContain("insight-mystery");
+      warnSpy.mockRestore();
+    });
   });
 
   describe("headsUpSummaryLabel", () => {

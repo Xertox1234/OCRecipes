@@ -370,7 +370,7 @@ export default function ScanScreen() {
         // the detail screen's "Heads up" section instead.
         const safetyFlag = pickTopSafetyFlag(flags);
         const topFlag =
-          pickTopSafetyFlag(flags) ??
+          safetyFlag ??
           pickTopFlag(
             flags.filter(
               (f: ScanFlag) => f.tier !== "safety" && f.severity !== "info",
