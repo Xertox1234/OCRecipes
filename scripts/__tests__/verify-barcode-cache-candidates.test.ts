@@ -173,14 +173,14 @@ describe("classify — verdicts", () => {
     expect(r.verdict).toContain("review");
   });
 
-  // CHARACTERIZATION, not endorsement: this pins a KNOWN limitation reported by
-  // /code-review and deliberately left unfixed. The `materially` gate compares
-  // calories only, so Cherry Coke's cached 6.5 vs OFF's 11.1 (a 4.6 delta,
-  // inside max(5, off*0.25)) scores `ok` — even though that row carried 1.0 g
-  // fat and 0.2 g protein for a cola, i.e. macros from a different food. If the
-  // criterion is ever corrected to "would the current code produce a better
-  // row?", this expectation SHOULD flip to POISONED; update it, don't preserve it.
-  it("does NOT flag macro-only pollution when calories happen to be close", () => {
+  // The Cherry Coke prod case: cached 6.5 vs OFF's 11.1 kcal/100ml is inside
+  // any reasonable calorie threshold, but the row carried 1.0 g fat and 0.2 g
+  // protein for a cola — macros from a different food. The criterion is not
+  // "do the calories differ materially?" but "would the current code produce a
+  // better row?": the source is a secondary AND OFF now shields the entry.
+  // (This flips the former characterization test that pinned the calorie-only
+  // limitation.)
+  it("flags macro-only pollution even when calories are close (Cherry Coke prod case)", () => {
     const r = classify({
       off100: 11.1,
       P: 0,
@@ -189,6 +189,38 @@ describe("classify — verdicts", () => {
       cal: 23,
       grams: 355,
     });
+    expect(r.verdict).toBe("POISONED");
+  });
+
+  it("flags a shielded row even when cached energy matches OFF exactly (bias toward delete)", () => {
+    // Deleting costs nothing — the row re-seeds identically on next scan — so
+    // any secondary-source row the current policy would shield is worth
+    // re-seeding; matching calories are a symptom, not the criterion.
+    const r = classify({
+      off100: 539,
+      P: 6.3,
+      C: 57.5,
+      F: 30.9,
+      cal: 539,
+      grams: 100,
+    });
+    expect(r.shielded).toBe("yes");
+    expect(r.verdict).toBe("POISONED");
+  });
+
+  it("leaves an unshielded OFF entry alone even when values differ wildly", () => {
+    // Energy contradicts its own macros (Atwater 400 vs stated 50): the
+    // current code would NOT shield this entry, so deleting the cached row
+    // would just re-seed the same secondary answer. Not poisoned.
+    const r = classify({
+      off100: 50,
+      P: 0,
+      C: 100,
+      F: 0,
+      cal: 400,
+      grams: 100,
+    });
+    expect(r.shielded).toBe("no");
     expect(r.verdict).toBe("ok");
   });
 });

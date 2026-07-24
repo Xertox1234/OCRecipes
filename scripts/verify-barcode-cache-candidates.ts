@@ -10,10 +10,17 @@
 // Read-only: fetches Open Food Facts, never touches any database — the policy
 // functions are imported from the db-free server/services/barcode-policy.ts,
 // so the verdicts ARE the server's current shielding policy, not a mirror.
-// A candidate is POISONED when OFF resolves it AND the post-fix policy would now
-// shield that entry (macros corroborate energy, or it's an explicit zero) AND the
-// cached value differs materially from OFF. A candidate that no longer resolves in
-// OFF is LEGITIMATE — its secondary source was the correct answer (Kinder Bueno).
+//
+// PRECONDITION: every candidate fed to this script is a secondary-source row
+// (the sweep SQL filters `source IN ('cnf','usda','api-ninjas')` — see the
+// runbook in todos/archive/P2-2026-07-24-barcode-cache-poisoned-rows-
+// remediation.md). Under that precondition the verdict criterion is "would
+// the current code produce a better row?": a candidate is POISONED when OFF
+// resolves it AND the post-fix policy would now shield the entry (macros
+// corroborate energy, or it's an explicit zero) — no cached-vs-OFF delta
+// threshold, because deleting re-seeds correctly and costs nothing. A
+// candidate that no longer resolves in OFF is LEGITIMATE — its secondary
+// source was the correct answer (Kinder Bueno).
 
 import { pathToFileURL } from "node:url";
 
@@ -132,13 +139,15 @@ export function classify({
     };
   }
   const cached100 = Math.round((cal / grams) * 100 * 10) / 10;
-  const materially =
-    off100 !== undefined &&
-    Math.abs(cached100 - off100) > Math.max(5, off100 * 0.25);
+  // No calorie-delta threshold: matching numbers are a symptom, not the
+  // criterion (the Cherry Coke prod row sat inside every reasonable threshold
+  // while carrying another food's macros). Deleting a shielded row costs
+  // nothing — it re-seeds from OFF on the next scan — so the bias is toward
+  // deleting; cached100 stays in the output as informational context only.
   return {
     shielded,
     cached100,
-    verdict: materially && shielded !== "no" ? "POISONED" : "ok",
+    verdict: off100 !== undefined && shielded !== "no" ? "POISONED" : "ok",
   };
 }
 
