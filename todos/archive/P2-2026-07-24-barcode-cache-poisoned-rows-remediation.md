@@ -55,7 +55,7 @@ railway run --service Postgres -- sh -c 'psql "$DATABASE_PUBLIC_URL" -f /tmp/swe
 
 # 2. Classify each candidate against live OFF (read-only, no DB).
 #    `calories` from step 1 is PER SERVING, hence the grams argument.
-node verify-candidates.mjs <barcode>:<calories>:<servingGrams> ...
+node scripts/verify-barcode-cache-candidates.mjs <barcode>:<calories>:<servingGrams> ...
 
 # 3. Targeted delete — explicit barcode list ONLY.
 cat > /tmp/remediate.sql <<'SQL'
@@ -135,7 +135,7 @@ Permission rules were added for the Railway CLI (both layers — `permissions.al
 
 After: **zero** secondary-source rows remain (2 × `openfoodfacts+verified`, 1 × `openfoodfacts`, 1 × `openfoodfacts+self-consistent`).
 
-**Refinement to the classifier — a calorie-only threshold under-flags.** `verify-candidates.mjs` scored Cherry Coke `ok` because its cached 6.5 vs OFF's 11.1 kcal/100 ml fell inside the material-delta threshold. But its cached row carried **1.0 g fat and 0.2 g protein for a cola** — CNF name-match macros, not the product. The correct remediation criterion is not _"do the calories differ materially?"_ but **"would the current code produce a better row?"** — i.e. the source is a secondary AND OFF now resolves with the shield engaging. Calories are one symptom of that, not the definition. Deleting costs nothing (rows re-seed correctly), so the bias should be toward deleting any secondary-source row whose barcode OFF now shields.
+**Refinement to the classifier — a calorie-only threshold under-flags.** `scripts/verify-barcode-cache-candidates.mjs` scored Cherry Coke `ok` because its cached 6.5 vs OFF's 11.1 kcal/100 ml fell inside the material-delta threshold. But its cached row carried **1.0 g fat and 0.2 g protein for a cola** — CNF name-match macros, not the product. The correct remediation criterion is not _"do the calories differ materially?"_ but **"would the current code produce a better row?"** — i.e. the source is a secondary AND OFF now resolves with the shield engaging. Calories are one symptom of that, not the definition. Deleting costs nothing (rows re-seed correctly), so the bias should be toward deleting any secondary-source row whose barcode OFF now shields.
 
 **Not verified:** the re-seed itself in prod. It requires an authenticated scan per barcode, which happens organically on next use. Risk is nil — an absent row is strictly better than a poisoned one, and `lookupBarcode` computes live regardless; only the Public API reads the cache.
 
