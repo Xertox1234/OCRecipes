@@ -93,3 +93,25 @@ export function pickTopFlag(flags: ScanFlag[]): ScanFlag | undefined {
   }
   return top;
 }
+
+/**
+ * Top single-badge flag for compact display surfaces (the scan-lock chip,
+ * the returnAfterLog confirm-card overlay): the top safety-tier flag if ANY
+ * safety flag is present (any severity — a personal allergen match must
+ * never be hidden behind a universal nutrition heads-up), else the top
+ * warn/danger-level non-safety (nutrition) flag, else nothing. Info-level
+ * non-safety flags (Nutri-Score, "Contains caffeine", "Contains artificial
+ * sweeteners") never reach this badge — they render on the detail screen's
+ * "Heads up" section instead. Both display surfaces must call this shared
+ * helper rather than re-deriving the composition inline — a prior refactor
+ * updated one call site's inline logic without the other, producing a
+ * parity gap between the two surfaces.
+ */
+export function pickTopDisplayFlag(flags: ScanFlag[]): ScanFlag | undefined {
+  return (
+    pickTopSafetyFlag(flags) ??
+    pickTopFlag(
+      flags.filter((f) => f.tier !== "safety" && f.severity !== "info"),
+    )
+  );
+}

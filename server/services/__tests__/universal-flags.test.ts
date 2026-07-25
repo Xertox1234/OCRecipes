@@ -233,3 +233,49 @@ describe("evaluateUniversalFlags — regression: fixed Nutella data now flags hi
     expect(ids(flags)).toContain("nutriscore:e");
   });
 });
+
+describe("evaluateUniversalFlags — severity drift guard", () => {
+  // The client's shared `pickTopDisplayFlag` (shared/types/scan-flags.ts)
+  // and the confirm-card/scan-lock chip's fail-dangerous "danger" haptic
+  // (client/screens/ScanScreen.tsx) both rely on an invariant this module
+  // never type-enforces: a nutrition-tier flag from evaluateUniversalFlags
+  // is never `severity: "danger"` — only allergy (safety-tier) flags carry
+  // "danger" (server/services/scan-flags.ts SEVERITY_TO_FLAG). If a future
+  // nutrient/processing/sweetener addition were ever raised to "danger",
+  // it would silently trigger allergy-styled UI/haptics for a non-allergen.
+  // This is a strong worst-case fixture (every branch pushed to its highest
+  // trigger), not exhaustive, but it fails loudly the moment the invariant
+  // is violated instead of drifting silently.
+  it('never emits severity: "danger" for any universal flag, across every branch', () => {
+    const flags = evaluateUniversalFlags({
+      per100g: { sugar: 999, saturatedFat: 999, sodium: 999, caffeine: 999 },
+      perServing: { sugar: 999, saturatedFat: 999, sodium: 999, caffeine: 999 },
+      servingGrams: 500,
+      categoriesTags: ["en:beverages", "en:sodas", "en:energy-drinks"],
+      novaGroup: 4,
+      nutriScore: "e",
+      additivesTags: ["en:e950", "en:e951"],
+      ingredientsText: "Sugar, caffeine, artificial sweeteners",
+    });
+    expect(flags.length).toBeGreaterThan(0);
+    for (const f of flags) {
+      expect(f.severity).not.toBe("danger");
+    }
+  });
+
+  // The fixture above always trips the caffeine ladder's `servingMg >=
+  // CAFFEINE_HIGH_MG` branch first (severity "warn"), so the sibling
+  // `else if (hasCaffeineSignal)` info-severity branch never runs there —
+  // this second fixture drives ONLY that branch (no perServing at all, a
+  // low per100g caffeine value below the high-dose threshold) so the
+  // "across every branch" claim actually covers it.
+  it('never emits severity: "danger" for the info-severity "Contains caffeine" branch specifically', () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { caffeine: 5 },
+    });
+    const caffeineFlag = flags.find((f) => f.id === "nutrient:caffeine");
+    expect(caffeineFlag?.severity).toBe("info");
+    expect(caffeineFlag?.severity).not.toBe("danger");
+  });
+});

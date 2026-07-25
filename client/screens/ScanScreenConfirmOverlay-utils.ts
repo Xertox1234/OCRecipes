@@ -1,5 +1,5 @@
 import type { ScanFlag } from "@shared/types/scan-flags";
-import { pickTopSafetyFlag } from "@shared/types/scan-flags";
+import { pickTopDisplayFlag } from "@shared/types/scan-flags";
 
 export type ConfirmCardState = {
   barcode: string;
@@ -8,6 +8,14 @@ export type ConfirmCardState = {
   isLoading: boolean;
   isLogging: boolean;
   isError: boolean;
+  /**
+   * Despite the field name (kept for the haptic/announce call sites'
+   * `.severity === "danger"` checks, which only ever fire for a safety-tier
+   * flag), this holds the shared `pickTopDisplayFlag` composition — the top
+   * safety-tier flag if any is present, else the top warn/danger-level
+   * nutrition flag — matching the scan-lock chip's ProductChip badge. See
+   * `pickTopDisplayFlag` in `shared/types/scan-flags.ts`.
+   */
   safetyFlag?: ScanFlag;
 };
 
@@ -46,7 +54,7 @@ export function buildLoadedConfirmCard(
     isLoading: false,
     isLogging: false,
     isError: false,
-    safetyFlag: pickTopSafetyFlag(Array.isArray(data.flags) ? data.flags : []),
+    safetyFlag: pickTopDisplayFlag(Array.isArray(data.flags) ? data.flags : []),
   };
 }
 
