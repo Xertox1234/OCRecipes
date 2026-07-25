@@ -7,6 +7,8 @@ updated: 2026-07-25
 assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
+human_led: true
+blocked_reason: "Acceptance criterion #1 is a human judgment across three options with very different costs (wait upstream / patch a podspec across an MLKit major / replace the OCR library). Verification also needs a physical device, an EAS Build, and real label photos — none reachable by an autonomous executor."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
@@ -44,10 +46,18 @@ Exact failure from `pod install --project-directory=ios`:
 
 ### Already investigated — do not redo
 
-- **The npm side is clean.** Both `react-native-vision-camera` and
-  `-barcode-scanner` publish 5.1.1. Peer deps are all `*`; `react-native-nitro-modules`
-  (0.35.6) and `react-native-nitro-image` (0.14.0) do **not** need to move.
-  The blocker is entirely at the CocoaPods layer.
+- **The npm side needs no changes — but is NOT safely pinned.** Both
+  `react-native-vision-camera` and `-barcode-scanner` publish 5.1.1. Peer deps
+  are all `*`; `react-native-nitro-modules` (0.35.6) and
+  `react-native-nitro-image` (0.14.0) do **not** need to move. The blocker is
+  entirely at the CocoaPods layer.
+  **⚠ Latent trap:** `package.json:145-146` declares `^5.0.11`, and the caret
+  **already permits 5.1.1**. Only `package-lock.json` holds the 5.0.11 line, so
+  a Dependabot bump, `npm update`, or any lockfile regeneration silently
+  resolves to 5.1.1 and reproduces the `pod install` failure above — with no
+  record of why. Consider an exact pin (`5.0.11`) or a `package.json`
+  `overrides` entry until this todo is resolved. Note the CocoaPods failure is
+  loud, but it surfaces at native build time, not at `npm install`.
 - **`@react-native-ml-kit/text-recognition` has no MLKit 9 release.** Installed
   2.0.0 is the latest published version; its podspec hard-pins five subspecs at
   `8.0.0` (`RNMLKitTextRecognition.podspec:25-33`: TextRecognition, Chinese,
@@ -75,12 +85,22 @@ Exact failure from `pod install --project-directory=ios`:
 - [ ] Barcode scanning verified on **both** iOS and Android (iOS uses
       `useObjectOutput`, Android uses `useBarcodeScannerOutput` — different code paths)
 - [ ] iOS 26 simulator build still works (see the MLKit fat-binary risk below)
-- [ ] Tap-to-focus re-verified on a physical device; then **delete the
-      `Platform.OS === "ios"` workaround branch** in
+- [ ] Tap-to-focus re-verified on a physical device; then remove the
+      `Platform.OS === "ios"` workaround branch in
       `client/camera/hooks/useCameraFocusAndZoom.ts` and its
-      `supportedMeteringModes()` helper, per the "delete when 5.1.1 lands" note
-      in that file and in
-      `docs/solutions/logic-errors/library-auto-capability-default-fails-whole-operation-2026-07-25.md`
+      `supportedMeteringModes()` helper
+      (`client/camera/hooks/useCameraFocusAndZoom-utils.ts`) — **but only the
+      part upstream actually fixed.** The "delete when 5.1.1 lands" note scopes
+      to #3976, the unconditional-AWB-append bug, which makes the _computed_
+      mode set correct. It says nothing about the _empty_ set: iOS throws
+      `"MeteringModes cannot be empty!"` by design
+      (`HybridCameraController.swift:186-188`, a deliberate `guard`, not a
+      defect), so a device supporting no metering at all still needs handling.
+      Confirm 5.1.1's behavior for that case **before** dropping the
+      `modes.length === 0` early return, or a no-metering device gets a
+      guaranteed rejection plus a Sentry event on its first tap — the exact
+      failure `docs/solutions/logic-errors/library-auto-capability-default-fails-whole-operation-2026-07-25.md`
+      flags as load-bearing
 - [ ] `useCameraDevice` device selection re-verified — 5.1.0 shipped
       "Better `useCameraDevice(...)` including default Cameras" (#4053), a
       behavioral change to which physical camera gets picked
