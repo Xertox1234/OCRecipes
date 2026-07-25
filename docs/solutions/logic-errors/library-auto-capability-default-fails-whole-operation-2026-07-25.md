@@ -163,6 +163,17 @@ rebuild via EAS Build and its own verification pass, because 5.1.0 also changed
   Here the Android implementation was already *more* correct than the
   workaround, so cross-platform "symmetry" would have introduced the very class
   of defect being fixed on the platform that was never verified.
+- **A "delete this when upstream fixes it" note must name exactly which
+  sub-behavior upstream fixes.** A workaround block accretes guards for adjacent
+  problems that the upstream fix does not cover, and a bare "remove when 5.1.1
+  lands" invites deleting all of them together. Here the note scoped to #3976
+  (the unconditional AWB append), which corrects the *computed* mode set — but
+  the block also carries the `modes.length === 0` early return, which exists
+  because iOS throws `"MeteringModes cannot be empty!"` **by design**
+  (a deliberate `guard`, not a defect upstream will ever "fix"). A follow-up
+  todo initially inherited the unscoped wording and would have removed both.
+  Caught in review of PR #717; the criterion now requires verifying the
+  empty-set behavior separately before that guard comes out.
 
 ## Related Files
 
