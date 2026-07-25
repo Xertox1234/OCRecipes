@@ -3,7 +3,7 @@
 ---
 
 title: "Fix stale novaGroup/nutriScore comment in server/routes/nutrition.ts"
-status: backlog
+status: done
 priority: low
 created: 2026-07-24
 updated: 2026-07-24
@@ -41,3 +41,19 @@ Files: `server/routes/nutrition.ts` only. Low-risk, comment/DTO-trim only — no
 ### 2026-07-24
 
 - Filed by the P3-2026-07-22-smart-scan-v1-cleanup todo executor (out-of-scope finding).
+- **Resolved (comment fix, not DTO trim).** Re-ran the AC's grep: no client
+  reads the raw `novaGroup`/`nutriScore` scalars. `NutritionDetailScreen.tsx:380`
+  renders `partition.nutriScore?.grade`, a `ScanFlag` derived from
+  `orderedFlags` by `nutrition-detail-flags-utils.ts` — not this field. The only
+  other client hit is a mock server-response fixture in
+  `client/hooks/__tests__/useNutritionLookup.test.ts:278-279`. No client type
+  declares the scalars at all (the 2026-07-22 cleanup removed them).
+- **Deliberately did NOT drop the fields from the response body**, though the AC
+  allowed it. The grep proves no reader in current _source_; it cannot prove no
+  reader in a _deployed_ bundle. The client-side fields were removed only on
+  2026-07-22, EAS Updates apply on second cold start, and there is an
+  embedded-vs-OTA user split — so clients running the pre-cleanup bundle may
+  still read them. A wire-contract trim is outward-facing and not reversible for
+  users already on an old bundle, so the AC's "confirmed unused" condition is
+  not met. The rewritten comment records this and the condition under which the
+  trim becomes safe.
