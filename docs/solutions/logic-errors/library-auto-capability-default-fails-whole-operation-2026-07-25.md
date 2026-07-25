@@ -97,19 +97,43 @@ export function supportedMeteringModes(device: CameraDevice): MeteringMode[] {
 ```
 
 ```ts
-const modes = supportedMeteringModes(device);
-if (modes.length === 0) return; // nothing to meter; stay on continuous AF
-cameraRef.current?.focusTo({ x, y }, { modes }).catch((error: unknown) => {
-  if (focusFailureReportedRef.current) return; // latched — this is a tap handler
-  focusFailureReportedRef.current = true;
-  logger.error(`[useCameraFocusAndZoom] focusTo failed (requested ${modes.join("+")}; …)`, error);
-});
+let options: FocusOptions | undefined;
+if (Platform.OS === "ios") {
+  const modes = supportedMeteringModes(device);
+  if (modes.length === 0) return;   // iOS throws "MeteringModes cannot be empty!"
+  options = { modes };
+}
+cameraRef.current?.focusTo({ x, y }, options)
+  .then(() => { focusFailureReportedRef.current = false; })  // re-arm
+  .catch((error: unknown) => {
+    if (focusFailureReportedRef.current) return; // latched — this is a tap handler
+    focusFailureReportedRef.current = true;
+    logger.error(`[useCameraFocusAndZoom] focusTo failed (…)`, error);
+  });
 ```
 
-**Derive, do not hardcode.** `modes: ['AF']` would have fixed the reporting
+Three things this shape gets right, each of which was wrong in the first draft
+and caught in review:
+
+**1. Scope the workaround to the broken platform.** The bug is **iOS-only**.
+Android's CameraX path derives its modes from
+`isFocusMeteringSupported(FocusMeteringAction)` for the **actual tapped point**
+(`HybridCameraController.kt:148,167`), whereas `device.supports*Metering` on
+Android is a **point-agnostic** `createDummyMeteringAction(FLAG_*)` probe
+(`HybridCameraDevice.kt:126-130`). Passing our flags there replaces a
+point-aware check with a point-agnostic one — a *downgrade*, on the platform
+that never had the bug and that wasn't device-verified. A platform-specific
+workaround applied cross-platform buys symmetry and pays for it in a regression.
+
+**2. Derive, do not hardcode.** `modes: ['AF']` would have fixed the reporting
 device and silently dropped exposure and white-balance metering on every other
-one. Deriving degrades correctly everywhere and needs no revisit after the
-version bump.
+one.
+
+**3. The empty guard is load-bearing, not politeness.** iOS throws
+`"MeteringModes cannot be empty!"` on `[]`
+(`HybridCameraController.swift:186-188`), so without it a device supporting no
+metering gets a guaranteed rejection — and, with the new logging, a spurious
+Sentry event — on its first tap.
 
 Device-verified via `npm run update:preview` (PR #716). This is a **workaround
 for a known upstream bug**, not the root fix — #3974/#3977 are KVO
@@ -129,6 +153,16 @@ rebuild via EAS Build and its own verification pass, because 5.1.0 also changed
   code cannot enforce.
 - Latch error reporting invoked from a gesture/tap handler. Unlatched,
   `logger.error` forwards one Sentry event **per tap** on a broken device.
+- **Re-arm the latch on success.** A permanently-set latch caps *distinct
+  causes* at one, not just volume. A transient early-tap rejection ("Camera is
+  not yet ready!", thrown before the controller is set) would otherwise consume
+  the mount's only report and hide a later persistent failure — the one worth
+  knowing about. Reset it in `.then()`.
+- **Before applying a workaround on every platform, confirm every platform has
+  the bug.** Read the native source for each, not just the one in your hand.
+  Here the Android implementation was already *more* correct than the
+  workaround, so cross-platform "symmetry" would have introduced the very class
+  of defect being fixed on the platform that was never verified.
 
 ## Related Files
 
