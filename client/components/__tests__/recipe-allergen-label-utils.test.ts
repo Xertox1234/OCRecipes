@@ -54,6 +54,19 @@ describe("recipe-allergen-label-utils", () => {
 
       expect(toRecipeAllergenLabels(stale)).toEqual([]);
     });
+
+    // `id in MAP` would pass Object.prototype keys ("constructor" in {} is
+    // true) and render "Contains: undefined" — the guard must be own-property
+    // only (Object.hasOwn).
+    it("skips ids that are Object.prototype keys, not own map entries", () => {
+      const hostile = [
+        { id: "constructor", viaDerived: false },
+        { id: "__proto__", viaDerived: false },
+        { id: "hasOwnProperty", viaDerived: false },
+      ] as unknown as DerivedRecipeAllergen[];
+
+      expect(toRecipeAllergenLabels(hostile)).toEqual([]);
+    });
   });
 
   describe("toRecipeAllergenA11ySuffix", () => {

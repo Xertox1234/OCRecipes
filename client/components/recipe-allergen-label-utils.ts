@@ -32,7 +32,7 @@ export function toRecipeAllergenLabels(
   if (!allergens || allergens.length === 0) return [];
 
   return allergens
-    .filter(({ id }) => id in ALLERGEN_INGREDIENT_MAP)
+    .filter(({ id }) => Object.hasOwn(ALLERGEN_INGREDIENT_MAP, id))
     .map(({ id }) => ({
       id,
       label: ALLERGEN_INGREDIENT_MAP[id].label,
