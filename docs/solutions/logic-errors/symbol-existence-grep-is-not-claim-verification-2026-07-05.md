@@ -8,7 +8,7 @@ tags: [verification, fact-checking, agents, prompts, documentation, grep, review
 symptoms: [Doc or agent-file prose cites real symbols but states wrong relationships between them (order, exclusivity, tier assignment, wrong owning file), A pre-merge fact-check grepped every cited symbol and came back green, Adversarial review later confirms several claims false against source comments and existing tests]
 applies_to: [.claude/agents/**/*.md, .claude/skills/**/*.md, docs/**/*.md]
 created: '2026-07-05'
-last_updated: '2026-07-11'
+last_updated: '2026-07-25'
 ---
 
 # A symbol-existence grep passes while the claim about the symbol is wrong — verify the predicate at the source
@@ -62,6 +62,22 @@ cited source:
   and confirm the behavior is implemented there, not re-exported from elsewhere.
 - **Assignment claims** ("FAST = text, HEAVY = vision") → read the source-of-truth
   comments/config the claim cites.
+- **Date / provenance claims** ("field X was removed on 2026-07-22") → the predicate is
+  *which commit changed it, and in which direction* — never "a commit touching X exists
+  on that date." `git log --format='%h %ad %s' --date=short -S'<symbol>' -- <paths>`
+  proves a change to the symbol's occurrence count existed; only `git show <sha>` says
+  whether it **added** or **removed**. Two wrong sources are especially close at hand: a
+  **todo/issue filename**, which carries the *filing* date, not the ship date; and the
+  **adjacent commit that added** the symbol, which sits right beside the removal in the
+  same `-S` output. (2026-07-25, PR #713: a comment justifying why two response-body
+  fields stay on the wire cited 2026-07-22 as the client-side removal date. `d03b6c0d`
+  (2026-07-22, #694) **added** those fields; `13bf5059` (#708) removed them and shipped
+  2026-07-24. The 07-22 date came from the source todo's filename,
+  `P3-2026-07-22-smart-scan-v1-cleanup`. Load-bearing: the OTA compatibility window is
+  computed from that date, so anchoring it two days early would have licensed a
+  wire-contract trim before the pre-cleanup bundles were out of circulation — the exact
+  outcome the comment existed to prevent. Caught by `/code-review`, not by any grep,
+  lint, or type check.)
 - **Count/precedent claims** ("PR #14: 3 review findings") → re-derive the number
   under one stated counting method applied uniformly to every cited instance. A
   count whose method you cannot state cannot be verified — cite the source commit
@@ -99,6 +115,18 @@ defects that the symbol-existence pass had approved.
   symbol grep) caught it. Retiring stale vocabulary and restating a mechanism's scope
   are both claims — re-run the same predicate check on the replacement prose you just
   wrote, not only on the text you deleted.
+- **When the false claim has already been codified, correct the code and the codified
+  copy in the SAME PR.** A wrong fact that reached `docs/solutions/` is served to future
+  edits by `.claude/hooks/inject-patterns.sh` as authoritative, so fixing only the
+  originating code leaves the wrong version as the durable one — and the codified copy
+  outlives the comment it came from. If the solution file already merged, pull `main`
+  into the open branch and fix both there rather than deferring to a second PR; the
+  correction is one change, and splitting it opens a window where the two disagree.
+  Sweep every restatement, not just the origin: in PR #713 the same bad date sat in the
+  route comment, the archived todo, the merged solution file, and a `server-reviewer`
+  rule. Then fix the *class*, not only the digits — that incident's real output was a
+  new predicate type (date/provenance, above) plus a smell pattern, not a corrected
+  date.
 
 ## Related Files
 
