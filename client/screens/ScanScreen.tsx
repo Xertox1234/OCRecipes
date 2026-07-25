@@ -69,6 +69,7 @@ import {
   buildScannedItemPayload,
   buildSuccessToastMessage,
   canLog,
+  getConfirmFlagPresentation,
   getScanOverlayA11y,
   type ConfirmCardState,
 } from "@/screens/ScanScreenConfirmOverlay-utils";
@@ -85,7 +86,10 @@ import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
-import { pickTopSafetyFlag, pickTopFlag } from "@shared/types/scan-flags";
+import {
+  pickTopSafetyFlag,
+  pickTopDisplayFlag,
+} from "@shared/types/scan-flags";
 import type { ScanFlag } from "@shared/types/scan-flags";
 
 const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
@@ -232,7 +236,12 @@ export default function ScanScreen() {
             // Raise salience on a severe flag WITHOUT blocking the flow (badges
             // only) — mirrors fetchProductInfo's ProductChip-path haptic below,
             // since this path never opens NutritionDetail to carry it instead.
-            if (card.safetyFlag?.severity === "danger") {
+            // tier check required: topDisplayFlag can hold a nutrition flag,
+            // and the Warning haptic is reserved for safety-tier danger.
+            if (
+              card.topDisplayFlag?.tier === "safety" &&
+              card.topDisplayFlag.severity === "danger"
+            ) {
               haptics.notification(Haptics.NotificationFeedbackType.Warning);
             }
           },
@@ -307,17 +316,21 @@ export default function ScanScreen() {
 
   // Announce loading state transitions to screen readers (iOS VoiceOver only —
   // Android TalkBack is handled by accessibilityLiveRegion on the loading view).
-  // The loaded-name branch also folds in the safety badge (when present): the
-  // badge's own `accessibilityLiveRegion="assertive"` is Android-only, so this
-  // imperative announce is iOS's ONLY signal for the flag. Name and flag arrive
-  // together in the same buildLoadedConfirmCard transition (a single fetch, not
+  // The loaded-name branch also folds in the flag badge (when present): the
+  // badge's own `accessibilityLiveRegion` is Android-only, so this imperative
+  // announce is iOS's ONLY signal for the flag. Name and flag arrive together
+  // in the same buildLoadedConfirmCard transition (a single fetch, not
   // ProductChip's multi-variant lifecycle), so one combined announcement covers
   // both without needing a separate edge-guarded effect.
   const confirmIsLoading = confirmCard?.isLoading;
   const confirmIsError = confirmCard?.isError;
   const confirmName = confirmCard?.name;
-  const confirmSafetyFlagTitle = confirmCard?.safetyFlag?.title;
-  const confirmSafetyFlagDetail = confirmCard?.safetyFlag?.detail;
+  const confirmFlagTitle = confirmCard?.topDisplayFlag?.title;
+  const confirmFlagDetail = confirmCard?.topDisplayFlag?.detail;
+  const confirmFlag = confirmCard?.topDisplayFlag;
+  const confirmFlagVisuals = confirmFlag
+    ? getConfirmFlagPresentation(confirmFlag)
+    : undefined;
   useEffect(() => {
     if (confirmIsLoading === undefined) return; // confirmCard is null
     if (Platform.OS !== "ios") return;
@@ -326,19 +339,19 @@ export default function ScanScreen() {
     } else if (confirmIsError) {
       AccessibilityInfo.announceForAccessibility("Nutrition data unavailable");
     } else if (confirmName) {
-      const safetySuffix = confirmSafetyFlagTitle
-        ? ` ${confirmSafetyFlagDetail ? `${confirmSafetyFlagTitle}. ${confirmSafetyFlagDetail}` : confirmSafetyFlagTitle}`
+      const flagSuffix = confirmFlagTitle
+        ? ` ${confirmFlagDetail ? `${confirmFlagTitle}. ${confirmFlagDetail}` : confirmFlagTitle}`
         : "";
       AccessibilityInfo.announceForAccessibility(
-        `${confirmName}.${safetySuffix}`,
+        `${confirmName}.${flagSuffix}`,
       );
     }
   }, [
     confirmIsLoading,
     confirmIsError,
     confirmName,
-    confirmSafetyFlagTitle,
-    confirmSafetyFlagDetail,
+    confirmFlagTitle,
+    confirmFlagDetail,
   ]);
 
   const fetchProductInfo = useCallback(
@@ -354,28 +367,15 @@ export default function ScanScreen() {
         // semantics) — this LOCAL variable drives the haptic below,
         // unchanged; the field of the same name on the dispatched product is
         // kept for its safety-tier-only semantics but has no reader today.
-        // topFlag ranks TIER before severity (fix round 3): show the top
+        // topFlag: the shared `pickTopDisplayFlag` composition (top
         // safety-tier flag if ANY safety flag is present, else the top
-        // warn-level non-safety (nutrition) flag, else nothing. Ranking by
-        // pure severity (the old `pickTopFlag` over an unpartitioned list)
-        // let a warn-level nutrition flag ("High in sugar") outrank and
-        // DISPLACE a MILD allergen match ("Contains Milk", severity "info",
-        // tier "safety" — server/services/scan-flags.ts SEVERITY_TO_FLAG),
-        // dropping the allergen off the chip entirely. This chip is the ONLY
-        // signal for a mild allergen match (no haptic fires for mild), so a
-        // personal allergen must never be hidden behind a universal
-        // nutrition heads-up. Info-level NON-safety flags (Nutri-Score
-        // grades, "Contains caffeine", "Contains artificial sweeteners" —
-        // all tier: "nutrition") still never reach the chip; they render on
-        // the detail screen's "Heads up" section instead.
+        // warn/danger-level non-safety flag) — see its doc comment in
+        // shared/types/scan-flags.ts. The returnAfterLog confirm-card
+        // overlay (ScanScreenConfirmOverlay-utils.ts) must use the SAME
+        // helper, not re-derive this inline — a prior refactor updated only
+        // this call site and produced a parity gap between the two surfaces.
         const safetyFlag = pickTopSafetyFlag(flags);
-        const topFlag =
-          safetyFlag ??
-          pickTopFlag(
-            flags.filter(
-              (f: ScanFlag) => f.tier !== "safety" && f.severity !== "info",
-            ),
-          );
+        const topFlag = pickTopDisplayFlag(flags);
         dispatch({
           type: "PRODUCT_LOADED",
           product: {
@@ -944,55 +944,40 @@ export default function ScanScreen() {
                   </ThemedText>
                 )}
               </View>
-              {confirmCard.safetyFlag ? (
+              {confirmFlag && confirmFlagVisuals ? (
                 <View
                   style={[
-                    styles.confirmSafetyFlag,
+                    styles.confirmFlagBadge,
                     {
                       backgroundColor: withOpacity(
-                        confirmCard.safetyFlag.severity === "danger"
-                          ? theme.error
-                          : confirmCard.safetyFlag.severity === "warn"
-                            ? theme.warning
-                            : theme.info,
+                        theme[confirmFlagVisuals.colorKey],
                         0.12,
                       ),
                     },
                   ]}
                   accessible={true}
                   accessibilityRole="text"
-                  accessibilityLiveRegion="assertive"
+                  accessibilityLiveRegion={confirmFlagVisuals.liveRegion}
                   accessibilityLabel={
-                    confirmCard.safetyFlag.detail
-                      ? `${confirmCard.safetyFlag.title}. ${confirmCard.safetyFlag.detail}`
-                      : confirmCard.safetyFlag.title
+                    confirmFlag.detail
+                      ? `${confirmFlag.title}. ${confirmFlag.detail}`
+                      : confirmFlag.title
                   }
                 >
                   <Feather
-                    name="alert-triangle"
+                    name={confirmFlagVisuals.icon}
                     size={16}
-                    color={
-                      confirmCard.safetyFlag.severity === "danger"
-                        ? theme.error
-                        : confirmCard.safetyFlag.severity === "warn"
-                          ? theme.warning
-                          : theme.info
-                    }
+                    color={theme[confirmFlagVisuals.colorKey]}
                   />
                   <ThemedText
                     type="small"
                     style={{
                       marginLeft: Spacing.sm,
                       fontWeight: "700",
-                      color:
-                        confirmCard.safetyFlag.severity === "danger"
-                          ? theme.error
-                          : confirmCard.safetyFlag.severity === "warn"
-                            ? theme.warning
-                            : theme.info,
+                      color: theme[confirmFlagVisuals.colorKey],
                     }}
                   >
-                    {confirmCard.safetyFlag.title}
+                    {confirmFlag.title}
                   </ThemedText>
                 </View>
               ) : null}
@@ -1183,7 +1168,7 @@ const styles = StyleSheet.create({
   confirmInfo: {
     gap: 4,
   },
-  confirmSafetyFlag: {
+  confirmFlagBadge: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: BorderRadius.sm,

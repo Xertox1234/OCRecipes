@@ -230,4 +230,32 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     // being nested inside an empty, misleadingly-labeled group.
     expect(queryByLabelText("No additional nutrition flags.")).toBeNull();
   });
+
+  it("caps the grouped summary label at the same 6 flags that render as badges (finding #4, PR #694 medium review)", () => {
+    // Server-side today bounds universal flags at 6 kinds (3 nutrient + 1
+    // caffeine + 1 processing + 1 sweetener — see universal-flags.ts), so
+    // this synthetic 7-flag fixture models a hypothetical future kind to
+    // prove the label/render count stay in sync even past that bound.
+    const flags = Array.from({ length: 7 }, (_, i) => ({
+      id: `nutrient:extra-${i}`,
+      kind: "nutrient",
+      severity: "warn",
+      tier: "nutrition",
+      title: `Flag ${i}`,
+    }));
+    mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
+
+    const { getAllByText, getByLabelText } = renderComponent(
+      <NutritionDetailScreen />,
+    );
+
+    // Only 6 badges render.
+    expect(getAllByText(/^Flag \d$/)).toHaveLength(6);
+    // The grouped label's count and title list match the rendered 6, not
+    // the full 7 — no "7 nutrition flags" summary describing an unseen badge.
+    const badgeGroup = getByLabelText(
+      "6 nutrition flags: Flag 0, Flag 1, Flag 2, Flag 3, Flag 4, Flag 5",
+    );
+    expect(badgeGroup).toBeTruthy();
+  });
 });

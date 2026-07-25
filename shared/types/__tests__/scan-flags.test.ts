@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   pickTopSafetyFlag,
   pickTopFlag,
+  pickTopDisplayFlag,
   createAllergenUnavailableFlag,
   type ScanFlag,
 } from "@shared/types/scan-flags";
@@ -101,5 +102,24 @@ describe("pickTopFlag", () => {
   });
   it("returns undefined for an empty list", () => {
     expect(pickTopFlag([])).toBeUndefined();
+  });
+});
+
+describe("pickTopDisplayFlag", () => {
+  it("prefers a safety-tier flag over a warn-level nutrition flag", () => {
+    const allergen = flag({ id: "a", severity: "info" }); // mild allergen
+    const nutrient = f({ id: "n", severity: "warn" });
+    expect(pickTopDisplayFlag([nutrient, allergen])?.id).toBe("a");
+  });
+  it("falls back to the top warn/danger nutrition flag when there is no safety flag", () => {
+    const nutrient = f({ id: "sugar", severity: "warn" });
+    expect(pickTopDisplayFlag([nutrient])?.id).toBe("sugar");
+  });
+  it("never surfaces an info-severity nutrition flag", () => {
+    const infoNutrient = f({ id: "caffeine", severity: "info" });
+    expect(pickTopDisplayFlag([infoNutrient])).toBeUndefined();
+  });
+  it("returns undefined when there are no eligible flags", () => {
+    expect(pickTopDisplayFlag([])).toBeUndefined();
   });
 });

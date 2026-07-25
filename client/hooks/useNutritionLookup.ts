@@ -128,6 +128,14 @@ export function useNutritionLookup(params: {
   // Derive per-100g values: prefer validatedData when available,
   // otherwise back-calculate from whatever nutrition state we have
   // (e.g. when the USDA/API Ninjas fallback was used).
+  //
+  // Deliberately omits saturatedFat/transFat/cholesterol/caffeine: the
+  // itemId/history-load path (validatedData null) sources `nutrition` from
+  // `/api/scanned-items/:id`, whose payload is the `scanned_items` Drizzle
+  // row (shared/schema.ts) — that table has no columns for these 4
+  // nutrients at all, so there is nothing to carry through here. Verified
+  // won't-fix (Smart Scan v1 refinements follow-up); revisit only if
+  // `scanned_items` ever gains those columns.
   const effectivePer100g = useMemo((): NutritionPer100g | null => {
     if (validatedData) return validatedData.per100g;
     if (!nutrition || nutrition.calories === undefined) return null;

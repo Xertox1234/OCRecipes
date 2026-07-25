@@ -219,6 +219,12 @@ export default function NutritionDetailScreen() {
   // allergen) and "Heads up" (universal nutrition) sections, plus the
   // Nutri-Score chip rendered separately from the badge list.
   const partition = partitionScanFlags(flags);
+  // Single source for the "Heads up" badge list — used for BOTH the grouped
+  // accessibilityLabel and the rendered badges, so the announced count can
+  // never desync from what's on screen (bounded at 6 kinds today; a future
+  // v2 addition must not silently break this parity again by editing one
+  // `.slice(0, 6)` call site and not the other).
+  const universalToShow = partition.universal.slice(0, 6);
   // Derived from the SAME serving state that scales the displayed values, so
   // the hero caption can never desync from the numbers it describes.
   const servingContextLabel = getServingContextLabel({
@@ -363,10 +369,10 @@ export default function NutritionDetailScreen() {
               {partition.universal.length > 0 ? (
                 <View
                   accessible={true}
-                  accessibilityLabel={headsUpSummaryLabel(partition.universal)}
+                  accessibilityLabel={headsUpSummaryLabel(universalToShow)}
                   style={{ gap: Spacing.sm }}
                 >
-                  {partition.universal.slice(0, 6).map((f) => (
+                  {universalToShow.map((f) => (
                     <ScanFlagBadge key={f.id} flag={f} />
                   ))}
                 </View>

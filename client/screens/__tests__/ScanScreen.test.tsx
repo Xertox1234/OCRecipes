@@ -349,7 +349,7 @@ describe("ScanScreen — confirm-card safety badge (returnAfterLog)", () => {
     });
   });
 
-  // Guards the flex-trap: `styles.confirmSafetyFlag` AND `styles.confirmButtons`
+  // Guards the flex-trap: `styles.confirmFlagBadge` AND `styles.confirmButtons`
   // are BOTH `flexDirection: "row"` siblings under `styles.confirmCard` (a
   // plain column). A badge accidentally nested inside the buttons row would
   // render squished beside Dismiss/Log It instead of as a full-width banner
@@ -397,6 +397,43 @@ describe("ScanScreen — confirm-card safety badge (returnAfterLog)", () => {
 
     await screen.findByLabelText(composedLabel);
     expect(Haptics.notificationAsync).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Warning,
+    );
+  });
+
+  // Regression guard for the tier gate: topDisplayFlag can hold a NUTRITION
+  // flag (pickTopDisplayFlag parity), and that must present as an informational
+  // heads-up — polite live region, no allergen Warning haptic — never with
+  // safety-grade salience. severity is deliberately "danger" (impossible from
+  // today's producer, enforced consumer-side) so BOTH assertions discriminate
+  // the tier === "safety" guard from the old severity-only check: pre-fix this
+  // flag fired the Warning haptic and rendered assertive.
+  it("does NOT fire the Warning haptic and uses a polite live region for a danger-severity nutrition flag", async () => {
+    const nutritionFlag = {
+      id: "nutrient:sugar",
+      kind: "nutrient",
+      severity: "danger",
+      tier: "nutrition",
+      title: "High in sugar",
+    };
+    mockApiRequest.mockImplementation(async (_method: string, url: string) => {
+      if (url.startsWith("/api/nutrition/barcode/")) {
+        return {
+          json: async () => ({
+            productName: "Soda",
+            calories: 150,
+            flags: [nutritionFlag],
+          }),
+        } as Response;
+      }
+      return { json: async () => ({}) } as Response;
+    });
+
+    renderComponent(<ScanScreen />);
+
+    const badge = await screen.findByLabelText(nutritionFlag.title);
+    expect(badge.getAttribute("aria-live")).toBe("polite");
+    expect(Haptics.notificationAsync).not.toHaveBeenCalledWith(
       Haptics.NotificationFeedbackType.Warning,
     );
   });
