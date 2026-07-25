@@ -74,7 +74,7 @@ describe("CookbookDetailScreen universal allergen label", () => {
     ]);
     renderComponent(<CookbookDetailScreen />);
     expect(
-      screen.getByLabelText("Pasta Carbonara. Contains Peanuts"),
+      screen.getByLabelText("Pasta Carbonara. Contains: Peanuts"),
     ).toBeDefined();
   });
 

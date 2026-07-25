@@ -9,7 +9,7 @@ import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
-import { toRecipeAllergenLabels } from "@/components/recipe-allergen-label-utils";
+import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
@@ -154,11 +154,7 @@ export default function CookbookDetailScreen() {
       // safety-critical allergen info still reaches screen-reader users (same
       // pattern as RecipeBrowserScreen's UnifiedRecipeCard); the visible
       // chips (RecipeAllergenLabel below) remain for sighted users.
-      const allergenLabels = toRecipeAllergenLabels(item.allergens);
-      const allergenA11ySuffix =
-        allergenLabels.length > 0
-          ? `. Contains ${allergenLabels.map((l) => l.label).join(", ")}`
-          : "";
+      const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.allergens);
       return (
         <SwipeableRow
           rightAction={{

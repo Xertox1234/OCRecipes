@@ -222,7 +222,7 @@ describe("CarouselRecipeCard universal allergen label", () => {
     );
     expect(
       screen.getByLabelText(
-        "Pasta Carbonara, 20 min prep. High protein. Contains Peanuts. Double tap to view recipe.",
+        "Pasta Carbonara, 20 min prep. High protein. Contains: Peanuts. Double tap to view recipe.",
       ),
     ).toBeDefined();
   });

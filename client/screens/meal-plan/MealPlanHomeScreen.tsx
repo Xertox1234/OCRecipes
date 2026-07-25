@@ -33,7 +33,7 @@ import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
-import { toRecipeAllergenLabels } from "@/components/recipe-allergen-label-utils";
+import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { DraggableList } from "@/components/DraggableList";
 import { CalorieRing } from "@/components/CalorieRing";
@@ -224,11 +224,7 @@ const MealSlotItem = React.memo(function MealSlotItem({
   // into the card's own label (same pattern as RecipeBrowserScreen's
   // UnifiedRecipeCard) rather than relying on the nested label's own
   // container.
-  const allergenLabels = toRecipeAllergenLabels(item.recipe?.allergens);
-  const allergenA11ySuffix =
-    allergenLabels.length > 0
-      ? `. Contains ${allergenLabels.map((l) => l.label).join(", ")}`
-      : "";
+  const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.recipe?.allergens);
 
   const accessLabel = macros
     ? `${name}, ${macros.calories} calories, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`
