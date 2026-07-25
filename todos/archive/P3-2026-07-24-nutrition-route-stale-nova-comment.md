@@ -47,13 +47,24 @@ Files: `server/routes/nutrition.ts` only. Low-risk, comment/DTO-trim only — no
   `orderedFlags` by `nutrition-detail-flags-utils.ts` — not this field. The only
   other client hit is a mock server-response fixture in
   `client/hooks/__tests__/useNutritionLookup.test.ts:278-279`. No client type
-  declares the scalars at all (the 2026-07-22 cleanup removed them).
+  declares the scalars at all (the cleanup removed them — see date note below).
 - **Deliberately did NOT drop the fields from the response body**, though the AC
   allowed it. The grep proves no reader in current _source_; it cannot prove no
-  reader in a _deployed_ bundle. The client-side fields were removed only on
-  2026-07-22, EAS Updates apply on second cold start, and there is an
-  embedded-vs-OTA user split — so clients running the pre-cleanup bundle may
-  still read them. A wire-contract trim is outward-facing and not reversible for
+  reader in a _deployed_ bundle. The client-side fields SHIPPED removed on
+  **2026-07-24** (#708, `13bf5059`), EAS Updates apply on second cold start, and
+  there is an embedded-vs-OTA user split — so clients running the pre-cleanup
+  bundle may still read them. A wire-contract trim is outward-facing and not reversible for
   users already on an old bundle, so the AC's "confirmed unused" condition is
   not met. The rewritten comment records this and the condition under which the
   trim becomes safe.
+- **Date correction (`/code-review` finding on PR #713).** The first version of
+  the comment, this note, and the codified solution all said the client fields
+  were removed on **2026-07-22**. Wrong, and wrong in the worst direction:
+  `d03b6c0d` (2026-07-22, #694) is the commit that **ADDED** them; `13bf5059`
+  (#708) removed them and merged **2026-07-24**. The 07-22 date is this todo's
+  own source-todo filename (`P3-2026-07-22-smart-scan-v1-cleanup` — the filing
+  date), which is what led to the mix-up. Since the compatibility window is
+  computed from this date, anchoring it two days early would have licensed the
+  DTO trim before the pre-cleanup bundles were actually out of circulation —
+  breaking exactly the readers the decision existed to protect. **Measure the
+  window from the SHIP date, never the work item's filing date.**
