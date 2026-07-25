@@ -98,7 +98,6 @@ describe("evaluateUniversalFlags — caffeine ladder", () => {
     }).find((x) => x.id === "nutrient:caffeine");
     expect(f?.severity).toBe("warn");
     expect(f?.title).toContain("High in caffeine");
-    expect(f?.value).toEqual({ amount: 160, unit: "mg" });
   });
   it("CONTAINS (info, no mg) when serving mg is present but <150", () => {
     const f = evaluateUniversalFlags({
@@ -107,7 +106,6 @@ describe("evaluateUniversalFlags — caffeine ladder", () => {
     }).find((x) => x.id === "nutrient:caffeine");
     expect(f?.severity).toBe("info");
     expect(f?.title).toBe("Contains caffeine");
-    expect(f?.value).toBeUndefined();
   });
   it("CONTAINS via multilingual ingredient text when no mg (German 'Koffein')", () => {
     const f = evaluateUniversalFlags({
@@ -130,7 +128,6 @@ describe("evaluateUniversalFlags — caffeine ladder", () => {
     }).find((x) => x.id === "nutrient:caffeine");
     expect(f?.severity).toBe("info");
     expect(f?.title).toBe("Contains caffeine");
-    expect(f?.value).toBeUndefined();
   });
   it("NO flag with no mg and no signal (untrusted serving fails safe to nothing here)", () => {
     expect(evaluateUniversalFlags(base).map((x) => x.id)).not.toContain(

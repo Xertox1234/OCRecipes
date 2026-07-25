@@ -42,7 +42,10 @@ const NUTRIENT_META = {
   },
   sodium: {
     title: "High in sodium",
-    detail: "Above the FSA guideline for salt.",
+    // Copy is sodium-denominated to match the id/mg display above — the
+    // underlying FSA guidance is published in grams of salt and pre-converted
+    // to mg sodium (see the ×400 conversion comment in nutrition-flag-rules.ts).
+    detail: "Above the FSA guideline for sodium.",
   },
 } as const;
 
@@ -71,8 +74,7 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
   const sv = input.perServing;
 
   const nutrientFlag = (
-    key: keyof typeof NUTRIENT_META,
-    nk: "sugar" | "saturated_fat" | "sodium",
+    nk: keyof typeof NUTRIENT_META,
     p100: number | undefined,
     pServ: number | undefined,
     line: number,
@@ -84,23 +86,15 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
         kind: "nutrient",
         severity: "warn",
         tier: "nutrition",
-        title: NUTRIENT_META[key].title,
-        detail: NUTRIENT_META[key].detail,
+        title: NUTRIENT_META[nk].title,
+        detail: NUTRIENT_META[nk].detail,
         nutrient: nk,
       });
     }
   };
 
+  nutrientFlag("sugar", s.sugar, sv?.sugar, per100.sugar, FSA_PORTION.sugar);
   nutrientFlag(
-    "sugar",
-    "sugar",
-    s.sugar,
-    sv?.sugar,
-    per100.sugar,
-    FSA_PORTION.sugar,
-  );
-  nutrientFlag(
-    "saturated_fat",
     "saturated_fat",
     s.saturatedFat,
     sv?.saturatedFat,
@@ -108,7 +102,6 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
     FSA_PORTION.saturatedFat,
   );
   nutrientFlag(
-    "sodium",
     "sodium",
     s.sodium,
     sv?.sodium,
@@ -154,7 +147,6 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
       nutrient: "caffeine",
       title: "High in caffeine",
       detail: "Contains a high dose of caffeine.",
-      value: { amount: Math.round(servingMg), unit: "mg" },
     });
   } else if (hasCaffeineSignal) {
     flags.push({

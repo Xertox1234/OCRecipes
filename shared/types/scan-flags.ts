@@ -27,8 +27,6 @@ export interface ScanFlag {
   allergenId?: AllergenId;
   /** Present on kind==="nutrient". */
   nutrient?: NutrientKind;
-  /** Optional numeric detail, e.g. { amount: 160, unit: "mg" } for caffeine. */
-  value?: { amount: number; unit: string };
   /** Present on kind==="nutriscore". */
   grade?: "a" | "b" | "c" | "d" | "e";
 }

@@ -55,10 +55,6 @@ export interface NutritionData {
   caffeine?: number;
   imageUrl?: string;
   barcode?: string;
-  /** Product-level NOVA processing classification (1-4) — not scaled by serving. */
-  novaGroup?: number;
-  /** Product-level Nutri-Score grade (e.g. "a"-"e") — not scaled by serving. */
-  nutriScore?: string;
 }
 
 export function useNutritionLookup(params: {
@@ -315,8 +311,6 @@ export function useNutritionLookup(params: {
               caffeine: data.perServing.caffeine,
               imageUrl: data.imageUrl,
               barcode: code,
-              novaGroup: data.novaGroup,
-              nutriScore: data.nutriScore,
             };
             const dbFlags: ScanFlag[] = Array.isArray(data.flags)
               ? (data.flags as ScanFlag[])
@@ -356,8 +350,6 @@ export function useNutritionLookup(params: {
                 caffeine: lbl.perServing.caffeine,
                 imageUrl: lbl.imageUrl,
                 barcode: code,
-                novaGroup: lbl.novaGroup,
-                nutriScore: lbl.nutriScore,
               };
               const labelFlags: ScanFlag[] = Array.isArray(lbl.flags)
                 ? (lbl.flags as ScanFlag[])

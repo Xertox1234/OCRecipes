@@ -641,7 +641,7 @@ export default function NutritionDetailScreen() {
                     Fiber
                   </ThemedText>
                   <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {Math.round(nutrition.fiber)} g
+                    {roundToOneDecimal(nutrition.fiber)} g
                   </ThemedText>
                 </View>
               ) : null}
@@ -653,7 +653,7 @@ export default function NutritionDetailScreen() {
                     Sugar
                   </ThemedText>
                   <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {Math.round(nutrition.sugar)} g
+                    {roundToOneDecimal(nutrition.sugar)} g
                   </ThemedText>
                 </View>
               ) : null}
@@ -665,7 +665,7 @@ export default function NutritionDetailScreen() {
                     Sodium
                   </ThemedText>
                   <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {Math.round(nutrition.sodium)} mg
+                    {roundToOneDecimal(nutrition.sodium)} mg
                   </ThemedText>
                 </View>
               ) : null}

@@ -99,14 +99,14 @@ export function ProductChip({
   // exists on ProductSummary for its safety-tier-only semantics but has no
   // reader today; ScanScreen's fail-dangerous haptic uses its own local
   // `pickTopSafetyFlag` result, not the field on the dispatched product.
-  const safetyFlagTitle =
+  const topFlagTitle =
     "product" in phase ? phase.product?.topFlag?.title : undefined;
-  const safetyFlagDetail =
+  const topFlagDetail =
     "product" in phase ? phase.product?.topFlag?.detail : undefined;
   const [shouldRender, setShouldRender] = useState(variant !== null);
   const prevSmartConfirmingRef = useRef(false);
   const prevProductNameRef = useRef<string | undefined>(undefined);
-  const prevSafetyFlagTitleRef = useRef<string | undefined>(undefined);
+  const prevTopFlagTitleRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (variant !== null) {
@@ -176,14 +176,13 @@ export function ProductChip({
   // undefined→defined transition, not on every render.
   useEffect(() => {
     const nameJustArrived = !!productName && !prevProductNameRef.current;
-    const flagJustArrived =
-      !!safetyFlagTitle && !prevSafetyFlagTitleRef.current;
+    const flagJustArrived = !!topFlagTitle && !prevTopFlagTitleRef.current;
 
     if (Platform.OS === "ios") {
       if (nameJustArrived && flagJustArrived) {
-        const flagText = safetyFlagDetail
-          ? `${safetyFlagTitle}. ${safetyFlagDetail}`
-          : safetyFlagTitle;
+        const flagText = topFlagDetail
+          ? `${topFlagTitle}. ${topFlagDetail}`
+          : topFlagTitle;
         AccessibilityInfo.announceForAccessibility(
           `${productName}. ${flagText}`,
         );
@@ -193,9 +192,7 @@ export function ProductChip({
         }
         if (flagJustArrived) {
           AccessibilityInfo.announceForAccessibility(
-            safetyFlagDetail
-              ? `${safetyFlagTitle}. ${safetyFlagDetail}`
-              : safetyFlagTitle!,
+            topFlagDetail ? `${topFlagTitle}. ${topFlagDetail}` : topFlagTitle!,
           );
         }
       }
@@ -204,8 +201,8 @@ export function ProductChip({
     }
 
     prevProductNameRef.current = productName;
-    prevSafetyFlagTitleRef.current = safetyFlagTitle;
-  }, [productName, safetyFlagTitle, safetyFlagDetail]);
+    prevTopFlagTitleRef.current = topFlagTitle;
+  }, [productName, topFlagTitle, topFlagDetail]);
 
   const animStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -238,7 +235,7 @@ export function ProductChip({
       {product?.topFlag ? (
         <View
           style={[
-            styles.safetyFlag,
+            styles.topFlag,
             {
               backgroundColor:
                 product.topFlag.severity === "danger"
@@ -257,7 +254,7 @@ export function ProductChip({
               : product.topFlag.title
           }
         >
-          <Text style={styles.safetyFlagText}>⚠ {product.topFlag.title}</Text>
+          <Text style={styles.topFlagText}>⚠ {product.topFlag.title}</Text>
         </View>
       ) : null}
 
@@ -471,13 +468,13 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 4,
   },
-  safetyFlag: {
+  topFlag: {
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6,
     marginBottom: 6,
   },
-  safetyFlagText: {
+  topFlagText: {
     color: "#FFF", // hardcoded — camera overlay
     fontSize: 13,
     fontWeight: "700",

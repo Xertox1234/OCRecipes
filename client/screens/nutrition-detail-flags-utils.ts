@@ -11,6 +11,7 @@
  * renders as a grade chip (`NutriScoreChip`), not a `ScanFlagBadge`.
  */
 import type { ScanFlag, ScanFlagSeverity } from "@shared/types/scan-flags";
+import { logger } from "@/lib/logger";
 
 const SEVERITY_RANK: Record<ScanFlagSeverity, number> = {
   danger: 3,
@@ -45,12 +46,24 @@ export function partitionScanFlags(flags: ScanFlag[]): PartitionedScanFlags {
       personal.push(flag);
     } else if (UNIVERSAL_KINDS.has(flag.kind)) {
       universal.push(flag);
-    } else if (flag.kind === "nutriscore" && flag.grade) {
+    } else if (flag.kind === "nutriscore") {
       // `grade` is optional on ScanFlag — a gradeless nutriscore flag must
       // not flow through, since NutritionDetailScreen renders it via
       // `NutriScoreChip`, which calls `.toUpperCase()` on the grade
-      // (final-review fix, Smart Scan Universal Nutrition Flags v1).
-      nutriScore = flag;
+      // (final-review fix, Smart Scan Universal Nutrition Flags v1). This is
+      // an intentional, silent drop — not the unmodeled-kind case below.
+      if (flag.grade) {
+        nutriScore = flag;
+      }
+    } else {
+      // Defensive default: a flag kind outside PERSONAL_KINDS/UNIVERSAL_KINDS
+      // and not "nutriscore" has no bucket here — e.g. a future addition to
+      // ScanFlagKind, or an "insight"-tier flag once that tier ships. Warn
+      // instead of silently dropping it from both display sections, so a gap
+      // surfaces in dev/test rather than shipping invisible.
+      logger.warn(
+        `partitionScanFlags: unhandled flag kind "${flag.kind}" (id: ${flag.id}) — dropped from both sections`,
+      );
     }
   }
 
