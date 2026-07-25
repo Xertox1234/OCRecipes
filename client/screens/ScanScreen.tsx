@@ -69,6 +69,7 @@ import {
   buildScannedItemPayload,
   buildSuccessToastMessage,
   canLog,
+  getConfirmFlagPresentation,
   getScanOverlayA11y,
   type ConfirmCardState,
 } from "@/screens/ScanScreenConfirmOverlay-utils";
@@ -235,7 +236,12 @@ export default function ScanScreen() {
             // Raise salience on a severe flag WITHOUT blocking the flow (badges
             // only) — mirrors fetchProductInfo's ProductChip-path haptic below,
             // since this path never opens NutritionDetail to carry it instead.
-            if (card.safetyFlag?.severity === "danger") {
+            // tier check required: topDisplayFlag can hold a nutrition flag,
+            // and the Warning haptic is reserved for safety-tier danger.
+            if (
+              card.topDisplayFlag?.tier === "safety" &&
+              card.topDisplayFlag.severity === "danger"
+            ) {
               haptics.notification(Haptics.NotificationFeedbackType.Warning);
             }
           },
@@ -310,17 +316,21 @@ export default function ScanScreen() {
 
   // Announce loading state transitions to screen readers (iOS VoiceOver only —
   // Android TalkBack is handled by accessibilityLiveRegion on the loading view).
-  // The loaded-name branch also folds in the safety badge (when present): the
-  // badge's own `accessibilityLiveRegion="assertive"` is Android-only, so this
-  // imperative announce is iOS's ONLY signal for the flag. Name and flag arrive
-  // together in the same buildLoadedConfirmCard transition (a single fetch, not
+  // The loaded-name branch also folds in the flag badge (when present): the
+  // badge's own `accessibilityLiveRegion` is Android-only, so this imperative
+  // announce is iOS's ONLY signal for the flag. Name and flag arrive together
+  // in the same buildLoadedConfirmCard transition (a single fetch, not
   // ProductChip's multi-variant lifecycle), so one combined announcement covers
   // both without needing a separate edge-guarded effect.
   const confirmIsLoading = confirmCard?.isLoading;
   const confirmIsError = confirmCard?.isError;
   const confirmName = confirmCard?.name;
-  const confirmSafetyFlagTitle = confirmCard?.safetyFlag?.title;
-  const confirmSafetyFlagDetail = confirmCard?.safetyFlag?.detail;
+  const confirmFlagTitle = confirmCard?.topDisplayFlag?.title;
+  const confirmFlagDetail = confirmCard?.topDisplayFlag?.detail;
+  const confirmFlag = confirmCard?.topDisplayFlag;
+  const confirmFlagVisuals = confirmFlag
+    ? getConfirmFlagPresentation(confirmFlag)
+    : undefined;
   useEffect(() => {
     if (confirmIsLoading === undefined) return; // confirmCard is null
     if (Platform.OS !== "ios") return;
@@ -329,19 +339,19 @@ export default function ScanScreen() {
     } else if (confirmIsError) {
       AccessibilityInfo.announceForAccessibility("Nutrition data unavailable");
     } else if (confirmName) {
-      const safetySuffix = confirmSafetyFlagTitle
-        ? ` ${confirmSafetyFlagDetail ? `${confirmSafetyFlagTitle}. ${confirmSafetyFlagDetail}` : confirmSafetyFlagTitle}`
+      const flagSuffix = confirmFlagTitle
+        ? ` ${confirmFlagDetail ? `${confirmFlagTitle}. ${confirmFlagDetail}` : confirmFlagTitle}`
         : "";
       AccessibilityInfo.announceForAccessibility(
-        `${confirmName}.${safetySuffix}`,
+        `${confirmName}.${flagSuffix}`,
       );
     }
   }, [
     confirmIsLoading,
     confirmIsError,
     confirmName,
-    confirmSafetyFlagTitle,
-    confirmSafetyFlagDetail,
+    confirmFlagTitle,
+    confirmFlagDetail,
   ]);
 
   const fetchProductInfo = useCallback(
@@ -934,55 +944,40 @@ export default function ScanScreen() {
                   </ThemedText>
                 )}
               </View>
-              {confirmCard.safetyFlag ? (
+              {confirmFlag && confirmFlagVisuals ? (
                 <View
                   style={[
-                    styles.confirmSafetyFlag,
+                    styles.confirmFlagBadge,
                     {
                       backgroundColor: withOpacity(
-                        confirmCard.safetyFlag.severity === "danger"
-                          ? theme.error
-                          : confirmCard.safetyFlag.severity === "warn"
-                            ? theme.warning
-                            : theme.info,
+                        theme[confirmFlagVisuals.colorKey],
                         0.12,
                       ),
                     },
                   ]}
                   accessible={true}
                   accessibilityRole="text"
-                  accessibilityLiveRegion="assertive"
+                  accessibilityLiveRegion={confirmFlagVisuals.liveRegion}
                   accessibilityLabel={
-                    confirmCard.safetyFlag.detail
-                      ? `${confirmCard.safetyFlag.title}. ${confirmCard.safetyFlag.detail}`
-                      : confirmCard.safetyFlag.title
+                    confirmFlag.detail
+                      ? `${confirmFlag.title}. ${confirmFlag.detail}`
+                      : confirmFlag.title
                   }
                 >
                   <Feather
-                    name="alert-triangle"
+                    name={confirmFlagVisuals.icon}
                     size={16}
-                    color={
-                      confirmCard.safetyFlag.severity === "danger"
-                        ? theme.error
-                        : confirmCard.safetyFlag.severity === "warn"
-                          ? theme.warning
-                          : theme.info
-                    }
+                    color={theme[confirmFlagVisuals.colorKey]}
                   />
                   <ThemedText
                     type="small"
                     style={{
                       marginLeft: Spacing.sm,
                       fontWeight: "700",
-                      color:
-                        confirmCard.safetyFlag.severity === "danger"
-                          ? theme.error
-                          : confirmCard.safetyFlag.severity === "warn"
-                            ? theme.warning
-                            : theme.info,
+                      color: theme[confirmFlagVisuals.colorKey],
                     }}
                   >
-                    {confirmCard.safetyFlag.title}
+                    {confirmFlag.title}
                   </ThemedText>
                 </View>
               ) : null}
@@ -1173,7 +1168,7 @@ const styles = StyleSheet.create({
   confirmInfo: {
     gap: 4,
   },
-  confirmSafetyFlag: {
+  confirmFlagBadge: {
     flexDirection: "row",
     alignItems: "center",
     borderRadius: BorderRadius.sm,
