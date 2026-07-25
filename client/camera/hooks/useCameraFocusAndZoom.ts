@@ -2,7 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Gesture } from "react-native-gesture-handler";
 import { useSharedValue, runOnJS } from "react-native-reanimated";
 import type { CameraDevice, CameraRef } from "react-native-vision-camera";
-import { clampZoom } from "./useCameraFocusAndZoom-utils";
+import { logger } from "@/lib/logger";
+import {
+  clampZoom,
+  supportedMeteringModes,
+} from "./useCameraFocusAndZoom-utils";
 
 export interface FocusPoint {
   x: number;
@@ -29,19 +33,44 @@ export function useCameraFocusAndZoom({
   const zoomAtGestureStart = useSharedValue(1);
   const [focusPoint, setFocusPoint] = useState<FocusPoint | null>(null);
   const focusKeyRef = useRef(0);
+  const focusFailureReportedRef = useRef(false);
   const [zoomLabel, setZoomLabel] = useState<string | null>(null);
   const zoomLabelHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runFocus = useCallback(
     (x: number, y: number) => {
+      // No device means no camera to focus — showing the ring here would
+      // promise feedback for an action that cannot happen.
+      if (!device) return;
+
       focusKeyRef.current += 1;
       setFocusPoint({ x, y, key: focusKeyRef.current });
-      cameraRef.current?.focusTo({ x, y }).catch(() => {
-        // Devices without focus metering support reject — the ring still
-        // shows for feedback; the camera falls back to continuous AF.
-      });
+
+      // Filter to what the device actually supports rather than letting
+      // focusTo() pick — see supportedMeteringModes() for why 5.0.11 needs it.
+      const modes = supportedMeteringModes(device);
+      // Nothing to meter at all: the ring still shows for feedback and the
+      // camera stays on continuous AF.
+      if (modes.length === 0) return;
+
+      cameraRef.current
+        ?.focusTo({ x, y }, { modes })
+        .catch((error: unknown) => {
+          // Latched to once per mount: this runs from a tap handler, and in
+          // production logger.error forwards to Sentry — unlatched, a user
+          // tapping a broken-focus camera would emit an event per tap.
+          if (focusFailureReportedRef.current) return;
+          focusFailureReportedRef.current = true;
+          logger.error(
+            `[useCameraFocusAndZoom] focusTo failed (requested ${modes.join("+")}; ` +
+              `device supports AE=${device.supportsExposureMetering} ` +
+              `AF=${device.supportsFocusMetering} ` +
+              `AWB=${device.supportsWhiteBalanceMetering})`,
+            error,
+          );
+        });
     },
-    [cameraRef],
+    [cameraRef, device],
   );
 
   // Imperative controller.setZoom(), NOT the <Camera zoom={SharedValue}>
