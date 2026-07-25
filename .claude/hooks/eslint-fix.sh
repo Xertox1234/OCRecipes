@@ -23,7 +23,12 @@ case "$FILE" in
   *) exit 0 ;;
 esac
 
-OUTPUT=$(ESLINT_NO_TYPE_AWARE=1 npx eslint --no-warn-ignored --fix "$FILE" 2>&1)
+# Run from the project root rather than the agent's cwd. `npx` walks up from cwd to find
+# node_modules/.bin, and eslint discovers its flat config the same way — so with a cwd
+# inside a package directory this would run THAT package's eslint and config, and a config
+# file is executable code. $FILE is absolute, so the cd does not affect which file is fixed.
+OUTPUT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." \
+         && ESLINT_NO_TYPE_AWARE=1 npx eslint --no-warn-ignored --fix "$FILE" 2>&1)
 STATUS=$?
 
 # Clean: every problem was auto-fixed or there were none → stay silent.

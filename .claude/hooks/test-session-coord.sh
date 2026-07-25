@@ -83,9 +83,13 @@ assert_empty "wrapper register silent" "$OUT"
 # Unknown subcommand: silent no-op.
 OUT=$(printf '{}' | bash "$WRAPPER" bogus 2>/dev/null); RC=$?
 assert_exit0 "wrapper bogus subcommand exit 0" "$RC"; assert_empty "wrapper bogus silent" "$OUT"
-# settings.json wiring present:
+# settings.json wiring present. The script path is registered absolutely as
+# `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh" <sub>`, so in the RAW
+# file bytes a backslash-escaped closing quote sits between the .sh and the subcommand.
+# `[^ ]*` spans it without hard-coding an escape depth, so this asserts the wiring rather
+# than one particular spelling of the path.
 for pair in "SessionStart:register" "PostToolUse:record" "SessionEnd:deregister" "PreToolUse:consult"; do
-  grep -q "session-coord-hook.sh ${pair#*:}" "$PROJECT_ROOT/.claude/settings.json" \
+  grep -qE "session-coord-hook\.sh[^ ]* ${pair#*:}" "$PROJECT_ROOT/.claude/settings.json" \
     && echo "ok: settings wires ${pair}" || { echo "FAIL: settings missing ${pair}"; FAIL=1; }
 done
 

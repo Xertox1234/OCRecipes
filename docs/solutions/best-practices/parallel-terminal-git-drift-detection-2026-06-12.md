@@ -81,11 +81,17 @@ commit would be silently absorbed.
 
 ```json
 // PreToolUse — Bash matcher
-{ "type": "command", "command": "bash .claude/hooks/drift-detect.sh", "timeout": 10 }
+{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/drift-detect.sh\"", "timeout": 10 }
 
 // PostToolUse — Bash matcher
-{ "type": "command", "command": "bash .claude/hooks/drift-detect-update.sh", "timeout": 10 }
+{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/drift-detect-update.sh\"", "timeout": 10 }
 ```
+
+The path must be absolute via `$CLAUDE_PROJECT_DIR`, not relative. Hook handlers run in
+the *current* directory, and the Bash tool's cwd persists across calls — so after any
+`cd` into a subdirectory a relative registration fails with `No such file or directory`.
+Those failures are non-blocking, meaning the hook is silently skipped rather than
+erroring, which disarms the guard instead of announcing it.
 
 ### Worktree isolation decision
 

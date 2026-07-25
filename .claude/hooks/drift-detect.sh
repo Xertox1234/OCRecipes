@@ -66,7 +66,11 @@ MSG="Drift detected: repo HEAD moved externally since Claude's last git op. Stor
 
 # Registry attribution (PG Lab session coordination, spec §6) — best-effort: empty when
 # Postgres is down or the script is absent, leaving today's message untouched.
-COORD="$(git rev-parse --show-toplevel 2>/dev/null)/scripts/pg-lab/session-coord.sh"
+# Located from this script's own path, not cwd — this line EXECUTES the resolved file, so
+# a cwd inside a nested repo would run that tree's script instead of ours. The repo passed
+# as the attribution argument stays cwd-derived on purpose: that names which checkout
+# drifted, which is a question about the agent's working tree, not about this hook.
+COORD="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/pg-lab/session-coord.sh"
 if [ -f "$COORD" ]; then
   ATTRIB=$(bash "$COORD" attribute-drift "$SESSION" "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || true)
   [ -n "$ATTRIB" ] && MSG="$MSG $ATTRIB"
