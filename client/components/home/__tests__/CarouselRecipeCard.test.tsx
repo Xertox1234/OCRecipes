@@ -241,3 +241,58 @@ describe("CarouselRecipeCard universal allergen label", () => {
     ).toBeDefined();
   });
 });
+
+// Regression coverage for the double-period bug
+// (todos/archive/P3-2026-07-24-carousel-card-double-period-empty-reason.md).
+// `recommendationReason` can be an empty string (see `toCarouselCard`'s
+// calorie/time/cuisine fallback chain in recipe-discovery-utils.ts, which
+// terminates at `recipe.cuisine ?? ""`), and the composed label used to emit
+// an unconditional ". " before it, producing a dangling ". .". These tests
+// synthesize the empty-reason `card` prop directly rather than exercising it
+// through `toCarouselCard`, so the assertion doesn't depend on the producer's
+// reachability.
+describe("CarouselRecipeCard empty recommendationReason", () => {
+  it("does not leave a dangling double period when recommendationReason is empty", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{ ...baseCard, recommendationReason: "" }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText(
+        "Pasta Carbonara, 20 min prep. Double tap to view recipe.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("does not leave a dangling double period when recommendationReason is empty and an allergen suffix is present", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{
+          ...baseCard,
+          recommendationReason: "",
+          allergens: [{ id: "peanuts", viaDerived: false }],
+        }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText(
+        "Pasta Carbonara, 20 min prep. Contains: Peanuts. Double tap to view recipe.",
+      ),
+    ).toBeDefined();
+  });
+
+  it("does not leave a dangling double period when both prep time and recommendationReason are absent", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{ ...baseCard, prepTimeMinutes: null, recommendationReason: "" }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText("Pasta Carbonara. Double tap to view recipe."),
+    ).toBeDefined();
+  });
+});

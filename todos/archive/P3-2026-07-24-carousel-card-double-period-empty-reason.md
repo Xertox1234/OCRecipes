@@ -1,6 +1,6 @@
 ---
 title: "CarouselRecipeCard composed a11y label has a double period when recommendationReason is empty"
-status: backlog
+status: done
 priority: low
 created: 2026-07-24
 updated: 2026-07-24
