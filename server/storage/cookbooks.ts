@@ -276,6 +276,7 @@ export async function getResolvedCookbookRecipes(
           servings: recipe.servings ?? null,
           difficulty: recipe.difficulty ?? null,
           addedAt: row.addedAt.toISOString(),
+          allergens: recipe.allergens,
         });
       }
       // recipe exists but is owned by another user → hidden, junction row
@@ -294,6 +295,7 @@ export async function getResolvedCookbookRecipes(
           servings: recipe.servings ?? null,
           difficulty: recipe.difficulty ?? null,
           addedAt: row.addedAt.toISOString(),
+          allergens: recipe.allergens,
         });
       }
       // recipe exists but is private and not authored by the caller → hidden,

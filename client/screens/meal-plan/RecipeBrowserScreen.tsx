@@ -30,7 +30,7 @@ import { useSheetBackHandler } from "@/hooks/useSheetBackHandler";
 import { ThemedText } from "@/components/ThemedText";
 import { Chip } from "@/components/Chip";
 import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
-import { toRecipeAllergenLabels } from "@/components/recipe-allergen-label-utils";
+import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
 import { EmptyState } from "@/components/EmptyState";
@@ -202,11 +202,7 @@ const UnifiedRecipeCard = React.memo(function UnifiedRecipeCard({
   // precedent). Fold the recipe's derived allergens into the card's own label
   // so the safety-critical allergen info still reaches screen-reader users; the
   // visible chips (RecipeAllergenLabel below) remain for sighted users.
-  const allergenLabels = toRecipeAllergenLabels(item.allergens);
-  const allergenA11ySuffix =
-    allergenLabels.length > 0
-      ? `. Contains ${allergenLabels.map((l) => l.label).join(", ")}`
-      : "";
+  const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.allergens);
   const baseA11yLabel =
     isCommunity || isOnline || browseOnly
       ? `View ${item.title}`

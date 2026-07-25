@@ -34,6 +34,7 @@ const mockResolvedFavourite = {
   servings: 4,
   difficulty: "Medium",
   favouritedAt: new Date().toISOString(),
+  allergens: null,
 };
 
 describe("Favourite Recipe Routes", () => {

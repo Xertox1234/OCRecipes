@@ -49,6 +49,7 @@ const mockResolvedRecipe = {
   servings: 4,
   difficulty: "Medium",
   addedAt: new Date().toISOString(),
+  allergens: null,
 };
 
 describe("Cookbook Routes", () => {

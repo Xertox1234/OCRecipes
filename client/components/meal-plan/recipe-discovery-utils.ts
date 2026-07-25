@@ -27,6 +27,9 @@ export function toCarouselCard(recipe: SearchableRecipe): CarouselRecipeCard {
     prepTimeMinutes: recipe.totalTimeMinutes ?? recipe.prepTimeMinutes,
     recommendationReason: reason,
     isCanonical: recipe.isCanonical,
+    // SearchableRecipe already carries the derived-allergen cache (same
+    // fail-dangerous null/[] contract) — thread it through, no re-derivation.
+    allergens: recipe.allergens,
   };
 }
 

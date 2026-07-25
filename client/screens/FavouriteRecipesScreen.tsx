@@ -5,6 +5,8 @@ import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
+import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
+import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
@@ -61,6 +63,14 @@ export default function FavouriteRecipesScreen() {
   const renderItem = useCallback(
     ({ item }: { item: ResolvedFavouriteRecipe }) => {
       const imageUri = resolveImageUrl(item.imageUrl);
+      // The card Pressable is accessible by default, which collapses its
+      // whole subtree into a single VoiceOver/TalkBack focus stop — the
+      // nested RecipeAllergenLabel's own container label is never reached.
+      // Fold the recipe's derived allergens into the card's own label so the
+      // safety-critical allergen info still reaches screen-reader users (same
+      // pattern as RecipeBrowserScreen's UnifiedRecipeCard); the visible
+      // chips (RecipeAllergenLabel below) remain for sighted users.
+      const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.allergens);
       return (
         <Pressable
           onPress={() => handleRecipePress(item)}
@@ -69,7 +79,7 @@ export default function FavouriteRecipesScreen() {
             { backgroundColor: withOpacity(theme.text, 0.04) },
           ]}
           accessibilityRole="button"
-          accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}`}
+          accessibilityLabel={`${item.title}${item.recipeType === "community" ? ", community recipe" : ""}${allergenA11ySuffix}`}
           // The card Pressable is accessible by default, which collapses its
           // whole subtree into a single VoiceOver/TalkBack focus stop — the
           // nested "remove from favourites" Pressable below is never
@@ -106,6 +116,7 @@ export default function FavouriteRecipesScreen() {
             <ThemedText style={styles.recipeTitle} numberOfLines={2}>
               {item.title}
             </ThemedText>
+            <RecipeAllergenLabel allergens={item.allergens} />
             <View style={styles.recipeMeta}>
               <View
                 style={[

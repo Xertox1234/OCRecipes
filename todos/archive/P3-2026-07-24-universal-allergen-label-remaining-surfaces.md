@@ -1,6 +1,6 @@
 ---
 title: "Universal 'Contains: <allergen>' label — remaining surfaces needing data plumbing"
-status: backlog
+status: done
 priority: low
 created: 2026-07-24
 updated: 2026-07-24
@@ -34,9 +34,9 @@ server changes:
 
 - **`client/components/recipe-chat/RecipeCard.tsx`** — renders a pre-persist
   `StreamingRecipe` (`client/hooks/useChat.ts`). `deriveRecipeAllergens` only runs
-  server-side at *save* time, so this card has no derived array to read. Wiring it
+  server-side at _save_ time, so this card has no derived array to read. Wiring it
   needs a NEW server-side SSE payload field computed pre-save (a new mechanism the
-  parent's Scope Contract excluded). **Note:** this surface was *listed* in the
+  parent's Scope Contract excluded). **Note:** this surface was _listed_ in the
   parent todo's "Confirmed recipe display surfaces to cover" but is structurally
   unreachable within that todo's own Scope Contract — an internal contradiction
   surfaced for the human reviewer, resolved by deferring it here.
@@ -137,3 +137,65 @@ it is a coverage extension.
   surfaces need server-DTO plumbing (or a new pre-persist channel) that the
   parent's client-only Scope Contract excluded. Surfaced by the `code-reviewer`
   WARNING + advisor scope-boundary review.
+
+### 2026-07-24 (implementation)
+
+- Implemented. `FavouriteRecipesScreen`, `CookbookDetailScreen`, and
+  `CarouselRecipeCard` now render `RecipeAllergenLabel`, sourced from their
+  resolved-recipe DTOs extended to carry `allergens: DerivedRecipeAllergen[] |
+null` — `server/storage/favourite-recipes.ts` and
+  `server/storage/cookbooks.ts` select/carry the column; the carousel path
+  required touching `server/storage/carousel.ts` (the actual `CAROUSEL_COLUMNS`
+  projection) in addition to the named `server/services/carousel-builder.ts`,
+  and `client/components/meal-plan/recipe-discovery-utils.ts`'s `toCarouselCard`
+  (a second `CarouselRecipeCard` construction site, forced by making the field
+  required) — both are mechanism-required extensions of the contract's own
+  "extend resolved-recipe DTOs/queries to carry the column" clause, not new
+  mechanisms; confirmed by `code-reviewer` and `server-reviewer` (no CRITICAL
+  findings). Verified end-to-end: DB column populated on write for both
+  mealPlan (`meal-plan-recipes-crud.ts`) and community
+  (`community-recipes.ts`) recipes, with `backfill-recipe-allergens.ts` for
+  historical rows; server routes pass the DTO straight through
+  (`res.json(...)`, no field-picks); client hooks do a bare `res.json()` with
+  no Zod response-schema stripping — the field survives the full wire path.
+  The a11y-fold pattern (compose the allergen text into the card's own
+  `accessibilityLabel`, since an `accessible`-by-default Pressable swallows a
+  nested label's own container) is applied to all three required surfaces plus
+  a bonus `MealPlanHomeScreen` `MealSlotItem` slot row (full treatment —
+  visible label + fold). `recipe-chat/RecipeCard`, `RecipeExtractionReviewCard`,
+  and coach `RecipeCard` each got a one-line explanatory comment and were left
+  unwired (no persisted derived data pre-save / LLM-authored block, per the
+  todo's own framing). Fail-dangerous trichotomy (`null`/`[]`/non-empty, never
+  `?? []`) verified with real-DB tests in `favourite-recipes.test.ts`,
+  `cookbooks.test.ts`, `carousel.test.ts` (storage), `carousel-builder.test.ts`
+  (service), and render-test `accessibilityLabel` assertions in
+  `FavouriteRecipesScreen.test.tsx`, `CarouselRecipeCard.test.tsx`, and a new
+  `CookbookDetailScreen.test.tsx` (added mid-review in response to a
+  `code-reviewer` WARNING about missing coverage on that surface). Review:
+  `code-reviewer` + `server-reviewer` + `mobile-reviewer`, zero CRITICAL, one
+  WARNING (CookbookDetailScreen coverage gap — fixed), plus SUGGESTIONs — see
+  deferred items below.
+- **Deferred, out of scope, surfaced for human review** (not fixed in this
+  PR): `mobile-reviewer` found a **pre-existing** (confirmed byte-identical
+  in the diff, only reindented) accessibility defect in
+  `client/screens/meal-plan/CookbookDetailScreen.tsx`'s "Remove" button — it's
+  a bare nested `Pressable` inside an `accessible`-by-default card Pressable,
+  so it's swallowed the same way `FavouriteRecipesScreen`'s equivalent button
+  was before that screen's own (separate, already-merged) `accessibilityActions`
+  fix. Not this todo's scope (unrelated to allergen labels); a screen-reader
+  user with default motion settings currently has no way to remove a recipe
+  from a cookbook via this row. Left for the human to decide/file.
+- **Filed as a low-severity follow-up**:
+  `todos/P3-2026-07-24-carousel-card-double-period-empty-reason.md` — a
+  pre-existing (not introduced here) double-period formatting glitch in
+  `CarouselRecipeCard`'s composed `accessibilityLabel` when
+  `recommendationReason` is empty.
+- **Not covered by a test** (judgment call, `DEFERRED_WARNING`):
+  `MealPlanHomeScreen`'s `MealSlotItem` allergen-label wiring — the existing
+  `MealPlanHomeScreen.test.tsx` is narrowly scoped to `useSheetBackHandler`
+  wiring with `useMealPlanItems` mocked to an empty array, not a drop-in fit
+  for asserting on rendered meal-slot items; extending it would require a
+  materially different test harness than the other three surfaces' direct
+  mirror of `FavouriteRecipesScreen.test.tsx`. This surface is itself listed
+  as "(SUGGESTION, lower priority)" in the original Background, not an
+  Acceptance Criteria checkbox.

@@ -32,6 +32,8 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { RecipeAllergenLabel } from "@/components/RecipeAllergenLabel";
+import { toRecipeAllergenA11ySuffix } from "@/components/recipe-allergen-label-utils";
 import { SwipeableRow } from "@/components/SwipeableRow";
 import { DraggableList } from "@/components/DraggableList";
 import { CalorieRing } from "@/components/CalorieRing";
@@ -215,9 +217,18 @@ const MealSlotItem = React.memo(function MealSlotItem({
   const macros = isOrphaned ? null : computeItemMacros(item);
   const macroLine = macros ? formatMacroLine(macros) : null;
 
+  // Scanned items carry no derived-allergen cache (that's product-level data,
+  // a separate concept) — only a recipe-backed item can have one. The card
+  // Pressable is accessible by default, which collapses its whole subtree
+  // into a single VoiceOver/TalkBack focus stop, so fold the allergen text
+  // into the card's own label (same pattern as RecipeBrowserScreen's
+  // UnifiedRecipeCard) rather than relying on the nested label's own
+  // container.
+  const allergenA11ySuffix = toRecipeAllergenA11ySuffix(item.recipe?.allergens);
+
   const accessLabel = macros
-    ? `${name}, ${macros.calories} calories, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat${isConfirmed ? ", confirmed" : ""}`
-    : `${name}${isConfirmed ? ", confirmed" : ""}`;
+    ? `${name}, ${macros.calories} calories, ${macros.protein}g protein, ${macros.carbs}g carbs, ${macros.fat}g fat${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`
+    : `${name}${isConfirmed ? ", confirmed" : ""}${allergenA11ySuffix}`;
 
   return (
     <Pressable
@@ -263,6 +274,7 @@ const MealSlotItem = React.memo(function MealSlotItem({
         >
           {name}
         </ThemedText>
+        <RecipeAllergenLabel allergens={item.recipe?.allergens} />
         {macroLine !== null && (
           <ThemedText
             style={[styles.mealSlotCalories, { color: theme.textSecondary }]}

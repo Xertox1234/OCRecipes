@@ -13,6 +13,7 @@ type CarouselRecipe = Pick<
   | "dietTags"
   | "isCanonical"
   | "mealTypes"
+  | "allergens"
 >;
 
 // ── Normalization ────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ function normalizeCommunity(
     recommendationReason: generateCommunityReason(recipe, profile),
     isRemix: !!recipe.remixedFromId,
     isCanonical: recipe.isCanonical,
+    allergens: recipe.allergens,
   };
 }
 

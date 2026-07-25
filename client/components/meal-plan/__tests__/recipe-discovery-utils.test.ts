@@ -51,7 +51,21 @@ describe("toCarouselCard", () => {
       prepTimeMinutes: 30,
       recommendationReason: "520 cal",
       isCanonical: true,
+      allergens: [],
     });
+  });
+
+  it("threads the recipe's derived allergens through unmodified (no re-derivation)", () => {
+    const card = toCarouselCard({
+      ...base,
+      allergens: [{ id: "peanuts", viaDerived: false }],
+    });
+    expect(card.allergens).toEqual([{ id: "peanuts", viaDerived: false }]);
+  });
+
+  it("preserves null allergens (never coerces to [])", () => {
+    const card = toCarouselCard({ ...base, allergens: null });
+    expect(card.allergens).toBeNull();
   });
 
   it("falls back to total time, then cuisine, then empty string", () => {

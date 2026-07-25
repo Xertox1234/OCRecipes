@@ -353,6 +353,43 @@ describe("favourite-recipes storage", () => {
       expect(titles).toContain("Community Salad");
     });
 
+    it("threads the recipe's derived allergens through unmodified, preserving null vs [] vs non-empty", async () => {
+      const withAllergens = await createTestMealPlanRecipe(testUser.id, {
+        title: "Allergen Recipe",
+        allergens: [{ id: "peanuts", viaDerived: false }],
+      });
+      const withEmptyAllergens = await createTestMealPlanRecipe(testUser.id, {
+        title: "No Allergen Recipe",
+        allergens: [],
+      });
+      const withNullAllergens = await createTestCommunityRecipe(testUser.id, {
+        title: "Undetermined Recipe",
+        allergens: null,
+      });
+      await toggleFavouriteRecipe(testUser.id, withAllergens.id, "mealPlan");
+      await toggleFavouriteRecipe(
+        testUser.id,
+        withEmptyAllergens.id,
+        "mealPlan",
+      );
+      await toggleFavouriteRecipe(
+        testUser.id,
+        withNullAllergens.id,
+        "community",
+      );
+
+      const result = await getResolvedFavouriteRecipes(testUser.id);
+      const byTitle = new Map(result.map((r) => [r.title, r]));
+
+      expect(byTitle.get("Allergen Recipe")?.allergens).toEqual([
+        { id: "peanuts", viaDerived: false },
+      ]);
+      expect(byTitle.get("No Allergen Recipe")?.allergens).toEqual([]);
+      // Never coerced to [] — a genuinely un-derived recipe must stay null so
+      // the fail-dangerous display never renders a false "safe" signal.
+      expect(byTitle.get("Undetermined Recipe")?.allergens).toBeNull();
+    });
+
     it("cleans up orphan favourites when recipe is deleted", async () => {
       const recipe = await createTestMealPlanRecipe(testUser.id);
       await toggleFavouriteRecipe(testUser.id, recipe.id, "mealPlan");

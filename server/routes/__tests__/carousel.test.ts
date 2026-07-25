@@ -33,6 +33,7 @@ const mockCards = [
     imageUrl: "https://example.com/pasta.jpg",
     prepTimeMinutes: 25,
     recommendationReason: "Recently added recipe",
+    allergens: null,
   },
   {
     id: 2,
@@ -40,6 +41,7 @@ const mockCards = [
     imageUrl: null,
     prepTimeMinutes: 30,
     recommendationReason: "Matches your keto diet",
+    allergens: null,
   },
 ];
 
