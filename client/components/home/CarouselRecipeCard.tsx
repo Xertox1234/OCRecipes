@@ -247,13 +247,22 @@ export const CarouselRecipeCard = React.memo(function CarouselRecipeCard({
 
           <RecipeAllergenLabel allergens={card.allergens} />
 
-          <ThemedText
-            type="caption"
-            style={[styles.reason, { color: theme.textSecondary }]}
-            numberOfLines={1}
-          >
-            {card.recommendationReason}
-          </ThemedText>
+          {/* Rendered only when non-empty: an empty `recommendationReason`
+              (see `toCarouselCard`'s fallback chain, which terminates at
+              `recipe.cuisine ?? ""`) would otherwise leave a blank Text that
+              still reserves its `styles.reason` marginBottom — the sighted
+              counterpart of the composed-label double-period bug fixed in
+              PR 711. */}
+          {card.recommendationReason ? (
+            <ThemedText
+              testID="carousel-card-reason"
+              type="caption"
+              style={[styles.reason, { color: theme.textSecondary }]}
+              numberOfLines={1}
+            >
+              {card.recommendationReason}
+            </ThemedText>
+          ) : null}
 
           {/* Action buttons */}
           {showActions ? (

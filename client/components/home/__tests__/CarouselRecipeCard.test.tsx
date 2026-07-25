@@ -295,4 +295,24 @@ describe("CarouselRecipeCard empty recommendationReason", () => {
       screen.getByLabelText("Pasta Carbonara. Double tap to view recipe."),
     ).toBeDefined();
   });
+
+  // The visible caption is the sighted-user half of the same bug: rendering it
+  // unconditionally left an empty <Text> that still reserved its
+  // `styles.reason` marginBottom, so an empty reason showed as a blank gap.
+  it("renders the reason caption when recommendationReason is non-empty", () => {
+    renderComponent(<CarouselRecipeCard card={baseCard} onPress={vi.fn()} />);
+    expect(screen.getByTestId("carousel-card-reason").textContent).toBe(
+      "High protein",
+    );
+  });
+
+  it("omits the reason caption entirely when recommendationReason is empty", () => {
+    renderComponent(
+      <CarouselRecipeCard
+        card={{ ...baseCard, recommendationReason: "" }}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("carousel-card-reason")).toBeNull();
+  });
 });
