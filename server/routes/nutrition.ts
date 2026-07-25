@@ -118,8 +118,22 @@ function buildBarcodeResponseBody(
   // directly, and additivesTags/categoriesTags are OFF-licensed
   // (ODbL) content that must never reach the client or be persisted —
   // so trim them all off the response body before spreading
-  // (`orderedFlags` already carries the computed result; `novaGroup`
-  // and `nutriScore` are kept — they are displayed).
+  // (`orderedFlags` already carries the computed result).
+  //
+  // `novaGroup`/`nutriScore` are deliberately NOT trimmed, but they are not
+  // "displayed" either — an earlier version of this comment said so and was
+  // wrong. They are consumed above as `evaluateUniversalFlags` input and
+  // reach the user only as the computed `processing:ultra` and
+  // `nutriscore:<grade>` flags; NutritionDetailScreen's `partition.nutriScore`
+  // is a `ScanFlag` derived from `orderedFlags`, not this scalar. No current
+  // client reads either raw value. They stay on the wire for compatibility
+  // with already-shipped bundles that predate the removal of the client-side
+  // `NutritionData.novaGroup`/`nutriScore` fields, which SHIPPED 2026-07-24
+  // (#708, `13bf5059`) — not 2026-07-22, which is when #694 ADDED them, and
+  // also the filing date of the todo that removed them. Measure the window
+  // from the ship date. OTA updates apply on second cold start, so old
+  // readers can still be live. Safe to drop from the response body once
+  // those bundles are out of circulation.
   const {
     ingredientsText: _ingredientsText,
     allergenTags: _allergenTags,

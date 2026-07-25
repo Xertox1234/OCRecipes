@@ -6,6 +6,7 @@ module: server
 tags: [api, wire-contract, ota, eas-update, dead-code, response-body, backwards-compatibility]
 applies_to: ["server/routes/**/*.ts", "shared/types/**/*.ts"]
 created: '2026-07-25'
+last_updated: '2026-07-25'
 ---
 
 # Removing a field from a response body needs deployed-bundle evidence — a source grep only proves the current tree has no reader
@@ -26,6 +27,20 @@ If (2) is not established, **keep the field and document why**, with the
 condition under which the trim becomes safe. Removing a field the client no
 longer *declares* is not the same as removing one no client *reads*.
 
+**Date the window from the SHIP date, and verify it from git.** The whole
+decision reduces to "how long ago did the last reader stop shipping," so that
+one date is load-bearing — and it is easy to get wrong by grabbing a nearby,
+plausible-looking date instead of the merge commit's. Never take it from:
+
+- a **todo/issue filename or filing date** — work is filed days before it ships;
+- the date the field was **added** — an adjacent commit touching the same
+  symbol, and the easiest one to grab by mistake;
+- "the last release" from memory.
+
+Confirm it: `git log --format='%h %ad %s' --date=short -S'<fieldName>' -- client/ shared/`
+shows every commit that changed the symbol's occurrence count, and
+`git show <sha> -- client shared` tells you which one removed it versus added it.
+
 ## Smell patterns
 
 - A cleanup PR removes a client-side type field, and a follow-up proposes
@@ -35,6 +50,8 @@ longer *declares* is not the same as removing one no client *reads*.
 - A comment says a field is "kept — it is displayed" but the render path
   actually consumes a *derived* value (a computed flag, a partition, a
   selector output), not the raw field.
+- The removal date in the justification is cited bare, with no commit sha —
+  or matches a todo filename rather than a merge commit.
 
 ## Why
 
@@ -69,11 +86,12 @@ anything.
 and `nutriScore` scalars are consumed as `evaluateUniversalFlags` input and
 reach the user only as the computed `processing:ultra` / `nutriscore:<grade>`
 flags. The client-side `NutritionData.novaGroup`/`nutriScore` fields were
-deleted on 2026-07-22, and a follow-up todo offered "drop the two fields from
-the response body entirely if confirmed unused."
+deleted by #708 (`13bf5059`), which **shipped 2026-07-24**, and a follow-up todo
+offered "drop the two fields from the response body entirely if confirmed
+unused."
 
 Resolution (PR #713): **kept the fields, corrected the comment.** The grep was
-clean, but the client fields had been gone for only three days — well inside the
+clean, but the client fields had been gone for a single day — well inside the
 window where pre-cleanup bundles are live. The comment now records the finding,
 the reason, and the condition under which the trim becomes safe, so the next
 reader does not re-derive it:
@@ -82,10 +100,10 @@ reader does not re-derive it:
 // `novaGroup`/`nutriScore` are deliberately NOT trimmed, but they are not
 // "displayed" either — an earlier version of this comment said so and was
 // wrong. [...] They stay on the wire for compatibility with already-shipped
-// bundles that predate the 2026-07-22 removal of the client-side
-// `NutritionData.novaGroup`/`nutriScore` fields — OTA updates apply on second
-// cold start, so old readers can still be live. Safe to drop from the response
-// body once those bundles are out of circulation.
+// bundles that predate the removal of the client-side
+// `NutritionData.novaGroup`/`nutriScore` fields, which SHIPPED 2026-07-24
+// (#708, `13bf5059`) [...] Safe to drop from the response body once those
+// bundles are out of circulation.
 ```
 
 Note what the comment does that a bare deletion-or-not decision does not: it
