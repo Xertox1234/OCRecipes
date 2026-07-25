@@ -174,6 +174,7 @@ The pre-commit script only catches: `Pressable`/`TouchableOpacity` with `onPress
 5. **Missing `accessibilityViewIsModal`** on modals, bottom sheets, and overlays
 6. **Touch targets below 44×44pt** — the script does no geometry checking; small icon buttons without `hitSlop` are invisible to it
 7. **Missing `aria-invalid`** on error-state inputs — an input can have `accessibilityLabel` and still be invisible to screen readers in the error state
+8. **An empty-value guard applied to a composed `accessibilityLabel` but NOT to the same field's visible render** — when a fix adds `${x ? \`. ${x}\` : ""}`to a label template, grep that component for every other consumer of`x`before approving.`{""}`renders nothing and warns nothing, but the host`<Text>`still mounts and its`marginBottom`is real space (Yoga does not collapse margins), so the sighted half degrades into a silent blank gap while the a11y regression test stays green. Precedent:`CarouselRecipeCard.recommendationReason`— PR #711 guarded the label, the caption at the same file's line 255 was still unguarded and needed PR #712 two days later. Never re-add an empty`<Text>`to hold spacing a guard removed. See`docs/solutions/logic-errors/a11y-label-guard-without-matching-visible-render-guard-2026-07-25.md`.
 
 ---
 
