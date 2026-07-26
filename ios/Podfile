@@ -59,6 +59,69 @@ target 'OCRecipes' do
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
 
+    # fmt 11.0.2 (pinned by React Native via third-party-podspecs/fmt.podspec)
+    # does not compile under Xcode 26 / Apple clang 21. clang tightened its
+    # consteval rules, and fmt's FMT_STRING compile-time validation now trips
+    # "call to consteval function ... is not a constant expression" — 5 errors in
+    # fmt/format-inl.h that kill a clean build ~12s in, before any app code is
+    # reached. Nothing in this project causes it; the toolchain moved.
+    #
+    # fmt gives every other feature macro an external escape hatch
+    # (`#ifdef FMT_USE_CONSTEXPR` / `FMT_USE_CONCEPTS` /
+    # `FMT_USE_NONTYPE_TEMPLATE_ARGS`, each "// Use the provided definition"),
+    # but the consteval chain in base.h was missed — it #defines
+    # FMT_USE_CONSTEVAL unconditionally, so the header always wins and a
+    # `-DFMT_USE_CONSTEVAL=0` build setting can NOT reach it. Both halves below
+    # are load-bearing: add the missing guard, then force the macro off through
+    # it. Patching only one has no effect.
+    #
+    # Effect: format-string validation drops from compile-time to runtime. RN's
+    # fmt usage is diagnostic logging with literal format strings, so no
+    # meaningful checking is lost here.
+    #
+    # REMOVE THIS when fmt moves past 11.0.2 or RN unpins it — re-run a clean
+    # build (fresh DerivedData, so fmt actually recompiles) before deleting.
+    # NOTE: CocoaPods installs pod headers read-only (0444), so this must chmod
+    # before writing and restore the mode after. Everything is wrapped in a
+    # rescue because an exception raised here aborts the WHOLE post_install
+    # hook — silently skipping the MLKit and VisionCamera fixes below, which
+    # breaks simulator and Release builds in ways that look unrelated to fmt.
+    begin
+      fmt_base_h = File.join(installer.sandbox.root, 'fmt', 'include', 'fmt', 'base.h')
+      if File.exist?(fmt_base_h)
+        fmt_marker = 'FMT_USE_CONSTEVAL 0  // patched by Podfile: Xcode 26 / clang 21'
+        fmt_anchor = '#if !defined(__cpp_lib_is_constant_evaluated)'
+        fmt_content = File.read(fmt_base_h)
+        if fmt_content.include?(fmt_marker)
+          # already patched (pod install re-run against an unchanged sandbox)
+        elsif fmt_content.include?(fmt_anchor)
+          fmt_patched = fmt_content.sub(fmt_anchor, <<~GUARD.chomp)
+            #define #{fmt_marker}
+            #ifdef FMT_USE_CONSTEVAL
+            // Use the provided definition.
+            #elif !defined(__cpp_lib_is_constant_evaluated)
+          GUARD
+          fmt_mode = File.stat(fmt_base_h).mode
+          begin
+            File.chmod(0o644, fmt_base_h)
+            File.write(fmt_base_h, fmt_patched)
+          ensure
+            File.chmod(fmt_mode, fmt_base_h)
+          end
+          Pod::UI.puts '[fmt] patched base.h to disable consteval (Xcode 26 / clang 21)'
+        else
+          # Warn, never raise: a silent no-op reappears later as an inscrutable
+          # 5-error fmt build failure with no pointer back to this hook.
+          Pod::UI.warn '[fmt] consteval anchor not found in base.h — fmt may have ' \
+                       'changed. If a clean build fails on consteval in ' \
+                       'format-inl.h, update or remove this Podfile patch.'
+        end
+      end
+    rescue => e
+      Pod::UI.warn "[fmt] could not apply the consteval patch (#{e.class}: #{e.message}). " \
+                   'A clean build will fail in fmt/format-inl.h until this is resolved.'
+    end
+
     # iOS 26 simulators are arm64-only but MLKit ships fat binaries with arm64
     # tagged for device. Strip EXCLUDED_ARCHS so xcodebuild discovers arm64
     # simulators, then re-tag MLKit binaries for simulator platform.
