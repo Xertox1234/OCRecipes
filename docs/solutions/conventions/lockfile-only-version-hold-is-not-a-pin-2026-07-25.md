@@ -5,8 +5,9 @@ category: conventions
 tags: [dependencies, npm, semver, lockfile, dependabot, cocoapods, native-build, version-pinning]
 module: shared
 applies_to: ["package.json", "package-lock.json"]
-symptoms: ["A dependency you deliberately held back reappears at the newer version after an unrelated npm install", "A native build breaks with a pod/gradle conflict that npm install reported no problem with", "A Dependabot PR crosses a version boundary a todo said not to cross", "Nobody can reconstruct why a version was being held"]
+symptoms: ["A dependency you deliberately held back reappears at the newer version after an unrelated npm install", "A native build breaks with a pod/gradle conflict that npm install reported no problem with", "A Dependabot PR crosses a version boundary a todo said not to cross", "Nobody can reconstruct why a version was being held", "A hold is set at the version named in the resolver error, and a slightly older release in the same series is equally broken"]
 created: '2026-07-25'
+last_updated: '2026-07-26'
 ---
 
 # A dependency version held only by the lockfile is not pinned — put a deliberate hold in package.json
@@ -31,6 +32,11 @@ change that documents the constraint.
   *installed* tree is correct rather than that the *declared* range is.
 - A constraint that only manifests in `Podfile.lock` / `build.gradle`
   resolution, with nothing in the JS-side manifest recording it.
+- A hold whose boundary is quoted from a resolver error message, with no check
+  of whether the preceding release carries the same constraint.
+- An exact pin landed as the whole mitigation, with `.github/dependabot.yml`
+  untouched — or `open-pull-requests-limit: 0` cited as if it also stopped
+  security updates.
 
 ## Why
 
@@ -51,10 +57,10 @@ The damage is proportional to **how late the failure surfaces**. Concretely
 "react-native-vision-camera-barcode-scanner": "^5.0.11",
 ```
 
-while 5.1.1 was published and known to be **unusable** — it requires
+while the 5.1.x series was published and known to be **unusable** — it requires
 `GoogleMLKit/BarcodeScanning = 9.0.0`, which conflicts irreconcilably with
 `@react-native-ml-kit/text-recognition`'s hard pin at `8.0.0`. The caret already
-permitted 5.1.1. Only `package-lock.json` was holding the line.
+permitted 5.1.x. Only `package-lock.json` was holding the line.
 
 Had anything re-resolved, `npm install` would have succeeded silently and the
 break would have appeared later at `pod install` — a CocoaPods resolution error
@@ -62,6 +68,56 @@ with no connection back to the npm change that caused it, and no record in the
 repo of why 5.0.11 was deliberate. **The loudness of the eventual failure is not
 protection when it fires in a different tool, at a different layer, days after
 the change.**
+
+### Set the boundary from the manifest, not from the resolver transcript
+
+The version named in a resolution error is the version that **happened to
+resolve** — not the lower bound of the broken range. Read the actual constraint
+out of the published manifest for each candidate release.
+
+Concretely (2026-07-26): the `pod install` transcript named **5.1.1**, and both
+the todo and the first draft of this rule recorded 5.1.1 as the blocked version.
+But the published **5.1.0** podspec already declares
+
+```ruby
+s.dependency 'GoogleMLKit/BarcodeScanning', '9.0.0'
+```
+
+so 5.1.0 is equally unusable and there is no safe intermediate step. A hold
+inferred from the transcript (`>=5.1.1`, or an exact pin justified as "5.1.1 is
+the bad one") leaves a hole at exactly 5.1.0. Cheap to check:
+
+```bash
+TB=$(npm view <pkg>@<candidate> dist.tarball)
+curl -sL "$TB" | tar -xzO 'package/*.podspec' | grep -i dependency
+```
+
+### Cover the bot-config layer too — a PR limit of 0 does not stop security bumps
+
+An exact pin in `package.json` closes `npm update` and lockfile regeneration,
+but **not** a bot that edits `package.json` itself. In this repo
+`.github/dependabot.yml` sets `open-pull-requests-limit: 0`, which disables
+**version** updates — and it is tempting to stop there. Security updates
+**bypass that limit by design**: they fire on any CVE and bump to the minimum
+patched version, which can sit on the far side of your boundary.
+
+So a deliberate hold needs an `ignore` entry as well, banded to the whole
+unusable series rather than a single release:
+
+```yaml
+- dependency-name: "react-native-vision-camera"
+  versions: [">=5.1.0"] # NOT >=5.1.1 — see the boundary note above
+```
+
+Band it no wider than the real constraint, so an in-series security patch
+(5.0.12) can still land. And where a family is version-locked as a set — the
+VisionCamera pods share generated Nitro specs — every member needs its own
+entry, or the set desynchronizes.
+
+**Why this layer matters more than it looks:** CI has no native build step, so a
+bump across this boundary passes every required check and only fails on an EAS
+Build. When the authoritative gate is blind to the failure, config is the only
+guard; review vigilance is not a substitute.
 
 ## Examples
 
@@ -94,8 +150,9 @@ see the Dependabot remediation convention in the project memory.
 ## Related Files
 
 - `package.json` — where a deliberate hold belongs
+- `.github/dependabot.yml` — the second layer; `ignore` entries, because security updates bypass `open-pull-requests-limit: 0`
 - `ios/Podfile.lock` — where this particular constraint actually bites
-- `todos/P2-2026-07-25-mlkit-9-unblock-visioncamera-511.md` — the blocked upgrade that surfaced it
+- `todos/P2-2026-07-25-mlkit-9-unblock-visioncamera-511.md` — the blocked upgrade that surfaced it (PR #724 applied the pin + ignore entries as a holding measure; both revert with the real upgrade)
 
 ## See Also
 
