@@ -79,8 +79,14 @@ target 'OCRecipes' do
     # fmt usage is diagnostic logging with literal format strings, so no
     # meaningful checking is lost here.
     #
-    # REMOVE THIS when fmt moves past 11.0.2 or RN unpins it — re-run a clean
-    # build (fresh DerivedData, so fmt actually recompiles) before deleting.
+    # REMOVE THIS when fmt moves past 11.0.2 or RN unpins it — but verify the
+    # removal with `rm -rf ios/Pods && pod install`, NOT with fresh DerivedData.
+    # This hook rewrites base.h *inside the sandbox*, and CocoaPods re-extracts
+    # a pod only when its spec checksum changes. So deleting the hook and
+    # re-running `pod install` leaves the already-patched header on disk: a
+    # DerivedData-clean build passes against a still-patched header, and only
+    # EAS — which pod-installs into a pristine sandbox — fails, with the
+    # original 5 consteval errors and no obvious link back to this deletion.
     # NOTE: CocoaPods installs pod headers read-only (0444), so this must chmod
     # before writing and restore the mode after. Everything is wrapped in a
     # rescue because an exception raised here aborts the WHOLE post_install
@@ -116,6 +122,13 @@ target 'OCRecipes' do
                        'changed. If a clean build fails on consteval in ' \
                        'format-inl.h, update or remove this Podfile patch.'
         end
+      else
+        # Same reasoning as the anchor-missing warn above. A pod rename,
+        # use_frameworks!, a modular-headers change, or RN vendoring fmt
+        # elsewhere would move this path and skip the patch in total silence.
+        Pod::UI.warn "[fmt] base.h not found at #{fmt_base_h} — the pod layout " \
+                     'may have changed, so the consteval patch was NOT applied. ' \
+                     'Expect a clean build to fail in fmt/format-inl.h.'
       end
     rescue => e
       Pod::UI.warn "[fmt] could not apply the consteval patch (#{e.class}: #{e.message}). " \
