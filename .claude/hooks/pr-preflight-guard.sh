@@ -58,6 +58,13 @@ STAMP=""
 # checkout, a dependency shipping .git) it would source a DIFFERENT tree's helper. The
 # helper that ships beside this hook is the one whose stamp path must be honored.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# NOTE for whoever next changes the stamp-path SCHEME: this reader resolves the helper from
+# the tree the hook ships in, while the writer (scripts/preflight.sh) resolves it from the
+# tree it runs in. If those two trees hold different versions of the helper, the reader
+# looks for a path the writer never wrote — "my preflight passed but PR-create is blocked".
+# That is the fail-closed direction, so it is confusing rather than dangerous; change both
+# copies together. The `[ -n "$ROOT" ]` below stays load-bearing: a `cd` that fails leaves
+# ROOT empty, and STAMP must then remain empty so the gate denies.
 if [ -n "$ROOT" ] && [ -f "$ROOT/scripts/lib/preflight-stamp-path.sh" ]; then
   # shellcheck source=scripts/lib/preflight-stamp-path.sh
   . "$ROOT/scripts/lib/preflight-stamp-path.sh"

@@ -23,12 +23,20 @@ case "$FILE" in
   *) exit 0 ;;
 esac
 
+# eslint --fix WRITES, and the cd below would change what a relative path resolves against.
+# Pin a relative path to the ORIGINAL cwd first, so the cd affects only which eslint binary
+# and flat config get discovered — never which file is rewritten. (Claude Code's Edit/Write
+# emit absolute paths in practice, but this hook has always accepted relative ones.)
+case "$FILE" in /*) ;; *) FILE="$PWD/$FILE" ;; esac
+
 # Run from the project root rather than the agent's cwd. `npx` walks up from cwd to find
 # node_modules/.bin, and eslint discovers its flat config the same way — so with a cwd
 # inside a package directory this would run THAT package's eslint and config, and a config
-# file is executable code. $FILE is absolute, so the cd does not affect which file is fixed.
-OUTPUT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." \
-         && ESLINT_NO_TYPE_AWARE=1 npx eslint --no-warn-ignored --fix "$FILE" 2>&1)
+# file is executable code.
+# 2>&1 wraps the whole group, not just npx: a failed cd would otherwise send its error to
+# the hook's stderr and report a bare "left problems it could not auto-fix" with no body.
+OUTPUT=$( { cd "$(dirname "${BASH_SOURCE[0]}")/../.." \
+            && ESLINT_NO_TYPE_AWARE=1 npx eslint --no-warn-ignored --fix "$FILE"; } 2>&1 )
 STATUS=$?
 
 # Clean: every problem was auto-fixed or there were none → stay silent.

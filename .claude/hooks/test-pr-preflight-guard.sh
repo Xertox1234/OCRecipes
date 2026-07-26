@@ -133,16 +133,37 @@ OUT=$(run_hook 'env GH_TOKEN=x gh pr create --title x')
 assert_contains "env-runner-word create still denies" '"permissionDecision": "deny"' "$OUT"
 
 # 13. Helper UN-SOURCEABLE → DENY. Locks the fail-safe: if the shared stamp-path helper
-# can't be found at the repo root, the guard must block (never silently allow a PR with no
-# stamp). Run in a throwaway repo that HAS a HEAD but NO scripts/lib helper, with the env
-# override unset so resolution actually goes through the $ROOT/helper path.
-TMP_REPO=$(mktemp -d)
-( cd "$TMP_REPO" && git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init )
-OUT=$( cd "$TMP_REPO" && printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x"}}' \
-  | env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_COMMON_DIR \
-        -u PREFLIGHT_STAMP_FILE bash "$HOOK" )
+# can't be found, the guard must block (never silently allow a PR with no stamp).
+#
+# The hook resolves $ROOT from its OWN location (${BASH_SOURCE[0]}/../..), not from cwd, so
+# "make the helper missing" means running a COPY of the hook from a tree that lacks it — a
+# cwd change cannot hide the helper any more. (Before that change this test cd'd into a
+# throwaway repo; it kept passing afterwards, but via a different branch entirely — the
+# throwaway repo's stamp key had no stamp file — so it silently stopped testing the helper.)
+#
+# Two-sided, per docs/solutions/conventions/gate-test-needs-two-sided-negative-control:
+# the ONLY difference between the two runs is whether scripts/lib/ exists in the hook's
+# tree, so an ALLOW/DENY split isolates exactly the helper-presence variable.
+HELPER_T=$(mktemp -d)
+mkdir -p "$HELPER_T/.claude/hooks" "$HELPER_T/scripts/lib"
+cp "$HOOK" "$HELPER_T/.claude/hooks/"
+cp -R "$(dirname "$HOOK")/lib" "$HELPER_T/.claude/hooks/"        # so cmd-detect.sh still sources
+# Absolute, derived from $HOOK — a relative `scripts/lib/...` here would only work while cwd
+# happens to be the repo root, which is the very defect this hook set was just fixed for.
+cp "$(dirname "$HOOK")/../../scripts/lib/preflight-stamp-path.sh" "$HELPER_T/scripts/lib/"
+echo "$HEAD" > "$STAMP_FILE"
+# negative control — helper PRESENT and the stamp matches HEAD → allow. Without this, the
+# DENY below would be indistinguishable from "this fixture can never allow anything".
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x"}}' \
+  | bash "$HELPER_T/.claude/hooks/pr-preflight-guard.sh")
+assert_empty "helper present + fresh stamp allows (control for the fail-safe below)" "" "$OUT"
+# positive — remove ONLY the helper; everything else is identical.
+rm -rf "$HELPER_T/scripts"
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x"}}' \
+  | bash "$HELPER_T/.claude/hooks/pr-preflight-guard.sh")
 assert_contains "missing helper denies (fail-safe)" '"permissionDecision": "deny"' "$OUT"
-rm -rf "$TMP_REPO"
+rm -f "$STAMP_FILE"
+rm -rf "$HELPER_T"
 
 # 14. Lib UNSOURCEABLE → still DENY (fail-CLOSED). The sourced-scanner refactor must not
 # reintroduce a fail-OPEN: run a COPY of the hook from a dir with NO lib/ subdir (so
