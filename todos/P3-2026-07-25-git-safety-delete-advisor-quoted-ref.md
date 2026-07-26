@@ -52,6 +52,18 @@ delete (the PR #520 incident class it was built for).
 The existing advisor tests (`test-git-safety.sh:499-513`) use **unquoted**
 literals exclusively, which is why nothing in the suite caught this.
 
+A third trigger, observed while committing this very todo: the advisor scans the
+whole command string, so `git branch -D "todo/foo"` appearing as **data** inside
+a heredoc commit message also matches, and the multi-line `sed` scrapes fragments
+across newlines into a nonsense `REF`. Recorded here as context for whoever
+implements this — it is the same raw-text-scanning root cause, and it means the
+"NO PR found" message can fire on commands that delete nothing at all. It is
+deliberately **not** an acceptance criterion: distinguishing command text from
+quoted data is the hard problem the git-safety hardening chain (#663 → #678)
+already litigated for the gates, and re-opening it for a warn-only advisor is
+out of proportion. The quote strip plus the unresolvable-ref message already
+downgrade this case from a false alarm to an honest "cannot resolve".
+
 ## Acceptance Criteria
 
 - [ ] Surrounding quotes are stripped from `REF` at the normalization point
