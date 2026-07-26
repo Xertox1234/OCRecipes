@@ -135,10 +135,17 @@ Risks/notes for whoever picks this up:
   device). An MLKit major bump can change framework layout/packaging and break
   that script. Budget time for it and re-read
   `docs/solutions/best-practices/visioncamera-5-upgrade-ios-xcode26-build-2026-06-02.md`.
-- **Verification needs EAS Build, not OTA.** This is a native change; an OTA
-  update cannot deliver or validate it. The local iOS build is blocked on
-  fmt vs clang 21, but that is a _local_ toolchain problem — EAS Build runs its
-  own image and can produce both a dev client and a preview build.
+- **Verification needs a native build, not OTA.** This is a native change; an
+  OTA update cannot deliver or validate it.
+  **Updated 2026-07-26 — the local iOS build is NO LONGER blocked.** The
+  fmt-vs-clang-21 break was root-caused and fixed by a `post_install` patch in
+  `ios/Podfile` (PR #725); a clean simulator build with fresh DerivedData now
+  passes in ~5.5 min. So a **local simulator build covers Acceptance Criteria
+  #2, #3 and #6** — only a Release archive / store build still needs EAS.
+  Criteria #4, #5, #7 and #8 remain physical-device work regardless (real label
+  photos, both barcode code paths, tap-to-focus, multi-lens selection).
+  If a clean build fails on `consteval` in `fmt/format-inl.h` again, check
+  whether that Podfile hook is still present and matching fmt's current source.
 - Do **not** run `npm audit fix` while touching the lockfile — use `package.json`
   `overrides` per `project_dependabot_transitive_override_remediation`.
 
