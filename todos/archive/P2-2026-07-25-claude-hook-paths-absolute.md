@@ -1,6 +1,6 @@
 ---
 title: "Make .claude hook registrations cwd-independent ($CLAUDE_PROJECT_DIR)"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-25
 updated: 2026-07-25
@@ -43,17 +43,32 @@ session that _is_ mutating.
 
 ## Acceptance Criteria
 
-- [ ] Every `command` entry in `.claude/settings.json` uses an absolute path via
+- [x] Every `command` entry in `.claude/settings.json` uses an absolute path via
       `$CLAUDE_PROJECT_DIR` (e.g. `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/git-safety.sh"`)
-- [ ] Verified by running a Bash tool call from a subdirectory (e.g.
+      — all 29 entries; args stay outside the quotes.
+- [~] Verified by running a Bash tool call from a subdirectory (e.g.
       `cd node_modules && git status`) and confirming **zero** hook errors
-- [ ] `git-safety.sh` confirmed to still DENY a contract-violating command when
+      — **not satisfiable pre-merge.** The harness reads hook registrations from
+      `projectRoot` at session start, so an uncommitted worktree edit is not live in the
+      session making the change. Asserted instead against a modeled invocation of the
+      real registered string (see below); the live `cd` check is a post-merge, post-restart
+      step.
+- [x] `git-safety.sh` confirmed to still DENY a contract-violating command when
       invoked from a subdirectory — i.e. the guard actually fires, not merely
-      that the script is found
-- [ ] Same treatment applied to `.claude/settings.local.json` if it registers hooks
-- [ ] Hooks that internally resolve their own paths relative to cwd (rather than
+      that the script is found — asserted on both the deny AND the
+      `outside every registered worktree` reason, so it pins the contract-violation
+      branch rather than any deny.
+- [x] Same treatment applied to `.claude/settings.local.json` if it registers hooks
+      — vacuous: that file has no `hooks` key (and is globally gitignored).
+- [~] Hooks that internally resolve their own paths relative to cwd (rather than
       to `$0`) are identified and fixed too — finding the script is necessary but
-      not sufficient
+      not sufficient — **partially met.** All *code-loading* sites are fixed
+      (`pr-preflight-guard.sh` lib sourcing, `drift-detect.sh` session-coord execution,
+      `eslint-fix.sh` npx/config resolution); every `lib/` source was already
+      `${BASH_SOURCE[0]}`-relative. Hooks that derive repo *state* from cwd
+      (`git rev-parse` in `branch-preflight.sh`, `core-bare-guard.sh`,
+      `commit-verify.sh`, `drift-detect*.sh`) are deliberately left alone — see
+      Updates, this needs per-hook reasoning, not a mechanical sweep.
 
 ## Implementation Notes
 
@@ -101,3 +116,39 @@ session that _is_ mutating.
 - Initial creation. Discovered during the PR #716 tap-to-focus investigation
   when an agent `cd`-ed into `node_modules/` and every hook failed for the
   remainder of that call sequence.
+
+- **Implemented and closed.** All 29 `command` entries in `.claude/settings.json` now use
+  `bash "$CLAUDE_PROJECT_DIR/.claude/hooks/<name>.sh"`.
+
+  **The bare form was chosen over a `${CLAUDE_PROJECT_DIR:-.}` fallback deliberately.**
+  A fallback looks safer but is worse for a gate: if the variable were ever unset it would
+  silently restore this exact bug, permanently and invisibly. The bare form fails loudly,
+  everywhere, at session start. Verified against the installed CLI (v2.1.220) that the
+  variable is set on the single hook-spawn path for every event type, assigned after the
+  inherited-env spread so it cannot be shadowed, and that `projectRoot` is not moved by a
+  Bash `cd` — so the fix is not a no-op.
+
+  **Severity was higher than "error noise."** The relative form selected the gate script
+  *by cwd*, so any `.claude/hooks/` directory under the agent's current directory would
+  have been trusted to emit the allow/deny verdict — a confused deputy, not just a
+  missing file.
+
+  New CI-enforced regression test `.claude/hooks/test-settings-hook-paths.sh` (picked up
+  by `scripts/run-hook-tests.sh`'s glob, no wiring needed). It is two-sided: a negative
+  control proves the relative form cannot fire from a subdirectory, so the positive
+  assertion cannot pass for an unrelated reason. Mutation-checked — reintroducing either
+  bug class turns it red.
+
+  Consequential fixes: `test-session-coord.sh` matched the raw-JSON registration string
+  with a literal space, which the escaped closing quote broke; a solution doc documented
+  the old form as a copy-paste template.
+
+  **Deliberately not fixed here — needs its own decision.** Several hooks derive repo
+  *state* from process cwd (`git rev-parse` in `branch-preflight.sh`, `core-bare-guard.sh`,
+  `commit-verify.sh`, `drift-detect.sh`, `drift-detect-update.sh`), and
+  `pr-preflight-guard.sh` still `exit 0`s (fails OPEN) when cwd is not a repo, which the
+  `mcp__github__create_pull_request` path can reach. These are NOT a mechanical sweep:
+  for a repo-state query, process cwd is arguably *more* correct than script location,
+  because the checkout the agent is working in is the one whose drift/HEAD matters —
+  switching them to a `${BASH_SOURCE[0]}`-derived root could break worktree drift
+  detection. Each needs a per-hook call about which root is semantically right.
