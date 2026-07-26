@@ -7,6 +7,7 @@ module: client
 applies_to: ["client/camera/**/*.ts", "client/camera/**/*.tsx", "client/lib/logger.ts"]
 symptoms: ["A feature's animation/indicator fires but its underlying effect never happens", "A bug reproduces on device but no log line exists anywhere", "Instrumentation added to diagnose a release-build bug produces nothing", "A fix 'works' after an OTA update but the native half was never rebuilt"]
 created: '2026-07-25'
+last_updated: '2026-07-25'
 ---
 
 # JS-rendered feedback is not evidence a native call succeeded — and logger.warn produces no evidence on the builds we actually test
@@ -23,6 +24,18 @@ For any feature where **JS draws the feedback and native does the work**:
    `logger.error`**, never `logger.warn`/`logger.info`. In this codebase the
    latter two are `__DEV__`-only and are silent in exactly the builds we verify
    on.
+3. A failure-reported ref that re-arms on the next successful call bounds Sentry
+   events to **one per success-to-failure transition**, not one per mount or
+   component lifetime. This is fine for tap handlers (`runFocus`) where
+   transitions are rare, but for gesture-frame callbacks (`setCameraZoom` called
+   via `runOnJS` on every pinch frame), an **intermittent** native failure during
+   a single continuous gesture, or concurrent in-flight promises settling out of
+   call order, can cause the re-arm to fire between two failures — producing
+   more than one Sentry event during that gesture. This is an **accepted
+   tradeoff** when the scope boundary prohibits introducing a new throttling
+   abstraction (time-window, call-count gate, etc.). Do not treat this as a bug
+   to fix unless a stronger cap is explicitly added; document it as a known
+   residual.
 
 ## Smell patterns
 
@@ -61,6 +74,22 @@ and it is precisely the level that yields **zero** evidence on a `preview` or
 been on fmt vs clang 21) and OTA is the only delivery path, `logger.error` is
 the only channel that reaches you. Latch it if it fires from a gesture handler,
 or one Sentry event per tap.
+
+**Caveat: the "one Sentry event per tap" claim only holds for a persistently
+failing call with no interleaved success.** The re-arming latch (see Example
+below) resets on every successful resolution. For a tap handler (`runFocus`),
+success-to-failure transitions are rare — you tap, the call succeeds, you tap
+again, it fails — so the latch produces at most one Sentry event per tap
+sequence. But for a frame-rate callback (`setCameraZoom` invoked via `runOnJS`
+on every pinch gesture frame), an **intermittent** native failure during a single
+continuous gesture can produce multiple Sentry events: the latch fires on the
+first failure, re-arms on the next successful frame, then fires again on the
+next failure — all within one drag gesture. Concurrent in-flight promises
+settling out of call order can cause the same effect. This is an **accepted
+tradeoff** when the scope boundary prohibits introducing a new throttling
+abstraction (time-window, call-count gate, etc.). If a future task revisits this
+file with a mandate to add a stronger cap, prefer a per-gesture-gesture ID or a
+time-window gate rather than extending the latch logic further.
 
 **A cheaper discriminator usually exists.** Before instrumenting, look for a
 **sibling call on the same native object that has visible output**, and ask the
@@ -109,6 +138,7 @@ just the error. The rejection alone rarely says *why* the device refused.
 - `client/lib/logger.ts` — the `__DEV__` gate that makes this rule necessary
 - `client/lib/reporter.ts` — `reportingActive()`: DSN present **and** `!__DEV__`
 - `client/camera/hooks/useCameraFocusAndZoom.ts` — latched `logger.error` precedent
+- `client/camera/hooks/__tests__/useCameraFocusAndZoom.test.ts` — latched-logger.error failure-reporting tests for both runFocus and setCameraZoom
 - `eas.json` — `preview`/`production` profiles carry the DSN; `development` does not
 
 ## See Also

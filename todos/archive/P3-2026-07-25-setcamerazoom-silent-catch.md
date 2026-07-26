@@ -1,6 +1,6 @@
 ---
 title: "setCameraZoom still swallows its rejection in an empty .catch()"
-status: backlog
+status: done
 priority: low
 created: 2026-07-25
 updated: 2026-07-25
@@ -93,3 +93,15 @@ visible to the user than a stuck focus. Hence low priority, not medium.
 
 - Initial creation. Deferred from the PR #716 review; raised independently by
   both `code-reviewer` and `mobile-reviewer`.
+- Implemented: `setCameraZoom` now mirrors `runFocus`'s latched
+  `logger.error` pattern via a new `zoomFailureReportedRef`, re-arming on a
+  successful `setZoom`. Added failure-reporting tests in
+  `useCameraFocusAndZoom.test.ts` (single rejection, many rejecting frames,
+  re-arm after success). Reviewed by `code-reviewer` + `mobile-reviewer`
+  (no CRITICAL findings); both independently flagged the same residual —
+  the latch bounds reports per success→failure transition, not per mount,
+  so an intermittently-failing `setZoom` during one drag can still emit
+  more than one Sentry event. Per the todo's own Scope Contract (no new
+  abstraction), this was surfaced as a deferred warning rather than fixed
+  with a throttle/cap. Codified as a caveat on
+  `docs/solutions/conventions/js-rendered-feedback-not-evidence-native-call-succeeded-2026-07-25.md`.

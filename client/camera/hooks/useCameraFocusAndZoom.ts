@@ -39,6 +39,7 @@ export function useCameraFocusAndZoom({
   const [focusPoint, setFocusPoint] = useState<FocusPoint | null>(null);
   const focusKeyRef = useRef(0);
   const focusFailureReportedRef = useRef(false);
+  const zoomFailureReportedRef = useRef(false);
   const [zoomLabel, setZoomLabel] = useState<string | null>(null);
   const zoomLabelHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -107,13 +108,32 @@ export function useCameraFocusAndZoom({
   // update costs a JS-thread hop per frame but avoids that dependency.
   const setCameraZoom = useCallback(
     (value: number) => {
-      cameraRef.current?.controller?.setZoom(value).catch(() => {
-        // Camera not ready yet / setZoom rejected — next gesture update
-        // (or the label, which already reflects the intended value) is the
-        // recovery; nothing user-facing to surface here.
-      });
+      cameraRef.current?.controller
+        ?.setZoom(value)
+        .then(() => {
+          // Re-arm, mirroring runFocus above: a transient early rejection
+          // must not permanently suppress reporting for a later persistent
+          // one.
+          zoomFailureReportedRef.current = false;
+        })
+        .catch((error: unknown) => {
+          // Latched: setZoom is invoked via runOnJS on EVERY pinch-gesture
+          // frame (not once per tap, like runFocus's focusTo) — unlatched,
+          // one dragged pinch on a broken zoom would emit dozens of Sentry
+          // events. NOTE: the bound is "one report per success→failure
+          // transition", not "one report per mount" — the .then() re-arm
+          // above means an INTERMITTENTLY failing setZoom during one drag
+          // can still emit more than one report; that's the same tradeoff
+          // runFocus already accepts, just at a much higher call rate here.
+          if (zoomFailureReportedRef.current) return;
+          zoomFailureReportedRef.current = true;
+          logger.error(
+            `[useCameraFocusAndZoom] setZoom(${value.toFixed(1)}) failed (device zoom range ${device?.minZoom ?? "?"}-${device?.maxZoom ?? "?"})`,
+            error,
+          );
+        });
     },
-    [cameraRef],
+    [cameraRef, device],
   );
 
   // Bridged from the pinch worklet on every update via runOnJS — shows a live

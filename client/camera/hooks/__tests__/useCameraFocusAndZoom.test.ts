@@ -8,11 +8,13 @@ import { useCameraFocusAndZoom } from "../useCameraFocusAndZoom";
 import { logger } from "@/lib/logger";
 
 // The shared RNGH mock (test/mocks/react-native-gesture-handler.ts) throws away
-// handler callbacks — its `onEnd()` just returns `this`. These tests need to
-// *drive* the tap, so they supply a capturing stub instead. vi.hoisted() is
-// required: vi.mock factories are hoisted above module-scope declarations.
+// handler callbacks — its `onEnd()`/`onUpdate()` just return `this`. These
+// tests need to *drive* the tap and pinch, so they supply a capturing stub
+// instead. vi.hoisted() is required: vi.mock factories are hoisted above
+// module-scope declarations.
 const captured = vi.hoisted(() => ({
   tapEnd: undefined as ((e: { x: number; y: number }) => void) | undefined,
+  pinchUpdate: undefined as ((e: { scale: number }) => void) | undefined,
 }));
 
 vi.mock("react-native-gesture-handler", () => {
@@ -26,7 +28,8 @@ vi.mock("react-native-gesture-handler", () => {
     onStart() {
       return this;
     }
-    onUpdate() {
+    onUpdate(cb: (e: { scale: number }) => void) {
+      captured.pinchUpdate = cb;
       return this;
     }
   }
@@ -52,8 +55,15 @@ function makeDevice(flags: Partial<CameraDevice> = {}): CameraDevice {
   } as CameraDevice;
 }
 
-function makeCameraRef(focusTo: CameraRef["focusTo"]) {
-  return { current: { focusTo } as CameraRef };
+function makeCameraRef(
+  focusTo: CameraRef["focusTo"],
+  setZoom: (zoom: number) => Promise<void> = vi
+    .fn()
+    .mockResolvedValue(undefined),
+) {
+  return {
+    current: { focusTo, controller: { setZoom } } as unknown as CameraRef,
+  };
 }
 
 async function tap(x: number, y: number) {
@@ -64,20 +74,33 @@ async function tap(x: number, y: number) {
   });
 }
 
+async function pinch(scale: number) {
+  // async act() flushes the microtask queue, so setZoom's then/catch handlers
+  // have run by the time the assertion executes.
+  await act(async () => {
+    captured.pinchUpdate?.({ scale });
+  });
+}
+
 function mount(
   focusTo: CameraRef["focusTo"],
   device: CameraDevice | undefined,
+  setZoom?: (zoom: number) => Promise<void>,
 ) {
   return renderHook(() =>
-    useCameraFocusAndZoom({ cameraRef: makeCameraRef(focusTo), device }),
+    useCameraFocusAndZoom({
+      cameraRef: makeCameraRef(focusTo, setZoom),
+      device,
+    }),
   );
 }
 
-describe("useCameraFocusAndZoom — tap-to-focus", () => {
+describe("useCameraFocusAndZoom", () => {
   const originalPlatformOS = RN.Platform.OS;
 
   beforeEach(() => {
     captured.tapEnd = undefined;
+    captured.pinchUpdate = undefined;
     vi.mocked(logger.error).mockClear();
     // Platform.OS is a plain string property, not a function — assign directly.
     RN.Platform.OS = "ios";
@@ -208,6 +231,56 @@ describe("useCameraFocusAndZoom — tap-to-focus", () => {
       expect(logger.error).toHaveBeenCalledTimes(2);
       expect(vi.mocked(logger.error).mock.calls[1][1]).toMatchObject({
         message: "persistent metering failure",
+      });
+    });
+  });
+
+  describe("pinch-to-zoom — failure reporting", () => {
+    it("reports a setZoom rejection instead of swallowing it", async () => {
+      const failure = new Error("Camera is not yet ready!");
+      const setZoom = vi.fn().mockRejectedValue(failure);
+      mount(vi.fn().mockResolvedValue(undefined), makeDevice(), setZoom);
+
+      await pinch(1.5);
+
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(logger.error).mock.calls[0][1]).toBe(failure);
+    });
+
+    // setZoom fires via runOnJS on EVERY pinch frame — a much higher call
+    // rate than the tap-driven focusTo latch above — so this drives several
+    // frames, not just one, to prove the latch actually holds under that load.
+    it("reports at most once across many pinch frames so runOnJS's per-frame calls cannot flood the reporter", async () => {
+      const setZoom = vi.fn().mockRejectedValue(new Error("nope"));
+      mount(vi.fn().mockResolvedValue(undefined), makeDevice(), setZoom);
+
+      await pinch(1.1);
+      await pinch(1.2);
+      await pinch(1.3);
+      await pinch(1.4);
+      await pinch(1.5);
+
+      expect(logger.error).toHaveBeenCalledTimes(1);
+    });
+
+    // A transient early-pinch rejection must not permanently blind reporting:
+    // if the camera recovers and later fails persistently, that failure is
+    // the one worth knowing about — matching the runFocus precedent above.
+    it("re-arms after a successful setZoom so a later persistent failure is still reported", async () => {
+      const setZoom = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Camera is not yet ready!"))
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error("persistent zoom failure"));
+      mount(vi.fn().mockResolvedValue(undefined), makeDevice(), setZoom);
+
+      await pinch(1.1); // fails    → reported
+      await pinch(1.2); // succeeds → re-arms
+      await pinch(1.3); // fails    → reported again
+
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(logger.error).mock.calls[1][1]).toMatchObject({
+        message: "persistent zoom failure",
       });
     });
   });
