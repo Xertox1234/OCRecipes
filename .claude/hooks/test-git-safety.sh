@@ -55,6 +55,19 @@ jsonc() {  # $1=session $2=cwd $3=raw command
 FAKE_BIN=$(mktemp -d)
 cat > "$FAKE_BIN/gh" <<'EOF'
 #!/usr/bin/env bash
+# A ref argument that still contains a literal quote character is not a real
+# branch name gh could ever resolve — mirror gh's real "no pull requests
+# found" for such a garbled ref, so a test using this fixture actually proves
+# the caller stripped its quotes rather than passing regardless of $@ (see
+# docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md).
+for a in "$@"; do
+  case "$a" in
+    *\"*|*\'*)
+      echo "no pull requests found for branch \"${a}\"" >&2
+      exit 1
+      ;;
+  esac
+done
 if [ "${FAKE_GH_EXIT:-0}" != "0" ]; then
   echo "${FAKE_GH_STDERR:-no pull requests found}" >&2
   exit "$FAKE_GH_EXIT"
@@ -508,6 +521,45 @@ FAKE_GH_STATE=CLOSED assert_warn_contains "advisor: CLOSED-unmerged PR is a reje
 FAKE_GH_EXIT=1 assert_warn_contains "advisor: no PR found warns about never-pushed work" \
   "$(json no-registry-session "$MAIN" 'git branch -D scratch-branch')" \
   "NO PR found"
+
+# Quote-handling fix (P3-2026-07-25-git-safety-delete-advisor-quoted-ref): the
+# branch-name extraction never stripped quotes, so a quoted literal OR a
+# quoted shell variable both surfaced as a false "NO PR found". Three new
+# cases below (quoted-literal resolves normally, variable-quoted is
+# unresolvable rather than "no PR", flag-like skips the lookup entirely with
+# no second message) plus the existing unquoted "no PR found" sibling just
+# above make the AC's four distinct messages. See
+# docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md
+# for the sibling "blank vs. tokenize" lesson this fix follows.
+FAKE_GH_STATE=MERGED assert_warn_contains "advisor: quoted literal branch -D resolves its PR (was: NO PR found)" \
+  "$(jsonc no-registry-session "$MAIN" 'git branch -D "todo/foo"')" \
+  "MERGED"
+FAKE_GH_STATE=MERGED assert_warn_contains "advisor: quoted shell variable is reported unresolvable, not NO PR found" \
+  "$(jsonc no-registry-session "$MAIN" 'git branch -D "$B"')" \
+  "could not resolve a literal branch name"
+out=$(FAKE_GH_EXIT=1 run_hook "$(json no-registry-session "$MAIN" 'git branch -D -f todo/foo')")
+if echo "$out" | grep -qF 'looks like a flag' && ! echo "$out" | grep -qi 'NO PR found'; then
+  echo "PASS: advisor: flag-like extraction skips the lookup (no additional NO PR found)"; PASS=$((PASS+1))
+else
+  echo "FAIL: advisor: flag-like extraction skips the lookup (no additional NO PR found)"
+  echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
+fi
+
+# An empty ref AFTER quote-stripping (`git branch -D ""`) must never reach
+# `gh pr view`: real gh treats an empty positional as "no ref given" and
+# resolves the CURRENT branch's PR instead — a confident, wrong-branch
+# "MERGED" would be worse than the honest "no PR found" a garbled ref used
+# to (accidentally) produce. FAKE_GH_STATE=MERGED here would make a
+# fall-through pass this assertion for the wrong reason, so assert the
+# skip message and the absence of any gh-derived state word.
+out=$(FAKE_GH_STATE=MERGED run_hook "$(jsonc no-registry-session "$MAIN" 'git branch -D ""')")
+if echo "$out" | grep -qF 'extracted ref is empty' && ! echo "$out" | grep -qi 'MERGED'; then
+  echo "PASS: advisor: empty ref after quote-stripping skips the lookup (no false MERGED)"; PASS=$((PASS+1))
+else
+  echo "FAIL: advisor: empty ref after quote-stripping skips the lookup (no false MERGED)"
+  echo "  got: $(echo "$out" | head -3)"; FAIL=$((FAIL+1))
+fi
+
 FAKE_GH_EXIT=8 FAKE_GH_STDERR="network down" assert_warn_contains "advisor: gh hard failure reports UNVERIFIED" \
   "$(json no-registry-session "$MAIN" 'git branch -D todo/foo')" \
   "UNVERIFIED"

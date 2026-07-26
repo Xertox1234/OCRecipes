@@ -564,12 +564,55 @@ elif printf '%s' "$CMD" | grep -qE '(^|[;&|[:space:]])git[[:space:]]+worktree[[:
 fi
 
 if [ "$KIND" = "delete" ] && [ -n "$REF" ]; then
-  REF="${REF#origin/}"
-  # A flag-like extraction must not reach gh in argument position.
-  case "$REF" in -*)
-    warn "⚠ Fresh PR check skipped: extracted ref '${REF}' looks like a flag — verify the branch's PR state manually before deleting." ;;
+  # Strip one matched pair of surrounding quotes BEFORE the origin/ prefix
+  # strip below, so a quoted literal (`git branch -D "todo/foo"`) — or a
+  # quoted origin ref — resolves exactly like the unquoted form. Matched-pair
+  # removal only (never `tr -d`, which deletes quote chars but keeps their
+  # content and glues adjacent tokens — see
+  # docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md).
+  case "$REF" in
+    \"*\") REF="${REF#\"}"; REF="${REF%\"}" ;;
+    \'*\') REF="${REF#\'}"; REF="${REF%\'}" ;;
   esac
-  if PR_JSON=$(gh pr view "$REF" --json number,state,mergedAt 2>/dev/null); then
+  REF="${REF#origin/}"
+  # Exactly one of these paths may reach `gh pr view` below — a REF that
+  # cannot be resolved to a literal branch name must SKIP the lookup
+  # entirely rather than fall through to it. (`warn()` itself calls `exit 0`,
+  # so a naive sibling `case` would still emit only one message today — but
+  # making the skip explicit here, instead of relying on that side effect,
+  # keeps it true if `warn()` ever changes. See
+  # docs/solutions/conventions/warn-deny-helper-embedded-exit-defeats-fallthrough-reasoning-2026-07-26.md.)
+  SKIP_REASON=""
+  # A ref that is empty AFTER normalization (quote-stripping above, OR the
+  # origin/ strip — e.g. `git branch -D ""` or `git push origin --delete
+  # origin/`) must not reach `gh pr view`: an empty positional is NOT "no
+  # ref" to gh — it resolves to the CURRENT branch's PR, which can print a
+  # confident "MERGED — deletion is safe" about a branch that has nothing to
+  # do with the one actually being deleted. That is worse than the honest
+  # "no PR found" this hook used to (accidentally) produce for a garbled ref.
+  [ -n "$REF" ] || SKIP_REASON="the extracted ref is empty after normalization — confirm this branch's merge state manually before deleting."
+  # A flag-like extraction must not reach gh in argument position.
+  if [ -z "$SKIP_REASON" ]; then
+    case "$REF" in
+      -*) SKIP_REASON="extracted ref '${REF}' looks like a flag — verify the branch's PR state manually before deleting." ;;
+    esac
+  fi
+  if [ -z "$SKIP_REASON" ]; then
+    # An unexpanded shell construct ($VAR, `cmd`) survives quote-stripping as
+    # a literal token — the ref could not be resolved from the command text.
+    # This must NOT assert that no PR exists; it is an honest "unknown."
+    # Accepted trade-off: a real branch legitimately named e.g. `feat/a$b`
+    # also hits this path and gets "unresolvable" instead of a real PR
+    # lookup. That is intentional — a softer warning on a rare valid name
+    # beats a confidently wrong one on the common quoted-variable case. Do
+    # not "fix" this back to a real lookup for `$`/backtick-containing refs.
+    case "$REF" in
+      *'$'*|*'`'*) SKIP_REASON="could not resolve a literal branch name from '${REF}' (looks like an unexpanded shell variable or command substitution) — confirm this branch's merge state manually before deleting." ;;
+    esac
+  fi
+  if [ -n "$SKIP_REASON" ]; then
+    warn "⚠ Fresh PR check skipped: ${SKIP_REASON}"
+  elif PR_JSON=$(gh pr view "$REF" --json number,state,mergedAt 2>/dev/null); then
     NUM=$(printf '%s' "$PR_JSON" | jq -r '.number' 2>/dev/null || echo "?")
     STATE=$(printf '%s' "$PR_JSON" | jq -r '.state' 2>/dev/null || echo "")
     MERGED_AT=$(printf '%s' "$PR_JSON" | jq -r '.mergedAt // "-"' 2>/dev/null || echo "-")
