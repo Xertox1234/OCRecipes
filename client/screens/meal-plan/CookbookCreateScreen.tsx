@@ -107,8 +107,13 @@ export default function CookbookCreateScreen() {
   // a picked photo is held here, and "generate" is armed as an intent.
   const [pendingCoverUri, setPendingCoverUri] = useState<string | null>(null);
   const [generateOnCreate, setGenerateOnCreate] = useState(false);
-  // Covers the plate while the deferred cover step runs after create.
-  const [coverBusyLabel, setCoverBusyLabel] = useState<string | null>(null);
+  // Which cover step is running, if any. A discriminated kind rather than the
+  // label alone: the buttons key their spinners off `kind`, so re-wording the
+  // copy can't silently detach them.
+  const [coverBusy, setCoverBusy] = useState<{
+    kind: "upload" | "generate";
+    label: string;
+  } | null>(null);
 
   // Pre-populate form when editing
   useEffect(() => {
@@ -121,7 +126,12 @@ export default function CookbookCreateScreen() {
 
   const trimmedName = name.trim();
   const canSubmit =
-    trimmedName.length > 0 && !mutation.isPending && !editLoadBlocked;
+    trimmedName.length > 0 &&
+    !mutation.isPending &&
+    !editLoadBlocked &&
+    // An in-flight cover step owns the screen — submitting under it would
+    // race a second mutation against the same cookbook.
+    coverBusy === null;
 
   const storedCoverUrl = existingCookbook?.coverImageUrl ?? null;
   const hasCover = !!(pendingCoverUri ?? storedCoverUrl);
@@ -135,11 +145,20 @@ export default function CookbookCreateScreen() {
    */
   const dismiss = useCallback(() => {
     if (fromHome) {
+      // Switching tabs leaves this screen mounted, so a create-mode form
+      // would still be filled in the next time Home routes here. Reset it.
+      if (!isEditMode) {
+        setName("");
+        setDescription("");
+        setError(null);
+        setPendingCoverUri(null);
+        setGenerateOnCreate(false);
+      }
       redirectToHomeTab(navigation);
       return;
     }
     navigation.goBack();
-  }, [fromHome, navigation]);
+  }, [fromHome, isEditMode, navigation]);
 
   // An explicit close control, always present. Without it this screen can be
   // a dead end (see `dismiss` above), and `headerBackVisible: false` keeps the
@@ -185,7 +204,7 @@ export default function CookbookCreateScreen() {
       }
 
       setPendingCoverUri(uri);
-      setCoverBusyLabel("Uploading…");
+      setCoverBusy({ kind: "upload", label: "Uploading…" });
       try {
         await uploadCoverMutation.mutateAsync({ cookbookId, uri });
         haptics.notification(NotificationFeedbackType.Success);
@@ -196,7 +215,7 @@ export default function CookbookCreateScreen() {
         setPendingCoverUri(null);
         toast.error("Couldn't upload that photo. Please try again.");
       } finally {
-        setCoverBusyLabel(null);
+        setCoverBusy(null);
       }
     } catch (err) {
       logger.error("Cookbook cover picker failed:", err);
@@ -221,7 +240,7 @@ export default function CookbookCreateScreen() {
       return;
     }
 
-    setCoverBusyLabel("Generating…");
+    setCoverBusy({ kind: "generate", label: "Generating…" });
     try {
       await generateCoverMutation.mutateAsync(cookbookId);
       setPendingCoverUri(null);
@@ -232,7 +251,7 @@ export default function CookbookCreateScreen() {
       haptics.notification(NotificationFeedbackType.Error);
       toast.error("Couldn't generate a cover right now. Please try again.");
     } finally {
-      setCoverBusyLabel(null);
+      setCoverBusy(null);
     }
   }, [
     canGenerateCover,
@@ -304,7 +323,7 @@ export default function CookbookCreateScreen() {
     // reports separately and the flow still completes.
     let coverFailed = false;
     if (pendingCoverUri) {
-      setCoverBusyLabel("Adding your cover…");
+      setCoverBusy({ kind: "upload", label: "Adding your cover…" });
       try {
         await uploadCoverMutation.mutateAsync({
           cookbookId: created.id,
@@ -314,17 +333,17 @@ export default function CookbookCreateScreen() {
         logger.error("Cookbook cover upload failed after create:", err);
         coverFailed = true;
       } finally {
-        setCoverBusyLabel(null);
+        setCoverBusy(null);
       }
     } else if (generateOnCreate) {
-      setCoverBusyLabel("Generating your cover…");
+      setCoverBusy({ kind: "generate", label: "Generating your cover…" });
       try {
         await generateCoverMutation.mutateAsync(created.id);
       } catch (err) {
         logger.error("Cookbook cover generation failed after create:", err);
         coverFailed = true;
       } finally {
-        setCoverBusyLabel(null);
+        setCoverBusy(null);
       }
     }
 
@@ -369,7 +388,7 @@ export default function CookbookCreateScreen() {
     SCREEN_PADDING,
   );
 
-  const coverBusy = !!coverBusyLabel;
+  const isCoverBusy = coverBusy !== null;
   const submitLabel = isEditMode ? "Save Changes" : "Create Cookbook";
 
   return (
@@ -394,8 +413,8 @@ export default function CookbookCreateScreen() {
           coverImageUrl={storedCoverUrl}
           previewUri={pendingCoverUri}
           width={coverWidth}
-          busy={coverBusy}
-          busyLabel={coverBusyLabel ?? undefined}
+          busy={isCoverBusy}
+          busyLabel={coverBusy?.label}
         />
 
         <View style={styles.coverActions}>
@@ -406,8 +425,8 @@ export default function CookbookCreateScreen() {
             accessibilityLabel={coverPhotoActionLabel(hasCover)}
             accessibilityHint="Choose a cover image from your photo library"
             selected={!isEditMode && !!pendingCoverUri}
-            loading={coverBusyLabel === "Uploading…"}
-            disabled={coverBusy}
+            loading={coverBusy?.kind === "upload"}
+            disabled={isCoverBusy}
           />
           <CoverActionButton
             icon="feather"
@@ -424,8 +443,8 @@ export default function CookbookCreateScreen() {
             }
             selected={!isEditMode && generateOnCreate}
             locked={!canGenerateCover}
-            loading={coverBusyLabel === "Generating…"}
-            disabled={coverBusy}
+            loading={coverBusy?.kind === "generate"}
+            disabled={isCoverBusy}
           />
         </View>
 
@@ -435,7 +454,7 @@ export default function CookbookCreateScreen() {
           </ThemedText>
         ) : null}
 
-        <View style={styles.fields}>
+        <View>
           <TextInput
             label="Name"
             value={name}
@@ -445,7 +464,8 @@ export default function CookbookCreateScreen() {
             maxLength={NAME_MAX}
             error={!!error && !trimmedName}
             returnKeyType="next"
-            autoFocus={!isEditMode}
+            // Deliberately NOT autofocused: the cover is the first thing this
+            // screen has to say, and opening with the keyboard up buries it.
           />
           <ThemedText
             style={[styles.charCount, { color: theme.textSecondary }]}
@@ -496,7 +516,7 @@ export default function CookbookCreateScreen() {
         <Button
           onPress={() => void handleSubmit()}
           disabled={!canSubmit}
-          loading={mutation.isPending || coverBusy}
+          loading={mutation.isPending || isCoverBusy}
           loadingText={isEditMode ? "Saving…" : "Creating…"}
           accessibilityLabel={isEditMode ? "Save changes" : "Create cookbook"}
         >
@@ -525,9 +545,6 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.regular,
     textAlign: "center",
     marginTop: -Spacing.sm,
-  },
-  fields: {
-    gap: 0,
   },
   multilineInput: {
     minHeight: 92,
