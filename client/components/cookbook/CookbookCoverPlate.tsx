@@ -12,7 +12,13 @@ import Animated, {
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
-import { BorderRadius, Fonts, Spacing, withOpacity } from "@/constants/theme";
+import {
+  BorderRadius,
+  Fonts,
+  MAX_FONT_SCALE_CONSTRAINED,
+  Spacing,
+  withOpacity,
+} from "@/constants/theme";
 import { expandTimingConfig } from "@/constants/animations";
 import { resolveImageUrl } from "@/lib/query-client";
 import {
@@ -88,8 +94,14 @@ export function CookbookCoverPlate({
     height: animatedWidth.value / COVER_ASPECT_RATIO,
   }));
 
-  // Title scales with the plate so it stays proportionate when compacted.
-  const titleSize = Math.max(13, Math.round(width * 0.115));
+  // Title scales with the plate so it stays proportionate when compacted —
+  // driven by the ANIMATED width, not the prop. Reading the prop would snap
+  // the font to its target on frame one while the box is still tweening, so
+  // the title visibly pops out of proportion for the whole 300ms.
+  const animatedTitle = useAnimatedStyle(() => {
+    const size = Math.max(13, Math.round(animatedWidth.value * 0.115));
+    return { fontSize: size, lineHeight: Math.round(size * 1.25) };
+  });
 
   return (
     <Animated.View
@@ -165,13 +177,19 @@ export function CookbookCoverPlate({
       />
 
       <View style={styles.titleWrap}>
-        <ThemedText
+        {/* Animated.Text, not ThemedText: the font size is animated in step
+            with the plate, and ThemedText is a plain wrapper with no ref
+            forwarding so it can't be wrapped by createAnimatedComponent.
+            Every style ThemedText would contribute is set explicitly below;
+            the Dynamic Type cap replaces its `maxScale` handling, and is
+            needed because the plate is a fixed-ratio box with a 3-line
+            title. */}
+        <Animated.Text
           numberOfLines={3}
+          maxFontSizeMultiplier={MAX_FONT_SCALE_CONSTRAINED}
           style={[
             styles.title,
             {
-              fontSize: titleSize,
-              lineHeight: Math.round(titleSize * 1.25),
               // The scrim under the title is a fixed dark gradient in both
               // themes, so the title is always white over art —
               // `buttonText` is #FFFFFF in light and dark alike.
@@ -181,10 +199,11 @@ export function CookbookCoverPlate({
                   ? withOpacity(theme.text, 0.35)
                   : theme.text,
             },
+            animatedTitle,
           ]}
         >
           {title}
-        </ThemedText>
+        </Animated.Text>
       </View>
 
       {busy ? (

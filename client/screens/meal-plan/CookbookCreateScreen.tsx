@@ -99,7 +99,29 @@ export default function CookbookCreateScreen() {
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
-  const [anyFieldFocused, setAnyFieldFocused] = useState(false);
+  // Focus is tracked by field IDENTITY, not a shared boolean. Moving from
+  // Name to Description fires Name's onBlur and Description's onFocus as two
+  // native events that aren't guaranteed to land in the same React commit —
+  // with one boolean, the intermediate render reads "nothing focused" and the
+  // plate starts a 300ms grow back to full size that is immediately reversed,
+  // producing a visible wobble during the exact interaction this screen is
+  // built around. A Set is order-independent, so the transient state is
+  // "both focused" rather than "neither".
+  const [focusedFields, setFocusedFields] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const anyFieldFocused = focusedFields.size > 0;
+
+  const handleFieldFocus = useCallback((field: string) => {
+    setFocusedFields((prev) => new Set(prev).add(field));
+  }, []);
+  const handleFieldBlur = useCallback((field: string) => {
+    setFocusedFields((prev) => {
+      const next = new Set(prev);
+      next.delete(field);
+      return next;
+    });
+  }, []);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // Create mode has no cookbook id yet, so a chosen cover can't be attached
@@ -189,6 +211,23 @@ export default function CookbookCreateScreen() {
     });
   }, [navigation, dismiss, haptics, theme.text]);
 
+  /**
+   * User-safe copy for a cover step. Never surfaces `err.message` — that is
+   * the raw server body. `RATE_LIMITED` gets its own line because "try again"
+   * is actively wrong advice when the limiter is the thing rejecting you.
+   */
+  const describeCoverError = useCallback(
+    (err: unknown, step: "upload" | "generate"): string => {
+      if (err instanceof ApiError && err.code === ErrorCode.RATE_LIMITED) {
+        return "Too many requests. Please wait a moment and try again.";
+      }
+      return step === "upload"
+        ? "Couldn't upload that photo. Please try again."
+        : "Couldn't generate a cover right now. Please try again.";
+    },
+    [],
+  );
+
   const handlePickPhoto = useCallback(async () => {
     haptics.selection();
     try {
@@ -219,7 +258,7 @@ export default function CookbookCreateScreen() {
         logger.error("Cookbook cover upload failed:", err);
         haptics.notification(NotificationFeedbackType.Error);
         setPendingCoverUri(null);
-        toast.error("Couldn't upload that photo. Please try again.");
+        toast.error(describeCoverError(err, "upload"));
       } finally {
         setCoverBusy(null);
       }
@@ -227,7 +266,14 @@ export default function CookbookCreateScreen() {
       logger.error("Cookbook cover picker failed:", err);
       toast.error("Couldn't open your photo library.");
     }
-  }, [haptics, isEditMode, cookbookId, uploadCoverMutation, toast]);
+  }, [
+    haptics,
+    isEditMode,
+    cookbookId,
+    uploadCoverMutation,
+    toast,
+    describeCoverError,
+  ]);
 
   const handleGenerateCover = useCallback(async () => {
     if (!canGenerateCover) {
@@ -255,7 +301,16 @@ export default function CookbookCreateScreen() {
     } catch (err) {
       logger.error("Cookbook cover generation failed:", err);
       haptics.notification(NotificationFeedbackType.Error);
-      toast.error("Couldn't generate a cover right now. Please try again.");
+      // `canGenerateCover` above is a locally-cached entitlement flag. If it
+      // has gone stale (a downgrade since the last fetch) the server is the
+      // one that says no — surface the upgrade path the user can actually act
+      // on rather than a generic "try again" for something that will never
+      // succeed.
+      if (err instanceof ApiError && err.code === ErrorCode.PREMIUM_REQUIRED) {
+        setShowUpgradeModal(true);
+      } else {
+        toast.error(describeCoverError(err, "generate"));
+      }
     } finally {
       setCoverBusy(null);
     }
@@ -266,6 +321,7 @@ export default function CookbookCreateScreen() {
     cookbookId,
     generateCoverMutation,
     toast,
+    describeCoverError,
   ]);
 
   /**
@@ -358,15 +414,18 @@ export default function CookbookCreateScreen() {
         ? NotificationFeedbackType.Warning
         : NotificationFeedbackType.Success,
     );
-    // One announcement, not two — co-arriving announceForAccessibility calls
-    // collide on iOS and only the last is spoken.
-    AccessibilityInfo.announceForAccessibility(
-      coverFailed
-        ? "Cookbook created. The cover couldn't be added — you can add one by editing the cookbook."
-        : "Cookbook created",
-    );
+    // Exactly ONE announcer per branch. Toast is itself an announcer (an
+    // iOS-gated announceForAccessibility PLUS an Android polite live region),
+    // so announcing here as well would drop one message on iOS — where
+    // announcements don't queue — and double-speak on TalkBack. On the
+    // failure branch Toast carries it; only the silent success path needs an
+    // announce of its own, ungated because nothing else covers it.
     if (coverFailed) {
-      toast.error("Cookbook created, but the cover couldn't be added.");
+      toast.error(
+        "Cookbook created, but the cover couldn't be added. You can add one by editing the cookbook.",
+      );
+    } else {
+      AccessibilityInfo.announceForAccessibility("Cookbook created");
     }
     dismiss();
   }, [
@@ -432,7 +491,13 @@ export default function CookbookCreateScreen() {
             accessibilityHint="Choose a cover image from your photo library"
             selected={!isEditMode && !!pendingCoverUri}
             loading={coverBusy?.kind === "upload"}
-            disabled={isCoverBusy}
+            // `editLoadBlocked` gates these for the same reason it gates
+            // submit: with the fetch failed, `storedCoverUrl` is null, so
+            // `hasCover` is false and this button would read "Add photo" for
+            // a cookbook that HAS one. The server does its own lookup, finds
+            // the real cover, and deletes it — silent data loss behind a
+            // label that promises the opposite.
+            disabled={isCoverBusy || editLoadBlocked}
           />
           <CoverActionButton
             icon="feather"
@@ -450,7 +515,9 @@ export default function CookbookCreateScreen() {
             selected={!isEditMode && generateOnCreate}
             locked={!canGenerateCover}
             loading={coverBusy?.kind === "generate"}
-            disabled={isCoverBusy}
+            // Same guard as the photo button above — generating also replaces
+            // (and deletes) the existing cover we currently can't see.
+            disabled={isCoverBusy || editLoadBlocked}
           />
         </View>
 
@@ -465,8 +532,8 @@ export default function CookbookCreateScreen() {
             label="Name"
             value={name}
             onChangeText={(text) => setName(text.slice(0, NAME_MAX))}
-            onFocus={() => setAnyFieldFocused(true)}
-            onBlur={() => setAnyFieldFocused(false)}
+            onFocus={() => handleFieldFocus("name")}
+            onBlur={() => handleFieldBlur("name")}
             maxLength={NAME_MAX}
             error={!!error && !trimmedName}
             returnKeyType="next"
@@ -485,8 +552,8 @@ export default function CookbookCreateScreen() {
             onChangeText={(text) =>
               setDescription(text.slice(0, DESCRIPTION_MAX))
             }
-            onFocus={() => setAnyFieldFocused(true)}
-            onBlur={() => setAnyFieldFocused(false)}
+            onFocus={() => handleFieldFocus("description")}
+            onBlur={() => handleFieldBlur("description")}
             maxLength={DESCRIPTION_MAX}
             multiline
             numberOfLines={4}

@@ -21,25 +21,29 @@ import { deleteImage, saveCookbookCover } from "../lib/image-store";
 import { detectImageMimeType } from "../lib/image-mime";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { generateCookbookCover } from "../services/cookbook-cover";
+import { createServiceLogger, toError } from "../lib/logger";
+
+const log = createServiceLogger("cookbooks-routes");
 
 // Covers are larger than avatars (they render full-bleed at book proportion),
 // so the cap is 2MB against the avatar path's 1MB. The client compresses
 // before upload; this is the backstop.
 const coverUpload = createImageUpload(2 * 1024 * 1024);
 
+// `coverImageUrl` is deliberately NOT accepted from the request body. It is
+// set only by the two /cover endpoints below, from a server-minted key.
+//
+// This matters beyond "no client sends it": the stored value is now read back
+// and passed to `deleteImage(..., "cookbook")` on the delete/replace paths, so
+// an accepted body field would let a user point their own cookbook at ANOTHER
+// user's cover key and have the server delete that object. The prefix guard in
+// `deleteImage` only scopes to `cookbook-covers/`, which is where every user's
+// covers live — it blocks cross-KIND deletion, not cross-USER. Removing the
+// field closes that, and also fixes an orphan leak (a PATCH overwriting the
+// URL abandoned the previous object with no cleanup).
 const createCookbookSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   description: z.string().max(1000).optional().nullable(),
-  coverImageUrl: z
-    .string()
-    .url()
-    .max(2000)
-    .refine(
-      (url) => /^https?:\/\//.test(url),
-      "Only http:// or https:// URLs allowed",
-    )
-    .optional()
-    .nullable(),
 });
 
 const updateCookbookSchema = createCookbookSchema
@@ -52,6 +56,29 @@ const addRecipeSchema = z.object({
   recipeId: z.number().int().positive(),
   recipeType: z.enum(["mealPlan", "community"]).default("mealPlan"),
 });
+
+/**
+ * Best-effort removal of an object we just stored but failed to point the DB
+ * at. The request is already failing 404, so a cleanup failure must not turn
+ * it into a 500 — but it must not be silent either: a swallowed R2 delete
+ * leaves an orphaned object with no trace that bucket state and the DB have
+ * diverged. (`deleteImage`'s disk branch swallows its own unlink errors, so
+ * this catch's real blast radius is R2.)
+ */
+async function rollbackStoredCover(
+  url: string,
+  cookbookId: number,
+  source: "upload" | "generate",
+): Promise<void> {
+  try {
+    await deleteImage(url, "cookbook");
+  } catch (error) {
+    log.error(
+      { err: toError(error), cookbookId, source, url },
+      "cookbook cover rollback cleanup failed — object may be orphaned",
+    );
+  }
+}
 
 export function register(app: Express): void {
   // GET /api/cookbooks — List user's cookbooks
@@ -95,7 +122,9 @@ export function register(app: Express): void {
           userId: req.userId,
           name: parsed.data.name,
           description: parsed.data.description || null,
-          coverImageUrl: parsed.data.coverImageUrl || null,
+          // A cookbook is always created without a cover; the client attaches
+          // one afterwards via POST /api/cookbooks/:id/cover[/generate].
+          coverImageUrl: null,
         });
         res.status(201).json(cookbook);
       } catch (error) {
@@ -284,7 +313,7 @@ export function register(app: Express): void {
         if (!updated) {
           // Best-effort rollback of the just-uploaded object; the request
           // already fails 404, so a cleanup failure must not make it a 500.
-          await deleteImage(coverImageUrl, "cookbook").catch(() => {});
+          await rollbackStoredCover(coverImageUrl, id, "upload");
           sendError(res, 404, "Cookbook not found", ErrorCode.NOT_FOUND);
           return;
         }
@@ -294,7 +323,7 @@ export function register(app: Express): void {
         // Replaced cover is cleaned up after responding — the DB already
         // points at the new object, so a storage failure is not user-visible.
         fireAndForget(
-          "old-cookbook-cover-cleanup",
+          "cookbook-cover-upload-cleanup",
           deleteImage(existing.coverImageUrl, "cookbook"),
         );
       } catch (error) {
@@ -343,11 +372,16 @@ export function register(app: Express): void {
           existing.description,
         );
         if (!coverImageUrl) {
+          // Distinct from AI_NOT_CONFIGURED: this path is reached when a
+          // provider was configured but the attempt failed (or persistence
+          // did), which is retryable. Conflating the two makes an R2 outage
+          // read as a missing API key in monitoring, and tells the user a
+          // transient blip is a permanent capability gap.
           sendError(
             res,
             503,
             "Couldn't generate a cover right now. Please try again.",
-            ErrorCode.AI_NOT_CONFIGURED,
+            ErrorCode.IMAGE_GENERATION_FAILED,
           );
           return;
         }
@@ -356,15 +390,17 @@ export function register(app: Express): void {
           coverImageUrl,
         });
         if (!updated) {
-          await deleteImage(coverImageUrl, "cookbook").catch(() => {});
+          await rollbackStoredCover(coverImageUrl, id, "generate");
           sendError(res, 404, "Cookbook not found", ErrorCode.NOT_FOUND);
           return;
         }
 
         res.json(updated);
 
+        // Distinct label per path: a cleanup failure after a PAID generation
+        // is a different severity than after a free upload.
         fireAndForget(
-          "old-cookbook-cover-cleanup",
+          "cookbook-cover-generate-cleanup",
           deleteImage(existing.coverImageUrl, "cookbook"),
         );
       } catch (error) {

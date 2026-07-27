@@ -40,12 +40,70 @@ const SUBJECT_PROMPT_MAX = 200;
  * and that was NOT enough on its own — see `buildCoverPrompt` for why. These
  * cover the surfaces a food scene actually carries writing on.
  */
-const COVER_NEGATIVE_PROMPT =
+const COVER_SURFACE_NEGATIVES =
   "text, lettering, writing, words, letters, title, caption, typography, " +
   "handwriting, watermark, logo, label, signage, book cover, magazine cover, " +
-  "packaging, printed packaging, chalkboard, recipe card, blurry, " +
-  "out of focus, oversaturated, artificial colors, cartoon, illustration, " +
-  "3d render";
+  "packaging, printed packaging, chalkboard, recipe card";
+
+const COVER_NEGATIVE_PROMPT =
+  `${COVER_SURFACE_NEGATIVES}, blurry, out of focus, oversaturated, ` +
+  "artificial colors, cartoon, illustration, 3d render";
+
+/**
+ * Nouns that are themselves lettering surfaces. Used two ways: rejected if the
+ * LLM pre-pass smuggles one into the derived subject, and (via
+ * `COVER_SURFACE_NEGATIVES`) excluded on both provider paths.
+ *
+ * `cookbook` is listed separately from `book` on purpose — `\bbooks?\b` does
+ * NOT match "cookbook", because `\b` needs a word/non-word transition and
+ * `k`→`b` is word→word. That is the single likeliest leaked noun here, so
+ * relying on the `book` entry alone would miss exactly the case that matters.
+ */
+const SURFACE_NOUN_RE =
+  /\b(?:cook)?books?\b|\bcovers?\b|\btitles?\b|\btext\b|\bletter(?:s|ing)?\b|\bwords?\b|\bwriting\b|\blabels?\b|\bsigns?\b|\bsignage\b|\bchalkboards?\b|\bmenus?\b|\bpackaging\b|\bposters?\b|\bmagazines?\b|\bnewspapers?\b|\brecipe cards?\b/i;
+
+/** Words in a whitespace-separated phrase. */
+export function wordCount(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+/** Casefold + drop punctuation + collapse whitespace, for echo comparison. */
+function normalizeForEcho(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Whether the derived subject echoes the cookbook's name.
+ *
+ * Compares NORMALIZED forms so a paraphrase can't slip through on punctuation
+ * or spacing alone, and accepts a partial echo: if most of the name's
+ * significant words reappear, it is still recognisably the branding phrase and
+ * must not reach the image model. Names of 1-2 characters are skipped — they
+ * match inside almost any subject and would reject every valid result.
+ *
+ * Exported for direct testing: this is the guard on the defect the whole
+ * service exists to prevent.
+ */
+export function echoesName(subject: string, name: string): boolean {
+  const normName = normalizeForEcho(name);
+  if (normName.length <= 2) return false;
+
+  const normSubject = normalizeForEcho(subject);
+  if (normSubject.includes(normName)) return true;
+
+  // Partial echo: ignore short filler words, then require a majority of the
+  // name's remaining words to appear as whole words in the subject.
+  const nameWords = normName.split(" ").filter((w) => w.length > 2);
+  if (nameWords.length === 0) return false;
+  const subjectWords = new Set(normSubject.split(" "));
+  const hits = nameWords.filter((w) => subjectWords.has(w)).length;
+  return hits / nameWords.length > 0.5;
+}
 
 /**
  * Scene used when no LLM is available to derive one from the cookbook's name.
@@ -117,12 +175,14 @@ export async function deriveCoverSubject(
 ): Promise<string> {
   if (!isArtDirectorLLMEnabled()) return FALLBACK_COVER_SUBJECT;
 
-  const safeName = sanitizeUserInput(name).slice(0, NAME_PROMPT_MAX).trim();
-  const safeDescription = description
-    ? sanitizeUserInput(description).slice(0, DESCRIPTION_PROMPT_MAX).trim()
-    : "unspecified";
-
+  // Inside the try: the doc comment above promises every failure falls back,
+  // and a throw out here would escape to the route as a 500 instead.
   try {
+    const safeName = sanitizeUserInput(name).slice(0, NAME_PROMPT_MAX).trim();
+    const safeDescription = description
+      ? sanitizeUserInput(description).slice(0, DESCRIPTION_PROMPT_MAX).trim()
+      : "unspecified";
+
     const systemPrompt =
       "You turn a cookbook's name into a description of the FOOD it contains, " +
       "for a photographer who will never see the name. Reply with concrete " +
@@ -148,7 +208,7 @@ export async function deriveCoverSubject(
           { role: "user", content: userPrompt },
         ],
         temperature: 0.7,
-        max_tokens: 120,
+        max_completion_tokens: 120,
         response_format: { type: "json_object" },
       },
       { timeout: OPENAI_TIMEOUT_FAST_MS },
@@ -178,12 +238,36 @@ export async function deriveCoverSubject(
       .replace(/\s+/g, " ")
       .trim();
 
-    // Last-ditch guard: if the model echoed the cookbook name back despite
-    // being told not to, the name would reach the image model after all.
-    if (
-      safeName.length > 2 &&
-      subject.toLowerCase().includes(safeName.toLowerCase())
-    ) {
+    // The system prompt asks the model for food nouns only, but that is a soft
+    // instruction — the same "weight, not a veto" failure this whole service
+    // exists to work around, one level upstream. So the OUTPUT is constrained
+    // too, and every rejection falls back to the deterministic subject.
+
+    // 1. Charset + length. Blocks control tokens, fake turn markers, and
+    //    "Return JSON: {...}" restatements that a steered description could
+    //    push through the ~200 chars of free-form text it controls.
+    if (!/^[A-Za-z0-9 ,.'-]+$/.test(subject) || wordCount(subject) > 25) {
+      log.warn("cover-subject LLM output failed shape check; using fallback");
+      return FALLBACK_COVER_SUBJECT;
+    }
+
+    // 2. No lettering surfaces. "a chalkboard menu and a stack of cookbooks"
+    //    is well-formed food-adjacent prose that would put writing right back
+    //    into the image.
+    if (SURFACE_NOUN_RE.test(subject)) {
+      log.warn(
+        "cover-subject LLM output named a lettering surface; using fallback",
+      );
+      return FALLBACK_COVER_SUBJECT;
+    }
+
+    // 3. No echo of the cookbook name — the original failure mode. Both sides
+    //    are normalized (punctuation dropped, whitespace collapsed, casefolded)
+    //    because the model paraphrases: "Grandma's Kitchen" comes back as
+    //    "Grandmas Kitchen" and a raw substring test would miss it. Also
+    //    rejects a PARTIAL echo, since "Sunday Bakes" out of "Sunday Bakes Vol
+    //    2" is still the branding phrase.
+    if (echoesName(subject, safeName)) {
       log.warn("cover-subject LLM echoed the cookbook name; using fallback");
       return FALLBACK_COVER_SUBJECT;
     }
@@ -235,13 +319,19 @@ export async function generateCookbookCover(
 
   try {
     // DALL-E has no separate negative field, so the exclusions ride as a
-    // suffix (Runware takes them via its default negative prompt instead).
+    // suffix. This suffix is therefore the ONLY lettering gate on the fallback
+    // path, so it carries the same cookbook-specific surface nouns as
+    // `COVER_NEGATIVE_PROMPT` — a generic "no text, no letters" was already
+    // proven insufficient, and this path runs precisely when Runware is
+    // unconfigured or failing, i.e. when there is no second line of defence.
+    // (The style negatives — blurry, cartoon, 3d render — stay out; they are a
+    // separate concern and DALL-E handles them via the positive prompt.)
     // DALL-E 3 has no 3:4 size — 1024x1792 is its portrait option; the client
     // crops to the cover plate.
     const response = await dalleClient.images.generate(
       {
         model: "dall-e-3",
-        prompt: `${prompt} No text, no watermarks, no logos, no labels, no letters.`,
+        prompt: `${prompt} Do not render any of the following: ${COVER_SURFACE_NEGATIVES}.`,
         n: 1,
         size: "1024x1792",
         quality: "standard",

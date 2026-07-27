@@ -133,6 +133,43 @@ describe("Cookbook Routes", () => {
 
       expect(res.status).toBe(400);
     });
+
+    it("ignores a client-supplied coverImageUrl", async () => {
+      // The stored value feeds deleteImage() on the delete/replace paths, and
+      // the prefix guard scopes to `cookbook-covers/` — where EVERY user's
+      // covers live. Accepting this field would let a user point their own
+      // cookbook at another user's key and have the server delete it. Covers
+      // are only ever set from a server-minted key by the /cover endpoints.
+      vi.mocked(storage.createCookbook).mockResolvedValue(mockCookbook);
+
+      const res = await request(app).post("/api/cookbooks").send({
+        name: "Italian Favorites",
+        coverImageUrl: "https://cdn.test/cookbook-covers/someone-elses.png",
+      });
+
+      expect(res.status).toBe(201);
+      expect(vi.mocked(storage.createCookbook)).toHaveBeenCalledWith(
+        expect.objectContaining({ coverImageUrl: null }),
+      );
+    });
+
+    it("ignores a client-supplied coverImageUrl on update too", async () => {
+      // updateCookbookSchema is createCookbookSchema.partial(), so the field
+      // must be absent from both.
+      vi.mocked(storage.updateCookbook).mockResolvedValue(mockCookbook);
+
+      const res = await request(app).patch("/api/cookbooks/1").send({
+        name: "Renamed",
+        coverImageUrl: "https://cdn.test/cookbook-covers/someone-elses.png",
+      });
+
+      expect(res.status).toBe(200);
+      expect(vi.mocked(storage.updateCookbook)).toHaveBeenCalledWith(
+        1,
+        expect.any(String),
+        { name: "Renamed" },
+      );
+    });
   });
 
   describe("GET /api/cookbooks/:id", () => {
@@ -213,6 +250,33 @@ describe("Cookbook Routes", () => {
       const res = await request(app).delete("/api/cookbooks/1");
 
       expect(res.status).toBe(204);
+    });
+
+    it("deletes the cookbook's stored cover after responding", async () => {
+      // Without an explicit getCookbook mock this passes vacuously:
+      // clearAllMocks leaves it resolving undefined, so the route calls
+      // deleteImage(undefined, ...) and the real cleanup never runs.
+      vi.mocked(storage.getCookbook).mockResolvedValue({
+        ...mockCookbook,
+        coverImageUrl: "https://cdn.test/cookbook-covers/gone.png",
+      });
+      vi.mocked(storage.deleteCookbook).mockResolvedValue(true);
+
+      await request(app).delete("/api/cookbooks/1");
+
+      expect(vi.mocked(deleteImage)).toHaveBeenCalledWith(
+        "https://cdn.test/cookbook-covers/gone.png",
+        "cookbook",
+      );
+    });
+
+    it("does not attempt a cover delete for a coverless cookbook", async () => {
+      vi.mocked(storage.getCookbook).mockResolvedValue(mockCookbook);
+      vi.mocked(storage.deleteCookbook).mockResolvedValue(true);
+
+      await request(app).delete("/api/cookbooks/1");
+
+      expect(vi.mocked(deleteImage)).toHaveBeenCalledWith(null, "cookbook");
     });
 
     it("returns 404 when cookbook not found", async () => {

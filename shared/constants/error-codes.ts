@@ -25,6 +25,12 @@ export const ErrorCode = {
   TOGGLE_FAILED: "TOGGLE_FAILED",
   DATE_RANGE_LIMIT: "DATE_RANGE_LIMIT",
   AI_NOT_CONFIGURED: "AI_NOT_CONFIGURED",
+  /**
+   * An image provider WAS configured but the attempt failed (provider error,
+   * timeout, or a persistence failure after generation). Retryable — distinct
+   * from AI_NOT_CONFIGURED, which means the capability is absent entirely.
+   */
+  IMAGE_GENERATION_FAILED: "IMAGE_GENERATION_FAILED",
   ALREADY_CONFIRMED: "ALREADY_CONFIRMED",
   NUTRITION_LOOKUP_FAILED: "NUTRITION_LOOKUP_FAILED",
   // Recipe import error codes — mirror the ImportError union in recipe-import.ts

@@ -293,13 +293,14 @@ describe("CookbookCreateScreen — create then attach", () => {
     // the flow completes rather than stranding the user on the form.
     await waitFor(() =>
       expect(mockToastError).toHaveBeenCalledWith(
-        "Cookbook created, but the cover couldn't be added.",
+        expect.stringContaining("Cookbook created, but the cover couldn't"),
       ),
     );
     await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
-    expect(mockAnnounce).toHaveBeenCalledWith(
-      expect.stringContaining("Cookbook created."),
-    );
+    // Toast is itself an announcer (iOS imperative + Android live region), so
+    // the screen must NOT announce here too: iOS announcements don't queue,
+    // and TalkBack would speak it twice.
+    expect(mockAnnounce).not.toHaveBeenCalled();
   });
 
   it("announces creation exactly once on the happy path", async () => {
@@ -316,6 +317,67 @@ describe("CookbookCreateScreen — create then attach", () => {
 });
 
 describe("CookbookCreateScreen — edit-mode load guard", () => {
+  /** Edit mode with the detail fetch resolved to a real cookbook. */
+  function mockLoadedCookbook(overrides: Record<string, unknown> = {}) {
+    mockRouteParams.mockReturnValue({ cookbookId: 3 });
+    mockCookbookDetail.mockReturnValue({
+      ...idleDetail,
+      data: {
+        id: 3,
+        name: "Sunday Bakes",
+        description: "Weekend baking",
+        coverImageUrl: null,
+        ...overrides,
+      },
+    });
+  }
+
+  // POSITIVE CONTROL for the two tests below. Without it, their
+  // `not.toHaveBeenCalled()` assertions can't distinguish "the guard blocked
+  // the click" from "the click never reached the handler at all" — a typo'd
+  // label or a broken isEditMode would leave them just as green.
+  it("saves when the cookbook loaded normally", async () => {
+    mockLoadedCookbook();
+    renderComponent(<CookbookCreateScreen />);
+
+    fireEvent.click(screen.getByLabelText("Save changes"));
+
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenCalledWith({
+        id: 3,
+        name: "Sunday Bakes",
+        description: "Weekend baking",
+      }),
+    );
+    await waitFor(() => expect(mockGoBack).toHaveBeenCalled());
+    expect(mockAnnounce).toHaveBeenCalledWith("Cookbook updated");
+  });
+
+  it("leaves the cover actions usable when the cookbook loaded", () => {
+    // Positive control for the destructive-cover guard below.
+    mockLoadedCookbook({ coverImageUrl: "https://cdn.test/c.png" });
+    renderComponent(<CookbookCreateScreen />);
+
+    fireEvent.click(screen.getByLabelText("Replace cover photo"));
+
+    expect(mockLaunchImageLibrary).toHaveBeenCalled();
+  });
+
+  it("blocks the cover actions while the cookbook fetch has failed", () => {
+    // The destructive case: with the fetch failed, storedCoverUrl is null, so
+    // the button would read "Add cover photo" for a cookbook that HAS one —
+    // and the server would find the real cover and delete it.
+    mockRouteParams.mockReturnValue({ cookbookId: 3 });
+    mockCookbookDetail.mockReturnValue({ ...idleDetail, isError: true });
+    renderComponent(<CookbookCreateScreen />);
+
+    fireEvent.click(screen.getByLabelText("Add cover photo"));
+    fireEvent.click(screen.getByLabelText("Generate a cover"));
+
+    expect(mockLaunchImageLibrary).not.toHaveBeenCalled();
+    expect(mockGenerateCover).not.toHaveBeenCalled();
+  });
+
   it("blocks saving while the cookbook fetch has failed", () => {
     // Submitting an empty form here would blank a real cookbook's fields.
     mockRouteParams.mockReturnValue({ cookbookId: 3 });
