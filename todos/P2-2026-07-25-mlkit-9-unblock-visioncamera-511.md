@@ -81,6 +81,11 @@ Exact failure from `pod install --project-directory=ios`:
 - [x] A decision is recorded on which option below is taken, and why
       — **Option 3**, decided 2026-07-27. See Updates.
 - [ ] `pod install` completes with `GoogleMLKit` resolved to a single root version
+      — **literally satisfied by PR 1 already, at root 8.0.0** (verified against
+      the regenerated `ios/Podfile.lock`). This criterion was written assuming
+      9.0.0 was the only way to reach a single root; it is not. Left unticked
+      deliberately, because PR 2 moves the root to 9.0.0 and must re-satisfy it
+      — do not tick this off the PR 1 result.
 - [ ] `react-native-vision-camera` + `-barcode-scanner` both at 5.1.1, with
       `ios/Podfile.lock` regenerated and committed
 - [ ] OCR still works end-to-end: nutrition-label capture → `recognizeTextFromPhoto`
@@ -88,7 +93,10 @@ Exact failure from `pod install --project-directory=ios`:
       TextRecognition API must be verified, not assumed compatible)
 - [ ] Barcode scanning verified on **both** iOS and Android (iOS uses
       `useObjectOutput`, Android uses `useBarcodeScannerOutput` — different code paths)
-- [ ] iOS 26 simulator build still works (see the MLKit fat-binary risk below)
+- [x] iOS 26 simulator build still works (see the MLKit fat-binary risk below)
+      — **verified 2026-07-27 on PR 1**: compile-only sim build SUCCEEDED, 0
+      errors, 118s; app binary is `arm64`, so `scripts/patch-mlkit-simulator.py`
+      re-tagged the new MLKit set correctly. Re-verify after PR 2's MLKit 9 bump.
 - [ ] Tap-to-focus re-verified on a physical device; then remove the
       `Platform.OS === "ios"` workaround branch in
       `client/camera/hooks/useCameraFocusAndZoom.ts` and its
@@ -232,6 +240,11 @@ run. `ios/Podfile.lock` is untouched and still records
 `GoogleMLKit/BarcodeScanning (8.0.0)` / `VisionCamera (5.0.11)`. No OCR,
 barcode, tap-to-focus, or `useCameraDevice` verification was attempted — all of
 it needs an EAS Build and a physical device.
+
+> ⚠️ **The paragraph above is SUPERSEDED as of 2026-07-27** — see the next
+> Updates entry. `ios/Podfile.lock` has since been regenerated and a local iOS
+> simulator build succeeded (0 errors). `VisionCamera (5.0.11)` is still
+> accurate and deliberate; "nothing native was built or run" is not.
 
 ### 2026-07-27 — DECISION: Option 3. Split into two PRs.
 
