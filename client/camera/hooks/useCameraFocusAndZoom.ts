@@ -2,11 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
 import { useSharedValue, runOnJS } from "react-native-reanimated";
-import type {
-  CameraDevice,
-  CameraRef,
-  FocusOptions,
-} from "react-native-vision-camera";
+import type { CameraDevice, CameraRef } from "react-native-vision-camera";
 import { logger } from "@/lib/logger";
 import {
   clampZoom,
@@ -52,27 +48,43 @@ export function useCameraFocusAndZoom({
       focusKeyRef.current += 1;
       setFocusPoint({ x, y, key: focusKeyRef.current });
 
-      // iOS ONLY. AVFoundation's getAllSupportedMeteringModes() gates AE/AF on
-      // the device's point-of-interest flags but appends .awb UNCONDITIONALLY
-      // ("White Balance adjusting is always supported" — HybridCameraController
-      // .swift), so on a device without white-balance metering the default
-      // request fails the whole 3A operation, AF included. Android is NOT
-      // affected and must NOT get this: its CameraX path derives modes from
-      // isFocusMeteringSupported() for the ACTUAL tapped point, which is
-      // strictly better than our point-agnostic device flags — overriding it
-      // would downgrade a correct check. Delete this branch when 5.1.1 lands
-      // (upstream #3976).
-      let options: FocusOptions | undefined;
-      if (Platform.OS === "ios") {
-        const modes = supportedMeteringModes(device);
-        // iOS throws "MeteringModes cannot be empty!" on an empty array. The
-        // ring still shows for feedback; the camera stays on continuous AF.
-        if (modes.length === 0) return;
-        options = { modes };
+      // iOS ONLY — and deliberately NOT the old 5.0.11 workaround. That one
+      // passed an explicit `modes` array because getAllSupportedMeteringModes()
+      // appended .awb UNCONDITIONALLY, so on a device without white-balance
+      // metering the request failed the whole 3A operation, AF included.
+      // VisionCamera 5.1.1 fixes exactly that (upstream #3976): .awb is now
+      // gated on isWhiteBalanceModeSupported(), making the NATIVE default set
+      // correct — so we pass no modes at all and let it compute them.
+      //
+      // What survives is the EMPTY-SET guard, which #3976 does not address.
+      // HybridCameraController.swift resolves `options.modes ??
+      // getAllSupportedMeteringModes()` FIRST and only then applies
+      // `guard !modes.isEmpty`, so passing nothing does NOT bypass the
+      // "MeteringModes cannot be empty!" throw. Without this early return a
+      // device supporting no metering earns a guaranteed rejection — plus a
+      // Sentry event — on its very first tap. The ring still shows for
+      // feedback; the camera stays on continuous AF.
+      //
+      // The check is a deliberately conservative heuristic, NOT a mirror of the
+      // native set, and cannot be made exact: supportsExposureMetering /
+      // supportsFocusMetering are derived from is{Exposure,Focus}ModeSupported(),
+      // while getAllSupportedMeteringModes() reads
+      // is{Exposure,Focus}PointOfInterestSupported() — and VisionCamera exposes
+      // no point-of-interest flag to JS. Only AWB agrees exactly. The residual
+      // case (we allow, native throws) costs one latched log below.
+      //
+      // Android is NOT affected and must NOT get this guard: its CameraX path
+      // derives modes from isFocusMeteringSupported() for the ACTUAL tapped
+      // point, which is strictly better than our point-agnostic device flags.
+      if (
+        Platform.OS === "ios" &&
+        supportedMeteringModes(device).length === 0
+      ) {
+        return;
       }
 
       cameraRef.current
-        ?.focusTo({ x, y }, options)
+        ?.focusTo({ x, y })
         .then(() => {
           // Re-arm. The latch below caps Sentry volume, but left permanently
           // set a transient early-tap rejection ("Camera is not yet ready!")
@@ -87,7 +99,7 @@ export function useCameraFocusAndZoom({
           if (focusFailureReportedRef.current) return;
           focusFailureReportedRef.current = true;
           logger.error(
-            `[useCameraFocusAndZoom] focusTo failed (requested ${options?.modes?.join("+") ?? "native default"}; ` +
+            `[useCameraFocusAndZoom] focusTo failed (native default modes; ` +
               `device supports AE=${device.supportsExposureMetering} ` +
               `AF=${device.supportsFocusMetering} ` +
               `AWB=${device.supportsWhiteBalanceMetering})`,
