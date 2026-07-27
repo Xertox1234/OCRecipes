@@ -90,7 +90,7 @@ Exact failure from `pod install --project-directory=ios`:
       Note `pod install` alone **refuses** this bump by design: `Podfile.lock` is
       a snapshot constraint, so crossing a native major requires an explicit
       `pod update GoogleMLKit MLKitVision MLKitBarcodeScanning
-    MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
+  MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
 - [x] `react-native-vision-camera` + `-barcode-scanner` both at 5.1.1, with
       `ios/Podfile.lock` regenerated and committed — **done in PR 2** (`8f30a5f0`).
       Full resolved set: `MLKitBarcodeScanning` 7→8, `MLKitTextRecognition` 6→7,
@@ -104,9 +104,22 @@ Exact failure from `pod install --project-directory=ios`:
 - [ ] Barcode scanning verified on **both** iOS and Android (iOS uses
       `useObjectOutput`, Android uses `useBarcodeScannerOutput` — different code paths)
 - [x] iOS 26 simulator build still works (see the MLKit fat-binary risk below)
-      — **verified 2026-07-27 on PR 1**: compile-only sim build SUCCEEDED, 0
-      errors, 118s; app binary is `arm64`, so `scripts/patch-mlkit-simulator.py`
-      re-tagged the new MLKit set correctly. Re-verify after PR 2's MLKit 9 bump.
+      — **RE-VERIFIED 2026-07-27 on PR 2, against the MLKit 9 framework set.**
+      Full Debug build on a booted iPhone 17 (iOS 26): `** BUILD SUCCEEDED **`,
+      **0 errors** (1197 warnings, 51,466 log lines), app binary `arm64`,
+      `LatinOCRResources.bundle` present, and all 11 MLKit/VisionCamera pod
+      products built — including `RNMLKitTextRecognition` and `RNMLKitCore`
+      linking against MLKit 9 unchanged.
+      The proof that `scripts/patch-mlkit-simulator.py` handled the **changed**
+      framework set (MLKitVision 9→10 etc.) is that on an arm64-only simulator a
+      failure to re-tag surfaces as a hard link error: zero occurrences of
+      "building for iOS Simulator, but linking in object file built for iOS" and
+      zero "excluded architecture" complaints.
+      PR 1's green build was deliberately NOT carried forward as evidence here —
+      it covered a different framework set.
+      ⚠️ Still outstanding: a **Release-configuration** build. Local Debug is
+      `-Onone`, so it cannot exercise the VisionCamera LLVM optimizer crash
+      documented at `ios/Podfile:195-203`.
 - [ ] Tap-to-focus re-verified on a physical device; then remove the
       `Platform.OS === "ios"` workaround branch in
       `client/camera/hooks/useCameraFocusAndZoom.ts` and its
@@ -136,7 +149,7 @@ Exact failure from `pod install --project-directory=ios`:
       the throw. `supportedMeteringModes()` therefore stays too; the earlier
       "remove the helper" wording is superseded.
       • **New:** the guard _cannot_ be made exact. Our `supports{Exposure,Focus}
-      Metering` flags derive from `is*ModeSupported()`, while native reads
+    Metering` flags derive from `is*ModeSupported()`, while native reads
       `is*PointOfInterestSupported()`, and VisionCamera exposes no
       point-of-interest flag to JS. Only AWB agrees. Details in the solution
       doc's new Resolution section.
