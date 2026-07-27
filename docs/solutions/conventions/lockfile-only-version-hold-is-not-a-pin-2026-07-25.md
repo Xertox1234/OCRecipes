@@ -157,5 +157,6 @@ see the Dependabot remediation convention in the project memory.
 ## See Also
 
 - [Verify lockfile churn semantically, never by git diff line count](verify-lockfile-churn-semantically-not-by-diff-line-count-2026-06-23.md) — the sibling lockfile trap, on the reviewing side
+- [`Podfile.lock` is a snapshot constraint that REFUSES a native-major bump](../best-practices/podfile-lock-snapshot-refuses-native-major-pod-update-cascades-2026-07-27.md) — the mirror image: the CocoaPods lockfile is a *strong* hold that blocks a bump you meant to make, where `package-lock.json` is a *weak* one that yields to a bump you meant to block
 - [A todo needing human judgment must carry human_led](todo-needing-human-judgment-must-carry-human-led-gate-2026-07-25.md) — the other finding from the same review
 - [A library's auto-capability default can fail the whole operation](../logic-errors/library-auto-capability-default-fails-whole-operation-2026-07-25.md) — the defect whose root fix this pin is blocking

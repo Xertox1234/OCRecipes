@@ -8,7 +8,7 @@ assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
 human_led: true
-blocked_reason: "Criteria #1, #2, #3 RESOLVED 2026-07-27 across two PRs — #728 (OCR library swap, open) and PR 2 (VisionCamera 5.1.1 + GoogleMLKit 9, commit 8f30a5f0, stacked on #728). Both PRs are code-complete and CI-green; NEITHER is auto-merge armed. Remaining work is device-only and cannot be reached by any autonomous executor: #4 real-label OCR end-to-end, #5 barcode on iOS AND Android (different code paths), #7 tap-to-focus, #8 useCameraDevice lens selection at barcode distance. A Release-configuration build is also required before merging PR 2 — the VisionCamera LLVM optimizer crash never manifests in local Debug."
+blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27 across two stacked PRs — #728 (OCR library swap) and #729 (VisionCamera 5.1.1 + GoogleMLKit 9), both OPEN, NEITHER auto-merge armed. #729's base is #728's branch, not main, because at main the old OCR package still pins GoogleMLKit 8.0.0; GitHub retargets it on #728 merge, and CI re-runs against a NEW merge base at that point — today's run is not the final word. Remaining work is device-only and unreachable by any autonomous executor: #4 real-label OCR end-to-end, #5 barcode on iOS AND Android (different code paths), #7 tap-to-focus, #8 useCameraDevice lens selection at barcode distance. A Release-configuration build also blocks #729 — the VisionCamera LLVM optimizer crash never manifests in local Debug."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
@@ -90,7 +90,7 @@ Exact failure from `pod install --project-directory=ios`:
       Note `pod install` alone **refuses** this bump by design: `Podfile.lock` is
       a snapshot constraint, so crossing a native major requires an explicit
       `pod update GoogleMLKit MLKitVision MLKitBarcodeScanning
-  MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
+MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
 - [x] `react-native-vision-camera` + `-barcode-scanner` both at 5.1.1, with
       `ios/Podfile.lock` regenerated and committed — **done in PR 2** (`8f30a5f0`).
       Full resolved set: `MLKitBarcodeScanning` 7→8, `MLKitTextRecognition` 6→7,
@@ -149,7 +149,7 @@ Exact failure from `pod install --project-directory=ios`:
       the throw. `supportedMeteringModes()` therefore stays too; the earlier
       "remove the helper" wording is superseded.
       • **New:** the guard _cannot_ be made exact. Our `supports{Exposure,Focus}
-    Metering` flags derive from `is*ModeSupported()`, while native reads
+  Metering` flags derive from `is*ModeSupported()`, while native reads
       `is*PointOfInterestSupported()`, and VisionCamera exposes no
       point-of-interest flag to JS. Only AWB agrees. Details in the solution
       doc's new Resolution section.
