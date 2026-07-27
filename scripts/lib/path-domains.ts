@@ -90,6 +90,7 @@ export const LLM_TOUCHING_SERVICES: ReadonlySet<string> = new Set([
   "canonical-enrichment.ts",
   "coach-pro-chat.ts",
   "coach-tools.ts",
+  "cookbook-cover.ts",
   "cooking-session.ts",
   "food-nlp.ts",
   "front-label-analysis.ts",
