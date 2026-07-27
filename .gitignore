@@ -75,6 +75,10 @@ uploads/avatars/*
 uploads/recipe-images/*
 !uploads/recipe-images/.gitkeep
 
+# Cookbook covers — uploaded or AI-generated (keep directory structure via .gitkeep)
+uploads/cookbook-covers/*
+!uploads/cookbook-covers/.gitkeep
+
 # Logs
 *.log
 logs/

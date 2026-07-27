@@ -133,6 +133,64 @@ describe("image-store", () => {
     expect(sendMock).not.toHaveBeenCalled();
   });
 
+  it("saveCookbookCover stores under the cookbook-covers prefix", async () => {
+    setR2Env(true);
+    const { saveCookbookCover } = await load();
+
+    const url = await saveCookbookCover(Buffer.from("png-bytes"), "png");
+
+    const cmd = sendMock.mock.calls[0][0];
+    expect(cmd.__cmd).toBe("Put");
+    expect(cmd.input.Key).toMatch(/^cookbook-covers\/[0-9a-f-]{36}\.png$/);
+    // Random key — must not be derivable from the owning user or cookbook.
+    expect(url).toContain("cookbook-covers/");
+  });
+
+  it("saveCookbookCover falls back to disk when R2 is unconfigured", async () => {
+    setR2Env(false);
+    const { saveCookbookCover } = await load();
+
+    const url = await saveCookbookCover(Buffer.from("png-bytes"), "png");
+
+    expect(url).toMatch(/^\/api\/cookbook-covers\/[0-9a-f-]{36}\.png$/);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it("deleteImage removes a cookbook cover within its own prefix", async () => {
+    setR2Env(true);
+    const { deleteImage } = await load();
+
+    await deleteImage(
+      "https://img.example.com/cookbook-covers/abc.png",
+      "cookbook",
+    );
+
+    const cmd = sendMock.mock.calls[0][0];
+    expect(cmd.__cmd).toBe("Delete");
+    expect(cmd.input.Key).toBe("cookbook-covers/abc.png");
+  });
+
+  it("deleteImage refuses cross-kind deletion for the cookbook kind", async () => {
+    // Two-sided with the test above: the guard must let the right prefix
+    // through AND block every other one, in both directions.
+    setR2Env(true);
+    const { deleteImage } = await load();
+
+    // another kind's object passed with kind=cookbook
+    await deleteImage("https://img.example.com/avatars/victim.jpg", "cookbook");
+    await deleteImage(
+      "https://img.example.com/recipe-images/recipe-abc.png",
+      "cookbook",
+    );
+    // a cookbook cover passed with a different kind
+    await deleteImage(
+      "https://img.example.com/cookbook-covers/abc.png",
+      "avatar",
+    );
+
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
   it("rejects oversized recipe images", async () => {
     setR2Env(true);
     const { saveRecipeImage } = await load();

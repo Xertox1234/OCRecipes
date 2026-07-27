@@ -247,6 +247,20 @@ export const avatarRateLimit = createRateLimiter({
   message: "Too many avatar uploads. Please wait.",
 });
 
+export const cookbookCoverUploadRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: "Too many cover uploads. Please wait.",
+});
+
+// AI cover generation is a paid provider call — capped tighter than uploads,
+// in line with the other generation endpoints.
+export const cookbookCoverGenerateRateLimit = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 3,
+  message: "Too many cover generation requests. Please wait.",
+});
+
 export const urlImportRateLimit = createRateLimiter({
   windowMs: 60 * 1000,
   max: 5,
