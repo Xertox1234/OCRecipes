@@ -8,7 +8,7 @@ assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
 human_led: true
-blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27 across two stacked PRs — #728 (OCR library swap) and #729 (VisionCamera 5.1.1 + GoogleMLKit 9), both OPEN, NEITHER auto-merge armed. #729's base is #728's branch, not main, because at main the old OCR package still pins GoogleMLKit 8.0.0; GitHub retargets it on #728 merge, and CI re-runs against a NEW merge base at that point — today's run is not the final word. Remaining work is device-only and unreachable by any autonomous executor: #4 real-label OCR end-to-end, #5 barcode on iOS AND Android (different code paths), #7 tap-to-focus, #8 useCameraDevice lens selection at barcode distance. A Release-configuration build also blocks #729 — the VisionCamera LLVM optimizer crash never manifests in local Debug."
+blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) is OPEN, retargeted to main, auto-merge NOT armed. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. Remaining work is device-only and unreachable by any autonomous executor: #4 real-label OCR end-to-end, #5 barcode on iOS AND Android (different code paths), #7 tap-to-focus, #8 useCameraDevice lens selection at barcode distance. A Release-configuration build also blocks #729 — the VisionCamera LLVM optimizer crash never manifests in local Debug."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
@@ -149,7 +149,7 @@ MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
       the throw. `supportedMeteringModes()` therefore stays too; the earlier
       "remove the helper" wording is superseded.
       • **New:** the guard _cannot_ be made exact. Our `supports{Exposure,Focus}
-  Metering` flags derive from `is*ModeSupported()`, while native reads
+Metering` flags derive from `is*ModeSupported()`, while native reads
       `is*PointOfInterestSupported()`, and VisionCamera exposes no
       point-of-interest flag to JS. Only AWB agrees. Details in the solution
       doc's new Resolution section.
