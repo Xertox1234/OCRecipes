@@ -21,15 +21,15 @@ below this section needs re-deriving; it is history and evidence.
 
 ### State
 
-|                                         |                                                                   |
-| --------------------------------------- | ----------------------------------------------------------------- |
-| **#728** — OCR library swap             | **MERGED** to `main` as `dfadf651` (live)                         |
-| **#729** — VisionCamera 5.1.1 + MLKit 9 | **OPEN**, branch `feat/visioncamera-511-mlkit-9`, head `9579df87` |
-| CI on #729                              | ✅ 10/10 green against `main`                                     |
-| `mergeStateStatus`                      | ✅ CLEAN (auto-merge deliberately NOT armed)                      |
-| Debug sim build (AC #6)                 | ✅ 0 errors                                                       |
-| Release build                           | ✅ 0 errors — optimizer carve-out intact                          |
-| Criteria closed                         | #1, #2, #3, #6 (4 of 8)                                           |
+|                                         |                                                                                                                                                            |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **#728** — OCR library swap             | **MERGED** to `main` as `dfadf651` (live)                                                                                                                  |
+| **#729** — VisionCamera 5.1.1 + MLKit 9 | **OPEN**, branch `feat/visioncamera-511-mlkit-9` (no commit hash here on purpose — it would go stale the moment this file is edited; use `gh pr view 729`) |
+| CI on #729                              | ✅ 10/10 green against `main`                                                                                                                              |
+| `mergeStateStatus`                      | ✅ CLEAN (auto-merge deliberately NOT armed)                                                                                                               |
+| Debug sim build (AC #6)                 | ✅ 0 errors                                                                                                                                                |
+| Release build                           | ✅ 0 errors — optimizer carve-out intact                                                                                                                   |
+| Criteria closed                         | #1, #2, #3, #6 (4 of 8)                                                                                                                                    |
 
 ### To resume
 
@@ -197,7 +197,7 @@ MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
       VisionCamera Swift compiles succeeded**, `LatinOCRResources.bundle` present
       and zero script-pack bundles. Both documented Swift 6.2 failure signatures
       absent: **0** `Global is external, but doesn't have external or weak
-  linkage` (the LLVM verify-pass crash) and **0** frontend ICEs — i.e. the
+linkage` (the LLVM verify-pass crash) and **0** frontend ICEs — i.e. the
       `-Onone` / `singlefile` carve-out at `ios/Podfile:204-211` still lands on
       the VisionCamera targets after the pod change. Debug could never have shown
       this: Debug is `-Onone` anyway, so the optimizer never runs.
