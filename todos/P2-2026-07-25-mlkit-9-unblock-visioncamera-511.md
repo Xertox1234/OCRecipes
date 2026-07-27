@@ -3,12 +3,12 @@ title: "Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 u
 status: backlog
 priority: medium
 created: 2026-07-25
-updated: 2026-07-26
+updated: 2026-07-27
 assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
 human_led: true
-blocked_reason: "Acceptance criterion #1 is a human judgment across three options with very different costs (wait upstream / patch a podspec across an MLKit major / replace the OCR library). Verification also needs a physical device, an EAS Build, and real label photos — none reachable by an autonomous executor."
+blocked_reason: "Criterion #1 RESOLVED 2026-07-27 (Option 3 — replace the OCR library; see Updates). Still human_led: the remaining criteria (#4 real-label OCR, #5 barcode on both platforms, #7 tap-to-focus, #8 useCameraDevice lens selection) need a physical device and real label photos, which no autonomous executor can reach. Criteria #2/#3/#6 are now locally verifiable — the fmt/clang-21 break was fixed in PR #725."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
@@ -78,7 +78,8 @@ Exact failure from `pod install --project-directory=ios`:
 
 ## Acceptance Criteria
 
-- [ ] A decision is recorded on which option below is taken, and why
+- [x] A decision is recorded on which option below is taken, and why
+      — **Option 3**, decided 2026-07-27. See Updates.
 - [ ] `pod install` completes with `GoogleMLKit` resolved to a single root version
 - [ ] `react-native-vision-camera` + `-barcode-scanner` both at 5.1.1, with
       `ios/Podfile.lock` regenerated and committed
@@ -231,3 +232,66 @@ run. `ios/Podfile.lock` is untouched and still records
 `GoogleMLKit/BarcodeScanning (8.0.0)` / `VisionCamera (5.0.11)`. No OCR,
 barcode, tap-to-focus, or `useCameraDevice` verification was attempted — all of
 it needs an EAS Build and a physical device.
+
+### 2026-07-27 — DECISION: Option 3. Split into two PRs.
+
+**Option 3 (replace the OCR library) is chosen.** Acceptance Criterion #1 closed.
+
+**Option 1 (wait for upstream) is dead, not merely slow.**
+`@react-native-ml-kit/text-recognition` is still `2.0.0`, last published
+**2025-09-01** (~11 months stale); its repo `a7medev/react-native-ml-kit` last
+committed 2025-09-06. There is no newer fork on npm.
+
+**Option 2 (patch the podspec) was rejected** because it means carrying a
+locally-forked podspec across an MLKit major, in a repo with no `patches/` or
+`patch-package` infrastructure, and it leaves the coupling permanently in place.
+
+**Replacement: `@infinitered/react-native-mlkit-text-recognition@^5.0.1`.** Its
+podspec declares `GoogleMLKit/TextRecognition` with **no version constraint**,
+so CocoaPods floats it to whatever root the barcode scanner demands. The
+conflict dissolves by _removing_ a pin rather than replacing a technology — and
+it makes the GoogleMLKit root version a free variable, which is what makes the
+VisionCamera bump independently revertible.
+
+Findings that made this cheap (all verified, not assumed):
+
+- **The four script packs were dead weight.** `recognizeTextFromPhoto` never
+  passed the `script` param, so it always ran `LATIN`. Infinite Red being
+  Latin-only is not a capability loss — it deleted four unused MLKit binaries
+  and four OCR resource bundles from the app.
+- **No MLKit API break to absorb.** GoogleMLKit 8.0.0 → 9.0.0 TextRecognition
+  Obj-C/Swift headers are byte-identical (`MLKTextRecognizer.h`,
+  `MLKTextBlock.h`, diffed from the shipped tarballs).
+- **The conflict is iOS-only.** Gradle resolves `com.google.mlkit:text-recognition`
+  and `:barcode-scanning` as independent Maven coordinates — no shared-root
+  constraint. Android needed no changes.
+- **`scripts/patch-mlkit-simulator.py` needed zero changes** — it walks every
+  `*.framework` under `ios/Pods` and self-selects; there is no framework list.
+
+**PR 1 (this branch) — OCR library swap only.** VisionCamera deliberately stays
+at 5.0.11 so the GoogleMLKit root stays 8.0.0 and any OCR regression has exactly
+one suspect. Verified after `pod install`: `GoogleMLKit/* (8.0.0)`,
+`MLKitVision (9.0.0)`, `VisionCamera (5.0.11)` all UNCHANGED;
+`RNMLKitTextRecognition 2.0.0 → 5.0.1`; `RNMLKitCore (3.1.0)` added; all four
+`MLKitTextRecognition{Chinese,Devanagari,Japanese,Korean}` pods removed.
+
+**PR 2 (next) — VisionCamera 5.1.1 + MLKit 9**, plus the two REVERT ME holding
+measures above and the iOS metering-workaround removal.
+
+⚠️ **Correction to carry forward:** an unpinned dependency adds no constraint —
+it does not force the maximum. `MLKitVision` stays at **9.0.0** in PR 1 (both
+`MLKitTextRecognition 6.0.0` and `MLKitBarcodeScanning 7.0.0` declare `~> 9.0`)
+and moves to 10.0.0 only in PR 2. Confirmed empirically against the regenerated
+`Podfile.lock`.
+
+**Two notes for PR 2's implementer:**
+
+- npm nests `@infinitered/react-native-mlkit-core` under the text-recognition
+  package rather than hoisting it. Expo autolinking discovers it fine (verified),
+  but `ls node_modules/@infinitered/` will not show it.
+- `npm install` emits `ERESOLVE overriding peer dependency` **warnings** (not
+  errors) because `mlkit-core@3.1.0` ships Jest tooling as runtime
+  `dependencies`, dragging in `react-test-renderer@17.0.2` against React 19. No
+  `overrides` entry was needed: Infinite Red's shipped build has zero
+  `@testing-library` imports, so Metro never bundles any of it. It is
+  node_modules bloat, not app bloat — do not "fix" it speculatively.
