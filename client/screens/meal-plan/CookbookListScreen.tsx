@@ -4,6 +4,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { useSafeTabBarHeight } from "@/hooks/useSafeTabBarHeight";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { Feather, Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 
 import { ThemedText } from "@/components/ThemedText";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
@@ -102,6 +103,36 @@ export default function CookbookListScreen() {
         accessibilityRole="button"
         accessibilityLabel={`${item.name}, ${item.recipeCount} recipes`}
       >
+        {/* Cover thumbnail at the same 3:4 book proportion the create screen
+            uses. The slot renders even without a cover so rows stay aligned
+            in a mixed list — and so the empty state reads as "this can have
+            a cover" rather than as a missing element. */}
+        {item.coverImageUrl ? (
+          <Image
+            source={{ uri: item.coverImageUrl }}
+            style={styles.cover}
+            contentFit="cover"
+            accessible={false}
+          />
+        ) : (
+          <View
+            style={[
+              styles.cover,
+              styles.coverEmpty,
+              {
+                backgroundColor: withOpacity(theme.text, 0.06),
+                borderColor: withOpacity(theme.link, 0.25),
+              },
+            ]}
+          >
+            <Feather
+              name="book"
+              size={14}
+              color={withOpacity(theme.text, 0.35)}
+              accessible={false}
+            />
+          </View>
+        )}
         <View style={styles.listItemContent}>
           <ThemedText style={styles.listItemTitle} numberOfLines={1}>
             {item.name}
@@ -299,6 +330,18 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderRadius: BorderRadius.card,
     marginBottom: Spacing.md,
+    gap: Spacing.md,
+  },
+  cover: {
+    // 3:4 — the same book proportion the create screen's cover plate uses.
+    width: 42,
+    height: 56,
+    borderRadius: 6,
+  },
+  coverEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: StyleSheet.hairlineWidth,
   },
   listItemContent: {
     flex: 1,
