@@ -12,6 +12,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useToast } from "@/context/ToastContext";
 import { useCookbooks, useDeleteCookbook } from "@/hooks/useCookbooks";
+import { resolveImageUrl } from "@/lib/query-client";
 import { useFavouriteRecipeIds } from "@/hooks/useFavouriteRecipes";
 import {
   Spacing,
@@ -90,73 +91,83 @@ export default function CookbookListScreen() {
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: CookbookWithCount }) => (
-      <Pressable
-        onPress={() => {
-          haptics.selection();
-          navigation.navigate("CookbookDetail", { cookbookId: item.id });
-        }}
-        style={[
-          styles.listItem,
-          { backgroundColor: withOpacity(theme.text, 0.04) },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel={`${item.name}, ${item.recipeCount} recipes`}
-      >
-        {/* Cover thumbnail at the same 3:4 book proportion the create screen
+    ({ item }: { item: CookbookWithCount }) => {
+      // Disk-backed dev storage returns a RELATIVE path
+      // (`/api/cookbook-covers/…`) that no image loader can fetch — R2 returns
+      // an absolute CDN URL. `resolveImageUrl` normalizes both.
+      const coverUri = resolveImageUrl(item.coverImageUrl);
+      return (
+        <Pressable
+          onPress={() => {
+            haptics.selection();
+            navigation.navigate("CookbookDetail", { cookbookId: item.id });
+          }}
+          style={[
+            styles.listItem,
+            { backgroundColor: withOpacity(theme.text, 0.04) },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`${item.name}, ${item.recipeCount} recipes`}
+        >
+          {/* Cover thumbnail at the same 3:4 book proportion the create screen
             uses. The slot renders even without a cover so rows stay aligned
             in a mixed list — and so the empty state reads as "this can have
             a cover" rather than as a missing element. */}
-        {item.coverImageUrl ? (
-          <Image
-            source={{ uri: item.coverImageUrl }}
-            style={styles.cover}
-            contentFit="cover"
-            accessible={false}
-          />
-        ) : (
-          <View
-            style={[
-              styles.cover,
-              styles.coverEmpty,
-              {
-                backgroundColor: withOpacity(theme.text, 0.06),
-                borderColor: withOpacity(theme.link, 0.25),
-              },
-            ]}
-          >
-            <Feather
-              name="book"
-              size={14}
-              color={withOpacity(theme.text, 0.35)}
+          {coverUri ? (
+            <Image
+              source={{ uri: coverUri }}
+              style={styles.cover}
+              contentFit="cover"
               accessible={false}
             />
+          ) : (
+            <View
+              style={[
+                styles.cover,
+                styles.coverEmpty,
+                {
+                  backgroundColor: withOpacity(theme.text, 0.06),
+                  borderColor: withOpacity(theme.link, 0.25),
+                },
+              ]}
+            >
+              <Feather
+                name="book"
+                size={14}
+                color={withOpacity(theme.text, 0.35)}
+                accessible={false}
+              />
+            </View>
+          )}
+          <View style={styles.listItemContent}>
+            <ThemedText style={styles.listItemTitle} numberOfLines={1}>
+              {item.name}
+            </ThemedText>
+            <ThemedText
+              style={[styles.listItemMeta, { color: theme.textSecondary }]}
+            >
+              {item.recipeCount} {item.recipeCount === 1 ? "recipe" : "recipes"}
+              {item.description ? ` · ${item.description}` : ""}
+            </ThemedText>
           </View>
-        )}
-        <View style={styles.listItemContent}>
-          <ThemedText style={styles.listItemTitle} numberOfLines={1}>
-            {item.name}
-          </ThemedText>
-          <ThemedText
-            style={[styles.listItemMeta, { color: theme.textSecondary }]}
-          >
-            {item.recipeCount} {item.recipeCount === 1 ? "recipe" : "recipes"}
-            {item.description ? ` · ${item.description}` : ""}
-          </ThemedText>
-        </View>
-        <View style={styles.listItemActions}>
-          <Pressable
-            onPress={() => handleDelete(item.id, item.name)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Delete ${item.name}`}
-          >
-            <Feather name="trash-2" size={16} color={theme.textSecondary} />
-          </Pressable>
-          <Feather name="chevron-right" size={18} color={theme.textSecondary} />
-        </View>
-      </Pressable>
-    ),
+          <View style={styles.listItemActions}>
+            <Pressable
+              onPress={() => handleDelete(item.id, item.name)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${item.name}`}
+            >
+              <Feather name="trash-2" size={16} color={theme.textSecondary} />
+            </Pressable>
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={theme.textSecondary}
+            />
+          </View>
+        </Pressable>
+      );
+    },
     [theme, haptics, navigation, handleDelete],
   );
 

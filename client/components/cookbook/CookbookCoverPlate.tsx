@@ -14,6 +14,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { BorderRadius, Fonts, Spacing, withOpacity } from "@/constants/theme";
 import { expandTimingConfig } from "@/constants/animations";
+import { resolveImageUrl } from "@/lib/query-client";
 import {
   COVER_ASPECT_RATIO,
   isCoverTitlePlaceholder,
@@ -62,8 +63,11 @@ export function CookbookCoverPlate({
   const { reducedMotion } = useAccessibility();
 
   // A locally-picked image wins over the stored one so the plate updates the
-  // instant the user chooses a photo, not when the upload round-trips.
-  const artUri = previewUri ?? coverImageUrl ?? null;
+  // instant the user chooses a photo, not when the upload round-trips. The
+  // stored URL goes through `resolveImageUrl` because disk-backed dev storage
+  // returns a RELATIVE path (`/api/cookbook-covers/…`) that no image loader
+  // can fetch; `previewUri` is already an absolute `file://` URI.
+  const artUri = previewUri ?? resolveImageUrl(coverImageUrl);
   const title = resolveCoverTitle(name);
   const isPlaceholder = isCoverTitlePlaceholder(name);
 
