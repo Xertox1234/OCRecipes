@@ -8,7 +8,7 @@ assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
 human_led: true
-blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) is OPEN, retargeted to main, auto-merge NOT armed. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. Remaining work is device-only and unreachable by any autonomous executor: #4 real-label OCR end-to-end, #5 barcode on iOS AND Android (different code paths), #7 tap-to-focus, #8 useCameraDevice lens selection at barcode distance. A Release-configuration build also blocks #729 — the VisionCamera LLVM optimizer crash never manifests in local Debug."
+blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) is OPEN, retargeted to main, auto-merge NOT armed. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. ALL remaining work is now device-only and unreachable by any autonomous executor: #4 real-label OCR end-to-end, #5 barcode on iOS AND Android (different code paths), #7 tap-to-focus, #8 useCameraDevice lens selection at barcode distance."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
@@ -117,9 +117,27 @@ MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
       zero "excluded architecture" complaints.
       PR 1's green build was deliberately NOT carried forward as evidence here —
       it covered a different framework set.
-      ⚠️ Still outstanding: a **Release-configuration** build. Local Debug is
-      `-Onone`, so it cannot exercise the VisionCamera LLVM optimizer crash
-      documented at `ios/Podfile:195-203`.
+      **Release-configuration build also DONE 2026-07-27**: `** BUILD SUCCEEDED **`,
+      0 errors, all 10 MLKit/VisionCamera products built at Release, **72
+      VisionCamera Swift compiles succeeded**, `LatinOCRResources.bundle` present
+      and zero script-pack bundles. Both documented Swift 6.2 failure signatures
+      absent: **0** `Global is external, but doesn't have external or weak
+    linkage` (the LLVM verify-pass crash) and **0** frontend ICEs — i.e. the
+      `-Onone` / `singlefile` carve-out at `ios/Podfile:204-211` still lands on
+      the VisionCamera targets after the pod change. Debug could never have shown
+      this: Debug is `-Onone` anyway, so the optimizer never runs.
+      ⚠️ **Trap for whoever runs the EAS build:** the FIRST Release attempt
+      FAILED with 3 errors, none of them compilation — the **Sentry source-map
+      upload** script phase (`error: Project not found`). That phase runs only in
+      Release, so it is invisible in every local Debug build, and it is a missing
+      local credential rather than a code defect (Sentry prod upload is
+      deliberately unconfigured until a store build). Re-ran clean with
+      `SENTRY_DISABLE_AUTO_UPLOAD=true`.
+      ⚠️ **Scope limit — this is a proxy, not the EAS path.** It is a Release
+      build for a _simulator_ destination (binary is `x86_64 arm64`), not a
+      signed device archive; an EAS archive additionally does device-arch
+      codegen, dSYM generation, and symbol stripping. It closes the specific
+      documented optimizer failure mode, not the whole archive pipeline.
 - [ ] Tap-to-focus re-verified on a physical device; then remove the
       `Platform.OS === "ios"` workaround branch in
       `client/camera/hooks/useCameraFocusAndZoom.ts` and its
