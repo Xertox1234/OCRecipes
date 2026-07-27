@@ -1,6 +1,6 @@
 ---
 title: "Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade"
-status: backlog
+status: blocked
 priority: medium
 created: 2026-07-25
 updated: 2026-07-27
@@ -12,6 +12,81 @@ blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library 
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
+
+## ▶ RESUME HERE (paused 2026-07-27 — read this first)
+
+**All code, CI, and build work is DONE. The only thing left is physical-device
+testing, which needs a USB cable that was not available at the time.** Nothing
+below this section needs re-deriving; it is history and evidence.
+
+### State
+
+|                                         |                                                                   |
+| --------------------------------------- | ----------------------------------------------------------------- |
+| **#728** — OCR library swap             | **MERGED** to `main` as `dfadf651` (live)                         |
+| **#729** — VisionCamera 5.1.1 + MLKit 9 | **OPEN**, branch `feat/visioncamera-511-mlkit-9`, head `9579df87` |
+| CI on #729                              | ✅ 10/10 green against `main`                                     |
+| `mergeStateStatus`                      | ✅ CLEAN (auto-merge deliberately NOT armed)                      |
+| Debug sim build (AC #6)                 | ✅ 0 errors                                                       |
+| Release build                           | ✅ 0 errors — optimizer carve-out intact                          |
+| Criteria closed                         | #1, #2, #3, #6 (4 of 8)                                           |
+
+### To resume
+
+```bash
+git checkout feat/visioncamera-511-mlkit-9
+npx expo run:ios --device      # iPhone plugged in + unlocked
+```
+
+Then run the device checklist — priority order, full pass/fail detail in
+Acceptance Criteria below and in the #729 comment thread:
+
+1. **Tap-to-focus (AC #7)** — the reason this upgrade exists. Pass = the
+   **preview image visibly racks focus**. ⚠️ The focus ring animating is NOT
+   evidence; it is JS-side feedback rendered on tap regardless of whether the
+   native promise resolved. That is precisely how the original bug stayed
+   invisible.
+2. **Barcode at 10–15 cm (AC #8)** — highest regression risk. 5.1.0's #4053
+   changed `useCameraDevice` defaults, and Pro main lenses cannot focus closer
+   than ~20 cm (upstream #2246), which is inside barcode range. A multi-lens
+   device (e.g. iPhone 16 Pro Max) is the right hardware to catch this; a
+   single-lens phone passes trivially and proves nothing.
+3. **Barcode on Android (AC #5)** — `useBarcodeScannerOutput`, a genuinely
+   different code path. Note `adb` was not on PATH as of this pause.
+4. **OCR on a real nutrition label (AC #4)** — parsed macros, not "text came
+   back." Lowest risk: TextRecognition headers are byte-identical 8.0.0 → 9.0.0.
+
+Items 1 and 2 are the load-bearing pair — 1 is the reason for the bump, 2 is the
+only way it could make things worse. 3 and 4 are regression smoke tests.
+
+### 🚫 Do NOT deliver this via OTA
+
+`runtimeVersion` is bumped 1.1.0 → **1.2.0** in #729 specifically to prevent it.
+EAS Update ships only the JS bundle, so it cannot carry MLKit 9 or VisionCamera
+5.1.1 — but it **would** ship the metering surgery in `useCameraFocusAndZoom.ts`,
+which calls `focusTo({x,y})` with no modes. That is correct **only** against
+5.1.1's native default computation; on a 5.0.11 binary it re-triggers the
+unconditional-AWB bug this whole todo exists to fix. Device testing requires a
+native build, not `npm run update:preview`.
+
+### Two traps already paid for — do not rediscover them
+
+- **`pod install` REFUSES this bump by design.** `Podfile.lock` is a snapshot
+  constraint; crossing a native major needs an explicit `pod update <family>`,
+  and it cascades one conflict at a time. Codified in
+  `docs/solutions/best-practices/podfile-lock-snapshot-refuses-native-major-pod-update-cascades-2026-07-27.md`.
+- **A Release build fails on the Sentry source-map upload phase**
+  (`error: Project not found`) — a Release-only phase, invisible in Debug, and a
+  missing local credential rather than a defect. Use
+  `SENTRY_DISABLE_AUTO_UPLOAD=true`.
+
+### After the device pass
+
+If all four checks pass: merge #729 (squash), then archive this todo to
+`todos/archive/`. If tap-to-focus still fails, the bump did not achieve its
+purpose — investigate before merging rather than merging and filing a follow-up.
+
+---
 
 ## Summary
 
@@ -122,7 +197,7 @@ MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
       VisionCamera Swift compiles succeeded**, `LatinOCRResources.bundle` present
       and zero script-pack bundles. Both documented Swift 6.2 failure signatures
       absent: **0** `Global is external, but doesn't have external or weak
-    linkage` (the LLVM verify-pass crash) and **0** frontend ICEs — i.e. the
+  linkage` (the LLVM verify-pass crash) and **0** frontend ICEs — i.e. the
       `-Onone` / `singlefile` carve-out at `ios/Podfile:204-211` still lands on
       the VisionCamera targets after the pod change. Debug could never have shown
       this: Debug is `-Onone` anyway, so the optimizer never runs.
