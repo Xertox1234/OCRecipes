@@ -22,7 +22,6 @@ import { vi } from "vitest";
  * override this locally via
  * `vi.mock("@infinitered/react-native-mlkit-text-recognition")`.
  */
-export const recognizeText = vi.fn(async (_imagePath: string) => ({
-  text: "",
-  blocks: [],
-}));
+export const recognizeText = vi.fn((_imagePath: string) =>
+  Promise.resolve({ text: "", blocks: [] }),
+);
