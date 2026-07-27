@@ -48,6 +48,12 @@ export interface PremiumFeatures {
   textFoodParsing: boolean;
   /** AI-generated item suggestions and their step-by-step instructions. */
   itemSuggestions: boolean;
+  /**
+   * Generate a cookbook cover image with AI (incurs a paid Runware/DALL-E
+   * call). Uploading a cover from the photo library is NOT gated — it costs
+   * nothing to serve and matches how avatar upload already works.
+   */
+  cookbookCoverGeneration: boolean;
 }
 
 /** Represents effectively unlimited scans (JSON-safe alternative to Infinity). */
@@ -86,6 +92,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     urlImport: false,
     textFoodParsing: false,
     itemSuggestions: false,
+    cookbookCoverGeneration: false,
   },
   premium: {
     maxDailyScans: UNLIMITED_SCANS,
@@ -119,6 +126,7 @@ export const TIER_FEATURES: Record<SubscriptionTier, PremiumFeatures> = {
     urlImport: true,
     textFoodParsing: true,
     itemSuggestions: true,
+    cookbookCoverGeneration: true,
   },
 };
 

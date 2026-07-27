@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { uploadCookbookCover } from "@/lib/cookbook-cover-upload";
 import type {
   Cookbook,
   CookbookWithCount,
@@ -68,6 +69,57 @@ export function useUpdateCookbook() {
     onSuccess: (_data, { id }) => {
       void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
       void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks", id] });
+    },
+  });
+}
+
+/**
+ * Attach an uploaded cover image to an existing cookbook. Not premium-gated.
+ *
+ * Goes through `uploadCookbookCover` rather than `apiRequest` because the
+ * payload is multipart — `apiRequest` only speaks JSON.
+ */
+export function useUploadCookbookCover() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      cookbookId,
+      uri,
+    }: {
+      cookbookId: number;
+      uri: string;
+    }): Promise<Cookbook> => uploadCookbookCover(cookbookId, uri),
+    onSuccess: (_data, { cookbookId }) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/cookbooks", cookbookId],
+      });
+    },
+  });
+}
+
+/**
+ * Generate a cover image with AI. Premium-only — the server returns 403
+ * `PREMIUM_REQUIRED` for free-tier users, and 503 when no image provider
+ * could produce one.
+ */
+export function useGenerateCookbookCover() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (cookbookId: number): Promise<Cookbook> => {
+      const res = await apiRequest(
+        "POST",
+        `/api/cookbooks/${cookbookId}/cover/generate`,
+      );
+      return res.json();
+    },
+    onSuccess: (_data, cookbookId) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/cookbooks"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["/api/cookbooks", cookbookId],
+      });
     },
   });
 }

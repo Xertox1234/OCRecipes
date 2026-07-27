@@ -175,12 +175,35 @@ export async function saveAvatar(
   return putToDisk("avatars", filename, buffer);
 }
 
+/**
+ * Persist a cookbook cover. Returns the stored URL.
+ *
+ * Covers arrive from two sources with different formats: an uploaded photo
+ * (jpg/png/webp, format detected from magic bytes) and an AI generation
+ * (png). The caller passes the ext it detected — this never infers one.
+ *
+ * Random key, same reasoning as `saveAvatar`: cover URLs live on a public
+ * CDN, so the key must not leak the owning user or cookbook id, and two
+ * same-millisecond uploads must not overwrite each other.
+ */
+export async function saveCookbookCover(
+  buffer: Buffer,
+  ext: Ext = "png",
+): Promise<string> {
+  assertSize(buffer);
+  const filename = `${crypto.randomUUID()}.${ext}`;
+  const cfg = readR2Config();
+  if (cfg) return putToR2(cfg, `cookbook-covers/${filename}`, buffer, ext);
+  return putToDisk("cookbook-covers", filename, buffer);
+}
+
 /** Kind of stored image — maps to the key prefix the delete is scoped to. */
-export type ImageKind = "avatar" | "recipe";
+export type ImageKind = "avatar" | "recipe" | "cookbook";
 
 const KIND_PREFIX: Record<ImageKind, string> = {
   avatar: "avatars",
   recipe: "recipe-images",
+  cookbook: "cookbook-covers",
 };
 
 /**

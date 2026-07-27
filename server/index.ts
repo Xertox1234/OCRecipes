@@ -268,6 +268,17 @@ function startServer() {
     }),
   );
 
+  // Serve uploaded cookbook covers (public — no auth required)
+  app.use(
+    "/api/cookbook-covers",
+    express.static(path.resolve(process.cwd(), "uploads/cookbook-covers"), {
+      maxAge: "7d",
+      etag: true,
+      lastModified: true,
+      dotfiles: "deny",
+    }),
+  );
+
   // Health check endpoint (registered before routes for fast response).
   // Unauthenticated and runs a DB query (SELECT 1) per hit, so an unbounded flood
   // could pressure the connection pool. The limiter bounds the per-IP request
