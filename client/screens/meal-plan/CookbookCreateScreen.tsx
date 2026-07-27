@@ -139,25 +139,31 @@ export default function CookbookCreateScreen() {
   /**
    * Leave the screen. A plain `goBack()` is not enough: when Home routes here
    * via a nested `navigate`, this screen is the ONLY route in the Plan stack,
-   * so there is nothing to pop to and `goBack()` is a no-op. Redirect to the
-   * Home tab explicitly in that case — the same destination the back-gesture
-   * interceptor uses.
+   * so there is nothing to pop to and `goBack()` is a silent no-op.
+   *
+   * The branch asks the navigator (`canGoBack()`), NOT `route.params.fromHome`.
+   * `redirectToHomeTab` clears `fromHome`, so a param-keyed check would be
+   * correct on the first visit and fall back into the dead end on the second
+   * (reach this screen again via the Plan tab and `fromHome` is already gone).
+   * Routing through `goBack()` whenever a route exists beneath also lets
+   * `useFromHomeBackRedirect` handle the Home case itself rather than
+   * bypassing the hook.
    */
   const dismiss = useCallback(() => {
-    if (fromHome) {
-      // Switching tabs leaves this screen mounted, so a create-mode form
-      // would still be filled in the next time Home routes here. Reset it.
-      if (!isEditMode) {
-        setName("");
-        setDescription("");
-        setError(null);
-        setPendingCoverUri(null);
-        setGenerateOnCreate(false);
-      }
-      redirectToHomeTab(navigation);
+    // Reaching Home leaves this screen mounted underneath, so a create-mode
+    // form would still be filled the next time it's opened. Reset it.
+    if (fromHome && !isEditMode) {
+      setName("");
+      setDescription("");
+      setError(null);
+      setPendingCoverUri(null);
+      setGenerateOnCreate(false);
+    }
+    if (navigation.canGoBack()) {
+      navigation.goBack();
       return;
     }
-    navigation.goBack();
+    redirectToHomeTab(navigation);
   }, [fromHome, isEditMode, navigation]);
 
   // An explicit close control, always present. Without it this screen can be

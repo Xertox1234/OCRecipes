@@ -15,6 +15,7 @@ import CookbookCreateScreen from "../CookbookCreateScreen";
 const {
   mockNavigate,
   mockGoBack,
+  mockCanGoBack,
   mockSetOptions,
   mockSetParams,
   mockParentNavigate,
@@ -31,6 +32,7 @@ const {
 } = vi.hoisted(() => ({
   mockNavigate: vi.fn(),
   mockGoBack: vi.fn(),
+  mockCanGoBack: vi.fn(),
   mockSetOptions: vi.fn(),
   mockSetParams: vi.fn(),
   mockParentNavigate: vi.fn(),
@@ -50,6 +52,7 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({
     navigate: mockNavigate,
     goBack: mockGoBack,
+    canGoBack: mockCanGoBack,
     setOptions: mockSetOptions,
     setParams: mockSetParams,
     dispatch: vi.fn(),
@@ -119,6 +122,9 @@ const idleDetail = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockRouteParams.mockReturnValue(undefined);
+  // Default: pushed onto an existing stack. The one-route case is opted into
+  // per test.
+  mockCanGoBack.mockReturnValue(true);
   mockCookbookDetail.mockReturnValue(idleDetail);
   mockPremiumFeature.mockReturnValue(true);
   mockCreate.mockResolvedValue({ id: 7, name: "Weeknight Dinners" });
@@ -156,7 +162,8 @@ describe("CookbookCreateScreen — leaving the screen", () => {
     expect(options.headerLeft).toBeTypeOf("function");
   });
 
-  it("goes back when the screen was pushed normally", () => {
+  it("goes back when there is a route beneath", () => {
+    mockCanGoBack.mockReturnValue(true);
     renderComponent(<CookbookCreateScreen />);
     renderComponent(renderHeaderLeft());
 
@@ -166,10 +173,27 @@ describe("CookbookCreateScreen — leaving the screen", () => {
     expect(mockParentNavigate).not.toHaveBeenCalled();
   });
 
-  it("redirects to Home when opened from the Home tab", () => {
+  it("redirects to Home when this is the only route in the stack", () => {
     // Reached via a nested navigate from Home, this screen is the only route
     // in the Plan stack — goBack() would be a no-op and strand the user.
+    mockCanGoBack.mockReturnValue(false);
     mockRouteParams.mockReturnValue({ fromHome: true });
+    renderComponent(<CookbookCreateScreen />);
+    renderComponent(renderHeaderLeft());
+
+    fireEvent.click(screen.getByLabelText("Close without saving"));
+
+    expect(mockParentNavigate).toHaveBeenCalledWith("HomeTab");
+    expect(mockGoBack).not.toHaveBeenCalled();
+  });
+
+  it("still escapes on a SECOND visit, after fromHome has been cleared", () => {
+    // redirectToHomeTab clears `fromHome`, so the screen sits in the Plan
+    // stack without it. Returning via the Plan tab lands here again with the
+    // same one-route stack — a `fromHome`-keyed check would fall through to a
+    // no-op goBack() and re-create the dead end.
+    mockCanGoBack.mockReturnValue(false);
+    mockRouteParams.mockReturnValue(undefined);
     renderComponent(<CookbookCreateScreen />);
     renderComponent(renderHeaderLeft());
 
