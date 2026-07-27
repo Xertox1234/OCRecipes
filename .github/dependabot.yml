@@ -75,3 +75,19 @@ updates:
         versions: [">=5.1.0"]
       - dependency-name: "react-native-vision-camera-barcode-scanner"
         versions: [">=5.1.0"]
+      # The OCR library, held on 5.x. Its 6.0.0 upgrades the Infinite Red suite
+      # to Expo SDK 56 and raises the iOS deployment target 15.1 -> 16.4; we are
+      # on SDK 54 with `ios.deploymentTarget: 15.5`, so 6.x cannot build here.
+      #
+      # Same asymmetry as the VisionCamera entries above: this breaks at NATIVE
+      # BUILD time, not at `npm install`, and CI has no native build step.
+      # `open-pull-requests-limit: 0` already blocks version updates, but
+      # SECURITY updates bypass that limit — hence a version boundary too.
+      #
+      # NOTE: this package is deliberately unpinned at the CocoaPods layer
+      # (`s.dependency 'GoogleMLKit/TextRecognition'`, no version). That is what
+      # lets GoogleMLKit float to whatever root the barcode scanner needs, and
+      # is why replacing @react-native-ml-kit/text-recognition unblocked the
+      # VisionCamera upgrade. Do not "fix" it by pinning GoogleMLKit.
+      - dependency-name: "@infinitered/react-native-mlkit-text-recognition"
+        versions: [">=6.0.0"]

@@ -159,6 +159,14 @@ export default defineConfig({
         __dirname,
         "./test/mocks/react-native-community-netinfo.ts",
       ),
+      // Expo Modules API package: importing it pulls in expo-modules-core and
+      // then raw TypeScript under node_modules (expo/src/Expo.ts), which Vitest
+      // cannot type-strip — collection fails before any test runs. Reached
+      // transitively via the @/camera barrel. See test/mocks/ header.
+      "@infinitered/react-native-mlkit-text-recognition": path.resolve(
+        __dirname,
+        "./test/mocks/infinitered-react-native-mlkit-text-recognition.ts",
+      ),
     },
   },
 });
