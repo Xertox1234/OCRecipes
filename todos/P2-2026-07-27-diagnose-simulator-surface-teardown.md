@@ -61,7 +61,7 @@ Note this is expensive to test: `npm ci` replaces whatever the current branch ne
 
 **Known-good recovery (unblocks a session, does not fix the cause):** restart Metro → `xcrun simctl terminate booted com.williamtower.ocrecipes` → `launch_app_sim` → verify the new log has zero `~Scheduler`/`~UIManager` lines.
 
-**Environment note.** `.env` had a stale `EXPO_PUBLIC_DOMAIN=http://192.168.0.145:3000` while the machine was on `192.168.0.103`. That is a **separate**, already-known issue ([[reference_sim_dev_loop_gotchas]] item 1) and was worked around with a shell override — do not conflate it with the teardown.
+**Environment note — do not conflate this with the teardown.** `.env` had a stale `EXPO_PUBLIC_DOMAIN=http://192.168.0.145:3000` while the machine was on `192.168.0.103`. That is a **separate and already-understood** failure: `EXPO_PUBLIC_*` values are inlined at bundle time, so whenever the machine changes networks the baked-in LAN IP goes dead and screens hang on loading skeletons with no error. Diagnose with `ipconfig getifaddr en0` vs the `.env` line; fix the IP and restart Metro. During this incident it was worked around with a shell override (`EXPO_PUBLIC_DOMAIN=http://localhost:3000 npx expo start …`) rather than editing the user's `.env`, and the override was confirmed to have won by grepping the served bundle for the inlined `process.env` block.
 
 **Cheaper alternative to keep in mind.** For a pure client-UI change, publishing to the `preview` EAS channel and checking on a physical device tests against the LIVE backend and bypasses Metro, `.env`, and the LAN IP entirely. That is how PR #730 was ultimately verified. This todo should not turn into a prerequisite for shipping UI work.
 
