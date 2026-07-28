@@ -16,8 +16,16 @@ blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library 
 ## ▶ RESUME HERE (paused 2026-07-27 — read this first)
 
 **All code, CI, and build work is DONE. The only thing left is physical-device
-testing, which needs a USB cable that was not available at the time.** Nothing
-below this section needs re-deriving; it is history and evidence.
+testing.** Nothing below this section needs re-deriving; it is history and
+evidence.
+
+**2026-07-28 — the hardware blocker is CLEARED.** The iPhone is tethered and
+`xcrun devicectl list devices` reports `available (paired)`: **iPhone 16 Pro Max
+(iPhone17,2), iOS 18.7.8** — which is the _right_ hardware for check 2, the
+multi-lens case that a single-lens phone cannot exercise. Android is reachable
+too, without a physical device (see check 3). ⚠️ `xcrun xctrace list devices`
+lists the phone under "Devices Offline" even when it is fine — `devicectl` is
+authoritative; do not chase that.
 
 ### State
 
@@ -35,8 +43,26 @@ below this section needs re-deriving; it is history and evidence.
 
 ```bash
 git checkout feat/visioncamera-511-mlkit-9
-npx expo run:ios --device      # iPhone plugged in + unlocked
+
+# iOS — checks 1, 2, 4. Tether + unlock first; run tethered, not untethered:
+# check 1 depends on reading console output live over the cable.
+npx expo run:ios --device
+npm run server:dev             # backend, for the parsed-macros half of check 4
+
+# Android — check 3. Boot WITH camera passthrough, then build onto it.
+emulator -avd Medium_Phone_API_36.1 -camera-back webcam0 -gpu host
+npx expo run:android           # targets the already-running emulator
 ```
+
+Console line to watch on iOS (check 1): `[useCameraFocusAndZoom] focusTo failed`.
+Any occurrence is a real finding — it prints the device's AE/AF/AWB support
+flags, which is what distinguishes a metering problem from a plain focus miss.
+
+**Do not attempt to exercise the empty-set metering guard on real hardware.** It
+fires only on a device supporting _no_ metering at all; every modern iPhone
+supports all three modes. That branch is retained on the strength of reading
+`HybridCameraController.swift`, not a device test. Check 1 verifies the _normal_
+path — that dropping the explicit `modes` array did not break ordinary focus.
 
 Then run the device checklist — priority order, full pass/fail detail in
 Acceptance Criteria below and in the #729 comment thread:
@@ -52,7 +78,22 @@ Acceptance Criteria below and in the #729 comment thread:
    device (e.g. iPhone 16 Pro Max) is the right hardware to catch this; a
    single-lens phone passes trivially and proves nothing.
 3. **Barcode on Android (AC #5)** — `useBarcodeScannerOutput`, a genuinely
-   different code path. Note `adb` was not on PATH as of this pause.
+   different code path. **No physical Android device is needed** (verified
+   2026-07-28): the `Medium_Phone_API_36.1` AVD exists and the emulator exposes
+   host-camera passthrough (`emulator -webcam-list` → `webcam0`, `webcam1`), so
+   the emulator can see a real barcode held up to the Mac's camera. The emulator
+   runs the real Android MLKit library and genuinely executes the
+   `useBarcodeScannerOutput` path — which is the whole point of this criterion
+   (it is a _different code path_, not different hardware). What it cannot cover
+   is Android camera **hardware** behavior: autofocus quality, lens choice, low
+   light. Treat that as a documented residual, not a blocker.
+
+   ⚠️ **This also compiles Android for the first time on this upgrade.** Every
+   build in AC #6 is iOS. `react-native-vision-camera-barcode-scanner`
+   5.0.11 → 5.1.1 moves the **Android** MLKit Gradle dependency too, and nothing
+   has verified that resolves and compiles. Run this even if barcode testing
+   were skipped — a Gradle resolution failure surfaces here, before any scan.
+
 4. **OCR on a real nutrition label (AC #4)** — parsed macros, not "text came
    back." Lowest risk: TextRecognition headers are byte-identical 8.0.0 → 9.0.0.
 
