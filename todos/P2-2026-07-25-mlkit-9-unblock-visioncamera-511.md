@@ -15,9 +15,40 @@ blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library 
 
 ## ▶ RESUME HERE (paused 2026-07-27 — read this first)
 
-**All code, CI, and build work is DONE. The only thing left is physical-device
-testing.** Nothing below this section needs re-deriving; it is history and
-evidence.
+**2026-07-28 — DEVICE PASS RUN. Two findings; one FIXED, one still BLOCKING.**
+The device session is no longer pending — it happened. Read this before the
+older text below, which predates it.
+
+**(1) FIXED — the app crashed (SIGABRT) on camera mount.** VisionCamera 5.1.1's
+nitrogen codegen dropped `RawPropsParser(/* enableJsiParser */ true)`, so its
+`jsi::Value`-typed props were parsed from `folly::dynamic` and every cast hit
+`react_native_assert(false)` at `RawValue.h:453`. Fixed by
+`patches/react-native-vision-camera+5.1.1.patch` (commit `34d75bef`) via
+patch-package. Upstream regression — `react-native-nitro-image` still emits it
+correctly, nitro is unchanged, and **5.2.0 carries the same bug**, so a version
+bump is not the fix. Camera now opens; scan flow runs steps 1→3 end to end.
+
+**(2) 🔴 BLOCKING — the label override never fires.** Cherry Coke (`06772408`)
+shows **39 kcal / 355 mL**; a can is ~150. OFF's record is wrong (every field
+~3.8× low) — which is exactly what PR #695 "Trust the Label" exists to correct,
+and it didn't. Verified BOTH halves are correct given good label text:
+`parseNutritionFromOCR` yields `150 / 42g / "1 can (355 mL)"`, and all four
+`buildLabelConflict` gates pass (serving parses to 355; conflict 74% ≫ 25%).
+So the fault is upstream — the OCR text never arrives usable. It fails
+**silently**: `ocrText: action.ocrText ?? ""` then `ocrText ? parse : null`, so
+an empty read renders the wrong DB number with no error at all.
+
+**NOT YET SEPARATED — this is the open question:** (a) MLKit 9 TextRecognition
+returns nothing usable (= AC #4's warning, a #729 blocker), or (b) pre-existing
+— #695 merged 2026-07-24 with client runtime **never verified**, so it may
+never have worked. Decide by capturing the inbound `labelNutrition` on the
+server, or rescanning the same can on a `main` (MLKit 8) build.
+
+**Do not merge #729 until (2) is resolved** — a silent nutrition error on the
+core scan path is worse than the crash it replaced.
+
+Full analysis in the #729 comment thread. Everything below is older history and
+evidence; the build/CI claims there remain accurate.
 
 **2026-07-28 — the hardware blocker is CLEARED.** The iPhone is tethered and
 `xcrun devicectl list devices` reports `available (paired)`: **iPhone 16 Pro Max
