@@ -53,14 +53,27 @@ discarded that intent without saying so.
 
 ## Acceptance Criteria
 
-- [ ] When step-2 OCR yields no usable text, the user is told the label could not
+- [x] When step-2 OCR yields no usable text, the user is told the label could not
       be read — not left with an unlabelled database value
-- [ ] The message offers the obvious recovery (retake the label photo)
-- [ ] A successful label read is unchanged — no new message on the happy path
-- [ ] The distinction is explicit in code: "no label was captured" and "a label
+      — a warning notice on NutritionDetailScreen, reusing the existing
+      `correctionNotice` surface (`accessibilityLiveRegion="polite"`).
+- [x] The message offers the obvious recovery (retake the label photo)
+      — asserted by test, not just written.
+- [x] A successful label read is unchanged — no new message on the happy path
+      — and barcode-only scans stay silent too: they never promised to use a
+      label, so warning there would train the user to dismiss it.
+- [x] The distinction is explicit in code: "no label was captured" and "a label
       was captured but unreadable" are different states, not both `""`
-- [ ] Test covers the unreadable-label path asserting the user-visible signal
-- [ ] Existing `useNutritionLookup` / scan-phase tests still pass
+      — `ocrText` is three-valued end to end (reducer → phase types → nav params
+      → hook): `undefined` / `null` / string. Whitespace-only normalises to
+      `null` as well; MLKit can return a stray newline for a glare-washed panel,
+      which is truthy and would have sailed past the old guard.
+- [x] Test covers the unreadable-label path asserting the user-visible signal
+      — 5 hook cases + 4 reducer cases. Includes the optional "text but no
+      nutrition fields" split from Implementation Notes, since the two failures
+      need different recovery (retake vs photograph the other side).
+- [x] Existing `useNutritionLookup` / scan-phase tests still pass
+      — 47 reducer+hook, 433 across camera and screens.
 
 ## Implementation Notes
 
@@ -119,3 +132,20 @@ that as optional; the required behaviour is the empty-read case.
 
 - Filed from the #729 device pass. Root cause traced to the two coercion points
   above; the override logic itself was verified correct and is out of scope.
+- **IMPLEMENTED** (`cf0584ef`). Both coercion points fixed; all six acceptance
+  criteria closed. `server/services/label-override.ts` and
+  `client/lib/nutrition-ocr-parser.ts` untouched, as specified.
+
+  One deviation worth recording: the Implementation Notes listed the
+  "text recognised but no nutrition fields" split as **optional**. It is
+  implemented, because the two failures need genuinely different recovery —
+  "retake the photo" is wrong advice for someone who photographed the front of
+  the pack, and identical copy would make it a coin-flip. The `confidence`
+  gating, also listed as optional, is **not** implemented: it risks the
+  over-warning failure mode in Risks, and the required empty-read case is
+  covered without it.
+
+  Device verification is still outstanding — this was fixed against tests, not
+  reproduced on hardware. The on-device check is a Cherry Coke (`06772408`) scan
+  where the label capture fails: the notice must appear instead of a bare
+  39 kcal.
