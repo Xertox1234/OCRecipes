@@ -61,7 +61,12 @@ export function useNutritionLookup(params: {
   barcode?: string;
   imageUri?: string;
   itemId?: number;
-  ocrText?: string;
+  /**
+   * Three-valued: `undefined` = no label step ran (barcode-only scan), `null` =
+   * a label was photographed but the recognizer produced nothing usable, string
+   * = recognised label text. The `null` case is why this is not just `string?`.
+   */
+  ocrText?: string | null;
 }) {
   const { barcode, imageUri, itemId, ocrText } = params;
 
@@ -87,6 +92,15 @@ export function useNutritionLookup(params: {
     null,
   );
   const [correctionNotice, setCorrectionNotice] = useState<string | null>(null);
+  /**
+   * Set when the user photographed a nutrition label that could not be used, so
+   * the values on screen came from the product database instead.
+   *
+   * Deliberately silent when no label was captured at all — a barcode-only scan
+   * never promised to use a label, so warning there would train the user to
+   * dismiss the message on the happy path.
+   */
+  const [labelReadNotice, setLabelReadNotice] = useState<string | null>(null);
   const [showManualSearch, setShowManualSearch] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -111,13 +125,22 @@ export function useNutritionLookup(params: {
     "database",
   );
 
+  // One lookup can set BOTH notices (a server serving-correction and an unusable
+  // label), and two announceForAccessibility calls in the same commit collide on
+  // iOS — the later one silences the earlier. Compose a single utterance rather
+  // than adding a second effect. See
+  // docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md
+  // Label first: it changes which SOURCE the numbers came from, which outranks a
+  // serving-size adjustment to those numbers.
   useEffect(() => {
-    if (Platform.OS === "ios" && correctionNotice) {
-      void AccessibilityInfo.announceForAccessibility(
-        `Serving size adjusted: ${correctionNotice}`,
-      );
-    }
-  }, [correctionNotice]);
+    if (Platform.OS !== "ios") return;
+    const parts = [
+      labelReadNotice,
+      correctionNotice ? `Serving size adjusted: ${correctionNotice}` : null,
+    ].filter((p): p is string => p != null);
+    if (parts.length === 0) return;
+    void AccessibilityInfo.announceForAccessibility(parts.join(". "));
+  }, [correctionNotice, labelReadNotice]);
 
   useEffect(() => {
     if (Platform.OS === "ios" && error) {
@@ -242,6 +265,7 @@ export function useNutritionLookup(params: {
       // branch below does).
       setFlags([]);
       setConflict(null);
+      setLabelReadNotice(null);
       setDbSnapshot(null);
       setActiveSource("database");
       try {
@@ -261,6 +285,19 @@ export function useNutritionLookup(params: {
             parsedLabel.calories != null &&
             (parsedLabel.totalSugars != null || parsedLabel.totalFat != null) &&
             parsedLabel.servingSize != null;
+
+          // A label the user photographed but we could not use must not vanish
+          // silently: the whole point of the label step is products whose
+          // database record is wrong, which is exactly when a quiet fallback
+          // does the most damage. `undefined` means no label step ran at all
+          // (barcode-only) — that path stays silent.
+          if (ocrText !== undefined && !labelReady) {
+            setLabelReadNotice(
+              ocrText === null
+                ? "We couldn't read that nutrition label, so these values come from the product database. Retake the label photo to use the package instead."
+                : "We couldn't find nutrition values on that photo, so these come from the product database. Retake the nutrition panel to use the package instead.",
+            );
+          }
 
           const serverRes = labelReady
             ? await fetch(url, {
@@ -736,6 +773,7 @@ export function useNutritionLookup(params: {
     setShowCustomInput,
     validatedData,
     correctionNotice,
+    labelReadNotice,
     showManualSearch,
     manualSearchQuery,
     setManualSearchQuery,

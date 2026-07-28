@@ -1,5 +1,18 @@
 import type { ScanPhase, ScanAction } from "../types/scan-phase";
 
+/**
+ * Collapse every "the recognizer gave us nothing usable" shape — `undefined`,
+ * `""`, whitespace-only — to a single `null`, and trim otherwise.
+ *
+ * Whitespace-only matters in practice: MLKit can return a stray newline for a
+ * blurry or glare-washed panel, which is truthy and would sail past a
+ * `ocrText ? …` guard as if it were real label text.
+ */
+function normalizeOcrText(raw: string | undefined): string | null {
+  const trimmed = raw?.trim();
+  return trimmed ? trimmed : null;
+}
+
 export function scanPhaseReducer(
   state: ScanPhase,
   action: ScanAction,
@@ -72,7 +85,11 @@ export function scanPhaseReducer(
           barcode: state.barcode,
           product: state.product,
           imageUri: action.imageUri,
-          ocrText: action.ocrText ?? "",
+          // `null`, never `""`. Reaching here means the user photographed a
+          // nutrition panel, so the only two outcomes are readable and
+          // unreadable — and the old `?? ""` made the unreadable one
+          // indistinguishable from the barcode-only path downstream.
+          ocrText: normalizeOcrText(action.ocrText),
         };
       }
       if (state.type === "STEP2_CONFIRMED") {
