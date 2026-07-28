@@ -7,7 +7,7 @@
   },
   "scripts": {
     "expo:dev": "npx expo start --tunnel",
-    "server:dev": "NODE_ENV=development tsx server/index.ts",
+    "server:dev": "NODE_ENV=development tsx watch server/index.ts",
     "expo:start:static:build": "npx expo start --no-dev --minify",
     "expo:static:build": "node scripts/build.js",
     "server:build": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=server_dist --alias:@shared=./shared",
