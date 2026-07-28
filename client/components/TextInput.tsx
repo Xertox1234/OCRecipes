@@ -26,6 +26,7 @@ import {
   getRestBorderColor,
   resolvePlaceholder,
   resolveInputAccessibilityLabel,
+  LABELLED_INPUT_GEOMETRY,
 } from "./text-input-utils";
 
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
@@ -143,6 +144,10 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
     const errorColor = theme.error;
     const labelRestColor = theme.textSecondary;
     const hasError = !!error;
+    // Same rule as the colors above — captured as plain numbers outside the
+    // worklet rather than reached through the imported geometry object.
+    const labelFloatTranslateY = LABELLED_INPUT_GEOMETRY.labelFloatTranslateY;
+    const labelFloatScale = LABELLED_INPUT_GEOMETRY.labelFloatScale;
 
     const animatedBorderStyle = useAnimatedStyle(() => ({
       borderColor: hasError
@@ -156,8 +161,16 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
 
     const animatedLabelStyle = useAnimatedStyle(() => ({
       transform: [
-        { translateY: interpolate(labelProgress.value, [0, 1], [0, -11]) },
-        { scale: interpolate(labelProgress.value, [0, 1], [1, 0.82]) },
+        {
+          translateY: interpolate(
+            labelProgress.value,
+            [0, 1],
+            [0, labelFloatTranslateY],
+          ),
+        },
+        {
+          scale: interpolate(labelProgress.value, [0, 1], [1, labelFloatScale]),
+        },
       ],
       color: hasError
         ? errorColor
@@ -174,6 +187,7 @@ export const TextInput = forwardRef<RNTextInput, TextInputProps>(
       <Animated.View
         style={[
           styles.container,
+          label ? styles.labelledContainer : null,
           { backgroundColor },
           animatedBorderStyle,
           containerStyle,
@@ -266,42 +280,59 @@ TextInput.displayName = "TextInput";
 const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
-    alignItems: "center",
-    height: Spacing.inputHeight,
+    // `stretch`, not `center`: a taller child (a multiline input) must grow the
+    // bordered box rather than overflow it. With `center` + a fixed height the
+    // text rendered straight through the border.
+    alignItems: "stretch",
+    // minHeight, not height — same reason.
+    minHeight: Spacing.inputHeight,
     borderRadius: BorderRadius.input,
     paddingHorizontal: Spacing.md,
     // Constant width in both modes so the focus transition never shifts
     // layout — dark mode rests on a transparent border color instead of
     // the previous borderWidth: 0.
-    borderWidth: 1,
+    borderWidth: LABELLED_INPUT_GEOMETRY.borderWidth,
+  },
+  // A labelled field stacks the floated label above the value, so it needs
+  // more room than a plain single-row input.
+  labelledContainer: {
+    minHeight: LABELLED_INPUT_GEOMETRY.containerMinHeight,
   },
   leftIcon: {
     marginRight: Spacing.sm,
+    // The row stretches its children; icons opt back out.
+    alignSelf: "center",
   },
   rightIcon: {
     marginLeft: Spacing.sm,
+    alignSelf: "center",
   },
   inputArea: {
     flex: 1,
-    height: "100%",
     justifyContent: "center",
   },
   input: {
     fontFamily: FontFamily.regular,
     fontSize: 14,
-    height: "100%",
+    // Fills the stretched row so the whole field stays tappable, while still
+    // letting a multiline minHeight grow the container.
+    flexGrow: 1,
   },
   inputWithLabel: {
-    paddingTop: 14,
-    // Android EditText default font padding can clip/off-center text inside
-    // the height-constrained label box; iOS ignores this prop.
-    textAlignVertical: "center",
+    paddingTop: LABELLED_INPUT_GEOMETRY.inputPaddingTop,
+    paddingBottom: LABELLED_INPUT_GEOMETRY.inputPaddingBottom,
+    // Explicit line height so the label/value spacing is arithmetic we control
+    // rather than a platform default — see LABELLED_INPUT_GEOMETRY.
+    lineHeight: LABELLED_INPUT_GEOMETRY.inputLineHeight,
+    // Padding above now positions the text on both platforms; `top` keeps
+    // Android's EditText from re-centering it and reintroducing the overlap.
+    textAlignVertical: "top",
   },
   label: {
     position: "absolute",
-    top: 14,
+    top: LABELLED_INPUT_GEOMETRY.labelRestTop,
     fontSize: 14,
-    lineHeight: 20,
+    lineHeight: LABELLED_INPUT_GEOMETRY.labelLineHeight,
     fontFamily: FontFamily.regular,
     transformOrigin: "left",
   },
