@@ -28,24 +28,27 @@ patch-package. Upstream regression — `react-native-nitro-image` still emits it
 correctly, nitro is unchanged, and **5.2.0 carries the same bug**, so a version
 bump is not the fix. Camera now opens; scan flow runs steps 1→3 end to end.
 
-**(2) 🔴 BLOCKING — the label override never fires.** Cherry Coke (`06772408`)
-shows **39 kcal / 355 mL**; a can is ~150. OFF's record is wrong (every field
-~3.8× low) — which is exactly what PR #695 "Trust the Label" exists to correct,
-and it didn't. Verified BOTH halves are correct given good label text:
-`parseNutritionFromOCR` yields `150 / 42g / "1 can (355 mL)"`, and all four
-`buildLabelConflict` gates pass (serving parses to 355; conflict 74% ≫ 25%).
-So the fault is upstream — the OCR text never arrives usable. It fails
-**silently**: `ocrText: action.ocrText ?? ""` then `ocrText ? parse : null`, so
-an empty read renders the wrong DB number with no error at all.
+**(2) ✅ AC #4 CLOSED — OCR + label override VERIFIED on device.** Cherry Coke
+(`06772408`): the conflict UI rendered **Label vs Database side by side**, with
+the Label column reading **140 kcal — matching the physical can**. Full chain
+confirmed: MLKit 9 read the panel → `parseNutritionFromOCR` extracted it →
+`buildLabelConflict` flagged the conflict → `chooseSource()` offered both.
+**This is the first runtime verification of PR #695 "Trust the Label"** (merged
+2026-07-24 with client runtime never verified), on the exact product it was
+written for. OFF's record for this barcode is wrong — every field ~3.8× low
+(`energy-kcal_serving: 39.4`) — so the override is doing real work here.
 
-**NOT YET SEPARATED — this is the open question:** (a) MLKit 9 TextRecognition
-returns nothing usable (= AC #4's warning, a #729 blocker), or (b) pre-existing
-— #695 merged 2026-07-24 with client runtime **never verified**, so it may
-never have worked. Decide by capturing the inbound `labelNutrition` on the
-server, or rescanning the same can on a `main` (MLKit 8) build.
+⚠️ An earlier scan in the same session showed the wrong 39 kcal with **no**
+conflict UI. Since the override demonstrably works, that capture simply yielded
+no usable OCR text. That exposes a **pre-existing, non-blocking** defect worth a
+follow-up: the empty-OCR path is SILENT. `ocrText: action.ocrText ?? ""` then
+`ocrText ? parse : null` means an unreadable label falls through to the DB with
+no error and no hint it was ignored — indistinguishable from success, and on a
+product whose DB record is badly wrong it presents a bogus calorie count as if
+verified. Surface "couldn't read the label — try again" instead.
 
-**Do not merge #729 until (2) is resolved** — a silent nutrition error on the
-core scan path is worse than the crash it replaced.
+**#729 is NOT blocked by any correctness defect.** What remains is coverage:
+AC #5 Android barcode, AC #7 tap-to-focus, AC #8 close-range lens.
 
 Full analysis in the #729 comment thread. Everything below is older history and
 evidence; the build/CI claims there remain accurate.
@@ -245,9 +248,15 @@ MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
       `RNMLKitTextRecognition (5.0.1)` and `RNMLKitCore (3.1.0)` are **unchanged**
       — they resolved against MLKit 9 without a version bump, which is the whole
       payoff of PR 1's unpinned podspec.
-- [ ] OCR still works end-to-end: nutrition-label capture → `recognizeTextFromPhoto`
+- [x] OCR still works end-to-end: nutrition-label capture → `recognizeTextFromPhoto`
       → parsed macros (this is the app's core scan path — MLKit 9's
       TextRecognition API must be verified, not assumed compatible)
+      — **VERIFIED ON DEVICE 2026-07-28** (iPhone 16 Pro Max, iOS 18.7.8), on
+      Cherry Coke `06772408`. The Trust-the-Label conflict UI rendered Label vs
+      Database side by side with the Label column at **140 kcal, matching the
+      physical can**. That output is only reachable if MLKit 9 supplied calories + a macro + a parseable serving size, so the TextRecognition 6→7 bump is
+      confirmed compatible — not assumed. Doubles as the first runtime
+      verification of PR #695, whose client path had never been exercised.
 - [ ] Barcode scanning verified on **both** iOS and Android (iOS uses
       `useObjectOutput`, Android uses `useBarcodeScannerOutput` — different code paths)
 - [x] iOS 26 simulator build still works (see the MLKit fat-binary risk below)
