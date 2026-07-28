@@ -8,16 +8,17 @@ assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
 human_led: true
-blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) is OPEN, retargeted to main, auto-merge NOT armed. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. ALL remaining work is now device-only and unreachable by any autonomous executor: #4 real-label OCR end-to-end, #5 barcode on iOS AND Android (different code paths), #7 tap-to-focus, #8 useCameraDevice lens selection at barcode distance."
+blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) is OPEN, retargeted to main, auto-merge NOT armed. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. DEVICE PASS RUN 2026-07-28: a VisionCamera 5.1.1 codegen regression aborted the app on camera mount (SIGABRT) — FIXED via patch-package in 34d75bef. AC #4 then CLOSED on device (Cherry Coke 06772408: Trust-the-Label conflict UI, Label column 140 kcal matching the can) — MLKit 9 TextRecognition confirmed compatible, and the first runtime verification of PR #695. No correctness defect blocks #729. Remaining work is device-only coverage, unreachable by any autonomous executor: #5 barcode on Android (iOS half PASSED), #7 tap-to-focus (not exercisable in the barcode flow — it auto-advances; use a no-barcode HUNTING state), #8 useCameraDevice lens selection at 10-15cm (normal range PASSED)."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
 
 ## ▶ RESUME HERE (paused 2026-07-27 — read this first)
 
-**2026-07-28 — DEVICE PASS RUN. Two findings; one FIXED, one still BLOCKING.**
+**2026-07-28 — DEVICE PASS RUN. One blocker found and FIXED; AC #4 CLOSED.**
 The device session is no longer pending — it happened. Read this before the
-older text below, which predates it.
+older text below, which predates it. **No correctness defect blocks #729; only
+device coverage remains (AC #5 Android, #7, #8).**
 
 **(1) FIXED — the app crashed (SIGABRT) on camera mount.** VisionCamera 5.1.1's
 nitrogen codegen dropped `RawPropsParser(/* enableJsiParser */ true)`, so its
@@ -71,7 +72,8 @@ authoritative; do not chase that.
 | `mergeStateStatus`                      | ✅ CLEAN (auto-merge deliberately NOT armed)                                                                                                               |
 | Debug sim build (AC #6)                 | ✅ 0 errors                                                                                                                                                |
 | Release build                           | ✅ 0 errors — optimizer carve-out intact                                                                                                                   |
-| Criteria closed                         | #1, #2, #3, #6 (4 of 8)                                                                                                                                    |
+| Criteria closed                         | #1, #2, #3, #6, **#4** (5 of 8) — #4 closed on device 2026-07-28                                                                                           |
+| Device blocker                          | ✅ SIGABRT on camera mount — FIXED (`34d75bef`, patch-package)                                                                                             |
 
 ### To resume
 
