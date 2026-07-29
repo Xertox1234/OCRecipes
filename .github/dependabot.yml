@@ -49,32 +49,6 @@ updates:
       # docs/solutions/best-practices (metro-postcss-gating-…).
       - dependency-name: "expo"
         versions: [">=55.0.0"]
-      # react-native-vision-camera + -barcode-scanner held at exactly 5.0.11
-      # (exact pins in package.json, not carets) because the 5.1.x series is
-      # blocked at the CocoaPods layer, NOT the npm layer:
-      # VisionCameraBarcodeScanner 5.1.0+ requires GoogleMLKit/BarcodeScanning
-      # = 9.0.0, while @react-native-ml-kit/text-recognition 2.0.0 hard-pins
-      # five GoogleMLKit/TextRecognition* subspecs at = 8.0.0. GoogleMLKit
-      # subspecs share one root version, so the two cannot coexist and
-      # `pod install` fails outright.
-      #
-      # The failure surfaces at NATIVE BUILD time, not at `npm install` — CI
-      # has no native build step, so a bump would go green here and only break
-      # on an EAS Build. That asymmetry is why this needs a config-level hold
-      # and not just review vigilance.
-      #
-      # The family is version-locked as a set (shared generated Nitro specs),
-      # so both packages move together or neither does. 5.1.0 is NOT a safe
-      # stepping stone — it already carries the MLKit 9 requirement.
-      #
-      # REVERT ME as part of todos/P2-2026-07-25-mlkit-9-unblock-visioncamera-511.md,
-      # which resolves the MLKit 8→9 conflict. These entries and the exact pins
-      # in package.json are holding measures to undo, not constraints to work
-      # around.
-      - dependency-name: "react-native-vision-camera"
-        versions: [">=5.1.0"]
-      - dependency-name: "react-native-vision-camera-barcode-scanner"
-        versions: [">=5.1.0"]
       # The OCR library, held on 5.x. Its 6.0.0 upgrades the Infinite Red suite
       # to Expo SDK 56 and raises the iOS deployment target 15.1 -> 16.4; we are
       # on SDK 54 with `ios.deploymentTarget: 15.5`, so 6.x cannot build here.

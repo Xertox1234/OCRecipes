@@ -80,6 +80,11 @@ content-keyed, `usePhotoOutput` memoizes on primitives, and
 
 ## Solution
 
+> **Historical — half of this shipped out on 2026-07-27.** The snippets below are
+> the 5.0.11-era workaround, kept because the reasoning still explains the guard
+> that survived. For what the code looks like now, read **Resolution** below
+> first.
+
 Do the capability check at the call site, deriving it from the device's own
 flags — which is what `focusTo`'s own docs require of callers who pass an
 explicit `modes` array ("you are responsible for ensuring that the given modes
@@ -142,6 +147,58 @@ still fail intermittently until the 5.1.1 bump lands. That bump needs a native
 rebuild via EAS Build and its own verification pass, because 5.1.0 also changed
 `useCameraDevice` device selection.
 
+## Resolution — 5.1.1 landed (2026-07-27)
+
+The bump shipped in PR 2 of `todos/P2-2026-07-25-mlkit-9-unblock-visioncamera-511.md`.
+Exactly **half** of this workaround came out, which is what the last Prevention
+bullet below predicted.
+
+**Removed — upstream really did fix it.** `getAllSupportedMeteringModes()` now
+gates `.awb` on `isWhiteBalanceModeSupported(.autoWhiteBalance) ||
+.continuousAutoWhiteBalance` instead of appending it unconditionally
+(`HybridCameraController.swift:227-240`; upstream's own comment changed to
+"White Balance adjusting is not point-based, but it still requires a supported
+auto mode"). The **computed** set is now correct, so the `options = { modes }`
+construction is gone and we pass no modes at all.
+
+**Kept — and the reason is stronger than "upstream didn't get to it".** The
+`modes.length === 0` early return survives because the native ordering makes it
+unreachable-by-default rather than redundant:
+
+```swift
+let modes = options.modes ?? self.getAllSupportedMeteringModes()  // :182
+guard !modes.isEmpty else {                                       // :183
+  throw RuntimeError.error(withMessage: "MeteringModes cannot be empty!")
+}
+```
+
+The fallback resolves **first**, and the guard applies to the *result*. So
+passing nothing does **not** bypass the throw — a device supporting no metering
+still earns a guaranteed rejection (and a Sentry event) on its first tap. This
+was verifiable only by reading the 5.1.1 source; the changelog does not mention
+it.
+
+**New constraint discovered at closure: the JS guard cannot be made exact.**
+It is a conservative heuristic, not a mirror of the native computation, because
+the two read *different AVFoundation properties*:
+
+| Mode | Our JS flag (`HybridCameraDevice.swift:236-257`) | Native (`getAllSupportedMeteringModes`) |
+|---|---|---|
+| AWB | `isWhiteBalanceModeSupported(...)` | **identical** |
+| AE | `isExposureModeSupported(...)` | `isExposurePointOfInterestSupported` |
+| AF | `isFocusModeSupported(...)` | `isFocusPointOfInterestSupported` |
+
+Mode support and *point-of-interest* support are distinct capabilities, and
+VisionCamera exposes **no** point-of-interest flag to JS (`grep PointOfInterest
+src/specs/` → zero hits), so an exact match is unreachable from the call site.
+Only AWB agrees. The residual case — we allow, native throws — costs exactly one
+latched log, which is why the latch above is load-bearing rather than tidy.
+
+This also retires the "root fix" caveat: #3974/#3977 (KVO ordering and metering
+serialization) are now in the binary, so intermittent focus failure should no
+longer be expected. Tap-to-focus and lens selection at barcode distance are
+device-verification gates on that PR, not assumptions.
+
 ## Prevention
 
 - When a pinned library version fails a documented-as-automatic capability
@@ -180,7 +237,8 @@ rebuild via EAS Build and its own verification pass, because 5.1.0 also changed
 - `client/camera/hooks/useCameraFocusAndZoom.ts` — `runFocus`, the latched catch
 - `client/camera/hooks/useCameraFocusAndZoom-utils.ts` — `supportedMeteringModes`
 - `client/camera/hooks/__tests__/useCameraFocusAndZoom.test.ts` — call-contract + error-path coverage
-- `package.json` / `ios/Podfile.lock` — the `^5.0.11` pin this depends on
+- `package.json` / `ios/Podfile.lock` — now `^5.1.1` / GoogleMLKit root `9.0.0`
+  (was the exact `5.0.11` pin this bug depended on)
 
 ## See Also
 

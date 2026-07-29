@@ -1,6 +1,6 @@
 ---
 title: "Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade"
-status: backlog
+status: blocked
 priority: medium
 created: 2026-07-25
 updated: 2026-07-27
@@ -8,10 +8,162 @@ assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
 human_led: true
-blocked_reason: "Criterion #1 RESOLVED 2026-07-27 (Option 3 — replace the OCR library; see Updates). Still human_led: the remaining criteria (#4 real-label OCR, #5 barcode on both platforms, #7 tap-to-focus, #8 useCameraDevice lens selection) need a physical device and real label photos, which no autonomous executor can reach. Criteria #2/#3/#6 are now locally verifiable — the fmt/clang-21 break was fixed in PR #725."
+blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) is OPEN, retargeted to main, auto-merge NOT armed. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. DEVICE PASS RUN 2026-07-28: a VisionCamera 5.1.1 codegen regression aborted the app on camera mount (SIGABRT) — FIXED via patch-package in 34d75bef. AC #4 then CLOSED on device (Cherry Coke 06772408: Trust-the-Label conflict UI, Label column 140 kcal matching the can) — MLKit 9 TextRecognition confirmed compatible, and the first runtime verification of PR #695. No correctness defect blocks #729. Remaining work is device-only coverage, unreachable by any autonomous executor: #5 barcode on Android (iOS half PASSED), #7 tap-to-focus (not exercisable in the barcode flow — it auto-advances; use a no-barcode HUNTING state), #8 useCameraDevice lens selection at 10-15cm (normal range PASSED)."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
+
+## ▶ RESUME HERE (paused 2026-07-27 — read this first)
+
+**2026-07-28 — DEVICE PASS RUN. One blocker found and FIXED; AC #4 CLOSED.**
+The device session is no longer pending — it happened. Read this before the
+older text below, which predates it. **No correctness defect blocks #729; only
+device coverage remains (AC #5 Android, #7, #8).**
+
+**(1) FIXED — the app crashed (SIGABRT) on camera mount.** VisionCamera 5.1.1's
+nitrogen codegen dropped `RawPropsParser(/* enableJsiParser */ true)`, so its
+`jsi::Value`-typed props were parsed from `folly::dynamic` and every cast hit
+`react_native_assert(false)` at `RawValue.h:453`. Fixed by
+`patches/react-native-vision-camera+5.1.1.patch` (commit `34d75bef`) via
+patch-package. Upstream regression — `react-native-nitro-image` still emits it
+correctly, nitro is unchanged, and **5.2.0 carries the same bug**, so a version
+bump is not the fix. Camera now opens; scan flow runs steps 1→3 end to end.
+
+**(2) ✅ AC #4 CLOSED — OCR + label override VERIFIED on device.** Cherry Coke
+(`06772408`): the conflict UI rendered **Label vs Database side by side**, with
+the Label column reading **140 kcal — matching the physical can**. Full chain
+confirmed: MLKit 9 read the panel → `parseNutritionFromOCR` extracted it →
+`buildLabelConflict` flagged the conflict → `chooseSource()` offered both.
+**This is the first runtime verification of PR #695 "Trust the Label"** (merged
+2026-07-24 with client runtime never verified), on the exact product it was
+written for. OFF's record for this barcode is wrong — every field ~3.8× low
+(`energy-kcal_serving: 39.4`) — so the override is doing real work here.
+
+⚠️ An earlier scan in the same session showed the wrong 39 kcal with **no**
+conflict UI. Since the override demonstrably works, that capture simply yielded
+no usable OCR text. That exposes a **pre-existing, non-blocking** defect worth a
+follow-up: the empty-OCR path is SILENT. `ocrText: action.ocrText ?? ""` then
+`ocrText ? parse : null` means an unreadable label falls through to the DB with
+no error and no hint it was ignored — indistinguishable from success, and on a
+product whose DB record is badly wrong it presents a bogus calorie count as if
+verified. Surface "couldn't read the label — try again" instead.
+
+**#729 is NOT blocked by any correctness defect.** What remains is coverage:
+AC #5 Android barcode, AC #7 tap-to-focus, AC #8 close-range lens.
+
+Full analysis in the #729 comment thread. Everything below is older history and
+evidence; the build/CI claims there remain accurate.
+
+**2026-07-28 — the hardware blocker is CLEARED.** The iPhone is tethered and
+`xcrun devicectl list devices` reports `available (paired)`: **iPhone 16 Pro Max
+(iPhone17,2), iOS 18.7.8** — which is the _right_ hardware for check 2, the
+multi-lens case that a single-lens phone cannot exercise. Android is reachable
+too, without a physical device (see check 3). ⚠️ `xcrun xctrace list devices`
+lists the phone under "Devices Offline" even when it is fine — `devicectl` is
+authoritative; do not chase that.
+
+### State
+
+|                                         |                                                                                                                                                            |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **#728** — OCR library swap             | **MERGED** to `main` as `dfadf651` (live)                                                                                                                  |
+| **#729** — VisionCamera 5.1.1 + MLKit 9 | **OPEN**, branch `feat/visioncamera-511-mlkit-9` (no commit hash here on purpose — it would go stale the moment this file is edited; use `gh pr view 729`) |
+| CI on #729                              | ✅ 10/10 green against `main`                                                                                                                              |
+| `mergeStateStatus`                      | ✅ CLEAN (auto-merge deliberately NOT armed)                                                                                                               |
+| Debug sim build (AC #6)                 | ✅ 0 errors                                                                                                                                                |
+| Release build                           | ✅ 0 errors — optimizer carve-out intact                                                                                                                   |
+| Criteria closed                         | #1, #2, #3, #6, **#4** (5 of 8) — #4 closed on device 2026-07-28                                                                                           |
+| Device blocker                          | ✅ SIGABRT on camera mount — FIXED (`34d75bef`, patch-package)                                                                                             |
+
+### To resume
+
+```bash
+git checkout feat/visioncamera-511-mlkit-9
+
+# iOS — checks 1, 2, 4. Tether + unlock first; run tethered, not untethered:
+# check 1 depends on reading console output live over the cable.
+npx expo run:ios --device
+npm run server:dev             # backend, for the parsed-macros half of check 4
+
+# Android — check 3. Boot WITH camera passthrough, then build onto it.
+emulator -avd Medium_Phone_API_36.1 -camera-back webcam0 -gpu host
+npx expo run:android           # targets the already-running emulator
+```
+
+Console line to watch on iOS (check 1): `[useCameraFocusAndZoom] focusTo failed`.
+Any occurrence is a real finding — it prints the device's AE/AF/AWB support
+flags, which is what distinguishes a metering problem from a plain focus miss.
+
+**Do not attempt to exercise the empty-set metering guard on real hardware.** It
+fires only on a device supporting _no_ metering at all; every modern iPhone
+supports all three modes. That branch is retained on the strength of reading
+`HybridCameraController.swift`, not a device test. Check 1 verifies the _normal_
+path — that dropping the explicit `modes` array did not break ordinary focus.
+
+Then run the device checklist — priority order, full pass/fail detail in
+Acceptance Criteria below and in the #729 comment thread:
+
+1. **Tap-to-focus (AC #7)** — the reason this upgrade exists. Pass = the
+   **preview image visibly racks focus**. ⚠️ The focus ring animating is NOT
+   evidence; it is JS-side feedback rendered on tap regardless of whether the
+   native promise resolved. That is precisely how the original bug stayed
+   invisible.
+2. **Barcode at 10–15 cm (AC #8)** — highest regression risk. 5.1.0's #4053
+   changed `useCameraDevice` defaults, and Pro main lenses cannot focus closer
+   than ~20 cm (upstream #2246), which is inside barcode range. A multi-lens
+   device (e.g. iPhone 16 Pro Max) is the right hardware to catch this; a
+   single-lens phone passes trivially and proves nothing.
+3. **Barcode on Android (AC #5)** — `useBarcodeScannerOutput`, a genuinely
+   different code path. **No physical Android device is needed** (verified
+   2026-07-28): the `Medium_Phone_API_36.1` AVD exists and the emulator exposes
+   host-camera passthrough (`emulator -webcam-list` → `webcam0`, `webcam1`), so
+   the emulator can see a real barcode held up to the Mac's camera. The emulator
+   runs the real Android MLKit library and genuinely executes the
+   `useBarcodeScannerOutput` path — which is the whole point of this criterion
+   (it is a _different code path_, not different hardware). What it cannot cover
+   is Android camera **hardware** behavior: autofocus quality, lens choice, low
+   light. Treat that as a documented residual, not a blocker.
+
+   ⚠️ **This also compiles Android for the first time on this upgrade.** Every
+   build in AC #6 is iOS. `react-native-vision-camera-barcode-scanner`
+   5.0.11 → 5.1.1 moves the **Android** MLKit Gradle dependency too, and nothing
+   has verified that resolves and compiles. Run this even if barcode testing
+   were skipped — a Gradle resolution failure surfaces here, before any scan.
+
+4. **OCR on a real nutrition label (AC #4)** — parsed macros, not "text came
+   back." Lowest risk: TextRecognition headers are byte-identical 8.0.0 → 9.0.0.
+
+Items 1 and 2 are the load-bearing pair — 1 is the reason for the bump, 2 is the
+only way it could make things worse. 3 and 4 are regression smoke tests.
+
+### 🚫 Do NOT deliver this via OTA
+
+`runtimeVersion` is bumped 1.1.0 → **1.2.0** in #729 specifically to prevent it.
+EAS Update ships only the JS bundle, so it cannot carry MLKit 9 or VisionCamera
+5.1.1 — but it **would** ship the metering surgery in `useCameraFocusAndZoom.ts`,
+which calls `focusTo({x,y})` with no modes. That is correct **only** against
+5.1.1's native default computation; on a 5.0.11 binary it re-triggers the
+unconditional-AWB bug this whole todo exists to fix. Device testing requires a
+native build, not `npm run update:preview`.
+
+### Two traps already paid for — do not rediscover them
+
+- **`pod install` REFUSES this bump by design.** `Podfile.lock` is a snapshot
+  constraint; crossing a native major needs an explicit `pod update <family>`,
+  and it cascades one conflict at a time. Codified in
+  `docs/solutions/best-practices/podfile-lock-snapshot-refuses-native-major-pod-update-cascades-2026-07-27.md`.
+- **A Release build fails on the Sentry source-map upload phase**
+  (`error: Project not found`) — a Release-only phase, invisible in Debug, and a
+  missing local credential rather than a defect. Use
+  `SENTRY_DISABLE_AUTO_UPLOAD=true`.
+
+### After the device pass
+
+If all four checks pass: merge #729 (squash), then archive this todo to
+`todos/archive/`. If tap-to-focus still fails, the bump did not achieve its
+purpose — investigate before merging rather than merging and filing a follow-up.
+
+---
 
 ## Summary
 
@@ -80,23 +232,70 @@ Exact failure from `pod install --project-directory=ios`:
 
 - [x] A decision is recorded on which option below is taken, and why
       — **Option 3**, decided 2026-07-27. See Updates.
-- [ ] `pod install` completes with `GoogleMLKit` resolved to a single root version
-      — **literally satisfied by PR 1 already, at root 8.0.0** (verified against
-      the regenerated `ios/Podfile.lock`). This criterion was written assuming
-      9.0.0 was the only way to reach a single root; it is not. Left unticked
-      deliberately, because PR 2 moves the root to 9.0.0 and must re-satisfy it
-      — do not tick this off the PR 1 result.
-- [ ] `react-native-vision-camera` + `-barcode-scanner` both at 5.1.1, with
-      `ios/Podfile.lock` regenerated and committed
-- [ ] OCR still works end-to-end: nutrition-label capture → `recognizeTextFromPhoto`
+- [x] `pod install` completes with `GoogleMLKit` resolved to a single root version
+      — **satisfied at root 9.0.0 by PR 2**, verified against the regenerated
+      `ios/Podfile.lock`: `GoogleMLKit/{MLKitCore,BarcodeScanning,TextRecognition}`
+      all `(9.0.0)`.
+      (PR 1 also satisfied this _literally_, at root 8.0.0 — the criterion was
+      written assuming 9.0.0 was the only way to reach a single root, which it is
+      not. It was deliberately left unticked then so PR 2 had to re-satisfy it.)
+      Note `pod install` alone **refuses** this bump by design: `Podfile.lock` is
+      a snapshot constraint, so crossing a native major requires an explicit
+      `pod update GoogleMLKit MLKitVision MLKitBarcodeScanning
+MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
+- [x] `react-native-vision-camera` + `-barcode-scanner` both at 5.1.1, with
+      `ios/Podfile.lock` regenerated and committed — **done in PR 2** (`8f30a5f0`).
+      Full resolved set: `MLKitBarcodeScanning` 7→8, `MLKitTextRecognition` 6→7,
+      `MLKitTextRecognitionCommon` 5→6, `MLKitCommon` 13→14, `MLKitVision` 9→10.
+      `RNMLKitTextRecognition (5.0.1)` and `RNMLKitCore (3.1.0)` are **unchanged**
+      — they resolved against MLKit 9 without a version bump, which is the whole
+      payoff of PR 1's unpinned podspec.
+- [x] OCR still works end-to-end: nutrition-label capture → `recognizeTextFromPhoto`
       → parsed macros (this is the app's core scan path — MLKit 9's
       TextRecognition API must be verified, not assumed compatible)
+      — **VERIFIED ON DEVICE 2026-07-28** (iPhone 16 Pro Max, iOS 18.7.8), on
+      Cherry Coke `06772408`. The Trust-the-Label conflict UI rendered Label vs
+      Database side by side with the Label column at **140 kcal, matching the
+      physical can**. That output is only reachable if MLKit 9 supplied calories + a macro + a parseable serving size, so the TextRecognition 6→7 bump is
+      confirmed compatible — not assumed. Doubles as the first runtime
+      verification of PR #695, whose client path had never been exercised.
 - [ ] Barcode scanning verified on **both** iOS and Android (iOS uses
       `useObjectOutput`, Android uses `useBarcodeScannerOutput` — different code paths)
 - [x] iOS 26 simulator build still works (see the MLKit fat-binary risk below)
-      — **verified 2026-07-27 on PR 1**: compile-only sim build SUCCEEDED, 0
-      errors, 118s; app binary is `arm64`, so `scripts/patch-mlkit-simulator.py`
-      re-tagged the new MLKit set correctly. Re-verify after PR 2's MLKit 9 bump.
+      — **RE-VERIFIED 2026-07-27 on PR 2, against the MLKit 9 framework set.**
+      Full Debug build on a booted iPhone 17 (iOS 26): `** BUILD SUCCEEDED **`,
+      **0 errors** (1197 warnings, 51,466 log lines), app binary `arm64`,
+      `LatinOCRResources.bundle` present, and all 11 MLKit/VisionCamera pod
+      products built — including `RNMLKitTextRecognition` and `RNMLKitCore`
+      linking against MLKit 9 unchanged.
+      The proof that `scripts/patch-mlkit-simulator.py` handled the **changed**
+      framework set (MLKitVision 9→10 etc.) is that on an arm64-only simulator a
+      failure to re-tag surfaces as a hard link error: zero occurrences of
+      "building for iOS Simulator, but linking in object file built for iOS" and
+      zero "excluded architecture" complaints.
+      PR 1's green build was deliberately NOT carried forward as evidence here —
+      it covered a different framework set.
+      **Release-configuration build also DONE 2026-07-27**: `** BUILD SUCCEEDED **`,
+      0 errors, all 10 MLKit/VisionCamera products built at Release, **72
+      VisionCamera Swift compiles succeeded**, `LatinOCRResources.bundle` present
+      and zero script-pack bundles. Both documented Swift 6.2 failure signatures
+      absent: **0** `Global is external, but doesn't have external or weak
+linkage` (the LLVM verify-pass crash) and **0** frontend ICEs — i.e. the
+      `-Onone` / `singlefile` carve-out at `ios/Podfile:204-211` still lands on
+      the VisionCamera targets after the pod change. Debug could never have shown
+      this: Debug is `-Onone` anyway, so the optimizer never runs.
+      ⚠️ **Trap for whoever runs the EAS build:** the FIRST Release attempt
+      FAILED with 3 errors, none of them compilation — the **Sentry source-map
+      upload** script phase (`error: Project not found`). That phase runs only in
+      Release, so it is invisible in every local Debug build, and it is a missing
+      local credential rather than a code defect (Sentry prod upload is
+      deliberately unconfigured until a store build). Re-ran clean with
+      `SENTRY_DISABLE_AUTO_UPLOAD=true`.
+      ⚠️ **Scope limit — this is a proxy, not the EAS path.** It is a Release
+      build for a _simulator_ destination (binary is `x86_64 arm64`), not a
+      signed device archive; an EAS archive additionally does device-arch
+      codegen, dSYM generation, and symbol stripping. It closes the specific
+      documented optimizer failure mode, not the whole archive pipeline.
 - [ ] Tap-to-focus re-verified on a physical device; then remove the
       `Platform.OS === "ios"` workaround branch in
       `client/camera/hooks/useCameraFocusAndZoom.ts` and its
@@ -113,6 +312,23 @@ Exact failure from `pod install --project-directory=ios`:
       guaranteed rejection plus a Sentry event on its first tap — the exact
       failure `docs/solutions/logic-errors/library-auto-capability-default-fails-whole-operation-2026-07-25.md`
       flags as load-bearing
+      → **CODE HALF DONE in PR 2 (`8f30a5f0`); this box stays unticked pending
+      the on-device pass.** The 5.1.1 source was read before editing, and it
+      settled the question in both directions:
+      • **#3976 confirmed fixed** — `getAllSupportedMeteringModes()` now gates
+      `.awb` on `isWhiteBalanceModeSupported(...)` instead of appending it
+      unconditionally, so the `options = { modes }` construction was removed.
+      • **The empty-set guard was KEPT, and the note above was right to insist.**
+      `HybridCameraController.swift:182-185` resolves
+      `options.modes ?? getAllSupportedMeteringModes()` **first** and only then
+      applies `guard !modes.isEmpty` — so passing no modes does **not** bypass
+      the throw. `supportedMeteringModes()` therefore stays too; the earlier
+      "remove the helper" wording is superseded.
+      • **New:** the guard _cannot_ be made exact. Our `supports{Exposure,Focus}
+Metering` flags derive from `is*ModeSupported()`, while native reads
+      `is*PointOfInterestSupported()`, and VisionCamera exposes no
+      point-of-interest flag to JS. Only AWB agrees. Details in the solution
+      doc's new Resolution section.
 - [ ] `useCameraDevice` device selection re-verified — 5.1.0 shipped
       "Better `useCameraDevice(...)` including default Cameras" (#4053), a
       behavioral change to which physical camera gets picked
@@ -308,3 +524,61 @@ and moves to 10.0.0 only in PR 2. Confirmed empirically against the regenerated
   `overrides` entry was needed: Infinite Red's shipped build has zero
   `@testing-library` imports, so Metro never bundles any of it. It is
   node_modules bloat, not app bloat — do not "fix" it speculatively.
+
+### 2026-07-27 — PR 2 implemented: VisionCamera 5.1.1 + GoogleMLKit 9
+
+Commit `8f30a5f0` on `feat/visioncamera-511-mlkit-9`. Criteria #2 and #3 closed.
+
+**Branch is stacked on PR 1, not `main`.** The plan called for branching off
+`main` after #728 merged, but that is not reachable: at `main` the old OCR
+package still pins `GoogleMLKit/TextRecognition = 8.0.0`, so the bump reproduces
+the exact conflict this todo exists to fix. The PR's base is
+`feat/ocr-swap-infinitered-mlkit`; GitHub retargets it to `main` when #728
+merges. Basing on `main` would also have shown PR 1's 454 additions in the diff.
+
+**`pod install` refuses this bump — by design, and that is the safety property.**
+`Podfile.lock` acts as a snapshot constraint, so it holds every pod at its locked
+version and reports a conflict rather than silently crossing a native major. It
+took an explicit `pod update GoogleMLKit MLKitVision MLKitBarcodeScanning
+MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`. (The same mechanism
+is what kept the root at 8.0.0 throughout PR 1.) One `pod update GoogleMLKit`
+alone is not enough — it cascades to a second conflict on `MLKitVision`, which is
+snapshot-pinned at 9.0.0 while the new chain needs `~> 10.0`.
+
+**Transitive drift beyond the plan's list**, all pulled by `MLKitCommon 14.0.0`:
+`GoogleUtilities` 8.1.0→8.1.2, `MLImage` 1.0.0-beta7→beta8, `PromisesObjC`
+2.4.0→2.4.1. `NitroImage` is now a declared pod dependency of
+`VisionCameraBarcodeScanner 5.1.1` (matching its new npm peer dep; already
+installed at 0.14.0). npm-side: `nitro-modules` 0.35.6 and `nitro-image` 0.14.0
+did **not** move, as predicted. `project.pbxproj` is untouched this time.
+
+**`post_install` verified by artifact, not by console silence.** `ios/Podfile:141-193`
+is not rescue-wrapped, so a raise there would silently skip the VisionCamera
+Swift-settings block at `:204-211` — and that block is what prevents the
+Release-only LLVM optimizer crash. Confirmed: zero `EXCLUDED_ARCHS` left in any
+xcconfig, `[MLKit] Patch for platform` phase intact, and **all four** VisionCamera
+build configurations (both targets × Debug **and Release**) carrying
+`SWIFT_COMPILATION_MODE=singlefile` / `-Onone` / `SWIFT_VERSION=5`. A local Debug
+build is `-Onone` anyway, so it would have passed even if the hook had skipped —
+which is exactly why the artifact check was necessary.
+
+**Metering surgery: half out, half permanent.** See AC #7 above for the source
+evidence. The `options = { modes }` construction is gone; the
+`modes.length === 0` early return and `supportedMeteringModes()` both stay.
+
+**Test correction — the plan was internally inconsistent here.** It asked for a
+one-argument `focusTo({x,y})` call, an assertion of
+`toHaveBeenCalledWith({x,y}, undefined)`, _and_ zero changes to the Android
+block. Those cannot all hold: Vitest compares the whole arguments array, and the
+Android cases already asserted arity 2 (they passed because `options` was
+declared-but-unassigned on Android). Resolved toward the clean call site — one
+argument, and **all four** assertions updated to match. Verified two-sided with a
+temporary negative control: a 2-arg assertion does fail against the 1-arg call,
+so these assertions genuinely guard a regression back to filtering rather than
+passing vacuously. 22/22 green.
+
+**Still blocking merge (device-only):** AC #4 OCR end-to-end, AC #5 barcode on
+both platforms, AC #7 tap-to-focus on-device, AC #8 `useCameraDevice` lens
+selection at barcode distance (~10–15 cm — 5.1.0's #4053 changed default camera
+selection). A **Release-configuration** build is also required before merge; the
+LLVM crash never manifests in local Debug.

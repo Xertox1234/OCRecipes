@@ -110,37 +110,36 @@ describe("useCameraFocusAndZoom", () => {
     RN.Platform.OS = originalPlatformOS;
   });
 
-  describe("iOS — explicit metering modes (5.0.11 workaround)", () => {
-    it("requests focus at the tapped point with the device's supported modes", async () => {
+  describe("iOS — native metering default, plus the empty-set guard", () => {
+    it("requests focus at the tapped point without dictating modes", async () => {
       const focusTo = vi.fn().mockResolvedValue(undefined);
       mount(focusTo, makeDevice());
 
       await tap(120, 240);
 
-      expect(focusTo).toHaveBeenCalledWith(
-        { x: 120, y: 240 },
-        { modes: ["AE", "AF", "AWB"] },
-      );
+      expect(focusTo).toHaveBeenCalledWith({ x: 120, y: 240 });
     });
 
-    // The actual bug: on 5.0.11 iOS appends .awb unconditionally, and an
-    // unsupported mode in the request fails the whole operation, so AF never
-    // runs and the camera never refocuses even though the ring animates.
-    it("omits metering modes the device does not support", async () => {
+    // The 5.0.11 bug: iOS appended .awb unconditionally, and an unsupported
+    // mode in the request failed the whole operation, so AF never ran and the
+    // camera never refocused even though the ring animated. 5.1.1 gates .awb
+    // natively (#3976), so we deliberately no longer filter — a device missing
+    // white-balance metering gets the same plain call, and native computes the
+    // correct set. This test is what would catch a regression back to filtering.
+    it("does not filter modes for a device missing white-balance metering", async () => {
       const focusTo = vi.fn().mockResolvedValue(undefined);
       mount(focusTo, makeDevice({ supportsWhiteBalanceMetering: false }));
 
       await tap(10, 20);
 
-      expect(focusTo).toHaveBeenCalledWith(
-        { x: 10, y: 20 },
-        { modes: ["AE", "AF"] },
-      );
+      expect(focusTo).toHaveBeenCalledWith({ x: 10, y: 20 });
     });
 
-    // iOS throws "MeteringModes cannot be empty!" on an empty array, so the
-    // guard is load-bearing — but the ring must still show, matching the
-    // documented "falls back to continuous AF" behavior.
+    // Still load-bearing on 5.1.1: HybridCameraController resolves
+    // `options.modes ?? getAllSupportedMeteringModes()` BEFORE applying
+    // `guard !modes.isEmpty`, so passing no modes does NOT bypass the
+    // "MeteringModes cannot be empty!" throw. The ring must still show,
+    // matching the documented "falls back to continuous AF" behavior.
     it("skips the call but still shows the ring when no metering is supported", async () => {
       const focusTo = vi.fn().mockResolvedValue(undefined);
       const { result } = mount(
@@ -171,9 +170,13 @@ describe("useCameraFocusAndZoom", () => {
 
       await tap(10, 20);
 
-      expect(focusTo).toHaveBeenCalledWith({ x: 10, y: 20 }, undefined);
+      expect(focusTo).toHaveBeenCalledWith({ x: 10, y: 20 });
     });
 
+    // The ONLY surviving platform difference: the empty-set early return is
+    // iOS-only, so Android still calls focusTo here where iOS bails out (see
+    // "skips the call but still shows the ring" above). This is the negative
+    // control for that guard's Platform.OS condition.
     it("still focuses on a device reporting no metering support", async () => {
       RN.Platform.OS = "android";
       const focusTo = vi.fn().mockResolvedValue(undefined);
@@ -188,7 +191,7 @@ describe("useCameraFocusAndZoom", () => {
 
       await tap(10, 20);
 
-      expect(focusTo).toHaveBeenCalledWith({ x: 10, y: 20 }, undefined);
+      expect(focusTo).toHaveBeenCalledWith({ x: 10, y: 20 });
     });
   });
 
