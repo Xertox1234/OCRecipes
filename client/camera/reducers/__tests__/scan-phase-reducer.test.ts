@@ -124,6 +124,58 @@ describe("scanPhaseReducer", () => {
     });
   });
 
+  // A step-2 capture ALWAYS means the user photographed a label. Collapsing an
+  // unreadable read into "" made it indistinguishable from "no label captured",
+  // so `useNutritionLookup`'s `ocrText ? …` guard skipped the label branch and
+  // the wrong database value was presented as if it had been verified against
+  // the package. `null` marks "captured but unreadable" so the failure is
+  // representable — see todos/P2-2026-07-28-surface-unreadable-nutrition-label-ocr.md
+  it.each([
+    ["undefined (recognizer returned nothing)", undefined],
+    ["empty string", ""],
+    ["whitespace only", "   \n\t "],
+  ])(
+    "STEP_PHOTO_CAPTURED with %s marks the label unreadable, not absent",
+    (_label, ocrText) => {
+      const state: ScanPhase = {
+        type: "BARCODE_LOCKED",
+        barcode: "123",
+        bounds: BOUNDS,
+        product: { name: "Bar" },
+      };
+
+      const result = scanPhaseReducer(state, {
+        type: "STEP_PHOTO_CAPTURED",
+        imageUri: "file://photo.jpg",
+        ocrText,
+      });
+
+      expect(result).toEqual({
+        type: "STEP2_REVIEWING",
+        barcode: "123",
+        product: { name: "Bar" },
+        imageUri: "file://photo.jpg",
+        ocrText: null,
+      });
+    },
+  );
+
+  it("STEP_PHOTO_CAPTURED trims surrounding whitespace off a readable label", () => {
+    const state: ScanPhase = {
+      type: "BARCODE_LOCKED",
+      barcode: "123",
+      bounds: BOUNDS,
+    };
+
+    const result = scanPhaseReducer(state, {
+      type: "STEP_PHOTO_CAPTURED",
+      imageUri: "file://photo.jpg",
+      ocrText: "  Calories 140  ",
+    });
+
+    expect(result).toMatchObject({ ocrText: "Calories 140" });
+  });
+
   it("STEP_CONFIRMED from STEP2_REVIEWING → STEP2_CONFIRMED", () => {
     const state: ScanPhase = {
       type: "STEP2_REVIEWING",

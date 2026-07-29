@@ -196,6 +196,7 @@ export default function NutritionDetailScreen() {
     showCustomInput,
     setShowCustomInput,
     correctionNotice,
+    labelReadNotice,
     showManualSearch,
     manualSearchQuery,
     setManualSearchQuery,
@@ -388,6 +389,29 @@ export default function NutritionDetailScreen() {
               Informational only — not medical advice.
             </ThemedText>
           </Animated.View>
+        ) : null}
+
+        {labelReadNotice && !itemId ? (
+          <View
+            accessibilityLiveRegion="polite"
+            style={[
+              styles.correctionContainer,
+              { backgroundColor: withOpacity(theme.warning, 0.1) },
+            ]}
+          >
+            <Feather name="alert-triangle" size={16} color={theme.warning} />
+            <View style={{ flex: 1 }}>
+              <ThemedText
+                type="small"
+                style={{ color: theme.warning, fontWeight: "600" }}
+              >
+                Label not used
+              </ThemedText>
+              <ThemedText type="small" style={{ color: theme.warning }}>
+                {labelReadNotice}
+              </ThemedText>
+            </View>
+          </View>
         ) : null}
 
         {correctionNotice && !itemId ? (

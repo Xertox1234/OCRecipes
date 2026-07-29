@@ -42,7 +42,19 @@ export type ScanPhase =
       type: "STEP2_REVIEWING";
       barcode: string;
       product?: ProductSummary;
-      ocrText: string;
+      /**
+       * Recognised label text, or `null` when a label WAS photographed but the
+       * recognizer produced nothing usable.
+       *
+       * The distinction is load-bearing, not cosmetic: reaching a STEP2/STEP3
+       * phase means the user deliberately photographed a nutrition panel, so
+       * "absent" is not a possible reading here — only "readable" or
+       * "unreadable". Collapsing the latter to `""` made it identical to the
+       * barcode-only path, and `useNutritionLookup`'s truthiness guard then
+       * skipped the label branch silently, presenting a wrong database value as
+       * if it had been verified against the package.
+       */
+      ocrText: string | null;
       imageUri: string;
     }
   | {
@@ -50,14 +62,16 @@ export type ScanPhase =
       barcode: string;
       product?: ProductSummary;
       nutritionImageUri: string;
-      ocrText: string;
+      /** See STEP2_REVIEWING — `null` means captured but unreadable. */
+      ocrText: string | null;
     }
   | {
       type: "STEP3_REVIEWING";
       barcode: string;
       product?: ProductSummary;
       nutritionImageUri: string;
-      ocrText: string;
+      /** See STEP2_REVIEWING — `null` means captured but unreadable. */
+      ocrText: string | null;
       frontImageUri: string;
     }
   | {
@@ -65,7 +79,12 @@ export type ScanPhase =
       barcode: string;
       nutritionImageUri?: string;
       frontImageUri?: string;
-      ocrText?: string;
+      /**
+       * Three-valued on purpose: `undefined` = no label was ever captured
+       * (barcode-only session), `null` = a label was captured but unreadable,
+       * a string = readable label text.
+       */
+      ocrText?: string | null;
     }
   | { type: "CLASSIFYING"; imageUri: string }
   | {
