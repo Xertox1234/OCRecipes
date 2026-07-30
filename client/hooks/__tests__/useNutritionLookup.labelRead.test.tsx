@@ -96,10 +96,32 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
     },
   };
 
+  /**
+   * The host the hook's direct-OFF fallback actually calls
+   * (`useNutritionLookup.ts` → `https://world.openfoodfacts.org/api/v0/...`).
+   *
+   * Matched on the parsed hostname rather than with
+   * `String(input).includes("openfoodfacts.org")`, which CodeQL flags as
+   * js/incomplete-url-substring-sanitization — that substring also matches
+   * `https://evil.com/?x=openfoodfacts.org`. Nothing attacker-controlled reaches
+   * this fixture, so it was never a live vulnerability, but an exact host match is
+   * the more precise router anyway: it cannot accidentally claim a server-leg URL
+   * that happens to mention OFF in a query string.
+   */
+  const OFF_FALLBACK_HOST = "world.openfoodfacts.org";
+
   /** Routes the server leg to `onServerLeg` and the OFF fallback to its record. */
   const routeFetch = (onServerLeg: () => Promise<unknown>) => {
     mockServerFetch.mockImplementation(async (input: unknown) => {
-      if (String(input).includes("openfoodfacts.org")) {
+      // The server leg is built by `getApiUrl(...)`; if it is not a parseable
+      // absolute URL, `new URL` throws and we correctly fall through to it.
+      let host = "";
+      try {
+        host = new URL(String(input)).hostname;
+      } catch {
+        host = "";
+      }
+      if (host === OFF_FALLBACK_HOST) {
         return { ok: true, json: async () => offFallbackRecord };
       }
       return onServerLeg();
