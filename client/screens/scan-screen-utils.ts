@@ -337,6 +337,10 @@ export function getCapturePlan(phase: ScanPhase): CapturePlan {
   }
 }
 
+type NutritionDetailParams = RootStackParamList["NutritionDetail"] & {
+  barcode: string;
+};
+
 /**
  * Build the `NutritionDetail` route params from a completed scan session.
  *
@@ -360,10 +364,6 @@ export function getCapturePlan(phase: ScanPhase): CapturePlan {
  * type. `barcode` is optional on the route (the imageUri/itemId entry points
  * omit it) but required for a completed barcode session, hence the intersection.
  */
-type NutritionDetailParams = RootStackParamList["NutritionDetail"] & {
-  barcode: string;
-};
-
 export function buildNutritionDetailParams(
   phase: Extract<ScanPhase, { type: "SESSION_COMPLETE" }>,
 ): NutritionDetailParams {

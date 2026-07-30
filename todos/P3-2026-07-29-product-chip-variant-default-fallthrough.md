@@ -40,6 +40,24 @@ test covering it. Nothing is broken today. This is a latent-divergence guard, no
 a defect — filed so the next phase addition can't repeat the pattern in a second
 location.
 
+A more material sibling of this same fall-through risk lives one level up the
+call stack. `getCapturePlan` (`client/screens/scan-screen-utils.ts:312-338`)
+decides _whether_ a shutter press captures, but not _which route_ the capture
+takes. `{ capture: true, runStepOcr: false }` is shared by two phases with
+different destinations — `HUNTING` (smart classification / `LabelAnalysis`) and
+`STEP2_CONFIRMED` (dispatches `STEP_PHOTO_CAPTURED` as a front-label photo, no
+`ocrText`). `ScanScreen.onShutterPress` (`client/screens/ScanScreen.tsx:476`)
+disambiguates them only with a surviving hand-written
+`if (phase.type === "HUNTING")` check — the same shape of hand-maintained branch
+`getCapturePlan` was built to retire. A future `ScanPhase` that reuses that same
+plan tuple would compile clean, satisfy the "never plans step OCR without a
+capture" invariant test (`client/screens/__tests__/scan-screen-utils.test.ts`),
+fall through to the front-label dispatch, and the reducer would return `state`
+unchanged — haptic and flash, nothing happens. Not a defect today — the
+`HUNTING` check runs first and is correct for all 12 current phases — but it is
+the same silent-swallow bug class surviving one level down from the fix that was
+supposed to kill it.
+
 ## Acceptance Criteria
 
 - [ ] `getProductChipVariant` switches exhaustively over every `ScanPhase["type"]`
@@ -50,13 +68,22 @@ location.
 - [ ] The existing `LABEL_PROMPTED → null` test still passes, and its comment is
       updated to say the `null` is now an explicit case rather than a fall-through
 - [ ] `npx tsc --noEmit` clean; `ProductChip-utils` tests green
+- [ ] `CapturePlan` (`client/screens/scan-screen-utils.ts:281-338`) carries the
+      capture destination as data — e.g. a `route: "smart" | "step"` field — so
+      the exhaustive switch in `getCapturePlan` owns routing and a new phase
+      that shares `{ capture: true, runStepOcr: false }` can't silently fall
+      through the hand-written `phase.type === "HUNTING"` check in
+      `ScanScreen.onShutterPress` (`client/screens/ScanScreen.tsx:476`) to the
+      wrong dispatch
 
 ## Implementation Notes
 
 - File in scope: `client/camera/components/ProductChip-utils.ts`
   (`getProductChipVariant`, roughly `:112-135`).
-- Tests: `client/camera/components/__tests__/` — the file covering
-  `getProductChipVariant` (grep for `LABEL_PROMPTED intentionally falls here`).
+- Tests: `client/camera/components/__tests__/ProductChip-utils.test.ts:107-111`
+  covers `getProductChipVariant`'s `LABEL_PROMPTED → null` case (the
+  `LABEL_PROMPTED intentionally falls here` comment lives on the source side,
+  `client/camera/components/ProductChip-utils.ts:130`, not in the test file).
 - Copy the shape from `getCapturePlan` in
   `client/screens/scan-screen-utils.ts` — it documents WHY there is no
   `default:`, and that comment is worth mirroring so a future refactor doesn't
@@ -69,6 +96,15 @@ location.
   touched by the same Phase-1 commit (`759ea8f2`). Fix them in the same pass ONLY
   if the change is a pure `default:` → explicit-cases rewrite with no behaviour
   change; otherwise note them and stop.
+- Sibling finding (see Background): `getCapturePlan`
+  (`client/screens/scan-screen-utils.ts:312-338`) returns the same
+  `{ capture: true, runStepOcr: false }` tuple for both `HUNTING` and
+  `STEP2_CONFIRMED`, and only a hand-written `if (phase.type === "HUNTING")`
+  in `ScanScreen.onShutterPress` (`client/screens/ScanScreen.tsx:476`) routes
+  them to their different destinations. Suggested remedy: fold the destination
+  into `CapturePlan` itself (e.g. `route: "smart" | "step"`) so the exhaustive
+  switch owns where a capture goes, not a downstream `if` that a new phase can
+  bypass by inheriting the wrong tuple.
 
 ## Scope Contract
 
