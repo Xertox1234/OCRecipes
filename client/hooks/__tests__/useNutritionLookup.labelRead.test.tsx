@@ -368,6 +368,34 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
         buttonLabel: "Review values before logging",
       });
     });
+
+    /**
+     * Pins the `=== true` idiom itself, which `true` / `false` / omitted cannot:
+     * all three behave identically under `!!data.labelCompared`, so mutating the
+     * comparison to truthiness left the whole suite green and the fail-safe
+     * unguarded. A truthy NON-boolean is the only fixture that discriminates —
+     * and it is the realistic shape of the evolution the idiom defends against
+     * (a field that grows from boolean into a reason string).
+     */
+    it("gates on a truthy non-boolean labelCompared, e.g. a reason string", async () => {
+      mockServerFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ ...wrongDbRecord, labelCompared: "declined" }),
+      });
+
+      const { result } = render(READABLE_LABEL);
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      // Negative control: proves the fixture really is label-READY, so a closed
+      // gate is `=== true` rejecting the string — not the client never having
+      // POSTed a label (which would have set this notice instead).
+      expect(result.current.labelReadNotice).toBeNull();
+      expect(result.current.logGate).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+      });
+    });
   });
 });
 
@@ -421,6 +449,10 @@ describe("useNutritionLookup — post-log navigation", () => {
         routes: [{ name: "Main", params: { screen: "HomeTab" } }],
       }),
     );
+    // Cardinality alongside the argument check — `toHaveBeenCalledWith` alone
+    // passes for a double reset, which would flash Today twice and re-run the
+    // navigator's mount effects.
+    expect(mockReset).toHaveBeenCalledTimes(1);
     expect(mockGoBack).not.toHaveBeenCalled();
   });
 });

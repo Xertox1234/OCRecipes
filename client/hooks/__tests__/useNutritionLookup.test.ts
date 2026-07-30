@@ -122,6 +122,10 @@ describe("useNutritionLookup — addToLogMutation error surfacing", () => {
         routes: [{ name: "Main", params: { screen: "HomeTab" } }],
       }),
     );
+    // Cardinality alongside the argument check — `toHaveBeenCalledWith` alone
+    // passes for a double reset, which would flash Today twice and re-run the
+    // navigator's mount effects.
+    expect(mockReset).toHaveBeenCalledTimes(1);
     expect(mockGoBack).not.toHaveBeenCalled();
     expect(mockToastError).not.toHaveBeenCalled();
   });

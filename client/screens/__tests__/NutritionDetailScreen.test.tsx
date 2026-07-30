@@ -405,6 +405,11 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
     try {
       const { getByText } = renderScanRoute(GATED);
 
+      // Negative control: the assertion below would also pass if the string
+      // were announced at render time, which would speak the availability
+      // BEFORE the user acknowledges — the opposite of the intent.
+      expect(announceSpy).not.toHaveBeenCalled();
+
       fireEvent.click(getByText(GATED_LABEL));
 
       expect(announceSpy).toHaveBeenCalledWith(

@@ -523,7 +523,7 @@ describe("ScanScreen — barcode lock wiring (stale-closure regression, PR #654)
 
 describe("ScanScreen — session-complete navigate forwards ocrText (Task 4)", () => {
   // Non-returnAfterLog path only — the setTimeout → navigate("NutritionDetail")
-  // branch at ScanScreen.tsx:~247-255. returnAfterLog has its own coverage
+  // branch at ScanScreen.tsx:~256-262. returnAfterLog has its own coverage
   // above (post-log-success close) and never reaches this branch.
   beforeEach(() => {
     mockShortcutToSessionComplete.value = true;
@@ -543,15 +543,24 @@ describe("ScanScreen — session-complete navigate forwards ocrText (Task 4)", (
     });
   });
 
-  it("forwards ocrText as undefined on a barcode-only session (no label photo)", async () => {
+  // The key must be ABSENT, not present-and-undefined. `toHaveBeenCalledWith`
+  // treats the two as equal, so it cannot tell them apart — and the shape the
+  // three-valued contract forbids (`ocrText: undefined` on the wire) is exactly
+  // the one it would wave through. Assert key absence on the real call args.
+  it("omits ocrText on a barcode-only session (no label photo)", async () => {
     renderComponent(<ScanScreen />);
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith("NutritionDetail", {
         barcode: "0000000000000",
-        ocrText: undefined,
       });
     });
+
+    const params = mockNavigate.mock.calls.find(
+      (call) => call[0] === "NutritionDetail",
+    )?.[1] as Record<string, unknown>;
+    expect(params).toBeDefined();
+    expect("ocrText" in params).toBe(false);
   });
 });
 

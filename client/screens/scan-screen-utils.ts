@@ -348,21 +348,26 @@ export function getCapturePlan(phase: ScanPhase): CapturePlan {
  * Keys are omitted rather than set to `undefined` so the three-valued `ocrText`
  * contract survives: absent = no label step ran, `null` = captured but
  * unreadable, string = readable.
+ *
+ * The shape is DERIVED from the route params, not hand-written. A hand-written
+ * subset defeats the point of the helper: because the type is declared rather
+ * than inferred from a fresh literal, TypeScript's excess-property check never
+ * fires at the `navigation.navigate(...)` call site, so renaming e.g.
+ * `frontImageUri` in `RootStackParamList` would leave this compiling while
+ * silently dropping the field — the exact failure this helper exists to
+ * prevent. Both annotations (return type AND the local accumulator) must stay
+ * derived, or the object literal is still checked against a stale hand-written
+ * type. `barcode` is optional on the route (the imageUri/itemId entry points
+ * omit it) but required for a completed barcode session, hence the intersection.
  */
+type NutritionDetailParams = RootStackParamList["NutritionDetail"] & {
+  barcode: string;
+};
+
 export function buildNutritionDetailParams(
   phase: Extract<ScanPhase, { type: "SESSION_COMPLETE" }>,
-): {
-  barcode: string;
-  ocrText?: string | null;
-  nutritionImageUri?: string;
-  frontImageUri?: string;
-} {
-  const params: {
-    barcode: string;
-    ocrText?: string | null;
-    nutritionImageUri?: string;
-    frontImageUri?: string;
-  } = { barcode: phase.barcode };
+): NutritionDetailParams {
+  const params: NutritionDetailParams = { barcode: phase.barcode };
 
   if ("ocrText" in phase && phase.ocrText !== undefined) {
     params.ocrText = phase.ocrText;
