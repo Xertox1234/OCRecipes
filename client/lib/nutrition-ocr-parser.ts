@@ -3,7 +3,7 @@
  * Designed for US nutrition labels in English. Uses line-by-line regex matching
  * with common OCR misread correction.
  */
-import { parseServingGrams } from "@/lib/serving-size-utils";
+import { parseLabelServingGrams } from "@shared/lib/label-serving";
 
 export interface LocalNutritionData {
   calories: number | null;
@@ -176,16 +176,18 @@ export function isLabelReady(
   parsed: LocalNutritionData | null | undefined,
 ): boolean {
   if (parsed == null || parsed.calories == null) return false;
-  // Not merely "a serving string was captured" — it must PARSE to grams/ml,
-  // which is exactly what the server's gate requires (`buildLabelConflict` ->
-  // `parseServingGrams`). A weaker client check is worse than no check:
+  // Not merely "a serving string was captured" — it must PARSE to grams/ml.
   // `isLabelReady` also suppresses the "we couldn't use that label" notice, so
   // a label this accepts and the server then refuses reaches the user as
   // database values with NO indication the label was dropped — a server
   // refusal returns the same body shape as agreement. A US label reading
   // `Serving Size 1 can`, with no gram/ml figure, is the live case: captured
   // fine, parses to nothing.
-  return (
-    parsed.servingSize != null && parseServingGrams(parsed.servingSize) != null
-  );
+  //
+  // Shares `parseLabelServingGrams` with the server's `buildLabelConflict`
+  // rather than each side calling its own parser — they previously used two
+  // different implementations that disagreed on real inputs (`"355"` -> 355
+  // here, `null` there), which is precisely how a label could pass this gate
+  // and be refused downstream.
+  return parseLabelServingGrams(parsed.servingSize) != null;
 }

@@ -1,5 +1,6 @@
 import type { BarcodeLookupResult, BarcodePer100g } from "./barcode-lookup";
-import { parseServingGrams, scaleNutrients } from "./barcode-lookup";
+import { scaleNutrients } from "./barcode-lookup";
+import { parseLabelServingGrams } from "@shared/lib/label-serving";
 import { valuesMatch } from "../lib/verification-consensus";
 
 export interface LabelNutritionInput {
@@ -99,9 +100,14 @@ export function buildLabelConflict(
   if (label.calories == null) return none;
 
   // Comparable only if the label serving parses to grams/ml.
-  const labelGrams = label.servingSize
-    ? parseServingGrams(label.servingSize)
-    : null;
+  //
+  // Shares `parseLabelServingGrams` with the client's `isLabelReady` rather
+  // than using barcode-lookup's parser, which the client had no access to.
+  // The two gates previously ran different implementations that disagreed on
+  // real inputs — `"355"` (an OCR line break splitting "355 mL") parsed here
+  // as null but passed the client gate, so the label was POSTed, refused, and
+  // the user saw database values with nothing saying the label was dropped.
+  const labelGrams = parseLabelServingGrams(label.servingSize);
   if (
     labelGrams == null ||
     labelGrams <= 0 ||
