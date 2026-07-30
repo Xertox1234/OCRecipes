@@ -7,9 +7,11 @@ import {
   resolveMenuLocalOCRText,
   resolveSmartConfirmAction,
   evaluateBarcodeDetection,
+  buildProductSummary,
 } from "../scan-screen-utils";
 import { logger } from "@/lib/logger";
 import { TIER_FEATURES } from "@shared/types/premium";
+import type { ScanFlag } from "@shared/types/scan-flags";
 
 describe("scan-screen-utils", () => {
   describe("getRouteForContentType", () => {
@@ -480,6 +482,43 @@ describe("scan-screen-utils", () => {
         barcode: "999999",
         frameCount: 1,
       });
+    });
+  });
+
+  describe("buildProductSummary", () => {
+    const flags: ScanFlag[] = [];
+
+    it("carries verificationLevel through from the barcode response", () => {
+      const result = buildProductSummary(
+        {
+          productName: "Cherry Coke",
+          brandName: "Coca-Cola",
+          imageUrl: "https://cdn/x.jpg",
+          verificationLevel: "verified",
+        },
+        flags,
+      );
+
+      expect(result).toMatchObject({
+        name: "Cherry Coke",
+        brand: "Coca-Cola",
+        imageUri: "https://cdn/x.jpg",
+        verificationLevel: "verified",
+      });
+    });
+
+    // A response with no verificationLevel must NOT be treated as verified.
+    // Leaving it undefined lets the chip default to the label-required branch.
+    it("leaves verificationLevel undefined when the response omits it", () => {
+      const result = buildProductSummary({ productName: "Mystery Bar" }, flags);
+      expect(result.verificationLevel).toBeUndefined();
+    });
+
+    it("falls back to a placeholder name and drops absent optional fields", () => {
+      const result = buildProductSummary({}, flags);
+      expect(result.name).toBe("Unknown product");
+      expect(result.brand).toBeUndefined();
+      expect(result.imageUri).toBeUndefined();
     });
   });
 });

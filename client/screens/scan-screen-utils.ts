@@ -5,6 +5,13 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import { LOCK_THRESHOLD_FRAMES } from "@/camera/components/ScanReticle-utils";
 import { logger } from "@/lib/logger";
+import type { ProductSummary } from "@/camera/types/scan-phase";
+import type { ScanFlag } from "@shared/types/scan-flags";
+import {
+  pickTopSafetyFlag,
+  pickTopDisplayFlag,
+} from "@shared/types/scan-flags";
+import type { VerificationLevel } from "@shared/types/verification";
 
 /** Screen routing target for auto-classification results */
 export type ClassificationRoute =
@@ -236,4 +243,36 @@ export function evaluateBarcodeDetection(
     return { action: "lock", frameCount };
   }
   return { action: "update", frameCount, confidence };
+}
+
+/**
+ * Map a `GET /api/nutrition/barcode/:barcode` response into the `ProductSummary`
+ * the scan chip renders.
+ *
+ * Extracted from ScanScreen's `fetchProductInfo` so the mapping is unit-testable
+ * — in particular so the `verificationLevel` pass-through has a regression test.
+ * That field was silently dropped before, which is why step 1 could not tell a
+ * verified product from an unverified one.
+ *
+ * The flag helpers must stay the SHARED ones (`pickTopSafetyFlag` /
+ * `pickTopDisplayFlag`) rather than being re-derived here — a prior refactor
+ * updated one call site only and desynced two display surfaces.
+ */
+export function buildProductSummary(
+  data: {
+    productName?: string;
+    brandName?: string;
+    imageUrl?: string;
+    verificationLevel?: VerificationLevel;
+  },
+  flags: ScanFlag[],
+): ProductSummary {
+  return {
+    name: data.productName ?? "Unknown product",
+    brand: data.brandName ?? undefined,
+    imageUri: data.imageUrl ?? undefined,
+    safetyFlag: pickTopSafetyFlag(flags),
+    topFlag: pickTopDisplayFlag(flags),
+    verificationLevel: data.verificationLevel,
+  };
 }

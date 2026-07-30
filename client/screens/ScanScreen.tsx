@@ -60,6 +60,7 @@ import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
 import {
   resolveSmartConfirmAction,
   evaluateBarcodeDetection,
+  buildProductSummary,
   type BarcodeTrackingState,
 } from "@/screens/scan-screen-utils";
 import {
@@ -86,10 +87,7 @@ import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
-import {
-  pickTopSafetyFlag,
-  pickTopDisplayFlag,
-} from "@shared/types/scan-flags";
+import { pickTopSafetyFlag } from "@shared/types/scan-flags";
 import type { ScanFlag } from "@shared/types/scan-flags";
 
 const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
@@ -367,24 +365,18 @@ export default function ScanScreen() {
         // semantics) — this LOCAL variable drives the haptic below,
         // unchanged; the field of the same name on the dispatched product is
         // kept for its safety-tier-only semantics but has no reader today.
-        // topFlag: the shared `pickTopDisplayFlag` composition (top
-        // safety-tier flag if ANY safety flag is present, else the top
-        // warn/danger-level non-safety flag) — see its doc comment in
+        // The dispatched product's `topFlag` uses the shared
+        // `pickTopDisplayFlag` composition (top safety-tier flag if ANY
+        // safety flag is present, else the top warn/danger-level non-safety
+        // flag) via `buildProductSummary` — see its doc comment in
         // shared/types/scan-flags.ts. The returnAfterLog confirm-card
         // overlay (ScanScreenConfirmOverlay-utils.ts) must use the SAME
         // helper, not re-derive this inline — a prior refactor updated only
         // this call site and produced a parity gap between the two surfaces.
         const safetyFlag = pickTopSafetyFlag(flags);
-        const topFlag = pickTopDisplayFlag(flags);
         dispatch({
           type: "PRODUCT_LOADED",
-          product: {
-            name: data.productName ?? "Unknown product",
-            brand: data.brandName ?? undefined,
-            imageUri: data.imageUrl ?? undefined,
-            safetyFlag,
-            topFlag,
-          },
+          product: buildProductSummary(data, flags),
         });
         // Raise salience on a severe flag WITHOUT blocking the flow (badges only).
         // In returnAfterLog mode the confirm-card branch above owns this haptic
