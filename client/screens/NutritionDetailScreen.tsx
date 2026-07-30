@@ -221,15 +221,25 @@ export default function NutritionDetailScreen() {
     logGate,
   } = useNutritionLookup({ barcode, imageUri, itemId, ocrText });
 
-  // Reset whenever the gate itself changes (a new lookup, a source toggle), so
-  // an acknowledgement can never carry over onto different numbers. Keyed on
-  // `logGate.kind`, NOT `logGate` — the hook returns a fresh object literal each
-  // render, so depending on the object would re-fire every render and wipe the
-  // acknowledgement the moment it was given, making the log button unreachable.
+  // Reset whenever the gate changes OR the product does, so an acknowledgement
+  // can never carry over onto different numbers.
+  //
+  // `logGate.kind` alone is insufficient: it is two-valued, so any transition
+  // that swaps `nutrition` while leaving the gate gated keeps the acknowledgement
+  // alive. Reachable via manual search — a `notInDatabase` barcode renders the
+  // search box and the log button together, so the user can acknowledge a
+  // numberless "Product Not Found" screen and then search up a different food,
+  // whose values nobody acknowledged. `barcode` catches it: the not-found branch
+  // sets one, `handleManualSearch` replaces `nutrition` without one.
+  //
+  // Keyed on those two fields, NOT on `logGate`/`nutrition` themselves — the hook
+  // returns fresh objects each render, so depending on them would re-fire every
+  // render and wipe the acknowledgement the instant it was given, leaving the log
+  // button permanently unreachable.
   const [acknowledgedUnverified, setAcknowledgedUnverified] = useState(false);
   useEffect(() => {
     setAcknowledgedUnverified(false);
-  }, [logGate.kind]);
+  }, [logGate.kind, nutrition?.barcode]);
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;
@@ -868,9 +878,22 @@ export default function NutritionDetailScreen() {
             {logGate.kind === "needsAcknowledgement" &&
             !acknowledgedUnverified ? (
               <Button
-                onPress={() => setAcknowledgedUnverified(true)}
+                onPress={() => {
+                  setAcknowledgedUnverified(true);
+                  // Both branches render the same Button at the same JSX position
+                  // with no key, so React swaps props on ONE node and the screen
+                  // reader keeps focus there. A changed accessibilityLabel on an
+                  // already-focused element is not re-spoken, so without this a
+                  // screen-reader user hears nothing, re-activates the same node
+                  // out of habit, and logs the un-reviewed database numbers having
+                  // never perceived the gate. Announcing beats a `key` remount,
+                  // which would drop focus and still guarantee nothing.
+                  AccessibilityInfo.announceForAccessibility(
+                    "Values confirmed. Add to Today is now available.",
+                  );
+                }}
                 accessibilityLabel={`${logGate.buttonLabel}. These values come from the product database, not the label you photographed.`}
-                accessibilityHint="Confirms you have checked these values against the package"
+                accessibilityHint="Reveals the Add to Today button"
                 style={styles.addButton}
               >
                 {logGate.buttonLabel}

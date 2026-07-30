@@ -13,6 +13,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import NutritionDetailScreen from "../NutritionDetailScreen";
+import { deriveLogGate, type LogGate } from "../nutrition-detail-utils";
 
 /** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
  * `itemId`); every other suite relies on the `itemId` default below. */
@@ -288,15 +289,21 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
  * shape where the log button renders at all.
  */
 describe("NutritionDetailScreen — log gate (Task 6)", () => {
-  const GATED = {
-    kind: "needsAcknowledgement",
-    buttonLabel: "Review values before logging",
-  };
+  // Derived, not hand-copied: a change to the button copy must not leave this
+  // suite passing against a stale duplicate while the util test fails.
+  const GATED = deriveLogGate({ ocrText: null, labelUsed: false });
+  if (GATED.kind !== "needsAcknowledgement") {
+    throw new Error("deriveLogGate(null, false) must produce a gated gate");
+  }
+  const GATED_LABEL = GATED.buttonLabel;
 
-  function renderScanRoute(logGate: Record<string, unknown>) {
+  function renderScanRoute(
+    logGate: LogGate,
+    nutrition: Record<string, unknown> = { calories: 39 },
+  ) {
     mockRoute.params = { barcode: "06772408", ocrText: null };
     mockUseNutritionLookup.mockReturnValue({
-      ...baseHookReturn({ calories: 39 }),
+      ...baseHookReturn(nutrition),
       logGate,
     });
     return renderComponent(<NutritionDetailScreen />);
@@ -305,7 +312,7 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
   it("replaces the one-tap log button with the acknowledgement button while gated", () => {
     const { queryByText } = renderScanRoute(GATED);
 
-    expect(queryByText("Review values before logging")).toBeTruthy();
+    expect(queryByText(GATED_LABEL)).toBeTruthy();
     // The load-bearing half: the wrong calorie count must not be one tap away.
     expect(queryByText("Add to Today")).toBeNull();
   });
@@ -313,10 +320,10 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
   it("reveals the log button only after the acknowledgement is given", () => {
     const { queryByText, getByText } = renderScanRoute(GATED);
 
-    fireEvent.click(getByText("Review values before logging"));
+    fireEvent.click(getByText(GATED_LABEL));
 
     expect(queryByText("Add to Today")).toBeTruthy();
-    expect(queryByText("Review values before logging")).toBeNull();
+    expect(queryByText(GATED_LABEL)).toBeNull();
   });
 
   // Negative control for the two tests above: an open gate must NOT show the
@@ -326,6 +333,37 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
     const { queryByText } = renderScanRoute({ kind: "open" });
 
     expect(queryByText("Add to Today")).toBeTruthy();
-    expect(queryByText("Review values before logging")).toBeNull();
+    expect(queryByText(GATED_LABEL)).toBeNull();
+  });
+
+  /**
+   * An acknowledgement must not survive the numbers it acknowledged.
+   *
+   * `logGate.kind` is two-valued, so a transition that swaps `nutrition` while
+   * leaving the gate gated does not change it. Reachable today: a `notInDatabase`
+   * barcode renders the manual-search box AND the log button in the same tree, so
+   * the user can acknowledge a numberless "Product Not Found" screen, then search
+   * up a different food. `handleManualSearch` replaces `nutrition` and never
+   * touches `labelUsed`, so without `nutrition?.barcode` in the dep array
+   * "Add to Today" stays one tap away on values nobody reviewed.
+   */
+  it("re-gates after a manual search replaces the acknowledged numbers", () => {
+    const { queryByText, getByText, rerender } = renderScanRoute(GATED, {
+      productName: "Product Not Found",
+      barcode: "06772408",
+    });
+
+    fireEvent.click(getByText(GATED_LABEL));
+    expect(queryByText("Add to Today")).toBeTruthy();
+
+    // The manual-search result: a different food, no barcode, same gate kind.
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ productName: "Coffee Whitener", calories: 55 }),
+      logGate: GATED,
+    });
+    rerender(<NutritionDetailScreen />);
+
+    expect(queryByText("Add to Today")).toBeNull();
+    expect(queryByText(GATED_LABEL)).toBeTruthy();
   });
 });
