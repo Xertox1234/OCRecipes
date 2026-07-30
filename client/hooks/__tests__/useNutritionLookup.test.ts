@@ -9,12 +9,14 @@ import { ErrorCode } from "@shared/constants/error-codes";
 
 const {
   mockGoBack,
+  mockReset,
   mockToastError,
   mockToastSuccess,
   mockApiRequest,
   mockNotification,
 } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
+  mockReset: vi.fn(),
   mockToastError: vi.fn(),
   mockToastSuccess: vi.fn(),
   mockApiRequest: vi.fn(),
@@ -22,7 +24,7 @@ const {
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack }),
+  useNavigation: () => ({ goBack: mockGoBack, reset: mockReset }),
 }));
 
 vi.mock("@/context/AuthContext", () => ({
@@ -96,7 +98,7 @@ describe("useNutritionLookup — addToLogMutation error surfacing", () => {
     );
   });
 
-  it("does not show an error toast and navigates back on success", async () => {
+  it("does not show an error toast and resets to Today on success", async () => {
     mockApiRequest.mockResolvedValueOnce({
       json: async () => ({ id: 1 }),
     });
@@ -112,7 +114,19 @@ describe("useNutritionLookup — addToLogMutation error surfacing", () => {
       result.current.handleAddToLog();
     });
 
-    await waitFor(() => expect(mockGoBack).toHaveBeenCalledTimes(1));
+    // NutritionDetail is pushed from inside the scan fullScreenModal, so
+    // goBack() would pop to the live camera — see Task 7 (D5 fix).
+    await waitFor(() =>
+      expect(mockReset).toHaveBeenCalledWith({
+        index: 0,
+        routes: [{ name: "Main", params: { screen: "HomeTab" } }],
+      }),
+    );
+    // Cardinality alongside the argument check — `toHaveBeenCalledWith` alone
+    // passes for a double reset, which would flash Today twice and re-run the
+    // navigator's mount effects.
+    expect(mockReset).toHaveBeenCalledTimes(1);
+    expect(mockGoBack).not.toHaveBeenCalled();
     expect(mockToastError).not.toHaveBeenCalled();
   });
 });

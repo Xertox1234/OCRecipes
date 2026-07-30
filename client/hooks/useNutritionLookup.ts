@@ -36,6 +36,7 @@ import {
   type ScanFlag,
 } from "@shared/types/scan-flags";
 import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
+import { deriveLogGate } from "@/screens/nutrition-detail-utils";
 
 export interface NutritionData {
   id?: number;
@@ -101,6 +102,26 @@ export function useNutritionLookup(params: {
    * dismiss the message on the happy path.
    */
   const [labelReadNotice, setLabelReadNotice] = useState<string | null>(null);
+  /**
+   * True when a photographed label was parsed, accepted by the readiness gate,
+   * AND the server reports it actually compared the label against the record
+   * (`labelCompared`) — i.e. the values on screen have been checked against the
+   * package, either because the label overrode the record or because the two
+   * agreed.
+   *
+   * A 200 is NOT sufficient on its own: the server declines to compare on an
+   * unparseable or implausible serving, or when the record has no counterpart for
+   * any field the label read, and those return the same body shape as agreement.
+   * The client's own readiness gate cannot detect that — it only checks that a
+   * serving string is non-empty, not that it parses to grams — so the server has
+   * to say so, and this hook must not re-derive that policy.
+   *
+   * False on every path that falls back to database values the label never
+   * touched (server unreachable, non-`notInDatabase` 404, direct-OFF fallback,
+   * total outage). Assigned once, at the end of the successful server leg; the
+   * per-lookup reset below keeps every other path honest. Drives `logGate`.
+   */
+  const [labelUsed, setLabelUsed] = useState(false);
   const [showManualSearch, setShowManualSearch] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -266,6 +287,12 @@ export function useNutritionLookup(params: {
       setFlags([]);
       setConflict(null);
       setLabelReadNotice(null);
+      // `labelUsed` outlives a lookup, and it is assigned only at the end of the
+      // successful server leg below — so this reset is what every failing path
+      // relies on. Without it, a lookup that bails early inherits the PREVIOUS
+      // product's `true` and `logGate` reports `open` for database numbers.
+      // Fail-safe by construction: any future early exit is correct by default.
+      setLabelUsed(false);
       setDbSnapshot(null);
       setActiveSource("database");
       try {
@@ -425,6 +452,30 @@ export function useNutritionLookup(params: {
               setServingSizeGrams(lbl.servingInfo.grams);
               setIsPer100g(labelIsPer100g);
             }
+
+            // Deliberately here — at the END of the successful server leg, not
+            // beside the `labelReady` computation above. `labelUsed` claims the
+            // values ON SCREEN were checked against the package, and only this
+            // branch makes that true: the server cross-validated the label we
+            // POSTed, so it either surfaced a conflict (label values shown) or
+            // agreed with the record (DB values corroborated by the package).
+            //
+            // Every other exit from this function lands on the direct-OFF
+            // fallback (or an error), which never sees the label at all — so they
+            // must keep the `false` from the per-lookup reset. Setting it earlier
+            // would claim cross-validation that never happened, and a
+            // server-unreachable scan would open the gate on the rawest,
+            // least-validated record in the hook.
+            // `=== true`, deliberately not truthiness. A missing field (older
+            // server, or a shape change to something like "declined") must GATE,
+            // and only an explicit boolean true opens. The safe direction is
+            // asymmetric: a wrongly-closed gate costs the user one extra tap, a
+            // wrongly-open one logs a ~3.8x-wrong calorie count.
+            //
+            // `labelReady &&` still matters — it is the client's own precondition
+            // for having POSTed a label at all, so a stray field on a GET-shaped
+            // response can never open the gate by itself.
+            setLabelUsed(labelReady && data.labelCompared === true);
 
             // Set verification level from barcode lookup response
             if (data.verificationLevel) {
@@ -727,8 +778,8 @@ export function useNutritionLookup(params: {
       // success — the drain invalidates after replaying the queued POST on
       // reconnect, so invalidating on the queued path would just resume a paused
       // refetch that races the drain (S1; mirrors useQuickLogSession's guard).
-      // The success haptic + goBack still fire so the optimistic offline UX is
-      // unchanged.
+      // The success haptic + navigation reset still fire so the optimistic
+      // offline UX is unchanged.
       if (data !== undefined) {
         void queryClient.invalidateQueries({
           queryKey: QUERY_KEYS.scannedItems,
@@ -738,7 +789,15 @@ export function useNutritionLookup(params: {
         });
       }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
-      navigation.goBack();
+      // NOT goBack(), and NOT safeGoBack(). NutritionDetail is pushed from
+      // inside the scan fullScreenModal, so canGoBack() is true and goBack()
+      // lands the user back on the live camera. (ScanScreen's returnAfterLog
+      // path CAN use safeGoBack because NutritionDetail never opened there, so
+      // ScanScreen is the modal's top.) Dismiss the whole stack onto Today.
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Main", params: { screen: "HomeTab" } }],
+      });
     },
     onError: (err) => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);
@@ -754,7 +813,10 @@ export function useNutritionLookup(params: {
     addToLogMutation.mutate();
   };
 
+  const logGate = deriveLogGate({ ocrText, labelUsed });
+
   return {
+    logGate,
     nutrition,
     setNutrition,
     flags,

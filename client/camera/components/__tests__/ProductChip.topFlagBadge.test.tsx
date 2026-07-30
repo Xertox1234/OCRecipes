@@ -37,6 +37,7 @@ describe("ProductChip top flag badge", () => {
           title: "Contains Tree Nuts",
         })}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}
@@ -53,6 +54,7 @@ describe("ProductChip top flag badge", () => {
       <ProductChip
         phase={lockedPhase(undefined)}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}
@@ -78,6 +80,7 @@ describe("ProductChip top flag badge", () => {
           title: "Contains Tree Nuts",
         })}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}
@@ -126,6 +129,7 @@ describe("ProductChip top flag badge — accessibility", () => {
       <ProductChip
         phase={lockedPhase(undefined)}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}
@@ -138,6 +142,7 @@ describe("ProductChip top flag badge — accessibility", () => {
       <ProductChip
         phase={lockedPhase(dangerFlag)}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}
@@ -154,6 +159,7 @@ describe("ProductChip top flag badge — accessibility", () => {
       <ProductChip
         phase={lockedPhase(undefined)}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}
@@ -166,6 +172,7 @@ describe("ProductChip top flag badge — accessibility", () => {
       <ProductChip
         phase={lockedPhase(dangerFlag)}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}
@@ -197,6 +204,7 @@ describe("ProductChip top flag badge — accessibility", () => {
           bounds: { x: 0, y: 0, width: 1, height: 1 },
         }}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}
@@ -209,6 +217,7 @@ describe("ProductChip top flag badge — accessibility", () => {
       <ProductChip
         phase={lockedPhase(dangerFlag)}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}
@@ -228,6 +237,7 @@ describe("ProductChip top flag badge — accessibility", () => {
       <ProductChip
         phase={lockedPhase(dangerFlag)}
         onConfirm={noop}
+        onProceedToLabel={noop}
         onStepConfirmed={noop}
         onEditStep2={noop}
         onEditStep3={noop}

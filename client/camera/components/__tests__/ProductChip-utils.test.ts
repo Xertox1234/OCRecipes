@@ -1,6 +1,7 @@
 // client/camera/components/__tests__/ProductChip-utils.test.ts
 import { describe, it, expect } from "vitest";
 import {
+  getBarcodeLockActions,
   getChipAnnounceText,
   getProductChipVariant,
   getShutterClearanceStyle,
@@ -98,6 +99,15 @@ describe("getProductChipVariant", () => {
     expect(
       getProductChipVariant({ type: "SESSION_COMPLETE", barcode: "123" }),
     ).toBe("session_complete");
+  });
+
+  // Deliberate, not incidental: LABEL_PROMPTED means "chip collapsed, go frame
+  // the panel". A null variant hides the chip, which is exactly the intent — so
+  // assert it rather than leaving it to the `default` arm by accident.
+  it("returns null for LABEL_PROMPTED so the chip collapses out of the way", () => {
+    expect(
+      getProductChipVariant({ type: "LABEL_PROMPTED", barcode: "123" }),
+    ).toBeNull();
   });
 });
 
@@ -210,7 +220,7 @@ describe("getChipAnnounceText", () => {
 
   it("keeps the static announce strings for all other variants", () => {
     expect(getChipAnnounceText("barcode_lock", idle)).toBe(
-      "Product found, tap to view details",
+      "Product found, choose how to continue",
     );
     expect(getChipAnnounceText("step2_review", idle)).toBe(
       "Nutrition label scanned, review values",
@@ -262,5 +272,64 @@ describe("getChipConfidenceColor", () => {
 
   it("returns a neutral overlay tone for low confidence, not an alarming color", () => {
     expect(getChipConfidenceColor(0.2)).toBe("rgba(255,255,255,0.5)");
+  });
+});
+
+describe("getBarcodeLockActions", () => {
+  it("offers the fast path as primary when the product is already verified", () => {
+    const actions = getBarcodeLockActions("verified");
+    expect(actions.primary).toEqual({
+      label: "Use verified data →",
+      intent: "confirmProduct",
+    });
+    expect(actions.secondary).toEqual({
+      label: "Photograph label instead",
+      intent: "proceedToLabel",
+    });
+  });
+
+  it("requires the label step as primary when the data is unverified", () => {
+    const actions = getBarcodeLockActions("unverified");
+    expect(actions.primary).toEqual({
+      label: "Scan Nutrition Facts →",
+      intent: "proceedToLabel",
+    });
+    expect(actions.secondary).toEqual({
+      label: "Use database data anyway",
+      intent: "confirmProduct",
+    });
+  });
+
+  // The chip renders BEFORE the product fetch resolves, so this is a real
+  // runtime state, not a defensive branch. Defaulting to the verified fast path
+  // would let a user one-tap past the label step on a product whose data is
+  // actually unverified — reintroducing the wrong-calorie bug through a race.
+  it("treats an unloaded verificationLevel as unverified, never as verified", () => {
+    expect(getBarcodeLockActions(undefined)).toEqual(
+      getBarcodeLockActions("unverified"),
+    );
+  });
+
+  // `VerificationLevel` is `"unverified" | "single_verified" | "verified"`
+  // (shared/types/verification.ts). Only the fully-verified state earns the fast
+  // path — matching how NutritionDetailScreen already gates on `!== "verified"`.
+  it("requires the label step for single_verified, not just unverified", () => {
+    expect(getBarcodeLockActions("single_verified")).toEqual(
+      getBarcodeLockActions("unverified"),
+    );
+  });
+
+  // The old announcement told screen-reader users that tapping views details.
+  // It ended the session instead.
+  it("announces the barcode_lock chip as an action on the product, not a detail view", () => {
+    const phase: ScanPhase = {
+      type: "BARCODE_LOCKED",
+      barcode: "123",
+      bounds: BOUNDS,
+      product: { name: "Cherry Coke" },
+    };
+    expect(getChipAnnounceText("barcode_lock", phase)).toBe(
+      "Product found, choose how to continue",
+    );
   });
 });

@@ -5,6 +5,13 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import { LOCK_THRESHOLD_FRAMES } from "@/camera/components/ScanReticle-utils";
 import { logger } from "@/lib/logger";
+import type { ProductSummary, ScanPhase } from "@/camera/types/scan-phase";
+import type { ScanFlag } from "@shared/types/scan-flags";
+import {
+  pickTopSafetyFlag,
+  pickTopDisplayFlag,
+} from "@shared/types/scan-flags";
+import type { VerificationLevel } from "@shared/types/verification";
 
 /** Screen routing target for auto-classification results */
 export type ClassificationRoute =
@@ -236,4 +243,140 @@ export function evaluateBarcodeDetection(
     return { action: "lock", frameCount };
   }
   return { action: "update", frameCount, confidence };
+}
+
+/**
+ * Map a `GET /api/nutrition/barcode/:barcode` response into the `ProductSummary`
+ * the scan chip renders.
+ *
+ * Extracted from ScanScreen's `fetchProductInfo` so the mapping is unit-testable
+ * — in particular so the `verificationLevel` pass-through has a regression test.
+ * That field was silently dropped before, which is why step 1 could not tell a
+ * verified product from an unverified one.
+ *
+ * The flag helpers must stay the SHARED ones (`pickTopSafetyFlag` /
+ * `pickTopDisplayFlag`) rather than being re-derived here — a prior refactor
+ * updated one call site only and desynced two display surfaces.
+ */
+export function buildProductSummary(
+  data: {
+    productName?: string;
+    brandName?: string;
+    imageUrl?: string;
+    verificationLevel?: VerificationLevel;
+  },
+  flags: ScanFlag[],
+): ProductSummary {
+  return {
+    name: data.productName ?? "Unknown product",
+    brand: data.brandName ?? undefined,
+    imageUri: data.imageUrl ?? undefined,
+    safetyFlag: pickTopSafetyFlag(flags),
+    topFlag: pickTopDisplayFlag(flags),
+    verificationLevel: data.verificationLevel,
+  };
+}
+
+/** What a shutter press should do in a given phase. */
+export type CapturePlan = {
+  /** Take a photo at all. `false` means the shutter press is a deliberate no-op. */
+  capture: boolean;
+  /**
+   * Run on-device OCR and pass the result to `STEP_PHOTO_CAPTURED`.
+   *
+   * Scoped to the STEP2 nutrition-panel dispatch ONLY — it is not "does this
+   * phase ever OCR". `HUNTING` runs its own recognition for the label-mode and
+   * smart-menu previews (into `localOCRText`), which is a different payload on
+   * a different route.
+   */
+  runStepOcr: boolean;
+};
+
+/**
+ * Decide whether a shutter press captures in this phase, and whether that
+ * capture carries recognised label text.
+ *
+ * ONE decision for three call sites that each kept their own phase list:
+ * `onShutterPress`'s entry guard, its OCR branch, and `shutterArmed`. Those
+ * lists diverged twice on this branch, and the second divergence shipped
+ * `LABEL_PROMPTED` as a terminal dead-end — the reducer accepted
+ * `STEP_PHOTO_CAPTURED` from it while the guard silently dropped the tap, so
+ * the flow's new primary button did nothing and the barcode-only escape hatch
+ * had already unmounted with the chip.
+ *
+ * The switch is deliberately exhaustive with NO `default` clause: that is what
+ * makes a newly added `ScanPhase` a compile error here instead of a phase the
+ * capture gate silently ignores. Do not add a fall-through — it would recreate
+ * the bug class in a new location.
+ */
+export function getCapturePlan(phase: ScanPhase): CapturePlan {
+  switch (phase.type) {
+    // Smart scan / label mode. Captures, but its recognition goes to
+    // `localOCRText` on another route, not `STEP_PHOTO_CAPTURED`.
+    case "HUNTING":
+      return { capture: true, runStepOcr: false };
+    // BARCODE_LOCKED is retained alongside LABEL_PROMPTED so a capture taken
+    // before the chip's primary button is pressed still completes step 2 rather
+    // than being dropped — same rationale as the reducer's branch.
+    case "BARCODE_LOCKED":
+    case "LABEL_PROMPTED":
+      return { capture: true, runStepOcr: true };
+    // Step 3 (package front). Captured, but the front carries no nutrition
+    // panel and the phase's own `ocrText` (from step 2) is what moves forward.
+    case "STEP2_CONFIRMED":
+      return { capture: true, runStepOcr: false };
+    case "IDLE":
+    case "BARCODE_TRACKING":
+    case "STEP2_REVIEWING":
+    case "STEP3_REVIEWING":
+    case "SESSION_COMPLETE":
+    case "CLASSIFYING":
+    case "SMART_CONFIRMED":
+    case "SMART_ERROR":
+      return { capture: false, runStepOcr: false };
+  }
+}
+
+type NutritionDetailParams = RootStackParamList["NutritionDetail"] & {
+  barcode: string;
+};
+
+/**
+ * Build the `NutritionDetail` route params from a completed scan session.
+ *
+ * Passes the WHOLE payload rather than cherry-picking fields. The previous
+ * navigate sent only `{ barcode, ocrText }`, so the nutrition-panel and
+ * package-front photos the user deliberately captured were discarded at the
+ * navigation boundary — steps 2 and 3 produced artifacts nothing consumed.
+ *
+ * Keys are omitted rather than set to `undefined` so the three-valued `ocrText`
+ * contract survives: absent = no label step ran, `null` = captured but
+ * unreadable, string = readable.
+ *
+ * The shape is DERIVED from the route params, not hand-written. A hand-written
+ * subset defeats the point of the helper: because the type is declared rather
+ * than inferred from a fresh literal, TypeScript's excess-property check never
+ * fires at the `navigation.navigate(...)` call site, so renaming e.g.
+ * `frontImageUri` in `RootStackParamList` would leave this compiling while
+ * silently dropping the field — the exact failure this helper exists to
+ * prevent. Both annotations (return type AND the local accumulator) must stay
+ * derived, or the object literal is still checked against a stale hand-written
+ * type. `barcode` is optional on the route (the imageUri/itemId entry points
+ * omit it) but required for a completed barcode session, hence the intersection.
+ */
+export function buildNutritionDetailParams(
+  phase: Extract<ScanPhase, { type: "SESSION_COMPLETE" }>,
+): NutritionDetailParams {
+  const params: NutritionDetailParams = { barcode: phase.barcode };
+
+  if ("ocrText" in phase && phase.ocrText !== undefined) {
+    params.ocrText = phase.ocrText;
+  }
+  if (phase.nutritionImageUri !== undefined) {
+    params.nutritionImageUri = phase.nutritionImageUri;
+  }
+  if (phase.frontImageUri !== undefined) {
+    params.frontImageUri = phase.frontImageUri;
+  }
+  return params;
 }

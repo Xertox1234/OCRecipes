@@ -20,6 +20,7 @@ import Animated, {
 } from "react-native-reanimated";
 import type { ScanPhase } from "../types/scan-phase";
 import {
+  getBarcodeLockActions,
   getChipAnnounceText,
   getProductChipVariant,
   getShutterClearanceStyle,
@@ -41,6 +42,7 @@ const OFF_SCREEN_Y = 400;
 interface Props {
   phase: ScanPhase;
   onConfirm: () => void;
+  onProceedToLabel: () => void;
   onStepConfirmed: () => void;
   onEditStep2: () => void;
   onEditStep3: () => void;
@@ -72,6 +74,7 @@ interface Props {
 export function ProductChip({
   phase,
   onConfirm,
+  onProceedToLabel,
   onStepConfirmed,
   onEditStep2,
   onEditStep3,
@@ -208,6 +211,12 @@ export function ProductChip({
     transform: [{ translateY: translateY.value }],
   }));
 
+  const barcodeLockActions = getBarcodeLockActions(
+    phase.type === "BARCODE_LOCKED"
+      ? phase.product?.verificationLevel
+      : undefined,
+  );
+
   if (!shouldRender) return null;
 
   const product = "product" in phase ? phase.product : undefined;
@@ -280,15 +289,32 @@ export function ProductChip({
         <>
           <TouchableOpacity
             style={styles.btnPrimary}
-            onPress={onConfirm}
-            accessibilityLabel="Confirm product"
+            onPress={
+              barcodeLockActions.primary.intent === "proceedToLabel"
+                ? onProceedToLabel
+                : onConfirm
+            }
+            accessibilityLabel={barcodeLockActions.primary.label}
             accessibilityRole="button"
           >
-            <Text style={styles.btnPrimaryText}>Looks right →</Text>
+            <Text style={styles.btnPrimaryText}>
+              {barcodeLockActions.primary.label}
+            </Text>
           </TouchableOpacity>
-          <Text style={styles.caption}>
-            Point at the Nutrition Facts panel to continue.
-          </Text>
+          <TouchableOpacity
+            style={styles.btnSecondary}
+            onPress={
+              barcodeLockActions.secondary.intent === "proceedToLabel"
+                ? onProceedToLabel
+                : onConfirm
+            }
+            accessibilityLabel={barcodeLockActions.secondary.label}
+            accessibilityRole="button"
+          >
+            <Text style={styles.btnSecondaryText}>
+              {barcodeLockActions.secondary.label}
+            </Text>
+          </TouchableOpacity>
         </>
       )}
 
@@ -517,6 +543,7 @@ const styles = StyleSheet.create({
   btnSecondary: {
     backgroundColor: "rgba(255,255,255,0.1)",
     borderRadius: 12,
+    minHeight: 44,
     paddingVertical: 12,
     alignItems: "center",
     flexDirection: "row",

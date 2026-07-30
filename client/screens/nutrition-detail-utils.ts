@@ -32,6 +32,36 @@ export function roundToOneDecimal(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+export type LogGate =
+  | { kind: "open" }
+  | { kind: "needsAcknowledgement"; buttonLabel: string };
+
+/**
+ * Whether the user may log this item in one tap.
+ *
+ * The label step exists for products whose database record is wrong, which is
+ * exactly when a silent fallback does the most damage. When a photographed label
+ * could not be used, the database value is still shown — but logging it now
+ * takes a second, informed action instead of one tap.
+ *
+ * A barcode-only session (`ocrText === undefined`) is NEVER gated. It never
+ * promised to use a label, and warning on the happy path would train the user to
+ * dismiss the warning — the same dynamic that kept the wrong-calorie fallback
+ * invisible in the first place.
+ */
+export function deriveLogGate(params: {
+  ocrText: string | null | undefined;
+  labelUsed: boolean;
+}): LogGate {
+  const { ocrText, labelUsed } = params;
+  if (ocrText === undefined) return { kind: "open" };
+  if (labelUsed) return { kind: "open" };
+  return {
+    kind: "needsAcknowledgement",
+    buttonLabel: "Review values before logging",
+  };
+}
+
 /**
  * Label for the hero card's "Per …" caption, derived from the SAME serving
  * state that scales the displayed nutrition values so the caption can never

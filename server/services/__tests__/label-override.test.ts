@@ -161,3 +161,74 @@ it("no override when the label serving grossly disagrees with a trusted DB servi
   expect(r.conflict).toBe(false);
   expect(r.labelResult).toBeUndefined();
 });
+
+// ── `compared`: did we actually check the label against the record? ──
+//
+// `conflict: false` is returned by four different situations, only ONE of which
+// means the label agreed. The client stakes its one-tap log gate on telling them
+// apart, so each decline path is pinned here.
+
+it("compared is true when the label was checked and materially disagreed", () => {
+  expect(buildLabelConflict(cherryCokeDb(), goodLabel).compared).toBe(true);
+});
+
+it("compared is true when the label was checked and agreed", () => {
+  const db = cherryCokeDb();
+  db.per100g = { calories: 42, sugar: 11, fat: 0 };
+  db.perServing = { calories: 149, sugar: 39, fat: 0 };
+  const r = buildLabelConflict(db, goodLabel);
+  expect(r.conflict).toBe(false);
+  // The distinction that matters: no conflict AND we really did compare, so the
+  // record is corroborated by the package and one-tap logging is justified.
+  expect(r.compared).toBe(true);
+});
+
+it("decline #1: compared is false when the label serving does not parse to grams", () => {
+  // The reachable client case: SERVING_SIZE_PATTERN captures to end-of-line, so
+  // an OCR line-break yields "1 Can" — non-empty (so the client POSTs) but with
+  // no g/ml token for parseServingGrams.
+  const r = buildLabelConflict(cherryCokeDb(), {
+    ...goodLabel,
+    servingSize: "1 Can",
+  });
+  expect(r.conflict).toBe(false);
+  expect(r.compared).toBe(false);
+});
+
+it("decline #2: compared is false when the label serving is implausibly large", () => {
+  const r = buildLabelConflict(cherryCokeDb(), {
+    ...goodLabel,
+    servingSize: "3550 mL",
+  });
+  expect(r.conflict).toBe(false);
+  expect(r.compared).toBe(false);
+});
+
+it("decline #2b: compared is false when the label serving disagrees >4x with a trusted DB serving", () => {
+  const db = cherryCokeDb();
+  db.servingInfo = { displayLabel: "80 g", grams: 80, wasCorrected: false };
+  const r = buildLabelConflict(db, { ...goodLabel, servingSize: "800 mL" });
+  expect(r.conflict).toBe(false);
+  expect(r.compared).toBe(false);
+});
+
+it("decline #3: compared is false when the record has no counterpart for any field the label read", () => {
+  // Serving parses and the ratio is fine, so we get all the way to the
+  // comparison loop — but the DB per-100g has none of calories/sugar/fat, so
+  // nothing is ever compared. Without `compared` this is indistinguishable from
+  // the agreement case above, and the client would open the gate on a record it
+  // never verified.
+  const db = cherryCokeDb();
+  db.per100g = { caffeine: 10 };
+  const r = buildLabelConflict(db, goodLabel);
+  expect(r.conflict).toBe(false);
+  expect(r.fields).toEqual([]);
+  expect(r.compared).toBe(false);
+});
+
+it("presence-gate declines also report compared false", () => {
+  expect(
+    buildLabelConflict(cherryCokeDb(), { ...goodLabel, calories: null })
+      .compared,
+  ).toBe(false);
+});

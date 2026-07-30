@@ -4,6 +4,7 @@ import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import { getContentTypeLabel } from "@/screens/scan-screen-utils";
 import { getShutterTopInset } from "./shutter-layout";
 import { getConfidenceTier } from "@/lib/confidence";
+import type { VerificationLevel } from "@shared/types/verification";
 
 /**
  * Confidence copy for the smart-scan chip — kept distinct from
@@ -60,6 +61,54 @@ export function getShutterClearanceStyle(insetsBottom: number): {
   return { bottom: getShutterTopInset(insetsBottom) + 8 };
 }
 
+export type BarcodeLockAction = {
+  label: string;
+  intent: "proceedToLabel" | "confirmProduct";
+};
+
+export type BarcodeLockActions = {
+  primary: BarcodeLockAction;
+  secondary: BarcodeLockAction;
+};
+
+/**
+ * Which action step 1 offers as primary, and which as secondary.
+ *
+ * The whole point: the PRIMARY control must ADVANCE the flow. It used to be
+ * "Looks right →" wired to CONFIRM_PRODUCT, which ends the session — so the
+ * loudest button on screen was the skip, and the only route to step 2 was an
+ * unlabeled implicit gesture described in caption text.
+ *
+ * `undefined` (product fetch still in flight) deliberately resolves to the
+ * unverified branch. Failing toward capturing the label is the safe direction;
+ * offering the verified fast path before verification has loaded would let a
+ * user one-tap past step 2 on unverified data.
+ *
+ * The secondary action must stay genuinely reachable in BOTH branches — a user
+ * may be offline, holding a damaged or missing label, or navigating by screen
+ * reader. Removing the barcode-only escape hatch would be a regression.
+ */
+export function getBarcodeLockActions(
+  verificationLevel: VerificationLevel | undefined,
+): BarcodeLockActions {
+  if (verificationLevel === "verified") {
+    return {
+      primary: { label: "Use verified data →", intent: "confirmProduct" },
+      secondary: {
+        label: "Photograph label instead",
+        intent: "proceedToLabel",
+      },
+    };
+  }
+  return {
+    primary: { label: "Scan Nutrition Facts →", intent: "proceedToLabel" },
+    secondary: {
+      label: "Use database data anyway",
+      intent: "confirmProduct",
+    },
+  };
+}
+
 export function getProductChipVariant(
   phase: ScanPhase,
 ): ProductChipVariant | null {
@@ -78,6 +127,8 @@ export function getProductChipVariant(
       return "smart_photo";
     case "SMART_ERROR":
       return "smart_error";
+    // LABEL_PROMPTED intentionally falls here: a null variant hides the chip,
+    // which is what "chip collapsed, go frame the panel" means. Covered by test.
     default:
       return null;
   }
@@ -128,7 +179,7 @@ export function getChipAnnounceText(
   }
   switch (variant) {
     case "barcode_lock":
-      return "Product found, tap to view details";
+      return "Product found, choose how to continue";
     case "step2_review":
       return "Nutrition label scanned, review values";
     case "step2_confirmed":

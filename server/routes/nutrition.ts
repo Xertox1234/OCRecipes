@@ -306,20 +306,31 @@ export function register(app: Express): void {
           profileOutcome,
           verification,
         );
-        const { conflict, fields, labelResult } = buildLabelConflict(
+        const { conflict, fields, labelResult, compared } = buildLabelConflict(
           result,
           parsed.data.labelNutrition,
         );
+        // `labelCompared` is additive and POST-only (the GET handler never
+        // receives a label). It exists because a 200 without `conflict` is
+        // ambiguous — buildLabelConflict returns that same shape when it DECLINES
+        // to compare (unparseable serving, implausible serving, no comparable
+        // field). The client gates one-tap logging on this, so it must be sent on
+        // BOTH paths: omitting it on the conflict path would gate a label that
+        // was in fact used.
         if (conflict && labelResult) {
           const labelBody = buildBarcodeResponseBody(
             labelResult,
             profileOutcome,
             verification,
           );
-          res.json({ ...body, conflict: { fields, label: labelBody } });
+          res.json({
+            ...body,
+            labelCompared: compared,
+            conflict: { fields, label: labelBody },
+          });
           return;
         }
-        res.json(body);
+        res.json({ ...body, labelCompared: compared });
       } catch (error) {
         handleRouteError(res, error, "look up barcode");
       }

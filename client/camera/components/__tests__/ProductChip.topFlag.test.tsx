@@ -22,6 +22,7 @@ const lockedPhase = (topFlag?: ScanFlag): ScanPhase => ({
 
 const chipProps = {
   onConfirm: noop,
+  onProceedToLabel: noop,
   onStepConfirmed: noop,
   onEditStep2: noop,
   onEditStep3: noop,

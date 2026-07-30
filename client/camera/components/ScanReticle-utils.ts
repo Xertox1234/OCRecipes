@@ -42,6 +42,7 @@ export function getReticleTarget(
       return { cx, cy, ...BARCODE_RETICLE };
     }
     case "BARCODE_LOCKED":
+    case "LABEL_PROMPTED":
     case "STEP2_REVIEWING":
     case "STEP2_CONFIRMED":
     case "STEP3_REVIEWING":

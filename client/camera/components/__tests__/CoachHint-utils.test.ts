@@ -132,4 +132,34 @@ describe("getCoachMessage", () => {
       ),
     ).toBe("");
   });
+
+  it('returns "Product confirmed. Now frame the Nutrition Facts panel" for LABEL_PROMPTED', () => {
+    expect(getCoachMessage({ type: "LABEL_PROMPTED", barcode: "123" }, 0)).toBe(
+      "Product confirmed. Now frame the Nutrition Facts panel",
+    );
+  });
+
+  // ACCESSIBILITY-LOAD-BEARING, and the reason is not obvious.
+  //
+  // CoachHint announces via `useEffect(…, [message])` on iOS and relies on
+  // `accessibilityLiveRegion="polite"` on Android. NEITHER re-fires when the
+  // string is unchanged. If LABEL_PROMPTED reused BARCODE_LOCKED's exact copy,
+  // a screen-reader user who presses "Scan Nutrition Facts →" would get the
+  // chip silently unmounting and NO announcement at all — no confirmation their
+  // tap did anything.
+  //
+  // So these two strings MUST differ. Do not "simplify" this by folding
+  // LABEL_PROMPTED into the BARCODE_LOCKED case arm.
+  it("uses copy distinct from BARCODE_LOCKED so the transition re-announces", () => {
+    const locked = getCoachMessage(
+      { type: "BARCODE_LOCKED", barcode: "123", bounds: BOUNDS },
+      0,
+    );
+    const prompted = getCoachMessage(
+      { type: "LABEL_PROMPTED", barcode: "123" },
+      0,
+    );
+    expect(prompted).not.toBe(locked);
+    expect(prompted).toBeTruthy();
+  });
 });

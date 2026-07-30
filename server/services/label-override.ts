@@ -16,6 +16,18 @@ export interface LabelConflict {
   conflict: boolean;
   fields: ConflictField[];
   labelResult?: BarcodeLookupResult;
+  /**
+   * Whether the label was actually compared against the record — i.e. at least
+   * one field had both a label reading and a DB per-100g counterpart, and the
+   * comparison ran.
+   *
+   * `conflict: false` alone cannot tell agreement from refusal: this function
+   * declines on an unparseable serving, an implausible serving, or a record with
+   * no comparable field, and every one of those returns the same empty shape.
+   * The client stakes its log gate on this, so the two must stay distinguishable
+   * — `false` means "we did not check", NOT "we checked and it was fine".
+   */
+  compared: boolean;
 }
 
 /** Relative-difference threshold (25%) for calling a label-vs-DB macro a
@@ -42,7 +54,10 @@ export function buildLabelConflict(
   dbResult: BarcodeLookupResult,
   label: LabelNutritionInput,
 ): LabelConflict {
-  const none: LabelConflict = { conflict: false, fields: [] };
+  // Every early return below is a REFUSAL to compare, so they all carry
+  // `compared: false`. Only the two exits past the comparison loop can claim
+  // otherwise.
+  const none: LabelConflict = { conflict: false, fields: [], compared: false };
 
   // Presence gate: need calories + at least one comparable macro.
   const hasCalories = label.calories != null;
@@ -101,15 +116,22 @@ export function buildLabelConflict(
     ["sugar", per100.sugar, dbResult.per100g.sugar],
     ["fat", per100.fat, dbResult.per100g.fat],
   ];
+  // Count the fields we could actually compare, separately from the ones that
+  // disagreed. An empty `fields` is ambiguous on its own: it means either "every
+  // comparable field agreed" or "there was nothing comparable at all", and only
+  // the first justifies the client trusting the displayed numbers.
+  let comparedCount = 0;
   for (const [name, labelVal, dbVal] of cmp) {
-    if (
-      labelVal != null &&
-      dbVal != null &&
-      !valuesMatch(labelVal, dbVal, REL_THRESHOLD)
-    )
-      fields.push(name);
+    if (labelVal == null || dbVal == null) continue;
+    comparedCount++;
+    if (!valuesMatch(labelVal, dbVal, REL_THRESHOLD)) fields.push(name);
   }
-  if (fields.length === 0) return none;
+  if (fields.length === 0) {
+    // No disagreement. `compared` distinguishes a genuine agreement (the record
+    // is corroborated by the package) from a record that simply had no per-100g
+    // counterpart for anything the label read (nothing was verified).
+    return { conflict: false, fields: [], compared: comparedCount > 0 };
+  }
 
   // Build the label-corrected result: mark serving trusted so
   // evaluateUniversalFlags gets the per-portion path.
@@ -139,5 +161,5 @@ export function buildLabelConflict(
     source: `${dbResult.source}+label`,
   };
 
-  return { conflict: true, fields, labelResult };
+  return { conflict: true, fields, labelResult, compared: true };
 }

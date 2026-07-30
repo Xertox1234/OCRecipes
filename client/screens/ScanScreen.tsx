@@ -60,6 +60,9 @@ import { uploadPhotoForAnalysis } from "@/lib/photo-upload";
 import {
   resolveSmartConfirmAction,
   evaluateBarcodeDetection,
+  buildProductSummary,
+  buildNutritionDetailParams,
+  getCapturePlan,
   type BarcodeTrackingState,
 } from "@/screens/scan-screen-utils";
 import {
@@ -86,10 +89,7 @@ import type { ScanScreenNavigationProp } from "@/types/navigation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { safeGoBack } from "@/navigation/safeGoBack";
 import type { FrontLabelExtractionResult } from "@shared/types/front-label";
-import {
-  pickTopSafetyFlag,
-  pickTopDisplayFlag,
-} from "@shared/types/scan-flags";
+import { pickTopSafetyFlag } from "@shared/types/scan-flags";
 import type { ScanFlag } from "@shared/types/scan-flags";
 
 const TORCH_ICON_COLOR = "#FFFFFF"; // hardcoded — camera overlay
@@ -255,13 +255,10 @@ export default function ScanScreen() {
 
     const timer = setTimeout(() => {
       void refreshScanCount();
-      navigation.navigate("NutritionDetail", {
-        barcode,
-        // Present only when a STEP2 nutrition-label photo was captured; the
-        // detail screen parses it for label-vs-DB override. `undefined` on a
-        // barcode-only scan → unchanged behavior.
-        ocrText: "ocrText" in scanPhase ? scanPhase.ocrText : undefined,
-      });
+      navigation.navigate(
+        "NutritionDetail",
+        buildNutritionDetailParams(scanPhase),
+      );
     }, 700);
     return () => clearTimeout(timer);
   }, [
@@ -367,24 +364,18 @@ export default function ScanScreen() {
         // semantics) — this LOCAL variable drives the haptic below,
         // unchanged; the field of the same name on the dispatched product is
         // kept for its safety-tier-only semantics but has no reader today.
-        // topFlag: the shared `pickTopDisplayFlag` composition (top
-        // safety-tier flag if ANY safety flag is present, else the top
-        // warn/danger-level non-safety flag) — see its doc comment in
+        // The dispatched product's `topFlag` uses the shared
+        // `pickTopDisplayFlag` composition (top safety-tier flag if ANY
+        // safety flag is present, else the top warn/danger-level non-safety
+        // flag) via `buildProductSummary` — see its doc comment in
         // shared/types/scan-flags.ts. The returnAfterLog confirm-card
         // overlay (ScanScreenConfirmOverlay-utils.ts) must use the SAME
         // helper, not re-derive this inline — a prior refactor updated only
         // this call site and produced a parity gap between the two surfaces.
         const safetyFlag = pickTopSafetyFlag(flags);
-        const topFlag = pickTopDisplayFlag(flags);
         dispatch({
           type: "PRODUCT_LOADED",
-          product: {
-            name: data.productName ?? "Unknown product",
-            brand: data.brandName ?? undefined,
-            imageUri: data.imageUrl ?? undefined,
-            safetyFlag,
-            topFlag,
-          },
+          product: buildProductSummary(data, flags),
         });
         // Raise salience on a severe flag WITHOUT blocking the flow (badges only).
         // In returnAfterLog mode the confirm-card branch above owns this haptic
@@ -473,12 +464,8 @@ export default function ScanScreen() {
 
   const onShutterPress = useCallback(async () => {
     const phase = scanPhaseRef.current;
-    if (
-      phase.type !== "BARCODE_LOCKED" &&
-      phase.type !== "STEP2_CONFIRMED" &&
-      phase.type !== "HUNTING"
-    )
-      return;
+    const capturePlan = getCapturePlan(phase);
+    if (!capturePlan.capture) return;
 
     // Guard against duplicate captures from rapid taps — ref check is synchronous
     // and avoids the re-render cycle that makes `disabled` lag behind fast input.
@@ -547,7 +534,7 @@ export default function ScanScreen() {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
       setFlashCount((c) => c + 1);
 
-      if (phase.type === "BARCODE_LOCKED") {
+      if (capturePlan.runStepOcr) {
         let ocrText = "";
         try {
           const ocrResult = await recognizeTextFromPhoto(photo.uri);
@@ -653,10 +640,11 @@ export default function ScanScreen() {
   const productChipVisible = getProductChipVariant(scanPhase) !== null;
   const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
 
-  const shutterArmed =
-    scanPhase.type === "HUNTING" ||
-    scanPhase.type === "BARCODE_LOCKED" ||
-    scanPhase.type === "STEP2_CONFIRMED";
+  // Same source of truth as onShutterPress's guard — the visual must never
+  // claim the shutter is dead in a phase that captures (LABEL_PROMPTED
+  // rendered un-armed, faithfully reflecting the broken behaviour), nor armed
+  // in one that doesn't.
+  const shutterArmed = getCapturePlan(scanPhase).capture;
 
   return (
     <View style={styles.root} accessibilityViewIsModal>
@@ -773,6 +761,7 @@ export default function ScanScreen() {
         screenReaderEnabled={screenReaderEnabled}
         phase={scanPhase}
         onConfirm={() => dispatch({ type: "CONFIRM_PRODUCT" })}
+        onProceedToLabel={() => dispatch({ type: "PROCEED_TO_LABEL" })}
         onStepConfirmed={() => dispatch({ type: "STEP_CONFIRMED" })}
         onEditStep2={() => {
           if (

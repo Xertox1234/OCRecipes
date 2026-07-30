@@ -85,6 +85,15 @@ describe("getReticleTarget", () => {
     );
     expect(t.width).toBe(LABEL_RETICLE.width);
   });
+
+  it("uses the label-shaped reticle for LABEL_PROMPTED, not the barcode one", () => {
+    const target = getReticleTarget(
+      { type: "LABEL_PROMPTED", barcode: "123" },
+      400,
+      800,
+    );
+    expect(target).toEqual({ cx: 200, cy: 400, ...LABEL_RETICLE });
+  });
 });
 
 describe("getConfidenceFromPhase", () => {

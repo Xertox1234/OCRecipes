@@ -9,17 +9,29 @@
 // (each gated on `!itemId` or a non-empty array) stay out of the render
 // tree — only the Additional Nutrients card is exercised.
 import React from "react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { fireEvent } from "@testing-library/react";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import NutritionDetailScreen from "../NutritionDetailScreen";
+import { deriveLogGate, type LogGate } from "../nutrition-detail-utils";
 
-const { mockUseNutritionLookup } = vi.hoisted(() => ({
+/** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
+ * `itemId`); every other suite relies on the `itemId` default below. */
+const { mockUseNutritionLookup, mockRoute } = vi.hoisted(() => ({
   mockUseNutritionLookup: vi.fn(),
+  mockRoute: { params: { itemId: 42 } as Record<string, unknown> },
 }));
+
+const ITEM_ID_ROUTE_PARAMS: Record<string, unknown> = { itemId: 42 };
+
+afterEach(() => {
+  mockRoute.params = ITEM_ID_ROUTE_PARAMS;
+});
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
-  useRoute: () => ({ params: { itemId: 42 } }),
+  useRoute: () => mockRoute,
 }));
 
 vi.mock("@/hooks/useNutritionLookup", () => ({
@@ -64,6 +76,11 @@ function baseHookReturn(
     handleManualSearch: vi.fn(),
     addToLogMutation: { isPending: false },
     handleAddToLog: vi.fn(),
+    // Required even though this file pins the route to `itemId` (which closes
+    // the log-button block): the screen reads `logGate.kind` in a top-level
+    // useEffect dep array, so omitting it is a TypeError, not a falsy no-op
+    // like the notice fields above.
+    logGate: { kind: "open" },
   };
 }
 
@@ -257,5 +274,162 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
       "6 nutrition flags: Flag 0, Flag 1, Flag 2, Flag 3, Flag 4, Flag 5",
     );
     expect(badgeGroup).toBeTruthy();
+  });
+});
+
+/**
+ * The log gate at the layer that actually gates (Task 6, D3 fix).
+ *
+ * `deriveLogGate`'s own tests prove the decision, and the hook tests prove
+ * `logGate` is exposed — but neither can fail if the screen wires the two
+ * branches of the button ternary the wrong way round. The property the fix
+ * exists to deliver is that "Add to Today" is NOT reachable in one tap while
+ * gated, and that only holds at this layer.
+ *
+ * These use a scan-flow route (`barcode`, no `itemId`), which is the only route
+ * shape where the log button renders at all.
+ */
+describe("NutritionDetailScreen — log gate (Task 6)", () => {
+  // Derived, not hand-copied: a change to the button copy must not leave this
+  // suite passing against a stale duplicate while the util test fails.
+  const GATED = deriveLogGate({ ocrText: null, labelUsed: false });
+  if (GATED.kind !== "needsAcknowledgement") {
+    throw new Error("deriveLogGate(null, false) must produce a gated gate");
+  }
+  const GATED_LABEL = GATED.buttonLabel;
+
+  function renderScanRoute(
+    logGate: LogGate,
+    nutrition: Record<string, unknown> = { calories: 39 },
+  ) {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn(nutrition),
+      logGate,
+    });
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  it("replaces the one-tap log button with the acknowledgement button while gated", () => {
+    const { queryByText } = renderScanRoute(GATED);
+
+    expect(queryByText(GATED_LABEL)).toBeTruthy();
+    // The load-bearing half: the wrong calorie count must not be one tap away.
+    expect(queryByText("Add to Today")).toBeNull();
+  });
+
+  it("reveals the log button only after the acknowledgement is given", () => {
+    const { queryByText, getByText } = renderScanRoute(GATED);
+
+    fireEvent.click(getByText(GATED_LABEL));
+
+    expect(queryByText("Add to Today")).toBeTruthy();
+    expect(queryByText(GATED_LABEL)).toBeNull();
+  });
+
+  // Negative control for the two tests above: an open gate must NOT show the
+  // acknowledgement step, or the gate would fire on the barcode-only happy path
+  // and train users to tap through it.
+  it("shows the log button directly when the gate is open", () => {
+    const { queryByText } = renderScanRoute({ kind: "open" });
+
+    expect(queryByText("Add to Today")).toBeTruthy();
+    expect(queryByText(GATED_LABEL)).toBeNull();
+  });
+
+  /**
+   * An acknowledgement must not survive the numbers it acknowledged.
+   *
+   * `logGate.kind` is two-valued, so a transition that swaps `nutrition` while
+   * leaving the gate gated does not change it. The manual-search flow is such a
+   * transition: the `notInDatabase` branch renders the search box AND the log
+   * button in the same tree, so the user acknowledges a numberless "Product Not
+   * Found" screen, then searches up a different food; `handleManualSearch`
+   * replaces `nutrition` and never touches `labelUsed`, leaving "Add to Today" one
+   * tap away on values nobody reviewed.
+   *
+   * NOT reachable in this tree today: nothing emits `notInDatabase`. `grep -rn
+   * notInDatabase server/` is empty and `sendError` sends only `{ error, code }`,
+   * so `useNutritionLookup.ts`'s check is dead against this server and
+   * `showManualSearch` can never become true. This is a live defect in the state
+   * machine guarded ahead of the emitter existing — not a user-facing bug today.
+   *
+   * `nutrition?.barcode` does NOT discriminate here (both sides carry the same
+   * route barcode); `productName` does. See the dep-array comment in the screen.
+   */
+  it("re-gates after a manual search replaces the acknowledged numbers", () => {
+    const { queryByText, getByText, rerender } = renderScanRoute(GATED, {
+      productName: "Product Not Found",
+      barcode: "06772408",
+    });
+
+    fireEvent.click(getByText(GATED_LABEL));
+    expect(queryByText("Add to Today")).toBeTruthy();
+
+    // The manual-search result, shaped as the hook really emits it:
+    // `handleManualSearch` sets `barcode: barcode || undefined`, carrying the
+    // ROUTE barcode forward — the same value the not-found branch already set. So
+    // the barcode is invariant across this transition and only the product name
+    // changes. A fixture that omitted the barcode would let an ineffective
+    // dependency look correct.
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({
+        productName: "Coffee Whitener",
+        calories: 55,
+        barcode: "06772408",
+      }),
+      logGate: GATED,
+    });
+    rerender(<NutritionDetailScreen />);
+
+    expect(queryByText("Add to Today")).toBeNull();
+    expect(queryByText(GATED_LABEL)).toBeTruthy();
+  });
+
+  /**
+   * Both branches render the same Button at the same JSX position with no `key`,
+   * so React swaps props on ONE node and screen-reader focus stays parked there.
+   * A changed accessibilityLabel on an already-focused element is not re-spoken,
+   * so without an explicit announce a screen-reader user gets no confirmation,
+   * re-activates the same node out of habit, and logs the un-reviewed database
+   * numbers having never perceived the gate.
+   *
+   * Ungated by platform on purpose: this button has no accessibilityLiveRegion
+   * backing it on Android, unlike the notice banners whose announce IS iOS-gated.
+   */
+  it("announces that the log button has become available", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { getByText } = renderScanRoute(GATED);
+
+      // Negative control: the assertion below would also pass if the string
+      // were announced at render time, which would speak the availability
+      // BEFORE the user acknowledges — the opposite of the intent.
+      expect(announceSpy).not.toHaveBeenCalled();
+
+      fireEvent.click(getByText(GATED_LABEL));
+
+      expect(announceSpy).toHaveBeenCalledWith(
+        "Values confirmed. Add to Today is now available.",
+      );
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
+
+  // D4 fix (Task 8): the CTA navigated to Scan with mode: "label" — asking
+  // for the nutrition-label photo that step 2 of the main flow already
+  // collects. Uses renderScanRoute (barcode route, no itemId) because the
+  // verification section only renders under `!itemId && barcode &&
+  // nutrition`; the default itemId route would keep this text out of the
+  // tree regardless of whether the CTA still existed, making the assertion
+  // vacuous.
+  it("does not render the obsolete Help verify this product CTA", () => {
+    const { queryByText } = renderScanRoute({ kind: "open" });
+
+    expect(queryByText("Help verify this product")).toBeNull();
   });
 });

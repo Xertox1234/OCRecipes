@@ -26,6 +26,7 @@ const noop = () => {};
 
 const handlers = {
   onConfirm: noop,
+  onProceedToLabel: noop,
   onStepConfirmed: noop,
   onEditStep2: noop,
   onEditStep3: noop,
@@ -102,7 +103,7 @@ describe("ProductChip — announce model (rework)", () => {
     RN.Platform.OS = os;
     render(<ProductChip phase={barcodeLock} {...handlers} />);
     expect(announceSpy).toHaveBeenCalledWith(
-      "Product found, tap to view details",
+      "Product found, choose how to continue",
     );
   });
 

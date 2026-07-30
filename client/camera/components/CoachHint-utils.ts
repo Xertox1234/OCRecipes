@@ -16,6 +16,14 @@ export function getCoachMessage(
       return "Hold steady…";
     case "BARCODE_LOCKED":
       return "Frame the Nutrition Facts panel";
+    // Distinct copy from BARCODE_LOCKED on purpose. CoachHint announces via
+    // useEffect(…, [message]) on iOS and accessibilityLiveRegion="polite" on
+    // Android — neither re-fires on an unchanged string. Sharing the arm would
+    // leave a screen-reader user with no announcement at all when the chip
+    // collapses after they press "Scan Nutrition Facts →". "Now" also confirms
+    // to sighted users that the tap registered.
+    case "LABEL_PROMPTED":
+      return "Product confirmed. Now frame the Nutrition Facts panel";
     case "STEP2_CONFIRMED":
       return "Frame the front of the package";
     case "STEP2_REVIEWING":

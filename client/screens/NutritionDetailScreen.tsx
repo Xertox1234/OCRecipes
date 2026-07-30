@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -51,7 +51,13 @@ type RouteParams = {
   barcode?: string;
   imageUri?: string;
   itemId?: number;
-  ocrText?: string;
+  /**
+   * Three-valued, matching `RootStackParamList` — `undefined` = no label step
+   * ran, `null` = a label was photographed but unreadable, string = label text.
+   * Narrowing `null` away here would make the unreadable case indistinguishable
+   * from the barcode-only one, which is the whole basis of the log gate.
+   */
+  ocrText?: string | null;
 };
 
 function NutritionDetailSkeleton() {
@@ -212,7 +218,40 @@ export default function NutritionDetailScreen() {
     activeSource,
     chooseSource,
     dbNutrition,
+    logGate,
   } = useNutritionLookup({ barcode, imageUri, itemId, ocrText });
+
+  // Reset whenever the gate changes OR the product does, so an acknowledgement
+  // can never carry over onto different numbers.
+  //
+  // `logGate.kind` alone is insufficient: it is two-valued, so any transition that
+  // swaps `nutrition` while leaving the gate gated keeps the acknowledgement alive.
+  // The manual-search flow is that transition — the user acknowledges a numberless
+  // "Product Not Found" screen, then searches up a different food and
+  // `handleManualSearch` replaces `nutrition` without touching `labelUsed`.
+  //
+  // Not user-reachable in this tree today: nothing emits the `notInDatabase` flag
+  // that opens `showManualSearch` (no server hit for it, and `sendError` sends only
+  // `{ error, code }`), so this guards a real state-machine defect ahead of the
+  // emitter rather than a live bug. It is cheap and must not regress if that
+  // branch is ever wired up.
+  //
+  // `productName` is the dep that actually discriminates. `barcode` does NOT: the
+  // not-found branch sets `barcode: code` and `handleManualSearch` sets
+  // `barcode: barcode || undefined` — the same route barcode both times — so it is
+  // invariant across exactly the transition this guards. `productName` goes
+  // "Product Not Found" → the searched food's name, and it also survives
+  // `recalculateNutrition` untouched, so a user-initiated serving edit does not
+  // needlessly discard an acknowledgement about the same product.
+  //
+  // Keyed on those two PRIMITIVE fields, not on `logGate`/`nutrition` themselves —
+  // the hook returns fresh objects each render, so depending on them would re-fire
+  // every render and wipe the acknowledgement the instant it was given, leaving
+  // the log button permanently unreachable.
+  const [acknowledgedUnverified, setAcknowledgedUnverified] = useState(false);
+  useEffect(() => {
+    setAcknowledgedUnverified(false);
+  }, [logGate.kind, nutrition?.productName]);
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;
@@ -774,37 +813,6 @@ export default function NutritionDetailScreen() {
           <View style={styles.verificationSection}>
             <VerificationBadge level={verificationLevel} />
 
-            {verificationLevel !== "verified" && (
-              <Pressable
-                onPress={() =>
-                  navigation.navigate("Scan", {
-                    mode: "label",
-                    verifyBarcode: barcode,
-                  })
-                }
-                accessibilityLabel="Verify nutrition data with a label photo"
-                accessibilityRole="button"
-                style={[
-                  styles.verifyPrompt,
-                  { backgroundColor: withOpacity(theme.info, 0.08) },
-                ]}
-              >
-                <Feather name="camera" size={18} color={theme.info} />
-                <View style={{ flex: 1 }}>
-                  <ThemedText
-                    type="body"
-                    style={{ color: theme.info, fontWeight: "600" }}
-                  >
-                    Help verify this product
-                  </ThemedText>
-                  <ThemedText type="small" style={{ color: theme.info }}>
-                    Scan the nutrition label to confirm data
-                  </ThemedText>
-                </View>
-                <Feather name="chevron-right" size={18} color={theme.info} />
-              </Pressable>
-            )}
-
             {/* Retroactive front-label CTA for verified products without front-label data */}
             {verificationLevel !== "unverified" && !hasFrontLabelData && (
               <Pressable
@@ -848,17 +856,42 @@ export default function NutritionDetailScreen() {
 
         {!itemId ? (
           <View style={styles.buttonContainer}>
-            <Button
-              onPress={handleAddToLog}
-              loading={addToLogMutation.isPending}
-              accessibilityLabel={offlineLabel(
-                `Add ${nutrition?.productName || "item"} to today's food log`,
-              )}
-              accessibilityHint="Saves this item to your daily nutrition tracking"
-              style={styles.addButton}
-            >
-              {offlineLabel("Add to Today")}
-            </Button>
+            {logGate.kind === "needsAcknowledgement" &&
+            !acknowledgedUnverified ? (
+              <Button
+                onPress={() => {
+                  setAcknowledgedUnverified(true);
+                  // Both branches render the same Button at the same JSX position
+                  // with no key, so React swaps props on ONE node and the screen
+                  // reader keeps focus there. A changed accessibilityLabel on an
+                  // already-focused element is not re-spoken, so without this a
+                  // screen-reader user hears nothing, re-activates the same node
+                  // out of habit, and logs the un-reviewed database numbers having
+                  // never perceived the gate. Announcing beats a `key` remount,
+                  // which would drop focus and still guarantee nothing.
+                  AccessibilityInfo.announceForAccessibility(
+                    "Values confirmed. Add to Today is now available.",
+                  );
+                }}
+                accessibilityLabel={`${logGate.buttonLabel}. These values come from the product database, not the label you photographed.`}
+                accessibilityHint="Reveals the Add to Today button"
+                style={styles.addButton}
+              >
+                {logGate.buttonLabel}
+              </Button>
+            ) : (
+              <Button
+                onPress={handleAddToLog}
+                loading={addToLogMutation.isPending}
+                accessibilityLabel={offlineLabel(
+                  `Add ${nutrition?.productName || "item"} to today's food log`,
+                )}
+                accessibilityHint="Saves this item to your daily nutrition tracking"
+                style={styles.addButton}
+              >
+                {offlineLabel("Add to Today")}
+              </Button>
+            )}
             {isOffline && (
               <ThemedText
                 type="small"
