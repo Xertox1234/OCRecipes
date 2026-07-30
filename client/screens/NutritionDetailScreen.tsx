@@ -224,22 +224,34 @@ export default function NutritionDetailScreen() {
   // Reset whenever the gate changes OR the product does, so an acknowledgement
   // can never carry over onto different numbers.
   //
-  // `logGate.kind` alone is insufficient: it is two-valued, so any transition
-  // that swaps `nutrition` while leaving the gate gated keeps the acknowledgement
-  // alive. Reachable via manual search — a `notInDatabase` barcode renders the
-  // search box and the log button together, so the user can acknowledge a
-  // numberless "Product Not Found" screen and then search up a different food,
-  // whose values nobody acknowledged. `barcode` catches it: the not-found branch
-  // sets one, `handleManualSearch` replaces `nutrition` without one.
+  // `logGate.kind` alone is insufficient: it is two-valued, so any transition that
+  // swaps `nutrition` while leaving the gate gated keeps the acknowledgement alive.
+  // The manual-search flow is that transition — the user acknowledges a numberless
+  // "Product Not Found" screen, then searches up a different food and
+  // `handleManualSearch` replaces `nutrition` without touching `labelUsed`.
   //
-  // Keyed on those two fields, NOT on `logGate`/`nutrition` themselves — the hook
-  // returns fresh objects each render, so depending on them would re-fire every
-  // render and wipe the acknowledgement the instant it was given, leaving the log
-  // button permanently unreachable.
+  // Not user-reachable in this tree today: nothing emits the `notInDatabase` flag
+  // that opens `showManualSearch` (no server hit for it, and `sendError` sends only
+  // `{ error, code }`), so this guards a real state-machine defect ahead of the
+  // emitter rather than a live bug. It is cheap and must not regress if that
+  // branch is ever wired up.
+  //
+  // `productName` is the dep that actually discriminates. `barcode` does NOT: the
+  // not-found branch sets `barcode: code` and `handleManualSearch` sets
+  // `barcode: barcode || undefined` — the same route barcode both times — so it is
+  // invariant across exactly the transition this guards. `productName` goes
+  // "Product Not Found" → the searched food's name, and it also survives
+  // `recalculateNutrition` untouched, so a user-initiated serving edit does not
+  // needlessly discard an acknowledgement about the same product.
+  //
+  // Keyed on those two PRIMITIVE fields, not on `logGate`/`nutrition` themselves —
+  // the hook returns fresh objects each render, so depending on them would re-fire
+  // every render and wipe the acknowledgement the instant it was given, leaving
+  // the log button permanently unreachable.
   const [acknowledgedUnverified, setAcknowledgedUnverified] = useState(false);
   useEffect(() => {
     setAcknowledgedUnverified(false);
-  }, [logGate.kind, nutrition?.barcode]);
+  }, [logGate.kind, nutrition?.productName]);
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;

@@ -11,6 +11,7 @@
 import React from "react";
 import { describe, it, expect, afterEach } from "vitest";
 import { fireEvent } from "@testing-library/react";
+import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import NutritionDetailScreen from "../NutritionDetailScreen";
 import { deriveLogGate, type LogGate } from "../nutrition-detail-utils";
@@ -340,12 +341,21 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
    * An acknowledgement must not survive the numbers it acknowledged.
    *
    * `logGate.kind` is two-valued, so a transition that swaps `nutrition` while
-   * leaving the gate gated does not change it. Reachable today: a `notInDatabase`
-   * barcode renders the manual-search box AND the log button in the same tree, so
-   * the user can acknowledge a numberless "Product Not Found" screen, then search
-   * up a different food. `handleManualSearch` replaces `nutrition` and never
-   * touches `labelUsed`, so without `nutrition?.barcode` in the dep array
-   * "Add to Today" stays one tap away on values nobody reviewed.
+   * leaving the gate gated does not change it. The manual-search flow is such a
+   * transition: the `notInDatabase` branch renders the search box AND the log
+   * button in the same tree, so the user acknowledges a numberless "Product Not
+   * Found" screen, then searches up a different food; `handleManualSearch`
+   * replaces `nutrition` and never touches `labelUsed`, leaving "Add to Today" one
+   * tap away on values nobody reviewed.
+   *
+   * NOT reachable in this tree today: nothing emits `notInDatabase`. `grep -rn
+   * notInDatabase server/` is empty and `sendError` sends only `{ error, code }`,
+   * so `useNutritionLookup.ts`'s check is dead against this server and
+   * `showManualSearch` can never become true. This is a live defect in the state
+   * machine guarded ahead of the emitter existing — not a user-facing bug today.
+   *
+   * `nutrition?.barcode` does NOT discriminate here (both sides carry the same
+   * route barcode); `productName` does. See the dep-array comment in the screen.
    */
   it("re-gates after a manual search replaces the acknowledged numbers", () => {
     const { queryByText, getByText, rerender } = renderScanRoute(GATED, {
@@ -356,14 +366,52 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
     fireEvent.click(getByText(GATED_LABEL));
     expect(queryByText("Add to Today")).toBeTruthy();
 
-    // The manual-search result: a different food, no barcode, same gate kind.
+    // The manual-search result, shaped as the hook really emits it:
+    // `handleManualSearch` sets `barcode: barcode || undefined`, carrying the
+    // ROUTE barcode forward — the same value the not-found branch already set. So
+    // the barcode is invariant across this transition and only the product name
+    // changes. A fixture that omitted the barcode would let an ineffective
+    // dependency look correct.
     mockUseNutritionLookup.mockReturnValue({
-      ...baseHookReturn({ productName: "Coffee Whitener", calories: 55 }),
+      ...baseHookReturn({
+        productName: "Coffee Whitener",
+        calories: 55,
+        barcode: "06772408",
+      }),
       logGate: GATED,
     });
     rerender(<NutritionDetailScreen />);
 
     expect(queryByText("Add to Today")).toBeNull();
     expect(queryByText(GATED_LABEL)).toBeTruthy();
+  });
+
+  /**
+   * Both branches render the same Button at the same JSX position with no `key`,
+   * so React swaps props on ONE node and screen-reader focus stays parked there.
+   * A changed accessibilityLabel on an already-focused element is not re-spoken,
+   * so without an explicit announce a screen-reader user gets no confirmation,
+   * re-activates the same node out of habit, and logs the un-reviewed database
+   * numbers having never perceived the gate.
+   *
+   * Ungated by platform on purpose: this button has no accessibilityLiveRegion
+   * backing it on Android, unlike the notice banners whose announce IS iOS-gated.
+   */
+  it("announces that the log button has become available", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { getByText } = renderScanRoute(GATED);
+
+      fireEvent.click(getByText(GATED_LABEL));
+
+      expect(announceSpy).toHaveBeenCalledWith(
+        "Values confirmed. Add to Today is now available.",
+      );
+    } finally {
+      announceSpy.mockRestore();
+    }
   });
 });
