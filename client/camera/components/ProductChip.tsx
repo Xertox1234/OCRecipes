@@ -543,6 +543,7 @@ const styles = StyleSheet.create({
   btnSecondary: {
     backgroundColor: "rgba(255,255,255,0.1)",
     borderRadius: 12,
+    minHeight: 44,
     paddingVertical: 12,
     alignItems: "center",
     flexDirection: "row",

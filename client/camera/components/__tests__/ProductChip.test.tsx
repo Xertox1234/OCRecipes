@@ -91,6 +91,25 @@ describe("ProductChip — barcode_lock offers two real actions, not a skip-only 
     screen.getByText("Use database data anyway").click();
     expect(called).toBe(true);
   });
+
+  // Regression guard for a review finding on this task: `styles.btnSecondary`
+  // had no `minHeight`, unlike `styles.btnPrimary` (which sets `minHeight: 44`
+  // right alongside the same `paddingVertical: 12`) — so its rendered/tappable
+  // height sat a few points under the 44pt floor docs/rules/react-native.md
+  // requires unconditionally. That was a latent defect on the low-traffic
+  // step2/step3 screen-reader-only "Edit values" buttons; this task makes
+  // `btnSecondary` the SOLE route to the barcode-only escape hatch on
+  // `barcode_lock` — the highest-traffic phase in the app — which is what
+  // makes the gap load-bearing rather than cosmetic. Asserts the real
+  // rendered style, not the source object, so it can't pass on a `styles`
+  // literal that never reaches the DOM.
+  it("gives the secondary (barcode-only escape hatch) button a 44pt minimum touch target", () => {
+    render(<ProductChip phase={barcodeLock} {...handlers} />);
+    const secondaryButton = screen
+      .getByText("Use database data anyway")
+      .closest("button")!;
+    expect(getComputedStyle(secondaryButton).minHeight).toBe("44px");
+  });
 });
 
 describe("ProductChip — step2_review / step3_review auto-advance treatment", () => {
