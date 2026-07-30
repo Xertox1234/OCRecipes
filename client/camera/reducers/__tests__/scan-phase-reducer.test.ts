@@ -393,4 +393,92 @@ describe("scanPhaseReducer", () => {
       frameCount: 1,
     });
   });
+
+  // The primary CTA in BARCODE_LOCKED used to dispatch CONFIRM_PRODUCT, which
+  // ends the session — so "Looks right →" was the SKIP button and steps 2/3
+  // never ran. PROCEED_TO_LABEL is the advance that button needs.
+  it("PROCEED_TO_LABEL transitions BARCODE_LOCKED → LABEL_PROMPTED, carrying the product", () => {
+    const state: ScanPhase = {
+      type: "BARCODE_LOCKED",
+      barcode: "06772408",
+      bounds: BOUNDS,
+      product: { name: "Cherry Coke", brand: "Coca-Cola" },
+    };
+
+    expect(scanPhaseReducer(state, { type: "PROCEED_TO_LABEL" })).toEqual({
+      type: "LABEL_PROMPTED",
+      barcode: "06772408",
+      product: { name: "Cherry Coke", brand: "Coca-Cola" },
+    });
+  });
+
+  it("PROCEED_TO_LABEL is a no-op from any phase other than BARCODE_LOCKED", () => {
+    const hunting: ScanPhase = { type: "HUNTING" };
+    expect(scanPhaseReducer(hunting, { type: "PROCEED_TO_LABEL" })).toBe(
+      hunting,
+    );
+
+    const step2: ScanPhase = {
+      type: "STEP2_REVIEWING",
+      barcode: "123",
+      imageUri: "file://a.jpg",
+      ocrText: "Calories 140",
+    };
+    expect(scanPhaseReducer(step2, { type: "PROCEED_TO_LABEL" })).toBe(step2);
+  });
+
+  it("STEP_PHOTO_CAPTURED from LABEL_PROMPTED → STEP2_REVIEWING with normalized ocrText", () => {
+    const state: ScanPhase = {
+      type: "LABEL_PROMPTED",
+      barcode: "06772408",
+      product: { name: "Cherry Coke" },
+    };
+
+    const result = scanPhaseReducer(state, {
+      type: "STEP_PHOTO_CAPTURED",
+      imageUri: "file://panel.jpg",
+      ocrText: "  Calories 140  ",
+    });
+
+    expect(result).toEqual({
+      type: "STEP2_REVIEWING",
+      barcode: "06772408",
+      product: { name: "Cherry Coke" },
+      imageUri: "file://panel.jpg",
+      ocrText: "Calories 140",
+    });
+  });
+
+  it("an unreadable capture from LABEL_PROMPTED still yields ocrText null, not empty string", () => {
+    const state: ScanPhase = {
+      type: "LABEL_PROMPTED",
+      barcode: "06772408",
+    };
+
+    const result = scanPhaseReducer(state, {
+      type: "STEP_PHOTO_CAPTURED",
+      imageUri: "file://blurry.jpg",
+      ocrText: "   \n ",
+    });
+
+    expect(result).toMatchObject({ type: "STEP2_REVIEWING", ocrText: null });
+  });
+
+  // REGRESSION GUARD. The barcode-only escape hatch must survive this change —
+  // a user may be offline, holding a damaged label, or navigating by screen
+  // reader. CONFIRM_PRODUCT from BARCODE_LOCKED keeps its exact old behavior;
+  // it just stops being wired to the PRIMARY button.
+  it("CONFIRM_PRODUCT from BARCODE_LOCKED still ends the session (barcode-only path preserved)", () => {
+    const state: ScanPhase = {
+      type: "BARCODE_LOCKED",
+      barcode: "06772408",
+      bounds: BOUNDS,
+      product: { name: "Cherry Coke" },
+    };
+
+    expect(scanPhaseReducer(state, { type: "CONFIRM_PRODUCT" })).toEqual({
+      type: "SESSION_COMPLETE",
+      barcode: "06772408",
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import type { BarcodeResult } from "../types";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import type { ScanFlag } from "@shared/types/scan-flags";
+import type { VerificationLevel } from "@shared/types/verification";
 
 export interface ProductSummary {
   name: string;
@@ -19,6 +20,14 @@ export interface ProductSummary {
    * its own locally-computed `pickTopSafetyFlag` result, not this field.
    */
   topFlag?: ScanFlag;
+  /**
+   * Server-reported verification state for this barcode, from
+   * `GET /api/nutrition/barcode/:barcode`. OPTIONAL on purpose: the chip
+   * renders before the product fetch resolves (see ProductChip's note that the
+   * name can arrive after the chip is shown), so `undefined` means "not loaded
+   * yet" and callers must treat it as unverified — never as verified.
+   */
+  verificationLevel?: VerificationLevel;
 }
 
 type Bounds = NonNullable<BarcodeResult["bounds"]>;
@@ -36,6 +45,21 @@ export type ScanPhase =
       type: "BARCODE_LOCKED";
       barcode: string;
       bounds: Bounds;
+      product?: ProductSummary;
+    }
+  | {
+      /**
+       * The user confirmed the scanned product and asked to photograph its
+       * nutrition panel. The chip is collapsed and the camera is live; the
+       * NEXT capture completes step 2.
+       *
+       * This phase exists because taking a photo in BARCODE_LOCKED *is* the
+       * advance to step 2 — there was no action representing "I want to do
+       * step 2", so step 1's primary button had to be wired to
+       * CONFIRM_PRODUCT, which ends the session instead.
+       */
+      type: "LABEL_PROMPTED";
+      barcode: string;
       product?: ProductSummary;
     }
   | {
@@ -102,6 +126,7 @@ export type ScanAction =
   | { type: "PRODUCT_LOADED"; product: ProductSummary }
   | { type: "BARCODE_LOST" }
   | { type: "CONFIRM_PRODUCT" }
+  | { type: "PROCEED_TO_LABEL" }
   | { type: "STEP_PHOTO_CAPTURED"; imageUri: string; ocrText?: string }
   | { type: "STEP_CONFIRMED" }
   | { type: "SMART_PHOTO_INITIATED"; imageUri: string }

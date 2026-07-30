@@ -78,8 +78,19 @@ export function scanPhaseReducer(
       }
       return state;
 
+    case "PROCEED_TO_LABEL":
+      if (state.type !== "BARCODE_LOCKED") return state;
+      return {
+        type: "LABEL_PROMPTED",
+        barcode: state.barcode,
+        product: state.product,
+      };
+
     case "STEP_PHOTO_CAPTURED":
-      if (state.type === "BARCODE_LOCKED") {
+      // LABEL_PROMPTED is the normal route here now; BARCODE_LOCKED is retained
+      // so a capture taken before the chip's primary button is pressed still
+      // completes step 2 rather than being silently dropped.
+      if (state.type === "BARCODE_LOCKED" || state.type === "LABEL_PROMPTED") {
         return {
           type: "STEP2_REVIEWING",
           barcode: state.barcode,
