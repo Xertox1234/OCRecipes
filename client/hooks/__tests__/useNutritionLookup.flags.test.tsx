@@ -5,14 +5,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
-const { mockGoBack, mockReset, mockApiRequest } = vi.hoisted(() => ({
+const { mockGoBack, mockReset, mockPopTo, mockApiRequest } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
   mockReset: vi.fn(),
+  mockPopTo: vi.fn(),
   mockApiRequest: vi.fn(),
 }));
 
+// `popTo` is stubbed even though nothing in this file exercises `handleAddToLog`
+// today. The hook's log-success path calls `navigation.popTo(...)`, so the first
+// success-path assertion added here would otherwise die with an opaque
+// "popTo is not a function" TypeError instead of a meaningful failure.
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack, reset: mockReset }),
+  useNavigation: () => ({
+    goBack: mockGoBack,
+    reset: mockReset,
+    popTo: mockPopTo,
+  }),
 }));
 
 vi.mock("@/context/AuthContext", () => ({
