@@ -9,17 +9,27 @@
 // (each gated on `!itemId` or a non-empty array) stay out of the render
 // tree — only the Additional Nutrients card is exercised.
 import React from "react";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import NutritionDetailScreen from "../NutritionDetailScreen";
 
-const { mockUseNutritionLookup } = vi.hoisted(() => ({
+/** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
+ * `itemId`); every other suite relies on the `itemId` default below. */
+const { mockUseNutritionLookup, mockRoute } = vi.hoisted(() => ({
   mockUseNutritionLookup: vi.fn(),
+  mockRoute: { params: { itemId: 42 } as Record<string, unknown> },
 }));
+
+const ITEM_ID_ROUTE_PARAMS: Record<string, unknown> = { itemId: 42 };
+
+afterEach(() => {
+  mockRoute.params = ITEM_ID_ROUTE_PARAMS;
+});
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
-  useRoute: () => ({ params: { itemId: 42 } }),
+  useRoute: () => mockRoute,
 }));
 
 vi.mock("@/hooks/useNutritionLookup", () => ({
@@ -262,5 +272,60 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
       "6 nutrition flags: Flag 0, Flag 1, Flag 2, Flag 3, Flag 4, Flag 5",
     );
     expect(badgeGroup).toBeTruthy();
+  });
+});
+
+/**
+ * The log gate at the layer that actually gates (Task 6, D3 fix).
+ *
+ * `deriveLogGate`'s own tests prove the decision, and the hook tests prove
+ * `logGate` is exposed — but neither can fail if the screen wires the two
+ * branches of the button ternary the wrong way round. The property the fix
+ * exists to deliver is that "Add to Today" is NOT reachable in one tap while
+ * gated, and that only holds at this layer.
+ *
+ * These use a scan-flow route (`barcode`, no `itemId`), which is the only route
+ * shape where the log button renders at all.
+ */
+describe("NutritionDetailScreen — log gate (Task 6)", () => {
+  const GATED = {
+    kind: "needsAcknowledgement",
+    buttonLabel: "Review values before logging",
+  };
+
+  function renderScanRoute(logGate: Record<string, unknown>) {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ calories: 39 }),
+      logGate,
+    });
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  it("replaces the one-tap log button with the acknowledgement button while gated", () => {
+    const { queryByText } = renderScanRoute(GATED);
+
+    expect(queryByText("Review values before logging")).toBeTruthy();
+    // The load-bearing half: the wrong calorie count must not be one tap away.
+    expect(queryByText("Add to Today")).toBeNull();
+  });
+
+  it("reveals the log button only after the acknowledgement is given", () => {
+    const { queryByText, getByText } = renderScanRoute(GATED);
+
+    fireEvent.click(getByText("Review values before logging"));
+
+    expect(queryByText("Add to Today")).toBeTruthy();
+    expect(queryByText("Review values before logging")).toBeNull();
+  });
+
+  // Negative control for the two tests above: an open gate must NOT show the
+  // acknowledgement step, or the gate would fire on the barcode-only happy path
+  // and train users to tap through it.
+  it("shows the log button directly when the gate is open", () => {
+    const { queryByText } = renderScanRoute({ kind: "open" });
+
+    expect(queryByText("Add to Today")).toBeTruthy();
+    expect(queryByText("Review values before logging")).toBeNull();
   });
 });
