@@ -349,12 +349,12 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
      * and all three return the plain body, indistinguishable from agreement
      * unless it says so.
      *
-     * `SERVING_SIZE_PATTERN` captures to end-of-line, so an OCR line-break
-     * between "Serving Size 1 Can" and "(355 mL)" yields `servingSize: "1 Can"`.
-     * The client's readiness gate only requires a non-empty string, so it POSTs
-     * happily; `parseServingGrams("1 Can")` then finds no g/ml token and the
-     * server declines. On the ~3.8x-wrong Cherry Coke record that means 39 kcal
-     * on screen with the label silently discarded.
+     * The fixture is deliberately label-READY (its serving parses to 355), so
+     * the only thing standing between the user and the ~3.8x-wrong Cherry Coke
+     * record is `labelCompared: false`. The server has several ways to reach
+     * that on a ready label — no comparable per-100g counterpart, the
+     * implausible-serving bound, the >4x serving cross-check, or fewer than two
+     * comparable fields — and every one returns the plain body.
      */
     it("gates a label the server declined to compare, despite the 200", async () => {
       mockServerFetch.mockResolvedValue({
@@ -363,7 +363,7 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
       });
 
       const { result } = render(
-        "Serving Size 1 Can\nCalories 140\nTotal Sugars 42g",
+        "Serving Size 1 Can (355 mL)\nCalories 140\nTotal Sugars 42g",
       );
 
       await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -372,6 +372,35 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
       // this notice instead. So no warning fires on this path either, leaving the
       // gate as the only protection.
       expect(result.current.labelReadNotice).toBeNull();
+      expect(result.current.logGate).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+      });
+    });
+
+    /**
+     * The counterpart the fixture above used to cover by accident.
+     *
+     * `SERVING_SIZE_PATTERN` captures to end-of-line, so an OCR line-break
+     * between "Serving Size 1 Can" and "(355 mL)" yields `servingSize: "1 Can"` —
+     * captured, non-null, and useless. The client gate once accepted that
+     * (non-empty string), skipped the notice, POSTed, and let the server refuse
+     * on `parseServingGrams`, leaving the user with database values and NOTHING
+     * saying the label had been dropped.
+     *
+     * `isLabelReady` now requires the serving to parse, matching the server, so
+     * the divergence is closed at its source and the user is told up front.
+     */
+    it("warns up front when the serving was captured but does not parse", async () => {
+      const { result } = render(
+        "Serving Size 1 Can\nCalories 140\nTotal Sugars 42g",
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.labelReadNotice).toBeTruthy();
+      expect(result.current.labelReadNotice).toMatch(/product database/i);
+      // Still gated — the notice explains, it does not excuse.
       expect(result.current.logGate).toEqual({
         kind: "needsAcknowledgement",
         buttonLabel: "Review values before logging",

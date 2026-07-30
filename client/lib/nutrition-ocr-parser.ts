@@ -3,6 +3,7 @@
  * Designed for US nutrition labels in English. Uses line-by-line regex matching
  * with common OCR misread correction.
  */
+import { parseLabelServingGrams } from "@shared/lib/label-serving";
 
 export interface LocalNutritionData {
   calories: number | null;
@@ -122,11 +123,23 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   // Extract serving size (free-form text, not numeric). Prefer the US
   // "Serving Size" label; fall back to the Canadian "Per X mL" form only when
   // that capture contains a g/ml token (see SERVING_PER_PATTERN).
-  const servingMatch =
-    text.match(SERVING_SIZE_PATTERN) ?? text.match(SERVING_PER_PATTERN);
-  if (servingMatch) {
-    result.servingSize = servingMatch[1].trim().slice(0, 100);
-  }
+  // Both forms can appear on one panel — a US "Serving size" line AND a
+  // Canadian "Per ..." line. Taking the first that MATCHES loses the label
+  // when that one happens not to carry a metric figure: "Serving size 1 can"
+  // wins over "Per 1 can (355 mL)", parses to nothing, and `isLabelReady` now
+  // hard-requires a parseable serving, so the whole label is dropped. Prefer
+  // whichever candidate actually parses, and fall back to the first captured
+  // string so `servingSize` still carries raw text for display.
+  const servingCandidates = [
+    text.match(SERVING_SIZE_PATTERN)?.[1],
+    text.match(SERVING_PER_PATTERN)?.[1],
+  ]
+    .filter((c): c is string => c != null)
+    .map((c) => c.trim().slice(0, 100));
+  const parseable = servingCandidates.find(
+    (c) => parseLabelServingGrams(c) != null,
+  );
+  result.servingSize = parseable ?? servingCandidates[0] ?? null;
 
   // Extract numeric fields
   let extracted = 0;
@@ -144,4 +157,49 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   result.confidence = extracted / TOTAL_FIELDS;
 
   return result;
+}
+
+/**
+ * Decides whether a parsed nutrition label is usable as the source of truth.
+ *
+ * Product rule (user decision, 2026-07-30): **when a nutrition label is present
+ * it is the source of truth** — its serving size and calories are adopted over
+ * the product database record. So this gate asks for exactly those two:
+ *
+ * - `calories` — the value being adopted.
+ * - `servingSize` — what that value is *per*. Without it there is nothing to
+ *   scale by, and the calorie figure would be silently presented as whatever
+ *   serving the database assumed. That is the bug this rule exists to fix, so
+ *   adopting calories without a serving would just relocate it.
+ *
+ * It deliberately does NOT also require a sugars-or-fat reading. That looked
+ * like cheap corroboration, but the two are not independent: the recogniser's
+ * `g` -> `9` substitution breaks the sugars and fat patterns *together*, so one
+ * glitch took out both and discarded labels whose calories and serving were
+ * perfect. Device-observed on a Cherry Coke can (barcode 06772408) on
+ * 2026-07-30 — the screen fell back to the database's per-100 mL figure and
+ * showed 39 kcal for a 140 kcal can. The verbatim capture is in the tests.
+ *
+ * A field that failed to parse is treated as ABSENT, not as evidence the label
+ * is wrong: `null` here means "we did not read this", never "the label is
+ * untrustworthy".
+ */
+export function isLabelReady(
+  parsed: LocalNutritionData | null | undefined,
+): boolean {
+  if (parsed == null || parsed.calories == null) return false;
+  // Not merely "a serving string was captured" — it must PARSE to grams/ml.
+  // `isLabelReady` also suppresses the "we couldn't use that label" notice, so
+  // a label this accepts and the server then refuses reaches the user as
+  // database values with NO indication the label was dropped — a server
+  // refusal returns the same body shape as agreement. A US label reading
+  // `Serving Size 1 can`, with no gram/ml figure, is the live case: captured
+  // fine, parses to nothing.
+  //
+  // Shares `parseLabelServingGrams` with the server's `buildLabelConflict`
+  // rather than each side calling its own parser — they previously used two
+  // different implementations that disagreed on real inputs (`"355"` -> 355
+  // here, `null` there), which is precisely how a label could pass this gate
+  // and be refused downstream.
+  return parseLabelServingGrams(parsed.servingSize) != null;
 }

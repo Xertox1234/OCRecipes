@@ -1,5 +1,6 @@
 import type { BarcodeLookupResult, BarcodePer100g } from "./barcode-lookup";
-import { parseServingGrams, scaleNutrients } from "./barcode-lookup";
+import { scaleNutrients } from "./barcode-lookup";
+import { parseLabelServingGrams } from "@shared/lib/label-serving";
 import { valuesMatch } from "../lib/verification-consensus";
 
 export interface LabelNutritionInput {
@@ -17,9 +18,16 @@ export interface LabelConflict {
   fields: ConflictField[];
   labelResult?: BarcodeLookupResult;
   /**
-   * Whether the label was actually compared against the record — i.e. at least
-   * one field had both a label reading and a DB per-100g counterpart, and the
-   * comparison ran.
+   * Whether the label was actually compared against the record.
+   *
+   * On the AGREEMENT path this requires at least TWO fields to have had both a
+   * label reading and a DB per-100g counterpart. `compared` drives the client's
+   * `labelUsed`, which opens one-tap logging on the claim that the values on
+   * screen were checked against the package — and a calories-only label makes
+   * exactly one field comparable, so a single agreement would verify one number
+   * while the user logs sugar, fat, protein and sodium that were never checked.
+   * On the CONFLICT path one field is enough, because the label's values replace
+   * the ones they disagree with.
    *
    * `conflict: false` alone cannot tell agreement from refusal: this function
    * declines on an unparseable serving, an implausible serving, or a record with
@@ -57,17 +65,42 @@ export function buildLabelConflict(
   // Every early return below is a REFUSAL to compare, so they all carry
   // `compared: false`. Only the two exits past the comparison loop can claim
   // otherwise.
-  const none: LabelConflict = { conflict: false, fields: [], compared: false };
+  const none: LabelConflict = {
+    conflict: false,
+    fields: [],
+    compared: false,
+  };
 
-  // Presence gate: need calories + at least one comparable macro.
-  const hasCalories = label.calories != null;
-  const hasMacro = label.totalSugars != null || label.totalFat != null;
-  if (!hasCalories || !hasMacro) return none;
+  // Presence gate: the label is the source of truth when present, so its
+  // calories are what gets adopted — that is the only reading required here.
+  // The serving check immediately below is the other half: without a parseable
+  // serving there is nothing to scale by, and adopting a calorie figure would
+  // silently present it as whatever serving the DB assumed.
+  //
+  // A sugars-or-fat reading used to be required as well. It looked like cheap
+  // corroboration, but the two are not independent: the recogniser's `g` -> `9`
+  // substitution breaks the sugars and fat patterns *together*, so a single
+  // glitch took out both. Device-observed on a Cherry Coke can (06772408),
+  // 2026-07-30 — `Calories 140` and `Per 1 can (355 mL)` read perfectly while
+  // `Sugars Sucres 39 9` and `Fat / Ipldes 0 9` both failed; the label was
+  // discarded and the screen showed the database's per-100 ml value, 39 kcal
+  // for a 140 kcal can.
+  //
+  // Mirrors `isLabelReady` in client/lib/nutrition-ocr-parser.ts. The two gates
+  // must agree: if the client sends a label this refuses, the refusal returns
+  // the same body shape as agreement and the user sees database values with no
+  // indication the label was dropped.
+  if (label.calories == null) return none;
 
   // Comparable only if the label serving parses to grams/ml.
-  const labelGrams = label.servingSize
-    ? parseServingGrams(label.servingSize)
-    : null;
+  //
+  // Shares `parseLabelServingGrams` with the client's `isLabelReady` rather
+  // than using barcode-lookup's parser, which the client had no access to.
+  // The two gates previously ran different implementations that disagreed on
+  // real inputs — `"355"` (an OCR line break splitting "355 mL") parsed here
+  // as null but passed the client gate, so the label was POSTed, refused, and
+  // the user saw database values with nothing saying the label was dropped.
+  const labelGrams = parseLabelServingGrams(label.servingSize);
   if (
     labelGrams == null ||
     labelGrams <= 0 ||
@@ -130,7 +163,28 @@ export function buildLabelConflict(
     // No disagreement. `compared` distinguishes a genuine agreement (the record
     // is corroborated by the package) from a record that simply had no per-100g
     // counterpart for anything the label read (nothing was verified).
-    return { conflict: false, fields: [], compared: comparedCount > 0 };
+    //
+    // TWO fields, not one. `compared` drives the client's `labelUsed`, which
+    // opens the one-tap log gate on the claim that the values ON SCREEN were
+    // checked against the package. A calories-only label makes exactly one
+    // field comparable, so agreement there verifies a single number while the
+    // user logs sugar, fat, protein and sodium that were never checked against
+    // anything.
+    //
+    // Note this is a genuine tightening, not merely a restoration: comparability
+    // needs a DB per-100g counterpart too, so a record carrying
+    // `energy-kcal_100g` but no `sugars_100g`/`fat_100g` reached
+    // `comparedCount === 1` under the old presence gate as well, and was treated
+    // as verified. It now costs one extra tap — the direction this codebase
+    // already calls safe.
+    //
+    // The CONFLICT path below is deliberately unaffected: it replaces the values
+    // it disagrees with, so what is displayed did come from the label.
+    return {
+      conflict: false,
+      fields: [],
+      compared: comparedCount >= 2,
+    };
   }
 
   // Build the label-corrected result: mark serving trusted so
@@ -144,10 +198,27 @@ export function buildLabelConflict(
   // enrichment (NOVA/Nutri-Score/category tags) — caffeine is a spec-acknowledged
   // separate limitation and doesn't participate in a macro sub-relationship, and
   // the "Contains caffeine" flag is category-derived, not numeric.
+  //
+  // This branch is only reachable when the label MATERIALLY disagrees with the
+  // record, so the record's per-100 basis is demonstrably wrong — which makes
+  // its other macros the values there is most reason to distrust. Retaining
+  // them would put an impossible combination on screen (on a real Cherry Coke
+  // record: 140 kcal alongside ~11 g of sugar for a can that has 39, in a
+  // fat-free, protein-free drink) and would still not raise the high-sugar
+  // warning, since the retained value is ~3.5x too low. So they stay blanked.
+  //
+  // The cost of blanking is that `evaluateUniversalFlags` then sees `undefined`
+  // for every nutrient and emits nothing, rendering identically to a genuinely
+  // clean product. The ROUTE is what keeps those apart: it holds both response
+  // bodies, so it can diff their flags and raise `nutrient-unavailable` for
+  // warnings that were actually lost. Deliberately not decided here — this
+  // module has no access to the flag thresholds, and guessing from value
+  // presence fires on records whose sodium is 0 or nowhere near the FSA line.
   const mergedPer100g: BarcodePer100g = {
     ...per100, // calories/sugar/fat/saturatedFat that the label actually read
     caffeine: dbResult.per100g.caffeine,
   };
+
   const labelResult: BarcodeLookupResult = {
     ...dbResult,
     per100g: mergedPer100g,

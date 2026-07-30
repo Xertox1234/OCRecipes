@@ -18,6 +18,7 @@ import {
 } from "../services/scan-flags";
 import { evaluateUniversalFlags } from "../services/universal-flags";
 import { buildLabelConflict } from "../services/label-override";
+import { createNutrientUnavailableFlag } from "@shared/types/scan-flags";
 import { parseUserAllergies } from "@shared/constants/allergens";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
 import { numericStringField } from "./_schemas";
@@ -323,10 +324,43 @@ export function register(app: Express): void {
             profileOutcome,
             verification,
           );
+          // The label-corrected block deliberately drops macros whose per-100
+          // basis the calorie disagreement just proved wrong, so the universal
+          // flag recompute emits nothing for them. Say that out loud: otherwise
+          // a missing "High in sugar" is indistinguishable from a low-sugar
+          // product, on the very screen that tells the user to trust the label.
+          //
+          // Decided by DIFFING the two bodies, not by asking whether a value
+          // was dropped. Most records carry a sodium figure and the label input
+          // has no sodium field at all, so a value-presence test fires on
+          // essentially every scan — including records whose sodium is 0 or
+          // nowhere near the threshold, where no warning ever existed. Only a
+          // flag the record actually raised and the label body lost is a
+          // warning the user has genuinely stopped seeing.
+          const lostNutrientFlags = body.flags.filter(
+            (f) =>
+              f.kind === "nutrient" &&
+              !labelBody.flags.some(
+                (lf) => lf.kind === "nutrient" && lf.nutrient === f.nutrient,
+              ),
+          );
+          const labelFlags =
+            lostNutrientFlags.length > 0
+              ? [
+                  ...labelBody.flags,
+                  createNutrientUnavailableFlag(
+                    `Our record flagged ${lostNutrientFlags
+                      .map((f) => f.title.toLowerCase())
+                      .join(
+                        " and ",
+                      )}, but its values didn't match the label, so they aren't shown for this scan.`,
+                  ),
+                ]
+              : labelBody.flags;
           res.json({
             ...body,
             labelCompared: compared,
-            conflict: { fields, label: labelBody },
+            conflict: { fields, label: { ...labelBody, flags: labelFlags } },
           });
           return;
         }

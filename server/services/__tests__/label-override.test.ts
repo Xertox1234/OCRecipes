@@ -70,20 +70,151 @@ it("no conflict (not comparable) when the label serving is unparseable", () => {
   expect(r.labelResult).toBeUndefined();
 });
 
-it("presence gate: no conflict when calories or all macros are unread", () => {
+it("presence gate: declines when calories are unread — nothing to adopt", () => {
   const noCals = buildLabelConflict(cherryCokeDb(), {
     ...goodLabel,
     calories: null,
   });
   expect(noCals.conflict).toBe(false);
-  const noMacros = buildLabelConflict(cherryCokeDb(), {
-    calories: 150,
+  expect(noCals.compared).toBe(false);
+});
+
+/**
+ * The label is the source of truth when present: its serving size and calories
+ * are adopted over the database record (user decision, 2026-07-30). So calories
+ * plus a parseable serving is sufficient — a sugars-or-fat reading is NOT also
+ * required.
+ *
+ * This is the real device shape. A Cherry Coke can (06772408) OCR'd
+ * `Calories 140` and `Per 1 can (355 mL)` cleanly while every macro failed,
+ * because the recogniser reads `g` as `9` (`Sugars Sucres 39 9`,
+ * `Fat / Ipldes 0 9`) — one glitch takes out sugars and fat together, so
+ * "either one" was never the independent corroboration it looked like. Under
+ * the old gate this label was discarded and the screen showed the database's
+ * per-100 ml figure: 39 kcal for a 140 kcal can.
+ */
+it("compares a calories-only label — the device Cherry Coke shape", () => {
+  const caloriesOnly: LabelNutritionInput = {
+    calories: 140,
     totalSugars: null,
     totalFat: null,
     saturatedFat: null,
-    servingSize: "355 mL",
+    servingSize: "1 can (355 mL)",
+  };
+  const r = buildLabelConflict(cherryCokeDb(), caloriesOnly);
+
+  // It must actually COMPARE — `compared` is what drives the client's
+  // `labelUsed`, and a refusal here is indistinguishable from agreement.
+  expect(r.compared).toBe(true);
+  // 140 kcal / 355 ml = 39.4 per-100 vs the DB's 11.11 — a real conflict.
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toContain("calories");
+  // And the corrected result carries the LABEL's serving and exact calories.
+  expect(r.labelResult).toBeDefined();
+  expect(r.labelResult!.servingInfo.grams).toBe(355);
+  expect(r.labelResult!.perServing.calories).toBe(140);
+});
+
+/**
+ * Blanking the un-read macros is right when the label supplied COMPETING
+ * values — that is evidence the record is mis-scaled, and inheriting its other
+ * macros would create impossible relationships (sugar > carbs).
+ *
+ * It is wrong when the label read no macros at all. There is no evidence
+ * against the record's other nutrients, and blanking them means the route's
+ * `evaluateUniversalFlags` recompute sees `undefined` everywhere and emits NO
+ * nutrient warnings — so "High in sugar" silently disappears at the exact
+ * moment the UI tells the user to trust the label.
+ */
+it("blanks the un-read nutrients rather than inheriting a disproven basis", () => {
+  // The UNMODIFIED fixture: a record mis-scaled on a per-355 ml basis
+  // (calories 11.11, sugar 3.09 per-100). This branch is only reachable
+  // BECAUSE the label's calories disagree by >25%, which is exactly what
+  // proves that basis wrong — so its sugar is untrustworthy too and must not
+  // be shown. Retaining it would put 140 kcal beside ~11 g of sugar for a can
+  // that has 39, in a fat-free, protein-free drink.
+  const r = buildLabelConflict(cherryCokeDb(), {
+    calories: 140,
+    totalSugars: null,
+    totalFat: null,
+    saturatedFat: null,
+    servingSize: "1 can (355 mL)",
   });
-  expect(noMacros.conflict).toBe(false);
+
+  expect(r.labelResult).toBeDefined();
+  // The label's calories win.
+  expect(r.labelResult!.perServing.calories).toBe(140);
+  // The record's sugar is dropped, not inherited at a basis we just disproved.
+  //
+  // Whether that silence gets ANNOUNCED is the route's call, not this module's:
+  // it holds both response bodies and can diff their flags, so it raises
+  // `nutrient-unavailable` only for a warning the record actually made and the
+  // label body lost. Deciding here from value presence would fire on nearly
+  // every scan, since most records carry a sodium figure — including 0 — and
+  // `LabelNutritionInput` has no sodium field at all.
+  expect(r.labelResult!.per100g.sugar).toBeUndefined();
+  expect(r.labelResult!.per100g.sodium).toBeUndefined();
+});
+
+it("keeps the nutrients the label DID supply", () => {
+  // goodLabel reads sugar and fat, so the corrected block carries real values
+  // and the universal-flag recompute has something to work with.
+  const db = cherryCokeDb();
+  db.per100g = { calories: 11.11, sugar: 3.09, fat: 0 };
+  const r = buildLabelConflict(db, goodLabel);
+  expect(r.conflict).toBe(true);
+  // 39 g per 355 ml = ~11 per-100, from the LABEL rather than the record.
+  expect(r.labelResult!.per100g.sugar).toBeCloseTo(11, 0);
+});
+
+/**
+ * `compared` drives the client's `labelUsed`, which opens the one-tap log gate
+ * on the claim that the values on screen were checked against the package. With
+ * a calories-only label exactly ONE field is comparable, so agreement there
+ * verifies one number while the user logs sugar, fat, protein and sodium that
+ * were never checked. Require two.
+ *
+ * The CONFLICT path is unaffected: it replaces the values it disagrees with, so
+ * what is displayed really did come from the label.
+ */
+it("agreement on calories alone does not claim the label was verified", () => {
+  const db = cherryCokeDb();
+  // Make the DB agree with the label on calories (140 / 355 ml = 39.4 per-100).
+  db.per100g = { calories: 39.4, sugar: 11, fat: 0 };
+  const r = buildLabelConflict(db, {
+    calories: 140,
+    totalSugars: null,
+    totalFat: null,
+    saturatedFat: null,
+    servingSize: "1 can (355 mL)",
+  });
+
+  expect(r.conflict).toBe(false);
+  // Only one field was comparable — not enough to claim the record is verified.
+  expect(r.compared).toBe(false);
+});
+
+it("agreement on two or more fields still claims verification", () => {
+  const db = cherryCokeDb();
+  db.per100g = { calories: 42, sugar: 11, fat: 0 };
+  db.perServing = { calories: 149, sugar: 39, fat: 0 };
+  const r = buildLabelConflict(db, goodLabel);
+  expect(r.conflict).toBe(false);
+  expect(r.compared).toBe(true);
+});
+
+it("still declines a calories-only label whose serving cannot be parsed", () => {
+  // No grams/ml token: there is nothing to scale by, so adopting 140 would
+  // silently present it as whatever serving the DB assumed.
+  const r = buildLabelConflict(cherryCokeDb(), {
+    calories: 140,
+    totalSugars: null,
+    totalFat: null,
+    saturatedFat: null,
+    servingSize: "1 can",
+  });
+  expect(r.compared).toBe(false);
+  expect(r.conflict).toBe(false);
 });
 
 it("compares only fields the OCR read (sugar-only disagreement still conflicts)", () => {
