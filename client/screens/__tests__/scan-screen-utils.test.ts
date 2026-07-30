@@ -520,5 +520,31 @@ describe("scan-screen-utils", () => {
       expect(result.brand).toBeUndefined();
       expect(result.imageUri).toBeUndefined();
     });
+
+    // No safety-tier flag is present, so pickTopSafetyFlag(flags) must yield
+    // undefined — but pickTopDisplayFlag(flags) still surfaces the
+    // danger-severity nutrition flag via its non-safety fallback branch (see
+    // its doc comment in shared/types/scan-flags.ts). safetyFlag and topFlag
+    // land on different values here on purpose: if the two composition lines
+    // in buildProductSummary were ever swapped, both assertions below would
+    // fail (safetyFlag would come back defined, topFlag undefined).
+    it("composes topFlag and safetyFlag from the shared selectors, not interchangeably", () => {
+      const sugarFlag: ScanFlag = {
+        id: "nutrient:sugar",
+        kind: "nutrient",
+        severity: "danger",
+        tier: "nutrition",
+        title: "High sugar",
+        nutrient: "sugar",
+      };
+
+      const result = buildProductSummary(
+        { productName: "Soda" },
+        [sugarFlag],
+      );
+
+      expect(result.safetyFlag).toBeUndefined();
+      expect(result.topFlag).toEqual(sugarFlag);
+    });
   });
 });
