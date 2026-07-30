@@ -12,9 +12,9 @@ const { mockGoBack, mockApiRequest, mockTokenGet } = vi.hoisted(() => ({
 }));
 
 /**
- * Flips `tokenStorage.get` to reject. That is the ONE realistic failure that
- * throws BEFORE the hook sets `labelUsed` from `labelReady`, which is what makes
- * the stale-`labelUsed` regression test below discriminating. See its comment.
+ * Flips `tokenStorage.get` to reject, so the hook's whole server leg is skipped
+ * and the direct-OFF fallback supplies the numbers. Used by the stale-`labelUsed`
+ * regression test below to prove the per-lookup reset is load-bearing.
  */
 let failKeychainRead = false;
 
@@ -74,6 +74,34 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
   /** Proven `labelReady === true` by the happy-path test at the end of this file. */
   const READABLE_LABEL =
     "Nutrition Facts\nServing Size 1 can (355 mL)\nCalories 140\nTotal Fat 0g\nTotal Sugars 42g";
+
+  // The direct-Open-Food-Facts fallback's own payload shape — reached when the
+  // server leg fails. Same wrong-by-3.8x record, and the rawest source in the
+  // hook: it never sees the label at all, so nothing here is cross-validated.
+  const offFallbackRecord = {
+    status: 1,
+    product: {
+      product_name: "Cherry Coke",
+      brands: "Coca-Cola",
+      nutriments: {
+        "energy-kcal_100g": 11.11,
+        proteins_100g: 0,
+        carbohydrates_100g: 3.1,
+        fat_100g: 0,
+      },
+      serving_size: "355 ml",
+    },
+  };
+
+  /** Routes the server leg to `onServerLeg` and the OFF fallback to its record. */
+  const routeFetch = (onServerLeg: () => Promise<unknown>) => {
+    mockServerFetch.mockImplementation(async (input: unknown) => {
+      if (String(input).includes("openfoodfacts.org")) {
+        return { ok: true, json: async () => offFallbackRecord };
+      }
+      return onServerLeg();
+    });
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -171,23 +199,6 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
    * whole feature exists to stop, so it gets its own regression test.
    */
   describe("logGate across consecutive lookups on one screen instance", () => {
-    // The OFF fallback's own payload shape. Same wrong-by-3.8x record as the
-    // server's, reached directly because the server leg never ran.
-    const offFallbackRecord = {
-      status: 1,
-      product: {
-        product_name: "Cherry Coke",
-        brands: "Coca-Cola",
-        nutriments: {
-          "energy-kcal_100g": 11.11,
-          proteins_100g: 0,
-          carbohydrates_100g: 3.1,
-          fat_100g: 0,
-        },
-        serving_size: "355 ml",
-      },
-    };
-
     it("re-gates a retaken label that could not be read, after one that was used", async () => {
       const { wrapper } = createQueryWrapper();
       const { result, rerender } = renderHook(
@@ -206,11 +217,10 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
       // also fails, so the whole server leg is skipped and the direct-OFF
       // fallback supplies the numbers.
       //
-      // That combination is what makes this test discriminating: the hook assigns
-      // `labelUsed` from `labelReady` BEFORE it fetches, so every failure AFTER
-      // that point still clears the flag. A `tokenStorage.get` rejection is the
-      // one realistic failure that throws BEFORE it, leaving the per-lookup reset
-      // as the only thing that can clear the previous lookup's `true`.
+      // `labelUsed` is assigned only at the end of the successful server leg, so
+      // this lookup never reaches the assignment at all — the per-lookup reset is
+      // the only thing that can clear the previous lookup's `true`. Deleting that
+      // reset makes this test fail and nothing else.
       failKeychainRead = true;
       mockServerFetch.mockResolvedValue({
         ok: true,
@@ -229,6 +239,63 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
         kind: "needsAcknowledgement",
         buttonLabel: "Review values before logging",
       });
+    });
+  });
+
+  /**
+   * The label parsed cleanly, so nothing warns the user — `labelReadNotice` stays
+   * null by design. But the server leg then failed, so the numbers on screen came
+   * from the direct-OFF fallback, which never saw the label and cross-validated
+   * nothing. `labelUsed` must be false here or the gate opens on the rawest
+   * record in the hook while the user believes their photo was used.
+   */
+  describe("logGate when the label parsed but the server leg never answered", () => {
+    it("gates a readable label whose cross-validation failed outright", async () => {
+      routeFetch(async () => {
+        throw new Error("server unreachable");
+      });
+
+      const { result } = render(READABLE_LABEL);
+
+      await waitFor(() => expect(result.current.flags).toHaveLength(1));
+
+      // No notice fires: the label DID parse, so neither piece of
+      // unreadable-label copy applies. That is exactly why the gate has to close
+      // here — it is the only protection left on this path.
+      expect(result.current.labelReadNotice).toBeNull();
+      expect(result.current.logGate).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+      });
+    });
+
+    it("gates a readable label when the server 404s without notInDatabase", async () => {
+      // Falls past the notInDatabase early-return and on to the OFF fallback
+      // without ever throwing — a distinct control path from the rejection above.
+      routeFetch(async () => ({
+        ok: false,
+        status: 404,
+        json: async () => ({ error: "upstream lookup failed" }),
+      }));
+
+      const { result } = render(READABLE_LABEL);
+
+      await waitFor(() => expect(result.current.flags).toHaveLength(1));
+
+      expect(result.current.logGate).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+      });
+    });
+
+    // Positive control. The fix must not over-gate: when the server DOES answer,
+    // the label reached cross-validation and one-tap logging stays available.
+    it("stays open when the label parsed and the server answered", async () => {
+      const { result } = render(READABLE_LABEL);
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.logGate).toEqual({ kind: "open" });
     });
   });
 });

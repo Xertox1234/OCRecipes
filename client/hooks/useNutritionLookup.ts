@@ -103,9 +103,15 @@ export function useNutritionLookup(params: {
    */
   const [labelReadNotice, setLabelReadNotice] = useState<string | null>(null);
   /**
-   * True when a photographed label was parsed AND accepted by the readiness
-   * gate, i.e. the values on screen came from the package rather than the
-   * database. Drives `logGate`.
+   * True when a photographed label was parsed, accepted by the readiness gate,
+   * AND cross-validated by the server — i.e. the values on screen have been
+   * checked against the package, either because the label overrode the record or
+   * because the server confirmed the two agree.
+   *
+   * False on every path that falls back to database values the label never
+   * touched (server unreachable, non-`notInDatabase` 404, direct-OFF fallback,
+   * total outage). Assigned once, at the end of the successful server leg; the
+   * per-lookup reset below keeps every other path honest. Drives `logGate`.
    */
   const [labelUsed, setLabelUsed] = useState(false);
   const [showManualSearch, setShowManualSearch] = useState(false);
@@ -273,10 +279,11 @@ export function useNutritionLookup(params: {
       setFlags([]);
       setConflict(null);
       setLabelReadNotice(null);
-      // Must run BEFORE any early exit from the server leg below. `labelUsed`
-      // outlives a lookup, so a lookup that bails before reaching the
-      // `setLabelUsed(labelReady)` site would otherwise inherit the PREVIOUS
-      // product's `true` and `logGate` would report `open` for database numbers.
+      // `labelUsed` outlives a lookup, and it is assigned only at the end of the
+      // successful server leg below — so this reset is what every failing path
+      // relies on. Without it, a lookup that bails early inherits the PREVIOUS
+      // product's `true` and `logGate` reports `open` for database numbers.
+      // Fail-safe by construction: any future early exit is correct by default.
       setLabelUsed(false);
       setDbSnapshot(null);
       setActiveSource("database");
@@ -310,8 +317,6 @@ export function useNutritionLookup(params: {
                 : "We couldn't find nutrition values on that photo, so these come from the product database. Retake the nutrition panel to use the package instead.",
             );
           }
-
-          setLabelUsed(labelReady);
 
           const serverRes = labelReady
             ? await fetch(url, {
@@ -439,6 +444,21 @@ export function useNutritionLookup(params: {
               setServingSizeGrams(lbl.servingInfo.grams);
               setIsPer100g(labelIsPer100g);
             }
+
+            // Deliberately here — at the END of the successful server leg, not
+            // beside the `labelReady` computation above. `labelUsed` claims the
+            // values ON SCREEN were checked against the package, and only this
+            // branch makes that true: the server cross-validated the label we
+            // POSTed, so it either surfaced a conflict (label values shown) or
+            // agreed with the record (DB values corroborated by the package).
+            //
+            // Every other exit from this function lands on the direct-OFF
+            // fallback (or an error), which never sees the label at all — so they
+            // must keep the `false` from the per-lookup reset. Setting it earlier
+            // would claim cross-validation that never happened, and a
+            // server-unreachable scan would open the gate on the rawest,
+            // least-validated record in the hook.
+            setLabelUsed(labelReady);
 
             // Set verification level from barcode lookup response
             if (data.verificationLevel) {
