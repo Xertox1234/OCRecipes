@@ -813,37 +813,6 @@ export default function NutritionDetailScreen() {
           <View style={styles.verificationSection}>
             <VerificationBadge level={verificationLevel} />
 
-            {verificationLevel !== "verified" && (
-              <Pressable
-                onPress={() =>
-                  navigation.navigate("Scan", {
-                    mode: "label",
-                    verifyBarcode: barcode,
-                  })
-                }
-                accessibilityLabel="Verify nutrition data with a label photo"
-                accessibilityRole="button"
-                style={[
-                  styles.verifyPrompt,
-                  { backgroundColor: withOpacity(theme.info, 0.08) },
-                ]}
-              >
-                <Feather name="camera" size={18} color={theme.info} />
-                <View style={{ flex: 1 }}>
-                  <ThemedText
-                    type="body"
-                    style={{ color: theme.info, fontWeight: "600" }}
-                  >
-                    Help verify this product
-                  </ThemedText>
-                  <ThemedText type="small" style={{ color: theme.info }}>
-                    Scan the nutrition label to confirm data
-                  </ThemedText>
-                </View>
-                <Feather name="chevron-right" size={18} color={theme.info} />
-              </Pressable>
-            )}
-
             {/* Retroactive front-label CTA for verified products without front-label data */}
             {verificationLevel !== "unverified" && !hasFrontLabelData && (
               <Pressable

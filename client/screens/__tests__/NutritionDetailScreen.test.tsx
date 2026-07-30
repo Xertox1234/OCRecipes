@@ -414,4 +414,17 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
       announceSpy.mockRestore();
     }
   });
+
+  // D4 fix (Task 8): the CTA navigated to Scan with mode: "label" — asking
+  // for the nutrition-label photo that step 2 of the main flow already
+  // collects. Uses renderScanRoute (barcode route, no itemId) because the
+  // verification section only renders under `!itemId && barcode &&
+  // nutrition`; the default itemId route would keep this text out of the
+  // tree regardless of whether the CTA still existed, making the assertion
+  // vacuous.
+  it("does not render the obsolete Help verify this product CTA", () => {
+    const { queryByText } = renderScanRoute({ kind: "open" });
+
+    expect(queryByText("Help verify this product")).toBeNull();
+  });
 });
