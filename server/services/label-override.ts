@@ -146,7 +146,18 @@ export function buildLabelConflict(
     // No disagreement. `compared` distinguishes a genuine agreement (the record
     // is corroborated by the package) from a record that simply had no per-100g
     // counterpart for anything the label read (nothing was verified).
-    return { conflict: false, fields: [], compared: comparedCount > 0 };
+    //
+    // TWO fields, not one. `compared` drives the client's `labelUsed`, which
+    // opens the one-tap log gate on the claim that the values ON SCREEN were
+    // checked against the package. A calories-only label makes exactly one
+    // field comparable, so agreement there verifies a single number while the
+    // user logs sugar, fat, protein and sodium that were never checked against
+    // anything. Under the old presence gate at least two fields were always
+    // comparable, so this threshold preserves what that gate implicitly
+    // guaranteed. The CONFLICT path below is deliberately unaffected — it
+    // replaces the values it disagrees with, so what is displayed did come
+    // from the label.
+    return { conflict: false, fields: [], compared: comparedCount >= 2 };
   }
 
   // Build the label-corrected result: mark serving trusted so
@@ -160,10 +171,27 @@ export function buildLabelConflict(
   // enrichment (NOVA/Nutri-Score/category tags) — caffeine is a spec-acknowledged
   // separate limitation and doesn't participate in a macro sub-relationship, and
   // the "Contains caffeine" flag is category-derived, not numeric.
-  const mergedPer100g: BarcodePer100g = {
-    ...per100, // calories/sugar/fat/saturatedFat that the label actually read
-    caffeine: dbResult.per100g.caffeine,
-  };
+  //
+  // ...but ONLY when the label supplied competing macros. That is what makes
+  // the record demonstrably mis-scaled. When the label read calories alone
+  // there is no evidence against its other nutrients, and blanking them is
+  // actively harmful: the route rebuilds the response via
+  // `buildBarcodeResponseBody`, which re-runs `evaluateUniversalFlags`, and
+  // `nutrientFlag("sugar", undefined, ...)` emits nothing. The user would see
+  // the label's calories with every nutrient warning silently gone — "High in
+  // sugar", high sodium, high saturated fat — at the exact moment the UI tells
+  // them to trust the label. Keep the record's nutrients in that case and let
+  // the label's calories override on top.
+  const labelReadAnyMacro =
+    label.totalSugars != null ||
+    label.totalFat != null ||
+    label.saturatedFat != null;
+  const mergedPer100g: BarcodePer100g = labelReadAnyMacro
+    ? {
+        ...per100, // calories/sugar/fat/saturatedFat that the label actually read
+        caffeine: dbResult.per100g.caffeine,
+      }
+    : { ...dbResult.per100g, ...per100 };
   const labelResult: BarcodeLookupResult = {
     ...dbResult,
     per100g: mergedPer100g,
