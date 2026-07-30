@@ -4,6 +4,7 @@ export type ScanFlagKind =
   | "allergen"
   | "allergen-unavailable"
   | "nutrient"
+  | "nutrient-unavailable"
   | "processing"
   | "sweetener"
   | "nutriscore";
@@ -74,6 +75,35 @@ export function createAllergenUnavailableFlag(
     tier: "safety",
     title: options.title ?? "Couldn't verify allergens",
     detail: options.detail,
+  };
+}
+
+/**
+ * Raised when a result's nutrient values are unknown, so the ABSENCE of
+ * "High in sugar" / high sodium / high saturated fat cannot be read as their
+ * absence in the product.
+ *
+ * The live case: a photographed label supplies calories that materially
+ * disagree with the product record, so the record's per-100 basis is
+ * demonstrably wrong and its other macros are dropped rather than shown at a
+ * basis we know to be broken. `evaluateUniversalFlags` then sees `undefined`
+ * for every nutrient and emits nothing — which renders identically to a
+ * genuinely clean product. This flag is what keeps those two apart.
+ *
+ * Nutrition tier, not safety: it concerns nutrient warnings, not allergens.
+ * Deliberately mirrors `createAllergenUnavailableFlag` — this codebase already
+ * treats "we could not check" as something to say out loud, not to omit.
+ */
+export function createNutrientUnavailableFlag(detail?: string): ScanFlag {
+  return {
+    id: "nutrient-unavailable",
+    kind: "nutrient-unavailable",
+    severity: "warn",
+    tier: "nutrition",
+    title: "Nutrient details unavailable",
+    detail:
+      detail ??
+      "The label's calories didn't match our record, so its other nutrient values weren't used. Sugar, sodium and fat warnings can't be shown for this scan.",
   };
 }
 

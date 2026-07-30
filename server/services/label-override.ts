@@ -28,6 +28,17 @@ export interface LabelConflict {
    * — `false` means "we did not check", NOT "we checked and it was fine".
    */
   compared: boolean;
+  /**
+   * Whether `labelResult`'s macro block dropped a nutrient the record had a
+   * value for — so `evaluateUniversalFlags` cannot warn about it.
+   *
+   * Only meaningful alongside `labelResult`. The route turns this into a
+   * visible `nutrient-unavailable` flag: without it, "we blanked the values we
+   * could not trust" renders identically to "this product has nothing worth
+   * warning about", and a missing "High in sugar" is indistinguishable from a
+   * low-sugar product.
+   */
+  nutrientsUnknown: boolean;
 }
 
 /** Relative-difference threshold (25%) for calling a label-vs-DB macro a
@@ -57,7 +68,14 @@ export function buildLabelConflict(
   // Every early return below is a REFUSAL to compare, so they all carry
   // `compared: false`. Only the two exits past the comparison loop can claim
   // otherwise.
-  const none: LabelConflict = { conflict: false, fields: [], compared: false };
+  const none: LabelConflict = {
+    conflict: false,
+    fields: [],
+    compared: false,
+    // No labelResult is produced on a refusal, so nothing was blanked and the
+    // record's own flags reach the user untouched.
+    nutrientsUnknown: false,
+  };
 
   // Presence gate: the label is the source of truth when present, so its
   // calories are what gets adopted — that is the only reading required here.
@@ -152,12 +170,24 @@ export function buildLabelConflict(
     // checked against the package. A calories-only label makes exactly one
     // field comparable, so agreement there verifies a single number while the
     // user logs sugar, fat, protein and sodium that were never checked against
-    // anything. Under the old presence gate at least two fields were always
-    // comparable, so this threshold preserves what that gate implicitly
-    // guaranteed. The CONFLICT path below is deliberately unaffected — it
-    // replaces the values it disagrees with, so what is displayed did come
-    // from the label.
-    return { conflict: false, fields: [], compared: comparedCount >= 2 };
+    // anything.
+    //
+    // Note this is a genuine tightening, not merely a restoration: comparability
+    // needs a DB per-100g counterpart too, so a record carrying
+    // `energy-kcal_100g` but no `sugars_100g`/`fat_100g` reached
+    // `comparedCount === 1` under the old presence gate as well, and was treated
+    // as verified. It now costs one extra tap — the direction this codebase
+    // already calls safe.
+    //
+    // The CONFLICT path below is deliberately unaffected: it replaces the values
+    // it disagrees with, so what is displayed did come from the label.
+    return {
+      conflict: false,
+      fields: [],
+      compared: comparedCount >= 2,
+      // No labelResult on this path — the record's own values and flags stand.
+      nutrientsUnknown: false,
+    };
   }
 
   // Build the label-corrected result: mark serving trusted so
@@ -172,26 +202,31 @@ export function buildLabelConflict(
   // separate limitation and doesn't participate in a macro sub-relationship, and
   // the "Contains caffeine" flag is category-derived, not numeric.
   //
-  // ...but ONLY when the label supplied competing macros. That is what makes
-  // the record demonstrably mis-scaled. When the label read calories alone
-  // there is no evidence against its other nutrients, and blanking them is
-  // actively harmful: the route rebuilds the response via
-  // `buildBarcodeResponseBody`, which re-runs `evaluateUniversalFlags`, and
-  // `nutrientFlag("sugar", undefined, ...)` emits nothing. The user would see
-  // the label's calories with every nutrient warning silently gone — "High in
-  // sugar", high sodium, high saturated fat — at the exact moment the UI tells
-  // them to trust the label. Keep the record's nutrients in that case and let
-  // the label's calories override on top.
-  const labelReadAnyMacro =
-    label.totalSugars != null ||
-    label.totalFat != null ||
-    label.saturatedFat != null;
-  const mergedPer100g: BarcodePer100g = labelReadAnyMacro
-    ? {
-        ...per100, // calories/sugar/fat/saturatedFat that the label actually read
-        caffeine: dbResult.per100g.caffeine,
-      }
-    : { ...dbResult.per100g, ...per100 };
+  // This branch is only reachable when the label MATERIALLY disagrees with the
+  // record, so the record's per-100 basis is demonstrably wrong — which makes
+  // its other macros the values there is most reason to distrust. Retaining
+  // them would put an impossible combination on screen (on a real Cherry Coke
+  // record: 140 kcal alongside ~11 g of sugar for a can that has 39, in a
+  // fat-free, protein-free drink) and would still not raise the high-sugar
+  // warning, since the retained value is ~3.5x too low. So they stay blanked.
+  //
+  // The cost of blanking is that `evaluateUniversalFlags` then sees `undefined`
+  // for every nutrient and emits nothing, rendering identically to a genuinely
+  // clean product. `nutrientsUnknown` below is what keeps those apart — the
+  // route turns it into a visible flag rather than letting silence speak.
+  const mergedPer100g: BarcodePer100g = {
+    ...per100, // calories/sugar/fat/saturatedFat that the label actually read
+    caffeine: dbResult.per100g.caffeine,
+  };
+
+  // True when the corrected block dropped a nutrient the record had a value
+  // for, so the universal-flag recompute cannot warn about it. Sodium counts
+  // unconditionally: `LabelNutritionInput` has no sodium field, so a record's
+  // sodium warning always disappears on this path.
+  const nutrientsUnknown =
+    (dbResult.per100g.sugar != null && per100.sugar == null) ||
+    (dbResult.per100g.saturatedFat != null && per100.saturatedFat == null) ||
+    dbResult.per100g.sodium != null;
   const labelResult: BarcodeLookupResult = {
     ...dbResult,
     per100g: mergedPer100g,
@@ -205,5 +240,11 @@ export function buildLabelConflict(
     source: `${dbResult.source}+label`,
   };
 
-  return { conflict: true, fields, labelResult, compared: true };
+  return {
+    conflict: true,
+    fields,
+    labelResult,
+    compared: true,
+    nutrientsUnknown,
+  };
 }

@@ -126,10 +126,14 @@ it("compares a calories-only label — the device Cherry Coke shape", () => {
  * nutrient warnings — so "High in sugar" silently disappears at the exact
  * moment the UI tells the user to trust the label.
  */
-it("keeps the DB's un-read nutrients when the label read no macros", () => {
-  const db = cherryCokeDb();
-  db.per100g = { ...db.per100g, sugar: 11, fat: 0 };
-  const r = buildLabelConflict(db, {
+it("blanks the un-read nutrients and reports that they are unknown", () => {
+  // The UNMODIFIED fixture: a record mis-scaled on a per-355 ml basis
+  // (calories 11.11, sugar 3.09 per-100). This branch is only reachable
+  // BECAUSE the label's calories disagree by >25%, which is exactly what
+  // proves that basis wrong — so its sugar is untrustworthy too and must not
+  // be shown. Retaining it would put 140 kcal beside ~11 g of sugar for a can
+  // that has 39, in a fat-free, protein-free drink.
+  const r = buildLabelConflict(cherryCokeDb(), {
     calories: 140,
     totalSugars: null,
     totalFat: null,
@@ -138,11 +142,32 @@ it("keeps the DB's un-read nutrients when the label read no macros", () => {
   });
 
   expect(r.labelResult).toBeDefined();
-  // The label's calories win...
+  // The label's calories win.
   expect(r.labelResult!.perServing.calories).toBe(140);
-  // ...but the record's sugar survives, so the high-sugar warning can still fire.
-  expect(r.labelResult!.per100g.sugar).toBe(11);
-  expect(r.labelResult!.perServing.sugar).toBeCloseTo(39, 0);
+  // The record's sugar is dropped, not inherited at a basis we just disproved.
+  expect(r.labelResult!.per100g.sugar).toBeUndefined();
+  // ...and the drop is REPORTED, so the route can say so rather than letting a
+  // missing "High in sugar" read as a low-sugar product.
+  expect(r.nutrientsUnknown).toBe(true);
+});
+
+it("does not claim nutrients are unknown when the label supplied them", () => {
+  // goodLabel reads sugar and fat, so the corrected block carries real values
+  // and the universal-flag recompute has something to work with.
+  const db = cherryCokeDb();
+  db.per100g = { calories: 11.11, sugar: 3.09, fat: 0 };
+  const r = buildLabelConflict(db, goodLabel);
+  expect(r.conflict).toBe(true);
+  expect(r.nutrientsUnknown).toBe(false);
+});
+
+it("reports nothing unknown on a refusal — no label result is built", () => {
+  const r = buildLabelConflict(cherryCokeDb(), {
+    ...goodLabel,
+    servingSize: "1 bottle",
+  });
+  expect(r.labelResult).toBeUndefined();
+  expect(r.nutrientsUnknown).toBe(false);
 });
 
 /**

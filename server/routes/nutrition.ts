@@ -18,6 +18,7 @@ import {
 } from "../services/scan-flags";
 import { evaluateUniversalFlags } from "../services/universal-flags";
 import { buildLabelConflict } from "../services/label-override";
+import { createNutrientUnavailableFlag } from "@shared/types/scan-flags";
 import { parseUserAllergies } from "@shared/constants/allergens";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
 import { numericStringField } from "./_schemas";
@@ -306,10 +307,8 @@ export function register(app: Express): void {
           profileOutcome,
           verification,
         );
-        const { conflict, fields, labelResult, compared } = buildLabelConflict(
-          result,
-          parsed.data.labelNutrition,
-        );
+        const { conflict, fields, labelResult, compared, nutrientsUnknown } =
+          buildLabelConflict(result, parsed.data.labelNutrition);
         // `labelCompared` is additive and POST-only (the GET handler never
         // receives a label). It exists because a 200 without `conflict` is
         // ambiguous — buildLabelConflict returns that same shape when it DECLINES
@@ -323,10 +322,19 @@ export function register(app: Express): void {
             profileOutcome,
             verification,
           );
+          // The label-corrected block deliberately drops macros whose per-100
+          // basis the calorie disagreement just proved wrong, so the universal
+          // flag recompute above emits nothing for them. Say that out loud:
+          // otherwise a missing "High in sugar" is indistinguishable from a
+          // low-sugar product, on the very screen that tells the user to trust
+          // the label.
+          const labelFlags = nutrientsUnknown
+            ? [...labelBody.flags, createNutrientUnavailableFlag()]
+            : labelBody.flags;
           res.json({
             ...body,
             labelCompared: compared,
-            conflict: { fields, label: labelBody },
+            conflict: { fields, label: { ...labelBody, flags: labelFlags } },
           });
           return;
         }

@@ -25,6 +25,12 @@ const PERSONAL_KINDS = new Set<ScanFlag["kind"]>([
 ]);
 const UNIVERSAL_KINDS = new Set<ScanFlag["kind"]>([
   "nutrient",
+  // Sits beside "nutrient" on purpose: it is the ABSENCE of nutrient data
+  // reported as a heads-up, so it belongs in the same section as the warnings
+  // it stands in for. Omitting it here would send it to the defensive default
+  // below, which warns and drops — i.e. the "no data reads as no warning"
+  // failure this flag exists to prevent.
+  "nutrient-unavailable",
   "processing",
   "sweetener",
 ]);
