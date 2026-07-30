@@ -778,8 +778,8 @@ export function useNutritionLookup(params: {
       // success — the drain invalidates after replaying the queued POST on
       // reconnect, so invalidating on the queued path would just resume a paused
       // refetch that races the drain (S1; mirrors useQuickLogSession's guard).
-      // The success haptic + goBack still fire so the optimistic offline UX is
-      // unchanged.
+      // The success haptic + navigation reset still fire so the optimistic
+      // offline UX is unchanged.
       if (data !== undefined) {
         void queryClient.invalidateQueries({
           queryKey: QUERY_KEYS.scannedItems,
@@ -789,7 +789,15 @@ export function useNutritionLookup(params: {
         });
       }
       haptics.notification(Haptics.NotificationFeedbackType.Success);
-      navigation.goBack();
+      // NOT goBack(), and NOT safeGoBack(). NutritionDetail is pushed from
+      // inside the scan fullScreenModal, so canGoBack() is true and goBack()
+      // lands the user back on the live camera. (ScanScreen's returnAfterLog
+      // path CAN use safeGoBack because NutritionDetail never opened there, so
+      // ScanScreen is the modal's top.) Dismiss the whole stack onto Today.
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Main", params: { screen: "HomeTab" } }],
+      });
     },
     onError: (err) => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);

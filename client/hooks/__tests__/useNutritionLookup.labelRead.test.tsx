@@ -5,11 +5,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
-const { mockGoBack, mockApiRequest, mockTokenGet } = vi.hoisted(() => ({
-  mockGoBack: vi.fn(),
-  mockApiRequest: vi.fn(),
-  mockTokenGet: vi.fn(),
-}));
+const { mockGoBack, mockReset, mockApiRequest, mockTokenGet } = vi.hoisted(
+  () => ({
+    mockGoBack: vi.fn(),
+    mockReset: vi.fn(),
+    mockApiRequest: vi.fn(),
+    mockTokenGet: vi.fn(),
+  }),
+);
 
 /**
  * Flips `tokenStorage.get` to reject, so the hook's whole server leg is skipped
@@ -19,7 +22,7 @@ const { mockGoBack, mockApiRequest, mockTokenGet } = vi.hoisted(() => ({
 let failKeychainRead = false;
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack }),
+  useNavigation: () => ({ goBack: mockGoBack, reset: mockReset }),
 }));
 
 vi.mock("@/context/AuthContext", () => ({
@@ -365,5 +368,59 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
         buttonLabel: "Review values before logging",
       });
     });
+  });
+});
+
+describe("useNutritionLookup — post-log navigation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          productName: "Cherry Coke",
+          barcode: "06772408",
+          per100g: { calories: 11.11 },
+          perServing: { calories: 39.4 },
+          servingInfo: {
+            displayLabel: "355 mL",
+            grams: 355,
+            wasCorrected: false,
+          },
+          isServingDataTrusted: true,
+        }),
+      }),
+    );
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 1 }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // NutritionDetail is pushed from inside the scan fullScreenModal, so goBack()
+  // pops to the live camera. Logging an item must land the user on Today.
+  it("resets to Main/HomeTab after a successful log, never goBack", async () => {
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "06772408" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    result.current.handleAddToLog();
+
+    await waitFor(() =>
+      expect(mockReset).toHaveBeenCalledWith({
+        index: 0,
+        routes: [{ name: "Main", params: { screen: "HomeTab" } }],
+      }),
+    );
+    expect(mockGoBack).not.toHaveBeenCalled();
   });
 });

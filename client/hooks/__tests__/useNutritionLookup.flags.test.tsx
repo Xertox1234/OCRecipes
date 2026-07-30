@@ -5,13 +5,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
-const { mockGoBack, mockApiRequest } = vi.hoisted(() => ({
+const { mockGoBack, mockReset, mockApiRequest } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
+  mockReset: vi.fn(),
   mockApiRequest: vi.fn(),
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack }),
+  useNavigation: () => ({ goBack: mockGoBack, reset: mockReset }),
 }));
 
 vi.mock("@/context/AuthContext", () => ({
