@@ -3,6 +3,7 @@
  * Designed for US nutrition labels in English. Uses line-by-line regex matching
  * with common OCR misread correction.
  */
+import { parseServingGrams } from "@/lib/serving-size-utils";
 
 export interface LocalNutritionData {
   calories: number | null;
@@ -174,7 +175,17 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
 export function isLabelReady(
   parsed: LocalNutritionData | null | undefined,
 ): boolean {
+  if (parsed == null || parsed.calories == null) return false;
+  // Not merely "a serving string was captured" — it must PARSE to grams/ml,
+  // which is exactly what the server's gate requires (`buildLabelConflict` ->
+  // `parseServingGrams`). A weaker client check is worse than no check:
+  // `isLabelReady` also suppresses the "we couldn't use that label" notice, so
+  // a label this accepts and the server then refuses reaches the user as
+  // database values with NO indication the label was dropped — a server
+  // refusal returns the same body shape as agreement. A US label reading
+  // `Serving Size 1 can`, with no gram/ml figure, is the live case: captured
+  // fine, parses to nothing.
   return (
-    parsed != null && parsed.calories != null && parsed.servingSize != null
+    parsed.servingSize != null && parseServingGrams(parsed.servingSize) != null
   );
 }

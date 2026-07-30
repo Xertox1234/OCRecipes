@@ -348,4 +348,24 @@ Sodlum 30 mg`;
     expect(parsed.totalFat).toBeNull();
     expect(isLabelReady(parsed)).toBe(true);
   });
+
+  /**
+   * The gate must not be weaker than the server's. `isLabelReady` also
+   * suppresses the "we couldn't use that label" notice, so a label it accepts
+   * and `buildLabelConflict` then refuses reaches the user as database values
+   * with NO indication the label was dropped — a server refusal returns the
+   * same body shape as agreement.
+   */
+  it("rejects a serving that was captured but does not parse to grams/ml", () => {
+    // A US label with no gram/ml figure on the serving line. Captured cleanly,
+    // parses to nothing — and the server declines exactly this shape.
+    const parsed = parseNutritionFromOCR(
+      "Nutrition Facts\nServing Size 1 can\nCalories 140",
+    );
+
+    expect(parsed.calories).toBe(140);
+    // The string WAS captured — this is precisely the trap: non-null, useless.
+    expect(parsed.servingSize).toBe("1 can");
+    expect(isLabelReady(parsed)).toBe(false);
+  });
 });
