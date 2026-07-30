@@ -765,6 +765,7 @@ export default function ScanScreen() {
         screenReaderEnabled={screenReaderEnabled}
         phase={scanPhase}
         onConfirm={() => dispatch({ type: "CONFIRM_PRODUCT" })}
+        onProceedToLabel={() => dispatch({ type: "PROCEED_TO_LABEL" })}
         onStepConfirmed={() => dispatch({ type: "STEP_CONFIRMED" })}
         onEditStep2={() => {
           if (

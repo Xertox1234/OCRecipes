@@ -23,7 +23,7 @@ export function getCoachMessage(
     // collapses after they press "Scan Nutrition Facts →". "Now" also confirms
     // to sighted users that the tap registered.
     case "LABEL_PROMPTED":
-      return "Now frame the Nutrition Facts panel";
+      return "Product confirmed. Now frame the Nutrition Facts panel";
     case "STEP2_CONFIRMED":
       return "Frame the front of the package";
     case "STEP2_REVIEWING":

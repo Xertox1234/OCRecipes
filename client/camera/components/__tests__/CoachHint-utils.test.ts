@@ -133,9 +133,9 @@ describe("getCoachMessage", () => {
     ).toBe("");
   });
 
-  it('returns "Now frame the Nutrition Facts panel" for LABEL_PROMPTED', () => {
+  it('returns "Product confirmed. Now frame the Nutrition Facts panel" for LABEL_PROMPTED', () => {
     expect(getCoachMessage({ type: "LABEL_PROMPTED", barcode: "123" }, 0)).toBe(
-      "Now frame the Nutrition Facts panel",
+      "Product confirmed. Now frame the Nutrition Facts panel",
     );
   });
 

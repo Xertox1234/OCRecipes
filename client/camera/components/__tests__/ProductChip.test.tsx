@@ -9,6 +9,7 @@ const noop = () => {};
 
 const handlers = {
   onConfirm: noop,
+  onProceedToLabel: noop,
   onStepConfirmed: noop,
   onEditStep2: noop,
   onEditStep3: noop,
@@ -41,17 +42,54 @@ const step3Review: ScanPhase = {
   frontImageUri: "y",
 };
 
-describe("ProductChip — barcode_lock / step2_confirmed have no secondary capture button", () => {
-  it("barcode_lock renders exactly one button (the shutter, not this chip, captures the next photo)", () => {
-    render(<ProductChip phase={barcodeLock} {...handlers} />);
-    expect(screen.getAllByRole("button")).toHaveLength(1);
-    expect(screen.getByText(/point at the nutrition facts/i)).toBeTruthy();
-  });
-
+describe("ProductChip — step2_confirmed has no secondary capture button", () => {
   it("step2_confirmed renders exactly one button", () => {
     render(<ProductChip phase={step2Confirmed} {...handlers} />);
     expect(screen.getAllByRole("button")).toHaveLength(1);
     expect(screen.getByText(/point at the front/i)).toBeTruthy();
+  });
+});
+
+// barcode_lock's primary control must ADVANCE the flow — it used to be
+// "Looks right →" wired to CONFIRM_PRODUCT (a skip), with the only route to
+// step 2 an unlabeled implicit gesture in caption text. Both actions are now
+// real, labelled buttons: see getBarcodeLockActions in ProductChip-utils.ts.
+describe("ProductChip — barcode_lock offers two real actions, not a skip-only primary", () => {
+  it("renders two buttons: primary advances to the label step, secondary is the barcode-only escape hatch", () => {
+    render(<ProductChip phase={barcodeLock} {...handlers} />);
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+    expect(screen.getByText("Scan Nutrition Facts →")).toBeTruthy();
+    expect(screen.getByText("Use database data anyway")).toBeTruthy();
+  });
+
+  it("tapping the primary action calls onProceedToLabel when the product is unverified", () => {
+    let called = false;
+    render(
+      <ProductChip
+        phase={barcodeLock}
+        {...handlers}
+        onProceedToLabel={() => {
+          called = true;
+        }}
+      />,
+    );
+    screen.getByText("Scan Nutrition Facts →").click();
+    expect(called).toBe(true);
+  });
+
+  it("tapping the secondary action calls onConfirm when the product is unverified", () => {
+    let called = false;
+    render(
+      <ProductChip
+        phase={barcodeLock}
+        {...handlers}
+        onConfirm={() => {
+          called = true;
+        }}
+      />,
+    );
+    screen.getByText("Use database data anyway").click();
+    expect(called).toBe(true);
   });
 });
 
