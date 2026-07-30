@@ -78,6 +78,29 @@ describe("nutrition-detail-utils", () => {
         }),
       ).toBe("serving");
     });
+
+    it("counts servings of unknown weight rather than ignoring the quantity", () => {
+      // A serving of unknown weight (an OFF record whose serving_size is
+      // "1 bottle") still rescales on the quantity stepper, so the caption has
+      // to move with it — a frozen "Per serving" over doubled values is the
+      // same class of silent desync as the fabricated 100 g basis it replaced.
+      expect(
+        getServingContextLabel({
+          servingQuantity: 2,
+          servingSizeGrams: null,
+          servingOptions: [],
+          isPer100g: false,
+        }),
+      ).toBe("2 servings");
+      expect(
+        getServingContextLabel({
+          servingQuantity: 1.5,
+          servingSizeGrams: null,
+          servingOptions: [],
+          isPer100g: false,
+        }),
+      ).toBe("1.5 servings");
+    });
   });
 
   describe("roundToOneDecimal", () => {

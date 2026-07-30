@@ -225,9 +225,45 @@ export function useNutritionLookup(params: {
   ]);
 
   // Recalculate displayed nutrition from per-100g whenever serving
-  // size or quantity changes
+  // size or quantity changes.
+  //
+  // `grams === null` is a real state, not a missing value: an Open Food Facts
+  // record can publish trustworthy per-serving energy against a serving_size
+  // that carries no metric quantity ("1 bottle"), so the serving is known but
+  // its weight is not. There is no gram basis to scale from, so multiply the
+  // per-serving baseline by the quantity instead. Falling through to the
+  // per-100g path with a fabricated denominator is what this fix removes —
+  // and passing null into it produces `(null / 100) * qty === 0`, zeroing the
+  // whole card.
   const recalculateNutrition = useCallback(
-    (grams: number, quantity: number) => {
+    (grams: number | null, quantity: number) => {
+      if (grams === null) {
+        const baseline = validatedData?.perServing;
+        if (!baseline) return;
+        const scaled = scaleNutrition(baseline, quantity);
+        setNutrition((prev) =>
+          prev
+            ? {
+                ...prev,
+                calories: scaled.calories,
+                protein: scaled.protein,
+                carbs: scaled.carbs,
+                fat: scaled.fat,
+                fiber: scaled.fiber,
+                sugar: scaled.sugar,
+                sodium: scaled.sodium,
+                saturatedFat: scaled.saturatedFat,
+                transFat: scaled.transFat,
+                cholesterol: scaled.cholesterol,
+                caffeine: scaled.caffeine,
+                // Deliberately NOT overwritten with a gram string — the product's
+                // own wording ("1 bottle") is the only honest label we have.
+                servingSize: prev.servingSize,
+              }
+            : prev,
+        );
+        return;
+      }
       if (!effectivePer100g) return;
       const factor = (grams / 100) * quantity;
       const scaled = scaleNutrition(effectivePer100g, factor);
@@ -251,7 +287,7 @@ export function useNutritionLookup(params: {
           : prev,
       );
     },
-    [effectivePer100g],
+    [effectivePer100g, validatedData],
   );
 
   const { data: existingItem, isError: existingItemFailed } =
@@ -534,7 +570,18 @@ export function useNutritionLookup(params: {
           const validated = validateAndNormalizeNutrition(product, code);
 
           setValidatedData(validated);
-          setServingSizeGrams(validated.servingInfo.grams ?? 100);
+          // NOT `?? 100`. `isServingDataTrusted` means the per-serving VALUES
+          // are trustworthy — it does not promise we know what the serving
+          // weighs, and `validateAndNormalizeNutrition`'s trusted branch passes
+          // `servingGrams` straight through, null and all (an OFF record whose
+          // serving_size is "1 bottle"). Coercing that to 100 captioned the
+          // bottle's calories "1 × 100g" and lit the 100 g chip as the active
+          // selection, then silently reinterpreted the values against a per-100g
+          // basis on the first serving edit. `getServingContextLabel` and
+          // `ServingControls` both already model null as "unknown weight"; let
+          // them. `isPer100g` stays false either way — these ARE per-serving
+          // values, so the "Values shown per 100g" banner would be a second lie.
+          setServingSizeGrams(validated.servingInfo.grams);
           setIsPer100g(
             !validated.isServingDataTrusted &&
               !validated.servingInfo.wasCorrected,

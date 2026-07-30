@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
+import { getServingContextLabel } from "@/screens/nutrition-detail-utils";
 import { ApiError } from "@/lib/api-error";
 import { ErrorCode } from "@shared/constants/error-codes";
 
@@ -493,5 +494,146 @@ describe("useNutritionLookup — trust-the-label override (Task 5)", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.conflict).toBeNull();
     expect(result.current.activeSource).toBe("database");
+  });
+});
+
+describe("useNutritionLookup — unknown serving weight (direct-OFF fallback)", () => {
+  const mockServerFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({ hasFrontLabelData: false }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * Drives the hook down the direct-Open-Food-Facts fallback: the server leg
+   * rejects (unreachable), so `fetchBarcodeData` falls through to the public OFF
+   * endpoint and normalizes the product client-side via
+   * `validateAndNormalizeNutrition`.
+   */
+  function mockOffFallback(product: Record<string, unknown>) {
+    mockServerFetch
+      .mockRejectedValueOnce(new Error("server unreachable"))
+      .mockResolvedValueOnce({
+        json: async () => ({ status: 1, product }),
+      });
+  }
+
+  /**
+   * A real Open Food Facts shape: per-serving energy is published, but
+   * `serving_size` is a household count with no metric quantity anywhere and
+   * there is no `serving_quantity`. `parseServingGrams` returns null, yet the
+   * per-serving values are perfectly trustworthy — so
+   * `validateAndNormalizeNutrition` takes its trusted branch and emits
+   * `{ grams: null, isServingDataTrusted: true }`.
+   */
+  const UNPARSEABLE_SERVING_PRODUCT = {
+    product_name: "Kombucha, Ginger Lemon",
+    brands: "GT's",
+    serving_size: "1 bottle",
+    nutriments: {
+      "energy-kcal_100g": 21,
+      proteins_100g: 0,
+      carbohydrates_100g: 5,
+      fat_100g: 0,
+      sugars_100g: 4,
+      "energy-kcal_serving": 100,
+      proteins_serving: 0,
+      carbohydrates_serving: 24,
+      fat_serving: 0,
+      sugars_serving: 19,
+    },
+  };
+
+  it("leaves the serving weight unknown instead of fabricating 100 g", async () => {
+    mockOffFallback(UNPARSEABLE_SERVING_PRODUCT);
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "0722430900001" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // The values on screen are the bottle's, and they are correct.
+    expect(result.current.nutrition?.calories).toBe(100);
+    // They are NOT per-100g values, so the "Values shown per 100g" banner must
+    // stay hidden — this is a real serving, just one of unknown weight.
+    expect(result.current.isPer100g).toBe(false);
+
+    // The bug: `grams ?? 100` asserted a 100 g basis the product never gave us,
+    // which captioned a per-bottle value "1 × 100g" and lit the 100 g chip as
+    // the active selection. Unknown must stay unknown.
+    expect(result.current.servingSizeGrams).toBeNull();
+    expect(
+      getServingContextLabel({
+        servingQuantity: result.current.servingQuantity,
+        servingSizeGrams: result.current.servingSizeGrams,
+        servingOptions: result.current.servingOptions,
+        isPer100g: result.current.isPer100g,
+      }),
+    ).toBe("serving");
+  });
+
+  it("still scales by quantity when the serving weight is unknown", async () => {
+    mockOffFallback(UNPARSEABLE_SERVING_PRODUCT);
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "0722430900001" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // `servings` is never applied server-side (server/routes/nutrition.ts stores
+    // the posted nutrient values verbatim), so the stepper MUST rescale here or
+    // the user logs one bottle while the counter reads two.
+    act(() => result.current.recalculateNutrition(null, 2));
+
+    expect(result.current.nutrition?.calories).toBe(200);
+    expect(result.current.nutrition?.sugar).toBe(38);
+    // And the caption must keep the product's own wording — not "nullg"/"100g".
+    expect(result.current.nutrition?.servingSize).toBe("1 bottle");
+  });
+
+  it("regression: a parseable serving weight is unchanged", async () => {
+    mockOffFallback({
+      product_name: "Sparkling Water, Lime",
+      brands: "Bubly",
+      serving_size: "355 ml",
+      nutriments: {
+        "energy-kcal_100g": 20,
+        carbohydrates_100g: 5,
+        "energy-kcal_serving": 71,
+        carbohydrates_serving: 17.8,
+      },
+    });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "0012000171705" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.servingSizeGrams).toBe(355);
+    expect(result.current.isPer100g).toBe(false);
+    expect(result.current.nutrition?.calories).toBe(71);
+
+    // Known-grams scaling still runs off per-100g, exactly as before.
+    act(() => result.current.recalculateNutrition(355, 2));
+    expect(result.current.nutrition?.calories).toBeCloseTo(142, 5);
+    expect(result.current.nutrition?.servingSize).toBe("355g");
   });
 });

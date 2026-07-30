@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { screen } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { renderComponent } from "../../../test/utils/render-component";
 import { ServingControls } from "../ServingControls";
 
@@ -60,5 +60,35 @@ describe("ServingControls — serving size radio semantics", () => {
         .getByLabelText("Set serving to 1 cup")
         .getAttribute("aria-selected"),
     ).toBe("false");
+  });
+});
+
+describe("ServingControls — serving of unknown weight", () => {
+  const unknownWeightProps = { ...baseProps, servingSizeGrams: null };
+
+  it("marks no serving chip active when the serving weight is unknown", () => {
+    renderComponent(<ServingControls {...unknownWeightProps} />);
+
+    for (const label of ["Set serving to 1 cup", "Set serving to 1 bowl"]) {
+      expect(screen.getByLabelText(label).getAttribute("aria-selected")).toBe(
+        "false",
+      );
+    }
+  });
+
+  it("still rescales on the quantity stepper when the serving weight is unknown", () => {
+    const recalculateNutrition = vi.fn();
+    renderComponent(
+      <ServingControls {...unknownWeightProps} {...{ recalculateNutrition }} />,
+    );
+
+    fireEvent.click(screen.getByLabelText("Increase serving quantity"));
+
+    // Passing null through is the point: the hook scales the per-serving
+    // baseline by quantity. A truthiness guard here would skip the call and
+    // freeze the card's values while the counter climbs — and because
+    // `servings` is never applied server-side, the user would log one serving
+    // while the stepper reads two.
+    expect(recalculateNutrition).toHaveBeenCalledWith(null, 1.5);
   });
 });
