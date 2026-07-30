@@ -118,9 +118,13 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
       ok: true,
       json: async () => ({ hasFrontLabelData: false }),
     });
+    // Default: the server compared the label against the record and reported no
+    // material conflict. `labelCompared: true` is the shape every test here
+    // assumes unless it overrides — a 200 alone does NOT mean a comparison
+    // happened (the server declines on an unparseable or implausible serving).
     mockServerFetch.mockResolvedValue({
       ok: true,
-      json: async () => wrongDbRecord,
+      json: async () => ({ ...wrongDbRecord, labelCompared: true }),
     });
   });
 
@@ -298,14 +302,68 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
       });
     });
 
-    // Positive control. The fix must not over-gate: when the server DOES answer,
-    // the label reached cross-validation and one-tap logging stays available.
-    it("stays open when the label parsed and the server answered", async () => {
+    // Positive control. The fix must not over-gate: when the server actually
+    // COMPARED the label against the record, one-tap logging stays available.
+    // Note "compared", not merely "answered" — see the sibling test below.
+    it("stays open when the server compared the label and found no conflict", async () => {
       const { result } = render(READABLE_LABEL);
 
       await waitFor(() => expect(result.current.isLoading).toBe(false));
 
       expect(result.current.logGate).toEqual({ kind: "open" });
+    });
+
+    /**
+     * A 200 with no `conflict` key is NOT proof the label was used. The server
+     * declines to compare on an unparseable serving, an implausible serving, or
+     * when the record has no per-100g counterpart for any field the label read —
+     * and all three return the plain body, indistinguishable from agreement
+     * unless it says so.
+     *
+     * `SERVING_SIZE_PATTERN` captures to end-of-line, so an OCR line-break
+     * between "Serving Size 1 Can" and "(355 mL)" yields `servingSize: "1 Can"`.
+     * The client's readiness gate only requires a non-empty string, so it POSTs
+     * happily; `parseServingGrams("1 Can")` then finds no g/ml token and the
+     * server declines. On the ~3.8x-wrong Cherry Coke record that means 39 kcal
+     * on screen with the label silently discarded.
+     */
+    it("gates a label the server declined to compare, despite the 200", async () => {
+      mockServerFetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ ...wrongDbRecord, labelCompared: false }),
+      });
+
+      const { result } = render(
+        "Serving Size 1 Can\nCalories 140\nTotal Sugars 42g",
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      // Proves the fixture really is label-READY: an unready label would have set
+      // this notice instead. So no warning fires on this path either, leaving the
+      // gate as the only protection.
+      expect(result.current.labelReadNotice).toBeNull();
+      expect(result.current.logGate).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+      });
+    });
+
+    // A missing field (older server, or a shape change) must GATE, not open.
+    it("gates when the server omits labelCompared entirely", async () => {
+      mockServerFetch.mockResolvedValue({
+        ok: true,
+        json: async () => wrongDbRecord,
+      });
+
+      const { result } = render(READABLE_LABEL);
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.logGate).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+      });
     });
   });
 });

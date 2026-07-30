@@ -104,9 +104,17 @@ export function useNutritionLookup(params: {
   const [labelReadNotice, setLabelReadNotice] = useState<string | null>(null);
   /**
    * True when a photographed label was parsed, accepted by the readiness gate,
-   * AND cross-validated by the server — i.e. the values on screen have been
-   * checked against the package, either because the label overrode the record or
-   * because the server confirmed the two agree.
+   * AND the server reports it actually compared the label against the record
+   * (`labelCompared`) — i.e. the values on screen have been checked against the
+   * package, either because the label overrode the record or because the two
+   * agreed.
+   *
+   * A 200 is NOT sufficient on its own: the server declines to compare on an
+   * unparseable or implausible serving, or when the record has no counterpart for
+   * any field the label read, and those return the same body shape as agreement.
+   * The client's own readiness gate cannot detect that — it only checks that a
+   * serving string is non-empty, not that it parses to grams — so the server has
+   * to say so, and this hook must not re-derive that policy.
    *
    * False on every path that falls back to database values the label never
    * touched (server unreachable, non-`notInDatabase` 404, direct-OFF fallback,
@@ -458,7 +466,16 @@ export function useNutritionLookup(params: {
             // would claim cross-validation that never happened, and a
             // server-unreachable scan would open the gate on the rawest,
             // least-validated record in the hook.
-            setLabelUsed(labelReady);
+            // `=== true`, deliberately not truthiness. A missing field (older
+            // server, or a shape change to something like "declined") must GATE,
+            // and only an explicit boolean true opens. The safe direction is
+            // asymmetric: a wrongly-closed gate costs the user one extra tap, a
+            // wrongly-open one logs a ~3.8x-wrong calorie count.
+            //
+            // `labelReady &&` still matters — it is the client's own precondition
+            // for having POSTed a label at all, so a stray field on a GET-shaped
+            // response can never open the gate by itself.
+            setLabelUsed(labelReady && data.labelCompared === true);
 
             // Set verification level from barcode lookup response
             if (data.verificationLevel) {

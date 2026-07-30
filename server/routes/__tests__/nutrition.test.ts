@@ -908,6 +908,50 @@ describe("Nutrition Routes", () => {
       });
       expect(res.status).toBe(400);
     });
+
+    // ── labelCompared on the wire ──
+    //
+    // The client gates one-tap logging on this field because a 200 without a
+    // `conflict` key is ambiguous: it is also what a REFUSAL to compare returns.
+    const label355 = {
+      calories: 150,
+      totalSugars: 39,
+      totalFat: 0,
+      saturatedFat: null,
+      servingSize: "355 mL",
+    };
+
+    it("reports labelCompared true on the conflict branch", async () => {
+      mockLookup.mockResolvedValue(cherryCokeDbResult());
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: label355,
+      });
+      expect(res.body.conflict).toBeDefined();
+      // Must be present on this branch too — omitting it would gate a label that
+      // was in fact used.
+      expect(res.body.labelCompared).toBe(true);
+    });
+
+    it("reports labelCompared true when the label agrees", async () => {
+      mockLookup.mockResolvedValue(correctCokeDbResult());
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: label355,
+      });
+      expect(res.body.conflict).toBeUndefined();
+      expect(res.body.labelCompared).toBe(true);
+    });
+
+    it("reports labelCompared false when the serving does not parse, with the same 200 shape", async () => {
+      mockLookup.mockResolvedValue(cherryCokeDbResult());
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: { ...label355, servingSize: "1 Can" },
+      });
+      expect(res.status).toBe(200);
+      // Indistinguishable from agreement WITHOUT the flag — that ambiguity is
+      // exactly what let the gate open on the un-compared Cherry Coke record.
+      expect(res.body.conflict).toBeUndefined();
+      expect(res.body.labelCompared).toBe(false);
+    });
   });
 
   describe("GET /api/scanned-items/frequent", () => {
