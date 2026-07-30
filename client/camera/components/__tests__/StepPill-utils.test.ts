@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { getStepDotState, shouldShowStepPill } from "../StepPill-utils";
+import type { ScanPhase } from "../../types/scan-phase";
 
 const BOUNDS = { x: 0.4, y: 0.45, width: 0.2, height: 0.1 };
 
@@ -76,6 +77,13 @@ describe("getStepDotState", () => {
     expect(getStepDotState(phase, 1)).toBe("done");
     expect(getStepDotState(phase, 2)).toBe("active");
   });
+
+  it("LABEL_PROMPTED shows step 1 done and step 2 active", () => {
+    const phase: ScanPhase = { type: "LABEL_PROMPTED", barcode: "123" };
+    expect(getStepDotState(phase, 0)).toBe("done");
+    expect(getStepDotState(phase, 1)).toBe("active");
+    expect(getStepDotState(phase, 2)).toBe("idle");
+  });
 });
 
 describe("shouldShowStepPill", () => {
@@ -124,5 +132,11 @@ describe("shouldShowStepPill", () => {
 
   it("hides for IDLE", () => {
     expect(shouldShowStepPill({ type: "IDLE" })).toBe(false);
+  });
+
+  it("still shows the step pill during LABEL_PROMPTED", () => {
+    expect(shouldShowStepPill({ type: "LABEL_PROMPTED", barcode: "123" })).toBe(
+      true,
+    );
   });
 });

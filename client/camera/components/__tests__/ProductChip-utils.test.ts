@@ -99,6 +99,15 @@ describe("getProductChipVariant", () => {
       getProductChipVariant({ type: "SESSION_COMPLETE", barcode: "123" }),
     ).toBe("session_complete");
   });
+
+  // Deliberate, not incidental: LABEL_PROMPTED means "chip collapsed, go frame
+  // the panel". A null variant hides the chip, which is exactly the intent — so
+  // assert it rather than leaving it to the `default` arm by accident.
+  it("returns null for LABEL_PROMPTED so the chip collapses out of the way", () => {
+    expect(
+      getProductChipVariant({ type: "LABEL_PROMPTED", barcode: "123" }),
+    ).toBeNull();
+  });
 });
 
 describe("getShutterClearanceStyle", () => {

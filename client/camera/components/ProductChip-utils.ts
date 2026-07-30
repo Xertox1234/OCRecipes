@@ -78,6 +78,8 @@ export function getProductChipVariant(
       return "smart_photo";
     case "SMART_ERROR":
       return "smart_error";
+    // LABEL_PROMPTED intentionally falls here: a null variant hides the chip,
+    // which is what "chip collapsed, go frame the panel" means. Covered by test.
     default:
       return null;
   }
