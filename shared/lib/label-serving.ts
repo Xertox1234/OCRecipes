@@ -5,29 +5,51 @@
  *
  * It exists because those two gates previously called two different functions
  * — `client/lib/serving-size-utils.ts` and `server/services/barcode-lookup.ts`
- * — with genuinely different behaviour:
- *
- *     "355"      -> client 355, server null
- *     "30"       -> client 30,  server null
- *     "355 mL)"  -> client null, server 355
- *
- * The client-accepts/server-refuses direction was live and reachable:
- * `SERVING_SIZE_PATTERN` captures to end of line, so an OCR line break splits
- * "Serving Size 355 mL" into `"355"`. The client gate passed, which ALSO
- * suppresses the "we couldn't use that label" notice, the label was POSTed,
- * the server refused — and a refusal returns the same body shape as agreement.
- * The user got database values with nothing saying the label had been dropped.
+ * — which disagreed on real inputs (`"355"` -> 355 there, `null` here). The
+ * client gate also suppresses the "we couldn't use that label" notice, so a
+ * label it accepted and the server then refused reached the user as database
+ * values with nothing saying the label had been dropped — a refusal returns
+ * the same body shape as agreement.
  *
  * Both existing `parseServingGrams` functions are left alone for their own
  * callers (DB serving strings, the serving-size controls). Only the two gates
- * move here, so they cannot drift apart again.
+ * live here, so they cannot drift apart again.
  *
- * A UNIT IS REQUIRED. The client's version accepted a bare number
- * (`/^(\d+\.?\d*)$/`), which on label text is dangerous rather than generous:
- * "Serving Size 1" would parse to a 1-gram serving and scale every nutrient by
- * 100x. Ambiguity here fails closed — the caller then treats the label as
- * unusable and TELLS the user, which is the honest outcome.
+ * MUST BE AT LEAST AS PERMISSIVE AS BOTH PREDECESSORS. This gate decides
+ * whether a label is used at all, so narrowing it rejects labels that used to
+ * work and tells the user "we couldn't find nutrition values" when the values
+ * were read perfectly well. Every form below is one a real predecessor
+ * accepted; the regression tests pin them.
  */
+
+/**
+ * Metric units as they appear on labels, longest-first so the alternation
+ * cannot settle on a prefix (`g` inside `grams`) and then fail the `\b`.
+ */
+const UNIT = String.raw`(?:grams?|g|millilit(?:re|er)s?|ml)`;
+
+/**
+ * The metric figure inside a parenthetical, e.g. "1 can (355 mL)".
+ *
+ * Deliberately does NOT require the closing parenthesis right after the unit —
+ * dual-unit labels ("(198g/7oz)", "(250 mL/8 fl oz)") and OCR spacing
+ * ("(355 mL )") both put something between them, and an earlier version of
+ * this module dropped all of those.
+ */
+const PAREN = new RegExp(String.raw`\(\s*(\d+(?:\.\d+)?)\s*${UNIT}\b`);
+
+/**
+ * A bare metric serving, e.g. "355 mL", "30g", "250 grams".
+ *
+ * `(?:^|[\s(])` anchors the number to a token start so a digit inside a longer
+ * run cannot be mistaken for a serving — while still admitting one that opens
+ * a parenthetical, which the anchor would otherwise exclude entirely.
+ *
+ * The trailing `\b` rejects a unit that is merely a prefix of a longer word:
+ * "1 gal" must not read as 1 gram. ("30 mg" was never at risk — neither
+ * predecessor matched it, since `mg` is not `g` or `ml`.)
+ */
+const BARE = new RegExp(String.raw`(?:^|[\s(])(\d+(?:\.\d+)?)\s*${UNIT}\b`);
 
 /** Grams/millilitres parsed from a label serving string, or null if none. */
 export function parseLabelServingGrams(
@@ -36,18 +58,13 @@ export function parseLabelServingGrams(
   if (!servingSize) return null;
   const lower = servingSize.toLowerCase();
 
-  // Preferred form: the metric figure in parentheses beside a household
-  // measure — "1 can (355 mL)", "2/3 cup (55 g)", "2 tbsp (32g)".
-  const paren = lower.match(/\((\d+(?:\.\d+)?)\s*(?:g|ml)\)/);
+  // Prefer the parenthetical: on "1 can (355 mL)" the household measure ("1")
+  // comes first, and taking it would yield a 1-gram serving.
+  const paren = lower.match(PAREN);
   if (paren) return parseFloat(paren[1]);
 
-  // Otherwise a bare metric serving — "355 mL", "30g", "236.0 g".
-  //
-  // `(?:^|\s)` anchors the number to a token start so a digit embedded in a
-  // longer run cannot be picked up, and `(?![a-z])` stops "30 mg" being read
-  // as 30 g — sodium lines sit right beside serving lines on a real panel.
-  const trailing = lower.match(/(?:^|\s)(\d+(?:\.\d+)?)\s*(?:g|ml)(?![a-z])/);
-  if (trailing) return parseFloat(trailing[1]);
+  const bare = lower.match(BARE);
+  if (bare) return parseFloat(bare[1]);
 
   return null;
 }

@@ -123,11 +123,23 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   // Extract serving size (free-form text, not numeric). Prefer the US
   // "Serving Size" label; fall back to the Canadian "Per X mL" form only when
   // that capture contains a g/ml token (see SERVING_PER_PATTERN).
-  const servingMatch =
-    text.match(SERVING_SIZE_PATTERN) ?? text.match(SERVING_PER_PATTERN);
-  if (servingMatch) {
-    result.servingSize = servingMatch[1].trim().slice(0, 100);
-  }
+  // Both forms can appear on one panel — a US "Serving size" line AND a
+  // Canadian "Per ..." line. Taking the first that MATCHES loses the label
+  // when that one happens not to carry a metric figure: "Serving size 1 can"
+  // wins over "Per 1 can (355 mL)", parses to nothing, and `isLabelReady` now
+  // hard-requires a parseable serving, so the whole label is dropped. Prefer
+  // whichever candidate actually parses, and fall back to the first captured
+  // string so `servingSize` still carries raw text for display.
+  const servingCandidates = [
+    text.match(SERVING_SIZE_PATTERN)?.[1],
+    text.match(SERVING_PER_PATTERN)?.[1],
+  ]
+    .filter((c): c is string => c != null)
+    .map((c) => c.trim().slice(0, 100));
+  const parseable = servingCandidates.find(
+    (c) => parseLabelServingGrams(c) != null,
+  );
+  result.servingSize = parseable ?? servingCandidates[0] ?? null;
 
   // Extract numeric fields
   let extracted = 0;

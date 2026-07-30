@@ -126,7 +126,7 @@ it("compares a calories-only label — the device Cherry Coke shape", () => {
  * nutrient warnings — so "High in sugar" silently disappears at the exact
  * moment the UI tells the user to trust the label.
  */
-it("blanks the un-read nutrients and reports that they are unknown", () => {
+it("blanks the un-read nutrients rather than inheriting a disproven basis", () => {
   // The UNMODIFIED fixture: a record mis-scaled on a per-355 ml basis
   // (calories 11.11, sugar 3.09 per-100). This branch is only reachable
   // BECAUSE the label's calories disagree by >25%, which is exactly what
@@ -145,29 +145,26 @@ it("blanks the un-read nutrients and reports that they are unknown", () => {
   // The label's calories win.
   expect(r.labelResult!.perServing.calories).toBe(140);
   // The record's sugar is dropped, not inherited at a basis we just disproved.
+  //
+  // Whether that silence gets ANNOUNCED is the route's call, not this module's:
+  // it holds both response bodies and can diff their flags, so it raises
+  // `nutrient-unavailable` only for a warning the record actually made and the
+  // label body lost. Deciding here from value presence would fire on nearly
+  // every scan, since most records carry a sodium figure — including 0 — and
+  // `LabelNutritionInput` has no sodium field at all.
   expect(r.labelResult!.per100g.sugar).toBeUndefined();
-  // ...and the drop is REPORTED, so the route can say so rather than letting a
-  // missing "High in sugar" read as a low-sugar product.
-  expect(r.nutrientsUnknown).toBe(true);
+  expect(r.labelResult!.per100g.sodium).toBeUndefined();
 });
 
-it("does not claim nutrients are unknown when the label supplied them", () => {
+it("keeps the nutrients the label DID supply", () => {
   // goodLabel reads sugar and fat, so the corrected block carries real values
   // and the universal-flag recompute has something to work with.
   const db = cherryCokeDb();
   db.per100g = { calories: 11.11, sugar: 3.09, fat: 0 };
   const r = buildLabelConflict(db, goodLabel);
   expect(r.conflict).toBe(true);
-  expect(r.nutrientsUnknown).toBe(false);
-});
-
-it("reports nothing unknown on a refusal — no label result is built", () => {
-  const r = buildLabelConflict(cherryCokeDb(), {
-    ...goodLabel,
-    servingSize: "1 bottle",
-  });
-  expect(r.labelResult).toBeUndefined();
-  expect(r.nutrientsUnknown).toBe(false);
+  // 39 g per 355 ml = ~11 per-100, from the LABEL rather than the record.
+  expect(r.labelResult!.per100g.sugar).toBeCloseTo(11, 0);
 });
 
 /**

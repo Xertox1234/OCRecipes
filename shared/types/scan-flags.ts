@@ -101,9 +101,11 @@ export function createNutrientUnavailableFlag(detail?: string): ScanFlag {
     severity: "warn",
     tier: "nutrition",
     title: "Nutrient details unavailable",
+    // Says the RECORD's values were dropped, not the label's — the label is the
+    // thing being trusted here, so blaming it would be backwards.
     detail:
       detail ??
-      "The label's calories didn't match our record, so its other nutrient values weren't used. Sugar, sodium and fat warnings can't be shown for this scan.",
+      "The label's calories didn't match our record, so the record's other nutrient values weren't used. Sugar, sodium and fat warnings can't be shown for this scan.",
   };
 }
 
