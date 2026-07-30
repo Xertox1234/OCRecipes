@@ -62,6 +62,7 @@ import {
   evaluateBarcodeDetection,
   buildProductSummary,
   buildNutritionDetailParams,
+  getCapturePlan,
   type BarcodeTrackingState,
 } from "@/screens/scan-screen-utils";
 import {
@@ -463,12 +464,8 @@ export default function ScanScreen() {
 
   const onShutterPress = useCallback(async () => {
     const phase = scanPhaseRef.current;
-    if (
-      phase.type !== "BARCODE_LOCKED" &&
-      phase.type !== "STEP2_CONFIRMED" &&
-      phase.type !== "HUNTING"
-    )
-      return;
+    const capturePlan = getCapturePlan(phase);
+    if (!capturePlan.capture) return;
 
     // Guard against duplicate captures from rapid taps — ref check is synchronous
     // and avoids the re-render cycle that makes `disabled` lag behind fast input.
@@ -537,7 +534,7 @@ export default function ScanScreen() {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
       setFlashCount((c) => c + 1);
 
-      if (phase.type === "BARCODE_LOCKED") {
+      if (capturePlan.runStepOcr) {
         let ocrText = "";
         try {
           const ocrResult = await recognizeTextFromPhoto(photo.uri);
@@ -643,10 +640,11 @@ export default function ScanScreen() {
   const productChipVisible = getProductChipVariant(scanPhase) !== null;
   const overlayA11y = getScanOverlayA11y(!!confirmCard, productChipVisible);
 
-  const shutterArmed =
-    scanPhase.type === "HUNTING" ||
-    scanPhase.type === "BARCODE_LOCKED" ||
-    scanPhase.type === "STEP2_CONFIRMED";
+  // Same source of truth as onShutterPress's guard — the visual must never
+  // claim the shutter is dead in a phase that captures (LABEL_PROMPTED
+  // rendered un-armed, faithfully reflecting the broken behaviour), nor armed
+  // in one that doesn't.
+  const shutterArmed = getCapturePlan(scanPhase).capture;
 
   return (
     <View style={styles.root} accessibilityViewIsModal>

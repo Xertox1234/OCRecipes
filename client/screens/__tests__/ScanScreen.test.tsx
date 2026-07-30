@@ -20,6 +20,8 @@ const {
   mockSessionCompleteOcrText,
   mockRefreshScanCount,
   mockApiRequest,
+  mockCapturePhotoToFile,
+  mockRecognizeText,
 } = vi.hoisted(() => {
   const mockGoBack = vi.fn();
   const mockCanGoBack = vi.fn();
@@ -73,6 +75,14 @@ const {
     // render and cancel its own setTimeout via cleanup before it ever elapses.
     mockRefreshScanCount: vi.fn(),
     mockApiRequest: vi.fn(),
+    // ONE stable fn, not a fresh `vi.fn()` per usePhotoOutput() call:
+    // CameraView's useImperativeHandle has no dep array, so it recaptures
+    // photoOutput on every render. A per-render capture fn makes takePicture()
+    // resolve against whichever instance the last commit produced, and any
+    // shutter test then fails on `Alert.alert("Capture failed")` instead of on
+    // the behaviour under test.
+    mockCapturePhotoToFile: vi.fn(),
+    mockRecognizeText: vi.fn(),
   };
 });
 
@@ -86,7 +96,17 @@ vi.mock("react-native-confetti-cannon", () => ({
 vi.mock("react-native-vision-camera", () => ({
   Camera: vi.fn(() => React.createElement("div", { "data-testid": "camera" })),
   useCameraDevice: vi.fn(() => ({ id: "back", position: "back" })),
-  usePhotoOutput: vi.fn(() => ({ capturePhotoToFile: vi.fn() })),
+  usePhotoOutput: vi.fn(() => ({
+    capturePhotoToFile: mockCapturePhotoToFile,
+  })),
+}));
+// The package is ALSO aliased to test/mocks/ in vitest.config.ts (it calls
+// requireNativeModule() at module scope). That alias and this vi.mock compose —
+// vi.mock replaces whatever the resolver returns — so the shutter tests below
+// can drive real OCR text through recognizeTextFromPhoto. Same pattern as
+// client/camera/utils/__tests__/recognizeTextFromPhoto.test.ts.
+vi.mock("@infinitered/react-native-mlkit-text-recognition", () => ({
+  recognizeText: mockRecognizeText,
 }));
 vi.mock("react-native-vision-camera-barcode-scanner", () => ({
   useBarcodeScannerOutput: vi.fn(() => ({})),
@@ -190,6 +210,10 @@ beforeEach(() => {
   mockPermissionStatus.value = "granted";
   mockShortcutToSessionComplete.value = false;
   mockSessionCompleteOcrText.value = undefined;
+  // Re-seeded every test (clearAllMocks wipes history, not implementations, so
+  // a per-test override would otherwise leak into the next test in this file).
+  mockCapturePhotoToFile.mockResolvedValue({ filePath: "/label.jpg" });
+  mockRecognizeText.mockResolvedValue({ text: "", blocks: [] });
   mockApiRequest.mockImplementation(async (_method: string, url: string) => {
     if (url.startsWith("/api/nutrition/barcode/")) {
       return {
@@ -778,5 +802,95 @@ describe("ScanScreen — scan-lock chip ranks safety tier before severity (fix r
 
     expect(await screen.findByText("⚠ Contains Milk")).toBeTruthy();
     expect(screen.queryByText(/High in sugar/)).toBeNull();
+  });
+});
+
+describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch review Critical)", () => {
+  // LABEL_PROMPTED was a terminal dead-end: `onShutterPress` early-returned for
+  // it, `onBarcodeScanned` ignores every phase but HUNTING/BARCODE_TRACKING,
+  // BARCODE_LOST is BARCODE_TRACKING-only, and the chip (the sole dispatcher of
+  // PROCEED_TO_LABEL *and* CONFIRM_PRODUCT) unmounts in this phase. Pressing
+  // "Scan Nutrition Facts →" therefore stranded the user with only "Close
+  // camera", after removing the barcode-only escape hatch a tap earlier.
+  //
+  // Neither the reducer test (which dispatches STEP_PHOTO_CAPTURED from
+  // LABEL_PROMPTED directly, so the transition looks covered while being
+  // unreachable in production) nor `tsc` (the guard was a string-comparison
+  // chain, not an exhaustive switch) could see this. It has to be driven
+  // through the real shutter binding.
+  const driveBarcodeLock = async () => {
+    renderComponent(<ScanScreen />);
+
+    const firstAttach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const firstHandler = firstAttach.onBarcodeScanned;
+    expect(firstHandler).toBeDefined();
+
+    const frame = [
+      {
+        rawValue: "0778918011332",
+        format: "ean-13",
+        boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+      },
+    ] as Parameters<NonNullable<typeof firstHandler>>[0];
+
+    for (let i = 0; i < 7; i++) {
+      await act(async () => {
+        firstHandler!(frame);
+      });
+    }
+  };
+
+  const proceedToLabelThenShoot = async () => {
+    await driveBarcodeLock();
+
+    fireEvent.click(await screen.findByLabelText("Scan Nutrition Facts →"));
+    // Precondition, not decoration: the chip really is gone in LABEL_PROMPTED,
+    // so the shutter is the ONLY remaining route forward.
+    expect(screen.queryByLabelText("Scan Nutrition Facts →")).toBeNull();
+    expect(screen.queryByLabelText("Use database data anyway")).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText("Take photo"));
+    });
+  };
+
+  it("advances to step 2 instead of silently no-op'ing the tap", async () => {
+    await proceedToLabelThenShoot();
+
+    // STEP2_CONFIRMED, reached via the 1s auto-advance out of STEP2_REVIEWING,
+    // is the first post-capture phase no timer dissolves — so this assertion
+    // can't race itself the way a STEP2_REVIEWING one would.
+    expect(
+      await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
+    ).toBeTruthy();
+  });
+
+  // Pins the trap in the obvious fix: admitting LABEL_PROMPTED to the capture
+  // guard alone routes it down the no-OCR branch, `normalizeOcrText(undefined)`
+  // returns `null`, and EVERY label photographed via the new primary path is
+  // then recorded as "photographed but unreadable" — gating 100% of label scans
+  // while looking fixed.
+  it("carries the recognised OCR text through to NutritionDetail, not null", async () => {
+    mockRecognizeText.mockResolvedValue({
+      text: "Calories 210\nTotal Fat 8g",
+      blocks: [],
+    });
+
+    await proceedToLabelThenShoot();
+
+    fireEvent.click(
+      await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
+    );
+
+    await waitFor(
+      () => {
+        expect(mockNavigate).toHaveBeenCalledWith("NutritionDetail", {
+          barcode: "0778918011332",
+          nutritionImageUri: "file:///label.jpg",
+          ocrText: "Calories 210\nTotal Fat 8g",
+        });
+      },
+      { timeout: 3000 },
+    );
   });
 });

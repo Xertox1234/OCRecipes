@@ -277,6 +277,66 @@ export function buildProductSummary(
   };
 }
 
+/** What a shutter press should do in a given phase. */
+export type CapturePlan = {
+  /** Take a photo at all. `false` means the shutter press is a deliberate no-op. */
+  capture: boolean;
+  /**
+   * Run on-device OCR and pass the result to `STEP_PHOTO_CAPTURED`.
+   *
+   * Scoped to the STEP2 nutrition-panel dispatch ONLY — it is not "does this
+   * phase ever OCR". `HUNTING` runs its own recognition for the label-mode and
+   * smart-menu previews (into `localOCRText`), which is a different payload on
+   * a different route.
+   */
+  runStepOcr: boolean;
+};
+
+/**
+ * Decide whether a shutter press captures in this phase, and whether that
+ * capture carries recognised label text.
+ *
+ * ONE decision for three call sites that each kept their own phase list:
+ * `onShutterPress`'s entry guard, its OCR branch, and `shutterArmed`. Those
+ * lists diverged twice on this branch, and the second divergence shipped
+ * `LABEL_PROMPTED` as a terminal dead-end — the reducer accepted
+ * `STEP_PHOTO_CAPTURED` from it while the guard silently dropped the tap, so
+ * the flow's new primary button did nothing and the barcode-only escape hatch
+ * had already unmounted with the chip.
+ *
+ * The switch is deliberately exhaustive with NO `default` clause: that is what
+ * makes a newly added `ScanPhase` a compile error here instead of a phase the
+ * capture gate silently ignores. Do not add a fall-through — it would recreate
+ * the bug class in a new location.
+ */
+export function getCapturePlan(phase: ScanPhase): CapturePlan {
+  switch (phase.type) {
+    // Smart scan / label mode. Captures, but its recognition goes to
+    // `localOCRText` on another route, not `STEP_PHOTO_CAPTURED`.
+    case "HUNTING":
+      return { capture: true, runStepOcr: false };
+    // BARCODE_LOCKED is retained alongside LABEL_PROMPTED so a capture taken
+    // before the chip's primary button is pressed still completes step 2 rather
+    // than being dropped — same rationale as the reducer's branch.
+    case "BARCODE_LOCKED":
+    case "LABEL_PROMPTED":
+      return { capture: true, runStepOcr: true };
+    // Step 3 (package front). Captured, but the front carries no nutrition
+    // panel and the phase's own `ocrText` (from step 2) is what moves forward.
+    case "STEP2_CONFIRMED":
+      return { capture: true, runStepOcr: false };
+    case "IDLE":
+    case "BARCODE_TRACKING":
+    case "STEP2_REVIEWING":
+    case "STEP3_REVIEWING":
+    case "SESSION_COMPLETE":
+    case "CLASSIFYING":
+    case "SMART_CONFIRMED":
+    case "SMART_ERROR":
+      return { capture: false, runStepOcr: false };
+  }
+}
+
 /**
  * Build the `NutritionDetail` route params from a completed scan session.
  *

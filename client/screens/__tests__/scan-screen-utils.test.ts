@@ -9,10 +9,13 @@ import {
   evaluateBarcodeDetection,
   buildProductSummary,
   buildNutritionDetailParams,
+  getCapturePlan,
 } from "../scan-screen-utils";
 import { logger } from "@/lib/logger";
 import { TIER_FEATURES } from "@shared/types/premium";
 import type { ScanFlag } from "@shared/types/scan-flags";
+import type { ScanPhase } from "@/camera/types/scan-phase";
+import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 
 describe("scan-screen-utils", () => {
   describe("getRouteForContentType", () => {
@@ -590,5 +593,117 @@ describe("scan-screen-utils", () => {
       expect(params).toEqual({ barcode: "06772408" });
       expect("ocrText" in params).toBe(false);
     });
+  });
+
+  describe("getCapturePlan", () => {
+    // One tested decision replaces the three hand-maintained phase lists that
+    // `onShutterPress`'s guard, its OCR branch, and `shutterArmed` each kept —
+    // the divergence that made LABEL_PROMPTED a dead-end (the reducer accepted
+    // STEP_PHOTO_CAPTURED from it; the capture gate silently dropped the tap).
+    const bounds = { x: 0.3, y: 0.4, width: 0.4, height: 0.2 };
+
+    const CASES: [ScanPhase, { capture: boolean; runStepOcr: boolean }][] = [
+      [{ type: "IDLE" }, { capture: false, runStepOcr: false }],
+      // Smart scan / label mode — captures, but runs its own OCR into
+      // localOCRText rather than the STEP_PHOTO_CAPTURED payload.
+      [{ type: "HUNTING" }, { capture: true, runStepOcr: false }],
+      [
+        {
+          type: "BARCODE_TRACKING",
+          barcode: "06772408",
+          bounds,
+          frameCount: 3,
+        },
+        { capture: false, runStepOcr: false },
+      ],
+      // Retained so a capture taken before the chip's primary button is
+      // pressed still completes step 2 (mirrors the reducer).
+      [
+        { type: "BARCODE_LOCKED", barcode: "06772408", bounds },
+        { capture: true, runStepOcr: true },
+      ],
+      [
+        { type: "LABEL_PROMPTED", barcode: "06772408" },
+        { capture: true, runStepOcr: true },
+      ],
+      [
+        {
+          type: "STEP2_REVIEWING",
+          barcode: "06772408",
+          imageUri: "file://panel.jpg",
+          ocrText: "Calories 140",
+        },
+        { capture: false, runStepOcr: false },
+      ],
+      // Step 3 (package front) — captured, but the front has no nutrition
+      // panel to recognise and its ocrText is carried over from step 2.
+      [
+        {
+          type: "STEP2_CONFIRMED",
+          barcode: "06772408",
+          nutritionImageUri: "file://panel.jpg",
+          ocrText: "Calories 140",
+        },
+        { capture: true, runStepOcr: false },
+      ],
+      [
+        {
+          type: "STEP3_REVIEWING",
+          barcode: "06772408",
+          nutritionImageUri: "file://panel.jpg",
+          ocrText: "Calories 140",
+          frontImageUri: "file://front.jpg",
+        },
+        { capture: false, runStepOcr: false },
+      ],
+      [
+        { type: "SESSION_COMPLETE", barcode: "06772408" },
+        { capture: false, runStepOcr: false },
+      ],
+      [
+        { type: "CLASSIFYING", imageUri: "file://photo.jpg" },
+        { capture: false, runStepOcr: false },
+      ],
+      [
+        {
+          type: "SMART_CONFIRMED",
+          imageUri: "file://photo.jpg",
+          classification: {} as PhotoAnalysisResponse,
+        },
+        { capture: false, runStepOcr: false },
+      ],
+      [
+        {
+          type: "SMART_ERROR",
+          imageUri: "file://photo.jpg",
+          error: "unrecognized",
+        },
+        { capture: false, runStepOcr: false },
+      ],
+    ];
+
+    it.each(CASES)("plans %o", (phase, expected) => {
+      expect(getCapturePlan(phase)).toEqual(expected);
+    });
+
+    // The whole-branch-review Critical, pinned at the helper: a shutter press in
+    // LABEL_PROMPTED must capture (it was a silent no-op) AND run step OCR (the
+    // trap in the guard-only fix — no OCR text makes normalizeOcrText return
+    // `null`, i.e. "photographed but unreadable", for every label scan).
+    it("captures AND runs step OCR for LABEL_PROMPTED", () => {
+      expect(
+        getCapturePlan({ type: "LABEL_PROMPTED", barcode: "06772408" }),
+      ).toEqual({ capture: true, runStepOcr: true });
+    });
+
+    // runStepOcr must never be true where capture is false — there would be no
+    // photo to recognise, so that pair can only ever be a slip.
+    it.each(CASES.map(([phase]) => [phase] as const))(
+      "never plans step OCR without a capture (%o)",
+      (phase) => {
+        const plan = getCapturePlan(phase);
+        expect(plan.runStepOcr && !plan.capture).toBe(false);
+      },
+    );
   });
 });
