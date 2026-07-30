@@ -145,3 +145,36 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
 
   return result;
 }
+
+/**
+ * Decides whether a parsed nutrition label is usable as the source of truth.
+ *
+ * Product rule (user decision, 2026-07-30): **when a nutrition label is present
+ * it is the source of truth** — its serving size and calories are adopted over
+ * the product database record. So this gate asks for exactly those two:
+ *
+ * - `calories` — the value being adopted.
+ * - `servingSize` — what that value is *per*. Without it there is nothing to
+ *   scale by, and the calorie figure would be silently presented as whatever
+ *   serving the database assumed. That is the bug this rule exists to fix, so
+ *   adopting calories without a serving would just relocate it.
+ *
+ * It deliberately does NOT also require a sugars-or-fat reading. That looked
+ * like cheap corroboration, but the two are not independent: the recogniser's
+ * `g` -> `9` substitution breaks the sugars and fat patterns *together*, so one
+ * glitch took out both and discarded labels whose calories and serving were
+ * perfect. Device-observed on a Cherry Coke can (barcode 06772408) on
+ * 2026-07-30 — the screen fell back to the database's per-100 mL figure and
+ * showed 39 kcal for a 140 kcal can. The verbatim capture is in the tests.
+ *
+ * A field that failed to parse is treated as ABSENT, not as evidence the label
+ * is wrong: `null` here means "we did not read this", never "the label is
+ * untrustworthy".
+ */
+export function isLabelReady(
+  parsed: LocalNutritionData | null | undefined,
+): boolean {
+  return (
+    parsed != null && parsed.calories != null && parsed.servingSize != null
+  );
+}

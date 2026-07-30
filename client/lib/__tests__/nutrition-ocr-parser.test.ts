@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseNutritionFromOCR } from "../nutrition-ocr-parser";
+import { parseNutritionFromOCR, isLabelReady } from "../nutrition-ocr-parser";
 
 describe("parseNutritionFromOCR", () => {
   it("extracts all fields from a standard US nutrition label", () => {
@@ -264,5 +264,88 @@ Protein / Protéines 3 g`;
     expect(r.protein).toBe(3);
     expect(r.transFat).toBeNull(); // trans fat kept US-only (not read by feature)
     expect(r.servingSize).toContain("355 mL");
+  });
+});
+
+/**
+ * The label is the source of truth when one is present: its serving size and
+ * calories are adopted over the product database (user decision, 2026-07-30).
+ *
+ * `isLabelReady` is the gate that decides whether a parse is used at all. It
+ * used to also demand a sugars-or-fat reading, and that clause is what threw
+ * away the real capture below.
+ */
+describe("isLabelReady — the label-is-source-of-truth gate", () => {
+  /**
+   * VERBATIM device OCR of a Cherry Coke can (barcode 06772408), captured on
+   * 2026-07-30 from a physical iPhone via MLKit. Do not "clean up" this string:
+   * every defect in it is real, and they are the point.
+   *
+   * The recogniser reads `g` as `9` (`0 9`, `39 9`) and `i` as `l` (`Ipldes`
+   * for `Lipides`, `Glucldes` for `Glucides`, `Sodlum` for `Sodium`), and
+   * splits `Carbohydrate` across two lines. Only 1 of 10 numeric field patterns
+   * survives that — but the two fields this product decision cares about,
+   * calories and serving size, both come through clean.
+   */
+  const CHERRY_COKE_DEVICE_OCR = `Nutrition Facts
+Valeur n ttritive
+Per 1 can (355 mL)
+pour 1 canette (355 mL)
+Calories 140
+Fat / Ipldes 0 9
+Carbe
+hydrate / Glucldes 39g
+Sugars Sucres 39 9
+Protein /Protéines 0 9
+Sodlum 30 mg`;
+
+  it("accepts a real device capture that yields only calories and a serving size", () => {
+    const parsed = parseNutritionFromOCR(CHERRY_COKE_DEVICE_OCR);
+
+    // Both source-of-truth fields survived the noise.
+    expect(parsed.calories).toBe(140);
+    expect(parsed.servingSize).toContain("355 mL");
+    // ...and essentially nothing else did. This is the shape the old gate rejected.
+    expect(parsed.totalSugars).toBeNull();
+    expect(parsed.totalFat).toBeNull();
+
+    // Before this change the gate required (totalSugars ?? totalFat), so this
+    // label was discarded and the screen fell back to the database's
+    // per-100 mL figure — 39 kcal for a 140 kcal can.
+    expect(isLabelReady(parsed)).toBe(true);
+  });
+
+  it("rejects a parse with no calories, even when a serving size was read", () => {
+    // A front-of-pack shot: legible, has a volume, but no nutrition panel.
+    const parsed = parseNutritionFromOCR(
+      "CHERRY COKE ZERO SUGAR\nPer 1 can (355 mL)",
+    );
+
+    expect(parsed.calories).toBeNull();
+    expect(isLabelReady(parsed)).toBe(false);
+  });
+
+  it("rejects a parse with calories but no serving size", () => {
+    // Without a serving there is nothing to scale by, so adopting the calorie
+    // figure would silently present it as whatever serving the DB assumed.
+    const parsed = parseNutritionFromOCR("Nutrition Facts\nCalories 140");
+
+    expect(parsed.calories).toBe(140);
+    expect(parsed.servingSize).toBeNull();
+    expect(isLabelReady(parsed)).toBe(false);
+  });
+
+  it("rejects a null parse (no label step ran, or OCR produced nothing)", () => {
+    expect(isLabelReady(null)).toBe(false);
+  });
+
+  it("does not require sugars or fat — one recogniser glitch takes out both", () => {
+    // `g`->`9` breaks the sugars AND fat patterns simultaneously, so requiring
+    // "either one" is not the independent corroboration it looks like.
+    const parsed = parseNutritionFromOCR(CHERRY_COKE_DEVICE_OCR);
+
+    expect(parsed.totalSugars).toBeNull();
+    expect(parsed.totalFat).toBeNull();
+    expect(isLabelReady(parsed)).toBe(true);
   });
 });

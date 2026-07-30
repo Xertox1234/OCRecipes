@@ -59,10 +59,26 @@ export function buildLabelConflict(
   // otherwise.
   const none: LabelConflict = { conflict: false, fields: [], compared: false };
 
-  // Presence gate: need calories + at least one comparable macro.
-  const hasCalories = label.calories != null;
-  const hasMacro = label.totalSugars != null || label.totalFat != null;
-  if (!hasCalories || !hasMacro) return none;
+  // Presence gate: the label is the source of truth when present, so its
+  // calories are what gets adopted — that is the only reading required here.
+  // The serving check immediately below is the other half: without a parseable
+  // serving there is nothing to scale by, and adopting a calorie figure would
+  // silently present it as whatever serving the DB assumed.
+  //
+  // A sugars-or-fat reading used to be required as well. It looked like cheap
+  // corroboration, but the two are not independent: the recogniser's `g` -> `9`
+  // substitution breaks the sugars and fat patterns *together*, so a single
+  // glitch took out both. Device-observed on a Cherry Coke can (06772408),
+  // 2026-07-30 — `Calories 140` and `Per 1 can (355 mL)` read perfectly while
+  // `Sugars Sucres 39 9` and `Fat / Ipldes 0 9` both failed; the label was
+  // discarded and the screen showed the database's per-100 ml value, 39 kcal
+  // for a 140 kcal can.
+  //
+  // Mirrors `isLabelReady` in client/lib/nutrition-ocr-parser.ts. The two gates
+  // must agree: if the client sends a label this refuses, the refusal returns
+  // the same body shape as agreement and the user sees database values with no
+  // indication the label was dropped.
+  if (label.calories == null) return none;
 
   // Comparable only if the label serving parses to grams/ml.
   const labelGrams = label.servingSize

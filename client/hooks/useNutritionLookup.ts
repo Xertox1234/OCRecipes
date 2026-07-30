@@ -35,7 +35,10 @@ import {
   createAllergenUnavailableFlag,
   type ScanFlag,
 } from "@shared/types/scan-flags";
-import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
+import {
+  parseNutritionFromOCR,
+  isLabelReady,
+} from "@/lib/nutrition-ocr-parser";
 import { deriveLogGate } from "@/screens/nutrition-detail-utils";
 
 export interface NutritionData {
@@ -307,11 +310,9 @@ export function useNutritionLookup(params: {
           if (token) headers["Authorization"] = `Bearer ${token}`;
 
           const parsedLabel = ocrText ? parseNutritionFromOCR(ocrText) : null;
-          const labelReady =
-            parsedLabel != null &&
-            parsedLabel.calories != null &&
-            (parsedLabel.totalSugars != null || parsedLabel.totalFat != null) &&
-            parsedLabel.servingSize != null;
+          // The label is the source of truth when present — see `isLabelReady`
+          // for the rule and why it does NOT also require sugars or fat.
+          const labelReady = isLabelReady(parsedLabel);
 
           // A label the user photographed but we could not use must not vanish
           // silently: the whole point of the label step is products whose
