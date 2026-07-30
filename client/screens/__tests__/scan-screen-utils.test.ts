@@ -538,10 +538,7 @@ describe("scan-screen-utils", () => {
         nutrient: "sugar",
       };
 
-      const result = buildProductSummary(
-        { productName: "Soda" },
-        [sugarFlag],
-      );
+      const result = buildProductSummary({ productName: "Soda" }, [sugarFlag]);
 
       expect(result.safetyFlag).toBeUndefined();
       expect(result.topFlag).toEqual(sugarFlag);
