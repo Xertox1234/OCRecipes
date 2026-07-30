@@ -64,6 +64,11 @@ function baseHookReturn(
     handleManualSearch: vi.fn(),
     addToLogMutation: { isPending: false },
     handleAddToLog: vi.fn(),
+    // Required even though this file pins the route to `itemId` (which closes
+    // the log-button block): the screen reads `logGate.kind` in a top-level
+    // useEffect dep array, so omitting it is a TypeError, not a falsy no-op
+    // like the notice fields above.
+    logGate: { kind: "open" },
   };
 }
 

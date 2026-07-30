@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -51,7 +51,13 @@ type RouteParams = {
   barcode?: string;
   imageUri?: string;
   itemId?: number;
-  ocrText?: string;
+  /**
+   * Three-valued, matching `RootStackParamList` — `undefined` = no label step
+   * ran, `null` = a label was photographed but unreadable, string = label text.
+   * Narrowing `null` away here would make the unreadable case indistinguishable
+   * from the barcode-only one, which is the whole basis of the log gate.
+   */
+  ocrText?: string | null;
 };
 
 function NutritionDetailSkeleton() {
@@ -212,7 +218,18 @@ export default function NutritionDetailScreen() {
     activeSource,
     chooseSource,
     dbNutrition,
+    logGate,
   } = useNutritionLookup({ barcode, imageUri, itemId, ocrText });
+
+  // Reset whenever the gate itself changes (a new lookup, a source toggle), so
+  // an acknowledgement can never carry over onto different numbers. Keyed on
+  // `logGate.kind`, NOT `logGate` — the hook returns a fresh object literal each
+  // render, so depending on the object would re-fire every render and wipe the
+  // acknowledgement the moment it was given, making the log button unreachable.
+  const [acknowledgedUnverified, setAcknowledgedUnverified] = useState(false);
+  useEffect(() => {
+    setAcknowledgedUnverified(false);
+  }, [logGate.kind]);
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;
@@ -848,17 +865,29 @@ export default function NutritionDetailScreen() {
 
         {!itemId ? (
           <View style={styles.buttonContainer}>
-            <Button
-              onPress={handleAddToLog}
-              loading={addToLogMutation.isPending}
-              accessibilityLabel={offlineLabel(
-                `Add ${nutrition?.productName || "item"} to today's food log`,
-              )}
-              accessibilityHint="Saves this item to your daily nutrition tracking"
-              style={styles.addButton}
-            >
-              {offlineLabel("Add to Today")}
-            </Button>
+            {logGate.kind === "needsAcknowledgement" &&
+            !acknowledgedUnverified ? (
+              <Button
+                onPress={() => setAcknowledgedUnverified(true)}
+                accessibilityLabel={`${logGate.buttonLabel}. These values come from the product database, not the label you photographed.`}
+                accessibilityHint="Confirms you have checked these values against the package"
+                style={styles.addButton}
+              >
+                {logGate.buttonLabel}
+              </Button>
+            ) : (
+              <Button
+                onPress={handleAddToLog}
+                loading={addToLogMutation.isPending}
+                accessibilityLabel={offlineLabel(
+                  `Add ${nutrition?.productName || "item"} to today's food log`,
+                )}
+                accessibilityHint="Saves this item to your daily nutrition tracking"
+                style={styles.addButton}
+              >
+                {offlineLabel("Add to Today")}
+              </Button>
+            )}
             {isOffline && (
               <ThemedText
                 type="small"

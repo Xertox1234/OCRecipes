@@ -36,6 +36,7 @@ import {
   type ScanFlag,
 } from "@shared/types/scan-flags";
 import { parseNutritionFromOCR } from "@/lib/nutrition-ocr-parser";
+import { deriveLogGate } from "@/screens/nutrition-detail-utils";
 
 export interface NutritionData {
   id?: number;
@@ -101,6 +102,12 @@ export function useNutritionLookup(params: {
    * dismiss the message on the happy path.
    */
   const [labelReadNotice, setLabelReadNotice] = useState<string | null>(null);
+  /**
+   * True when a photographed label was parsed AND accepted by the readiness
+   * gate, i.e. the values on screen came from the package rather than the
+   * database. Drives `logGate`.
+   */
+  const [labelUsed, setLabelUsed] = useState(false);
   const [showManualSearch, setShowManualSearch] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -266,6 +273,11 @@ export function useNutritionLookup(params: {
       setFlags([]);
       setConflict(null);
       setLabelReadNotice(null);
+      // Must run BEFORE any early exit from the server leg below. `labelUsed`
+      // outlives a lookup, so a lookup that bails before reaching the
+      // `setLabelUsed(labelReady)` site would otherwise inherit the PREVIOUS
+      // product's `true` and `logGate` would report `open` for database numbers.
+      setLabelUsed(false);
       setDbSnapshot(null);
       setActiveSource("database");
       try {
@@ -298,6 +310,8 @@ export function useNutritionLookup(params: {
                 : "We couldn't find nutrition values on that photo, so these come from the product database. Retake the nutrition panel to use the package instead.",
             );
           }
+
+          setLabelUsed(labelReady);
 
           const serverRes = labelReady
             ? await fetch(url, {
@@ -754,7 +768,10 @@ export function useNutritionLookup(params: {
     addToLogMutation.mutate();
   };
 
+  const logGate = deriveLogGate({ ocrText, labelUsed });
+
   return {
+    logGate,
     nutrition,
     setNutrition,
     flags,

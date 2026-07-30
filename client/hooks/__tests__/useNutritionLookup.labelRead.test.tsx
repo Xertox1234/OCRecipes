@@ -5,10 +5,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
-const { mockGoBack, mockApiRequest } = vi.hoisted(() => ({
+const { mockGoBack, mockApiRequest, mockTokenGet } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
   mockApiRequest: vi.fn(),
+  mockTokenGet: vi.fn(),
 }));
+
+/**
+ * Flips `tokenStorage.get` to reject. That is the ONE realistic failure that
+ * throws BEFORE the hook sets `labelUsed` from `labelReady`, which is what makes
+ * the stale-`labelUsed` regression test below discriminating. See its comment.
+ */
+let failKeychainRead = false;
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ goBack: mockGoBack }),
@@ -32,7 +40,7 @@ vi.mock("@/lib/query-client", () => ({
 }));
 
 vi.mock("@/lib/token-storage", () => ({
-  tokenStorage: { get: vi.fn(), set: vi.fn(), clear: vi.fn() },
+  tokenStorage: { get: mockTokenGet, set: vi.fn(), clear: vi.fn() },
 }));
 
 /**
@@ -63,9 +71,21 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
     source: "openfoodfacts",
   };
 
+  /** Proven `labelReady === true` by the happy-path test at the end of this file. */
+  const READABLE_LABEL =
+    "Nutrition Facts\nServing Size 1 can (355 mL)\nCalories 140\nTotal Fat 0g\nTotal Sugars 42g";
+
   beforeEach(() => {
     vi.clearAllMocks();
+    failKeychainRead = false;
     vi.stubGlobal("fetch", mockServerFetch);
+    // A mutable flag rather than mockRejectedValueOnce: clearAllMocks does not
+    // drain a once-queue, so an unconsumed rejection would leak into the next
+    // test in this file.
+    mockTokenGet.mockImplementation(async () => {
+      if (failKeychainRead) throw new Error("keychain unavailable");
+      return "test-token";
+    });
     mockApiRequest.mockResolvedValue({
       ok: true,
       json: async () => ({ hasFrontLabelData: false }),
@@ -136,12 +156,79 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
   });
 
   it("stays silent on the happy path so the warning keeps its meaning", async () => {
-    const { result } = render(
-      "Nutrition Facts\nServing Size 1 can (355 mL)\nCalories 140\nTotal Fat 0g\nTotal Sugars 42g",
-    );
+    const { result } = render(READABLE_LABEL);
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(result.current.labelReadNotice).toBeNull();
+  });
+
+  /**
+   * `labelUsed` is state that OUTLIVES a single lookup, so a lookup that never
+   * reaches the point where it is assigned would otherwise inherit the previous
+   * lookup's `true` — and `deriveLogGate` would report `open` for numbers that
+   * came from the database. That is the exact one-tap wrong-calorie write this
+   * whole feature exists to stop, so it gets its own regression test.
+   */
+  describe("logGate across consecutive lookups on one screen instance", () => {
+    // The OFF fallback's own payload shape. Same wrong-by-3.8x record as the
+    // server's, reached directly because the server leg never ran.
+    const offFallbackRecord = {
+      status: 1,
+      product: {
+        product_name: "Cherry Coke",
+        brands: "Coca-Cola",
+        nutriments: {
+          "energy-kcal_100g": 11.11,
+          proteins_100g: 0,
+          carbohydrates_100g: 3.1,
+          fat_100g: 0,
+        },
+        serving_size: "355 ml",
+      },
+    };
+
+    it("re-gates a retaken label that could not be read, after one that was used", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result, rerender } = renderHook(
+        (props: { ocrText?: string | null }) =>
+          useNutritionLookup({ barcode: "06772408", ocrText: props.ocrText }),
+        { wrapper, initialProps: { ocrText: READABLE_LABEL } },
+      );
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      // Negative control. Without this the assertion below could pass simply
+      // because the gate was never open in the first place.
+      expect(result.current.logGate).toEqual({ kind: "open" });
+
+      // The user takes the notice's advice and retakes the label — same barcode,
+      // same screen instance, and this time OCR yields nothing. The keychain read
+      // also fails, so the whole server leg is skipped and the direct-OFF
+      // fallback supplies the numbers.
+      //
+      // That combination is what makes this test discriminating: the hook assigns
+      // `labelUsed` from `labelReady` BEFORE it fetches, so every failure AFTER
+      // that point still clears the flag. A `tokenStorage.get` rejection is the
+      // one realistic failure that throws BEFORE it, leaving the per-lookup reset
+      // as the only thing that can clear the previous lookup's `true`.
+      failKeychainRead = true;
+      mockServerFetch.mockResolvedValue({
+        ok: true,
+        json: async () => offFallbackRecord,
+      });
+
+      rerender({ ocrText: null });
+
+      // `isLoading` is already false and is not re-armed, and the keychain
+      // rejection means `labelReadNotice` is never set either — so wait on the
+      // OFF fallback's own side effect: its fail-safe "couldn't check allergens"
+      // flag, which only that branch sets.
+      await waitFor(() => expect(result.current.flags).toHaveLength(1));
+
+      expect(result.current.logGate).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+      });
+    });
   });
 });

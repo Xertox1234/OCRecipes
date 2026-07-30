@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  deriveLogGate,
   getServingContextLabel,
   roundToOneDecimal,
 } from "../nutrition-detail-utils";
@@ -95,6 +96,46 @@ describe("nutrition-detail-utils", () => {
 
     it("passes through a whole number unchanged", () => {
       expect(roundToOneDecimal(40)).toBe(40);
+    });
+  });
+
+  describe("deriveLogGate", () => {
+    it("stays open when the label was read and used", () => {
+      expect(
+        deriveLogGate({ ocrText: "Calories 140", labelUsed: true }),
+      ).toEqual({ kind: "open" });
+    });
+
+    it("requires acknowledgement when a label was captured but unreadable", () => {
+      expect(deriveLogGate({ ocrText: null, labelUsed: false })).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+      });
+    });
+
+    it("requires acknowledgement when a label was read but the values were unusable", () => {
+      expect(
+        deriveLogGate({ ocrText: "Nutrition Facts", labelUsed: false }),
+      ).toEqual({
+        kind: "needsAcknowledgement",
+        buttonLabel: "Review values before logging",
+      });
+    });
+
+    // Load-bearing. A barcode-only session never promised to use a label, so
+    // gating it would warn on the happy path and train the user to dismiss the
+    // warning — which is exactly how the silent wrong-calorie path stayed
+    // invisible. `undefined` means no label step ran.
+    it("stays open for a barcode-only session", () => {
+      expect(deriveLogGate({ ocrText: undefined, labelUsed: false })).toEqual({
+        kind: "open",
+      });
+    });
+
+    it("stays open for a barcode-only session even if labelUsed is somehow true", () => {
+      expect(deriveLogGate({ ocrText: undefined, labelUsed: true })).toEqual({
+        kind: "open",
+      });
     });
   });
 });
