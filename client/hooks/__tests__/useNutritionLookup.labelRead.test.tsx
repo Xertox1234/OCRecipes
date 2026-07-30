@@ -201,8 +201,18 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
   describe("logGate across consecutive lookups on one screen instance", () => {
     it("re-gates a retaken label that could not be read, after one that was used", async () => {
       const { wrapper } = createQueryWrapper();
-      const { result, rerender } = renderHook(
-        (props: { ocrText?: string | null }) =>
+      // Explicit <Result, Props> generics — without them TS infers Props from the
+      // initialProps literal alone (a plain `string` there), NOT from the
+      // callback's parameter annotation, so the `rerender({ ocrText: null })`
+      // below fails to type-check. Same fix and same reason as
+      // client/camera/hooks/__tests__/useAutoAdvanceTimer.test.ts. Widening here
+      // rather than casting at the call site is deliberate: `null` is a
+      // first-class value in this contract, so the props type has to admit it.
+      const { result, rerender } = renderHook<
+        ReturnType<typeof useNutritionLookup>,
+        { ocrText?: string | null }
+      >(
+        (props) =>
           useNutritionLookup({ barcode: "06772408", ocrText: props.ocrText }),
         { wrapper, initialProps: { ocrText: READABLE_LABEL } },
       );
