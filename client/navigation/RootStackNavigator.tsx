@@ -95,6 +95,10 @@ export type RootStackParamList = {
     // `undefined` = no label step ran, `null` = a label was photographed but
     // unreadable (surfaced to the user), string = recognised text.
     ocrText?: string | null;
+    /** STEP2 capture — shown as evidence beside the values it produced. */
+    nutritionImageUri?: string;
+    /** STEP3 capture — package front, for product identity and the log thumbnail. */
+    frontImageUri?: string;
   };
   PhotoIntent:
     | {

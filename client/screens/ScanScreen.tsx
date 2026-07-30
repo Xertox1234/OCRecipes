@@ -61,6 +61,7 @@ import {
   resolveSmartConfirmAction,
   evaluateBarcodeDetection,
   buildProductSummary,
+  buildNutritionDetailParams,
   type BarcodeTrackingState,
 } from "@/screens/scan-screen-utils";
 import {
@@ -253,13 +254,10 @@ export default function ScanScreen() {
 
     const timer = setTimeout(() => {
       void refreshScanCount();
-      navigation.navigate("NutritionDetail", {
-        barcode,
-        // Present only when a STEP2 nutrition-label photo was captured; the
-        // detail screen parses it for label-vs-DB override. `undefined` on a
-        // barcode-only scan → unchanged behavior.
-        ocrText: "ocrText" in scanPhase ? scanPhase.ocrText : undefined,
-      });
+      navigation.navigate(
+        "NutritionDetail",
+        buildNutritionDetailParams(scanPhase),
+      );
     }, 700);
     return () => clearTimeout(timer);
   }, [

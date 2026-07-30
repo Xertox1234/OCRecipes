@@ -5,7 +5,7 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { PhotoAnalysisResponse } from "@/lib/photo-upload";
 import { LOCK_THRESHOLD_FRAMES } from "@/camera/components/ScanReticle-utils";
 import { logger } from "@/lib/logger";
-import type { ProductSummary } from "@/camera/types/scan-phase";
+import type { ProductSummary, ScanPhase } from "@/camera/types/scan-phase";
 import type { ScanFlag } from "@shared/types/scan-flags";
 import {
   pickTopSafetyFlag,
@@ -275,4 +275,43 @@ export function buildProductSummary(
     topFlag: pickTopDisplayFlag(flags),
     verificationLevel: data.verificationLevel,
   };
+}
+
+/**
+ * Build the `NutritionDetail` route params from a completed scan session.
+ *
+ * Passes the WHOLE payload rather than cherry-picking fields. The previous
+ * navigate sent only `{ barcode, ocrText }`, so the nutrition-panel and
+ * package-front photos the user deliberately captured were discarded at the
+ * navigation boundary — steps 2 and 3 produced artifacts nothing consumed.
+ *
+ * Keys are omitted rather than set to `undefined` so the three-valued `ocrText`
+ * contract survives: absent = no label step ran, `null` = captured but
+ * unreadable, string = readable.
+ */
+export function buildNutritionDetailParams(
+  phase: Extract<ScanPhase, { type: "SESSION_COMPLETE" }>,
+): {
+  barcode: string;
+  ocrText?: string | null;
+  nutritionImageUri?: string;
+  frontImageUri?: string;
+} {
+  const params: {
+    barcode: string;
+    ocrText?: string | null;
+    nutritionImageUri?: string;
+    frontImageUri?: string;
+  } = { barcode: phase.barcode };
+
+  if ("ocrText" in phase && phase.ocrText !== undefined) {
+    params.ocrText = phase.ocrText;
+  }
+  if (phase.nutritionImageUri !== undefined) {
+    params.nutritionImageUri = phase.nutritionImageUri;
+  }
+  if (phase.frontImageUri !== undefined) {
+    params.frontImageUri = phase.frontImageUri;
+  }
+  return params;
 }

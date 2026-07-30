@@ -513,6 +513,7 @@ describe("ScanScreen — session-complete navigate forwards ocrText (Task 4)", (
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith("NutritionDetail", {
         barcode: "0000000000000",
+        nutritionImageUri: "file:///nutrition-label.jpg",
         ocrText: "Calories 210, Total Fat 8g",
       });
     });

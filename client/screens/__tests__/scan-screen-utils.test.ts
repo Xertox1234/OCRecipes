@@ -8,6 +8,7 @@ import {
   resolveSmartConfirmAction,
   evaluateBarcodeDetection,
   buildProductSummary,
+  buildNutritionDetailParams,
 } from "../scan-screen-utils";
 import { logger } from "@/lib/logger";
 import { TIER_FEATURES } from "@shared/types/premium";
@@ -542,6 +543,52 @@ describe("scan-screen-utils", () => {
 
       expect(result.safetyFlag).toBeUndefined();
       expect(result.topFlag).toEqual(sugarFlag);
+    });
+  });
+
+  describe("buildNutritionDetailParams", () => {
+    // THE REGRESSION GUARD for the discarded-photos bug. The user photographed a
+    // nutrition panel and a package front; both were dropped at the navigate.
+    it("carries both captured photos through to NutritionDetail", () => {
+      const params = buildNutritionDetailParams({
+        type: "SESSION_COMPLETE",
+        barcode: "06772408",
+        nutritionImageUri: "file://panel.jpg",
+        frontImageUri: "file://front.jpg",
+        ocrText: "Calories 140",
+      });
+
+      expect(params).toEqual({
+        barcode: "06772408",
+        ocrText: "Calories 140",
+        nutritionImageUri: "file://panel.jpg",
+        frontImageUri: "file://front.jpg",
+      });
+    });
+
+    it("preserves ocrText null — a captured but unreadable label", () => {
+      const params = buildNutritionDetailParams({
+        type: "SESSION_COMPLETE",
+        barcode: "06772408",
+        nutritionImageUri: "file://blurry.jpg",
+        ocrText: null,
+      });
+
+      expect(params.ocrText).toBeNull();
+      expect(params.nutritionImageUri).toBe("file://blurry.jpg");
+      expect(params.frontImageUri).toBeUndefined();
+    });
+
+    // A barcode-only session never promised a label. ocrText must stay undefined
+    // — distinct from null — or the detail screen will warn on the happy path.
+    it("leaves ocrText undefined for a barcode-only session", () => {
+      const params = buildNutritionDetailParams({
+        type: "SESSION_COMPLETE",
+        barcode: "06772408",
+      });
+
+      expect(params).toEqual({ barcode: "06772408" });
+      expect("ocrText" in params).toBe(false);
     });
   });
 });
