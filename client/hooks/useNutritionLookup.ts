@@ -794,10 +794,18 @@ export function useNutritionLookup(params: {
       // lands the user back on the live camera. (ScanScreen's returnAfterLog
       // path CAN use safeGoBack because NutritionDetail never opened there, so
       // ScanScreen is the modal's top.) Dismiss the whole stack onto Today.
-      navigation.reset({
-        index: 0,
-        routes: [{ name: "Main", params: { screen: "HomeTab" } }],
-      });
+      //
+      // And NOT reset(). The stack here is Main (card) -> Scan
+      // (fullScreenModal) -> NutritionDetail (modal), so landing on Main means
+      // dismissing TWO stacked native modal presentations. `reset` asks
+      // react-native-screens to reconcile a wholesale state replacement; on iOS
+      // the native side does not tear both down, and the library then reverts
+      // JS state to match native — so the reset silently no-ops. Device-verified
+      // 2026-07-30 (iOS 18.7.8): the log row was written, `onSuccess` ran, and
+      // the stack was identical before and after. `popTo` dispatches a POP —
+      // the same path as swiping a modal down — which native-stack implements
+      // natively, and it carries the nested tab param in one action.
+      navigation.popTo("Main", { screen: "HomeTab" });
     },
     onError: (err) => {
       haptics.notification(Haptics.NotificationFeedbackType.Error);

@@ -10,6 +10,7 @@ import { ErrorCode } from "@shared/constants/error-codes";
 const {
   mockGoBack,
   mockReset,
+  mockPopTo,
   mockToastError,
   mockToastSuccess,
   mockApiRequest,
@@ -17,6 +18,7 @@ const {
 } = vi.hoisted(() => ({
   mockGoBack: vi.fn(),
   mockReset: vi.fn(),
+  mockPopTo: vi.fn(),
   mockToastError: vi.fn(),
   mockToastSuccess: vi.fn(),
   mockApiRequest: vi.fn(),
@@ -24,7 +26,11 @@ const {
 }));
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack, reset: mockReset }),
+  useNavigation: () => ({
+    goBack: mockGoBack,
+    reset: mockReset,
+    popTo: mockPopTo,
+  }),
 }));
 
 vi.mock("@/context/AuthContext", () => ({
@@ -115,17 +121,19 @@ describe("useNutritionLookup — addToLogMutation error surfacing", () => {
     });
 
     // NutritionDetail is pushed from inside the scan fullScreenModal, so
-    // goBack() would pop to the live camera — see Task 7 (D5 fix).
+    // goBack() would pop to the live camera — see Task 7 (D5 fix). It must be a
+    // POP, not a reset: reaching Main means dismissing two stacked native modal
+    // presentations, and `reset` silently no-ops there on iOS (device-verified
+    // 2026-07-30). See the sibling test in useNutritionLookup.labelRead.test.tsx
+    // for the full rationale.
     await waitFor(() =>
-      expect(mockReset).toHaveBeenCalledWith({
-        index: 0,
-        routes: [{ name: "Main", params: { screen: "HomeTab" } }],
-      }),
+      expect(mockPopTo).toHaveBeenCalledWith("Main", { screen: "HomeTab" }),
     );
     // Cardinality alongside the argument check — `toHaveBeenCalledWith` alone
-    // passes for a double reset, which would flash Today twice and re-run the
+    // passes for a double pop, which would flash Today twice and re-run the
     // navigator's mount effects.
-    expect(mockReset).toHaveBeenCalledTimes(1);
+    expect(mockPopTo).toHaveBeenCalledTimes(1);
+    expect(mockReset).not.toHaveBeenCalled();
     expect(mockGoBack).not.toHaveBeenCalled();
     expect(mockToastError).not.toHaveBeenCalled();
   });

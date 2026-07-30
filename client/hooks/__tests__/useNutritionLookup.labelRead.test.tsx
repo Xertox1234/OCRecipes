@@ -5,14 +5,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
 
-const { mockGoBack, mockReset, mockApiRequest, mockTokenGet } = vi.hoisted(
-  () => ({
+const { mockGoBack, mockReset, mockPopTo, mockApiRequest, mockTokenGet } =
+  vi.hoisted(() => ({
     mockGoBack: vi.fn(),
     mockReset: vi.fn(),
+    mockPopTo: vi.fn(),
     mockApiRequest: vi.fn(),
     mockTokenGet: vi.fn(),
-  }),
-);
+  }));
 
 /**
  * Flips `tokenStorage.get` to reject, so the hook's whole server leg is skipped
@@ -22,7 +22,11 @@ const { mockGoBack, mockReset, mockApiRequest, mockTokenGet } = vi.hoisted(
 let failKeychainRead = false;
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ goBack: mockGoBack, reset: mockReset }),
+  useNavigation: () => ({
+    goBack: mockGoBack,
+    reset: mockReset,
+    popTo: mockPopTo,
+  }),
 }));
 
 vi.mock("@/context/AuthContext", () => ({
@@ -454,7 +458,24 @@ describe("useNutritionLookup — post-log navigation", () => {
 
   // NutritionDetail is pushed from inside the scan fullScreenModal, so goBack()
   // pops to the live camera. Logging an item must land the user on Today.
-  it("resets to Main/HomeTab after a successful log, never goBack", async () => {
+  //
+  // MUST be a POP action, not `reset`. The stack at this point is
+  // Main (card) -> Scan (fullScreenModal) -> NutritionDetail (modal), so
+  // reaching Main means dismissing TWO stacked native modal presentations.
+  // `reset` asks react-native-screens to reconcile a wholesale state
+  // replacement that happens to do that, and on iOS the native side does not
+  // tear both down — the library then reverts JS state to match native, so the
+  // reset silently no-ops. Device-verified 2026-07-30 on iOS 18.7.8: the row
+  // was written, `onSuccess` ran, and the stack was byte-identical before and
+  // after (["Main","Scan","NutritionDetail"] both times). `popTo` dispatches a
+  // POP, the same path as swiping a modal down, which native-stack implements
+  // natively.
+  //
+  // This test mocks the navigator, so it can only prove WHICH action is
+  // dispatched — it cannot observe a native rejection. That is precisely how
+  // the `reset` version of this test stayed green while the feature was broken
+  // in the user's hands. Re-verify on a device when touching this.
+  it("pops to Main/HomeTab after a successful log — never reset, never goBack", async () => {
     const { wrapper } = createQueryWrapper();
     const { result } = renderHook(
       () => useNutritionLookup({ barcode: "06772408" }),
@@ -466,15 +487,15 @@ describe("useNutritionLookup — post-log navigation", () => {
     result.current.handleAddToLog();
 
     await waitFor(() =>
-      expect(mockReset).toHaveBeenCalledWith({
-        index: 0,
-        routes: [{ name: "Main", params: { screen: "HomeTab" } }],
-      }),
+      expect(mockPopTo).toHaveBeenCalledWith("Main", { screen: "HomeTab" }),
     );
     // Cardinality alongside the argument check — `toHaveBeenCalledWith` alone
-    // passes for a double reset, which would flash Today twice and re-run the
+    // passes for a double pop, which would flash Today twice and re-run the
     // navigator's mount effects.
-    expect(mockReset).toHaveBeenCalledTimes(1);
+    expect(mockPopTo).toHaveBeenCalledTimes(1);
+    // The regression guard: `reset` is the call that silently no-ops across two
+    // stacked native modals. If it comes back, this test fails.
+    expect(mockReset).not.toHaveBeenCalled();
     expect(mockGoBack).not.toHaveBeenCalled();
   });
 });
