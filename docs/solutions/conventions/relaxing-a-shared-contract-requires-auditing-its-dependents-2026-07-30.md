@@ -101,6 +101,6 @@ the sweep. That is rare; verify rather than assume it.
 
 ## See Also
 
-- [../logic-errors/disjunctive-gate-alternatives-sharing-one-failure-mode-2026-07-30.md](../logic-errors/disjunctive-gate-alternatives-sharing-one-failure-mode-2026-07-30.md) — the gate whose relaxation triggered instance 1
-- [replacement-must-accept-predecessor-inputs-2026-07-30.md](replacement-must-accept-predecessor-inputs-2026-07-30.md) — the same blind spot in the opposite direction: verifying new intent instead of preserved behaviour
-- [../conventions/discriminated-union-case-collapse-audit-absorbed-semantics-2026-07-14.md](../conventions/discriminated-union-case-collapse-audit-absorbed-semantics-2026-07-14.md) — the mirror case: collapsing a union member, not adding one
+- [A disjunctive gate whose alternatives fail to the same root cause](../logic-errors/disjunctive-gate-alternatives-sharing-one-failure-mode-2026-07-30.md) — the gate whose relaxation triggered instance 1
+- [A replacement must accept everything its predecessors accepted](replacement-must-accept-predecessor-inputs-2026-07-30.md) — the same blind spot in the opposite direction: verifying new intent instead of preserved behaviour
+- [Discriminated-union case collapse must audit the absorbed semantics](discriminated-union-case-collapse-audit-absorbed-semantics-2026-07-14.md) — the mirror case: collapsing a union member, not adding one

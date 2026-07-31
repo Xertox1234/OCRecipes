@@ -103,6 +103,6 @@ caller's failure path is honest about it.
 
 ## See Also
 
-- [relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md](relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md) — the same blind spot in the opposite direction
-- [../logic-errors/disjunctive-gate-alternatives-sharing-one-failure-mode-2026-07-30.md](../logic-errors/disjunctive-gate-alternatives-sharing-one-failure-mode-2026-07-30.md) — the gate this parser feeds
-- [../best-practices/collapse-duplicated-branches-verify-behaviour-first-2026-05-31.md](../best-practices/collapse-duplicated-branches-verify-behaviour-first-2026-05-31.md) — the same principle for collapsing duplicated branches
+- [Relaxing a shared contract requires auditing its dependents](relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md) — the same blind spot in the opposite direction
+- [A disjunctive gate whose alternatives fail to the same root cause](../logic-errors/disjunctive-gate-alternatives-sharing-one-failure-mode-2026-07-30.md) — the gate this parser feeds
+- [Collapse duplicated branches only after verifying identical behaviour](../best-practices/collapse-duplicated-branches-verify-behaviour-first-2026-05-31.md) — the same principle for collapsing duplicated branches
