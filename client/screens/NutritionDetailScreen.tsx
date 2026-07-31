@@ -709,8 +709,28 @@ export default function NutritionDetailScreen() {
               Your photos
             </ThemedText>
             <View style={styles.capturedPhotoRow}>
+              {/* The label lives on the GROUP, not on the image.
+                  Two reasons, and the naive placement fails both. RN's
+                  `Image` is not an accessibility element unless `accessible`
+                  is set, so an `accessibilityLabel` sitting on it may never
+                  reach VoiceOver at all; and where it IS exposed (Android,
+                  where a label sets importantForAccessibility) it would
+                  double-announce against the visible caption right below it
+                  — "Nutrition label you photographed", then "Nutrition
+                  label" — the pattern docs/rules/accessibility.md prohibits.
+                  One `accessible` wrapper collapses image + caption into a
+                  single node carrying one label. Safe here specifically
+                  because the tile has NO interactive child (that same rule
+                  forbids the wrapper when it would swallow a Pressable), and
+                  because the caption's words are contained in the group
+                  label — a collapsed subtree announces only the group's
+                  label, so anything not reflected in it is silently dropped. */}
               {nutritionImageUri ? (
-                <View style={styles.capturedPhoto}>
+                <View
+                  accessible
+                  accessibilityLabel="Nutrition label you photographed"
+                  style={styles.capturedPhoto}
+                >
                   <FallbackImage
                     source={{ uri: nutritionImageUri }}
                     style={[
@@ -724,10 +744,6 @@ export default function NutritionDetailScreen() {
                     // the numbers above — the whole panel has to be visible,
                     // letterboxing and all.
                     resizeMode="contain"
-                    // Names WHICH capture this is. A generic "image" would
-                    // leave a screen-reader user with two indistinguishable
-                    // photos and no way to tell the panel from the front.
-                    accessibilityLabel="Nutrition label you photographed"
                   />
                   <ThemedText
                     type="caption"
@@ -738,7 +754,11 @@ export default function NutritionDetailScreen() {
                 </View>
               ) : null}
               {frontImageUri ? (
-                <View style={styles.capturedPhoto}>
+                <View
+                  accessible
+                  accessibilityLabel="Product front you photographed"
+                  style={styles.capturedPhoto}
+                >
                   <FallbackImage
                     source={{ uri: frontImageUri }}
                     style={[
@@ -747,7 +767,6 @@ export default function NutritionDetailScreen() {
                     ]}
                     fallbackIcon="image"
                     resizeMode="contain"
-                    accessibilityLabel="Product front you photographed"
                   />
                   <ThemedText
                     type="caption"

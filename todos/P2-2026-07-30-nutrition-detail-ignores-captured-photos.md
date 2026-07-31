@@ -120,3 +120,31 @@ beyond display — the spec's front-label identity analysis (lines 212-222) is P
 
 Not done, and out of scope per the Scope Contract: tap-to-enlarge, and the two drive-by
 notes above (`deriveLogGate` placement, `verificationLevel` runtime validation).
+
+### 2026-07-30 (review round — PR #742)
+
+`/code-review medium` returned 1 Medium + 2 Low. Two fixed in the PR:
+
+- **Medium, tests could not tell a photo from a placeholder.** `FallbackImage` puts the
+  same `accessibilityLabel` on its grey fallback `View` as on a loaded `Image`, so
+  `getByLabelText(...)` alone passed either way. Repointing `source` at a wrong field
+  would have shown the user a grey box with every test still green. Added
+  `expectPhotoWithSource`, asserting an actual `<img>` carrying the expected `src`.
+  **Validated by sabotage:** forcing `source={{ uri: undefined }}` now fails 2 tests; under
+  the old assertions it failed none.
+- **Low, a11y label placement.** RN `Image` is not an accessibility element unless
+  `accessible` is set, so the label may never reach VoiceOver; where it IS exposed
+  (Android) it double-announced against the visible caption below it. Both tiles are now
+  one `accessible` group carrying the label, with image + caption collapsed inside — the
+  same pattern as the "Heads up" badge group, safe here because the tile has no
+  interactive child. Pinned by a new test asserting exactly one labelled node per photo.
+
+**Third finding deliberately NOT fixed here — it is Phase 2 input, not a defect to patch.**
+Saving uploads the label photo, so a later scan of the same barcode can show that photo as
+the database hero while the freshly-captured one sits in the tile below: near-identical
+pictures under two different a11y labels. There is no sound in-place fix — the hero is a
+CDN URL and the capture is a `file://` URI, so they cannot be compared. This is precisely
+what the spec's `ProductHero` ("Product image (front photo when available)", line 264) is
+meant to resolve. Note also that #737 largely mooted the acute case: `handleAddToLog` now
+`popTo`s Home in `onSuccess`, so the screen unmounts instead of sitting there re-rendering
+with the uploaded image.

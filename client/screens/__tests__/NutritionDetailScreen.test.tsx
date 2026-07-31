@@ -465,6 +465,24 @@ describe("NutritionDetailScreen — captured photos", () => {
     return renderComponent(<NutritionDetailScreen />);
   }
 
+  /**
+   * Asserts the SOURCE, not just the presence of a labelled node.
+   *
+   * `FallbackImage` puts the same label on its grey placeholder as on a
+   * loaded image, and here the label lives on the wrapper that survives
+   * either branch — so `getByLabelText(...)` alone passes identically
+   * whether the user's photo rendered or a placeholder icon did. The exact
+   * regression that hides behind the weaker assertion: point `source` at the
+   * wrong field, `hasValidUri` returns false, the user gets a grey box where
+   * their label photo should be, and every test stays green. The mock sets
+   * `src` from `source.uri`, so the URI is checkable end to end.
+   */
+  function expectPhotoWithSource(tile: HTMLElement, expectedUri: string) {
+    const img = tile.querySelector("img");
+    expect(img).toBeTruthy();
+    expect(img?.getAttribute("src")).toBe(expectedUri);
+  }
+
   it("renders both captures from a completed three-step session", () => {
     const { getByLabelText, queryByText } = renderCompletedSession({
       nutritionImageUri: "file://panel.jpg",
@@ -472,9 +490,30 @@ describe("NutritionDetailScreen — captured photos", () => {
       ocrText: "Calories 140",
     });
 
-    expect(getByLabelText(LABEL_A11Y)).toBeTruthy();
-    expect(getByLabelText(FRONT_A11Y)).toBeTruthy();
+    expectPhotoWithSource(getByLabelText(LABEL_A11Y), "file://panel.jpg");
+    expectPhotoWithSource(getByLabelText(FRONT_A11Y), "file://front.jpg");
     expect(queryByText("Your photos")).toBeTruthy();
+  });
+
+  /**
+   * The a11y contract is ONE node per photo, not two. Image and caption are
+   * collapsed into a single `accessible` group, so the caption's text must
+   * not also surface as its own labelled node — that is the double-announce
+   * `docs/rules/accessibility.md` prohibits, and it is invisible on device
+   * until someone turns VoiceOver on.
+   */
+  it("exposes each photo as a single labelled node, not image plus caption", () => {
+    const { getAllByLabelText, getByLabelText } = renderCompletedSession({
+      nutritionImageUri: "file://panel.jpg",
+      frontImageUri: "file://front.jpg",
+    });
+
+    expect(getAllByLabelText(LABEL_A11Y)).toHaveLength(1);
+    expect(getAllByLabelText(FRONT_A11Y)).toHaveLength(1);
+    // The visible caption is inside the group, contributing no label of its
+    // own — a collapsed subtree announces the group's label only, so the
+    // caption's words have to already be in it.
+    expect(getByLabelText(LABEL_A11Y).textContent).toContain("Nutrition label");
   });
 
   // A session that captured a label but skipped step 3. One photo, no empty
@@ -485,7 +524,7 @@ describe("NutritionDetailScreen — captured photos", () => {
       ocrText: null,
     });
 
-    expect(getByLabelText(LABEL_A11Y)).toBeTruthy();
+    expectPhotoWithSource(getByLabelText(LABEL_A11Y), "file://blurry.jpg");
     expect(queryByLabelText(FRONT_A11Y)).toBeNull();
   });
 
