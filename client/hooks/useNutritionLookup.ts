@@ -593,10 +593,18 @@ export function useNutritionLookup(params: {
           // it, and the plausibility check only rejects servings that are too
           // LARGE. A zero is not a measurement, it is the same absence of data
           // as a null — and left as 0 it captions "1 × 0 g" and scales every
-          // macro to zero. The server reached the same conclusion independently:
-          // `barcode-lookup.ts` computes `hasServingData` as
-          // `servingGrams !== null && servingGrams > 0` and documents its own
-          // fallback as a guard for "a pathological '0 ml' parse".
+          // macro to zero.
+          //
+          // The server CLASSIFIES a zero the same way — `barcode-lookup.ts`
+          // computes `hasServingData` as `servingGrams !== null && servingGrams
+          // > 0`, and documents its own fallback as a guard for "a pathological
+          // '0 ml' parse" — but it DIVERGES on the remedy, and deliberately so.
+          // It falls back to 100 g with `isServingDataTrusted: false`, which
+          // makes `scale` exactly 1, so the values it returns genuinely ARE
+          // per-100g and `isPer100g` lights the "Values shown per 100g" banner
+          // that says so. That remedy is coherent there and wrong here: this
+          // branch's values are per-SERVING, so re-basing them on 100 g would
+          // mislabel real data rather than disclose an absence of it.
           const trustedGrams = validated.servingInfo.grams;
           setServingSizeGrams(
             trustedGrams != null && trustedGrams > 0 ? trustedGrams : null,

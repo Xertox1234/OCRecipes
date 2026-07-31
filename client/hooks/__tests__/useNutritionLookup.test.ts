@@ -670,7 +670,9 @@ describe("useNutritionLookup — unknown serving weight (direct-OFF fallback)", 
 
     expect(result.current.nutrition?.calories).toBe(200);
     expect(result.current.nutrition?.sugar).toBe(38);
-    expect(result.current.nutrition?.servingSize).not.toBe("0g");
+    // The product's own wording, preserved. Pre-fix the per-100g branch
+    // overwrote this with `${grams}g` — i.e. the literal "0g".
+    expect(result.current.nutrition?.servingSize).toBe("0 ml");
   });
 
   it("regression: a parseable serving weight is unchanged", async () => {
