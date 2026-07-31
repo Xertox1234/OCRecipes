@@ -101,10 +101,17 @@ server rejects produces database values with no indication the label was dropped
 
 - `client/lib/nutrition-ocr-parser.ts` — `isLabelReady`, `FIELD_PATTERNS`, `SERVING_PER_PATTERN`
 - `server/services/label-override.ts` — `buildLabelConflict` presence gate
-- `client/hooks/useNutritionLookup.ts` — `labelReady`, and the `grams = servingSizeGrams || 100` fallback that renders the un-scaled value
+- `client/hooks/useNutritionLookup.ts` — `labelReady`, the client half of the gate
+- `server/services/barcode-lookup.ts` — `finalGrams = servingGrams || 100`. Once
+  the label is discarded, a record with no parseable serving falls back here to a
+  per-100 basis, making `scale` exactly 1 so the per-100 figure IS what reaches
+  the screen. The server flags that (`isServingDataTrusted: false` → the client's
+  "Values shown per 100g" banner), so the fallback itself is disclosed — the
+  defect is upstream, in discarding the label that carried the real 355 mL
+  serving.
 - `client/lib/__tests__/nutrition-ocr-parser.test.ts` — the verbatim Cherry Coke fixture
 
 ## See Also
 
 - [Explicit-zero corroboration must not inherit the nonzero path's guards](explicit-zero-corroboration-needs-contradiction-checks-2026-07-17.md) — the neighbouring nutrition-trust failure, where the guard was too strict rather than falsely redundant
-- [../conventions/relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md](../conventions/relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md) — relaxing this very gate broke downstream code that had relied on the removed guarantee
+- [Relaxing a shared contract requires auditing its dependents](../conventions/relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md) — relaxing this very gate broke downstream code that had relied on the removed guarantee

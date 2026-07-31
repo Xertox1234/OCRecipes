@@ -107,4 +107,4 @@ cannot observe a native rejection.
 
 - [fullScreenModal dismissal requires navigation.goBack() after navigate()](fullscreen-modal-dismissal-needs-goback-2026-05-13.md) — the sibling case: one modal left in the stack after `navigate()`, rather than a rejected multi-modal teardown
 - [RN Modal cannot overlay a React Navigation transparentModal](rn-modal-cannot-overlay-transparent-modal-2026-05-13.md) — another native-layer constraint that JS state alone does not express
-- [../conventions/relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md](../conventions/relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md) — the general form of "green tests did not cover the thing that broke"
+- [Relaxing a shared contract requires auditing its dependents](../conventions/relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md) — the general form of "green tests did not cover the thing that broke"
