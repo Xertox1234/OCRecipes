@@ -54,6 +54,17 @@ you photographed", then "Nutrition label"), which
 Wrapping in one `accessible` group avoids the question entirely: image and
 caption collapse to a single node carrying a single label.
 
+**Confirmed on device, iOS VoiceOver, 2026-07-31.** Each photo tile announces
+exactly once ("Nutrition label you photographed"), and the next swipe lands on
+the sibling photo rather than on the caption. This matters more than usual
+here: the jsdom harness cannot observe `accessible` subtree collapse in either
+direction, so a passing suite and a broken group are indistinguishable —
+device observation is the only evidence this shape has, and it is the reason
+not to "simplify" the label back onto the `<Image>`. **Android/TalkBack
+remains unverified** (no Android build exists in the EAS account); the RN
+source gate above is identical on both platforms, but that is an argument, not
+a measurement.
+
 Two conditions must hold, and they are the same ones this pattern always
 requires — they are just easy to miss when the group is "only an image":
 
