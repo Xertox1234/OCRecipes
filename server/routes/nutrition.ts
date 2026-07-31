@@ -20,6 +20,7 @@ import { evaluateUniversalFlags } from "../services/universal-flags";
 import { buildLabelConflict } from "../services/label-override";
 import { createNutrientUnavailableFlag } from "@shared/types/scan-flags";
 import { parseUserAllergies } from "@shared/constants/allergens";
+import { isBeverageCategory } from "@shared/constants/nutrition-bands";
 import { nutritionLookupRateLimit, pantryRateLimit } from "./_rate-limiters";
 import { numericStringField } from "./_schemas";
 import {
@@ -114,6 +115,13 @@ function buildBarcodeResponseBody(
   // (Phase 2, nutrition tier) flags.
   const orderedFlags = [...flags, ...universalFlags];
 
+  // Derived BEFORE the ODbL trim below, because categoriesTags is what it
+  // reads — and a derived boolean is our own classification, not OFF
+  // content, so it may ship where the tags themselves may not. The client
+  // needs it to pick the FSA per-100g vs per-100ml scale, which differs by
+  // ~2x.
+  const isBeverage = isBeverageCategory(result.categoriesTags ?? []);
+
   // Raw OFF allergen/ingredient/additive/category fields are consumed
   // here to build `flags`/`universalFlags` — no client reads them
   // directly, and additivesTags/categoriesTags are OFF-licensed
@@ -152,6 +160,7 @@ function buildBarcodeResponseBody(
   return {
     ...clientResult,
     flags: orderedFlags,
+    isBeverage,
     verificationLevel: verification?.verificationLevel ?? "unverified",
     verificationCount: verification?.verificationCount ?? 0,
   };

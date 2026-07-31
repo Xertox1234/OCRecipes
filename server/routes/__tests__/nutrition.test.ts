@@ -369,6 +369,131 @@ describe("Nutrition Routes", () => {
     });
   });
 
+  describe("GET /api/nutrition/barcode/:code — isBeverage", () => {
+    it("returns isBeverage true for a product tagged en:beverages", async () => {
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Cherry Coke",
+        barcode: "06772408",
+        per100g: { calories: 42, sugar: 11, fat: 0 },
+        perServing: { calories: 149, sugar: 39, fat: 0 },
+        servingInfo: {
+          displayLabel: "355 ml",
+          grams: 355,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts+self-consistent",
+        allergenDataAvailable: true,
+        novaGroup: 4,
+        categoriesTags: ["en:colas", "en:beverages"],
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/06772408")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.isBeverage).toBe(true);
+    });
+
+    it("returns isBeverage false for a food", async () => {
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Greek Yogurt",
+        barcode: "1234567890",
+        per100g: { calories: 120, protein: 18 },
+        perServing: { calories: 120, protein: 18 },
+        servingInfo: {
+          displayLabel: "1 serving",
+          grams: 170,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+        allergenDataAvailable: false,
+        categoriesTags: ["en:snacks"],
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/1234567890")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.isBeverage).toBe(false);
+    });
+
+    it("returns isBeverage false when categoriesTags is undefined", async () => {
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Mystery Item",
+        barcode: "1234567890",
+        per100g: { calories: 120 },
+        perServing: { calories: 120 },
+        servingInfo: {
+          displayLabel: "1 serving",
+          grams: 100,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+        allergenDataAvailable: false,
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/1234567890")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.isBeverage).toBe(false);
+    });
+
+    it("still strips the raw ODbL tag fields", async () => {
+      // The whole point of deriving a scalar is that the tags do NOT ship.
+      // If this ever passes with categoriesTags present, the licence
+      // boundary has been broken, not merely the test.
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Cherry Coke",
+        barcode: "06772408",
+        per100g: { calories: 42, sugar: 11, fat: 0 },
+        perServing: { calories: 149, sugar: 39, fat: 0 },
+        servingInfo: {
+          displayLabel: "355 ml",
+          grams: 355,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts+self-consistent",
+        allergenDataAvailable: true,
+        novaGroup: 4,
+        categoriesTags: ["en:colas", "en:beverages"],
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/06772408")
+        .set("Authorization", "Bearer token");
+
+      expect(res.body).not.toHaveProperty("categoriesTags");
+      expect(res.body).not.toHaveProperty("additivesTags");
+      expect(res.body).not.toHaveProperty("ingredientsText");
+      expect(res.body).not.toHaveProperty("allergenTags");
+    });
+
+    it("appears on the nested conflict.label body too, not only at the top level", async () => {
+      mockLookup.mockResolvedValue(cherryCokeDbResult()); // categoriesTags: en:colas, en:beverages
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: {
+          calories: 150,
+          totalSugars: 39,
+          totalFat: 0,
+          saturatedFat: null,
+          servingSize: "355 mL",
+        },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.isBeverage).toBe(true);
+      expect(res.body.conflict.label.isBeverage).toBe(true);
+    });
+  });
+
   describe("GET /api/scanned-items", () => {
     it("returns scanned items list", async () => {
       (storage.getScannedItems as Mock).mockResolvedValue([mockScannedItem]);
