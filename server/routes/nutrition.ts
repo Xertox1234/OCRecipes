@@ -120,7 +120,27 @@ function buildBarcodeResponseBody(
   // content, so it may ship where the tags themselves may not. The client
   // needs it to pick the FSA per-100g vs per-100ml scale, which differs by
   // ~2x.
-  const isBeverage = isBeverageCategory(result.categoriesTags ?? []);
+  //
+  // An EMPTY categoriesTags array (the real shape for a USDA-only match or
+  // any OFF product missing categories_tags — see
+  // extractOffUniversalData's null branch in barcode-lookup.ts) means "no
+  // category signal", not "confirmed not a beverage". isBeverageCategory([])
+  // returns false by design, so calling it unconditionally would emit a
+  // false claim of certainty here. That false would override Task 6's
+  // serving-unit fallback (resolveBasis short-circuits on a boolean before
+  // it ever inspects the parsed serving unit), silently halving the FSA
+  // sugar/fat/etc. thresholds for a real drink that just lacks OFF
+  // category data. So: only classify when there is at least one tag to
+  // classify from. Leaving `isBeverage` `undefined` here drops the key
+  // entirely (`res.json` omits `undefined` properties), which is exactly
+  // the "absent → fall back to the parsed serving unit, never default to
+  // food" behaviour the spec's error-handling table defines. DO NOT
+  // "simplify" this back to `isBeverageCategory(result.categoriesTags ??
+  // [])` — that reintroduces the false-food bug.
+  const isBeverage =
+    result.categoriesTags && result.categoriesTags.length > 0
+      ? isBeverageCategory(result.categoriesTags)
+      : undefined;
 
   // Raw OFF allergen/ingredient/additive/category fields are consumed
   // here to build `flags`/`universalFlags` — no client reads them

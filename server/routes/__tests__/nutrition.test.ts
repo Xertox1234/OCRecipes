@@ -421,7 +421,15 @@ describe("Nutrition Routes", () => {
       expect(res.body.isBeverage).toBe(false);
     });
 
-    it("returns isBeverage false when categoriesTags is undefined", async () => {
+    // The realistic "no category signal" shape: extractOffUniversalData
+    // (barcode-lookup.ts) always defaults categoriesTags to `[]`, never
+    // `undefined` — a USDA-only match or an OFF product missing
+    // categories_tags both land here. An empty array must NOT be read as
+    // "confirmed not a beverage": isBeverage must be OMITTED, not `false`,
+    // or Task 6's resolveBasis short-circuits to the food scale before its
+    // serving-unit fallback ever runs, silently halving FSA thresholds for
+    // a real drink that just lacks OFF category data.
+    it("omits isBeverage entirely when categoriesTags is empty (no category signal)", async () => {
       vi.mocked(lookupBarcode).mockResolvedValue({
         productName: "Mystery Item",
         barcode: "1234567890",
@@ -435,6 +443,7 @@ describe("Nutrition Routes", () => {
         isServingDataTrusted: true,
         source: "openfoodfacts",
         allergenDataAvailable: false,
+        categoriesTags: [],
       } satisfies BarcodeLookupResult);
 
       const res = await request(app)
@@ -442,7 +451,10 @@ describe("Nutrition Routes", () => {
         .set("Authorization", "Bearer token");
 
       expect(res.status).toBe(200);
-      expect(res.body.isBeverage).toBe(false);
+      // Not `toBeUndefined()`: that assertion also passes for a present
+      // key whose value happens to be undefined/null after serialization
+      // and would not catch a regression that emits `isBeverage: null`.
+      expect(res.body).not.toHaveProperty("isBeverage");
     });
 
     it("still strips the raw ODbL tag fields", async () => {
@@ -491,6 +503,31 @@ describe("Nutrition Routes", () => {
       expect(res.status).toBe(200);
       expect(res.body.isBeverage).toBe(true);
       expect(res.body.conflict.label.isBeverage).toBe(true);
+    });
+
+    it("omits isBeverage on BOTH the top level and conflict.label when categoriesTags is empty", async () => {
+      // A field that silently differs between branches is exactly what
+      // buildBarcodeResponseBody exists to prevent — check the "no signal"
+      // case is also consistent across both surfaces, not just the
+      // confirmed-beverage case above.
+      mockLookup.mockResolvedValue({
+        ...cherryCokeDbResult(),
+        categoriesTags: [],
+      });
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: {
+          calories: 150,
+          totalSugars: 39,
+          totalFat: 0,
+          saturatedFat: null,
+          servingSize: "355 mL",
+        },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.conflict).toBeDefined();
+      expect(res.body).not.toHaveProperty("isBeverage");
+      expect(res.body.conflict.label).not.toHaveProperty("isBeverage");
     });
   });
 
