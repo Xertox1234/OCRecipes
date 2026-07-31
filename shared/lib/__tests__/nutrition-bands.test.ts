@@ -135,6 +135,35 @@ describe("concernBand — per-portion HIGH override", () => {
     const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 240 };
     expect(concernBand("saturatedFat", 6.1, basis, null)).toBe("medium");
   });
+
+  it("gating the override to food: Cherry Coke on drink scale with portion weight", () => {
+    // 39g in 355ml = 11.0g/100ml, comfortably medium on the drink scale.
+    // If the override leaked onto drinks, this would falsely promote to high
+    // (39 > 27, the food sugar line). With the scale gate, it stays medium.
+    const drinkBasis: Basis = {
+      kind: "resolved",
+      scale: "drink",
+      factor: 100 / 355,
+    };
+    expect(concernBand("sugar", 39, drinkBasis, 355)).toBe("medium");
+  });
+
+  it("gating the override to food: invented-red case (5.6g/100ml drink)", () => {
+    // 28g sugar in 500ml drink = 5.6g/100ml, safely medium by drink standards.
+    // Without the scale gate, 28 > 27 (food line) would promote it to high.
+    const drinkBasis: Basis = {
+      kind: "resolved",
+      scale: "drink",
+      factor: 100 / 500,
+    };
+    expect(concernBand("sugar", 28, drinkBasis, 500)).toBe("medium");
+  });
+
+  it("food-basis override still promotes when all conditions are met", () => {
+    // Sanity check: the gate does not disable the override for food.
+    const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 240 };
+    expect(concernBand("saturatedFat", 6.1, basis, 240)).toBe("high");
+  });
 });
 
 describe("benefitBand", () => {
@@ -160,6 +189,18 @@ describe("benefitBand", () => {
     // 4g x 4 = 16 of 200 = 8% -> none
     expect(benefitBand("protein", 4, FOOD, 200)).toBe("none");
   });
+
+  it.each([
+    [5.9, "none"], // 5.9 x 4 = 23.6 of 200 = 11.8% < 12% good line
+    [6, "good"], // 6 x 4 = 24 of 200 = 12% = exactly the good line (inclusive)
+    [9.9, "good"], // 9.9 x 4 = 39.6 of 200 = 19.8% < 20% excellent line
+    [10, "excellent"], // 10 x 4 = 40 of 200 = 20% = exactly the excellent line (inclusive)
+  ] as const)(
+    "protein boundaries pinned: %g grams at 200 kcal bands %s",
+    (grams, expected) => {
+      expect(benefitBand("protein", grams, FOOD, 200)).toBe(expected);
+    },
+  );
 
   it("bands protein unknown when energy is absent or zero", () => {
     // No division by zero, and no pretending 0 kcal means 0% protein.

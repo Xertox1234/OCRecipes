@@ -37,6 +37,16 @@ const PORTION_LINES: Partial<Record<ConcernNutrient, number>> = {
   sodium: FSA_PORTION.sodium,
 };
 
+/**
+ * Classify a concern nutrient into a traffic-light band (high/medium/low).
+ *
+ * Precondition: When `portionGrams` is supplied, it must be the weight of the
+ * same portion that `perServingValue` describes. When `basis.factor` is 1
+ * (values already per-100), `portionGrams` should not be supplied.
+ *
+ * The per-portion override can only promote to high, only for portions over
+ * 100 g/ml, and only on the food scale (FSA_PORTION applies to food only).
+ */
 export function concernBand(
   nutrient: ConcernNutrient,
   perServingValue: number | undefined,
@@ -57,6 +67,7 @@ export function concernBand(
   // flags (allergen flags fail the other way).
   const portionLine = PORTION_LINES[nutrient];
   if (
+    basis.scale === "food" &&
     portionLine !== undefined &&
     portionGrams != null &&
     portionGrams > 100 &&
