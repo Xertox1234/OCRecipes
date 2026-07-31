@@ -163,3 +163,118 @@ export function resolveBasis(input: ResolveBasisInput): Basis {
   if (!parsed) return { kind: "unknown" };
   return { kind: "resolved", scale, factor: 100 / parsed.quantity };
 }
+
+/** Fixed order. Ties break here, so the same product always shows the same rows. */
+const CONCERN_ORDER: readonly ConcernNutrient[] = [
+  "sugar",
+  "saturatedFat",
+  "sodium",
+  "fat",
+];
+const BENEFIT_ORDER: readonly BenefitNutrient[] = ["fibre", "protein"];
+
+const CONCERN_RANK: Record<ConcernBand, number> = {
+  high: 3,
+  medium: 2,
+  low: 1,
+  unknown: 0,
+};
+const BENEFIT_RANK: Record<BenefitBand, number> = {
+  excellent: 3,
+  good: 2,
+  none: 1,
+  unknown: 0,
+};
+
+export interface BandedValue<B> {
+  band: B;
+  /** False when the nutrient has no recorded value at all (distinct from zero). */
+  hasValue: boolean;
+}
+
+export interface NutrientBands {
+  concerns: Partial<Record<ConcernNutrient, BandedValue<ConcernBand>>>;
+  benefits: Partial<Record<BenefitNutrient, BandedValue<BenefitBand>>>;
+}
+
+export type Standout =
+  | { group: "concern"; nutrient: ConcernNutrient; band: ConcernBand }
+  | { group: "benefit"; nutrient: BenefitNutrient; band: BenefitBand };
+
+/**
+ * Picks the two nutrients worth promoting into the summary card — the worst
+ * concern and the best benefit on THIS product.
+ *
+ * Iterates the fixed ORDER arrays rather than Object.keys, so the result
+ * cannot depend on how the input object was built.
+ */
+export function pickStandouts(bands: NutrientBands): Standout[] {
+  // Rule 3, slot one: worst concern at MEDIUM or above.
+  let concern: Standout | null = null;
+  let bestConcernRank = CONCERN_RANK.medium - 1;
+  for (const n of CONCERN_ORDER) {
+    const entry = bands.concerns[n];
+    if (!entry) continue;
+    const rank = CONCERN_RANK[entry.band];
+    if (rank >= CONCERN_RANK.medium && rank > bestConcernRank) {
+      bestConcernRank = rank;
+      concern = { group: "concern", nutrient: n, band: entry.band };
+    }
+  }
+
+  // Rule 3, slot two: best benefit at GOOD or above.
+  let benefit: Standout | null = null;
+  let bestBenefitRank = BENEFIT_RANK.good - 1;
+  for (const n of BENEFIT_ORDER) {
+    const entry = bands.benefits[n];
+    if (!entry) continue;
+    const rank = BENEFIT_RANK[entry.band];
+    if (rank >= BENEFIT_RANK.good && rank > bestBenefitRank) {
+      bestBenefitRank = rank;
+      benefit = { group: "benefit", nutrient: n, band: entry.band };
+    }
+  }
+
+  // Rule 4: if exactly one slot filled, the other is ALWAYS fibre — whatever
+  // its band, including `none` and `unknown`. This is what guarantees fibre
+  // appears on every product (Decision 3).
+  if (concern && !benefit) {
+    const fibre = bands.benefits.fibre;
+    if (fibre) {
+      benefit = { group: "benefit", nutrient: "fibre", band: fibre.band };
+    }
+  }
+
+  // Rule 5: neither filled. Promote fibre plus the first concern in fixed
+  // order that has a KNOWN VALUE, regardless of band. Rules 3-4 test the
+  // band; this tests value-presence, because on a basis-unknown saved item
+  // every band is `unknown` while every value is known — the dominant
+  // saved-item state, not an edge case.
+  if (!concern && !benefit) {
+    const fibre = bands.benefits.fibre;
+    if (fibre?.hasValue) {
+      benefit = { group: "benefit", nutrient: "fibre", band: fibre.band };
+    }
+  }
+  if (!concern) {
+    for (const n of CONCERN_ORDER) {
+      const entry = bands.concerns[n];
+      if (entry?.hasValue) {
+        concern = { group: "concern", nutrient: n, band: entry.band };
+        break;
+      }
+    }
+  }
+
+  // Benefit first when it led (rule 3 filled the benefit slot but not the
+  // concern one), so the promoted good news reads before the filler.
+  const out: Standout[] = [];
+  if (benefit && bestConcernRank < CONCERN_RANK.medium) {
+    if (benefit) out.push(benefit);
+    if (concern) out.push(concern);
+  } else {
+    if (concern) out.push(concern);
+    if (benefit) out.push(benefit);
+  }
+  return out;
+}

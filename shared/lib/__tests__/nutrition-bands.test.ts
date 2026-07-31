@@ -4,6 +4,10 @@ import {
   benefitBand,
   type Basis,
   resolveBasis,
+  pickStandouts,
+  type NutrientBands,
+  type ConcernBand,
+  type BenefitBand,
 } from "../nutrition-bands";
 
 const FOOD: Basis = { kind: "resolved", scale: "food", factor: 1 };
@@ -329,5 +333,174 @@ describe("resolveBasis", () => {
       }),
     ];
     for (const r of results) expect(r.kind).toBe("unknown");
+  });
+});
+
+/** Terse fixture builder. Typed, so a bad band string fails at compile time. */
+const c = <B extends ConcernBand | BenefitBand>(band: B, hasValue = true) => ({
+  band,
+  hasValue,
+});
+
+describe("pickStandouts", () => {
+  it("promotes the worst concern and the best benefit", () => {
+    const bands: NutrientBands = {
+      concerns: { sugar: c("high"), sodium: c("medium") },
+      benefits: { fibre: c("excellent"), protein: c("good") },
+    };
+    expect(pickStandouts(bands)).toEqual([
+      { group: "concern", nutrient: "sugar", band: "high" },
+      { group: "benefit", nutrient: "fibre", band: "excellent" },
+    ]);
+  });
+
+  it("falls back to fibre when no benefit qualifies", () => {
+    // Cherry Coke: high sugar, nothing good to say. Fibre still appears,
+    // as an explicit grey NONE — its absence IS the finding.
+    const bands: NutrientBands = {
+      concerns: { sugar: c("high"), sodium: c("low") },
+      benefits: { fibre: c("none"), protein: c("none") },
+    };
+    expect(pickStandouts(bands)).toEqual([
+      { group: "concern", nutrient: "sugar", band: "high" },
+      { group: "benefit", nutrient: "fibre", band: "none" },
+    ]);
+  });
+
+  it("fills the concern slot from fixed order when no concern qualifies", () => {
+    const bands: NutrientBands = {
+      concerns: { sugar: c("low"), sodium: c("low") },
+      benefits: { fibre: c("excellent") },
+    };
+    expect(pickStandouts(bands)).toEqual([
+      { group: "benefit", nutrient: "fibre", band: "excellent" },
+      { group: "concern", nutrient: "sugar", band: "low" },
+    ]);
+  });
+
+  it("promotes fibre plus the first valued concern when ALL bands are unknown", () => {
+    // THE dominant saved-item state under Decision 8: values known, basis
+    // unresolved, so every band is unknown. Rule 5 is value-presence, not
+    // band-knownness — showing nothing here would blank the card on a screen
+    // whose premise is surfacing data.
+    const bands: NutrientBands = {
+      concerns: {
+        sugar: c("unknown"),
+        saturatedFat: c("unknown"),
+        sodium: c("unknown"),
+      },
+      benefits: { fibre: c("unknown"), protein: c("unknown") },
+    };
+    expect(pickStandouts(bands)).toEqual([
+      { group: "benefit", nutrient: "fibre", band: "unknown" },
+      { group: "concern", nutrient: "sugar", band: "unknown" },
+    ]);
+  });
+
+  it("skips a concern with no value when filling by rule 5", () => {
+    const bands: NutrientBands = {
+      concerns: {
+        sugar: c("unknown", false), // not recorded
+        sodium: c("unknown", true),
+      },
+      benefits: { fibre: c("unknown", true) },
+    };
+    expect(pickStandouts(bands)).toEqual([
+      { group: "benefit", nutrient: "fibre", band: "unknown" },
+      { group: "concern", nutrient: "sodium", band: "unknown" },
+    ]);
+  });
+
+  it("breaks concern ties on fixed order — sugar wins", () => {
+    const bands: NutrientBands = {
+      concerns: { sodium: c("high"), sugar: c("high") },
+      benefits: {},
+    };
+    expect(pickStandouts(bands)[0]).toEqual({
+      group: "concern",
+      nutrient: "sugar",
+      band: "high",
+    });
+  });
+
+  it("breaks benefit ties on fixed order — fibre wins", () => {
+    const bands: NutrientBands = {
+      concerns: { sugar: c("high") },
+      benefits: { protein: c("excellent"), fibre: c("excellent") },
+    };
+    expect(pickStandouts(bands)[1]).toEqual({
+      group: "benefit",
+      nutrient: "fibre",
+      band: "excellent",
+    });
+  });
+
+  it("is insensitive to key insertion order", () => {
+    // Determinism by PERMUTATION, not repetition. Calling a pure function
+    // twice cannot differ; iterating a differently-built object can.
+    const a: NutrientBands = {
+      concerns: { sugar: c("medium"), sodium: c("high") },
+      benefits: { fibre: c("good"), protein: c("excellent") },
+    };
+    const b: NutrientBands = {
+      concerns: { sodium: c("high"), sugar: c("medium") },
+      benefits: { protein: c("excellent"), fibre: c("good") },
+    };
+    expect(pickStandouts(a)).toEqual(pickStandouts(b));
+  });
+
+  it("always returns two distinct rows when two nutrients have values", () => {
+    const cases: NutrientBands[] = [
+      { concerns: { sugar: c("high") }, benefits: { fibre: c("excellent") } },
+      { concerns: { sugar: c("low") }, benefits: { fibre: c("none") } },
+      { concerns: { sugar: c("unknown") }, benefits: { fibre: c("unknown") } },
+    ];
+    for (const bands of cases) {
+      const out = pickStandouts(bands);
+      expect(out).toHaveLength(2);
+      expect(out[0]).not.toEqual(out[1]);
+    }
+  });
+
+  it("returns what it can when fewer than two nutrients have values", () => {
+    const bands: NutrientBands = {
+      concerns: { sugar: c("unknown", false) },
+      benefits: { fibre: c("good", true) },
+    };
+    const out = pickStandouts(bands);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual({
+      group: "benefit",
+      nutrient: "fibre",
+      band: "good",
+    });
+  });
+
+  it("promotes a lone concern exactly AT the medium threshold", () => {
+    // Pins the >= boundary on CONCERN_RANK.medium: no other concern present
+    // to win "by rank" anyway, so a >= vs > mix-up would silently drop this
+    // concern and let rule 5 refill it, flipping the output order.
+    const bands: NutrientBands = {
+      concerns: { sodium: c("medium") },
+      benefits: { fibre: c("none") },
+    };
+    expect(pickStandouts(bands)).toEqual([
+      { group: "concern", nutrient: "sodium", band: "medium" },
+      { group: "benefit", nutrient: "fibre", band: "none" },
+    ]);
+  });
+
+  it("promotes a lone benefit exactly AT the good threshold", () => {
+    // Pins the >= boundary on BENEFIT_RANK.good: no fibre entry at all, so a
+    // >= vs > mix-up drops the benefit slot entirely (rule 4 has no fibre to
+    // fall back to), shrinking the result from two rows to one.
+    const bands: NutrientBands = {
+      concerns: { sugar: c("high") },
+      benefits: { protein: c("good") },
+    };
+    expect(pickStandouts(bands)).toEqual([
+      { group: "concern", nutrient: "sugar", band: "high" },
+      { group: "benefit", nutrient: "protein", band: "good" },
+    ]);
   });
 });
