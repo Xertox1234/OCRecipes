@@ -635,10 +635,27 @@ describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
   });
 
   it("falls back to Unknown Product and omits an absent brand", () => {
-    const { queryByText } = renderHero({ productName: "" });
+    // brandName is explicitly "" (falsy but PRESENT), not merely absent from
+    // the fixture. The screen renders `{nutrition.brandName}` — the brand's
+    // own literal value, never a hardcoded string — so with the key left out
+    // entirely, `queryByText("Coca-Cola")` could never find a match for ANY
+    // implementation of the omission guard, correct or broken: "Coca-Cola"
+    // was never in the tree to begin with. An explicit falsy value is the
+    // input that actually exercises `nutrition?.brandName ? (...) : null`
+    // (fix for review finding: PR review, 2b Task 1 re-review).
+    const { queryByText } = renderHero({ productName: "", brandName: "" });
 
-    expect(queryByText("Unknown Product")).toBeTruthy();
-    expect(queryByText("Coca-Cola")).toBeNull();
+    const productNameNode = queryByText("Unknown Product");
+    expect(productNameNode).toBeTruthy();
+    // A falsy brandName renders no visible TEXT either way — an empty-string
+    // child is textually indistinguishable from "not rendered" — so a
+    // text-based assertion can't tell a correct guard from a broken one that
+    // renders an empty node. Detect the omission structurally instead: the
+    // product name has no DOM sibling at all when the brand line is
+    // correctly withheld. Empirically confirmed non-vacuous: forcing the
+    // guard to render unconditionally produces an extra (empty) sibling
+    // `<span>` here even though its text content is "".
+    expect(productNameNode?.nextElementSibling).toBeNull();
   });
 
   it("labels the image by product name, and says so when there is no image", () => {
