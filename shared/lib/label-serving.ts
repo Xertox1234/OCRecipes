@@ -80,9 +80,10 @@ export function parseLabelServingGrams(
  * unit is not decoration — a drink measured on the food scale silently halves
  * the strictness applied to it.
  *
- * NOTE the inner `(?:re|er)` must stay NON-capturing: the outer parentheses
- * are group 2, and an extra capture would shift the index so the unit read
- * lands on `undefined` while `match[1]` still looks right.
+ * INVARIANT: The `(?:\.\d+)?` inside the quantity group MUST stay non-capturing.
+ * If captured, it inserts a new group 2 and pushes the unit to group 3,
+ * causing `match[2].startsWith("m")` to throw TypeError on integer quantities
+ * or silently map decimal fragments (e.g. ".5") to the wrong scale.
  */
 const UNIT_CAP = String.raw`(grams?|g|millilit(?:re|er)s?|ml)`;
 const PAREN_BASIS = new RegExp(
