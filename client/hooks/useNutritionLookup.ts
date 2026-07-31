@@ -350,6 +350,13 @@ export function useNutritionLookup(params: {
       setLabelUsed(false);
       setDbSnapshot(null);
       setActiveSource("database");
+      // Same fail-safe-by-construction rationale as `labelUsed` above:
+      // `isBeverage` is written only in the `serverRes.ok` branch below, so
+      // every other exit (404 notInDatabase, OFF fallback, total outage)
+      // must inherit "no signal" rather than the PRIOR product's
+      // classification. A stale `false` surviving onto a real beverage would
+      // apply lenient food-scale thresholds to a drink.
+      setIsBeverage(null);
       try {
         // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
         // Use raw fetch (not apiRequest) so we can inspect 404 responses

@@ -851,4 +851,35 @@ describe("useNutritionLookup — isBeverage (Task 8)", () => {
     expect(result.current.isBeverage).toBeNull();
     expect(mockServerFetch).not.toHaveBeenCalled();
   });
+
+  it("resets isBeverage to null on a re-fetch (same hook instance) that takes a non-success path", async () => {
+    // `isBeverage` is written ONLY in the `serverRes.ok` branch, so it needs
+    // its own entry in the per-lookup reset block alongside `flags`,
+    // `conflict`, `labelUsed`, etc. — otherwise a re-fetch on the same hook
+    // instance (e.g. a mounted screen handed a new barcode) leaks the PRIOR
+    // product's classification into every non-success exit.
+    mockBarcodeFetch({ isBeverage: true });
+    const { wrapper } = createQueryWrapper();
+    const { result, rerender } = renderHook(
+      ({ barcode }: { barcode: string }) => useNutritionLookup({ barcode }),
+      { wrapper, initialProps: { barcode: "06772408" } },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isBeverage).toBe(true);
+
+    // Second barcode: the primary server fetch fails outright, and the
+    // direct-OFF fallback ALSO fails — landing on the total-outage catch,
+    // which never touches `isBeverage`. Without the reset, the hook would
+    // still be reporting the FIRST product's `true` here.
+    mockServerFetch.mockRejectedValueOnce(new Error("network down"));
+    mockServerFetch.mockRejectedValueOnce(new Error("off unreachable"));
+
+    rerender({ barcode: "00000000" });
+
+    await waitFor(() =>
+      expect(result.current.nutrition?.barcode).toBe("00000000"),
+    );
+    expect(result.current.isBeverage).toBeNull();
+  });
 });
