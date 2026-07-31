@@ -468,19 +468,40 @@ describe("NutritionDetailScreen — captured photos", () => {
   /**
    * Asserts the SOURCE, not just the presence of a labelled node.
    *
-   * `FallbackImage` puts the same label on its grey placeholder as on a
-   * loaded image, and here the label lives on the wrapper that survives
-   * either branch — so `getByLabelText(...)` alone passes identically
-   * whether the user's photo rendered or a placeholder icon did. The exact
-   * regression that hides behind the weaker assertion: point `source` at the
-   * wrong field, `hasValidUri` returns false, the user gets a grey box where
-   * their label photo should be, and every test stays green. The mock sets
-   * `src` from `source.uri`, so the URI is checkable end to end.
+   * The label lives on the group wrapper, which renders identically whether
+   * `FallbackImage` resolved the photo or fell back to its grey placeholder
+   * — so `getByLabelText(...)` alone passes either way. The exact regression
+   * that hides behind the weaker assertion: point `source` at the wrong
+   * field, `hasValidUri` returns false, the user gets a grey box where their
+   * label photo should be, and every test stays green.
+   *
+   * Only the loaded branch emits an `<img>` at all (the fallback renders a
+   * div plus an icon span), and the mock sets `src` from `source.uri`, so
+   * both "did a real photo render" and "was it the RIGHT photo" are
+   * checkable here.
    */
   function expectPhotoWithSource(tile: HTMLElement, expectedUri: string) {
     const img = tile.querySelector("img");
     expect(img).toBeTruthy();
     expect(img?.getAttribute("src")).toBe(expectedUri);
+  }
+
+  /**
+   * Verifies the group label SUBSUMES the caption rendered inside it.
+   *
+   * Both sides are read off the DOM rather than compared against literals.
+   * That distinction is the whole value: two hardcoded strings that happen
+   * to overlap prove nothing about the component, whereas this fails the
+   * moment the caption text and the group label drift apart — which is the
+   * real defect, because an `accessible` group announces ONLY its own label
+   * and silently drops any nested text not reflected in it.
+   */
+  function expectCaptionSubsumedByGroupLabel(tile: HTMLElement) {
+    const caption = tile.textContent ?? "";
+    // Guard against the vacuous pass: `toContain("")` is always true, so an
+    // empty caption would make the real assertion below meaningless.
+    expect(caption.length).toBeGreaterThan(0);
+    expect(tile.getAttribute("aria-label")).toContain(caption);
   }
 
   it("renders both captures from a completed three-step session", () => {
@@ -510,10 +531,10 @@ describe("NutritionDetailScreen — captured photos", () => {
 
     expect(getAllByLabelText(LABEL_A11Y)).toHaveLength(1);
     expect(getAllByLabelText(FRONT_A11Y)).toHaveLength(1);
-    // The visible caption is inside the group, contributing no label of its
-    // own — a collapsed subtree announces the group's label only, so the
-    // caption's words have to already be in it.
-    expect(getByLabelText(LABEL_A11Y).textContent).toContain("Nutrition label");
+    // Both tiles, not just the first: they have identical structure, so
+    // guarding one and not the other leaves half the contract unpinned.
+    expectCaptionSubsumedByGroupLabel(getByLabelText(LABEL_A11Y));
+    expectCaptionSubsumedByGroupLabel(getByLabelText(FRONT_A11Y));
   });
 
   // A session that captured a label but skipped step 3. One photo, no empty

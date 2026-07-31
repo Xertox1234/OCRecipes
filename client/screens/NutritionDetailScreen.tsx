@@ -710,21 +710,27 @@ export default function NutritionDetailScreen() {
             </ThemedText>
             <View style={styles.capturedPhotoRow}>
               {/* The label lives on the GROUP, not on the image.
-                  Two reasons, and the naive placement fails both. RN's
-                  `Image` is not an accessibility element unless `accessible`
-                  is set, so an `accessibilityLabel` sitting on it may never
-                  reach VoiceOver at all; and where it IS exposed (Android,
-                  where a label sets importantForAccessibility) it would
-                  double-announce against the visible caption right below it
-                  — "Nutrition label you photographed", then "Nutrition
-                  label" — the pattern docs/rules/accessibility.md prohibits.
-                  One `accessible` wrapper collapses image + caption into a
-                  single node carrying one label. Safe here specifically
-                  because the tile has NO interactive child (that same rule
-                  forbids the wrapper when it would swallow a Pressable), and
-                  because the caption's words are contained in the group
-                  label — a collapsed subtree announces only the group's
-                  label, so anything not reflected in it is silently dropped. */}
+                  RN's `Image` gates on `accessible={props.alt !== undefined
+                  ? true : props.accessible}` — identically in Image.ios.js
+                  and Image.android.js — so a bare `accessibilityLabel` on it
+                  does not make it an accessibility element on EITHER
+                  platform, and may simply never be announced. If a platform
+                  heuristic surfaces it anyway, the result is worse: it
+                  double-announces against the visible caption right below it
+                  — "Nutrition label you photographed", then "Nutrition label"
+                  — which docs/rules/accessibility.md prohibits. Both branches
+                  are bad; neither has been confirmed on a device.
+
+                  One `accessible` wrapper avoids the question entirely by
+                  collapsing image + caption into a single node with one
+                  label. Safe here specifically because the tile has NO
+                  interactive child (that same rule forbids the wrapper when
+                  it would swallow a Pressable), and because the caption's
+                  words are contained in the group label — a collapsed
+                  subtree announces only the group's label, so anything not
+                  reflected in it is silently dropped. The test pins that
+                  containment by comparing the two off the DOM, not by
+                  matching two hand-written strings that happen to overlap. */}
               {nutritionImageUri ? (
                 <View
                   accessible
@@ -1140,10 +1146,15 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   capturedPhoto: {
-    // `flex: 1` rather than a fixed width so one photo fills the row and two
-    // split it — the single-capture case (step 3 skipped) must not leave a
-    // gap where the missing photo would have been.
+    // `flex: 1` so two captures split the row evenly, CAPPED at half width so
+    // a lone capture doesn't stretch across it. Letting it stretch looks like
+    // it fills the gap left by the missing photo, but `contain` won't upscale
+    // a portrait panel to a 343pt-wide frame — it just centres it and paints
+    // ~126pt of empty background on either side. Same emptiness, now inside
+    // the frame and larger. Capped, the single-capture case (step 3 skipped)
+    // is the same tile it would have been beside a sibling.
     flex: 1,
+    maxWidth: "50%",
     gap: Spacing.xs,
   },
   capturedPhotoImage: {
