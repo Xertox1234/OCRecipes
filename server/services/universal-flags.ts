@@ -4,6 +4,8 @@ import {
   FSA_DRINK,
   FSA_PORTION,
   isBeverageCategory,
+} from "@shared/constants/nutrition-bands";
+import {
   CAFFEINE_HIGH_MG,
   CAFFEINE_CATEGORY_TAGS,
   CAFFEINE_INGREDIENT_RE,
@@ -44,7 +46,8 @@ const NUTRIENT_META = {
     title: "High in sodium",
     // Copy is sodium-denominated to match the id/mg display above — the
     // underlying FSA guidance is published in grams of salt and pre-converted
-    // to mg sodium (see the ×400 conversion comment in nutrition-flag-rules.ts).
+    // to mg sodium (see the ×400 conversion comment in
+    // @shared/constants/nutrition-bands.ts).
     detail: "Above the FSA guideline for sodium.",
   },
 } as const;
@@ -93,19 +96,25 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
     }
   };
 
-  nutrientFlag("sugar", s.sugar, sv?.sugar, per100.sugar, FSA_PORTION.sugar);
+  nutrientFlag(
+    "sugar",
+    s.sugar,
+    sv?.sugar,
+    per100.sugar.high,
+    FSA_PORTION.sugar,
+  );
   nutrientFlag(
     "saturated_fat",
     s.saturatedFat,
     sv?.saturatedFat,
-    per100.saturatedFat,
+    per100.saturatedFat.high,
     FSA_PORTION.saturatedFat,
   );
   nutrientFlag(
     "sodium",
     s.sodium,
     sv?.sodium,
-    per100.sodium,
+    per100.sodium.high,
     FSA_PORTION.sodium,
   );
 
