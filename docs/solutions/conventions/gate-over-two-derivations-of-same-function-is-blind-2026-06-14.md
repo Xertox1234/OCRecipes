@@ -7,6 +7,7 @@ tags: [verification, testing, gates, parity, round-trip, code-review, independen
 symptoms: ['A parity/round-trip gate is green, yet the underlying data is wrong', Both sides of a correctness check are computed by the same parser/serializer/hash, A bug survived a passing gate because the gate could only see what that function produced]
 applies_to: [scripts/solutions-db/**/*.ts]
 created: '2026-06-14'
+last_updated: '2026-07-31'
 ---
 
 # A gate comparing two derivations of the same function is blind to that function's bugs
@@ -54,6 +55,33 @@ Design checklist for a new gate:
   expectations, a second implementation, or a human).
 - Prefer at least one gate per critical `f` whose two sides are independent.
 - A residual diff from an independent-reader gate is signal, not noise — root-cause it.
+
+### The shared origin can be a DOCUMENT, not just a function (added 2026-07-31)
+
+The same blindness appears with no `f` in sight. A literal-value pin —
+
+```ts
+expect(FSA_FOOD).toEqual({ sugar: { low: 5.0, high: 22.5 }, … });
+```
+
+— looks like the strongest possible assertion, and it is genuinely useful: it catches a
+*later* transposition. But it cannot validate the numbers themselves, because the pin and the
+implementation were transcribed from **the same source document**. A value that was wrong in
+the spec is wrong in both, and the test passes forever.
+
+The independent reader here is not a second code path — it is the **published standard**, or a
+person who checks against it. In the incident, a domain-specialist review of the constants
+found that a source comment asserted the UK FSA "publishes no per-portion figure for total
+fat". It publishes >21 g (food) / >10.5 g (drink). No amount of pinning could have caught
+that: the comment, the constant, and the test all descended from one wrong belief.
+
+Practical consequence for review routing: when a change's substance is *values from an external
+standard*, a second general code review will agree with the first. Route one pass at the
+domain — its job is to check the artifact against the world, not against itself.
+
+Sibling shape worth recognising: two regexes that differ only by capture parens
+(`PAREN` vs `PAREN_BASIS`) are two derivations of one pattern. A test asserting they agree is
+drift detection, not correctness — it passes for any shared mistake.
 
 ## Exceptions
 

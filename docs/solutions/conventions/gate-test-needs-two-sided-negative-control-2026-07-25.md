@@ -7,6 +7,7 @@ module: shared
 applies_to: [".claude/hooks/test-*.sh", "scripts/**/*.sh"]
 symptoms: ["A test asserts only that the fixed form passes, never that the broken form fails", "A guard test would still pass if the guard were deleted", "A config-string assertion greps raw file bytes but the value it expects is the JSON-decoded form (or vice versa)"]
 created: 2026-07-25
+last_updated: 2026-07-31
 ---
 
 # A gate test must be two-sided: without a negative control, green cannot be distinguished from "the payload never triggers the gate"
@@ -89,6 +90,48 @@ JSON, span the escape with a character class instead of hard-coding a depth:
 ```bash
 grep -qE "session-coord-hook\.sh[^ ]* register"   # not `\.sh register`, not `\.sh\" register`
 ```
+
+### The source-scan variant: `toEqual([])` hides "the scan found nothing to search" (added 2026-07-31)
+
+A guard that walks the source tree and asserts `expect(offenders).toEqual([])` is the same
+one-sided shape wearing different clothes. It passes when the tree is clean **and** when the
+scan searched nothing at all. A synthetic-repo check confirmed all of these produce an
+identical observable — exit 1, empty stdout, no error:
+
+| Cause | Looks like |
+| --- | --- |
+| The tree really is clean | `[]` ✅ |
+| The matcher is broken (e.g. `-E` with `\b`, see the facade doc) | `[]` ❌ |
+| A pathspec typo — `-- serverXYZ/` matches no path | `[]` ❌ |
+| `execSync` cwd diverged from the repo root | `[]` ❌ |
+| The offending file is untracked, so `git grep` cannot see it | `[]` ❌ |
+
+Two additions make it self-validating, and they are different checks — you want both:
+
+```ts
+// 1. Non-vacuity: the scan found files to search at all.
+expect(serverSourceFiles().length).toBeGreaterThan(0);
+
+// 2. Positive control: the SAME matcher, run against a file known to contain a real
+//    declaration. Not a hand-written fixture — a real file, so it cannot drift.
+expect(offendersIn(["shared/constants/nutrition-bands.ts"]))
+  .toEqual(["shared/constants/nutrition-bands.ts"]);
+```
+
+Factor the matcher into one `offendersIn(paths)` helper so the control exercises **identical**
+logic. A positive control that runs a re-typed copy of the regex proves the copy works, not
+the guard.
+
+Note the direction of the trade this replaces: a guard written as "expect exactly these
+allowed files" *is* self-proving (an empty result fails), but it fails confusingly whenever
+anyone adds a comment mentioning the symbol. Prefer the declaration-scoped matcher plus an
+explicit control over an allowlist of mention-permitted files.
+
+**Beware of regressing this while fixing something else.** In the incident, the guard began
+with a self-proving positive expectation; a later commit fixed an unrelated self-match bug and
+switched the assertion to `toEqual([])` in the same edit, silently trading the non-vacuity
+property away. When you change what a gate asserts, ask what property the old assertion was
+carrying for free.
 
 ## Exceptions
 
