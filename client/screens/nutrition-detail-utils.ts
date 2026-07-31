@@ -74,7 +74,15 @@ export function getServingContextLabel({
   isPer100g,
 }: ServingContextInput): string {
   if (servingSizeGrams === null) {
-    return isPer100g ? "100 g" : "serving";
+    if (isPer100g) return "100 g";
+    // A serving whose weight we don't know is still a serving that can be
+    // multiplied — an Open Food Facts record can publish trustworthy
+    // per-serving values against a serving_size like "1 bottle". Count them
+    // rather than dropping the quantity, or the caption freezes at "serving"
+    // while the values below it double.
+    return servingQuantity === 1
+      ? "serving"
+      : `${formatQuantity(servingQuantity)} servings`;
   }
   const match = servingOptions.find(
     (opt) => Math.abs(opt.grams - servingSizeGrams) < OPTION_MATCH_TOLERANCE,

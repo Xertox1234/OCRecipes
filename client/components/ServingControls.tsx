@@ -32,7 +32,12 @@ interface ServingControlsProps {
   setShowCustomInput: (show: boolean) => void;
   customGramsInput: string;
   setCustomGramsInput: (input: string) => void;
-  recalculateNutrition: (grams: number, quantity: number) => void;
+  /**
+   * `grams` is nullable because a serving of unknown weight is a real state —
+   * see the hook's implementation, which scales the per-serving baseline by
+   * quantity when no gram basis exists.
+   */
+  recalculateNutrition: (grams: number | null, quantity: number) => void;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -183,9 +188,13 @@ export const ServingControls = React.memo(function ServingControls({
             onPress={() => {
               const next = Math.max(0.5, servingQuantity - 0.5);
               setServingQuantity(next);
-              if (servingSizeGrams) {
-                recalculateNutrition(servingSizeGrams, next);
-              }
+              // Unconditional: `recalculateNutrition` now handles a null serving
+              // weight by scaling the per-serving baseline. The old truthiness
+              // guard existed because passing null computed `(null / 100) * qty`
+              // — zero — so it skipped instead, freezing the values while the
+              // counter climbed. `servings` is never applied server-side, so a
+              // frozen card logs one serving while the stepper reads two.
+              recalculateNutrition(servingSizeGrams, next);
               haptics.selection();
             }}
             accessibilityLabel="Decrease serving quantity"
@@ -200,9 +209,8 @@ export const ServingControls = React.memo(function ServingControls({
             onPress={() => {
               const next = servingQuantity + 0.5;
               setServingQuantity(next);
-              if (servingSizeGrams) {
-                recalculateNutrition(servingSizeGrams, next);
-              }
+              // Unconditional — see the decrement handler above.
+              recalculateNutrition(servingSizeGrams, next);
               haptics.selection();
             }}
             accessibilityLabel="Increase serving quantity"
