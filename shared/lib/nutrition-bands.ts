@@ -5,6 +5,7 @@ import {
   FIBRE_CLAIM,
   PROTEIN_ENERGY_CLAIM,
 } from "@shared/constants/nutrition-bands";
+import { parseServingBasis } from "@shared/lib/label-serving";
 
 export type ConcernNutrient = "sugar" | "saturatedFat" | "sodium" | "fat";
 export type BenefitNutrient = "fibre" | "protein";
@@ -112,4 +113,53 @@ export function benefitBand(
   if (per100 >= FIBRE_CLAIM.excellent) return "excellent";
   if (per100 >= FIBRE_CLAIM.good) return "good";
   return "none";
+}
+
+export interface ResolveBasisInput {
+  /** True when the caller's nutrient values are ALREADY per 100 g/ml. */
+  valuesArePer100: boolean;
+  /** The product's serving string, e.g. "1 can (355 mL)". */
+  servingSize: string | null | undefined;
+  /**
+   * Derived scale flag from the barcode response. Absent on the saved-item
+   * path, the direct-OFF fallback, and bundles predating it.
+   */
+  isBeverage: boolean | null | undefined;
+}
+
+/**
+ * Decides whether a set of nutrient values can be placed on an FSA scale at
+ * all, and if so on which one.
+ *
+ * Deliberately does NOT read `effectivePer100g` from useNutritionLookup:
+ * that value back-calculates with `servingSizeGrams || 100`, and on the
+ * saved-item path `servingSizeGrams` is never set, so it returns per-serving
+ * numbers labelled per-100g. Consuming it here is exactly what would arm that
+ * latent defect. See
+ * todos/P2-2026-07-31-effective-per100g-fabricates-basis-on-saved-item-path.md
+ */
+export function resolveBasis(input: ResolveBasisInput): Basis {
+  const parsed = parseServingBasis(input.servingSize);
+
+  // Scale: the explicit flag wins (a drink sold by weight is still a drink);
+  // otherwise the serving unit, which mirrors the FSA's own per-100g vs
+  // per-100ml split. Never a default — food thresholds are roughly double
+  // drink thresholds, so guessing food under-warns on every untagged drink.
+  const scale: "food" | "drink" | null =
+    input.isBeverage === true
+      ? "drink"
+      : input.isBeverage === false
+        ? "food"
+        : parsed
+          ? parsed.unit === "ml"
+            ? "drink"
+            : "food"
+          : null;
+
+  if (scale === null) return { kind: "unknown" };
+
+  if (input.valuesArePer100) return { kind: "resolved", scale, factor: 1 };
+
+  if (!parsed) return { kind: "unknown" };
+  return { kind: "resolved", scale, factor: 100 / parsed.quantity };
 }

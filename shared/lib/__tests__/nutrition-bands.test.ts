@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { concernBand, benefitBand, type Basis } from "../nutrition-bands";
+import {
+  concernBand,
+  benefitBand,
+  type Basis,
+  resolveBasis,
+} from "../nutrition-bands";
 
 const FOOD: Basis = { kind: "resolved", scale: "food", factor: 1 };
 const DRINK: Basis = { kind: "resolved", scale: "drink", factor: 1 };
@@ -210,5 +215,119 @@ describe("benefitBand", () => {
 
   it("bands unknown when the basis is unresolved", () => {
     expect(benefitBand("fibre", 12, UNKNOWN)).toBe("unknown");
+  });
+});
+
+describe("resolveBasis", () => {
+  it("trusts a per-100 payload with an explicit drink flag", () => {
+    expect(
+      resolveBasis({
+        valuesArePer100: true,
+        servingSize: "1 can (355 mL)",
+        isBeverage: true,
+      }),
+    ).toEqual({ kind: "resolved", scale: "drink", factor: 1 });
+  });
+
+  it("trusts a per-100 payload with an explicit food flag", () => {
+    expect(
+      resolveBasis({
+        valuesArePer100: true,
+        servingSize: "1 cup (236g)",
+        isBeverage: false,
+      }),
+    ).toEqual({ kind: "resolved", scale: "food", factor: 1 });
+  });
+
+  it("falls back to the serving unit when isBeverage is absent", () => {
+    // The direct-OFF client fallback and older bundles have no flag.
+    expect(
+      resolveBasis({
+        valuesArePer100: true,
+        servingSize: "1 can (355 mL)",
+        isBeverage: undefined,
+      }),
+    ).toEqual({ kind: "resolved", scale: "drink", factor: 1 });
+  });
+
+  it("back-calculates the factor from a parsed serving", () => {
+    expect(
+      resolveBasis({
+        valuesArePer100: false,
+        servingSize: "1 cup (236g)",
+        isBeverage: null,
+      }),
+    ).toEqual({ kind: "resolved", scale: "food", factor: 100 / 236 });
+  });
+
+  it("prefers the explicit flag over the serving unit when both exist", () => {
+    // A drink sold by weight ("500g") is still a drink.
+    expect(
+      resolveBasis({
+        valuesArePer100: false,
+        servingSize: "500g",
+        isBeverage: true,
+      }),
+    ).toEqual({ kind: "resolved", scale: "drink", factor: 100 / 500 });
+  });
+
+  it("returns unknown when the serving string carries no metric quantity", () => {
+    // THE saved-item case. Never a 100g default.
+    expect(
+      resolveBasis({
+        valuesArePer100: false,
+        servingSize: "1 bottle",
+        isBeverage: undefined,
+      }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("returns unknown when the serving string is absent", () => {
+    expect(
+      resolveBasis({
+        valuesArePer100: false,
+        servingSize: null,
+        isBeverage: undefined,
+      }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("returns unknown for a zero or negative quantity", () => {
+    expect(
+      resolveBasis({
+        valuesArePer100: false,
+        servingSize: "0 ml",
+        isBeverage: true,
+      }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("returns unknown when a per-100 payload has no usable scale signal", () => {
+    // Values are trustworthy but we cannot tell food from drink, and the
+    // scales differ by ~2x. Guessing food would halve the strictness on
+    // every untagged drink.
+    expect(
+      resolveBasis({
+        valuesArePer100: true,
+        servingSize: "1 serving",
+        isBeverage: undefined,
+      }),
+    ).toEqual({ kind: "unknown" });
+  });
+
+  it("never defaults to the food scale", () => {
+    const results = [
+      resolveBasis({
+        valuesArePer100: true,
+        servingSize: null,
+        isBeverage: null,
+      }),
+      resolveBasis({
+        valuesArePer100: false,
+        servingSize: "1 pack",
+        isBeverage: null,
+      }),
+    ];
+    for (const r of results) expect(r.kind).toBe("unknown");
   });
 });
