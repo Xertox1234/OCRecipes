@@ -706,3 +706,132 @@ describe("useNutritionLookup — unknown serving weight (direct-OFF fallback)", 
     expect(result.current.nutrition?.servingSize).toBe("355g");
   });
 });
+
+describe("useNutritionLookup — isBeverage (Task 8)", () => {
+  const mockServerFetch = vi.fn();
+
+  // Minimal-but-complete buildBarcodeResponseBody-shaped body — the hook
+  // reads perServing/servingInfo/etc. off the OK response before it ever
+  // looks at isBeverage, so a partial body would throw before assertions run.
+  function baseBody(overrides: Record<string, unknown> = {}) {
+    return {
+      productName: "Cherry Coke",
+      brandName: "Coca-Cola",
+      barcode: "06772408",
+      perServing: {
+        calories: 39,
+        protein: 0,
+        carbs: 10,
+        fat: 0,
+        fiber: 0,
+        sugar: 10,
+        sodium: 5,
+        saturatedFat: 0,
+        transFat: 0,
+        cholesterol: 0,
+        caffeine: 10,
+      },
+      per100g: { calories: 11, protein: 0, carbs: 2.8, fat: 0 },
+      servingInfo: { displayLabel: "355 ml", grams: 355, wasCorrected: false },
+      isServingDataTrusted: true,
+      imageUrl: undefined,
+      flags: [],
+      verificationLevel: "unverified",
+      ...overrides,
+    };
+  }
+
+  function mockBarcodeFetch(overrides: Record<string, unknown> = {}) {
+    mockServerFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => baseBody(overrides),
+    });
+    return mockServerFetch;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+    // Non-critical follow-up calls inside fetchBarcodeData (front-label
+    // verification) and the micronutrients query (itemId path) — resolve
+    // them so they don't derail the isBeverage assertions under test.
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        hasFrontLabelData: false,
+        foodName: "Leftover chili",
+        micronutrients: [],
+      }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("exposes isBeverage from a successful barcode response", async () => {
+    mockBarcodeFetch({ isBeverage: true });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "06772408" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isBeverage).toBe(true);
+  });
+
+  it("exposes null when isBeverage is absent from the response (USDA-only shape)", async () => {
+    // The normal path for uncategorized products now that the server omits
+    // the key rather than sending false. Null means "no signal", which
+    // resolveBasis treats as unknown rather than defaulting to food.
+    mockBarcodeFetch();
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "06772408" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isBeverage).toBeNull();
+  });
+
+  it("exposes null when isBeverage is present but not a boolean", async () => {
+    // The response is consumed as untyped json(); a wire field must be
+    // narrowed at the boundary, not trusted.
+    mockBarcodeFetch({ isBeverage: "true" });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "06772408" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isBeverage).toBeNull();
+  });
+
+  it("exposes null on the saved-item path, which never runs the barcode handler", async () => {
+    const { wrapper, queryClient } = createQueryWrapper();
+    // The scanned-items query has no queryFn of its own (see
+    // useNutritionLookup.ts) — it relies on the cache. Freeze it via
+    // staleTime so mounting doesn't attempt a background refetch with no
+    // queryFn configured on this bare test QueryClient.
+    queryClient.setQueryDefaults(["/api/scanned-items"], {
+      staleTime: Infinity,
+    });
+    queryClient.setQueryData(["/api/scanned-items", 42], {
+      id: 42,
+      productName: "Leftover chili",
+    });
+
+    const { result } = renderHook(() => useNutritionLookup({ itemId: 42 }), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    // The itemId branch never calls fetchBarcodeData, so isBeverage keeps
+    // its null initialiser.
+    expect(result.current.isBeverage).toBeNull();
+    expect(mockServerFetch).not.toHaveBeenCalled();
+  });
+});

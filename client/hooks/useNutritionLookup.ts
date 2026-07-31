@@ -84,6 +84,16 @@ export function useNutritionLookup(params: {
   const [flags, setFlags] = useState<ScanFlag[]>([]);
   const [verificationLevel, setVerificationLevel] =
     useState<VerificationLevel>("unverified");
+  /**
+   * Null means "no signal" — an older server, a USDA-only match, or an OFF
+   * product with no `categories_tags` all omit the key entirely rather than
+   * sending `false`, since the server has no basis to claim certainty either
+   * way. `resolveBasis` treats null as unknown rather than defaulting to the
+   * food scale, which would halve the strictness applied to a real drink.
+   * The itemId/saved-item path never runs the barcode handler below, so it
+   * keeps this null initialiser — the correct "no signal" value there too.
+   */
+  const [isBeverage, setIsBeverage] = useState<boolean | null>(null);
   const [hasFrontLabelData, setHasFrontLabelData] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -525,6 +535,16 @@ export function useNutritionLookup(params: {
               setVerificationLevel(data.verificationLevel as VerificationLevel);
             }
 
+            // Narrowed explicitly: the response is consumed as untyped
+            // `json()`, so a wire field arrives as `any`. Anything that is
+            // not a real boolean becomes null — "no signal" — which
+            // resolveBasis treats as unknown rather than silently defaulting
+            // to the food scale (which would halve the strictness applied to
+            // every drink).
+            setIsBeverage(
+              typeof data.isBeverage === "boolean" ? data.isBeverage : null,
+            );
+
             // Fetch front-label status from verification endpoint
             try {
               const verRes = await apiRequest(
@@ -904,6 +924,7 @@ export function useNutritionLookup(params: {
     setNutrition,
     flags,
     verificationLevel,
+    isBeverage,
     hasFrontLabelData,
     isLoading,
     error,
