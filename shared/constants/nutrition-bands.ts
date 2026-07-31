@@ -41,9 +41,16 @@ export const FSA_DRINK = {
 } as const satisfies Record<string, ConcernBandLimits>;
 
 /**
- * Per portion, for portions over 100 g/ml. RED-ONLY by FSA design — there is
- * no published green band for portions, and no total-fat figure. Inventing
- * either would make it our number rather than theirs.
+ * Per portion, FOOD scale only (triggers at portion > 100 g). RED-ONLY by FSA
+ * design — there is no published green band for portions. The FSA publishes a
+ * per-portion fat threshold (>21 g), but this constant omits the fat key
+ * because no total-fat flag is emitted anywhere in the app today — adding it
+ * would be dead data. If you need to emit a fat flag, that flag and this key
+ * must be added together.
+ *
+ * Note: The FSA also publishes a separate per-portion table for drinks with
+ * different thresholds (fat >10.5 g) and a different trigger (portion > 150 ml).
+ * That table is not implemented here.
  */
 export const FSA_PORTION = {
   sugar: 27,
@@ -51,10 +58,19 @@ export const FSA_PORTION = {
   sodium: 720,
 } as const;
 
-/** Grams of fibre per 100 g. */
+/**
+ * Grams of fibre per 100 g. Per EU 1924/2006 Annex, comparison is INCLUSIVE
+ * (>= this value = claim applies) — use "at least" wording in UI. Note: This
+ * implements per-100g basis only; the regulation's alternative per-100kcal
+ * basis (good: >= 1.5 g/100 kcal, excellent: >= 3 g/100 kcal) is not here.
+ */
 export const FIBRE_CLAIM = { good: 3, excellent: 6 } as const;
 
-/** Protein energy as a fraction of total energy (protein_g * 4 / kcal). */
+/**
+ * Protein energy as a fraction of total energy (protein_g * 4 / kcal). Per
+ * EU 1924/2006 Annex, comparison is INCLUSIVE (>= this value = claim applies)
+ * — use "at least" wording in UI.
+ */
 export const PROTEIN_ENERGY_CLAIM = { good: 0.12, excellent: 0.2 } as const;
 
 export const BEVERAGE_PARENT = "en:beverages";
