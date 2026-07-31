@@ -229,7 +229,11 @@ describe("parseServingBasis", () => {
     for (const form of HARD_FORMS) {
       const basis = parseServingBasis(form.input);
       const grams = parseLabelServingGrams(form.input);
-      expect(basis?.quantity).toBe(grams);
+      expect(basis).toEqual({
+        quantity: form.expectedQuantity,
+        unit: form.expectedUnit,
+      });
+      expect(basis?.quantity).toBe(grams); // keep the cross-parser drift check
     }
   });
 
