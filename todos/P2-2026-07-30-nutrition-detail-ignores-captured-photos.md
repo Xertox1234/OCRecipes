@@ -43,18 +43,18 @@ refetched. That proves the screen renders a server-sourced URL and never reads r
 
 ## Acceptance Criteria
 
-- [ ] `NutritionDetailScreen` uses `RootStackParamList["NutritionDetail"]` instead of a
+- [x] `NutritionDetailScreen` uses `RootStackParamList["NutritionDetail"]` instead of a
       hand-maintained local `RouteParams` type.
-- [ ] Both `nutritionImageUri` and `frontImageUri` are read from route params.
-- [ ] Both captures are displayed when present, alongside (or instead of) the database
+- [x] Both `nutritionImageUri` and `frontImageUri` are read from route params.
+- [x] Both captures are displayed when present, alongside (or instead of) the database
       product image — exact layout is a design decision, see below.
-- [ ] A barcode-only scan (neither param present) renders exactly as it does today — no
+- [x] A barcode-only scan (neither param present) renders exactly as it does today — no
       empty frames, no layout shift.
-- [ ] A partial session (only `nutritionImageUri`) renders sensibly.
-- [ ] Accessibility: each image has a label distinguishing _which_ capture it is
+- [x] A partial session (only `nutritionImageUri`) renders sensibly.
+- [x] Accessibility: each image has a label distinguishing _which_ capture it is
       ("Nutrition label you photographed" / "Product front you photographed"), not a
       generic "image".
-- [ ] A test asserts both params reach the screen and both render — using the real
+- [x] A test asserts both params reach the screen and both render — using the real
       `buildNutritionDetailParams` output as the fixture, not a hand-written params object
       (a hand-written one is what would have hidden this).
 
@@ -92,3 +92,31 @@ refetched. That proves the screen renders a server-sourced URL and never reads r
 ### 2026-07-30
 
 - Initial creation, deferred out of the Phase 1 device-verification session.
+
+### 2026-07-30 (implemented — branch `fix/nutrition-detail-captured-photos`)
+
+All seven acceptance criteria met. Three changed files, no new mechanisms:
+
+- `client/screens/NutritionDetailScreen.tsx` — local `RouteParams` deleted; the route type
+  is now `RouteProp<RootStackParamList, "NutritionDetail">`. Both URIs destructured and
+  rendered in a "Your photos" group placed under the macro block (the label capture is the
+  evidence for those numbers). `resizeMode="contain"` — a portrait panel cropped to a wide
+  frame shows a sliver. Neither URI present ⇒ nothing renders, so the barcode-only path is
+  unchanged.
+- `client/screens/__tests__/NutritionDetailScreen.test.tsx` — new `captured photos` suite;
+  fixtures built by the real `buildNutritionDetailParams`.
+- `test/mocks/react-native.ts` — **prerequisite, and a harness bug in its own right.** The
+  hand-written `Image` mock was the only mocked component that did not translate
+  `accessibilityLabel`; it fell through into `...rest` and landed on the `<img>` as an
+  unrecognised DOM attribute. `getByLabelText` therefore could not find ANY image by its
+  label, repo-wide, so image-a11y assertions were silently unwritable. Now mapped to
+  `aria-label` + `alt` like `mockComponent` does. Whole client suite re-run: 2572 passed.
+
+**Layout is provisional and deliberately so.** Phase 2 moves this into `ProductHero` /
+`NutritionFactsPanel` (spec lines 264-265) and designs the real presentation. What survives
+that move is the route typing, the a11y label strings, and the tests; the JSX does not.
+Still-open design question, unchanged by this todo: **what step 3's front photo is FOR**
+beyond display — the spec's front-label identity analysis (lines 212-222) is Phase 2 work.
+
+Not done, and out of scope per the Scope Contract: tap-to-enlarge, and the two drive-by
+notes above (`deriveLogGate` placement, `verificationLevel` runtime validation).

@@ -15,6 +15,8 @@ import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import NutritionDetailScreen from "../NutritionDetailScreen";
 import { deriveLogGate, type LogGate } from "../nutrition-detail-utils";
+import { buildNutritionDetailParams } from "../scan-screen-utils";
+import type { ScanPhase } from "@/camera/types/scan-phase";
 
 /** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
  * `itemId`); every other suite relies on the `itemId` default below. */
@@ -431,5 +433,75 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
     const { queryByText } = renderScanRoute({ kind: "open" });
 
     expect(queryByText("Help verify this product")).toBeNull();
+  });
+});
+
+describe("NutritionDetailScreen — captured photos", () => {
+  const LABEL_A11Y = "Nutrition label you photographed";
+  const FRONT_A11Y = "Product front you photographed";
+
+  /**
+   * Route params come from the REAL `buildNutritionDetailParams`, never a
+   * hand-written literal. A hand-written params object is precisely what hid
+   * this bug: the payload boundary was already correct and already tested
+   * (`scan-screen-utils.test.ts` → "carries both captured photos through"),
+   * but the screen declared its own `RouteParams` that omitted both keys, so
+   * nothing in the type system connected the two ends. Building the fixture
+   * from the producer means a rename in `RootStackParamList` breaks this
+   * suite instead of silently dropping a photo again.
+   */
+  function renderCompletedSession(
+    session: Omit<
+      Extract<ScanPhase, { type: "SESSION_COMPLETE" }>,
+      "type" | "barcode"
+    >,
+  ) {
+    mockRoute.params = buildNutritionDetailParams({
+      type: "SESSION_COMPLETE",
+      barcode: "06772408",
+      ...session,
+    }) as Record<string, unknown>;
+    mockUseNutritionLookup.mockReturnValue(baseHookReturn({ calories: 140 }));
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  it("renders both captures from a completed three-step session", () => {
+    const { getByLabelText, queryByText } = renderCompletedSession({
+      nutritionImageUri: "file://panel.jpg",
+      frontImageUri: "file://front.jpg",
+      ocrText: "Calories 140",
+    });
+
+    expect(getByLabelText(LABEL_A11Y)).toBeTruthy();
+    expect(getByLabelText(FRONT_A11Y)).toBeTruthy();
+    expect(queryByText("Your photos")).toBeTruthy();
+  });
+
+  // A session that captured a label but skipped step 3. One photo, no empty
+  // frame standing in for the other.
+  it("renders only the label capture when the front photo is absent", () => {
+    const { getByLabelText, queryByLabelText } = renderCompletedSession({
+      nutritionImageUri: "file://blurry.jpg",
+      ocrText: null,
+    });
+
+    expect(getByLabelText(LABEL_A11Y)).toBeTruthy();
+    expect(queryByLabelText(FRONT_A11Y)).toBeNull();
+  });
+
+  /**
+   * The negative control, and the one that protects everyone who never uses
+   * the label steps: a barcode-only scan must render exactly as it did before
+   * this change — no section heading, no placeholder frames.
+   */
+  it("renders no photo section at all for a barcode-only scan", () => {
+    const { queryByLabelText, queryByText } = renderCompletedSession({});
+
+    expect(queryByText("Your photos")).toBeNull();
+    expect(queryByLabelText(LABEL_A11Y)).toBeNull();
+    expect(queryByLabelText(FRONT_A11Y)).toBeNull();
+    // The database product image is untouched by this feature — the captures
+    // are additive evidence, not a replacement hero.
+    expect(queryByLabelText("No product image available")).toBeTruthy();
   });
 });
