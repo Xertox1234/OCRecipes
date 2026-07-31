@@ -629,9 +629,23 @@ describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
       servingSize: "1 can (355 ml)",
     });
 
-    expect(queryByText("Cherry Coke")).toBeTruthy();
+    const productNameNode = queryByText("Cherry Coke");
+    expect(productNameNode).toBeTruthy();
     expect(queryByText("Coca-Cola")).toBeTruthy();
     expect(queryByText("Serving size: 1 can (355 ml)")).toBeTruthy();
+    // Mirrors the structural check below (brand-omission test): the hero's
+    // product name, brand and serving-size fields are direct siblings inside
+    // one `Animated.View`, not separately wrapped. That flat shape is what
+    // makes `nextElementSibling` a valid probe for "was this sibling
+    // omitted?" over there. Empirically confirmed: wrapping the product-name
+    // `ThemedText` alone in a `View` (isolating it from its siblings) turns
+    // THIS assertion red — the sibling relation the brand-omission test
+    // relies on is gone. Wrapping all three fields together in one shared
+    // `View` does NOT turn it red, because the three stay adjacent inside
+    // that wrapper; a per-field wrapper is the failure mode this guards
+    // against. Asserting non-null here, with all three fields present, fails
+    // loudly the moment a field gets isolated into its own wrapper.
+    expect(productNameNode?.nextElementSibling).not.toBeNull();
   });
 
   it("falls back to Unknown Product and omits an absent brand", () => {

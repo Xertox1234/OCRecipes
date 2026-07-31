@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import Animated, { FadeInUp, FadeIn } from "react-native-reanimated";
+import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
@@ -33,6 +33,7 @@ import {
   getServingContextLabel,
   roundToOneDecimal,
 } from "@/screens/nutrition-detail-utils";
+import { ProductHero } from "@/components/nutrition/ProductHero";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
@@ -319,52 +320,11 @@ export default function NutritionDetailScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View
-          entering={reducedMotion ? undefined : FadeIn.duration(400)}
-          style={[
-            styles.imageCard,
-            { backgroundColor: theme.backgroundSecondary },
-          ]}
-        >
-          <FallbackImage
-            source={{ uri: nutrition?.imageUrl ?? undefined }}
-            style={styles.productImage}
-            fallbackIcon="image"
-            fallbackIconSize={30}
-            resizeMode="contain"
-            accessibilityLabel={
-              nutrition?.imageUrl
-                ? `Image of ${nutrition.productName || "product"}`
-                : "No product image available"
-            }
-          />
-        </Animated.View>
-
-        <Animated.View
-          entering={
-            reducedMotion ? undefined : FadeInUp.delay(100).duration(400)
-          }
-        >
-          <ThemedText type="h2" style={styles.productName}>
-            {nutrition?.productName || "Unknown Product"}
-          </ThemedText>
-          {nutrition?.brandName ? (
-            <ThemedText
-              type="small"
-              style={[styles.brandName, { color: theme.textSecondary }]}
-            >
-              {nutrition.brandName}
-            </ThemedText>
-          ) : null}
-          {nutrition?.servingSize && !showServingControls ? (
-            <ThemedText
-              type="small"
-              style={[styles.servingSize, { color: theme.textSecondary }]}
-            >
-              Serving size: {nutrition.servingSize}
-            </ThemedText>
-          ) : null}
-        </Animated.View>
+        <ProductHero
+          nutrition={nutrition}
+          showServingControls={showServingControls}
+          reducedMotion={reducedMotion}
+        />
 
         {conflict && dbNutrition && (
           <ScanConflictPrompt
@@ -1041,32 +1001,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: Spacing.lg,
-  },
-  imageCard: {
-    height: 150,
-    borderRadius: BorderRadius.card,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    marginBottom: Spacing.lg,
-  },
-  productImage: {
-    width: "100%",
-    height: 150,
-  },
-  productName: {
-    fontSize: 22,
-    lineHeight: 28,
-    textAlign: "center",
-    marginBottom: Spacing.xs,
-  },
-  brandName: {
-    textAlign: "center",
-    marginBottom: Spacing.xs,
-  },
-  servingSize: {
-    textAlign: "center",
-    marginBottom: Spacing.lg,
   },
   warningContainer: {
     flexDirection: "row",
