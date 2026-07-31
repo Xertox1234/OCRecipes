@@ -15,6 +15,8 @@ import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import NutritionDetailScreen from "../NutritionDetailScreen";
 import { deriveLogGate, type LogGate } from "../nutrition-detail-utils";
+import { buildNutritionDetailParams } from "../scan-screen-utils";
+import type { ScanPhase } from "@/camera/types/scan-phase";
 
 /** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
  * `itemId`); every other suite relies on the `itemId` default below. */
@@ -431,5 +433,135 @@ describe("NutritionDetailScreen — log gate (Task 6)", () => {
     const { queryByText } = renderScanRoute({ kind: "open" });
 
     expect(queryByText("Help verify this product")).toBeNull();
+  });
+});
+
+describe("NutritionDetailScreen — captured photos", () => {
+  const LABEL_A11Y = "Nutrition label you photographed";
+  const FRONT_A11Y = "Product front you photographed";
+
+  /**
+   * Route params come from the REAL `buildNutritionDetailParams`, never a
+   * hand-written literal. A hand-written params object is precisely what hid
+   * this bug: the payload boundary was already correct and already tested
+   * (`scan-screen-utils.test.ts` → "carries both captured photos through"),
+   * but the screen declared its own `RouteParams` that omitted both keys, so
+   * nothing in the type system connected the two ends. Building the fixture
+   * from the producer means a rename in `RootStackParamList` breaks this
+   * suite instead of silently dropping a photo again.
+   */
+  function renderCompletedSession(
+    session: Omit<
+      Extract<ScanPhase, { type: "SESSION_COMPLETE" }>,
+      "type" | "barcode"
+    >,
+  ) {
+    mockRoute.params = buildNutritionDetailParams({
+      type: "SESSION_COMPLETE",
+      barcode: "06772408",
+      ...session,
+    }) as Record<string, unknown>;
+    mockUseNutritionLookup.mockReturnValue(baseHookReturn({ calories: 140 }));
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  /**
+   * Asserts the SOURCE, not just the presence of a labelled node.
+   *
+   * The label lives on the group wrapper, which renders identically whether
+   * `FallbackImage` resolved the photo or fell back to its grey placeholder
+   * — so `getByLabelText(...)` alone passes either way. The exact regression
+   * that hides behind the weaker assertion: point `source` at the wrong
+   * field, `hasValidUri` returns false, the user gets a grey box where their
+   * label photo should be, and every test stays green.
+   *
+   * Only the loaded branch emits an `<img>` at all (the fallback renders a
+   * div plus an icon span), and the mock sets `src` from `source.uri`, so
+   * both "did a real photo render" and "was it the RIGHT photo" are
+   * checkable here.
+   */
+  function expectPhotoWithSource(tile: HTMLElement, expectedUri: string) {
+    const img = tile.querySelector("img");
+    expect(img).toBeTruthy();
+    expect(img?.getAttribute("src")).toBe(expectedUri);
+  }
+
+  /**
+   * Verifies the group label SUBSUMES the caption rendered inside it.
+   *
+   * Both sides are read off the DOM rather than compared against literals.
+   * That distinction is the whole value: two hardcoded strings that happen
+   * to overlap prove nothing about the component, whereas this fails the
+   * moment the caption text and the group label drift apart — which is the
+   * real defect, because an `accessible` group announces ONLY its own label
+   * and silently drops any nested text not reflected in it.
+   */
+  function expectCaptionSubsumedByGroupLabel(tile: HTMLElement) {
+    const caption = tile.textContent ?? "";
+    // Guard against the vacuous pass: `toContain("")` is always true, so an
+    // empty caption would make the real assertion below meaningless.
+    expect(caption.length).toBeGreaterThan(0);
+    expect(tile.getAttribute("aria-label")).toContain(caption);
+  }
+
+  it("renders both captures from a completed three-step session", () => {
+    const { getByLabelText, queryByText } = renderCompletedSession({
+      nutritionImageUri: "file://panel.jpg",
+      frontImageUri: "file://front.jpg",
+      ocrText: "Calories 140",
+    });
+
+    expectPhotoWithSource(getByLabelText(LABEL_A11Y), "file://panel.jpg");
+    expectPhotoWithSource(getByLabelText(FRONT_A11Y), "file://front.jpg");
+    expect(queryByText("Your photos")).toBeTruthy();
+  });
+
+  /**
+   * The a11y contract is ONE node per photo, not two. Image and caption are
+   * collapsed into a single `accessible` group, so the caption's text must
+   * not also surface as its own labelled node — that is the double-announce
+   * `docs/rules/accessibility.md` prohibits, and it is invisible on device
+   * until someone turns VoiceOver on.
+   */
+  it("exposes each photo as a single labelled node, not image plus caption", () => {
+    const { getAllByLabelText, getByLabelText } = renderCompletedSession({
+      nutritionImageUri: "file://panel.jpg",
+      frontImageUri: "file://front.jpg",
+    });
+
+    expect(getAllByLabelText(LABEL_A11Y)).toHaveLength(1);
+    expect(getAllByLabelText(FRONT_A11Y)).toHaveLength(1);
+    // Both tiles, not just the first: they have identical structure, so
+    // guarding one and not the other leaves half the contract unpinned.
+    expectCaptionSubsumedByGroupLabel(getByLabelText(LABEL_A11Y));
+    expectCaptionSubsumedByGroupLabel(getByLabelText(FRONT_A11Y));
+  });
+
+  // A session that captured a label but skipped step 3. One photo, no empty
+  // frame standing in for the other.
+  it("renders only the label capture when the front photo is absent", () => {
+    const { getByLabelText, queryByLabelText } = renderCompletedSession({
+      nutritionImageUri: "file://blurry.jpg",
+      ocrText: null,
+    });
+
+    expectPhotoWithSource(getByLabelText(LABEL_A11Y), "file://blurry.jpg");
+    expect(queryByLabelText(FRONT_A11Y)).toBeNull();
+  });
+
+  /**
+   * The negative control, and the one that protects everyone who never uses
+   * the label steps: a barcode-only scan must render exactly as it did before
+   * this change — no section heading, no placeholder frames.
+   */
+  it("renders no photo section at all for a barcode-only scan", () => {
+    const { queryByLabelText, queryByText } = renderCompletedSession({});
+
+    expect(queryByText("Your photos")).toBeNull();
+    expect(queryByLabelText(LABEL_A11Y)).toBeNull();
+    expect(queryByLabelText(FRONT_A11Y)).toBeNull();
+    // The database product image is untouched by this feature — the captures
+    // are additive evidence, not a replacement hero.
+    expect(queryByLabelText("No product image available")).toBeTruthy();
   });
 });

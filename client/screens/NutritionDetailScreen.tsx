@@ -46,19 +46,25 @@ import {
 import { useNutritionLookup } from "@/hooks/useNutritionLookup";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
-type RouteParams = {
-  barcode?: string;
-  imageUri?: string;
-  itemId?: number;
-  /**
-   * Three-valued, matching `RootStackParamList` — `undefined` = no label step
-   * ran, `null` = a label was photographed but unreadable, string = label text.
-   * Narrowing `null` away here would make the unreadable case indistinguishable
-   * from the barcode-only one, which is the whole basis of the log gate.
-   */
-  ocrText?: string | null;
-};
+/**
+ * The route's params come from `RootStackParamList` rather than a local
+ * restatement of them. A hand-maintained copy lived here and omitted
+ * `nutritionImageUri` / `frontImageUri`, so it SHADOWED the canonical type:
+ * the navigator guaranteed two photos, this screen's type said they did not
+ * exist, and strict mode had nothing to complain about. The user's captures
+ * were silently discarded at the last step of an otherwise-correct pipeline.
+ * Deriving the type means a param added to the navigator shows up here as an
+ * unread field, not as a param that vanishes.
+ *
+ * `ocrText` stays three-valued through this indirection — `undefined` = no
+ * label step ran, `null` = a label was photographed but unreadable, string =
+ * label text. Narrowing `null` away would make the unreadable case
+ * indistinguishable from the barcode-only one, which is the whole basis of
+ * the log gate.
+ */
+type NutritionDetailRoute = RouteProp<RootStackParamList, "NutritionDetail">;
 
 function NutritionDetailSkeleton() {
   React.useEffect(() => {
@@ -176,9 +182,16 @@ export default function NutritionDetailScreen() {
   const { reducedMotion } = useAccessibility();
   const { isOffline, offlineLabel } = useOfflineGuard();
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
-  const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
+  const route = useRoute<NutritionDetailRoute>();
 
-  const { barcode, imageUri, itemId, ocrText } = route.params || {};
+  const {
+    barcode,
+    imageUri,
+    itemId,
+    ocrText,
+    nutritionImageUri,
+    frontImageUri,
+  } = route.params || {};
 
   // Offline transitions are announced by the always-mounted global OfflineBanner
   // (client/components/OfflineBanner.tsx) — iOS via announceForAccessibility,
@@ -665,6 +678,114 @@ export default function NutritionDetailScreen() {
           </Card>
         </Animated.View>
 
+        {/* ── Your photos ──
+            Sits directly under the macro block because the nutrition-label
+            capture is the EVIDENCE for the numbers above it — it is what the
+            values were read from, which is more useful next to them than as a
+            hero image at the top.
+
+            Both are rendered only when present, so a barcode-only scan (the
+            common case, and the one that never opts into the label steps) is
+            byte-identical to before: no heading, no placeholder frames.
+
+            The heading is deliberately neutral. "Read from your label" would
+            be a false claim whenever `ocrText` is null — a photographed but
+            unreadable panel is exactly the case the log gate exists for, and
+            the photo is still worth showing there as the record of what the
+            user pointed the camera at.
+
+            PROVISIONAL LAYOUT — Phase 2 of the scan-flow rework moves these
+            into `ProductHero` / `NutritionFactsPanel` and designs the real
+            presentation. The route plumbing, a11y labels and tests above it
+            survive that move; this JSX does not. */}
+        {nutritionImageUri || frontImageUri ? (
+          <Animated.View
+            entering={
+              reducedMotion ? undefined : FadeInUp.delay(250).duration(400)
+            }
+            style={styles.capturedPhotos}
+          >
+            <ThemedText type="h4" style={styles.sectionTitle}>
+              Your photos
+            </ThemedText>
+            <View style={styles.capturedPhotoRow}>
+              {/* The label lives on the GROUP, not on the image.
+                  RN's `Image` gates on `accessible={props.alt !== undefined
+                  ? true : props.accessible}` — identically in Image.ios.js
+                  and Image.android.js — so a bare `accessibilityLabel` on it
+                  does not make it an accessibility element on EITHER
+                  platform, and may simply never be announced. If a platform
+                  heuristic surfaces it anyway, the result is worse: it
+                  double-announces against the visible caption right below it
+                  — "Nutrition label you photographed", then "Nutrition label"
+                  — which docs/rules/accessibility.md prohibits. Both branches
+                  are bad; neither has been confirmed on a device.
+
+                  One `accessible` wrapper avoids the question entirely by
+                  collapsing image + caption into a single node with one
+                  label. Safe here specifically because the tile has NO
+                  interactive child (that same rule forbids the wrapper when
+                  it would swallow a Pressable), and because the caption's
+                  words are contained in the group label — a collapsed
+                  subtree announces only the group's label, so anything not
+                  reflected in it is silently dropped. The test pins that
+                  containment by comparing the two off the DOM, not by
+                  matching two hand-written strings that happen to overlap. */}
+              {nutritionImageUri ? (
+                <View
+                  accessible
+                  accessibilityLabel="Nutrition label you photographed"
+                  style={styles.capturedPhoto}
+                >
+                  <FallbackImage
+                    source={{ uri: nutritionImageUri }}
+                    style={[
+                      styles.capturedPhotoImage,
+                      { backgroundColor: theme.backgroundSecondary },
+                    ]}
+                    fallbackIcon="image"
+                    // `contain`, not `cover`: a nutrition panel is portrait and
+                    // this frame is wide, so cropping to fill would show a
+                    // horizontal sliver of the label. These are evidence for
+                    // the numbers above — the whole panel has to be visible,
+                    // letterboxing and all.
+                    resizeMode="contain"
+                  />
+                  <ThemedText
+                    type="caption"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    Nutrition label
+                  </ThemedText>
+                </View>
+              ) : null}
+              {frontImageUri ? (
+                <View
+                  accessible
+                  accessibilityLabel="Product front you photographed"
+                  style={styles.capturedPhoto}
+                >
+                  <FallbackImage
+                    source={{ uri: frontImageUri }}
+                    style={[
+                      styles.capturedPhotoImage,
+                      { backgroundColor: theme.backgroundSecondary },
+                    ]}
+                    fallbackIcon="image"
+                    resizeMode="contain"
+                  />
+                  <ThemedText
+                    type="caption"
+                    style={{ color: theme.textSecondary }}
+                  >
+                    Product front
+                  </ThemedText>
+                </View>
+              ) : null}
+            </View>
+          </Animated.View>
+        ) : null}
+
         {isPer100g && !itemId ? (
           <View
             style={[
@@ -1016,6 +1137,30 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     marginBottom: Spacing.md,
+  },
+  capturedPhotos: {
+    marginBottom: Spacing["2xl"],
+  },
+  capturedPhotoRow: {
+    flexDirection: "row",
+    gap: Spacing.md,
+  },
+  capturedPhoto: {
+    // `flex: 1` so two captures split the row evenly, CAPPED at half width so
+    // a lone capture doesn't stretch across it. Letting it stretch looks like
+    // it fills the gap left by the missing photo, but `contain` won't upscale
+    // a portrait panel to a 343pt-wide frame — it just centres it and paints
+    // ~126pt of empty background on either side. Same emptiness, now inside
+    // the frame and larger. Capped, the single-capture case (step 3 skipped)
+    // is the same tile it would have been beside a sibling.
+    flex: 1,
+    maxWidth: "50%",
+    gap: Spacing.xs,
+  },
+  capturedPhotoImage: {
+    width: "100%",
+    height: 120,
+    borderRadius: BorderRadius.card,
   },
   nutrientsList: {
     borderRadius: BorderRadius.card,

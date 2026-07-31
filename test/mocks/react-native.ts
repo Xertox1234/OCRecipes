@@ -163,8 +163,16 @@ export const Pressable = React.forwardRef<unknown, Record<string, unknown>>(
 );
 Pressable.displayName = "Pressable";
 
+// `accessibilityLabel` is mapped the same way `mockComponent` maps it, rather
+// than falling into `...rest`. Hand-written separately from that helper, this
+// was the ONE mocked component that let the prop through untranslated: it
+// landed on the <img> as an unrecognised DOM attribute, so `getByLabelText`
+// could never find an image by its label and every image-a11y assertion in
+// the repo was silently unwritable. `alt` carries the same string so the
+// element is labelled in jsdom's own terms too — both derive from the one
+// prop, so they cannot desync.
 export const Image = React.forwardRef<unknown, Record<string, unknown>>(
-  ({ source, testID, ...rest }, ref) =>
+  ({ source, testID, accessibilityLabel, ...rest }, ref) =>
     React.createElement("img", {
       ref,
       src:
@@ -172,6 +180,8 @@ export const Image = React.forwardRef<unknown, Record<string, unknown>>(
           ? ((source as Record<string, unknown>).uri ?? "")
           : "",
       "data-testid": testID,
+      "aria-label": accessibilityLabel,
+      alt: accessibilityLabel,
       ...rest,
     }),
 );
