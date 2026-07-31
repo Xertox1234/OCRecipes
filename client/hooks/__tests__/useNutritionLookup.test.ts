@@ -781,6 +781,23 @@ describe("useNutritionLookup — isBeverage (Task 8)", () => {
     expect(result.current.isBeverage).toBe(true);
   });
 
+  it("exposes false from a successful barcode response with a categorized non-beverage", async () => {
+    // `false` is a real signal, not the absence of one — Task 4 emits it
+    // whenever the server DOES have category data and the product isn't a
+    // drink, which is the majority path for categorized food. `toBe`, not
+    // `toBeFalsy`: the latter also passes on null and would hide a
+    // false→null collapse regression.
+    mockBarcodeFetch({ isBeverage: false });
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "06772408" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isBeverage).toBe(false);
+  });
+
   it("exposes null when isBeverage is absent from the response (USDA-only shape)", async () => {
     // The normal path for uncategorized products now that the server omits
     // the key rather than sending false. Null means "no signal", which
