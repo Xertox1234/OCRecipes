@@ -34,16 +34,11 @@ import {
   roundToOneDecimal,
 } from "@/screens/nutrition-detail-utils";
 import { ProductHero } from "@/components/nutrition/ProductHero";
+import { FlagSections } from "@/components/nutrition/FlagSections";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
 import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
-import { ScanFlagBadge } from "@/components/ScanFlagBadge";
-import { NutriScoreChip } from "@/components/NutriScoreChip";
 import { ScanConflictPrompt } from "@/components/ScanConflictPrompt";
-import {
-  partitionScanFlags,
-  headsUpSummaryLabel,
-} from "@/screens/nutrition-detail-flags-utils";
 import { useNutritionLookup } from "@/hooks/useNutritionLookup";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
@@ -269,16 +264,6 @@ export default function NutritionDetailScreen() {
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;
-  // Splits the server's mixed flags[] into the "For you" (personal
-  // allergen) and "Heads up" (universal nutrition) sections, plus the
-  // Nutri-Score chip rendered separately from the badge list.
-  const partition = partitionScanFlags(flags);
-  // Single source for the "Heads up" badge list — used for BOTH the grouped
-  // accessibilityLabel and the rendered badges, so the announced count can
-  // never desync from what's on screen (bounded at 6 kinds today; a future
-  // v2 addition must not silently break this parity again by editing one
-  // `.slice(0, 6)` call site and not the other).
-  const universalToShow = partition.universal.slice(0, 6);
   // Derived from the SAME serving state that scales the displayed values, so
   // the hero caption can never desync from the numbers it describes.
   const servingContextLabel = getServingContextLabel({
@@ -336,72 +321,7 @@ export default function NutritionDetailScreen() {
           />
         )}
 
-        {partition.personal.length > 0 ? (
-          <Animated.View
-            entering={
-              reducedMotion ? undefined : FadeInUp.delay(450).duration(400)
-            }
-            style={styles.additionalNutrients}
-          >
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              For you
-            </ThemedText>
-            <View style={{ gap: Spacing.sm }}>
-              {partition.personal.map((f) => (
-                <ScanFlagBadge key={f.id} flag={f} />
-              ))}
-            </View>
-            <ThemedText
-              type="caption"
-              style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-            >
-              Informational only — not medical advice.
-            </ThemedText>
-          </Animated.View>
-        ) : null}
-
-        {partition.universal.length > 0 || partition.nutriScore ? (
-          <Animated.View
-            entering={
-              reducedMotion ? undefined : FadeInUp.delay(475).duration(400)
-            }
-            style={styles.additionalNutrients}
-          >
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              Heads up
-            </ThemedText>
-            <View style={{ gap: Spacing.sm }}>
-              {/* The Nutri-Score chip renders OUTSIDE this wrapper — an
-                  accessible={true} group collapses its subtree into a
-                  single VoiceOver/TalkBack node using only this label, so
-                  anything nested inside that isn't reflected in
-                  headsUpSummaryLabel's text (the grade letter isn't) would
-                  be silently dropped from the announcement. The badges'
-                  titles ARE all in the composed label, so only they are
-                  grouped here. */}
-              {partition.universal.length > 0 ? (
-                <View
-                  accessible={true}
-                  accessibilityLabel={headsUpSummaryLabel(universalToShow)}
-                  style={{ gap: Spacing.sm }}
-                >
-                  {universalToShow.map((f) => (
-                    <ScanFlagBadge key={f.id} flag={f} />
-                  ))}
-                </View>
-              ) : null}
-              {partition.nutriScore?.grade ? (
-                <NutriScoreChip grade={partition.nutriScore.grade} />
-              ) : null}
-            </View>
-            <ThemedText
-              type="caption"
-              style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-            >
-              Informational only — not medical advice.
-            </ThemedText>
-          </Animated.View>
-        ) : null}
+        <FlagSections flags={flags} reducedMotion={reducedMotion} />
 
         {labelReadNotice && !itemId ? (
           <View
