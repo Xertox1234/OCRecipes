@@ -9,7 +9,6 @@ import {
   TextInput as RNTextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeInUp } from "react-native-reanimated";
@@ -21,6 +20,7 @@ import { Button } from "@/components/Button";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import {
   Spacing,
   BorderRadius,
@@ -173,7 +173,7 @@ function NutritionDetailSkeleton() {
 
 export default function NutritionDetailScreen() {
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
+  const headerContentInset = useHeaderContentInset(Spacing.xl);
   const { theme, isDark } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { isOffline, offlineLabel } = useOfflineGuard();
@@ -281,7 +281,7 @@ export default function NutritionDetailScreen() {
           contentContainerStyle={[
             styles.content,
             {
-              paddingTop: headerHeight + Spacing.xl,
+              paddingTop: headerContentInset,
               paddingBottom: insets.bottom + Spacing["3xl"],
             },
           ]}
@@ -299,7 +299,7 @@ export default function NutritionDetailScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: headerHeight + Spacing.xl,
+            paddingTop: headerContentInset,
             paddingBottom: insets.bottom + Spacing["3xl"],
           },
         ]}
