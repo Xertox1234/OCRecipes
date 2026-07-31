@@ -35,8 +35,8 @@ import {
 import { ProductHero } from "@/components/nutrition/ProductHero";
 import { FlagSections } from "@/components/nutrition/FlagSections";
 import { CapturedPhotos } from "@/components/nutrition/CapturedPhotos";
+import { VerificationPanel } from "@/components/nutrition/VerificationPanel";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
-import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
 import { ScanConflictPrompt } from "@/components/ScanConflictPrompt";
 import { useNutritionLookup } from "@/hooks/useNutritionLookup";
@@ -709,48 +709,16 @@ export default function NutritionDetailScreen() {
 
         {/* Verification badge + CTA */}
         {!itemId && barcode && nutrition && (
-          <View style={styles.verificationSection}>
-            <VerificationBadge level={verificationLevel} />
-
-            {/* Retroactive front-label CTA for verified products without front-label data */}
-            {verificationLevel !== "unverified" && !hasFrontLabelData && (
-              <Pressable
-                onPress={() =>
-                  navigation.navigate("Scan", {
-                    mode: "front-label",
-                    verifyBarcode: barcode,
-                  })
-                }
-                accessibilityLabel="Scan front of package to add product details"
-                accessibilityRole="button"
-                style={[
-                  styles.verifyPrompt,
-                  { backgroundColor: withOpacity(theme.textSecondary, 0.06) },
-                ]}
-              >
-                <Feather name="package" size={18} color={theme.textSecondary} />
-                <View style={{ flex: 1 }}>
-                  <ThemedText
-                    type="body"
-                    style={{ color: theme.textSecondary, fontWeight: "600" }}
-                  >
-                    Add product details
-                  </ThemedText>
-                  <ThemedText
-                    type="small"
-                    style={{ color: theme.textSecondary }}
-                  >
-                    Scan front of package
-                  </ThemedText>
-                </View>
-                <Feather
-                  name="chevron-right"
-                  size={18}
-                  color={theme.textSecondary}
-                />
-              </Pressable>
-            )}
-          </View>
+          <VerificationPanel
+            verificationLevel={verificationLevel}
+            hasFrontLabelData={hasFrontLabelData}
+            onAddProductDetails={() =>
+              navigation.navigate("Scan", {
+                mode: "front-label",
+                verifyBarcode: barcode,
+              })
+            }
+          />
         )}
 
         {!itemId ? (
@@ -912,17 +880,6 @@ const styles = StyleSheet.create({
   },
   micronutrientSection: {
     marginBottom: Spacing["2xl"],
-  },
-  verificationSection: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  verifyPrompt: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.sm,
   },
   correctionContainer: {
     flexDirection: "row",
