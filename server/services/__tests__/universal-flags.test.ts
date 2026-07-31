@@ -279,3 +279,78 @@ describe("evaluateUniversalFlags — severity drift guard", () => {
     expect(caffeineFlag?.severity).not.toBe("danger");
   });
 });
+
+describe("emission coverage for previously-unpinned constants", () => {
+  // FSA_DRINK.saturatedFat = 2.5 (per 100ml)
+  it("flags a drink over the saturated-fat line", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { saturatedFat: 2.6 },
+      categoriesTags: ["en:beverages"],
+    });
+    expect(flags.map((f) => f.id)).toContain("nutrient:saturated_fat");
+  });
+
+  it("does not flag a drink at or below the saturated-fat line", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { saturatedFat: 2.5 },
+      categoriesTags: ["en:beverages"],
+    });
+    expect(flags.map((f) => f.id)).not.toContain("nutrient:saturated_fat");
+  });
+
+  // FSA_DRINK.sodium = 300 (mg per 100ml)
+  it("flags a drink over the sodium line", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { sodium: 301 },
+      categoriesTags: ["en:beverages"],
+    });
+    expect(flags.map((f) => f.id)).toContain("nutrient:sodium");
+  });
+
+  it("does not flag a drink at the sodium line", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { sodium: 300 },
+      categoriesTags: ["en:beverages"],
+    });
+    expect(flags.map((f) => f.id)).not.toContain("nutrient:sodium");
+  });
+
+  // FSA_PORTION.saturatedFat = 6, only applies when servingGrams > 100
+  it("flags saturated fat via the per-portion override", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { saturatedFat: 1.0 }, // under the per-100 line
+      perServing: { saturatedFat: 6.1 },
+      servingGrams: 240,
+      categoriesTags: [],
+    });
+    expect(flags.map((f) => f.id)).toContain("nutrient:saturated_fat");
+  });
+
+  // FSA_PORTION.sodium = 720
+  it("flags sodium via the per-portion override", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { sodium: 100 }, // under the per-100 line
+      perServing: { sodium: 721 },
+      servingGrams: 240,
+      categoriesTags: [],
+    });
+    expect(flags.map((f) => f.id)).toContain("nutrient:sodium");
+  });
+
+  it("ignores the per-portion override for servings at or under 100g", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { sodium: 100 },
+      perServing: { sodium: 721 },
+      servingGrams: 100,
+      categoriesTags: [],
+    });
+    expect(flags.map((f) => f.id)).not.toContain("nutrient:sodium");
+  });
+});

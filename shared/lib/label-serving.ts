@@ -15,6 +15,11 @@
  * callers (DB serving strings, the serving-size controls). Only the two gates
  * live here, so they cannot drift apart again.
  *
+ * `parseServingBasis` (below) additionally covers DB serving strings for the
+ * nutrient-band scale, returning the unit as well as the quantity. It does
+ * NOT replace either predecessor; the two gates above still call
+ * `parseLabelServingGrams`.
+ *
  * MUST BE AT LEAST AS PERMISSIVE AS BOTH PREDECESSORS. This gate decides
  * whether a label is used at all, so narrowing it rejects labels that used to
  * work and tells the user "we couldn't find nutrition values" when the values
@@ -67,4 +72,61 @@ export function parseLabelServingGrams(
   if (bare) return parseFloat(bare[1]);
 
   return null;
+}
+
+/**
+ * Unit-CAPTURING variants of the two patterns above. The scale a band is
+ * judged on (food per-100g vs drink per-100ml) differs by roughly 2x, so the
+ * unit is not decoration — a drink measured on the food scale silently halves
+ * the strictness applied to it.
+ *
+ * INVARIANT: The `(?:\.\d+)?` inside the quantity group MUST stay non-capturing.
+ * If captured, it inserts a new group 2 and pushes the unit to group 3,
+ * causing `match[2].startsWith("m")` to throw TypeError on integer quantities
+ * or silently map decimal fragments (e.g. ".5") to the wrong scale.
+ */
+const UNIT_CAP = String.raw`(grams?|g|millilit(?:re|er)s?|ml)`;
+const PAREN_BASIS = new RegExp(
+  String.raw`\(\s*(\d+(?:\.\d+)?)\s*${UNIT_CAP}\b`,
+);
+const BARE_BASIS = new RegExp(
+  String.raw`(?:^|[\s(])(\d+(?:\.\d+)?)\s*${UNIT_CAP}\b`,
+);
+
+/** A serving quantity together with the scale its unit implies. */
+export interface ServingBasis {
+  quantity: number;
+  unit: "g" | "ml";
+}
+
+/**
+ * Parses a serving string into a quantity AND its unit, for choosing the FSA
+ * per-100g vs per-100ml scale.
+ *
+ * A SIBLING of `parseLabelServingGrams`, not a replacement: that function
+ * backs the two label-readiness gates and is deliberately left alone. This one
+ * additionally serves DB serving strings (`scanned_items.servingSize`), which
+ * the module docblock hands off — that hand-off is now here rather than to a
+ * third parser.
+ *
+ * Returns null rather than a default for anything unparseable or non-positive.
+ * A fabricated denominator produces a confidently wrong traffic light, which
+ * is worse than no traffic light.
+ */
+export function parseServingBasis(
+  servingSize: string | null | undefined,
+): ServingBasis | null {
+  if (!servingSize) return null;
+  const lower = servingSize.toLowerCase();
+
+  const match = lower.match(PAREN_BASIS) ?? lower.match(BARE_BASIS);
+  if (!match) return null;
+
+  const quantity = parseFloat(match[1]);
+  if (!Number.isFinite(quantity) || quantity <= 0) return null;
+
+  return {
+    quantity,
+    unit: match[2].startsWith("m") ? "ml" : "g",
+  };
 }

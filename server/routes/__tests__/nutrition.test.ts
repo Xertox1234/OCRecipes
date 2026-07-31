@@ -369,6 +369,168 @@ describe("Nutrition Routes", () => {
     });
   });
 
+  describe("GET /api/nutrition/barcode/:code — isBeverage", () => {
+    it("returns isBeverage true for a product tagged en:beverages", async () => {
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Cherry Coke",
+        barcode: "06772408",
+        per100g: { calories: 42, sugar: 11, fat: 0 },
+        perServing: { calories: 149, sugar: 39, fat: 0 },
+        servingInfo: {
+          displayLabel: "355 ml",
+          grams: 355,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts+self-consistent",
+        allergenDataAvailable: true,
+        novaGroup: 4,
+        categoriesTags: ["en:colas", "en:beverages"],
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/06772408")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.isBeverage).toBe(true);
+    });
+
+    it("returns isBeverage false for a food", async () => {
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Greek Yogurt",
+        barcode: "1234567890",
+        per100g: { calories: 120, protein: 18 },
+        perServing: { calories: 120, protein: 18 },
+        servingInfo: {
+          displayLabel: "1 serving",
+          grams: 170,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+        allergenDataAvailable: false,
+        categoriesTags: ["en:snacks"],
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/1234567890")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      expect(res.body.isBeverage).toBe(false);
+    });
+
+    // The realistic "no category signal" shape: extractOffUniversalData
+    // (barcode-lookup.ts) always defaults categoriesTags to `[]`, never
+    // `undefined` — a USDA-only match or an OFF product missing
+    // categories_tags both land here. An empty array must NOT be read as
+    // "confirmed not a beverage": isBeverage must be OMITTED, not `false`,
+    // or Task 6's resolveBasis short-circuits to the food scale before its
+    // serving-unit fallback ever runs, silently halving FSA thresholds for
+    // a real drink that just lacks OFF category data.
+    it("omits isBeverage entirely when categoriesTags is empty (no category signal)", async () => {
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Mystery Item",
+        barcode: "1234567890",
+        per100g: { calories: 120 },
+        perServing: { calories: 120 },
+        servingInfo: {
+          displayLabel: "1 serving",
+          grams: 100,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts",
+        allergenDataAvailable: false,
+        categoriesTags: [],
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/1234567890")
+        .set("Authorization", "Bearer token");
+
+      expect(res.status).toBe(200);
+      // Not `toBeUndefined()`: that assertion also passes for a present
+      // key whose value happens to be undefined/null after serialization
+      // and would not catch a regression that emits `isBeverage: null`.
+      expect(res.body).not.toHaveProperty("isBeverage");
+    });
+
+    it("still strips the raw ODbL tag fields", async () => {
+      // The whole point of deriving a scalar is that the tags do NOT ship.
+      // If this ever passes with categoriesTags present, the licence
+      // boundary has been broken, not merely the test.
+      vi.mocked(lookupBarcode).mockResolvedValue({
+        productName: "Cherry Coke",
+        barcode: "06772408",
+        per100g: { calories: 42, sugar: 11, fat: 0 },
+        perServing: { calories: 149, sugar: 39, fat: 0 },
+        servingInfo: {
+          displayLabel: "355 ml",
+          grams: 355,
+          wasCorrected: false,
+        },
+        isServingDataTrusted: true,
+        source: "openfoodfacts+self-consistent",
+        allergenDataAvailable: true,
+        novaGroup: 4,
+        categoriesTags: ["en:colas", "en:beverages"],
+      } satisfies BarcodeLookupResult);
+
+      const res = await request(app)
+        .get("/api/nutrition/barcode/06772408")
+        .set("Authorization", "Bearer token");
+
+      expect(res.body).not.toHaveProperty("categoriesTags");
+      expect(res.body).not.toHaveProperty("additivesTags");
+      expect(res.body).not.toHaveProperty("ingredientsText");
+      expect(res.body).not.toHaveProperty("allergenTags");
+    });
+
+    it("appears on the nested conflict.label body too, not only at the top level", async () => {
+      mockLookup.mockResolvedValue(cherryCokeDbResult()); // categoriesTags: en:colas, en:beverages
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: {
+          calories: 150,
+          totalSugars: 39,
+          totalFat: 0,
+          saturatedFat: null,
+          servingSize: "355 mL",
+        },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.isBeverage).toBe(true);
+      expect(res.body.conflict.label.isBeverage).toBe(true);
+    });
+
+    it("omits isBeverage on BOTH the top level and conflict.label when categoriesTags is empty", async () => {
+      // A field that silently differs between branches is exactly what
+      // buildBarcodeResponseBody exists to prevent — check the "no signal"
+      // case is also consistent across both surfaces, not just the
+      // confirmed-beverage case above.
+      mockLookup.mockResolvedValue({
+        ...cherryCokeDbResult(),
+        categoriesTags: [],
+      });
+      const res = await authedPost("/api/nutrition/barcode/06772408", {
+        labelNutrition: {
+          calories: 150,
+          totalSugars: 39,
+          totalFat: 0,
+          saturatedFat: null,
+          servingSize: "355 mL",
+        },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body.conflict).toBeDefined();
+      expect(res.body).not.toHaveProperty("isBeverage");
+      expect(res.body.conflict.label).not.toHaveProperty("isBeverage");
+    });
+  });
+
   describe("GET /api/scanned-items", () => {
     it("returns scanned items list", async () => {
       (storage.getScannedItems as Mock).mockResolvedValue([mockScannedItem]);

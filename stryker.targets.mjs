@@ -77,6 +77,28 @@ export const MUTATION_TARGETS = {
     testInclude: ["server/services/__tests__/goal-calculator.test.ts"],
     breakThreshold: 100, // all survivors killed (Task 3); no equivalents
   },
+  "nutrition-bands": {
+    mutate: ["shared/lib/nutrition-bands.ts"],
+    testInclude: ["shared/lib/__tests__/nutrition-bands.test.ts"],
+    breakThreshold: 85, // achieved 88.89% via `npm run mutation:explore --
+    // shared/lib/nutrition-bands.ts shared/lib/__tests__/nutrition-bands.test.ts`
+    // (Task 7 baseline; first shared/ target — test discovery worked with no config
+    // changes). Initial run was 83.54%/40 survivors; two boundary tests (a lone
+    // MEDIUM concern, a lone GOOD benefit, each with nothing else to fill the
+    // slot) killed the `>=` vs `>` mix-up on CONCERN_RANK.medium/BENEFIT_RANK.good
+    // at the outer condition, raising it to 88.89%/27 survivors. Of those: 13 are
+    // in concernBand/benefitBand/resolveBasis (Tasks 5-6, reviewed/complete, out
+    // of this task's scope — e.g. the fibre per100 `*` vs `/` ArithmeticOperator
+    // at line 112 is equivalent under every fixture's factor:1 basis); 14 are in
+    // pickStandouts — 2 are the residual `>=`-check-elided variant of the same
+    // mutant above (provably equivalent: CONCERN_RANK.low/BENEFIT_RANK.none are
+    // defined exactly one below medium/good, so the running-max comparison alone
+    // reproduces the threshold check), 1 (line 273) is a redundant inner guard
+    // already implied by its enclosing `benefit &&`, and the remaining ~11
+    // (rule 4/5 gating at 241/253/255/259, the final push guards at 276/277, and
+    // the saturatedFat/fat order-array literals) are unexercised on fully-empty
+    // or degenerate inputs — not chased further per the task's time-box.
+  },
 };
 
 export const DEFAULT_TARGET = "macro-gap-context";
