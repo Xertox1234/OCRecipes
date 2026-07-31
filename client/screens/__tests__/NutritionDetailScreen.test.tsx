@@ -647,7 +647,15 @@ describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
       imageUrl: "https://example.test/coke.png",
     });
 
-    expect(queryByLabelText("Image of Cherry Coke")).toBeTruthy();
+    const hero = queryByLabelText("Image of Cherry Coke");
+    expect(hero).toBeTruthy();
+    // Assert the rendered SOURCE, not just the labelled node: FallbackImage
+    // (client/components/FallbackImage.tsx) labels its grey placeholder
+    // identically to the loaded image, so a label-only assertion would still
+    // pass if the `source` wiring broke and every product image silently
+    // fell back to the placeholder. See
+    // docs/solutions/conventions/assert-source-not-label-when-fallback-shares-it-2026-07-30.md
+    expect(hero?.getAttribute("src")).toBe("https://example.test/coke.png");
   });
 
   it("announces a missing product image rather than staying silent", () => {
