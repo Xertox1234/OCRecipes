@@ -651,10 +651,14 @@ describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
     // child is textually indistinguishable from "not rendered" — so a
     // text-based assertion can't tell a correct guard from a broken one that
     // renders an empty node. Detect the omission structurally instead: the
-    // product name has no DOM sibling at all when the brand line is
-    // correctly withheld. Empirically confirmed non-vacuous: forcing the
-    // guard to render unconditionally produces an extra (empty) sibling
-    // `<span>` here even though its text content is "".
+    // product name has no DOM sibling at all. NOTE this covers ALL of the
+    // hero's conditional siblings (brand AND the serving-size line right
+    // after it, NutritionDetailScreen.tsx:351-359), not brandName alone —
+    // this fixture leaves servingSize unset too, so a red here means
+    // "something rendered in the hero that shouldn't have," not specifically
+    // the brand guard. Empirically confirmed non-vacuous for the brand guard
+    // specifically: forcing it to render unconditionally produces an extra
+    // (empty) sibling `<span>` here even though its text content is "".
     expect(productNameNode?.nextElementSibling).toBeNull();
   });
 
