@@ -565,3 +565,133 @@ describe("NutritionDetailScreen — captured photos", () => {
     expect(queryByLabelText("No product image available")).toBeTruthy();
   });
 });
+
+/**
+ * Characterisation suites (Slice 2b). These pin behaviour that already exists
+ * but had NO coverage, so the extraction in Tasks 2-6 has something to fail
+ * against. They must PASS on unmodified code — a red test here means the test
+ * is wrong, not the screen.
+ */
+describe("NutritionDetailScreen — loading branch (2b characterisation)", () => {
+  function renderLoading() {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ productName: "Cherry Coke" }),
+      isLoading: true,
+    });
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  it("renders the skeleton and announces Loading", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { queryByText } = renderLoading();
+
+      expect(announceSpy).toHaveBeenCalledWith("Loading");
+      // Negative control: the loading branch returns EARLY, so no main-branch
+      // content may be in the tree. Without this, a component that rendered
+      // both branches would still pass the announcement assertion.
+      expect(queryByText("Cherry Coke")).toBeNull();
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
+});
+
+// NutritionDetailScreen — modal focus containment (2b characterisation):
+// deliberately NOT a test. `accessibilityViewIsModal` reaches the DOM only
+// through mockComponent's `...rest` spread and is not one of the props the
+// mock special-cases, so — like the `accessible` boolean prop documented in
+// docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md —
+// it never appears as an attribute on the rendered DOM node for either
+// branch. Empirically confirmed: `container.querySelectorAll("[accessibilityviewismodal]")`
+// returned 0 on BOTH the main branch and the loading branch, so an assertion
+// of `.length === 1` could never fail and would pass vacuously regardless of
+// whether the screen (or an extracted component in Tasks 2-6) keeps the
+// prop. `accessibilityViewIsModal` on `ThemedView` at NutritionDetailScreen.tsx:292
+// and :310 is therefore a diff-review obligation, not a test — verify on
+// device with VoiceOver per docs/rules/accessibility.md instead.
+
+describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
+  function renderHero(nutrition: Record<string, unknown>) {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue(baseHookReturn(nutrition));
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  it("renders product name, brand and serving size", () => {
+    const { queryByText } = renderHero({
+      productName: "Cherry Coke",
+      brandName: "Coca-Cola",
+      servingSize: "1 can (355 ml)",
+    });
+
+    expect(queryByText("Cherry Coke")).toBeTruthy();
+    expect(queryByText("Coca-Cola")).toBeTruthy();
+    expect(queryByText("Serving size: 1 can (355 ml)")).toBeTruthy();
+  });
+
+  it("falls back to Unknown Product and omits an absent brand", () => {
+    const { queryByText } = renderHero({ productName: "" });
+
+    expect(queryByText("Unknown Product")).toBeTruthy();
+    expect(queryByText("Coca-Cola")).toBeNull();
+  });
+
+  it("labels the image by product name, and says so when there is no image", () => {
+    const { queryByLabelText } = renderHero({
+      productName: "Cherry Coke",
+      imageUrl: "https://example.test/coke.png",
+    });
+
+    expect(queryByLabelText("Image of Cherry Coke")).toBeTruthy();
+  });
+
+  it("announces a missing product image rather than staying silent", () => {
+    const { queryByLabelText } = renderHero({ productName: "Cherry Coke" });
+
+    expect(queryByLabelText("No product image available")).toBeTruthy();
+  });
+});
+
+describe("NutritionDetailScreen — verification panel (2b characterisation)", () => {
+  function renderVerification(overrides: Record<string, unknown>) {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ productName: "Cherry Coke" }),
+      ...overrides,
+    });
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  it("offers the front-label CTA for a verified product with no front-label data", () => {
+    const { queryByText } = renderVerification({
+      verificationLevel: "verified",
+      hasFrontLabelData: false,
+    });
+
+    expect(queryByText("Add product details")).toBeTruthy();
+    expect(queryByText("Scan front of package")).toBeTruthy();
+  });
+
+  it("withholds the CTA once front-label data exists", () => {
+    const { queryByText } = renderVerification({
+      verificationLevel: "verified",
+      hasFrontLabelData: true,
+    });
+
+    expect(queryByText("Add product details")).toBeNull();
+  });
+
+  it("withholds the CTA for an unverified product", () => {
+    const { queryByText } = renderVerification({
+      verificationLevel: "unverified",
+      hasFrontLabelData: false,
+    });
+
+    expect(queryByText("Add product details")).toBeNull();
+  });
+});
