@@ -1,6 +1,6 @@
 ---
 title: "NutritionDetailScreen ignores both captured photos — local RouteParams shadows the canonical type"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-30
 updated: 2026-07-30
