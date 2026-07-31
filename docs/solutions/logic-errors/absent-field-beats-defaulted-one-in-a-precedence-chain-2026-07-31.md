@@ -85,12 +85,29 @@ signal" state:
 setIsBeverage(typeof data.isBeverage === "boolean" ? data.isBeverage : null);
 ```
 
-Assert **absence**, not undefined-ness:
+Assert **absence** with `not.toHaveProperty`:
 
 ```ts
-expect(res.body).not.toHaveProperty("isBeverage");   // ✅ distinguishes omitted from null
-expect(res.body.isBeverage).toBeUndefined();          // ❌ also passes for a present `null`
+expect(res.body).not.toHaveProperty("isBeverage");   // says what you mean: the key is gone
 ```
+
+Be precise about why, because the obvious justification is wrong. `expect(null).toBeUndefined()`
+**fails** — verified by running it. The two assertions diverge on exactly one state, a key that
+is *present* holding `undefined`:
+
+| state | `not.toHaveProperty("x")` | `expect(obj.x).toBeUndefined()` |
+| --- | --- | --- |
+| key absent | passes ✅ | passes ✅ |
+| key present, value `undefined` | **fails** ✅ | **passes** ❌ |
+| key present, value `null` | fails ✅ | fails ✅ |
+
+And `res.body` is deserialized JSON, which **cannot carry an own `undefined` property** — so on
+that object specifically the two are equivalent on every reachable state. The divergence bites
+on a **hand-built mock or fixture** (`{ ...mockResponse, isBeverage: undefined }`), which is
+precisely the shape a test author reaches for when writing the "no signal" case. Prefer
+`not.toHaveProperty` because it states the contract directly and stays correct if the object
+under test later becomes a fixture rather than a parsed response — not because `toBeUndefined()`
+is loose about `null`.
 
 ## Prevention
 
