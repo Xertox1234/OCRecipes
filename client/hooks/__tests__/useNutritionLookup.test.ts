@@ -606,6 +606,73 @@ describe("useNutritionLookup — unknown serving weight (direct-OFF fallback)", 
     expect(result.current.nutrition?.servingSize).toBe("1 bottle");
   });
 
+  /**
+   * A zero serving weight is not a weight — it is the same absence of data as a
+   * null, and `parseServingGrams` hands it back as a number.
+   * `server/services/barcode-lookup.ts` documents its own `|| 100` as a guard
+   * for "a pathological '0 ml' parse", so this shape occurs in live OFF data;
+   * the client's trusted branch has no equivalent guard and emits
+   * `{ grams: 0, isServingDataTrusted: true }`.
+   */
+  const ZERO_SERVING_PRODUCT = {
+    product_name: "Sparkling Beverage",
+    brands: "Generic",
+    serving_size: "0 ml",
+    nutriments: {
+      "energy-kcal_100g": 21,
+      carbohydrates_100g: 5,
+      sugars_100g: 4,
+      "energy-kcal_serving": 100,
+      carbohydrates_serving: 24,
+      sugars_serving: 19,
+    },
+  };
+
+  it("treats a zero serving weight as unknown, not as a real basis", async () => {
+    mockOffFallback(ZERO_SERVING_PRODUCT);
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "0000000000001" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.servingSizeGrams).toBeNull();
+    // Not "1 × 0 g" — a zero basis that reaches the caption reads as a real
+    // measurement of nothing.
+    expect(
+      getServingContextLabel({
+        servingQuantity: result.current.servingQuantity,
+        servingSizeGrams: result.current.servingSizeGrams,
+        servingOptions: result.current.servingOptions,
+        isPer100g: result.current.isPer100g,
+      }),
+    ).toBe("serving");
+  });
+
+  it("does not zero the card when the stepper runs at a zero serving weight", async () => {
+    mockOffFallback(ZERO_SERVING_PRODUCT);
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "0000000000001" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.nutrition?.calories).toBe(100);
+
+    // `factor = (0 / 100) * quantity` is zero, so a zero basis reaching the
+    // per-100g path blanks every macro and writes a 0-calorie log entry.
+    act(() => result.current.recalculateNutrition(0, 2));
+
+    expect(result.current.nutrition?.calories).toBe(200);
+    expect(result.current.nutrition?.sugar).toBe(38);
+    expect(result.current.nutrition?.servingSize).not.toBe("0g");
+  });
+
   it("regression: a parseable serving weight is unchanged", async () => {
     mockOffFallback({
       product_name: "Sparkling Water, Lime",

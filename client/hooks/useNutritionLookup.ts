@@ -227,17 +227,23 @@ export function useNutritionLookup(params: {
   // Recalculate displayed nutrition from per-100g whenever serving
   // size or quantity changes.
   //
-  // `grams === null` is a real state, not a missing value: an Open Food Facts
-  // record can publish trustworthy per-serving energy against a serving_size
-  // that carries no metric quantity ("1 bottle"), so the serving is known but
-  // its weight is not. There is no gram basis to scale from, so multiply the
-  // per-serving baseline by the quantity instead. Falling through to the
-  // per-100g path with a fabricated denominator is what this fix removes —
-  // and passing null into it produces `(null / 100) * qty === 0`, zeroing the
-  // whole card.
+  // An absent gram basis is a real state, not a missing value: an Open Food
+  // Facts record can publish trustworthy per-serving energy against a
+  // serving_size that carries no metric quantity ("1 bottle"), so the serving
+  // is known but its weight is not. There is no gram basis to scale from, so
+  // multiply the per-serving baseline by the quantity instead. Falling through
+  // to the per-100g path with a fabricated denominator is what this fix
+  // removes.
+  //
+  // The guard is `!(grams > 0)`, not `grams === null`, and it is load-bearing
+  // rather than defensive: both a null and a zero produce a factor of exactly
+  // zero in the per-100g path below, blanking every macro on the card and
+  // logging a 0-calorie entry. The callers are already normalized (see the
+  // `> 0` filter where `servingSizeGrams` is assigned), so this is the second
+  // of two layers — a future call site cannot reintroduce the zeroing.
   const recalculateNutrition = useCallback(
     (grams: number | null, quantity: number) => {
-      if (grams === null) {
+      if (!(grams != null && grams > 0)) {
         const baseline = validatedData?.perServing;
         if (!baseline) return;
         const scaled = scaleNutrition(baseline, quantity);
@@ -581,7 +587,20 @@ export function useNutritionLookup(params: {
           // `ServingControls` both already model null as "unknown weight"; let
           // them. `isPer100g` stays false either way — these ARE per-serving
           // values, so the "Values shown per 100g" banner would be a second lie.
-          setServingSizeGrams(validated.servingInfo.grams);
+          //
+          // `> 0`, because that same trusted branch also emits a ZERO gram
+          // basis: `parseServingGrams("0 ml")` returns the number 0, `??` keeps
+          // it, and the plausibility check only rejects servings that are too
+          // LARGE. A zero is not a measurement, it is the same absence of data
+          // as a null — and left as 0 it captions "1 × 0 g" and scales every
+          // macro to zero. The server reached the same conclusion independently:
+          // `barcode-lookup.ts` computes `hasServingData` as
+          // `servingGrams !== null && servingGrams > 0` and documents its own
+          // fallback as a guard for "a pathological '0 ml' parse".
+          const trustedGrams = validated.servingInfo.grams;
+          setServingSizeGrams(
+            trustedGrams != null && trustedGrams > 0 ? trustedGrams : null,
+          );
           setIsPer100g(
             !validated.isServingDataTrusted &&
               !validated.servingInfo.wasCorrected,
