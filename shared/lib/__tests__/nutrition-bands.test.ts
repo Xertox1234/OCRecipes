@@ -349,8 +349,13 @@ describe("pickStandouts", () => {
       benefits: { fibre: c("excellent"), protein: c("good") },
     };
     expect(pickStandouts(bands)).toEqual([
-      { group: "concern", nutrient: "sugar", band: "high" },
-      { group: "benefit", nutrient: "fibre", band: "excellent" },
+      { group: "concern", nutrient: "sugar", band: "high", hasValue: true },
+      {
+        group: "benefit",
+        nutrient: "fibre",
+        band: "excellent",
+        hasValue: true,
+      },
     ]);
   });
 
@@ -362,8 +367,8 @@ describe("pickStandouts", () => {
       benefits: { fibre: c("none"), protein: c("none") },
     };
     expect(pickStandouts(bands)).toEqual([
-      { group: "concern", nutrient: "sugar", band: "high" },
-      { group: "benefit", nutrient: "fibre", band: "none" },
+      { group: "concern", nutrient: "sugar", band: "high", hasValue: true },
+      { group: "benefit", nutrient: "fibre", band: "none", hasValue: true },
     ]);
   });
 
@@ -373,8 +378,13 @@ describe("pickStandouts", () => {
       benefits: { fibre: c("excellent") },
     };
     expect(pickStandouts(bands)).toEqual([
-      { group: "benefit", nutrient: "fibre", band: "excellent" },
-      { group: "concern", nutrient: "sugar", band: "low" },
+      {
+        group: "benefit",
+        nutrient: "fibre",
+        band: "excellent",
+        hasValue: true,
+      },
+      { group: "concern", nutrient: "sugar", band: "low", hasValue: true },
     ]);
   });
 
@@ -392,8 +402,13 @@ describe("pickStandouts", () => {
       benefits: { fibre: c("unknown"), protein: c("unknown") },
     };
     expect(pickStandouts(bands)).toEqual([
-      { group: "benefit", nutrient: "fibre", band: "unknown" },
-      { group: "concern", nutrient: "sugar", band: "unknown" },
+      {
+        group: "benefit",
+        nutrient: "fibre",
+        band: "unknown",
+        hasValue: true,
+      },
+      { group: "concern", nutrient: "sugar", band: "unknown", hasValue: true },
     ]);
   });
 
@@ -406,8 +421,18 @@ describe("pickStandouts", () => {
       benefits: { fibre: c("unknown", true) },
     };
     expect(pickStandouts(bands)).toEqual([
-      { group: "benefit", nutrient: "fibre", band: "unknown" },
-      { group: "concern", nutrient: "sodium", band: "unknown" },
+      {
+        group: "benefit",
+        nutrient: "fibre",
+        band: "unknown",
+        hasValue: true,
+      },
+      {
+        group: "concern",
+        nutrient: "sodium",
+        band: "unknown",
+        hasValue: true,
+      },
     ]);
   });
 
@@ -416,11 +441,11 @@ describe("pickStandouts", () => {
       concerns: { sodium: c("high"), sugar: c("high") },
       benefits: {},
     };
-    expect(pickStandouts(bands)[0]).toEqual({
-      group: "concern",
-      nutrient: "sugar",
-      band: "high",
-    });
+    // Full-array assertion, not just index [0]: with no fibre to fall back
+    // on, the benefit slot must stay empty — this documents that shape too.
+    expect(pickStandouts(bands)).toEqual([
+      { group: "concern", nutrient: "sugar", band: "high", hasValue: true },
+    ]);
   });
 
   it("breaks benefit ties on fixed order — fibre wins", () => {
@@ -432,6 +457,7 @@ describe("pickStandouts", () => {
       group: "benefit",
       nutrient: "fibre",
       band: "excellent",
+      hasValue: true,
     });
   });
 
@@ -473,6 +499,7 @@ describe("pickStandouts", () => {
       group: "benefit",
       nutrient: "fibre",
       band: "good",
+      hasValue: true,
     });
   });
 
@@ -485,8 +512,8 @@ describe("pickStandouts", () => {
       benefits: { fibre: c("none") },
     };
     expect(pickStandouts(bands)).toEqual([
-      { group: "concern", nutrient: "sodium", band: "medium" },
-      { group: "benefit", nutrient: "fibre", band: "none" },
+      { group: "concern", nutrient: "sodium", band: "medium", hasValue: true },
+      { group: "benefit", nutrient: "fibre", band: "none", hasValue: true },
     ]);
   });
 
@@ -499,8 +526,44 @@ describe("pickStandouts", () => {
       benefits: { protein: c("good") },
     };
     expect(pickStandouts(bands)).toEqual([
-      { group: "concern", nutrient: "sugar", band: "high" },
-      { group: "benefit", nutrient: "protein", band: "good" },
+      { group: "concern", nutrient: "sugar", band: "high", hasValue: true },
+      { group: "benefit", nutrient: "protein", band: "good", hasValue: true },
+    ]);
+  });
+
+  it("carries hasValue through a rule-4 fibre promotion, distinguishing a recorded value from none", () => {
+    // Finding 1: Standout must not collapse "no value at all" and "value
+    // present, basis unresolved" into the same shape. Same band (none) in
+    // both cases below — only hasValue differs, and it must survive.
+    const noValue: NutrientBands = {
+      concerns: { sugar: c("high") },
+      benefits: { fibre: c("none", false) },
+    };
+    expect(pickStandouts(noValue)).toEqual([
+      { group: "concern", nutrient: "sugar", band: "high", hasValue: true },
+      { group: "benefit", nutrient: "fibre", band: "none", hasValue: false },
+    ]);
+
+    const withValue: NutrientBands = {
+      concerns: { sugar: c("high") },
+      benefits: { fibre: c("none", true) },
+    };
+    expect(pickStandouts(withValue)).toEqual([
+      { group: "concern", nutrient: "sugar", band: "high", hasValue: true },
+      { group: "benefit", nutrient: "fibre", band: "none", hasValue: true },
+    ]);
+  });
+
+  it("does not promote a never-recorded fibre when filling by rule 5", () => {
+    // Finding 2: no existing test exercised the FALSE path of `fibre?.hasValue`
+    // in rule 5's benefit half. A >= vs boolean-elision mutant there would
+    // wrongly promote a fibre value that was never recorded.
+    const bands: NutrientBands = {
+      concerns: { sugar: c("unknown", true) },
+      benefits: { fibre: c("unknown", false) },
+    };
+    expect(pickStandouts(bands)).toEqual([
+      { group: "concern", nutrient: "sugar", band: "unknown", hasValue: true },
     ]);
   });
 });

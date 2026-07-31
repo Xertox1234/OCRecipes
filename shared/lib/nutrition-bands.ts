@@ -198,8 +198,18 @@ export interface NutrientBands {
 }
 
 export type Standout =
-  | { group: "concern"; nutrient: ConcernNutrient; band: ConcernBand }
-  | { group: "benefit"; nutrient: BenefitNutrient; band: BenefitBand };
+  | {
+      group: "concern";
+      nutrient: ConcernNutrient;
+      band: ConcernBand;
+      hasValue: boolean;
+    }
+  | {
+      group: "benefit";
+      nutrient: BenefitNutrient;
+      band: BenefitBand;
+      hasValue: boolean;
+    };
 
 /**
  * Picks the two nutrients worth promoting into the summary card — the worst
@@ -218,7 +228,12 @@ export function pickStandouts(bands: NutrientBands): Standout[] {
     const rank = CONCERN_RANK[entry.band];
     if (rank >= CONCERN_RANK.medium && rank > bestConcernRank) {
       bestConcernRank = rank;
-      concern = { group: "concern", nutrient: n, band: entry.band };
+      concern = {
+        group: "concern",
+        nutrient: n,
+        band: entry.band,
+        hasValue: entry.hasValue,
+      };
     }
   }
 
@@ -231,7 +246,12 @@ export function pickStandouts(bands: NutrientBands): Standout[] {
     const rank = BENEFIT_RANK[entry.band];
     if (rank >= BENEFIT_RANK.good && rank > bestBenefitRank) {
       bestBenefitRank = rank;
-      benefit = { group: "benefit", nutrient: n, band: entry.band };
+      benefit = {
+        group: "benefit",
+        nutrient: n,
+        band: entry.band,
+        hasValue: entry.hasValue,
+      };
     }
   }
 
@@ -241,33 +261,55 @@ export function pickStandouts(bands: NutrientBands): Standout[] {
   if (concern && !benefit) {
     const fibre = bands.benefits.fibre;
     if (fibre) {
-      benefit = { group: "benefit", nutrient: "fibre", band: fibre.band };
+      benefit = {
+        group: "benefit",
+        nutrient: "fibre",
+        band: fibre.band,
+        hasValue: fibre.hasValue,
+      };
     }
   }
 
-  // Rule 5: neither filled. Promote fibre plus the first concern in fixed
-  // order that has a KNOWN VALUE, regardless of band. Rules 3-4 test the
-  // band; this tests value-presence, because on a basis-unknown saved item
-  // every band is `unknown` while every value is known — the dominant
-  // saved-item state, not an edge case.
+  // Rule 5, benefit half: neither slot filled. Promote fibre only if it has a
+  // KNOWN VALUE, regardless of band. Rules 3-4 test the band; this tests
+  // value-presence, because on a basis-unknown saved item every band is
+  // `unknown` while every value is known — the dominant saved-item state,
+  // not an edge case.
   if (!concern && !benefit) {
     const fibre = bands.benefits.fibre;
     if (fibre?.hasValue) {
-      benefit = { group: "benefit", nutrient: "fibre", band: fibre.band };
+      benefit = {
+        group: "benefit",
+        nutrient: "fibre",
+        band: fibre.band,
+        hasValue: fibre.hasValue,
+      };
     }
   }
+  // Rule 5, concern half: whenever the concern slot is STILL EMPTY after rule
+  // 3 — including when benefit already filled via rule 3 — backfill from
+  // fixed order by value-presence. Not gated on `!benefit`: this is what lets
+  // a qualifying benefit pair with a fixed-order concern fallback rather than
+  // leaving the concern slot empty.
   if (!concern) {
     for (const n of CONCERN_ORDER) {
       const entry = bands.concerns[n];
       if (entry?.hasValue) {
-        concern = { group: "concern", nutrient: n, band: entry.band };
+        concern = {
+          group: "concern",
+          nutrient: n,
+          band: entry.band,
+          hasValue: entry.hasValue,
+        };
         break;
       }
     }
   }
 
-  // Benefit first when it led (rule 3 filled the benefit slot but not the
-  // concern one), so the promoted good news reads before the filler.
+  // Benefit first whenever rule 3's concern loop never found a qualifying
+  // concern (bestConcernRank never rose above its initial value), regardless
+  // of which rule filled the benefit slot — including the all-unknown path,
+  // where the benefit is fibre from rule 5, not rule 3.
   const out: Standout[] = [];
   if (benefit && bestConcernRank < CONCERN_RANK.medium) {
     if (benefit) out.push(benefit);
