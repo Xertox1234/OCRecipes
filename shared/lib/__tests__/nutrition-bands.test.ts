@@ -389,10 +389,10 @@ describe("pickStandouts", () => {
   });
 
   it("promotes fibre plus the first valued concern when ALL bands are unknown", () => {
-    // THE dominant saved-item state under Decision 8: values known, basis
-    // unresolved, so every band is unknown. Rule 5 is value-presence, not
-    // band-knownness — showing nothing here would blank the card on a screen
-    // whose premise is surfacing data.
+    // THE dominant saved-item state: values known, basis unresolved, so
+    // every band is unknown. Rule 5 is value-presence, not band-knownness —
+    // showing nothing here would blank the card on a screen whose premise is
+    // surfacing data.
     const bands: NutrientBands = {
       concerns: {
         sugar: c("unknown"),

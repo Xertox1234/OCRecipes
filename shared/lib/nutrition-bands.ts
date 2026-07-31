@@ -45,6 +45,16 @@ const PORTION_LINES: Partial<Record<ConcernNutrient, number>> = {
  * same portion that `perServingValue` describes. When `basis.factor` is 1
  * (values already per-100), `portionGrams` should not be supplied.
  *
+ * If a future caller violates that precondition anyway (factor 1 WITH a
+ * portionGrams override), the override compares a per-100 value against a
+ * portion line — harmless today because every FSA_PORTION line sits above
+ * its FSA_FOOD high line (27 > 22.5 sugar, 6 > 5 saturatedFat, 720 > 600
+ * sodium), so anything exceeding the portion line had already banded
+ * "high" on the ordinary per-100 comparison below. That headroom holds
+ * under the FSA drink portion table a follow-up todo will add too
+ * (13.5 > 11.25, 3 > 2.5, 360 > 300). Nothing pins this — it is recorded
+ * here so a future reader does not have to re-derive it.
+ *
  * The per-portion override can only promote to high, only for portions over
  * 100 g/ml, and only on the food scale (FSA_PORTION applies to food only).
  */
@@ -94,6 +104,16 @@ export function benefitBand(
   }
 
   if (nutrient === "protein") {
+    // Deliberate: this branch computes an energy-share RATIO
+    // (perServingValue*4 / kcalPerServing), so `basis.factor` — the per-100
+    // scale — is never read for protein at all. But the `basis.kind ===
+    // "unknown"` guard above still fires first, so on the dominant
+    // saved-item path (basis unresolved) protein is always suppressed to
+    // "unknown" even though it would be fully computable here. That
+    // suppression is intentional and safe (fails toward under-warning, per
+    // the project's flag-emission rule) — it is not a gap to close by
+    // skipping the basis check for protein specifically.
+    //
     // Energy share, not an absolute weight — 20g of protein means something
     // different in a 200kcal meal than in a 900kcal one.
     if (
@@ -188,7 +208,14 @@ const BENEFIT_RANK: Record<BenefitBand, number> = {
 
 export interface BandedValue<B> {
   band: B;
-  /** False when the nutrient has no recorded value at all (distinct from zero). */
+  /**
+   * False when the nutrient has no recorded value at all (distinct from
+   * zero). MUST be derived from the raw value's presence, never from
+   * `band === "unknown"` — `concernBand`/`benefitBand` return `"unknown"`
+   * for both an absent value AND an unresolved basis, so deriving this
+   * field from the band would re-collapse exactly the two states it exists
+   * to keep apart.
+   */
   hasValue: boolean;
 }
 
@@ -256,8 +283,8 @@ export function pickStandouts(bands: NutrientBands): Standout[] {
   }
 
   // Rule 4: if exactly one slot filled, the other is ALWAYS fibre — whatever
-  // its band, including `none` and `unknown`. This is what guarantees fibre
-  // appears on every product (Decision 3).
+  // its band, including `none` and `unknown`. This is the rule that
+  // guarantees fibre is always given a promoted slot on every product.
   if (concern && !benefit) {
     const fibre = bands.benefits.fibre;
     if (fibre) {
@@ -312,7 +339,7 @@ export function pickStandouts(bands: NutrientBands): Standout[] {
   // where the benefit is fibre from rule 5, not rule 3.
   const out: Standout[] = [];
   if (benefit && bestConcernRank < CONCERN_RANK.medium) {
-    if (benefit) out.push(benefit);
+    out.push(benefit);
     if (concern) out.push(concern);
   } else {
     if (concern) out.push(concern);
