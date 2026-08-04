@@ -7,10 +7,7 @@ import { ScanFlagBadge } from "@/components/ScanFlagBadge";
 import { NutriScoreChip } from "@/components/NutriScoreChip";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
-import {
-  partitionScanFlags,
-  headsUpSummaryLabel,
-} from "@/screens/nutrition-detail-flags-utils";
+import { partitionScanFlags } from "@/screens/nutrition-detail-flags-utils";
 import type { ScanFlag } from "@shared/types/scan-flags";
 
 interface FlagSectionsProps {
@@ -21,9 +18,11 @@ interface FlagSectionsProps {
 /**
  * "For you" (personal/allergen) and "Heads up" (universal + Nutri-Score).
  *
- * Owns the partition and the six-flag cap deliberately: ONE array must feed
- * both the announced group label and the rendered badges, and keeping the
- * slice in the same file as both consumers is what stops them desyncing.
+ * Owns the partition and the six-flag cap. The cap used to have a second
+ * consumer — a composed group label that had to name exactly the badges that
+ * rendered — which is why it lives here rather than at the call site. That
+ * label is gone (see the comment on the badge list below), so the cap now has
+ * one consumer and means simply "render at most six".
  *
  * SLICE 2c will narrow this to non-scalar flags only, once NutritionPanel
  * exists to render the sugar / saturated-fat / sodium rows. Narrowing it
@@ -75,41 +74,32 @@ export function FlagSections({ flags, reducedMotion }: FlagSectionsProps) {
             Heads up
           </ThemedText>
           <View style={{ gap: Spacing.sm }}>
-            {/* The Nutri-Score chip renders OUTSIDE this wrapper. On
-                iOS, accessible={true} collapses the subtree into a
-                single VoiceOver node speaking only this label, so
-                anything nested inside that headsUpSummaryLabel does not
-                name (the grade letter does not) is silently dropped.
-                The badges' titles ARE all in the composed label, so
-                only they are grouped here.
+            {/* NO accessible={true} group wrapper here — deliberate, and
+                the reverse of what this section originally shipped with.
 
-                ANDROID DOES NOT COLLAPSE — device-verified 2026-08-04
-                by diffing `uiautomator dump` on the emulator: the
-                wrapper AND all three badges stay focusable=true, so
-                "Heads up" is 4 TalkBack stops against 1 VoiceOver stop.
-                The chip's placement is still correct (it is what iOS
-                needs, and Android is indifferent to it), but never rely
-                on this wrapper to HIDE anything on Android.
+                A group wrapper collapses its subtree on iOS into one
+                VoiceOver node speaking only the wrapper's label. Each
+                badge's own description is strictly RICHER than any
+                summary sentence can be — "High in sugar. Above the FSA
+                guideline for sugar." against "High in sugar" — and those
+                explanations exist nowhere else on the screen. Collapsing
+                therefore made every flag's justification unreachable to
+                VoiceOver users.
 
-                Direction for 2c, which is the opposite of what this
-                grouping assumes: each badge's own label is strictly
-                more informative than the summary — "High in sugar.
-                Above the FSA guideline for sugar." vs. "High in sugar"
-                — so iOS is the platform losing information, and the
-                fix is more likely "drop the group" than "collapse
-                Android to match iOS". See
-                todos/P2-2026-08-04-heads-up-accessible-group-diverges-ios-android.md */}
-            {partition.universal.length > 0 ? (
-              <View
-                accessible={true}
-                accessibilityLabel={headsUpSummaryLabel(universalToShow)}
-                style={{ gap: Spacing.sm }}
-              >
-                {universalToShow.map((f) => (
-                  <ScanFlagBadge key={f.id} flag={f} />
-                ))}
-              </View>
-            ) : null}
+                Android never collapsed at all: device-verified
+                2026-08-04 via `uiautomator dump`, where the wrapper AND
+                all three badges stayed focusable=true, so TalkBack read
+                the summary and then repeated all of it badge by badge.
+
+                Dropping the wrapper fixes both platforms at once — one
+                stop per badge, each carrying its full explanation,
+                identically on iOS and Android. The "Heads up" heading
+                above already supplies the grouping cue, and the
+                Nutri-Score chip keeps its own node for free rather than
+                by being carefully kept outside a wrapper. */}
+            {universalToShow.map((f) => (
+              <ScanFlagBadge key={f.id} flag={f} />
+            ))}
             {partition.nutriScore?.grade ? (
               <NutriScoreChip grade={partition.nutriScore.grade} />
             ) : null}

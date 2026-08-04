@@ -209,7 +209,8 @@ export default function ItemDetailScreen() {
               }}
               fallbackIcon="package"
               fallbackIconSize={40}
-              accessibilityLabel={`Photo of ${item.productName}`}
+              // Decorative: the product name is announced by the <h3>
+              // immediately below, so labelling the image only repeats it.
             />
             <View style={styles.headerInfo}>
               <ThemedText type="h3" style={styles.productName}>

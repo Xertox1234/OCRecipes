@@ -43,11 +43,15 @@ export function ProductHero({
           fallbackIcon="image"
           fallbackIconSize={30}
           resizeMode="contain"
-          accessibilityLabel={
-            nutrition?.imageUrl
-              ? `Image of ${nutrition.productName || "product"}`
-              : "No product image available"
-          }
+          // Decorative: the product name is announced by the <h2> right
+          // below, so a label here would only double-announce it. See
+          // FallbackImage's docblock for the RN gating that made the old
+          // label inert anyway.
+          //
+          // testID reaches the real <Image> ONLY — the placeholder branch
+          // takes no image props — so a test that finds this node has
+          // proved the source wiring, not merely that something rendered.
+          testID="product-hero-image"
         />
       </Animated.View>
 

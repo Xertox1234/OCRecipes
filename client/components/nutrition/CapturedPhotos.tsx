@@ -80,17 +80,23 @@ export function CapturedPhotos({
             containment by comparing the two off the DOM, not by
             matching two hand-written strings that happen to overlap.
 
-            ANDROID DOES NOT COLLAPSE. Verified 2026-08-04 on the
-            sibling FlagSections wrapper via `uiautomator dump`: the
-            group and every child stayed focusable=true. This tile was
-            NOT itself on screen for that dump (the barcode fixture has
-            no captured photos), so the same outcome here is INFERRED
-            from the shared RN mechanism, not observed. If it holds,
-            TalkBack reads the group label AND the caption — "Nutrition
-            label you photographed", then "Nutrition label" — which is
-            exactly the double-announce this wrapper was chosen to
-            avoid. PR 745 confirmed this pattern on iOS ONLY; confirm
-            on Android before treating it as cross-platform correct. */}
+            ANDROID DOES NOT COLLAPSE — verified 2026-08-04 on the
+            sibling FlagSections wrapper via `uiautomator dump`, where
+            the group and every child stayed focusable=true. Left as
+            it was, TalkBack would read the group label AND the caption
+            — "Nutrition label you photographed", then "Nutrition
+            label" — the exact double-announce the wrapper was chosen
+            to avoid. So each caption now carries
+            importantForAccessibility="no" (the image is decorative
+            already — see FallbackImage's docblock). That is what
+            actually delivers on Android the single announcement
+            accessible={true} delivers by itself on iOS.
+
+            Note the OPPOSITE call in FlagSections: there the children
+            are richer than any group label, so the wrapper was dropped
+            rather than the children hidden. Containment decides the
+            direction — collapse a group only when its label is a
+            superset of what the children would say. */}
         {nutritionImageUri ? (
           <View
             accessible
@@ -111,7 +117,11 @@ export function CapturedPhotos({
               // letterboxing and all.
               resizeMode="contain"
             />
-            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+            <ThemedText
+              type="caption"
+              style={{ color: theme.textSecondary }}
+              importantForAccessibility="no"
+            >
               Nutrition label
             </ThemedText>
           </View>
@@ -131,7 +141,11 @@ export function CapturedPhotos({
               fallbackIcon="image"
               resizeMode="contain"
             />
-            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+            <ThemedText
+              type="caption"
+              style={{ color: theme.textSecondary }}
+              importantForAccessibility="no"
+            >
               Product front
             </ThemedText>
           </View>

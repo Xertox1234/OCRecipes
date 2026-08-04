@@ -1,8 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  partitionScanFlags,
-  headsUpSummaryLabel,
-} from "../nutrition-detail-flags-utils";
+import { partitionScanFlags } from "../nutrition-detail-flags-utils";
 
 describe("nutrition-detail-flags-utils", () => {
   describe("partitionScanFlags", () => {
@@ -45,7 +42,6 @@ describe("nutrition-detail-flags-utils", () => {
         "nutrient:caffeine",
       ]); // warn before info
       expect(p.nutriScore?.id).toBe("nutriscore:e");
-      expect(headsUpSummaryLabel(p.universal)).toContain("Ultra-processed");
     });
 
     it("treats allergen-unavailable as personal, and sweetener as universal", () => {
@@ -122,56 +118,6 @@ describe("nutrition-detail-flags-utils", () => {
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy.mock.calls[0][0]).toContain("insight-mystery");
       warnSpy.mockRestore();
-    });
-  });
-
-  describe("headsUpSummaryLabel", () => {
-    it("summarizes a single flag without pluralizing", () => {
-      const universal = [
-        {
-          id: "nutrient:sugar",
-          kind: "nutrient",
-          severity: "warn",
-          tier: "nutrition",
-          title: "High in sugar",
-        },
-      ] as any;
-      expect(headsUpSummaryLabel(universal)).toBe(
-        "1 nutrition flag: High in sugar",
-      );
-    });
-
-    it("pluralizes and lists every title in order for multiple flags", () => {
-      const universal = [
-        {
-          id: "nutrient:sugar",
-          kind: "nutrient",
-          severity: "warn",
-          tier: "nutrition",
-          title: "High in sugar",
-        },
-        {
-          id: "nutrient:caffeine",
-          kind: "nutrient",
-          severity: "info",
-          tier: "nutrition",
-          title: "High in caffeine",
-        },
-        {
-          id: "processing:ultra",
-          kind: "processing",
-          severity: "warn",
-          tier: "nutrition",
-          title: "Ultra-processed",
-        },
-      ] as any;
-      expect(headsUpSummaryLabel(universal)).toBe(
-        "3 nutrition flags: High in sugar, High in caffeine, Ultra-processed",
-      );
-    });
-
-    it("returns a graceful fallback for an empty universal list", () => {
-      expect(headsUpSummaryLabel([])).toBe("No additional nutrition flags.");
     });
   });
 });

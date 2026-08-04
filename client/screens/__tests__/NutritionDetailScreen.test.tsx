@@ -186,7 +186,7 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     ];
     mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
 
-    const { queryByText, getByLabelText } = renderComponent(
+    const { queryByText, getByLabelText, queryByLabelText } = renderComponent(
       <NutritionDetailScreen />,
     );
 
@@ -202,32 +202,24 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     expect(queryByText("Contains caffeine")).toBeTruthy();
     expect(getByLabelText("Nutri-Score E")).toBeTruthy();
 
-    // The Heads-up badges are wrapped in ONE accessible={true} view whose
-    // accessibilityLabel is the composed summary sentence, so
-    // VoiceOver/TalkBack read the badge group as a single grouped
-    // announcement instead of stepping through each badge. This jsdom
-    // harness can't model the real subtree-collapse (see
-    // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md);
-    // what IS verifiable is that the exact composed label resolves to
-    // exactly one element — getByLabelText throws on a missing or
-    // duplicate match — and its content reflects the severity-sorted
-    // (warn before info) universal flags.
-    const badgeGroup = getByLabelText(
-      "2 nutrition flags: Ultra-processed, Contains caffeine",
-    );
-    expect(badgeGroup).toBeTruthy();
-
-    // The Nutri-Score chip must be a SIBLING of the badge group, not
-    // nested inside it: an accessible={true} group's composed label
-    // doesn't mention the grade, so a real VoiceOver/TalkBack collapse
-    // would silently drop "Nutri-Score E" if the chip were nested here.
-    // Its own label being reachable OUTSIDE this subtree (asserted above
-    // via getByLabelText) plus its absence FROM this subtree is the
-    // closest jsdom proxy for "the chip keeps its own accessible node."
-    expect(badgeGroup.querySelector('[aria-label="Nutri-Score E"]')).toBeNull();
+    // NO composed group label wraps these badges. It was removed
+    // deliberately: an accessible={true} wrapper collapses the subtree on
+    // iOS to speak only the summary, which made each flag's explanation
+    // ("High in sugar. Above the FSA guideline for sugar.") unreachable,
+    // while on Android it never collapsed at all and TalkBack read the
+    // summary and then every badge again. See the rationale comment in
+    // client/components/nutrition/FlagSections.tsx.
+    //
+    // Asserting the summary's ABSENCE is what stops the wrapper being
+    // reintroduced by a future refactor; jsdom cannot observe the collapse
+    // itself in either direction (see
+    // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md).
+    expect(
+      queryByLabelText("2 nutrition flags: Ultra-processed, Contains caffeine"),
+    ).toBeNull();
   });
 
-  it("shows the Heads-up section for the Nutri-Score chip alone, omitting the badge-group wrapper when there are no universal flags to summarize", () => {
+  it("shows the Heads-up section for the Nutri-Score chip alone when there are no universal flags", () => {
     const flags = [
       {
         id: "nutriscore:c",
@@ -240,22 +232,18 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     ];
     mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
 
-    const { queryByText, getByLabelText, queryByLabelText } = renderComponent(
+    const { queryByText, getByLabelText } = renderComponent(
       <NutritionDetailScreen />,
     );
 
     expect(queryByText("For you")).toBeNull();
     expect(queryByText("Heads up")).toBeTruthy();
+    // The chip is the section's only content here and carries its own
+    // accessibility node — nothing wraps it or speaks on its behalf.
     expect(getByLabelText("Nutri-Score C")).toBeTruthy();
-    // No universal flags means there is nothing for the grouped summary
-    // to describe — the badge-group wrapper (and its "No additional
-    // nutrition flags." fallback label) isn't rendered at all, so the
-    // chip keeps its own independent accessible identity instead of
-    // being nested inside an empty, misleadingly-labeled group.
-    expect(queryByLabelText("No additional nutrition flags.")).toBeNull();
   });
 
-  it("caps the grouped summary label at the same 6 flags that render as badges (finding #4, PR #694 medium review)", () => {
+  it("caps the rendered badges at the first 6 (finding #4, PR #694 medium review)", () => {
     // Server-side today bounds universal flags at 6 kinds (3 nutrient + 1
     // caffeine + 1 processing + 1 sweetener — see universal-flags.ts), so
     // this synthetic 7-flag fixture models a hypothetical future kind to
@@ -269,18 +257,17 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     }));
     mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
 
-    const { getAllByText, getByLabelText } = renderComponent(
+    const { getAllByText, queryByText } = renderComponent(
       <NutritionDetailScreen />,
     );
 
-    // Only 6 badges render.
+    // Exactly the first six render, and the seventh does not. Naming both
+    // sides of the boundary fails loudly if the slice ever changes size or
+    // start index — a bare count assertion would still pass if the cap
+    // kept six flags but the wrong six.
     expect(getAllByText(/^Flag \d$/)).toHaveLength(6);
-    // The grouped label's count and title list match the rendered 6, not
-    // the full 7 — no "7 nutrition flags" summary describing an unseen badge.
-    const badgeGroup = getByLabelText(
-      "6 nutrition flags: Flag 0, Flag 1, Flag 2, Flag 3, Flag 4, Flag 5",
-    );
-    expect(badgeGroup).toBeTruthy();
+    expect(queryByText("Flag 5")).toBeTruthy();
+    expect(queryByText("Flag 6")).toBeNull();
   });
 });
 
@@ -580,9 +567,11 @@ describe("NutritionDetailScreen — captured photos", () => {
     expect(queryByText("Your photos")).toBeNull();
     expect(queryByLabelText(LABEL_A11Y)).toBeNull();
     expect(queryByLabelText(FRONT_A11Y)).toBeNull();
-    // The database product image is untouched by this feature — the captures
-    // are additive evidence, not a replacement hero.
-    expect(queryByLabelText("No product image available")).toBeTruthy();
+    // The hero is untouched by this feature — the captures are additive
+    // evidence, not a replacement hero. The hero image itself is decorative
+    // and carries no accessible name (see FallbackImage's docblock), so the
+    // hero's product name is what proves ProductHero still rendered.
+    expect(queryByText("Unknown Product")).toBeTruthy();
   });
 });
 
@@ -700,43 +689,42 @@ describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
     expect(productNameNode?.nextElementSibling).toBeNull();
   });
 
-  // `accessibilityLabel` here sits directly on the hero `<Image>` (via
-  // `FallbackImage`), pre-existing and moved verbatim by this slice. RN gates
-  // image accessibility on `accessible={props.alt !== undefined ? true :
-  // props.accessible}` — identically in Image.ios.js and Image.android.js —
-  // so a bare `accessibilityLabel` here does not make it an accessibility
-  // element on either platform; this placement is UNVERIFIED on device and
-  // contradicts the group-wrapper shape `CapturedPhotos.tsx` adopts for the
-  // same kind of image+label pairing (device-confirmed on iOS VoiceOver, PR
-  // #745). jsdom cannot observe `accessible` in either direction (see
-  // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md),
-  // so this test proves only that the label string reached a DOM attribute —
-  // nothing about whether VoiceOver/TalkBack actually announces it. If 2c
-  // relocates this label to a wrapper (see
-  // todos/P3-2026-08-04-reconcile-producthero-image-a11y-labelling.md), a red
-  // here means the assertion needs moving to the wrapper, not that the fix
-  // is wrong.
-  it("labels the image by product name, and says so when there is no image", () => {
-    const { queryByLabelText } = renderHero({
+  // The hero image is DECORATIVE and carries no accessible name: the product
+  // name it would announce is already spoken by the <h2> directly below, so a
+  // label here would only double-announce. `FallbackImage` no longer accepts
+  // `accessibilityLabel` at all — its docblock carries the RN gating that made
+  // the old label inert on both platforms, device-confirmed — so this is now
+  // enforced by the type system rather than by convention.
+  //
+  // The handle is `testID`, which reaches the real <Image> ONLY (the
+  // placeholder branch takes no image props). That preserves the property the
+  // old label-based assertion existed for: if the `source` wiring breaks, the
+  // placeholder takes over, the testID disappears, and this goes red. See
+  // docs/solutions/conventions/assert-source-not-label-when-fallback-shares-it-2026-07-30.md
+  it("renders the product image from the source URL, with no accessible name", () => {
+    const { queryByTestId, queryByLabelText } = renderHero({
       productName: "Cherry Coke",
       imageUrl: "https://example.test/coke.png",
     });
 
-    const hero = queryByLabelText("Image of Cherry Coke");
+    const hero = queryByTestId("product-hero-image");
     expect(hero).toBeTruthy();
-    // Assert the rendered SOURCE, not just the labelled node: FallbackImage
-    // (client/components/FallbackImage.tsx) labels its grey placeholder
-    // identically to the loaded image, so a label-only assertion would still
-    // pass if the `source` wiring broke and every product image silently
-    // fell back to the placeholder. See
-    // docs/solutions/conventions/assert-source-not-label-when-fallback-shares-it-2026-07-30.md
     expect(hero?.getAttribute("src")).toBe("https://example.test/coke.png");
+    expect(queryByLabelText("Image of Cherry Coke")).toBeNull();
   });
 
-  it("announces a missing product image rather than staying silent", () => {
-    const { queryByLabelText } = renderHero({ productName: "Cherry Coke" });
+  it("falls back to a silent placeholder when there is no image", () => {
+    const { queryByTestId, queryByLabelText, queryByText } = renderHero({
+      productName: "Cherry Coke",
+    });
 
-    expect(queryByLabelText("No product image available")).toBeTruthy();
+    // No real <Image> rendered — the placeholder branch took over.
+    expect(queryByTestId("product-hero-image")).toBeNull();
+    // And it announces nothing. A screen-reader user gains nothing from being
+    // told a decorative placeholder graphic is on screen, and the product
+    // name is announced immediately below it either way.
+    expect(queryByLabelText("No product image available")).toBeNull();
+    expect(queryByText("Cherry Coke")).toBeTruthy();
   });
 });
 
