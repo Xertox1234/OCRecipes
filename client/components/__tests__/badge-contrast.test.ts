@@ -17,6 +17,14 @@ import {
   getBadgeConfig,
   VERIFICATION_BADGE_FILL_OPACITY,
 } from "../verification-badge-utils";
+import {
+  CONCERN_LOW_VISUALS,
+  BENEFIT_VISUALS,
+  BENEFIT_NONE_VISUALS,
+  BADGE_SEVERITY_FILL_OPACITY,
+  HIGH_SEVERITY_VISUALS,
+  MEDIUM_SEVERITY_VISUALS,
+} from "../badge-severity-visuals";
 import { allergySeverities } from "@shared/constants/allergens";
 import { verificationLevels } from "@shared/types/verification";
 import type { ScanFlagSeverity } from "@shared/types/scan-flags";
@@ -78,11 +86,29 @@ function verificationCases(): Case[] {
   });
 }
 
+/**
+ * NutritionPanel's band tag renders as a pill at the shared severity fill
+ * opacity, exactly like ScanFlagBadge — so its text sits against the same
+ * composited background and takes the same 4.5:1 bar.
+ */
+function panelTagCases(): Case[] {
+  return [
+    { label: "NutritionPanel concern LOW tag", visuals: CONCERN_LOW_VISUALS },
+    { label: "NutritionPanel benefit tag", visuals: BENEFIT_VISUALS },
+    { label: "NutritionPanel benefit NONE tag", visuals: BENEFIT_NONE_VISUALS },
+  ].map(({ label, visuals }) => ({
+    label,
+    colorKey: visuals.colorKey,
+    opacity: BADGE_SEVERITY_FILL_OPACITY,
+  }));
+}
+
 describe("badge family WCAG AA contrast", () => {
   const allCases = [
     ...allergenCases(),
     ...scanFlagCases(),
     ...verificationCases(),
+    ...panelTagCases(),
   ];
 
   for (const themeName of themeNames) {
@@ -102,6 +128,39 @@ describe("badge family WCAG AA contrast", () => {
           const ratio = contrastRatio(textHex, effectiveBackground);
 
           expect(ratio).toBeGreaterThanOrEqual(AA_NORMAL_TEXT_THRESHOLD);
+        });
+      }
+    }
+  }
+});
+
+/**
+ * WCAG 1.4.11 — the indicator dot is a GRAPHICAL OBJECT, not text, so its bar
+ * is 3:1 rather than 4.5:1, and it renders at FULL token strength (opacity 1)
+ * directly on the surface rather than as a low-opacity fill. Naming only the
+ * text criterion is what invites picking a lighter green that passes the wrong
+ * test.
+ */
+const AA_GRAPHICAL_OBJECT_THRESHOLD = 3.0;
+
+describe("NutritionPanel band indicator (WCAG 1.4.11 graphical object)", () => {
+  const indicatorVisuals = [
+    { label: "concern HIGH", visuals: HIGH_SEVERITY_VISUALS },
+    { label: "concern MEDIUM", visuals: MEDIUM_SEVERITY_VISUALS },
+    { label: "concern LOW", visuals: CONCERN_LOW_VISUALS },
+    { label: "benefit GOOD/EXCELLENT", visuals: BENEFIT_VISUALS },
+    { label: "benefit NONE", visuals: BENEFIT_NONE_VISUALS },
+  ];
+
+  for (const theme of themeNames) {
+    for (const surface of surfaceNames) {
+      for (const { label, visuals } of indicatorVisuals) {
+        it(`${label} dot >= 3:1 on ${theme}/${surface}`, () => {
+          const fg = Colors[theme][visuals.colorKey];
+          const bg = Colors[theme][surface];
+          expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(
+            AA_GRAPHICAL_OBJECT_THRESHOLD,
+          );
         });
       }
     }
