@@ -99,6 +99,18 @@ export const MUTATION_TARGETS = {
     // the saturatedFat/fat order-array literals) are unexercised on fully-empty
     // or degenerate inputs — not chased further per the task's time-box.
   },
+  "nutrition-band-source": {
+    mutate: ["client/components/nutrition/nutrition-band-source.ts"],
+    testInclude: [
+      "client/components/nutrition/__tests__/nutrition-band-source.test.ts",
+    ],
+    // No breakThreshold yet — baseline with `npm run mutation:explore --
+    // client/components/nutrition/nutrition-band-source.ts
+    // client/components/nutrition/__tests__/nutrition-band-source.test.ts`
+    // before setting one (task-2 brief, step 6). The likeliest defect here is
+    // a branch inversion (`itemId === undefined` the wrong way round, or
+    // `valuesArePer100` flipped), which coarse fixtures cannot see.
+  },
 };
 
 export const DEFAULT_TARGET = "macro-gap-context";
