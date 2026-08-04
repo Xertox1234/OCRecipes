@@ -3,9 +3,10 @@ title: Drive and verify on-device Android UI behavior via adb + uiautomator (tap
 track: knowledge
 category: best-practices
 module: client
-tags: [android, emulator, adb, uiautomator, verification, backhandler, testing]
+tags: [android, emulator, adb, uiautomator, verification, backhandler, testing, accessibility, talkback]
 applies_to: [client/**/*.tsx, client/hooks/**/*.ts]
 created: '2026-07-12'
+last_updated: '2026-08-04'
 ---
 
 # Drive and verify on-device Android UI behavior via adb + uiautomator (tap/back-press timing, not TalkBack)
@@ -18,6 +19,11 @@ interactions, animation windows — and there's no scripted/Maestro coverage for
 the general adb/uiautomator toolkit; for TalkBack screen-reader speech verification specifically,
 see the companion solution linked below instead (different technique: logcat, not tap
 coordinates).
+
+**Also use this for STRUCTURAL accessibility questions** — "is this one node or several", "does
+the group label survive", "is this element hidden from TalkBack" — which need no TalkBack at all.
+See step 8; it answers them far more cheaply than driving the screen reader, and it is the only
+way to prove a subtree exclusion actually took effect.
 
 ## Examples
 
@@ -80,6 +86,39 @@ fixes against `MealPlanHomeScreen`):
    trigger is network-backed, look for another state-driven UI element wired to the same
    underlying hook/mechanism that closes synchronously, and use that instead.
 
+8. **For accessibility questions, `--compressed` is a DIFFERENT QUESTION — not an optimisation**
+   (added 2026-08-04, PR #751). The default `uiautomator dump` is the **raw view hierarchy**: it
+   lists nodes regardless of `importantForAccessibility`, so a node appearing there proves
+   nothing about whether a screen reader reaches it. `uiautomator dump --compressed` applies the
+   accessibility-importance filter and is the only one of the two that answers "will TalkBack
+   traverse this".
+
+   ```bash
+   adb shell uiautomator dump /sdcard/ui.xml              # raw view tree — for TAP COORDINATES
+   adb shell uiautomator dump --compressed /sdcard/uic.xml # a11y-important only — for REACHABILITY
+   ```
+
+   Pick by question: `content-desc` / `focusable` / `bounds` → either dump (view properties).
+   "Is this hidden from TalkBack?" → **`--compressed` only**.
+
+   **`focusable=false` is NOT evidence a node is skipped.** A plain `TextView` of visible body
+   copy is `focusable=false` and is certainly announced; `focusable=true` marks an *explicit* a11y
+   element (RN `accessible={true}`), and everything else is still traversed as content. Reading
+   `focusable=false` as "TalkBack skips it" is the easiest mistake here and it nearly caused a
+   real defect to be dismissed in review.
+
+   Worked example: a decorative placeholder whose parent had `importantForAccessibility="no"` and
+   whose icon child had `accessible={false}` STILL appeared in the compressed tree as
+   `TextView text='U+F205'`. The default dump showed that child both before and after the fix and
+   could not tell them apart; the compressed dump showed it present before and gone after.
+
+9. **Before/after branch diffing is the strongest zero-delta proof available.** Dump on both
+   branches and compare `content-desc` + `focusable` + `bounds` per node. Identical bounds are
+   the platform's own layout coordinates agreeing — far stronger than eyeballing screenshots, and
+   it catches iOS/Android divergence neither jsdom nor an iOS pass can see (e.g. an RN
+   `accessible={true}` wrapper collapses its subtree on iOS but **not** on Android, so a 3-badge
+   group is 4 stops on Android against 1 on iOS).
+
 ## Exceptions
 
 - **A tab-root screen with no stack-pop target can make a back-press race UN-diagnosable via
@@ -107,3 +146,4 @@ fixes against `MealPlanHomeScreen`):
 
 - [Verify TalkBack behavior via emulator logcat](verify-talkback-behavior-via-emulator-logcat-2026-06-23.md) — the companion technique for screen-reader speech output specifically (different mechanism: logcat text, not tap coordinates)
 - [gorhom onChange fires on animation complete, not start](../logic-errors/gorhom-onchange-fires-on-animation-complete-not-start-2026-07-07.md) — the underlying close-animation-grace-period mechanism this session verified on-device
+- [Visually-hidden-but-mounted surfaces must be hidden from the a11y tree](../conventions/a11y-hide-visually-hidden-surfaces-2026-06-10.md) — the rule step 8's `--compressed` check exists to verify (`"no"` vs `"no-hide-descendants"`)
