@@ -7,6 +7,8 @@ updated: 2026-08-04
 assignee:
 labels: [deferred, accessibility]
 github_issue:
+blocked_reason: "placement decision (group-wrapper vs. alternative) is a human call, not an executor's to invent; confirming it needs a physical-device VoiceOver pass that jsdom cannot substitute for"
+human_led: true
 ---
 
 # ProductHero image label placement vs CapturedPhotos group wrapper
