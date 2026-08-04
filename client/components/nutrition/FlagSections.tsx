@@ -75,14 +75,30 @@ export function FlagSections({ flags, reducedMotion }: FlagSectionsProps) {
             Heads up
           </ThemedText>
           <View style={{ gap: Spacing.sm }}>
-            {/* The Nutri-Score chip renders OUTSIDE this wrapper — an
-                accessible={true} group collapses its subtree into a
-                single VoiceOver/TalkBack node using only this label, so
-                anything nested inside that isn't reflected in
-                headsUpSummaryLabel's text (the grade letter isn't) would
-                be silently dropped from the announcement. The badges'
-                titles ARE all in the composed label, so only they are
-                grouped here. */}
+            {/* The Nutri-Score chip renders OUTSIDE this wrapper. On
+                iOS, accessible={true} collapses the subtree into a
+                single VoiceOver node speaking only this label, so
+                anything nested inside that headsUpSummaryLabel does not
+                name (the grade letter does not) is silently dropped.
+                The badges' titles ARE all in the composed label, so
+                only they are grouped here.
+
+                ANDROID DOES NOT COLLAPSE — device-verified 2026-08-04
+                by diffing `uiautomator dump` on the emulator: the
+                wrapper AND all three badges stay focusable=true, so
+                "Heads up" is 4 TalkBack stops against 1 VoiceOver stop.
+                The chip's placement is still correct (it is what iOS
+                needs, and Android is indifferent to it), but never rely
+                on this wrapper to HIDE anything on Android.
+
+                Direction for 2c, which is the opposite of what this
+                grouping assumes: each badge's own label is strictly
+                more informative than the summary — "High in sugar.
+                Above the FSA guideline for sugar." vs. "High in sugar"
+                — so iOS is the platform losing information, and the
+                fix is more likely "drop the group" than "collapse
+                Android to match iOS". See
+                todos/P2-2026-08-04-heads-up-accessible-group-diverges-ios-android.md */}
             {partition.universal.length > 0 ? (
               <View
                 accessible={true}

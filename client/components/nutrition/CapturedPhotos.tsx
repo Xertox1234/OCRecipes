@@ -61,10 +61,15 @@ export function CapturedPhotos({
             heuristic surfaces it anyway, the result is worse: it
             double-announces against the visible caption right below it
             — "Nutrition label you photographed", then "Nutrition label"
-            — which docs/rules/accessibility.md prohibits. Both branches
-            are bad; neither has been confirmed on a device.
+            — the double-announce family that docs/rules/accessibility.md
+            guards against (its rules name the nested-in-a-labelled-parent
+            case, not sibling redundancy, so this is the spirit of that
+            file rather than a literal rule). The gating half IS now
+            device-confirmed: the sibling hero image in ProductHero
+            renders `focusable=false` in the Android tree while carrying
+            a content-desc, so TalkBack skips it entirely.
 
-            One `accessible` wrapper avoids the question entirely by
+            One `accessible` wrapper avoids the question ON iOS by
             collapsing image + caption into a single node with one
             label. Safe here specifically because the tile has NO
             interactive child (that same rule forbids the wrapper when
@@ -73,7 +78,19 @@ export function CapturedPhotos({
             subtree announces only the group's label, so anything not
             reflected in it is silently dropped. The test pins that
             containment by comparing the two off the DOM, not by
-            matching two hand-written strings that happen to overlap. */}
+            matching two hand-written strings that happen to overlap.
+
+            ANDROID DOES NOT COLLAPSE. Verified 2026-08-04 on the
+            sibling FlagSections wrapper via `uiautomator dump`: the
+            group and every child stayed focusable=true. This tile was
+            NOT itself on screen for that dump (the barcode fixture has
+            no captured photos), so the same outcome here is INFERRED
+            from the shared RN mechanism, not observed. If it holds,
+            TalkBack reads the group label AND the caption — "Nutrition
+            label you photographed", then "Nutrition label" — which is
+            exactly the double-announce this wrapper was chosen to
+            avoid. PR 745 confirmed this pattern on iOS ONLY; confirm
+            on Android before treating it as cross-platform correct. */}
         {nutritionImageUri ? (
           <View
             accessible
