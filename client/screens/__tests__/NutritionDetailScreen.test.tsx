@@ -10,12 +10,13 @@
 // tree — only the Additional Nutrients card is exercised.
 import React from "react";
 import { describe, it, expect, afterEach } from "vitest";
-import { fireEvent } from "@testing-library/react";
+import { act, fireEvent } from "@testing-library/react";
 import * as RN from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import NutritionDetailScreen from "../NutritionDetailScreen";
 import { deriveLogGate, type LogGate } from "../nutrition-detail-utils";
 import { buildNutritionDetailParams } from "../scan-screen-utils";
+import { Spacing } from "@/constants/theme";
 import type { ScanPhase } from "@/camera/types/scan-phase";
 
 /** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
@@ -35,6 +36,28 @@ afterEach(() => {
   mockRoute.params = ITEM_ID_ROUTE_PARAMS;
   mockNavigate.mockClear();
 });
+
+/**
+ * A NON-ZERO bottom inset, overriding the shared mock
+ * (`test/mocks/react-native-safe-area-context.ts`), which reports 0 on every
+ * edge. With 0 the two candidate paddings — `insets.bottom + Spacing["3xl"]`
+ * and `barHeight + Spacing["3xl"]` — are numerically identical before a layout
+ * pass, so the "the inset is counted exactly once" assertions could not fail.
+ * `top` stays 0: the header inset comes from `useHeaderHeight()`, not from
+ * here, and moving it would only churn unrelated expectations.
+ */
+const { SAFE_AREA_BOTTOM } = vi.hoisted(() => ({ SAFE_AREA_BOTTOM: 34 }));
+
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({
+    top: 0,
+    bottom: SAFE_AREA_BOTTOM,
+    left: 0,
+    right: 0,
+  }),
+  SafeAreaProvider: ({ children }: { children: React.ReactNode }) => children,
+  SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
+}));
 
 vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: mockNavigate }),
@@ -78,6 +101,10 @@ function baseHookReturn(
     showCustomInput: false,
     setShowCustomInput: vi.fn(),
     correctionNotice: null,
+    // Was MISSING despite the docblock above claiming "every field the screen
+    // reads": the screen destructures `labelReadNotice`, so every notice test
+    // would otherwise render an `undefined` notice and pass vacuously.
+    labelReadNotice: null,
     showManualSearch: false,
     manualSearchQuery: "",
     setManualSearchQuery: vi.fn(),
@@ -1263,5 +1290,323 @@ describe("NutritionDetailScreen — nutrition panel wiring (slice 2c)", () => {
     // dead mapping would show up here alone.
     expect(queryByText("High in saturated fat")).toBeNull();
     expect(queryByText("High in sodium")).toBeTruthy();
+  });
+});
+
+/**
+ * Slice 2c, Task 8 — the notices collapse into one `NoticeStack`, `error`
+ * routes through `InlineError`, and the log button becomes the sticky
+ * `LogActionBar` that owns the bottom safe-area inset.
+ *
+ * Fixture bodies are deliberately nonsense literals (`LABEL_NOTICE_FIXTURE`
+ * &c.) rather than realistic copy: three notices, an error and a summary card
+ * render in one tree here, and a realistic string can collide with copy some
+ * OTHER component emits, turning a red on a string clash into what looks like
+ * a finding.
+ */
+describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () => {
+  const LABEL_BODY = "LABEL_NOTICE_FIXTURE";
+  const CORRECTION_BODY = "CORRECTION_NOTICE_FIXTURE";
+  const PER_100G_BODY =
+    "Values shown per 100g. Check package for actual serving size.";
+  const ERROR_BODY = "ERROR_BANNER_FIXTURE";
+
+  // Derived, not hand-copied — same reasoning as the log-gate suite above.
+  const GATED = deriveLogGate({ ocrText: null, labelUsed: false });
+  if (GATED.kind !== "needsAcknowledgement") {
+    throw new Error("deriveLogGate(null, false) must produce a gated gate");
+  }
+  const GATED_LABEL = GATED.buttonLabel;
+
+  function renderScan(overrides: Record<string, unknown> = {}) {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ productName: "Cherry Coke", calories: 39 }),
+      ...overrides,
+    });
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  function renderSavedItem(overrides: Record<string, unknown> = {}) {
+    mockRoute.params = { itemId: 42 };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ productName: "Cherry Coke", calories: 39 }),
+      ...overrides,
+    });
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  /**
+   * React keeps every prop it was handed on the host node's fiber, including
+   * ones it declined to wire up (`onLayout`) or to recognise
+   * (`contentContainerStyle`). Reading them back is the only way to inspect
+   * RN layout props in this harness — for an unrecognised object prop React
+   * writes a stringified attribute, and jsdom has no layout event to fire.
+   * Mirrors `client/components/nutrition/__tests__/LogActionBar.test.tsx`.
+   */
+  function reactProps(node: Element): Record<string, unknown> {
+    const key = Object.keys(node).find((k) => k.startsWith("__reactProps$"));
+    if (!key) {
+      throw new Error(
+        "React's internal props key was not on the node — the __reactProps$ " +
+          "prefix may have changed in a React upgrade.",
+      );
+    }
+    return (node as unknown as Record<string, Record<string, unknown>>)[key];
+  }
+
+  /** RN styles are arrays of objects; resolve to the effective values. */
+  function flattenStyle(style: unknown): Record<string, unknown> {
+    const parts = (
+      Array.isArray(style) ? style.flat(Infinity) : [style]
+    ).filter(Boolean);
+    return Object.assign({}, ...parts);
+  }
+
+  /**
+   * The screen's main ScrollView: the first child of the modal root.
+   *
+   * Located structurally rather than by a `testID` added to production markup
+   * just so a test could find it. A bare
+   * `querySelectorAll("[contentcontainerstyle]")` is NOT specific enough —
+   * `ServingControls` nests a horizontal ScrollView that carries the same
+   * attribute. The attribute check below is the guard that this really is a
+   * ScrollView and not some other first child.
+   */
+  function scrollViewOf(container: HTMLElement): Element {
+    const scroll = container.firstElementChild?.firstElementChild;
+    if (!scroll?.hasAttribute("contentcontainerstyle")) {
+      throw new Error(
+        "the modal root's first child was not the main ScrollView",
+      );
+    }
+    return scroll;
+  }
+
+  function scrollPaddingBottom(container: HTMLElement): unknown {
+    return flattenStyle(
+      reactProps(scrollViewOf(container)).contentContainerStyle,
+    ).paddingBottom;
+  }
+
+  /**
+   * The `NoticeStack` row a body string sits in: the body `ThemedText` renders
+   * inside the row's `textColumn` View, which is the row's only child element,
+   * and every row is a direct child of the ONE stack container.
+   */
+  function noticeRow(body: HTMLElement): HTMLElement {
+    const row = body.parentElement?.parentElement;
+    if (!row) {
+      throw new Error("notice body was not nested two levels inside a row");
+    }
+    return row;
+  }
+
+  /**
+   * The announce collision, asserted by CALL COUNT.
+   *
+   * iOS `UIAccessibility.post(.announcement)` does not queue — post two in one
+   * commit and one is silently dropped — so a test that only asserted the
+   * acknowledge STRING was announced would pass in exactly the broken case
+   * where both fired and the user heard one of them. The mount assertion is
+   * what makes the count discriminate: with `suppressAnnounce` unwired, the
+   * notice announces at mount and the acknowledge announce is the second of
+   * two, not the only one.
+   *
+   * `error` stays null in this fixture on purpose — `InlineError` fires its
+   * own iOS-gated announce (Constraint 23), which would add a third call and
+   * make the count say nothing about the notice/acknowledge pair.
+   */
+  it("announces ONLY the acknowledgement while the log gate is unmet", () => {
+    const announce = vi
+      .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    try {
+      const { getByText } = renderScan({
+        labelReadNotice: LABEL_BODY,
+        logGate: GATED,
+      });
+
+      expect(announce).not.toHaveBeenCalled();
+
+      fireEvent.click(getByText(GATED_LABEL));
+
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(announce).toHaveBeenCalledWith(
+        "Values confirmed. Add to Today is now available.",
+      );
+    } finally {
+      announce.mockRestore();
+    }
+  });
+
+  /**
+   * All three advisory surfaces in ONE stack, in ONE position.
+   *
+   * Asserting a shared parent rather than mere presence is the whole point:
+   * three notices each rendered by its own inline block would satisfy every
+   * text query while leaving the screen exactly as scattered as before. The
+   * per-100g row is the one that proves the MOVE — it rendered BELOW the
+   * summary card until this task.
+   */
+  it("collapses every notice into ONE stack rendered above the summary card", () => {
+    const { getByText, getByTestId } = renderScan({
+      labelReadNotice: LABEL_BODY,
+      correctionNotice: CORRECTION_BODY,
+      isPer100g: true,
+      flags: [
+        {
+          id: "nutriscore:e",
+          kind: "nutriscore",
+          severity: "info",
+          tier: "nutrition",
+          title: "Nutri-Score E",
+          grade: "e",
+        },
+      ],
+    });
+
+    // Each notice's own title still renders, so consolidating the containers
+    // did not consolidate away what they said.
+    expect(getByText("Label not used")).toBeTruthy();
+    expect(getByText("Serving size adjusted")).toBeTruthy();
+    expect(getByText("Per 100g")).toBeTruthy();
+
+    const stack = noticeRow(getByText(LABEL_BODY)).parentElement;
+    expect(stack).toBeTruthy();
+    expect(noticeRow(getByText(CORRECTION_BODY)).parentElement).toBe(stack);
+    expect(noticeRow(getByText(PER_100G_BODY)).parentElement).toBe(stack);
+
+    // …and that one stack leads the summary card, so an advisory caveat about
+    // the data is read before the verdict it qualifies.
+    const ring = getByTestId("nutri-score-ring");
+    expect(
+      stack!.compareDocumentPosition(ring) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  // Constraint 25: the saved-item view keeps its existing omissions. All three
+  // notice inputs are supplied, so a dropped `!itemId` gate goes red here
+  // rather than passing because the fixture had nothing to show.
+  it("renders no notices at all on the saved-item path", () => {
+    const { queryByText } = renderSavedItem({
+      labelReadNotice: LABEL_BODY,
+      correctionNotice: CORRECTION_BODY,
+      isPer100g: true,
+    });
+
+    expect(queryByText(LABEL_BODY)).toBeNull();
+    expect(queryByText(CORRECTION_BODY)).toBeNull();
+    expect(queryByText(PER_100G_BODY)).toBeNull();
+    expect(queryByText("Label not used")).toBeNull();
+  });
+
+  /**
+   * `error` renders through `InlineError`, not as a `NoticeStack` row
+   * (Constraint 23): error messages require `assertive`, and the notices
+   * deliberately carry no live region at all (Constraint 12) because a polite
+   * region on a container wrapping three variants makes TalkBack recompose the
+   * whole subtree on any single change.
+   *
+   * Counting `[aria-live]` across the WHOLE tree is what pins both halves at
+   * once: exactly one, and it is the error's.
+   */
+  it("routes error through InlineError — one assertive live region, none on the notices", () => {
+    const { container, getByText } = renderScan({
+      error: ERROR_BODY,
+      labelReadNotice: LABEL_BODY,
+      correctionNotice: CORRECTION_BODY,
+      isPer100g: true,
+    });
+
+    const live = container.querySelectorAll("[aria-live]");
+    expect(live).toHaveLength(1);
+    expect(live[0].getAttribute("aria-live")).toBe("assertive");
+    expect(live[0].getAttribute("role")).toBe("alert");
+    expect(live[0].textContent).toContain(ERROR_BODY);
+
+    // The positive form of "the notices carry none": walk up from a notice
+    // body and require no live region anywhere above it.
+    expect(getByText(LABEL_BODY).closest("[aria-live]")).toBeNull();
+    expect(getByText(PER_100G_BODY).closest("[aria-live]")).toBeNull();
+  });
+
+  /**
+   * Constraint 9: `insets.bottom` is counted exactly ONCE.
+   *
+   * The bar owns the inset, so the ScrollView must pad by the bar's MEASURED
+   * height — never a hardcoded constant, because the bar has three heights
+   * (normal, gated, and with the offline caption). Asserting both sides is
+   * load-bearing: a screen that dropped the inset from the ScrollView and
+   * never added it to the bar would satisfy the first assertion alone while
+   * clipping the log button behind the home indicator.
+   */
+  it("pads the ScrollView by the bar's measured height, with the inset only on the bar", async () => {
+    const { container, getByTestId } = renderScan();
+
+    // jsdom fires no layout pass, so this is the pre-measurement state: the
+    // bar's height is still 0 and the inset is demonstrably NOT here.
+    expect(scrollPaddingBottom(container)).toBe(Spacing["3xl"]);
+
+    const bar = getByTestId("log-action-bar");
+    const onLayout = reactProps(bar).onLayout as (e: unknown) => void;
+    // ASYNC act, not the sync form: the screen's `useAccessibility` and
+    // `useOfflineGuard` both settle a promise on mount, and a sync `act()`
+    // drains the microtask queue only AFTER returning — so their state updates
+    // land outside it and React logs an "update was not wrapped in act(...)"
+    // warning that has nothing to do with the layout event under test.
+    await act(async () => {
+      onLayout({ nativeEvent: { layout: { height: 96 } } });
+    });
+
+    expect(scrollPaddingBottom(container)).toBe(96 + Spacing["3xl"]);
+    expect(flattenStyle(reactProps(bar).style).paddingBottom).toBe(
+      SAFE_AREA_BOTTOM + Spacing.md,
+    );
+  });
+
+  /**
+   * The other half of "counted once": with no bar to own it, the inset has to
+   * stay on the ScrollView or the saved-item view loses its home-indicator
+   * clearance. Same reason the loading branch keeps it.
+   */
+  it("keeps insets.bottom on the ScrollView where no bar renders", () => {
+    const { container } = renderSavedItem();
+
+    expect(scrollPaddingBottom(container)).toBe(
+      SAFE_AREA_BOTTOM + Spacing["3xl"],
+    );
+  });
+
+  /**
+   * Constraint 8: the bar must render INSIDE the `accessibilityViewIsModal`
+   * root, or it falls outside the modal's iOS accessibility scope.
+   *
+   * Asserted structurally, because `accessibilityViewIsModal` never reaches
+   * the DOM in this harness (React declines the unrecognised prop) — see the
+   * standing note above the product-hero suite. What IS assertable is the
+   * shape the constraint requires: the modal root has exactly two children,
+   * the ScrollView and then the bar, so the bar is an absolutely-positioned
+   * sibling AFTER the scroller and inside the same root. The prop itself
+   * stays a diff-review obligation.
+   */
+  it("mounts the sticky bar inside the modal root, after the ScrollView", () => {
+    const { container, getByTestId } = renderScan();
+
+    const root = container.firstElementChild;
+    expect(root).toBeTruthy();
+    expect(root!.children).toHaveLength(2);
+    expect(root!.children[0]).toBe(scrollViewOf(container));
+    expect(root!.children[1]).toBe(getByTestId("log-action-bar"));
+  });
+
+  // Constraint 25 again: no log button on the saved-item path. The root drops
+  // back to a lone ScrollView.
+  it("renders no sticky bar on the saved-item path", () => {
+    const { container, queryByTestId, queryByText } = renderSavedItem();
+
+    expect(queryByTestId("log-action-bar")).toBeNull();
+    expect(queryByText("Add to Today")).toBeNull();
+    expect(container.firstElementChild!.children).toHaveLength(1);
   });
 });

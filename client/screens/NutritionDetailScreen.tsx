@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -16,7 +16,7 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
-import { Button } from "@/components/Button";
+import { InlineError } from "@/components/InlineError";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
@@ -28,6 +28,8 @@ import { ProductHero } from "@/components/nutrition/ProductHero";
 import { FlagSections } from "@/components/nutrition/FlagSections";
 import { NutritionSummaryCard } from "@/components/nutrition/NutritionSummaryCard";
 import { NutritionPanel } from "@/components/nutrition/NutritionPanel";
+import { NoticeStack } from "@/components/nutrition/NoticeStack";
+import { LogActionBar } from "@/components/nutrition/LogActionBar";
 import { buildPanelRows } from "@/components/nutrition/nutrition-band-source";
 import { pickStandouts } from "@shared/lib/nutrition-bands";
 import { CapturedPhotos } from "@/components/nutrition/CapturedPhotos";
@@ -242,37 +244,19 @@ export default function NutritionDetailScreen() {
     logGate,
   } = useNutritionLookup({ barcode, imageUri, itemId, ocrText });
 
-  // Reset whenever the gate changes OR the product does, so an acknowledgement
-  // can never carry over onto different numbers.
+  // The sticky log bar's MEASURED height, reported through its `onLayout` and
+  // spent as the ScrollView's bottom padding. Measured rather than a constant
+  // because the bar has three heights — normal, gated (a longer button label
+  // can wrap), and with the offline caption underneath.
   //
-  // `logGate.kind` alone is insufficient: it is two-valued, so any transition that
-  // swaps `nutrition` while leaving the gate gated keeps the acknowledgement alive.
-  // The manual-search flow is that transition — the user acknowledges a numberless
-  // "Product Not Found" screen, then searches up a different food and
-  // `handleManualSearch` replaces `nutrition` without touching `labelUsed`.
-  //
-  // Not user-reachable in this tree today: nothing emits the `notInDatabase` flag
-  // that opens `showManualSearch` (no server hit for it, and `sendError` sends only
-  // `{ error, code }`), so this guards a real state-machine defect ahead of the
-  // emitter rather than a live bug. It is cheap and must not regress if that
-  // branch is ever wired up.
-  //
-  // `productName` is the dep that actually discriminates. `barcode` does NOT: the
-  // not-found branch sets `barcode: code` and `handleManualSearch` sets
-  // `barcode: barcode || undefined` — the same route barcode both times — so it is
-  // invariant across exactly the transition this guards. `productName` goes
-  // "Product Not Found" → the searched food's name, and it also survives
-  // `recalculateNutrition` untouched, so a user-initiated serving edit does not
-  // needlessly discard an acknowledgement about the same product.
-  //
-  // Keyed on those two PRIMITIVE fields, not on `logGate`/`nutrition` themselves —
-  // the hook returns fresh objects each render, so depending on them would re-fire
-  // every render and wipe the acknowledgement the instant it was given, leaving
-  // the log button permanently unreachable.
-  const [acknowledgedUnverified, setAcknowledgedUnverified] = useState(false);
-  useEffect(() => {
-    setAcknowledgedUnverified(false);
-  }, [logGate.kind, nutrition?.productName]);
+  // The acknowledgement state that used to live here moved into `LogActionBar`
+  // along with the button it gates; see that component for the reset rationale.
+  const [barHeight, setBarHeight] = useState(0);
+
+  // The saved-item view renders no log bar (`!itemId`, Constraint 25), so on
+  // that path nothing else claims the bottom inset and the ScrollView must
+  // keep it. Read below, and by the bar's own gate.
+  const showLogBar = !itemId;
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;
@@ -314,6 +298,10 @@ export default function NutritionDetailScreen() {
             styles.content,
             {
               paddingTop: headerContentInset,
+              // `insets.bottom` here, and the bar's measured height on the main
+              // branch below — the two differ because this branch renders NO
+              // `LogActionBar`, so nothing else is claiming the home-indicator
+              // clearance. The inset is owned by exactly one node per branch.
               paddingBottom: insets.bottom + Spacing["3xl"],
             },
           ]}
@@ -332,7 +320,14 @@ export default function NutritionDetailScreen() {
           styles.content,
           {
             paddingTop: headerContentInset,
-            paddingBottom: insets.bottom + Spacing["3xl"],
+            // `insets.bottom` is counted EXACTLY ONCE. When the sticky bar
+            // renders it owns the inset (`LogActionBar` adds it to its own
+            // `paddingBottom`), so the scroller pads by the bar's measured
+            // height instead — adding both would double-count and leave a
+            // dead band under the last row. When no bar renders (saved item),
+            // the scroller keeps the inset itself.
+            paddingBottom:
+              (showLogBar ? barHeight : insets.bottom) + Spacing["3xl"],
           },
         ]}
         showsVerticalScrollIndicator={false}
@@ -363,50 +358,34 @@ export default function NutritionDetailScreen() {
           reducedMotion={reducedMotion}
         />
 
-        {labelReadNotice && !itemId ? (
-          <View
-            accessibilityLiveRegion="polite"
-            style={[
-              styles.correctionContainer,
-              { backgroundColor: withOpacity(theme.warning, 0.1) },
-            ]}
-          >
-            <Feather name="alert-triangle" size={16} color={theme.warning} />
-            <View style={{ flex: 1 }}>
-              <ThemedText
-                type="small"
-                style={{ color: theme.warning, fontWeight: "600" }}
-              >
-                Label not used
-              </ThemedText>
-              <ThemedText type="small" style={{ color: theme.warning }}>
-                {labelReadNotice}
-              </ThemedText>
-            </View>
-          </View>
-        ) : null}
+        {/* Every passive advisory surface, in ONE place and ONE position: the
+            label-not-used warning, the serving correction, and the per-100g
+            info notice that used to sit BELOW the summary card. Above the card
+            deliberately — a caveat about the data should be read before the
+            verdict it qualifies, and it keeps the entrance ladder in visual
+            order (notices 150 → card 200 → panel 300 → micronutrients 500).
 
-        {correctionNotice && !itemId ? (
-          <View
-            accessibilityLiveRegion="polite"
-            style={[
-              styles.correctionContainer,
-              { backgroundColor: withOpacity(theme.warning, 0.1) },
-            ]}
-          >
-            <Feather name="zap" size={16} color={theme.warning} />
-            <View style={{ flex: 1 }}>
-              <ThemedText
-                type="small"
-                style={{ color: theme.warning, fontWeight: "600" }}
-              >
-                Serving size adjusted
-              </ThemedText>
-              <ThemedText type="small" style={{ color: theme.warning }}>
-                {correctionNotice}
-              </ThemedText>
-            </View>
-          </View>
+            `ScanConflictPrompt` and the manual-search card stay outside it:
+            both are interactive, and a passive row list must not swallow a
+            control. `error` is outside it too — it needs `assertive`, which is
+            `InlineError`'s job (Constraint 23).
+
+            Suppressed while the log gate is unmet so the acknowledge
+            announcement is the ONE thing a screen-reader user hears on a gated
+            screen: iOS `UIAccessibility.post(.announcement)` does not queue, so
+            of two utterances one is silently dropped, and the casualty must
+            never be the message that stops unreviewed values being logged. The
+            notices stay fully readable by swipe either way. Keyed on the gate
+            rather than on the acknowledgement itself because `LogActionBar`
+            owns that state — see its docblock. */}
+        {!itemId ? (
+          <NoticeStack
+            labelReadNotice={labelReadNotice}
+            correctionNotice={correctionNotice}
+            showPer100gInfo={isPer100g}
+            suppressAnnounce={logGate.kind === "needsAcknowledgement"}
+            reducedMotion={reducedMotion}
+          />
         ) : null}
 
         {/* ── Serving size & quantity controls ── */}
@@ -425,21 +404,14 @@ export default function NutritionDetailScreen() {
           />
         ) : null}
 
-        {error ? (
-          <View
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={[
-              styles.warningContainer,
-              { backgroundColor: withOpacity(theme.warning, 0.12) },
-            ]}
-          >
-            <Feather name="alert-triangle" size={20} color={theme.warning} />
-            <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
-              {error}
-            </ThemedText>
-          </View>
-        ) : null}
+        {/* The canonical error surface: `assertive`, not the `polite` this
+            block used to carry — an error is not an advisory notice and must
+            interrupt. `InlineError` renders nothing for a null message, so no
+            ternary here, and it is deliberately NOT `!itemId`-gated: a saved
+            item can fail to load too, and that was already true before this
+            change. Style is spacing only, replacing the deleted
+            `warningContainer`'s bottom margin. */}
+        <InlineError message={error} style={styles.errorSpacing} />
 
         {showManualSearch ? (
           <Card elevation={1} style={styles.manualSearchCard}>
@@ -533,20 +505,6 @@ export default function NutritionDetailScreen() {
           reducedMotion={reducedMotion}
         />
 
-        {isPer100g && !itemId ? (
-          <View
-            style={[
-              styles.infoContainer,
-              { backgroundColor: withOpacity(theme.info, 0.08) },
-            ]}
-          >
-            <Feather name="info" size={16} color={theme.info} />
-            <ThemedText type="small" style={{ color: theme.info, flex: 1 }}>
-              Values shown per 100g. Check package for actual serving size.
-            </ThemedText>
-          </View>
-        ) : null}
-
         {/* Every row, always — a row with no value reads "Not recorded"
             rather than vanishing, which is what stops missing data looking
             like nothing to worry about. Entrance (delay 300) and bottom
@@ -584,60 +542,26 @@ export default function NutritionDetailScreen() {
             }
           />
         )}
-
-        {!itemId ? (
-          <View style={styles.buttonContainer}>
-            {logGate.kind === "needsAcknowledgement" &&
-            !acknowledgedUnverified ? (
-              <Button
-                onPress={() => {
-                  setAcknowledgedUnverified(true);
-                  // Both branches render the same Button at the same JSX position
-                  // with no key, so React swaps props on ONE node and the screen
-                  // reader keeps focus there. A changed accessibilityLabel on an
-                  // already-focused element is not re-spoken, so without this a
-                  // screen-reader user hears nothing, re-activates the same node
-                  // out of habit, and logs the un-reviewed database numbers having
-                  // never perceived the gate. Announcing beats a `key` remount,
-                  // which would drop focus and still guarantee nothing.
-                  AccessibilityInfo.announceForAccessibility(
-                    "Values confirmed. Add to Today is now available.",
-                  );
-                }}
-                accessibilityLabel={`${logGate.buttonLabel}. These values come from the product database, not the label you photographed.`}
-                accessibilityHint="Reveals the Add to Today button"
-                style={styles.addButton}
-              >
-                {logGate.buttonLabel}
-              </Button>
-            ) : (
-              <Button
-                onPress={handleAddToLog}
-                loading={addToLogMutation.isPending}
-                accessibilityLabel={offlineLabel(
-                  `Add ${nutrition?.productName || "item"} to today's food log`,
-                )}
-                accessibilityHint="Saves this item to your daily nutrition tracking"
-                style={styles.addButton}
-              >
-                {offlineLabel("Add to Today")}
-              </Button>
-            )}
-            {isOffline && (
-              <ThemedText
-                type="small"
-                style={{
-                  color: theme.textSecondary,
-                  textAlign: "center",
-                  marginTop: Spacing.xs,
-                }}
-              >
-                You&apos;re offline. This will sync when you reconnect.
-              </ThemedText>
-            )}
-          </View>
-        ) : null}
       </ScrollView>
+
+      {/* The log action is sticky, not the last thing you scroll to — an
+          absolutely-positioned sibling AFTER the ScrollView and INSIDE this
+          `accessibilityViewIsModal` root. Inside matters: outside it, the bar
+          falls out of the modal's iOS accessibility scope and VoiceOver cannot
+          reach it (Constraint 8). It reports its measured height back so the
+          scroller can clear it — the bar occludes real content otherwise, at
+          whichever of its three heights it is currently rendering. */}
+      {showLogBar ? (
+        <LogActionBar
+          logGate={logGate}
+          productName={nutrition?.productName}
+          isOffline={isOffline}
+          offlineLabel={offlineLabel}
+          isPending={addToLogMutation.isPending}
+          onAddToLog={handleAddToLog}
+          onLayout={setBarHeight}
+        />
+      ) : null}
     </ThemedView>
   );
 }
@@ -652,38 +576,14 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: Spacing.lg,
   },
-  warningContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
+  // All that survives of the deleted `warningContainer`: `InlineError` owns
+  // the error's own layout and colours, but not its separation from whatever
+  // renders next.
+  errorSpacing: {
     marginBottom: Spacing.lg,
-  },
-  infoContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
-    marginBottom: Spacing.lg,
-  },
-  buttonContainer: {
-    marginTop: Spacing.lg,
-  },
-  addButton: {
-    marginBottom: Spacing.md,
   },
   micronutrientSection: {
     marginBottom: Spacing["2xl"],
-  },
-  correctionContainer: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
-    marginBottom: Spacing.lg,
   },
   manualSearchCard: {
     padding: Spacing.lg,
