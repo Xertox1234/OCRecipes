@@ -116,6 +116,39 @@ describe("NutritionPanel", () => {
     expect(queryByText("0 g")).toBeNull();
   });
 
+  // Defensive against a data shape `buildPanelRows` never actually produces
+  // today (band comes from the band source, displayValue from `nutrition` —
+  // see nutrition-band-source.ts), but the component must not trust that
+  // invariant blindly: `composeNutrientRowLabel` already drops the tag when
+  // `value === undefined`, so the RENDER must make the same call, or the
+  // visible pill/dot and the spoken label diverge on the same row — the
+  // shared-tag anti-drift property NutritionPanel-utils.ts exists to
+  // prevent, applied to this component's own two channels instead of a
+  // second component's.
+  it("gates the dot and pill on a recorded value — an unrecorded row never shows a colored indicator, even with a resolvable band", () => {
+    const { queryByText, queryByTestId, container } = renderComponent(
+      <NutritionPanel
+        rows={[
+          row({
+            row: NUTRIENT_ROWS.saturatedFat,
+            displayValue: undefined,
+            band: { group: "concern", band: "high" },
+            hasValue: false,
+          }),
+        ]}
+      />,
+    );
+    expect(queryByText("Not recorded")).toBeTruthy();
+    expect(queryByTestId("band-indicator-saturatedFat")).toBeNull();
+    expect(queryByText("HIGH")).toBeNull();
+    // The composed label must carry no band word either — visible and
+    // spoken must agree by construction.
+    const labelled = container.querySelector("[aria-label]");
+    expect(labelled?.getAttribute("aria-label")).toBe(
+      "Saturated fat, not recorded",
+    );
+  });
+
   it("gives each row one accessible group carrying the composed label", () => {
     const { container } = renderComponent(
       <NutritionPanel

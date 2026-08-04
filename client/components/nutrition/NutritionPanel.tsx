@@ -21,8 +21,6 @@ interface NutritionPanelProps {
   reducedMotion?: boolean;
 }
 
-type Theme = ReturnType<typeof useTheme>["theme"];
-
 /**
  * The nutrient table: banded rows (traffic-light judged) above a divider,
  * unbanded rows (no published standard — trans fat, cholesterol, caffeine)
@@ -44,17 +42,17 @@ export function NutritionPanel({ rows, reducedMotion }: NutritionPanelProps) {
 
   return (
     <Animated.View
-      entering={reducedMotion ? undefined : FadeInUp.delay(350).duration(400)}
+      entering={reducedMotion ? undefined : FadeInUp.delay(300).duration(400)}
     >
       <Card>
         {bandedRows.map((data) => (
-          <NutrientRow key={data.row.key} data={data} theme={theme} />
+          <NutrientRow key={data.row.key} data={data} />
         ))}
         {bandedRows.length > 0 && unbandedRows.length > 0 ? (
           <View style={[styles.divider, { backgroundColor: theme.border }]} />
         ) : null}
         {unbandedRows.map((data) => (
-          <NutrientRow key={data.row.key} data={data} theme={theme} quiet />
+          <NutrientRow key={data.row.key} data={data} quiet />
         ))}
       </Card>
     </Animated.View>
@@ -69,20 +67,28 @@ export function NutritionPanel({ rows, reducedMotion }: NutritionPanelProps) {
  */
 function NutrientRow({
   data,
-  theme,
   quiet = false,
 }: {
   data: PanelRowData;
-  theme: Theme;
   quiet?: boolean;
 }) {
+  const { theme } = useTheme();
   const { row, displayValue, band } = data;
-  // An unresolvable/absent band (`band === null`, or `bandTagText`/`bandVisuals`
-  // returning null for an "unknown" band) renders NEITHER a dot nor a pill —
-  // never a fabricated colour. Guarded together so TS narrows both from one
-  // check before either indexes `theme[visuals.colorKey]`.
-  const tag = band ? bandTagText(band) : null;
-  const visuals = band ? bandVisuals(band) : null;
+  // The dot and pill require BOTH a resolvable band AND a recorded value.
+  // An unresolvable/absent band (`band === null`, or `bandTagText`/
+  // `bandVisuals` returning null for an "unknown" band) renders neither —
+  // never a fabricated colour. Gating on `band` alone would also let a row
+  // with `displayValue: undefined` but a resolvable `band` show a coloured
+  // indicator next to a value cell that reads "Not recorded" — a
+  // visible/spoken split, since `composeNutrientRowLabel` already drops the
+  // tag whenever `value === undefined`. Gate on `displayValue`, not
+  // `hasValue`: `hasValue` reads the band SOURCE's raw value
+  // (`validatedData.per100g` on the scan path), a different object from
+  // `displayValue` (`nutrition`) — see nutrition-band-source.ts's own
+  // docblock — so it would not suppress the indicator in exactly the
+  // divergent case this guards against.
+  const tag = band && displayValue !== undefined ? bandTagText(band) : null;
+  const visuals = band && displayValue !== undefined ? bandVisuals(band) : null;
   const label = composeNutrientRowLabel({ row, value: displayValue, tag });
 
   return (
