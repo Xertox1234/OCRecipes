@@ -13,7 +13,9 @@ interface ProductHeroProps {
   /**
    * Suppresses the serving-size line when `ServingControls` is rendering the
    * same information below. Passed in rather than re-derived: the screen owns
-   * the condition (`isPer100g && !itemId && servingOptions.length > 0`).
+   * the condition — see `showServingControls` in
+   * `client/screens/NutritionDetailScreen.tsx` (currently `:265`) rather than
+   * restating it here, where it can drift out of sync with the real logic.
    */
   showServingControls: boolean;
   reducedMotion?: boolean;

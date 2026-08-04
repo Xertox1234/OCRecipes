@@ -125,6 +125,8 @@ export function CapturedPhotos({
 }
 
 const styles = StyleSheet.create({
+  // Verbatim copy. The screen keeps its own — the Additional Nutrients card
+  // still uses both, until 2c deletes it.
   sectionTitle: {
     marginBottom: Spacing.md,
   },

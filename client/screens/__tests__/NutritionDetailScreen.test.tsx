@@ -19,20 +19,25 @@ import { buildNutritionDetailParams } from "../scan-screen-utils";
 import type { ScanPhase } from "@/camera/types/scan-phase";
 
 /** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
- * `itemId`); every other suite relies on the `itemId` default below. */
-const { mockUseNutritionLookup, mockRoute } = vi.hoisted(() => ({
+ * `itemId`); every other suite relies on the `itemId` default below.
+ * `mockNavigate` is hoisted (not a fresh `vi.fn()` per `useNavigation()` call)
+ * so a test can assert against a stable reference — see the verification-panel
+ * CTA test below. */
+const { mockUseNutritionLookup, mockRoute, mockNavigate } = vi.hoisted(() => ({
   mockUseNutritionLookup: vi.fn(),
   mockRoute: { params: { itemId: 42 } as Record<string, unknown> },
+  mockNavigate: vi.fn(),
 }));
 
 const ITEM_ID_ROUTE_PARAMS: Record<string, unknown> = { itemId: 42 };
 
 afterEach(() => {
   mockRoute.params = ITEM_ID_ROUTE_PARAMS;
+  mockNavigate.mockClear();
 });
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
   useRoute: () => mockRoute,
 }));
 
@@ -549,6 +554,21 @@ describe("NutritionDetailScreen — captured photos", () => {
     expect(queryByLabelText(FRONT_A11Y)).toBeNull();
   });
 
+  // The mirror of the "label only" case above, and the fourth quadrant of
+  // the (label, front) presence matrix. This is precisely the boundary
+  // Task 4's `{a || b ? … : null}` → `if (!a && !b) return null` conversion
+  // touched — front-only is the one shape that ternary form and the
+  // early-return form must agree on identically.
+  it("renders only the front capture when the label photo is absent", () => {
+    const { getByLabelText, queryByLabelText } = renderCompletedSession({
+      frontImageUri: "file://front-only.jpg",
+      ocrText: undefined,
+    });
+
+    expectPhotoWithSource(getByLabelText(FRONT_A11Y), "file://front-only.jpg");
+    expect(queryByLabelText(LABEL_A11Y)).toBeNull();
+  });
+
   /**
    * The negative control, and the one that protects everyone who never uses
    * the label steps: a barcode-only scan must render exactly as it did before
@@ -611,9 +631,11 @@ describe("NutritionDetailScreen — loading branch (2b characterisation)", () =>
 // returned 0 on BOTH the main branch and the loading branch, so an assertion
 // of `.length === 1` could never fail and would pass vacuously regardless of
 // whether the screen (or an extracted component in Tasks 2-6) keeps the
-// prop. `accessibilityViewIsModal` on `ThemedView` at NutritionDetailScreen.tsx:292
-// and :310 is therefore a diff-review obligation, not a test — verify on
-// device with VoiceOver per docs/rules/accessibility.md instead.
+// prop. `accessibilityViewIsModal` on both
+// `<ThemedView style={styles.container} accessibilityViewIsModal>` tags in
+// NutritionDetailScreen.tsx — one per branch (loading and main) — is
+// therefore a diff-review obligation, not a test — verify on device with
+// VoiceOver per docs/rules/accessibility.md instead.
 
 describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
   function renderHero(nutrition: Record<string, unknown>) {
@@ -667,7 +689,9 @@ describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
     // renders an empty node. Detect the omission structurally instead: the
     // product name has no DOM sibling at all. NOTE this covers ALL of the
     // hero's conditional siblings (brand AND the serving-size line right
-    // after it, NutritionDetailScreen.tsx:351-359), not brandName alone —
+    // after it — the `nutrition?.brandName ? (...) : null` and
+    // `nutrition?.servingSize && !showServingControls ? (...) : null` blocks
+    // in client/components/nutrition/ProductHero.tsx), not brandName alone —
     // this fixture leaves servingSize unset too, so a red here means
     // "something rendered in the hero that shouldn't have," not specifically
     // the brand guard. Empirically confirmed non-vacuous for the brand guard
@@ -676,6 +700,22 @@ describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
     expect(productNameNode?.nextElementSibling).toBeNull();
   });
 
+  // `accessibilityLabel` here sits directly on the hero `<Image>` (via
+  // `FallbackImage`), pre-existing and moved verbatim by this slice. RN gates
+  // image accessibility on `accessible={props.alt !== undefined ? true :
+  // props.accessible}` — identically in Image.ios.js and Image.android.js —
+  // so a bare `accessibilityLabel` here does not make it an accessibility
+  // element on either platform; this placement is UNVERIFIED on device and
+  // contradicts the group-wrapper shape `CapturedPhotos.tsx` adopts for the
+  // same kind of image+label pairing (device-confirmed on iOS VoiceOver, PR
+  // #745). jsdom cannot observe `accessible` in either direction (see
+  // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md),
+  // so this test proves only that the label string reached a DOM attribute —
+  // nothing about whether VoiceOver/TalkBack actually announces it. If 2c
+  // relocates this label to a wrapper (see
+  // todos/P3-2026-08-04-reconcile-producthero-image-a11y-labelling.md), a red
+  // here means the assertion needs moving to the wrapper, not that the fix
+  // is wrong.
   it("labels the image by product name, and says so when there is no image", () => {
     const { queryByLabelText } = renderHero({
       productName: "Cherry Coke",
@@ -736,5 +776,26 @@ describe("NutritionDetailScreen — verification panel (2b characterisation)", (
     });
 
     expect(queryByText("Add product details")).toBeNull();
+  });
+
+  // The ONLY seam this slice newly created: before the refactor the handler
+  // was inline on the screen; now it arrives at VerificationPanel as a prop.
+  // A prop that's declared, destructured, and never forwarded to `onPress`
+  // would be type-clean, lint-clean, and pixel-identical — a button that
+  // renders perfectly and does nothing. `mockNavigate` is the hoisted,
+  // module-scoped mock (not a fresh `vi.fn()` per `useNavigation()` call) so
+  // it has something stable to assert against.
+  it("navigates to the front-label scan when the CTA is pressed", () => {
+    const { getByText } = renderVerification({
+      verificationLevel: "verified",
+      hasFrontLabelData: false,
+    });
+
+    fireEvent.click(getByText("Add product details"));
+
+    expect(mockNavigate).toHaveBeenCalledWith("Scan", {
+      mode: "front-label",
+      verifyBarcode: "06772408",
+    });
   });
 });
