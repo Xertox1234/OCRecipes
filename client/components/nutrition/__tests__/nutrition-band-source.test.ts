@@ -99,6 +99,48 @@ describe("selectBandSource — serving invariance (the defect this module exists
   });
 });
 
+describe("selectBandSource — the SCALE channel (servingSize is ALSO rewritten)", () => {
+  // `recalculateNutrition` doesn't only scale the VALUES — on its gram branch
+  // it overwrites `nutrition.servingSize` to `${grams}g` (useNutritionLookup.ts:301).
+  // `isBeverage: null` is required to expose this: it forces resolveBasis to
+  // infer scale from the serving string's UNIT, so any regression that reads
+  // `nutrition.servingSize` instead of `validatedData.servingInfo.displayLabel`
+  // shows up here even though `factor` stays pinned at 1 either way.
+  it("keeps the drink scale when nutrition.servingSize has been rewritten to a gram string", () => {
+    const source = selectBandSource({
+      itemId: undefined,
+      validatedData: cherryCokeValidated, // servingInfo.displayLabel: "1 can (355 mL)"
+      nutrition: { ...cherryCokeNutrition, servingSize: "355g" },
+      isBeverage: null,
+    });
+    expect(source.basis).toEqual({
+      kind: "resolved",
+      scale: "drink",
+      factor: 1,
+    });
+  });
+
+  it("stays unbanded rather than fabricating a scale from the rewritten servingSize", () => {
+    // The ORIGINAL serving string ("1 bottle", unparseable) governs, not a
+    // later gram string that happens to parse. Fabricating a basis here is
+    // exactly what Global Constraint 2 forbids.
+    const source = selectBandSource({
+      itemId: undefined,
+      validatedData: {
+        ...cherryCokeValidated,
+        servingInfo: {
+          displayLabel: "1 bottle",
+          grams: null,
+          wasCorrected: false,
+        },
+      },
+      nutrition: { ...cherryCokeNutrition, servingSize: "100g" },
+      isBeverage: null,
+    });
+    expect(source.basis).toEqual({ kind: "unknown" });
+  });
+});
+
 describe("selectBandSource — path selection", () => {
   it("scan path with no validatedData yields an unknown basis, never a guess", () => {
     const source = selectBandSource({

@@ -3,17 +3,28 @@
  * and the summary card's `NutrientBands` from that ONE selection.
  *
  * ── THE RULE ──────────────────────────────────────────────────────────────
- * NEVER band from `nutrition`. `nutrition` is display state:
- * `recalculateNutrition` writes
- *     nutrition.sugar = per100g.sugar x (servingSizeGrams / 100) x quantity
- * while `resolveBasis` derives its factor from the LABEL's one-serving string,
- * which the serving controls never rewrite. The two agree only in the default
- * state; at quantity 2 the computed per-100 doubles, and picking the 100 g chip
- * against a 30 g label serving inflates it 3.3x. Both OVER-warn, which is the
- * direction nutrient flags must never fail in.
+ * NEVER band from `nutrition`. `nutrition` is display state, and the serving
+ * controls move it through TWO channels, not one:
+ *   - VALUES: `recalculateNutrition` writes
+ *         nutrition.sugar = per100g.sugar x (servingSizeGrams / 100) x quantity
+ *     At quantity 2 the computed per-100 doubles, and picking the 100 g chip
+ *     against a 30 g label serving inflates it 3.3x. Both OVER-warn, which is
+ *     the direction nutrient flags must never fail in.
+ *   - SCALE: on its gram branch `recalculateNutrition` ALSO overwrites
+ *         nutrition.servingSize = `${grams}g`
+ *     (useNutritionLookup.ts:301) — so a caller that reads only the serving
+ *     STRING, not the values, can still get burned: `resolveBasis` infers
+ *     food-vs-drink from the string's unit whenever `isBeverage` is null, so
+ *     a rewritten "355g" flips a drink's scale to food (thresholds ~2x
+ *     looser) even though its VALUES never moved. An earlier version of this
+ *     module fed `nutrition.servingSize` into `resolveBasis` on the scan
+ *     path on the false premise that the serving controls never rewrite it —
+ *     they do, via exactly this field.
  *
- * `validatedData.per100g` is the un-scaled lookup payload and is invariant to
- * the serving controls, so it is the only safe scan-path source.
+ * `validatedData.per100g` (values) and `validatedData.servingInfo.displayLabel`
+ * (the ORIGINAL serving string) are the un-scaled lookup payload and are both
+ * invariant to the serving controls — `recalculateNutrition` never calls
+ * `setValidatedData` — so together they are the only safe scan-path source.
  *
  * ── WHY THE SAVED-ITEM PATH IS DIFFERENT ──────────────────────────────────
  * There `validatedData` is null (the `existingItem` effect calls only
@@ -64,32 +75,34 @@ export interface BandSource {
 }
 
 export function selectBandSource(input: BandSourceInput): BandSource {
-  const servingSize = input.nutrition?.servingSize;
-
   if (input.itemId === undefined) {
-    // Scan path. `nutrition` may be serving-scaled at any moment, so the only
-    // admissible source is the un-scaled per-100 payload. Without it there is
-    // no denominator we can defend, and an unbanded panel is the honest result.
+    // Scan path. `nutrition` may be serving-scaled at any moment — including
+    // its OWN `servingSize` field, which `recalculateNutrition` overwrites to
+    // `${grams}g` on the gram branch. So the serving STRING fed to
+    // `resolveBasis` must also come from `validatedData`, not from
+    // `nutrition.servingSize` — `servingInfo.displayLabel` is the product's
+    // original serving text and is never touched by the serving controls.
     if (!input.validatedData) return { values: {}, basis: { kind: "unknown" } };
     return {
       values: input.validatedData.per100g,
       basis: resolveBasis({
         valuesArePer100: true,
-        servingSize,
+        servingSize: input.validatedData.servingInfo.displayLabel,
         isBeverage: input.isBeverage,
       }),
     };
   }
 
-  // Saved-item path. No serving control renders, so `nutrition` is the
-  // un-scaled per-serving source and resolveBasis back-calculates from the
-  // stored serving string — never from a `|| 100` default.
+  // Saved-item path. No serving control renders, so `nutrition` — including
+  // its `servingSize` field — is the un-scaled per-serving source, and
+  // resolveBasis back-calculates from the stored serving string — never from
+  // a `|| 100` default.
   if (!input.nutrition) return { values: {}, basis: { kind: "unknown" } };
   return {
     values: input.nutrition,
     basis: resolveBasis({
       valuesArePer100: false,
-      servingSize,
+      servingSize: input.nutrition.servingSize,
       isBeverage: input.isBeverage,
     }),
   };
@@ -115,9 +128,19 @@ export interface PanelData {
 }
 
 /**
- * One derivation, two consumers. The panel's rows and the summary card's
- * `NutrientBands` come out of the same pass, so a row that says "Not recorded"
- * can never pair with a standout that says otherwise.
+ * One derivation, two consumers. The panel's rows' `band` and the summary
+ * card's `NutrientBands` (`bands`) come out of the SAME pass over
+ * `source.values`, so a row's band can never disagree with the matching
+ * standout's band.
+ *
+ * That guarantee is about `band` <-> `bands`, NOT about `hasValue` <->
+ * `displayValue`: `hasValue` reads `source.values` (the BAND source —
+ * `validatedData.per100g` on the scan path) while `displayValue` always reads
+ * `input.nutrition` (the display state) — two different objects on the scan
+ * path. A nutrient present in one and absent from the other can in principle
+ * render "Not recorded" (`displayValue` undefined) while still carrying a
+ * live band (`hasValue` true). Left open for Tasks 3/4/7, which render both
+ * fields.
  */
 export function buildPanelRows(input: BandSourceInput): PanelData {
   const source = selectBandSource(input);
