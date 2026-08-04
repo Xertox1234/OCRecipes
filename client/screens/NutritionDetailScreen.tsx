@@ -501,30 +501,27 @@ export default function NutritionDetailScreen() {
           </Card>
         ) : null}
 
-        {/* A PLAIN View, never an Animated.View, and never an `accessible`
-            group: the card owns its own entrance (delay 200) — a second
-            animated wrapper would run a second entrance over the same content
-            — and a labelled group would swallow the Nutri-Score ring's own
-            announcement, which the ring carries on its own node precisely so
-            nothing has to. The wrapper exists only for the section margin the
-            deleted `calorieCard` style used to supply. */}
-        <View style={styles.sectionSpacing}>
-          <NutritionSummaryCard
-            standouts={standouts}
-            calories={nutrition?.calories}
-            protein={nutrition?.protein}
-            carbs={nutrition?.carbs}
-            fat={nutrition?.fat}
-            // Only the scan flow populates the serving state this caption is
-            // derived from — saved items store already-scaled totals, so a
-            // "Per …" claim there would misdescribe the numbers.
-            servingContextLabel={
-              showServingControls ? servingContextLabel : undefined
-            }
-            nutriScoreGrade={partition.nutriScore?.grade}
-            reducedMotion={reducedMotion}
-          />
-        </View>
+        {/* No wrapper of any kind: the card owns its entrance (delay 200) and
+            its own bottom margin, so an Animated.View here would run a second
+            entrance over the same content and a plain View would only add a
+            layer. No `accessible` group either — a labelled group would
+            swallow the Nutri-Score ring's own announcement, which the ring
+            carries on its own node precisely so nothing has to. */}
+        <NutritionSummaryCard
+          standouts={standouts}
+          calories={nutrition?.calories}
+          protein={nutrition?.protein}
+          carbs={nutrition?.carbs}
+          fat={nutrition?.fat}
+          // Only the scan flow populates the serving state this caption is
+          // derived from — saved items store already-scaled totals, so a
+          // "Per …" claim there would misdescribe the numbers.
+          servingContextLabel={
+            showServingControls ? servingContextLabel : undefined
+          }
+          nutriScoreGrade={partition.nutriScore?.grade}
+          reducedMotion={reducedMotion}
+        />
 
         <CapturedPhotos
           nutritionImageUri={nutritionImageUri}
@@ -548,12 +545,9 @@ export default function NutritionDetailScreen() {
 
         {/* Every row, always — a row with no value reads "Not recorded"
             rather than vanishing, which is what stops missing data looking
-            like nothing to worry about. The entrance (delay 300) is the
-            panel's own; this wrapper is plain, and carries only the section
-            margin the deleted `additionalNutrients` style used to supply. */}
-        <View style={styles.sectionSpacing}>
-          <NutritionPanel rows={rows} reducedMotion={reducedMotion} />
-        </View>
+            like nothing to worry about. Entrance (delay 300) and bottom
+            margin are both the panel's own, so no wrapper here. */}
+        <NutritionPanel rows={rows} reducedMotion={reducedMotion} />
 
         {/* Micronutrients — collapsible section */}
         {nutrition?.productName &&
@@ -669,17 +663,6 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.xs,
     marginBottom: Spacing.lg,
-  },
-  /**
-   * The section margin the deleted `calorieCard` / `additionalNutrients`
-   * styles supplied, kept at its original value. `NutritionSummaryCard` and
-   * `NutritionPanel` render an entrance-animated root with no margin of its
-   * own — unlike ProductHero / CapturedPhotos / VerificationPanel, which each
-   * carry theirs — so without this the card butts straight into the captured
-   * photos and the panel into the micronutrient section.
-   */
-  sectionSpacing: {
-    marginBottom: Spacing["2xl"],
   },
   buttonContainer: {
     marginTop: Spacing.lg,

@@ -59,6 +59,7 @@ export function NutritionSummaryCard({
   return (
     <Animated.View
       entering={reducedMotion ? undefined : FadeInUp.delay(200).duration(400)}
+      style={styles.summaryCard}
     >
       <Card elevation={1} style={{ backgroundColor: theme.surface }}>
         {nutriScoreGrade ? (
@@ -226,6 +227,14 @@ function StandoutRow({ standout }: { standout: Standout }) {
 }
 
 const styles = StyleSheet.create({
+  // On the component's OWN root — the same Animated.View that carries the
+  // entrance — matching ProductHero / CapturedPhotos / VerificationPanel,
+  // which each own their separation from the next section rather than being
+  // spaced by the screen. An inner wrapper would put the margin inside the
+  // card's own frame instead of below it.
+  summaryCard: {
+    marginBottom: Spacing["2xl"],
+  },
   nutriScoreRing: {
     alignSelf: "flex-end",
     marginBottom: Spacing.xs,

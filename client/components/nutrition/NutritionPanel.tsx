@@ -43,6 +43,7 @@ export function NutritionPanel({ rows, reducedMotion }: NutritionPanelProps) {
   return (
     <Animated.View
       entering={reducedMotion ? undefined : FadeInUp.delay(300).duration(400)}
+      style={styles.panel}
     >
       <Card>
         {bandedRows.map((data) => (
@@ -171,6 +172,14 @@ function NutrientRow({
 }
 
 const styles = StyleSheet.create({
+  // On the component's OWN root — the same Animated.View that carries the
+  // entrance — matching ProductHero / CapturedPhotos / VerificationPanel,
+  // which each own their separation from the next section rather than being
+  // spaced by the screen. An inner wrapper would put the margin inside the
+  // Card's own frame instead of below it.
+  panel: {
+    marginBottom: Spacing["2xl"],
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
