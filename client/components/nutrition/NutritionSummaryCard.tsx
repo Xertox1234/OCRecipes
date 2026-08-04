@@ -141,29 +141,16 @@ export function NutritionSummaryCard({
               <ThemedText
                 style={[styles.macroTileValue, { color: macro.color }]}
               >
-                {macro.value !== undefined ? (
-                  <>
-                    {Math.round(macro.value)}
-                    <ThemedText
-                      style={[
-                        styles.macroTileUnit,
-                        { color: isDark ? theme.textSecondary : theme.text },
-                      ]}
-                    >
-                      {" "}
-                      g
-                    </ThemedText>
-                  </>
-                ) : (
-                  // A bare "—" here would be indistinguishable, to an exact
-                  // jsdom text query, from the calorie figure's own "—" —
-                  // `getNodeText` reads only an element's DIRECT text-node
-                  // children, so both spans would report the identical
-                  // string. Folding the unit into the same text node keeps
-                  // the visible "not recorded" cue while giving it text
-                  // distinct from the calorie row's.
-                  "— g"
-                )}
+                {macro.value !== undefined ? Math.round(macro.value) : "—"}
+                <ThemedText
+                  style={[
+                    styles.macroTileUnit,
+                    { color: isDark ? theme.textSecondary : theme.text },
+                  ]}
+                >
+                  {" "}
+                  g
+                </ThemedText>
               </ThemedText>
             </View>
           ))}
