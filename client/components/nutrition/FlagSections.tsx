@@ -6,44 +6,39 @@ import { ThemedText } from "@/components/ThemedText";
 import { ScanFlagBadge } from "@/components/ScanFlagBadge";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
-import type { ScanFlag, NutrientKind } from "@shared/types/scan-flags";
+import { dropPanelBandedFlags } from "./FlagSections-utils";
+import type { ScanFlag } from "@shared/types/scan-flags";
+import type { NutrientBands } from "@shared/lib/nutrition-bands";
 
 interface FlagSectionsProps {
   /** "For you" — the caller's `partitionScanFlags(flags).personal`. */
   personal: ScanFlag[];
   /** "Heads up" — the caller's `partitionScanFlags(flags).universal`. */
   universal: ScanFlag[];
+  /**
+   * The bands `NutritionPanel` is rendering, from the SAME `buildPanelRows`
+   * call — so "the panel already says this" is decided against what the panel
+   * actually shows, not against a list of nutrients it nominally covers.
+   */
+  bands: NutrientBands;
   reducedMotion?: boolean;
 }
 
 /**
- * The three scalar nutrients `NutritionPanel` now bands, so a badge repeating
- * the same judgement would double-warn.
- *
- * Filtering on the `nutrient` FIELD, not on `kind`: the caffeine flag also
- * ships as `kind: "nutrient"` (server/services/universal-flags.ts:151-169),
- * and the panel's caffeine row is unbanded — value only — so it does not
- * carry the "High in caffeine" warning. A kind-based filter would delete it
- * silently.
- *
- * "nutrient" stays in UNIVERSAL_KINDS in nutrition-detail-flags-utils.ts:
- * `partitionScanFlags` warn-and-drops unmodelled kinds, so removing it there
- * would swallow these flags rather than relocate them. The narrowing belongs
- * at the RENDER step, which is here.
- */
-const PANEL_OWNED_NUTRIENTS = new Set<NutrientKind>([
-  "sugar",
-  "saturated_fat",
-  "sodium",
-]);
-
-/**
  * "For you" (personal/allergen) and "Heads up" (the universal flags the
- * nutrient panel does not already band).
+ * nutrient panel is not already banding).
  *
  * Takes the two partitions rather than raw `flags`: the screen partitions once
  * and feeds the Nutri-Score grade to `NutritionSummaryCard`, so partitioning
  * again here would be a second source of truth for the same split.
+ *
+ * The narrowing decision lives entirely in `FlagSections-utils.ts` — read its
+ * docblock before changing what gets dropped; it carries the reachable state
+ * where "the panel covers sugar" and "the panel bands sugar" disagree. Note
+ * that "nutrient" must STAY in UNIVERSAL_KINDS in
+ * `nutrition-detail-flags-utils.ts`: `partitionScanFlags` warn-and-drops
+ * unmodelled kinds, so removing it there would swallow these flags rather
+ * than relocate them. The narrowing belongs at the RENDER step, which is here.
  *
  * Owns the six-flag cap. The cap used to have a second consumer — a composed
  * group label that had to name exactly the badges that rendered — which is why
@@ -54,13 +49,12 @@ const PANEL_OWNED_NUTRIENTS = new Set<NutrientKind>([
 export function FlagSections({
   personal,
   universal,
+  bands,
   reducedMotion,
 }: FlagSectionsProps) {
   const { theme } = useTheme();
 
-  const universalToShow = universal
-    .filter((f) => !(f.nutrient && PANEL_OWNED_NUTRIENTS.has(f.nutrient)))
-    .slice(0, 6);
+  const universalToShow = dropPanelBandedFlags(universal, bands).slice(0, 6);
 
   return (
     <>
@@ -89,8 +83,8 @@ export function FlagSections({
       ) : null}
 
       {/* Gated on what SURVIVES the filter, not on `universal.length`: a
-          product whose only universal flags are the panel-owned three would
-          otherwise render a "Heads up" heading over an empty list. */}
+          product whose only universal flags are ones the panel is banding
+          would otherwise render a "Heads up" heading over an empty list. */}
       {universalToShow.length > 0 ? (
         <Animated.View
           entering={

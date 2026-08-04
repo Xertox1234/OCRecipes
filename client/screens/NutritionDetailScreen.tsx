@@ -353,9 +353,13 @@ export default function NutritionDetailScreen() {
           />
         )}
 
+        {/* `bands` is the SAME object the panel below renders from, so a badge
+            is dropped only when the panel is genuinely showing that nutrient's
+            judgement — see FlagSections-utils.ts. */}
         <FlagSections
           personal={partition.personal}
           universal={partition.universal}
+          bands={bands}
           reducedMotion={reducedMotion}
         />
 

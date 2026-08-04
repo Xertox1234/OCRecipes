@@ -98,6 +98,32 @@ function baseHookReturn(
 }
 
 /**
+ * `validatedData` shaped so that `resolveBasis` either CAN or CANNOT place the
+ * values on an FSA scale. The two differ only in the serving string, which is
+ * the whole point: whether the panel actually bands a nutrient is a property of
+ * the data, not of which nutrients the panel nominally covers.
+ *
+ * Built the way the real payload is built, never by forcing a band value —
+ * `"1 serving"` is the literal fallback `validateNutritionData` writes when a
+ * record has no usable serving string (client/lib/serving-size-utils.ts:368),
+ * and OFF free-text servings ("1 bottle") pass through verbatim. Neither
+ * parses, so with `isBeverage` also absent — which `server/routes/nutrition.ts`
+ * omits deliberately when a product carries no category tags — `resolveBasis`
+ * has no scale to choose and returns `{ kind: "unknown" }`.
+ */
+function validatedWithServing(
+  displayLabel: string,
+  per100g: Record<string, number>,
+) {
+  return {
+    perServing: per100g,
+    per100g,
+    servingInfo: { displayLabel, grams: 100, wasCorrected: false },
+    isServingDataTrusted: true,
+  };
+}
+
+/**
  * Slice 2c rewrote this suite's subject: the Additional Nutrients card became
  * `NutritionPanel`. The assertions are the SAME properties against the new
  * structure — row present, value+unit correct, absent fields not fabricated as
@@ -314,11 +340,11 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
 
   /**
    * The empty-section guard, in the shape slice 2c newly made reachable: a
-   * product whose only universal flags are the three the panel now bands.
+   * product whose only universal flags are ones the panel is actually banding.
    * `partition.universal` is non-empty, so a section gated on IT would render
    * a "Heads up" heading over nothing.
    */
-  it("renders no Heads-up section when every universal flag is panel-owned", () => {
+  it("renders no Heads-up section when every universal flag is banded by the panel", () => {
     const flags = [
       {
         id: "nutrient:sugar",
@@ -334,16 +360,33 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
         severity: "warn",
         tier: "nutrition",
         nutrient: "sodium",
-        title: "High in salt",
+        title: "High in sodium",
       },
     ];
-    mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
+    mockRoute.params = { barcode: "5449000000996", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ calories: 42, sugar: 10.6, sodium: 200 }, flags),
+      // Both nutrients must genuinely band, or the badges are entitled to
+      // stay and this section would legitimately render. Both land MEDIUM on
+      // the drink scale, which keeps the summary card's promoted standout off
+      // the badge titles — a HIGH band would render "High in sodium" as the
+      // standout's own text.
+      isBeverage: true,
+      validatedData: validatedWithServing("1 glass (100 ml)", {
+        sugar: 10.6,
+        sodium: 200,
+      }),
+    });
 
-    const { queryByText } = renderComponent(<NutritionDetailScreen />);
+    const { queryByText, queryByTestId } = renderComponent(
+      <NutritionDetailScreen />,
+    );
 
+    expect(queryByTestId("band-indicator-sugar")).toBeTruthy();
+    expect(queryByTestId("band-indicator-sodium")).toBeTruthy();
     expect(queryByText("Heads up")).toBeNull();
     expect(queryByText("High in sugar")).toBeNull();
-    expect(queryByText("High in salt")).toBeNull();
+    expect(queryByText("High in sodium")).toBeNull();
   });
 
   it("caps the rendered badges at the first 6 (finding #4, PR #694 medium review)", () => {
@@ -1061,8 +1104,8 @@ describe("NutritionDetailScreen — nutrition panel wiring (slice 2c)", () => {
 
   it("does not render sugar / saturated-fat / sodium as Heads up badges", () => {
     mockRoute.params = { barcode: "5449000000996", ocrText: null };
-    mockUseNutritionLookup.mockReturnValue(
-      baseHookReturn({ calories: 42, sugar: 39 }, [
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ calories: 42, sugar: 10.6 }, [
         {
           id: "nutrient:sugar",
           kind: "nutrient",
@@ -1080,18 +1123,145 @@ describe("NutritionDetailScreen — nutrition panel wiring (slice 2c)", () => {
           title: "Contains caffeine",
         },
       ]),
+      // A basis the panel can actually resolve — the badge is dropped because
+      // the row genuinely bands the nutrient, not merely because sugar is a
+      // nutrient the panel covers. See the unresolvable-basis test below.
+      isBeverage: true,
+      validatedData: validatedWithServing("1 glass (100 ml)", { sugar: 10.6 }),
+    });
+
+    const { queryByText, queryByTestId } = renderComponent(
+      <NutritionDetailScreen />,
     );
 
-    const { queryByText } = renderComponent(<NutritionDetailScreen />);
-
-    // The panel's sugar row owns this judgement now. (`validatedData` is null,
-    // so no standout is promoted and this string cannot be matched by the
-    // summary card's "High in sugar" copy instead.)
+    // The panel's sugar row owns this judgement now — and demonstrably IS
+    // making it, which is what entitles the badge to go.
+    expect(queryByTestId("band-indicator-sugar")).toBeTruthy();
     expect(queryByText("High in sugar")).toBeNull();
     // Caffeine ships as kind:"nutrient" too. A `kind !== "nutrient"` filter
     // would delete this, and the panel's caffeine row (unbanded, value only)
     // does not replace it.
     expect(queryByText("Contains caffeine")).toBeTruthy();
     expect(queryByText("Heads up")).toBeTruthy();
+  });
+
+  /**
+   * The finding this round fixes: a badge may only be dropped when the panel is
+   * ACTUALLY banding that nutrient, not merely when the panel covers it.
+   *
+   * The two data gaps below are reachable together and correlated — a sparse
+   * OFF record typically has neither category tags nor a structured serving
+   * size. `server/routes/nutrition.ts:140-142` omits `isBeverage` when
+   * `categoriesTags` is empty (deliberately: "absent → fall back to the parsed
+   * serving unit, never default to food"), while `universal-flags.ts:74` still
+   * emits food-scale nutrient flags for the same product. So the server sends
+   * "High in sugar" and the panel cannot band sugar at all — and the pre-fix
+   * filter deleted the badge anyway, silently dropping a `severity: "warn"`
+   * health flag the pre-2c screen displayed.
+   */
+  it("KEEPS a panel-owned badge when the basis is unresolvable and the row is unbanded", () => {
+    mockRoute.params = { barcode: "5449000000996", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ calories: 140, sugar: 39 }, [
+        {
+          id: "nutrient:sugar",
+          kind: "nutrient",
+          severity: "warn",
+          tier: "nutrition",
+          nutrient: "sugar",
+          title: "High in sugar",
+        },
+      ]),
+      // `isBeverage` left at its `null` default — the shape the route emits for
+      // a product with no category tags — and a serving string that does not
+      // parse. Together: `scale === null`, so every band is `unknown`.
+      validatedData: validatedWithServing("1 serving", { sugar: 39 }),
+    });
+
+    const { queryByText, queryByTestId } = renderComponent(
+      <NutritionDetailScreen />,
+    );
+
+    // The premise, asserted rather than assumed: the panel really is NOT
+    // banding sugar here. Without this the test could pass for the wrong
+    // reason if the fixture ever started resolving.
+    expect(queryByTestId("band-indicator-sugar")).toBeNull();
+    // Therefore the server's warning is the only thing saying it, and it must
+    // survive.
+    expect(queryByText("High in sugar")).toBeTruthy();
+    expect(queryByText("Heads up")).toBeTruthy();
+  });
+
+  /**
+   * The per-nutrient half of the same rule, and the guard on the snake_case →
+   * camelCase bridge. `saturated_fat` is the ONLY nutrient whose two spellings
+   * differ (`sugar` and `sodium` are identical in both unions), so a dead
+   * mapping shows up here and nowhere else: its badge would survive while
+   * sugar's was correctly dropped.
+   */
+  it("drops each panel-owned badge independently — banded ones go, the unbanded one stays", () => {
+    mockRoute.params = { barcode: "5449000000996", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      // Titles verbatim from NUTRIENT_META (server/services/universal-flags.ts)
+      // — a hand-invented title could not collide with the summary card's copy
+      // the way the real ones can, which is a property this fixture needs to
+      // keep honest.
+      ...baseHookReturn({ calories: 42, sugar: 10.6, saturatedFat: 1.5 }, [
+        {
+          id: "nutrient:sugar",
+          kind: "nutrient",
+          severity: "warn",
+          tier: "nutrition",
+          nutrient: "sugar",
+          title: "High in sugar",
+        },
+        {
+          id: "nutrient:saturated_fat",
+          kind: "nutrient",
+          severity: "warn",
+          tier: "nutrition",
+          nutrient: "saturated_fat",
+          title: "High in saturated fat",
+        },
+        {
+          id: "nutrient:sodium",
+          kind: "nutrient",
+          severity: "warn",
+          tier: "nutrition",
+          nutrient: "sodium",
+          title: "High in sodium",
+        },
+      ]),
+      isBeverage: true,
+      // Sugar and saturated fat have values and band; sodium has none, so its
+      // band is `unknown` and its badge is the only thing warning about it.
+      //
+      // Both band MEDIUM on the drink scale, not HIGH, for two reasons: it
+      // proves the rule is "the band is not `unknown`" rather than "the band
+      // is high", and it keeps `standoutCopy` off the badge titles — a HIGH
+      // band renders the promoted standout as the literal string "High in
+      // saturated fat", the same words as the badge, so `queryByText` would
+      // match the standout and the assertions below could not tell the two
+      // apart.
+      validatedData: validatedWithServing("1 glass (100 ml)", {
+        sugar: 10.6,
+        saturatedFat: 1.5,
+      }),
+    });
+
+    const { queryByText, queryByTestId } = renderComponent(
+      <NutritionDetailScreen />,
+    );
+
+    expect(queryByTestId("band-indicator-sugar")).toBeTruthy();
+    expect(queryByTestId("band-indicator-saturatedFat")).toBeTruthy();
+    expect(queryByTestId("band-indicator-sodium")).toBeNull();
+
+    expect(queryByText("High in sugar")).toBeNull();
+    // The snake_case → camelCase bridge, and the only nutrient that can prove
+    // it: `sugar` and `sodium` are spelled identically in both unions, so a
+    // dead mapping would show up here alone.
+    expect(queryByText("High in saturated fat")).toBeNull();
+    expect(queryByText("High in sodium")).toBeTruthy();
   });
 });
