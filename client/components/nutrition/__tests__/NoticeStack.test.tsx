@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AccessibilityInfo } from "react-native";
+import { FadeInUp } from "react-native-reanimated";
 
 import { renderComponent } from "../../../../test/utils/render-component";
 import { NoticeStack } from "../NoticeStack";
@@ -143,5 +144,37 @@ describe("NoticeStack", () => {
       />,
     );
     expect(announce).toHaveBeenCalledTimes(0);
+  });
+
+  it("skips the entrance animation when reducedMotion is true", () => {
+    // The jsdom Reanimated mock (test/mocks/react-native-reanimated.ts) strips
+    // `entering`/`exiting`/`layout` from the DOM entirely, so the `entering`
+    // prop's value isn't directly queryable. Spying on `FadeInUp.delay` — the
+    // entry point of the chain the non-reduced branch calls — is the
+    // observable proxy: called means an entrance animation was built, not
+    // called means `entering` was left `undefined`.
+    const delaySpy = vi.spyOn(FadeInUp, "delay");
+    renderComponent(
+      <NoticeStack
+        labelReadNotice="Calories disagreed."
+        correctionNotice={null}
+        showPer100gInfo={false}
+        reducedMotion
+      />,
+    );
+    expect(delaySpy).not.toHaveBeenCalled();
+  });
+
+  it("builds the entrance animation when reducedMotion is false", () => {
+    const delaySpy = vi.spyOn(FadeInUp, "delay");
+    renderComponent(
+      <NoticeStack
+        labelReadNotice="Calories disagreed."
+        correctionNotice={null}
+        showPer100gInfo={false}
+        reducedMotion={false}
+      />,
+    );
+    expect(delaySpy).toHaveBeenCalledWith(150);
   });
 });

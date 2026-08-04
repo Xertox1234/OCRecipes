@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { StyleSheet, View, AccessibilityInfo } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -67,7 +68,7 @@ export function NoticeStack({
   correctionNotice,
   showPer100gInfo,
   suppressAnnounce = false,
-  reducedMotion: _reducedMotion,
+  reducedMotion,
 }: NoticeStackProps) {
   const { theme } = useTheme();
 
@@ -105,8 +106,17 @@ export function NoticeStack({
 
   if (notices.length === 0) return null;
 
+  // 150 is this component's position in the screen's entrance ladder, not an
+  // independent guess: NoticeStack replaces the labelReadNotice/
+  // correctionNotice blocks at NutritionDetailScreen.tsx:326-370, which sit
+  // between ProductHero and the calorie card — so it leads NutritionSummaryCard
+  // (200) the same way every sibling's delay tracks its own final rendered
+  // position (NutritionPanel 300, "For you" 400, "Heads up" 450,
+  // micronutrients 500). duration(400) matches every sibling unconditionally.
   return (
-    <View>
+    <Animated.View
+      entering={reducedMotion ? undefined : FadeInUp.delay(150).duration(400)}
+    >
       {notices.map((notice) => {
         const color = theme[SEVERITY_COLOR_KEY[notice.severity]];
         return (
@@ -139,7 +149,7 @@ export function NoticeStack({
           </View>
         );
       })}
-    </View>
+    </Animated.View>
   );
 }
 
