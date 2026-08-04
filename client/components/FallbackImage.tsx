@@ -18,7 +18,14 @@ import { hasValidUri } from "@/components/FallbackImage-utils";
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
 
 interface FallbackImageProps
-  extends Omit<ImageProps, "source" | "accessibilityLabel" | "alt"> {
+  extends Omit<
+    ImageProps,
+    // `aria-label` has to go too: RN resolves it AHEAD of accessibilityLabel
+    // (`props['aria-label'] ?? props.accessibilityLabel`), so omitting only
+    // the latter would leave a second, equally inert way in through
+    // `{...imageProps}` — and the compile-error guarantee below would be false.
+    "source" | "accessibilityLabel" | "alt" | "aria-label"
+  > {
   /** Image source with optional URI. Shows fallback when URI is missing or load fails. */
   source: { uri: string | undefined | null } | undefined | null;
   /** Custom fallback element. When omitted, a default themed icon placeholder is shown. */
@@ -56,9 +63,10 @@ interface FallbackImageProps
  *
  * Every call site that passed a label was naming an image whose name is
  * already carried by adjacent visible text, so honouring the label would
- * have added a double-announcement rather than fixing anything. Both props
- * are omitted from the public type so the next consumer gets a compile
- * error instead of silence. An image that genuinely needs its own name
+ * have added a double-announcement rather than fixing anything. All three
+ * naming props (`accessibilityLabel`, `alt`, `aria-label`) are omitted from
+ * the public type so the next consumer gets a compile error instead of
+ * silence. An image that genuinely needs its own name
  * belongs in an `accessible` group wrapper at the call site — see
  * `client/components/nutrition/CapturedPhotos.tsx`.
  */
@@ -108,8 +116,16 @@ export function FallbackImage({
           },
           fallbackStyle,
         ]}
+        // Unlike the image branch, this one HAS a child: the Feather glyph
+        // below renders as a Text node holding a private-use codepoint
+        // (U+F205 etc.). `importantForAccessibility="no"` would exclude only
+        // this View, leaving that child in the Android accessibility tree
+        // where TalkBack could announce the raw glyph. "no-hide-descendants"
+        // excludes the subtree; `accessibilityElementsHidden` is the iOS
+        // half, which ignores importantForAccessibility entirely.
         accessible={false}
-        importantForAccessibility="no"
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
       >
         <Feather
           name={fallbackIcon}

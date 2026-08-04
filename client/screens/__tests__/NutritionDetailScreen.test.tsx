@@ -217,6 +217,16 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     expect(
       queryByLabelText("2 nutrition flags: Ultra-processed, Contains caffeine"),
     ).toBeNull();
+
+    // Structural, not string-matching. The line above pins one literal
+    // sentence, which a reintroduced wrapper would evade just by rewording or
+    // by running under a different flag fixture. The shape that must not come
+    // back is "a badge has a labelled ANCESTOR" — in this harness an
+    // accessible={true} group renders as a div carrying aria-label — so walk
+    // up from a badge's own labelled node and require nothing above it.
+    const badge = queryByText("Ultra-processed")?.closest("[aria-label]");
+    expect(badge).toBeTruthy();
+    expect(badge?.parentElement?.closest("[aria-label]")).toBeNull();
   });
 
   it("shows the Heads-up section for the Nutri-Score chip alone when there are no universal flags", () => {
