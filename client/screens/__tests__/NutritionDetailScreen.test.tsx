@@ -67,6 +67,12 @@ function baseHookReturn(
     setServingQuantity: vi.fn(),
     servingSizeGrams: null,
     setServingSizeGrams: vi.fn(),
+    // The band source (slice 2c). `null` / `null` is the SAVED-ITEM shape and
+    // the scan path's pre-lookup shape: no per-100g payload, no derived
+    // beverage flag, so every band resolves `unknown` and no row is painted.
+    // Suites that need a real band supply both explicitly.
+    validatedData: null,
+    isBeverage: null,
     customGramsInput: "",
     setCustomGramsInput: vi.fn(),
     showCustomInput: false,
@@ -91,28 +97,51 @@ function baseHookReturn(
   };
 }
 
-describe("NutritionDetailScreen — Additional Nutrients card", () => {
+/**
+ * Slice 2c rewrote this suite's subject: the Additional Nutrients card became
+ * `NutritionPanel`. The assertions are the SAME properties against the new
+ * structure — row present, value+unit correct, absent fields not fabricated as
+ * zeros — with two changes forced by the panel's contract:
+ *
+ * - Rows are read through their `accessibilityLabel`, not their visible label.
+ *   The summary card's promoted standout uses `standoutCopy`, whose
+ *   `unknown` + `hasValue` branch is the bare capitalised nutrient word — the
+ *   dominant saved-item state — so "Saturated fat" matches the standout AND
+ *   the row label, and a text query would throw on two matches.
+ * - An absent nutrient no longer omits its row; it renders "Not recorded".
+ *   That is `NutritionPanel`'s deliberate contract (see its docblock): a
+ *   vanishing row reads as "nothing to worry about". The property the old
+ *   assertions protected — that an absent value is never shown as a zero —
+ *   survives as an explicit "no 0 g / 0 mg anywhere" check.
+ */
+describe("NutritionDetailScreen — nutrient panel rows", () => {
   it("renders a saturated fat row and a caffeine row when present", () => {
     mockUseNutritionLookup.mockReturnValue(
       baseHookReturn({ saturatedFat: 2.5, caffeine: 95 }),
     );
 
-    const { queryByText } = renderComponent(<NutritionDetailScreen />);
+    const { queryByText, queryByLabelText } = renderComponent(
+      <NutritionDetailScreen />,
+    );
 
     // Sanity check: the screen actually rendered (not a thrown/empty tree).
     expect(queryByText("Unknown Product")).toBeTruthy();
 
-    expect(queryByText("Additional Nutrients")).toBeTruthy();
-    expect(queryByText("Saturated Fat")).toBeTruthy();
-    expect(queryByText("Caffeine")).toBeTruthy();
+    expect(queryByText("Additional Nutrients")).toBeNull();
+    // No band word after the value: `validatedData` is null and the stored
+    // serving carries no metric quantity, so the basis is unknown.
+    expect(queryByLabelText("Saturated fat, 2.5 grams")).toBeTruthy();
+    expect(queryByLabelText("Caffeine, 95 milligrams")).toBeTruthy();
     // Locks the roundToOneDecimal wiring end-to-end — not just that the row
     // renders, but that the displayed value+unit is correct.
     expect(queryByText("2.5 g")).toBeTruthy();
     expect(queryByText("95 mg")).toBeTruthy();
-    // Only the two set fields should render — no "0 g"/"0 mg" row for the
-    // undefined ones.
-    expect(queryByText("Trans Fat")).toBeNull();
-    expect(queryByText("Cholesterol")).toBeNull();
+    // The undefined fields keep their rows but state their absence, and no
+    // "0 g"/"0 mg" is invented for them.
+    expect(queryByLabelText("Trans fat, not recorded")).toBeTruthy();
+    expect(queryByLabelText("Cholesterol, not recorded")).toBeTruthy();
+    expect(queryByText("0 g")).toBeNull();
+    expect(queryByText("0 mg")).toBeNull();
   });
 
   it("renders trans fat and cholesterol rows when present", () => {
@@ -120,25 +149,37 @@ describe("NutritionDetailScreen — Additional Nutrients card", () => {
       baseHookReturn({ transFat: 0.4, cholesterol: 15 }),
     );
 
-    const { queryByText } = renderComponent(<NutritionDetailScreen />);
+    const { queryByText, queryByLabelText } = renderComponent(
+      <NutritionDetailScreen />,
+    );
 
-    expect(queryByText("Trans Fat")).toBeTruthy();
-    expect(queryByText("Cholesterol")).toBeTruthy();
+    expect(queryByLabelText("Trans fat, 0.4 grams")).toBeTruthy();
+    expect(queryByLabelText("Cholesterol, 15 milligrams")).toBeTruthy();
     // Locks the roundToOneDecimal wiring end-to-end — not just that the row
     // renders, but that the displayed value+unit is correct.
     expect(queryByText("0.4 g")).toBeTruthy();
     expect(queryByText("15 mg")).toBeTruthy();
-    expect(queryByText("Saturated Fat")).toBeNull();
-    expect(queryByText("Caffeine")).toBeNull();
+    expect(queryByLabelText("Saturated fat, not recorded")).toBeTruthy();
+    expect(queryByLabelText("Caffeine, not recorded")).toBeTruthy();
   });
 
-  it("does not render the Additional Nutrients card when no nutrient field is present", () => {
+  it("renders every row as Not recorded when no nutrient field is present", () => {
     mockUseNutritionLookup.mockReturnValue(baseHookReturn({}));
 
-    const { queryByText } = renderComponent(<NutritionDetailScreen />);
+    const { queryByText, getAllByText } = renderComponent(
+      <NutritionDetailScreen />,
+    );
 
     expect(queryByText("Unknown Product")).toBeTruthy();
     expect(queryByText("Additional Nutrients")).toBeNull();
+    // All nine rows, every one of them stating its absence. The panel
+    // deliberately does NOT vanish here — the predecessor card did, and a
+    // silent nutrient table reads as a clean bill of health.
+    expect(getAllByText("Not recorded")).toHaveLength(9);
+    // The half of the old assertion that still applies: nothing absent is
+    // rendered as a zero.
+    expect(queryByText("0 g")).toBeNull();
+    expect(queryByText("0 mg")).toBeNull();
   });
 });
 
@@ -152,7 +193,7 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     expect(queryByText("Heads up")).toBeNull();
   });
 
-  it("splits allergen flags into For-you and universal flags + Nutri-Score into a grouped Heads-up section", () => {
+  it("splits allergen flags into For-you and universal flags into Heads-up, with the Nutri-Score on the summary card", () => {
     const flags = [
       {
         id: "nutriscore:e",
@@ -186,20 +227,26 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     ];
     mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
 
-    const { queryByText, getByLabelText, queryByLabelText } = renderComponent(
-      <NutritionDetailScreen />,
-    );
+    const { queryByText, getByLabelText, queryByLabelText, queryByTestId } =
+      renderComponent(<NutritionDetailScreen />);
 
     // "For you" keeps only the Phase-1 personal (allergen) flag — its
     // existing rendering/behavior is otherwise unchanged.
     expect(queryByText("For you")).toBeTruthy();
     expect(queryByText("Contains Peanuts")).toBeTruthy();
 
-    // "Heads up" gets the universal flags via the existing ScanFlagBadge,
-    // and the Nutri-Score grade split out into its own chip.
+    // "Heads up" gets the universal flags via the existing ScanFlagBadge.
     expect(queryByText("Heads up")).toBeTruthy();
     expect(queryByText("Ultra-processed")).toBeTruthy();
     expect(queryByText("Contains caffeine")).toBeTruthy();
+
+    // Slice 2c (D3): the Nutri-Score is no longer a Heads-up citizen — it is
+    // the summary card's ring. Asserting the RING, not just the label, is what
+    // proves the chip MOVED rather than that some other surface happens to
+    // carry the same accessible name.
+    const ring = queryByTestId("nutri-score-ring");
+    expect(ring).toBeTruthy();
+    expect(ring?.querySelector('[aria-label="Nutri-Score E"]')).toBeTruthy();
     expect(getByLabelText("Nutri-Score E")).toBeTruthy();
 
     // NO composed group label wraps these badges. It was removed
@@ -229,7 +276,13 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     expect(badge?.parentElement?.closest("[aria-label]")).toBeNull();
   });
 
-  it("shows the Heads-up section for the Nutri-Score chip alone when there are no universal flags", () => {
+  /**
+   * Was: "shows the Heads-up section for the Nutri-Score chip alone when there
+   * are no universal flags". Slice 2c (D3) reverses that — the chip left the
+   * section, so the section now has nothing to show and must not render. Same
+   * fixture, same subject, opposite expectation for "Heads up".
+   */
+  it("renders the Nutri-Score on the summary card and NO Heads-up section when it is the only flag", () => {
     const flags = [
       {
         id: "nutriscore:c",
@@ -242,15 +295,51 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     ];
     mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
 
-    const { queryByText, getByLabelText } = renderComponent(
+    const { queryByText, getByLabelText, queryByTestId } = renderComponent(
       <NutritionDetailScreen />,
     );
 
     expect(queryByText("For you")).toBeNull();
-    expect(queryByText("Heads up")).toBeTruthy();
-    // The chip is the section's only content here and carries its own
-    // accessibility node — nothing wraps it or speaks on its behalf.
+    // An empty "Heads up" heading is worse than no section at all.
+    expect(queryByText("Heads up")).toBeNull();
+    // The chip still carries its own accessibility node in its new home —
+    // nothing wraps it or speaks on its behalf.
+    expect(queryByTestId("nutri-score-ring")).toBeTruthy();
     expect(getByLabelText("Nutri-Score C")).toBeTruthy();
+  });
+
+  /**
+   * The empty-section guard, in the shape slice 2c newly made reachable: a
+   * product whose only universal flags are the three the panel now bands.
+   * `partition.universal` is non-empty, so a section gated on IT would render
+   * a "Heads up" heading over nothing.
+   */
+  it("renders no Heads-up section when every universal flag is panel-owned", () => {
+    const flags = [
+      {
+        id: "nutrient:sugar",
+        kind: "nutrient",
+        severity: "warn",
+        tier: "nutrition",
+        nutrient: "sugar",
+        title: "High in sugar",
+      },
+      {
+        id: "nutrient:sodium",
+        kind: "nutrient",
+        severity: "warn",
+        tier: "nutrition",
+        nutrient: "sodium",
+        title: "High in salt",
+      },
+    ];
+    mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
+
+    const { queryByText } = renderComponent(<NutritionDetailScreen />);
+
+    expect(queryByText("Heads up")).toBeNull();
+    expect(queryByText("High in sugar")).toBeNull();
+    expect(queryByText("High in salt")).toBeNull();
   });
 
   it("caps the rendered badges at the first 6 (finding #4, PR #694 medium review)", () => {
@@ -795,5 +884,210 @@ describe("NutritionDetailScreen — verification panel (2b characterisation)", (
       mode: "front-label",
       verifyBarcode: "06772408",
     });
+  });
+});
+
+/**
+ * Slice 2c — NutritionSummaryCard + NutritionPanel replace the calorie card and
+ * the Additional Nutrients list.
+ *
+ * These are the assertions the pure tests structurally cannot make. The
+ * serving-invariance guarantee lives in the CALL SITE's choice of band source:
+ * `nutrition-band-source.ts`'s own tests prove `buildPanelRows` reads
+ * `validatedData` when handed it, but nothing there executes the screen, so a
+ * screen that passed the serving-scaled `nutrition` in as `validatedData`
+ * would leave every pure test green while over-warning on every product the
+ * user re-portions.
+ */
+describe("NutritionDetailScreen — nutrition panel wiring (slice 2c)", () => {
+  /**
+   * A 100 ml drink serving, so per-100 and per-serving coincide at quantity 1
+   * and the arithmetic below is readable. Sugar 10.6 g sits inside the FSA
+   * DRINK medium band (low 2.5, high 11.25 per 100 ml) — deliberately close
+   * enough to the high line that DOUBLING it crosses into HIGH, which is what
+   * makes the invariance test below discriminate rather than pass vacuously.
+   *
+   * Byte-identical across both renders of that test: `recalculateNutrition`
+   * never calls `setValidatedData`, so the real hook holds this object still
+   * while `nutrition` moves underneath it. That is the property under test.
+   */
+  const INVARIANT_PER_100_ML = {
+    calories: 42,
+    protein: 0,
+    carbs: 10.6,
+    fat: 0,
+    sugar: 10.6,
+    saturatedFat: 0,
+    sodium: 5,
+    fiber: 0,
+  };
+  const INVARIANT_VALIDATED = {
+    perServing: INVARIANT_PER_100_ML,
+    per100g: INVARIANT_PER_100_ML,
+    servingInfo: {
+      displayLabel: "1 glass (100 ml)",
+      grams: 100,
+      wasCorrected: false,
+    },
+    isServingDataTrusted: true,
+  };
+
+  it("renders the saved-item sugar row UNBANDED — no indicator, no tag", () => {
+    // Saved-item path: `validatedData` is null and `nutrition` IS the
+    // per-serving source, but "1 bottle" carries no metric quantity, so
+    // `resolveBasis` returns `unknown` and 39 g of sugar gets no colour. A
+    // fabricated denominator here would be a confident false claim.
+    //
+    // Asserting on the indicator and the value rather than the row label: a
+    // label-only assertion passes in every row state.
+    mockRoute.params = { itemId: 42 };
+    mockUseNutritionLookup.mockReturnValue(
+      baseHookReturn({
+        productName: "Mystery Drink",
+        servingSize: "1 bottle",
+        sugar: 39,
+      }),
+    );
+
+    const { queryByTestId, queryByText, queryByLabelText } = renderComponent(
+      <NutritionDetailScreen />,
+    );
+
+    expect(queryByText("39 g")).toBeTruthy();
+    // The POSITIVE form of "no tag", and the assertion that makes this test
+    // discriminate at all: the old Additional Nutrients markup also rendered a
+    // "39 g" sugar row and also had no indicator, so the three assertions
+    // around this one pass on the pre-2c screen too. A row label with no band
+    // word after the value exists only in the panel.
+    expect(queryByLabelText(/^Sugar, /)?.getAttribute("aria-label")).toBe(
+      "Sugar, 39 grams",
+    );
+    expect(queryByTestId("band-indicator-sugar")).toBeNull();
+    expect(queryByText("HIGH")).toBeNull();
+    expect(queryByText("LOW")).toBeNull();
+  });
+
+  /**
+   * The whole slice turns on this one: a band describes the PRODUCT, not the
+   * plateful, so re-portioning must move the numbers and leave the judgement
+   * alone.
+   *
+   * The quantity change is modelled as the hook really emits it — same
+   * `validatedData`, `nutrition` re-scaled, `servingQuantity` bumped — because
+   * `useNutritionLookup` is mocked and `setServingQuantity` is a `vi.fn()`
+   * that cannot drive a re-render on its own.
+   *
+   * The sugar row is read through its own `accessibilityLabel` rather than a
+   * bare value/tag text query: "MED" renders TWICE (the promoted standout in
+   * the summary card and the sugar row's pill), so a global text query would
+   * match two nodes and throw. The label is scoped to the row and carries the
+   * value and the tag in one string, which is exactly the pair under test.
+   * The visible cell is asserted separately — the label goes through
+   * `formatValue`, the cell through `roundToOneDecimal`.
+   */
+  it("does NOT change a band tag when the serving quantity changes", () => {
+    mockRoute.params = { barcode: "5449000000996", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({
+        // `recalculateNutrition` overwrites this to `${grams}g` on the gram
+        // branch — kept faithful here precisely because the band must NOT be
+        // resolved from it (a rewritten "100g" would flip a drink's scale to
+        // food if `isBeverage` were ever absent).
+        servingSize: "100g",
+        ...INVARIANT_PER_100_ML,
+      }),
+      isBeverage: true,
+      validatedData: INVARIANT_VALIDATED,
+      servingSizeGrams: 100,
+      servingQuantity: 1,
+    });
+
+    const { queryByLabelText, queryByText, rerender } = renderComponent(
+      <NutritionDetailScreen />,
+    );
+    const sugarRowLabel = () =>
+      queryByLabelText(/^Sugar, /)?.getAttribute("aria-label");
+
+    expect(sugarRowLabel()).toBe("Sugar, 10.6 grams, medium");
+    expect(queryByText("10.6 g")).toBeTruthy();
+
+    // Quantity 2. Literals, not `10.6 * 2` — a computed fixture can drift
+    // with the code it is meant to pin.
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({
+        servingSize: "100g",
+        calories: 84,
+        protein: 0,
+        carbs: 21.2,
+        fat: 0,
+        sugar: 21.2,
+        saturatedFat: 0,
+        sodium: 10,
+        fiber: 0,
+      }),
+      isBeverage: true,
+      validatedData: INVARIANT_VALIDATED,
+      servingSizeGrams: 100,
+      servingQuantity: 2,
+    });
+    rerender(<NutritionDetailScreen />);
+
+    // 21.2 g/100 ml would band HIGH. It does not, because the band never saw
+    // the serving-scaled number.
+    expect(sugarRowLabel()).toBe("Sugar, 21.2 grams, medium");
+    expect(queryByText("21.2 g")).toBeTruthy();
+    expect(queryByText("10.6 g")).toBeNull();
+  });
+
+  it("no longer renders the Additional Nutrients section", () => {
+    mockRoute.params = { barcode: "5449000000996", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue(
+      baseHookReturn({ calories: 42, sugar: 10.6 }),
+    );
+
+    const { queryByText } = renderComponent(<NutritionDetailScreen />);
+
+    expect(queryByText("Additional Nutrients")).toBeNull();
+    // Negative control: the panel that replaced it IS in the tree, so this is
+    // not passing merely because the screen failed to render. `validatedData`
+    // is null here, so every band is `unknown` and no standout is promoted —
+    // which is also why "Sugar" matches exactly one node (the row label).
+    expect(queryByText("Sugar")).toBeTruthy();
+  });
+
+  it("does not render sugar / saturated-fat / sodium as Heads up badges", () => {
+    mockRoute.params = { barcode: "5449000000996", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue(
+      baseHookReturn({ calories: 42, sugar: 39 }, [
+        {
+          id: "nutrient:sugar",
+          kind: "nutrient",
+          severity: "warn",
+          tier: "nutrition",
+          nutrient: "sugar",
+          title: "High in sugar",
+        },
+        {
+          id: "nutrient:caffeine",
+          kind: "nutrient",
+          severity: "info",
+          tier: "nutrition",
+          nutrient: "caffeine",
+          title: "Contains caffeine",
+        },
+      ]),
+    );
+
+    const { queryByText } = renderComponent(<NutritionDetailScreen />);
+
+    // The panel's sugar row owns this judgement now. (`validatedData` is null,
+    // so no standout is promoted and this string cannot be matched by the
+    // summary card's "High in sugar" copy instead.)
+    expect(queryByText("High in sugar")).toBeNull();
+    // Caffeine ships as kind:"nutrient" too. A `kind !== "nutrient"` filter
+    // would delete this, and the panel's caffeine row (unbanded, value only)
+    // does not replace it.
+    expect(queryByText("Contains caffeine")).toBeTruthy();
+    expect(queryByText("Heads up")).toBeTruthy();
   });
 });

@@ -21,19 +21,15 @@ import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  Shadows,
-  withOpacity,
-} from "@/constants/theme";
-import {
-  getServingContextLabel,
-  roundToOneDecimal,
-} from "@/screens/nutrition-detail-utils";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { getServingContextLabel } from "@/screens/nutrition-detail-utils";
+import { partitionScanFlags } from "@/screens/nutrition-detail-flags-utils";
 import { ProductHero } from "@/components/nutrition/ProductHero";
 import { FlagSections } from "@/components/nutrition/FlagSections";
+import { NutritionSummaryCard } from "@/components/nutrition/NutritionSummaryCard";
+import { NutritionPanel } from "@/components/nutrition/NutritionPanel";
+import { buildPanelRows } from "@/components/nutrition/nutrition-band-source";
+import { pickStandouts } from "@shared/lib/nutrition-bands";
 import { CapturedPhotos } from "@/components/nutrition/CapturedPhotos";
 import { VerificationPanel } from "@/components/nutrition/VerificationPanel";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
@@ -62,6 +58,13 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
  */
 type NutritionDetailRoute = RouteProp<RootStackParamList, "NutritionDetail">;
 
+/**
+ * Label widths for the panel's six banded rows. A const array rather than a
+ * count, so each placeholder row is keyed by a stable unique value instead of
+ * its array index.
+ */
+const SKELETON_PANEL_ROW_WIDTHS = [70, 92, 64, 76, 58, 84];
+
 function NutritionDetailSkeleton() {
   React.useEffect(() => {
     AccessibilityInfo.announceForAccessibility("Loading");
@@ -71,6 +74,11 @@ function NutritionDetailSkeleton() {
     <SkeletonProvider>
       <View
         accessibilityElementsHidden
+        // The iOS half alone leaves the whole placeholder tree readable to
+        // TalkBack: `accessibilityElementsHidden` is iOS-only, and
+        // `importantForAccessibility="no"` would exclude only THIS view, not
+        // its subtree. A container with children needs "no-hide-descendants".
+        importantForAccessibility="no-hide-descendants"
         style={{ alignItems: "center", padding: Spacing.lg }}
       >
         {/* Product image */}
@@ -98,7 +106,8 @@ function NutritionDetailSkeleton() {
           style={{ marginTop: Spacing.sm }}
         />
 
-        {/* Hero calorie card: caption, calorie figure, macro tile row */}
+        {/* Summary card: Nutri-Score ring, caption, calorie figure, two
+            promoted standout rows, macro tile row */}
         <View
           style={{
             width: "100%",
@@ -109,8 +118,20 @@ function NutritionDetailSkeleton() {
             marginBottom: Spacing["2xl"],
           }}
         >
+          <SkeletonBox
+            width={44}
+            height={44}
+            borderRadius={22}
+            style={{ alignSelf: "flex-end" }}
+          />
           <SkeletonBox width={120} height={12} />
           <SkeletonBox width={140} height={44} />
+          <SkeletonBox
+            width="70%"
+            height={16}
+            style={{ marginTop: Spacing.xs }}
+          />
+          <SkeletonBox width="55%" height={16} />
           <View
             style={{
               flexDirection: "row",
@@ -137,34 +158,23 @@ function NutritionDetailSkeleton() {
           </View>
         </View>
 
-        {/* Additional nutrients title */}
-        <View style={{ width: "100%" }}>
-          <SkeletonBox
-            width={180}
-            height={20}
-            style={{ marginBottom: Spacing.md }}
-          />
-          {/* Nutrient rows */}
-          <View style={{ gap: Spacing.sm }}>
+        {/* Nutrient panel: six banded rows — indicator dot, label, value */}
+        <View style={{ width: "100%", gap: Spacing.md }}>
+          {SKELETON_PANEL_ROW_WIDTHS.map((labelWidth) => (
             <View
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
+              key={labelWidth}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: Spacing.sm,
+              }}
             >
-              <SkeletonBox width={60} height={16} />
-              <SkeletonBox width={40} height={16} />
+              <SkeletonBox width={12} height={12} borderRadius={6} />
+              <SkeletonBox width={labelWidth} height={16} />
+              <View style={{ flex: 1 }} />
+              <SkeletonBox width={48} height={16} />
             </View>
-            <View
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
-            >
-              <SkeletonBox width={50} height={16} />
-              <SkeletonBox width={40} height={16} />
-            </View>
-            <View
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
-            >
-              <SkeletonBox width={70} height={16} />
-              <SkeletonBox width={50} height={16} />
-            </View>
-          </View>
+          ))}
         </View>
       </View>
     </SkeletonProvider>
@@ -174,7 +184,7 @@ function NutritionDetailSkeleton() {
 export default function NutritionDetailScreen() {
   const insets = useSafeAreaInsets();
   const headerContentInset = useHeaderContentInset(Spacing.xl);
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { isOffline, offlineLabel } = useOfflineGuard();
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
@@ -202,6 +212,8 @@ export default function NutritionDetailScreen() {
     isLoading,
     error,
     isPer100g,
+    validatedData,
+    isBeverage,
     servingQuantity,
     setServingQuantity,
     servingSizeGrams,
@@ -273,6 +285,26 @@ export default function NutritionDetailScreen() {
     isPer100g,
   });
 
+  // Partitioned ONCE here, not inside FlagSections: the Nutri-Score grade
+  // lands on the summary card while the other two groups go to the flag
+  // sections, so a second partition would be a second source of truth for the
+  // same split.
+  const partition = partitionScanFlags(flags);
+
+  // One derivation, two consumers — `rows` for the panel, `bands` for the
+  // card's standouts — so a row's band can never disagree with the standout
+  // promoting it. NEVER pass `nutrition` in as the band source: it is
+  // serving-scaled display state, and banding from it over-warns the moment a
+  // user picks a bigger portion. `buildPanelRows` owns that choice; see its
+  // module docblock.
+  const { rows, bands } = buildPanelRows({
+    itemId,
+    validatedData,
+    nutrition,
+    isBeverage,
+  });
+  const standouts = pickStandouts(bands);
+
   if (isLoading) {
     return (
       <ThemedView style={styles.container} accessibilityViewIsModal>
@@ -321,7 +353,11 @@ export default function NutritionDetailScreen() {
           />
         )}
 
-        <FlagSections flags={flags} reducedMotion={reducedMotion} />
+        <FlagSections
+          personal={partition.personal}
+          universal={partition.universal}
+          reducedMotion={reducedMotion}
+        />
 
         {labelReadNotice && !itemId ? (
           <View
@@ -465,98 +501,30 @@ export default function NutritionDetailScreen() {
           </Card>
         ) : null}
 
-        <Animated.View
-          entering={
-            reducedMotion ? undefined : FadeInUp.delay(200).duration(400)
-          }
-          style={styles.calorieCard}
-        >
-          <Card elevation={1} style={{ backgroundColor: theme.surface }}>
-            {/* Only the scan flow populates the serving state this caption is
-                derived from — saved items store already-scaled totals, so a
-                "Per …" claim there would misdescribe the numbers. */}
-            {showServingControls ? (
-              <ThemedText
-                type="caption"
-                style={[styles.heroContext, { color: theme.textSecondary }]}
-              >
-                Per {servingContextLabel}
-              </ThemedText>
-            ) : null}
-            <View style={styles.calorieRow}>
-              <ThemedText
-                accessibilityRole="header"
-                style={[styles.calorieValue, { color: theme.calorieAccent }]}
-              >
-                {nutrition?.calories !== undefined
-                  ? Math.round(nutrition.calories)
-                  : "—"}
-              </ThemedText>
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                kcal
-              </ThemedText>
-            </View>
-            <View style={styles.macroTiles}>
-              {(
-                [
-                  {
-                    label: "Protein",
-                    value: nutrition?.protein,
-                    color: theme.proteinAccent,
-                  },
-                  {
-                    label: "Carbs",
-                    value: nutrition?.carbs,
-                    color: theme.carbsAccent,
-                  },
-                  {
-                    label: "Fat",
-                    value: nutrition?.fat,
-                    color: theme.fatAccent,
-                  },
-                ] as const
-              ).map((macro) => (
-                <View
-                  key={macro.label}
-                  style={[
-                    styles.macroTile,
-                    {
-                      backgroundColor: isDark
-                        ? theme.backgroundTertiary
-                        : theme.backgroundSecondary,
-                    },
-                  ]}
-                >
-                  {/* textSecondary fails AA (4.31:1) on the light-mode tile
-                      fill (backgroundSecondary) — use full text there; the
-                      dark tile passes with textSecondary. */}
-                  <ThemedText
-                    style={[
-                      styles.macroTileLabel,
-                      { color: isDark ? theme.textSecondary : theme.text },
-                    ]}
-                  >
-                    {macro.label}
-                  </ThemedText>
-                  <ThemedText
-                    style={[styles.macroTileValue, { color: macro.color }]}
-                  >
-                    {macro.value !== undefined ? Math.round(macro.value) : "—"}
-                    <ThemedText
-                      style={[
-                        styles.macroTileUnit,
-                        { color: isDark ? theme.textSecondary : theme.text },
-                      ]}
-                    >
-                      {" "}
-                      g
-                    </ThemedText>
-                  </ThemedText>
-                </View>
-              ))}
-            </View>
-          </Card>
-        </Animated.View>
+        {/* A PLAIN View, never an Animated.View, and never an `accessible`
+            group: the card owns its own entrance (delay 200) — a second
+            animated wrapper would run a second entrance over the same content
+            — and a labelled group would swallow the Nutri-Score ring's own
+            announcement, which the ring carries on its own node precisely so
+            nothing has to. The wrapper exists only for the section margin the
+            deleted `calorieCard` style used to supply. */}
+        <View style={styles.sectionSpacing}>
+          <NutritionSummaryCard
+            standouts={standouts}
+            calories={nutrition?.calories}
+            protein={nutrition?.protein}
+            carbs={nutrition?.carbs}
+            fat={nutrition?.fat}
+            // Only the scan flow populates the serving state this caption is
+            // derived from — saved items store already-scaled totals, so a
+            // "Per …" claim there would misdescribe the numbers.
+            servingContextLabel={
+              showServingControls ? servingContextLabel : undefined
+            }
+            nutriScoreGrade={partition.nutriScore?.grade}
+            reducedMotion={reducedMotion}
+          />
+        </View>
 
         <CapturedPhotos
           nutritionImageUri={nutritionImageUri}
@@ -578,116 +546,14 @@ export default function NutritionDetailScreen() {
           </View>
         ) : null}
 
-        {nutrition?.fiber !== undefined ||
-        nutrition?.sugar !== undefined ||
-        nutrition?.sodium !== undefined ||
-        nutrition?.saturatedFat !== undefined ||
-        nutrition?.transFat !== undefined ||
-        nutrition?.cholesterol !== undefined ||
-        nutrition?.caffeine !== undefined ? (
-          <Animated.View
-            entering={
-              reducedMotion ? undefined : FadeInUp.delay(500).duration(400)
-            }
-            style={styles.additionalNutrients}
-          >
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              Additional Nutrients
-            </ThemedText>
-            <View
-              style={[
-                styles.nutrientsList,
-                { backgroundColor: theme.surface },
-                !isDark && Shadows.small,
-              ]}
-            >
-              {nutrition?.fiber !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Fiber
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.fiber)} g
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.sugar !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Sugar
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.sugar)} g
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.sodium !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Sodium
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.sodium)} mg
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.saturatedFat !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Saturated Fat
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.saturatedFat)} g
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.transFat !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Trans Fat
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.transFat)} g
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.cholesterol !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Cholesterol
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.cholesterol)} mg
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.caffeine !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Caffeine
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.caffeine)} mg
-                  </ThemedText>
-                </View>
-              ) : null}
-            </View>
-          </Animated.View>
-        ) : null}
+        {/* Every row, always — a row with no value reads "Not recorded"
+            rather than vanishing, which is what stops missing data looking
+            like nothing to worry about. The entrance (delay 300) is the
+            panel's own; this wrapper is plain, and carries only the section
+            margin the deleted `additionalNutrients` style used to supply. */}
+        <View style={styles.sectionSpacing}>
+          <NutritionPanel rows={rows} reducedMotion={reducedMotion} />
+        </View>
 
         {/* Micronutrients — collapsible section */}
         {nutrition?.productName &&
@@ -695,7 +561,7 @@ export default function NutritionDetailScreen() {
         nutrition.productName !== "Product Not Found" ? (
           <Animated.View
             entering={
-              reducedMotion ? undefined : FadeInUp.delay(600).duration(400)
+              reducedMotion ? undefined : FadeInUp.delay(500).duration(400)
             }
             style={styles.micronutrientSection}
           >
@@ -804,73 +670,16 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.xs,
     marginBottom: Spacing.lg,
   },
-  calorieCard: {
+  /**
+   * The section margin the deleted `calorieCard` / `additionalNutrients`
+   * styles supplied, kept at its original value. `NutritionSummaryCard` and
+   * `NutritionPanel` render an entrance-animated root with no margin of its
+   * own — unlike ProductHero / CapturedPhotos / VerificationPanel, which each
+   * carry theirs — so without this the card butts straight into the captured
+   * photos and the panel into the micronutrient section.
+   */
+  sectionSpacing: {
     marginBottom: Spacing["2xl"],
-  },
-  heroContext: {
-    fontFamily: FontFamily.semiBold,
-    fontSize: 11,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  calorieRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: Spacing.sm,
-    marginTop: Spacing.xs,
-  },
-  calorieValue: {
-    fontSize: 40,
-    lineHeight: 44,
-    fontFamily: FontFamily.bold,
-  },
-  macroTiles: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.lg,
-  },
-  macroTile: {
-    flex: 1,
-    borderRadius: BorderRadius.sm,
-    paddingVertical: 10,
-    paddingHorizontal: Spacing.md,
-  },
-  macroTileLabel: {
-    fontFamily: FontFamily.medium,
-    fontSize: 11,
-    lineHeight: 16,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  macroTileValue: {
-    fontFamily: FontFamily.bold,
-    fontSize: 18,
-    lineHeight: 26,
-    marginTop: 2,
-  },
-  macroTileUnit: {
-    fontFamily: FontFamily.medium,
-    fontSize: 12,
-  },
-  additionalNutrients: {
-    marginBottom: Spacing["2xl"],
-  },
-  sectionTitle: {
-    marginBottom: Spacing.md,
-  },
-  nutrientsList: {
-    borderRadius: BorderRadius.card,
-    overflow: "hidden",
-  },
-  nutrientRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderTopWidth: 1,
-  },
-  nutrientLabel: {
-    fontWeight: "500",
   },
   buttonContainer: {
     marginTop: Spacing.lg,
