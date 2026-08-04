@@ -57,7 +57,8 @@ export const DailySummaryHeader = React.memo(function DailySummaryHeader({
             fallbackStyle={styles.avatarPlaceholder}
             fallbackIcon="user"
             fallbackIconSize={14}
-            accessibilityLabel={`${displayName}'s profile photo`}
+            // Decorative: the greeting beside it already announces the
+            // display name, so labelling the avatar only repeats it.
           />
           <ThemedText type="body" style={styles.greeting}>
             Hello {displayName}
