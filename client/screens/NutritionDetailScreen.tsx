@@ -9,19 +9,18 @@ import {
   TextInput as RNTextInput,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import Animated, { FadeInUp, FadeIn } from "react-native-reanimated";
+import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
-import { FallbackImage } from "@/components/FallbackImage";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
+import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import {
   Spacing,
   BorderRadius,
@@ -33,16 +32,13 @@ import {
   getServingContextLabel,
   roundToOneDecimal,
 } from "@/screens/nutrition-detail-utils";
+import { ProductHero } from "@/components/nutrition/ProductHero";
+import { FlagSections } from "@/components/nutrition/FlagSections";
+import { CapturedPhotos } from "@/components/nutrition/CapturedPhotos";
+import { VerificationPanel } from "@/components/nutrition/VerificationPanel";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
-import { VerificationBadge } from "@/components/VerificationBadge";
 import { ServingControls } from "@/components/ServingControls";
-import { ScanFlagBadge } from "@/components/ScanFlagBadge";
-import { NutriScoreChip } from "@/components/NutriScoreChip";
 import { ScanConflictPrompt } from "@/components/ScanConflictPrompt";
-import {
-  partitionScanFlags,
-  headsUpSummaryLabel,
-} from "@/screens/nutrition-detail-flags-utils";
 import { useNutritionLookup } from "@/hooks/useNutritionLookup";
 import { useOfflineGuard } from "@/hooks/useOfflineGuard";
 import type { NutritionDetailScreenNavigationProp } from "@/types/navigation";
@@ -177,7 +173,7 @@ function NutritionDetailSkeleton() {
 
 export default function NutritionDetailScreen() {
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
+  const headerContentInset = useHeaderContentInset(Spacing.xl);
   const { theme, isDark } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { isOffline, offlineLabel } = useOfflineGuard();
@@ -268,16 +264,6 @@ export default function NutritionDetailScreen() {
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;
-  // Splits the server's mixed flags[] into the "For you" (personal
-  // allergen) and "Heads up" (universal nutrition) sections, plus the
-  // Nutri-Score chip rendered separately from the badge list.
-  const partition = partitionScanFlags(flags);
-  // Single source for the "Heads up" badge list — used for BOTH the grouped
-  // accessibilityLabel and the rendered badges, so the announced count can
-  // never desync from what's on screen (bounded at 6 kinds today; a future
-  // v2 addition must not silently break this parity again by editing one
-  // `.slice(0, 6)` call site and not the other).
-  const universalToShow = partition.universal.slice(0, 6);
   // Derived from the SAME serving state that scales the displayed values, so
   // the hero caption can never desync from the numbers it describes.
   const servingContextLabel = getServingContextLabel({
@@ -295,7 +281,7 @@ export default function NutritionDetailScreen() {
           contentContainerStyle={[
             styles.content,
             {
-              paddingTop: headerHeight + Spacing.xl,
+              paddingTop: headerContentInset,
               paddingBottom: insets.bottom + Spacing["3xl"],
             },
           ]}
@@ -313,58 +299,17 @@ export default function NutritionDetailScreen() {
         contentContainerStyle={[
           styles.content,
           {
-            paddingTop: headerHeight + Spacing.xl,
+            paddingTop: headerContentInset,
             paddingBottom: insets.bottom + Spacing["3xl"],
           },
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View
-          entering={reducedMotion ? undefined : FadeIn.duration(400)}
-          style={[
-            styles.imageCard,
-            { backgroundColor: theme.backgroundSecondary },
-          ]}
-        >
-          <FallbackImage
-            source={{ uri: nutrition?.imageUrl ?? undefined }}
-            style={styles.productImage}
-            fallbackIcon="image"
-            fallbackIconSize={30}
-            resizeMode="contain"
-            accessibilityLabel={
-              nutrition?.imageUrl
-                ? `Image of ${nutrition.productName || "product"}`
-                : "No product image available"
-            }
-          />
-        </Animated.View>
-
-        <Animated.View
-          entering={
-            reducedMotion ? undefined : FadeInUp.delay(100).duration(400)
-          }
-        >
-          <ThemedText type="h2" style={styles.productName}>
-            {nutrition?.productName || "Unknown Product"}
-          </ThemedText>
-          {nutrition?.brandName ? (
-            <ThemedText
-              type="small"
-              style={[styles.brandName, { color: theme.textSecondary }]}
-            >
-              {nutrition.brandName}
-            </ThemedText>
-          ) : null}
-          {nutrition?.servingSize && !showServingControls ? (
-            <ThemedText
-              type="small"
-              style={[styles.servingSize, { color: theme.textSecondary }]}
-            >
-              Serving size: {nutrition.servingSize}
-            </ThemedText>
-          ) : null}
-        </Animated.View>
+        <ProductHero
+          nutrition={nutrition}
+          showServingControls={showServingControls}
+          reducedMotion={reducedMotion}
+        />
 
         {conflict && dbNutrition && (
           <ScanConflictPrompt
@@ -376,72 +321,7 @@ export default function NutritionDetailScreen() {
           />
         )}
 
-        {partition.personal.length > 0 ? (
-          <Animated.View
-            entering={
-              reducedMotion ? undefined : FadeInUp.delay(450).duration(400)
-            }
-            style={styles.additionalNutrients}
-          >
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              For you
-            </ThemedText>
-            <View style={{ gap: Spacing.sm }}>
-              {partition.personal.map((f) => (
-                <ScanFlagBadge key={f.id} flag={f} />
-              ))}
-            </View>
-            <ThemedText
-              type="caption"
-              style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-            >
-              Informational only — not medical advice.
-            </ThemedText>
-          </Animated.View>
-        ) : null}
-
-        {partition.universal.length > 0 || partition.nutriScore ? (
-          <Animated.View
-            entering={
-              reducedMotion ? undefined : FadeInUp.delay(475).duration(400)
-            }
-            style={styles.additionalNutrients}
-          >
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              Heads up
-            </ThemedText>
-            <View style={{ gap: Spacing.sm }}>
-              {/* The Nutri-Score chip renders OUTSIDE this wrapper — an
-                  accessible={true} group collapses its subtree into a
-                  single VoiceOver/TalkBack node using only this label, so
-                  anything nested inside that isn't reflected in
-                  headsUpSummaryLabel's text (the grade letter isn't) would
-                  be silently dropped from the announcement. The badges'
-                  titles ARE all in the composed label, so only they are
-                  grouped here. */}
-              {partition.universal.length > 0 ? (
-                <View
-                  accessible={true}
-                  accessibilityLabel={headsUpSummaryLabel(universalToShow)}
-                  style={{ gap: Spacing.sm }}
-                >
-                  {universalToShow.map((f) => (
-                    <ScanFlagBadge key={f.id} flag={f} />
-                  ))}
-                </View>
-              ) : null}
-              {partition.nutriScore?.grade ? (
-                <NutriScoreChip grade={partition.nutriScore.grade} />
-              ) : null}
-            </View>
-            <ThemedText
-              type="caption"
-              style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-            >
-              Informational only — not medical advice.
-            </ThemedText>
-          </Animated.View>
-        ) : null}
+        <FlagSections flags={flags} reducedMotion={reducedMotion} />
 
         {labelReadNotice && !itemId ? (
           <View
@@ -678,113 +558,11 @@ export default function NutritionDetailScreen() {
           </Card>
         </Animated.View>
 
-        {/* ── Your photos ──
-            Sits directly under the macro block because the nutrition-label
-            capture is the EVIDENCE for the numbers above it — it is what the
-            values were read from, which is more useful next to them than as a
-            hero image at the top.
-
-            Both are rendered only when present, so a barcode-only scan (the
-            common case, and the one that never opts into the label steps) is
-            byte-identical to before: no heading, no placeholder frames.
-
-            The heading is deliberately neutral. "Read from your label" would
-            be a false claim whenever `ocrText` is null — a photographed but
-            unreadable panel is exactly the case the log gate exists for, and
-            the photo is still worth showing there as the record of what the
-            user pointed the camera at.
-
-            PROVISIONAL LAYOUT — Phase 2 of the scan-flow rework moves these
-            into `ProductHero` / `NutritionFactsPanel` and designs the real
-            presentation. The route plumbing, a11y labels and tests above it
-            survive that move; this JSX does not. */}
-        {nutritionImageUri || frontImageUri ? (
-          <Animated.View
-            entering={
-              reducedMotion ? undefined : FadeInUp.delay(250).duration(400)
-            }
-            style={styles.capturedPhotos}
-          >
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              Your photos
-            </ThemedText>
-            <View style={styles.capturedPhotoRow}>
-              {/* The label lives on the GROUP, not on the image.
-                  RN's `Image` gates on `accessible={props.alt !== undefined
-                  ? true : props.accessible}` — identically in Image.ios.js
-                  and Image.android.js — so a bare `accessibilityLabel` on it
-                  does not make it an accessibility element on EITHER
-                  platform, and may simply never be announced. If a platform
-                  heuristic surfaces it anyway, the result is worse: it
-                  double-announces against the visible caption right below it
-                  — "Nutrition label you photographed", then "Nutrition label"
-                  — which docs/rules/accessibility.md prohibits. Both branches
-                  are bad; neither has been confirmed on a device.
-
-                  One `accessible` wrapper avoids the question entirely by
-                  collapsing image + caption into a single node with one
-                  label. Safe here specifically because the tile has NO
-                  interactive child (that same rule forbids the wrapper when
-                  it would swallow a Pressable), and because the caption's
-                  words are contained in the group label — a collapsed
-                  subtree announces only the group's label, so anything not
-                  reflected in it is silently dropped. The test pins that
-                  containment by comparing the two off the DOM, not by
-                  matching two hand-written strings that happen to overlap. */}
-              {nutritionImageUri ? (
-                <View
-                  accessible
-                  accessibilityLabel="Nutrition label you photographed"
-                  style={styles.capturedPhoto}
-                >
-                  <FallbackImage
-                    source={{ uri: nutritionImageUri }}
-                    style={[
-                      styles.capturedPhotoImage,
-                      { backgroundColor: theme.backgroundSecondary },
-                    ]}
-                    fallbackIcon="image"
-                    // `contain`, not `cover`: a nutrition panel is portrait and
-                    // this frame is wide, so cropping to fill would show a
-                    // horizontal sliver of the label. These are evidence for
-                    // the numbers above — the whole panel has to be visible,
-                    // letterboxing and all.
-                    resizeMode="contain"
-                  />
-                  <ThemedText
-                    type="caption"
-                    style={{ color: theme.textSecondary }}
-                  >
-                    Nutrition label
-                  </ThemedText>
-                </View>
-              ) : null}
-              {frontImageUri ? (
-                <View
-                  accessible
-                  accessibilityLabel="Product front you photographed"
-                  style={styles.capturedPhoto}
-                >
-                  <FallbackImage
-                    source={{ uri: frontImageUri }}
-                    style={[
-                      styles.capturedPhotoImage,
-                      { backgroundColor: theme.backgroundSecondary },
-                    ]}
-                    fallbackIcon="image"
-                    resizeMode="contain"
-                  />
-                  <ThemedText
-                    type="caption"
-                    style={{ color: theme.textSecondary }}
-                  >
-                    Product front
-                  </ThemedText>
-                </View>
-              ) : null}
-            </View>
-          </Animated.View>
-        ) : null}
+        <CapturedPhotos
+          nutritionImageUri={nutritionImageUri}
+          frontImageUri={frontImageUri}
+          reducedMotion={reducedMotion}
+        />
 
         {isPer100g && !itemId ? (
           <View
@@ -931,48 +709,16 @@ export default function NutritionDetailScreen() {
 
         {/* Verification badge + CTA */}
         {!itemId && barcode && nutrition && (
-          <View style={styles.verificationSection}>
-            <VerificationBadge level={verificationLevel} />
-
-            {/* Retroactive front-label CTA for verified products without front-label data */}
-            {verificationLevel !== "unverified" && !hasFrontLabelData && (
-              <Pressable
-                onPress={() =>
-                  navigation.navigate("Scan", {
-                    mode: "front-label",
-                    verifyBarcode: barcode,
-                  })
-                }
-                accessibilityLabel="Scan front of package to add product details"
-                accessibilityRole="button"
-                style={[
-                  styles.verifyPrompt,
-                  { backgroundColor: withOpacity(theme.textSecondary, 0.06) },
-                ]}
-              >
-                <Feather name="package" size={18} color={theme.textSecondary} />
-                <View style={{ flex: 1 }}>
-                  <ThemedText
-                    type="body"
-                    style={{ color: theme.textSecondary, fontWeight: "600" }}
-                  >
-                    Add product details
-                  </ThemedText>
-                  <ThemedText
-                    type="small"
-                    style={{ color: theme.textSecondary }}
-                  >
-                    Scan front of package
-                  </ThemedText>
-                </View>
-                <Feather
-                  name="chevron-right"
-                  size={18}
-                  color={theme.textSecondary}
-                />
-              </Pressable>
-            )}
-          </View>
+          <VerificationPanel
+            verificationLevel={verificationLevel}
+            hasFrontLabelData={hasFrontLabelData}
+            onAddProductDetails={() =>
+              navigation.navigate("Scan", {
+                mode: "front-label",
+                verifyBarcode: barcode,
+              })
+            }
+          />
         )}
 
         {!itemId ? (
@@ -1041,32 +787,6 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: Spacing.lg,
-  },
-  imageCard: {
-    height: 150,
-    borderRadius: BorderRadius.card,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-    marginBottom: Spacing.lg,
-  },
-  productImage: {
-    width: "100%",
-    height: 150,
-  },
-  productName: {
-    fontSize: 22,
-    lineHeight: 28,
-    textAlign: "center",
-    marginBottom: Spacing.xs,
-  },
-  brandName: {
-    textAlign: "center",
-    marginBottom: Spacing.xs,
-  },
-  servingSize: {
-    textAlign: "center",
-    marginBottom: Spacing.lg,
   },
   warningContainer: {
     flexDirection: "row",
@@ -1138,30 +858,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     marginBottom: Spacing.md,
   },
-  capturedPhotos: {
-    marginBottom: Spacing["2xl"],
-  },
-  capturedPhotoRow: {
-    flexDirection: "row",
-    gap: Spacing.md,
-  },
-  capturedPhoto: {
-    // `flex: 1` so two captures split the row evenly, CAPPED at half width so
-    // a lone capture doesn't stretch across it. Letting it stretch looks like
-    // it fills the gap left by the missing photo, but `contain` won't upscale
-    // a portrait panel to a 343pt-wide frame — it just centres it and paints
-    // ~126pt of empty background on either side. Same emptiness, now inside
-    // the frame and larger. Capped, the single-capture case (step 3 skipped)
-    // is the same tile it would have been beside a sibling.
-    flex: 1,
-    maxWidth: "50%",
-    gap: Spacing.xs,
-  },
-  capturedPhotoImage: {
-    width: "100%",
-    height: 120,
-    borderRadius: BorderRadius.card,
-  },
   nutrientsList: {
     borderRadius: BorderRadius.card,
     overflow: "hidden",
@@ -1184,17 +880,6 @@ const styles = StyleSheet.create({
   },
   micronutrientSection: {
     marginBottom: Spacing["2xl"],
-  },
-  verificationSection: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  verifyPrompt: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.sm,
   },
   correctionContainer: {
     flexDirection: "row",

@@ -79,18 +79,3 @@ export function partitionScanFlags(flags: ScanFlag[]): PartitionedScanFlags {
 
   return { personal, universal, nutriScore };
 }
-
-/**
- * Summarizing sentence for the "Heads up" section's single grouped
- * `accessibilityLabel`, e.g. "3 nutrition flags: high in sugar, high in
- * caffeine, ultra-processed" — so VoiceOver/TalkBack announce the whole
- * group once instead of stepping through each badge individually.
- */
-export function headsUpSummaryLabel(universal: ScanFlag[]): string {
-  if (universal.length === 0) {
-    return "No additional nutrition flags.";
-  }
-  const noun = universal.length === 1 ? "flag" : "flags";
-  const titles = universal.map((f) => f.title).join(", ");
-  return `${universal.length} nutrition ${noun}: ${titles}`;
-}

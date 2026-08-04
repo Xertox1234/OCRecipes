@@ -19,20 +19,25 @@ import { buildNutritionDetailParams } from "../scan-screen-utils";
 import type { ScanPhase } from "@/camera/types/scan-phase";
 
 /** Mutable so the log-gate suite can swap in a scan-flow route (`barcode`, no
- * `itemId`); every other suite relies on the `itemId` default below. */
-const { mockUseNutritionLookup, mockRoute } = vi.hoisted(() => ({
+ * `itemId`); every other suite relies on the `itemId` default below.
+ * `mockNavigate` is hoisted (not a fresh `vi.fn()` per `useNavigation()` call)
+ * so a test can assert against a stable reference — see the verification-panel
+ * CTA test below. */
+const { mockUseNutritionLookup, mockRoute, mockNavigate } = vi.hoisted(() => ({
   mockUseNutritionLookup: vi.fn(),
   mockRoute: { params: { itemId: 42 } as Record<string, unknown> },
+  mockNavigate: vi.fn(),
 }));
 
 const ITEM_ID_ROUTE_PARAMS: Record<string, unknown> = { itemId: 42 };
 
 afterEach(() => {
   mockRoute.params = ITEM_ID_ROUTE_PARAMS;
+  mockNavigate.mockClear();
 });
 
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ navigate: vi.fn() }),
+  useNavigation: () => ({ navigate: mockNavigate }),
   useRoute: () => mockRoute,
 }));
 
@@ -181,7 +186,7 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     ];
     mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
 
-    const { queryByText, getByLabelText } = renderComponent(
+    const { queryByText, getByLabelText, queryByLabelText } = renderComponent(
       <NutritionDetailScreen />,
     );
 
@@ -197,32 +202,34 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     expect(queryByText("Contains caffeine")).toBeTruthy();
     expect(getByLabelText("Nutri-Score E")).toBeTruthy();
 
-    // The Heads-up badges are wrapped in ONE accessible={true} view whose
-    // accessibilityLabel is the composed summary sentence, so
-    // VoiceOver/TalkBack read the badge group as a single grouped
-    // announcement instead of stepping through each badge. This jsdom
-    // harness can't model the real subtree-collapse (see
-    // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md);
-    // what IS verifiable is that the exact composed label resolves to
-    // exactly one element — getByLabelText throws on a missing or
-    // duplicate match — and its content reflects the severity-sorted
-    // (warn before info) universal flags.
-    const badgeGroup = getByLabelText(
-      "2 nutrition flags: Ultra-processed, Contains caffeine",
-    );
-    expect(badgeGroup).toBeTruthy();
+    // NO composed group label wraps these badges. It was removed
+    // deliberately: an accessible={true} wrapper collapses the subtree on
+    // iOS to speak only the summary, which made each flag's explanation
+    // ("High in sugar. Above the FSA guideline for sugar.") unreachable,
+    // while on Android it never collapsed at all and TalkBack read the
+    // summary and then every badge again. See the rationale comment in
+    // client/components/nutrition/FlagSections.tsx.
+    //
+    // Asserting the summary's ABSENCE is what stops the wrapper being
+    // reintroduced by a future refactor; jsdom cannot observe the collapse
+    // itself in either direction (see
+    // docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md).
+    expect(
+      queryByLabelText("2 nutrition flags: Ultra-processed, Contains caffeine"),
+    ).toBeNull();
 
-    // The Nutri-Score chip must be a SIBLING of the badge group, not
-    // nested inside it: an accessible={true} group's composed label
-    // doesn't mention the grade, so a real VoiceOver/TalkBack collapse
-    // would silently drop "Nutri-Score E" if the chip were nested here.
-    // Its own label being reachable OUTSIDE this subtree (asserted above
-    // via getByLabelText) plus its absence FROM this subtree is the
-    // closest jsdom proxy for "the chip keeps its own accessible node."
-    expect(badgeGroup.querySelector('[aria-label="Nutri-Score E"]')).toBeNull();
+    // Structural, not string-matching. The line above pins one literal
+    // sentence, which a reintroduced wrapper would evade just by rewording or
+    // by running under a different flag fixture. The shape that must not come
+    // back is "a badge has a labelled ANCESTOR" — in this harness an
+    // accessible={true} group renders as a div carrying aria-label — so walk
+    // up from a badge's own labelled node and require nothing above it.
+    const badge = queryByText("Ultra-processed")?.closest("[aria-label]");
+    expect(badge).toBeTruthy();
+    expect(badge?.parentElement?.closest("[aria-label]")).toBeNull();
   });
 
-  it("shows the Heads-up section for the Nutri-Score chip alone, omitting the badge-group wrapper when there are no universal flags to summarize", () => {
+  it("shows the Heads-up section for the Nutri-Score chip alone when there are no universal flags", () => {
     const flags = [
       {
         id: "nutriscore:c",
@@ -235,22 +242,18 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     ];
     mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
 
-    const { queryByText, getByLabelText, queryByLabelText } = renderComponent(
+    const { queryByText, getByLabelText } = renderComponent(
       <NutritionDetailScreen />,
     );
 
     expect(queryByText("For you")).toBeNull();
     expect(queryByText("Heads up")).toBeTruthy();
+    // The chip is the section's only content here and carries its own
+    // accessibility node — nothing wraps it or speaks on its behalf.
     expect(getByLabelText("Nutri-Score C")).toBeTruthy();
-    // No universal flags means there is nothing for the grouped summary
-    // to describe — the badge-group wrapper (and its "No additional
-    // nutrition flags." fallback label) isn't rendered at all, so the
-    // chip keeps its own independent accessible identity instead of
-    // being nested inside an empty, misleadingly-labeled group.
-    expect(queryByLabelText("No additional nutrition flags.")).toBeNull();
   });
 
-  it("caps the grouped summary label at the same 6 flags that render as badges (finding #4, PR #694 medium review)", () => {
+  it("caps the rendered badges at the first 6 (finding #4, PR #694 medium review)", () => {
     // Server-side today bounds universal flags at 6 kinds (3 nutrient + 1
     // caffeine + 1 processing + 1 sweetener — see universal-flags.ts), so
     // this synthetic 7-flag fixture models a hypothetical future kind to
@@ -264,18 +267,17 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     }));
     mockUseNutritionLookup.mockReturnValue(baseHookReturn({}, flags));
 
-    const { getAllByText, getByLabelText } = renderComponent(
+    const { getAllByText, queryByText } = renderComponent(
       <NutritionDetailScreen />,
     );
 
-    // Only 6 badges render.
+    // Exactly the first six render, and the seventh does not. Naming both
+    // sides of the boundary fails loudly if the slice ever changes size or
+    // start index — a bare count assertion would still pass if the cap
+    // kept six flags but the wrong six.
     expect(getAllByText(/^Flag \d$/)).toHaveLength(6);
-    // The grouped label's count and title list match the rendered 6, not
-    // the full 7 — no "7 nutrition flags" summary describing an unseen badge.
-    const badgeGroup = getByLabelText(
-      "6 nutrition flags: Flag 0, Flag 1, Flag 2, Flag 3, Flag 4, Flag 5",
-    );
-    expect(badgeGroup).toBeTruthy();
+    expect(queryByText("Flag 5")).toBeTruthy();
+    expect(queryByText("Flag 6")).toBeNull();
   });
 });
 
@@ -549,6 +551,21 @@ describe("NutritionDetailScreen — captured photos", () => {
     expect(queryByLabelText(FRONT_A11Y)).toBeNull();
   });
 
+  // The mirror of the "label only" case above, and the fourth quadrant of
+  // the (label, front) presence matrix. This is precisely the boundary
+  // Task 4's `{a || b ? … : null}` → `if (!a && !b) return null` conversion
+  // touched — front-only is the one shape that ternary form and the
+  // early-return form must agree on identically.
+  it("renders only the front capture when the label photo is absent", () => {
+    const { getByLabelText, queryByLabelText } = renderCompletedSession({
+      frontImageUri: "file://front-only.jpg",
+      ocrText: undefined,
+    });
+
+    expectPhotoWithSource(getByLabelText(FRONT_A11Y), "file://front-only.jpg");
+    expect(queryByLabelText(LABEL_A11Y)).toBeNull();
+  });
+
   /**
    * The negative control, and the one that protects everyone who never uses
    * the label steps: a barcode-only scan must render exactly as it did before
@@ -560,8 +577,223 @@ describe("NutritionDetailScreen — captured photos", () => {
     expect(queryByText("Your photos")).toBeNull();
     expect(queryByLabelText(LABEL_A11Y)).toBeNull();
     expect(queryByLabelText(FRONT_A11Y)).toBeNull();
-    // The database product image is untouched by this feature — the captures
-    // are additive evidence, not a replacement hero.
-    expect(queryByLabelText("No product image available")).toBeTruthy();
+    // The hero is untouched by this feature — the captures are additive
+    // evidence, not a replacement hero. The hero image itself is decorative
+    // and carries no accessible name (see FallbackImage's docblock), so the
+    // hero's product name is what proves ProductHero still rendered.
+    expect(queryByText("Unknown Product")).toBeTruthy();
+  });
+});
+
+/**
+ * Characterisation suites (Slice 2b). These pin behaviour that already exists
+ * but had NO coverage, so the extraction in Tasks 2-6 has something to fail
+ * against. They must PASS on unmodified code — a red test here means the test
+ * is wrong, not the screen.
+ */
+describe("NutritionDetailScreen — loading branch (2b characterisation)", () => {
+  function renderLoading() {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ productName: "Cherry Coke" }),
+      isLoading: true,
+    });
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  it("renders the skeleton and announces Loading", () => {
+    const announceSpy = vi.spyOn(
+      RN.AccessibilityInfo,
+      "announceForAccessibility",
+    );
+    try {
+      const { queryByText } = renderLoading();
+
+      expect(announceSpy).toHaveBeenCalledWith("Loading");
+      // Negative control: the loading branch returns EARLY, so no main-branch
+      // content may be in the tree. Without this, a component that rendered
+      // both branches would still pass the announcement assertion.
+      expect(queryByText("Cherry Coke")).toBeNull();
+    } finally {
+      announceSpy.mockRestore();
+    }
+  });
+});
+
+// NutritionDetailScreen — modal focus containment (2b characterisation):
+// deliberately NOT a test. `accessibilityViewIsModal` reaches the DOM only
+// through mockComponent's `...rest` spread and is not one of the props the
+// mock special-cases, so — like the `accessible` boolean prop documented in
+// docs/solutions/conventions/jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding-2026-07-03.md —
+// it never appears as an attribute on the rendered DOM node for either
+// branch. Empirically confirmed: `container.querySelectorAll("[accessibilityviewismodal]")`
+// returned 0 on BOTH the main branch and the loading branch, so an assertion
+// of `.length === 1` could never fail and would pass vacuously regardless of
+// whether the screen (or an extracted component in Tasks 2-6) keeps the
+// prop. `accessibilityViewIsModal` on both
+// `<ThemedView style={styles.container} accessibilityViewIsModal>` tags in
+// NutritionDetailScreen.tsx — one per branch (loading and main) — is
+// therefore a diff-review obligation, not a test — verify on device with
+// VoiceOver per docs/rules/accessibility.md instead.
+
+describe("NutritionDetailScreen — product hero (2b characterisation)", () => {
+  function renderHero(nutrition: Record<string, unknown>) {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue(baseHookReturn(nutrition));
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  it("renders product name, brand and serving size", () => {
+    const { queryByText } = renderHero({
+      productName: "Cherry Coke",
+      brandName: "Coca-Cola",
+      servingSize: "1 can (355 ml)",
+    });
+
+    const productNameNode = queryByText("Cherry Coke");
+    expect(productNameNode).toBeTruthy();
+    expect(queryByText("Coca-Cola")).toBeTruthy();
+    expect(queryByText("Serving size: 1 can (355 ml)")).toBeTruthy();
+    // Mirrors the structural check below (brand-omission test): the hero's
+    // product name, brand and serving-size fields are direct siblings inside
+    // one `Animated.View`, not separately wrapped. That flat shape is what
+    // makes `nextElementSibling` a valid probe for "was this sibling
+    // omitted?" over there. Empirically confirmed: wrapping the product-name
+    // `ThemedText` alone in a `View` (isolating it from its siblings) turns
+    // THIS assertion red — the sibling relation the brand-omission test
+    // relies on is gone. Wrapping all three fields together in one shared
+    // `View` does NOT turn it red, because the three stay adjacent inside
+    // that wrapper; a per-field wrapper is the failure mode this guards
+    // against. Asserting non-null here, with all three fields present, fails
+    // loudly the moment a field gets isolated into its own wrapper.
+    expect(productNameNode?.nextElementSibling).not.toBeNull();
+  });
+
+  it("falls back to Unknown Product and omits an absent brand", () => {
+    // brandName is explicitly "" (falsy but PRESENT), not merely absent from
+    // the fixture. The screen renders `{nutrition.brandName}` — the brand's
+    // own literal value, never a hardcoded string — so with the key left out
+    // entirely, `queryByText("Coca-Cola")` could never find a match for ANY
+    // implementation of the omission guard, correct or broken: "Coca-Cola"
+    // was never in the tree to begin with. An explicit falsy value is the
+    // input that actually exercises `nutrition?.brandName ? (...) : null`
+    // (fix for review finding: PR review, 2b Task 1 re-review).
+    const { queryByText } = renderHero({ productName: "", brandName: "" });
+
+    const productNameNode = queryByText("Unknown Product");
+    expect(productNameNode).toBeTruthy();
+    // A falsy brandName renders no visible TEXT either way — an empty-string
+    // child is textually indistinguishable from "not rendered" — so a
+    // text-based assertion can't tell a correct guard from a broken one that
+    // renders an empty node. Detect the omission structurally instead: the
+    // product name has no DOM sibling at all. NOTE this covers ALL of the
+    // hero's conditional siblings (brand AND the serving-size line right
+    // after it — the `nutrition?.brandName ? (...) : null` and
+    // `nutrition?.servingSize && !showServingControls ? (...) : null` blocks
+    // in client/components/nutrition/ProductHero.tsx), not brandName alone —
+    // this fixture leaves servingSize unset too, so a red here means
+    // "something rendered in the hero that shouldn't have," not specifically
+    // the brand guard. Empirically confirmed non-vacuous for the brand guard
+    // specifically: forcing it to render unconditionally produces an extra
+    // (empty) sibling `<span>` here even though its text content is "".
+    expect(productNameNode?.nextElementSibling).toBeNull();
+  });
+
+  // The hero image is DECORATIVE and carries no accessible name: the product
+  // name it would announce is already spoken by the <h2> directly below, so a
+  // label here would only double-announce. `FallbackImage` no longer accepts
+  // `accessibilityLabel` at all — its docblock carries the RN gating that made
+  // the old label inert on both platforms, device-confirmed — so this is now
+  // enforced by the type system rather than by convention.
+  //
+  // The handle is `testID`, which reaches the real <Image> ONLY (the
+  // placeholder branch takes no image props). That preserves the property the
+  // old label-based assertion existed for: if the `source` wiring breaks, the
+  // placeholder takes over, the testID disappears, and this goes red. See
+  // docs/solutions/conventions/assert-source-not-label-when-fallback-shares-it-2026-07-30.md
+  it("renders the product image from the source URL, with no accessible name", () => {
+    const { queryByTestId, queryByLabelText } = renderHero({
+      productName: "Cherry Coke",
+      imageUrl: "https://example.test/coke.png",
+    });
+
+    const hero = queryByTestId("product-hero-image");
+    expect(hero).toBeTruthy();
+    expect(hero?.getAttribute("src")).toBe("https://example.test/coke.png");
+    expect(queryByLabelText("Image of Cherry Coke")).toBeNull();
+  });
+
+  it("falls back to a silent placeholder when there is no image", () => {
+    const { queryByTestId, queryByLabelText, queryByText } = renderHero({
+      productName: "Cherry Coke",
+    });
+
+    // No real <Image> rendered — the placeholder branch took over.
+    expect(queryByTestId("product-hero-image")).toBeNull();
+    // And it announces nothing. A screen-reader user gains nothing from being
+    // told a decorative placeholder graphic is on screen, and the product
+    // name is announced immediately below it either way.
+    expect(queryByLabelText("No product image available")).toBeNull();
+    expect(queryByText("Cherry Coke")).toBeTruthy();
+  });
+});
+
+describe("NutritionDetailScreen — verification panel (2b characterisation)", () => {
+  function renderVerification(overrides: Record<string, unknown>) {
+    mockRoute.params = { barcode: "06772408", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue({
+      ...baseHookReturn({ productName: "Cherry Coke" }),
+      ...overrides,
+    });
+    return renderComponent(<NutritionDetailScreen />);
+  }
+
+  it("offers the front-label CTA for a verified product with no front-label data", () => {
+    const { queryByText } = renderVerification({
+      verificationLevel: "verified",
+      hasFrontLabelData: false,
+    });
+
+    expect(queryByText("Add product details")).toBeTruthy();
+    expect(queryByText("Scan front of package")).toBeTruthy();
+  });
+
+  it("withholds the CTA once front-label data exists", () => {
+    const { queryByText } = renderVerification({
+      verificationLevel: "verified",
+      hasFrontLabelData: true,
+    });
+
+    expect(queryByText("Add product details")).toBeNull();
+  });
+
+  it("withholds the CTA for an unverified product", () => {
+    const { queryByText } = renderVerification({
+      verificationLevel: "unverified",
+      hasFrontLabelData: false,
+    });
+
+    expect(queryByText("Add product details")).toBeNull();
+  });
+
+  // The ONLY seam this slice newly created: before the refactor the handler
+  // was inline on the screen; now it arrives at VerificationPanel as a prop.
+  // A prop that's declared, destructured, and never forwarded to `onPress`
+  // would be type-clean, lint-clean, and pixel-identical — a button that
+  // renders perfectly and does nothing. `mockNavigate` is the hoisted,
+  // module-scoped mock (not a fresh `vi.fn()` per `useNavigation()` call) so
+  // it has something stable to assert against.
+  it("navigates to the front-label scan when the CTA is pressed", () => {
+    const { getByText } = renderVerification({
+      verificationLevel: "verified",
+      hasFrontLabelData: false,
+    });
+
+    fireEvent.click(getByText("Add product details"));
+
+    expect(mockNavigate).toHaveBeenCalledWith("Scan", {
+      mode: "front-label",
+      verifyBarcode: "06772408",
+    });
   });
 });

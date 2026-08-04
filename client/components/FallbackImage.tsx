@@ -17,7 +17,15 @@ import { hasValidUri } from "@/components/FallbackImage-utils";
 
 type FeatherIconName = React.ComponentProps<typeof Feather>["name"];
 
-interface FallbackImageProps extends Omit<ImageProps, "source"> {
+interface FallbackImageProps
+  extends Omit<
+    ImageProps,
+    // `aria-label` has to go too: RN resolves it AHEAD of accessibilityLabel
+    // (`props['aria-label'] ?? props.accessibilityLabel`), so omitting only
+    // the latter would leave a second, equally inert way in through
+    // `{...imageProps}` — and the compile-error guarantee below would be false.
+    "source" | "accessibilityLabel" | "alt" | "aria-label"
+  > {
   /** Image source with optional URI. Shows fallback when URI is missing or load fails. */
   source: { uri: string | undefined | null } | undefined | null;
   /** Custom fallback element. When omitted, a default themed icon placeholder is shown. */
@@ -32,8 +40,6 @@ interface FallbackImageProps extends Omit<ImageProps, "source"> {
   style?: StyleProp<ImageStyle>;
   /** Style applied only to the fallback container (merged with style). */
   fallbackStyle?: StyleProp<ViewStyle>;
-  /** Accessibility label for both image and fallback. */
-  accessibilityLabel?: string;
 }
 
 /**
@@ -45,6 +51,24 @@ interface FallbackImageProps extends Omit<ImageProps, "source"> {
  * - The image fails to load (404, network error, etc.)
  *
  * The fallback matches the image dimensions to prevent layout shift.
+ *
+ * DECORATIVE BY DESIGN — neither branch is an accessibility element, and the
+ * component deliberately does NOT accept `accessibilityLabel` or `alt`.
+ * React Native gates image accessibility on
+ * `accessible={props.alt !== undefined ? true : props.accessible}`
+ * (identically in Image.ios.js and Image.android.js), so the label this
+ * component used to accept was silently inert. Device-confirmed 2026-08-04:
+ * the hero image rendered `content-desc='Image of coca-cola'` with
+ * `focusable=false` in the Android tree — a description TalkBack skips.
+ *
+ * Every call site that passed a label was naming an image whose name is
+ * already carried by adjacent visible text, so honouring the label would
+ * have added a double-announcement rather than fixing anything. All three
+ * naming props (`accessibilityLabel`, `alt`, `aria-label`) are omitted from
+ * the public type so the next consumer gets a compile error instead of
+ * silence. An image that genuinely needs its own name
+ * belongs in an `accessible` group wrapper at the call site — see
+ * `client/components/nutrition/CapturedPhotos.tsx`.
  */
 export function FallbackImage({
   source,
@@ -54,7 +78,6 @@ export function FallbackImage({
   fallbackIconColor,
   style,
   fallbackStyle,
-  accessibilityLabel,
   onError,
   ...imageProps
 }: FallbackImageProps) {
@@ -93,8 +116,16 @@ export function FallbackImage({
           },
           fallbackStyle,
         ]}
-        accessibilityLabel={accessibilityLabel}
-        accessibilityRole="image"
+        // Unlike the image branch, this one HAS a child: the Feather glyph
+        // below renders as a Text node holding a private-use codepoint
+        // (U+F205 etc.). `importantForAccessibility="no"` would exclude only
+        // this View, leaving that child in the Android accessibility tree
+        // where TalkBack could announce the raw glyph. "no-hide-descendants"
+        // excludes the subtree; `accessibilityElementsHidden` is the iOS
+        // half, which ignores importantForAccessibility entirely.
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
       >
         <Feather
           name={fallbackIcon}
@@ -110,7 +141,8 @@ export function FallbackImage({
     <Image
       source={{ uri: validSource.uri }}
       style={style}
-      accessibilityLabel={accessibilityLabel}
+      accessible={false}
+      importantForAccessibility="no"
       onError={handleError}
       {...imageProps}
     />

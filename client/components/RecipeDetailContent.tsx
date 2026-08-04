@@ -247,7 +247,8 @@ export function RecipeDetailContent(props: RecipeDetailContentProps) {
             fallbackIcon="image"
             fallbackIconSize={48}
             resizeMode="cover"
-            accessibilityLabel={`Photo of ${props.title}`}
+            // Decorative: the recipe title is announced by the <h3> just
+            // below, so labelling the hero image only repeats it.
           />
         )}
 
