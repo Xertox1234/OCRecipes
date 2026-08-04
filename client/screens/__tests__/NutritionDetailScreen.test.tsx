@@ -172,9 +172,13 @@ describe("NutritionDetailScreen — nutrient panel rows", () => {
 
     expect(queryByText("Unknown Product")).toBeTruthy();
     expect(queryByText("Additional Nutrients")).toBeNull();
-    // All nine rows, every one of them stating its absence. The panel
-    // deliberately does NOT vanish here — the predecessor card did, and a
-    // silent nutrient table reads as a clean bill of health.
+    // One per row in NUTRIENT_ROWS (sugar, saturated fat, total fat, sodium,
+    // fibre, protein, trans fat, cholesterol, caffeine), every one of them
+    // stating its absence. The panel deliberately does NOT vanish here — the
+    // predecessor card did, and a silent nutrient table reads as a clean bill
+    // of health. The count is exact on purpose: adding a tenth row should turn
+    // this red so the new row's not-recorded rendering gets looked at, and
+    // dropping a row can never pass as "rendered but empty".
     expect(getAllByText("Not recorded")).toHaveLength(9);
     // The half of the old assertion that still applies: nothing absent is
     // rendered as a zero.
