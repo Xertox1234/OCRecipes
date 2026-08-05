@@ -262,8 +262,224 @@ Protein / Protéines 3 g`;
     expect(r.totalCarbs).toBe(39); // not 38 (sugars)
     expect(r.totalSugars).toBe(38);
     expect(r.protein).toBe(3);
-    expect(r.transFat).toBeNull(); // trans fat kept US-only (not read by feature)
+    expect(r.transFat).toBe(0.5); // bilingual trans fat now parsed, not 2/1/39/38
     expect(r.servingSize).toContain("355 mL");
+  });
+});
+
+/**
+ * VERBATIM MLKit output from `probeLabelRead` on a physical iPhone 16 Pro Max
+ * (EAS dev client `3967b6cd`), captured 2026-08-05. Do not "clean up" these
+ * strings — every defect in them is real and load-bearing, and the research
+ * note they came from is gitignored, so this file is the only copy in the repo.
+ *
+ * Both labels ALREADY passed `isLabelReady` before this change (calories and a
+ * parseable serving both survived), so what these tests pin down is not
+ * *whether* the label is used but *which fields survive the parse* — 2 of 10
+ * and 3 of 10 respectively, on labels a human reads without difficulty.
+ *
+ * Assertions that still expect `null` name their cause. They are the ledger for
+ * the remaining known defects, and each one flips to a value when its cause is
+ * fixed:
+ *   - `g` -> `9`: the recogniser reads the unit as a digit ("2.59" for "2.5 g",
+ *     "9 9" for "9 g"). Known since 2026-07-30 (Cherry Coke, above).
+ *   - column merge: MLKit flattens physically adjacent print columns into one
+ *     line, so the ingredients panel bleeds into the serving-size line.
+ */
+describe("device captures — 2026-08-05 bilingual Canadian labels", () => {
+  /** Canola/olive mayonnaise-style dressing. */
+  const MAYONNAISE_DEVICE_OCR = `MACEIN CANAOA WITH DOMESTIC AND IMPORTED INGREDIENTS / FAIT AU CANADA AVEC DES NGRÉIENSM
+"ABLEND OF CANOLA & OUVE ONLS / UN MÉLANGE D'HUILE DE CANOLA ETDHILE ETUIE
+Nutrition Facts
+Valeur nutritive
+Per 1 tbsp (15 mL)/par 1 c. à s. (15 mL) Sugar, Vinegar, Splu Lguit et y
+% Daily Value* lemon juns faV
+% valeur quotídienne*EDTA (Ma
+Calories 100
+Fat /Lipides 11 g
+Saturated/ saturés 19
++Trans / trans 0 g
+Polyunsaturated / polyinsaturés 3 9
+Omega-6/oméga-62 g
+Omega-3/ oméga-3 0.8 g
+Monounsaturated / mono-insaturés b g
+Carbohydrate /Glucides 09
+Protein / Protéines 0.2 9
+Cholesterol /Cholestérol 5 mg
+Sodium 85 mg
+Not a significant source of fibre, suga ars
+potassium, calcium or iron.
+Source négligeable de fibre,
+potassium, calcium ou fer.
+SUcres,
+5% or less is a little. 15% or more
+a lot / *5% ou moins c'est peu,
+plus c'est beaucoup
+15
+%
+ou
+15 %
+5 %
+Contalins: Egg.
+Ingrédients:Huile te
+d'o a eut ente
+Vinaiare Jaune 1 B
+Sel Sucre ioie s
+Concentré
+dlsodiaue aintent as
+COntiantau
+19
+Ingredients: Canola
+oil, Water Ligut wtok
+Cancentatt
+GLUTEN FREE
+SANS GLUTEN
+NO TRANSFAT
+SANS GRASTRANS
+\\oWINSATURATED FAT
+FAIBLE EN GRAS SATURES
+\\OHHIN
+HOLESTEROL
+FABLE EN CHOLESTEROI
+FAibNC
+SOURCE OF OMEGA-3
+SOURCE DOMEGA-3`;
+
+  /** Little Saigon sauce, Abbotsford BC. */
+  const SAUCE_DEVICE_OCR = `Nutrition Facts
+Valeur nutritive
+Per 30 ml (30 g)
+pour 30 ml (30 g)
+Servings per Container
+Portions par contenant
+Calories 60
+Total Fat / Lipides 2.59
+saturés 0.4g
+Saturated/
++ Trans / trans 0 g
+Glucides 9 9
+Carbohydrate /
+Fiber / Fibres 1 g
+Sugars / Sucres 7 g
+s2 g
+Protein | Protéine
+iOlesterol / Cholestérol 0 mg
+Sodium 400 mg
+|Potassium 50 mg
+Calcium 10 mg
+|Iron / Fer 0.2 mg
+or less is a little. 15% or more Is a lot beau
+S C'est peu, 15% ou plus c'est beaucoup
+LO% ou moins cest peu
+"59%
+LITTLE SAIGON RESTAUHT
+RBBOTSFORD, BC V2S 2H2
+EFRIDGERATE AETER OPENING /RÉFRIOÉRER UNE FO)
+Www.LITLESAIGON.CA
+E FOIS DUVEAI
+BRIZ
+C863409800
+Supps by BCID
+NE
+% Daily Value
+% valeur quotidienne"
+49
+7%
+17%
+1 %/
+15
+1%/`;
+
+  it("reads the spaced-unit fields the old patterns could not match (mayonnaise)", () => {
+    const r = parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR);
+
+    // `(\S+?)mg` could not cross the space in "85 mg" / "5 mg", so both of
+    // these parsed null on a label the recogniser had read perfectly.
+    expect(r.sodium).toBe(85);
+    expect(r.cholesterol).toBe(5);
+    // "+Trans / trans 0 g" — needed the bilingual form AND the leading marker.
+    expect(r.transFat).toBe(0);
+    // Unchanged, and asserted so the new alternations can't steal these.
+    expect(r.calories).toBe(100);
+    expect(r.totalFat).toBe(11);
+  });
+
+  it("still cannot read the g→9 fields on the mayonnaise label", () => {
+    const r = parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR);
+
+    expect(r.saturatedFat).toBeNull(); // "saturés 19"      is "saturés 1 g"
+    expect(r.totalCarbs).toBeNull(); //  "Glucides 09"      is "Glucides 0 g"
+    expect(r.protein).toBeNull(); //     "Protéines 0.2 9"  is "Protéines 0.2 g"
+  });
+
+  it("does not read a fibre disclaimer as a fibre value (line-anchor guard)", () => {
+    const r = parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR);
+
+    // This label carries "Not a significant source of fibre, suga ars" and
+    // "Source négligeable de fibre," — neither line-initial. The bare bilingual
+    // "fibre" token is line-anchored precisely so a disclaimer cannot supply a
+    // number. Dropping that anchor makes this assertion fail.
+    expect(r.dietaryFiber).toBeNull();
+    // Same shape: "SUcres," is line-initial but carries no value.
+    expect(r.totalSugars).toBeNull();
+  });
+
+  it("reads the spaced-unit and bilingual fields on the sauce label", () => {
+    const r = parseNutritionFromOCR(SAUCE_DEVICE_OCR);
+
+    expect(r.sodium).toBe(400); // was null: "400 mg" has a space
+    expect(r.dietaryFiber).toBe(1); // was null: "Fiber / Fibres 1 g"
+    expect(r.transFat).toBe(0); // was null: "+ Trans / trans 0 g"
+    // The English name is mangled to "iOlesterol"; only the French half is
+    // legible, so this field is readable ONLY via the bilingual alternation.
+    expect(r.cholesterol).toBe(0);
+    // Unchanged.
+    expect(r.calories).toBe(60);
+    expect(r.saturatedFat).toBe(0.4);
+    expect(r.totalSugars).toBe(7);
+  });
+
+  it("still cannot read the g→9 and column-merged fields on the sauce label", () => {
+    const r = parseNutritionFromOCR(SAUCE_DEVICE_OCR);
+
+    expect(r.totalFat).toBeNull(); //   "Lipides 2.59" is "Lipides 2.5 g"
+    expect(r.totalCarbs).toBeNull(); // "Glucides 9 9" is "Glucides 9 g"
+    // MLKit split the column: the value ("s2 g") landed on the line BEFORE the
+    // name, and the separator is "|" rather than "/".
+    expect(r.protein).toBeNull();
+  });
+
+  it("lifts the sauce label over the 0.6 local-preview confidence gate", () => {
+    // `LabelAnalysisScreen` shows an instant local preview only at >= 0.6.
+    // 3/10 fields before this change, 7/10 after — the one user-visible
+    // behaviour change in this fix.
+    expect(parseNutritionFromOCR(SAUCE_DEVICE_OCR).confidence).toBeCloseTo(0.7);
+    // The mayonnaise label gains three fields but stays below the gate.
+    expect(parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR).confidence).toBeCloseTo(
+      0.5,
+    );
+  });
+});
+
+describe("marketing claims must not supply nutrition values", () => {
+  // Front-of-pack claims sit in the same OCR blob as the panel on these
+  // captures. None of them carries a number, so the guard that matters is that
+  // they never become the FIRST match for a field whose real value is elsewhere.
+  it("ignores 'NO TRANSFAT' / 'SANS GRASTRANS' badges", () => {
+    const r = parseNutritionFromOCR(
+      "NO TRANSFAT\nSANS GRASTRANS\nCalories 100\n+Trans / trans 0 g",
+    );
+    expect(r.transFat).toBe(0);
+  });
+
+  it("ignores a 'TRANS FAT FREE' claim rather than reading FREE as a number", () => {
+    const r = parseNutritionFromOCR("TRANS FAT FREE\nCalories 100");
+    expect(r.transFat).toBeNull();
+  });
+
+  it("ignores a 'LOW IN CHOLESTEROL' claim with no value", () => {
+    const r = parseNutritionFromOCR("LOW IN CHOLESTEROL\nCalories 100");
+    expect(r.cholesterol).toBeNull();
   });
 });
 
