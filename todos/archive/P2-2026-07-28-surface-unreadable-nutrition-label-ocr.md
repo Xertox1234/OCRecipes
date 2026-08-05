@@ -1,9 +1,9 @@
 ---
 title: "Surface an unreadable nutrition label instead of silently trusting the database"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-28
-updated: 2026-07-28
+updated: 2026-08-05
 assignee:
 labels: [camera, ocr, scan, nutrition, ux]
 github_issue:
@@ -112,6 +112,10 @@ that as optional; the required behaviour is the empty-read case.
   co-located `__tests__/`
 - **Explicitly out of scope:** `server/services/label-override.ts` and
   `client/lib/nutrition-ocr-parser.ts` — both verified correct
+  — **CORRECTION (2026-08-05): the parser half of that claim was wrong.** It
+  held for this todo (the scope exclusion was right, and nothing here needed to
+  change), but it must not be carried forward as a standing fact. See the
+  Outcome section.
 - No new mechanisms, files, or abstractions beyond those listed.
 
 ## Dependencies
@@ -149,3 +153,37 @@ that as optional; the required behaviour is the empty-read case.
   reproduced on hardware. The on-device check is a Cherry Coke (`06772408`) scan
   where the label capture fails: the notice must appear instead of a bare
   39 kcal.
+
+## Outcome — closed 2026-08-05
+
+All six acceptance criteria are met and the implementation is on `main`
+(`labelReadNotice` + three-valued `ocrText` in `client/hooks/useNutritionLookup.ts`).
+
+**Where to find it:** the fix landed under PR #734, whose squash subject is
+`docs(todos): file the silent unreadable-label OCR fallback (P2)` — the branch
+carried the todo file AND the fix, and the squash took the first commit's
+message. Searching commit subjects for the fix finds nothing; `git log -S
+"labelReadNotice"` locates it.
+
+**Closed with one thing unverified, deliberately not re-filed.** The hardware
+check described above (a failed Cherry Coke label capture showing the notice
+rather than a bare 39 kcal) was never performed — it was not an acceptance
+criterion, and the ACs are the contract. A gated follow-up todo would cost more
+than it returns; the check is cheap to fold into the next device pass.
+
+**Correction to the Scope Contract.** It recorded
+`client/lib/nutrition-ocr-parser.ts` as "verified correct". The exclusion was
+right — nothing in this todo needed to touch the parser — but the _claim_ was
+false, and a device probe on 2026-08-05 disproved it:
+
+- four `FIELD_PATTERNS` used `(\S+?)mg`, which cannot span the gap in
+  `Sodium 400 mg`, so those fields were null on every bilingual label
+- `\s` matches newlines and `g` matches any word's leading letter, so a field
+  could assemble itself from three lines (`Trans\n15\nGLUTEN FREE` → 15)
+- the recogniser's `g` → `9` substitution silently discarded macros
+
+Fixed in #755 and #757. The original verification was real but tested the wrong
+input class: it replayed _well-formed_ label text, which every pattern handles.
+The defects only appear against verbatim device OCR. Codified as
+`docs/solutions/logic-errors/whitespace-class-silently-sets-extraction-regex-boundary-2026-08-05.md`
+and its siblings (#758).
