@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   NUTRIENT_ROWS,
   bandTagText,
+  bandVisuals,
   composeNutrientRowLabel,
 } from "../NutritionPanel-utils";
 
@@ -24,6 +25,62 @@ describe("bandTagText", () => {
   it("returns null for an unknown band — an unbanded row shows no tag at all", () => {
     expect(bandTagText({ group: "concern", band: "unknown" })).toBeNull();
     expect(bandTagText({ group: "benefit", band: "unknown" })).toBeNull();
+  });
+});
+
+/**
+ * `bandVisuals` decides a row's DOT COLOUR and its pill icon, and until now had
+ * no direct test at all: this suite covered only `bandTagText` /
+ * `composeNutrientRowLabel` / `NUTRIENT_ROWS`; `badge-contrast.test.ts` imports
+ * the `*_VISUALS` constants directly and never calls this function; and the
+ * component suites assert only that the dot testID is present or absent, never
+ * which colour or glyph it resolved. So `CONCERN_VISUALS.high =
+ * CONCERN_LOW_VISUALS` compiled clean, passed the whole suite, and rendered a
+ * HIGH sugar row with a GREEN check-circle dot and a green pill.
+ *
+ * Asserted as literal token/glyph names rather than `toBe(HIGH_SEVERITY_VISUALS)`
+ * — comparing against the same constant the table points at is satisfied by any
+ * mis-wiring that happens to reuse a real constant, which is exactly the defect
+ * shape above.
+ */
+describe("bandVisuals", () => {
+  it("maps every concern band to its own token and glyph", () => {
+    expect(bandVisuals({ group: "concern", band: "high" })).toEqual({
+      colorKey: "badgeErrorText",
+      icon: "alert-triangle",
+    });
+    expect(bandVisuals({ group: "concern", band: "medium" })).toEqual({
+      colorKey: "badgeWarningText",
+      icon: "alert-circle",
+    });
+    // Green, and deliberately NOT the benefit glyph — the two share
+    // `badgeSuccessText`, so the icon is the channel that keeps "a good result
+    // about a bad thing" distinct from "actively good news".
+    expect(bandVisuals({ group: "concern", band: "low" })).toEqual({
+      colorKey: "badgeSuccessText",
+      icon: "check-circle",
+    });
+  });
+
+  it("maps every benefit band to its own token and glyph", () => {
+    expect(bandVisuals({ group: "benefit", band: "excellent" })).toEqual({
+      colorKey: "badgeSuccessText",
+      icon: "award",
+    });
+    expect(bandVisuals({ group: "benefit", band: "good" })).toEqual({
+      colorKey: "badgeSuccessText",
+      icon: "award",
+    });
+    // Grey, not green: a product with no fibre is a fact about the product.
+    expect(bandVisuals({ group: "benefit", band: "none" })).toEqual({
+      colorKey: "badgeNeutralText",
+      icon: "minus-circle",
+    });
+  });
+
+  it("returns null for BOTH unknown bands — no dot, no pill", () => {
+    expect(bandVisuals({ group: "concern", band: "unknown" })).toBeNull();
+    expect(bandVisuals({ group: "benefit", band: "unknown" })).toBeNull();
   });
 });
 

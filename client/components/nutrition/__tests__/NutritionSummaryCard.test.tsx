@@ -42,14 +42,24 @@ describe("NutritionSummaryCard", () => {
   });
 
   it("shows an em dash for an absent calorie value, never a zero", () => {
-    // Every macro tile ALSO falls back to "—" when its own value is absent
-    // (protein/carbs/fat are unset here too), so more than one element can
-    // legitimately match — `queryAllByText` is the correct singular/plural
-    // choice, not `queryByText`, which throws on more than one match.
+    // Every macro tile ALSO falls back to "—" when its own value is absent, so
+    // the three macros are given values here and the count is pinned at
+    // EXACTLY ONE. The previous fixture left all four undefined and asserted
+    // `length > 0`, which the macro tiles satisfied on their own — deleting
+    // the calorie figure's `"—"` branch outright left that assertion green.
+    //
+    // No zeros in the fixture, so the `queryByText("0")` guard still means
+    // what it says: an absent calorie count must not render as `0`.
     const { queryAllByText, queryByText } = renderComponent(
-      <NutritionSummaryCard standouts={[]} calories={undefined} />,
+      <NutritionSummaryCard
+        standouts={[]}
+        calories={undefined}
+        protein={2}
+        carbs={39}
+        fat={1}
+      />,
     );
-    expect(queryAllByText("—").length).toBeGreaterThan(0);
+    expect(queryAllByText("—")).toHaveLength(1);
     expect(queryByText("0")).toBeNull();
   });
 
