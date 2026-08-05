@@ -39,8 +39,13 @@ function extractNumber(raw: string): number | null {
   return num;
 }
 
+type NumericField = keyof Omit<
+  LocalNutritionData,
+  "servingSize" | "confidence"
+>;
+
 interface FieldPattern {
-  key: keyof Omit<LocalNutritionData, "servingSize" | "confidence">;
+  key: NumericField;
   pattern: RegExp;
 }
 
@@ -61,6 +66,19 @@ interface FieldPattern {
 //      name, the value and the unit must all be on ONE line. See below.
 //   5. `|[ \t]+9(?![\d.])(?![ \t]*g)` — an alternate gram unit, tolerating the
 //      recogniser's `g` -> `9` substitution. See below.
+//   6. `|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.]))` — the same substitution
+//      with no space before it. This branch MARKS rather than accepts: its
+//      capture group is what tells `parseNutritionFromOCR` the reading is
+//      ambiguous and must survive `gluedUnitIsForced` before it can be
+//      adopted. Both trailing guards exist because being LAST in the
+//      alternation is not enough to make a branch a last resort: the
+//      alternation is retried at every length of the lazy `\S+?`, so branch 6
+//      reaches a match at a SHORTER capture than branches 4-5 need and wins
+//      outright. "Total Sugars 39 9" is the case — branch 5 reads it correctly
+//      as 39 plus a lone unit, but only at capture "39", while branch 6 gets
+//      there first at capture "3" and strands the real unit. So branch 6 must
+//      refuse whenever a unit its siblings would have consumed is still
+//      sitting there: a real "g", or a lone "9" further along the line.
 //
 // ── Why a field may not assemble itself across lines ─────────────────────────
 // `\s` matches newlines and `g` matches the leading letter of any word, so
@@ -127,12 +145,23 @@ interface FieldPattern {
 //   "Fat / Ipldes 0 9" -> 0     no "g" anywhere; the "9" stands alone.
 //   "Glucides 9 9"     -> 9     value and unit are both the glyph "9".
 //   "Total Fat 1 9 g"  -> null  a real "g" follows: not a substitution.
-//   "saturés 19"       -> null  AMBIGUOUS: declined, not guessed.
-//   "Lipides 2.59"     -> null  AMBIGUOUS: declined, not guessed.
-//   "Glucides 09"      -> null  AMBIGUOUS: declined, not guessed.
+//
+// A GLUED substitution ("saturés 19") has no whitespace to key on, so a third
+// branch matches it and hands it to `gluedUnitIsForced`, which adopts it only
+// where the label itself rules the whole-token reading out:
+//
+//   "Glucides 09"      -> 0     no panel prints a leading zero before a digit.
+//   "saturés 19"       -> 1     19 g of saturated fat cannot fit in the 11 g
+//                               of total fat the same label reports.
+//   "Lipides 2.59"     -> null  AMBIGUOUS: nothing contradicts 2.59, so it is
+//                               declined, not guessed.
+//   "Total Fat 19"     -> null  AMBIGUOUS: totalFat has no parent to overflow.
+//   "Total Fat 0.59"   -> null  AMBIGUOUS: a leading zero before a DECIMAL
+//                               point is ordinary, not impossible.
 //
 // On this path a missing field falls back to the database, and a confident
-// wrong one does not — so declining beats picking the likelier reading.
+// wrong one does not — so wherever both readings survive, declining still
+// beats picking the likelier one.
 //
 // Deliberately NOT extended to `mg`: an "m9" substitution has never been
 // observed, and inventing tolerance for an unseen failure mode is how the
@@ -146,12 +175,12 @@ const FIELD_PATTERNS: FieldPattern[] = [
   {
     key: "totalFat",
     pattern:
-      /(?:total\s+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g))/i,
+      /(?:total\s+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "saturatedFat",
     pattern:
-      /(?:saturated\s+fat|(?:^|\n)\s*(?:saturated|satur[ée]s))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g))/i,
+      /(?:saturated\s+fat|(?:^|\n)\s*(?:saturated|satur[ée]s))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "transFat",
@@ -161,7 +190,7 @@ const FIELD_PATTERNS: FieldPattern[] = [
     // it while keeping the line anchor that stops "NO TRANSFAT" and
     // "SANS GRASTRANS" badges from matching.
     pattern:
-      /(?:trans\s+fat|(?:^|\n)[\s+]*trans)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g))/i,
+      /(?:trans\s+fat|(?:^|\n)[\s+]*trans)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "cholesterol",
@@ -175,7 +204,7 @@ const FIELD_PATTERNS: FieldPattern[] = [
   {
     key: "totalCarbs",
     pattern:
-      /(?:total\s+carb(?:ohydrate|s|\.?)?|carbohydrates?|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g))/i,
+      /(?:total\s+carb(?:ohydrate|s|\.?)?|carbohydrates?|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "dietaryFiber",
@@ -184,26 +213,100 @@ const FIELD_PATTERNS: FieldPattern[] = [
     // work here: Canadian panels carry "Not a significant source of fibre,
     // potassium, calcium or iron." in running text a few lines below.
     pattern:
-      /(?:dietary\s+fib(?:er|re)|(?:^|\n)\s*fib(?:er|re)s?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g))/i,
+      /(?:dietary\s+fib(?:er|re)|(?:^|\n)\s*fib(?:er|re)s?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "totalSugars",
     pattern:
-      /(?:total\s+sugars?|(?:^|\n)\s*(?:sugars?|sucres?))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g))/i,
+      /(?:total\s+sugars?|(?:^|\n)\s*(?:sugars?|sucres?))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "protein",
     pattern:
-      /(?:protein|prot[ée]ines?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g))/i,
+      /(?:protein|prot[ée]ines?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
 ];
+
+// ── Resolving a GLUED substituted unit ──────────────────────────────────────
+// The third branch above matches "saturés 19" — a value with the substituted
+// unit glued to it, no whitespace to key on. That shape is genuinely ambiguous
+// ("1 g" or "19"), so matching it is NOT the same as adopting it: the branch
+// only lifts these candidates out of the text, and they are then admitted one
+// by one, and only where something the label ITSELF says rules the whole-token
+// reading out. Everything else stays declined, exactly as before.
+//
+// Two pieces of evidence qualify. Both are facts about labels, not guesses
+// about the recogniser, which is what separates them from the reading this
+// parser still refuses ("2.59" -> 2.5 g, true only if you assume the printing
+// precision rules).
+
+/**
+ * Fields whose value cannot exceed another field's, by definition — saturated
+ * and trans fat are both fat; fibre and sugars are both carbohydrate. A whole-
+ * token reading that breaks the containment is not a value the package could
+ * be carrying, whatever the glyphs look like.
+ */
+const PARENT_FIELD: Partial<Record<NumericField, NumericField>> = {
+  saturatedFat: "totalFat",
+  transFat: "totalFat",
+  dietaryFiber: "totalCarbs",
+  totalSugars: "totalCarbs",
+};
+
+/**
+ * Decide whether a glued candidate may be adopted. `value` is the reading with
+ * the trailing glyph taken as the unit; `raw` is the whole token, i.e. the
+ * competing reading. Returns false whenever both readings remain possible.
+ */
+function gluedUnitIsForced(
+  key: NumericField,
+  value: number,
+  raw: string,
+  result: LocalNutritionData,
+): boolean {
+  // A printed panel never puts a leading zero in front of another digit. It
+  // writes "0 g", so "09" is not a value any label could carry. Note this asks
+  // for a zero before a DIGIT: "0.59" is perfectly printable and stays declined.
+  if (/^0\d/.test(raw)) return true;
+
+  // Otherwise the only remaining evidence is containment: the whole-token
+  // reading has to overflow a parent field that actually parsed, AND the unit
+  // reading has to fit inside it. If the parent is missing the argument cannot
+  // be made, so the candidate is declined — a wrong parent must never be able
+  // to promote a child.
+  const parent = PARENT_FIELD[key];
+  const bound = parent ? result[parent] : null;
+  if (bound === null) return false;
+
+  const wholeToken = extractNumber(raw);
+  return wholeToken !== null && wholeToken > bound && value <= bound;
+}
 
 const SERVING_SIZE_PATTERN = /serving\s+size\s+(.+)/i;
 // Canadian/bilingual labels head the column with "Per 355 mL" / "pour 250 mL" /
 // "Portion". Only accept this form when the capture carries a g/ml token, so a
 // stray "Amount per serving" line can't hijack the serving size.
+//
+// The capture STOPS at the last unit token instead of running to end of line.
+// MLKit flattens physically adjacent print columns into one line, so on a
+// package whose ingredients panel sits beside the nutrition panel the serving
+// line arrives as "Per 1 tbsp (15 mL)/par 1 c. à s. (15 mL) Sugar, Vinegar,
+// Splu Lguit et y" — and that whole string was displayed AND posted in the
+// label-override payload. A serving spec is quantity-and-unit tokens; whatever
+// follows the final one belongs to another column.
+//
+// Two details carry the trim:
+//   `\b` after the unit — "Sugar", "Vinegar" and "Lguit" all contain a "g",
+//        and both `[^\n]*` are greedy, so without a token boundary the capture
+//        would cut mid-word ("...Splu Lg") and lose the unit entirely.
+//   `\)?` — keeps the closing bracket of a parenthesised metric equivalent, so
+//        "(15 mL)" survives intact rather than as "(15 mL".
+//
+// Trimming can only ever remove text AFTER the final unit, so the substring
+// `parseLabelServingGrams` reads is untouched: this cannot change whether a
+// label passes `isLabelReady`, only what the user is shown.
 const SERVING_PER_PATTERN =
-  /(?:^|\n)\s*(?:per|pour|portion)\s+([^\n]*\d[^\n]*(?:g|ml)[^\n]*)/i;
+  /(?:^|\n)\s*(?:per|pour|portion)\s+([^\n]*\d[^\n]*(?:g|ml)\b\)?)/i;
 
 /** Total number of numeric fields used to calculate confidence */
 const TOTAL_FIELDS = FIELD_PATTERNS.length;
@@ -247,17 +350,31 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   );
   result.servingSize = parseable ?? servingCandidates[0] ?? null;
 
-  // Extract numeric fields
+  // Extract numeric fields. A match whose SECOND group is set came from the
+  // glued-unit branch and is ambiguous on its face, so it is set aside rather
+  // than adopted — see `gluedUnitIsForced`.
   let extracted = 0;
+  const glued: { key: NumericField; value: number; raw: string }[] = [];
   for (const { key, pattern } of FIELD_PATTERNS) {
     const match = text.match(pattern);
-    if (match?.[1]) {
-      const value = extractNumber(match[1]);
-      if (value !== null) {
-        result[key] = value;
-        extracted++;
-      }
+    if (!match?.[1]) continue;
+    const value = extractNumber(match[1]);
+    if (value === null) continue;
+    if (match[2]) {
+      glued.push({ key, value, raw: match[1] + match[2] });
+      continue;
     }
+    result[key] = value;
+    extracted++;
+  }
+
+  // Second pass, after every unambiguous field is in place. Deferring is what
+  // makes the containment test independent of FIELD_PATTERNS order: a child
+  // never gets tested against a parent that has not been read yet.
+  for (const { key, value, raw } of glued) {
+    if (!gluedUnitIsForced(key, value, raw, result)) continue;
+    result[key] = value;
+    extracted++;
   }
 
   result.confidence = extracted / TOTAL_FIELDS;
