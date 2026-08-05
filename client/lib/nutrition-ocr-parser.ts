@@ -267,7 +267,14 @@ function gluedUnitIsForced(
   // A printed panel never puts a leading zero in front of another digit. It
   // writes "0 g", so "09" is not a value any label could carry. Note this asks
   // for a zero before a DIGIT: "0.59" is perfectly printable and stays declined.
-  if (/^0\d/.test(raw)) return true;
+  //
+  // The same premise has to be applied to what would be LEFT once the trailing
+  // glyph is taken as the unit, or the rule contradicts itself: "019" would
+  // leave "01", which no panel prints either. When both readings are
+  // impossible the token is garbage, and resolving it would invent a value —
+  // one that can then promote a glued child through the containment test
+  // below. Resolve only where the remainder is itself printable.
+  if (/^0\d/.test(raw)) return !/^0\d/.test(raw.slice(0, -1));
 
   // Otherwise the only remaining evidence is containment: the whole-token
   // reading has to overflow a parent field that actually parsed, AND the unit

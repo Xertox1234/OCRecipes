@@ -421,6 +421,11 @@ NE
     // "saturés 19" is "saturés 1 g". 19 g of saturated fat cannot fit inside
     // the 11 g of total fat this same label reports, so the whole-token
     // reading is impossible and only the unit reading survives.
+    //
+    // Asserted alongside it because it is load-bearing, not context: lose
+    // totalFat on this capture and saturatedFat silently reverts to null.
+    // Without this line that shows up as a confidence failure somewhere else.
+    expect(r.totalFat).toBe(11);
     expect(r.saturatedFat).toBe(1);
   });
 
@@ -518,6 +523,29 @@ describe("glued g→9 — resolving only what the label itself rules out", () =>
     it("resolves a glued form no label could have printed", () => {
       // "09" cannot be a printed value: panels write "0 g", never "09 g".
       expect(parseNutritionFromOCR("Carbohydrate 09").totalCarbs).toBe(0);
+    });
+
+    it("declines when the remainder is no more printable than the whole", () => {
+      // "019" is not a value a panel could print — but neither is the "01"
+      // left behind once the trailing glyph is called the unit. Both readings
+      // are impossible, so the token is garbage and resolving it would invent
+      // a number rather than recover one.
+      expect(parseNutritionFromOCR("Carbohydrate 019").totalCarbs).toBeNull();
+      expect(parseNutritionFromOCR("Carbohydrate 0199").totalCarbs).toBeNull();
+    });
+
+    it("cannot manufacture a parent that then promotes a child", () => {
+      // The containment test below reads whatever is in the result, without
+      // knowing how it got there. That is only safe while no rule here can
+      // invent a parent: "Carbohydrate 019" must not resolve to 1 and license
+      // "Sugars 19" — a fabricated bound promoting a genuinely ambiguous child.
+      const r = parseNutritionFromOCR("Carbohydrate 019\nSugars 19");
+      expect(r.totalCarbs).toBeNull();
+      expect(r.totalSugars).toBeNull();
+      // Same shape on the fat side.
+      const f = parseNutritionFromOCR("Total Fat 019\nSaturated 19");
+      expect(f.totalFat).toBeNull();
+      expect(f.saturatedFat).toBeNull();
     });
 
     it("declines when the leading zero is a real decimal", () => {
