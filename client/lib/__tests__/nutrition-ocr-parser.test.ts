@@ -404,12 +404,23 @@ NE
     expect(r.totalFat).toBe(11);
   });
 
-  it("still cannot read the g→9 fields on the mayonnaise label", () => {
+  it("reads the separated g→9 form on the mayonnaise label", () => {
     const r = parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR);
 
-    expect(r.saturatedFat).toBeNull(); // "saturés 19"      is "saturés 1 g"
-    expect(r.totalCarbs).toBeNull(); //  "Glucides 09"      is "Glucides 0 g"
-    expect(r.protein).toBeNull(); //     "Protéines 0.2 9"  is "Protéines 0.2 g"
+    // "Protéines 0.2 9" — the "9" is a lone token, so it can only be the unit.
+    expect(r.protein).toBe(0.2);
+  });
+
+  it("declines the ambiguous glued g→9 forms on the mayonnaise label", () => {
+    const r = parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR);
+
+    // "saturés 19" is "saturés 1 g" on the package, and "Glucides 09" is
+    // "Glucides 0 g" — but nothing in the flattened text says so. "19" is a
+    // well-formed saturated-fat value on its face. These fields feed the
+    // server override, so the parser declines rather than guessing: a missing
+    // field falls back to the database, a confident wrong one does not.
+    expect(r.saturatedFat).toBeNull();
+    expect(r.totalCarbs).toBeNull();
   });
 
   it("does not read a fibre disclaimer as a fibre value (line-anchor guard)", () => {
@@ -439,25 +450,106 @@ NE
     expect(r.totalSugars).toBe(7);
   });
 
-  it("still cannot read the g→9 and column-merged fields on the sauce label", () => {
+  it("reads the separated g→9 form on the sauce label", () => {
     const r = parseNutritionFromOCR(SAUCE_DEVICE_OCR);
 
-    expect(r.totalFat).toBeNull(); //   "Lipides 2.59" is "Lipides 2.5 g"
-    expect(r.totalCarbs).toBeNull(); // "Glucides 9 9" is "Glucides 9 g"
+    // "Glucides 9 9" — value and unit are BOTH rendered as the glyph "9".
+    // Requiring the unit to be a lone whitespace-preceded token resolves it.
+    expect(r.totalCarbs).toBe(9);
+  });
+
+  it("still cannot read the glued g→9 and column-merged fields on the sauce label", () => {
+    const r = parseNutritionFromOCR(SAUCE_DEVICE_OCR);
+
+    // "Lipides 2.59" is "Lipides 2.5 g". Declined: 2.59 is not distinguishable
+    // from a real value without a rule about label printing precision, and
+    // totalFat is in the server-override payload.
+    expect(r.totalFat).toBeNull();
     // MLKit split the column: the value ("s2 g") landed on the line BEFORE the
-    // name, and the separator is "|" rather than "/".
+    // name, and the separator is "|" rather than "/". Not a g→9 problem —
+    // needs block geometry, which the flattened text does not carry.
     expect(r.protein).toBeNull();
   });
 
-  it("lifts the sauce label over the 0.6 local-preview confidence gate", () => {
+  it("lifts both labels over the 0.6 local-preview confidence gate", () => {
     // `LabelAnalysisScreen` shows an instant local preview only at >= 0.6.
-    // 3/10 fields before this change, 7/10 after — the one user-visible
-    // behaviour change in this fix.
-    expect(parseNutritionFromOCR(SAUCE_DEVICE_OCR).confidence).toBeCloseTo(0.7);
-    // The mayonnaise label gains three fields but stays below the gate.
+    // Sauce: 3/10 fields originally, 7/10 after the spaced-unit fix, 8/10 now.
+    expect(parseNutritionFromOCR(SAUCE_DEVICE_OCR).confidence).toBeCloseTo(0.8);
+    // Mayonnaise: 2/10 originally, 5/10 after the spaced-unit fix, and this
+    // change carries it to exactly the 0.6 threshold.
     expect(parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR).confidence).toBeCloseTo(
-      0.5,
+      0.6,
     );
+  });
+});
+
+/**
+ * The `g` -> `9` substitution is the single largest cause of dropped fields,
+ * but a `9` is also a digit, so tolerating it risks reading a real value wrong.
+ * `totalFat`, `totalSugars` and `saturatedFat` go into the `labelNutrition`
+ * payload and reach the user's log, so these are the assertions that matter
+ * most in this file: the parser must recover the unambiguous form and DECLINE
+ * the rest, never pick the likelier reading.
+ */
+describe("g→9 unit substitution — recover the lone token, decline the glued", () => {
+  it("never reads a real two-digit value as its first digit", () => {
+    // The regression that a careless fix causes: lazy `(\S+?)` would happily
+    // capture "1" and treat the "9" of "19" as the unit. Requiring the
+    // substituted unit to be whitespace-preceded forces the backtrack to the
+    // real "g". If this fails, every 19/29/39g label is silently wrong.
+    expect(parseNutritionFromOCR("Total Fat 19 g").totalFat).toBe(19);
+    expect(parseNutritionFromOCR("Total Sugars 39g").totalSugars).toBe(39);
+    expect(parseNutritionFromOCR("Protein 9 g").protein).toBe(9);
+  });
+
+  it("accepts a lone 9 in the unit slot", () => {
+    expect(parseNutritionFromOCR("Total Fat 0 9").totalFat).toBe(0);
+    expect(parseNutritionFromOCR("Total Sugars 39 9").totalSugars).toBe(39);
+    expect(parseNutritionFromOCR("Protein 0.2 9").protein).toBe(0.2);
+  });
+
+  it("declines a 9 glued to the value", () => {
+    // "19" is either 19 grams or "1 g" and the flattened text cannot say which.
+    expect(parseNutritionFromOCR("Total Fat 19").totalFat).toBeNull();
+    expect(parseNutritionFromOCR("Total Fat 2.59").totalFat).toBeNull();
+    expect(
+      parseNutritionFromOCR("Total Carbohydrate 09").totalCarbs,
+    ).toBeNull();
+  });
+
+  it("does not let a 9 on the next line supply this line's unit", () => {
+    // `\s` matches newlines; `[ \t]` does not. MLKit's column merging makes a
+    // stray digit on an adjacent line a live hazard, not a hypothetical one.
+    expect(parseNutritionFromOCR("Total Fat 3\n9").totalFat).toBeNull();
+  });
+
+  it("does not read a %DV that lost its percent sign as a unit", () => {
+    // "Total Fat 3 g 95%" degrading to "Total Fat 3 95" must not yield 3 —
+    // the trailing digits mean this is not a bare unit glyph.
+    expect(parseNutritionFromOCR("Total Fat 3 95").totalFat).toBeNull();
+  });
+
+  it("leaves mg fields alone — no m→9 substitution has been observed", () => {
+    expect(parseNutritionFromOCR("Sodium 400 9").sodium).toBeNull();
+  });
+
+  it("declines when a real g is still sitting unconsumed after the 9", () => {
+    // The shape the first version of this fix got wrong, and the reason the
+    // `(?![ \t]*g)` guard exists. The "9" branch used to fire even with the
+    // true unit right there, silently truncating the value:
+    //
+    //   "Total Fat 1 9 g" -> 1     (should be: decline)
+    //
+    // A dropped decimal point is a SINGLE OCR error producing exactly this
+    // shape — "1.9 g" reads as "1 9 g" — and totalFat/saturatedFat/totalSugars
+    // go into the labelNutrition payload, where a wrong value reaches
+    // buildLabelConflict and replaces the database macros wholesale.
+    expect(parseNutritionFromOCR("Total Fat 1 9 g").totalFat).toBeNull();
+    expect(parseNutritionFromOCR("Total Fat 3 9g").totalFat).toBeNull();
+    expect(
+      parseNutritionFromOCR("Saturated Fat 0 9g 5%").saturatedFat,
+    ).toBeNull();
+    expect(parseNutritionFromOCR("Total Sugars 2 9 g").totalSugars).toBeNull();
   });
 });
 
@@ -552,8 +644,8 @@ describe("isLabelReady — the label-is-source-of-truth gate", () => {
    *
    * The recogniser reads `g` as `9` (`0 9`, `39 9`) and `i` as `l` (`Ipldes`
    * for `Lipides`, `Glucldes` for `Glucides`, `Sodlum` for `Sodium`), and
-   * splits `Carbohydrate` across two lines. Only 1 of 10 numeric field patterns
-   * survives that — but the two fields this product decision cares about,
+   * splits `Carbohydrate` across two lines. Only 2 of 10 numeric field patterns
+   * survive that — but the two fields this product decision cares about,
    * calories and serving size, both come through clean.
    */
   const CHERRY_COKE_DEVICE_OCR = `Nutrition Facts
@@ -574,12 +666,15 @@ Sodlum 30 mg`;
     // Both source-of-truth fields survived the noise.
     expect(parsed.calories).toBe(140);
     expect(parsed.servingSize).toContain("355 mL");
-    // ...and essentially nothing else did. This is the shape the old gate rejected.
+    // ...and almost nothing else did. `Fat / Ipldes 0 9` is now readable (the
+    // "9" is a lone token), and 0 g of fat in a soda is correct. `Sugars Sucres
+    // 39 9` is still lost, but for an unrelated reason: the recogniser dropped
+    // the "/" separator, so no bilingual alternation matches the name at all.
+    expect(parsed.totalFat).toBe(0);
     expect(parsed.totalSugars).toBeNull();
-    expect(parsed.totalFat).toBeNull();
 
-    // Before this change the gate required (totalSugars ?? totalFat), so this
-    // label was discarded and the screen fell back to the database's
+    // When this capture was taken the gate required (totalSugars ?? totalFat),
+    // so this label was discarded and the screen fell back to the database's
     // per-100 mL figure — 39 kcal for a 140 kcal can.
     expect(isLabelReady(parsed)).toBe(true);
   });
@@ -608,13 +703,31 @@ Sodlum 30 mg`;
     expect(isLabelReady(null)).toBe(false);
   });
 
-  it("does not require sugars or fat — one recogniser glitch takes out both", () => {
-    // `g`->`9` breaks the sugars AND fat patterns simultaneously, so requiring
-    // "either one" is not the independent corroboration it looks like.
-    const parsed = parseNutritionFromOCR(CHERRY_COKE_DEVICE_OCR);
+  it("does not require sugars or fat, even when neither was read", () => {
+    // The rule (user decision 2026-07-30): calories + a parseable serving are
+    // the whole gate. Sugars and fat are NOT corroboration — they share failure
+    // modes with each other and with everything else the recogniser mangles, so
+    // demanding "either one" discards labels whose two source-of-truth fields
+    // are perfect.
+    //
+    // The Cherry Coke capture above used to BE this proof — sugars and fat both
+    // null from one glitch. The `g`->`9` fix recovered its fat, so it can no
+    // longer exercise the both-absent case: under the old gate it would now
+    // pass for the wrong reason, and this guard would quietly stop guarding.
+    //
+    // So the fixture is rebuilt to keep the property that mattered. It is
+    // synthetic but NOT trivial — both fields are present in the text and both
+    // are lost, each to a defect this file documents elsewhere: fat to the
+    // ambiguous glued `g`->`9` ("09"), sugars to a dropped "/" separator, which
+    // is what actually costs Cherry Coke its sugars. A fixture that simply
+    // omitted the two lines would prove only that absent fields are absent.
+    const parsed = parseNutritionFromOCR(
+      "Nutrition Facts\nPer 1 can (355 mL)\nCalories 140\nFat / Ipldes 09\nSugars Sucres 39 9",
+    );
 
     expect(parsed.totalSugars).toBeNull();
     expect(parsed.totalFat).toBeNull();
+    expect(parsed.calories).toBe(140);
     expect(isLabelReady(parsed)).toBe(true);
   });
 
