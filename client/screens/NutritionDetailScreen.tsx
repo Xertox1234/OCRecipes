@@ -370,20 +370,19 @@ export default function NutritionDetailScreen() {
             control. `error` is outside it too — it needs `assertive`, which is
             `InlineError`'s job (Constraint 23).
 
-            Suppressed while the log gate is unmet so the acknowledge
-            announcement is the ONE thing a screen-reader user hears on a gated
-            screen: iOS `UIAccessibility.post(.announcement)` does not queue, so
-            of two utterances one is silently dropped, and the casualty must
-            never be the message that stops unreviewed values being logged. The
-            notices stay fully readable by swipe either way. Keyed on the gate
-            rather than on the acknowledgement itself because `LogActionBar`
-            owns that state — see its docblock. */}
+            Nothing mutes its announcer, deliberately — not even while the log
+            gate is unmet. The gated screen IS the screen carrying "Label not
+            used" (`deriveLogGate` gates on a label that could not be used;
+            `useNutritionLookup.ts:382` sets the notice on the same failure), so
+            muting there would switch the announcer off exactly where it earns
+            its keep. There is nothing to collide with: the acknowledge
+            announcement fires from a click handler that re-renders only
+            `LogActionBar`, later in time and in a different commit. */}
         {!itemId ? (
           <NoticeStack
             labelReadNotice={labelReadNotice}
             correctionNotice={correctionNotice}
             showPer100gInfo={isPer100g}
-            suppressAnnounce={logGate.kind === "needsAcknowledgement"}
             reducedMotion={reducedMotion}
           />
         ) : null}

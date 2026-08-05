@@ -62,25 +62,6 @@ describe("NoticeStack", () => {
     expect(announce).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT announce when suppressed — the acknowledge announce must win", () => {
-    // iOS UIAccessibility.post(.announcement) does not queue: two calls in one
-    // commit and one is dropped. The casualty must never be the log gate's
-    // acknowledge announce, which exists to stop a screen-reader user logging
-    // unreviewed values. Asserting the STRING alone would pass when both fire.
-    const announce = vi
-      .spyOn(AccessibilityInfo, "announceForAccessibility")
-      .mockImplementation(() => {});
-    renderComponent(
-      <NoticeStack
-        labelReadNotice="Calories disagreed."
-        correctionNotice={null}
-        showPer100gInfo={false}
-        suppressAnnounce
-      />,
-    );
-    expect(announce).toHaveBeenCalledTimes(0);
-  });
-
   it("re-announces when the content changes but the notice kind does not", () => {
     const announce = vi
       .spyOn(AccessibilityInfo, "announceForAccessibility")
@@ -115,35 +96,6 @@ describe("NoticeStack", () => {
     const { rerender } = renderComponent(<NoticeStack {...props} />);
     rerender(<NoticeStack {...props} />);
     expect(announce).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not retroactively announce unchanged content when suppression lifts", () => {
-    // The brief covers suppression and content-change as separate axes but
-    // never their intersection. Task 8 flips `suppressAnnounce` back to
-    // false once its own acknowledge announcement finishes — if the notice
-    // content hasn't changed in the meantime, that flip must stay silent:
-    // content already "seen" while suppressed must not fire late.
-    const announce = vi
-      .spyOn(AccessibilityInfo, "announceForAccessibility")
-      .mockImplementation(() => {});
-    const { rerender } = renderComponent(
-      <NoticeStack
-        labelReadNotice="Calories disagreed."
-        correctionNotice={null}
-        showPer100gInfo={false}
-        suppressAnnounce
-      />,
-    );
-    expect(announce).toHaveBeenCalledTimes(0);
-    rerender(
-      <NoticeStack
-        labelReadNotice="Calories disagreed."
-        correctionNotice={null}
-        showPer100gInfo={false}
-        suppressAnnounce={false}
-      />,
-    );
-    expect(announce).toHaveBeenCalledTimes(0);
   });
 
   it("skips the entrance animation when reducedMotion is true", () => {

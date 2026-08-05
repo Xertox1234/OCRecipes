@@ -1403,21 +1403,29 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
   }
 
   /**
-   * The announce collision, asserted by CALL COUNT.
+   * The notice announcer, on the screen it was WRITTEN for.
    *
-   * iOS `UIAccessibility.post(.announcement)` does not queue — post two in one
-   * commit and one is silently dropped — so a test that only asserted the
-   * acknowledge STRING was announced would pass in exactly the broken case
-   * where both fired and the user heard one of them. The mount assertion is
-   * what makes the count discriminate: with `suppressAnnounce` unwired, the
-   * notice announces at mount and the acknowledge announce is the second of
-   * two, not the only one.
+   * `deriveLogGate` gates iff a session photographed a label the pipeline
+   * could not use, and `useNutritionLookup.ts:382` sets `labelReadNotice` on
+   * that same failure — so the gated screen is precisely the screen carrying
+   * "Label not used". `NoticeStack` has no live region (Constraint 12) and the
+   * inline blocks it replaced carried the Android-only
+   * `accessibilityLiveRegion="polite"`, so this announcer is now Android's
+   * ONLY signal for that notice. Suppressing it on the gated screen — as an
+   * earlier revision of this task did — switched it off exactly where it
+   * matters most.
+   *
+   * Then the acknowledge press, asserted by CALL COUNT after a `mockClear` so
+   * the count is scoped to the click. iOS `UIAccessibility.post(.announcement)`
+   * does not queue — post two in one commit and one is silently dropped — so
+   * asserting only the acknowledge STRING would pass in exactly the broken
+   * case where two fired and the user heard one.
    *
    * `error` stays null in this fixture on purpose — `InlineError` fires its
-   * own iOS-gated announce (Constraint 23), which would add a third call and
-   * make the count say nothing about the notice/acknowledge pair.
+   * own iOS-gated announce (Constraint 23), which would add a call and make
+   * the counts say nothing about the pair under test.
    */
-  it("announces ONLY the acknowledgement while the log gate is unmet", () => {
+  it("announces the notice at mount, then exactly one acknowledgement on press", () => {
     const announce = vi
       .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
       .mockImplementation(() => {});
@@ -1427,13 +1435,50 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
         logGate: GATED,
       });
 
-      expect(announce).not.toHaveBeenCalled();
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(announce).toHaveBeenCalledWith(`Label not used. ${LABEL_BODY}`);
 
+      announce.mockClear();
       fireEvent.click(getByText(GATED_LABEL));
 
+      // Exactly one, and it is the gate's. The acknowledge press re-renders
+      // only `LogActionBar` (it owns that state since Task 6), so the notice
+      // announcer's effect does not re-run — and even if it did, the content
+      // key is unchanged and `lastAnnouncedRef` short-circuits it.
       expect(announce).toHaveBeenCalledTimes(1);
       expect(announce).toHaveBeenCalledWith(
         "Values confirmed. Add to Today is now available.",
+      );
+    } finally {
+      announce.mockRestore();
+    }
+  });
+
+  /**
+   * The positive case, on an OPEN gate: the announcer fires once, with the
+   * composed content of every notice on screen.
+   *
+   * This diff deleted the two `accessibilityLiveRegion="polite"` regions that
+   * used to be Android's safety net, so "the announcer runs at all" is now
+   * load-bearing at the screen level and nothing else asserts it here. The
+   * composed string is a literal rather than a call to `noticeAnnouncementKey`:
+   * `NoticeStack-utils.test.ts` owns the composition RULE, and re-deriving it
+   * here would make the test agree with the implementation by construction
+   * instead of pinning the wiring end-to-end.
+   */
+  it("announces the composed notice content once on an open-gate screen", () => {
+    const announce = vi
+      .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    try {
+      renderScan({
+        labelReadNotice: LABEL_BODY,
+        correctionNotice: CORRECTION_BODY,
+      });
+
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(announce).toHaveBeenCalledWith(
+        `Label not used. ${LABEL_BODY} Serving size adjusted. ${CORRECTION_BODY}`,
       );
     } finally {
       announce.mockRestore();

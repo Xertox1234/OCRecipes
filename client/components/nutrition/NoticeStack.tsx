@@ -12,11 +12,29 @@ import {
   type NoticeSeverity,
 } from "./NoticeStack-utils";
 
+/**
+ * There is deliberately NO `suppressAnnounce` here.
+ *
+ * It shipped in the first revision of this component so the screen could mute
+ * the announcer while the log gate was unmet, on the theory that the gate's
+ * acknowledge announcement and a notice announcement could collide in one
+ * commit. They cannot: `acknowledgedUnverified` is `LogActionBar`-local state,
+ * so the acknowledge click re-renders only that component and this effect does
+ * not re-run — and if it did, `announcementKey` would be unchanged and
+ * `lastAnnouncedRef` would short-circuit it. The acknowledge announce also
+ * fires from a click handler, strictly later than any mount-time notice, and
+ * the later `post(.announcement)` silences the earlier regardless.
+ *
+ * What the prop DID buy was a permanent silence on Android for the one screen
+ * the label notice exists for — `deriveLogGate` gates iff a label could not be
+ * used, which is the same condition that sets `labelReadNotice`. Removed from
+ * the type rather than left declared-and-ignored, per
+ * docs/solutions/design-patterns/remove-an-inert-prop-from-the-public-type-2026-08-04.md.
+ */
 interface NoticeStackProps {
   labelReadNotice: string | null;
   correctionNotice: string | null;
   showPer100gInfo: boolean;
-  suppressAnnounce?: boolean;
   reducedMotion?: boolean;
 }
 
@@ -55,9 +73,19 @@ const SEVERITY_COLOR_KEY: Record<NoticeSeverity, "warning" | "info"> = {
  * single descendant change, and `correctionNotice` mutates on every serving
  * adjustment. Instead this owns ONE edge-guarded imperative announcer, keyed
  * on the notices' composed CONTENT (`noticeAnnouncementKey`) rather than their
- * kind — see that function's docblock. Ungated by platform: with no live
- * region anywhere there is no double-announce risk on Android, and this is
- * iOS's only signal.
+ * kind — see that function's docblock.
+ *
+ * Ungated by platform, but in practice this is **Android's** signal, not iOS's.
+ * `useNutritionLookup.ts:169-177` already composes and announces these same two
+ * notices on iOS, and React flushes child effects before parent ones — this
+ * component is the child, the hook belongs to the screen — so on iOS the hook's
+ * utterance is the later `post(.announcement)` and silences this one. On
+ * Android the hook is inert (`Platform.OS === "ios"`-gated) and the polite live
+ * regions this component replaced are gone, so this is the only thing left that
+ * speaks. Gating it to Android would therefore be correct today and wrong the
+ * moment that hook effect is removed — it is left ungated deliberately, so
+ * deleting the duplicate leaves a working announcer rather than silence. Do NOT
+ * add a third announcer at a call site.
  *
  * `error` is NOT a notice here — it renders through `InlineError`, which
  * fires its own iOS-gated announce, and `ScanConflictPrompt` is NOT a notice
@@ -67,7 +95,6 @@ export function NoticeStack({
   labelReadNotice,
   correctionNotice,
   showPer100gInfo,
-  suppressAnnounce = false,
   reducedMotion,
 }: NoticeStackProps) {
   const { theme } = useTheme();
@@ -79,30 +106,19 @@ export function NoticeStack({
   });
   const announcementKey = noticeAnnouncementKey(notices);
 
-  // Guarded by a ref, not solely by the effect's dependency array: "changed"
-  // must mean the CONTENT changed, independent of `suppressAnnounce` also
-  // being a dependency. A bare `[announcementKey, suppressAnnounce]` deps
-  // array re-runs the effect body whenever EITHER value flips — so if Task 8
-  // flips `suppressAnnounce` true→false while the key is unchanged (the
-  // acknowledge announcement finishing), a deps-only guard would re-announce
-  // stale content right as the acknowledge announce lands, defeating the
-  // mutual exclusion Task 8 exists to establish.
-  //
-  // The ref is updated to the current key BEFORE the suppress check, not
-  // after — so content seen while suppressed is marked "already handled" even
-  // though it was never actually spoken. That is what makes lifting
-  // `suppressAnnounce` on unchanged content silent rather than retroactive:
-  // the ref already matches, so the second effect run (triggered by
-  // `suppressAnnounce` alone changing) short-circuits before reaching the
-  // announce call.
+  // Guarded by a ref, not solely by the effect's dependency array. The deps
+  // array alone re-runs the body on any re-render that produces a new key
+  // object, and — more to the point — a ref is what lets "already announced"
+  // survive a re-render that recomputes an IDENTICAL key, which is every
+  // serving adjustment that leaves the notices untouched. Announce once per
+  // distinct content, never twice for the same words.
   const lastAnnouncedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!announcementKey) return;
     if (lastAnnouncedRef.current === announcementKey) return;
     lastAnnouncedRef.current = announcementKey;
-    if (suppressAnnounce) return;
     AccessibilityInfo.announceForAccessibility(announcementKey);
-  }, [announcementKey, suppressAnnounce]);
+  }, [announcementKey]);
 
   if (notices.length === 0) return null;
 
