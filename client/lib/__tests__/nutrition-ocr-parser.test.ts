@@ -481,6 +481,59 @@ describe("marketing claims must not supply nutrition values", () => {
     const r = parseNutritionFromOCR("LOW IN CHOLESTEROL\nCalories 100");
     expect(r.cholesterol).toBeNull();
   });
+
+  // The three cases above pair a claim with a VALUE-FREE next line, so on their
+  // own they prove only that a claim with no adjacent number is ignored. These
+  // pair a claim with a real number on the following line — the shape that
+  // actually occurs, since OCR flattens the whole package into one blob and a
+  // badge frequently sits directly above a panel line.
+  it("does not take its value from the line below a claim", () => {
+    expect(parseNutritionFromOCR("LOW SODIUM\n30 mg").sodium).toBeNull();
+    expect(
+      parseNutritionFromOCR("LOW IN CHOLESTEROL\n5 mg").cholesterol,
+    ).toBeNull();
+  });
+});
+
+/**
+ * A field name, its value and its unit must all be on ONE line.
+ *
+ * Both `\s+` (before the value) and `\s*` (before the unit) match newlines, and
+ * `g` matches the leading letter of any word — so a field could assemble itself
+ * from three different lines. `Trans\n15\nGLUTEN FREE` read transFat = 15,
+ * taking the value from line 2 and the "unit" from the G of GLUTEN.
+ *
+ * Every ingredient of that is present in the real captures: both carry
+ * `GLUTEN FREE` / `SANS GLUTEN` badges and bare number-only lines (`15`, `19`,
+ * `49`) shed by the %DV column. This was latent before the bilingual patterns
+ * were extended and is not specific to them, but extending them widened it.
+ */
+describe("fields must not assemble themselves across lines", () => {
+  it("does not take a value from the following line", () => {
+    expect(parseNutritionFromOCR("Trans\n15\nGLUTEN FREE").transFat).toBeNull();
+    expect(
+      parseNutritionFromOCR("Fibres\n15\nGLUTEN FREE").dietaryFiber,
+    ).toBeNull();
+    expect(
+      parseNutritionFromOCR("Sugars\n38\nGLUTEN FREE").totalSugars,
+    ).toBeNull();
+  });
+
+  it("does not accept a word's leading letter as the gram unit", () => {
+    expect(
+      parseNutritionFromOCR("Total Fat 0\nGLUTEN FREE").totalFat,
+    ).toBeNull();
+    expect(parseNutritionFromOCR("Total Fat 5 Gras").totalFat).toBeNull();
+  });
+
+  it("still reads every legitimate same-line form", () => {
+    // The guard must not cost recall on real labels.
+    expect(parseNutritionFromOCR("Total Fat 12g").totalFat).toBe(12);
+    expect(parseNutritionFromOCR("Fat / Lipides 0 g").totalFat).toBe(0);
+    expect(parseNutritionFromOCR("Sodium 400 mg").sodium).toBe(400);
+    expect(parseNutritionFromOCR("Total Fat 8g 10%").totalFat).toBe(8);
+    expect(parseNutritionFromOCR("Dietary Fiber <1g").dietaryFiber).toBe(1);
+  });
 });
 
 /**
