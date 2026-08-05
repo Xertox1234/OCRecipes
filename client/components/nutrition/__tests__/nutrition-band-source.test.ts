@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { selectBandSource, buildPanelRows } from "../nutrition-band-source";
+import { pickStandouts } from "@shared/lib/nutrition-bands";
 import type { NutritionData } from "@/hooks/useNutritionLookup";
 import type { ValidatedNutrition } from "@/lib/serving-size-utils";
 
@@ -277,6 +278,109 @@ describe("buildPanelRows — the three states that must stay distinct", () => {
     // what pins hasValue to raw-value presence rather than to the band.
     expect(fibre?.band).toEqual({ group: "benefit", band: "unknown" });
     expect(fibre?.hasValue).toBe(true);
+  });
+});
+
+describe("buildPanelRows — the direct-OFF fallback's ASYMMETRIC sources", () => {
+  /**
+   * `hasValue` reads the BAND source (`validatedData.per100g`) while
+   * `displayValue` reads the DISPLAY source (`nutrition`). On the primary
+   * server path those two are symmetric by construction —
+   * `barcode-lookup.ts` computes `perServing = scaleNutrients(per100g, scale)`
+   * and `label-override.ts` merges both halves — so the gap below cannot open
+   * there. On the CLIENT-SIDE direct-OFF fallback (server unreachable or 5xx)
+   * it can:
+   *
+   *   - `validateAndNormalizeNutrition`'s trusted branch returns
+   *     `perServing: existingPerServing` (serving-size-utils.ts:362-374), an
+   *     object built field-by-field from independently-present OFF `*_serving`
+   *     fields (:334-349), while `per100g` is built from the separate `*_100g`
+   *     fields (:296-307).
+   *   - The plausibility gate that admits that branch inspects CALORIES ONLY
+   *     (:351) — `checkServingPlausibility` never looks at sugar, fat or
+   *     sodium.
+   *   - `useNutritionLookup.ts:652` then copies `validated.perServing` into
+   *     `nutrition` field by field.
+   *
+   * So the common OFF shape "`sugars_100g` present, `sugars_serving` absent,
+   * `energy-kcal_serving` present and plausible" yields
+   * `validatedData.per100g.sugar = 11.0` alongside `nutrition.sugar =
+   * undefined`, and the panel and the summary card end up describing the same
+   * nutrient in contradictory terms.
+   */
+  const divergentValidated: ValidatedNutrition = {
+    // `sugars_100g` and `fiber_100g` are carried by the record...
+    per100g: { calories: 44, sugar: 11.0, fiber: 4 },
+    // ...but only `energy-kcal_serving` has a per-serving counterpart, and
+    // calories alone is what the plausibility gate checks.
+    perServing: { calories: 156 },
+    servingInfo: {
+      displayLabel: "1 can (355 mL)",
+      grams: 355,
+      wasCorrected: false,
+    },
+    isServingDataTrusted: true,
+  };
+
+  const divergentNutrition: NutritionData = {
+    productName: "Fallback Cola",
+    servingSize: "1 can (355 mL)",
+    calories: 156,
+  };
+
+  const divergentInput = {
+    itemId: undefined,
+    validatedData: divergentValidated,
+    nutrition: divergentNutrition,
+    isBeverage: true,
+  };
+
+  it("publishes no band for a nutrient the panel renders as 'Not recorded'", () => {
+    const { rows } = buildPanelRows(divergentInput);
+    const sugar = rows.find((r) => r.row.key === "sugar");
+
+    // The panel gates its dot, its pill and its value cell on `displayValue`,
+    // so this row reads "Sugar — Not recorded" with no indicator...
+    expect(sugar?.displayValue).toBeUndefined();
+    // ...and `hasValue`/`band` must now say the same thing. Before the fix
+    // this row carried `hasValue: true` and a live MEDIUM band (11.0 sits
+    // between FSA_DRINK.sugar.low 2.5 and .high 11.25).
+    expect(sugar?.hasValue).toBe(false);
+    expect(sugar?.band).toEqual({ group: "concern", band: "unknown" });
+  });
+
+  it("promotes no standout for a nutrient the panel cannot display", () => {
+    const { bands } = buildPanelRows(divergentInput);
+
+    expect(bands.concerns.sugar).toEqual({ band: "unknown", hasValue: false });
+
+    // The user-visible defect: `pickStandouts`' rule 3 qualifies on the BAND,
+    // so a MEDIUM sugar band rendered "Moderate sugar" with a coloured pill on
+    // the summary card for the very nutrient the panel below it reported as
+    // not recorded.
+    //
+    // Fibre goes quiet too, and that is correct rather than incidental: its
+    // 4 g/100 g cleared FIBRE_CLAIM.good, so rule 3 promoted "Good source of
+    // fibre" off a number the screen never shows. With `hasValue` false,
+    // rule 3's band gate and rule 5's `fibre?.hasValue` gate both decline —
+    // saying nothing, rather than claiming a benefit we cannot display.
+    expect(pickStandouts(bands)).toEqual([]);
+  });
+
+  it("still bands from the UN-SCALED per-100 value when both sources agree", () => {
+    // The gate must not become a second value source. Same record, but the
+    // per-serving fields are present too — `nutrition` is the serving-scaled
+    // display state (39 g in the can) while the band still reads per-100
+    // (11.0), which is MEDIUM on the drink scale, not HIGH.
+    const { rows } = buildPanelRows({
+      ...divergentInput,
+      nutrition: { ...divergentNutrition, sugar: 39 },
+    });
+    const sugar = rows.find((r) => r.row.key === "sugar");
+
+    expect(sugar?.hasValue).toBe(true);
+    expect(sugar?.displayValue).toBe(39);
+    expect(sugar?.band).toEqual({ group: "concern", band: "medium" });
   });
 });
 

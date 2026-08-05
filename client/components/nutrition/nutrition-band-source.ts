@@ -117,7 +117,12 @@ export interface PanelRowData {
   displayValue: number | undefined;
   /** `null` for an unbanded row (trans fat, cholesterol, caffeine). */
   band: BandDescriptor | null;
-  /** From the BAND SOURCE's raw value. Never from `band === "unknown"`. */
+  /**
+   * Raw-value presence in BOTH sources — the band source and the display
+   * state. Never derived from `band === "unknown"`, which also covers an
+   * unresolvable basis. See `buildPanelRows`' docblock for why one source is
+   * not enough.
+   */
   hasValue: boolean;
 }
 
@@ -133,14 +138,32 @@ export interface PanelData {
  * `source.values`, so a row's band can never disagree with the matching
  * standout's band.
  *
- * That guarantee is about `band` <-> `bands`, NOT about `hasValue` <->
- * `displayValue`: `hasValue` reads `source.values` (the BAND source —
- * `validatedData.per100g` on the scan path) while `displayValue` always reads
- * `input.nutrition` (the display state) — two different objects on the scan
- * path. A nutrient present in one and absent from the other can in principle
- * render "Not recorded" (`displayValue` undefined) while still carrying a
- * live band (`hasValue` true). Left open for Tasks 3/4/7, which render both
- * fields.
+ * ── AND `hasValue` AGREES WITH `displayValue` (closed) ────────────────────
+ * `hasValue` reads `source.values` (the BAND source — `validatedData.per100g`
+ * on the scan path) while `displayValue` always reads `input.nutrition` (the
+ * display state) — two different objects on the scan path, and NOT symmetric
+ * on every path. The primary server path builds them from each other
+ * (`barcode-lookup.ts`: `perServing = scaleNutrients(per100g, scale)`;
+ * `label-override.ts` merges both halves), and the saved-item path reads one
+ * object for both. But the CLIENT-SIDE direct-OFF fallback (server
+ * unreachable / 5xx) assembles them from independent OFF fields:
+ * `validateAndNormalizeNutrition`'s trusted branch returns
+ * `perServing: existingPerServing`, built field-by-field from the `*_serving`
+ * nutriments (`serving-size-utils.ts:334-349`), while `per100g` comes from the
+ * separate `*_100g` nutriments (`:296-307`) — and the plausibility gate
+ * admitting that branch inspects CALORIES ONLY (`:351`).
+ *
+ * So `sugars_100g` present + `sugars_serving` absent + a plausible
+ * `energy-kcal_serving` used to produce a live MEDIUM sugar band next to a
+ * "Sugar — Not recorded" row, and `pickStandouts` promoted "Moderate sugar"
+ * off a number the screen never showed.
+ *
+ * `hasValue` is therefore gated on BOTH sources. The band MATH is untouched —
+ * it still receives the un-scaled per-100 value, never `displayValue` — so
+ * serving-invariance is unaffected; only the decision to band AT ALL now
+ * requires that the panel can actually show the number it is judging. On the
+ * primary, label and saved-item paths the two sources are already symmetric,
+ * so this is a no-op there.
  */
 export function buildPanelRows(input: BandSourceInput): PanelData {
   const source = selectBandSource(input);
@@ -154,8 +177,12 @@ export function buildPanelRows(input: BandSourceInput): PanelData {
     // every one of those fields also exists on NutritionData, so the display
     // read needs no cast either.
     const sourceValue = source.values[row.sourceKey];
-    const hasValue = typeof sourceValue === "number";
     const displayValue = input.nutrition?.[row.sourceKey];
+    // Fail toward "not recorded", the established direction: a value we can
+    // band but cannot display is not a judgement the screen is entitled to
+    // publish.
+    const hasValue =
+      typeof sourceValue === "number" && displayValue !== undefined;
 
     if (row.group === "concern") {
       // `row.key` is `ConcernNutrient` by the union's own discriminant — no
