@@ -7,6 +7,8 @@ updated: 2026-08-04
 assignee:
 labels: [deferred, accessibility, hooks]
 github_issue:
+human_led: true
+blocked_reason: "iOS VoiceOver / Android TalkBack device pass required; jsdom can only observe that the announce mock was called, never what a screen reader actually says. An autonomous executor cannot produce the evidence the acceptance criteria demand."
 ---
 
 # Delete useNutritionLookup's duplicate iOS announcers
