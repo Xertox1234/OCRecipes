@@ -159,22 +159,35 @@ export function useNutritionLookup(params: {
     "database",
   );
 
-  // One lookup can set BOTH notices (a server serving-correction and an unusable
-  // label), and two announceForAccessibility calls in the same commit collide on
-  // iOS — the later one silences the earlier. Compose a single utterance rather
-  // than adding a second effect. See
+  // The notices are announced by `NoticeStack`, NOT here. This hook used to
+  // carry an iOS-gated announcer for them, on the reasoning that React flushes
+  // child effects before parent ones, so the hook's utterance would land later
+  // and silence the component's. That premise only holds within ONE commit,
+  // and these two are never in the same commit: `setLabelReadNotice` runs
+  // BEFORE `await fetch(...)` below, while `isLoading` is still true and the
+  // screen is rendering its skeleton — `NoticeStack` is not even mounted.
+  // `setIsLoading(false)` lands in the `finally`, after the barcode POST and
+  // the verification round trip. Two posts separated by a network round trip
+  // do not collide, so nothing was silenced: VoiceOver users heard the
+  // label-not-used warning twice.
+  //
+  // Removing this one rather than gating the other is deliberate on two
+  // counts. It announced content that was not on screen yet — the user heard
+  // a notice and then landed on a skeleton — and it left iOS and Android on
+  // different announcers for the same words. `NoticeStack` speaks when the
+  // notice is actually mounted, is keyed on composed CONTENT with a ref guard,
+  // and is ungated by platform, so deleting this leaves one announcer serving
+  // both. That is exactly the removal its docblock was written to survive.
+  //
+  // The composition rule that lived here still applies and still lives in
+  // `noticeAnnouncementKey`: one utterance for both notices, never two calls
+  // in a commit. See
   // docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md
-  // Label first: it changes which SOURCE the numbers came from, which outranks a
-  // serving-size adjustment to those numbers.
-  useEffect(() => {
-    if (Platform.OS !== "ios") return;
-    const parts = [
-      labelReadNotice,
-      correctionNotice ? `Serving size adjusted: ${correctionNotice}` : null,
-    ].filter((p): p is string => p != null);
-    if (parts.length === 0) return;
-    void AccessibilityInfo.announceForAccessibility(parts.join(". "));
-  }, [correctionNotice, labelReadNotice]);
+  //
+  // Safe because the notices are reachable only on the barcode path, which is
+  // the same `!itemId` condition that mounts `NoticeStack` (see the saved-item
+  // note above `existingItem`) — there is no state where a notice is set and
+  // no announcer is listening.
 
   useEffect(() => {
     if (Platform.OS === "ios" && error) {
@@ -357,6 +370,17 @@ export function useNutritionLookup(params: {
       // classification. A stale `false` surviving onto a real beverage would
       // apply lenient food-scale thresholds to a drink.
       setIsBeverage(null);
+      // Reset for the same fail-safe reason, and newly load-bearing: slice 2c
+      // promoted `validatedData` from "backs the serving controls" to "is a
+      // band source" (`selectBandSource`). It is written only in the
+      // `serverRes.ok` branch, so the 404 `notInDatabase` branch, the OFF
+      // fallback and the outer catch all leave the PRIOR product's `per100g`
+      // in place — and `hasValue` passes on it, because a stale source with
+      // real numbers looks exactly like a fresh one. The traffic lights, the
+      // pills and the standout copy would then be computed from a different
+      // product's data, which is a wrong health claim rather than a missing
+      // one. Every state `selectBandSource` reads belongs in this block.
+      setValidatedData(null);
       try {
         // ── Primary: server-side lookup (cross-validates OFF with USDA) ──
         // Use raw fetch (not apiRequest) so we can inspect 404 responses

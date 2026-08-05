@@ -4,7 +4,6 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ScanFlagBadge } from "@/components/ScanFlagBadge";
-import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
 import { dropPanelBandedFlags } from "./FlagSections-utils";
 import type { ScanFlag } from "@shared/types/scan-flags";
@@ -45,6 +44,19 @@ interface FlagSectionsProps {
  * it lives here rather than at the call site. That label is gone (see the
  * comment on the badge list below), so the cap now has one consumer and means
  * simply "render at most six".
+ *
+ * Does NOT own the "not medical advice" disclaimer, though it used to — once
+ * per section. That coupled the disclaimer to a BADGE LIST, and this component
+ * renders nothing when every universal flag is one the panel is already
+ * banding. A product whose only universal flags are `nutrient:sugar`/`sodium`
+ * therefore reached the user as a Nutri-Score ring, "High in sugar" standout
+ * copy and red/amber traffic-light pills with no disclaimer anywhere on the
+ * screen — the claims outlived their qualifier because they live in three
+ * different components and the disclaimer lived in only one of them.
+ *
+ * It now renders once, unconditionally, from the screen: the only place that
+ * knows all three claim surfaces are present. Do not move it back into a
+ * component that can return null.
  */
 export function FlagSections({
   personal,
@@ -52,8 +64,6 @@ export function FlagSections({
   bands,
   reducedMotion,
 }: FlagSectionsProps) {
-  const { theme } = useTheme();
-
   const universalToShow = dropPanelBandedFlags(universal, bands).slice(0, 6);
 
   return (
@@ -73,12 +83,6 @@ export function FlagSections({
               <ScanFlagBadge key={f.id} flag={f} />
             ))}
           </View>
-          <ThemedText
-            type="caption"
-            style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-          >
-            Informational only — not medical advice.
-          </ThemedText>
         </Animated.View>
       ) : null}
 
@@ -124,12 +128,6 @@ export function FlagSections({
               <ScanFlagBadge key={f.id} flag={f} />
             ))}
           </View>
-          <ThemedText
-            type="caption"
-            style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-          >
-            Informational only — not medical advice.
-          </ThemedText>
         </Animated.View>
       ) : null}
     </>

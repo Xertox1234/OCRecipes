@@ -541,6 +541,27 @@ export default function NutritionDetailScreen() {
             }
           />
         )}
+
+        {/* Unconditional, and owned by the screen rather than by any one of
+            the components above. This screen makes health claims from THREE
+            places — `FlagSections` badges, `NutritionSummaryCard`'s
+            Nutri-Score ring and standout copy, and `NutritionPanel`'s FSA
+            traffic lights — and the first of those can render nothing at all
+            (every universal flag dropped as already-banded). While the
+            disclaimer lived inside `FlagSections` it was gated on a badge
+            list, so exactly that state shipped a banded, graded, red-pilled
+            screen with no qualifier on it.
+
+            The rule this encodes: a qualifier belongs to the claim, not to
+            whichever component happened to introduce it. Anything that can
+            return null is the wrong owner. Keep this outside every
+            conditional — its correctness is that it has no gate. */}
+        <ThemedText
+          type="caption"
+          style={[styles.medicalDisclaimer, { color: theme.textSecondary }]}
+        >
+          Informational only — not medical advice.
+        </ThemedText>
       </ScrollView>
 
       {/* The log action is sticky, not the last thing you scroll to — an
@@ -583,6 +604,10 @@ const styles = StyleSheet.create({
   },
   micronutrientSection: {
     marginBottom: Spacing["2xl"],
+  },
+  medicalDisclaimer: {
+    marginTop: Spacing.md,
+    textAlign: "center",
   },
   manualSearchCard: {
     padding: Spacing.lg,

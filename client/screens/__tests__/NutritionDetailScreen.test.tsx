@@ -425,6 +425,91 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
     expect(
       queryByLabelText("High in sodium. Above the FSA guideline for sodium."),
     ).toBeNull();
+    // THIS is the state that lost the disclaimer. Every badge is dropped, so
+    // `FlagSections` renders nothing — and while the disclaimer lived inside
+    // it, the user got a Nutri-Score ring, "High in sugar" standout copy and
+    // red traffic-light pills with no qualifier anywhere on the screen. The
+    // section assertions above all passed throughout, which is why the loss
+    // was invisible: they check that the badges are gone, and the disclaimer
+    // was silently gone with them.
+    expect(
+      queryByText("Informational only — not medical advice."),
+    ).toBeTruthy();
+  });
+
+  /**
+   * The disclaimer's correctness is that it has NO gate — it qualifies claims
+   * made from three different components, so it cannot belong to any one of
+   * them. Asserted across the states that empty each claim surface in turn.
+   */
+  it("shows the medical-advice disclaimer whatever the flag state", () => {
+    const cases: { name: string; flags: unknown[] }[] = [
+      { name: "no flags at all", flags: [] },
+      {
+        name: "personal flags only",
+        flags: [
+          {
+            id: "allergen:milk",
+            kind: "allergen",
+            severity: "danger",
+            tier: "safety",
+            title: "Contains milk",
+            detail: "You listed milk as an allergen.",
+          },
+        ],
+      },
+    ];
+
+    for (const { name, flags } of cases) {
+      mockRoute.params = { barcode: "5449000000996", ocrText: null };
+      mockUseNutritionLookup.mockReturnValue(
+        baseHookReturn({ calories: 42 }, flags),
+      );
+      const { queryByText, unmount } = renderComponent(
+        <NutritionDetailScreen />,
+      );
+      expect(
+        queryByText("Informational only — not medical advice."),
+        `disclaimer missing with ${name}`,
+      ).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it("renders the disclaimer exactly once, not once per section", () => {
+    // It used to be duplicated into both section bodies, so a product with
+    // personal AND universal flags said it twice. One claim surface losing
+    // its copy was then invisible, because another still printed it.
+    const flags = [
+      {
+        id: "allergen:milk",
+        kind: "allergen",
+        severity: "danger",
+        tier: "safety",
+        title: "Contains milk",
+        detail: "You listed milk as an allergen.",
+      },
+      {
+        id: "processing:ultra",
+        kind: "processing",
+        severity: "warn",
+        tier: "nutrition",
+        title: "Ultra-processed",
+        detail: "NOVA group 4.",
+      },
+    ];
+    mockRoute.params = { barcode: "5449000000996", ocrText: null };
+    mockUseNutritionLookup.mockReturnValue(
+      baseHookReturn({ calories: 42 }, flags),
+    );
+
+    const { queryAllByText } = renderComponent(<NutritionDetailScreen />);
+
+    expect(queryAllByText("For you")).toHaveLength(1);
+    expect(queryAllByText("Heads up")).toHaveLength(1);
+    expect(
+      queryAllByText("Informational only — not medical advice."),
+    ).toHaveLength(1);
   });
 
   it("caps the rendered badges at the first 6 (finding #4, PR #694 medium review)", () => {

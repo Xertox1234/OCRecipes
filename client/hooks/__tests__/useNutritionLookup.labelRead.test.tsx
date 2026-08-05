@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { AccessibilityInfo } from "react-native";
 
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
@@ -282,6 +283,75 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
         kind: "needsAcknowledgement",
         buttonLabel: "Review values before logging",
       });
+    });
+  });
+
+  /**
+   * The hook sets the notice, it does not SPEAK it. `NoticeStack` owns the
+   * announcement for both platforms.
+   *
+   * This hook used to carry an iOS-gated announcer too, on the premise that
+   * React flushes child effects first, so the component's utterance would be
+   * silenced by this one. The two are never in the same commit — the notice is
+   * set before `await fetch(...)`, while `isLoading` is still true and
+   * `NoticeStack` is not mounted — so both were heard, a full round trip apart.
+   */
+  it("does not announce the notice itself — that belongs to NoticeStack", async () => {
+    const announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+
+    const { result } = render(null);
+
+    await waitFor(() => expect(result.current.labelReadNotice).not.toBeNull());
+
+    // Negative control: the notice really was set, so a silent spy here means
+    // "the hook did not speak", not "nothing happened this render".
+    expect(result.current.labelReadNotice).toContain("couldn't read");
+    expect(announce).not.toHaveBeenCalled();
+
+    announce.mockRestore();
+  });
+
+  /**
+   * Slice 2c promoted `validatedData` from "backs the serving controls" to
+   * "is a band source" (`selectBandSource`). A stale one no longer just
+   * mislabels a serving control — it computes this product's traffic lights,
+   * pills and standout copy from the PREVIOUS product's per-100g values, and
+   * `hasValue` cannot tell the difference because a stale source carries real
+   * numbers.
+   */
+  describe("stale band source across consecutive lookups on one screen", () => {
+    it("clears validatedData on a lookup that never reaches the branch setting it", async () => {
+      const { wrapper } = createQueryWrapper();
+      const { result, rerender } = renderHook<
+        ReturnType<typeof useNutritionLookup>,
+        { barcode: string }
+      >((props) => useNutritionLookup({ barcode: props.barcode }), {
+        wrapper,
+        initialProps: { barcode: "06772408" },
+      });
+
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      // Negative control. Without a populated first lookup this test would
+      // pass against a hook that never sets `validatedData` at all.
+      expect(result.current.validatedData).not.toBeNull();
+
+      // A different product, in no database. That branch calls `setNutrition`
+      // and returns — it never writes `validatedData`, so the per-lookup reset
+      // is the only thing that can clear the previous product's. Delete the
+      // reset and this test fails and nothing else.
+      routeFetch(async () => ({
+        ok: false,
+        status: 404,
+        json: async () => ({ notInDatabase: true }),
+      }));
+      rerender({ barcode: "00000000000" });
+
+      await waitFor(() =>
+        expect(result.current.nutrition?.productName).toBe("Product Not Found"),
+      );
+      expect(result.current.validatedData).toBeNull();
     });
   });
 

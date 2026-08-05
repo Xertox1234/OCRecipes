@@ -71,17 +71,21 @@ const SEVERITY_FILL_COLOR_KEY: Record<NoticeSeverity, "warning" | "info"> = {
  * on the notices' composed CONTENT (`noticeAnnouncementKey`) rather than their
  * kind — see that function's docblock.
  *
- * Ungated by platform, but in practice this is **Android's** signal, not iOS's.
- * `useNutritionLookup.ts:169-177` already composes and announces these same two
- * notices on iOS, and React flushes child effects before parent ones — this
- * component is the child, the hook belongs to the screen — so on iOS the hook's
- * utterance is the later `post(.announcement)` and silences this one. On
- * Android the hook is inert (`Platform.OS === "ios"`-gated) and the polite live
- * regions this component replaced are gone, so this is the only thing left that
- * speaks. Gating it to Android would therefore be correct today and wrong the
- * moment that hook effect is removed — it is left ungated deliberately, so
- * deleting the duplicate leaves a working announcer rather than silence. Do NOT
- * add a third announcer at a call site.
+ * Ungated by platform, and now the ONLY announcer for these notices on either
+ * one. `useNutritionLookup` used to carry an iOS-gated duplicate, justified by
+ * "React flushes child effects before parent ones, so the hook's utterance is
+ * the later post and silences this one." That premise holds only within a
+ * single commit, and the two were never in the same commit: the hook sets the
+ * notice BEFORE awaiting the barcode fetch, while `isLoading` is still true
+ * and this component is not mounted, and mounting waits on the `finally` a
+ * full round trip later. Nothing was silenced — iOS spoke the warning twice.
+ *
+ * The duplicate is gone (see the note where it used to live), which is the
+ * removal this ungated announcer was written to survive. Keep it ungated: it
+ * speaks when the notice is actually on screen, which is what the hook's could
+ * not do. Do NOT add another announcer at a call site or back in the hook —
+ * two of them cannot be kept in sync by an argument about effect ordering,
+ * which is exactly how the last pair got out of sync.
  *
  * `error` is NOT a notice here — it renders through `InlineError`, which
  * fires its own iOS-gated announce, and `ScanConflictPrompt` is NOT a notice
