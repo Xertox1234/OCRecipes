@@ -607,7 +607,6 @@ const styles = StyleSheet.create({
   },
   medicalDisclaimer: {
     marginTop: Spacing.md,
-    textAlign: "center",
   },
   manualSearchCard: {
     padding: Spacing.lg,
