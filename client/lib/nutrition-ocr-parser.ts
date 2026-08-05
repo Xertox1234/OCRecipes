@@ -46,49 +46,111 @@ interface FieldPattern {
 
 // Canadian/bilingual labels put the English name first with the French name
 // after a slash ("Fat / Lipides", "Sugars / Sucres") or use the French name
-// alone ("Glucides", "Protéines"). Only the five fields the label-override
-// feature reads (fat, saturated fat, sugars, carbs, protein) plus serving size
-// are extended for bilingual labels; trans fat, cholesterol, sodium, and fiber
-// (none read by the feature) keep their US-only form.
+// alone ("Glucides", "Protéines"). ALL ten numeric fields carry that form.
 //
-// Two additions vs. the US patterns, both regression-safe:
+// Four additions vs. a plain US pattern, all regression-safe:
 //   1. `(?:\s*\/\s*[a-zà-ÿ]+)?` — an OPTIONAL alternate-name group that steps
 //      over the "/ Lipides" half without over-consuming the value.
 //   2. `(\S+?)\s*g` — a loose capture (so fixOCRDigits still repairs OCR
 //      misreads like "l2" -> 12) followed by an optional space before the unit
 //      (for the Canadian "0 g" spacing).
-// The bare English tokens "fat" and "sugars" are substrings of "saturated/
-// trans fat" and "total sugars", so their bilingual forms are line-anchored
-// (`(?:^|\n)\s*`) to keep them from stealing another field's value.
+//   3. A line anchor on bare tokens. "fat", "sugars", "trans" and "fibre" are
+//      substrings of other fields' names and of marketing copy, so their
+//      standalone forms only match at the start of a line.
+//   4. `[ \t]+` before the value and `(?![a-zà-ÿ])` after the gram unit — the
+//      name, the value and the unit must all be on ONE line. See below.
+//
+// ── Why a field may not assemble itself across lines ─────────────────────────
+// `\s` matches newlines and `g` matches the leading letter of any word, so
+// `\s+<?(\S+?)\s*g` could take a name from one line, a value from the next and
+// a "unit" from the one after that. `Trans\n15\nGLUTEN FREE` read transFat = 15
+// — value from line 2, "unit" from the G of GLUTEN.
+//
+// That is not hypothetical. OCR flattens the whole package into one string, so
+// both device captures carry `GLUTEN FREE` / `SANS GLUTEN` badges AND bare
+// number-only lines (`15`, `19`, `49`) shed by the %DV column, a few lines from
+// the panel. The same shape let `LOW SODIUM\n30 mg` report 30 mg of sodium.
+//
+// Requiring one line can only cost recall, never correctness: a field we fail
+// to read falls back to the database and raises the "couldn't use that label"
+// notice, whereas a field assembled from three lines is silently wrong.
+//
+// This was previously true of only five fields — fat, saturated fat, sugars,
+// carbs and protein — on the reasoning that trans fat, cholesterol, sodium and
+// fibre were "not read by the feature" and could stay US-only. That premise was
+// wrong twice over, and two device captures on 2026-08-05 showed the cost:
+//
+//   - `(\S+?)mg` cannot cross a space, because `\S` never matches one. So
+//     "Sodium 400 mg" and "Cholesterol / Cholestérol 5 mg" — both read
+//     PERFECTLY by the recogniser — parsed as null. Only the glued form
+//     ("400mg") ever worked, and Canadian panels do not use it.
+//   - the fields are read: `confidence` counts all ten and gates the instant
+//     local preview in `LabelAnalysisScreen` at 0.6; `shouldReplaceWithAI`
+//     compares sodium; and sodium is one of the FSA-banded nutrients the
+//     redesigned nutrition panel displays.
+//
+// The four are NOT in the `labelNutrition` payload `useNutritionLookup` posts
+// (calories, sugars, fat, saturated fat, serving size), so none of them can
+// change whether a label overrides the product database — only how much of the
+// label survives the parse.
 const FIELD_PATTERNS: FieldPattern[] = [
-  { key: "calories", pattern: /calories\s+(?!from\b)<?(\S+)/i },
+  // The same-line rule matters most here: calories is half the readiness gate,
+  // so a value bled from a "REDUCED CALORIES" badge on the line above would
+  // override the database with a marketing number. Requiring the same line can
+  // only cost recall, and a lost field falls back to the database WITH a notice.
+  { key: "calories", pattern: /calories[ \t]+(?!from\b)<?(\S+)/i },
   {
     key: "totalFat",
     pattern:
-      /(?:total\s+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+      /(?:total\s+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)\s*g(?![a-zà-ÿ])/i,
   },
   {
     key: "saturatedFat",
     pattern:
-      /(?:saturated\s+fat|(?:^|\n)\s*(?:saturated|satur[ée]s))(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+      /(?:saturated\s+fat|(?:^|\n)\s*(?:saturated|satur[ée]s))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)\s*g(?![a-zà-ÿ])/i,
   },
-  { key: "transFat", pattern: /trans\s+fat\s+<?(\S+?)g/i },
-  { key: "cholesterol", pattern: /cholesterol\s+<?(\S+?)mg/i },
-  { key: "sodium", pattern: /sodium\s+<?(\S+?)mg/i },
+  {
+    key: "transFat",
+    // The bare bilingual "Trans / trans" line is printed as an indented
+    // sub-line, and the recogniser renders that indent marker as a leading
+    // "+" ("+Trans", "+ Trans" — both captured on device). `[\s+]*` steps over
+    // it while keeping the line anchor that stops "NO TRANSFAT" and
+    // "SANS GRASTRANS" badges from matching.
+    pattern:
+      /(?:trans\s+fat|(?:^|\n)[\s+]*trans)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)\s*g(?![a-zà-ÿ])/i,
+  },
+  {
+    key: "cholesterol",
+    // `[ée]` covers the English and French spellings in one token. Worth it:
+    // on one capture the recogniser mangled the English half to "iOlesterol"
+    // and the French half was the only legible name on the line.
+    pattern: /cholest[ée]rol(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)\s*mg/i,
+  },
+  // "Sodium" is spelled the same in both languages; only the space was wrong.
+  { key: "sodium", pattern: /sodium[ \t]+<?(\S+?)\s*mg/i },
   {
     key: "totalCarbs",
     pattern:
-      /(?:total\s+carb(?:ohydrate|s|\.?)?|carbohydrates?|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+      /(?:total\s+carb(?:ohydrate|s|\.?)?|carbohydrates?|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)\s*g(?![a-zà-ÿ])/i,
   },
-  { key: "dietaryFiber", pattern: /dietary\s+fiber\s+<?(\S+?)g/i },
+  {
+    key: "dietaryFiber",
+    // "fibre" is the French spelling AND the British English one, so one
+    // alternation serves both. The line anchor on the bare form is doing real
+    // work here: Canadian panels carry "Not a significant source of fibre,
+    // potassium, calcium or iron." in running text a few lines below.
+    pattern:
+      /(?:dietary\s+fib(?:er|re)|(?:^|\n)\s*fib(?:er|re)s?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)\s*g(?![a-zà-ÿ])/i,
+  },
   {
     key: "totalSugars",
     pattern:
-      /(?:total\s+sugars?|(?:^|\n)\s*(?:sugars?|sucres?))(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+      /(?:total\s+sugars?|(?:^|\n)\s*(?:sugars?|sucres?))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)\s*g(?![a-zà-ÿ])/i,
   },
   {
     key: "protein",
-    pattern: /(?:protein|prot[ée]ines?)(?:\s*\/\s*[a-zà-ÿ]+)?\s+<?(\S+?)\s*g/i,
+    pattern:
+      /(?:protein|prot[ée]ines?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)\s*g(?![a-zà-ÿ])/i,
   },
 ];
 
