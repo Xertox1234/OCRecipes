@@ -155,6 +155,17 @@ Key implementation details:
 - API Ninjas returns some fields as strings for non-premium tiers (coerced to 0 via Zod)
 - USDA nutrient extraction uses substring matching across candidate names
 
+### Label OCR → override payload (`client/lib/nutrition-ocr-parser.ts`)
+
+A photographed label is the **source of truth** over the database record, so parsed values reach
+`buildLabelConflict`, whose conflict path replaces the DB macros wholesale, and then the user's log.
+Review any change to the extraction patterns against this asymmetry:
+
+- [ ] **A parser feeding the override payload must DECLINE an ambiguous read, never resolve it.** `totalFat`, `totalSugars` and `saturatedFat` are in the `labelNutrition` body; a missing field falls back to the database _with_ a user-visible notice, while a confident wrong one silently replaces real data. Flag any tolerance rule that picks the likelier of two readings. MLKit renders `g` as `9`, so `19` is either 19 grams or `1 g` — the flattened text cannot say which, and neither should the parser. (Ref: `docs/solutions/logic-errors/alternation-fallback-fires-before-backtracking-to-primary-2026-08-05.md`)
+- [ ] **Reject OCR-tolerance heuristics resting on an unverified claim about how labels are PRINTED.** "Labels never show two decimal places, so `2.59` must be `2.5 g`" is a plausible-sounding invariant with no cited source; it writes a wrong fat value the one time it is false. Demand either a citation or a rule that needs no such assumption (here: positional — a substituted unit must be a lone whitespace-preceded token).
+- [ ] **Confidence is not a gate unless something reads it.** `confidence = extracted / TOTAL_FIELDS` gates only the instant local preview in `LabelAnalysisScreen` (≥ 0.6); `isLabelReady` never reads it. Adding or removing a field pattern changes the denominator and can move a label across that threshold — say so in the review rather than treating field additions as inert.
+- [ ] **A field recovered from `null` can flip a downstream count.** Recovering `totalFat` moved `buildLabelConflict`'s `comparedCount` 1 → 2, flipping `compared` to `true` and opening the client's one-tap log gate. Trace recovered fields into any `compared`/`count`-style predicate before approving.
+
 ### Micronutrient lookup (`server/services/micronutrient-lookup.ts`)
 
 Separate service for vitamins and minerals — different data sources and caching from the macro pipeline.
