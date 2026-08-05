@@ -9,6 +9,8 @@ import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import {
   buildNotices,
   noticeAnnouncementKey,
+  NOTICE_FILL_OPACITY,
+  NOTICE_TEXT_COLOR_KEY,
   type NoticeSeverity,
 } from "./NoticeStack-utils";
 
@@ -39,24 +41,18 @@ interface NoticeStackProps {
 }
 
 /**
- * The two fills that ship today — background opacity per severity. Consulted
- * against `theme.warning` / `theme.info` in the component, not stored here,
- * since the actual colour is only known once `useTheme()` runs.
- */
-const SEVERITY_BACKGROUND_OPACITY: Record<NoticeSeverity, number> = {
-  warning: 0.1,
-  info: 0.08,
-};
-
-/**
- * Which theme colour token backs each severity. A `Record` rather than
- * indexing `theme[notice.severity]` directly — the union happening to spell
- * the same names as the theme's colour keys is incidental, not guaranteed;
- * this makes the coupling explicit, mirroring `NutritionPanel`'s
+ * Which theme colour token backs each severity's FILL and ICON. A `Record`
+ * rather than indexing `theme[notice.severity]` directly — the union happening
+ * to spell the same names as the theme's colour keys is incidental, not
+ * guaranteed; this makes the coupling explicit, mirroring `NutritionPanel`'s
  * `theme[visuals.colorKey]` (where `colorKey` is its own resolved field, not
  * a re-used discriminator).
+ *
+ * The TEXT deliberately uses a different token — see `NOTICE_TEXT_COLOR_KEY`
+ * in `NoticeStack-utils.ts`. A fill and a body-copy colour take different WCAG
+ * criteria, and these display tokens only clear the fill's.
  */
-const SEVERITY_COLOR_KEY: Record<NoticeSeverity, "warning" | "info"> = {
+const SEVERITY_FILL_COLOR_KEY: Record<NoticeSeverity, "warning" | "info"> = {
   warning: "warning",
   info: "info",
 };
@@ -134,7 +130,10 @@ export function NoticeStack({
       entering={reducedMotion ? undefined : FadeInUp.delay(150).duration(400)}
     >
       {notices.map((notice) => {
-        const color = theme[SEVERITY_COLOR_KEY[notice.severity]];
+        const fillColor = theme[SEVERITY_FILL_COLOR_KEY[notice.severity]];
+        // Not `fillColor`: the title and body are normal text and take WCAG
+        // 1.4.3's 4.5:1, which the display tokens miss badly in light mode.
+        const textColor = theme[NOTICE_TEXT_COLOR_KEY[notice.severity]];
         return (
           <View
             key={notice.id}
@@ -142,8 +141,8 @@ export function NoticeStack({
               styles.row,
               {
                 backgroundColor: withOpacity(
-                  color,
-                  SEVERITY_BACKGROUND_OPACITY[notice.severity],
+                  fillColor,
+                  NOTICE_FILL_OPACITY[notice.severity],
                 ),
               },
             ]}
@@ -151,14 +150,17 @@ export function NoticeStack({
             <Feather
               name={notice.icon}
               size={16}
-              color={color}
+              color={fillColor}
               accessible={false}
             />
             <View style={styles.textColumn}>
-              <ThemedText type="small" style={{ color, fontWeight: "600" }}>
+              <ThemedText
+                type="small"
+                style={{ color: textColor, fontWeight: "600" }}
+              >
                 {notice.title}
               </ThemedText>
-              <ThemedText type="small" style={{ color }}>
+              <ThemedText type="small" style={{ color: textColor }}>
                 {notice.body}
               </ThemedText>
             </View>

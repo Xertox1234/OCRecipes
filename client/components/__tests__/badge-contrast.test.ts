@@ -25,6 +25,11 @@ import {
   HIGH_SEVERITY_VISUALS,
   MEDIUM_SEVERITY_VISUALS,
 } from "../badge-severity-visuals";
+import {
+  NOTICE_FILL_OPACITY,
+  NOTICE_TEXT_COLOR_KEY,
+  type NoticeSeverity,
+} from "../nutrition/NoticeStack-utils";
 import { allergySeverities } from "@shared/constants/allergens";
 import { verificationLevels } from "@shared/types/verification";
 import type { ScanFlagSeverity } from "@shared/types/scan-flags";
@@ -103,12 +108,36 @@ function panelTagCases(): Case[] {
   }));
 }
 
+/**
+ * `NoticeStack` is not a pill, but it is the same construction: body copy at
+ * full token strength on a `withOpacity(color, …)` fill of the same token's
+ * family, so its text takes the identical 4.5:1 bar. It was excluded when this
+ * suite was written and was shipping light-mode notice text at 2.30:1
+ * (`theme.warning`) and 2.67:1 (`theme.info`).
+ *
+ * Derived from the component's OWN maps rather than restating the tokens here.
+ * A hard-coded `{colorKey: "badgeWarningText"}` case would only prove the
+ * token is AA — it would stay green if `NoticeStack` rendered its text at
+ * `theme.warning` again. Deriving is what makes this suite observe the
+ * component, and matches how `allergenCases()` / `scanFlagCases()` derive from
+ * their own visuals functions.
+ */
+function noticeCases(): Case[] {
+  const severities = Object.keys(NOTICE_TEXT_COLOR_KEY) as NoticeSeverity[];
+  return severities.map((severity) => ({
+    label: `NoticeStack ${severity} notice text`,
+    colorKey: NOTICE_TEXT_COLOR_KEY[severity],
+    opacity: NOTICE_FILL_OPACITY[severity],
+  }));
+}
+
 describe("badge family WCAG AA contrast", () => {
   const allCases = [
     ...allergenCases(),
     ...scanFlagCases(),
     ...verificationCases(),
     ...panelTagCases(),
+    ...noticeCases(),
   ];
 
   for (const themeName of themeNames) {
