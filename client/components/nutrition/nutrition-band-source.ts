@@ -158,12 +158,24 @@ export interface PanelData {
  * "Sugar — Not recorded" row, and `pickStandouts` promoted "Moderate sugar"
  * off a number the screen never showed.
  *
- * `hasValue` is therefore gated on BOTH sources. The band MATH is untouched —
- * it still receives the un-scaled per-100 value, never `displayValue` — so
- * serving-invariance is unaffected; only the decision to band AT ALL now
- * requires that the panel can actually show the number it is judging. On the
- * primary, label and saved-item paths the two sources are already symmetric,
- * so this is a no-op there.
+ * `hasValue` is therefore gated on BOTH sources. State the guarantee precisely,
+ * because it is narrower than "nothing about banding moves with the serving":
+ *
+ *   - A band's VALUE stays serving-invariant. `concernBand`/`benefitBand` still
+ *     receive the un-scaled per-100 number and still no `portionGrams`, so no
+ *     serving choice can move a nutrient from MEDIUM to HIGH.
+ *   - A band's PRESENCE now tracks DISPLAYABILITY, and displayability is a
+ *     property of `nutrition`, which the serving controls do rewrite. On the
+ *     divergent OFF shape below, `recalculateNutrition`'s gram branch rebuilds
+ *     every field from `effectivePer100g` (= `validatedData.per100g` whenever
+ *     `validatedData` exists, useNutritionLookup.ts:196-197), so a serving edit
+ *     repopulates `nutrition.sugar` and the band — the correct MEDIUM, never a
+ *     different one — appears alongside the value it judges.
+ *
+ * That is the contract, not a leak in it: don't band what the screen cannot
+ * show, and do band it once the screen can. On the primary, label and
+ * saved-item paths the two sources are already symmetric, so this is a no-op
+ * there and nothing appears or disappears at all.
  */
 export function buildPanelRows(input: BandSourceInput): PanelData {
   const source = selectBandSource(input);
