@@ -124,6 +124,8 @@ The `applies_to` field is live in the pattern-injection hook. Selection is **rel
 
 A solution with **no** `applies_to` can only ever reach the third tier, where it competes on recency alone against its whole domain. For anything you want reliably delivered, declare `applies_to`.
 
+**`tags` and `applies_to` are a two-part precondition — a glob alone is not enough.** Retrieval selects by `tags` **first**: the hook builds the candidate set from solutions whose `tags` contain the domain the edited file routed to, and only *then* partitions that set by `applies_to`. So a glob naming a path whose domain never intersects your `tags` can never fire, however precise the glob is. Check the path's domains against `scripts/lib/path-domains.ts` (or run `npx tsx scripts/lib/path-domains.ts <path>`) before writing the glob. Worked example: a solution tagged only `database` with `applies_to: [server/routes/**/*.ts]` is inert — `server/routes/**` routes to `api, security, architecture`, never `database`. Either tag it `api` too, or point the glob at `server/storage/**` where `database` actually applies.
+
 ## Body Template
 
 Both tracks share the same file shape; section headings adapt to the content:

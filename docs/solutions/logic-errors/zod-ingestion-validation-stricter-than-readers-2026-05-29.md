@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [zod, validation, typescript, nutrition-pipeline, silent-failure, reliability]
+tags: [zod, validation, typescript, architecture, nutrition-pipeline, silent-failure, reliability]
 applies_to: [server/services/**/*.ts, server/lib/**/*.ts, shared/schema.ts]
 symptoms: [A third-party lookup that used to return data now returns null/empty, One bad row/sibling in an upstream response drops the whole valid result, '`.default(0)` does not stop a `null` from failing `z.number()`', A wrong-typed present value (e.g. `"N/A"` string) passes `.optional()` but still rejects the parent object parse]
 created: '2026-05-29'

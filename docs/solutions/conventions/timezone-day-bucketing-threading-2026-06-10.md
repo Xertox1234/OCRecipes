@@ -3,7 +3,7 @@ title: 'Day-bucketed reads must thread tz end-to-end (header for requests, store
 track: knowledge
 category: conventions
 module: server
-tags: [timezone, database, nutrition, coach, day-bounds]
+tags: [timezone, database, api, architecture, nutrition, coach, day-bounds]
 applies_to: [server/routes/**/*.ts, server/storage/**/*.ts, server/services/**/*.ts]
 created: '2026-06-10'
 source: 2026-06-10 full audit (H1 + per-fix review + Phase 6)

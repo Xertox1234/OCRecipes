@@ -244,10 +244,17 @@ solutions_from_markdown() {
 
   # ONE grep for applies_to across the whole tagged set, replacing a per-candidate grep plus a
   # 5-process sed|tr|sed|grep pipeline. Both BSD and GNU grep apply -m1 PER FILE and emit in
-  # argument order, so this output is already newest-first. -H forces the `path:` prefix even
-  # for a single-file argv — WITHOUT it, a one-file domain emits no prefix, every file falls to
-  # the general tier, and the suite still passes (test 10 pins the single-file case).
-  # Files with no applies_to simply emit nothing and fall through to the general tier.
+  # argument order (verified on BSD grep 2.6.0 and GNU grep 3.12), so this output is already
+  # newest-first. Files with no applies_to emit nothing and fall through to the general tier.
+  #
+  # -H forces the `path:` prefix even for a single-file argv. Keep it: without it the
+  # `:applies_to:` split key below is absent, $sol/$pats parse to garbage, and that lone file
+  # silently falls to the general tier. NOTE this is unfalsifiable by any output-level test and
+  # is deliberately NOT covered — with exactly one candidate in a domain the emitted
+  # `rel<TAB>title` list is byte-identical whether it came from the exact/glob tier or the
+  # general tier (mutation-tested 2026-08: removing -H leaves all 20 assertions green). A test
+  # asserting otherwise would be a decoration that cannot fail — see
+  # docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md.
   local applies
   applies=$(grep -H -m1 '^applies_to:' "${files[@]}" 2>/dev/null || true)
 
