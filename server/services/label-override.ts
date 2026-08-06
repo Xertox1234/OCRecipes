@@ -335,12 +335,15 @@ const CONTAINMENT_PAIRS: readonly {
  *   rather than silently.
  *
  * - NEITHER from the label -> leave both. The RECORD contradicts itself, which
- *   this merge did not cause and must not silently repair: the same record
+ *   this merge did not cause and must not silently repair. The same record
  *   renders untouched on the plain lookup path, so acting only here would make
- *   the two paths disagree, and "drop the child" would delete the FLAG-BEARING
- *   side (`sugar` and `saturatedFat` have FSA flags; `carbs` and `fat` have
- *   none), removing a real warning. Repairing record-internal inconsistency is
- *   a different change with a different blast radius.
+ *   the two paths disagree about the same product for no reason the user can
+ *   see; repairing record-internal inconsistency is a different change, and it
+ *   belongs wherever the record is built, not on the one path that happens to
+ *   have a label in hand. Secondary: "drop the child" would land on the
+ *   FLAG-BEARING side (`sugar` and `saturatedFat` carry FSA flags; `carbs` and
+ *   `fat` carry none), which downgrades a specific "High in sugar" to the
+ *   route's generic `nutrient-unavailable` notice.
  *
  * A pair with no parent in the merged block at all is a no-op: nothing bounds
  * the child, so there is no contradiction to display and nothing to drop.

@@ -895,8 +895,9 @@ it("leaves a record that contradicts ITSELF alone — the merge did not cause it
   // carbs. This module's job is to stop the MERGE from inventing an impossible
   // pair, not to repair the record — the same values render untouched on the
   // plain lookup path, so acting only here would make the two paths disagree.
-  // And "drop the child" would delete the FLAG-BEARING side: sugar has an FSA
-  // high-sugar flag, carbs has none.
+  // Secondary: "drop the child" would land on the FLAG-BEARING side (sugar
+  // carries an FSA flag, carbs none), downgrading a specific "High in sugar"
+  // to the route's generic nutrient-unavailable notice.
   const db = cheddarDb(2);
   db.per100g = { ...db.per100g, sugar: 30, carbs: 5 };
   const r = buildLabelConflict(db, {

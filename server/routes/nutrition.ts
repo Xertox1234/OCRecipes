@@ -371,20 +371,33 @@ export function register(app: Express): void {
             profileOutcome,
             verification,
           );
-          // The label-corrected block can deliberately drop macros whose per-100
-          // basis a corroborating disagreement just proved wrong, and the
+          // The label-corrected block can deliberately drop macros, and the
           // universal flag recompute then emits nothing for them. Say that out
           // loud: otherwise a missing "High in sugar" is indistinguishable from
           // a low-sugar product, on the very screen that tells the user to
           // trust the label.
           //
-          // "Can" rather than "does" since the blanking was scoped: a conflict
-          // raised only by non-corroborating fields (today, saturatedFat alone)
-          // KEEPS the record's un-read macros, because the fields that agreed
-          // are evidence the basis is sound. Nothing here needs to change for
-          // that — the diff below asks what was actually lost, so a body that
-          // lost nothing raises nothing. That is exactly why it was written as
-          // a diff and not as a value-presence test.
+          // TWO causes, and enumerating only the first is how this comment has
+          // already gone stale once:
+          //
+          // 1. BLANKING — a corroborating disagreement proved the record's
+          //    whole per-100 basis wrong, so its un-read macros go. "Can"
+          //    rather than "does" since that blanking was scoped: a conflict
+          //    raised only by non-corroborating fields (today, saturatedFat
+          //    alone) KEEPS them, because the fields that agreed are evidence
+          //    the basis is sound.
+          // 2. CONTAINMENT — `enforceContainment` drops whichever side of a
+          //    `child <= parent` pair the merged block cannot honestly show
+          //    (`saturatedFat`/`fat`, `transFat`/`fat`, `sugar`/`carbs`). This
+          //    one fires with NO corroborating disagreement at all, and on
+          //    EITHER merge branch, so it is not a special case of (1).
+          //
+          // Nothing here needs to change for either — the diff below asks what
+          // was actually lost, so a body that lost nothing raises nothing. That
+          // is exactly why it was written as a diff and not as a value-presence
+          // test, and it is why a third cause would need no code change here
+          // either. What a new cause DOES need is a look at the message copy
+          // below, which explains the loss in (1)'s terms only.
           //
           // Decided by DIFFING the two bodies, not by asking whether a value
           // was dropped. Most records carry a sodium figure and the label input
