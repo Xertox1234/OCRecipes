@@ -238,6 +238,16 @@ check "scripts/*.ts → harness rules" \
   '{"tool_name":"Edit","tool_input":{"file_path":"scripts/build-domain-map.ts"}}' \
   "RULES — harness"
 
+# .husky/** is the commit/push gate. Five corpus solutions already declare `.husky/**` in their
+# applies_to, so without this routing those globs are inert and a git-hook edit injects nothing.
+check ".husky/** → harness rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".husky/pre-push"}}' \
+  "RULES — harness"
+
+check ".husky/** → harness solution references" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".husky/pre-push"}}' \
+  "SOLUTIONS — harness"
+
 # harness is a SURFACE domain, not a language domain, so it must NOT suppress the typescript
 # fallback the way api/react-native/etc. do. Before harness existed these ~40 files matched
 # nothing and got typescript; they must still get it.

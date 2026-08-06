@@ -11,8 +11,8 @@ Binding for the repo's own tooling — `.claude/hooks/**`, `.claude/skills/**`, 
 ## Bash (target bash 3.2 — stock macOS)
 
 - No `mapfile`, `${var,,}`, or associative arrays. Under `set -u`, `"${arr[@]}"` on an empty array aborts — guard with `[ "${#arr[@]}" -gt 0 ]`. Every word of a `local` expands before the builtin runs, so `local nl=$'\n' x="$nl"` fails; declare separately.
-- `$(...)` unsets `errexit` — `var=$(fn)` swallows failures inside `fn`, and `set -e` is suspended for a function that is the subject of `if !`, `&&`, or `||`. Check `$?` explicitly.
-- `cmd | grep -q ...` fails OPEN under `pipefail`: grep exits at first match, the writer takes SIGPIPE, the pipeline reports failure though grep matched. Use `grep -q ... <<< "$var"`.
+- `$(...)` unsets `errexit`, so every command inside `var=$(fn)` runs as if `set +e` and only `fn`'s **final** status can propagate — checking `$?` does not recover the failure of an earlier statement inside `fn`, and inside `read ... <<<"$(fn)"` no status is checked at all. For must-not-fail side effects, call the function **bare** and return results via a file; guard only the failures you intend to tolerate (`x=$(...) || x=""`). `set -e` is likewise suspended for a function that is the subject of `if !`, `&&`, or `||`.
+- Early-exiting readers fail OPEN under `pipefail` — `cmd | grep -q`, `| head`, `| sed q` all exit at first match, the writer takes SIGPIPE, and the pipeline reports failure though the read succeeded. Capture first, then read: `grep -q ... <<< "$var"`.
 - `jq -r '.k'` prints literal `null` for an absent key (`-e` only changes the exit code) — use `jq -r '.k // empty'` whenever the value keys state, a path, or a filename.
 - `for p in $var` pathname-expands as well as word-splits, so a glob in `$var` silently becomes a real filename. Wrap in `set -f` and restore.
 - Scripts run under `bash`, not the interactive zsh you paste into: zsh does not word-split unquoted expansions and applies csh modifiers to an unbraced `$VAR` before a colon.

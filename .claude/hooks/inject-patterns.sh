@@ -383,6 +383,12 @@ domain_rank() {
     # (via the fallback above). It yields to testing — directly binding on a test file — and
     # precedes typescript, the generic fallback. An EXPLICIT rank is required: the default
     # `*) echo 75` would place it ahead of both and invert those orderings.
+    # MEASURED CONSEQUENCE (2026-08, first touch, dedup ON): on a scripts test file, testing
+    # emits inline (~5.1 KB) and harness then DEFERS — preamble ~1.3 KB + testing ~3.4 KB +
+    # harness rules 4.2 KB + refs ~0.4 KB ≈ 9.4 KB, over DOMAIN_BUDGET. No truncation, no loss;
+    # the payload lands in the spill file and auto-injects on the session's next edit. Accepted:
+    # a test file's testing rules are the more directly binding of the two. The two levers if
+    # that ever stops being true are trimming docs/rules/harness.md or lowering this rank.
     harness)       echo 115 ;;
     typescript)    echo 120 ;;
     architecture)  echo 130 ;;

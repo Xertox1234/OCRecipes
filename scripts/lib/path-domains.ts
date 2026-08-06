@@ -270,12 +270,22 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
   },
   {
     // `recursive-dir` cannot be root-anchored (FILE_PATH may be absolute), so this necessarily
-    // matches ANY directory named `scripts` — including server/scripts/**. Accepted and stated
-    // in the description, which renders into the generated Copilot table.
+    // matches ANY directory named `scripts` — including server/scripts/** and, harmlessly,
+    // node_modules/**/scripts/**. Accepted and stated in the description, which renders into
+    // the generated Copilot table.
     match: { kind: "recursive-dir", dir: "scripts" },
     domains: ["harness"],
     description:
       "`scripts/**` (any directory named `scripts`, incl. `server/scripts/**`)",
+  },
+  {
+    // .husky/** holds the real commit/push gate (pre-commit, pre-push, post-checkout — ~100
+    // lines of bash). Five solutions in the corpus already declare `.husky/**` in their
+    // applies_to, so the corpus expects this routing to exist; without the rule those globs are
+    // inert and editing a git hook injects nothing at all.
+    match: { kind: "recursive-dir", dir: ".husky" },
+    domains: ["harness"],
+    description: "`.husky/**`",
   },
 ];
 

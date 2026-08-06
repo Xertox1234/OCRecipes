@@ -39,6 +39,7 @@ When editing a file, identify its domain(s) using the table below. The correspon
 | `.claude/agents/**` | harness |
 | `.claude/settings.json` | harness |
 | `scripts/**` (any directory named `scripts`, incl. `server/scripts/**`) | harness |
+| `.husky/**` | harness |
 | `server/services/<llm-touching>.ts` (see LLM_TOUCHING_SERVICES) | architecture, ai-prompting |
 
 In addition, `typescript` rules apply to every `.ts` or `.tsx` file regardless of other domain matches.

@@ -142,6 +142,10 @@ describe("rulesDomainsForPath", () => {
     // absolute), so ANY directory named `scripts` matches. Pinned so a future change is a
     // conscious one rather than a surprise.
     ["server/scripts/backfill-recipe-images.ts", ["harness"]],
+    // .husky/** is the real commit/push gate; five corpus solutions already declare
+    // `.husky/**` in applies_to, so this routing has to exist for those globs to fire.
+    [".husky/pre-push", ["harness"]],
+    [".husky/pre-commit", ["harness"]],
   ];
   it.each(cases)("%s", (input, expected) => {
     expect(rulesDomainsForPath(input).sort()).toEqual(expected);
@@ -240,6 +244,7 @@ const PARITY_CORPUS = [
   "scripts/build-domain-map.ts",
   "scripts/lib/__tests__/path-domains.test.ts",
   "server/scripts/backfill-recipe-images.ts",
+  ".husky/pre-push",
 ];
 
 describe("regex<->bash-glob parity", () => {
