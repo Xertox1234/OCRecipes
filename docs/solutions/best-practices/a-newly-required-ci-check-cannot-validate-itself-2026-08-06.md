@@ -70,13 +70,13 @@ reason to skip it, only a prediction about what it will return.
 git merge-base origin/main <branch>
 
 # 2. What did main gain since then, inside the new check's glob?
-#    (check:format's glob is **/*.{js,ts,tsx,css,json})
-git diff --name-only <merge-base> origin/main
+git diff --name-only <merge-base> origin/main | grep -E '\.(js|ts|tsx|css|json)$'
 
 # 3. Run the check against those files at MAIN'S TIP — not at the branch,
 #    and not against the whole repo (that hides which files are new risk).
 git switch --detach origin/main
 npx prettier --check <the filtered file list>
+git switch -            # <- get back; step 3 leaves you on a detached HEAD
 
 # 4. Merge only if clean. If not clean, the fix belongs in the gate PR:
 #    it must land in the SAME merge as the gate, or main is red between them.
@@ -84,7 +84,9 @@ npx prettier --check <the filtered file list>
 
 Step 3's detach matters. Running the check from the branch checks the branch's copies of
 those files, which may include fixes the branch made — precisely the files whose main
-state you are trying to judge.
+state you are trying to judge. It also leaves you detached, which is easy to forget and
+which the repo's branch-preflight hook will block a commit on; switch back before doing
+anything else.
 
 If step 3 is not clean, do **not** land the gate and file a follow-up. The window
 between "gate merged" and "fix merged" is a red main.
