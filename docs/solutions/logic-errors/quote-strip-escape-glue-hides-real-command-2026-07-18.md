@@ -7,7 +7,7 @@ module: shared
 applies_to: [".claude/hooks/**/*.sh", "scripts/**/*.sh"]
 symptoms: ["A command-matching hook that strips quoted spans before matching silently allows or ignores a REAL invocation when an earlier argument contains a backslash-escaped quote or a bare apostrophe inside a double-quoted word", "Independent per-quote-type span substitutions pair a quote inside one argument with the quote opening a LATER argument and delete the separator and command between them", "A deny gate falls through its final match-or-exit-0 line on input that visibly contains the gated command"]
 created: 2026-07-18
-last_updated: 2026-07-26
+last_updated: 2026-08-05
 severity: high
 ---
 
@@ -69,8 +69,7 @@ a single shared helper — not re-derived (and re-broken) per hook.
 `.claude/hooks/lib/cmd-detect.sh` exposes `cmd_bare` (an `awk` state machine:
 `OUT` / `IN_SINGLE` / `IN_DOUBLE`, blanking quoted content and escaped chars,
 state carried across newlines) plus the matcher predicates
-(`cmd_is_gh_pr_create`, `cmd_is_git_commit`, `cmd_gh_pr_write_subcommand`,
-`cmd_gh_pr_number`). Each hook sources the helper and calls a predicate; the
+(`cmd_is_gh_pr_create`, `cmd_is_git_commit`, `cmd_gh_pr_write_subcommand`, `cmd_gh_pr_ref`). Each hook sources the helper and calls a predicate; the
 quote grammar lives in exactly one place.
 
 ```bash
@@ -126,6 +125,14 @@ substitute a target. Lesson: on a gate, a decoy in free-text isn't just noise th
 adds a false-positive; "last match wins" lets the decoy REPLACE the real value, which
 is the bypass direction. Test both directions (see `test-git-safety.sh`: main-decoy →
 must-ALLOW, worktree-decoy → must-DENY).
+
+### An extractor's empty return can be overloaded between two different meanings — and ERE has no negative lookahead to fix it
+
+When an extractor's "nothing found" return means two DIFFERENT things to its caller — "legitimately nothing to extract" (e.g. `gh pr create` genuinely has no ref yet) vs. "extraction failed on input that DOES have the target" (e.g. an unresolvable branch/URL ref) — a caller that branches only on emptiness cannot tell them apart. In this codebase's `pr-verify.sh`, the caller was ALREADY correct here: it branches on `SUBCOMMAND == "create"` (the true "nothing to extract" case) rather than on `PR_REF` being empty, specifically so the two meanings are pulled apart at the call site rather than conflated at the extractor. The pattern: disambiguate at the CALL SITE when the caller has independent information (here, which subcommand was invoked) that the extractor itself lacks.
+
+POSIX extended regular expressions (ERE — the `grep -E` / `sed -E` dialect used throughout this file's examples) have no negative lookahead, so a pattern cannot directly express "match X only if Y does NOT follow". Concretely: `cmd_gh_pr_ref` (in `cmd-detect.sh`) needs to treat a value-taking flag (`--title`, `--milestone`, etc.) as consuming its own next token as a VALUE, never as a ref — but when that flag+value pair is the LAST thing on the line, the only complete match the regex engine can find AT ALL is the one that misreads the flag as boolean and the value as the ref (`gh pr edit --title Fixed` → wrongly resolves `Fixed`). The regex cannot forbid this parse from the inside — ERE has no way to say "only match this shape if nothing legitimate remains after it." The fix pattern: let the regex both under- and over-match, then apply a cheap POST-hoc filter on the captured result using information the regex itself couldn't reason about — here, checking whether the token immediately BEFORE the extracted ref is itself a known value-flag name, and rejecting the match if so, rather than trying to force the exclusion into the pattern.
+
+**Rule of thumb:** When an ERE's only successful parse of some input is the WRONG parse, don't fight the engine for a lookahead it doesn't have — accept the over-match and filter the result afterward with information the pattern couldn't express.
 
 ## Prevention
 
