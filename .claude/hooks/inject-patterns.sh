@@ -209,38 +209,121 @@ solutions_from_markdown() {
   local domain="$1" tag_pattern
   tag_pattern=$(domain_tag_pattern "$domain")
   [ -d "$SOLUTIONS_DIR" ] || return 0
-  local matches
-  # Widen CAP#1 by +4 so a bug-track ref just outside the natural top-N is a reservation
-  # candidate (reserve_bug_slot caps back to SOLUTIONS_PER_DOMAIN at the end).
+  # The FULL domain-tagged set, newest-first by the YYYY-MM-DD in the filename. There is
+  # deliberately NO cap here: capping BEFORE the applies_to partition was the bug. Relevance was
+  # only ever consulted among the 8 date-survivors, so a solution whose applies_to matched the
+  # edited file exactly but ranked #40 by date was discarded unexamined. Measured 2026-08: only
+  # 170 of 735 corpus files were ever injected in a month, and 16 of the 23 solutions that
+  # docs/rules/*.md cites BY NAME could not be delivered for any file in their own domain.
   # --exclude=README.md: the schema README quotes example frontmatter lines that the
   # line-anchored grep would otherwise treat as a real solution's tags.
-  matches=$(grep -rl --include='*.md' --exclude=README.md -E "^tags:.*${tag_pattern}" \
+  local tagged
+  tagged=$(grep -rl --include='*.md' --exclude=README.md -E "^tags:.*${tag_pattern}" \
     "$SOLUTIONS_DIR" 2>/dev/null | grep -v '/_manifests/' \
     | sed "s|.*\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)\.md\$|\1 &|" \
-    | sort -r | cut -d' ' -f2- | head -n "$((SOLUTIONS_PER_DOMAIN + 4))" || true)
-  [ -n "$matches" ] || return 0
-  local priority="" fallback="" nl=$'\n'
+    | sort -r | cut -d' ' -f2- || true)
+  [ -n "$tagged" ] || return 0
+
+  # noglob for the whole matching section. LOAD-BEARING TWICE:
+  #   correctness — `for p in $pats` both word-splits AND pathname-expands. An applies_to entry
+  #     like `client/**/*.tsx` would be expanded against the CWD and $p would silently become a
+  #     real filename, changing which solutions match (test 5 pins this);
+  #   performance — that filesystem walk costs ~17x the entire parse loop.
+  # Restored below. The function is always called in a $(...) subshell today, so it cannot leak
+  # either way, but the restore keeps a future non-substituted caller honest.
+  local _reglob=0
+  case "$-" in *f*) ;; *) _reglob=1; set -f ;; esac
+
+  local oldifs="$IFS"
+  # Word-split the newline-separated list into an argv for the single grep below. Safe under
+  # noglob; solution paths are whitespace-free.
+  IFS=$'\n'
+  # shellcheck disable=SC2206
+  local -a files=($tagged)
+  IFS="$oldifs"
+
+  # ONE grep for applies_to across the whole tagged set, replacing a per-candidate grep plus a
+  # 5-process sed|tr|sed|grep pipeline. Both BSD and GNU grep apply -m1 PER FILE and emit in
+  # argument order (verified on BSD grep 2.6.0 and GNU grep 3.12), so this output is already
+  # newest-first. Files with no applies_to emit nothing and fall through to the general tier.
+  #
+  # -H forces the `path:` prefix even for a single-file argv. Keep it: without it the
+  # `:applies_to:` split key below is absent, $sol/$pats parse to garbage, and that lone file
+  # silently falls to the general tier. NOTE this is unfalsifiable by any output-level test and
+  # is deliberately NOT covered — with exactly one candidate in a domain the emitted
+  # `rel<TAB>title` list is byte-identical whether it came from the exact/glob tier or the
+  # general tier (mutation-tested 2026-08: removing -H leaves all 20 assertions green). A test
+  # asserting otherwise would be a decoration that cannot fail — see
+  # docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md.
+  local applies
+  applies=$(grep -H -m1 '^applies_to:' "${files[@]}" 2>/dev/null || true)
+
+  # Declare nl on its OWN line: under `set -u`, bash 3.2 expands every word of a `local`
+  # statement before the builtin runs, so `local nl=$'\n' seen="$nl"` aborts on unbound $nl.
+  local nl=$'\n'
+  local exact="" glob="" seen="$nl"
+  local line sol pats p alt is_exact is_glob
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    sol="${line%%:applies_to:*}"
+    pats="${line#*:applies_to:}"
+    # applies_to is inline flow style (corpus format invariant, docs/solutions/README.md).
+    # Trim, then strip ONE leading '[' and ONE trailing ']' — NOT `${pats#*[}`, which reads as an
+    # unterminated bracket expression and would corrupt a glob containing a character class.
+    # Pure parameter expansion: zero forks in this loop.
+    pats="${pats#"${pats%%[![:space:]]*}"}"
+    pats="${pats%"${pats##*[![:space:]]}"}"
+    pats="${pats#\[}"
+    pats="${pats%\]}"
+    is_exact=0
+    is_glob=0
+    IFS=','
+    for p in $pats; do
+      p="${p#"${p%%[![:space:]]*}"}"
+      p="${p%"${p##*[![:space:]]}"}"
+      p="${p#\"}"; p="${p%\"}"; p="${p#\'}"; p="${p%\'}"
+      [ -n "$p" ] || continue
+      # bash [[ ]] has no globstar: `dir/**/*.ext` requires an INTERMEDIATE directory and does
+      # NOT match `dir/file.ext` — yet that is the form 523 of the corpus's 695 applies_to files
+      # use, because docs/solutions/README.md gives it as the canonical example. Also try the
+      # `**/`-elided variant so both `dir/file.ext` and `dir/sub/file.ext` match author intent.
+      alt="${p//\*\*\//}"
+      [ "$p" = "$_FILE_REL" ] && is_exact=1
+      # shellcheck disable=SC2254
+      { [[ "$_FILE_REL" == $p ]] || [[ "$_FILE_REL" == $alt ]]; } && is_glob=1
+    done
+    IFS="$oldifs"
+    if [ "$is_exact" = 1 ]; then
+      exact="${exact}${sol}${nl}"; seen="${seen}${sol}${nl}"
+    elif [ "$is_glob" = 1 ]; then
+      glob="${glob}${sol}${nl}"; seen="${seen}${sol}${nl}"
+    fi
+  done <<< "$applies"
+
+  # Over-cap by +4 so a bug-track ref just outside the natural top-N stays a reservation
+  # candidate (reserve_bug_slot caps back to SOLUTIONS_PER_DOMAIN at the end).
+  local over=$((SOLUTIONS_PER_DOMAIN + 4))
+  # General tier: domain-tagged, no applies_to match, still newest-first. The walk stops as soon
+  # as the over-cap is filled, so the full tagged set is never scanned when matches are dense.
+  # The $nl delimiters around each key are what stop /a/b.md false-matching inside /a/ab.md.
+  local general="" ng=0
+  for sol in "${files[@]}"; do
+    case "$seen" in *"$nl$sol$nl"*) continue ;; esac
+    general="${general}${sol}${nl}"
+    ng=$((ng + 1))
+    [ "$ng" -ge "$over" ] && break
+  done
+
+  # exact > glob > general, newest-first within each tier.
+  local matches="" n=0
   while IFS= read -r sol; do
     [ -n "$sol" ] || continue
-    local pats matched=false
-    # applies_to is inline flow style (canonical corpus format): strip `applies_to: [ ... ]`,
-    # split on commas, trim surrounding spaces and optional quotes. Tolerates quoted too.
-    pats=$(grep -m1 '^applies_to:' "$sol" 2>/dev/null \
-      | sed -E 's/^applies_to:[[:space:]]*\[?//; s/\][[:space:]]*$//' \
-      | tr ',' '\n' \
-      | sed -E "s/^[[:space:]]*[\"']?//; s/[\"']?[[:space:]]*\$//" \
-      | grep -v '^[[:space:]]*$' || true)
-    if [ -n "$pats" ]; then
-      while IFS= read -r pat; do
-        [ -n "$pat" ] || continue
-        # shellcheck disable=SC2254
-        [[ "$_FILE_REL" == $pat ]] && { matched=true; break; }
-      done <<< "$pats"
-    fi
-    if [ "$matched" = true ]; then priority="${priority:+$priority$nl}$sol"; else fallback="${fallback:+$fallback$nl}$sol"; fi
-  done <<< "$matches"
-  # Widen CAP#2 by +4 too (mirrors CAP#1): build the OVER-cap candidate list, then reserve.
-  matches=$(printf '%s\n%s\n' "$priority" "$fallback" | grep -v '^$' | head -n "$((SOLUTIONS_PER_DOMAIN + 4))")
+    matches="${matches}${sol}${nl}"
+    n=$((n + 1))
+    [ "$n" -ge "$over" ] && break
+  done <<< "$exact$glob$general"
+  [ "$_reglob" = 1 ] && set +f
+  [ -n "$matches" ] || return 0
   # Emit the over-cap `rel<TAB>title` candidates (newest/priority-first), then pipe the WHOLE
   # loop straight into reserve_bug_slot — capping back to SOLUTIONS_PER_DOMAIN with a guaranteed
   # bug slot. Piping the loop (not a captured $(...)) preserves the trailing newline so the

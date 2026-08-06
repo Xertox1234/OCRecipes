@@ -118,7 +118,13 @@ severity: low | medium | high | critical # required for track:bug, optional for 
 | `last_updated` | optional                                                                  | optional                                             |
 | `severity`     | required                                                                  | optional                                             |
 
-The `applies_to` field is live in the pattern-injection hook: solutions whose globs match the file being edited are promoted ahead of the date-ordered rest of their domain's matches.
+The `applies_to` field is live in the pattern-injection hook. Selection is **relevance-first, then date**: the hook partitions the domain's whole tagged set into three tiers — an exact path match, then a glob match, then everything else — and takes the newest from each in that order. A May solution whose `applies_to` matches the edited file therefore outranks a generic file codified yesterday.
+
+**Glob semantics.** Patterns are matched with bash `[[ "$file" == $pattern ]]`, which has no `globstar` — `**` behaves as a plain `*`. The hook compensates by also testing the pattern with `**/` elided, so `dir/**/*.ext` matches **both** `dir/file.ext` and `dir/sub/file.ext`, which is what authors mean. Without that compensation `dir/**/*.ext` silently requires an intermediate directory and never matches a file sitting directly in `dir/` (see `.claude/hooks/test-inject-patterns-relevance.sh`).
+
+A solution with **no** `applies_to` can only ever reach the third tier, where it competes on recency alone against its whole domain. For anything you want reliably delivered, declare `applies_to`.
+
+**`tags` and `applies_to` are a two-part precondition — a glob alone is not enough.** Retrieval selects by `tags` **first**: the hook builds the candidate set from solutions whose `tags` contain the domain the edited file routed to, and only *then* partitions that set by `applies_to`. So a glob naming a path whose domain never intersects your `tags` can never fire, however precise the glob is. Check the path's domains against `scripts/lib/path-domains.ts` (or run `npx tsx scripts/lib/path-domains.ts <path>`) before writing the glob. Worked example: a solution tagged only `database` with `applies_to: [server/routes/**/*.ts]` is inert — `server/routes/**` routes to `api, security, architecture`, never `database`. Either tag it `api` too, or point the glob at `server/storage/**` where `database` actually applies.
 
 ## Body Template
 
