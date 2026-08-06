@@ -11,6 +11,7 @@ import {
   buildNutritionDetailParams,
   getCapturePlan,
 } from "../scan-screen-utils";
+import type { CapturePlan } from "../scan-screen-utils";
 import { logger } from "@/lib/logger";
 import { TIER_FEATURES } from "@shared/types/premium";
 import type { ScanFlag } from "@shared/types/scan-flags";
@@ -602,11 +603,15 @@ describe("scan-screen-utils", () => {
     // STEP_PHOTO_CAPTURED from it; the capture gate silently dropped the tap).
     const bounds = { x: 0.3, y: 0.4, width: 0.4, height: 0.2 };
 
-    const CASES: [ScanPhase, { capture: boolean; runStepOcr: boolean }][] = [
-      [{ type: "IDLE" }, { capture: false, runStepOcr: false }],
+    const CASES: [ScanPhase, CapturePlan][] = [
+      [{ type: "IDLE" }, { capture: false, runStepOcr: false, route: "step" }],
       // Smart scan / label mode — captures, but runs its own OCR into
-      // localOCRText rather than the STEP_PHOTO_CAPTURED payload.
-      [{ type: "HUNTING" }, { capture: true, runStepOcr: false }],
+      // localOCRText rather than the STEP_PHOTO_CAPTURED payload. The only
+      // "smart" route: onShutterPress's classification/LabelAnalysis branch.
+      [
+        { type: "HUNTING" },
+        { capture: true, runStepOcr: false, route: "smart" },
+      ],
       [
         {
           type: "BARCODE_TRACKING",
@@ -614,17 +619,17 @@ describe("scan-screen-utils", () => {
           bounds,
           frameCount: 3,
         },
-        { capture: false, runStepOcr: false },
+        { capture: false, runStepOcr: false, route: "step" },
       ],
       // Retained so a capture taken before the chip's primary button is
       // pressed still completes step 2 (mirrors the reducer).
       [
         { type: "BARCODE_LOCKED", barcode: "06772408", bounds },
-        { capture: true, runStepOcr: true },
+        { capture: true, runStepOcr: true, route: "step" },
       ],
       [
         { type: "LABEL_PROMPTED", barcode: "06772408" },
-        { capture: true, runStepOcr: true },
+        { capture: true, runStepOcr: true, route: "step" },
       ],
       [
         {
@@ -633,7 +638,7 @@ describe("scan-screen-utils", () => {
           imageUri: "file://panel.jpg",
           ocrText: "Calories 140",
         },
-        { capture: false, runStepOcr: false },
+        { capture: false, runStepOcr: false, route: "step" },
       ],
       // Step 3 (package front) — captured, but the front has no nutrition
       // panel to recognise and its ocrText is carried over from step 2.
@@ -644,7 +649,7 @@ describe("scan-screen-utils", () => {
           nutritionImageUri: "file://panel.jpg",
           ocrText: "Calories 140",
         },
-        { capture: true, runStepOcr: false },
+        { capture: true, runStepOcr: false, route: "step" },
       ],
       [
         {
@@ -654,15 +659,15 @@ describe("scan-screen-utils", () => {
           ocrText: "Calories 140",
           frontImageUri: "file://front.jpg",
         },
-        { capture: false, runStepOcr: false },
+        { capture: false, runStepOcr: false, route: "step" },
       ],
       [
         { type: "SESSION_COMPLETE", barcode: "06772408" },
-        { capture: false, runStepOcr: false },
+        { capture: false, runStepOcr: false, route: "step" },
       ],
       [
         { type: "CLASSIFYING", imageUri: "file://photo.jpg" },
-        { capture: false, runStepOcr: false },
+        { capture: false, runStepOcr: false, route: "step" },
       ],
       [
         {
@@ -670,7 +675,7 @@ describe("scan-screen-utils", () => {
           imageUri: "file://photo.jpg",
           classification: {} as PhotoAnalysisResponse,
         },
-        { capture: false, runStepOcr: false },
+        { capture: false, runStepOcr: false, route: "step" },
       ],
       [
         {
@@ -678,7 +683,7 @@ describe("scan-screen-utils", () => {
           imageUri: "file://photo.jpg",
           error: "unrecognized",
         },
-        { capture: false, runStepOcr: false },
+        { capture: false, runStepOcr: false, route: "step" },
       ],
     ];
 
@@ -693,7 +698,29 @@ describe("scan-screen-utils", () => {
     it("captures AND runs step OCR for LABEL_PROMPTED", () => {
       expect(
         getCapturePlan({ type: "LABEL_PROMPTED", barcode: "06772408" }),
-      ).toEqual({ capture: true, runStepOcr: true });
+      ).toEqual({ capture: true, runStepOcr: true, route: "step" });
+    });
+
+    // The routing decision this field exists for: only HUNTING takes
+    // onShutterPress's smart-classification/LabelAnalysis branch. Every other
+    // capturing phase takes the STEP2/STEP3 branch.
+    it("routes only HUNTING to the smart branch", () => {
+      expect(getCapturePlan({ type: "HUNTING" }).route).toBe("smart");
+      expect(
+        getCapturePlan({
+          type: "BARCODE_LOCKED",
+          barcode: "06772408",
+          bounds,
+        }).route,
+      ).toBe("step");
+      expect(
+        getCapturePlan({
+          type: "STEP2_CONFIRMED",
+          barcode: "06772408",
+          nutritionImageUri: "file://panel.jpg",
+          ocrText: "Calories 140",
+        }).route,
+      ).toBe("step");
     });
 
     // runStepOcr must never be true where capture is false — there would be no

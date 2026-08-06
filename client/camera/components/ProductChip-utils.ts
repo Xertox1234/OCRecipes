@@ -109,6 +109,17 @@ export function getBarcodeLockActions(
   };
 }
 
+/**
+ * Which chip variant a scan phase should render, or `null` to hide the chip.
+ *
+ * Deliberately exhaustive with NO `default` clause — see `getCapturePlan` in
+ * `client/screens/scan-screen-utils.ts` for the precedent. A `default: return
+ * null` here would make a newly added `ScanPhase` silently render no chip
+ * instead of failing `tsc`, which is exactly how `LABEL_PROMPTED` shipped as a
+ * terminal dead-end on `feat/scan-flow-2-phase1` (it took the chip's only
+ * dispatch sites for `PROCEED_TO_LABEL`/`CONFIRM_PRODUCT` with it). Do not add
+ * a fall-through — it would recreate that bug class in a new location.
+ */
 export function getProductChipVariant(
   phase: ScanPhase,
 ): ProductChipVariant | null {
@@ -127,9 +138,14 @@ export function getProductChipVariant(
       return "smart_photo";
     case "SMART_ERROR":
       return "smart_error";
-    // LABEL_PROMPTED intentionally falls here: a null variant hides the chip,
-    // which is what "chip collapsed, go frame the panel" means. Covered by test.
-    default:
+    // LABEL_PROMPTED intentionally returns null here — an explicit case, not a
+    // fall-through: a null variant hides the chip, which is what "chip
+    // collapsed, go frame the panel" means. Covered by test.
+    case "LABEL_PROMPTED":
+    case "IDLE":
+    case "HUNTING":
+    case "BARCODE_TRACKING":
+    case "CLASSIFYING":
       return null;
   }
 }

@@ -102,8 +102,9 @@ describe("getProductChipVariant", () => {
   });
 
   // Deliberate, not incidental: LABEL_PROMPTED means "chip collapsed, go frame
-  // the panel". A null variant hides the chip, which is exactly the intent — so
-  // assert it rather than leaving it to the `default` arm by accident.
+  // the panel". A null variant hides the chip, which is exactly the intent —
+  // so assert it rather than trusting it silently. `getProductChipVariant` has
+  // no `default` arm; LABEL_PROMPTED is its own explicit case.
   it("returns null for LABEL_PROMPTED so the chip collapses out of the way", () => {
     expect(
       getProductChipVariant({ type: "LABEL_PROMPTED", barcode: "123" }),

@@ -47,7 +47,16 @@ export function getReticleTarget(
     case "STEP2_CONFIRMED":
     case "STEP3_REVIEWING":
       return { ...center, ...LABEL_RETICLE };
-    default:
+    // Every other phase — including the smart-scan phases, which render their
+    // own overlays, not this reticle — keeps the barcode-shaped centered
+    // target. Explicit cases, not a fall-through, so a future ScanPhase
+    // addition is a tsc error here.
+    case "IDLE":
+    case "HUNTING":
+    case "SESSION_COMPLETE":
+    case "CLASSIFYING":
+    case "SMART_CONFIRMED":
+    case "SMART_ERROR":
       return { ...center, ...BARCODE_RETICLE };
   }
 }
@@ -59,7 +68,18 @@ export function getConfidenceFromPhase(phase: ScanPhase): number {
       return 0;
     case "BARCODE_TRACKING":
       return Math.min(phase.frameCount / LOCK_THRESHOLD_FRAMES, 1.0);
-    default:
+    // Every phase from BARCODE_LOCKED onward is at or past a confident lock.
+    // Explicit cases, not a fall-through, so a future ScanPhase addition is a
+    // tsc error here.
+    case "BARCODE_LOCKED":
+    case "LABEL_PROMPTED":
+    case "STEP2_REVIEWING":
+    case "STEP2_CONFIRMED":
+    case "STEP3_REVIEWING":
+    case "SESSION_COMPLETE":
+    case "CLASSIFYING":
+    case "SMART_CONFIRMED":
+    case "SMART_ERROR":
       return 1.0;
   }
 }
