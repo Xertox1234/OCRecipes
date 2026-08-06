@@ -21,3 +21,24 @@ eslint-suppressions.json
 # control, so reformatting now only drifts back out of Prettier-compliance on
 # the next Xcode edit or `expo prebuild` run.
 ios/**/Contents.json
+# Native build artifacts. These duplicate ios/.gitignore and android/.gitignore ON PURPOSE
+# — do NOT "clean up" the duplication. Prettier's default `--ignore-path` is
+# [.gitignore, .prettierignore], a ROOT-level file lookup; unlike git it never reads NESTED
+# .gitignore files, so everything ios/.gitignore and android/.gitignore exclude is still
+# visible to `prettier --check`. Without these mirrors, `npm run check:format` — and so
+# `scripts/preflight.sh` full mode — is permanently red for anyone who has run a local
+# native build (hundreds of generated .json files). CI never hits it: the `checks` job
+# builds no native code.
+# Each entry mirrors the nested-gitignore line it is derived from:
+#   ios/Pods/           ← ios/.gitignore:30      `/Pods/`
+#   ios/**/build/       ← ios/.gitignore:7       `build/`
+#   ios/**/DerivedData/ ← ios/.gitignore:19      `DerivedData`
+#   android/**/build/   ← android/.gitignore:7   `build/`
+#   android/**/.cxx/    ← android/.gitignore:13  `.cxx/`
+#   android/**/.gradle/ ← android/.gitignore:9   `.gradle`
+ios/Pods/
+ios/**/build/
+ios/**/DerivedData/
+android/**/build/
+android/**/.cxx/
+android/**/.gradle/
