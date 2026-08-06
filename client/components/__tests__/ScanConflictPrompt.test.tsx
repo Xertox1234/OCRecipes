@@ -7,6 +7,12 @@ import { fireEvent } from "@testing-library/react";
 // (not even installed; only @testing-library/react is a dependency).
 import { renderComponent } from "../../../test/utils/render-component";
 import { ScanConflictPrompt } from "@/components/ScanConflictPrompt";
+// Type-only import of the SERVER's union. It is the definition the wire format
+// carries and the thing `FIELD_LABEL` has to stay total over, so importing it
+// here is what makes the exhaustiveness check below mean anything — a local
+// copy would just be a second list to forget to update. `import type` is erased
+// at build, so no server module is pulled into the client bundle.
+import type { ConflictField } from "../../../server/services/label-override";
 
 const db = { productName: "Cherry Coke", calories: 39, sugar: 11 } as any;
 const label = { productName: "Cherry Coke", calories: 150, sugar: 39 } as any;
@@ -84,6 +90,43 @@ describe("ScanConflictPrompt", () => {
     expect(getByText("6.3")).toBeTruthy();
     expect(getByText("0.6")).toBeTruthy();
     expect(getByLabelText(/Saturated Fat \(g\) 6\.3/)).toBeTruthy();
+  });
+
+  it("renders a human label for EVERY member of the server's ConflictField union", () => {
+    // The generalisation of the test above, and the reason `REQUIRED` exists.
+    //
+    // `saturatedFat` nearly reached the screen — and VoiceOver — as a raw
+    // camelCase key, because nothing connects the server's union to the
+    // client's `FIELD_LABEL` map: `conflictFields` crosses the wire as
+    // `string[]`, so `tsc` cannot see a missing entry and the component falls
+    // through to `?? f`. A per-field runtime warning in the render path was
+    // rejected as the fix — it would fire once per field per column per
+    // render.
+    //
+    // `REQUIRED` closes it at COMPILE time instead: it is a total
+    // `Record<ConflictField, true>`, so adding a fifth member to the union
+    // upstream makes this file fail `tsc` until the member is listed here, and
+    // the loop below then fails until `FIELD_LABEL` has copy for it.
+    const REQUIRED: Record<ConflictField, true> = {
+      calories: true,
+      sugar: true,
+      fat: true,
+      saturatedFat: true,
+    };
+    const fields = Object.keys(REQUIRED) as ConflictField[];
+
+    const { queryByText } = renderComponent(
+      <ScanConflictPrompt
+        conflictFields={fields}
+        labelNutrition={label}
+        dbNutrition={db}
+        activeSource="label"
+        onChoose={() => {}}
+      />,
+    );
+    // Exact-text queries: "Calories" is not "calories", so a hit here means the
+    // raw union key itself was rendered.
+    for (const f of fields) expect(queryByText(f)).toBeNull();
   });
 
   it("follows activeSource in both directions — database selected flips which column reports selected", () => {

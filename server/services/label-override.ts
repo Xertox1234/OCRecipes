@@ -1,7 +1,30 @@
 import type { BarcodeLookupResult, BarcodePer100g } from "./barcode-lookup";
 import { scaleNutrients } from "./barcode-lookup";
-import { parseLabelServingGrams } from "@shared/lib/label-serving";
+import {
+  parseLabelServingGrams,
+  parseServingBasis,
+} from "@shared/lib/label-serving";
+import { FSA_DRINK, FSA_FOOD } from "@shared/constants/nutrition-bands";
 import { valuesMatch } from "../lib/verification-consensus";
+
+/**
+ * A payload field whose OCR PROVENANCE can gate its comparison. Named in the
+ * PAYLOAD's vocabulary (`totalSugars`, `totalFat`), not `ConflictField`'s
+ * (`sugar`, `fat`), because it is the wire contract with the parser — the two
+ * vocabularies are bridged by the `requiresDirectRead` property on each `cmp`
+ * row, so nothing has to keep a second name map in step.
+ *
+ * The union is the extension point: to gate another field, set
+ * `requiresDirectRead` on its row. Only `saturatedFat` is gated today.
+ * `totalFat` and `totalSugars` are listed because the parser's
+ * `gluedUnitIsForced` rule can reconstruct those two as well, making them the
+ * plausible next candidates — NOT because anything reads them yet.
+ */
+export type LabelProvenanceField =
+  | "calories"
+  | "totalSugars"
+  | "totalFat"
+  | "saturatedFat";
 
 export interface LabelNutritionInput {
   calories: number | null;
@@ -9,20 +32,32 @@ export interface LabelNutritionInput {
   totalFat: number | null;
   saturatedFat: number | null;
   servingSize: string | null;
+  /**
+   * The label fields the client's OCR parser read DIRECTLY off a glyph run,
+   * rather than reconstructing via its `gluedUnitIsForced` containment rule
+   * (`client/lib/nutrition-ocr-parser.ts`). See `requiresDirectRead` below for
+   * what consumes it.
+   *
+   * OPTIONAL, and typed as loose strings, both deliberately — see the route's
+   * `labelNutritionSchema`. The rule this file has to hold up: an absent or
+   * unrecognised entry means "NOT a direct read". There is no encoding of this
+   * field that can assert the opposite by staying silent.
+   */
+  directReads?: readonly string[];
 }
 
 export type ConflictField = "calories" | "sugar" | "fat" | "saturatedFat";
 
 /**
- * One field's label-vs-DB comparison inputs, plus the two policies that are
+ * One field's label-vs-DB comparison inputs, plus the three policies that are
  * NOT uniform across fields.
  *
- * A single list of these, never two parallel ones. `fields` and
- * `comparedCount` are derived from the same rows precisely because
- * `saturatedFat` now feeds one and not the other: encoding that divergence as
- * a PROPERTY of the row keeps it impossible for the two to drift when a fifth
- * field is added. (Every recent defect in this area was a pair of
- * field-parallel structures updated on one path and not the other.)
+ * A single list of these, never two parallel ones. `fields`, `comparedCount`
+ * and the blanking decision are all derived from the same rows precisely
+ * because `saturatedFat` feeds them differently: encoding each divergence as a
+ * PROPERTY of the row keeps them impossible to drift apart when a fifth field
+ * is added. (Every recent defect in this area was a pair of field-parallel
+ * structures updated on one path and not the other.)
  */
 interface FieldComparison {
   field: ConflictField;
@@ -41,8 +76,28 @@ interface FieldComparison {
    * `compared >= 2` one-tap-log gate. Disagreement always reaches `fields`
    * regardless — raising a conflict and vouching for the screen are separate
    * outcomes.
+   *
+   * It carries a SECOND meaning, used by the blanking decision below: only a
+   * corroborating field's disagreement is evidence that the record's whole
+   * per-100 BASIS is wrong. Deliberately one flag and not two — the two
+   * questions have the same answer for the same reason. A field whose
+   * agreement is too weak to vouch for the screen (because its test was
+   * widened) is equally too narrow to condemn four macros it never touched.
+   * If a future field ever needs to answer them differently, that is the
+   * moment to split this into two properties, not before.
    */
   corroborates: boolean;
+  /**
+   * Payload field whose DIRECT-READ provenance this comparison requires, or
+   * `null` to compare regardless of provenance.
+   *
+   * `null` for calories/sugar/fat, and that is not an oversight: those three
+   * have been compared since before the provenance channel existed, and every
+   * already-installed client sends no provenance at all. Gating them would
+   * silently switch the entire installed base back to never checking a label
+   * against the record — the defect this module exists to prevent.
+   */
+  requiresDirectRead: LabelProvenanceField | null;
 }
 
 export interface LabelConflict {
@@ -63,6 +118,17 @@ export interface LabelConflict {
    * never checked. On the CONFLICT path one field is enough, because the label's
    * values replace the ones they disagree with.
    *
+   * KNOWN RESIDUAL, and it is new. That conflict-path rationale assumed the
+   * whole displayed macro block came from the label, which was true while a
+   * conflict always blanked the record's un-read macros. It no longer is: a
+   * conflict raised only by non-corroborating fields keeps the record's carbs,
+   * protein and sodium (see `basisDisproven` below), so `compared: true` can
+   * now open one-tap logging over values that came from the database and were
+   * never checked against the package. Left as-is deliberately — narrowing
+   * `compared` here would also shut the gate on the saturatedFat-only shape the
+   * tests pin, and the values in question are the record's own, not a label's
+   * unverified reading. Revisit if a second non-corroborating field lands.
+   *
    * `conflict: false` alone cannot tell agreement from refusal: this function
    * declines on an unparseable serving, an implausible serving, or a record with
    * no comparable field, and every one of those returns the same empty shape.
@@ -80,13 +146,33 @@ export interface LabelConflict {
 const REL_THRESHOLD = 0.25;
 
 /**
- * The increment a Nutrition Facts panel PRINTS saturated fat in: FDA
- * 21 CFR 101.9(c)(2) and CFIA's equivalent rounding table quantize it to the
- * nearest 0.5 g between 0.5 g and 5 g (to 0 below 0.5 g; to the nearest 1 g
- * above 5 g). This is a property of the labelling rules, not a tolerance tuned
- * to any observed product or test. (Cited at section level deliberately — the
- * paragraph numbering was not verified against the current CFR text, and the
- * derivation below does not depend on it.)
+ * The increment a Nutrition Facts panel PRINTS saturated fat in: 0.5 g steps
+ * between 0.5 g and 5 g. This is a property of the labelling rules, not a
+ * tolerance tuned to any observed product or test.
+ *
+ * Both regimes this app's products come from agree on that step, and both
+ * citations were checked against the primary text on 2026-08-06:
+ *
+ * - US — 21 CFR 101.9(c)(2)(i): saturated fat "expressed as grams per serving
+ *   to the nearest 0.5 gram (1/2) gram increment below 5 grams and to the
+ *   nearest gram increment above 5 grams. If the serving contains less than
+ *   0.5 gram, the content shall be expressed as zero."
+ * - Canada — the table to section B.01.401 of the Food and Drug Regulations,
+ *   as published in CFIA's industry labelling tool: 0.5 g to 5 g -> nearest
+ *   0.5 g; more than 5 g -> nearest 1 g.
+ *
+ * They DIVERGE below 0.5 g, and the previous version of this comment asserted
+ * the US rule for both: Canada rounds a sub-0.5 g figure to the nearest 0.1 g
+ * rather than to zero. It does not touch the derivation. The floor is built
+ * from the 0.5-5 g step, which is common to both, and below 0.5 g per serving
+ * the two sides land under 2 g/100g at any factor this floor is binding for,
+ * where `valuesMatch`'s own ±1 absolute branch is already the wider tolerance.
+ *
+ * Corroborated inside this repo by two independent write-ups of the same grid:
+ * the `PARENT_FIELD` docblock in `client/lib/nutrition-ocr-parser.ts` and
+ * `docs/solutions/logic-errors/regime-dependent-invariant-breaks-on-mixed-provenance-data-2026-08-05.md`.
+ * (Both state the 0.5 g / 1 g grid only, so neither is affected by the sub-0.5 g
+ * correction above.)
  *
  * It becomes an absolute floor on the saturatedFat comparison because label
  * readings are PER SERVING and get multiplied by `factor = 100 / labelGrams`
@@ -119,14 +205,58 @@ const REL_THRESHOLD = 0.25;
  * allows `1.25 * factor` — more than either step's floor.
  *
  * The floor can only ever SUPPRESS a conflict, so its failure mode is falling
- * back to the database result — the direction the spec already calls safe ("on
- * doubt, fail toward the DB result"). On a very small serving it makes the
- * check nearly vacuous (a 5 g serving yields a 10 g/100g floor); accepted,
- * because at that scale the printed digit genuinely carries no finer
- * information, and the behaviour it degrades to is the no-check-at-all this
- * change replaces.
+ * back to the database result — the direction the spec generally calls safe
+ * ("on doubt, fail toward the DB result"). But `step * factor` has no upper
+ * bound and `parseLabelServingGrams` enforces no minimum serving, so on a small
+ * enough serving that failure mode stops being conservative and becomes total:
+ * a 5 g serving yields `factor` 20 and a 10 g/100g floor, wider than the ENTIRE
+ * saturated-fat MEDIUM band on either FSA scale. At that point the comparison
+ * cannot see a label crossing the high-saturated-fat line at all — and 5-30 g
+ * servings (butter, oils, spreads, cheese) are exactly where saturated fat is
+ * the nutrient that matters. So the floor is CLAMPED; see
+ * `saturatedFatFloorCeiling`.
  */
 const SATURATED_FAT_LABEL_ROUNDING_STEP_G = 0.5;
+
+/**
+ * Upper bound on the saturatedFat `roundingFloor`, derived from the FSA band
+ * this app already judges the nutrient against rather than picked.
+ *
+ * The floor's job is to forgive printing rounding. The thing it must never be
+ * able to forgive is a genuine LOW-to-HIGH move, because that is the whole
+ * signal the comparison exists to catch. So bound it at HALF the width of the
+ * MEDIUM band — the open interval between `low` and `high` in
+ * `shared/constants/nutrition-bands.ts` — which leaves it unable to carry a
+ * value even halfway across the span between the two boundaries:
+ *
+ *   FSA_FOOD.saturatedFat   1.5 -> 5.0    width 3.5     ceiling 1.75
+ *   FSA_DRINK.saturatedFat  0.75 -> 2.5   width 1.75    ceiling 0.875
+ *
+ * Scale-aware because the two differ by 2x and a drink judged on the food
+ * ceiling would get twice the slack the FSA allows it. The unit comes from the
+ * LABEL's own serving line, which is the same string the per-100 basis was
+ * computed from — and `parseLabelServingGrams` only returns non-null when a
+ * g/ml token matched, so by the time this runs the unit is known. An
+ * unparseable basis still falls to the NARROWER (drink) ceiling: no evidence of
+ * scale must not buy the more generous bound.
+ *
+ * CLAMP rather than decline-to-compare, which is the other shape this could
+ * take (and the shape the serving-ratio cross-check above uses). Declining
+ * would restore, for exactly the small-serving products where saturated fat
+ * matters most, the "label overwrites the record unchecked" behaviour this
+ * module was changed to end. Clamping keeps the check running and only makes it
+ * STRICTER as the serving shrinks. The cost is spurious conflicts at degenerate
+ * servings, and that cost is now bounded: a saturatedFat-only conflict no
+ * longer blanks the record's other macros (see `basisDisproven` below), so a
+ * false positive costs a conflict prompt, not four discarded nutrients.
+ */
+function saturatedFatFloorCeiling(servingSize: string | null): number {
+  const band =
+    parseServingBasis(servingSize)?.unit === "g"
+      ? FSA_FOOD.saturatedFat
+      : FSA_DRINK.saturatedFat;
+  return (band.high - band.low) / 2;
+}
 
 /** Upper plausibility bound for a label-derived serving (grams/ml). A single
  *  beverage serving tops out around a 2 L bottle; a larger value is almost
@@ -232,14 +362,17 @@ export function buildLabelConflict(
   // deliberate; that decision was overridden (user, 2026-08-06). Writing a
   // photographed number over a database record — and into someone's food log —
   // without ever checking it against that record is the defect. The old
-  // argument (the server can't tell a confident direct read from a
+  // argument was that the server cannot tell a confident direct read from a
   // `gluedUnitIsForced` containment inference or a plain digit misread, since
-  // `labelNutritionSchema` sends a bare nullable number) is a reason to trust
-  // the reading LESS, which is an argument FOR corroborating it, not for
-  // skipping the check.
+  // `labelNutritionSchema` sent a bare nullable number. Half of that is a
+  // reason to trust the reading LESS, which argues FOR corroborating it rather
+  // than for skipping the check. The other half was a real gap in the wire
+  // format, and it is now closed rather than reasoned around: the payload
+  // carries provenance, and an INFERRED saturatedFat is excluded from the
+  // comparison by policy (3).
   //
-  // Two policies make the addition safe, and both live on the rows below
-  // rather than in a second list:
+  // Three policies make the addition safe, and all of them live on the rows
+  // below rather than in a second list:
   //
   // 1. `roundingFloor` — saturatedFat gets a quantization cushion the other
   //    three do not; the derivation is on
@@ -284,18 +417,38 @@ export function buildLabelConflict(
   //      false`. Nothing shown was corroborated broadly enough to claim it.
   //
   // Accepted residual, narrowed but not closed: a wrong saturatedFat still
-  // rides into `mergedPer100g` when the RECORD has no `saturated-fat_100g` to
-  // compare against and some other field conflicts. A comparison can only
-  // bound what the record is able to answer. Nothing downstream re-checks it
-  // either — `shouldReplaceWithAI` (client/screens/label-analysis-utils.ts)
-  // compares only calories/fat/protein/carbs/sodium. What partially bounds it:
+  // rides into `mergedPer100g` when some other field conflicts and this one was
+  // never compared — because the RECORD has no `saturated-fat_100g` to compare
+  // against, or because policy (3) declined to compare an inferred reading, or
+  // because the client is an older build sending no provenance at all. A
+  // comparison can only bound what the record is able to answer, and a
+  // comparison it is not allowed to run bounds nothing. All three are the same
+  // trade in different clothes: the label stays the source of truth for what it
+  // read, and the check only ever narrows what it may CONDEMN. Nothing
+  // downstream re-checks it either — `shouldReplaceWithAI`
+  // (client/screens/label-analysis-utils.ts) compares only
+  // calories/fat/protein/carbs/sodium. What partially bounds it:
   // `evaluateUniversalFlags`'s FSA "high in saturated fat" flag has a safety
   // asymmetry — a wrong-LOW value suppressing a real record-sourced flag is
   // caught by the route's lost-flag diff (`nutrient-unavailable`), and
   // wrong-HIGH is the direction this codebase already treats as safe to risk.
   // See
   // docs/solutions/logic-errors/confidence-must-count-evidence-not-inferences-2026-08-05.md.
-  const fields: ConflictField[] = [];
+  //
+  // 3. `requiresDirectRead` — saturatedFat is compared only when the payload
+  //    positively says the parser READ it off the panel. `gluedUnitIsForced`
+  //    can also reconstruct this field from its `totalFat` parent, and that
+  //    inference's error is bounded by `[0, totalFat]` — orders of magnitude
+  //    wider than the printed-rounding error `roundingFloor` is sized for. A
+  //    wrong inference compared at a print-rounding tolerance could raise a
+  //    conflict entirely on its own, and the parser comment notes this
+  //    inference path "is now exercised routinely". Provenance gates the
+  //    COMPARISON only: an inferred value is still accepted, still scaled into
+  //    `per100`, and still adopted on the conflict and null-DB paths, because
+  //    the product rule that the label is the source of truth is unchanged.
+  //    What it may not do is CONDEMN the record.
+  const directReads = new Set(label.directReads ?? []);
+  const conflicting: FieldComparison[] = [];
   const cmp: FieldComparison[] = [
     {
       field: "calories",
@@ -303,6 +456,7 @@ export function buildLabelConflict(
       dbVal: dbResult.per100g.calories,
       roundingFloor: 0,
       corroborates: true,
+      requiresDirectRead: null,
     },
     {
       field: "sugar",
@@ -310,6 +464,7 @@ export function buildLabelConflict(
       dbVal: dbResult.per100g.sugar,
       roundingFloor: 0,
       corroborates: true,
+      requiresDirectRead: null,
     },
     {
       field: "fat",
@@ -317,13 +472,18 @@ export function buildLabelConflict(
       dbVal: dbResult.per100g.fat,
       roundingFloor: 0,
       corroborates: true,
+      requiresDirectRead: null,
     },
     {
       field: "saturatedFat",
       labelVal: per100.saturatedFat,
       dbVal: dbResult.per100g.saturatedFat,
-      roundingFloor: SATURATED_FAT_LABEL_ROUNDING_STEP_G * factor,
+      roundingFloor: Math.min(
+        SATURATED_FAT_LABEL_ROUNDING_STEP_G * factor,
+        saturatedFatFloorCeiling(label.servingSize),
+      ),
       corroborates: false,
+      requiresDirectRead: "saturatedFat",
     },
   ];
   // Count the fields we could actually compare, separately from the ones that
@@ -333,13 +493,22 @@ export function buildLabelConflict(
   let comparedCount = 0;
   for (const c of cmp) {
     if (c.labelVal == null || c.dbVal == null) continue;
+    // Provenance gate. `directReads` is absent on every client that predates
+    // the field, so this MUST be a positive membership test: `!has(...)` skips,
+    // and there is deliberately no branch that treats silence as a direct read.
+    if (c.requiresDirectRead && !directReads.has(c.requiresDirectRead))
+      continue;
     if (c.corroborates) comparedCount++;
     if (valuesMatch(c.labelVal, c.dbVal, REL_THRESHOLD)) continue;
     // The relative check failed. Only call that a disagreement if the gap is
     // larger than the label's own printed rounding can explain.
     if (Math.abs(c.labelVal - c.dbVal) <= c.roundingFloor) continue;
-    fields.push(c.field);
+    // Keep the ROW, not just its name: the blanking decision below needs the
+    // `corroborates` flag of whatever disagreed, and re-deriving that from a
+    // list of names is exactly the field-parallel lookup this file avoids.
+    conflicting.push(c);
   }
+  const fields = conflicting.map((c) => c.field);
   if (fields.length === 0) {
     // No disagreement. `compared` distinguishes a genuine agreement (the record
     // is corroborated by the package) from a record that simply had no per-100g
@@ -396,10 +565,42 @@ export function buildLabelConflict(
   // warnings that were actually lost. Deliberately not decided here — this
   // module has no access to the flag thresholds, and guessing from value
   // presence fires on records whose sodium is 0 or nowhere near the FSA line.
-  const mergedPer100g: BarcodePer100g = {
-    ...per100, // calories/sugar/fat/saturatedFat that the label actually read
-    caffeine: dbResult.per100g.caffeine,
-  };
+  // ...but ONLY when something actually disproved that basis.
+  //
+  // Every paragraph above argues from the Cherry Coke shape, where the label
+  // and the record disagree on CALORIES — an error that is uniform across the
+  // entry, so the record's other macros go with it. `saturatedFat` broke that
+  // assumption by joining `cmp`: a conflict can now be raised by a single
+  // field that says nothing about the basis, while calories, sugar and fat all
+  // AGREE. That combination is not weak evidence of a basis-wide error, it is
+  // evidence AGAINST one — three independent fields on the record's per-100
+  // basis just matched the package. Blanking there discarded the record's
+  // carbs, protein and sodium on the strength of one disagreeing nutrient
+  // (reproduced: db calories 380 / sugar 1.5 / fat 30 / satFat 2 / carbs 2 /
+  // protein 24 / sodium 650, against a label agreeing on the first three ->
+  // carbs, protein and sodium all `undefined`).
+  //
+  // So the blanking is scoped to what was actually disproved. `corroborates`
+  // is the same flag that decides whether AGREEMENT vouches for the screen,
+  // reused here for the mirror question — see its docblock.
+  //
+  // Note the two cases stay genuinely distinct rather than one subsuming the
+  // other: when a corroborating field disagrees, the un-read macros are blanked
+  // exactly as before, Cherry Coke included.
+  const basisDisproven = conflicting.some((c) => c.corroborates);
+  const mergedPer100g: BarcodePer100g = basisDisproven
+    ? {
+        ...per100, // calories/sugar/fat/saturatedFat that the label actually read
+        caffeine: dbResult.per100g.caffeine,
+      }
+    : // Nothing challenged the basis, so the record's un-read macros are the
+      // best (and only) figures available for them — "on doubt, fail toward the
+      // DB result". `per100` still wins wherever the label read a value, so the
+      // disagreeing nutrient is still corrected to the label's; and the label
+      // cannot introduce an impossible relationship here, because reaching this
+      // branch means every corroborating field it read AGREED with the record
+      // the siblings come from.
+      { ...dbResult.per100g, ...per100 };
 
   const labelResult: BarcodeLookupResult = {
     ...dbResult,

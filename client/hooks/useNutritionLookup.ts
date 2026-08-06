@@ -38,6 +38,7 @@ import {
 import {
   parseNutritionFromOCR,
   isLabelReady,
+  toLabelNutritionPayload,
 } from "@/lib/nutrition-ocr-parser";
 import { deriveLogGate } from "@/screens/nutrition-detail-utils";
 
@@ -391,13 +392,12 @@ export function useNutritionLookup(params: {
                 method: "POST",
                 headers: { ...headers, "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  labelNutrition: {
-                    calories: parsedLabel!.calories,
-                    totalSugars: parsedLabel!.totalSugars,
-                    totalFat: parsedLabel!.totalFat,
-                    saturatedFat: parsedLabel!.saturatedFat,
-                    servingSize: parsedLabel!.servingSize,
-                  },
+                  // One definition of this mapping, in the parser module beside
+                  // the data it maps — see `toLabelNutritionPayload`. It also
+                  // carries `directReads`, the provenance the server needs to
+                  // avoid comparing an INFERRED saturatedFat against the record
+                  // at a tolerance sized for printed rounding.
+                  labelNutrition: toLabelNutritionPayload(parsedLabel!),
                 }),
               })
             : await fetch(url, { headers });

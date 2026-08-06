@@ -575,6 +575,43 @@ describe("glued g→9 — resolving only what the label itself rules out", () =>
       ).toBe(1);
     });
 
+    it("records the resolved field as INFERRED, never as a direct read", () => {
+      // Provenance. A value the containment rule reconstructed is adopted, but
+      // it must not be indistinguishable from a glyph the recogniser actually
+      // read: `buildLabelConflict` declines to compare an inferred
+      // `saturatedFat` against the database record, because the inference's
+      // error is bounded by `[0, totalFat]` while that comparison's tolerance
+      // is sized for a 0.5 g printing step.
+      const inferred = parseNutritionFromOCR("Total Fat 11 g\nSaturated 19");
+      expect(inferred.saturatedFat).toBe(1);
+      expect(inferred.directReads).not.toContain("saturatedFat");
+      // The parent, read off a real "g", IS a direct read — so the assertion
+      // above is about the inference and not about the list being empty.
+      expect(inferred.directReads).toContain("totalFat");
+
+      // The same field read directly does land in the list.
+      const direct = parseNutritionFromOCR("Total Fat 11 g\nSaturated 1 g");
+      expect(direct.saturatedFat).toBe(1);
+      expect(direct.directReads).toContain("saturatedFat");
+    });
+
+    it("keeps directReads and confidence in step — one notion of 'we read this'", () => {
+      // `confidence` counts the fields the FIRST pass extracted, and
+      // `directReads` is populated on that same line. Pin the invariant rather
+      // than the two numbers separately: if a future recovery path starts
+      // incrementing one without the other, an inferred value silently becomes
+      // comparable (or a real read silently stops counting).
+      for (const text of [
+        "Total Fat 11 g\nSaturated 19", // one inferred, one direct
+        "Total Fat 11 g\nSaturated 1 g", // both direct
+        "Calories 121", // one direct, no glued forms at all
+        "", // nothing at all
+      ]) {
+        const r = parseNutritionFromOCR(text);
+        expect(r.confidence).toBeCloseTo(r.directReads.length / 10, 10);
+      }
+    });
+
     it("does not bound fibre by carbohydrate — the regimes disagree", () => {
       // "Carbohydrate" is not one quantity across labelling regimes: EU
       // 1169/2011 declares AVAILABLE carbohydrate and lists fibre separately

@@ -5,7 +5,13 @@
  */
 import { parseLabelServingGrams } from "@shared/lib/label-serving";
 
-export interface LocalNutritionData {
+/**
+ * The ten numeric fields, split out so `NumericField` can be `keyof` them
+ * WITHOUT `LocalNutritionData` (which now carries a `NumericField[]`) having to
+ * reference itself. The previous `keyof Omit<LocalNutritionData, ...>` form
+ * would have become a type cycle the moment a field held that union.
+ */
+interface LocalNutritionNumbers {
   calories: number | null;
   totalFat: number | null;
   saturatedFat: number | null;
@@ -16,8 +22,33 @@ export interface LocalNutritionData {
   dietaryFiber: number | null;
   totalSugars: number | null;
   protein: number | null;
+}
+
+export interface LocalNutritionData extends LocalNutritionNumbers {
   servingSize: string | null;
   confidence: number;
+  /**
+   * PROVENANCE. The fields whose value was read DIRECTLY off a glyph run, as
+   * opposed to being reconstructed by the `gluedUnitIsForced` containment rule
+   * in the second pass below. Exactly the set that incremented `extracted`, so
+   * it is also the set `confidence` is computed from — one notion of "we
+   * actually read this", not two.
+   *
+   * It exists because the server has to be able to tell the two apart. An
+   * inference's error is bounded only by the parent field it was tested
+   * against (`[0, totalFat]` for `saturatedFat`), which is orders of magnitude
+   * wider than the printed-rounding error a direct read carries — and
+   * `buildLabelConflict` compares `saturatedFat` against the database record
+   * with a tolerance calibrated for the LATTER. A wrong inference compared at a
+   * print-rounding tolerance can raise a conflict on its own, and a conflict
+   * rewrites what lands in the user's food log. So the comparison is gated on
+   * this list; adoption is not. See `toLabelNutritionPayload` below and the
+   * comment above `cmp` in `server/services/label-override.ts`.
+   *
+   * A field being ABSENT from this list must always read as "not a direct
+   * read". It is never a claim in the other direction.
+   */
+  directReads: NumericField[];
 }
 
 /** Fix common OCR character misreads in numeric strings */
@@ -39,10 +70,7 @@ function extractNumber(raw: string): number | null {
   return num;
 }
 
-type NumericField = keyof Omit<
-  LocalNutritionData,
-  "servingSize" | "confidence"
->;
+export type NumericField = keyof LocalNutritionNumbers;
 
 interface FieldPattern {
   key: NumericField;
@@ -383,6 +411,7 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
     protein: null,
     servingSize: null,
     confidence: 0,
+    directReads: [],
   };
 
   if (!text.trim()) return result;
@@ -433,6 +462,10 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
     }
     result[key] = value;
     if (match[2]) substitutedUnit.add(key);
+    // Provenance: this pass — and only this pass — is a DIRECT glyph read.
+    // Deliberately the same line that increments `extracted`, so `directReads`
+    // and `confidence` can never disagree about which fields were read.
+    result.directReads.push(key);
     extracted++;
   }
 
@@ -448,12 +481,20 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   // bound of 0 can promote no non-zero child. Reorder the patterns, or add a
   // rule that resolves to something other than 0, and this needs rechecking.
   //
-  // Adopted fields deliberately do NOT count toward `confidence`. That number
-  // gates the instant local preview in `LabelAnalysisScreen` at 0.6, and it
-  // means "how much of this panel did we actually READ". An inference from a
-  // neighbouring value is weaker evidence than a glyph, and letting it lift a
-  // label over the gate would put inferred numbers in front of the user with
-  // nothing distinguishing them from measured ones.
+  // Adopted fields deliberately do NOT count toward `confidence`, and equally
+  // deliberately do NOT join `directReads`. That number gates the instant local
+  // preview in `LabelAnalysisScreen` at 0.6, and it means "how much of this
+  // panel did we actually READ". An inference from a neighbouring value is
+  // weaker evidence than a glyph, and letting it lift a label over the gate
+  // would put inferred numbers in front of the user with nothing
+  // distinguishing them from measured ones.
+  //
+  // `directReads` carries that same distinction ACROSS THE WIRE, because the
+  // server needs it too: `buildLabelConflict` compares `saturatedFat` against
+  // the database record at a tolerance sized for printed rounding, while an
+  // inference's error is bounded only by `totalFat`. Omitting the field here is
+  // what stops a wrong inference from raising a conflict — a conflict rewrites
+  // the numbers in the user's food log.
   for (const { key, value, raw } of glued) {
     if (!gluedUnitIsForced(key, value, raw, result, substitutedUnit)) continue;
     result[key] = value;
@@ -507,4 +548,39 @@ export function isLabelReady(
   // here, `null` there), which is precisely how a label could pass this gate
   // and be refused downstream.
   return parseLabelServingGrams(parsed.servingSize) != null;
+}
+
+/**
+ * The `labelNutrition` body `useNutritionLookup` POSTs to
+ * `/api/nutrition/barcode/:code`.
+ *
+ * A function rather than an inline object literal at the call site so the
+ * mapping has ONE definition. The reviewers found no test covering
+ * parser -> server at all — the parser suite and the `buildLabelConflict` suite
+ * use disjoint hand-written fixtures — so a payload built inline was a seam
+ * nothing could reach. `directReads` in particular is inert unless it is
+ * actually sent, and a test that rebuilt the body itself would have proven
+ * nothing about the client.
+ *
+ * The return type is declared here rather than imported from the server's
+ * `LabelNutritionInput`: client code must not depend on server modules. The
+ * integration test hands this value straight to `buildLabelConflict`, which is
+ * what type-checks the two shapes against each other.
+ */
+export function toLabelNutritionPayload(parsed: LocalNutritionData): {
+  calories: number | null;
+  totalSugars: number | null;
+  totalFat: number | null;
+  saturatedFat: number | null;
+  servingSize: string | null;
+  directReads: NumericField[];
+} {
+  return {
+    calories: parsed.calories,
+    totalSugars: parsed.totalSugars,
+    totalFat: parsed.totalFat,
+    saturatedFat: parsed.saturatedFat,
+    servingSize: parsed.servingSize,
+    directReads: parsed.directReads,
+  };
 }

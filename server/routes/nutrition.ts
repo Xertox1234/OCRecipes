@@ -195,6 +195,24 @@ const labelNutritionSchema = z.object({
     totalFat: z.number().finite().nonnegative().max(100000).nullable(),
     saturatedFat: z.number().finite().nonnegative().max(100000).nullable(),
     servingSize: z.string().max(120).nullable(),
+    // OCR provenance: the parser fields read DIRECTLY off a glyph run, as
+    // opposed to reconstructed by its `gluedUnitIsForced` containment rule.
+    // `buildLabelConflict` will not COMPARE an inferred `saturatedFat` against
+    // the record — see the `requiresDirectRead` policy there.
+    //
+    // OPTIONAL, and that is load-bearing. Clients already installed (and every
+    // client on an older OTA bundle) send no such key, and an absent key must
+    // fall to "not a direct read" rather than defaulting to "direct" — a
+    // default in the other direction would leave every existing install on the
+    // exact behaviour this validates against. Making it REQUIRED would be worse
+    // still: those clients would 400 and lose the label entirely.
+    //
+    // Typed as loose strings rather than a `z.enum` of the four known fields on
+    // purpose. `z.enum` would reject the whole request the first time a future
+    // client adds a fifth provenance key against an older server, dropping the
+    // label; an unrecognised entry here is simply inert, since the only
+    // question ever asked of this list is whether it CONTAINS a given field.
+    directReads: z.array(z.string().max(40)).max(32).optional(),
   }),
 });
 
