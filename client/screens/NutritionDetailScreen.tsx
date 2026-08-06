@@ -380,7 +380,21 @@ export default function NutritionDetailScreen() {
             `LogActionBar`, later in time and in a different commit. */}
         {!itemId ? (
           <NoticeStack
-            labelReadNotice={labelReadNotice}
+            // Suppressed when the lookup itself failed, for two reasons that
+            // share one trigger. Content: the notice says "so these values come
+            // from the product database", and on every path that sets `error`
+            // the hook also sets `nutrition` to a bare
+            // `{ productName: "Unknown Product" }` — there are no database
+            // values either, so the sentence is simply false there.
+            // Announcement: `isLoading` flips false in the SAME commit as
+            // `setError` (no await between the catch and the `finally`), so the
+            // early return above releases `NoticeStack` and `InlineError`
+            // together; two announces in one commit collide on iOS and the
+            // later one — `InlineError`, further down this JSX — silences this.
+            // Until this delta the hook announced the notice in its own earlier
+            // commit, which hid the collision; removing that duplicate is what
+            // exposed it.
+            labelReadNotice={error ? null : labelReadNotice}
             correctionNotice={correctionNotice}
             showPer100gInfo={isPer100g}
             reducedMotion={reducedMotion}

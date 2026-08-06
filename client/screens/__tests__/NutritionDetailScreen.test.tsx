@@ -1693,9 +1693,47 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
     expect(live[0].textContent).toContain(ERROR_BODY);
 
     // The positive form of "the notices carry none": walk up from a notice
-    // body and require no live region anywhere above it.
-    expect(getByText(LABEL_BODY).closest("[aria-live]")).toBeNull();
+    // body and require no live region anywhere above it. Uses the correction
+    // and per-100g rows rather than the label notice, which is suppressed
+    // whenever `error` is set — see the test below.
+    expect(getByText(CORRECTION_BODY).closest("[aria-live]")).toBeNull();
     expect(getByText(PER_100G_BODY).closest("[aria-live]")).toBeNull();
+  });
+
+  /**
+   * The label-read notice is suppressed while `error` is set, for two reasons
+   * that share one trigger.
+   *
+   * Content: every path that sets `error` also sets `nutrition` to a bare
+   * `{ productName: "Unknown Product" }`, so the notice's own sentence —
+   * "so these values come from the product database" — describes values that
+   * do not exist.
+   *
+   * Announcement: `setError` and `setIsLoading(false)` land in one commit (no
+   * await between the catch and the `finally`), so the screen's `isLoading`
+   * early-return releases `NoticeStack` and `InlineError` together. Two
+   * announces in one commit collide on iOS and the later one wins, so the
+   * notice was spoken and immediately silenced by the error. The hook used to
+   * announce it in an earlier commit of its own, which masked this until that
+   * duplicate was removed.
+   */
+  it("suppresses the label notice while an error is showing", () => {
+    const { getByText, queryByText } = renderScan({
+      error: ERROR_BODY,
+      labelReadNotice: LABEL_BODY,
+    });
+
+    expect(getByText(ERROR_BODY)).toBeTruthy();
+    expect(queryByText(LABEL_BODY)).toBeNull();
+  });
+
+  it("still shows the label notice when the lookup succeeded", () => {
+    // Negative control for the test above — the suppression must be scoped to
+    // the error state, not a blanket mute. This is the common unreadable-label
+    // path, where the database values really are what the user is looking at.
+    const { getByText } = renderScan({ labelReadNotice: LABEL_BODY });
+
+    expect(getByText(LABEL_BODY)).toBeTruthy();
   });
 
   /**
