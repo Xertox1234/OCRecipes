@@ -8,7 +8,7 @@ applies_to: ["client/lib/nutrition-ocr-parser.ts", "client/screens/LabelAnalysis
 symptoms: ["Adding a recovery rule raises a confidence score, which then clears a gate that recovery was supposed to be judged by", "A quality metric rises without any improvement in input quality", "Inferred values are displayed with nothing distinguishing them from measured ones", "The threshold that was tuned against direct readings now admits derived ones"]
 severity: medium
 created: 2026-08-05
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 ---
 
 # A confidence score that counts inferences gates itself — count evidence, not conclusions
@@ -79,15 +79,20 @@ gives a reconciliation step something to prioritise.
   compares only calories/fat/protein/carbs/sodium, so an inferred
   `saturatedFat` or `dietaryFiber` was never re-checked by the AI pass. The
   sibling gap — `buildLabelConflict`'s `cmp` list also never compared
-  `saturatedFat` against the database — was raised as a todo the same day
-  this solution was written and resolved as a **deliberate exclusion**, not a
-  fix: the server can't condition on OCR provenance once the payload arrives
-  (a direct read, an inference, and a plain digit misread are
-  indistinguishable), so no comparison could trust one saturatedFat reading
-  over another. See the comment above `cmp` in
-  `server/services/label-override.ts` for the full reasoning.
-  `shouldReplaceWithAI` itself remains unaddressed — out of scope for that
-  todo.
+  `saturatedFat` against the database — was raised as a todo the same day this
+  solution was written and is now **fixed**: `saturatedFat` is in `cmp`.
+  Worth noting how, because "add it to the list" was not sufficient. The
+  argument for leaving it out was that the server cannot condition on OCR
+  provenance once the payload arrives — a direct read, an inference and a plain
+  digit misread are indistinguishable — but that is a reason to trust the
+  reading LESS, which argues for corroborating it, not for skipping the check.
+  The real obstacle was quantitative: label readings are per-serving and get
+  scaled to per-100, which scales their printing-rounding error too, so a naive
+  comparison fires spurious conflicts. The fix is a floor traceable to the
+  labelling rules (one 0.5 g printed step × the scaling factor), plus keeping
+  the field out of the `compared >= 2` trust gate because a check run at a
+  widened tolerance is weaker evidence than the others. `shouldReplaceWithAI`
+  itself remains unaddressed — out of scope for that todo.
 
 ## Related Files
 
@@ -95,7 +100,7 @@ gives a reconciliation step something to prioritise.
 - `client/screens/LabelAnalysisScreen.tsx` — the `>= 0.6` instant-preview gate
 - `client/screens/label-analysis-utils.ts` — `shouldReplaceWithAI`, the fields the AI pass reconciles
 - `client/lib/__tests__/nutrition-ocr-parser.test.ts` — the confidence assertion plus its populated-fields counterpart
-- `server/services/label-override.ts` — `cmp`, the sibling reconciliation gap for `saturatedFat` (deliberately excluded, see above)
+- `server/services/label-override.ts` — `cmp`, which now corroborates `saturatedFat` behind a label-rounding floor (see above)
 
 ## See Also
 

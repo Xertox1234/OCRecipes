@@ -11,7 +11,39 @@ export interface LabelNutritionInput {
   servingSize: string | null;
 }
 
-export type ConflictField = "calories" | "sugar" | "fat";
+export type ConflictField = "calories" | "sugar" | "fat" | "saturatedFat";
+
+/**
+ * One field's label-vs-DB comparison inputs, plus the two policies that are
+ * NOT uniform across fields.
+ *
+ * A single list of these, never two parallel ones. `fields` and
+ * `comparedCount` are derived from the same rows precisely because
+ * `saturatedFat` now feeds one and not the other: encoding that divergence as
+ * a PROPERTY of the row keeps it impossible for the two to drift when a fifth
+ * field is added. (Every recent defect in this area was a pair of
+ * field-parallel structures updated on one path and not the other.)
+ */
+interface FieldComparison {
+  field: ConflictField;
+  /** The label's reading, already normalized to per-100. */
+  labelVal: number | undefined;
+  /** The record's per-100 counterpart. */
+  dbVal: number | undefined;
+  /**
+   * Absolute per-100 gap that the label's own PRINTED ROUNDING can account
+   * for. A field is only called a disagreement when the relative check fails
+   * AND the gap exceeds this. `0` = no cushion, the historical behaviour.
+   */
+  roundingFloor: number;
+  /**
+   * Whether AGREEMENT on this field counts toward `comparedCount`, i.e. the
+   * `compared >= 2` one-tap-log gate. Disagreement always reaches `fields`
+   * regardless — raising a conflict and vouching for the screen are separate
+   * outcomes.
+   */
+  corroborates: boolean;
+}
 
 export interface LabelConflict {
   conflict: boolean;
@@ -20,14 +52,16 @@ export interface LabelConflict {
   /**
    * Whether the label was actually compared against the record.
    *
-   * On the AGREEMENT path this requires at least TWO fields to have had both a
-   * label reading and a DB per-100g counterpart. `compared` drives the client's
-   * `labelUsed`, which opens one-tap logging on the claim that the values on
-   * screen were checked against the package — and a calories-only label makes
-   * exactly one field comparable, so a single agreement would verify one number
-   * while the user logs sugar, fat, protein and sodium that were never checked.
-   * On the CONFLICT path one field is enough, because the label's values replace
-   * the ones they disagree with.
+   * On the AGREEMENT path this requires at least TWO CORROBORATING fields
+   * (calories/sugar/fat — `saturatedFat` is compared but deliberately does not
+   * count; see the `corroborates` flag and the comment above `cmp`) to have had
+   * both a label reading and a DB per-100g counterpart. `compared` drives the
+   * client's `labelUsed`, which opens one-tap logging on the claim that the
+   * values on screen were checked against the package — and a calories-only
+   * label makes exactly one field comparable, so a single agreement would verify
+   * one number while the user logs sugar, fat, protein and sodium that were
+   * never checked. On the CONFLICT path one field is enough, because the label's
+   * values replace the ones they disagree with.
    *
    * `conflict: false` alone cannot tell agreement from refusal: this function
    * declines on an unparseable serving, an implausible serving, or a record with
@@ -44,6 +78,53 @@ export interface LabelConflict {
  *  absolute floor — so label-override and verification/OFF-consistency can't
  *  drift into two different notions of "these numbers agree". */
 const REL_THRESHOLD = 0.25;
+
+/**
+ * The increment a Nutrition Facts panel PRINTS saturated fat in: FDA
+ * 21 CFR 101.9(c)(2)(ii) and CFIA's equivalent rounding table quantize it to
+ * the nearest 0.5 g between 0.5 g and 5 g (to 0 below 0.5 g; to the nearest
+ * 1 g above 5 g). This is a property of the labelling rules, not a tolerance
+ * tuned to any observed product or test.
+ *
+ * It becomes an absolute floor on the saturatedFat comparison because label
+ * readings are PER SERVING and get multiplied by `factor = 100 / labelGrams`
+ * to reach the per-100 basis the record uses — which multiplies the printed
+ * value's quantization error right along with them. On a 30 g serving
+ * (`factor` 3.33) one 0.5 g printing step is ~1.7 g at per-100 scale, while
+ * `valuesMatch`'s 25% relative branch allows only 1.0 g at 4 g/100g. So in the
+ * 2-5 g/100g band, rounding ALONE clears the tolerance and an unguarded
+ * comparison would flag two agreeing numbers as a conflict. (Below 2 g on both
+ * sides `valuesMatch`'s ±1 absolute floor already applies and is more
+ * forgiving; above ~5 g the relative branch comfortably exceeds the
+ * quantization.) A spurious conflict is expensive here: ANY conflict takes the
+ * blank-uncorrected-siblings path below, discarding the record's
+ * carbs/protein/fiber/sodium.
+ *
+ * Why one whole step rather than the half-step either value can be off by:
+ * both sides of the comparison are rounded, and their errors can point in
+ * opposite directions. The label side contributes at most half a step scaled,
+ * `0.25 * factor`. The record's per-100 figure is itself transcribed from a
+ * panel: 0.25 g flat when that panel printed per-100 (the EU shape), up to
+ * `0.25 * factor` when it printed per-serving at a comparable serving. The sum
+ * is at most `0.25 * (factor + 1)`, which for `factor >= 1` — every serving
+ * under 100 g, i.e. the whole band where this floor is ever the binding
+ * constraint — is at most `0.5 * factor`: exactly ONE printed step scaled to
+ * per-100. For servings above 100 g the expression is looser than the worst
+ * case, and the relative branch dominates there anyway.
+ *
+ * The >5 g/serving rule (1 g steps) needs no separate term: a per-serving
+ * reading above 5 g is above `5 * factor` per-100, where 25% relative already
+ * allows `1.25 * factor` — more than either step's floor.
+ *
+ * The floor can only ever SUPPRESS a conflict, so its failure mode is falling
+ * back to the database result — the direction the spec already calls safe ("on
+ * doubt, fail toward the DB result"). On a very small serving it makes the
+ * check nearly vacuous (a 5 g serving yields a 10 g/100g floor); accepted,
+ * because at that scale the printed digit genuinely carries no finer
+ * information, and the behaviour it degrades to is the no-check-at-all this
+ * change replaces.
+ */
+const SATURATED_FAT_LABEL_ROUNDING_STEP_G = 0.5;
 
 /** Upper plausibility bound for a label-derived serving (grams/ml). A single
  *  beverage serving tops out around a 2 L bottle; a larger value is almost
@@ -144,76 +225,118 @@ export function buildLabelConflict(
 
   // Compare the read fields against the DB per-100.
   //
-  // `saturatedFat` is deliberately NOT in `cmp` below — reviewed, not an
-  // oversight. Two reasons; the first alone carries the decision, the second
-  // is a narrower reinforcement that applies to some products, not all:
+  // ALL FOUR payload fields are compared, `saturatedFat` included. An earlier
+  // revision of this branch excluded it and argued the exclusion was
+  // deliberate; that decision was overridden (user, 2026-08-06). Writing a
+  // photographed number over a database record — and into someone's food log —
+  // without ever checking it against that record is the defect. The old
+  // argument (the server can't tell a confident direct read from a
+  // `gluedUnitIsForced` containment inference or a plain digit misread, since
+  // `labelNutritionSchema` sends a bare nullable number) is a reason to trust
+  // the reading LESS, which is an argument FOR corroborating it, not for
+  // skipping the check.
   //
-  // 1. The server can't condition on provenance. `labelNutritionSchema`
-  //    sends saturatedFat as a bare nullable number; the parser's
-  //    substitutedUnit / gluedUnitIsForced verdict (direct read vs.
-  //    containment inference — client/lib/nutrition-ocr-parser.ts) is
-  //    discarded before this payload arrives. Any comparison would treat a
-  //    confident direct read and an ambiguous inference identically, and —
-  //    the sharper point — a plain digit misread inside an unambiguous "X g"
-  //    match (a 3 read as 8, say) is JUST as uncorroborated as an inference;
-  //    `fixOCRDigits` only repairs O/I/l/S-class glyph confusions, not
-  //    digit-for-digit ones. There is no shape of saturatedFat reading this
-  //    module could trust more than another.
-  // 2. On low-fat products a spurious conflict is expensive and easy to
-  //    trigger: saturated fat there sits under the ~5 g band where
-  //    `valuesMatch`'s 25% relative branch applies with no absolute-floor
-  //    cushion — the genuinely tightest window is 2-5 g/100g (below 2 g on
-  //    BOTH sides, the ±1 g absolute floor is more forgiving than 25%
-  //    relative would be). And label values are read PER-SERVING then scaled
-  //    by `factor = 100 / labelGrams` before comparison — a single 0.5 g
-  //    FDA/CFIA rounding step on a 30-60 g serving amplifies to ~0.8-1.7 g at
-  //    the per-100 scale being compared, which can clear the tolerance on
-  //    rounding alone. (This does NOT hold for high-fat
-  //    products — cheese, butter — where saturated fat routinely exceeds
-  //    5 g/100g and 25% relative is as forgiving as it is for sugar/fat; the
-  //    decision does not rest on this case.) When it does trigger, the cost
-  //    is real: a conflict takes the blank-uncorrected-siblings path below
-  //    (`mergedPer100g = {...per100, caffeine}`), discarding the DB's
-  //    carbs/protein/fiber/sodium — a noisy saturatedFat-only conflict would
-  //    throw those away on a record whose calories/sugar/fat all agreed.
+  // Two policies make the addition safe, and both live on the rows below
+  // rather than in a second list:
   //
-  // Narrower secondary note: including it would also raise `comparedCount`
-  // (loosening the `compared >= 2` one-tap-log gate below) — but
-  // `gluedUnitIsForced` requires a non-substituted `totalFat` read to promote
-  // a saturatedFat INFERENCE specifically, and `fat` is already in `cmp`, so
-  // this effect is rarely what tips the threshold on its own for that path.
+  // 1. `roundingFloor` — saturatedFat gets a quantization cushion the other
+  //    three do not; the derivation is on
+  //    `SATURATED_FAT_LABEL_ROUNDING_STEP_G` above. Without it the 2-5 g/100g
+  //    band fires conflicts on rounding alone, and a conflict is expensive:
+  //    it takes the blank-uncorrected-siblings path below, discarding the
+  //    record's carbs/protein/fiber/sodium.
   //
-  // Accepted residual: a wrong saturatedFat — misread OR inferred — can still
-  // ride into `mergedPer100g` uncorroborated whenever some OTHER field
-  // triggers a conflict. This is not narrowly bounded: the containment guard
-  // and substitutedUnit check (client/lib/nutrition-ocr-parser.ts) only cover
-  // the glued-ambiguous-token path, not a plain misread inside an
-  // unambiguous match, and `shouldReplaceWithAI`
-  // (client/screens/label-analysis-utils.ts) doesn't re-check saturatedFat
-  // either. What DOES bound it: fat containment holding under every
-  // labelling regime makes an INFERRED value trustworthy on its own terms,
-  // and `evaluateUniversalFlags`'s FSA "high in saturated fat" flag has a
-  // built-in safety asymmetry — a wrong-LOW value that suppresses a real
-  // DB-sourced flag is caught by the route's lost-flag diff
-  // (`nutrient-unavailable`); a wrong-HIGH value that spuriously introduces
-  // the flag is the direction this codebase already treats as the safe one
-  // to risk. See
+  //    `fat` is printed in the same 0.5 g steps and has the same amplification
+  //    in principle, and is deliberately left at `0` anyway: giving a floor to
+  //    a field ALREADY in `cmp` would loosen a check that currently works (the
+  //    Cherry Coke override is exactly a calories/sugar/fat disagreement),
+  //    whereas bounding a newly-admitted field only limits a new source of
+  //    false positives. If `fat` should have one, that is its own change with
+  //    its own evidence — not a symmetry argument riding in on this one.
+  //
+  // 2. `corroborates` — saturatedFat can RAISE a conflict but can never help
+  //    open the `compared >= 2` one-tap-log gate below. Policy (1) is exactly
+  //    why: a saturatedFat AGREEMENT is materially weaker evidence than the
+  //    other three, because a gap of up to a full printed step is scored as
+  //    agreement by construction. The field whose agreement test was
+  //    deliberately widened must not be the field that tips a trust threshold
+  //    — otherwise a calories + saturatedFat label reaches 2 and tells the
+  //    user the sugar, fat, protein and sodium on screen were checked against
+  //    the package, on the strength of one number compared at a widened
+  //    tolerance.
+  //
+  //    So both halves of this change move the same way: conflicts get EASIER
+  //    to detect, and the trust gate does not get easier to open.
+  //    `comparedCount` is byte-for-byte unaffected by adding this field — a
+  //    deliberate property, since `compared` drives client UI (one-tap
+  //    logging) well away from this file.
+  //
+  //    Two states this asymmetry creates, both pinned by tests:
+  //    - saturatedFat the only comparable field and DISAGREEING -> conflict
+  //      with `comparedCount === 0`, and the conflict path still returns
+  //      `compared: true`. That is consistent with that path's existing
+  //      rationale, not an exception to it: on a conflict the label's values
+  //      replace the ones they disagree with, so what is displayed did come
+  //      from the label.
+  //    - saturatedFat the only comparable field and AGREEING -> `compared:
+  //      false`. Nothing shown was corroborated broadly enough to claim it.
+  //
+  // Accepted residual, narrowed but not closed: a wrong saturatedFat still
+  // rides into `mergedPer100g` when the RECORD has no `saturated-fat_100g` to
+  // compare against and some other field conflicts. A comparison can only
+  // bound what the record is able to answer. Nothing downstream re-checks it
+  // either — `shouldReplaceWithAI` (client/screens/label-analysis-utils.ts)
+  // compares only calories/fat/protein/carbs/sodium. What partially bounds it:
+  // `evaluateUniversalFlags`'s FSA "high in saturated fat" flag has a safety
+  // asymmetry — a wrong-LOW value suppressing a real record-sourced flag is
+  // caught by the route's lost-flag diff (`nutrient-unavailable`), and
+  // wrong-HIGH is the direction this codebase already treats as safe to risk.
+  // See
   // docs/solutions/logic-errors/confidence-must-count-evidence-not-inferences-2026-08-05.md.
   const fields: ConflictField[] = [];
-  const cmp: [ConflictField, number | undefined, number | undefined][] = [
-    ["calories", per100.calories, dbResult.per100g.calories],
-    ["sugar", per100.sugar, dbResult.per100g.sugar],
-    ["fat", per100.fat, dbResult.per100g.fat],
+  const cmp: FieldComparison[] = [
+    {
+      field: "calories",
+      labelVal: per100.calories,
+      dbVal: dbResult.per100g.calories,
+      roundingFloor: 0,
+      corroborates: true,
+    },
+    {
+      field: "sugar",
+      labelVal: per100.sugar,
+      dbVal: dbResult.per100g.sugar,
+      roundingFloor: 0,
+      corroborates: true,
+    },
+    {
+      field: "fat",
+      labelVal: per100.fat,
+      dbVal: dbResult.per100g.fat,
+      roundingFloor: 0,
+      corroborates: true,
+    },
+    {
+      field: "saturatedFat",
+      labelVal: per100.saturatedFat,
+      dbVal: dbResult.per100g.saturatedFat,
+      roundingFloor: SATURATED_FAT_LABEL_ROUNDING_STEP_G * factor,
+      corroborates: false,
+    },
   ];
   // Count the fields we could actually compare, separately from the ones that
   // disagreed. An empty `fields` is ambiguous on its own: it means either "every
   // comparable field agreed" or "there was nothing comparable at all", and only
   // the first justifies the client trusting the displayed numbers.
   let comparedCount = 0;
-  for (const [name, labelVal, dbVal] of cmp) {
-    if (labelVal == null || dbVal == null) continue;
-    comparedCount++;
-    if (!valuesMatch(labelVal, dbVal, REL_THRESHOLD)) fields.push(name);
+  for (const c of cmp) {
+    if (c.labelVal == null || c.dbVal == null) continue;
+    if (c.corroborates) comparedCount++;
+    if (valuesMatch(c.labelVal, c.dbVal, REL_THRESHOLD)) continue;
+    // The relative check failed. Only call that a disagreement if the gap is
+    // larger than the label's own printed rounding can explain.
+    if (Math.abs(c.labelVal - c.dbVal) <= c.roundingFloor) continue;
+    fields.push(c.field);
   }
   if (fields.length === 0) {
     // No disagreement. `compared` distinguishes a genuine agreement (the record
@@ -225,7 +348,8 @@ export function buildLabelConflict(
     // checked against the package. A calories-only label makes exactly one
     // field comparable, so agreement there verifies a single number while the
     // user logs sugar, fat, protein and sodium that were never checked against
-    // anything.
+    // anything. `saturatedFat` agreement does not count toward this total even
+    // though the field IS compared — see `corroborates` above.
     //
     // Note this is a genuine tightening, not merely a restoration: comparability
     // needs a DB per-100g counterpart too, so a record carrying

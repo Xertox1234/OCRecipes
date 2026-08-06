@@ -4,6 +4,7 @@ import {
   type LabelNutritionInput,
 } from "../label-override";
 import type { BarcodeLookupResult } from "../barcode-lookup";
+import { valuesMatch } from "../../lib/verification-consensus";
 
 // DB result shaped like OFF's wrong Cherry Coke entry (per-100 ml).
 function cherryCokeDb(): BarcodeLookupResult {
@@ -364,119 +365,200 @@ it("presence-gate declines also report compared false", () => {
   ).toBe(false);
 });
 
-// ── `saturatedFat` is deliberately NOT in `cmp` (see the comment above `cmp`
-// in label-override.ts). Two of the tests below are the actual regression
-// guards, each catching a different half of "saturatedFat silently rejoins
-// `cmp`": the DISAGREES test catches it via `fields` (a re-admitted field
-// that disagrees gets pushed there), and the comparedCount test below catches
-// it via `compared` (a re-admitted field that agrees raises `comparedCount`).
-// The AGREES test and the negative control's agreeing branch are agreement
-// cases, which `fields`/`compared` cannot distinguish from "not compared at
-// all" — they exist to document the accepted behavior (the label's value
-// rides through unconditionally either way), not to catch that regression.
+// ── `saturatedFat` IS corroborated against the record (see the comment above
+// `cmp` in label-override.ts). Two policies distinguish it from the other
+// three fields, and each has its own tests below:
+//
+//   1. It carries a quantization floor derived from the 0.5 g step a Nutrition
+//      Facts panel prints saturated fat in, scaled by the same per-serving →
+//      per-100 `factor` the reading itself is scaled by. Without it the
+//      2-5 g/100g band conflicts on rounding alone.
+//   2. Its AGREEMENT does not count toward `comparedCount`, so it can raise a
+//      conflict but can never help open the `compared >= 2` one-tap-log gate.
+//
+// A fatty-product fixture (cheddar-like, 30 g serving) is used for most of
+// these rather than the beverage one: saturated fat is only interesting where
+// it is nonzero, and the small serving is what makes the rounding
+// amplification visible (factor 3.33, so a 0.5 g printed step is 1.67 g at
+// per-100 scale).
 
-it("conflict path: label saturatedFat rides through even when it AGREES with the DB", () => {
+/**
+ * Cheddar-like fixture: 30 g label serving against a trusted 28 g DB serving
+ * (close enough to clear the >4x/<0.25x serving cross-check, which the 355 ml
+ * beverage default would otherwise trip before any comparison runs).
+ * calories/sugar/fat are offset by a real amount INSIDE tolerance rather than
+ * being identical, so `valuesMatch`'s relative and absolute-floor branches are
+ * genuinely exercised instead of its `a === b` shortcut.
+ */
+function cheddarDb(saturatedFat: number | undefined): BarcodeLookupResult {
+  const db = cherryCokeDb();
+  db.servingInfo = { displayLabel: "28 g", grams: 28, wasCorrected: false };
+  db.per100g = {
+    calories: 380, // within 25% of the label's ~403.3
+    sugar: 1.5, // within the <2 g absolute ±1 floor of the label's ~1.33
+    fat: 30, // within 25% of the label's ~33.3
+    saturatedFat,
+  };
+  return db;
+}
+
+const cheddarLabel: LabelNutritionInput = {
+  calories: 121, // 30 g serving; scales to ~403.3 per-100
+  totalSugars: 0.4, // -> ~1.33 per-100
+  totalFat: 10, // -> ~33.3 per-100
+  saturatedFat: 6.3, // -> ~21 per-100
+  servingSize: "30 g",
+};
+
+it("a saturatedFat disagreement beyond the rounding floor conflicts on its own", () => {
+  // calories/sugar/fat all agree; only saturatedFat disagrees — ~21 per-100
+  // from the label against the record's 2. That gap (19) dwarfs both the 25%
+  // relative tolerance and the 1.67 g/100g quantization floor a 30 g serving
+  // produces, so it is a real disagreement and must be reported as one.
+  //
+  // This is the behaviour the previous revision of this branch deliberately
+  // did NOT have: the same fixture was a "negative control" asserting no
+  // conflict. Overridden — writing a photographed number over the record
+  // without ever checking it against the record is the defect.
+  const r = buildLabelConflict(cheddarDb(2), cheddarLabel);
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["saturatedFat"]);
+  // And the conflict is acted on: the label's value replaces the record's.
+  expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(21, 5);
+});
+
+it("an agreeing saturatedFat produces no conflict", () => {
+  // Same fixture, record's saturatedFat within 25% of the label's ~21.
+  const r = buildLabelConflict(cheddarDb(20.5), cheddarLabel);
+  expect(r.conflict).toBe(false);
+  expect(r.fields).toEqual([]);
+  // Still `compared` — calories/sugar/fat are three corroborating agreements.
+  expect(r.compared).toBe(true);
+});
+
+/**
+ * THE DISCRIMINATING TEST for the quantization floor.
+ *
+ * FDA/CFIA quantize printed saturated fat to 0.5 g steps, and the label is
+ * read PER SERVING then multiplied by `factor = 100 / labelGrams`, which
+ * multiplies that rounding error too. On this 30 g serving `factor` is 3.33,
+ * so ONE printed step is 1.67 g at the per-100 scale being compared — while
+ * `valuesMatch`'s 25% relative branch allows only 1.25 g at 5 g/100g. Two
+ * genuinely agreeing labels would therefore be reported as conflicting, and a
+ * conflict is expensive: it blanks the record's carbs/protein/fiber/sodium.
+ *
+ * The values below are exactly one printed step apart. The label prints 1.5 g
+ * per 30 g serving (5.0 per-100); the record's 3.4 per-100 is ~1.02 g on the
+ * same serving. Relative check: 1.6 / 5.0 = 32% — FAILS. Floor: 1.6 <= 1.67 —
+ * so the gap is fully explained by rounding and must not be called a conflict.
+ *
+ * Non-vacuity: verified to FAIL (conflict true, fields ["saturatedFat"]) when
+ * the `roundingFloor` term is removed from the comparison loop.
+ */
+it("does NOT conflict when label and record saturatedFat differ by one printed rounding step", () => {
+  const label: LabelNutritionInput = { ...cheddarLabel, saturatedFat: 1.5 };
+  const r = buildLabelConflict(cheddarDb(3.4), label);
+  expect(r.conflict).toBe(false);
+  expect(r.fields).toEqual([]);
+  expect(r.labelResult).toBeUndefined();
+  // Both values sit above 2, so `valuesMatch`'s ±1 absolute branch is NOT what
+  // saved this — the floor is. Pin that the relative check really did fail.
+  expect(valuesMatch(1.5 * (100 / 30), 3.4, 0.25)).toBe(false);
+});
+
+it("conflict path: label saturatedFat rides through when it AGREES with the record", () => {
   // Conflict is triggered by calories/sugar (goodLabel vs. the unmodified
-  // Cherry Coke DB, same as the very first test in this file). DB carries a
-  // saturatedFat that matches the label's scaled reading exactly.
+  // Cherry Coke DB, same as the very first test in this file). The record
+  // carries a saturatedFat matching the label's scaled reading, so
+  // saturatedFat stays OUT of `fields` — this assertion is unchanged from
+  // when the field was excluded from `cmp`, but for a different reason: it is
+  // now compared and agrees, rather than never being compared.
   const db = cherryCokeDb();
   db.per100g = { ...db.per100g, saturatedFat: 1 }; // 3.55g / 355mL * 100 = 1
   const label: LabelNutritionInput = { ...goodLabel, saturatedFat: 3.55 };
   const r = buildLabelConflict(db, label);
   expect(r.conflict).toBe(true);
-  // `fields` is what the client is told "differs" — saturatedFat must never
-  // appear in it, agree or disagree, since it was never in `cmp`.
   expect(r.fields).toEqual(["calories", "sugar"]);
   expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(1, 5);
 });
 
-it("conflict path: label saturatedFat rides through even when it DISAGREES with the DB", () => {
+it("conflict path: a DISAGREEING saturatedFat now joins `fields` alongside the others", () => {
   const db = cherryCokeDb();
   db.per100g = { ...db.per100g, saturatedFat: 10 }; // wildly different from 1
   const label: LabelNutritionInput = { ...goodLabel, saturatedFat: 3.55 };
   const r = buildLabelConflict(db, label);
   expect(r.conflict).toBe(true);
-  // Disagreement alone must NOT add "saturatedFat" to `fields` — if it did,
-  // that would mean the field silently rejoined `cmp`.
-  expect(r.fields).toEqual(["calories", "sugar"]);
-  // The label's (uncorroborated) value wins — not the DB's, not a blend.
+  // The 355 ml serving makes `factor` 0.28, so the floor here is only 0.14 —
+  // a 9 g/100g gap is nowhere near explainable by rounding.
+  expect(r.fields).toEqual(["calories", "sugar", "saturatedFat"]);
+  // The label's value still wins in the merged block — not the DB's, not a
+  // blend. Corroboration changes what the user is TOLD differs, not which
+  // source the conflict path adopts.
   expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(1, 5);
 });
 
-it("negative control: a disagreeing saturatedFat alone does NOT create a conflict when calories/sugar/fat all agree", () => {
-  // A fatty-product shape (cheddar-like, 30g serving) rather than the
-  // beverage fixture: nonzero totalFat with saturatedFat inside it (a
-  // physically real relationship), and DB calories/sugar/fat offset by a
-  // real amount within tolerance — NOT identical to the label's scaled
-  // values — so this exercises `valuesMatch`'s actual relative/absolute-floor
-  // branches rather than its `a === b` shortcut.
-  const label: LabelNutritionInput = {
-    calories: 121, // 30g serving; scales to ~403.3 per-100
-    totalSugars: 0.4, // -> ~1.33 per-100
-    totalFat: 10, // -> ~33.3 per-100
-    saturatedFat: 6.3, // -> ~21 per-100 — wildly disagrees with the DB below
-    servingSize: "30 g",
-  };
-  const dbDisagree = cherryCokeDb();
-  // Also set a trusted DB serving close to the label's 30g — cherryCokeDb's
-  // default 355ml serving would otherwise trip the >4x/<0.25x cross-check
-  // ratio guard before the comparison this test targets is even reached.
-  dbDisagree.servingInfo = {
-    displayLabel: "28 g",
-    grams: 28,
-    wasCorrected: false,
-  };
-  dbDisagree.per100g = {
-    calories: 380, // within 25% of ~403.3
-    sugar: 1.5, // within the <2g absolute ±1 floor of ~1.33
-    fat: 30, // within 25% of ~33.3
-    saturatedFat: 2, // disagrees hugely with the label's ~21
-  };
-  const rDisagree = buildLabelConflict(dbDisagree, label);
-  expect(rDisagree.conflict).toBe(false);
-  expect(rDisagree.fields).toEqual([]);
-  expect(rDisagree.labelResult).toBeUndefined();
-  expect(rDisagree.compared).toBe(true);
+// ── `comparedCount`: saturatedFat is compared, but its agreement is not
+// evidence the SCREEN was checked.
 
-  // Same fixture but saturatedFat also agrees — documents that agreement
-  // takes the identical path (this assertion alone can't distinguish
-  // "not compared" from "compared and agreed"; the dedicated comparedCount
-  // test below is what actually pins that saturatedFat's agreement can't
-  // raise `comparedCount`).
-  const dbAgree = cherryCokeDb();
-  dbAgree.servingInfo = {
-    displayLabel: "28 g",
-    grams: 28,
-    wasCorrected: false,
-  };
-  dbAgree.per100g = {
-    calories: 380,
-    sugar: 1.5,
-    fat: 30,
-    saturatedFat: 20.5, // agrees with the label's ~21
-  };
-  const rAgree = buildLabelConflict(dbAgree, label);
-  expect(rAgree.conflict).toBe(false);
-  expect(rAgree.compared).toBe(true);
-});
-
-it("saturatedFat agreement never raises comparedCount — the compared>=2 gate stays shut on calories alone", () => {
+it("saturatedFat agreement does not raise comparedCount — the compared>=2 gate stays shut on calories alone", () => {
   // Calories-only label (sugar/fat unread), mirroring "agreement on calories
   // alone does not claim the label was verified" above, PLUS a saturatedFat
-  // reading that also agrees with the DB. Correct behaviour: comparedCount
-  // stays 1 (calories only), so `compared` stays false. If saturatedFat were
-  // silently re-admitted to `cmp`, comparedCount would go 1 -> 2 and flip
-  // `compared` to true — exactly the "loosens the compared >= 2 gate" risk
-  // the code comment above `cmp` names.
+  // reading that IS compared here and agrees (18 g / 355 ml = 5.07 per-100 vs
+  // the record's 5 — that value is load-bearing, not arbitrary).
+  //
+  // Correct behaviour: `comparedCount` stays 1, so `compared` stays false.
+  // saturatedFat's agreement test was deliberately widened by the quantization
+  // floor, which makes it materially weaker evidence than the other three — so
+  // it must not be the field that tips a trust gate the client stakes one-tap
+  // logging on. If `corroborates` were flipped to true, comparedCount would go
+  // 1 -> 2 and this would flip to `compared: true`.
+  //
+  // This case can only be built with an AGREEING saturatedFat: a disagreeing
+  // one takes the conflict path, where `compared` is unconditionally true.
   const db = cherryCokeDb();
   db.per100g = { calories: 39.4, sugar: 11, fat: 0, saturatedFat: 5 };
   const r = buildLabelConflict(db, {
     calories: 140,
     totalSugars: null,
     totalFat: null,
-    saturatedFat: 18, // arbitrary — never compared, so its value is moot
+    saturatedFat: 18,
     servingSize: "1 can (355 mL)",
   });
   expect(r.conflict).toBe(false);
+  expect(r.compared).toBe(false);
+});
+
+it("saturatedFat as the ONLY comparable field: disagreement conflicts, and the conflict path still reports compared", () => {
+  // The record has no calories/sugar/fat per-100 counterpart at all, so
+  // `comparedCount` is 0 — yet saturatedFat disagrees far beyond the floor and
+  // raises a conflict. `compared: true` is right on this path for the same
+  // reason it always was: the label's values REPLACE the ones they disagree
+  // with, so what is displayed did come from the package.
+  const db = cheddarDb(2);
+  db.per100g = { saturatedFat: 2 };
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null,
+  });
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["saturatedFat"]);
+  expect(r.compared).toBe(true);
+});
+
+it("saturatedFat as the ONLY comparable field: agreement alone does NOT claim the label was verified", () => {
+  // The mirror of the case above. Nothing disagreed, but the single field that
+  // agreed does not count toward `comparedCount`, so the one-tap-log gate
+  // stays shut — the sugar, fat, protein and sodium on screen were never
+  // checked against anything.
+  const db = cheddarDb(20.5);
+  db.per100g = { saturatedFat: 20.5 };
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null,
+  });
+  expect(r.conflict).toBe(false);
+  expect(r.fields).toEqual([]);
   expect(r.compared).toBe(false);
 });

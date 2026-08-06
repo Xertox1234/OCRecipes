@@ -60,6 +60,32 @@ describe("ScanConflictPrompt", () => {
     expect(onChoose).toHaveBeenCalledWith("label");
   });
 
+  it("gives every server ConflictField a human label — saturatedFat is not shown as a raw key", () => {
+    // `conflictFields` crosses the wire as `string[]`, so a member of the
+    // server's `ConflictField` union that is missing from `FIELD_LABEL` is not
+    // a type error — it falls through to `?? f` and puts the camelCase key
+    // both on screen and inside the radio's accessibilityLabel. Assert the
+    // rendered text and the a11y label, not just "it rendered".
+    const satLabel = { ...label, saturatedFat: 6.3 };
+    const satDb = { ...db, saturatedFat: 0.6 };
+    const { getByText, queryByText, getByLabelText, queryByLabelText } =
+      renderComponent(
+        <ScanConflictPrompt
+          conflictFields={["saturatedFat"]}
+          labelNutrition={satLabel}
+          dbNutrition={satDb}
+          activeSource="label"
+          onChoose={() => {}}
+        />,
+      );
+    expect(queryByText(/saturatedFat/)).toBeNull();
+    expect(queryByLabelText(/saturatedFat/)).toBeNull();
+    // Two columns (label + database), each printing the field name.
+    expect(getByText("6.3")).toBeTruthy();
+    expect(getByText("0.6")).toBeTruthy();
+    expect(getByLabelText(/Saturated Fat \(g\) 6\.3/)).toBeTruthy();
+  });
+
   it("follows activeSource in both directions — database selected flips which column reports selected", () => {
     const { getByLabelText } = renderComponent(
       <ScanConflictPrompt

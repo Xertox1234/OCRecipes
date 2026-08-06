@@ -240,28 +240,27 @@ const FIELD_PATTERNS: FieldPattern[] = [
 // parser still refuses ("2.59" -> 2.5 g, true only if you assume the printing
 // precision rules).
 //
-// Know what happens downstream before widening this. `saturatedFat` is in the
-// override payload but is the one payload field `buildLabelConflict` does NOT
-// corroborate: its `cmp` list is calories/sugar/fat, so `per100.saturatedFat`
-// rides into `mergedPer100g` whenever some OTHER field triggers a conflict,
-// with no comparison of its own (`server/services/label-override.ts`). While
-// glued forms were declined outright that gap was rarely reached; this is the
-// first rule that populates `saturatedFat` by INFERENCE, so it is now exercised
-// routinely.
+// Know what happens downstream before widening this. `buildLabelConflict` now
+// DOES corroborate `saturatedFat` against the database record — it is in the
+// `cmp` list alongside calories/sugar/fat, with a quantization floor that
+// keeps the label's 0.5 g printing step from firing a conflict on rounding
+// alone, and with its agreement excluded from the `compared >= 2` one-tap-log
+// gate. The full reasoning lives in ONE place, the comment above `cmp` in
+// `server/services/label-override.ts` — read it there, not here.
 //
-// This has been reviewed, not just flagged — the exclusion is deliberate. The
-// full reasoning lives in ONE place, the comment above `cmp` in
-// `server/services/label-override.ts` — read it there rather than here; this
-// note only carries what the parser side needs to know.
+// What that does NOT buy this rule: a record with no `saturated-fat_100g`
+// figure has nothing to compare against, so `per100.saturatedFat` still rides
+// into `mergedPer100g` uncorroborated whenever another field triggers a
+// conflict on such a record. Nothing else re-checks the number either —
+// `shouldReplaceWithAI` (client/screens/label-analysis-utils.ts) compares only
+// calories/fat/protein/carbs/sodium. While glued forms were declined outright
+// that path was rarely reached; this is the first rule that populates
+// `saturatedFat` by INFERENCE, so it is now exercised routinely.
 //
-// This parser keeps populating the field anyway — the containment argument
-// (see PARENT_FIELD's docblock below) is strong enough to carry adoption on
-// its own — but that is exactly why this stays the boundary: any future rule
-// admitting a WEAKER inference into this field is putting an uncorroborated
-// RAW VALUE straight into the user's log, with nothing downstream left to
-// re-check that number specifically (the FSA "high in saturated fat" flag it
-// can also feed has its own, separate, partial safety net — see the
-// label-override.ts comment).
+// So this stays the boundary: the containment argument (see PARENT_FIELD's
+// docblock below) is strong enough to carry adoption on its own, but any
+// future rule admitting a WEAKER inference into this field is putting a raw
+// value into the user's log that the server can only sometimes check.
 
 /**
  * Fields whose value cannot exceed another field's ON THE PRINTED PANEL. A

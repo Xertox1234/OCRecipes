@@ -8,7 +8,7 @@ applies_to: ["client/lib/nutrition-ocr-parser.ts", "client/lib/**/*.ts", "shared
 symptoms: ["A plausibility rule adopts a value that is wrong by an order of magnitude", "The rule's guard checks only that the reference field is non-null", "The reference field was itself read through the same tolerant path the rule is adjudicating", "A field that used to decline now returns a confident number, and the change looks like recall improvement"]
 severity: critical
 created: 2026-08-05
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 ---
 
 # A derived bound is only as trustworthy as the derivation that produced it — a non-null check is not a trust check
@@ -97,7 +97,7 @@ real-unit parent still works.
 
 - `client/lib/nutrition-ocr-parser.ts` — `gluedUnitIsForced`, `PARENT_FIELD`, the `substitutedUnit` set
 - `client/lib/__tests__/nutrition-ocr-parser.test.ts` — "declines a parent whose own unit was substituted" and its negative control
-- `server/services/label-override.ts` — where these values land; `saturatedFat` is deliberately NOT corroborated by `cmp` (a reviewed exclusion, not an oversight — see the comment above `cmp`)
+- `server/services/label-override.ts` — where these values land; `saturatedFat` IS corroborated by `cmp`, behind a floor derived from the label's 0.5 g printing step (see the comment above `cmp`)
 
 ## See Also
 

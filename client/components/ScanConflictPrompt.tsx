@@ -5,10 +5,16 @@ import { useTheme } from "@/hooks/useTheme";
 import { withOpacity } from "@/constants/theme";
 import type { NutritionData } from "@/hooks/useNutritionLookup";
 
+// Must cover every member of the server's `ConflictField` union
+// (server/services/label-override.ts). `conflictFields` arrives as `string[]`
+// over the wire, so a missing entry is NOT a type error — it silently falls
+// through to `?? f` and renders the raw camelCase key both on screen and
+// inside the radio's `accessibilityLabel`.
 const FIELD_LABEL: Record<string, string> = {
   calories: "Calories",
   sugar: "Sugar (g)",
   fat: "Fat (g)",
+  saturatedFat: "Saturated Fat (g)",
 };
 
 type Source = "database" | "label";
