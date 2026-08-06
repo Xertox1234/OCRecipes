@@ -65,7 +65,7 @@ has no equivalent label.
 - [ ] A `—` value announces as "not recorded", matching the panel's wording for the same state,
       not as a literal em dash.
 - [ ] The calorie row is one stop too: `139 kcal` (or "not recorded"), with `accessibilityRole=
-    "header"` preserved on the group rather than dropped.
+  "header"` preserved on the group rather than dropped.
 - [ ] Tests assert the composed `accessibilityLabel` on the tile group for a recorded value, a
       zero value, and an absent (`undefined`) value. Use `renderComponent` from
       `test/utils/render-component`, not `@testing-library/react-native`.
@@ -77,12 +77,22 @@ has no equivalent label.
 
 ## Implementation Notes
 
-**File depends on whether PR #753 has merged.**
+**PR #753 IS A PREREQUISITE — do not start this on `main`.**
 
-| State of #753     | Where the markup lives                                                                                               |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Merged (expected) | `client/components/nutrition/NutritionSummaryCard.tsx:85-158` — `calorieRow` at `:85-95`, `macroTiles` at `:108-158` |
-| Not merged        | `client/screens/NutritionDetailScreen.tsx:486-556` on `main` — identical markup                                      |
+| State of #753 | Where the markup lives                                                                                               |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Merged        | `client/components/nutrition/NutritionSummaryCard.tsx:85-158` — `calorieRow` at `:85-95`, `macroTiles` at `:108-158` |
+| Not merged    | `client/screens/NutritionDetailScreen.tsx:486-556` on `main` — identical markup, **but see below**                   |
+
+The markup is on both branches, so either looks workable. It is not. **Everything this
+todo tells you to reuse ships WITH 2c and does not exist on `main`:**
+`NutritionPanel-utils.ts` and its `composeNutrientRowLabel`, the `NutritionPanel` whose
+rows are the target shape, and the solution doc cited two paragraphs down. On `main`
+there is no unit-word helper to reuse, no exemplar to match, and no precedent to read —
+so "do not hand-roll the unit word" cannot be obeyed there, and whoever takes that path
+writes the second mapping this todo exists to prevent.
+
+The `main` row stays only so the markup is findable if you arrive there first.
 
 **Do not hand-roll the unit word.** `client/components/nutrition/NutritionPanel-utils.ts` already
 owns the unit-to-word spelling used by `composeNutrientRowLabel`. Read it first and reuse it. A
@@ -113,9 +123,21 @@ single `focusable="true"` node carrying the composed label.
 
 ## Dependencies
 
-- **Prefer waiting for PR #753 to merge**, purely so the edit lands in `NutritionSummaryCard.tsx`
-  and not in a file 2c deletes. There is no behavioural dependency — the fix is correct on either
-  branch — so if #753 stalls, take the `main` path and expect a trivial conflict at merge.
+- **Blocked on PR #753 merging.** This was originally written as a preference ("purely so the
+  edit lands in `NutritionSummaryCard.tsx` and not in a file 2c deletes… no behavioural
+  dependency… the fix is correct on either branch"). That was wrong, and the correction matters
+  more now than when it was written: #753 is **held for a physical-device VoiceOver/TalkBack
+  pass**, so "not merged" is the likely state, not the unlikely one.
+
+  The dependency is real because 2c is what INTRODUCES the things this todo builds on —
+  `composeNutrientRowLabel`, `NutritionPanel` and its house style, and the cited solution doc.
+  A `main`-branch implementer has the markup but none of the machinery, and the only way to
+  satisfy the acceptance criteria there is to hand-roll a second unit-word mapping — the exact
+  outcome the Implementation Notes forbid.
+
+  If #753 stalls indefinitely, this needs re-scoping rather than starting: either wait, or
+  accept a self-contained label helper here and fold it into the panel's when 2c lands. That is
+  a decision to make deliberately, not to discover halfway through.
 
 ## Risks
 
@@ -133,3 +155,9 @@ single `focusable="true"` node carrying the composed label.
 - Initial creation. Found during the PR #753 device pass on an Android emulator + iOS simulator.
 - Verified against `main` that the markup is pre-existing and was relocated, not introduced, by
   slice 2c — so it does not bear on #753's merge decision.
+- **Review correction.** The `main` fallback path was unworkable as written. Every artefact this
+  todo says to reuse — `NutritionPanel-utils.ts` / `composeNutrientRowLabel`, `NutritionPanel`
+  itself, and `field-parallel-objects-diverge-on-the-fallback-path-2026-08-04.md` — exists only
+  on `feat/nutrition-detail-2c`, confirmed with `git ls-tree` / `git grep` against both branches.
+  The "no behavioural dependency" claim in Dependencies was false. #753 is now a stated
+  prerequisite. The markup claims above re-checked against `main` at the same time and all hold.
