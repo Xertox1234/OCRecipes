@@ -83,12 +83,19 @@ export function createAllergenUnavailableFlag(
  * "High in sugar" / high sodium / high saturated fat cannot be read as their
  * absence in the product.
  *
- * The live case: a photographed label supplies calories that materially
- * disagree with the product record, so the record's per-100 basis is
- * demonstrably wrong and its other macros are dropped rather than shown at a
- * basis we know to be broken. `evaluateUniversalFlags` then sees `undefined`
- * for every nutrient and emits nothing — which renders identically to a
- * genuinely clean product. This flag is what keeps those two apart.
+ * Two live cases, and the caller is the one that can tell them apart, which is
+ * why `detail` is a parameter:
+ * - a photographed label materially disagrees with the product record, so the
+ *   record's per-100 basis is demonstrably wrong and its un-read macros are
+ *   dropped rather than shown at a basis we know to be broken;
+ * - a value survives that merge but breaks a containment bound (saturated fat
+ *   above total fat), so it cannot honestly be displayed at all — a case where
+ *   nothing was compared against the record and blaming a mismatch would
+ *   describe a comparison that never ran.
+ *
+ * Either way `evaluateUniversalFlags` then sees `undefined` for that nutrient
+ * and emits nothing — which renders identically to a genuinely clean product.
+ * This flag is what keeps those apart.
  *
  * Nutrition tier, not safety: it concerns nutrient warnings, not allergens.
  * Deliberately mirrors `createAllergenUnavailableFlag` — this codebase already
@@ -101,11 +108,14 @@ export function createNutrientUnavailableFlag(detail?: string): ScanFlag {
     severity: "warn",
     tier: "nutrition",
     title: "Nutrient details unavailable",
-    // Says the RECORD's values were dropped, not the label's — the label is the
-    // thing being trusted here, so blaming it would be backwards.
+    // Cause-neutral, deliberately. The only caller (the barcode POST route)
+    // always passes a `detail` naming the actual cause, so this is a fallback
+    // for a future caller that cannot — and a fallback must not assert a
+    // specific comparison the way the previous one did ("the label's calories
+    // didn't match our record"), since that is false for a containment drop.
     detail:
       detail ??
-      "The label's calories didn't match our record, so the record's other nutrient values weren't used. Sugar, sodium and fat warnings can't be shown for this scan.",
+      "Some nutrient values couldn't be used for this scan, so sugar, sodium and saturated fat warnings can't be shown.",
   };
 }
 

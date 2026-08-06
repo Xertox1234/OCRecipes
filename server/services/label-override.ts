@@ -5,6 +5,7 @@ import {
   parseServingBasis,
 } from "@shared/lib/label-serving";
 import { FSA_DRINK, FSA_FOOD } from "@shared/constants/nutrition-bands";
+import type { NutrientKind } from "@shared/types/scan-flags";
 import { valuesMatch } from "../lib/verification-consensus";
 
 /**
@@ -104,6 +105,16 @@ export interface LabelConflict {
   conflict: boolean;
   fields: ConflictField[];
   labelResult?: BarcodeLookupResult;
+  /**
+   * Values `enforceContainment` removed from `labelResult`, so the route can
+   * explain a vanished nutrient flag by its actual cause rather than by the one
+   * cause that existed when the copy was written.
+   *
+   * NON-OPTIONAL on every return, including the refusals — an optional array
+   * invites `?? []` at the call site, where "this path forgot to report" and
+   * "this path dropped nothing" would then read identically.
+   */
+  containmentDrops: readonly ContainmentDrop[];
   /**
    * Whether the label was actually compared against the record.
    *
@@ -290,11 +301,71 @@ function saturatedFatFloorCeiling(servingSize: string | null): number {
 const CONTAINMENT_PAIRS: readonly {
   child: keyof BarcodePer100g;
   parent: keyof BarcodePer100g;
+  /**
+   * The FSA nutrient flag each side FEEDS, or `null` when it feeds none.
+   *
+   * Both of today's parents are flagless, and both of today's flag-bearing
+   * children are named here rather than left to the route to re-derive — the
+   * route has to tell a containment drop from a blanking drop in the notice it
+   * writes, and a second `NutrientKind` -> per-100-field map at that call site
+   * is the field-parallel structure this whole module is shaped to avoid. A new
+   * pair cannot be added without answering this question for both sides.
+   */
+  childNutrient: NutrientKind | null;
+  parentNutrient: NutrientKind | null;
+  /**
+   * How the route's user-facing notice NAMES each side. Not display polish: the
+   * notice has to say what came out higher than what, and "totalFat" is not a
+   * phrase to show someone who photographed a label.
+   */
+  childNoun: string;
+  parentNoun: string;
 }[] = [
-  { child: "saturatedFat", parent: "fat" },
-  { child: "transFat", parent: "fat" },
-  { child: "sugar", parent: "carbs" },
+  {
+    child: "saturatedFat",
+    parent: "fat",
+    childNutrient: "saturated_fat",
+    parentNutrient: null,
+    childNoun: "saturated fat",
+    parentNoun: "total fat",
+  },
+  {
+    child: "transFat",
+    parent: "fat",
+    childNutrient: null,
+    parentNutrient: null,
+    childNoun: "trans fat",
+    parentNoun: "total fat",
+  },
+  {
+    child: "sugar",
+    parent: "carbs",
+    childNutrient: "sugar",
+    parentNutrient: null,
+    childNoun: "sugar",
+    parentNoun: "carbohydrate",
+  },
 ];
+
+/**
+ * One value `enforceContainment` removed, reported so the ROUTE can say why.
+ *
+ * The route's lost-flag notice used to explain every disappearance as "the
+ * record's values didn't match the label", which is true of a blanking drop and
+ * false — backwards, even — of a containment drop: the reproduced case is a
+ * value that came FROM the label, was never compared against the record at all,
+ * and was removed for being internally impossible. Telling those apart needs
+ * the cause carried out of here, not guessed at the call site.
+ */
+export interface ContainmentDrop {
+  /** The per-100 field removed from the merged block. */
+  field: keyof BarcodePer100g;
+  /** The FSA nutrient flag `field` feeds, or `null` when it feeds none. */
+  nutrient: NutrientKind | null;
+  /** The pair's child, and the parent bound it exceeded, in the notice's words. */
+  childNoun: string;
+  parentNoun: string;
+}
 
 /**
  * Drop whichever side of a containment pair the merged block cannot honestly
@@ -330,9 +401,23 @@ const CONTAINMENT_PAIRS: readonly {
  *   dropped because it is the reading that exceeds its own definitional bound,
  *   and because on the retained path a corroborating `fat` either AGREED with
  *   the record or was never comparable, while the child is the field that
- *   disagreed. The conflict prompt renders a dropped field as "—"
- *   (`client/components/ScanConflictPrompt.tsx`), so this degrades visibly
- *   rather than silently.
+ *   disagreed.
+ *
+ *   How that degradation actually SURFACES, corrected: an earlier revision of
+ *   this bullet claimed the conflict prompt renders a dropped field as "—"
+ *   (`client/components/ScanConflictPrompt.tsx`). It structurally cannot, in
+ *   general. That component's `conflictFields` is wired straight from the
+ *   server's `conflict.fields` (NutritionDetailScreen.tsx:316 <-
+ *   useNutritionLookup.ts:498), i.e. the COMPARED-AND-DISAGREEING `ConflictField`
+ *   set — and the case above is exactly one where `saturatedFat` was never
+ *   compared (provenance withheld it), so it never reaches that list. `carbs`
+ *   and `transFat` are not `ConflictField` members at all, so a containment drop
+ *   of either can never appear there under any conditions. What the user
+ *   actually sees is `NutritionDetailScreen`'s own rendering of an absent value:
+ *   the macro grid prints "—" for an undefined `carbs`, while the Additional
+ *   Nutrients rows for `saturatedFat`/`transFat` are conditionally rendered and
+ *   simply vanish. Only `saturatedFat` also earns the route's flag-diff notice,
+ *   and only when the record had raised its FSA flag.
  *
  * - NEITHER from the label -> leave both. The RECORD contradicts itself, which
  *   this merge did not cause and must not silently repair. The same record
@@ -352,23 +437,56 @@ const CONTAINMENT_PAIRS: readonly {
  * so a value one row drops cannot disarm another row that shares a parent
  * (`saturatedFat` and `transFat` both hang off `fat`). Row order carries no
  * meaning.
+ *
+ * Reports what it removed as well as removing it: the route's lost-flag notice
+ * has to name the CAUSE, and a containment drop and a blanking drop are not the
+ * same sentence. See `ContainmentDrop`.
  */
 function enforceContainment(
   merged: BarcodePer100g,
   fromLabel: BarcodePer100g,
-): BarcodePer100g {
+): { guarded: BarcodePer100g; drops: ContainmentDrop[] } {
   const guarded: BarcodePer100g = { ...merged };
-  for (const { child, parent } of CONTAINMENT_PAIRS) {
+  const drops: ContainmentDrop[] = [];
+  for (const pair of CONTAINMENT_PAIRS) {
+    const { child, parent } = pair;
     const childVal = merged[child];
     const parentVal = merged[parent];
+    // BELT AND BRACES, and it is worth being straight about which line here is
+    // load-bearing. Given the invariant this codebase holds — `merged[k] ===
+    // undefined` implies `fromLabel[k] === undefined`, because every key
+    // `fromLabel` can carry is spread into `merged` — an absent value on either
+    // side means that side is not from the label, so the sibling
+    // `!childFromLabel && !parentFromLabel` guard below already intercepts every
+    // case this line could catch. Mutation-verified on the shipped code:
+    // replacing THIS clause with `(childVal ?? 0) <= (parentVal ?? 0)` fails 0
+    // of 119 tests, while deleting the neither-guard fails 1 ("leaves a record
+    // that contradicts ITSELF alone"). The neither-guard is the line doing the
+    // work. This one is kept because it is free and because the `undefined >
+    // undefined` comparison it prevents would be nonsense to read — not because
+    // it is standing between us and a bug.
+    //
+    // The comment this replaced justified it with "the alternative — a missing
+    // parent reading as 0 — would delete every saturated fat on every record OFF
+    // has no `fat_100g` for". That scenario cannot occur: with no `fat` in
+    // `merged` there is no label `fat` either, and a record-only `saturatedFat`
+    // makes both sides non-label, so the neither-guard leaves the pair alone.
     if (childVal === undefined || parentVal === undefined) continue;
     if (childVal <= parentVal) continue;
     const childFromLabel = fromLabel[child] !== undefined;
     const parentFromLabel = fromLabel[parent] !== undefined;
     if (!childFromLabel && !parentFromLabel) continue;
-    delete guarded[childFromLabel && !parentFromLabel ? parent : child];
+    const dropParent = childFromLabel && !parentFromLabel;
+    const field = dropParent ? parent : child;
+    delete guarded[field];
+    drops.push({
+      field,
+      nutrient: dropParent ? pair.parentNutrient : pair.childNutrient,
+      childNoun: pair.childNoun,
+      parentNoun: pair.parentNoun,
+    });
   }
-  return guarded;
+  return { guarded, drops };
 }
 
 /** Upper plausibility bound for a label-derived serving (grams/ml). A single
@@ -394,6 +512,7 @@ export function buildLabelConflict(
   const none: LabelConflict = {
     conflict: false,
     fields: [],
+    containmentDrops: [],
     compared: false,
   };
 
@@ -647,6 +766,9 @@ export function buildLabelConflict(
     return {
       conflict: false,
       fields: [],
+      // No conflict means no label-corrected block was built, so nothing was
+      // merged and nothing could have been dropped for containment.
+      containmentDrops: [],
       compared: comparedCount >= 2,
     };
   }
@@ -701,26 +823,27 @@ export function buildLabelConflict(
   // other: when a corroborating field disagrees, the un-read macros are blanked
   // exactly as before, Cherry Coke included.
   const basisDisproven = conflicting.some((c) => c.corroborates);
-  const mergedPer100g: BarcodePer100g = enforceContainment(
-    basisDisproven
-      ? {
-          ...per100, // calories/sugar/fat/saturatedFat that the label actually read
-          caffeine: dbResult.per100g.caffeine,
-        }
-      : // Nothing challenged the basis, so the record's un-read macros are the
-        // best (and only) figures available for them — "on doubt, fail toward
-        // the DB result". `per100` still wins wherever the label read a value,
-        // so the disagreeing nutrient is still corrected to the label's.
-        { ...dbResult.per100g, ...per100 },
-    // BOTH branches go through the containment guard, not just the retaining
-    // one. Mixing the record's macros with the label's is one way to put
-    // `saturatedFat > fat` or `sugar > carbs` on screen; a single panel
-    // misreading one of its own lines is the other, and that one survives
-    // blanking untouched because both sides are then label-sourced. The guard
-    // is a no-op on consistent values, so applying it to both costs nothing.
-    // See `enforceContainment`.
-    per100,
-  );
+  const { guarded: mergedPer100g, drops: containmentDrops } =
+    enforceContainment(
+      basisDisproven
+        ? {
+            ...per100, // calories/sugar/fat/saturatedFat that the label actually read
+            caffeine: dbResult.per100g.caffeine,
+          }
+        : // Nothing challenged the basis, so the record's un-read macros are the
+          // best (and only) figures available for them — "on doubt, fail toward
+          // the DB result". `per100` still wins wherever the label read a value,
+          // so the disagreeing nutrient is still corrected to the label's.
+          { ...dbResult.per100g, ...per100 },
+      // BOTH branches go through the containment guard, not just the retaining
+      // one. Mixing the record's macros with the label's is one way to put
+      // `saturatedFat > fat` or `sugar > carbs` on screen; a single panel
+      // misreading one of its own lines is the other, and that one survives
+      // blanking untouched because both sides are then label-sourced. The guard
+      // is a no-op on consistent values, so applying it to both costs nothing.
+      // See `enforceContainment`.
+      per100,
+    );
 
   const labelResult: BarcodeLookupResult = {
     ...dbResult,
@@ -735,5 +858,11 @@ export function buildLabelConflict(
     source: `${dbResult.source}+label`,
   };
 
-  return { conflict: true, fields, labelResult, compared: true };
+  return {
+    conflict: true,
+    fields,
+    labelResult,
+    containmentDrops,
+    compared: true,
+  };
 }

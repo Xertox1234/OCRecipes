@@ -1,4 +1,4 @@
-import type { ScanFlag } from "@shared/types/scan-flags";
+import type { NutrientKind, ScanFlag } from "@shared/types/scan-flags";
 import {
   FSA_FOOD,
   FSA_DRINK,
@@ -52,6 +52,31 @@ const NUTRIENT_META = {
   },
 } as const;
 
+/**
+ * The `UniversalNutrients` field each `NutrientKind` flag is computed FROM.
+ *
+ * Exported because the label-override POST route has to answer the MIRROR
+ * question — "this nutrient flag disappeared from the label-corrected body;
+ * does that body still hold a VALUE for it?" — and the only alternative is a
+ * second copy of this correspondence at the call site. `saturated_fat` ->
+ * `saturatedFat` is the single entry the two vocabularies do not spell alike,
+ * which is exactly the entry a hand-written second copy gets wrong.
+ *
+ * Load-bearing for the three FSA rows rather than documentation of them:
+ * `nutrientFlag` below reads its per-100/per-serving values THROUGH this map,
+ * so a wrong row makes an FSA flag evaluate the wrong nutrient and fails the
+ * universal-flags suite instead of drifting silently. (`caffeine` is an
+ * identity row whose key and value are the same word; `satisfies` still pins
+ * it to a real `UniversalNutrients` field and forces every `NutrientKind` to
+ * appear.)
+ */
+export const NUTRIENT_FLAG_SOURCE_FIELD = {
+  sugar: "sugar",
+  saturated_fat: "saturatedFat",
+  sodium: "sodium",
+  caffeine: "caffeine",
+} as const satisfies Record<NutrientKind, keyof UniversalNutrients>;
+
 function high(
   per100g: number | undefined,
   perServing: number | undefined,
@@ -78,12 +103,14 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
 
   const nutrientFlag = (
     nk: keyof typeof NUTRIENT_META,
-    p100: number | undefined,
-    pServ: number | undefined,
     line: number,
     portion: number,
   ) => {
-    if (high(p100, pServ, input.servingGrams, line, portion)) {
+    // Values read THROUGH the shared map, not passed in by the call site —
+    // that is what keeps `NUTRIENT_FLAG_SOURCE_FIELD` honest for the route
+    // that consumes it (see its docblock).
+    const f = NUTRIENT_FLAG_SOURCE_FIELD[nk];
+    if (high(s[f], sv?.[f], input.servingGrams, line, portion)) {
       flags.push({
         id: `nutrient:${nk}`,
         kind: "nutrient",
@@ -96,27 +123,13 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
     }
   };
 
-  nutrientFlag(
-    "sugar",
-    s.sugar,
-    sv?.sugar,
-    per100.sugar.high,
-    FSA_PORTION.sugar,
-  );
+  nutrientFlag("sugar", per100.sugar.high, FSA_PORTION.sugar);
   nutrientFlag(
     "saturated_fat",
-    s.saturatedFat,
-    sv?.saturatedFat,
     per100.saturatedFat.high,
     FSA_PORTION.saturatedFat,
   );
-  nutrientFlag(
-    "sodium",
-    s.sodium,
-    sv?.sodium,
-    per100.sodium.high,
-    FSA_PORTION.sodium,
-  );
+  nutrientFlag("sodium", per100.sodium.high, FSA_PORTION.sodium);
 
   if (input.novaGroup === 4) {
     flags.push({
