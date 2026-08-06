@@ -4,6 +4,7 @@ track: knowledge
 category: conventions
 module: client
 tags: [accessibility, pointerEvents, reduced-motion, collapsed-header, voiceover, talkback, importantForAccessibility, decorative]
+applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx, client/camera/**/*.tsx]
 created: '2026-06-10'
 last_updated: '2026-08-04'
 source: '2026-06-10 full audit (H4, M13 + Phase 6 inverse finding); extended 2026-08-04 from PR #751 (no vs no-hide-descendants)'

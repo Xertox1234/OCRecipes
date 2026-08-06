@@ -4,6 +4,7 @@ track: knowledge
 category: conventions
 module: server
 tags: [timezone, database, nutrition, coach, day-bounds]
+applies_to: [server/routes/**/*.ts, server/storage/**/*.ts, server/services/**/*.ts]
 created: '2026-06-10'
 source: 2026-06-10 full audit (H1 + per-fix review + Phase 6)
 ---
