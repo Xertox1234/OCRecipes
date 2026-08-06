@@ -75,16 +75,46 @@ const bound = result[parent];
 if (bound === null) return false;
 ```
 
-The marked values are still adopted for themselves — they are direct reads. They
-just cannot vouch for anything else. Pin the exact two-field chain as a
-regression test, plus a negative control proving containment against a
-real-unit parent still works.
+The marked values are still adopted for themselves. What they may not do is
+vouch for anything — **and "anything" turned out to have two consumers, not
+one.** The first revision applied the judgement only to `gluedUnitIsForced`
+(such a value cannot BOUND another field) while the same value kept being pushed
+into `directReads`, the provenance list the server reads to decide whether a
+reading may CONDEMN a database record:
+
+```ts
+result[key] = value;
+if (match[2]) substitutedUnit.add(key);
+result.directReads.push(key);      // fires even when the value is itself corrupt
+```
+
+That is the same defect one level out. `Saturated Fat 2g 9%` — an unremarkable
+US panel line — misreads to `Saturated Fat 29 9%`, adopting 29 where the package
+prints 2, while `Total Fat 5g 6%` on the line above parses perfectly. The
+corrupted value was then published as a *direct read*, so `buildLabelConflict`
+compared it against the record at a tolerance sized for a 0.5 g printing step
+and let it overwrite a correct entry. The fix is one `else`:
+
+```ts
+if (match[2]) substitutedUnit.add(key);
+else result.directReads.push(key);
+```
+
+Pin the exact two-field chain as a regression test, plus a negative control
+proving containment against a real-unit parent still works, plus the
+substituted-unit panel end-to-end: value adopted, `confidence` unchanged,
+`directReads` silent, server does not compare.
 
 ## Prevention
 
 - When a rule reasons over previously-parsed values, ask **how each one was
   obtained**. If any path to it was tolerant, heuristic, defaulted or inferred,
   a plausibility check built on it inherits that uncertainty.
+- Once you decide a value is too ambiguous to vouch for, **enumerate every
+  consumer of that judgement and apply it to all of them.** Marking it in a
+  local set that one rule consults is half a fix if a second channel is
+  simultaneously publishing the same value as trustworthy. Grep for what else
+  reads the field, not just for what reads the marker.
 - `!= null` is an existence check. If the code comment says "trustworthy",
   "valid" or "correct", the guard needs to test that property, not presence.
 - Adding a tolerance rule can weaponise a *pre-existing* weakness elsewhere.

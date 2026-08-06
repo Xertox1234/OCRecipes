@@ -28,11 +28,17 @@ export interface LocalNutritionData extends LocalNutritionNumbers {
   servingSize: string | null;
   confidence: number;
   /**
-   * PROVENANCE. The fields whose value was read DIRECTLY off a glyph run, as
-   * opposed to being reconstructed by the `gluedUnitIsForced` containment rule
-   * in the second pass below. Exactly the set that incremented `extracted`, so
-   * it is also the set `confidence` is computed from — one notion of "we
-   * actually read this", not two.
+   * PROVENANCE. The fields whose value AND unit were both read directly off a
+   * glyph run — so neither reconstructed by the `gluedUnitIsForced` containment
+   * rule in the second pass below, nor read through a unit the recogniser
+   * turned into a digit.
+   *
+   * A SUBSET of the fields `confidence` counts, and deliberately not the same
+   * set. `confidence` asks how much of the panel yielded a number at all, which
+   * is the right question for gating a local preview; this list asks which of
+   * those numbers may be used to CONDEMN a database record, which is a higher
+   * bar. A spaced substituted unit ("Saturated Fat 29 9%", where the package
+   * prints 2 g) clears the first and fails the second.
    *
    * It exists because the server has to be able to tell the two apart. An
    * inference's error is bounded only by the parent field it was tested
@@ -443,11 +449,20 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   let extracted = 0;
   const glued: { key: NumericField; value: number; raw: string }[] = [];
   // Fields whose UNIT was a substituted "9" with a space before it, not a real
-  // "g". The VALUE was read directly, so it is adopted and counts toward
-  // confidence exactly as before — but it must never bound another field. The
-  // glyph standing in for the unit is indistinguishable from a daily value
-  // that lost its "%", so the value it leaves behind can be an order of
-  // magnitude out ("Total Fat 129 9%" -> 129) while looking perfectly ordinary.
+  // "g". The value is still adopted and still counts toward confidence — it is
+  // the best reading available and something has to be shown — but the glyph
+  // standing in for the unit is indistinguishable from a daily value that lost
+  // its "%", so the VALUE it leaves behind can be an order of magnitude out
+  // while looking perfectly ordinary. "Total Fat 129 9%" -> 129 is the case the
+  // rule was written from; "Saturated Fat 29 9%" is the same shape on an
+  // entirely ordinary panel (`Total Fat 5g 6%` / `Saturated Fat 2g 9%` with the
+  // g -> 9 misread this file calls the single largest cause of dropped fields),
+  // reading 29 where the package prints 2.
+  //
+  // So such a value may neither BOUND another field (`gluedUnitIsForced` checks
+  // this set) nor be VOUCHED FOR as a direct read (it is kept out of
+  // `directReads` below). Those are the same judgement applied to the two
+  // consumers: a reading this ambiguous is not evidence about anything.
   const substitutedUnit = new Set<NumericField>();
   for (const { key, pattern } of FIELD_PATTERNS) {
     const match = text.match(pattern);
@@ -461,11 +476,22 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
       continue;
     }
     result[key] = value;
+    // Provenance: this pass is the only one that can produce a DIRECT glyph
+    // read, but not every value it produces IS one. A spaced substituted unit
+    // (group 2) means the token that should have been "g" was recognised as a
+    // digit, and that digit may have been swallowed into the value — so the
+    // reading is adopted without being vouched for.
+    //
+    // `extracted` and `directReads` therefore count DIFFERENT things on
+    // purpose, and an earlier revision's comment here claimed the opposite.
+    // `confidence` asks "how much of this panel did we get a number out of",
+    // which gates the local preview; `directReads` asks "which of those numbers
+    // may CONDEMN a database record", which gates `buildLabelConflict`'s
+    // comparison. A value whose own unit was ambiguous answers yes to the first
+    // and no to the second. `directReads.length <= extracted`, never equal by
+    // construction.
     if (match[2]) substitutedUnit.add(key);
-    // Provenance: this pass — and only this pass — is a DIRECT glyph read.
-    // Deliberately the same line that increments `extracted`, so `directReads`
-    // and `confidence` can never disagree about which fields were read.
-    result.directReads.push(key);
+    else result.directReads.push(key);
     extracted++;
   }
 
