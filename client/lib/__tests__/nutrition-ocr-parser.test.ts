@@ -613,6 +613,34 @@ describe("glued g→9 — resolving only what the label itself rules out", () =>
       // read and predates the glued branch. Asserted so the decline above is
       // clearly about the CHILD being refused, not about the parent vanishing.
       expect(r.totalFat).toBe(129);
+      // The guard has to hold for every pair in PARENT_FIELD, not just the one
+      // the repro happened to use. Same shape on the carbohydrate side, and on
+      // the other child of totalFat.
+      expect(
+        parseNutritionFromOCR("Carbohydrate 11 9\nSugars 19").totalSugars,
+      ).toBeNull();
+      expect(
+        parseNutritionFromOCR("Total Fat 11 9\n+ Trans 19").transFat,
+      ).toBeNull();
+    });
+
+    it("cannot promote a child off a parent adopted in the second pass", () => {
+      // The deferred pass iterates in FIELD_PATTERNS order, so a parent
+      // resolved by the leading-zero rule IS visible to a later child's
+      // containment check. That is safe only because leading-zero can resolve
+      // to nothing but 0, and a bound of 0 promotes no non-zero child — a
+      // coincidence of that rule's output range, not a designed guarantee, and
+      // the parser's own comment flags it as needing recheck if either changes.
+      // Pinned so a reordering or a new non-zero rule goes red here.
+      expect(
+        parseNutritionFromOCR("Total Fat 09\nSaturated 19").saturatedFat,
+      ).toBeNull();
+      expect(
+        parseNutritionFromOCR("Carbohydrate 09\nSugars 19").totalSugars,
+      ).toBeNull();
+      // Negative control: the parent really was adopted, so the declines above
+      // are about the child, not about the parent failing to parse.
+      expect(parseNutritionFromOCR("Total Fat 09").totalFat).toBe(0);
     });
 
     it("still allows a parent read with a real unit to bound a child", () => {
