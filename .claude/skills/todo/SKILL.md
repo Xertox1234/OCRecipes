@@ -165,9 +165,9 @@ Establish a green baseline before touching any code.
    git rev-parse --git-common-dir
    ```
 
-   > Use the **bare** form here. It prints `.git` in the main checkout and an absolute path in a linked worktree, which is exactly the signal needed. The `--path-format=absolute` variant used in the next step is _always_ absolute and can never distinguish the two — the two calls answer different questions and must not be merged.
+   > Use the **bare** form here. It prints `.git` at the top level of the main checkout and an absolute path in a linked worktree, which is the signal needed. The `--path-format=absolute` variant used in the next step is _always_ absolute and can never distinguish the two — the two calls answer different questions and must not be merged.
 
-   If `BASE_BRANCH` is not `main`, **or** the command above printed anything other than `.git`, stop and report before dispatching:
+   If `BASE_BRANCH` is not `main`, **or** the command above printed anything other than `.git`, stop and report before dispatching. (It also prints an absolute path from a _subdirectory_ of the main checkout, so this can ask one extra time — confirm either way; the cost of a redundant question is nothing against a batch of PRs carrying someone else's diff.)
 
    ```
    BASE_BRANCH = <branch>   (worktree: <linked | main checkout>)

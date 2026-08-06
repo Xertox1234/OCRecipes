@@ -64,7 +64,7 @@ which checked **only** `saturatedFat > fat`.
 `compared: true`, that opened one-tap logging on a macro block that is internally
 impossible, on the screen whose entire proposition is "trust the label".
 
-The fix (`798245b3`) replaced the conditional with a `CONTAINMENT_PAIRS` table and an
+The fix (`798245b3`, same PR) replaced the conditional with a `CONTAINMENT_PAIRS` table and an
 `enforceContainment()` loop over it — so the rule's N and the code's N are now the same
 number by construction, and a new pair cannot be added without answering the table's
 questions for both sides.
