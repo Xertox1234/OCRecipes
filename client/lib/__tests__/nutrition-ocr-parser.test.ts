@@ -411,16 +411,33 @@ NE
     expect(r.protein).toBe(0.2);
   });
 
-  it("declines the ambiguous glued g→9 forms on the mayonnaise label", () => {
+  it("resolves the glued g→9 forms the label itself rules out (mayonnaise)", () => {
     const r = parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR);
 
-    // "saturés 19" is "saturés 1 g" on the package, and "Glucides 09" is
-    // "Glucides 0 g" — but nothing in the flattened text says so. "19" is a
-    // well-formed saturated-fat value on its face. These fields feed the
-    // server override, so the parser declines rather than guessing: a missing
-    // field falls back to the database, a confident wrong one does not.
-    expect(r.saturatedFat).toBeNull();
-    expect(r.totalCarbs).toBeNull();
+    // "Glucides 09" is "Glucides 0 g". A printed panel never puts a leading
+    // zero in front of another digit, so "09" is not a value any label could
+    // carry — the trailing glyph has to be the unit.
+    expect(r.totalCarbs).toBe(0);
+    // "saturés 19" is "saturés 1 g". 19 g of saturated fat cannot fit inside
+    // the 11 g of total fat this same label reports, so the whole-token
+    // reading is impossible and only the unit reading survives.
+    //
+    // Asserted alongside it because it is load-bearing, not context: lose
+    // totalFat on this capture and saturatedFat silently reverts to null.
+    // Without this line that shows up as a confidence failure somewhere else.
+    expect(r.totalFat).toBe(11);
+    expect(r.saturatedFat).toBe(1);
+  });
+
+  it("keeps the ingredients panel out of the serving size (mayonnaise)", () => {
+    const r = parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR);
+
+    // MLKit flattens adjacent print columns, so the ingredients panel lands on
+    // the serving line: "Per 1 tbsp (15 mL)/par 1 c. à s. (15 mL) Sugar,
+    // Vinegar, Splu Lguit et y". A serving spec ends at its last unit token;
+    // everything past it is another column. This string is displayed AND
+    // posted in the label-override payload.
+    expect(r.servingSize).toBe("1 tbsp (15 mL)/par 1 c. à s. (15 mL)");
   });
 
   it("does not read a fibre disclaimer as a fibre value (line-anchor guard)", () => {
@@ -461,13 +478,19 @@ NE
   it("still cannot read the glued g→9 and column-merged fields on the sauce label", () => {
     const r = parseNutritionFromOCR(SAUCE_DEVICE_OCR);
 
-    // "Lipides 2.59" is "Lipides 2.5 g". Declined: 2.59 is not distinguishable
-    // from a real value without a rule about label printing precision, and
-    // totalFat is in the server-override payload.
+    // "Lipides 2.59" is "Lipides 2.5 g" — the same glued shape the two
+    // mayonnaise fields above now resolve, but with no evidence against the
+    // whole-token reading: 2.59 carries no leading zero, and totalFat is the
+    // parent of the fat sub-fields, so nothing bounds it from above. Distin-
+    // guishing it needs a rule about label printing precision, which is a
+    // claim about regulation rather than about this text. Declined, not
+    // guessed — totalFat is in the server-override payload.
     expect(r.totalFat).toBeNull();
     // MLKit split the column: the value ("s2 g") landed on the line BEFORE the
-    // name, and the separator is "|" rather than "/". Not a g→9 problem —
-    // needs block geometry, which the flattened text does not carry.
+    // name, and the separator is "|" rather than "/". Reading backwards would
+    // not help — `fixOCRDigits` leaves a lowercase "s" alone, so "s2" is NaN
+    // and the field stays null. Recovering the 2 means stripping the "s",
+    // which contradicts the same table's S→5 rule ("S2" parses as 52).
     expect(r.protein).toBeNull();
   });
 
@@ -475,11 +498,249 @@ NE
     // `LabelAnalysisScreen` shows an instant local preview only at >= 0.6.
     // Sauce: 3/10 fields originally, 7/10 after the spaced-unit fix, 8/10 now.
     expect(parseNutritionFromOCR(SAUCE_DEVICE_OCR).confidence).toBeCloseTo(0.8);
-    // Mayonnaise: 2/10 originally, 5/10 after the spaced-unit fix, and this
-    // change carries it to exactly the 0.6 threshold.
-    expect(parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR).confidence).toBeCloseTo(
-      0.6,
+    // Mayonnaise: 2/10 originally, 5/10 after the spaced-unit fix, 6/10 after
+    // the separated g→9 fix — and still 6/10 here, sitting exactly on the
+    // threshold, even though its glued saturated-fat and carbohydrate fields
+    // now resolve. Those two are INFERRED, and confidence counts only what was
+    // read. It is a measure of how much of the panel the recogniser actually
+    // delivered, so an inference must not be able to lift a label over the gate
+    // that decides whether the user is shown a preview at all.
+    const mayo = parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR);
+    expect(mayo.confidence).toBeCloseTo(0.6);
+    // The fields are populated regardless — the two are independent.
+    expect(mayo.saturatedFat).toBe(1);
+    expect(mayo.totalCarbs).toBe(0);
+  });
+});
+
+/**
+ * A GLUED `g` -> `9` ("saturés 19") has two readings — "1 g" and "19" — and the
+ * flattened text alone cannot separate them. These tests pin the two pieces of
+ * evidence that CAN, and, just as importantly, every neighbouring case where
+ * that evidence is absent and the parser must still decline.
+ *
+ * Both sides of each boundary are asserted on purpose. The last defect this
+ * file shipped green was a tolerance whose suite only exercised the side that
+ * passed; the side that mattered was never written down.
+ */
+describe("glued g→9 — resolving only what the label itself rules out", () => {
+  describe("leading-zero evidence", () => {
+    it("resolves a glued form no label could have printed", () => {
+      // "09" cannot be a printed value: panels write "0 g", never "09 g".
+      expect(parseNutritionFromOCR("Carbohydrate 09").totalCarbs).toBe(0);
+    });
+
+    it("declines when the remainder is no more printable than the whole", () => {
+      // "019" is not a value a panel could print — but neither is the "01"
+      // left behind once the trailing glyph is called the unit. Both readings
+      // are impossible, so the token is garbage and resolving it would invent
+      // a number rather than recover one.
+      expect(parseNutritionFromOCR("Carbohydrate 019").totalCarbs).toBeNull();
+      expect(parseNutritionFromOCR("Carbohydrate 0199").totalCarbs).toBeNull();
+    });
+
+    it("cannot manufacture a parent that then promotes a child", () => {
+      // The containment test below reads whatever is in the result, without
+      // knowing how it got there. That is only safe while no rule here can
+      // invent a parent: "Carbohydrate 019" must not resolve to 1 and license
+      // "Sugars 19" — a fabricated bound promoting a genuinely ambiguous child.
+      const r = parseNutritionFromOCR("Carbohydrate 019\nSugars 19");
+      expect(r.totalCarbs).toBeNull();
+      expect(r.totalSugars).toBeNull();
+      // Same shape on the fat side.
+      const f = parseNutritionFromOCR("Total Fat 019\nSaturated 19");
+      expect(f.totalFat).toBeNull();
+      expect(f.saturatedFat).toBeNull();
+    });
+
+    it("declines when the leading zero is a real decimal", () => {
+      // "0.59" has a leading zero too, but it is followed by "." — a perfectly
+      // printable value. The rule is a zero before a DIGIT, nothing looser.
+      expect(parseNutritionFromOCR("Total Fat 0.59").totalFat).toBeNull();
+    });
+  });
+
+  describe("parent-field evidence", () => {
+    it("resolves a glued form the parent field makes impossible", () => {
+      // 19 g of saturated fat cannot fit in 11 g of total fat.
+      expect(
+        parseNutritionFromOCR("Total Fat 11 g\nSaturated 19").saturatedFat,
+      ).toBe(1);
+      // Same relation, other pairs: trans/total fat and sugars/carbohydrate.
+      expect(parseNutritionFromOCR("Total Fat 11 g\n+ Trans 19").transFat).toBe(
+        1,
+      );
+      expect(
+        parseNutritionFromOCR("Carbohydrate 5 g\nSugars 19").totalSugars,
+      ).toBe(1);
+    });
+
+    it("does not bound fibre by carbohydrate — the regimes disagree", () => {
+      // "Carbohydrate" is not one quantity across labelling regimes: EU
+      // 1169/2011 declares AVAILABLE carbohydrate and lists fibre separately
+      // outside it, while US labels count fibre within total carbohydrate. OFF
+      // carries both, so on an EU bran or psyllium product a CORRECT fibre
+      // reading legitimately exceeds a correct carbohydrate one. Containment
+      // would "resolve" that 19 to 1 and discard a right answer.
+      expect(
+        parseNutritionFromOCR("Carbohydrate 11 g\nFiber 19").dietaryFiber,
+      ).toBeNull();
+      // The sibling bound is sound and must stay: sugars sit inside the
+      // available-carbohydrate fraction under US, EU and Codex alike.
+      expect(
+        parseNutritionFromOCR("Carbohydrate 11 g\nSugars 19").totalSugars,
+      ).toBe(1);
+    });
+
+    it("declines when the whole-token reading still fits the parent", () => {
+      // 19 g of saturated fat inside 25 g of total fat is entirely possible,
+      // so both readings survive and neither may be picked.
+      expect(
+        parseNutritionFromOCR("Total Fat 25 g\nSaturated 19").saturatedFat,
+      ).toBeNull();
+    });
+
+    it("declines a parent whose own unit was substituted", () => {
+      // "Total Fat 129 9%" — the "9" taken as the unit is a daily value that
+      // lost its "%", so totalFat reads 129 when the package says something
+      // like 12.9. That parent is present and looks ordinary, and containment
+      // used to accept it: 259 > 129 and 25 <= 129, so "Saturated 259" was
+      // forced to 25. A bound is worth no more than the unit that produced it,
+      // and two ambiguous readings do not add up to one certain one.
+      const r = parseNutritionFromOCR("Total Fat 129 9%\nSaturated 259");
+      expect(r.saturatedFat).toBeNull();
+      // The corrupt parent itself is unchanged by this rule — it is a direct
+      // read and predates the glued branch. Asserted so the decline above is
+      // clearly about the CHILD being refused, not about the parent vanishing.
+      expect(r.totalFat).toBe(129);
+      // The guard has to hold for every pair in PARENT_FIELD, not just the one
+      // the repro happened to use. Same shape on the carbohydrate side, and on
+      // the other child of totalFat.
+      expect(
+        parseNutritionFromOCR("Carbohydrate 11 9\nSugars 19").totalSugars,
+      ).toBeNull();
+      expect(
+        parseNutritionFromOCR("Total Fat 11 9\n+ Trans 19").transFat,
+      ).toBeNull();
+    });
+
+    it("cannot promote a child off a parent adopted in the second pass", () => {
+      // The deferred pass iterates in FIELD_PATTERNS order, so a parent
+      // resolved by the leading-zero rule IS visible to a later child's
+      // containment check. That is safe only because leading-zero can resolve
+      // to nothing but 0, and a bound of 0 promotes no non-zero child — a
+      // coincidence of that rule's output range, not a designed guarantee, and
+      // the parser's own comment flags it as needing recheck if either changes.
+      // Pinned so a reordering or a new non-zero rule goes red here.
+      expect(
+        parseNutritionFromOCR("Total Fat 09\nSaturated 19").saturatedFat,
+      ).toBeNull();
+      expect(
+        parseNutritionFromOCR("Carbohydrate 09\nSugars 19").totalSugars,
+      ).toBeNull();
+      // Negative control: the parent really was adopted, so the declines above
+      // are about the child, not about the parent failing to parse.
+      expect(parseNutritionFromOCR("Total Fat 09").totalFat).toBe(0);
+    });
+
+    it("still allows a parent read with a real unit to bound a child", () => {
+      // Negative control for the rule above: the refusal is scoped to parents
+      // whose unit was substituted, not to containment generally.
+      expect(
+        parseNutritionFromOCR("Total Fat 11 g\nSaturated 19").saturatedFat,
+      ).toBe(1);
+      // And the spaced substitution is refused as a bound even when the value
+      // it produced happens to be right.
+      expect(
+        parseNutritionFromOCR("Total Fat 11 9\nSaturated 19").saturatedFat,
+      ).toBeNull();
+    });
+
+    it("declines when there is no parent value to test against", () => {
+      // The parent did not parse, so the impossibility argument cannot be made.
+      expect(parseNutritionFromOCR("Saturated 19").saturatedFat).toBeNull();
+      // totalFat has no parent at all — this is the sauce label's "2.59".
+      expect(parseNutritionFromOCR("Total Fat 19").totalFat).toBeNull();
+    });
+  });
+
+  describe("guards the glued branch must not break", () => {
+    it("never steals a value from a real g that follows it", () => {
+      // THE regression that matters: "19 g" is nineteen grams. The glued
+      // branch must refuse while a real unit is still sitting unconsumed,
+      // even when the parent field would otherwise make 19 impossible.
+      expect(
+        parseNutritionFromOCR("Total Fat 11 g\nSaturated 19 g").saturatedFat,
+      ).toBe(19);
+      expect(
+        parseNutritionFromOCR("Total Fat 11 g\nSaturated 19g").saturatedFat,
+      ).toBe(19);
+    });
+
+    it("never steals a value from a lone 9 unit further along the line", () => {
+      // "39 9" is thirty-nine grams — the lone "9" is the unit. The glued
+      // branch reaches a match at capture "3", a SHORTER capture than the
+      // lone-token branch needs, so ordering alone does not hold it back.
+      expect(parseNutritionFromOCR("Total Sugars 39 9").totalSugars).toBe(39);
+      // The same input with a parent present, which is where an early glued
+      // win gets dangerous rather than merely lossy: it would capture 3, and
+      // containment would then have to rule on it. 45 g of carbohydrate is
+      // chosen so the label is physically coherent — 39 g of sugars fits
+      // inside it — and the assertion still discriminates, because the buggy
+      // reading yields null here (3 is adopted only if 39 OVERFLOWS the
+      // parent, which it does not). With a SMALLER parent the same bug
+      // produces a confidently wrong 3 instead of a null, which is the worse
+      // outcome; it is not asserted here because pinning it would mean
+      // writing down a label that cannot exist as expected input.
+      expect(
+        parseNutritionFromOCR("Carbohydrate 45 g\nSugars 39 9").totalSugars,
+      ).toBe(39);
+    });
+
+    it("does not read a %DV that lost its percent sign", () => {
+      // "195" is not "19" plus a unit — more digits follow the 9.
+      expect(
+        parseNutritionFromOCR("Total Fat 11 g\nSaturated 195").saturatedFat,
+      ).toBeNull();
+    });
+
+    it("does not take its unit from the next line", () => {
+      // The glued branch requires the "9" to be touching the value, so it
+      // cannot reach a stray "9" shed by the %DV column below.
+      expect(
+        parseNutritionFromOCR("Total Fat 11 g\nSaturated 1\n9").saturatedFat,
+      ).toBeNull();
+    });
+  });
+});
+
+describe("serving size — a serving spec ends at its last unit token", () => {
+  it("drops an adjacent column merged onto the serving line", () => {
+    expect(
+      parseNutritionFromOCR("Per 1 tbsp (15 mL) Sugar, Vinegar, Splu Lguit")
+        .servingSize,
+    ).toBe("1 tbsp (15 mL)");
+  });
+
+  it("keeps a bilingual serving whole", () => {
+    // Both halves are unit-bearing, so the trim must land after the LAST one.
+    expect(
+      parseNutritionFromOCR("Per 1 tbsp (15 mL)/par 1 c. à s. (15 mL)")
+        .servingSize,
+    ).toBe("1 tbsp (15 mL)/par 1 c. à s. (15 mL)");
+  });
+
+  it("leaves a clean serving line untouched", () => {
+    expect(parseNutritionFromOCR("Per 30 ml (30 g)").servingSize).toBe(
+      "30 ml (30 g)",
     );
+    expect(parseNutritionFromOCR("Per 355 mL").servingSize).toBe("355 mL");
+  });
+
+  it("does not cut at a 'g' inside a word", () => {
+    // "Sugar" and "Lguit" both contain a g. Only a g at a token boundary ends
+    // the spec — otherwise the trim would cut mid-word and lose the unit.
+    expect(parseNutritionFromOCR("Per 250 g Sugar").servingSize).toBe("250 g");
   });
 });
 
@@ -512,9 +773,9 @@ describe("g→9 unit substitution — recover the lone token, decline the glued"
     // "19" is either 19 grams or "1 g" and the flattened text cannot say which.
     expect(parseNutritionFromOCR("Total Fat 19").totalFat).toBeNull();
     expect(parseNutritionFromOCR("Total Fat 2.59").totalFat).toBeNull();
-    expect(
-      parseNutritionFromOCR("Total Carbohydrate 09").totalCarbs,
-    ).toBeNull();
+    // "Total Carbohydrate 09" was declined alongside these two until the
+    // leading-zero rule settled it. It now reads 0 — see the glued-g→9
+    // describe block, which owns that rule and both sides of its boundary.
   });
 
   it("does not let a 9 on the next line supply this line's unit", () => {
@@ -717,12 +978,19 @@ Sodlum 30 mg`;
     //
     // So the fixture is rebuilt to keep the property that mattered. It is
     // synthetic but NOT trivial — both fields are present in the text and both
-    // are lost, each to a defect this file documents elsewhere: fat to the
-    // ambiguous glued `g`->`9` ("09"), sugars to a dropped "/" separator, which
-    // is what actually costs Cherry Coke its sugars. A fixture that simply
+    // are lost, each to a defect this file documents elsewhere: fat to an
+    // ambiguous glued `g`->`9`, sugars to a dropped "/" separator, which is
+    // what actually costs Cherry Coke its sugars. A fixture that simply
     // omitted the two lines would prove only that absent fields are absent.
+    //
+    // Rebuilt a SECOND time, same cause: the fat line was "Ipldes 09" until
+    // the leading-zero rule made "09" readable. "19" is the glued form that
+    // still declines — totalFat has no parent field to contradict it — so the
+    // both-absent property survives. Whenever a fix here turns one of these
+    // lines green, this fixture needs another still-broken input, not a
+    // relaxed assertion: it is guarding the gate, not the parser.
     const parsed = parseNutritionFromOCR(
-      "Nutrition Facts\nPer 1 can (355 mL)\nCalories 140\nFat / Ipldes 09\nSugars Sucres 39 9",
+      "Nutrition Facts\nPer 1 can (355 mL)\nCalories 140\nFat / Ipldes 19\nSugars Sucres 39 9",
     );
 
     expect(parsed.totalSugars).toBeNull();
