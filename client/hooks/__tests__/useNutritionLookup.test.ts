@@ -346,16 +346,26 @@ describe("useNutritionLookup — trust-the-label override (Task 5)", () => {
     expect(call[1]?.method).toBe("POST");
     const body = JSON.parse(call[1]!.body as string);
     expect(body.labelNutrition.totalSugars).toBe(39);
-    // All five keys must be present (server schema is .nullable() but not
-    // .optional() — an omitted key 400s the whole request).
+    // All five VALUE keys must be present (the server schema is `.nullable()`
+    // but not `.optional()` for those — an omitted key 400s the whole request),
+    // plus `directReads`, the OCR provenance the server needs to decide whether
+    // it may compare `saturatedFat` against the database record.
     expect(Object.keys(body.labelNutrition).sort()).toEqual(
       [
         "calories",
+        "directReads",
         "saturatedFat",
         "servingSize",
         "totalFat",
         "totalSugars",
       ].sort(),
+    );
+    // And it carries the real parse, not an empty placeholder: this panel reads
+    // calories and sugars off actual glyphs. `saturatedFat` has no line here at
+    // all, so it is absent from the list as well as null — nothing about a
+    // missing field may look like a direct read.
+    expect(body.labelNutrition.directReads.sort()).toEqual(
+      ["calories", "totalSugars"].sort(),
     );
   });
 

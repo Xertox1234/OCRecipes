@@ -81,18 +81,59 @@ gives a reconciliation step something to prioritise.
   sibling gap — `buildLabelConflict`'s `cmp` list also never compared
   `saturatedFat` against the database — was raised as a todo the same day this
   solution was written and is now **fixed**: `saturatedFat` is in `cmp`.
-  Worth noting how, because "add it to the list" was not sufficient. The
-  argument for leaving it out was that the server cannot condition on OCR
-  provenance once the payload arrives — a direct read, an inference and a plain
-  digit misread are indistinguishable — but that is a reason to trust the
-  reading LESS, which argues for corroborating it, not for skipping the check.
-  The real obstacle was quantitative: label readings are per-serving and get
-  scaled to per-100, which scales their printing-rounding error too, so a naive
-  comparison fires spurious conflicts. The fix is a floor traceable to the
-  labelling rules (one 0.5 g printed step × the scaling factor), plus keeping
-  the field out of the `compared >= 2` trust gate because a check run at a
-  widened tolerance is weaker evidence than the others. `shouldReplaceWithAI`
-  itself remains unaddressed — out of scope for that todo.
+  Worth noting how, because "add it to the list" was not sufficient, and the
+  first attempt shipped two CRITICALs that are the real lesson here.
+
+  The argument for leaving the field out was that the server cannot condition on
+  OCR provenance once the payload arrives — a direct read, an inference and a
+  plain digit misread are indistinguishable. Half of that is a reason to trust
+  the reading LESS, which argues for corroborating it rather than skipping the
+  check. **The other half was a true statement about the WIRE FORMAT that got
+  filed as a fact about the world.** The payload was the team's own; it could
+  carry provenance, and now does. When a check is blocked because "we can't tell
+  X apart downstream", ask who owns the format that lost X — the answer is often
+  you.
+
+  Three things had to be true before the comparison was safe:
+
+  1. **Provenance on the wire.** `directReads` lists the fields the parser read
+     off a glyph run; the `saturatedFat` row is compared only when the field is
+     positively listed. An inferred value is still accepted and still adopted —
+     only its power to CONDEMN the record is gated. Critically the field is
+     OPTIONAL and absence means "not a direct read": clients already installed
+     send nothing, and defaulting them to "direct" would have left the entire
+     installed base on the buggy path. (See
+     [absent field beats a defaulted one](absent-field-beats-defaulted-one-in-a-precedence-chain-2026-07-31.md)
+     — the same rule, reached independently a second time.)
+  2. **A floor traceable to the labelling rules** (one 0.5 g printed step ×
+     the per-serving→per-100 scaling factor), because scaling the reading scales
+     its rounding error too. That floor must itself be **clamped**: `step ×
+     factor` is unbounded and no minimum serving is enforced, so a 5 g serving
+     produced a 10 g/100g floor — wider than either FSA saturated-fat band, i.e.
+     a check that could no longer see a high-saturated-fat crossing. Bounded now
+     at half the MEDIUM band width from `shared/constants/nutrition-bands.ts`.
+  3. **A blanking scope.** This is the subtle one, and it generalises well
+     beyond nutrition — see the rule below.
+
+  `shouldReplaceWithAI` itself remains unaddressed — out of scope for that todo.
+
+- **Adding a field to a detector changes what its CONSEQUENCE should be scoped
+  to.** `buildLabelConflict` answers a conflict by discarding the record's
+  un-read macros (carbs/protein/fibre/sodium). That was written when only
+  calories/sugar/fat could raise a conflict, where a disagreement really does
+  imply the record's whole per-100 basis is wrong. Admitting `saturatedFat`
+  created a state the blanking logic was never written for: a conflict raised by
+  one field while the other three AGREE — which is evidence *against* a
+  basis-wide error, not for it. The unchanged code discarded three macros on the
+  strength of a single disagreeing nutrient.
+
+  The tell is that the consequence was **unconditional** while its justification
+  was **field-specific**. When you widen the set of inputs that can trigger an
+  action, re-read the action's rationale and ask which inputs it was actually
+  argued for. Here the fix is to scope the blanking to conflicts that include a
+  corroborating field, reusing the same per-row flag rather than adding a
+  parallel list. A future reviewer of this shape should check it directly:
+  *does every new member of the trigger set justify the full blast radius?*
 
 ## Related Files
 
@@ -100,7 +141,8 @@ gives a reconciliation step something to prioritise.
 - `client/screens/LabelAnalysisScreen.tsx` — the `>= 0.6` instant-preview gate
 - `client/screens/label-analysis-utils.ts` — `shouldReplaceWithAI`, the fields the AI pass reconciles
 - `client/lib/__tests__/nutrition-ocr-parser.test.ts` — the confidence assertion plus its populated-fields counterpart
-- `server/services/label-override.ts` — `cmp`, which now corroborates `saturatedFat` behind a label-rounding floor (see above)
+- `server/services/label-override.ts` — `cmp` (the `requiresDirectRead` provenance gate, the clamped label-rounding floor) and `basisDisproven` (the blanking scope)
+- `server/services/__tests__/label-override-provenance-integration.test.ts` — the parser→payload→server seam: one panel, one glyph different, same parsed value; inferred is not compared, direct is
 
 ## See Also
 

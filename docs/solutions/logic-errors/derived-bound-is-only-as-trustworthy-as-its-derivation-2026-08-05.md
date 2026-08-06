@@ -97,7 +97,7 @@ real-unit parent still works.
 
 - `client/lib/nutrition-ocr-parser.ts` — `gluedUnitIsForced`, `PARENT_FIELD`, the `substitutedUnit` set
 - `client/lib/__tests__/nutrition-ocr-parser.test.ts` — "declines a parent whose own unit was substituted" and its negative control
-- `server/services/label-override.ts` — where these values land; `saturatedFat` IS corroborated by `cmp`, behind a floor derived from the label's 0.5 g printing step (see the comment above `cmp`)
+- `server/services/label-override.ts` — where these values land. `saturatedFat` IS corroborated by `cmp`, behind a clamped floor derived from the label's 0.5 g printing step — but **only when the payload's `directReads` says the parser read it directly.** A value this rule INFERRED is still adopted and never compared, because the inference's error is bounded by `[0, totalFat]` while the floor is sized for a 0.5 g print step. That is the downstream half of this same lesson: a bound is only as trustworthy as its derivation, so the derivation has to survive the trip across the wire
 
 ## See Also
 
