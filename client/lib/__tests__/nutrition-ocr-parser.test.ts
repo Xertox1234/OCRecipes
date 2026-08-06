@@ -600,6 +600,34 @@ describe("glued g→9 — resolving only what the label itself rules out", () =>
       ).toBeNull();
     });
 
+    it("declines a parent whose own unit was substituted", () => {
+      // "Total Fat 129 9%" — the "9" taken as the unit is a daily value that
+      // lost its "%", so totalFat reads 129 when the package says something
+      // like 12.9. That parent is present and looks ordinary, and containment
+      // used to accept it: 259 > 129 and 25 <= 129, so "Saturated 259" was
+      // forced to 25. A bound is worth no more than the unit that produced it,
+      // and two ambiguous readings do not add up to one certain one.
+      const r = parseNutritionFromOCR("Total Fat 129 9%\nSaturated 259");
+      expect(r.saturatedFat).toBeNull();
+      // The corrupt parent itself is unchanged by this rule — it is a direct
+      // read and predates the glued branch. Asserted so the decline above is
+      // clearly about the CHILD being refused, not about the parent vanishing.
+      expect(r.totalFat).toBe(129);
+    });
+
+    it("still allows a parent read with a real unit to bound a child", () => {
+      // Negative control for the rule above: the refusal is scoped to parents
+      // whose unit was substituted, not to containment generally.
+      expect(
+        parseNutritionFromOCR("Total Fat 11 g\nSaturated 19").saturatedFat,
+      ).toBe(1);
+      // And the spaced substitution is refused as a bound even when the value
+      // it produced happens to be right.
+      expect(
+        parseNutritionFromOCR("Total Fat 11 9\nSaturated 19").saturatedFat,
+      ).toBeNull();
+    });
+
     it("declines when there is no parent value to test against", () => {
       // The parent did not parse, so the impossibility argument cannot be made.
       expect(parseNutritionFromOCR("Saturated 19").saturatedFat).toBeNull();
@@ -626,12 +654,18 @@ describe("glued g→9 — resolving only what the label itself rules out", () =>
       // branch reaches a match at capture "3", a SHORTER capture than the
       // lone-token branch needs, so ordering alone does not hold it back.
       expect(parseNutritionFromOCR("Total Sugars 39 9").totalSugars).toBe(39);
-      // The same input WITH a parent present is the dangerous version: 39
-      // overflows 5 g of carbohydrate and 3 fits inside it, so the glued
-      // reading would look forced and be adopted. Not a dropped field — a
-      // confidently wrong one, in a field the server override reads.
+      // The same input with a parent present, which is where an early glued
+      // win gets dangerous rather than merely lossy: it would capture 3, and
+      // containment would then have to rule on it. 45 g of carbohydrate is
+      // chosen so the label is physically coherent — 39 g of sugars fits
+      // inside it — and the assertion still discriminates, because the buggy
+      // reading yields null here (3 is adopted only if 39 OVERFLOWS the
+      // parent, which it does not). With a SMALLER parent the same bug
+      // produces a confidently wrong 3 instead of a null, which is the worse
+      // outcome; it is not asserted here because pinning it would mean
+      // writing down a label that cannot exist as expected input.
       expect(
-        parseNutritionFromOCR("Carbohydrate 5 g\nSugars 39 9").totalSugars,
+        parseNutritionFromOCR("Carbohydrate 45 g\nSugars 39 9").totalSugars,
       ).toBe(39);
     });
 

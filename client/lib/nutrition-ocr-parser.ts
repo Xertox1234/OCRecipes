@@ -175,12 +175,12 @@ const FIELD_PATTERNS: FieldPattern[] = [
   {
     key: "totalFat",
     pattern:
-      /(?:total\s+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:total\s+fat|(?:^|\n)\s*(?:fat|lipides))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "saturatedFat",
     pattern:
-      /(?:saturated\s+fat|(?:^|\n)\s*(?:saturated|satur[ée]s))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:saturated\s+fat|(?:^|\n)\s*(?:saturated|satur[ée]s))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "transFat",
@@ -190,7 +190,7 @@ const FIELD_PATTERNS: FieldPattern[] = [
     // it while keeping the line anchor that stops "NO TRANSFAT" and
     // "SANS GRASTRANS" badges from matching.
     pattern:
-      /(?:trans\s+fat|(?:^|\n)[\s+]*trans)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:trans\s+fat|(?:^|\n)[\s+]*trans)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "cholesterol",
@@ -204,7 +204,7 @@ const FIELD_PATTERNS: FieldPattern[] = [
   {
     key: "totalCarbs",
     pattern:
-      /(?:total\s+carb(?:ohydrate|s|\.?)?|carbohydrates?|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:total\s+carb(?:ohydrate|s|\.?)?|carbohydrates?|glucides)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "dietaryFiber",
@@ -213,17 +213,17 @@ const FIELD_PATTERNS: FieldPattern[] = [
     // work here: Canadian panels carry "Not a significant source of fibre,
     // potassium, calcium or iron." in running text a few lines below.
     pattern:
-      /(?:dietary\s+fib(?:er|re)|(?:^|\n)\s*fib(?:er|re)s?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:dietary\s+fib(?:er|re)|(?:^|\n)\s*fib(?:er|re)s?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "totalSugars",
     pattern:
-      /(?:total\s+sugars?|(?:^|\n)\s*(?:sugars?|sucres?))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:total\s+sugars?|(?:^|\n)\s*(?:sugars?|sucres?))(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
   {
     key: "protein",
     pattern:
-      /(?:protein|prot[ée]ines?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+9(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
+      /(?:protein|prot[ée]ines?)(?:\s*\/\s*[a-zà-ÿ]+)?[ \t]+<?(\S+?)(?:\s*g(?![a-zà-ÿ])|[ \t]+(9)(?![\d.])(?![ \t]*g)|(9)(?![\d.])(?![ \t]*g)(?![ \t]+9(?![\d.])))/i,
   },
 ];
 
@@ -291,6 +291,7 @@ function gluedUnitIsForced(
   value: number,
   raw: string,
   result: LocalNutritionData,
+  substitutedUnit: ReadonlySet<NumericField>,
 ): boolean {
   // A printed panel never puts a leading zero in front of another digit. It
   // writes "0 g", so "09" is not a value any label could carry. Note this asks
@@ -310,7 +311,19 @@ function gluedUnitIsForced(
   // be made, so the candidate is declined — a wrong parent must never be able
   // to promote a child.
   const parent = PARENT_FIELD[key];
-  const bound = parent ? result[parent] : null;
+  if (!parent) return false;
+
+  // "Present" is not the same as "trustworthy", and only checking for null let
+  // a corrupt parent through. A bound is worth no more than the unit that
+  // produced it: if the parent's own unit was a substituted "9" rather than a
+  // real "g", the parent was read through this same tolerance and inherits its
+  // ambiguity. "Total Fat 129 9%" is the case — the "9" taken as the unit is a
+  // daily value that lost its "%", so `totalFat` reads 129, and containment
+  // then cheerfully forced "Saturated 259" to 25 because 259 > 129. Two
+  // ambiguous readings do not add up to one certain one.
+  if (substitutedUnit.has(parent)) return false;
+
+  const bound = result[parent];
   if (bound === null) return false;
 
   const wholeToken = extractNumber(raw);
@@ -390,16 +403,26 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   // than adopted — see `gluedUnitIsForced`.
   let extracted = 0;
   const glued: { key: NumericField; value: number; raw: string }[] = [];
+  // Fields whose UNIT was a substituted "9" with a space before it, not a real
+  // "g". The VALUE was read directly, so it is adopted and counts toward
+  // confidence exactly as before — but it must never bound another field. The
+  // glyph standing in for the unit is indistinguishable from a daily value
+  // that lost its "%", so the value it leaves behind can be an order of
+  // magnitude out ("Total Fat 129 9%" -> 129) while looking perfectly ordinary.
+  const substitutedUnit = new Set<NumericField>();
   for (const { key, pattern } of FIELD_PATTERNS) {
     const match = text.match(pattern);
     if (!match?.[1]) continue;
     const value = extractNumber(match[1]);
     if (value === null) continue;
-    if (match[2]) {
-      glued.push({ key, value, raw: match[1] + match[2] });
+    // Group 3 = the GLUED substituted unit: ambiguous, set aside for the
+    // second pass. Group 2 = the SPACED one: adopted now, but marked.
+    if (match[3]) {
+      glued.push({ key, value, raw: match[1] + match[3] });
       continue;
     }
     result[key] = value;
+    if (match[2]) substitutedUnit.add(key);
     extracted++;
   }
 
@@ -422,7 +445,7 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   // label over the gate would put inferred numbers in front of the user with
   // nothing distinguishing them from measured ones.
   for (const { key, value, raw } of glued) {
-    if (!gluedUnitIsForced(key, value, raw, result)) continue;
+    if (!gluedUnitIsForced(key, value, raw, result, substitutedUnit)) continue;
     result[key] = value;
   }
 
