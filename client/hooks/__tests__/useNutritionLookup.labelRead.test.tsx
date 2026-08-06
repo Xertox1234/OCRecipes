@@ -301,21 +301,26 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
       .spyOn(AccessibilityInfo, "announceForAccessibility")
       .mockImplementation(() => {});
 
-    const { result } = render(null);
+    try {
+      const { result } = render(null);
 
-    await waitFor(() => expect(result.current.labelReadNotice).not.toBeNull());
-    // Wait for the WHOLE lookup, not just the notice. `labelReadNotice` is set
-    // BEFORE `await fetch(...)`, so asserting the moment it appears leaves most
-    // of the lookup unrun — and a duplicate announcer that fired later, from
-    // the `serverRes.ok` branch or the `finally`, would never be observed.
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+      await waitFor(() =>
+        expect(result.current.labelReadNotice).not.toBeNull(),
+      );
+      // Wait for the WHOLE lookup, not just the notice. `labelReadNotice` is
+      // set BEFORE `await fetch(...)`, so asserting the moment it appears
+      // leaves most of the lookup unrun — and a duplicate announcer that fired
+      // later, from the `serverRes.ok` branch or the `finally`, would never be
+      // observed.
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    // Negative control: the notice really was set, so a silent spy here means
-    // "the hook did not speak", not "nothing happened this render".
-    expect(result.current.labelReadNotice).toContain("couldn't read");
-    expect(announce).not.toHaveBeenCalled();
-
-    announce.mockRestore();
+      // Negative control: the notice really was set, so a silent spy here means
+      // "the hook did not speak", not "nothing happened this render".
+      expect(result.current.labelReadNotice).toContain("couldn't read");
+      expect(announce).not.toHaveBeenCalled();
+    } finally {
+      announce.mockRestore();
+    }
   });
 
   it("does not announce a serving correction either", async () => {
@@ -339,16 +344,25 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
       .spyOn(AccessibilityInfo, "announceForAccessibility")
       .mockImplementation(() => {});
 
-    const { result } = render(READABLE_LABEL);
+    try {
+      const { result } = render(READABLE_LABEL);
 
-    await waitFor(() => expect(result.current.correctionNotice).not.toBeNull());
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+      await waitFor(() =>
+        expect(result.current.correctionNotice).not.toBeNull(),
+      );
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    // Negative control, same shape: the correction really did fire.
-    expect(result.current.correctionNotice).toContain("355 mL");
-    expect(announce).not.toHaveBeenCalled();
-
-    announce.mockRestore();
+      // Negative control, same shape: the correction really did fire. Exact
+      // match, not `toContain("355 mL")` — `servingInfo.displayLabel` is also
+      // "355 mL", so a substring check would pass just as happily if the hook
+      // were mis-wired to announce the label instead of the reason.
+      expect(result.current.correctionNotice).toBe(
+        "Serving size corrected to 355 mL",
+      );
+      expect(announce).not.toHaveBeenCalled();
+    } finally {
+      announce.mockRestore();
+    }
   });
 
   /**

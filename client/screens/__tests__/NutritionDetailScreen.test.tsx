@@ -1679,7 +1679,7 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * once: exactly one, and it is the error's.
    */
   it("routes error through InlineError — one assertive live region, none on the notices", () => {
-    const { container, getByText } = renderScan({
+    const { container, getByText, queryByText } = renderScan({
       error: ERROR_BODY,
       labelReadNotice: LABEL_BODY,
       correctionNotice: CORRECTION_BODY,
@@ -1698,16 +1698,21 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
     // whenever `error` is set — see the test below.
     expect(getByText(CORRECTION_BODY).closest("[aria-live]")).toBeNull();
     expect(getByText(PER_100G_BODY).closest("[aria-live]")).toBeNull();
+    // This fixture still passes `labelReadNotice`, which the suppression now
+    // drops — asserted here rather than removed, so the suppression picks up a
+    // second guard from a test that already had the right fixture shape.
+    expect(queryByText(LABEL_BODY)).toBeNull();
   });
 
   /**
    * The label-read notice is suppressed while `error` is set, for two reasons
    * that share one trigger.
    *
-   * Content: every path that sets `error` also sets `nutrition` to a bare
-   * `{ productName: "Unknown Product" }`, so the notice's own sentence —
-   * "so these values come from the product database" — describes values that
-   * do not exist.
+   * Content: no path that sets `error` leaves real database values in
+   * `nutrition` — the placeholder differs by path (`Unknown Product`,
+   * `Product Not Found`, or `null`) but none carries macros — so the notice's
+   * own sentence, "so these values come from the product database", describes
+   * values that do not exist.
    *
    * Announcement: `setError` and `setIsLoading(false)` land in one commit (no
    * await between the catch and the `finally`), so the screen's `isLoading`
@@ -1718,13 +1723,28 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * duplicate was removed.
    */
   it("suppresses the label notice while an error is showing", () => {
-    const { getByText, queryByText } = renderScan({
-      error: ERROR_BODY,
-      labelReadNotice: LABEL_BODY,
-    });
+    const announce = vi
+      .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    try {
+      const { getByText, queryByText } = renderScan({
+        error: ERROR_BODY,
+        labelReadNotice: LABEL_BODY,
+      });
 
-    expect(getByText(ERROR_BODY)).toBeTruthy();
-    expect(queryByText(LABEL_BODY)).toBeNull();
+      expect(getByText(ERROR_BODY)).toBeTruthy();
+      expect(queryByText(LABEL_BODY)).toBeNull();
+
+      // Not drawn is not the same as not spoken, and the defect here was
+      // entirely about speech. A render-only assertion would stay green if the
+      // hook's deleted announcer were ever restored — it announces without
+      // rendering anything for `queryByText` to catch. Exactly one utterance,
+      // and it is the error's.
+      expect(announce).toHaveBeenCalledTimes(1);
+      expect(announce).toHaveBeenCalledWith(ERROR_BODY);
+    } finally {
+      announce.mockRestore();
+    }
   });
 
   it("still shows the label notice when the lookup succeeded", () => {

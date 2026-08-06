@@ -382,10 +382,18 @@ export default function NutritionDetailScreen() {
           <NoticeStack
             // Suppressed when the lookup itself failed, for two reasons that
             // share one trigger. Content: the notice says "so these values come
-            // from the product database", and on every path that sets `error`
-            // the hook also sets `nutrition` to a bare
-            // `{ productName: "Unknown Product" }` — there are no database
-            // values either, so the sentence is simply false there.
+            // from the product database", and NO path that sets `error` leaves
+            // real database values in `nutrition` — the placeholder differs by
+            // path (`Unknown Product`, `Product Not Found`, or `null` on the
+            // saved-item and no-scan-data exits), but none of them carries
+            // macros, so the sentence is false wherever `error` is set.
+            //
+            // Accepted tradeoff: on the one RECOVERABLE error state, the notice
+            // can blink. A `notInDatabase` 404 opens the manual-search card
+            // without setting `error`, so the notice shows; a failed search then
+            // sets one and it vanishes, and a successful search clears it and
+            // the notice returns — now truthfully qualifying values that exist.
+            // The flicker is the honest reading of each state in turn.
             // Announcement: `isLoading` flips false in the SAME commit as
             // `setError` (no await between the catch and the `finally`), so the
             // early return above releases `NoticeStack` and `InlineError`
