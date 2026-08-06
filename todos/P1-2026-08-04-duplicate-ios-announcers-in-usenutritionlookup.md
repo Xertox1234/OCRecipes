@@ -36,12 +36,17 @@ comment at `:162-167` even cites
 `docs/solutions/logic-errors/two-announceforaccessibility-same-commit-collide-ios-2026-07-21.md`,
 composing a single utterance precisely to avoid a same-commit collision.
 
-**No user-perceivable defect today**, which is why 2c shipped without fixing it:
+**No user-perceivable defect today**, which is why 2c shipped without fixing it — **the first
+bullet was DISPROVEN on 2026-08-05 and is kept only to show what the deferral rested on:**
 
-- React flushes **child** effects before **parent** effects. `NoticeStack` and `InlineError` are
+- ~~React flushes **child** effects before **parent** effects. `NoticeStack` and `InlineError` are
   children of the screen that calls the hook, so the hook's `post(.announcement)` is the later call
-  and silences theirs. iOS therefore hears exactly one utterance.
-- For the error, both callers announce the identical string, so the outcome is byte-identical.
+  and silences theirs. iOS therefore hears exactly one utterance.~~ **FALSE for the notices.**
+  Child-before-parent only orders effects _within one commit_, and the notices never share one:
+  the hook posts before awaiting the barcode fetch, `NoticeStack` mounts in the `finally` two round
+  trips later. Both were heard. This is what moved the notices fix into #753.
+- For the error, the premise **does** hold — `setError` and `setIsLoading(false)` land in the same
+  commit — and both callers announce the identical string, so the outcome is byte-identical.
 - On **Android** the hook's effects are gated out (`if (Platform.OS !== "ios") return`), so
   `NoticeStack` is already the only announcer there and nothing overlaps.
 
@@ -110,8 +115,9 @@ NOTICES announcer's absence. The ERROR announcer is still untested, so its test 
 
 ## Scope Contract
 
-- **Mechanisms to use:** plain deletion of two `useEffect` blocks plus their now-unused imports. No
-  new abstraction, no announcer facade, no platform-gating helper.
+- **Mechanisms to use:** plain deletion of **one** remaining `useEffect` block (the notices one is
+  already gone) plus its now-unused imports. No new abstraction, no announcer facade, no
+  platform-gating helper.
 - **Files in scope:** `client/hooks/useNutritionLookup.ts`, its test file under
   `client/hooks/__tests__/`, `client/components/nutrition/NoticeStack.tsx` (docblock only), and
   `client/screens/__tests__/NutritionDetailScreen.test.tsx` if the announcement assertions live
