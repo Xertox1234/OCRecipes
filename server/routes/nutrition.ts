@@ -371,11 +371,20 @@ export function register(app: Express): void {
             profileOutcome,
             verification,
           );
-          // The label-corrected block deliberately drops macros whose per-100
-          // basis the calorie disagreement just proved wrong, so the universal
-          // flag recompute emits nothing for them. Say that out loud: otherwise
-          // a missing "High in sugar" is indistinguishable from a low-sugar
-          // product, on the very screen that tells the user to trust the label.
+          // The label-corrected block can deliberately drop macros whose per-100
+          // basis a corroborating disagreement just proved wrong, and the
+          // universal flag recompute then emits nothing for them. Say that out
+          // loud: otherwise a missing "High in sugar" is indistinguishable from
+          // a low-sugar product, on the very screen that tells the user to
+          // trust the label.
+          //
+          // "Can" rather than "does" since the blanking was scoped: a conflict
+          // raised only by non-corroborating fields (today, saturatedFat alone)
+          // KEEPS the record's un-read macros, because the fields that agreed
+          // are evidence the basis is sound. Nothing here needs to change for
+          // that — the diff below asks what was actually lost, so a body that
+          // lost nothing raises nothing. That is exactly why it was written as
+          // a diff and not as a value-presence test.
           //
           // Decided by DIFFING the two bodies, not by asking whether a value
           // was dropped. Most records carry a sodium figure and the label input

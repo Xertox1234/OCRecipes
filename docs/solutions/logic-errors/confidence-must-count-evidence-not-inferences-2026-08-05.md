@@ -135,6 +135,19 @@ gives a reconciliation step something to prioritise.
   parallel list. A future reviewer of this shape should check it directly:
   *does every new member of the trigger set justify the full blast radius?*
 
+- **Narrowing a destructive consequence re-exposes whatever it was suppressing.**
+  The scoped blanking above immediately made a second defect reachable: retaining
+  the record's `fat` beside a label-corrected `saturatedFat` can display
+  `saturatedFat > fat` — nutritionally impossible, on the screen that tells the
+  user to trust the label. The coarse "drop everything" version had been hiding
+  it for free. So for any "blank less" / "keep more" change, enumerate the values
+  now retained and ask whether each is in a **containment relationship**
+  (`saturated`/`trans ≤ fat`, `sugars ≤ carbs`) with a value the other source
+  just replaced. Mixed provenance across such a pair is the failure mode, and it
+  is reachable precisely because the payload's field set is smaller than the
+  record's — here the parser declines an ambiguous glued `Total Fat 19` while
+  reading `Saturated Fat 6 g` on the next line perfectly.
+
 ## Related Files
 
 - `client/lib/nutrition-ocr-parser.ts` — the deferred adoption pass and its `extracted` comment

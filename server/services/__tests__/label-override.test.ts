@@ -683,6 +683,57 @@ it("keeps the record's un-read macros when ONLY a non-corroborating field disagr
   expect(r.labelResult!.per100g.sodium).toBe(650);
 });
 
+it("never retains a DB total fat that the label's corrected saturated fat exceeds", () => {
+  // The impossible-relationship trap the OLD unconditional blanking made
+  // unreachable, one level down from the blanking scope itself. Keeping the
+  // record's siblings is right for carbs/protein/sodium — the label has no
+  // field for any of them — but `fat` is `saturatedFat`'s CONTAINMENT PARENT,
+  // and this is the one path where the two can come from different sources.
+  //
+  // The shape is a real parse, not a contrivance: the parser DECLINES a glued
+  // "Total Fat 19" (nothing to bound it), while "Saturated Fat 6 g" one line
+  // below is an ordinary direct read. So a panel can legitimately yield
+  // `totalFat: null` alongside a directly-read `saturatedFat`.
+  const db = cheddarDb(2);
+  db.per100g = { ...db.per100g, fat: 3 }; // record says 3 g/100g of total fat
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null, // the glued-form decline
+  });
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["saturatedFat"]);
+
+  // The label's saturated fat is adopted: 6.3 g / 30 g = 21 per-100.
+  expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(21, 5);
+  // Assert the INVARIANT, not just "fat is undefined" — mirroring the
+  // sugar > carbs tests above, so a future change that starts defaulting fat
+  // to 0 instead of dropping it is still caught.
+  const { fat, saturatedFat } = r.labelResult!.per100g;
+  expect(
+    fat !== undefined && saturatedFat !== undefined && saturatedFat > fat,
+  ).toBe(false);
+  // And the fix stays narrow: the three macros with no containment relationship
+  // to anything the label corrected are still kept.
+  expect(r.labelResult!.per100g.carbs).toBe(2);
+  expect(r.labelResult!.per100g.protein).toBe(24);
+  expect(r.labelResult!.per100g.sodium).toBe(650);
+});
+
+it("keeps a DB total fat that COMFORTABLY contains the corrected saturated fat", () => {
+  // The negative control that keeps the guard from collapsing into "always drop
+  // fat". The unmodified fixture's 30 g/100g of fat holds 21 g of saturated fat
+  // without contradiction, so there is nothing to protect the user from and the
+  // value is worth displaying.
+  const r = buildLabelConflict(cheddarDb(2), {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null,
+  });
+  expect(r.fields).toEqual(["saturatedFat"]);
+  expect(r.labelResult!.per100g.fat).toBe(30);
+});
+
 it("STILL blanks the un-read macros when a corroborating field disagrees too", () => {
   // The Cherry Coke rule, pinned on the same fixture so the two branches differ
   // in exactly one thing: whether a corroborating field is among the

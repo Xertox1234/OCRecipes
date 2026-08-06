@@ -250,6 +250,52 @@ const SATURATED_FAT_LABEL_ROUNDING_STEP_G = 0.5;
  * longer blanks the record's other macros (see `basisDisproven` below), so a
  * false positive costs a conflict prompt, not four discarded nutrients.
  */
+/**
+ * The record's per-100 macros that may be shown ALONGSIDE the label's corrected
+ * ones, on the path where nothing disproved the record's basis.
+ *
+ * Almost all of them can: `LabelNutritionInput` has no carbs, protein, fibre or
+ * sodium field at all, so those four can only ever come from the record, and no
+ * label reading contradicts them.
+ *
+ * `fat` is the exception, and it is the whole reason this is a function. It is
+ * `saturatedFat`'s CONTAINMENT PARENT — saturated fat is a fraction of total
+ * fat, under every labelling regime — and `saturatedFat` is the one field that
+ * can be corrected by the label while `fat` comes from the record. That happens
+ * on a genuinely ordinary panel: the parser DECLINES an ambiguous glued
+ * "Total Fat 19" (it has no parent of its own to be bounded by) while reading
+ * "Saturated Fat 6 g" one line below perfectly. The result would be the
+ * record's 3 g of total fat displayed beside the label's 21 g/100g of saturated
+ * fat.
+ *
+ * Checked by VALUE rather than dropped whenever the pairing occurs. The
+ * distinction the route's flag-diff comment draws applies here in reverse: that
+ * one refuses to infer "a warning was lost" from value presence, because the
+ * proxy fires on records it shouldn't. This is not a proxy — it is the exact
+ * invariant being protected, evaluated directly — so it drops precisely the
+ * values that would be impossible and keeps a total fat that genuinely contains
+ * the corrected figure.
+ */
+function retainableSiblings(
+  dbPer100g: BarcodePer100g,
+  per100: Partial<
+    Record<"calories" | "sugar" | "fat" | "saturatedFat", number>
+  >,
+): BarcodePer100g {
+  const retained: BarcodePer100g = { ...dbPer100g };
+  // Only when the label supplied the child and NOT the parent — if it read both,
+  // they are one self-consistent source and this module does not second-guess it.
+  if (
+    per100.saturatedFat !== undefined &&
+    per100.fat === undefined &&
+    retained.fat !== undefined &&
+    per100.saturatedFat > retained.fat
+  ) {
+    delete retained.fat;
+  }
+  return retained;
+}
+
 function saturatedFatFloorCeiling(servingSize: string | null): number {
   const band =
     parseServingBasis(servingSize)?.unit === "g"
@@ -596,11 +642,16 @@ export function buildLabelConflict(
     : // Nothing challenged the basis, so the record's un-read macros are the
       // best (and only) figures available for them — "on doubt, fail toward the
       // DB result". `per100` still wins wherever the label read a value, so the
-      // disagreeing nutrient is still corrected to the label's; and the label
-      // cannot introduce an impossible relationship here, because reaching this
-      // branch means every corroborating field it read AGREED with the record
-      // the siblings come from.
-      { ...dbResult.per100g, ...per100 };
+      // disagreeing nutrient is still corrected to the label's.
+      //
+      // One sibling cannot simply be retained, though, and it is the reason
+      // this is a function call and not a spread. Mixing sources is exactly
+      // what the old unconditional blanking prevented, and `fat` is
+      // `saturatedFat`'s CONTAINMENT PARENT: keeping the record's total fat
+      // beside a label-corrected saturated fat can put `saturatedFat > fat` on
+      // screen — nutritionally impossible, on the screen that tells the user to
+      // trust the label. See `retainableSiblings`.
+      { ...retainableSiblings(dbResult.per100g, per100), ...per100 };
 
   const labelResult: BarcodeLookupResult = {
     ...dbResult,
