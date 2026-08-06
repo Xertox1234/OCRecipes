@@ -8,7 +8,7 @@ tags: [prettier, lint-staged, generated-files, ci, drift-check]
 symptoms: [CI `--check` step fails on a generated file the developer didn't touch, 'Committed bytes differ from `npm run build:foo` output even though manual pre-stage check passed', Prettier silently pads markdown table columns or swaps `*italic*` for `_italic_`]
 applies_to: [.prettierignore, scripts/build-*.ts, .github/workflows/**/*.yml]
 created: '2026-05-11'
-last_updated: '2026-08-05'
+last_updated: '2026-08-06'
 ---
 
 # Prettier reformats generated files after commit, breaking byte-equality drift checks
@@ -53,6 +53,18 @@ To detect at PR time, run `npm run build:foo:check` AFTER the commit lands (not 
 - `eslint-suppressions.json` (2026-08-05, `todo/P3-2026-07-31-prettier-enforced-only-by-the-commit-hook`): written by `eslint --prune-suppressions` (`npm run lint:suppress:check`, which byte-diffs it against HEAD). ESLint's own JSON writer emits `{\n}` for an empty object where Prettier wants `{}` — no functional difference, but reformatting it would make `lint:suppress:check` fail on the very next regeneration even with zero suppression changes.
 - `ios/**/Contents.json` (Xcode asset-catalog manifests, same date/todo): **two different non-Prettier writers, not one.** The catalog root (`Images.xcassets/Contents.json`) is written by Xcode itself and uses `"key" : value` (space before the colon). The nested `.appiconset`/`.imageset`/`.colorset` manifests are Expo-prebuild output and differ from Prettier only by a missing trailing newline. Verify the *actual* diff per file before writing the `.prettierignore` comment — an initial version of this ignore entry claimed all 4 files shared both traits; a second reviewer pass (raw byte inspection via `od -c`) caught that only the catalog root has the colon-spacing tell, and it already has a trailing newline.
 
+**A second reason to duplicate an entry into `.prettierignore`: Prettier does not read nested
+`.gitignore` files.** Its default `--ignore-path` is `[.gitignore, .prettierignore]` — a
+*root-level file lookup*, not git's "walk every directory's `.gitignore`" semantics. This repo
+excludes native build output via nested `ios/.gitignore` and `android/.gitignore`
+(`/Pods/`, `build/`, `.cxx/`, `.gradle`, `DerivedData`), none of which Prettier ever sees. A
+`prettier --check` over `**/*` therefore flags hundreds of generated `.json` files for anyone
+who has run a local native build, while CI stays green because its lint job builds no native
+code — a gate that only fails on developer machines. The fix is to mirror the nested-gitignore
+lines into `.prettierignore` and record the derivation in a comment, so the duplication reads
+as deliberate rather than as cruft to clean up. Generalises: any tool whose ignore file is
+looked up only at the repo root needs nested-gitignore content copied up, not inherited.
+
 ## Related Files
 
 - `.prettierignore`
@@ -61,6 +73,7 @@ To detect at PR time, run `npm run build:foo:check` AFTER the commit lands (not 
 - `docs/legacy-patterns/architecture.md` — "CI Drift-Check for Generated Tracked Artifacts"
 - `eslint-suppressions.json`, `package.json` (`lint:suppress:check`)
 - `ios/OCRecipes/Images.xcassets/**/Contents.json`
+- `ios/.gitignore`, `android/.gitignore` — the nested ignore files Prettier never reads
 
 ## See Also
 

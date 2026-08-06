@@ -3,7 +3,7 @@ title: "Prettier is enforced only by the commit hook — check:format runs in no
 status: done
 priority: low
 created: 2026-07-31
-updated: 2026-08-05
+updated: 2026-08-06
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -112,3 +112,38 @@ assume CI would catch what the hook missed.
   `package.json`), so the "commit hook is the only enforcement" problem is only partially
   closed for those extensions. Codified as
   `docs/solutions/conventions/prettier-glob-mismatch-commit-hook-vs-ci-2026-08-05.md`.
+  _(Superseded 2026-08-06 for the `.json`/`.css` half — see below. The `.md`/`.yml`/`.yaml`
+  half is still deferred and still open.)_
+
+### 2026-08-06
+
+Review repairs on PR #765 (code-reviewer + security-auditor), applied at user direction.
+
+- **BLOCKER — preflight was unusable for anyone who had built natively.** Prettier's default
+  `--ignore-path` is `[.gitignore, .prettierignore]`, a ROOT-level file lookup, not git's
+  nested-`.gitignore` walk. This repo excludes native build output via **nested**
+  `ios/.gitignore` and `android/.gitignore`, which Prettier therefore never reads, so
+  `prettier --check` flagged every generated `.json` under `ios/Pods/`, `ios/build/`,
+  `android/**/build/` and `android/app/.cxx/` — ~260 files. CI never saw it (the `checks` job
+  builds no native code), but `scripts/preflight.sh` full mode was permanently red locally.
+  Fixed by mirroring the nested-gitignore lines into `.prettierignore` (`ios/Pods/`,
+  `ios/**/build/`, `ios/**/DerivedData/`, `android/**/build/`, `android/**/.cxx/`,
+  `android/**/.gradle/`), each annotated with the gitignore line it derives from and a comment
+  explaining why the duplication is deliberate. Verified against real artifact paths: 7/7
+  ignored, `check:format` back to exit 0.
+- **Scope Contract extended, deliberately.** The Contract above excludes `package.json`, but
+  the user directed that the `.json`/`.css` asymmetry be repaired rather than left live:
+  `lint-staged` gained `"*.{json,css}": ["prettier --write"]`, so the commit hook now
+  auto-formats exactly what CI judges. This is a user-directed override recorded on the
+  record, **not** a scope violation. Verified end-to-end through `npx lint-staged` that the
+  three `.prettierignore`d JSON files (`package-lock.json`, `eslint-suppressions.json`,
+  `ios/**/Contents.json`) are left byte-identical and the run exits 0 — so an `npm install`
+  commit, which stages nothing but ignored paths, is not blocked.
+- **`scripts/pg-lab/git-mine.sh` comment falsified by this PR.** Its `build_exclude_regex`
+  ERE-escapes every `.prettierignore` entry literally and its caveat claimed the file "only
+  holds literal paths"; `ios/**/Contents.json` — added by this PR — was the first glob entry
+  it ever held, silently no-opping that exclusion. Added the `Contents.json` basename to the
+  `extra` list (safe: every `Contents.json` ever committed lives under `ios/`) and rewrote the
+  caveat to state what actually happens, including why the new native-artifact globs are
+  harmless there (those paths are git-ignored and never enter git history).
+- `.md`/`.yml`/`.yaml` remain uncovered by `check:format` — unchanged, still genuinely open.

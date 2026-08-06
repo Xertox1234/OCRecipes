@@ -27,10 +27,12 @@ into CI for `todo/P3-2026-07-31-prettier-enforced-only-by-the-commit-hook`. `lin
 Prettier entries are `*.{ts,tsx}` and `*.{js,md}` — narrower than `check:format`'s glob in
 two directions:
 
-- `.json` and `.css` are checked by CI but were never auto-formatted by the commit hook.
+- `.json` and `.css` were checked by CI but never auto-formatted by the commit hook.
   This is exactly why `main` already had 9 pre-existing `.json` violations the moment
   `check:format` was pointed at it — the hook was never going to catch them regardless of
-  `--no-verify`.
+  `--no-verify`. **Closed in the same PR** as a user-directed review repair: `lint-staged`
+  gained `"*.{json,css}": ["prettier --write"]`, so the write-time formatter is no longer
+  narrower than the gate that judges it.
 - `.md`, `.yml`, and `.yaml` are outside `check:format`'s glob entirely, so those extensions
   still have **no CI backstop** after this fix. The todo's own problem statement — "Prettier
   is enforced only by the commit hook" — remains literally true for every `.md` and
@@ -40,17 +42,25 @@ two directions:
 
 ```
 # lint-staged (package.json) — write-time, commit hook
-"*.{ts,tsx}": ["eslint --fix", "prettier --write"]
-"*.{js,md}":  ["prettier --write"]
+"*.{ts,tsx}":   ["eslint --fix", "prettier --write"]
+"*.{js,md}":    ["prettier --write"]
+"*.{json,css}": ["prettier --write"]   # added by the review repair below
 
 # check:format (package.json) — read-time, wired into CI by the referenced todo
 "check:format": "prettier --check \"**/*.{js,ts,tsx,css,json}\""
 ```
 
 Diff the two globs by extension before treating a newly-wired CI check as "now enforced
-everywhere": `.json`/`.css` are CI-only (never hook-formatted, so a normal hook-honoring
-commit that edits one goes red with no local warning); `.md`/`.yml`/`.yaml` are hook-only
-(still entirely un-checked by CI).
+everywhere". As shipped: `.js`/`.ts`/`.tsx`/`.json`/`.css` are covered in both directions;
+`.md`/`.yml`/`.yaml` remain hook-only (`.md` is auto-formatted, `.yml`/`.yaml` by nothing at
+all) and are **still entirely un-checked by CI** — that half of the gap is genuinely open.
+
+Adding `.json`/`.css` to `lint-staged` is only safe because `prettier --write` honours
+`.prettierignore` even for explicitly-passed paths, and exits 0 when every path it was given
+is ignored. Verify that before widening a write-time glob over a tree that contains
+generated files: this repo ignores `package-lock.json`, `eslint-suppressions.json` and
+`ios/**/Contents.json`, so an `npm install` commit hands the hook nothing but ignored paths,
+and a non-zero exit there would block every dependency bump.
 
 ## Exceptions
 
@@ -60,7 +70,10 @@ commit that edits one goes red with no local warning); `.md`/`.yml`/`.yaml` are 
   the CI check flags that the hook never auto-formats.
 - Widening either glob to close a discovered gap is a separate, deliberate scope decision
   (it touches `package.json`) — don't fold it into an unrelated change that's merely wiring
-  an existing check into CI for the first time.
+  an existing check into CI for the first time. *In this instance the widening did land in
+  the same PR, but only because review surfaced the gap and the user explicitly directed the
+  repair — the Scope Contract was overridden on the record, not quietly stretched. Absent
+  that instruction the deferral was the right call.*
 
 ## Related Files
 
