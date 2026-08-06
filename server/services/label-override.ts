@@ -81,10 +81,12 @@ const REL_THRESHOLD = 0.25;
 
 /**
  * The increment a Nutrition Facts panel PRINTS saturated fat in: FDA
- * 21 CFR 101.9(c)(2)(ii) and CFIA's equivalent rounding table quantize it to
- * the nearest 0.5 g between 0.5 g and 5 g (to 0 below 0.5 g; to the nearest
- * 1 g above 5 g). This is a property of the labelling rules, not a tolerance
- * tuned to any observed product or test.
+ * 21 CFR 101.9(c)(2) and CFIA's equivalent rounding table quantize it to the
+ * nearest 0.5 g between 0.5 g and 5 g (to 0 below 0.5 g; to the nearest 1 g
+ * above 5 g). This is a property of the labelling rules, not a tolerance tuned
+ * to any observed product or test. (Cited at section level deliberately — the
+ * paragraph numbering was not verified against the current CFR text, and the
+ * derivation below does not depend on it.)
  *
  * It becomes an absolute floor on the saturatedFat comparison because label
  * readings are PER SERVING and get multiplied by `factor = 100 / labelGrams`

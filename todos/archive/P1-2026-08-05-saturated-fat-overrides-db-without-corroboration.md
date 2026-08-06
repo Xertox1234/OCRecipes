@@ -199,17 +199,11 @@ with a comment saying why, may well be the right answer.
   2. A **quantization floor**, `SATURATED_FAT_LABEL_ROUNDING_STEP_G (0.5 g) *
 factor`. A field is only called a disagreement when the relative check
      fails AND the absolute gap exceeds that floor. The derivation is traceable
-     to labelling rules, not tuned to a test: FDA 21 CFR 101.9(c)(2)(ii) and
+     to labelling rules, not tuned to a test: FDA 21 CFR 101.9(c)(2) and
      CFIA quantize printed saturated fat to 0.5 g steps, both sides of the
      comparison are rounded values whose errors can point in opposite
      directions (≤ `0.25 * (factor + 1)`, which is ≤ `0.5 * factor` for every
-     serving under 100 g — the whole band where the floor binds), and the
-     > 5 g/serving 1 g-step rule needs no term because 25% relative already
-     > exceeds it there. Without this, the 2-5 g/100g band conflicts on rounding
-     > alone: on a 30 g serving one 0.5 g printed step is 1.67 g at per-100 scale
-     > while 25% of 4 g is only 1.0 g. A spurious conflict is expensive — it takes
-     > the blank-uncorrected-siblings path and discards the record's
-     > carbs/protein/fiber/sodium.
+     serving under 100 g — the whole band where the floor binds), and the > 5 g/serving 1 g-step rule needs no term because 25% relative already > exceeds it there. Without this, the 2-5 g/100g band conflicts on rounding > alone: on a 30 g serving one 0.5 g printed step is 1.67 g at per-100 scale > while 25% of 4 g is only 1.0 g. A spurious conflict is expensive — it takes > the blank-uncorrected-siblings path and discards the record's > carbs/protein/fiber/sodium.
   3. **`comparedCount` is deliberately UNCHANGED.** The `cmp` rows carry a
      `corroborates` flag; saturatedFat's is `false`, so its agreement never
      counts toward the `compared >= 2` one-tap-log gate. Justification: the
