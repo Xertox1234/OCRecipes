@@ -51,8 +51,17 @@ PR #765 added `npm run check:format` to `.github/workflows/ci.yml`. Its 10/10 gr
 computed against merge-base `d51578df`, while main had already advanced to `099b7e4c`.
 The tick covered the branch and `d51578df`; it covered none of the commits in between.
 
-Before merging, the gap was enumerated explicitly and the checker run against main's
-tip. All clean, so the gate was safe to land.
+Before merging, the gap was enumerated explicitly: main had gained **seven** files
+inside the check's glob (`**/*.{js,ts,tsx,css,json}`) — the `ProductChip`/`ScanReticle`/
+`StepPill` util extractions, `ScanScreen.tsx`, `scan-screen-utils.ts` and two test files,
+all from PR #763. Running `prettier --check` against those seven at `099b7e4c` returned
+clean, so the gate was safe to land.
+
+Note what the enumeration is *for*. Seven files is a small enough set to check by hand,
+and they came from a single PR — but none of that was knowable before running step 2,
+and the answer would have been the same shape (a list, then a check) had main advanced
+by fifty commits. The procedure is cheap enough that "main has barely moved" is never a
+reason to skip it, only a prediction about what it will return.
 
 ### Procedure
 
