@@ -123,11 +123,73 @@ cmd_gh_pr_write_subcommand() {
     | grep -oE '(create|merge|close|edit)' | head -1
 }
 
-# cmd_gh_pr_number <command>  → echo the PR number that FOLLOWS `gh pr <merge|close|edit>`
-# (not the first number anywhere in the line — a wrapper like `timeout 30 gh pr merge 42`
-# must resolve 42, not 30). Empty if the ref is a URL/branch rather than a number.
-cmd_gh_pr_number() {
-  printf '%s' "$1" | cmd_bare \
-    | grep -oE 'gh[[:space:]]+pr[[:space:]]+(merge|close|edit)[[:space:]]+#?[0-9]+' \
-    | grep -oE '[0-9]+' | tail -1
+# cmd_gh_pr_ref <command>  → echo the PR ref (number, branch name, or URL) that
+# FOLLOWS `gh pr <merge|close|edit>`, skipping flag tokens (and, for a known
+# value-taking long-form flag, its value token too) along the way — not the
+# first ref-shaped token anywhere in the line (a wrapper like `timeout 30 gh pr
+# merge 42` must resolve 42, not 30; a boolean flag before the ref, `gh pr
+# merge --squash 42`, must resolve 42, not --squash; a VALUE-taking flag
+# before the ref, `gh pr merge --repo owner/repo 42` or `gh pr edit
+# --add-label bug 42`, must resolve 42, not the flag's own value). Renamed
+# from cmd_gh_pr_number (2026-07-26) because it can now return a non-numeric
+# ref; `gh pr view <ref>` accepts all three forms itself, so callers do not
+# need to know which form it is. Reads cmd_bare'd output like every other
+# predicate here — NOT raw text: a greedy last-match search over raw text is
+# a decoy vector (`gh pr merge 42 --delete-branch && echo "done gh pr merge
+# 999"` would resolve 999, not 42, if run on unblanked text) — same family as
+# docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md.
+# Takes the FIRST match, not the last: `cmd_gh_pr_write_subcommand` (above)
+# also picks its first match, and a compound command chaining two DIFFERENT
+# gh-pr write subcommands (`gh pr merge 42 && gh pr close some-branch`) must
+# report the ref for the SAME invocation SUBCOMMAND was read from — otherwise
+# a caller pairing them independently could describe two different
+# sub-invocations as if they were one.
+# A leading `#` (`gh pr merge #42`) is stripped, matching the old numeric-only
+# behavior. Value-taking flags are matched by LONG name only — short forms
+# (`-b`, `-c`, `-t`, …) are treated as a boolean-style single-token skip, an
+# accepted residual: `-m` alone is genuinely ambiguous between merge's
+# boolean `--merge` and edit's value-taking `--milestone`, and resolving it
+# would require knowing which subcommand's grammar applies mid-regex. The
+# `value_flags` alternation is the complete set of long-form value-taking
+# flags across `gh pr merge|close|edit --help` as of gh 2.95.0 — an UNLISTED
+# value-taking flag (a future `gh` release adding one, not currently
+# possible with any real `gh` flag) is treated as boolean by the same
+# fallback, so its value is read as the ref and a REAL ref later in the
+# command is silently skipped (`gh pr merge --foo bar 42` → `bar`, not `42`,
+# if `--foo` were ever a real value-taking flag). Re-derive and extend this
+# list against `gh pr <subcommand> --help` if `gh` adds one.
+# Empty if no ref token is found: a flags-only tail (`gh pr merge --auto`), a
+# value-taking flag with NOTHING after it (`gh pr edit --milestone 5` — ERE
+# has no negative lookahead, so the regex alone cannot forbid a flag+value
+# pair from being the final tokens; instead it MATCHES that shape via the
+# generic single-token fallback, misreading "5" as a positional ref, and a
+# second check below (is the token before the match's last token itself a
+# known value-flag name?) rejects that parse and returns empty), or a QUOTED
+# ref (cmd_bare blanks quoted content — an accepted residual, along with the
+# narrower case where a value-flag's QUOTED value is immediately followed by
+# a real positional ref, e.g. `gh pr merge --body "msg" 42` — cmd_bare blanks
+# the quoted value to whitespace, which is indistinguishable from "nothing
+# follows the flag" once blanked, so this now also returns empty rather than
+# resolving 42; not currently exercised by any command this hook's callers
+# are known to run). Callers MUST treat empty as "could not verify" and never
+# fall back to a no-args lookup, which resolves the CURRENT branch's PR
+# instead.
+cmd_gh_pr_ref() {
+  local value_flags='--author-email|--body-file|--body|--match-head-commit|--subject|--comment|--add-assignee|--add-label|--add-project|--add-reviewer|--base|--milestone|--remove-assignee|--remove-label|--remove-project|--remove-reviewer|--title|--repo'
+  local full_match ref prev
+  full_match=$(printf '%s' "$1" | cmd_bare \
+    | grep -oE "gh[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]+(${value_flags})[[:space:]]+[^[:space:];&|]*|[[:space:]]+-[^[:space:];&|]*)*[[:space:]]+[^[:space:];&|-][^[:space:];&|]*" \
+    | head -1)
+  [ -n "$full_match" ] || return
+  ref=$(printf '%s' "$full_match" | awk '{print $NF}')
+  # If the token immediately before the extracted ref is ITSELF a known
+  # value-flag name, the match above only succeeded by reinterpreting that
+  # flag as boolean (see comment above) — the "ref" is really the flag's own
+  # value. Reject it rather than report a wrong PR.
+  prev=$(printf '%s' "$full_match" | awk '{print $(NF-1)}')
+  case "$prev" in
+    --author-email|--body-file|--body|--match-head-commit|--subject|--comment|--add-assignee|--add-label|--add-project|--add-reviewer|--base|--milestone|--remove-assignee|--remove-label|--remove-project|--remove-reviewer|--title|--repo)
+      return ;;
+  esac
+  printf '%s' "${ref#\#}"
 }

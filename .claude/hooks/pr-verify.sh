@@ -24,12 +24,13 @@ if [ "$TOOL" = "Bash" ]; then
   . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_gh_pr_write_subcommand >/dev/null || exit 0
   SUBCOMMAND=$(cmd_gh_pr_write_subcommand "$CMD")
   [ -n "$SUBCOMMAND" ] || exit 0
-  # For create: no PR number exists yet — no-args gh pr view resolves from the current branch.
-  # For merge/close/edit: pass the number that FOLLOWS the subcommand (never the first number
-  # anywhere) — no-args would return the current branch's PR, wrong after --delete-branch or when
-  # operating on another branch's PR by number.
+  # For create: no PR ref exists yet — no-args gh pr view resolves from the current branch.
+  # For merge/close/edit: pass the ref (number, branch name, or URL) that FOLLOWS the
+  # subcommand (never the first ref-shaped token anywhere) — no-args would return the
+  # current branch's PR, wrong after --delete-branch or when operating on another
+  # branch's/PR's ref.
   if [ "$SUBCOMMAND" != "create" ]; then
-    PR_REF=$(cmd_gh_pr_number "$CMD")
+    PR_REF=$(cmd_gh_pr_ref "$CMD")
   fi
 elif [ "$TOOL" = "mcp__github__create_pull_request" ]; then
   # The MCP create tool is the preferred PR-creation path (see CLAUDE.md). It
@@ -48,12 +49,20 @@ else
   exit 0
 fi
 
-if [ -n "$PR_REF" ]; then
+if [ "$SUBCOMMAND" = "create" ]; then
+  PR_JSON=$(gh pr view --json number,url,state,title 2>/dev/null)
+  GH_EXIT=$?
+elif [ -n "$PR_REF" ]; then
   PR_JSON=$(gh pr view "$PR_REF" --json number,url,state,title 2>/dev/null)
   GH_EXIT=$?
 else
-  PR_JSON=$(gh pr view --json number,url,state,title 2>/dev/null)
-  GH_EXIT=$?
+  # merge/close/edit with a ref that could not be resolved (cmd_gh_pr_ref found
+  # no ref, or an MCP merge call arrived with no pullNumber): NEVER fall back to
+  # the no-args lookup — that resolves the CURRENT branch's PR, wrong for a
+  # command that operated on a different branch/PR. An honest "could not
+  # verify" beats a confident wrong answer.
+  PR_JSON=""
+  GH_EXIT=1
 fi
 
 if [ $GH_EXIT -eq 0 ] && [ -n "$PR_JSON" ]; then
