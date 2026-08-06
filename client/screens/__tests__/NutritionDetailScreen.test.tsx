@@ -1679,29 +1679,56 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * once: exactly one, and it is the error's.
    */
   it("routes error through InlineError — one assertive live region, none on the notices", () => {
-    const { container, getByText, queryByText } = renderScan({
-      error: ERROR_BODY,
-      labelReadNotice: LABEL_BODY,
-      correctionNotice: CORRECTION_BODY,
-      isPer100g: true,
-    });
+    const announce = vi
+      .spyOn(RN.AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+    try {
+      const { container, getByText, queryByText } = renderScan({
+        error: ERROR_BODY,
+        labelReadNotice: LABEL_BODY,
+        correctionNotice: CORRECTION_BODY,
+        isPer100g: true,
+      });
 
-    const live = container.querySelectorAll("[aria-live]");
-    expect(live).toHaveLength(1);
-    expect(live[0].getAttribute("aria-live")).toBe("assertive");
-    expect(live[0].getAttribute("role")).toBe("alert");
-    expect(live[0].textContent).toContain(ERROR_BODY);
+      // CHARACTERIZATION, not an endorsement. This fixture is the residual the
+      // `labelReadNotice` gate does NOT close: the label notice is suppressed,
+      // but `correctionNotice` and `showPer100gInfo` survive, so `NoticeStack`
+      // still announces and collides with `InlineError` in the same commit —
+      // TWO utterances, which on iOS means the first is cut off.
+      // Reachable in production, not just constructible: nothing in
+      // `useNutritionLookup` resets `correctionNotice` between lookups (there is
+      // no `setCorrectionNotice(null)` in the file) and `isPer100g` is not
+      // re-armed at the top of `fetchBarcodeData`, so a label RETAKE carries a
+      // stale correction into a lookup that errors.
+      // Pinned so that fixing it — resetting both per lookup, which lives in
+      // `useNutritionLookup` and is on this slice's do-not-touch list — turns
+      // this RED and has to be updated deliberately rather than silently.
+      // Literal rather than a `noticeAnnouncementKey` call, for the same reason
+      // given on the open-gate test above.
+      expect(announce.mock.calls.map((c) => c[0])).toEqual([
+        `Serving size adjusted. ${CORRECTION_BODY} Per 100g. ${PER_100G_BODY}`,
+        ERROR_BODY,
+      ]);
 
-    // The positive form of "the notices carry none": walk up from a notice
-    // body and require no live region anywhere above it. Uses the correction
-    // and per-100g rows rather than the label notice, which is suppressed
-    // whenever `error` is set — see the test below.
-    expect(getByText(CORRECTION_BODY).closest("[aria-live]")).toBeNull();
-    expect(getByText(PER_100G_BODY).closest("[aria-live]")).toBeNull();
-    // This fixture still passes `labelReadNotice`, which the suppression now
-    // drops — asserted here rather than removed, so the suppression picks up a
-    // second guard from a test that already had the right fixture shape.
-    expect(queryByText(LABEL_BODY)).toBeNull();
+      const live = container.querySelectorAll("[aria-live]");
+      expect(live).toHaveLength(1);
+      expect(live[0].getAttribute("aria-live")).toBe("assertive");
+      expect(live[0].getAttribute("role")).toBe("alert");
+      expect(live[0].textContent).toContain(ERROR_BODY);
+
+      // The positive form of "the notices carry none": walk up from a notice
+      // body and require no live region anywhere above it. Uses the correction
+      // and per-100g rows rather than the label notice, which is suppressed
+      // whenever `error` is set — see the test below.
+      expect(getByText(CORRECTION_BODY).closest("[aria-live]")).toBeNull();
+      expect(getByText(PER_100G_BODY).closest("[aria-live]")).toBeNull();
+      // This fixture still passes `labelReadNotice`, which the suppression now
+      // drops — asserted here rather than removed, so the suppression picks up a
+      // second guard from a test that already had the right fixture shape.
+      expect(queryByText(LABEL_BODY)).toBeNull();
+    } finally {
+      announce.mockRestore();
+    }
   });
 
   /**
@@ -1714,13 +1741,16 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
    * own sentence, "so these values come from the product database", describes
    * values that do not exist.
    *
-   * Announcement: `setError` and `setIsLoading(false)` land in one commit (no
-   * await between the catch and the `finally`), so the screen's `isLoading`
-   * early-return releases `NoticeStack` and `InlineError` together. Two
-   * announces in one commit collide on iOS and the later one wins, so the
-   * notice was spoken and immediately silenced by the error. The hook used to
-   * announce it in an earlier commit of its own, which masked this until that
-   * duplicate was removed.
+   * Announcement: when the gate empties the stack, `NoticeStack` opts out at
+   * the SOURCE rather than being silenced — `noticeAnnouncementKey` returns
+   * null for an empty list and the effect guards on it before announcing, so
+   * no utterance is issued at all. That is what this test pins: one call, and
+   * it is the error's.
+   *
+   * It does NOT close the collision class. `correctionNotice` and
+   * `showPer100gInfo` are not gated on `error`, so either surviving alongside
+   * a fresh error still produces two announces in one commit — see the
+   * "routes error through InlineError" test above, which pins that residual.
    */
   it("suppresses the label notice while an error is showing", () => {
     const announce = vi
@@ -1736,10 +1766,13 @@ describe("NutritionDetailScreen — notices, error and sticky bar (Task 8)", () 
       expect(queryByText(LABEL_BODY)).toBeNull();
 
       // Not drawn is not the same as not spoken, and the defect here was
-      // entirely about speech. A render-only assertion would stay green if the
-      // hook's deleted announcer were ever restored — it announces without
-      // rendering anything for `queryByText` to catch. Exactly one utterance,
-      // and it is the error's.
+      // entirely about speech. Note what this does and does NOT guard: this
+      // file mocks `useNutritionLookup` wholesale, so a restored announcer
+      // inside the HOOK is invisible here — `useNutritionLookup.labelRead`
+      // owns that, and its tests are not redundant with this one. What this
+      // assertion does catch, proven by mutation, is `InlineError`'s own
+      // announce effect breaking: disable its iOS gate and every render-based
+      // assertion in this file stays green while this line fails.
       expect(announce).toHaveBeenCalledTimes(1);
       expect(announce).toHaveBeenCalledWith(ERROR_BODY);
     } finally {

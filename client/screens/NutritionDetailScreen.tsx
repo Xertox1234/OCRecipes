@@ -394,14 +394,35 @@ export default function NutritionDetailScreen() {
             // sets one and it vanishes, and a successful search clears it and
             // the notice returns — now truthfully qualifying values that exist.
             // The flicker is the honest reading of each state in turn.
-            // Announcement: `isLoading` flips false in the SAME commit as
-            // `setError` (no await between the catch and the `finally`), so the
-            // early return above releases `NoticeStack` and `InlineError`
-            // together; two announces in one commit collide on iOS and the
-            // later one — `InlineError`, further down this JSX — silences this.
-            // Until this delta the hook announced the notice in its own earlier
-            // commit, which hid the collision; removing that duplicate is what
-            // exposed it.
+            // Announcement — this gate removes ONE of three contributors, and
+            // does NOT close the same-commit-collision class. Said precisely,
+            // because the earlier wording here overstated it:
+            //
+            // When this gate empties the stack entirely, `NoticeStack` opts out
+            // at the SOURCE rather than losing a race: `noticeAnnouncementKey`
+            // returns null for an empty list and the effect guards on that
+            // before calling `announceForAccessibility`, so no utterance is
+            // issued to be silenced.
+            //
+            // But `correctionNotice` and `showPer100gInfo` below are NOT gated
+            // on `error`. When either survives alongside a newly-set `error`,
+            // `NoticeStack` still announces and DOES collide with
+            // `InlineError`. That is reachable, not theoretical: nothing in
+            // `useNutritionLookup` ever resets `correctionNotice` (there is no
+            // `setCorrectionNotice(null)` in the file) and `isPer100g` is not
+            // re-armed at the top of `fetchBarcodeData` the way
+            // `labelReadNotice`/`validatedData`/`isBeverage` are — so a label
+            // RETAKE can carry a stale correction into a lookup that errors.
+            // The `lastAnnouncedRef` guard does not absorb it either:
+            // suppressing one contributor makes the composed key SHORTER, not
+            // absent, so it no longer matches the stored key.
+            //
+            // Resetting those two per-lookup is the real fix and is out of this
+            // slice's scope (`useNutritionLookup.ts` is on its do-not-touch
+            // list). Do not read this gate as having closed it.
+            //
+            // Historical note: the hook's own duplicate announcer for these
+            // notices was deleted in `c87fb790`, two commits before this range.
             labelReadNotice={error ? null : labelReadNotice}
             correctionNotice={correctionNotice}
             showPer100gInfo={isPer100g}
