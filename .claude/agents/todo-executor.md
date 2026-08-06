@@ -172,6 +172,7 @@ Read the research brief the agent returns. Keep it in context for Step 4 — it 
 | `typescript`, `types`         | `docs/legacy-patterns/typescript.md`                                                                                 |
 | `client-state`                | `docs/legacy-patterns/client-state.md`                                                                               |
 | `remix`                       | `docs/legacy-patterns/react-native.md`, `docs/legacy-patterns/design-system.md`                                      |
+| `harness`                     | `docs/rules/harness.md` (post-freeze domain — no legacy-patterns archive)                                            |
 
 If the researcher failed and no label matches the table above, read `CLAUDE.md` for general project guidance.
 

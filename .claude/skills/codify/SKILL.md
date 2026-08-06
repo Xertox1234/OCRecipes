@@ -78,7 +78,7 @@ derive from.
 > source of truth for domain→reviewer routing. Other surfaces (`.claude/skills/audit/SKILL.md`,
 > `.claude/agents/todo-executor.md`) point here — never restate these tables elsewhere.
 
-The domain labels from Step 1 carry forward to two places: they tell the reviewers (Step 3) which lenses matter most, and they drive the self-improvement routing in Step 5 (which reviewer file owns a new review rule). The table keys are exactly the labels the `path-domains.ts` CLI emits (the 13 rules-domains + routing-only `camera`, plus `typescript` via `--typescript-crosscut`) — never invent other keys; they will never match the CLI output:
+The domain labels from Step 1 carry forward to two places: they tell the reviewers (Step 3) which lenses matter most, and they drive the self-improvement routing in Step 5 (which reviewer file owns a new review rule). The table keys are exactly the labels the `path-domains.ts` CLI emits (the 14 rules-domains + routing-only `camera`, plus `typescript` via `--typescript-crosscut`) — never invent other keys; they will never match the CLI output:
 
 | Domain label(s)                           | Reviewer(s) to dispatch                                    |
 | ----------------------------------------- | ---------------------------------------------------------- |
@@ -92,6 +92,7 @@ The domain labels from Step 1 carry forward to two places: they tell the reviewe
 | `ai-prompting`                            | `ai-reviewer`                                              |
 | `testing`                                 | `code-reviewer`                                            |
 | `typescript`                              | `code-reviewer`                                            |
+| `harness`                                 | `code-reviewer`                                            |
 | _(no match)_                              | `code-reviewer` only                                       |
 
 Combine dispatch targets for multiple matched domains — dispatching several reviewers over one branch is normal. Rule _ownership_ is different: a finding that reveals a reusable review rule updates exactly **one** owning reviewer file (see Step 5 — single-write rule).
@@ -171,6 +172,7 @@ For each codification candidate, classify by **nature of the finding**, not by r
 | UI/UX / camera/vision / accessibility | `.claude/agents/mobile-reviewer.md`  |
 | AI/LLM / nutrition domain             | `.claude/agents/ai-reviewer.md`      |
 | Code quality / TypeScript / testing   | `.claude/agents/code-reviewer.md`    |
+| Repo harness (hooks/scripts/agents)   | `.claude/agents/code-reviewer.md`    |
 
 ## Step 6 — Overlap-check, then write one file per finding
 

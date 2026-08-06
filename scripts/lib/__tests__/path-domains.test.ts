@@ -13,7 +13,7 @@ import {
 } from "../path-domains";
 
 describe("RULES_DOMAINS invariant", () => {
-  it("has exactly the 13 known rules-domains", () => {
+  it("has exactly the 14 known rules-domains", () => {
     expect([...RULES_DOMAINS].sort()).toEqual([
       "accessibility",
       "ai-prompting",
@@ -22,6 +22,7 @@ describe("RULES_DOMAINS invariant", () => {
       "client-state",
       "database",
       "design-system",
+      "harness",
       "hooks",
       "performance",
       "react-native",
@@ -36,6 +37,34 @@ describe("RULES_DOMAINS invariant", () => {
       const p = path.resolve("docs/rules", `${d}.md`);
       expect(fs.existsSync(p), `${p} must exist`).toBe(true);
     }
+  });
+});
+
+// Two-sided guard on the single most dangerous way to get the harness rules wrong. Worktrees
+// live at .claude/worktrees/<name>/, and routing matches FILE PATHS, not tracked files — so
+// collapsing the four narrow .claude/* rules into one `{ kind: "recursive-dir", dir: ".claude" }`
+// would tag every file in every worktree with `harness` ON TOP of its real domains, pushing
+// those past DOMAIN_BUDGET into deferral. Nothing errors; a concurrent agent's context just
+// quietly degrades. The negative case is the one that catches that; the positive case stops
+// someone "fixing" it by excluding .claude/worktrees wholesale, which would also blind the
+// harness domain to hook edits made from inside a worktree (i.e. how this rule was written).
+describe("harness never leaks into worktree app files", () => {
+  it("a worktree app file keeps its real domains and does NOT get harness", () => {
+    const p = ".claude/worktrees/wt-a/client/screens/HomeScreen.tsx";
+    expect(rulesDomainsForPath(p)).not.toContain("harness");
+    expect([...rulesDomainsForPath(p)].sort()).toEqual([
+      "accessibility",
+      "design-system",
+      "react-native",
+    ]);
+  });
+
+  it("a worktree's OWN harness files still get harness", () => {
+    expect(
+      rulesDomainsForPath(
+        ".claude/worktrees/wt-a/.claude/hooks/inject-patterns.sh",
+      ),
+    ).toEqual(["harness"]);
   });
 });
 
@@ -101,6 +130,22 @@ describe("rulesDomainsForPath", () => {
     ["server/routes/__tests__/recipe-catalog.test.ts", ["testing"]],
     ["server/storage/__tests__/recipes.test.ts", ["testing"]],
     ["README.md", []],
+    // --- harness surfaces ---
+    [".claude/hooks/inject-patterns.sh", ["harness"]],
+    [".claude/hooks/lib/domain-map.sh", ["harness"]],
+    [".claude/skills/codify/SKILL.md", ["harness"]],
+    [".claude/agents/todo-executor.md", ["harness"]],
+    [".claude/settings.json", ["harness"]],
+    ["scripts/build-domain-map.ts", ["harness"]],
+    ["scripts/lib/__tests__/path-domains.test.ts", ["harness", "testing"]],
+    // Documented over-match: `recursive-dir` cannot be root-anchored (FILE_PATH may be
+    // absolute), so ANY directory named `scripts` matches. Pinned so a future change is a
+    // conscious one rather than a surprise.
+    ["server/scripts/backfill-recipe-images.ts", ["harness"]],
+    // .husky/** is the real commit/push gate; five corpus solutions already declare
+    // `.husky/**` in applies_to, so this routing has to exist for those globs to fire.
+    [".husky/pre-push", ["harness"]],
+    [".husky/pre-commit", ["harness"]],
   ];
   it.each(cases)("%s", (input, expected) => {
     expect(rulesDomainsForPath(input).sort()).toEqual(expected);
@@ -190,6 +235,16 @@ const PARITY_CORPUS = [
   "vitest.config.ts",
   "eslint.config.js",
   "README.md",
+  ".claude/hooks/inject-patterns.sh",
+  ".claude/hooks/lib/domain-map.sh",
+  ".claude/skills/codify/SKILL.md",
+  ".claude/agents/todo-executor.md",
+  ".claude/settings.json",
+  ".claude/worktrees/wt-a/client/screens/HomeScreen.tsx",
+  "scripts/build-domain-map.ts",
+  "scripts/lib/__tests__/path-domains.test.ts",
+  "server/scripts/backfill-recipe-images.ts",
+  ".husky/pre-push",
 ];
 
 describe("regex<->bash-glob parity", () => {
@@ -248,9 +303,11 @@ describe("runCli", () => {
     expect(out.join("")).toBe("");
   });
 
+  // Fixture moved scripts/foo.ts -> shared/foo.ts when the harness domain claimed scripts/**.
+  // shared/foo.ts still maps to no domain, so this keeps testing what it always tested.
   it("--typescript-crosscut adds typescript for a .ts input with no other domain match", () => {
     const out: string[] = [];
-    runCli(["--typescript-crosscut", "scripts/foo.ts"], (s) => out.push(s));
+    runCli(["--typescript-crosscut", "shared/foo.ts"], (s) => out.push(s));
     expect(out.join("")).toBe("typescript");
   });
 
@@ -265,8 +322,21 @@ describe("runCli", () => {
 
   it("without --typescript-crosscut, a .ts file with no domain match yields nothing", () => {
     const out: string[] = [];
-    runCli(["scripts/foo.ts"], (s) => out.push(s));
+    runCli(["shared/foo.ts"], (s) => out.push(s));
     expect(out.join("")).toBe("");
+  });
+
+  // Pin the behaviour the fixture move above gave up: scripts/** is now a harness surface.
+  it("scripts/** maps to harness", () => {
+    const out: string[] = [];
+    runCli(["scripts/foo.ts"], (s) => out.push(s));
+    expect(out.join("")).toBe("harness");
+  });
+
+  it("--typescript-crosscut unions harness with typescript for a scripts .ts file", () => {
+    const out: string[] = [];
+    runCli(["--typescript-crosscut", "scripts/foo.ts"], (s) => out.push(s));
+    expect(out.join("")).toBe("harness, typescript");
   });
 
   it("--typescript-crosscut does not add typescript for a non-.ts/.tsx file", () => {

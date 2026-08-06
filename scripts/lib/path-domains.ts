@@ -21,6 +21,7 @@ export type RulesDomain =
   | "client-state"
   | "database"
   | "design-system"
+  | "harness"
   | "hooks"
   | "performance"
   | "react-native"
@@ -64,7 +65,7 @@ export interface PathDomainRule {
   readonly description: string;
 }
 
-/** The 13 rules-domains, each with a docs/rules/<domain>.md file. */
+/** The 14 rules-domains, each with a docs/rules/<domain>.md file. */
 export const RULES_DOMAINS = [
   "accessibility",
   "ai-prompting",
@@ -73,6 +74,7 @@ export const RULES_DOMAINS = [
   "client-state",
   "database",
   "design-system",
+  "harness",
   "hooks",
   "performance",
   "react-native",
@@ -238,6 +240,52 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     },
     domains: ["testing", "typescript"],
     description: "`vitest.config.*`, `eslint.config.*`",
+  },
+  // --- harness: the repo's own tooling ---------------------------------------
+  // NEVER collapse these into one `{ kind: "recursive-dir", dir: ".claude" }` rule. Worktrees
+  // live at .claude/worktrees/<name>/, and routing matches FILE PATHS, not tracked files — so a
+  // bare `.claude` rule would tag every file in every worktree with `harness` on top of its real
+  // domains, pushing those past DOMAIN_BUDGET into deferral. The regression is silent: nothing
+  // errors, a concurrent agent's context just quietly degrades. Guarded by the
+  // "a worktree app file ... never gets harness" case in path-domains.test.ts.
+  {
+    match: { kind: "recursive-dir", dir: ".claude/hooks" },
+    domains: ["harness"],
+    description: "`.claude/hooks/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: ".claude/skills" },
+    domains: ["harness"],
+    description: "`.claude/skills/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: ".claude/agents" },
+    domains: ["harness"],
+    description: "`.claude/agents/**`",
+  },
+  {
+    match: { kind: "exact-file", path: ".claude/settings.json" },
+    domains: ["harness"],
+    description: "`.claude/settings.json`",
+  },
+  {
+    // `recursive-dir` cannot be root-anchored (FILE_PATH may be absolute), so this necessarily
+    // matches ANY directory named `scripts` — including server/scripts/** and, harmlessly,
+    // node_modules/**/scripts/**. Accepted and stated in the description, which renders into
+    // the generated Copilot table.
+    match: { kind: "recursive-dir", dir: "scripts" },
+    domains: ["harness"],
+    description:
+      "`scripts/**` (any directory named `scripts`, incl. `server/scripts/**`)",
+  },
+  {
+    // .husky/** holds the real commit/push gate (pre-commit, pre-push, post-checkout — ~100
+    // lines of bash). Five solutions in the corpus already declare `.husky/**` in their
+    // applies_to, so the corpus expects this routing to exist; without the rule those globs are
+    // inert and editing a git hook injects nothing at all.
+    match: { kind: "recursive-dir", dir: ".husky" },
+    domains: ["harness"],
+    description: "`.husky/**`",
   },
 ];
 

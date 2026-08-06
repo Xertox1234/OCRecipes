@@ -97,7 +97,14 @@ apply_domain_map "$FILE_PATH"
 # are already covered by more-specific domains (api, react-native, etc.). Suppressing
 # typescript-on-top keeps the 4-domain stack under the 9000-byte spill threshold while
 # preserving typescript guidance as the fallback for pure type-utility files (e.g. shared/).
-if [ -z "$DOMAINS" ]; then
+# `harness` is deliberately treated as NOT-a-more-specific-domain here. It is a SURFACE domain
+# (how to write hook/script/agent code), not a language domain, so it must not suppress the
+# typescript fallback the way api/react-native/etc. do — otherwise the ~40 .ts files under
+# scripts/** and server/scripts/**, which matched nothing before harness existed, would silently
+# LOSE the typescript rules they get today. A file matching harness AND something else (e.g. a
+# scripts test file → "testing,harness") is not affected: it keeps typescript suppressed, exactly
+# as before.
+if [ -z "$DOMAINS" ] || [ "$DOMAINS" = "harness" ]; then
   case "$FILE_PATH" in
     *.ts|*.tsx) add_domain typescript ;;
   esac
@@ -200,7 +207,21 @@ fi
 domain_tag_pattern() {
   case "$1" in
     ai-prompting) printf '\\bai(-[a-z]+)?\\b' ;;
-    *) printf '\\b%s\\b' "$1" ;;
+    # The harness corpus predates the domain, so almost none of it is tagged `harness`. This
+    # alternation is what makes it reachable. Re-derived 2026-08 ON TOP of the relevance-first
+    # selection fix, over 9 representative harness files (4 delivered slots each, max 36):
+    #   harness                                  pool  6 -> 9 matched slots, 4/9 files
+    #   +tooling,pg-lab                          pool 48 -> 33,               9/9
+    #   +worktree,agents                         pool 61 -> 36 (SATURATED),   9/9
+    #   +bash,shell                              pool 88 -> 36,               9/9
+    #   +git,ci                                  pool 109 -> 36,              9/9
+    # It saturates at worktree|agents, so widening further only grows the pool (more grep, more
+    # noise) for zero gain. NOTE an earlier measurement taken BEFORE the selection fix showed
+    # `bash` actively harming the .claude/agents and .claude/skills surfaces — that crowding was
+    # the date-truncation bug itself and no longer applies. Re-measure with the same method
+    # before changing this.
+    harness)      printf '\\b(harness|tooling|pg-lab|worktree|agents)\\b' ;;
+    *)            printf '\\b%s\\b' "$1" ;;
   esac
 }
 
@@ -358,6 +379,17 @@ domain_rank() {
     design-system) echo 90 ;;
     client-state)  echo 100 ;;
     testing)       echo 110 ;;
+    # harness co-occurs almost exclusively with `testing` (scripts test files) and `typescript`
+    # (via the fallback above). It yields to testing — directly binding on a test file — and
+    # precedes typescript, the generic fallback. An EXPLICIT rank is required: the default
+    # `*) echo 75` would place it ahead of both and invert those orderings.
+    # MEASURED CONSEQUENCE (2026-08, first touch, dedup ON): on a scripts test file, testing
+    # emits inline (~5.1 KB) and harness then DEFERS — preamble ~1.3 KB + testing ~3.4 KB +
+    # harness rules 4.2 KB + refs ~0.4 KB ≈ 9.4 KB, over DOMAIN_BUDGET. No truncation, no loss;
+    # the payload lands in the spill file and auto-injects on the session's next edit. Accepted:
+    # a test file's testing rules are the more directly binding of the two. The two levers if
+    # that ever stops being true are trimming docs/rules/harness.md or lowering this rank.
+    harness)       echo 115 ;;
     typescript)    echo 120 ;;
     architecture)  echo 130 ;;
     *)             echo 75 ;;
