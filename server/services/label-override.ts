@@ -250,58 +250,122 @@ const SATURATED_FAT_LABEL_ROUNDING_STEP_G = 0.5;
  * longer blanks the record's other macros (see `basisDisproven` below), so a
  * false positive costs a conflict prompt, not four discarded nutrients.
  */
-/**
- * The record's per-100 macros that may be shown ALONGSIDE the label's corrected
- * ones, on the path where nothing disproved the record's basis.
- *
- * Almost all of them can: `LabelNutritionInput` has no carbs, protein, fibre or
- * sodium field at all, so those four can only ever come from the record, and no
- * label reading contradicts them.
- *
- * `fat` is the exception, and it is the whole reason this is a function. It is
- * `saturatedFat`'s CONTAINMENT PARENT — saturated fat is a fraction of total
- * fat, under every labelling regime — and `saturatedFat` is the one field that
- * can be corrected by the label while `fat` comes from the record. That happens
- * on a genuinely ordinary panel: the parser DECLINES an ambiguous glued
- * "Total Fat 19" (it has no parent of its own to be bounded by) while reading
- * "Saturated Fat 6 g" one line below perfectly. The result would be the
- * record's 3 g of total fat displayed beside the label's 21 g/100g of saturated
- * fat.
- *
- * Checked by VALUE rather than dropped whenever the pairing occurs. The
- * distinction the route's flag-diff comment draws applies here in reverse: that
- * one refuses to infer "a warning was lost" from value presence, because the
- * proxy fires on records it shouldn't. This is not a proxy — it is the exact
- * invariant being protected, evaluated directly — so it drops precisely the
- * values that would be impossible and keeps a total fat that genuinely contains
- * the corrected figure.
- */
-function retainableSiblings(
-  dbPer100g: BarcodePer100g,
-  per100: Partial<
-    Record<"calories" | "sugar" | "fat" | "saturatedFat", number>
-  >,
-): BarcodePer100g {
-  const retained: BarcodePer100g = { ...dbPer100g };
-  // Only when the label supplied the child and NOT the parent — if it read both,
-  // they are one self-consistent source and this module does not second-guess it.
-  if (
-    per100.saturatedFat !== undefined &&
-    per100.fat === undefined &&
-    retained.fat !== undefined &&
-    per100.saturatedFat > retained.fat
-  ) {
-    delete retained.fat;
-  }
-  return retained;
-}
-
 function saturatedFatFloorCeiling(servingSize: string | null): number {
   const band =
     parseServingBasis(servingSize)?.unit === "g"
       ? FSA_FOOD.saturatedFat
       : FSA_DRINK.saturatedFat;
   return (band.high - band.low) / 2;
+}
+
+/**
+ * Nutrient pairs where the child is BY DEFINITION a component of the parent, so
+ * `child <= parent` holds for any correct pair of readings and a merged block
+ * that breaks it is showing a quantity no package can contain.
+ *
+ * A TABLE, and that is the entire point of the shape. The review rule this
+ * module is written against names several containment pairs; the previous
+ * revision stated them all in prose and implemented exactly one
+ * (`saturatedFat`/`fat`) — the rule and the code diverged INSIDE A SINGLE
+ * COMMIT, and `sugar > carbs` shipped unguarded. A rule naming N cases needs N
+ * rows, not a conditional for whichever case was reproduced first. Adding a
+ * pair is now a row, and the row is what the rule is checked against.
+ *
+ * Deliberately the SAME SET as the client parser's `PARENT_FIELD`
+ * (client/lib/nutrition-ocr-parser.ts), transposed into this module's
+ * vocabulary (`sugar`/`carbs` where the payload says `totalSugars`/
+ * `totalCarbs`). The two answer the same question — may this child exceed this
+ * parent — at opposite ends of the wire, so a pair one of them enforces and the
+ * other does not is a gap by construction. Change one, change both.
+ *
+ * `fiber`/`carbs` is EXCLUDED, for the reason `PARENT_FIELD`'s docblock argues
+ * at length: "carbohydrate" is not one quantity across regimes. EU 1169/2011
+ * declares AVAILABLE carbohydrate and lists fibre outside it, while US labels
+ * count fibre within total carbohydrate, and OFF aggregates both — so on an
+ * EU-sourced bran or psyllium record a CORRECT fibre figure legitimately
+ * exceeds a correct carbohydrate one. Enforcing that pair would delete accurate
+ * data, which is why the parser declines it too. See
+ * docs/solutions/logic-errors/regime-dependent-invariant-breaks-on-mixed-provenance-data-2026-08-05.md.
+ */
+const CONTAINMENT_PAIRS: readonly {
+  child: keyof BarcodePer100g;
+  parent: keyof BarcodePer100g;
+}[] = [
+  { child: "saturatedFat", parent: "fat" },
+  { child: "transFat", parent: "fat" },
+  { child: "sugar", parent: "carbs" },
+];
+
+/**
+ * Drop whichever side of a containment pair the merged block cannot honestly
+ * display, so a label-corrected result never puts `saturatedFat > fat` or
+ * `sugar > carbs` on the screen that tells the user to trust the label.
+ *
+ * Evaluated on the FINAL MERGED BLOCK — the values that will actually render —
+ * and NOT pairwise against `per100` and the record. The pairwise form the
+ * previous revision used (label child vs record parent) only looked right
+ * because `carbs` never appears in `per100` and `fat` was excluded by a
+ * carve-out; it is a coincidence of today's payload shape, not an invariant, so
+ * the next field added to `LabelNutritionInput` would have broken it silently.
+ *
+ * Provenance decides WHICH SIDE is dropped, never WHETHER to look:
+ *
+ * - Label child, record parent -> drop the PARENT. The label is the source of
+ *   truth for what it read, so the record's value is the one contradicted. This
+ *   is the original `saturatedFat`/`fat` behaviour, unchanged: the parser
+ *   DECLINES an ambiguous glued "Total Fat 19" (it has no parent of its own to
+ *   be bounded by) while reading "Saturated Fat 6 g" one line below perfectly,
+ *   which would otherwise show the record's 3 g of total fat beside the label's
+ *   21 g/100g of saturated fat.
+ *
+ * - Record child, label parent -> drop the CHILD, same rule from the other end.
+ *
+ * - BOTH from the label -> drop the CHILD. There is deliberately no "the label
+ *   read both, so it is one self-consistent source" carve-out; that premise was
+ *   false. `totalFat` and `saturatedFat` are INDEPENDENT PER-LINE CAPTURES and
+ *   one can corrupt while the other reads perfectly — an ordinary
+ *   "Total Fat 5g 6%" / "Saturated Fat 2g 9%" panel whose second `g` is
+ *   recognised as `9` yields `saturatedFat: 29` against `totalFat: 5`, both
+ *   label-sourced, 96.7 vs 16.7 g/100g at a 30 g serving. The child is the side
+ *   dropped because it is the reading that exceeds its own definitional bound,
+ *   and because on the retained path a corroborating `fat` either AGREED with
+ *   the record or was never comparable, while the child is the field that
+ *   disagreed. The conflict prompt renders a dropped field as "—"
+ *   (`client/components/ScanConflictPrompt.tsx`), so this degrades visibly
+ *   rather than silently.
+ *
+ * - NEITHER from the label -> leave both. The RECORD contradicts itself, which
+ *   this merge did not cause and must not silently repair: the same record
+ *   renders untouched on the plain lookup path, so acting only here would make
+ *   the two paths disagree, and "drop the child" would delete the FLAG-BEARING
+ *   side (`sugar` and `saturatedFat` have FSA flags; `carbs` and `fat` have
+ *   none), removing a real warning. Repairing record-internal inconsistency is
+ *   a different change with a different blast radius.
+ *
+ * A pair with no parent in the merged block at all is a no-op: nothing bounds
+ * the child, so there is no contradiction to display and nothing to drop.
+ *
+ * Every row is read from the same `merged` SNAPSHOT and written to `guarded`,
+ * so a value one row drops cannot disarm another row that shares a parent
+ * (`saturatedFat` and `transFat` both hang off `fat`). Row order carries no
+ * meaning.
+ */
+function enforceContainment(
+  merged: BarcodePer100g,
+  fromLabel: BarcodePer100g,
+): BarcodePer100g {
+  const guarded: BarcodePer100g = { ...merged };
+  for (const { child, parent } of CONTAINMENT_PAIRS) {
+    const childVal = merged[child];
+    const parentVal = merged[parent];
+    if (childVal === undefined || parentVal === undefined) continue;
+    if (childVal <= parentVal) continue;
+    const childFromLabel = fromLabel[child] !== undefined;
+    const parentFromLabel = fromLabel[parent] !== undefined;
+    if (!childFromLabel && !parentFromLabel) continue;
+    delete guarded[childFromLabel && !parentFromLabel ? parent : child];
+  }
+  return guarded;
 }
 
 /** Upper plausibility bound for a label-derived serving (grams/ml). A single
@@ -634,24 +698,26 @@ export function buildLabelConflict(
   // other: when a corroborating field disagrees, the un-read macros are blanked
   // exactly as before, Cherry Coke included.
   const basisDisproven = conflicting.some((c) => c.corroborates);
-  const mergedPer100g: BarcodePer100g = basisDisproven
-    ? {
-        ...per100, // calories/sugar/fat/saturatedFat that the label actually read
-        caffeine: dbResult.per100g.caffeine,
-      }
-    : // Nothing challenged the basis, so the record's un-read macros are the
-      // best (and only) figures available for them — "on doubt, fail toward the
-      // DB result". `per100` still wins wherever the label read a value, so the
-      // disagreeing nutrient is still corrected to the label's.
-      //
-      // One sibling cannot simply be retained, though, and it is the reason
-      // this is a function call and not a spread. Mixing sources is exactly
-      // what the old unconditional blanking prevented, and `fat` is
-      // `saturatedFat`'s CONTAINMENT PARENT: keeping the record's total fat
-      // beside a label-corrected saturated fat can put `saturatedFat > fat` on
-      // screen — nutritionally impossible, on the screen that tells the user to
-      // trust the label. See `retainableSiblings`.
-      { ...retainableSiblings(dbResult.per100g, per100), ...per100 };
+  const mergedPer100g: BarcodePer100g = enforceContainment(
+    basisDisproven
+      ? {
+          ...per100, // calories/sugar/fat/saturatedFat that the label actually read
+          caffeine: dbResult.per100g.caffeine,
+        }
+      : // Nothing challenged the basis, so the record's un-read macros are the
+        // best (and only) figures available for them — "on doubt, fail toward
+        // the DB result". `per100` still wins wherever the label read a value,
+        // so the disagreeing nutrient is still corrected to the label's.
+        { ...dbResult.per100g, ...per100 },
+    // BOTH branches go through the containment guard, not just the retaining
+    // one. Mixing the record's macros with the label's is one way to put
+    // `saturatedFat > fat` or `sugar > carbs` on screen; a single panel
+    // misreading one of its own lines is the other, and that one survives
+    // blanking untouched because both sides are then label-sourced. The guard
+    // is a no-op on consistent values, so applying it to both costs nothing.
+    // See `enforceContainment`.
+    per100,
+  );
 
   const labelResult: BarcodeLookupResult = {
     ...dbResult,

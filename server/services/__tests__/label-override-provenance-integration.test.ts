@@ -84,9 +84,11 @@ it("parses the same saturatedFat VALUE from both panels — only the provenance 
   // Both read calories and total fat off the panel either way.
   expect(inferred.directReads).toContain("totalFat");
 
-  // `directReads` is exactly the set that counted toward `confidence` — one
-  // notion of "we actually read this", not two. The inferred panel read two of
-  // the ten fields, the direct one three.
+  // On these two panels `directReads` happens to coincide with the set that
+  // counted toward `confidence`, because neither carries a substituted unit.
+  // They are NOT the same notion in general — see the corrupt panel below,
+  // where a field counts toward confidence and is deliberately not vouched for.
+  // The inferred panel read two of the ten fields, the direct one three.
   expect(inferred.confidence).toBeCloseTo(2 / 10, 10);
   expect(direct.confidence).toBeCloseTo(3 / 10, 10);
 });
@@ -123,4 +125,61 @@ it("a DIRECT saturatedFat read from the same panel IS compared, and conflicts", 
   // survive rather than being blanked.
   expect(r.labelResult!.per100g.protein).toBe(24);
   expect(r.labelResult!.per100g.sodium).toBe(650);
+});
+
+/**
+ * The same panel a third way: read DIRECTLY, and wrong.
+ *
+ * `Total Fat 5g 6%` / `Saturated Fat 2g 9%` is an unremarkable US panel. The
+ * g -> 9 misread that produced "Saturated Fat 69" above lands differently on
+ * this line — the glyph is not glued to the value but SPACED, so the whole
+ * "29" reads as the number and the following "9" as its unit. There is no
+ * ambiguity for `gluedUnitIsForced` to arbitrate: the first pass adopts 29
+ * where the package prints 2.
+ *
+ * The line above it parses perfectly. That is the point — these are independent
+ * per-line captures, so "the label read both sides, therefore they agree with
+ * each other" is not a premise anything may rest on.
+ */
+const PANEL_WITH_CORRUPTED_SATURATED_FAT = `Serving Size 30 g
+Calories 121
+Total Fat 5g 6%
+Saturated Fat 29 9%`;
+
+it("a substituted-unit saturatedFat is adopted, never vouched for, and cannot outgrow its parent", () => {
+  const parsed = parseNutritionFromOCR(PANEL_WITH_CORRUPTED_SATURATED_FAT);
+  // Adopted at face value — the parser has no better reading — and counted
+  // toward confidence, which still gates the local preview on three fields.
+  expect(parsed.saturatedFat).toBe(29);
+  expect(parsed.totalFat).toBe(5);
+  expect(parsed.confidence).toBeCloseTo(3 / 10, 10);
+
+  const payload = toLabelNutritionPayload(parsed);
+  expect(payload.saturatedFat).toBe(29);
+  // ...but NOT vouched for, so the server will not let it condemn the record.
+  // The clean line beside it still is.
+  expect(payload.directReads).not.toContain("saturatedFat");
+  expect(payload.directReads).toContain("totalFat");
+
+  const r = buildLabelConflict(db(), payload);
+  // The conflict comes from `fat` (16.7 vs the record's 30), a corroborating
+  // field — so this takes the BLANKING branch, where the merged block is the
+  // label's readings alone and no record value is mixed in. The old guard did
+  // not run on this branch at all, and could not have helped if it had: both
+  // sides of the pair are label-sourced.
+  expect(r.fields).toEqual(["fat"]);
+
+  // 29 g / 30 g scales to 96.7 g of saturated fat per 100 g, inside 16.7 g of
+  // total fat. Impossible against its parent, and impossible outright.
+  for (const basis of [r.labelResult!.per100g, r.labelResult!.perServing]) {
+    const { saturatedFat, fat } = basis;
+    expect(
+      saturatedFat !== undefined && fat !== undefined && saturatedFat > fat,
+    ).toBe(false);
+  }
+  expect(r.labelResult!.per100g.saturatedFat).toBeUndefined();
+  // The correctly-read parent survives, so this is the guard acting and not the
+  // whole macro block collapsing.
+  expect(r.labelResult!.per100g.fat).toBeCloseTo(16.6667, 3);
+  expect(r.labelResult!.perServing.fat).toBeCloseTo(5, 5);
 });
