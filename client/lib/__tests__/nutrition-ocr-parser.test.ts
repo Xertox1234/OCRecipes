@@ -499,12 +499,17 @@ NE
     // Sauce: 3/10 fields originally, 7/10 after the spaced-unit fix, 8/10 now.
     expect(parseNutritionFromOCR(SAUCE_DEVICE_OCR).confidence).toBeCloseTo(0.8);
     // Mayonnaise: 2/10 originally, 5/10 after the spaced-unit fix, 6/10 after
-    // the separated g→9 fix, and 8/10 once the two glued forms resolve. Its
-    // remaining two nulls are the fibre and sugars this label genuinely does
-    // not print, so 8/10 is every field that is on the package.
-    expect(parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR).confidence).toBeCloseTo(
-      0.8,
-    );
+    // the separated g→9 fix — and still 6/10 here, sitting exactly on the
+    // threshold, even though its glued saturated-fat and carbohydrate fields
+    // now resolve. Those two are INFERRED, and confidence counts only what was
+    // read. It is a measure of how much of the panel the recogniser actually
+    // delivered, so an inference must not be able to lift a label over the gate
+    // that decides whether the user is shown a preview at all.
+    const mayo = parseNutritionFromOCR(MAYONNAISE_DEVICE_OCR);
+    expect(mayo.confidence).toBeCloseTo(0.6);
+    // The fields are populated regardless — the two are independent.
+    expect(mayo.saturatedFat).toBe(1);
+    expect(mayo.totalCarbs).toBe(0);
   });
 });
 
@@ -567,6 +572,23 @@ describe("glued g→9 — resolving only what the label itself rules out", () =>
       );
       expect(
         parseNutritionFromOCR("Carbohydrate 5 g\nSugars 19").totalSugars,
+      ).toBe(1);
+    });
+
+    it("does not bound fibre by carbohydrate — the regimes disagree", () => {
+      // "Carbohydrate" is not one quantity across labelling regimes: EU
+      // 1169/2011 declares AVAILABLE carbohydrate and lists fibre separately
+      // outside it, while US labels count fibre within total carbohydrate. OFF
+      // carries both, so on an EU bran or psyllium product a CORRECT fibre
+      // reading legitimately exceeds a correct carbohydrate one. Containment
+      // would "resolve" that 19 to 1 and discard a right answer.
+      expect(
+        parseNutritionFromOCR("Carbohydrate 11 g\nFiber 19").dietaryFiber,
+      ).toBeNull();
+      // The sibling bound is sound and must stay: sugars sit inside the
+      // available-carbohydrate fraction under US, EU and Codex alike.
+      expect(
+        parseNutritionFromOCR("Carbohydrate 11 g\nSugars 19").totalSugars,
       ).toBe(1);
     });
 

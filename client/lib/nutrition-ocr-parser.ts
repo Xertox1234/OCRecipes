@@ -239,17 +239,45 @@ const FIELD_PATTERNS: FieldPattern[] = [
 // about the recogniser, which is what separates them from the reading this
 // parser still refuses ("2.59" -> 2.5 g, true only if you assume the printing
 // precision rules).
+//
+// Know what happens downstream before widening this. `saturatedFat` is in the
+// override payload but is the one payload field `buildLabelConflict` does NOT
+// corroborate: its `cmp` list is calories/sugar/fat, so `per100.saturatedFat`
+// rides into `mergedPer100g` whenever some OTHER field triggers a conflict,
+// with no comparison of its own (`server/services/label-override.ts`). While
+// glued forms were declined outright that gap was rarely reached; this is the
+// first rule that populates `saturatedFat` by INFERENCE, so it is now exercised
+// routinely. The containment argument is strong enough to carry that (fat
+// containment holds in every regime, unlike the carbohydrate case below), but
+// any future rule admitting a weaker inference into this field is putting an
+// uncorroborated number straight into the user's log.
 
 /**
- * Fields whose value cannot exceed another field's, by definition — saturated
- * and trans fat are both fat; fibre and sugars are both carbohydrate. A whole-
- * token reading that breaks the containment is not a value the package could
- * be carrying, whatever the glyphs look like.
+ * Fields whose value cannot exceed another field's ON THE PRINTED PANEL. A
+ * whole-token reading that breaks the containment is not a value the package
+ * could be carrying, whatever the glyphs look like.
+ *
+ * The bound has to survive rounding as well as chemistry, since both numbers
+ * are read as printed. It does: saturated and trans fat are fractions of total
+ * fat, and the FDA/CFIA fat-rounding grid (nearest 0.5 g below 5 g, nearest
+ * 1 g at or above) is monotonic, so a rounded child cannot overtake a rounded
+ * parent. Sugars sit inside the available-carbohydrate fraction under US, EU
+ * and Codex alike.
+ *
+ * `dietaryFiber` is deliberately NOT here. "Carbohydrate" is not one quantity
+ * across regimes: EU 1169/2011 declares AVAILABLE carbohydrate and lists fibre
+ * separately outside it, while US labels include fibre within total
+ * carbohydrate. OFF aggregates both, so on an EU-sourced bran or psyllium
+ * product a correct fibre reading legitimately exceeds a correct carbohydrate
+ * one — "Carbohydrate 11 / Fiber 19" is a real label, and the containment test
+ * would have "resolved" that 19 to 1. This is the same mixed-provenance trap
+ * `docs/solutions/logic-errors/name-matched-secondary-must-not-replace-self-consistent-label-2026-07-17.md`
+ * documents for the Atwater check, which excludes fibre for exactly this
+ * reason. Fibre glued forms stay declined.
  */
 const PARENT_FIELD: Partial<Record<NumericField, NumericField>> = {
   saturatedFat: "totalFat",
   transFat: "totalFat",
-  dietaryFiber: "totalCarbs",
   totalSugars: "totalCarbs",
 };
 
@@ -375,13 +403,27 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
     extracted++;
   }
 
-  // Second pass, after every unambiguous field is in place. Deferring is what
-  // makes the containment test independent of FIELD_PATTERNS order: a child
-  // never gets tested against a parent that has not been read yet.
+  // Second pass, after every directly-read field is in place, so a child is
+  // never tested against a parent this run has not read yet.
+  //
+  // That is weaker than "order-independent" and should not be leaned on. It
+  // holds for FIELD_PATTERNS' current order (parents declared ahead of their
+  // children) and would survive a reversal only by coincidence: a leading-zero
+  // resolution can produce nothing but 0, since `gluedUnitIsForced` takes that
+  // branch only when the remainder is itself printable, which for a token
+  // ending in the substituted glyph leaves the single character "0" — and a
+  // bound of 0 can promote no non-zero child. Reorder the patterns, or add a
+  // rule that resolves to something other than 0, and this needs rechecking.
+  //
+  // Adopted fields deliberately do NOT count toward `confidence`. That number
+  // gates the instant local preview in `LabelAnalysisScreen` at 0.6, and it
+  // means "how much of this panel did we actually READ". An inference from a
+  // neighbouring value is weaker evidence than a glyph, and letting it lift a
+  // label over the gate would put inferred numbers in front of the user with
+  // nothing distinguishing them from measured ones.
   for (const { key, value, raw } of glued) {
     if (!gluedUnitIsForced(key, value, raw, result)) continue;
     result[key] = value;
-    extracted++;
   }
 
   result.confidence = extracted / TOTAL_FIELDS;
