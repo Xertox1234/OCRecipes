@@ -2,14 +2,30 @@ import type { ScanPhase } from "../types/scan-phase";
 
 export type StepDotState = "idle" | "active" | "done";
 
-const SMART_PHOTO_PHASES = new Set([
-  "CLASSIFYING",
-  "SMART_CONFIRMED",
-  "SMART_ERROR",
-]);
-
+/**
+ * Exhaustive over `ScanPhase["type"]`, no `default` clause — same rationale as
+ * `getStepDotState` below: a `Set`-membership check with an implicit
+ * true/false fallback is the same silent-swallow risk as a `default:` clause,
+ * just spelled differently. A future `ScanPhase` addition must be listed here
+ * explicitly or `tsc` fails.
+ */
 export function shouldShowStepPill(phase: ScanPhase): boolean {
-  return phase.type !== "IDLE" && !SMART_PHOTO_PHASES.has(phase.type);
+  switch (phase.type) {
+    case "IDLE":
+    case "CLASSIFYING":
+    case "SMART_CONFIRMED":
+    case "SMART_ERROR":
+      return false;
+    case "HUNTING":
+    case "BARCODE_TRACKING":
+    case "BARCODE_LOCKED":
+    case "LABEL_PROMPTED":
+    case "STEP2_REVIEWING":
+    case "STEP2_CONFIRMED":
+    case "STEP3_REVIEWING":
+    case "SESSION_COMPLETE":
+      return true;
+  }
 }
 
 export function getStepDotState(
@@ -34,7 +50,12 @@ export function getStepDotState(
       return "active";
     case "SESSION_COMPLETE":
       return "done";
-    default:
+    // Smart-scan phases never show the step pill (see shouldShowStepPill), so
+    // their dot state is never rendered — kept as an explicit case, not a
+    // fall-through, so a future ScanPhase addition is a tsc error here.
+    case "CLASSIFYING":
+    case "SMART_CONFIRMED":
+    case "SMART_ERROR":
       return "idle";
   }
 }

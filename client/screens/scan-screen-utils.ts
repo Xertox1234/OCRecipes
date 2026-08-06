@@ -290,6 +290,24 @@ export type CapturePlan = {
    * a different route.
    */
   runStepOcr: boolean;
+  /**
+   * Which of `onShutterPress`'s two capture branches this phase's press takes.
+   *
+   * `"smart"` — `HUNTING`'s label-mode/smart-classification branch: navigates
+   * to `LabelAnalysis` or uploads for classification, never dispatches
+   * `STEP_PHOTO_CAPTURED`.
+   *
+   * `"step"` — the STEP2/STEP3 branch: haptic + flash, then dispatches
+   * `STEP_PHOTO_CAPTURED` (with OCR text iff `runStepOcr`).
+   *
+   * Required (not derived from `runStepOcr`) so a future phase that reuses an
+   * existing `{ capture, runStepOcr }` pair must still pick a route
+   * explicitly — this is what lets `getCapturePlan`'s exhaustive switch own
+   * routing instead of the hand-written `phase.type === "HUNTING"` check that
+   * used to live in `ScanScreen.onShutterPress`. Meaningless when `capture` is
+   * `false` — that branch returns before reading it.
+   */
+  route: "smart" | "step";
 };
 
 /**
@@ -314,17 +332,17 @@ export function getCapturePlan(phase: ScanPhase): CapturePlan {
     // Smart scan / label mode. Captures, but its recognition goes to
     // `localOCRText` on another route, not `STEP_PHOTO_CAPTURED`.
     case "HUNTING":
-      return { capture: true, runStepOcr: false };
+      return { capture: true, runStepOcr: false, route: "smart" };
     // BARCODE_LOCKED is retained alongside LABEL_PROMPTED so a capture taken
     // before the chip's primary button is pressed still completes step 2 rather
     // than being dropped — same rationale as the reducer's branch.
     case "BARCODE_LOCKED":
     case "LABEL_PROMPTED":
-      return { capture: true, runStepOcr: true };
+      return { capture: true, runStepOcr: true, route: "step" };
     // Step 3 (package front). Captured, but the front carries no nutrition
     // panel and the phase's own `ocrText` (from step 2) is what moves forward.
     case "STEP2_CONFIRMED":
-      return { capture: true, runStepOcr: false };
+      return { capture: true, runStepOcr: false, route: "step" };
     case "IDLE":
     case "BARCODE_TRACKING":
     case "STEP2_REVIEWING":
@@ -333,7 +351,7 @@ export function getCapturePlan(phase: ScanPhase): CapturePlan {
     case "CLASSIFYING":
     case "SMART_CONFIRMED":
     case "SMART_ERROR":
-      return { capture: false, runStepOcr: false };
+      return { capture: false, runStepOcr: false, route: "step" };
   }
 }
 

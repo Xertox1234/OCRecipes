@@ -473,7 +473,7 @@ export default function ScanScreen() {
     isCapturingRef.current = true;
 
     try {
-      if (phase.type === "HUNTING") {
+      if (capturePlan.route === "smart") {
         const photo = await cameraRef.current?.takePicture();
         if (!photo) {
           Alert.alert("Capture failed", "Please try again.");
