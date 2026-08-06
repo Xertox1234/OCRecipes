@@ -213,6 +213,68 @@ check "vitest.config.ts → testing rules" \
   '{"tool_name":"Edit","tool_input":{"file_path":"vitest.config.ts"}}' \
   "RULES — testing"
 
+# --- harness domain (the repo's own tooling) ---
+check ".claude/hooks → harness rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".claude/hooks/inject-patterns.sh"}}' \
+  "RULES — harness"
+
+check ".claude/hooks → harness solution references" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".claude/hooks/inject-patterns.sh"}}' \
+  "SOLUTIONS — harness"
+
+check ".claude/agents → harness rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".claude/agents/todo-executor.md"}}' \
+  "RULES — harness"
+
+check ".claude/skills → harness rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".claude/skills/codify/SKILL.md"}}' \
+  "RULES — harness"
+
+check ".claude/settings.json → harness rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".claude/settings.json"}}' \
+  "RULES — harness"
+
+check "scripts/*.ts → harness rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"scripts/build-domain-map.ts"}}' \
+  "RULES — harness"
+
+# harness is a SURFACE domain, not a language domain, so it must NOT suppress the typescript
+# fallback the way api/react-native/etc. do. Before harness existed these ~40 files matched
+# nothing and got typescript; they must still get it.
+check "scripts/*.ts → typescript rules survive (harness does not suppress the fallback)" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"scripts/build-domain-map.ts"}}' \
+  "RULES — typescript"
+
+check "server/scripts/*.ts → typescript rules survive" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"server/scripts/backfill-recipe-images.ts"}}' \
+  "RULES — typescript"
+
+# ...but a file matching harness AND another domain keeps typescript suppressed, exactly as
+# before harness existed (DOMAINS is "testing,harness", not "harness").
+check "scripts test file → testing rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"scripts/lib/__tests__/path-domains.test.ts"}}' \
+  "RULES — testing"
+
+check_not "scripts test file → typescript still suppressed (two domains matched)" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"scripts/lib/__tests__/path-domains.test.ts"}}' \
+  "RULES — typescript"
+
+# REGRESSION GUARD: worktrees live under .claude/worktrees/. A bare `.claude` path rule would
+# tag every worktree file as harness and suppress its real domains — silent context degradation
+# for any concurrent agent. Two-sided: the app file must NOT get harness, and the worktree's own
+# harness files still must.
+check_no_match "worktree app file → NO harness rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".claude/worktrees/wt-a/client/screens/HomeScreen.tsx"}}' \
+  "RULES — harness"
+
+check "worktree app file → real domains preserved" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".claude/worktrees/wt-a/client/screens/HomeScreen.tsx"}}' \
+  "RULES — react-native"
+
+check "worktree's own hook file → harness rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":".claude/worktrees/wt-a/.claude/hooks/inject-patterns.sh"}}' \
+  "RULES — harness"
+
 # AI service must NOT have security as a directly-injected domain — the
 # copilot-instructions table maps LLM-touching services to {architecture, ai-prompting} only.
 check_no_match "AI service → no security rules" \

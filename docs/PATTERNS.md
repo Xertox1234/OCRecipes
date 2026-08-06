@@ -55,7 +55,7 @@ Each retired `docs/patterns/<domain>.md` monolith maps to the binding `docs/rule
 | AI Prompting  | [ai-prompting](rules/ai-prompting.md)   | [legacy-patterns/ai-prompting.md](legacy-patterns/ai-prompting.md)   |
 | Testing       | [testing](rules/testing.md)             | [legacy-patterns/testing.md](legacy-patterns/testing.md)             |
 | Animation     | _(covered by `react-native` rules)_     | [legacy-patterns/animation.md](legacy-patterns/animation.md)         |
-| Agents        | _(no rules file — see solutions)_       | [legacy-patterns/agents.md](legacy-patterns/agents.md)               |
+| Harness       | [harness](rules/harness.md)             | [legacy-patterns/agents.md](legacy-patterns/agents.md)               |
 | Documentation | _(no rules file — see solutions)_       | [legacy-patterns/documentation.md](legacy-patterns/documentation.md) |
 
 **Before implementing:** Grep `docs/solutions/` (tags, title, `applies_to` frontmatter) and check the relevant `docs/rules/<domain>.md`.
