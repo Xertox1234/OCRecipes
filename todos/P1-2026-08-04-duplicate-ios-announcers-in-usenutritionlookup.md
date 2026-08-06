@@ -1,17 +1,17 @@
 ---
-title: "Delete useNutritionLookup's duplicate iOS announcers — NoticeStack and InlineError own them after slice 2c"
+title: "Delete useNutritionLookup's duplicate iOS ERROR announcer — InlineError owns it after slice 2c (the notices half landed in #753)"
 status: backlog
 priority: high
 created: 2026-08-04
-updated: 2026-08-04
+updated: 2026-08-06
 assignee:
 labels: [deferred, accessibility, hooks]
 github_issue:
 human_led: true
-blocked_reason: "iOS VoiceOver / Android TalkBack device pass required; jsdom can only observe that the announce mock was called, never what a screen reader actually says. An autonomous executor cannot produce the evidence the acceptance criteria demand."
+blocked_reason: "Blocked on PR #753 merging — `main`'s NutritionDetailScreen does not render `InlineError` at all, so deleting the hook's error announcer before 2c lands leaves iOS silent (verified 2026-08-06). Then device-gated: iOS VoiceOver is the only instrument that can confirm one utterance; jsdom observes that the announce mock was called, never what a screen reader says."
 ---
 
-# Delete useNutritionLookup's duplicate iOS announcers
+# Delete useNutritionLookup's duplicate iOS error announcer
 
 > **Priority note:** `high` reflects the **merge gate**, not the blast radius. The severity is
 > Medium. Screen-reader announcement behaviour is device-verifiable only, so this todo must never
@@ -20,9 +20,12 @@ blocked_reason: "iOS VoiceOver / Android TalkBack device pass required; jsdom ca
 
 ## Summary
 
-`client/hooks/useNutritionLookup.ts` fires two iOS `AccessibilityInfo.announceForAccessibility`
+`client/hooks/useNutritionLookup.ts` fired two iOS `AccessibilityInfo.announceForAccessibility`
 effects — one for the notices, one for the error. Slice 2c gave both surfaces their own announcers
-(`NoticeStack` and `InlineError`), so the hook's are now duplicates. Delete them.
+(`NoticeStack` and `InlineError`), making the hook's redundant.
+
+**The notices half is DONE — it landed inside #753 itself, not here.** Only the error effect
+remains. See the 2026-08-06 update below for why the split happened and what it changed.
 
 ## Background
 
@@ -49,24 +52,33 @@ Two reasons it should still be fixed:
    future change to its wording or timing is silently inert on iOS. The next maintainer reading
    either file gets a misleading picture.
 
-The fix was out of scope for 2c: Global Constraint 20 put `useNutritionLookup.ts` on the
-do-not-touch list for the entire slice.
+The fix was originally out of scope for 2c: Global Constraint 20 put `useNutritionLookup.ts` on
+the do-not-touch list for the entire slice. **That constraint was overridden for the notices half
+on 2026-08-05** — see the update below.
 
 ## Acceptance Criteria
 
-- [ ] The notices effect (`useNutritionLookup.ts:169-177`) is deleted.
-- [ ] The error effect (`useNutritionLookup.ts:179-183`) is deleted.
+- [x] ~~The notices effect (`useNutritionLookup.ts:169-177`) is deleted.~~ **Done in #753**,
+      commit `be48907b` (test) + the deletion it covers. Replaced by a docblock explaining why
+      `NoticeStack` is now the sole announcer on both platforms.
+- [ ] The error effect (**now `useNutritionLookup.ts:192-197`** on `feat/nutrition-detail-2c`;
+      the old `:179-183` reference predates the notices deletion) is deleted.
 - [ ] `Platform` and `AccessibilityInfo` imports are removed from the hook **if** nothing else in
-      the file uses them; if something does, leave them and say what.
-- [ ] `NoticeStack.tsx`'s docblock and `client/components/nutrition/NoticeStack-utils.ts` describe
-      the announcer accurately afterwards — no surviving claim that another layer announces these.
-- [ ] A test proves the notices are announced exactly once on iOS after the deletion, asserting
-      **call count** (`toHaveBeenCalledTimes(1)`), not just the announced string. iOS
-      `UIAccessibility.post(.announcement)` does not queue, so a string-only assertion passes in
-      exactly the broken case where two fired and one was dropped.
+      the file uses them; if something does, leave them and say what. (Still blocked by the error
+      effect — it is the last consumer of both imports, so this closes with it.)
+- [x] ~~`NoticeStack.tsx`'s docblock and `client/components/nutrition/NoticeStack-utils.ts`
+      describe the announcer accurately afterwards.~~ **Done in #753** — verified 2026-08-06:
+      the docblock now states it is "the ONLY announcer for these notices on either" platform and
+      explains the deleted duplicate's false premise. No stale "iOS hears nothing" claim survives
+      anywhere in `client/` or `docs/`.
+- [x] ~~A test proves the notices are announced exactly once on iOS after the deletion, asserting
+      **call count**.~~ **Done in #753** — `be48907b` proves the hook is silent on both of the
+      deleted effect's triggers; `ab51e8e3` asserts the error-state suppression stops the
+      ANNOUNCEMENT rather than only the render.
 - [ ] A test proves the error is announced exactly once on iOS.
-- [ ] Device pass on **both** platforms: iOS VoiceOver hears each notice once and the error once;
-      Android TalkBack is unchanged (it never heard the hook's version).
+- [ ] Device pass for the error only: iOS VoiceOver hears it once. Android TalkBack is unchanged
+      (it never heard the hook's version — the effect is `Platform.OS === "ios"`-gated). The
+      notices half of this criterion moved onto **#753's own device checklist**.
 
 ## Implementation Notes
 
@@ -78,21 +90,23 @@ consumer that would lose its announcements.
 
 **What replaces each effect, already shipped in 2c:**
 
-| Deleted from the hook                                                | Replacement                                                                  | Platform coverage                                          |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `:169-177` notices (composed `labelReadNotice` + `correctionNotice`) | `NoticeStack`'s content-keyed imperative announcer, `NoticeStack.tsx`        | Both — it is **not** platform-gated                        |
-| `:179-183` error                                                     | `InlineError`'s internal announce, `client/components/InlineError.tsx:24-28` | iOS only (gated), which matches the pre-existing behaviour |
+| Deleted from the hook                                                | Replacement                                                                  | Platform coverage                                          | State              |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------------ |
+| `:169-177` notices (composed `labelReadNotice` + `correctionNotice`) | `NoticeStack`'s content-keyed imperative announcer, `NoticeStack.tsx`        | Both — it is **not** platform-gated                        | **DONE — in #753** |
+| `:192-197` error (was `:179-183`)                                    | `InlineError`'s internal announce, `client/components/InlineError.tsx:24-28` | iOS only (gated), which matches the pre-existing behaviour | Open — this todo   |
 
-**Watch the composition difference.** The hook composed _one_ utterance from both notices —
+**Watch the composition difference — SETTLED 2026-08-06, this applied to the notices half and it
+is done.** Kept because the reasoning still guards the error deletion's shape. The hook composed
+_one_ utterance from both notices —
 `"<labelReadNotice>. Serving size adjusted: <correctionNotice>"` — deliberately, because two calls
 in one commit collide. `NoticeStack`'s announcer is keyed on its own composed content string.
 Before deleting, confirm `NoticeStack` still produces a single utterance covering both notices when
 both are present. If it emits two, the deletion trades one collision for another and the composition
 must move rather than vanish.
 
-**No existing coverage.** `grep -rn 'announceForAccessibility' client/hooks/__tests__/` returns
-nothing, so the hook's announcers are untested today. The new tests above are net-new coverage, not
-a port.
+**Coverage — was none, now partial.** As filed on 2026-08-04 the hook's announcers were untested.
+#753 added `client/hooks/__tests__/useNutritionLookup.labelRead.test.tsx`, which covers the
+NOTICES announcer's absence. The ERROR announcer is still untested, so its test remains net-new.
 
 ## Scope Contract
 
@@ -107,9 +121,12 @@ a port.
 
 ## Dependencies
 
-- **Slice 2c must be merged first.** This todo is only correct once `NoticeStack` and `InlineError`
-  are the screen's announcers; on `main` before that merge, deleting the hook's effects would leave
-  iOS silent. Branch: `feat/nutrition-detail-2c`.
+- **Slice 2c must be merged first — RE-VERIFIED 2026-08-06, and the reason is stronger than it
+  reads.** `git grep -n InlineError origin/main -- client/` shows nine call sites and
+  `NutritionDetailScreen.tsx` is **not** among them: slice 2c is what puts `InlineError` on this
+  screen at all. So on `main` today the hook's effect is the _sole_ announcer for the nutrition
+  lookup error, and deleting it before #753 lands leaves iOS genuinely silent — not merely
+  duplicated. Branch: `feat/nutrition-detail-2c`.
 
 ## Risks
 
@@ -131,3 +148,25 @@ a port.
   put `useNutritionLookup.ts` out of scope for the whole slice.
 - Verified `NutritionDetailScreen.tsx:245` is the sole call site, and that the hook's announcers
   currently have no test coverage.
+
+### 2026-08-06 — the notices half landed inside #753; this todo is now error-only
+
+**Global Constraint 20 was overridden on 2026-08-05, mid-slice.** A review of the 2c delta found
+the hook's notices announcer was not a benign duplicate after all: the two announces are **never
+in the same commit**, so nothing was silencing anything and VoiceOver users heard the
+label-not-used warning **twice** — the first time over a skeleton screen the notice did not yet
+describe. A correctness finding outranked a scope rule, so the deletion moved into #753
+(`be48907b`, `3c0e83e2`, `ab51e8e3`) rather than waiting here.
+
+That leaves this todo **error-only**, and it changes one thing worth stating plainly:
+
+**#753 INTRODUCES the duplicate error announce; it is not pre-existing.** On `main` the error has
+exactly one announcer (this hook). #753 adds `InlineError` to the screen, giving it two. The
+outcome is benign — both post the identical string, `setError` and `setIsLoading(false)` land in
+one commit, and iOS `post(.announcement)` does not queue, so the later call (`InlineError`, further
+down the JSX) wins and one utterance is heard. `NutritionDetailScreen.tsx:397-404` documents this
+collision deliberately. But it _is_ a new instance of the pattern `docs/rules/accessibility.md`
+prohibits, and this todo is what removes it. Sequence: #753 merges → this becomes unblocked and
+safe → delete.
+
+Priority stays `high` for the merge-gate reason in the note at the top, not for severity.
