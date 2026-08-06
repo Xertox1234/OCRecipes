@@ -143,6 +143,62 @@ export function buildLabelConflict(
     per100.saturatedFat = label.saturatedFat * factor;
 
   // Compare the read fields against the DB per-100.
+  //
+  // `saturatedFat` is deliberately NOT in `cmp` below — reviewed, not an
+  // oversight. Two reasons; the first alone carries the decision, the second
+  // is a narrower reinforcement that applies to some products, not all:
+  //
+  // 1. The server can't condition on provenance. `labelNutritionSchema`
+  //    sends saturatedFat as a bare nullable number; the parser's
+  //    substitutedUnit / gluedUnitIsForced verdict (direct read vs.
+  //    containment inference — client/lib/nutrition-ocr-parser.ts) is
+  //    discarded before this payload arrives. Any comparison would treat a
+  //    confident direct read and an ambiguous inference identically, and —
+  //    the sharper point — a plain digit misread inside an unambiguous "X g"
+  //    match (a 3 read as 8, say) is JUST as uncorroborated as an inference;
+  //    `fixOCRDigits` only repairs O/I/l/S-class glyph confusions, not
+  //    digit-for-digit ones. There is no shape of saturatedFat reading this
+  //    module could trust more than another.
+  // 2. On low-fat products a spurious conflict is expensive and easy to
+  //    trigger: saturated fat there sits under the ~5 g band where
+  //    `valuesMatch`'s 25% relative branch applies with no absolute-floor
+  //    cushion — the genuinely tightest window is 2-5 g/100g (below 2 g on
+  //    BOTH sides, the ±1 g absolute floor is more forgiving than 25%
+  //    relative would be). And label values are read PER-SERVING then scaled
+  //    by `factor = 100 / labelGrams` before comparison — a single 0.5 g
+  //    FDA/CFIA rounding step on a 30-60 g serving amplifies to ~0.8-1.7 g at
+  //    the per-100 scale being compared, which can clear the tolerance on
+  //    rounding alone. (This does NOT hold for high-fat
+  //    products — cheese, butter — where saturated fat routinely exceeds
+  //    5 g/100g and 25% relative is as forgiving as it is for sugar/fat; the
+  //    decision does not rest on this case.) When it does trigger, the cost
+  //    is real: a conflict takes the blank-uncorrected-siblings path below
+  //    (`mergedPer100g = {...per100, caffeine}`), discarding the DB's
+  //    carbs/protein/fiber/sodium — a noisy saturatedFat-only conflict would
+  //    throw those away on a record whose calories/sugar/fat all agreed.
+  //
+  // Narrower secondary note: including it would also raise `comparedCount`
+  // (loosening the `compared >= 2` one-tap-log gate below) — but
+  // `gluedUnitIsForced` requires a non-substituted `totalFat` read to promote
+  // a saturatedFat INFERENCE specifically, and `fat` is already in `cmp`, so
+  // this effect is rarely what tips the threshold on its own for that path.
+  //
+  // Accepted residual: a wrong saturatedFat — misread OR inferred — can still
+  // ride into `mergedPer100g` uncorroborated whenever some OTHER field
+  // triggers a conflict. This is not narrowly bounded: the containment guard
+  // and substitutedUnit check (client/lib/nutrition-ocr-parser.ts) only cover
+  // the glued-ambiguous-token path, not a plain misread inside an
+  // unambiguous match, and `shouldReplaceWithAI`
+  // (client/screens/label-analysis-utils.ts) doesn't re-check saturatedFat
+  // either. What DOES bound it: fat containment holding under every
+  // labelling regime makes an INFERRED value trustworthy on its own terms,
+  // and `evaluateUniversalFlags`'s FSA "high in saturated fat" flag has a
+  // built-in safety asymmetry — a wrong-LOW value that suppresses a real
+  // DB-sourced flag is caught by the route's lost-flag diff
+  // (`nutrient-unavailable`); a wrong-HIGH value that spuriously introduces
+  // the flag is the direction this codebase already treats as the safe one
+  // to risk. See
+  // docs/solutions/logic-errors/confidence-must-count-evidence-not-inferences-2026-08-05.md.
   const fields: ConflictField[] = [];
   const cmp: [ConflictField, number | undefined, number | undefined][] = [
     ["calories", per100.calories, dbResult.per100g.calories],

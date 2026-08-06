@@ -1,6 +1,6 @@
 ---
 title: "saturatedFat overrides the database without ever being compared against it"
-status: backlog
+status: done
 priority: high
 created: 2026-08-05
 updated: 2026-08-05
@@ -76,16 +76,18 @@ health-data path.
 
 ## Acceptance Criteria
 
-- [ ] A decision is made and written down: either `saturatedFat` joins `cmp`, or it
+- [x] A decision is made and written down: either `saturatedFat` joins `cmp`, or it
       is deliberately excluded with the reason stated in the code
-- [ ] If it joins `cmp`: `ConflictField` covers it, and the effect on
+- [x] If it joins `cmp`: `ConflictField` covers it, and the effect on
       `comparedCount` / the `compared` flag is traced, since that flag gates the
-      client's one-tap log (recovering `totalFat` already moved it 1 → 2 once)
-- [ ] Tests pin the behaviour on both sides — a label whose `saturatedFat` agrees
+      client's one-tap log (recovering `totalFat` already moved it 1 → 2 once) —
+      N/A: the decision was to exclude, not join; `comparedCount`'s effect was
+      still traced (see Updates below) as part of weighing the decision
+- [x] Tests pin the behaviour on both sides — a label whose `saturatedFat` agrees
       with the DB, and one where it disagrees — including what the user sees
-- [ ] No change to which labels are _accepted_ (`isLabelReady`) — this is about
+- [x] No change to which labels are _accepted_ (`isLabelReady`) — this is about
       what happens after acceptance
-- [ ] The parser docblock note in `client/lib/nutrition-ocr-parser.ts` is updated or
+- [x] The parser docblock note in `client/lib/nutrition-ocr-parser.ts` is updated or
       removed to match whatever is decided
 
 ## Implementation Notes
@@ -137,3 +139,43 @@ with a comment saying why, may well be the right answer.
 - Initial creation. Found by `ai-reviewer` reviewing PR #760; the code facts above
   were re-verified directly in `server/services/label-override.ts` on `main`
   at `4fdf8b7f` rather than taken from the review report.
+
+- **Decision: `saturatedFat` stays OUT of `cmp` — deliberate exclusion,
+  documented in the code comment above `cmp` in `server/services/label-override.ts`.**
+  Two reasons, in order of weight:
+  1. The server can't condition on OCR provenance: `labelNutritionSchema` sends
+     `saturatedFat` as a bare nullable number, so a confident direct read, an
+     ambiguous `gluedUnitIsForced` containment inference, and a plain digit
+     misread inside an unambiguous match are all indistinguishable once the
+     payload arrives. There is no shape of reading this module could trust
+     more than another.
+  2. On low-fat products a spurious conflict is cheap to trigger (tight
+     tolerance relative to per-serving→per-100 rounding amplification) and
+     expensive once triggered (the conflict path blanks the DB's
+     carbs/protein/fiber/sodium). Does not hold for high-fat products
+     (cheese/butter); the decision does not rest on this case.
+
+  `comparedCount`'s effect (AC #2) was traced as part of weighing the
+  decision rather than implemented: `gluedUnitIsForced` requires a
+  non-substituted `totalFat` read to promote a saturatedFat inference at all,
+  and `fat` is already in `cmp`, so an inferred saturatedFat joining `cmp`
+  would rarely be what tips `comparedCount` past the `>= 2` gate on its own —
+  a narrower, secondary concern than reason 1 above.
+
+  Accepted residual: a wrong saturatedFat (misread or inferred) can still
+  ride into the user's log uncorroborated whenever some OTHER field triggers
+  a conflict. Not narrowly bounded — the containment/substitutedUnit guards
+  only cover the glued-ambiguous-token path. What partially bounds it: fat
+  containment holds under every labelling regime, and the FSA "high in
+  saturated fat" flag's wrong-LOW case is caught by the route's lost-flag
+  diff (wrong-HIGH is the direction already treated as safe to risk).
+
+  Tests in `server/services/__tests__/label-override.test.ts` pin the
+  decision on both the `fields`/`conflict` axis (a disagreeing saturatedFat
+  never enters `fields`) and the `comparedCount`/`compared` axis (an
+  agreeing saturatedFat never raises `comparedCount`), plus a negative
+  control (calories/sugar/fat all agree, saturatedFat disagrees wildly →
+  no conflict). Reviewed by `code-reviewer` + `ai-reviewer`, two rounds — no
+  CRITICAL findings either round; WARNINGs addressed inline (test
+  discrimination gaps, comment precision). See
+  `docs/solutions/logic-errors/confidence-must-count-evidence-not-inferences-2026-08-05.md`.

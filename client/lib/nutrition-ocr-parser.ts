@@ -247,10 +247,21 @@ const FIELD_PATTERNS: FieldPattern[] = [
 // with no comparison of its own (`server/services/label-override.ts`). While
 // glued forms were declined outright that gap was rarely reached; this is the
 // first rule that populates `saturatedFat` by INFERENCE, so it is now exercised
-// routinely. The containment argument is strong enough to carry that (fat
-// containment holds in every regime, unlike the carbohydrate case below), but
-// any future rule admitting a weaker inference into this field is putting an
-// uncorroborated number straight into the user's log.
+// routinely.
+//
+// This has been reviewed, not just flagged — the exclusion is deliberate. The
+// full reasoning lives in ONE place, the comment above `cmp` in
+// `server/services/label-override.ts` — read it there rather than here; this
+// note only carries what the parser side needs to know.
+//
+// This parser keeps populating the field anyway — the containment argument
+// (see PARENT_FIELD's docblock below) is strong enough to carry adoption on
+// its own — but that is exactly why this stays the boundary: any future rule
+// admitting a WEAKER inference into this field is putting an uncorroborated
+// RAW VALUE straight into the user's log, with nothing downstream left to
+// re-check that number specifically (the FSA "high in saturated fat" flag it
+// can also feed has its own, separate, partial safety net — see the
+// label-override.ts comment).
 
 /**
  * Fields whose value cannot exceed another field's ON THE PRINTED PANEL. A
