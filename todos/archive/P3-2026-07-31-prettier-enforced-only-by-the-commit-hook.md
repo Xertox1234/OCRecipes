@@ -1,9 +1,9 @@
 ---
 title: "Prettier is enforced only by the commit hook — check:format runs in no CI workflow and no gate"
-status: backlog
+status: done
 priority: low
 created: 2026-07-31
-updated: 2026-07-31
+updated: 2026-08-05
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -47,11 +47,11 @@ assume CI would catch what the hook missed.
 
 ## Acceptance Criteria
 
-- [ ] A formatting violation on `main` is caught by something other than the commit hook
-- [ ] The chosen mechanism runs on every PR, not only on paths a change-detection filter matches
-- [ ] A deliberately mis-formatted file fails the new gate — verified by actually introducing
+- [x] A formatting violation on `main` is caught by something other than the commit hook
+- [x] The chosen mechanism runs on every PR, not only on paths a change-detection filter matches
+- [x] A deliberately mis-formatted file fails the new gate — verified by actually introducing
       one, not by reading the config
-- [ ] The gate's cost is proportionate: prefer adding `check:format` to an existing job over
+- [x] The gate's cost is proportionate: prefer adding `check:format` to an existing job over
       creating a new workflow
 
 ## Implementation Notes
@@ -90,3 +90,25 @@ assume CI would catch what the hook missed.
 - Filed after PR #747 merged. Discovered when a reviewer flagged an unformatted test file in
   that slice and the follow-up question — "why didn't CI catch this?" — turned out to have the
   answer "there is no CI check for it."
+
+### 2026-08-05
+
+- Implemented: added a "Format check" step (`npm run check:format`) to the `checks` job
+  ("Lint · Types · Patterns") in `.github/workflows/ci.yml`, right after `Lint`. That job is
+  already a required status check on `main` and already runs on every PR with no path filter.
+  Mirrored the same line into `scripts/preflight.sh`'s full-mode section.
+- Pre-existing violations on `main` (per the Risks section): `npx prettier --check
+"**/*.{js,ts,tsx,css,json}"` found 9 files failing. Resolved in this PR, not deferred: 4
+  hand-maintained files (`.claude/settings.json`, 3 `evals/datasets/*.json`) reformatted with
+  `prettier --write` (whitespace-only, verified semantically identical); `eslint-suppressions.json`
+  and the 4 Xcode/Expo-prebuild `ios/**/Contents.json` manifests added to `.prettierignore`
+  instead, since each is owned by a non-Prettier writer that would just drift back out of
+  compliance on its next regeneration/edit.
+- Verified acceptance criterion 3 empirically: injected a real badly-formatted scratch `.ts`
+  file, confirmed `npm run check:format` exits 1, then removed it and reconfirmed a clean pass.
+- Deferred, not fixed here (see PR body): `check:format`'s glob (`**/*.{js,ts,tsx,css,json}`)
+  excludes `.md`/`.yml`/`.yaml`, and `lint-staged`'s Prettier globs separately exclude
+  `.json`/`.css` — both gaps are out of this todo's Scope Contract (would require editing
+  `package.json`), so the "commit hook is the only enforcement" problem is only partially
+  closed for those extensions. Codified as
+  `docs/solutions/conventions/prettier-glob-mismatch-commit-hook-vs-ci-2026-08-05.md`.

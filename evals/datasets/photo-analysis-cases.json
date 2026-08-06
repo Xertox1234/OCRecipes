@@ -123,10 +123,7 @@
       "mustContain": ["peanut"],
       "foodsMinLength": 1
     },
-    "scoreDimensions": [
-      "identification_accuracy",
-      "confidence_calibration"
-    ]
+    "scoreDimensions": ["identification_accuracy", "confidence_calibration"]
   },
   {
     "id": "photo-analysis-multi-food-restaurant-08",
@@ -195,10 +192,7 @@
     "assertions": {
       "overallConfidenceMax": 0.95
     },
-    "scoreDimensions": [
-      "identification_accuracy",
-      "confidence_calibration"
-    ]
+    "scoreDimensions": ["identification_accuracy", "confidence_calibration"]
   },
   {
     "id": "photo-analysis-multi-food-colorful-12",
