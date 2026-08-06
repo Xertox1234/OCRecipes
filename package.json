@@ -235,6 +235,9 @@
     ],
     "*.{js,md}": [
       "prettier --write"
+    ],
+    "*.{json,css}": [
+      "prettier --write"
     ]
   },
   "private": true

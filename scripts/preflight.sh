@@ -153,6 +153,7 @@ fi
 
 # Full CI parity — mirrors .github/workflows/ci.yml.
 run npm run lint || exit 1
+run npm run check:format || exit 1
 run npm run lint:suppress:check || exit 1
 run npm run check:types || exit 1
 run npm run build:copilot-instructions:check || exit 1

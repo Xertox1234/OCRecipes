@@ -113,7 +113,11 @@
         "fat": 60
       },
       "existingMeals": [
-        { "title": "Large breakfast", "calories": 650, "mealType": "breakfast" },
+        {
+          "title": "Large breakfast",
+          "calories": 650,
+          "mealType": "breakfast"
+        },
         { "title": "Big lunch", "calories": 750, "mealType": "lunch" },
         { "title": "Afternoon snack", "calories": 200, "mealType": "snack" }
       ],
@@ -205,7 +209,11 @@
         "fat": 65
       },
       "existingMeals": [
-        { "title": "Egg white omelette", "calories": 200, "mealType": "breakfast" },
+        {
+          "title": "Egg white omelette",
+          "calories": 200,
+          "mealType": "breakfast"
+        },
         { "title": "Tuna salad", "calories": 380, "mealType": "lunch" }
       ],
       "remainingBudget": {
@@ -273,8 +281,16 @@
         "fat": 70
       },
       "existingMeals": [
-        { "title": "Oatmeal with berries", "calories": 400, "mealType": "breakfast" },
-        { "title": "Salad with grilled chicken", "calories": 520, "mealType": "lunch" }
+        {
+          "title": "Oatmeal with berries",
+          "calories": 400,
+          "mealType": "breakfast"
+        },
+        {
+          "title": "Salad with grilled chicken",
+          "calories": 520,
+          "mealType": "lunch"
+        }
       ],
       "remainingBudget": {
         "calories": 750,
@@ -504,7 +520,9 @@
     },
     "assertions": {
       "suggestionCount": 3,
-      "mustContain": ["chicken|salmon|beef|tuna|tofu|egg|turkey|shrimp|lentil|cottage cheese|Greek yogurt"]
+      "mustContain": [
+        "chicken|salmon|beef|tuna|tofu|egg|turkey|shrimp|lentil|cottage cheese|Greek yogurt"
+      ]
     }
   },
   {
@@ -536,7 +554,9 @@
     },
     "assertions": {
       "suggestionCount": 3,
-      "mustContain": ["rice|pasta|bread|potato|oats|quinoa|noodle|wrap|grain|beans"]
+      "mustContain": [
+        "rice|pasta|bread|potato|oats|quinoa|noodle|wrap|grain|beans"
+      ]
     }
   },
   {
@@ -592,7 +612,11 @@
         "fat": 65
       },
       "existingMeals": [
-        { "title": "Large breakfast", "calories": 800, "mealType": "breakfast" },
+        {
+          "title": "Large breakfast",
+          "calories": 800,
+          "mealType": "breakfast"
+        },
         { "title": "Large lunch", "calories": 750, "mealType": "lunch" },
         { "title": "Afternoon snack", "calories": 450, "mealType": "snack" }
       ],

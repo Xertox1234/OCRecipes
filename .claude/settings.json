@@ -1,10 +1,7 @@
 {
   "enabledPlugins": {},
   "permissions": {
-    "allow": [
-      "Bash(npx vitest run *)",
-      "Bash(npx eslint *)"
-    ]
+    "allow": ["Bash(npx vitest run *)", "Bash(npx eslint *)"]
   },
   "hooks": {
     "SessionStart": [
@@ -39,7 +36,10 @@
       },
       {
         "hooks": [
-          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" register" }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" register"
+          }
         ]
       }
     ],
@@ -79,19 +79,70 @@
       },
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/branch-preflight.sh\"", "timeout": 10, "statusMessage": "Checking branch before commit..." }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/branch-preflight.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking branch before commit..."
+          }
+        ]
       },
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/core-bare-guard.sh\"", "timeout": 10, "statusMessage": "Checking core.bare integrity..." }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/core-bare-guard.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking core.bare integrity..."
+          }
+        ]
       },
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/drift-detect.sh\"", "timeout": 10, "statusMessage": "Checking for external HEAD drift..." }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/drift-detect.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking for external HEAD drift..."
+          }
+        ]
       },
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-preflight-guard.sh\"", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
-      { "matcher": "mcp__github__create_pull_request", "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-preflight-guard.sh\"", "timeout": 10, "statusMessage": "Checking PR preflight stamp..." }] },
-      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/git-safety.sh\"", "timeout": 15, "statusMessage": "Checking git safety..." }] },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-preflight-guard.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking PR preflight stamp..."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__github__create_pull_request",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-preflight-guard.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking PR preflight stamp..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/git-safety.sh\"",
+            "timeout": 15,
+            "statusMessage": "Checking git safety..."
+          }
+        ]
+      },
       {
         "matcher": "Edit",
         "hooks": [
@@ -139,19 +190,31 @@
       {
         "matcher": "Edit",
         "hooks": [
-          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" consult", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" consult",
+            "timeout": 10
+          }
         ]
       },
       {
         "matcher": "Write",
         "hooks": [
-          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" consult", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" consult",
+            "timeout": 10
+          }
         ]
       },
       {
         "matcher": "MultiEdit",
         "hooks": [
-          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" consult", "timeout": 10 }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" consult",
+            "timeout": 10
+          }
         ]
       }
     ],
@@ -169,23 +232,58 @@
       },
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/drift-detect-update.sh\"", "timeout": 10, "statusMessage": "" }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/drift-detect-update.sh\"",
+            "timeout": 10,
+            "statusMessage": ""
+          }
+        ]
       },
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/commit-verify.sh\"", "timeout": 10, "statusMessage": "Verifying commit landed..." }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/commit-verify.sh\"",
+            "timeout": 10,
+            "statusMessage": "Verifying commit landed..."
+          }
+        ]
       },
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-verify.sh\"", "timeout": 15, "statusMessage": "Verifying PR state..." }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-verify.sh\"",
+            "timeout": 15,
+            "statusMessage": "Verifying PR state..."
+          }
+        ]
       },
       {
         "matcher": "mcp__github__create_pull_request",
-        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-verify.sh\"", "timeout": 15, "statusMessage": "Verifying PR state..." }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-verify.sh\"",
+            "timeout": 15,
+            "statusMessage": "Verifying PR state..."
+          }
+        ]
       },
       {
         "matcher": "mcp__github__merge_pull_request",
-        "hooks": [{ "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-verify.sh\"", "timeout": 15, "statusMessage": "Verifying PR state..." }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pr-verify.sh\"",
+            "timeout": 15,
+            "statusMessage": "Verifying PR state..."
+          }
+        ]
       },
       {
         "matcher": "Edit|Write|MultiEdit",
@@ -196,12 +294,23 @@
             "timeout": 60,
             "statusMessage": "eslint --fix on changed file..."
           },
-          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" record" }
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" record"
+          }
         ]
       }
     ],
     "SessionEnd": [
-      { "matcher": "*", "hooks": [ { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" deregister" } ] }
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-coord-hook.sh\" deregister"
+          }
+        ]
+      }
     ]
   }
 }

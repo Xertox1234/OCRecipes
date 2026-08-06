@@ -146,14 +146,20 @@ parse_git_log() {
 # hotspots/coupled never surface noise. Shares the list with the repo's existing
 # generated-file registry (.prettierignore — package-lock.json, the generated
 # .github/copilot-instructions.md, the format-locked docs/solutions/ tree) instead of a
-# hand-duplicated copy that can drift, unioned with common lockfile basenames
-# .prettierignore doesn't (yet) list.
+# hand-duplicated copy that can drift, unioned with the `extra` basenames below that
+# .prettierignore does not list as plain literals.
 #
-# Caveat: every .prettierignore entry is ERE-escaped literally, including glob
-# metacharacters (*, ?, etc.) — correct today because .prettierignore only holds literal
-# paths, but if it ever gains a real glob entry (e.g. `*.log`), the wildcard is escaped to
-# a literal character and that exclusion silently becomes a no-op. Revisit with a proper
-# glob-to-regex translation if .prettierignore grows glob entries.
+# Caveat: every .prettierignore entry is ERE-escaped literally, so a glob entry's
+# metacharacters (*, ?) become literal characters and that entry matches nothing here.
+# .prettierignore DOES hold glob entries today, so read the consequence per entry:
+#   - the native build-artifact globs (ios/**/build/, android/**/.cxx/, …) are harmless:
+#     those paths are git-ignored, so they never enter git history and there is nothing
+#     here to exclude in the first place;
+#   - ios/**/Contents.json is NOT harmless — those 4 Xcode asset manifests are tracked.
+#     It is covered instead by the literal `Contents.json` basename in `extra` below
+#     (safe against over-exclusion: every Contents.json ever committed lives under ios/).
+# So when you add a glob to .prettierignore that matches TRACKED files, add a matching
+# literal to `extra` below — or replace this with a real glob-to-regex translation.
 build_exclude_regex() {
   local prettierignore="$PROJECT_ROOT/.prettierignore"
   local -a alts=()
@@ -173,7 +179,7 @@ build_exclude_regex() {
     done < "$prettierignore"
   fi
   local extra
-  for extra in yarn.lock pnpm-lock.yaml Podfile.lock Gemfile.lock composer.lock; do
+  for extra in yarn.lock pnpm-lock.yaml Podfile.lock Gemfile.lock composer.lock Contents.json; do
     # shellcheck disable=SC2016
     esc=$(printf '%s' "$extra" | sed -e 's/[.[\*^$()+?{}|\\]/\\&/g')
     alts+=("(^|/)${esc}\$")
