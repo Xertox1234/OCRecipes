@@ -8,6 +8,7 @@ tags: [prettier, lint-staged, generated-files, ci, drift-check]
 symptoms: [CI `--check` step fails on a generated file the developer didn't touch, 'Committed bytes differ from `npm run build:foo` output even though manual pre-stage check passed', Prettier silently pads markdown table columns or swaps `*italic*` for `_italic_`]
 applies_to: [.prettierignore, scripts/build-*.ts, .github/workflows/**/*.yml]
 created: '2026-05-11'
+last_updated: '2026-08-05'
 ---
 
 # Prettier reformats generated files after commit, breaking byte-equality drift checks
@@ -47,12 +48,19 @@ Any tracked, generated artifact whose CI gate is byte-equality with the generato
 
 To detect at PR time, run `npm run build:foo:check` AFTER the commit lands (not before staging), since the formatter mutation happens inside the commit boundary.
 
+**The pattern is broader than byte-equality CI gates.** Any file whose bytes are owned by a *different* tool than Prettier — no CI drift-check required — should be ignored the same way, because that tool will keep re-writing it in its own style on every future edit, and Prettier will keep re-flagging (or re-mutating) it in a permanent tug-of-war:
+
+- `eslint-suppressions.json` (2026-08-05, `todo/P3-2026-07-31-prettier-enforced-only-by-the-commit-hook`): written by `eslint --prune-suppressions` (`npm run lint:suppress:check`, which byte-diffs it against HEAD). ESLint's own JSON writer emits `{\n}` for an empty object where Prettier wants `{}` — no functional difference, but reformatting it would make `lint:suppress:check` fail on the very next regeneration even with zero suppression changes.
+- `ios/**/Contents.json` (Xcode asset-catalog manifests, same date/todo): **two different non-Prettier writers, not one.** The catalog root (`Images.xcassets/Contents.json`) is written by Xcode itself and uses `"key" : value` (space before the colon). The nested `.appiconset`/`.imageset`/`.colorset` manifests are Expo-prebuild output and differ from Prettier only by a missing trailing newline. Verify the *actual* diff per file before writing the `.prettierignore` comment — an initial version of this ignore entry claimed all 4 files shared both traits; a second reviewer pass (raw byte inspection via `od -c`) caught that only the catalog root has the colon-spacing tell, and it already has a trailing newline.
+
 ## Related Files
 
 - `.prettierignore`
 - `scripts/build-copilot-instructions.ts`
 - `.github/workflows/ci.yml` — "Verify .github/copilot-instructions.md is current" step
 - `docs/legacy-patterns/architecture.md` — "CI Drift-Check for Generated Tracked Artifacts"
+- `eslint-suppressions.json`, `package.json` (`lint:suppress:check`)
+- `ios/OCRecipes/Images.xcassets/**/Contents.json`
 
 ## See Also
 
