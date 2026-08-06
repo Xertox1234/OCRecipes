@@ -304,10 +304,48 @@ describe("useNutritionLookup — unreadable nutrition label", () => {
     const { result } = render(null);
 
     await waitFor(() => expect(result.current.labelReadNotice).not.toBeNull());
+    // Wait for the WHOLE lookup, not just the notice. `labelReadNotice` is set
+    // BEFORE `await fetch(...)`, so asserting the moment it appears leaves most
+    // of the lookup unrun — and a duplicate announcer that fired later, from
+    // the `serverRes.ok` branch or the `finally`, would never be observed.
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     // Negative control: the notice really was set, so a silent spy here means
     // "the hook did not speak", not "nothing happened this render".
     expect(result.current.labelReadNotice).toContain("couldn't read");
+    expect(announce).not.toHaveBeenCalled();
+
+    announce.mockRestore();
+  });
+
+  it("does not announce a serving correction either", async () => {
+    // The deleted effect ran on `[correctionNotice, labelReadNotice]`. The test
+    // above only ever populates the second, so on its own it proves the hook is
+    // silent for ONE of the two triggers and assumes the other — a duplicate
+    // keyed on corrections would keep it green. This exercises the other leg.
+    mockServerFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ...wrongDbRecord,
+        labelCompared: true,
+        servingInfo: {
+          ...wrongDbRecord.servingInfo,
+          wasCorrected: true,
+          correctionReason: "Serving size corrected to 355 mL",
+        },
+      }),
+    });
+    const announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+
+    const { result } = render(READABLE_LABEL);
+
+    await waitFor(() => expect(result.current.correctionNotice).not.toBeNull());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // Negative control, same shape: the correction really did fire.
+    expect(result.current.correctionNotice).toContain("355 mL");
     expect(announce).not.toHaveBeenCalled();
 
     announce.mockRestore();

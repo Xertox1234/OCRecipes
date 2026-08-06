@@ -440,7 +440,15 @@ describe("NutritionDetailScreen — For you / Heads up flags (Task 13)", () => {
   /**
    * The disclaimer's correctness is that it has NO gate — it qualifies claims
    * made from three different components, so it cannot belong to any one of
-   * them. Asserted across the states that empty each claim surface in turn.
+   * them.
+   *
+   * Breadth cover, NOT the discriminating case. Only the no-flags case would
+   * have failed under the old per-section disclaimer; the personal-only case
+   * still renders "For you", which used to carry its own copy, so it passes
+   * either way. The state that actually shipped the bug — every universal flag
+   * dropped as already-banded, both sections empty — is pinned by the sibling
+   * test above. This one guards against a future gate appearing on the new,
+   * ungated placement.
    */
   it("shows the medical-advice disclaimer whatever the flag state", () => {
     const cases: { name: string; flags: unknown[] }[] = [
