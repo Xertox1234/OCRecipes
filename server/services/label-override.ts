@@ -417,7 +417,12 @@ export interface ContainmentDrop {
  *   the macro grid prints "—" for an undefined `carbs`, while the Additional
  *   Nutrients rows for `saturatedFat`/`transFat` are conditionally rendered and
  *   simply vanish. Only `saturatedFat` also earns the route's flag-diff notice,
- *   and only when the record had raised its FSA flag.
+ *   and only when the record had raised its FSA flag — and even then the
+ *   notice's explanatory `detail` reaches VoiceOver/TalkBack only: the badge
+ *   renders `title` alone (`client/components/ScanFlagBadge.tsx`), so a sighted
+ *   user gets "Nutrient details unavailable" with no cause. Pre-existing and
+ *   true of every scan flag, noted here so the next reader does not repeat the
+ *   overclaim this bullet is a correction of.
  *
  * - NEITHER from the label -> leave both. The RECORD contradicts itself, which
  *   this merge did not cause and must not silently repair. The same record
