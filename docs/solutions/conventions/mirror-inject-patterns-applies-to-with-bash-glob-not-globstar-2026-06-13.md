@@ -1,54 +1,94 @@
 ---
-title: 'Mirror inject-patterns.sh applies_to matching with bash glob semantics, not standard globstar'
+title: 'Mirror inject-patterns.sh applies_to matching exactly — bash glob semantics PLUS the **/-elision compensation'
 track: knowledge
 category: conventions
 module: shared
-tags: [inject-patterns, applies_to, glob, bash, pattern-matching, solutions-db, sp2]
-symptoms: [Reimplementing the applies_to matcher with picomatch/minimatch globstar instead of bash semantics, A reimplemented matcher matches `client/Foo.tsx` against `client/**/*.tsx` (standard globstar) — diverging from the hook]
-applies_to: [scripts/solutions-db/lib/globs.ts, .claude/hooks/inject-patterns.sh]
+tags: [inject-patterns, applies_to, glob, bash, pattern-matching, harness, tooling, sp2]
+symptoms: [Reimplementing the applies_to matcher with picomatch/minimatch globstar instead of the hook's own two-test rule, A reimplemented matcher disagrees with the hook on whether `client/**/*.tsx` matches `client/Foo.tsx`, An applies_to glob that looks obviously correct never promotes its solution]
+applies_to: [.claude/hooks/inject-patterns.sh, .claude/hooks/**/*.sh, scripts/**/*.ts]
 created: '2026-06-13'
+last_updated: '2026-08-06'
 ---
 
-# Mirror inject-patterns.sh applies_to matching with bash glob semantics, not standard globstar
+# Mirror inject-patterns.sh applies_to matching exactly — bash glob semantics PLUS the `**/`-elision compensation
 
 ## Rule
 
-When reimplementing the `applies_to:` glob matcher outside the hook (e.g. for a DB-backed preview tool, or the eventual SP2 rewrite of the injection hook), replicate **bash `[[ "$path" == $glob ]]` semantics**, not standard globstar. In bash `[[ ]]` pattern matching, `*` (and therefore `**`, which is just two `*`) matches any run of characters **including `/`**, and the literal `/` separators in the glob are **required**.
+When reimplementing the `applies_to:` glob matcher outside the hook, replicate what the hook
+**actually does today**: two tests OR'd together, not one.
+
+```bash
+alt="${pat//\*\*\//}"                                     # the pattern with every "**/" removed
+[[ "$file" == $pat ]] || [[ "$file" == $alt ]]            # match if EITHER form matches
+```
+
+Neither test alone is the hook. Standard globstar is also not the hook.
 
 ## Smell patterns
 
-- Reaching for `picomatch`/`minimatch` to match `applies_to` globs — those use globstar, where `client/**/*.tsx` matches zero intermediate segments (`client/Foo.tsx`). The hook does **not**.
-- A new dependency added "for correctness" when the goal is fidelity to an existing bash matcher.
+- Reaching for `picomatch`/`minimatch` — those implement real globstar, a third semantics that
+  agrees with the hook on some inputs and not others.
+- Implementing only `[[ "$file" == $pat ]]` and concluding `dir/**/*.ext` cannot match
+  `dir/file.ext`. That was true before 2026-08-06 and is the exact thing the compensation fixed.
+- A "preview the hook" tool with no test pinning `dir/**/*.ext` against BOTH `dir/file.ext` and
+  `dir/sub/file.ext`.
 
 ## Why
 
-`.claude/hooks/inject-patterns.sh` matches each solution file's `applies_to` globs against the edited file path with `[[ "$_FILE_REL" == $_pat ]]` (see its lines ~164-186). The hook's own comment notes that in bash 3.2, `*` inside `[[ ]]` matches any string including `/`, so `**` works for nested paths without `shopt -s globstar`. Consequence: `client/**/*.tsx` expands to `client/ <any> / <any> .tsx` — the middle `/` is literal and required, so `client/Foo.tsx` (zero intermediate segments) does **not** match, but `client/a/Foo.tsx` does.
+Bash `[[ ]]` has no globstar. Inside it `*` (and therefore `**`, which is just two `*`) matches
+any run of characters **including `/`**, but the literal `/` separators in the pattern are
+**required**. So `client/**/*.tsx` reads as `client/` + `<any>` + `/` + `<any>` + `.tsx` — the
+middle `/` must be present, and `client/Foo.tsx` (zero intermediate segments) does not match.
 
-A standard globstar library would match `client/Foo.tsx` too — a *different* matcher. A "preview the hook" tool that diverges defeats its purpose. The faithful (and dependency-free) implementation is `*`-run → `.*`, escape every other char, anchor `^…$`.
+That behaviour was a live defect, not a design choice. **523 of the corpus's 695 `applies_to`
+files use the `dir/**/*.ext` form** — because `docs/solutions/README.md` gave it as the canonical
+example — and every one of them was silently inert for files sitting directly in the named
+directory, which is most of them. `client/screens/**/*.tsx` missed all 38 flat screens.
+
+Rather than rewrite 523 files, the hook now also tests the pattern with `**/` elided, so
+`dir/**/*.ext` matches both `dir/file.ext` and `dir/sub/file.ext` — what authors evidently meant.
+Any mirror must do the same or it diverges.
 
 ## Examples
 
 ```ts
-// Mirrors bash [[ == ]]: * (and **) span '/', literal separators required.
-export function globToRegExp(glob: string): RegExp {
+// Mirrors the hook: bash-glob semantics (`*` spans '/'), tested against BOTH the literal
+// pattern and its **/-elided form.
+function globToRegExp(glob: string): RegExp {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
-    if (c === "*") { while (glob[i + 1] === "*") i++; re += ".*"; }
-    else if (c === "?") re += ".";
+    if (c === "*") {
+      while (glob[i + 1] === "*") i++;
+      re += ".*";
+    } else if (c === "?") re += ".";
     else re += c.replace(/[.+^${}()|[\]\\/]/g, "\\$&");
   }
   return new RegExp("^" + re + "$");
 }
+
+export function matchesGlob(file: string, glob: string): boolean {
+  return (
+    globToRegExp(glob).test(file) || globToRegExp(glob.replaceAll("**/", "")).test(file)
+  );
+}
 ```
 
-Lock the consequential case in a test: `client/**/*.tsx` matches `client/a/Foo.tsx` (true) but **not** `client/Foo.tsx` (false).
+Lock all three consequential cases in tests — `client/**/*.tsx` matches `client/a/Foo.tsx` (true),
+matches `client/Foo.tsx` (true, post-2026-08-06), and does **not** match `other/Foo.tsx` (false).
+The negative control is what stops an over-broad elision from passing.
 
 ## Exceptions
 
-If a future SP2 deliberately *changes* the hook's semantics (e.g. adopts real globstar everywhere), update both the hook and this matcher together and revise this rule — the invariant is "the preview tool matches the live hook", not "bash semantics forever".
+If the hook's semantics change again, update the mirror and this rule together — the invariant is
+"the mirror matches the live hook", not any particular glob dialect.
 
 ## Related Files
 
-- `scripts/solutions-db/lib/globs.ts` — `globToRegExp` / `matchesAnyGlob`
-- `.claude/hooks/inject-patterns.sh` — the live matcher this mirrors (lines ~164-186)
+- `.claude/hooks/inject-patterns.sh` — the live matcher, in `solutions_from_markdown`
+- `.claude/hooks/test-inject-patterns-relevance.sh` — pins both the match and the negative control
+
+## See Also
+
+- [truncate-before-rank discards the best candidates](../logic-errors/truncate-before-rank-discards-best-candidates-2026-08-06.md) — the other half of the same retrieval defect
+- [tags and applies_to are a two-part routing precondition](tags-and-applies-to-are-a-two-part-routing-precondition-2026-08-06.md) — a correct glob is still inert without a matching tag
