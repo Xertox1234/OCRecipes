@@ -73,8 +73,13 @@ duplicate — 18% of the whole file — of the `## Platform caveat` section alre
 Counter-measures, cheapest first:
 
 1. **Name the depth-home in the rules file header**, with an explicit "add new depth there, not
-   here." Both files now do. The header is embedded on every edit, so unlike the solution file
-   itself it cannot lose a ranking race — this is the one channel guaranteed to be seen.
+   here." The header is embedded on every edit, so unlike the solution file itself it cannot lose
+   a ranking race — this is the one channel guaranteed to be seen. `security.md` names a single
+   consolidated file. `accessibility.md` cannot: its depth is **per-bullet**, scattered across
+   several solutions, so its header names the two load-bearing ones and points the reader at
+   whichever solution the specific bullet cites. A tag-scoped pointer ("depth goes in
+   `docs/solutions/`, accessibility-tagged") is NOT sufficient — it sends the reader straight back
+   into the ranking race this section is about. A consolidated a11y depth-home is worth filing.
 2. **At codify time, diff the bullet against its cited solution before extending the bullet.** If
    the sentence you are about to add belongs in the solution, put it there.
 3. A soft warning threshold in `check-rules-file-size.js` (advise at ~5,700 B, fail at 6,500)
@@ -83,8 +88,10 @@ Counter-measures, cheapest first:
 
 Corollary worth stating plainly, because it inverts the obvious intuition: moving detail from a
 rules file into a per-bullet citation is a **reachability downgrade**, not a neutral relocation.
-Verified on the same three surfaces — the psql and CDN solutions cited by `security.md` do not
-surface on the files their own `applies_to` names. Compress a bullet only when the imperative
+Verified against the surfaces those solutions' own `applies_to` names — `scripts/pg-lab/*.sh` and
+`server/lib/image-store.ts` — and neither surfaced there. The reason is worse than a lost date
+race: those paths resolve to `harness` or to **no domain at all**, so the `security` tag pattern is
+never consulted on them and `security.md` itself is never injected there either. Compress a bullet only when the imperative
 that remains is actionable on its own; treat the citation as depth, never as the rule's only home.
 
 ## Examples
