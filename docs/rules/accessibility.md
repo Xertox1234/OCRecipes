@@ -1,6 +1,6 @@
 # Accessibility Rules
 
-> Binding directives only; embedded whole on every a11y-domain edit (6500 B cap). **Add new depth to the solution a bullet cites, not here.** Unlike `security.md` there is no single a11y depth-home — depth is per-bullet, chiefly `a11y-hide-visually-hidden-surfaces-2026-06-10.md` (hiding) and `radio-checkbox-group-container-pattern-2026-05-13.md` (group roles).
+> Binding directives only; embedded whole on every a11y-domain edit (6500 B cap). **Add new depth to the solution the bullet cites, not here** — a11y depth is per-bullet (chiefly `a11y-hide-visually-hidden-surfaces` and `radio-checkbox-group-container-pattern`), not one file.
 
 - All `fullScreenModal` and `modal` screens must have `accessibilityViewIsModal={true}` on the root container — VoiceOver navigates behind the modal without it
 - Decorative icons inside labeled Pressables must have `accessible={false}` — VoiceOver double-focuses on icon + container otherwise
