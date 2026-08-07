@@ -1,11 +1,11 @@
 ---
 title: "security.md and accessibility.md are at the 6500 B injection cap — no new rule can be codified in either"
-status: backlog
+status: done
 blocked_reason: "Editing `docs/rules/security.md` means editing binding IDOR / JWT / rate-limiting / SSRF rules, but no mechanism enforces a security review bar on it: `scripts/todo-automerge-guard.sh` short-circuits its sensitive-path check for every `docs/*.md` (they pass on `SAFE_ALLOWLIST` alone and never reach `SENSITIVE_OVERRIDE`), and `security` is absent from `SENSITIVE_INTENT_KEYWORDS`, so neither gate trips. A PR from this todo would be batch-automerge eligible and could land overnight unreviewed — exactly what the Risks section forbids. A human must drive the trim and sign off on the before/after rule inventory."
 human_led: true
 priority: medium
 created: 2026-08-06
-updated: 2026-08-06
+updated: 2026-08-07
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -87,3 +87,29 @@ Use a **fresh `session_id` for every data point** — a repeat under the same se
 - Initial creation. Headroom measured at security.md 9 B, accessibility.md 21 B against `MAX_BYTES = 6500`.
 - **External review before merge — gated `human_led: true`.** The Risks section asks for a security-grade review bar on the `security.md` edit, but nothing enforced it: `scripts/todo-automerge-guard.sh` exempts every `docs/*.md` from its sensitive-path check, and `security` is not in `SENSITIVE_INTENT_KEYWORDS` — so a PR from this todo was batch-automerge eligible and could have landed overnight with no individual review. `human_led: true` now removes it from any autonomous `/todo` batch.
 - Accuracy fixes from the same review: `/codify` only ever writes `docs/solutions/`, so the trigger is a **manual** promotion into `docs/rules/`, not an automated one; AC #1 restated as a mechanically checkable `≤ 5,700 B`; the size guard noted as lint-staged **and** CI; the measurement command caveated for the session-dedup pointer path. (The review flagged a `jq -r` literal-`null` hazard here — verified **not applicable**: the hook has a single emission site binding `--arg ctx`, so `additionalContext` is always a string; the real trap is session reuse.)
+
+### 2026-08-07 — DONE, merged as PR #776 (`589ae855`)
+
+`security.md` 6491 → **5698 B** (headroom 9 → 802), `accessibility.md` 6479 → **5694 B**
+(21 → 806). Rule counts 21→21 and 19→19; ≤5700 B met on both. Reviewed by security-auditor,
+mobile-reviewer and code-reviewer; all findings applied.
+
+What the work actually turned up, beyond the byte target:
+
+- **The todo's preferred approach was backwards.** It proposed relocating depth into
+  `docs/solutions/` and citing it. But a rules file is EMBEDDED whole on every edit in its domain,
+  while a solution is delivered BY REFERENCE and must win one of ~4 date-ranked slots — measured,
+  `security-rules-extended-rationale` surfaces on none of `auth.ts`/`users.ts`/`profile.ts`. So
+  that move is a reachability DOWNGRADE. Bullets were compressed only where the remaining
+  imperative is actionable standalone.
+- **That asymmetry is the regrowth mechanism** the todo asked about, now recorded in
+  `docs/solutions/conventions/rules-files-stay-terse-for-inline-injection-budget-2026-06-05.md`.
+  Proof: `accessibility.md:8` had regrown into a 1167 B duplicate of a section in the very
+  solution it cited on its own last line.
+- **One correctness fix, not a size change:** the psql bullet prescribed a remedy its own cited
+  solution had live-probed as insufficient (a URL parser still loses to a `?dbname=` override and
+  to percent-encoding). Now prescribes `SELECT current_database()` after connecting.
+
+Standing follow-up, deliberately out of this todo's scope contract: a soft warning threshold in
+`scripts/check-rules-file-size.js` (advise ~5700, fail 6500) to turn the wall into a gradient.
+Without it, codification adds and nothing prunes, and this todo reopens.
