@@ -56,7 +56,12 @@ only through the guard, never unconditionally. The filters:
    tests, docs/todos); it HOLDs for **anything sensitive or unrecognized** — the whole
    `server/routes/` directory (held wholesale, the request/authz boundary — see below), the
    whole `server/middleware/` directory, `.github/`, `scripts/`, migrations,
-   `shared/schema.ts`, secrets, plus named-sensitive files (auth/session/email-verification
+   `shared/schema.ts`, secrets, `docs/rules/` (the ONE docs path that HOLDs — those files
+   are the repo's binding review rules, and Step 5b of `todo-executor.md` appends
+   CRITICAL/HIGH rule bullets to them from inside a `/todo` PR, so without this a batch PR
+   trimming `docs/rules/security.md`'s IDOR/JWT/rate-limiting/SSRF rules would auto-merge
+   overnight unreviewed; every other docs path — `docs/solutions/`, `docs/research/`,
+   runbooks — and all of `todos/` stays eligible), plus named-sensitive files (auth/session/email-verification
    (`VerifyEmailScreen`)/admin/premium/login/api-key surfaces, IAP/health) that live inside
    the otherwise-open `client/` and `server/storage/` roots — note the unrelated Verified
    Product API (`server/storage/verification.ts`, `VerificationBadge`, barcode/nutrition-data
