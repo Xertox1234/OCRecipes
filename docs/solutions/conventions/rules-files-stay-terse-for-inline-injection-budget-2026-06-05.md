@@ -76,10 +76,10 @@ Counter-measures, cheapest first:
    here." The header is embedded on every edit, so unlike the solution file itself it cannot lose
    a ranking race — this is the one channel guaranteed to be seen. `security.md` names a single
    consolidated file. `accessibility.md` cannot: its depth is **per-bullet**, scattered across
-   several solutions, so its header names the two load-bearing ones and points the reader at
-   whichever solution the specific bullet cites. A tag-scoped pointer ("depth goes in
-   `docs/solutions/`, accessibility-tagged") is NOT sufficient — it sends the reader straight back
-   into the ranking race this section is about. A consolidated a11y depth-home is worth filing.
+   several solutions, so its header instead directs the reader to *the solution the bullet cites*.
+   Either form works; what does NOT work is a tag-scoped pointer ("depth goes in
+   `docs/solutions/`, accessibility-tagged"), which sends the reader straight back into the ranking
+   race this section is about. A consolidated a11y depth-home is worth filing.
 2. **At codify time, diff the bullet against its cited solution before extending the bullet.** If
    the sentence you are about to add belongs in the solution, put it there.
 3. A soft warning threshold in `check-rules-file-size.js` (advise at ~5,700 B, fail at 6,500)
