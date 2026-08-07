@@ -159,6 +159,23 @@ Establish a green baseline before touching any code.
 
    Store the branch name as `BASE_BRANCH` (e.g., `feat/nutrition-inline-drawers` or `main`). Pass it to every executor spawn in Phase 4 via the `Base branch:` line in the prompt.
 
+   **Confirm `BASE_BRANCH` out loud whenever it is not `main`.** Basing a batch on a feature branch is a deliberate, supported choice — but the capture above takes whatever branch you happen to be standing on, and it is silently wrong when `/todo` is invoked **from a linked worktree**, where the current branch is that worktree's unrelated feature work. Every executor forks from `BASE_BRANCH`, so a wrong value puts that unrelated feature diff into every PR in the batch. Check which checkout you are in:
+
+   ```bash
+   git rev-parse --git-common-dir
+   ```
+
+   > Use the **bare** form here. It prints `.git` at the top level of the main checkout and an absolute path in a linked worktree, which is the signal needed. The `--path-format=absolute` variant used in the next step is _always_ absolute and can never distinguish the two — the two calls answer different questions and must not be merged.
+
+   If `BASE_BRANCH` is not `main`, **or** the command above printed anything other than `.git`, stop and report before dispatching. (It also prints an absolute path from a _subdirectory_ of the main checkout, so this can ask one extra time — confirm either way; the cost of a redundant question is nothing against a batch of PRs carrying someone else's diff.)
+
+   ```
+   BASE_BRANCH = <branch>   (worktree: <linked | main checkout>)
+   Every executor will fork from this branch. Confirm or give a different base.
+   ```
+
+   Wait for an explicit answer. Do not proceed to Phase 2 on silence.
+
    **Then capture the main checkout's absolute path** using `git rev-parse --git-common-dir` (worktree-aware — `pwd` would be wrong if `/todo` is invoked from inside another worktree):
 
    ```bash
