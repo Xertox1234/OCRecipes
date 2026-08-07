@@ -390,6 +390,54 @@ describe("todo-automerge-guard.sh (xhigh review: directory-independent allowlist
   });
 });
 
+describe("todo-automerge-guard.sh (docs/rules/ carve-out: binding review rules are not ordinary docs)", () => {
+  it.each([
+    "docs/rules/security.md",
+    "docs/rules/accessibility.md",
+    "docs/rules/database.md",
+    "docs/rules/typescript.md",
+  ])(
+    "HOLDs %s (binding review rules: the markdown exemption used to short-circuit the sensitive check for every docs path, so a batch PR trimming security.md's IDOR/JWT/rate-limiting/SSRF rules was auto-merge eligible — scoped to the whole directory, not security.md alone, since every rules file is equally binding and a per-file list would go stale as rules files are added)",
+    (file) => {
+      const { status } = runGuard([file], GENERIC_LOW_TODO);
+      expect(status).toBe(1);
+    },
+  );
+
+  it("HOLDs a future NON-markdown file under docs/rules/ too (the override is anchored on the directory, not on the .md extension)", () => {
+    const { status } = runGuard(["docs/rules/security.yaml"], GENERIC_LOW_TODO);
+    expect(status).toBe(1);
+  });
+
+  it("HOLDs a mixed PR that touches an eligible client/ file AND a rules file (the realistic shape: todo-executor.md Step 5b appends a CRITICAL/HIGH rule bullet to docs/rules/{domain}.md from inside the /todo PR)", () => {
+    const { status } = runGuard(
+      ["client/screens/HomeScreen.tsx", "docs/rules/security.md"],
+      GENERIC_LOW_TODO,
+    );
+    expect(status).toBe(1);
+  });
+
+  it("names the sensitive/not-allowlisted reason and the offending rules file on stdout, not a bare exit code", () => {
+    const { stdout } = runGuard(["docs/rules/security.md"], GENERIC_LOW_TODO);
+    expect(stdout).toContain("not on the batch-merge allowlist");
+    expect(stdout).toContain("docs/rules/security.md");
+  });
+
+  it.each([
+    "docs/solutions/best-practices/some-solution-2026-08-05.md",
+    "docs/research/some-benchmark.md",
+    "docs/todo-automation-runbook.md",
+    "todos/P3-2026-08-05-some-open-todo.md",
+    "todos/archive/P3-2026-08-05-another.md",
+  ])(
+    "still allows %s (every OTHER docs/todos path keeps the markdown exemption — the high-volume, low-risk case it exists for; the carve-out must not have swallowed it)",
+    (file) => {
+      const { status } = runGuard([file], GENERIC_LOW_TODO);
+      expect(status).toBe(0);
+    },
+  );
+});
+
 describe("todo-automerge-guard.sh (xhigh review: case-sensitivity and anchoring fixes)", () => {
   it.each([
     "client/screens/AdminDashboardScreen.tsx",

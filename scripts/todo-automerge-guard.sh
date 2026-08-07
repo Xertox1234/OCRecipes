@@ -17,7 +17,9 @@
 # server/routes/ directory (the request/authz boundary — see SAFE_ALLOWLIST's comment for
 # why this one root HOLDs wholesale instead of being enumerate-the-sensitive-ones), the
 # whole server/middleware/ directory, .github/ (the CI gates), scripts/ (incl. this
-# guard), migrations, shared/schema.ts, secrets/certs, plus explicit sensitive files named
+# guard), migrations, shared/schema.ts, secrets/certs, docs/rules/ (the binding review
+# rules — the one docs path carved OUT of the markdown pass-through; see SENSITIVE_OVERRIDE
+# and PATH GATE step 2), plus explicit sensitive files named
 # in SENSITIVE_OVERRIDE that live inside the otherwise-open client/ and server/storage/
 # roots. server/routes/, .github/, scripts/, and migrations/ are held BOTH by SAFE_ALLOWLIST
 # omission AND by an explicit whole-dir SENSITIVE_OVERRIDE entry — belt-and-suspenders,
@@ -61,7 +63,9 @@ PR="${1:?usage: todo-automerge-guard.sh <pr-number>}"
 # all of client/ (UI, hooks, context, lib, screens, navigation, constants, ...) and all of
 # server/storage/ (minus the sensitive files named in SENSITIVE_OVERRIDE below),
 # business-logic services, shared pure modules (types / zod-schemas / constants / lib),
-# any test, an extracted *-utils file, and docs/todos/ markdown. NOTE: server/routes/,
+# any test, an extracted *-utils file, and docs/todos/ markdown — except docs/rules/, which
+# stays matched by ^docs/ here but HOLDs on SENSITIVE_OVERRIDE below (binding review rules,
+# not ordinary docs). NOTE: server/routes/,
 # server/middleware/, migrations/, shared/schema.ts, .github/, scripts/, certs, .env are
 # deliberately ABSENT — they HOLD in full, not file-by-file. server/routes/ HOLDs
 # wholesale (2026-07-08, reverted from a brief whole-root widening) because it's the
@@ -107,6 +111,21 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # that feature's OWN files are covered by name instead), SessionExpiryBridge, [Aa]dmin, and
 # [Pp]remium (case-classed to cover both server's lowercase-kebab and client's PascalCase
 # naming conventions — a bare `admin`/`Premium` literal missed half of each pair).
+# docs/rules/ is the one whole-directory entry that is NOT code: those files are this repo's
+# BINDING review rules (security.md carries the IDOR / JWT / rate-limiting / SSRF rules every
+# reviewer and every injected-pattern hook acts on; accessibility.md, database.md and the rest are
+# equally binding, which is why this is scoped to the whole directory and not to security.md
+# alone — a per-file list would silently go stale the next time a rules file is added). It needs
+# BOTH this entry and the docs/rules/ carve-out in the PATH GATE's step 2 below: SAFE_ALLOWLIST's
+# ^docs/ prefix already passes them, and the step-2 markdown exemption used to `continue` before
+# this override was ever consulted, so a batch-generated PR trimming a binding security rule was
+# auto-merge eligible and could land overnight unreviewed — contradicting this repo's own rule
+# that security changes get individual review. This is a real path, not a hypothetical:
+# todo-executor.md Step 5b appends CRITICAL/HIGH rule bullets to docs/rules/{domain}.md from
+# inside the /todo PR itself. Every OTHER docs path (docs/solutions/, docs/research/, runbooks)
+# and all of todos/ keeps the exemption. Listing it here rather than only in the step-2 carve-out
+# is what makes todo-executor.md's research-delegation skip-gate inherit it — that gate reads
+# SENSITIVE_OVERRIDE and never looks at SAFE_ALLOWLIST.
 # server/storage/verification.ts and client/components/VerificationBadge are the UNRELATED
 # Verified Product API (barcode/nutrition-data verification — see
 # shared/types/verification.ts) and must NOT be held. Grocery "receipt" OCR (receipt.ts,
@@ -139,7 +158,7 @@ SAFE_ALLOWLIST='^client/|^server/storage/|^server/services/|^shared/types/|^shar
 # generically-named, allowlisted-directory file — named individually since none shares a
 # signature generic enough for the drift-detection test to generalize without becoming a
 # broad "security detector" (deliberately avoided — see that test's own comment).
-SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
+SENSITIVE_OVERRIDE='receipt-validation|store-notification|store-webhook|(^|/)subscription|(^|/)iap[./-]|apple-?iap|google-?(iap|play)|app-store-server|in-app-purchase|entitlement|(^|/)[Hh]ealth|(^|/)server/middleware/|(^|/)server/routes/|(^|/)\.github/|(^|/)scripts/|(^|/)migrations/|(^|/)docs/rules/|token-storage|AuthContext|useAuth|verification-token|VerifyEmailScreen|(^|/)server/storage/users\.ts$|(^|/)sessions\.ts$|(^|/)session-store\.ts$|(^|/)user-sessions?\.ts$|SessionExpiryBridge|[Aa]dmin|[Pp]remium|[Ll]ogin|api-key|secret|credential|(^|/)query-client\.ts$|(^|/)reporter\.ts$|(^|/)offline-queue-drain\.ts$|(^|/)photo-upload\.ts$|(^|/)cookbook-cover-upload\.ts$|OnboardingContext|useDietaryProfileForm|useAllergenCheck|dietary-context|(^|/)export\.ts$|(^|/)server/services/email\.ts$|durable-owner|useAvatarUpload|useCarouselRecipes|useChat|useCookSession|useHistoryData|useMenuScan|useNutritionLookup|useReceiptScan|useSavedItems|useCoachStream'
 
 # Sensitive-domain keywords for the TODO gate's intent check (below): HOLDs any todo
 # whose own title/frontmatter names a sensitive domain, regardless of which file it ends
@@ -240,9 +259,21 @@ while IFS= read -r f; do
   if ! printf '%s' "$f" | grep -qE "$SAFE_ALLOWLIST"; then
     unsafe="${unsafe}  ${f}"$'\n'; continue
   fi
-  # 2) docs / todos / markdown are never sensitive code — they pass on the allowlist alone
-  #    (a todo slug like subscription-tier-ui.md must not trip the override)
-  if printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$'; then
+  # 2) docs / todos / markdown are never sensitive CODE — they pass on the allowlist alone
+  #    (a todo slug like subscription-tier-ui.md must not trip the override). ONE carve-out:
+  #    docs/rules/ holds this repo's BINDING review rules (see SENSITIVE_OVERRIDE's comment),
+  #    so those files fall through to (3) and HOLD. Every OTHER docs/todos path — docs/solutions/,
+  #    docs/research/, todos/, runbooks — keeps the exemption; that high-volume, low-risk case is
+  #    what the exemption exists for.
+  #    The rc is captured explicitly rather than written as `… && ! grep -qE '(^|/)docs/rules/'`:
+  #    under negation a BROKEN regex (rc >= 2) inverts to true, takes the exemption, and skips the
+  #    sensitive check — fail-OPEN, the exact trap step 3's rc_sens capture exists to avoid. Here
+  #    rc 1 (clean no-match ⇒ not a rules file) is the ONLY value that takes the exemption; rc 0
+  #    (is a rules file) and rc >= 2 (regex error) both fall through to MORE checking, not less.
+  #    Same regex text as the SENSITIVE_OVERRIDE entry on purpose — if the two ever diverged, a
+  #    path could be exempted here and never reach the override that is supposed to HOLD it.
+  rc_rules=0; printf '%s' "$f" | grep -qE '(^|/)docs/rules/' || rc_rules=$?
+  if [ "$rc_rules" -eq 1 ] && printf '%s' "$f" | grep -qE '^(docs|todos)/|\.md$'; then
     continue
   fi
   # 3) an allowlisted CODE file that hits the sensitive override HOLDs. rc 1 (clean no-match)
