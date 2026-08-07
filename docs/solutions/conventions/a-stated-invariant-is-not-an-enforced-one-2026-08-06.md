@@ -49,7 +49,8 @@ freshly-written assertion deserves the same scepticism as a five-year-old one.
 
 ### 1. Same-commit divergence — the rule and its violation shipped together
 
-Commit `cbb527c6` (PR #764) added two things. To `.claude/agents/ai-reviewer.md`:
+One commit in PR #764 (landed as `bcd026f8`) added two things. To
+`.claude/agents/ai-reviewer.md`:
 
 > The general check for any "blank less" / "keep more" change: for each value now
 > retained, is it in a CONTAINMENT relationship (`saturated`/`trans ≤ fat`,
@@ -64,13 +65,20 @@ which checked **only** `saturatedFat > fat`.
 `compared: true`, that opened one-tap logging on a macro block that is internally
 impossible, on the screen whose entire proposition is "trust the label".
 
-The fix (`798245b3`, same PR) replaced the conditional with a `CONTAINMENT_PAIRS` table and an
-`enforceContainment()` loop over it — so the rule's N and the code's N are now the same
-number by construction, and a new pair cannot be added without answering the table's
-questions for both sides.
+The fix — a later commit in the same PR, and what `bcd026f8` carries as the net result —
+replaced the conditional with a `CONTAINMENT_PAIRS` table and an `enforceContainment()`
+loop over it, so the rule's N and the code's N are now the same number by construction,
+and a new pair cannot be added without answering the table's questions for both sides.
 
-> `retainableSiblings` exists at no branch tip — it was introduced in `cbb527c6` and
-> replaced in `798245b3`. Cite the commits, not the name (see
+> `retainableSiblings` exists at no branch tip **and in no tree on `main`**: it was
+> introduced and then replaced inside PR #764's own history, and the squash collapsed it
+> away entirely — `git log -S retainableSiblings` on `main` finds nothing. What survives
+> on `main` is `bcd026f8`'s commit **message**, which preserves both original messages
+> (including "The rule and the implementation diverged inside a single commit") and is
+> therefore the on-`main` evidence for the same-commit claim above; `git log --grep`
+> finds it. The pre-squash commits themselves stay fetchable via
+> `git fetch origin refs/pull/764/head`. Cite the PR and the squash SHA — never the
+> symbol name, and never a branch commit a squash can strand (see
 > [cross-reference-code-by-stable-name-not-line-numbers-2026-07-03.md](cross-reference-code-by-stable-name-not-line-numbers-2026-07-03.md)).
 
 ### 2. "One self-consistent source" — an assertion nothing established
