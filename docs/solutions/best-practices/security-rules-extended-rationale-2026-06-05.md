@@ -4,9 +4,10 @@ track: knowledge
 category: best-practices
 module: server
 severity: high
-tags: [security, idor, mass-assignment, ai-prompting, premium-gating, consent, redos, supply-chain]
-applies_to: [server/routes/**/*.ts, server/storage/**/*.ts, server/middleware/**/*.ts, server/services/**/*.ts]
+tags: [security, idor, mass-assignment, ai-prompting, premium-gating, consent, redos, supply-chain, pg-lab]
+applies_to: [server/routes/**/*.ts, server/storage/**/*.ts, server/middleware/**/*.ts, server/services/**/*.ts, server/index.ts, server/lib/image-store.ts, server/scripts/**/*.ts, scripts/pg-lab/**/*.sh]
 created: '2026-06-05'
+last_updated: '2026-08-07'
 ---
 
 # Security Rules — Extended Rationale & Failure Modes
@@ -153,3 +154,55 @@ overwrite the original record.
 `pull_request_target` workflows with repository secrets must execute only trusted base-branch
 code — never checkout, source, import, install from, or execute PR-head files; fetch PR head
 only as diff data.
+
+## Deployment, storage & CLI surfaces
+
+### Reverse proxy and `trust proxy`
+Set `app.set("trust proxy", <hop count>)` numerically, never `true` — with `true`, Express takes
+the leftmost `X-Forwarded-For` entry, which any client can spoof, so a caller can forge their
+apparent IP. The failure mode is silent: a custom `keyGenerator` suppresses express-rate-limit's own
+`ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` warning, so a topology change that collapses every request
+into one shared bucket produces no error at all. The observed harm is a **global lockout**, not
+merely lost per-client granularity — in the 2026-06-08 incident any 10 failed logins from anyone
+locked out every user for 15 minutes, and more than 5 signups/hour from anywhere 429'd legitimate
+registrations. A custom key generator buys silence, not safety.
+Re-verify every `req.ip` consumer whenever the proxy topology changes. Trust platform client-IP
+headers (`X-Real-IP`, `CF-Connecting-IP`) only when the read is gated on the platform that
+overwrites them (e.g. `RAILWAY_ENVIRONMENT_NAME`).
+Precedent: `docs/solutions/logic-errors/reverse-proxy-rate-limit-keying-2026-06-10.md`.
+
+### Public-bucket / CDN object keys
+Never derive a public object key from a user identifier. An unsalted hash of an *exposed* id is
+still forward-computable — `authorId` is public via community recipes, so `sha256(userId)` can be
+recomputed by anyone who can read an author id, turning "unguessable" keys into an enumeration.
+Runtime uploads use random keys (`crypto.randomUUID()`). Idempotent migrations that must
+re-derive the same key mix in the content hash (`sha256(userId + ":" + sha256(bytes))`) or HMAC
+with a server-held secret.
+Precedent: `docs/solutions/logic-errors/public-cdn-keys-derivable-from-exposed-ids-2026-06-10.md`.
+
+### Bash CLI scripts calling `psql`
+Only the quoted form `:'var'` is escaped by psql. A bare `:var` is substituted literally, so a
+hostile value can close the predicate and rewrite the `WHERE` clause or stack a second statement
+— and psql reports no error, because the resulting SQL is valid. Validate any bare-substituted
+value as a strict integer or keyword enum *before* it reaches the query.
+Separately, never derive a DB-name/hostname denylist from ad-hoc connection-string slicing
+(`${VAR##*/}`): a trailing query string (`...?sslmode=require`) defeats the string match while
+`psql` and `pg` still connect to the denied database.
+
+**Parsing the URL is NOT the fix** — the precedent live-probed it and it still fails two ways:
+libpq honours a `?dbname=nutricam` query parameter *over* the URI path segment, and
+percent-encoding (`nutr%69cam`) defeats a literal match. Ask the driver for ground truth instead
+and denylist *that*:
+
+```bash
+ACTUAL_DB=$(psql -X -tAqd "$URL" -c 'SELECT current_database()')   # then denylist $ACTUAL_DB
+```
+
+(TypeScript/`pg`: `client.query('SELECT current_database()')`.) Note also that `psql -c` does
+**not** run the variable-substitution pass at all — only stdin, heredoc and `-f` do — so a
+`-c "… :var …"` call is a silent no-op rather than an injection, and must not be mis-triaged as
+either safe or exploitable without checking which channel is in use. The `scripts/pg-lab/*.sh`
+family still carries this as an OPEN gap; the TypeScript copy is `server/lib/contract-snapshot.ts`
+and fixing one does not fix the other.
+Precedents: `docs/solutions/logic-errors/psql-c-flag-skips-var-substitution-2026-07-05.md`,
+`docs/solutions/logic-errors/denylist-bypassed-by-connection-string-query-string-2026-07-06.md`.

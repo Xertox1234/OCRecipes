@@ -6,7 +6,7 @@ module: shared
 tags: [docs-rules, pattern-injection, hook-scripts, context-budget, maintainability]
 applies_to: [docs/rules/*.md, .claude/hooks/inject-patterns.sh]
 created: '2026-06-05'
-last_updated: '2026-07-03'
+last_updated: '2026-08-07'
 ---
 
 # docs/rules/*.md must stay terse — the inject hook embeds them inline under a byte cap
@@ -52,6 +52,48 @@ paid on every single edit in that domain.**
 rules file is invisible there — the cost only shows up through the inject hook. Don't let
 "copilot is fine" mask the inline-budget problem.
 
+### Why regrowth recurs (measured 2026-08-07, third trim)
+
+A trim buys headroom; it does not slow refill. `accessibility.md` went 6,547 → 4,582 B in
+2026-07 and was back to 6,479 B a month later. The mechanism is **asymmetric visibility at
+authoring time**, and it is structural, not carelessness:
+
+- A rules file is delivered by embedding — it is in front of you on **every** edit in its domain.
+- Its designated depth-home is an ordinary `docs/solutions/` file, delivered by reference, and
+  must win one of ~4 date-ranked slots to be listed at all. `security-rules-extended-rationale`
+  (2026-06-05) surfaced on **none** of `server/routes/auth.ts`, `server/storage/users.ts`, or
+  `server/routes/profile.ts` — it loses the date race to newer security-tagged solutions.
+
+So when a review finding sharpens an existing rule, the author sees the bullet and not its
+depth-home, and appends the detail to the bullet. Depth flows one way: **out of the solution file
+and into the rules file.** Measured instance: `accessibility.md:8` had regrown into a 1,167 B
+duplicate — 18% of the whole file — of the `## Platform caveat` section already present in the
+`radio-checkbox-group-container-pattern` solution it cited on its own last line.
+
+Counter-measures, cheapest first:
+
+1. **Name the depth-home in the rules file header**, with an explicit "add new depth there, not
+   here." The header is embedded on every edit, so unlike the solution file itself it cannot lose
+   a ranking race — this is the one channel guaranteed to be seen. `security.md` names a single
+   consolidated file. `accessibility.md` cannot: its depth is **per-bullet**, scattered across
+   several solutions, so its header instead directs the reader to *the solution the bullet cites*.
+   Either form works; what does NOT work is a tag-scoped pointer ("depth goes in
+   `docs/solutions/`, accessibility-tagged"), which sends the reader straight back into the ranking
+   race this section is about. A consolidated a11y depth-home is worth filing.
+2. **At codify time, diff the bullet against its cited solution before extending the bullet.** If
+   the sentence you are about to add belongs in the solution, put it there.
+3. A soft warning threshold in `check-rules-file-size.js` (advise at ~5,700 B, fail at 6,500)
+   would convert the wall into a gradient. Not implemented — deliberately out of the 2026-08-07
+   trim's scope contract, and recorded here as the standing follow-up.
+
+Corollary worth stating plainly, because it inverts the obvious intuition: moving detail from a
+rules file into a per-bullet citation is a **reachability downgrade**, not a neutral relocation.
+Verified against the surfaces those solutions' own `applies_to` names — `scripts/pg-lab/*.sh` and
+`server/lib/image-store.ts` — and neither surfaced there. The reason is worse than a lost date
+race: those paths resolve to `harness` or to **no domain at all**, so the `security` tag pattern is
+never consulted on them and `security.md` itself is never injected there either. Compress a bullet only when the imperative
+that remains is actionable on its own; treat the citation as depth, never as the rule's only home.
+
 ## Examples
 
 Keep the directive + load-bearing specifics (helper names, exact values, precedent paths,
@@ -89,6 +131,8 @@ exemptions); move the prose to a solution doc the hook auto-surfaces:
 - `scripts/check-rules-file-size.js` — since 2026-07-03 lint-staged ENFORCES a 6,500 B cap
   on `docs/rules/*.md` (budget derivation in its header); regrowth now fails at commit time.
   Its `GRANDFATHERED` exemption map is now EMPTY — every rules file fits the 6,500 B cap.
+- `docs/solutions/best-practices/security-rules-extended-rationale-2026-06-05.md` — the designated
+  depth-home for `security.md`; named in that file's header so it is reachable without a ranking race.
 - `docs/rules/client-state.md` — trimmed 8.4 → 6.4 KB by consolidation (2026-07-03), the
   second precedent after `accessibility.md`; the `GRANDFATHERED` entry was removed once it
   fit. A single-domain client-state path that this file oversized used to force the
