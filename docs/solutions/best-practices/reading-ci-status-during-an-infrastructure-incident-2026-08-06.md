@@ -33,9 +33,17 @@ and count it; never treat `completed` as a verdict.
 
 A run can register a fraction of its jobs and report no failures, because the jobs that
 would have failed never registered. PR #764 showed **4** registered checks where **10**
-were expected, and `gh pr checks` summarised that as "0 failed". Know the expected
-number for the repo and compare it every time; "nothing failed" over a truncated set is
-not information.
+were expected, and `gh pr checks` summarised that as "0 failed". "Nothing failed" over a
+truncated set is not information.
+
+**Compare against the count expected _at this stage_, not the total.** A job with
+`needs:` does not register until its dependency completes, so a healthy in-progress run
+is legitimately short. In `.github/workflows/ci.yml`, `test` (3 shards),
+`integration-http` and `coverage` all declare `needs: checks` — so **4 registered while
+"Lint · Types · Patterns" is still pending is the normal early state**, not a symptom.
+A raw count against the total false-positives on every run in that window, which is the
+fastest way to make this checklist item ignored. What is diagnostic is a short count
+**after** the gating job has concluded.
 
 ### 3. An unexpanded `${{ }}` in a check NAME is a hard tell
 
