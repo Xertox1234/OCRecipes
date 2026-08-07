@@ -1,6 +1,8 @@
 ---
 title: "security.md and accessibility.md are at the 6500 B injection cap — no new rule can be codified in either"
 status: backlog
+blocked_reason: "Editing `docs/rules/security.md` means editing binding IDOR / JWT / rate-limiting / SSRF rules, but no mechanism enforces a security review bar on it: `scripts/todo-automerge-guard.sh` short-circuits its sensitive-path check for every `docs/*.md` (they pass on `SAFE_ALLOWLIST` alone and never reach `SENSITIVE_OVERRIDE`), and `security` is absent from `SENSITIVE_INTENT_KEYWORDS`, so neither gate trips. A PR from this todo would be batch-automerge eligible and could land overnight unreviewed — exactly what the Risks section forbids. A human must drive the trim and sign off on the before/after rule inventory."
+human_led: true
 priority: medium
 created: 2026-08-06
 updated: 2026-08-06
@@ -13,7 +15,7 @@ github_issue:
 
 ## Summary
 
-`docs/rules/security.md` has **9 bytes** of headroom and `docs/rules/accessibility.md` has **21**, under the CI-enforced 6500 B cap in `scripts/check-rules-file-size.js`. Neither file can accept a new rule today — a `/codify` run that produces a binding security or accessibility rule has nowhere to put it, and CI fails the push.
+`docs/rules/security.md` has **9 bytes** of headroom and `docs/rules/accessibility.md` has **21**, under the CI-enforced 6500 B cap in `scripts/check-rules-file-size.js`. Neither file can accept a new rule today — promoting a solution into a binding `docs/rules/` entry has nowhere to put it, and `check-rules-file-size.js` rejects it at both gates: lint-staged at commit time (`package.json` → `"docs/rules/*.md"`) and again in CI on push.
 
 ## Background
 
@@ -36,7 +38,7 @@ Related codified context: `docs/solutions/conventions/rules-files-stay-terse-for
 
 ## Acceptance Criteria
 
-- [ ] `security.md` and `accessibility.md` each have at least ~800 B of headroom under the effective cap
+- [ ] `security.md` and `accessibility.md` are each **≤ 5,700 B** — i.e. ≥ 800 B under `MAX_BYTES = 6500`, which itself already holds ~350 B of margin below the ~6,850 B single-domain-first-touch ceiling derived in `check-rules-file-size.js`
 - [ ] **No binding rule is lost.** Every rule present before the change is still discoverable — either still in the rules file, or moved into `docs/solutions/` with the rules file retaining a one-line pointer
 - [ ] A before/after inventory of rule bullets is included in the PR body so a reviewer can verify nothing was silently dropped
 - [ ] `node scripts/check-rules-file-size.js` passes for all files
@@ -60,6 +62,8 @@ printf '{"session_id":"m1","tool_name":"Edit","tool_input":{"file_path":"'"$PWD"
   | jq -r '.hookSpecificOutput.additionalContext' | wc -c
 ```
 
+Use a **fresh `session_id` for every data point** — a repeat under the same session takes the dedup/pointer path and collapses already-injected domains to a one-line pointer (measured 8,881 → 7,196 B on byte-identical input), which reads as a successful trim when nothing was trimmed. A result of `0` means the hook exited early (non-Edit `tool_name`, unparsable stdin), not a zero-byte injection.
+
 ## Scope Contract
 
 - **Mechanisms to use:** editorial restructuring of existing rules files, plus (optionally) new `docs/solutions/` files to hold relocated rationale. No new hook behaviour, no change to `MAX_BYTES` without recording the derivation.
@@ -81,3 +85,5 @@ printf '{"session_id":"m1","tool_name":"Edit","tool_input":{"file_path":"'"$PWD"
 ### 2026-08-06
 
 - Initial creation. Headroom measured at security.md 9 B, accessibility.md 21 B against `MAX_BYTES = 6500`.
+- **External review before merge — gated `human_led: true`.** The Risks section asks for a security-grade review bar on the `security.md` edit, but nothing enforced it: `scripts/todo-automerge-guard.sh` exempts every `docs/*.md` from its sensitive-path check, and `security` is not in `SENSITIVE_INTENT_KEYWORDS` — so a PR from this todo was batch-automerge eligible and could have landed overnight with no individual review. `human_led: true` now removes it from any autonomous `/todo` batch.
+- Accuracy fixes from the same review: `/codify` only ever writes `docs/solutions/`, so the trigger is a **manual** promotion into `docs/rules/`, not an automated one; AC #1 restated as a mechanically checkable `≤ 5,700 B`; the size guard noted as lint-staged **and** CI; the measurement command caveated for the session-dedup pointer path. (The review flagged a `jq -r` literal-`null` hazard here — verified **not applicable**: the hook has a single emission site binding `--arg ctx`, so `additionalContext` is always a string; the real trap is session reuse.)
