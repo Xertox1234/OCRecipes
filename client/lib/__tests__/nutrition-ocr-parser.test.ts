@@ -575,6 +575,80 @@ describe("glued g→9 — resolving only what the label itself rules out", () =>
       ).toBe(1);
     });
 
+    it("records the resolved field as INFERRED, never as a direct read", () => {
+      // Provenance. A value the containment rule reconstructed is adopted, but
+      // it must not be indistinguishable from a glyph the recogniser actually
+      // read: `buildLabelConflict` declines to compare an inferred
+      // `saturatedFat` against the database record, because the inference's
+      // error is bounded by `[0, totalFat]` while that comparison's tolerance
+      // is sized for a 0.5 g printing step.
+      const inferred = parseNutritionFromOCR("Total Fat 11 g\nSaturated 19");
+      expect(inferred.saturatedFat).toBe(1);
+      expect(inferred.directReads).not.toContain("saturatedFat");
+      // The parent, read off a real "g", IS a direct read — so the assertion
+      // above is about the inference and not about the list being empty.
+      expect(inferred.directReads).toContain("totalFat");
+
+      // The same field read directly does land in the list.
+      const direct = parseNutritionFromOCR("Total Fat 11 g\nSaturated 1 g");
+      expect(direct.saturatedFat).toBe(1);
+      expect(direct.directReads).toContain("saturatedFat");
+    });
+
+    it("never vouches for more fields than it extracted — directReads <= confidence", () => {
+      // These count DIFFERENT things, deliberately. `confidence` counts every
+      // field the first pass got a number out of, and gates the local preview.
+      // `directReads` counts the subset whose UNIT was also read, and gates
+      // whether the server may let that number condemn a database record.
+      //
+      // An earlier revision pinned them as EQUAL, on the strength of both being
+      // written on the same line. That equality was the bug: it forced a value
+      // whose unit was a substituted "9" — adopted, and rightly counted toward
+      // confidence — to also be published as a direct read. The invariant that
+      // actually holds is containment, so pin that instead: every direct read
+      // was extracted, and nothing may be vouched for that was not.
+      for (const text of [
+        "Total Fat 11 g\nSaturated 19", // one inferred, one direct
+        "Total Fat 11 g\nSaturated 1 g", // both direct
+        "Total Fat 5g 6%\nSaturated Fat 29 9%", // one direct, one substituted unit
+        "Calories 121", // one direct, no glued forms at all
+        "", // nothing at all
+      ]) {
+        const r = parseNutritionFromOCR(text);
+        expect(r.directReads.length).toBeLessThanOrEqual(r.confidence * 10);
+        // Not a subset of some other list: everything vouched for must be a
+        // field that actually carries a value.
+        for (const key of r.directReads) expect(r[key]).not.toBeNull();
+      }
+    });
+
+    it("adopts a spaced substituted-unit value but does NOT call it a direct read", () => {
+      // An ORDINARY panel — `Total Fat 5g 6%` / `Saturated Fat 2g 9%` — with the
+      // g -> 9 misread this parser calls the single largest cause of dropped
+      // fields. The saturated-fat line becomes "Saturated Fat 29 9%": the value
+      // swallows the misread unit (2 -> 29, a 14.5x inflation) while the "9"
+      // that follows is a daily value that lost its "%". `totalFat` on the line
+      // above is untouched, which is the whole point — these are independent
+      // per-line captures and one can corrupt while the other reads perfectly.
+      const r = parseNutritionFromOCR("Total Fat 5g 6%\nSaturated Fat 29 9%");
+
+      // Still ADOPTED: the parser has no better reading, and the value counts
+      // toward confidence exactly as before. Denying provenance is not the same
+      // as dropping the field.
+      expect(r.totalFat).toBe(5);
+      expect(r.saturatedFat).toBe(29);
+      expect(r.confidence).toBeCloseTo(0.2, 10);
+
+      // ...but NOT vouched for. `buildLabelConflict` compares `saturatedFat`
+      // against the database record at a tolerance sized for a 0.5 g printing
+      // step; a 14.5x-inflated reading compared at that tolerance would condemn
+      // a correct record and rewrite the user's food log from a misread glyph.
+      expect(r.directReads).not.toContain("saturatedFat");
+      // The clean line beside it still is, so this is about the corrupt reading
+      // and not about the list being empty.
+      expect(r.directReads).toContain("totalFat");
+    });
+
     it("does not bound fibre by carbohydrate — the regimes disagree", () => {
       // "Carbohydrate" is not one quantity across labelling regimes: EU
       // 1169/2011 declares AVAILABLE carbohydrate and lists fibre separately

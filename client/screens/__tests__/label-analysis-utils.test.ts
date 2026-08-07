@@ -77,6 +77,10 @@ describe("localDataToExtractionResult", () => {
     protein: 7,
     servingSize: "1 serving",
     confidence: 0.8,
+    // Provenance is irrelevant to this mapping — `localDataToExtractionResult`
+    // is display-only. Kept non-empty rather than `[]` so the fixture stays a
+    // realistic parser output.
+    directReads: ["calories", "totalFat", "saturatedFat"],
   };
 
   it("maps all local fields to extraction result", () => {

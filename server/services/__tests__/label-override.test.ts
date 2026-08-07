@@ -4,6 +4,7 @@ import {
   type LabelNutritionInput,
 } from "../label-override";
 import type { BarcodeLookupResult } from "../barcode-lookup";
+import { valuesMatch } from "../../lib/verification-consensus";
 
 // DB result shaped like OFF's wrong Cherry Coke entry (per-100 ml).
 function cherryCokeDb(): BarcodeLookupResult {
@@ -362,4 +363,649 @@ it("presence-gate declines also report compared false", () => {
     buildLabelConflict(cherryCokeDb(), { ...goodLabel, calories: null })
       .compared,
   ).toBe(false);
+});
+
+// ── `saturatedFat` IS corroborated against the record (see the comment above
+// `cmp` in label-override.ts). Two policies distinguish it from the other
+// three fields, and each has its own tests below:
+//
+//   1. It carries a quantization floor derived from the 0.5 g step a Nutrition
+//      Facts panel prints saturated fat in, scaled by the same per-serving →
+//      per-100 `factor` the reading itself is scaled by. Without it the
+//      2-5 g/100g band conflicts on rounding alone.
+//   2. Its AGREEMENT does not count toward `comparedCount`, so it can raise a
+//      conflict but can never help open the `compared >= 2` one-tap-log gate.
+//
+// A fatty-product fixture (cheddar-like, 30 g serving) is used for most of
+// these rather than the beverage one: saturated fat is only interesting where
+// it is nonzero, and the small serving is what makes the rounding
+// amplification visible (factor 3.33, so a 0.5 g printed step is 1.67 g at
+// per-100 scale).
+
+/**
+ * Cheddar-like fixture: 30 g label serving against a trusted 28 g DB serving
+ * (close enough to clear the >4x/<0.25x serving cross-check, which the 355 ml
+ * beverage default would otherwise trip before any comparison runs).
+ * calories/sugar/fat are offset by a real amount INSIDE tolerance rather than
+ * being identical, so `valuesMatch`'s relative and absolute-floor branches are
+ * genuinely exercised instead of its `a === b` shortcut.
+ */
+function cheddarDb(saturatedFat: number | undefined): BarcodeLookupResult {
+  const db = cherryCokeDb();
+  db.servingInfo = { displayLabel: "28 g", grams: 28, wasCorrected: false };
+  db.per100g = {
+    calories: 380, // within 25% of the label's ~403.3
+    sugar: 1.5, // within the <2 g absolute ±1 floor of the label's ~1.33
+    fat: 30, // within 25% of the label's ~33.3
+    saturatedFat,
+    // Un-read siblings: `LabelNutritionInput` has no field for any of these, so
+    // they can only ever come from the record. They are what the blanking-scope
+    // tests below are about — without them those assertions would be vacuous.
+    carbs: 2,
+    protein: 24,
+    sodium: 650,
+  };
+  return db;
+}
+
+const cheddarLabel: LabelNutritionInput = {
+  calories: 121, // 30 g serving; scales to ~403.3 per-100
+  totalSugars: 0.4, // -> ~1.33 per-100
+  totalFat: 10, // -> ~33.3 per-100
+  saturatedFat: 6.3, // -> ~21 per-100
+  servingSize: "30 g",
+  // Provenance: a DIRECT glyph read, so the server is allowed to compare it.
+  // Every test below that expects a saturatedFat comparison to happen needs
+  // this — an absent list means "not a direct read" and skips the row. The
+  // absent and inferred cases have their own tests further down.
+  directReads: ["saturatedFat"],
+};
+
+it("a saturatedFat disagreement beyond the rounding floor conflicts on its own", () => {
+  // calories/sugar/fat all agree; only saturatedFat disagrees — ~21 per-100
+  // from the label against the record's 2. That gap (19) dwarfs both the 25%
+  // relative tolerance and the 1.67 g/100g quantization floor a 30 g serving
+  // produces, so it is a real disagreement and must be reported as one.
+  //
+  // This is the behaviour the previous revision of this branch deliberately
+  // did NOT have: the same fixture was a "negative control" asserting no
+  // conflict. Overridden — writing a photographed number over the record
+  // without ever checking it against the record is the defect.
+  const r = buildLabelConflict(cheddarDb(2), cheddarLabel);
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["saturatedFat"]);
+  // And the conflict is acted on: the label's value replaces the record's.
+  expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(21, 5);
+});
+
+it("an agreeing saturatedFat produces no conflict", () => {
+  // Same fixture, record's saturatedFat within 25% of the label's ~21.
+  const r = buildLabelConflict(cheddarDb(20.5), cheddarLabel);
+  expect(r.conflict).toBe(false);
+  expect(r.fields).toEqual([]);
+  // Still `compared` — calories/sugar/fat are three corroborating agreements.
+  expect(r.compared).toBe(true);
+});
+
+/**
+ * THE DISCRIMINATING TEST for the quantization floor.
+ *
+ * FDA/CFIA quantize printed saturated fat to 0.5 g steps, and the label is
+ * read PER SERVING then multiplied by `factor = 100 / labelGrams`, which
+ * multiplies that rounding error too. On this 30 g serving `factor` is 3.33,
+ * so ONE printed step is 1.67 g at the per-100 scale being compared — while
+ * `valuesMatch`'s 25% relative branch allows only 1.25 g at 5 g/100g. Two
+ * genuinely agreeing labels would therefore be reported as conflicting, and a
+ * conflict is expensive: it blanks the record's carbs/protein/fiber/sodium.
+ *
+ * The values below are exactly one printed step apart. The label prints 1.5 g
+ * per 30 g serving (5.0 per-100); the record's 3.4 per-100 is ~1.02 g on the
+ * same serving. Relative check: 1.6 / 5.0 = 32% — FAILS. Floor: 1.6 <= 1.67 —
+ * so the gap is fully explained by rounding and must not be called a conflict.
+ *
+ * Non-vacuity: verified to FAIL (conflict true, fields ["saturatedFat"]) when
+ * the `roundingFloor` term is removed from the comparison loop.
+ */
+it("does NOT conflict when label and record saturatedFat differ by one printed rounding step", () => {
+  const label: LabelNutritionInput = { ...cheddarLabel, saturatedFat: 1.5 };
+  const r = buildLabelConflict(cheddarDb(3.4), label);
+  expect(r.conflict).toBe(false);
+  expect(r.fields).toEqual([]);
+  expect(r.labelResult).toBeUndefined();
+  // Both values sit above 2, so `valuesMatch`'s ±1 absolute branch is NOT what
+  // saved this — the floor is. Pin that the relative check really did fail.
+  expect(valuesMatch(1.5 * (100 / 30), 3.4, 0.25)).toBe(false);
+});
+
+it("conflict path: label saturatedFat rides through when it AGREES with the record", () => {
+  // Conflict is triggered by calories/sugar (goodLabel vs. the unmodified
+  // Cherry Coke DB, same as the very first test in this file). The record
+  // carries a saturatedFat matching the label's scaled reading, so
+  // saturatedFat stays OUT of `fields` — this assertion is unchanged from
+  // when the field was excluded from `cmp`, but for a different reason: it is
+  // now compared and agrees, rather than never being compared.
+  const db = cherryCokeDb();
+  db.per100g = { ...db.per100g, saturatedFat: 1 }; // 3.55g / 355mL * 100 = 1
+  // `goodLabel` prints `Total Fat 0`, and a nonzero saturated fat beside a zero
+  // total fat is a panel that cannot exist — `enforceContainment` drops the
+  // child on exactly that shape, whichever source produced it. This test is
+  // about whether a saturatedFat reading is COMPARED and ADOPTED, not about
+  // containment, so the fixture states the total fat such a panel would really
+  // print: all of this product's fat is saturated. 3.55 g / 355 ml -> 1 g/100
+  // ml, which still agrees with the record's 0 inside `valuesMatch`'s <2
+  // absolute floor, so `fields` is unchanged.
+  const label: LabelNutritionInput = {
+    ...goodLabel,
+    totalFat: 3.55,
+    saturatedFat: 3.55,
+    directReads: ["saturatedFat"],
+  };
+  const r = buildLabelConflict(db, label);
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["calories", "sugar"]);
+  expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(1, 5);
+});
+
+it("conflict path: a DISAGREEING saturatedFat now joins `fields` alongside the others", () => {
+  const db = cherryCokeDb();
+  db.per100g = { ...db.per100g, saturatedFat: 10 }; // wildly different from 1
+  const label: LabelNutritionInput = {
+    ...goodLabel,
+    totalFat: 3.55, // see the containment note on the test above
+    saturatedFat: 3.55,
+    directReads: ["saturatedFat"],
+  };
+  const r = buildLabelConflict(db, label);
+  expect(r.conflict).toBe(true);
+  // The 355 ml serving makes `factor` 0.28, so the floor here is only 0.14 —
+  // a 9 g/100g gap is nowhere near explainable by rounding.
+  expect(r.fields).toEqual(["calories", "sugar", "saturatedFat"]);
+  // The label's value still wins in the merged block — not the DB's, not a
+  // blend. Corroboration changes what the user is TOLD differs, not which
+  // source the conflict path adopts.
+  expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(1, 5);
+});
+
+// ── `comparedCount`: saturatedFat is compared, but its agreement is not
+// evidence the SCREEN was checked.
+
+it("saturatedFat agreement does not raise comparedCount — the compared>=2 gate stays shut on calories alone", () => {
+  // Calories-only label (sugar/fat unread), mirroring "agreement on calories
+  // alone does not claim the label was verified" above, PLUS a saturatedFat
+  // reading that IS compared here and agrees (18 g / 355 ml = 5.07 per-100 vs
+  // the record's 5 — that value is load-bearing, not arbitrary).
+  //
+  // Correct behaviour: `comparedCount` stays 1, so `compared` stays false.
+  // saturatedFat's agreement test was deliberately widened by the quantization
+  // floor, which makes it materially weaker evidence than the other three — so
+  // it must not be the field that tips a trust gate the client stakes one-tap
+  // logging on. If `corroborates` were flipped to true, comparedCount would go
+  // 1 -> 2 and this would flip to `compared: true`.
+  //
+  // This case can only be built with an AGREEING saturatedFat: a disagreeing
+  // one takes the conflict path, where `compared` is unconditionally true.
+  const db = cherryCokeDb();
+  db.per100g = { calories: 39.4, sugar: 11, fat: 0, saturatedFat: 5 };
+  const r = buildLabelConflict(db, {
+    calories: 140,
+    totalSugars: null,
+    totalFat: null,
+    saturatedFat: 18,
+    servingSize: "1 can (355 mL)",
+    directReads: ["saturatedFat"],
+  });
+  expect(r.conflict).toBe(false);
+  expect(r.compared).toBe(false);
+});
+
+it("saturatedFat as the ONLY comparable field: disagreement conflicts, and the conflict path still reports compared", () => {
+  // The record has no calories/sugar/fat per-100 counterpart at all, so
+  // `comparedCount` is 0 — yet saturatedFat disagrees far beyond the floor and
+  // raises a conflict. `compared: true` is right on this path for the same
+  // reason it always was: the label's values REPLACE the ones they disagree
+  // with, so what is displayed did come from the package.
+  const db = cheddarDb(2);
+  db.per100g = { saturatedFat: 2 };
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null,
+  });
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["saturatedFat"]);
+  expect(r.compared).toBe(true);
+});
+
+it("saturatedFat as the ONLY comparable field: agreement alone does NOT claim the label was verified", () => {
+  // The mirror of the case above. Nothing disagreed, but the single field that
+  // agreed does not count toward `comparedCount`, so the one-tap-log gate
+  // stays shut — the sugar, fat, protein and sodium on screen were never
+  // checked against anything.
+  const db = cheddarDb(20.5);
+  db.per100g = { saturatedFat: 20.5 };
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null,
+  });
+  expect(r.conflict).toBe(false);
+  expect(r.fields).toEqual([]);
+  expect(r.compared).toBe(false);
+});
+
+// ── PROVENANCE: an INFERRED saturatedFat is accepted and adopted, but never
+// compared.
+//
+// The parser can reconstruct `saturatedFat` from its `totalFat` parent via the
+// `gluedUnitIsForced` containment rule. That inference's error is bounded only
+// by `[0, totalFat]`, while `roundingFloor` is sized for a 0.5 g printing step
+// — so comparing an inference at that tolerance lets a wrong one condemn the
+// record on its own. `directReads` is how the payload says which it was.
+
+it("does NOT compare saturatedFat when the payload carries NO provenance at all", () => {
+  // The old-client shape: `directReads` is literally ABSENT from the object,
+  // which is what every already-installed build and every older OTA bundle
+  // sends. Absent must read as "not a direct read" — never as "direct".
+  //
+  // Built by DELETING the key rather than passing `[]`, because those are
+  // different inputs and only this one models the client that exists in the
+  // field. (Same reasoning as
+  // docs/solutions/logic-errors/absent-field-beats-defaulted-one-in-a-precedence-chain-2026-07-31.md,
+  // which is about testing the encoding production actually emits.) The `[]`
+  // case is the test immediately below.
+  const { directReads: _omitted, ...noProvenance } = cheddarLabel;
+  expect(noProvenance).not.toHaveProperty("directReads");
+
+  // Identical to "a saturatedFat disagreement beyond the rounding floor
+  // conflicts on its own" above — same fixture, same 19 g/100g gap — except
+  // for the missing provenance. There it conflicts; here it must not.
+  const r = buildLabelConflict(cheddarDb(2), noProvenance);
+  expect(r.conflict).toBe(false);
+  expect(r.fields).toEqual([]);
+  // Still `compared`: calories/sugar/fat are three corroborating agreements and
+  // they were checked. Only the saturatedFat ROW was skipped.
+  expect(r.compared).toBe(true);
+});
+
+it("does NOT compare saturatedFat when provenance is present but does not list it", () => {
+  // The new-client inferred shape: the parser read calories/fat directly and
+  // reconstructed saturatedFat, so the field is sent (and still adopted) but
+  // is not in `directReads`.
+  const r = buildLabelConflict(cheddarDb(2), {
+    ...cheddarLabel,
+    directReads: ["calories", "totalFat"],
+  });
+  expect(r.conflict).toBe(false);
+  expect(r.fields).toEqual([]);
+});
+
+it("an unrecognised provenance entry is inert, not a comparison licence", () => {
+  // The wire type is loose strings so a newer client's extra key cannot 400 the
+  // whole request. Prove the looseness cannot be turned into a false positive:
+  // a list naming something else entirely still does not license saturatedFat.
+  const r = buildLabelConflict(cheddarDb(2), {
+    ...cheddarLabel,
+    directReads: ["somethingElse"],
+  });
+  expect(r.conflict).toBe(false);
+});
+
+it("still ADOPTS an unopposed inferred saturatedFat — provenance gates comparison, not adoption", () => {
+  // The label remains the source of truth for what it read. A conflict raised
+  // by calories/sugar still carries the label's saturatedFat into the corrected
+  // block even though that reading was never corroborated, exactly as it did
+  // before provenance existed.
+  const db = cherryCokeDb();
+  db.per100g = { ...db.per100g, saturatedFat: 10 };
+  const r = buildLabelConflict(db, {
+    ...goodLabel,
+    totalFat: 3.55, // see the containment note on "rides through when it AGREES"
+    saturatedFat: 3.55,
+  });
+  expect(r.conflict).toBe(true);
+  // saturatedFat is NOT reported as differing — it was never compared — but its
+  // value is still the label's (3.55 g / 355 mL * 100 = 1), not the record's 10.
+  expect(r.fields).toEqual(["calories", "sugar"]);
+  expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(1, 5);
+});
+
+// ── BLANKING SCOPE: a conflict raised only by non-corroborating fields must not
+// discard the record's un-read macros.
+//
+// `LabelNutritionInput` has no carbs/protein/sodium field, so those can only
+// come from the record. The blanking rationale was written for the Cherry Coke
+// shape, where a CALORIES disagreement implies the record's whole per-100 basis
+// is wrong. A saturatedFat-only disagreement with the other three AGREEING is
+// the case that disproves a basis-wide error rather than evidencing one.
+
+it("keeps the record's un-read macros when ONLY a non-corroborating field disagrees", () => {
+  // The reviewer's reproduction: db calories 380 / sugar 1.5 / fat 30 /
+  // satFat 2 / carbs 2 / protein 24 / sodium 650, against a label that agrees
+  // on calories, sugar and fat and disagrees only on saturatedFat.
+  const r = buildLabelConflict(cheddarDb(2), cheddarLabel);
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["saturatedFat"]);
+
+  // The conflict is still acted on: the label's saturatedFat replaces the
+  // record's.
+  expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(21, 5);
+  // ...but the three macros nothing disagreed about survive. Before this fix
+  // all three were `undefined`, which also silences every FSA flag they would
+  // have raised — 650 mg/100g of sodium is above the FSA_FOOD high line.
+  expect(r.labelResult!.per100g.carbs).toBe(2);
+  expect(r.labelResult!.per100g.protein).toBe(24);
+  expect(r.labelResult!.per100g.sodium).toBe(650);
+});
+
+it("never retains a DB total fat that the label's corrected saturated fat exceeds", () => {
+  // The impossible-relationship trap the OLD unconditional blanking made
+  // unreachable, one level down from the blanking scope itself. Keeping the
+  // record's siblings is right for carbs/protein/sodium — the label has no
+  // field for any of them — but `fat` is `saturatedFat`'s CONTAINMENT PARENT,
+  // and this is the one path where the two can come from different sources.
+  //
+  // The shape is a real parse, not a contrivance: the parser DECLINES a glued
+  // "Total Fat 19" (nothing to bound it), while "Saturated Fat 6 g" one line
+  // below is an ordinary direct read. So a panel can legitimately yield
+  // `totalFat: null` alongside a directly-read `saturatedFat`.
+  const db = cheddarDb(2);
+  db.per100g = { ...db.per100g, fat: 3 }; // record says 3 g/100g of total fat
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null, // the glued-form decline
+  });
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["saturatedFat"]);
+
+  // The label's saturated fat is adopted: 6.3 g / 30 g = 21 per-100.
+  expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(21, 5);
+  // Assert the INVARIANT, not just "fat is undefined" — mirroring the
+  // sugar > carbs tests above, so a future change that starts defaulting fat
+  // to 0 instead of dropping it is still caught.
+  const { fat, saturatedFat } = r.labelResult!.per100g;
+  expect(
+    fat !== undefined && saturatedFat !== undefined && saturatedFat > fat,
+  ).toBe(false);
+  // And the fix stays narrow: the three macros with no containment relationship
+  // to anything the label corrected are still kept.
+  expect(r.labelResult!.per100g.carbs).toBe(2);
+  expect(r.labelResult!.per100g.protein).toBe(24);
+  expect(r.labelResult!.per100g.sodium).toBe(650);
+});
+
+it("keeps a DB total fat that COMFORTABLY contains the corrected saturated fat", () => {
+  // The negative control that keeps the guard from collapsing into "always drop
+  // fat". The unmodified fixture's 30 g/100g of fat holds 21 g of saturated fat
+  // without contradiction, so there is nothing to protect the user from and the
+  // value is worth displaying.
+  const r = buildLabelConflict(cheddarDb(2), {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null,
+  });
+  expect(r.fields).toEqual(["saturatedFat"]);
+  expect(r.labelResult!.per100g.fat).toBe(30);
+});
+
+// ── CONTAINMENT TABLE: one test per row, asserting the NUMERIC INVARIANT.
+//
+// `enforceContainment` guards every pair in `CONTAINMENT_PAIRS`, not just the
+// `saturatedFat`/`fat` one that was reproduced first. Each test below asserts
+// `child <= parent` rather than `toBeUndefined()` on purpose: an assertion that
+// only checks a field vanished passes for the wrong reason the moment the drop
+// logic changes which side it drops, or starts defaulting to 0.
+//
+// Both bases are asserted. `per100g` is what the flag evaluator reads and
+// `perServing` is what the macro grid renders, and `scaleNutrients` builds the
+// second from the first — so a guard that fixed only one would be a guard that
+// fixed neither.
+
+/** Assert `child <= parent` on BOTH bases of a label-corrected result. */
+function expectContained(
+  result: BarcodeLookupResult,
+  child: "saturatedFat" | "sugar" | "transFat",
+  parent: "fat" | "carbs",
+) {
+  for (const basis of [result.per100g, result.perServing]) {
+    const c = basis[child];
+    const p = basis[parent];
+    expect(c !== undefined && p !== undefined && c > p).toBe(false);
+  }
+}
+
+it("row `sugar <= carbs`: never retains a DB carbs the label's sugar exceeds", () => {
+  // The defect the table was generalised for. Nothing about this record is
+  // exotic — 24 g of sugar in 25 g of carbohydrate is an ordinary near-limit
+  // confection, and the label AGREES with it: 8.7 g over a 30 g serving is 29
+  // per-100, inside `valuesMatch`'s 25% of 24, so `sugar` never joins `fields`.
+  // saturatedFat conflicts alone, which takes the retaining path, and the
+  // record's 25 g of carbs is then displayed beneath 29 g of sugar.
+  //
+  // `compared: true` is what makes it expensive: it drives the client's
+  // `labelUsed`, so `deriveLogGate` returns `{ kind: "open" }` and the
+  // impossible pair goes into the food log without the review step.
+  const db = cheddarDb(2);
+  db.per100g = { ...db.per100g, sugar: 24, carbs: 25 };
+  const r = buildLabelConflict(db, { ...cheddarLabel, totalSugars: 8.7 });
+
+  // Preconditions: exactly the shape described above, so a future change that
+  // stops reaching this branch fails here rather than passing vacuously.
+  expect(r.fields).toEqual(["saturatedFat"]);
+  expect(r.compared).toBe(true);
+  expect(r.labelResult!.per100g.sugar).toBeCloseTo(29, 5);
+  expect(r.labelResult!.perServing.sugar).toBeCloseTo(8.7, 5);
+
+  expectContained(r.labelResult!, "sugar", "carbs");
+  // The record's carbs is the side dropped, not the label's sugar: the label is
+  // the source of truth for what it read. Sugar also carries an FSA flag and
+  // carbs carries none, so this is the direction that cannot lose a warning.
+  expect(r.labelResult!.per100g.carbs).toBeUndefined();
+  // ...and the un-read macros with no containment relationship still survive.
+  expect(r.labelResult!.per100g.protein).toBe(24);
+  expect(r.labelResult!.per100g.sodium).toBe(650);
+});
+
+it("row `transFat <= fat`: never retains a DB trans fat the label's total fat exceeds", () => {
+  // The reachable shape is an OFF record carrying `trans-fat_100g` with no
+  // `fat_100g` at all — partial records are the norm there. With no DB `fat`
+  // the `fat` row is skipped for want of a counterpart, so nothing constrains
+  // the label's total fat against the record's trans fat, and the two land in
+  // the merged block from different sources with no comparison between them.
+  const db = cheddarDb(0.2);
+  db.per100g = {
+    calories: 380,
+    sugar: 1.5,
+    saturatedFat: 0.2,
+    transFat: 4,
+    carbs: 2,
+    protein: 24,
+    sodium: 650,
+    // NOTE: no `fat`.
+  };
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalFat: 1, // -> 3.33 per-100
+    saturatedFat: 0.9, // -> 3.0 per-100, comfortably inside 3.33
+    directReads: ["saturatedFat"],
+  });
+  // DB saturatedFat 0.2 vs the label's 2.0 is the conflict that reaches the
+  // retaining path; `fat` was never comparable and `sugar` agrees.
+  expect(r.fields).toEqual(["saturatedFat"]);
+  expect(r.labelResult!.per100g.fat).toBeCloseTo(3.3333, 3);
+
+  expectContained(r.labelResult!, "transFat", "fat");
+  // Here the RECORD holds the child and the label the parent, so the child is
+  // the side dropped — same rule from the other end. Assert the parent survived
+  // too, or "drop everything" would pass this test.
+  expect(r.labelResult!.per100g.transFat).toBeUndefined();
+  expect(r.labelResult!.perServing.fat).toBeCloseTo(1, 5);
+});
+
+it("row `saturatedFat <= fat` holds on BOTH bases, not just per-100", () => {
+  // The row the table was built around already has its own regression test
+  // above; this one adds the assertion that pins `perServing`, which is the
+  // basis the macro grid actually renders.
+  const db = cheddarDb(2);
+  db.per100g = { ...db.per100g, fat: 3 };
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null, // the glued-form decline
+  });
+  expect(r.fields).toEqual(["saturatedFat"]);
+  expect(r.labelResult!.perServing.saturatedFat).toBeCloseTo(6.3, 5);
+  expectContained(r.labelResult!, "saturatedFat", "fat");
+});
+
+it("guards a pair the LABEL supplied both sides of — there is no self-consistency carve-out", () => {
+  // `Total Fat 5g 6%` / `Saturated Fat 2g 9%` with the g -> 9 misread: the
+  // saturated-fat line reads 29 where the package prints 2, while the line
+  // above it reads perfectly. These are independent per-line captures, so
+  // "the label read both, therefore they agree with each other" is false — and
+  // it was the premise of the carve-out this replaces.
+  //
+  // At a 30 g serving that is 96.7 g of saturated fat inside 16.7 g of total
+  // fat: impossible against its own parent, and impossible outright.
+  const db = cheddarDb(2);
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: 5,
+    saturatedFat: 29,
+    // Provenance is absent for the corrupted field — the parser no longer
+    // vouches for a substituted-unit reading — so the server never COMPARES it.
+    // It is still adopted, which is exactly why the containment guard has to be
+    // the thing that catches it.
+    directReads: ["totalFat"],
+  });
+  expect(r.conflict).toBe(true);
+
+  expectContained(r.labelResult!, "saturatedFat", "fat");
+  // The CHILD is dropped here, not the parent: it is the reading that exceeds
+  // its own definitional bound, and `fat` is a corroborating field that either
+  // agreed with the record or was never comparable. Pin that the parent stayed,
+  // so this cannot pass by blanking the pair.
+  expect(r.labelResult!.per100g.saturatedFat).toBeUndefined();
+  expect(r.labelResult!.per100g.fat).toBeCloseTo(16.6667, 3);
+});
+
+it("leaves a record that contradicts ITSELF alone — the merge did not cause it", () => {
+  // Neither side came from the label: the record's own sugar exceeds its own
+  // carbs. This module's job is to stop the MERGE from inventing an impossible
+  // pair, not to repair the record — the same values render untouched on the
+  // plain lookup path, so acting only here would make the two paths disagree.
+  // Secondary: "drop the child" would land on the FLAG-BEARING side (sugar
+  // carries an FSA flag, carbs none), downgrading a specific "High in sugar"
+  // to the route's generic nutrient-unavailable notice.
+  const db = cheddarDb(2);
+  db.per100g = { ...db.per100g, sugar: 30, carbs: 5 };
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null, // the label read no sugars at all
+  });
+  expect(r.fields).toEqual(["saturatedFat"]);
+  expect(r.labelResult!.per100g.sugar).toBe(30);
+  expect(r.labelResult!.per100g.carbs).toBe(5);
+});
+
+it("is a no-op when the pair's PARENT is absent from the merged block entirely", () => {
+  // Nothing bounds the child, so there is no contradiction to display and
+  // nothing to drop. Well-defined rather than incidental: the alternative — a
+  // missing parent reading as 0 — would delete every saturated fat on every
+  // record OFF has no `fat_100g` for.
+  const db = cheddarDb(2);
+  db.per100g = { calories: 380, sugar: 1.5, saturatedFat: 2, protein: 24 };
+  const r = buildLabelConflict(db, {
+    ...cheddarLabel,
+    totalSugars: null,
+    totalFat: null, // no fat from the label either
+  });
+  expect(r.fields).toEqual(["saturatedFat"]);
+  expect(r.labelResult!.per100g.fat).toBeUndefined();
+  expect(r.labelResult!.per100g.saturatedFat).toBeCloseTo(21, 5);
+  expect(r.labelResult!.perServing.saturatedFat).toBeCloseTo(6.3, 5);
+});
+
+it("STILL blanks the un-read macros when a corroborating field disagrees too", () => {
+  // The Cherry Coke rule, pinned on the same fixture so the two branches differ
+  // in exactly one thing: whether a corroborating field is among the
+  // disagreements. Here the record's calories are wrong as well, which is the
+  // uniform-basis error the blanking exists for — so carbs, protein and sodium
+  // go, saturatedFat notwithstanding.
+  const db = cheddarDb(2);
+  db.per100g = { ...db.per100g, calories: 100 }; // vs the label's ~403
+  const r = buildLabelConflict(db, cheddarLabel);
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["calories", "saturatedFat"]);
+  expect(r.labelResult!.per100g.carbs).toBeUndefined();
+  expect(r.labelResult!.per100g.protein).toBeUndefined();
+  expect(r.labelResult!.per100g.sodium).toBeUndefined();
+});
+
+// ── FLOOR CLAMP: `step * factor` is unbounded, and `parseLabelServingGrams`
+// enforces no minimum serving.
+
+it("clamps the rounding floor so a tiny serving cannot swallow an FSA band crossing", () => {
+  // A 5 g serving (a spread/condiment portion) gives `factor` 20, so the raw
+  // floor would be 10 g/100g — nearly 3x the entire FSA_FOOD saturated-fat
+  // MEDIUM band (1.5 -> 5.0). Unclamped, the comparison could not see ANY
+  // crossing of the high-saturated-fat line.
+  //
+  // Label 0.5 g per 5 g serving = 10 per-100, which is HIGH on the FSA food
+  // scale; the record's 4.0 is MEDIUM. The gap is 6: the 25% relative branch
+  // allows only 2.5, and the clamped floor is (5.0 - 1.5) / 2 = 1.75. So it is
+  // a real disagreement.
+  //
+  // Non-vacuity: with the `Math.min(...)` clamp removed the floor is 10, 6 <= 10
+  // holds, and this returns `conflict: false`.
+  const db = cherryCokeDb();
+  db.servingInfo = { displayLabel: "5 g", grams: 5, wasCorrected: false };
+  db.per100g = { calories: 400, saturatedFat: 4.0 };
+  const r = buildLabelConflict(db, {
+    calories: 20, // -> 400 per-100, agreeing with the record
+    totalSugars: null,
+    totalFat: null,
+    saturatedFat: 0.5,
+    servingSize: "5 g",
+    directReads: ["saturatedFat"],
+  });
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["saturatedFat"]);
+});
+
+it("uses the narrower DRINK ceiling when the label's serving is in millilitres", () => {
+  // The two FSA scales differ by 2x, so the ceiling is scale-aware: 1.75 for
+  // food, (2.5 - 0.75) / 2 = 0.875 for drinks. This gap discriminates them.
+  //
+  // 15 ml serving -> `factor` 6.67, raw floor 3.33. Label 0.3 g -> 2.0 per-100;
+  // record 0.8. Gap 1.2: above the drink ceiling (0.875) so it conflicts, but
+  // BELOW the food ceiling (1.75) — if the food band were applied here this
+  // would be silently forgiven.
+  const db = cherryCokeDb();
+  db.servingInfo = { displayLabel: "15 mL", grams: 15, wasCorrected: false };
+  db.per100g = { calories: 66.7, saturatedFat: 0.8 };
+  const r = buildLabelConflict(db, {
+    calories: 10, // -> 66.7 per-100, agreeing
+    totalSugars: null,
+    totalFat: null,
+    saturatedFat: 0.3,
+    servingSize: "15 mL",
+    directReads: ["saturatedFat"],
+  });
+  expect(r.conflict).toBe(true);
+  expect(r.fields).toEqual(["saturatedFat"]);
+});
+
+it("the clamp does not disturb the ordinary 30 g serving the floor exists for", () => {
+  // Regression guard on the bound itself. At `factor` 3.33 the raw floor is
+  // 1.667, just under the 1.75 food ceiling — so the discriminating
+  // one-printed-step case above is decided by the DERIVED floor, not by the
+  // clamp. A tighter ceiling (e.g. half the drink band) would silently convert
+  // that test into a conflict and reintroduce rounding-only false positives.
+  const r = buildLabelConflict(cheddarDb(3.4), {
+    ...cheddarLabel,
+    saturatedFat: 1.5,
+  });
+  expect(r.conflict).toBe(false);
 });

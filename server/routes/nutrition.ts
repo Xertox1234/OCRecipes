@@ -16,7 +16,10 @@ import {
   buildScanResponseFlags,
   type ProfileOutcome,
 } from "../services/scan-flags";
-import { evaluateUniversalFlags } from "../services/universal-flags";
+import {
+  evaluateUniversalFlags,
+  NUTRIENT_FLAG_SOURCE_FIELD,
+} from "../services/universal-flags";
 import { buildLabelConflict } from "../services/label-override";
 import { createNutrientUnavailableFlag } from "@shared/types/scan-flags";
 import { parseUserAllergies } from "@shared/constants/allergens";
@@ -195,6 +198,24 @@ const labelNutritionSchema = z.object({
     totalFat: z.number().finite().nonnegative().max(100000).nullable(),
     saturatedFat: z.number().finite().nonnegative().max(100000).nullable(),
     servingSize: z.string().max(120).nullable(),
+    // OCR provenance: the parser fields read DIRECTLY off a glyph run, as
+    // opposed to reconstructed by its `gluedUnitIsForced` containment rule.
+    // `buildLabelConflict` will not COMPARE an inferred `saturatedFat` against
+    // the record — see the `requiresDirectRead` policy there.
+    //
+    // OPTIONAL, and that is load-bearing. Clients already installed (and every
+    // client on an older OTA bundle) send no such key, and an absent key must
+    // fall to "not a direct read" rather than defaulting to "direct" — a
+    // default in the other direction would leave every existing install on the
+    // exact behaviour this validates against. Making it REQUIRED would be worse
+    // still: those clients would 400 and lose the label entirely.
+    //
+    // Typed as loose strings rather than a `z.enum` of the four known fields on
+    // purpose. `z.enum` would reject the whole request the first time a future
+    // client adds a fifth provenance key against an older server, dropping the
+    // label; an unrecognised entry here is simply inert, since the only
+    // question ever asked of this list is whether it CONTAINS a given field.
+    directReads: z.array(z.string().max(40)).max(32).optional(),
   }),
 });
 
@@ -336,10 +357,8 @@ export function register(app: Express): void {
           profileOutcome,
           verification,
         );
-        const { conflict, fields, labelResult, compared } = buildLabelConflict(
-          result,
-          parsed.data.labelNutrition,
-        );
+        const { conflict, fields, labelResult, containmentDrops, compared } =
+          buildLabelConflict(result, parsed.data.labelNutrition);
         // `labelCompared` is additive and POST-only (the GET handler never
         // receives a label). It exists because a 200 without `conflict` is
         // ambiguous — buildLabelConflict returns that same shape when it DECLINES
@@ -353,19 +372,20 @@ export function register(app: Express): void {
             profileOutcome,
             verification,
           );
-          // The label-corrected block deliberately drops macros whose per-100
-          // basis the calorie disagreement just proved wrong, so the universal
-          // flag recompute emits nothing for them. Say that out loud: otherwise
-          // a missing "High in sugar" is indistinguishable from a low-sugar
-          // product, on the very screen that tells the user to trust the label.
+          // The label-corrected block can deliberately drop macros, and the
+          // universal flag recompute then emits nothing for them. Say that out
+          // loud: otherwise a missing "High in sugar" is indistinguishable from
+          // a low-sugar product, on the very screen that tells the user to
+          // trust the label.
           //
-          // Decided by DIFFING the two bodies, not by asking whether a value
-          // was dropped. Most records carry a sodium figure and the label input
-          // has no sodium field at all, so a value-presence test fires on
-          // essentially every scan — including records whose sodium is 0 or
-          // nowhere near the threshold, where no warning ever existed. Only a
-          // flag the record actually raised and the label body lost is a
-          // warning the user has genuinely stopped seeing.
+          // WHICH FLAGS ARE EVEN CANDIDATES is decided by DIFFING the two
+          // bodies, not by asking whether a value was dropped. Most records
+          // carry a sodium figure and the label input has no sodium field at
+          // all, so a value-presence test fires on essentially every scan —
+          // including records whose sodium is 0 or nowhere near the threshold,
+          // where no warning ever existed. Only a flag the record actually
+          // raised and the label body lost is a warning the user has genuinely
+          // stopped seeing.
           const lostNutrientFlags = body.flags.filter(
             (f) =>
               f.kind === "nutrient" &&
@@ -373,17 +393,83 @@ export function register(app: Express): void {
                 (lf) => lf.kind === "nutrient" && lf.nutrient === f.nutrient,
               ),
           );
+          // WHAT THE NOTICE SAYS is a separate question, and getting it from
+          // the diff alone is what made the previous copy false. A flag can
+          // vanish for three different reasons and they are not one sentence:
+          //
+          // 1. BLANKING — a corroborating disagreement proved the record's
+          //    whole per-100 basis wrong, so its un-read macros go. That
+          //    blanking is scoped: a conflict raised only by non-corroborating
+          //    fields (today, saturatedFat alone) KEEPS them, because the
+          //    fields that agreed are evidence the basis is sound. "The label
+          //    didn't match our record" is TRUE here — that comparison is the
+          //    very thing that caused the loss.
+          // 2. CONTAINMENT — `enforceContainment` dropped the value for
+          //    violating a `child <= parent` bound. This fires with NO
+          //    corroborating disagreement at all and on EITHER merge branch, so
+          //    it is not a special case of (1) — and "its values didn't match
+          //    the label" is FALSE here, sometimes backwards. The reproduced
+          //    case: the record's saturatedFat is never COMPARED (the payload
+          //    withheld direct-read provenance for it), the label's own
+          //    saturatedFat is a digit misread of its own panel, and the value
+          //    dropped is the LABEL's. Telling that user their label disagreed
+          //    with our record describes a comparison that did not happen.
+          // 3. NOT A LOSS AT ALL — the label read the nutrient itself and its
+          //    reading simply sits below the FSA line. The value is on screen;
+          //    the warning is correctly gone. Saying "it isn't shown for this
+          //    scan" about a number the user can see is the same category of
+          //    false statement, and this is the ORDINARY shape of a
+          //    wrong-high OFF record being corrected, not an exotic one. So it
+          //    raises nothing.
+          //
+          // Which of the three applies is read off the VALUE, never off
+          // `basisDisproven`: present -> (3); absent and reported by
+          // `containmentDrops` -> (2); absent otherwise -> (1). `per100g` is the
+          // authority because `perServing` is derived from it.
+          const droppedForContainment = new Map(
+            containmentDrops.flatMap((d) =>
+              d.nutrient ? [[d.nutrient, d] as const] : [],
+            ),
+          );
+          const blanked: string[] = [];
+          const impossible: string[] = [];
+          for (const f of lostNutrientFlags) {
+            // Narrowing only — `nutrient` is optional on `ScanFlag` but every
+            // `kind: "nutrient"` flag `evaluateUniversalFlags` emits sets it.
+            if (!f.nutrient) continue;
+            if (
+              labelResult.per100g[NUTRIENT_FLAG_SOURCE_FIELD[f.nutrient]] !==
+              undefined
+            )
+              continue; // (3)
+            const drop = droppedForContainment.get(f.nutrient);
+            if (drop) {
+              impossible.push(
+                `Our record flagged ${f.title.toLowerCase()}, but this scan's ${drop.childNoun} came out higher than its ${drop.parentNoun}, which can't be right, so that value isn't shown for this scan.`,
+              );
+            } else {
+              blanked.push(f.title.toLowerCase());
+            }
+          }
+          // One notice, not one per cause: `createNutrientUnavailableFlag` has a
+          // fixed id, and two flags sharing it would collide in the client's
+          // flag list. Blanking sentence first so the ordering is deterministic
+          // for both readers and tests; the blanked titles share a single
+          // sentence because they share a single explanation, while each
+          // containment drop names its own pair.
+          const notices = [
+            ...(blanked.length > 0
+              ? [
+                  `Our record flagged ${blanked.join(" and ")}, but the label's numbers didn't match our record's, so the record's other values weren't used and aren't shown for this scan.`,
+                ]
+              : []),
+            ...impossible,
+          ];
           const labelFlags =
-            lostNutrientFlags.length > 0
+            notices.length > 0
               ? [
                   ...labelBody.flags,
-                  createNutrientUnavailableFlag(
-                    `Our record flagged ${lostNutrientFlags
-                      .map((f) => f.title.toLowerCase())
-                      .join(
-                        " and ",
-                      )}, but its values didn't match the label, so they aren't shown for this scan.`,
-                  ),
+                  createNutrientUnavailableFlag(notices.join(" ")),
                 ]
               : labelBody.flags;
           res.json({

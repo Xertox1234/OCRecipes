@@ -8,6 +8,7 @@ applies_to: ["client/lib/nutrition-ocr-parser.ts", "client/lib/**/*.ts", "shared
 symptoms: ["A plausibility rule adopts a value that is wrong by an order of magnitude", "The rule's guard checks only that the reference field is non-null", "The reference field was itself read through the same tolerant path the rule is adjudicating", "A field that used to decline now returns a confident number, and the change looks like recall improvement"]
 severity: critical
 created: 2026-08-05
+last_updated: 2026-08-06
 ---
 
 # A derived bound is only as trustworthy as the derivation that produced it — a non-null check is not a trust check
@@ -74,16 +75,46 @@ const bound = result[parent];
 if (bound === null) return false;
 ```
 
-The marked values are still adopted for themselves — they are direct reads. They
-just cannot vouch for anything else. Pin the exact two-field chain as a
-regression test, plus a negative control proving containment against a
-real-unit parent still works.
+The marked values are still adopted for themselves. What they may not do is
+vouch for anything — **and "anything" turned out to have two consumers, not
+one.** The first revision applied the judgement only to `gluedUnitIsForced`
+(such a value cannot BOUND another field) while the same value kept being pushed
+into `directReads`, the provenance list the server reads to decide whether a
+reading may CONDEMN a database record:
+
+```ts
+result[key] = value;
+if (match[2]) substitutedUnit.add(key);
+result.directReads.push(key);      // fires even when the value is itself corrupt
+```
+
+That is the same defect one level out. `Saturated Fat 2g 9%` — an unremarkable
+US panel line — misreads to `Saturated Fat 29 9%`, adopting 29 where the package
+prints 2, while `Total Fat 5g 6%` on the line above parses perfectly. The
+corrupted value was then published as a *direct read*, so `buildLabelConflict`
+compared it against the record at a tolerance sized for a 0.5 g printing step
+and let it overwrite a correct entry. The fix is one `else`:
+
+```ts
+if (match[2]) substitutedUnit.add(key);
+else result.directReads.push(key);
+```
+
+Pin the exact two-field chain as a regression test, plus a negative control
+proving containment against a real-unit parent still works, plus the
+substituted-unit panel end-to-end: value adopted, `confidence` unchanged,
+`directReads` silent, server does not compare.
 
 ## Prevention
 
 - When a rule reasons over previously-parsed values, ask **how each one was
   obtained**. If any path to it was tolerant, heuristic, defaulted or inferred,
   a plausibility check built on it inherits that uncertainty.
+- Once you decide a value is too ambiguous to vouch for, **enumerate every
+  consumer of that judgement and apply it to all of them.** Marking it in a
+  local set that one rule consults is half a fix if a second channel is
+  simultaneously publishing the same value as trustworthy. Grep for what else
+  reads the field, not just for what reads the marker.
 - `!= null` is an existence check. If the code comment says "trustworthy",
   "valid" or "correct", the guard needs to test that property, not presence.
 - Adding a tolerance rule can weaponise a *pre-existing* weakness elsewhere.
@@ -96,7 +127,7 @@ real-unit parent still works.
 
 - `client/lib/nutrition-ocr-parser.ts` — `gluedUnitIsForced`, `PARENT_FIELD`, the `substitutedUnit` set
 - `client/lib/__tests__/nutrition-ocr-parser.test.ts` — "declines a parent whose own unit was substituted" and its negative control
-- `server/services/label-override.ts` — where these values land; `saturatedFat` is not corroborated by `cmp`
+- `server/services/label-override.ts` — where these values land. `saturatedFat` IS corroborated by `cmp`, behind a clamped floor derived from the label's 0.5 g printing step — but **only when the payload's `directReads` says the parser read it directly.** A value this rule INFERRED is still adopted and never compared, because the inference's error is bounded by `[0, totalFat]` while the floor is sized for a 0.5 g print step. That is the downstream half of this same lesson: a bound is only as trustworthy as its derivation, so the derivation has to survive the trip across the wire
 
 ## See Also
 

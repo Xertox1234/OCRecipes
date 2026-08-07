@@ -95,6 +95,104 @@ function correctCokeDbResult(): BarcodeLookupResult {
   } satisfies BarcodeLookupResult;
 }
 
+// ── Fixtures for the lost-flag notice (`nutrient-unavailable`) ──
+//
+// The notice has to name the CAUSE of a vanished nutrient warning, and the
+// causes are behaviourally different enough that each needs its own record.
+// All three are FOOD (no beverage category tag) so the FSA_FOOD lines apply:
+// sugar > 22.5, saturatedFat > 5.0, sodium > 600 per 100 g. Every serving is
+// under 100 g so the per-portion escalation branch stays inert.
+
+// CONTAINMENT cause, exactly as reproduced in the PR #764 final review: the
+// record's saturatedFat (8) is above the FSA high line, the label reads a
+// corroborating totalFat that DISAGREES, and the label's own saturatedFat is a
+// digit misread of its own panel ("2g 9%" -> 29). Provenance names only
+// `totalFat`, so saturatedFat is never compared against the record — yet it is
+// dropped, for exceeding the total fat it is part of. Carries no sodium/sugar
+// so `nutrient:saturated_fat` is the record's ONLY nutrient flag.
+function misreadSatFatDbResult(): BarcodeLookupResult {
+  return {
+    productName: "Aged Cheddar",
+    barcode: "07100001",
+    per100g: { calories: 500, fat: 5, saturatedFat: 8, protein: 20, carbs: 3 },
+    perServing: {
+      calories: 150,
+      fat: 1.5,
+      saturatedFat: 2.4,
+      protein: 6,
+      carbs: 0.9,
+    },
+    servingInfo: { displayLabel: "30 g", grams: 30, wasCorrected: false },
+    isServingDataTrusted: true,
+    source: "openfoodfacts+self-consistent",
+    allergenDataAvailable: true,
+    categoriesTags: ["en:cheeses"],
+  } satisfies BarcodeLookupResult;
+}
+
+// Same record plus a high-sodium figure the label cannot read, so ONE response
+// loses one flag to containment and another to blanking.
+function misreadSatFatSaltyDbResult(): BarcodeLookupResult {
+  const base = misreadSatFatDbResult();
+  return {
+    ...base,
+    per100g: { ...base.per100g, sodium: 900 },
+    perServing: { ...base.perServing, sodium: 270 },
+  } satisfies BarcodeLookupResult;
+}
+
+// The label payload for both of the above. `directReads: ["totalFat"]` is
+// load-bearing: it is what keeps saturatedFat OUT of the comparison, which is
+// what makes "its values didn't match the label" a false statement about it.
+const misreadSatFatLabel = {
+  calories: 150, // ×(100/30) = 500 per-100 — AGREES with the record
+  totalSugars: null,
+  totalFat: 5, // ×(100/30) = 16.7 per-100 — disagrees with the record's 5
+  saturatedFat: 29, // ×(100/30) = 96.7 per-100 — impossible against 16.7
+  servingSize: "30 g",
+  directReads: ["totalFat"],
+};
+
+// BLANKING cause: the label disagrees on CALORIES (a corroborating field), so
+// the record's whole per-100 basis is judged wrong and its un-read macros —
+// including the sodium behind the record's only nutrient flag — are dropped.
+function highSodiumDbResult(): BarcodeLookupResult {
+  return {
+    productName: "Instant Noodles",
+    barcode: "07100002",
+    per100g: { calories: 450, sugar: 2, fat: 18, sodium: 900, carbs: 60 },
+    perServing: {
+      calories: 383,
+      sugar: 1.7,
+      fat: 15.3,
+      sodium: 765,
+      carbs: 51,
+    },
+    servingInfo: { displayLabel: "85 g", grams: 85, wasCorrected: false },
+    isServingDataTrusted: true,
+    source: "openfoodfacts+self-consistent",
+    allergenDataAvailable: true,
+    categoriesTags: ["en:meals"],
+  } satisfies BarcodeLookupResult;
+}
+
+// NOT-A-LOSS case: a wrong-high OFF sugar figure (30 -> flagged) corrected by a
+// label that READ sugar and read it low. The warning is correctly gone and the
+// value is on screen, so there is nothing to apologise for.
+function wrongHighSugarDbResult(): BarcodeLookupResult {
+  return {
+    productName: "Plain Yogurt",
+    barcode: "07100003",
+    per100g: { calories: 400, sugar: 30, protein: 5, carbs: 70, fat: 2 },
+    perServing: { calories: 200, sugar: 15, protein: 2.5, carbs: 35, fat: 1 },
+    servingInfo: { displayLabel: "50 g", grams: 50, wasCorrected: false },
+    isServingDataTrusted: true,
+    source: "openfoodfacts+self-consistent",
+    allergenDataAvailable: true,
+    categoriesTags: ["en:yogurts"],
+  } satisfies BarcodeLookupResult;
+}
+
 const mockScannedItem = createMockScannedItem({
   id: 1,
   userId: "1",
@@ -1113,6 +1211,126 @@ describe("Nutrition Routes", () => {
       // exactly what let the gate open on the un-compared Cherry Coke record.
       expect(res.body.conflict).toBeUndefined();
       expect(res.body.labelCompared).toBe(false);
+    });
+
+    // ── The lost-flag notice must name the RIGHT cause ──
+    //
+    // A nutrient warning can disappear from the label-corrected body for
+    // reasons that are not the same sentence, and for one of them the original
+    // copy ("its values didn't match the label") described a comparison that
+    // never ran. Asserting only that A notice exists cannot catch that, so
+    // every test below asserts the WORDING, and each asserts the absence of the
+    // other cause's wording.
+    const noticeDetail = (res: {
+      body: {
+        conflict: {
+          label: {
+            flags: {
+              id: string;
+              detail?: string;
+            }[];
+          };
+        };
+      };
+    }) =>
+      res.body.conflict.label.flags.find((f) => f.id === "nutrient-unavailable")
+        ?.detail;
+
+    it("blames the label-vs-record mismatch when the record's macros were BLANKED", async () => {
+      mockLookup.mockResolvedValue(highSodiumDbResult()); // sodium 900 -> High in sodium
+      const res = await authedPost("/api/nutrition/barcode/07100002", {
+        labelNutrition: {
+          calories: 100, // ×(100/85) = 118 per-100 vs the record's 450
+          totalSugars: null,
+          totalFat: null,
+          saturatedFat: null,
+          servingSize: "85 g",
+        },
+      });
+      expect(res.status).toBe(200);
+      // A CORROBORATING field disagreed, which is what makes the mismatch
+      // wording true — the comparison it describes is the cause of the loss.
+      expect(res.body.conflict.fields).toEqual(["calories"]);
+      expect(
+        res.body.flags.some((f: { id: string }) => f.id === "nutrient:sodium"),
+      ).toBe(true);
+      expect(
+        res.body.conflict.label.flags.some(
+          (f: { id: string }) => f.id === "nutrient:sodium",
+        ),
+      ).toBe(false);
+      expect(noticeDetail(res)).toBe(
+        "Our record flagged high in sodium, but the label's numbers didn't match our record's, so the record's other values weren't used and aren't shown for this scan.",
+      );
+    });
+
+    it("blames the impossible reading when the value was dropped for CONTAINMENT", async () => {
+      mockLookup.mockResolvedValue(misreadSatFatDbResult()); // saturatedFat 8 -> High in saturated fat
+      const res = await authedPost("/api/nutrition/barcode/07100001", {
+        labelNutrition: misreadSatFatLabel,
+      });
+      expect(res.status).toBe(200);
+      // EXACTLY ["fat"], not arrayContaining: the whole point of this shape is
+      // that saturatedFat was never compared (provenance named only totalFat),
+      // so telling the user it "didn't match" would be a lie about a comparison
+      // that did not happen. If `directReads` ever stopped reaching the service,
+      // saturatedFat would join this list and the assertion would fail.
+      expect(res.body.conflict.fields).toEqual(["fat"]);
+      expect(
+        res.body.flags.some(
+          (f: { id: string }) => f.id === "nutrient:saturated_fat",
+        ),
+      ).toBe(true);
+      expect(
+        res.body.conflict.label.flags.some(
+          (f: { id: string }) => f.id === "nutrient:saturated_fat",
+        ),
+      ).toBe(false);
+      expect(noticeDetail(res)).toBe(
+        "Our record flagged high in saturated fat, but this scan's saturated fat came out higher than its total fat, which can't be right, so that value isn't shown for this scan.",
+      );
+      // The distinguishing assertion: the blanking sentence must NOT appear.
+      expect(noticeDetail(res)).not.toContain("didn't match");
+    });
+
+    it("says BOTH, in a fixed order, when one response loses a flag to each cause", async () => {
+      mockLookup.mockResolvedValue(misreadSatFatSaltyDbResult());
+      const res = await authedPost("/api/nutrition/barcode/07100001", {
+        labelNutrition: misreadSatFatLabel,
+      });
+      expect(res.status).toBe(200);
+      expect(noticeDetail(res)).toBe(
+        "Our record flagged high in sodium, but the label's numbers didn't match our record's, so the record's other values weren't used and aren't shown for this scan. " +
+          "Our record flagged high in saturated fat, but this scan's saturated fat came out higher than its total fat, which can't be right, so that value isn't shown for this scan.",
+      );
+    });
+
+    it("says nothing when the flag went away because the LABEL's own reading is below the line", async () => {
+      mockLookup.mockResolvedValue(wrongHighSugarDbResult()); // sugar 30 -> High in sugar
+      const res = await authedPost("/api/nutrition/barcode/07100003", {
+        labelNutrition: {
+          calories: 200, // ×2 = 400 per-100 — agrees
+          totalSugars: 4, // ×2 = 8 per-100 vs the record's 30
+          totalFat: null,
+          saturatedFat: null,
+          servingSize: "50 g",
+        },
+      });
+      expect(res.status).toBe(200);
+      // Non-vacuity: the record DID raise the flag and the label body DID lose
+      // it, so this exercises the suppression branch rather than a no-op.
+      expect(
+        res.body.flags.some((f: { id: string }) => f.id === "nutrient:sugar"),
+      ).toBe(true);
+      expect(
+        res.body.conflict.label.flags.some(
+          (f: { id: string }) => f.id === "nutrient:sugar",
+        ),
+      ).toBe(false);
+      // ...but the value is right there on screen, so no cause applies. Any
+      // notice here would tell the user a number they can see "isn't shown".
+      expect(res.body.conflict.label.per100g.sugar).toBeCloseTo(8);
+      expect(noticeDetail(res)).toBeUndefined();
     });
   });
 

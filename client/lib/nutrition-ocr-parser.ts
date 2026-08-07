@@ -5,7 +5,13 @@
  */
 import { parseLabelServingGrams } from "@shared/lib/label-serving";
 
-export interface LocalNutritionData {
+/**
+ * The ten numeric fields, split out so `NumericField` can be `keyof` them
+ * WITHOUT `LocalNutritionData` (which now carries a `NumericField[]`) having to
+ * reference itself. The previous `keyof Omit<LocalNutritionData, ...>` form
+ * would have become a type cycle the moment a field held that union.
+ */
+interface LocalNutritionNumbers {
   calories: number | null;
   totalFat: number | null;
   saturatedFat: number | null;
@@ -16,8 +22,39 @@ export interface LocalNutritionData {
   dietaryFiber: number | null;
   totalSugars: number | null;
   protein: number | null;
+}
+
+export interface LocalNutritionData extends LocalNutritionNumbers {
   servingSize: string | null;
   confidence: number;
+  /**
+   * PROVENANCE. The fields whose value AND unit were both read directly off a
+   * glyph run — so neither reconstructed by the `gluedUnitIsForced` containment
+   * rule in the second pass below, nor read through a unit the recogniser
+   * turned into a digit.
+   *
+   * A SUBSET of the fields `confidence` counts, and deliberately not the same
+   * set. `confidence` asks how much of the panel yielded a number at all, which
+   * is the right question for gating a local preview; this list asks which of
+   * those numbers may be used to CONDEMN a database record, which is a higher
+   * bar. A spaced substituted unit ("Saturated Fat 29 9%", where the package
+   * prints 2 g) clears the first and fails the second.
+   *
+   * It exists because the server has to be able to tell the two apart. An
+   * inference's error is bounded only by the parent field it was tested
+   * against (`[0, totalFat]` for `saturatedFat`), which is orders of magnitude
+   * wider than the printed-rounding error a direct read carries — and
+   * `buildLabelConflict` compares `saturatedFat` against the database record
+   * with a tolerance calibrated for the LATTER. A wrong inference compared at a
+   * print-rounding tolerance can raise a conflict on its own, and a conflict
+   * rewrites what lands in the user's food log. So the comparison is gated on
+   * this list; adoption is not. See `toLabelNutritionPayload` below and the
+   * comment above `cmp` in `server/services/label-override.ts`.
+   *
+   * A field being ABSENT from this list must always read as "not a direct
+   * read". It is never a claim in the other direction.
+   */
+  directReads: NumericField[];
 }
 
 /** Fix common OCR character misreads in numeric strings */
@@ -39,10 +76,7 @@ function extractNumber(raw: string): number | null {
   return num;
 }
 
-type NumericField = keyof Omit<
-  LocalNutritionData,
-  "servingSize" | "confidence"
->;
+export type NumericField = keyof LocalNutritionNumbers;
 
 interface FieldPattern {
   key: NumericField;
@@ -240,17 +274,27 @@ const FIELD_PATTERNS: FieldPattern[] = [
 // parser still refuses ("2.59" -> 2.5 g, true only if you assume the printing
 // precision rules).
 //
-// Know what happens downstream before widening this. `saturatedFat` is in the
-// override payload but is the one payload field `buildLabelConflict` does NOT
-// corroborate: its `cmp` list is calories/sugar/fat, so `per100.saturatedFat`
-// rides into `mergedPer100g` whenever some OTHER field triggers a conflict,
-// with no comparison of its own (`server/services/label-override.ts`). While
-// glued forms were declined outright that gap was rarely reached; this is the
-// first rule that populates `saturatedFat` by INFERENCE, so it is now exercised
-// routinely. The containment argument is strong enough to carry that (fat
-// containment holds in every regime, unlike the carbohydrate case below), but
-// any future rule admitting a weaker inference into this field is putting an
-// uncorroborated number straight into the user's log.
+// Know what happens downstream before widening this. `buildLabelConflict` now
+// DOES corroborate `saturatedFat` against the database record — it is in the
+// `cmp` list alongside calories/sugar/fat, with a quantization floor that
+// keeps the label's 0.5 g printing step from firing a conflict on rounding
+// alone, and with its agreement excluded from the `compared >= 2` one-tap-log
+// gate. The full reasoning lives in ONE place, the comment above `cmp` in
+// `server/services/label-override.ts` — read it there, not here.
+//
+// What that does NOT buy this rule: a record with no `saturated-fat_100g`
+// figure has nothing to compare against, so `per100.saturatedFat` still rides
+// into `mergedPer100g` uncorroborated whenever another field triggers a
+// conflict on such a record. Nothing else re-checks the number either —
+// `shouldReplaceWithAI` (client/screens/label-analysis-utils.ts) compares only
+// calories/fat/protein/carbs/sodium. While glued forms were declined outright
+// that path was rarely reached; this is the first rule that populates
+// `saturatedFat` by INFERENCE, so it is now exercised routinely.
+//
+// So this stays the boundary: the containment argument (see PARENT_FIELD's
+// docblock below) is strong enough to carry adoption on its own, but any
+// future rule admitting a WEAKER inference into this field is putting a raw
+// value into the user's log that the server can only sometimes check.
 
 /**
  * Fields whose value cannot exceed another field's ON THE PRINTED PANEL. A
@@ -373,6 +417,7 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
     protein: null,
     servingSize: null,
     confidence: 0,
+    directReads: [],
   };
 
   if (!text.trim()) return result;
@@ -404,11 +449,20 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   let extracted = 0;
   const glued: { key: NumericField; value: number; raw: string }[] = [];
   // Fields whose UNIT was a substituted "9" with a space before it, not a real
-  // "g". The VALUE was read directly, so it is adopted and counts toward
-  // confidence exactly as before — but it must never bound another field. The
-  // glyph standing in for the unit is indistinguishable from a daily value
-  // that lost its "%", so the value it leaves behind can be an order of
-  // magnitude out ("Total Fat 129 9%" -> 129) while looking perfectly ordinary.
+  // "g". The value is still adopted and still counts toward confidence — it is
+  // the best reading available and something has to be shown — but the glyph
+  // standing in for the unit is indistinguishable from a daily value that lost
+  // its "%", so the VALUE it leaves behind can be an order of magnitude out
+  // while looking perfectly ordinary. "Total Fat 129 9%" -> 129 is the case the
+  // rule was written from; "Saturated Fat 29 9%" is the same shape on an
+  // entirely ordinary panel (`Total Fat 5g 6%` / `Saturated Fat 2g 9%` with the
+  // g -> 9 misread this file calls the single largest cause of dropped fields),
+  // reading 29 where the package prints 2.
+  //
+  // So such a value may neither BOUND another field (`gluedUnitIsForced` checks
+  // this set) nor be VOUCHED FOR as a direct read (it is kept out of
+  // `directReads` below). Those are the same judgement applied to the two
+  // consumers: a reading this ambiguous is not evidence about anything.
   const substitutedUnit = new Set<NumericField>();
   for (const { key, pattern } of FIELD_PATTERNS) {
     const match = text.match(pattern);
@@ -422,7 +476,22 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
       continue;
     }
     result[key] = value;
+    // Provenance: this pass is the only one that can produce a DIRECT glyph
+    // read, but not every value it produces IS one. A spaced substituted unit
+    // (group 2) means the token that should have been "g" was recognised as a
+    // digit, and that digit may have been swallowed into the value — so the
+    // reading is adopted without being vouched for.
+    //
+    // `extracted` and `directReads` therefore count DIFFERENT things on
+    // purpose, and an earlier revision's comment here claimed the opposite.
+    // `confidence` asks "how much of this panel did we get a number out of",
+    // which gates the local preview; `directReads` asks "which of those numbers
+    // may CONDEMN a database record", which gates `buildLabelConflict`'s
+    // comparison. A value whose own unit was ambiguous answers yes to the first
+    // and no to the second. `directReads.length <= extracted`, never equal by
+    // construction.
     if (match[2]) substitutedUnit.add(key);
+    else result.directReads.push(key);
     extracted++;
   }
 
@@ -438,12 +507,20 @@ export function parseNutritionFromOCR(text: string): LocalNutritionData {
   // bound of 0 can promote no non-zero child. Reorder the patterns, or add a
   // rule that resolves to something other than 0, and this needs rechecking.
   //
-  // Adopted fields deliberately do NOT count toward `confidence`. That number
-  // gates the instant local preview in `LabelAnalysisScreen` at 0.6, and it
-  // means "how much of this panel did we actually READ". An inference from a
-  // neighbouring value is weaker evidence than a glyph, and letting it lift a
-  // label over the gate would put inferred numbers in front of the user with
-  // nothing distinguishing them from measured ones.
+  // Adopted fields deliberately do NOT count toward `confidence`, and equally
+  // deliberately do NOT join `directReads`. That number gates the instant local
+  // preview in `LabelAnalysisScreen` at 0.6, and it means "how much of this
+  // panel did we actually READ". An inference from a neighbouring value is
+  // weaker evidence than a glyph, and letting it lift a label over the gate
+  // would put inferred numbers in front of the user with nothing
+  // distinguishing them from measured ones.
+  //
+  // `directReads` carries that same distinction ACROSS THE WIRE, because the
+  // server needs it too: `buildLabelConflict` compares `saturatedFat` against
+  // the database record at a tolerance sized for printed rounding, while an
+  // inference's error is bounded only by `totalFat`. Omitting the field here is
+  // what stops a wrong inference from raising a conflict — a conflict rewrites
+  // the numbers in the user's food log.
   for (const { key, value, raw } of glued) {
     if (!gluedUnitIsForced(key, value, raw, result, substitutedUnit)) continue;
     result[key] = value;
@@ -497,4 +574,39 @@ export function isLabelReady(
   // here, `null` there), which is precisely how a label could pass this gate
   // and be refused downstream.
   return parseLabelServingGrams(parsed.servingSize) != null;
+}
+
+/**
+ * The `labelNutrition` body `useNutritionLookup` POSTs to
+ * `/api/nutrition/barcode/:code`.
+ *
+ * A function rather than an inline object literal at the call site so the
+ * mapping has ONE definition. The reviewers found no test covering
+ * parser -> server at all — the parser suite and the `buildLabelConflict` suite
+ * use disjoint hand-written fixtures — so a payload built inline was a seam
+ * nothing could reach. `directReads` in particular is inert unless it is
+ * actually sent, and a test that rebuilt the body itself would have proven
+ * nothing about the client.
+ *
+ * The return type is declared here rather than imported from the server's
+ * `LabelNutritionInput`: client code must not depend on server modules. The
+ * integration test hands this value straight to `buildLabelConflict`, which is
+ * what type-checks the two shapes against each other.
+ */
+export function toLabelNutritionPayload(parsed: LocalNutritionData): {
+  calories: number | null;
+  totalSugars: number | null;
+  totalFat: number | null;
+  saturatedFat: number | null;
+  servingSize: string | null;
+  directReads: NumericField[];
+} {
+  return {
+    calories: parsed.calories,
+    totalSugars: parsed.totalSugars,
+    totalFat: parsed.totalFat,
+    saturatedFat: parsed.saturatedFat,
+    servingSize: parsed.servingSize,
+    directReads: parsed.directReads,
+  };
 }
