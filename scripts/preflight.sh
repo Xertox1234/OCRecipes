@@ -107,6 +107,19 @@ if [ "$MODE" = "fast" ]; then
     run env ESLINT_NO_TYPE_AWARE= npx eslint "${CHANGED[@]}" || exit 1
   fi
 
+  # Rules-file size guard on changed rules files. Run STREAMED (not via run(), which is quiet
+  # on success) because its sub-cap advisory is the whole point and only matters if a human
+  # reads it. The other two venues both swallow it: lint-staged forwards a task's output only
+  # when the task FAILS or with verbose:true (neither applies at .husky/pre-commit), and a
+  # green CI job is post-push and unopened. This is the last moment the author still has the
+  # context to trim. Over-cap is still fatal here — the advisory is the only non-fatal part.
+  RULES_CHANGED=()
+  while IFS= read -r f; do [ -n "$f" ] && RULES_CHANGED+=("$f"); done \
+    < <(git diff --name-only --diff-filter=ACMRT "${DIFF_BASE_ARGS[@]}" -- 'docs/rules/*.md' 2>/dev/null)
+  if [ "${#RULES_CHANGED[@]}" -gt 0 ]; then
+    node scripts/check-rules-file-size.js "${RULES_CHANGED[@]}" || exit 1
+  fi
+
   # Whole-program type check (cannot be scoped).
   run npm run check:types || exit 1
 

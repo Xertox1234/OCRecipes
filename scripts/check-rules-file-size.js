@@ -52,21 +52,28 @@ const colors = {
 
 const MAX_BYTES = 6500;
 
-// Advisory threshold. Above this a file still PASSES — it only prints how much
-// headroom is left. The cap alone is a wall: a file sits comfortably under it
-// for months, then one codification pass lands on 6,501 B and the author has to
-// stop and run a whole trim. Three such trims happened in three months
-// (accessibility.md twice, security.md twice), because codification adds and
-// nothing prunes. The advisory turns that wall into a gradient, so the trim
-// happens in small increments while the person still has the context.
-// Deliberately non-failing: a warning that fails the build is just a second
-// wall 800 B earlier.
+// Advisory threshold — see the header for why. Deliberately non-failing: a
+// warning that fails the build is just a second wall 800 B earlier.
 const WARN_BYTES = 5700;
+
+// The advisory window is [WARN_BYTES, cap]. Inverting the constants would make
+// the advisory branch unreachable dead code — every byte count large enough to
+// enter it would already have failed the cap check — and nothing else would
+// notice. Fail loudly at load instead.
+if (WARN_BYTES >= MAX_BYTES) {
+  throw new Error(
+    `check-rules-file-size: WARN_BYTES (${WARN_BYTES}) must be below MAX_BYTES (${MAX_BYTES}); the advisory window is empty.`,
+  );
+}
 
 // Files already over the cap when the guard landed get a FROZEN cap just above
 // their current size — they may shrink but not grow. Add an entry only for a
 // genuinely over-cap file that cannot be trimmed immediately; remove it once the
 // file is trimmed under MAX_BYTES. Currently empty (all rules files fit the cap).
+// INVARIANT: a grandfathered cap must stay >= WARN_BYTES. By construction one
+// always is (entries are set just above a file that already exceeded MAX_BYTES),
+// but a cap below WARN_BYTES would erase that file's advisory window entirely —
+// it would jump from silent-pass straight to hard-fail with no warning.
 const GRANDFATHERED = new Map();
 
 function relPath(filePath) {
@@ -108,7 +115,7 @@ function main() {
       advisories++;
       console.log(`${colors.cyan}${rel}${colors.reset}`);
       console.log(
-        `  ${colors.yellow}!${colors.reset} ${bytes} B — approaching the ${cap} B cap, ${cap - bytes} B left. Not a failure. Trim now while you have the context: consolidate bullets that restate a shared exception, and move rationale into a docs/solutions/ file the bullet cites — keeping every binding imperative here.`,
+        `  ${colors.yellow}!${colors.reset} ${bytes} B — approaching the ${cap} B cap, ${cap - bytes} B left. Not a failure; trim now while you have the context. Consolidate bullets that restate a shared exception (the dominant bloat mechanism), and tighten prose. Move rationale to a cited solution ONLY where the imperative left behind still stands alone — a citation must win one of ~4 date-ranked slots to be surfaced at all, so relocating a load-bearing detail into one is a reachability downgrade.`,
       );
     }
   }
