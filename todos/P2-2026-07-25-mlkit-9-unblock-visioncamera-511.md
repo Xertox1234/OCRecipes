@@ -8,7 +8,7 @@ assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
 human_led: true
-blocked_reason: "SHIPPED 2026-07-29 — the upgrade is LIVE on main; what remains is device verification only, which is why this stays blocked rather than open. Criteria #1, #2, #3, #4, #6 CLOSED. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) MERGED to main 2026-07-29 as ed8ec449 (squash) — merged with criteria #5-Android, #7 and #8 still OPEN, so the upgrade is live and unverified in exactly those three respects. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. DEVICE PASS RUN 2026-07-28: a VisionCamera 5.1.1 codegen regression aborted the app on camera mount (SIGABRT) — FIXED via patch-package in 34d75bef. AC #4 then CLOSED on device (Cherry Coke 06772408: Trust-the-Label conflict UI, Label column 140 kcal matching the can) — MLKit 9 TextRecognition confirmed compatible, and the first runtime verification of PR #695. No correctness defect blocks #729. Remaining work is device-only coverage, unreachable by any autonomous executor: #5 barcode on Android (iOS half PASSED), #7 tap-to-focus (not exercisable in the barcode flow — it auto-advances; use a no-barcode HUNTING state), #8 useCameraDevice lens selection at 10-15cm (normal range PASSED). RESIDUAL RISK NOW CARRIED ON MAIN: patches/react-native-vision-camera+5.1.1.patch is load-bearing — it restores the enableJsiParser flag VisionCamera 5.1.1 dropped, and without it the camera aborts (SIGABRT) on mount. The upstream regression was still NOT reported as of 2026-08-08 and 5.2.0 carries the same bug, so any future VisionCamera bump must carry this patch forward or silently re-break camera mount. Device testing needs a native build at runtimeVersion 1.2.0; an OTA can neither deliver nor validate any of this."
+blocked_reason: "SHIPPED 2026-07-29 — the upgrade is LIVE on main; what remains is device verification only, which is why this stays blocked rather than open. Criteria #1, #2, #3, #4, #6 CLOSED. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) MERGED to main 2026-07-29 as ed8ec449 (squash) — merged with criteria #5-Android, #7 and #8 still OPEN, so the upgrade is live and unverified in exactly those three respects. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. DEVICE PASS RUN 2026-07-28: a VisionCamera 5.1.1 codegen regression aborted the app on camera mount (SIGABRT) — FIXED via patch-package in 34d75bef. AC #4 then CLOSED on device (Cherry Coke 06772408: Trust-the-Label conflict UI, Label column 140 kcal matching the can) — MLKit 9 TextRecognition confirmed compatible, and the first runtime verification of PR #695. No correctness defect blocks #729. Remaining work is device-only coverage, unreachable by any autonomous executor: #5 barcode on Android — NARROWED 2026-08-08 to the DECODE only: the Android build, install, launch and CAMERA MOUNT all PASSED on the emulator (session OPEN, bundled MLKit barcode module loaded, zero crashes), and the #729 prediction that Android would hit the same enableJsiParser crash is RETIRED; what remains is getting a barcode into the virtual-scene camera's view, which needs a human drag inside the emulator window (iOS half PASSED), #7 tap-to-focus (not exercisable in the barcode flow — it auto-advances; use a no-barcode HUNTING state), #8 useCameraDevice lens selection at 10-15cm (normal range PASSED). RESIDUAL RISK NOW CARRIED ON MAIN: patches/react-native-vision-camera+5.1.1.patch is load-bearing — it restores the enableJsiParser flag VisionCamera 5.1.1 dropped, and without it the camera aborts (SIGABRT) on mount. The upstream regression was still NOT reported as of 2026-08-08 and 5.2.0 carries the same bug, so any future VisionCamera bump must carry this patch forward or silently re-break camera mount. Device testing needs a native build at runtimeVersion 1.2.0; an OTA can neither deliver nor validate any of this."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
@@ -281,10 +281,16 @@ MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
       0 resolution failures; `barcode-scanning:17.3.0` and `text-recognition:16.0.1`
       coexist in `debugRuntimeClasspath`; `libbarhopper_v3.so` +
       `libmlkit_google_ocr_pipeline.so` packaged for all 4 ABIs — see Updates).
-      **Still open:** the Android app has never been launched and
-      `useBarcodeScannerOutput` has never executed. Boot
-      `emulator -avd Medium_Phone_API_36.1 -camera-back webcam0 -gpu host`
-      and scan a real barcode held to the Mac's camera.
+      **Android CAMERA-MOUNT half also PASSED 2026-08-08** on the emulator:
+      camera session `OPEN | Error: null`, scan UI live, and the bundled MLKit
+      barcode module loaded in-process (`DynamiteModule: Selected local version
+of com.google.mlkit.dynamite.barcode`), zero crashes.
+      **Still open — the DECODE only:** no barcode has been decoded, so
+      `useBarcodeScannerOutput` has never produced a result. Use
+      `-camera-back virtualscene -virtualscene-poster wall=<barcode.png>`
+      (**not** `webcam0` — that needs a person holding a barcode) and drag the
+      scene view onto the poster inside the emulator window; `adb` cannot turn
+      the virtual-scene camera. Full recipe in Updates.
 - [x] iOS 26 simulator build still works (see the MLKit fat-binary risk below)
       — **RE-VERIFIED 2026-07-27 on PR 2, against the MLKit 9 framework set.**
       Full Debug build on a booted iPhone 17 (iOS 26): `** BUILD SUCCEEDED **`,
@@ -677,6 +683,11 @@ unticked. The emulator route is confirmed available (AVD
 `Medium_Phone_API_36.1` present; `emulator -webcam-list` reports `webcam0` and
 `webcam1`), so the scan half needs no physical Android hardware.
 
+> ⚠️ **Partly SUPERSEDED the same day** — see the emulator-run entry at the end
+> of this file. The app *was* subsequently launched and **the camera mounts on
+> Android**. What remains unproven is narrower than this paragraph states: only
+> the barcode **decode** itself.
+
 ⚠️ **Scope limit — this is a proxy for `main`, not `main` itself.** The build ran
 from a working tree at `fb1baf71` + JS-only probe commits, against `node_modules`
 resolved from **that** lockfile, not `origin/main`'s (26 commits ahead). `android/`
@@ -693,3 +704,88 @@ build is **not reproducible**: an upstream `17.4.0` publish silently changes the
 graph with no lockfile diff and no CI signal, since CI has no native build step.
 Pinning it via a Gradle `resolutionStrategy` would close that; doing so is a call
 for the repo owner.
+
+### 2026-08-08 (emulator run) — the camera MOUNTS on Android; only the decode is left
+
+Went past the build into a real emulator run on `Medium_Phone_API_36.1`
+(Android 16, arm64-v8a), signed in as `demo`, and opened the scan screen.
+
+**✅ The camera mounts and runs on Android under VisionCamera 5.1.1 + MLKit 9.**
+
+| Evidence | |
+| --- | --- |
+| Camera session | `ActiveCameraSessionSingle: Camera #CameraId-10 State changed! Type: OPEN \| Error: null` |
+| Scan UI | live preview + Barcode/Nutrition/Front selector + reticle + shutter |
+| MLKit barcode module | `DynamiteModule: Selected local version of com.google.mlkit.dynamite.barcode` |
+| Runtime version | `1.2.0` reported by the dev client — #729's bump is live on Android |
+| Crashes | **zero** `react_native_assert`, `SIGABRT`, or `ElfError` |
+
+That third row is the load-bearing one: it is the **bundled** MLKit barcode
+module — what `com.google.mlkit:barcode-scanning:17.3.0` ships — loading
+in-process at scan time, on top of an open camera session.
+
+**⚠️ This RETIRES a prediction from the #729 thread.** That comment said of the
+`enableJsiParser` regression: _"Expect Android to fail identically — the
+regression is in `nitrogen/generated/**/shared/c++`, shared, not per-platform."_
+**It does not fail.** `patches/react-native-vision-camera+5.1.1.patch` is applied
+by `postinstall` and covers Android as well as iOS. Do not re-litigate this.
+
+**⬜ AC #5 still unticked — only the decode remains.** No barcode was decoded, so
+`useBarcodeScannerOutput` has still never produced a result. The blocker is
+purely fixture framing: the emulator's virtual-scene camera faces the
+bookshelf/TV wall, the injected poster is behind it, and the scene camera is
+turned by dragging **inside the emulator window** — `adb` cannot drive it
+(`adb emu physics` only records; the accelerometer does not steer it while an app
+holds the camera). **A human drag of ~10 seconds closes this criterion.**
+
+#### Reproduction recipe that works (use this, not the older text above)
+
+- `-camera-back virtualscene -virtualscene-poster wall=<png>` — **not**
+  `-camera-back webcam0`, which needs a person physically holding a barcode.
+  `adb emu virtualscene-image <wall|table> <png>` sets it at runtime, no restart.
+- **Generate the fixture and verify it independently** before trusting it. A bad
+  fixture is indistinguishable from an MLKit failure. Used EAN-13
+  `5449000000996` (Coca-Cola 330 mL, real OFF record), confirmed with macOS
+  Vision `VNDetectBarcodesRequest` at 0.994 confidence.
+- Build **one ABI**: `-PreactNativeArchitectures=arm64-v8a`. The 4-ABI APK is
+  306 MB and dies with `INSTALL_FAILED_INSUFFICIENT_STORAGE`; arm64-only is
+  ~104 MB. Apple Silicon emulators run arm64-v8a only.
+- `adb reverse tcp:8081` for Metro; grant up front
+  `pm grant … android.permission.CAMERA` **and**
+  `appops set … SYSTEM_ALERT_WINDOW allow` — otherwise expo-dev-client opens the
+  "Display over other apps" Settings page **on top of the app**, silently
+  stealing UI-automation taps.
+- Drive UI from `uiautomator dump`, never fixed coordinates: an inline error
+  banner moves the Sign In button from y=1330 to y=1488.
+
+#### Two defects found on the way — neither caused by this upgrade
+
+1. **A network failure is displayed as "Incorrect username or password."**
+   `client/screens/LoginScreen-utils.ts:135` (`getAuthErrorMessage`) maps every
+   non-`RATE_LIMITED` error to that copy, so an unreachable backend is reported
+   as wrong credentials. Confirmed empirically: `demo`/`demo123` returns **200**
+   when POSTed directly, while the app showed the credential error and the server
+   logged **zero** requests from the device. The static-copy rule it follows
+   (`no-error-message-in-ui`, anti-enumeration) is correct and should stay —
+   collapsing *unreachable* into *wrong credentials* is the separable bug. Costs
+   real user trust on a flaky connection, and it burned significant debugging
+   time here.
+2. **A zero-filled native library passed every structural check.**
+   `libreanimated.so` was 80 MB of `0x00`: correct size, 16 KB-aligned, stored
+   uncompressed, and **`zipalign -c` verified successful** — but its ELF magic
+   was `00000000`, not `7f454c46`. It crashed the app at
+   `SoLoader → NativeReanimatedModule` with `MinElf$ElfError`. `stripDebugDebugSymbols`
+   then reduced it to a 24-byte file and **exited 0 with no warning**. Origin: the
+   first Android build ran with the host disk at 94%. `:react-native-reanimated:clean`
+   produced a correct 7.6 MB stripped ELF.
+   **Lesson: verify native-artifact CONTENT (ELF magic), not size — size,
+   alignment and compression all looked right, and a mid-session "fix" that
+   copied the 80 MB file over the 24-byte one propagated the corruption.**
+
+#### Environment fix applied
+
+`.env`'s `EXPO_PUBLIC_DOMAIN` was stale at `192.168.0.148:3000` while the Mac had
+moved to `192.168.0.103`; corrected in place (backup `.env.bak`, both gitignored).
+`192.168.0.103` is the right value rather than `localhost` — `localhost` works for
+the Android emulator via `adb reverse` but breaks a physical iPhone, which needs
+the LAN IP. This trap is exactly `reference_sim_dev_loop_gotchas`.
