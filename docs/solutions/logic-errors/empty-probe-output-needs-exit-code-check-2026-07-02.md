@@ -5,10 +5,10 @@ category: logic-errors
 module: shared
 severity: medium
 tags: [git, ls-remote, shell, probes, fail-open, exit-codes, gh, renames, find, destructive-ops]
-symptoms: [A collision/existence pre-check "passes" during a network or auth outage and duplicate work is only caught later (or never), An instruction reads "no output → does not exist" and a transport failure takes the same branch as genuine absence, git ls-remote prints nothing on rc=0 (absent) AND rc=128 (failure) — only stdout was inspected]
+symptoms: [A collision/existence pre-check "passes" during a network or auth outage and duplicate work is only caught later (or never), An instruction reads "no output → does not exist" and a transport failure takes the same branch as genuine absence, git ls-remote prints nothing on rc=0 (absent) AND rc=128 (failure) — only stdout was inspected, A backgrounded command is reported as "exit code 0" while its log ends in BUILD FAILED because a trailing echo supplied the status]
 applies_to: [.claude/agents/**/*.md, scripts/*.sh, .husky/**]
 created: '2026-07-02'
-last_updated: '2026-07-20'
+last_updated: '2026-08-08'
 ---
 
 # Probes that signal absence by empty output must also check the exit code
@@ -59,6 +59,19 @@ with a note and rely on the authoritative downstream check as the backstop."
   printed notice. Never destroy (or assert about) what the probe couldn't inspect,
   and never model probe failure with a proxy pre-check when the probe already
   reports failure itself.
+- **Trailing-command variant (2026-08-08):** the exit code you are shown belongs to
+  the **last** command in the list, not the one you care about. A backgrounded
+  `./gradlew … ; echo "GRADLE_EXIT=$?"` was reported by the harness as **exit code
+  0** for a build whose log ended in `BUILD FAILED` — `echo` succeeded, and its
+  status is what the shell returned. The same trap catches `cmd | tail`, where the
+  pipeline reports `tail`'s status (this is also why a `git branch -d … | tail` +
+  `|| git branch -D` fallback never fires). Fixes, in order of preference: make the
+  command of interest the **last** thing in the invocation and read its status
+  directly; or capture `rc=$?` immediately after it and echo that; or `set -o
+  pipefail` for pipelines. Corollary for reporting: when a wrapper's exit code is
+  the only evidence, confirm the outcome from an **independent artifact** —
+  a `BUILD SUCCESSFUL` marker in the log, or the install timestamp on the device —
+  before stating that something passed.
 - Sibling under-specified-output gotcha from the same review: `gh pr diff --name-only`
   lists a **renamed** file only by its new path, and a rename's content is absent from
   the patch (only a similarity index appears). Todo archive files are renames — so
