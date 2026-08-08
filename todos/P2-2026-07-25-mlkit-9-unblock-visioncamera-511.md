@@ -3,22 +3,33 @@ title: "Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 u
 status: blocked
 priority: medium
 created: 2026-07-25
-updated: 2026-07-27
+updated: 2026-08-08
 assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
 human_led: true
-blocked_reason: "Criteria #1, #2, #3, #6 RESOLVED 2026-07-27. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) is OPEN, retargeted to main, auto-merge NOT armed. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. DEVICE PASS RUN 2026-07-28: a VisionCamera 5.1.1 codegen regression aborted the app on camera mount (SIGABRT) — FIXED via patch-package in 34d75bef. AC #4 then CLOSED on device (Cherry Coke 06772408: Trust-the-Label conflict UI, Label column 140 kcal matching the can) — MLKit 9 TextRecognition confirmed compatible, and the first runtime verification of PR #695. No correctness defect blocks #729. Remaining work is device-only coverage, unreachable by any autonomous executor: #5 barcode on Android (iOS half PASSED), #7 tap-to-focus (not exercisable in the barcode flow — it auto-advances; use a no-barcode HUNTING state), #8 useCameraDevice lens selection at 10-15cm (normal range PASSED)."
+blocked_reason: "SHIPPED 2026-07-29 — the upgrade is LIVE on main; what remains is device verification only, which is why this stays blocked rather than open. Criteria #1, #2, #3, #4, #6 CLOSED. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) MERGED to main 2026-07-29 as ed8ec449 (squash) — merged with criteria #5-Android, #7 and #8 still OPEN, so the upgrade is live and unverified in exactly those three respects. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. DEVICE PASS RUN 2026-07-28: a VisionCamera 5.1.1 codegen regression aborted the app on camera mount (SIGABRT) — FIXED via patch-package in 34d75bef. AC #4 then CLOSED on device (Cherry Coke 06772408: Trust-the-Label conflict UI, Label column 140 kcal matching the can) — MLKit 9 TextRecognition confirmed compatible, and the first runtime verification of PR #695. No correctness defect blocks #729. Remaining work is device-only coverage, unreachable by any autonomous executor: #5 barcode on Android (iOS half PASSED), #7 tap-to-focus (not exercisable in the barcode flow — it auto-advances; use a no-barcode HUNTING state), #8 useCameraDevice lens selection at 10-15cm (normal range PASSED). RESIDUAL RISK NOW CARRIED ON MAIN: patches/react-native-vision-camera+5.1.1.patch is load-bearing — it restores the enableJsiParser flag VisionCamera 5.1.1 dropped, and without it the camera aborts (SIGABRT) on mount. The upstream regression was still NOT reported as of 2026-08-08 and 5.2.0 carries the same bug, so any future VisionCamera bump must carry this patch forward or silently re-break camera mount. Device testing needs a native build at runtimeVersion 1.2.0; an OTA can neither deliver nor validate any of this."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
 
-## ▶ RESUME HERE (paused 2026-07-27 — read this first)
+## ▶ RESUME HERE (updated 2026-08-08 — read this first)
+
+**2026-07-29 — BOTH PRs ARE MERGED. This todo is no longer about landing the
+upgrade; it is about verifying what already shipped.** #729 merged as
+`ed8ec449` (squash) with three acceptance criteria still open, all of them
+device-only: **AC #5 (Android barcode), AC #7 (tap-to-focus), AC #8 (close-range
+lens).** Nothing below asks you to write code — the code is on `main`.
+
+⚠️ **AC #7 is the one that matters.** The iOS metering workaround is already
+REMOVED on `main`, and its removal rests on reading 5.1.1's native source plus
+unit tests that mock `focusTo`. Tap-to-focus — the entire reason this upgrade
+exists — has never once been exercised on hardware.
 
 **2026-07-28 — DEVICE PASS RUN. One blocker found and FIXED; AC #4 CLOSED.**
 The device session is no longer pending — it happened. Read this before the
-older text below, which predates it. **No correctness defect blocks #729; only
-device coverage remains (AC #5 Android, #7, #8).**
+older text below, which predates it. **No correctness defect blocks the merged
+code; only device coverage remains (AC #5 Android, #7, #8).**
 
 **(1) FIXED — the app crashed (SIGABRT) on camera mount.** VisionCamera 5.1.1's
 nitrogen codegen dropped `RawPropsParser(/* enableJsiParser */ true)`, so its
@@ -64,21 +75,22 @@ authoritative; do not chase that.
 
 ### State
 
-|                                         |                                                                                                                                                            |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **#728** — OCR library swap             | **MERGED** to `main` as `dfadf651` (live)                                                                                                                  |
-| **#729** — VisionCamera 5.1.1 + MLKit 9 | **OPEN**, branch `feat/visioncamera-511-mlkit-9` (no commit hash here on purpose — it would go stale the moment this file is edited; use `gh pr view 729`) |
-| CI on #729                              | ✅ 10/10 green against `main`                                                                                                                              |
-| `mergeStateStatus`                      | ✅ CLEAN (auto-merge deliberately NOT armed)                                                                                                               |
-| Debug sim build (AC #6)                 | ✅ 0 errors                                                                                                                                                |
-| Release build                           | ✅ 0 errors — optimizer carve-out intact                                                                                                                   |
-| Criteria closed                         | #1, #2, #3, #6, **#4** (5 of 8) — #4 closed on device 2026-07-28                                                                                           |
-| Device blocker                          | ✅ SIGABRT on camera mount — FIXED (`34d75bef`, patch-package)                                                                                             |
+|                                         |                                                                                                                                                |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| **#728** — OCR library swap             | **MERGED** to `main` as `dfadf651` (live)                                                                                                      |
+| **#729** — VisionCamera 5.1.1 + MLKit 9 | **MERGED** to `main` 2026-07-29 as `ed8ec449` (squash); branch `feat/visioncamera-511-mlkit-9` deleted                                         |
+| What `main` ships now                   | VisionCamera + `-barcode-scanner` 5.1.1, single `GoogleMLKit` root 9.0.0, MLKitVision 10.0.0, `patches/react-native-vision-camera+5.1.1.patch` |
+| Debug sim build (AC #6)                 | ✅ 0 errors                                                                                                                                    |
+| Release build                           | ✅ 0 errors — optimizer carve-out intact (simulator destination, NOT a signed EAS archive)                                                     |
+| Criteria closed                         | #1, #2, #3, #4, #6 (5 of 8) — #4 closed on device 2026-07-28                                                                                   |
+| Criteria still OPEN on shipped code     | **#5 (Android), #7 (tap-to-focus), #8 (close-range lens)** — device-only                                                                       |
+| Device blocker                          | ✅ SIGABRT on camera mount — FIXED (`34d75bef`, patch-package)                                                                                 |
 
 ### To resume
 
 ```bash
-git checkout feat/visioncamera-511-mlkit-9
+# The branch is DELETED and the upgrade is already on main — just build main.
+git checkout main && git pull
 
 # iOS — checks 1, 2, 4. Tether + unlock first; run tethered, not untethered:
 # check 1 depends on reading console output live over the cable.
@@ -159,9 +171,12 @@ native build, not `npm run update:preview`.
 
 ### After the device pass
 
-If all four checks pass: merge #729 (squash), then archive this todo to
-`todos/archive/`. If tap-to-focus still fails, the bump did not achieve its
-purpose — investigate before merging rather than merging and filing a follow-up.
+⚠️ Superseded 2026-07-29: #729 is already merged, so these checks can no longer
+gate a merge — they can only confirm or refute what shipped. If all three
+remaining checks pass, archive this todo to `todos/archive/`. If **tap-to-focus
+(AC #7) fails**, the bump did not achieve its purpose and the defect is already
+on `main` awaiting the next native build — treat that as a regression to fix,
+not a follow-up to file.
 
 ---
 
@@ -261,6 +276,15 @@ MLKitTextRecognition MLKitTextRecognitionCommon MLKitCommon`.
       verification of PR #695, whose client path had never been exercised.
 - [ ] Barcode scanning verified on **both** iOS and Android (iOS uses
       `useObjectOutput`, Android uses `useBarcodeScannerOutput` — different code paths)
+      — **iOS half PASSED on device 2026-07-28.** **Android BUILD half PASSED
+      2026-08-08** (`./gradlew assembleDebug` → `BUILD SUCCESSFUL in 5m 18s`,
+      0 resolution failures; `barcode-scanning:17.3.0` and `text-recognition:16.0.1`
+      coexist in `debugRuntimeClasspath`; `libbarhopper_v3.so` +
+      `libmlkit_google_ocr_pipeline.so` packaged for all 4 ABIs — see Updates).
+      **Still open:** the Android app has never been launched and
+      `useBarcodeScannerOutput` has never executed. Boot
+      `emulator -avd Medium_Phone_API_36.1 -camera-back webcam0 -gpu host`
+      and scan a real barcode held to the Mac's camera.
 - [x] iOS 26 simulator build still works (see the MLKit fat-binary risk below)
       — **RE-VERIFIED 2026-07-27 on PR 2, against the MLKit 9 framework set.**
       Full Debug build on a booted iPhone 17 (iOS 26): `** BUILD SUCCEEDED **`,
@@ -582,3 +606,90 @@ both platforms, AC #7 tap-to-focus on-device, AC #8 `useCameraDevice` lens
 selection at barcode distance (~10–15 cm — 5.1.0's #4053 changed default camera
 selection). A **Release-configuration** build is also required before merge; the
 LLVM crash never manifests in local Debug.
+
+### 2026-08-08 — reconciliation: #729 MERGED 2026-07-29; this file had gone stale
+
+No work happened on this todo between 2026-07-28 and 2026-08-08, and the file
+still described #729 as OPEN. It is not.
+
+**#729 merged 2026-07-29T23:15Z as `ed8ec449`** (squash, by the repo owner), with
+**three acceptance criteria still open** — #5-Android, #7, #8. Confirmed against
+the GitHub API, not from context. Checked specifically for a merge-day device
+pass that would have closed them: no todo edit, no `docs/solutions` commit, and
+no justification in the squash body. So the merge was a judgment call to ship
+with those three uncovered, and the residual is real rather than clerical.
+
+**What is now live on `main`:** VisionCamera + `-barcode-scanner` 5.1.1, a single
+`GoogleMLKit` root at 9.0.0, `MLKitVision` 10.0.0, and
+`patches/react-native-vision-camera+5.1.1.patch`.
+
+**The `enableJsiParser` patch is load-bearing and its upstream regression was
+never reported.** `postinstall: patch-package` is wired and the patch verifies as
+applied — both `nitrogen/generated/shared/c++/views/Hybrid{PreviewView,FrameRendererView}Component.cpp`
+carry `RawPropsParser(/* enableJsiParser */ true)`. Since 5.2.0 carries the same
+upstream bug, **any future VisionCamera bump must carry this patch forward** or
+the camera aborts on mount again. Filing upstream remains unowned.
+
+**Why this sat for eleven days is structural, not neglect.** The todo is
+`human_led: true` and every open criterion needs a tethered phone or an emulator
+with camera passthrough. No `/todo` executor, subagent, or worktree can close
+#5, #7 or #8 — CI has no native build step and never loads MLKit at all.
+
+**AC #5, first half — the Android BUILD: ✅ PASSES.** Until now every build on
+this upgrade had been iOS, leaving `react-native-vision-camera-barcode-scanner`
+5.1.1's **Android** Gradle dependency move unverified on shipped code. Run
+2026-08-08, `./gradlew assembleDebug`:
+
+```
+BUILD SUCCESSFUL in 5m 18s
+exit code:                                    0
+"Could not resolve" / "Could not find":       0
+react-native-vision-camera Gradle tasks:      104
+app-debug.apk:                                306.2 MB
+```
+
+**The load-bearing evidence is not the exit code — it is that both MLKit
+families coexist in one resolved graph**, which is exactly what CocoaPods
+refused on iOS:
+
+```
+com.google.mlkit:barcode-scanning:17.3.0
+com.google.mlkit:text-recognition:16.0.1
+com.google.mlkit:common:18.6.0  -> 18.11.0
+com.google.mlkit:common:18.9.0  -> 18.11.0
+com.google.mlkit:vision-common:17.+ -> 17.3.0
+```
+
+Gradle reconciled three different `common` requests to one version by picking
+the highest — no straddle, no conflict. This **empirically confirms** the
+2026-07-27 claim that the 8↔9 conflict was iOS-only because Maven coordinates
+carry no shared-root constraint; it had been reasoned from the podspec, never
+built.
+
+Packaging verified too, not just compilation — the decoder native libraries are
+in the APK for **all four ABIs**: `libbarhopper_v3.so` (barcode) and
+`libmlkit_google_ocr_pipeline.so` (text recognition) under `lib/{arm64-v8a,
+armeabi-v7a,x86,x86_64}/`.
+
+**What this does NOT close:** the app was never launched and no barcode was
+scanned, so `useBarcodeScannerOutput` has still never executed. AC #5 stays
+unticked. The emulator route is confirmed available (AVD
+`Medium_Phone_API_36.1` present; `emulator -webcam-list` reports `webcam0` and
+`webcam1`), so the scan half needs no physical Android hardware.
+
+⚠️ **Scope limit — this is a proxy for `main`, not `main` itself.** The build ran
+from a working tree at `fb1baf71` + JS-only probe commits, against `node_modules`
+resolved from **that** lockfile, not `origin/main`'s (26 commits ahead). `android/`
+is byte-identical between the two and the probe commits touch only `client/**`, so
+the Android build graph is the same; the three intervening `package.json` changes
+were npm **security overrides** (postcss et al.) with no Android native surface.
+Sound, but it is inference — a build from a clean `origin/main` + `npm ci` is the
+unqualified version.
+
+🔎 **Finding worth a decision (not actioned):** the resolved graph contains a
+**dynamic version** — `com.google.mlkit:vision-common:17.+ -> 17.3.0`, declared
+upstream, not by us. It resolves fine today, but a floating range means the Android
+build is **not reproducible**: an upstream `17.4.0` publish silently changes the
+graph with no lockfile diff and no CI signal, since CI has no native build step.
+Pinning it via a Gradle `resolutionStrategy` would close that; doing so is a call
+for the repo owner.
