@@ -4,71 +4,97 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ScanFlagBadge } from "@/components/ScanFlagBadge";
-import { NutriScoreChip } from "@/components/NutriScoreChip";
-import { useTheme } from "@/hooks/useTheme";
 import { Spacing } from "@/constants/theme";
-import { partitionScanFlags } from "@/screens/nutrition-detail-flags-utils";
+import { dropPanelBandedFlags } from "./FlagSections-utils";
 import type { ScanFlag } from "@shared/types/scan-flags";
+import type { NutrientBands } from "@shared/lib/nutrition-bands";
 
 interface FlagSectionsProps {
-  flags: ScanFlag[];
+  /** "For you" — the caller's `partitionScanFlags(flags).personal`. */
+  personal: ScanFlag[];
+  /** "Heads up" — the caller's `partitionScanFlags(flags).universal`. */
+  universal: ScanFlag[];
+  /**
+   * The bands `NutritionPanel` is rendering, from the SAME `buildPanelRows`
+   * call — so "the panel already says this" is decided against what the panel
+   * actually shows, not against a list of nutrients it nominally covers.
+   */
+  bands: NutrientBands;
   reducedMotion?: boolean;
 }
 
 /**
- * "For you" (personal/allergen) and "Heads up" (universal + Nutri-Score).
+ * "For you" (personal/allergen) and "Heads up" (the universal flags the
+ * nutrient panel is not already banding).
  *
- * Owns the partition and the six-flag cap. The cap used to have a second
- * consumer — a composed group label that had to name exactly the badges that
- * rendered — which is why it lives here rather than at the call site. That
- * label is gone (see the comment on the badge list below), so the cap now has
- * one consumer and means simply "render at most six".
+ * Takes the two partitions rather than raw `flags`: the screen partitions once
+ * and feeds the Nutri-Score grade to `NutritionSummaryCard`, so partitioning
+ * again here would be a second source of truth for the same split.
  *
- * SLICE 2c will narrow this to non-scalar flags only, once NutritionPanel
- * exists to render the sugar / saturated-fat / sodium rows. Narrowing it
- * before then deletes those badges with nothing in their place. When that
- * change lands, "nutrient" must STAY in UNIVERSAL_KINDS — partitionScanFlags
- * warn-and-drops unmodelled kinds, so removing it there swallows the flags
- * rather than relocating them.
+ * The narrowing decision lives entirely in `FlagSections-utils.ts` — read its
+ * docblock before changing what gets dropped; it carries the reachable state
+ * where "the panel covers sugar" and "the panel bands sugar" disagree. Note
+ * that "nutrient" must STAY in UNIVERSAL_KINDS in
+ * `nutrition-detail-flags-utils.ts`: `partitionScanFlags` warn-and-drops
+ * unmodelled kinds, so removing it there would swallow these flags rather
+ * than relocate them. The narrowing belongs at the RENDER step, which is here.
+ *
+ * Owns the six-flag cap. The cap used to have a second consumer — a composed
+ * group label that had to name exactly the badges that rendered — which is why
+ * it lives here rather than at the call site. That label is gone (see the
+ * comment on the badge list below), so the cap now has one consumer and means
+ * simply "render at most six".
+ *
+ * Does NOT own the "not medical advice" disclaimer, though it used to — once
+ * per section. That coupled the disclaimer to a BADGE LIST, and this component
+ * renders nothing when every universal flag is one the panel is already
+ * banding. A product whose only universal flags are `nutrient:sugar`/`sodium`
+ * therefore reached the user as a Nutri-Score ring, "High in sugar" standout
+ * copy and red/amber traffic-light pills with no disclaimer anywhere on the
+ * screen — the claims outlived their qualifier because they live in three
+ * different components and the disclaimer lived in only one of them.
+ *
+ * It now renders once, unconditionally, from the screen: the only place that
+ * knows all three claim surfaces are present. Do not move it back into a
+ * component that can return null.
  */
-export function FlagSections({ flags, reducedMotion }: FlagSectionsProps) {
-  const { theme } = useTheme();
-
-  const partition = partitionScanFlags(flags);
-  const universalToShow = partition.universal.slice(0, 6);
+export function FlagSections({
+  personal,
+  universal,
+  bands,
+  reducedMotion,
+}: FlagSectionsProps) {
+  const universalToShow = dropPanelBandedFlags(universal, bands).slice(0, 6);
 
   return (
     <>
-      {partition.personal.length > 0 ? (
+      {personal.length > 0 ? (
         <Animated.View
           entering={
-            reducedMotion ? undefined : FadeInUp.delay(450).duration(400)
+            reducedMotion ? undefined : FadeInUp.delay(400).duration(400)
           }
-          style={styles.additionalNutrients}
+          style={styles.flagSection}
         >
           <ThemedText type="h4" style={styles.sectionTitle}>
             For you
           </ThemedText>
           <View style={{ gap: Spacing.sm }}>
-            {partition.personal.map((f) => (
+            {personal.map((f) => (
               <ScanFlagBadge key={f.id} flag={f} />
             ))}
           </View>
-          <ThemedText
-            type="caption"
-            style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-          >
-            Informational only — not medical advice.
-          </ThemedText>
         </Animated.View>
       ) : null}
 
-      {partition.universal.length > 0 || partition.nutriScore ? (
+      {/* Gated on what SURVIVES the filter, not on `universal.length`: a
+          product whose only universal flags are ones the panel is banding
+          would otherwise render a "Heads up" heading over an empty list. */}
+      {universalToShow.length > 0 ? (
         <Animated.View
           entering={
-            reducedMotion ? undefined : FadeInUp.delay(475).duration(400)
+            reducedMotion ? undefined : FadeInUp.delay(450).duration(400)
           }
-          style={styles.additionalNutrients}
+          style={styles.flagSection}
         >
           <ThemedText type="h4" style={styles.sectionTitle}>
             Heads up
@@ -95,21 +121,13 @@ export function FlagSections({ flags, reducedMotion }: FlagSectionsProps) {
                 stop per badge, each carrying its full explanation,
                 identically on iOS and Android. The "Heads up" heading
                 above already supplies the grouping cue, and the
-                Nutri-Score chip keeps its own node for free rather than
+                Nutri-Score chip — now rendered by NutritionSummaryCard —
+                keeps its own node for free wherever it lives, rather than
                 by being carefully kept outside a wrapper. */}
             {universalToShow.map((f) => (
               <ScanFlagBadge key={f.id} flag={f} />
             ))}
-            {partition.nutriScore?.grade ? (
-              <NutriScoreChip grade={partition.nutriScore.grade} />
-            ) : null}
           </View>
-          <ThemedText
-            type="caption"
-            style={{ color: theme.textSecondary, marginTop: Spacing.xs }}
-          >
-            Informational only — not medical advice.
-          </ThemedText>
         </Animated.View>
       ) : null}
     </>
@@ -117,9 +135,7 @@ export function FlagSections({ flags, reducedMotion }: FlagSectionsProps) {
 }
 
 const styles = StyleSheet.create({
-  // Verbatim copies. The screen keeps its own — the Additional Nutrients card
-  // still uses both, until 2c deletes it.
-  additionalNutrients: {
+  flagSection: {
     marginBottom: Spacing["2xl"],
   },
   sectionTitle: {

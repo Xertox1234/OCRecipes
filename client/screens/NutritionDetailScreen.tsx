@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -16,24 +16,22 @@ import Animated, { FadeInUp } from "react-native-reanimated";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Card } from "@/components/Card";
-import { Button } from "@/components/Button";
+import { InlineError } from "@/components/InlineError";
 import { SkeletonBox, SkeletonProvider } from "@/components/SkeletonLoader";
 import { useTheme } from "@/hooks/useTheme";
 import { useAccessibility } from "@/hooks/useAccessibility";
 import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
-import {
-  Spacing,
-  BorderRadius,
-  FontFamily,
-  Shadows,
-  withOpacity,
-} from "@/constants/theme";
-import {
-  getServingContextLabel,
-  roundToOneDecimal,
-} from "@/screens/nutrition-detail-utils";
+import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
+import { getServingContextLabel } from "@/screens/nutrition-detail-utils";
+import { partitionScanFlags } from "@/screens/nutrition-detail-flags-utils";
 import { ProductHero } from "@/components/nutrition/ProductHero";
 import { FlagSections } from "@/components/nutrition/FlagSections";
+import { NutritionSummaryCard } from "@/components/nutrition/NutritionSummaryCard";
+import { NutritionPanel } from "@/components/nutrition/NutritionPanel";
+import { NoticeStack } from "@/components/nutrition/NoticeStack";
+import { LogActionBar } from "@/components/nutrition/LogActionBar";
+import { buildPanelRows } from "@/components/nutrition/nutrition-band-source";
+import { pickStandouts } from "@shared/lib/nutrition-bands";
 import { CapturedPhotos } from "@/components/nutrition/CapturedPhotos";
 import { VerificationPanel } from "@/components/nutrition/VerificationPanel";
 import { MicronutrientSection } from "@/components/MicronutrientSection";
@@ -62,6 +60,13 @@ import type { RootStackParamList } from "@/navigation/RootStackNavigator";
  */
 type NutritionDetailRoute = RouteProp<RootStackParamList, "NutritionDetail">;
 
+/**
+ * Label widths for the panel's six banded rows. A const array rather than a
+ * count, so each placeholder row is keyed by a stable unique value instead of
+ * its array index.
+ */
+const SKELETON_PANEL_ROW_WIDTHS = [70, 92, 64, 76, 58, 84];
+
 function NutritionDetailSkeleton() {
   React.useEffect(() => {
     AccessibilityInfo.announceForAccessibility("Loading");
@@ -71,6 +76,11 @@ function NutritionDetailSkeleton() {
     <SkeletonProvider>
       <View
         accessibilityElementsHidden
+        // The iOS half alone leaves the whole placeholder tree readable to
+        // TalkBack: `accessibilityElementsHidden` is iOS-only, and
+        // `importantForAccessibility="no"` would exclude only THIS view, not
+        // its subtree. A container with children needs "no-hide-descendants".
+        importantForAccessibility="no-hide-descendants"
         style={{ alignItems: "center", padding: Spacing.lg }}
       >
         {/* Product image */}
@@ -98,7 +108,8 @@ function NutritionDetailSkeleton() {
           style={{ marginTop: Spacing.sm }}
         />
 
-        {/* Hero calorie card: caption, calorie figure, macro tile row */}
+        {/* Summary card: Nutri-Score ring, caption, calorie figure, two
+            promoted standout rows, macro tile row */}
         <View
           style={{
             width: "100%",
@@ -109,8 +120,20 @@ function NutritionDetailSkeleton() {
             marginBottom: Spacing["2xl"],
           }}
         >
+          <SkeletonBox
+            width={44}
+            height={44}
+            borderRadius={22}
+            style={{ alignSelf: "flex-end" }}
+          />
           <SkeletonBox width={120} height={12} />
           <SkeletonBox width={140} height={44} />
+          <SkeletonBox
+            width="70%"
+            height={16}
+            style={{ marginTop: Spacing.xs }}
+          />
+          <SkeletonBox width="55%" height={16} />
           <View
             style={{
               flexDirection: "row",
@@ -137,34 +160,23 @@ function NutritionDetailSkeleton() {
           </View>
         </View>
 
-        {/* Additional nutrients title */}
-        <View style={{ width: "100%" }}>
-          <SkeletonBox
-            width={180}
-            height={20}
-            style={{ marginBottom: Spacing.md }}
-          />
-          {/* Nutrient rows */}
-          <View style={{ gap: Spacing.sm }}>
+        {/* Nutrient panel: six banded rows — indicator dot, label, value */}
+        <View style={{ width: "100%", gap: Spacing.md }}>
+          {SKELETON_PANEL_ROW_WIDTHS.map((labelWidth) => (
             <View
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
+              key={labelWidth}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: Spacing.sm,
+              }}
             >
-              <SkeletonBox width={60} height={16} />
-              <SkeletonBox width={40} height={16} />
+              <SkeletonBox width={12} height={12} borderRadius={6} />
+              <SkeletonBox width={labelWidth} height={16} />
+              <View style={{ flex: 1 }} />
+              <SkeletonBox width={48} height={16} />
             </View>
-            <View
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
-            >
-              <SkeletonBox width={50} height={16} />
-              <SkeletonBox width={40} height={16} />
-            </View>
-            <View
-              style={{ flexDirection: "row", justifyContent: "space-between" }}
-            >
-              <SkeletonBox width={70} height={16} />
-              <SkeletonBox width={50} height={16} />
-            </View>
-          </View>
+          ))}
         </View>
       </View>
     </SkeletonProvider>
@@ -174,7 +186,7 @@ function NutritionDetailSkeleton() {
 export default function NutritionDetailScreen() {
   const insets = useSafeAreaInsets();
   const headerContentInset = useHeaderContentInset(Spacing.xl);
-  const { theme, isDark } = useTheme();
+  const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const { isOffline, offlineLabel } = useOfflineGuard();
   const navigation = useNavigation<NutritionDetailScreenNavigationProp>();
@@ -202,6 +214,8 @@ export default function NutritionDetailScreen() {
     isLoading,
     error,
     isPer100g,
+    validatedData,
+    isBeverage,
     servingQuantity,
     setServingQuantity,
     servingSizeGrams,
@@ -230,37 +244,19 @@ export default function NutritionDetailScreen() {
     logGate,
   } = useNutritionLookup({ barcode, imageUri, itemId, ocrText });
 
-  // Reset whenever the gate changes OR the product does, so an acknowledgement
-  // can never carry over onto different numbers.
+  // The sticky log bar's MEASURED height, reported through its `onLayout` and
+  // spent as the ScrollView's bottom padding. Measured rather than a constant
+  // because the bar has three heights — normal, gated (a longer button label
+  // can wrap), and with the offline caption underneath.
   //
-  // `logGate.kind` alone is insufficient: it is two-valued, so any transition that
-  // swaps `nutrition` while leaving the gate gated keeps the acknowledgement alive.
-  // The manual-search flow is that transition — the user acknowledges a numberless
-  // "Product Not Found" screen, then searches up a different food and
-  // `handleManualSearch` replaces `nutrition` without touching `labelUsed`.
-  //
-  // Not user-reachable in this tree today: nothing emits the `notInDatabase` flag
-  // that opens `showManualSearch` (no server hit for it, and `sendError` sends only
-  // `{ error, code }`), so this guards a real state-machine defect ahead of the
-  // emitter rather than a live bug. It is cheap and must not regress if that
-  // branch is ever wired up.
-  //
-  // `productName` is the dep that actually discriminates. `barcode` does NOT: the
-  // not-found branch sets `barcode: code` and `handleManualSearch` sets
-  // `barcode: barcode || undefined` — the same route barcode both times — so it is
-  // invariant across exactly the transition this guards. `productName` goes
-  // "Product Not Found" → the searched food's name, and it also survives
-  // `recalculateNutrition` untouched, so a user-initiated serving edit does not
-  // needlessly discard an acknowledgement about the same product.
-  //
-  // Keyed on those two PRIMITIVE fields, not on `logGate`/`nutrition` themselves —
-  // the hook returns fresh objects each render, so depending on them would re-fire
-  // every render and wipe the acknowledgement the instant it was given, leaving
-  // the log button permanently unreachable.
-  const [acknowledgedUnverified, setAcknowledgedUnverified] = useState(false);
-  useEffect(() => {
-    setAcknowledgedUnverified(false);
-  }, [logGate.kind, nutrition?.productName]);
+  // The acknowledgement state that used to live here moved into `LogActionBar`
+  // along with the button it gates; see that component for the reset rationale.
+  const [barHeight, setBarHeight] = useState(0);
+
+  // The saved-item view renders no log bar (`!itemId`, Constraint 25), so on
+  // that path nothing else claims the bottom inset and the ScrollView must
+  // keep it. Read below, and by the bar's own gate.
+  const showLogBar = !itemId;
 
   const showServingControls =
     !itemId && !!barcode && nutrition?.calories !== undefined;
@@ -273,6 +269,26 @@ export default function NutritionDetailScreen() {
     isPer100g,
   });
 
+  // Partitioned ONCE here, not inside FlagSections: the Nutri-Score grade
+  // lands on the summary card while the other two groups go to the flag
+  // sections, so a second partition would be a second source of truth for the
+  // same split.
+  const partition = partitionScanFlags(flags);
+
+  // One derivation, two consumers — `rows` for the panel, `bands` for the
+  // card's standouts — so a row's band can never disagree with the standout
+  // promoting it. NEVER pass `nutrition` in as the band source: it is
+  // serving-scaled display state, and banding from it over-warns the moment a
+  // user picks a bigger portion. `buildPanelRows` owns that choice; see its
+  // module docblock.
+  const { rows, bands } = buildPanelRows({
+    itemId,
+    validatedData,
+    nutrition,
+    isBeverage,
+  });
+  const standouts = pickStandouts(bands);
+
   if (isLoading) {
     return (
       <ThemedView style={styles.container} accessibilityViewIsModal>
@@ -282,6 +298,10 @@ export default function NutritionDetailScreen() {
             styles.content,
             {
               paddingTop: headerContentInset,
+              // `insets.bottom` here, and the bar's measured height on the main
+              // branch below — the two differ because this branch renders NO
+              // `LogActionBar`, so nothing else is claiming the home-indicator
+              // clearance. The inset is owned by exactly one node per branch.
               paddingBottom: insets.bottom + Spacing["3xl"],
             },
           ]}
@@ -300,7 +320,14 @@ export default function NutritionDetailScreen() {
           styles.content,
           {
             paddingTop: headerContentInset,
-            paddingBottom: insets.bottom + Spacing["3xl"],
+            // `insets.bottom` is counted EXACTLY ONCE. When the sticky bar
+            // renders it owns the inset (`LogActionBar` adds it to its own
+            // `paddingBottom`), so the scroller pads by the bar's measured
+            // height instead — adding both would double-count and leave a
+            // dead band under the last row. When no bar renders (saved item),
+            // the scroller keeps the inset itself.
+            paddingBottom:
+              (showLogBar ? barHeight : insets.bottom) + Spacing["3xl"],
           },
         ]}
         showsVerticalScrollIndicator={false}
@@ -321,52 +348,86 @@ export default function NutritionDetailScreen() {
           />
         )}
 
-        <FlagSections flags={flags} reducedMotion={reducedMotion} />
+        {/* `bands` is the SAME object the panel below renders from, so a badge
+            is dropped only when the panel is genuinely showing that nutrient's
+            judgement — see FlagSections-utils.ts. */}
+        <FlagSections
+          personal={partition.personal}
+          universal={partition.universal}
+          bands={bands}
+          reducedMotion={reducedMotion}
+        />
 
-        {labelReadNotice && !itemId ? (
-          <View
-            accessibilityLiveRegion="polite"
-            style={[
-              styles.correctionContainer,
-              { backgroundColor: withOpacity(theme.warning, 0.1) },
-            ]}
-          >
-            <Feather name="alert-triangle" size={16} color={theme.warning} />
-            <View style={{ flex: 1 }}>
-              <ThemedText
-                type="small"
-                style={{ color: theme.warning, fontWeight: "600" }}
-              >
-                Label not used
-              </ThemedText>
-              <ThemedText type="small" style={{ color: theme.warning }}>
-                {labelReadNotice}
-              </ThemedText>
-            </View>
-          </View>
-        ) : null}
+        {/* Every passive advisory surface, in ONE place and ONE position: the
+            label-not-used warning, the serving correction, and the per-100g
+            info notice that used to sit BELOW the summary card. Above the card
+            deliberately — a caveat about the data should be read before the
+            verdict it qualifies, and it keeps the entrance ladder in visual
+            order (notices 150 → card 200 → panel 300 → micronutrients 500).
 
-        {correctionNotice && !itemId ? (
-          <View
-            accessibilityLiveRegion="polite"
-            style={[
-              styles.correctionContainer,
-              { backgroundColor: withOpacity(theme.warning, 0.1) },
-            ]}
-          >
-            <Feather name="zap" size={16} color={theme.warning} />
-            <View style={{ flex: 1 }}>
-              <ThemedText
-                type="small"
-                style={{ color: theme.warning, fontWeight: "600" }}
-              >
-                Serving size adjusted
-              </ThemedText>
-              <ThemedText type="small" style={{ color: theme.warning }}>
-                {correctionNotice}
-              </ThemedText>
-            </View>
-          </View>
+            `ScanConflictPrompt` and the manual-search card stay outside it:
+            both are interactive, and a passive row list must not swallow a
+            control. `error` is outside it too — it needs `assertive`, which is
+            `InlineError`'s job (Constraint 23).
+
+            Nothing mutes its announcer, deliberately — not even while the log
+            gate is unmet. The gated screen IS the screen carrying "Label not
+            used" (`deriveLogGate` gates on a label that could not be used;
+            `useNutritionLookup.ts:382` sets the notice on the same failure), so
+            muting there would switch the announcer off exactly where it earns
+            its keep. There is nothing to collide with: the acknowledge
+            announcement fires from a click handler that re-renders only
+            `LogActionBar`, later in time and in a different commit. */}
+        {!itemId ? (
+          <NoticeStack
+            // Suppressed when the lookup itself failed, for two reasons that
+            // share one trigger. Content: the notice says "so these values come
+            // from the product database", and NO path that sets `error` leaves
+            // real database values in `nutrition` — the placeholder differs by
+            // path (`Unknown Product`, `Product Not Found`, or `null` on the
+            // saved-item and no-scan-data exits), but none of them carries
+            // macros, so the sentence is false wherever `error` is set.
+            //
+            // Accepted tradeoff: on the one RECOVERABLE error state, the notice
+            // can blink. A `notInDatabase` 404 opens the manual-search card
+            // without setting `error`, so the notice shows; a failed search then
+            // sets one and it vanishes, and a successful search clears it and
+            // the notice returns — now truthfully qualifying values that exist.
+            // The flicker is the honest reading of each state in turn.
+            // Announcement — this gate removes ONE of three contributors, and
+            // does NOT close the same-commit-collision class. Said precisely,
+            // because the earlier wording here overstated it:
+            //
+            // When this gate empties the stack entirely, `NoticeStack` opts out
+            // at the SOURCE rather than losing a race: `noticeAnnouncementKey`
+            // returns null for an empty list and the effect guards on that
+            // before calling `announceForAccessibility`, so no utterance is
+            // issued to be silenced.
+            //
+            // But `correctionNotice` and `showPer100gInfo` below are NOT gated
+            // on `error`. When either survives alongside a newly-set `error`,
+            // `NoticeStack` still announces and DOES collide with
+            // `InlineError`. That is reachable, not theoretical: nothing in
+            // `useNutritionLookup` ever resets `correctionNotice` (there is no
+            // `setCorrectionNotice(null)` in the file) and `isPer100g` is not
+            // re-armed at the top of `fetchBarcodeData` the way
+            // `labelReadNotice`/`validatedData`/`isBeverage` are — so a label
+            // RETAKE can carry a stale correction into a lookup that errors.
+            // The `lastAnnouncedRef` guard does not absorb it either:
+            // suppressing one contributor makes the composed key SHORTER, not
+            // absent, so it no longer matches the stored key.
+            //
+            // Resetting those two per-lookup is the real fix and is out of this
+            // slice's scope (`useNutritionLookup.ts` is on its do-not-touch
+            // list). Do not read this gate as having closed it.
+            //
+            // Historical note: the hook's own duplicate announcer for these
+            // notices was deleted in `c87fb790`, two commits before this range.
+            labelReadNotice={error ? null : labelReadNotice}
+            correctionNotice={correctionNotice}
+            showPer100gInfo={isPer100g}
+            reducedMotion={reducedMotion}
+          />
         ) : null}
 
         {/* ── Serving size & quantity controls ── */}
@@ -385,21 +446,14 @@ export default function NutritionDetailScreen() {
           />
         ) : null}
 
-        {error ? (
-          <View
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={[
-              styles.warningContainer,
-              { backgroundColor: withOpacity(theme.warning, 0.12) },
-            ]}
-          >
-            <Feather name="alert-triangle" size={20} color={theme.warning} />
-            <ThemedText type="small" style={{ color: theme.warning, flex: 1 }}>
-              {error}
-            </ThemedText>
-          </View>
-        ) : null}
+        {/* The canonical error surface: `assertive`, not the `polite` this
+            block used to carry — an error is not an advisory notice and must
+            interrupt. `InlineError` renders nothing for a null message, so no
+            ternary here, and it is deliberately NOT `!itemId`-gated: a saved
+            item can fail to load too, and that was already true before this
+            change. Style is spacing only, replacing the deleted
+            `warningContainer`'s bottom margin. */}
+        <InlineError message={error} style={styles.errorSpacing} />
 
         {showManualSearch ? (
           <Card elevation={1} style={styles.manualSearchCard}>
@@ -465,98 +519,27 @@ export default function NutritionDetailScreen() {
           </Card>
         ) : null}
 
-        <Animated.View
-          entering={
-            reducedMotion ? undefined : FadeInUp.delay(200).duration(400)
+        {/* No wrapper of any kind: the card owns its entrance (delay 200) and
+            its own bottom margin, so an Animated.View here would run a second
+            entrance over the same content and a plain View would only add a
+            layer. No `accessible` group either — a labelled group would
+            swallow the Nutri-Score ring's own announcement, which the ring
+            carries on its own node precisely so nothing has to. */}
+        <NutritionSummaryCard
+          standouts={standouts}
+          calories={nutrition?.calories}
+          protein={nutrition?.protein}
+          carbs={nutrition?.carbs}
+          fat={nutrition?.fat}
+          // Only the scan flow populates the serving state this caption is
+          // derived from — saved items store already-scaled totals, so a
+          // "Per …" claim there would misdescribe the numbers.
+          servingContextLabel={
+            showServingControls ? servingContextLabel : undefined
           }
-          style={styles.calorieCard}
-        >
-          <Card elevation={1} style={{ backgroundColor: theme.surface }}>
-            {/* Only the scan flow populates the serving state this caption is
-                derived from — saved items store already-scaled totals, so a
-                "Per …" claim there would misdescribe the numbers. */}
-            {showServingControls ? (
-              <ThemedText
-                type="caption"
-                style={[styles.heroContext, { color: theme.textSecondary }]}
-              >
-                Per {servingContextLabel}
-              </ThemedText>
-            ) : null}
-            <View style={styles.calorieRow}>
-              <ThemedText
-                accessibilityRole="header"
-                style={[styles.calorieValue, { color: theme.calorieAccent }]}
-              >
-                {nutrition?.calories !== undefined
-                  ? Math.round(nutrition.calories)
-                  : "—"}
-              </ThemedText>
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                kcal
-              </ThemedText>
-            </View>
-            <View style={styles.macroTiles}>
-              {(
-                [
-                  {
-                    label: "Protein",
-                    value: nutrition?.protein,
-                    color: theme.proteinAccent,
-                  },
-                  {
-                    label: "Carbs",
-                    value: nutrition?.carbs,
-                    color: theme.carbsAccent,
-                  },
-                  {
-                    label: "Fat",
-                    value: nutrition?.fat,
-                    color: theme.fatAccent,
-                  },
-                ] as const
-              ).map((macro) => (
-                <View
-                  key={macro.label}
-                  style={[
-                    styles.macroTile,
-                    {
-                      backgroundColor: isDark
-                        ? theme.backgroundTertiary
-                        : theme.backgroundSecondary,
-                    },
-                  ]}
-                >
-                  {/* textSecondary fails AA (4.31:1) on the light-mode tile
-                      fill (backgroundSecondary) — use full text there; the
-                      dark tile passes with textSecondary. */}
-                  <ThemedText
-                    style={[
-                      styles.macroTileLabel,
-                      { color: isDark ? theme.textSecondary : theme.text },
-                    ]}
-                  >
-                    {macro.label}
-                  </ThemedText>
-                  <ThemedText
-                    style={[styles.macroTileValue, { color: macro.color }]}
-                  >
-                    {macro.value !== undefined ? Math.round(macro.value) : "—"}
-                    <ThemedText
-                      style={[
-                        styles.macroTileUnit,
-                        { color: isDark ? theme.textSecondary : theme.text },
-                      ]}
-                    >
-                      {" "}
-                      g
-                    </ThemedText>
-                  </ThemedText>
-                </View>
-              ))}
-            </View>
-          </Card>
-        </Animated.View>
+          nutriScoreGrade={partition.nutriScore?.grade}
+          reducedMotion={reducedMotion}
+        />
 
         <CapturedPhotos
           nutritionImageUri={nutritionImageUri}
@@ -564,130 +547,11 @@ export default function NutritionDetailScreen() {
           reducedMotion={reducedMotion}
         />
 
-        {isPer100g && !itemId ? (
-          <View
-            style={[
-              styles.infoContainer,
-              { backgroundColor: withOpacity(theme.info, 0.08) },
-            ]}
-          >
-            <Feather name="info" size={16} color={theme.info} />
-            <ThemedText type="small" style={{ color: theme.info, flex: 1 }}>
-              Values shown per 100g. Check package for actual serving size.
-            </ThemedText>
-          </View>
-        ) : null}
-
-        {nutrition?.fiber !== undefined ||
-        nutrition?.sugar !== undefined ||
-        nutrition?.sodium !== undefined ||
-        nutrition?.saturatedFat !== undefined ||
-        nutrition?.transFat !== undefined ||
-        nutrition?.cholesterol !== undefined ||
-        nutrition?.caffeine !== undefined ? (
-          <Animated.View
-            entering={
-              reducedMotion ? undefined : FadeInUp.delay(500).duration(400)
-            }
-            style={styles.additionalNutrients}
-          >
-            <ThemedText type="h4" style={styles.sectionTitle}>
-              Additional Nutrients
-            </ThemedText>
-            <View
-              style={[
-                styles.nutrientsList,
-                { backgroundColor: theme.surface },
-                !isDark && Shadows.small,
-              ]}
-            >
-              {nutrition?.fiber !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Fiber
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.fiber)} g
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.sugar !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Sugar
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.sugar)} g
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.sodium !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Sodium
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.sodium)} mg
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.saturatedFat !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Saturated Fat
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.saturatedFat)} g
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.transFat !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Trans Fat
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.transFat)} g
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.cholesterol !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Cholesterol
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.cholesterol)} mg
-                  </ThemedText>
-                </View>
-              ) : null}
-              {nutrition?.caffeine !== undefined ? (
-                <View
-                  style={[styles.nutrientRow, { borderTopColor: theme.border }]}
-                >
-                  <ThemedText type="body" style={styles.nutrientLabel}>
-                    Caffeine
-                  </ThemedText>
-                  <ThemedText type="body" style={{ fontWeight: "600" }}>
-                    {roundToOneDecimal(nutrition.caffeine)} mg
-                  </ThemedText>
-                </View>
-              ) : null}
-            </View>
-          </Animated.View>
-        ) : null}
+        {/* Every row, always — a row with no value reads "Not recorded"
+            rather than vanishing, which is what stops missing data looking
+            like nothing to worry about. Entrance (delay 300) and bottom
+            margin are both the panel's own, so no wrapper here. */}
+        <NutritionPanel rows={rows} reducedMotion={reducedMotion} />
 
         {/* Micronutrients — collapsible section */}
         {nutrition?.productName &&
@@ -695,7 +559,7 @@ export default function NutritionDetailScreen() {
         nutrition.productName !== "Product Not Found" ? (
           <Animated.View
             entering={
-              reducedMotion ? undefined : FadeInUp.delay(600).duration(400)
+              reducedMotion ? undefined : FadeInUp.delay(500).duration(400)
             }
             style={styles.micronutrientSection}
           >
@@ -721,59 +585,46 @@ export default function NutritionDetailScreen() {
           />
         )}
 
-        {!itemId ? (
-          <View style={styles.buttonContainer}>
-            {logGate.kind === "needsAcknowledgement" &&
-            !acknowledgedUnverified ? (
-              <Button
-                onPress={() => {
-                  setAcknowledgedUnverified(true);
-                  // Both branches render the same Button at the same JSX position
-                  // with no key, so React swaps props on ONE node and the screen
-                  // reader keeps focus there. A changed accessibilityLabel on an
-                  // already-focused element is not re-spoken, so without this a
-                  // screen-reader user hears nothing, re-activates the same node
-                  // out of habit, and logs the un-reviewed database numbers having
-                  // never perceived the gate. Announcing beats a `key` remount,
-                  // which would drop focus and still guarantee nothing.
-                  AccessibilityInfo.announceForAccessibility(
-                    "Values confirmed. Add to Today is now available.",
-                  );
-                }}
-                accessibilityLabel={`${logGate.buttonLabel}. These values come from the product database, not the label you photographed.`}
-                accessibilityHint="Reveals the Add to Today button"
-                style={styles.addButton}
-              >
-                {logGate.buttonLabel}
-              </Button>
-            ) : (
-              <Button
-                onPress={handleAddToLog}
-                loading={addToLogMutation.isPending}
-                accessibilityLabel={offlineLabel(
-                  `Add ${nutrition?.productName || "item"} to today's food log`,
-                )}
-                accessibilityHint="Saves this item to your daily nutrition tracking"
-                style={styles.addButton}
-              >
-                {offlineLabel("Add to Today")}
-              </Button>
-            )}
-            {isOffline && (
-              <ThemedText
-                type="small"
-                style={{
-                  color: theme.textSecondary,
-                  textAlign: "center",
-                  marginTop: Spacing.xs,
-                }}
-              >
-                You&apos;re offline. This will sync when you reconnect.
-              </ThemedText>
-            )}
-          </View>
-        ) : null}
+        {/* Unconditional, and owned by the screen rather than by any one of
+            the components above. This screen makes health claims from THREE
+            places — `FlagSections` badges, `NutritionSummaryCard`'s
+            Nutri-Score ring and standout copy, and `NutritionPanel`'s FSA
+            traffic lights — and the first of those can render nothing at all
+            (every universal flag dropped as already-banded). While the
+            disclaimer lived inside `FlagSections` it was gated on a badge
+            list, so exactly that state shipped a banded, graded, red-pilled
+            screen with no qualifier on it.
+
+            The rule this encodes: a qualifier belongs to the claim, not to
+            whichever component happened to introduce it. Anything that can
+            return null is the wrong owner. Keep this outside every
+            conditional — its correctness is that it has no gate. */}
+        <ThemedText
+          type="caption"
+          style={[styles.medicalDisclaimer, { color: theme.textSecondary }]}
+        >
+          Informational only — not medical advice.
+        </ThemedText>
       </ScrollView>
+
+      {/* The log action is sticky, not the last thing you scroll to — an
+          absolutely-positioned sibling AFTER the ScrollView and INSIDE this
+          `accessibilityViewIsModal` root. Inside matters: outside it, the bar
+          falls out of the modal's iOS accessibility scope and VoiceOver cannot
+          reach it (Constraint 8). It reports its measured height back so the
+          scroller can clear it — the bar occludes real content otherwise, at
+          whichever of its three heights it is currently rendering. */}
+      {showLogBar ? (
+        <LogActionBar
+          logGate={logGate}
+          productName={nutrition?.productName}
+          isOffline={isOffline}
+          offlineLabel={offlineLabel}
+          isPending={addToLogMutation.isPending}
+          onAddToLog={handleAddToLog}
+          onLayout={setBarHeight}
+        />
+      ) : null}
     </ThemedView>
   );
 }
@@ -788,106 +639,17 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: Spacing.lg,
   },
-  warningContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
+  // All that survives of the deleted `warningContainer`: `InlineError` owns
+  // the error's own layout and colours, but not its separation from whatever
+  // renders next.
+  errorSpacing: {
     marginBottom: Spacing.lg,
-  },
-  infoContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
-    marginBottom: Spacing.lg,
-  },
-  calorieCard: {
-    marginBottom: Spacing["2xl"],
-  },
-  heroContext: {
-    fontFamily: FontFamily.semiBold,
-    fontSize: 11,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  calorieRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: Spacing.sm,
-    marginTop: Spacing.xs,
-  },
-  calorieValue: {
-    fontSize: 40,
-    lineHeight: 44,
-    fontFamily: FontFamily.bold,
-  },
-  macroTiles: {
-    flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.lg,
-  },
-  macroTile: {
-    flex: 1,
-    borderRadius: BorderRadius.sm,
-    paddingVertical: 10,
-    paddingHorizontal: Spacing.md,
-  },
-  macroTileLabel: {
-    fontFamily: FontFamily.medium,
-    fontSize: 11,
-    lineHeight: 16,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  macroTileValue: {
-    fontFamily: FontFamily.bold,
-    fontSize: 18,
-    lineHeight: 26,
-    marginTop: 2,
-  },
-  macroTileUnit: {
-    fontFamily: FontFamily.medium,
-    fontSize: 12,
-  },
-  additionalNutrients: {
-    marginBottom: Spacing["2xl"],
-  },
-  sectionTitle: {
-    marginBottom: Spacing.md,
-  },
-  nutrientsList: {
-    borderRadius: BorderRadius.card,
-    overflow: "hidden",
-  },
-  nutrientRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderTopWidth: 1,
-  },
-  nutrientLabel: {
-    fontWeight: "500",
-  },
-  buttonContainer: {
-    marginTop: Spacing.lg,
-  },
-  addButton: {
-    marginBottom: Spacing.md,
   },
   micronutrientSection: {
     marginBottom: Spacing["2xl"],
   },
-  correctionContainer: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: Spacing.sm,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.xs,
-    marginBottom: Spacing.lg,
+  medicalDisclaimer: {
+    marginTop: Spacing.md,
   },
   manualSearchCard: {
     padding: Spacing.lg,

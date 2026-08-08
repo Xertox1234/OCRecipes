@@ -19,9 +19,17 @@ export const BADGE_SEVERITY_FILL_OPACITY = 0.1;
 export type BadgeSeverityColorKey =
   | "badgeErrorText"
   | "badgeWarningText"
-  | "badgeInfoText";
+  | "badgeInfoText"
+  | "badgeSuccessText"
+  | "badgeNeutralText";
 
-export type BadgeSeverityIcon = "alert-triangle" | "alert-circle" | "info";
+export type BadgeSeverityIcon =
+  | "alert-triangle"
+  | "alert-circle"
+  | "info"
+  | "check-circle"
+  | "award"
+  | "minus-circle";
 
 export interface BadgeSeverityVisuals {
   colorKey: BadgeSeverityColorKey;
@@ -44,4 +52,40 @@ export const MEDIUM_SEVERITY_VISUALS: BadgeSeverityVisuals = {
 export const LOW_SEVERITY_VISUALS: BadgeSeverityVisuals = {
   colorKey: "badgeInfoText",
   icon: "info",
+};
+
+/**
+ * The three entries below serve NutritionPanel's traffic-light bands, not the
+ * two severity badges above. They are here rather than in a panel-local module
+ * so every WCAG-checked badge token stays enumerable from one place —
+ * `__tests__/badge-contrast.test.ts` asserts against this file.
+ *
+ * CONCERN_LOW and BENEFIT deliberately SHARE `badgeSuccessText`. Both mean
+ * "good news", a second green would need its own 4.5:1 (text) and 3:1
+ * (graphical) verification in both themes, and the two are already separable
+ * on two non-colour channels: the icon here, and the tag text ("LOW" vs
+ * "GOOD"/"EXCELLENT") in NutritionPanel-utils.
+ */
+
+/** A concern nutrient in its LOW band — a good result about a bad thing. */
+export const CONCERN_LOW_VISUALS: BadgeSeverityVisuals = {
+  colorKey: "badgeSuccessText",
+  icon: "check-circle",
+};
+
+/** A benefit nutrient at GOOD or EXCELLENT — actively good news. */
+export const BENEFIT_VISUALS: BadgeSeverityVisuals = {
+  colorKey: "badgeSuccessText",
+  icon: "award",
+};
+
+/**
+ * A benefit nutrient at zero. Grey, and NOT the same as "not recorded" — a
+ * product with no fibre is a fact about the product; a product whose fibre we
+ * never received is a fact about our data. Collapsing the two is the
+ * fail-silent shape safety invariant 3 forbids.
+ */
+export const BENEFIT_NONE_VISUALS: BadgeSeverityVisuals = {
+  colorKey: "badgeNeutralText",
+  icon: "minus-circle",
 };
