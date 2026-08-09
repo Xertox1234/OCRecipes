@@ -193,9 +193,10 @@ below too — never skip them just because the advisory ran:
 
 ```bash
 # pg_trgm advisory — silent (no output, exit 0) when ocrecipes_lab is unreachable/unbuilt
-# or nothing scores above threshold; a hit prints "<path> (score <n>)" lines. Note: the
-# projection is only as fresh as the last manual `--rebuild` — it does not auto-update
-# when this very skill adds a new solution file, so treat a miss as weak evidence only.
+# or nothing scores above threshold; a hit prints "<path> (score <n>)" lines. Step 7
+# refreshes the projection after every codify, so it covers everything codified so far —
+# but the fail-silent rail still conflates unreachable with no-match, so a miss remains
+# weak evidence: run the greps below regardless.
 scripts/pg-lab/codify-neardup.sh "<intended title>"
 ```
 
@@ -257,6 +258,12 @@ Stage every codification target together — solution files under `docs/solution
 # Example — substitute the actual files you wrote/updated:
 git add docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md .claude/agents/security-auditor.md
 git commit -m "docs(solutions): codify findings from $(git branch --show-current)"
+
+# Refresh the Step 6b near-dup projection so the NEXT codify can see what this one wrote.
+# Fail-silent per the PG Lab rail (lab DB down => no-op, never block a codify). Without it
+# the projection freezes at its last manual --rebuild and 6b searches a stale corpus while
+# looking exactly like a healthy one — measured 2026-08-09 at 153 of 768 docs invisible.
+scripts/pg-lab/codify-neardup.sh --rebuild >/dev/null 2>&1 || true
 ```
 
 A solution persists by this commit — always commit when any file was written.
