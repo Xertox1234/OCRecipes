@@ -63,3 +63,34 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md` (design rails §1-4 ar
   zero hits" for the 2026-10-01 prune-date decision), plus a TOCTOU-race swallow in
   `init.sh` and wording/comment cleanups. Verified live against a local Postgres 18 (real
   579-file corpus round-trip + fixture-driven test, all passing); no CRITICAL findings.
+
+### 2026-08-09 — READ BEFORE THE 2026-10-01 PRUNE DECISION (PR #790)
+
+- The projection was **stale for this probe's entire measurement window**. `--rebuild` was
+  never invoked after 2026-07-09 (nothing in the repo called it), so all 112 logged
+  invocations — the first landing 2026-07-10 — searched 615 rows against a 768-doc corpus.
+  The `top_score = NULL` sentinel added above did not catch this: it fires only on a table
+  with **zero** rows, and a partially-stale table logs a normal score.
+- The prune criterion is **not currently met**. There is **1 genuine hit** (2026-07-21,
+  score 0.472) and it produced the prescribed outcome — the matched doc was extended, not
+  duplicated (commit `1b50f0f0`).
+- Staleness was **not** the cause of the low hit rate, so do not treat this as a reason to
+  re-measure before deciding. A time-correct replay of all 112 queries returns the same 1
+  hit, and a corpus-wide census finds only 10 near-dup pairs in the whole corpus, all from
+  the May/June bulk-import era, none involving the 153 docs the stale projection could not
+  see.
+- **Freshness from 2026-08-09 is better but NOT guaranteed.** `/codify` Step 7 refreshes the
+  projection only from the **primary checkout**: worktree codifies (`/todo`, `/todo-fast`,
+  `/audit`) skip it by design — a rebuild there would repopulate the shared projection from
+  that branch's corpus and drop every sibling worktree's just-committed doc — and
+  `todo-executor.md` Step 9 has its own codify commit path that never reaches Step 7.
+- **Before drawing any conclusion from the log, rebuild first.** Do NOT diagnose freshness by
+  comparing `count(*)` against a `find | wc -l` of the corpus — that comparison does not
+  discriminate. It under-counts benignly when a doc has no parseable title or no body line
+  (the extractor skips it), when the last refresh ran from a feature branch that had not yet
+  merged main, and when the last codify ran in a worktree. Instead run
+  `scripts/pg-lab/codify-neardup.sh --rebuild` from an up-to-date primary checkout and read the
+  `✓ rebuilt … N rows` it prints — that is ground truth by construction, and it costs one
+  command. Only then read `harness.codify_neardup_log`.
+- Full analysis: `docs/solutions/logic-errors/freshness-guard-as-emptiness-check-passes-when-partially-stale-2026-08-09.md`
+  and `docs/solutions/conventions/replay-eval-ground-truth-mutated-by-the-feature-under-test-2026-08-09.md`.

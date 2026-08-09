@@ -193,9 +193,12 @@ below too — never skip them just because the advisory ran:
 
 ```bash
 # pg_trgm advisory — silent (no output, exit 0) when ocrecipes_lab is unreachable/unbuilt
-# or nothing scores above threshold; a hit prints "<path> (score <n>)" lines. Note: the
-# projection is only as fresh as the last manual `--rebuild` — it does not auto-update
-# when this very skill adds a new solution file, so treat a miss as weak evidence only.
+# or nothing scores above threshold; a hit prints "<path> (score <n>)" lines. Step 7
+# refreshes the projection only when codify runs from the PRIMARY checkout with the lab DB
+# up — not from a todo/audit worktree, and todo-executor.md's own codify path never
+# invokes Step 7 at all — so coverage is "fresher", never "guaranteed complete". That plus
+# the fail-silent rail (unreachable is indistinguishable from no-match) keeps a miss weak
+# evidence: run the greps below regardless.
 scripts/pg-lab/codify-neardup.sh "<intended title>"
 ```
 
@@ -256,7 +259,37 @@ Stage every codification target together — solution files under `docs/solution
 ```bash
 # Example — substitute the actual files you wrote/updated:
 git add docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md .claude/agents/security-auditor.md
-git commit -m "docs(solutions): codify findings from $(git branch --show-current)"
+# Refresh the Step 6b near-dup projection so the NEXT codify can see what this one wrote.
+# Without it the projection freezes at its last manual --rebuild and 6b searches a stale
+# corpus while looking exactly like a healthy one — measured 2026-08-09 at 153 of 768 docs
+# invisible. CHAINED TO THE COMMIT (&&) on purpose: if lint-staged rejects it, the rebuild
+# must not index a working-tree doc that is not in git, or a later 6b hit cites a path that
+# does not exist.
+#
+# What this guarantees: the projection mirrors THIS CHECKOUT's docs/solutions.
+# What it does NOT guarantee: parity with main. Step 7 always runs on a feature branch
+# (committing to main is forbidden), so a branch forked before a docs merge rebuilds a
+# projection missing those docs. That is bounded and is restored by the next codify from a
+# re-based checkout. The linked-worktree case below is the one that does NOT self-correct:
+# /todo runs 4-5 executors in parallel worktrees, and each rebuild TRUNCATEs, so they would
+# take turns dropping each other's just-committed docs — last writer wins.
+#
+# Both absolute-path forms are load-bearing from a subdirectory: a bare --git-dir is
+# absolute there while --git-common-dir stays relative (false-skips in the primary
+# checkout), and a relative script path is simply not found (the || below would then
+# report a "failure" that is really a wrong cwd).
+#
+# Never blocks, and never silenced: the "✓ rebuilt … N rows" line is the freshness signal,
+# and swallowing stderr would re-hide psql-missing / LAB_DATABASE_URL refusal / load
+# failure — the exact invisibility this step exists to prevent.
+git commit -m "docs(solutions): codify findings from $(git branch --show-current)" && {
+  if [ "$(git rev-parse --path-format=absolute --git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+    "$(git rev-parse --show-toplevel)"/scripts/pg-lab/codify-neardup.sh --rebuild ||
+      echo "note: near-dup projection refresh failed — advisory only, continue"
+  else
+    echo "note: linked worktree — near-dup projection refresh skipped by design (see Step 6b)"
+  fi
+}
 ```
 
 A solution persists by this commit — always commit when any file was written.
