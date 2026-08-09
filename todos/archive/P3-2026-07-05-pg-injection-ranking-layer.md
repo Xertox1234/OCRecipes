@@ -3,13 +3,13 @@
 ---
 
 title: "PG Lab (spec-first): injection ranking layer — time decay + git-aware boosts + budget"
-status: blocked
+status: done
 blocked_until: 2026-08-05
-blocked_reason: "30-day usage-telemetry window (2026-07-11 user decision); re-check is HUMAN-LED only — see 2026-07-16 reopen update"
+blocked_reason: "SATISFIED 2026-08-09 — date gate passed, human-led decision taken (DROP). Gate fields retained for the audit trail; todos/archive/ is outside todo-gate-check.sh's -maxdepth 1 scan, so they cannot re-gate anything."
 human_led: true
 priority: low
 created: 2026-07-05
-updated: 2026-08-08
+updated: 2026-08-09
 assignee:
 labels: [deferred, harness, spec-first]
 github_issue:
@@ -28,10 +28,10 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`; evidence and the doob
 
 ## Acceptance Criteria (for the SPEC phase — implementation gets its own criteria in the spec)
 
-- [ ] Brainstorm session run (superpowers:brainstorming) covering: scoring formula and weights; where ranking lives (pure-bash over markdown vs Postgres derived index — decide with data from the corpus size and the usage-telemetry todo's findings); budget size and allocation phases; interaction with the existing over-budget deferral logic (PR #492/#504); rollout (shadow-mode scoring that only logs vs immediate). _(A 2026-07-16 autonomous run produced a candidate version of this — invalidated on process grounds; must be HUMAN-LED. See 2026-07-16 reopen update.)_
+- [ ] ~~Brainstorm session run (superpowers:brainstorming) covering: scoring formula and weights; where ranking lives (pure-bash over markdown vs Postgres derived index); budget size and allocation phases; interaction with the existing over-budget deferral logic (PR #492/#504); rollout (shadow-mode vs immediate).~~ **Moot on DROP** — this criterion exists to inform a design that is not being built. It becomes live again only if a re-trigger reopens the line, and it remains HUMAN-LED if so.
 - [x] Spec written to `docs/superpowers/specs/` and passed through `/spec-review`. _(`docs/superpowers/specs/2026-07-16-pg-injection-ranking-layer-design.md` — verdict: approve, one low finding fixed inline.)_
 - [x] Spec explicitly defines an evaluation: N recorded real injection events replayed under old vs new selection, human-judged relevance on the diff (no vibes-based "seems better"). _(N=200 stratified replay, blind judgment on changed events only, numeric ship/kill thresholds — binding on any revival.)_
-- [ ] Decision recorded: proceed / simplify / drop — with reasons. _(A 2026-07-16 autonomous run recorded DROP-with-re-triggers; DOWNGRADED to provisional input — the binding decision belongs to the ≥2026-08-05 human-led re-check. See reopen update.)_
+- [x] Decision recorded: proceed / simplify / drop — with reasons. **DROP — ratified by the user in a human-led session on 2026-08-09**, after the ≥2026-08-05 telemetry re-check. See the closing update below.
 
 ## Implementation Notes
 
@@ -121,6 +121,53 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`; evidence and the doob
   — its "stable metrics" justification was verified for only the deferral share.
 - Process followup filed: `todos/P3-2026-07-16-blocked-until-machine-checkable-gate.md`
   (make date gates frontmatter-visible so orchestrators refuse to dispatch past them).
+
+### 2026-08-09 — CLOSED: decision DROP (ratified, human-led)
+
+- **The user ratified the provisional DROP in a human-led session, naming this todo
+  explicitly.** That satisfies both 2026-07-11 gates: the date gate (2026-08-05) had passed,
+  and the decision was taken by the user rather than by autonomous execution. This is the
+  binding decision the 2026-07-16 reopen reserved; the 2026-07-16 verdict is no longer
+  provisional, it is ratified.
+- **Rationale (unchanged from the provisional analysis, and now confirmed by full-window
+  data).** R2's "all tag matches, unranked" premise went stale before the spec was written:
+  `applies_to` promotion, newest-first ordering, bug-slot reservation, domain-priority
+  ordering, and byte-budget deferral all shipped piecemeal 2026-06-05 → 2026-07-04.
+  Standalone time decay is order-equivalent to the newest-first sort already in place;
+  quality scoring is redundant for a human-curated corpus. The sole net-new signal
+  (git-aware boost) still has no demonstrated retrieval miss to justify touching the
+  hottest hook path.
+- **Telemetry at ratification** (33-day window 2026-07-06 → 2026-08-08; 7,841 rows,
+  147 sessions — recorded in full in the 2026-08-08 checkpoint above, PR #787):
+  deferral **5.6%** trailing-30d against the >10% re-trigger (not fired); corpus **768**
+  against the >1,300 re-trigger (not fired, ~4.2 docs/day ⇒ mid-Dec 2026). Action mix is
+  82.2% pointer / 12.4% injected / 5.4% deferred — so a ranking layer would govern a
+  first-touch decision occurring roughly **1 fire in 8**, a materially smaller lever than
+  "changes what the model sees on every edit" implies.
+- **Known limits of the evidence, recorded deliberately.** (1) The third re-trigger —
+  read-through telemetry showing injected refs going unread — is **unevaluable, not
+  un-fired**: `injection_log` records delivery only (pointer/injected/deferred) and no
+  read/open/used/hit column exists anywhere in the `harness` schema. "No re-trigger fired"
+  is literally true but covers 2 of 3. (2) Deferral is **domain-concentrated** (`api`
+  18.3%, `client-state` 13.8%, `testing` 8.2%, vs zero in `accessibility`, `security`,
+  `ai-prompting`). Read at aggregate granularity — which is how the >10% trigger is
+  written — it did not fire; a cheap per-domain budget tune is the proportionate response
+  if that concentration ever becomes painful, not the R2 ranking layer.
+- **Re-triggers remain armed and inherit the spec verbatim** — deferral >10% on a rolling
+  30 days, corpus >1,300 docs, read-through telemetry showing unread injections, or
+  explicit user choice. Any revival inherits
+  `docs/superpowers/specs/2026-07-16-pg-injection-ranking-layer-design.md` (local-only) with
+  its binding architecture: out-of-band manifest generator (never in-hook scoring),
+  shadow-first rollout, and the N=200 stratified replay eval with numeric ship/kill
+  thresholds.
+- **Caveat binding on that replay eval if the line ever reopens** (learned 2026-08-09 while
+  measuring a different projection): a replay eval cannot treat the current corpus as ground
+  truth when the feature under test mutates that corpus — and injection sessions codify new
+  solution docs into the very corpus the ranker selects from. A naive replay of this class
+  over-reported hits by ~49×. Method and the floor/ceiling correction:
+  `docs/solutions/conventions/replay-eval-ground-truth-mutated-by-the-feature-under-test-2026-08-09.md`.
+- Closed clean: no follow-up todos filed. Phase D is now fully resolved — distillation KEEP,
+  session-coordination SHIPPED, ranking-layer DROP.
 
 ### 2026-08-08 — telemetry re-check (date gate passed; NO decision recorded)
 
