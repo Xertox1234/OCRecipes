@@ -36,14 +36,38 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
 
 ## Prerequisites
 
-- **XcodeBuildMCP UI-automation tools must be enabled** (`tap`, `type_text`, `swipe`) for any
-  step that _interacts_ with the app: logging in, tapping through to a screen with no deep link,
-  or dismissing a system modal. They are **off by default** — only capture tools (`screenshot`,
-  `snapshot_ui`) plus build/launch/session tools are enabled. Turn the UI-automation group on
-  (user config + Claude restart): https://xcodebuildmcp.com/docs/configuration. Without them,
-  the skill can still set defaults, launch, deep-link, screenshot, and snapshot — so it works
-  **capture-only** for a target reachable without interaction (an already-authenticated
-  deep-link screen, or the login screen itself).
+- **XcodeBuildMCP UI-automation tools** (`tap`, `type_text`, `swipe`, `gesture`, `button`) are
+  needed for any step that _interacts_ with the app: logging in, tapping through to a screen with
+  no deep link, or dismissing a system modal. They live in the separate `ui-automation` workflow
+  and are **not registered unless it is explicitly enabled**.
+
+  **Check first, don't assume:** look for `mcp__XcodeBuildMCP__tap` in the available tools. The
+  server also logs `Registered N tools from workflows: ...` at startup.
+
+  Two mechanisms enable it, and **the project file wins over the env var** (config resolution
+  order is overrides → project file → env → default — the reverse of the usual convention):
+  1. **Project-local** `.xcodebuildmcp/config.yaml` at the repo root:
+
+     ```yaml
+     enabledWorkflows:
+       - simulator
+       - ui-automation
+     ```
+
+     This repo has one, but it is **git-excluded** (`.git/info/exclude`), so it is absent from a
+     fresh clone and from every worktree. The server reads it **once at startup, from its cwd** —
+     so a session launched inside a worktree gets no `ui-automation`, while a session launched
+     from the main checkout keeps it even after entering one.
+
+  2. **User-level** `XCODEBUILDMCP_ENABLED_WORKFLOWS=simulator,ui-automation` in the
+     XcodeBuildMCP server's `env` block in `~/.claude.json`. Lower precedence, but it is the one
+     that survives a clone — prefer it if you keep hitting this.
+
+  Either way, config changes only take effect **after a Claude restart**. Without the tools the
+  skill still runs **capture-only** — set defaults, launch, deep-link, screenshot, snapshot —
+  enough for any target reachable without interaction (an already-authenticated deep-link
+  screen, or the login screen itself). Reference: https://xcodebuildmcp.com/docs/configuration
+
 - Auth-gated screens need the backend up (`npm run server:dev`) and Metro running.
 
 ## Tools
