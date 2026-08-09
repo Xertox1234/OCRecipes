@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, Platform } from "react-native";
 
 import { useNutritionLookup } from "../useNutritionLookup";
 import { createQueryWrapper } from "../../../test/utils/query-wrapper";
@@ -648,5 +648,66 @@ describe("useNutritionLookup — post-log navigation", () => {
     // stacked native modals. If it comes back, this test fails.
     expect(mockReset).not.toHaveBeenCalled();
     expect(mockGoBack).not.toHaveBeenCalled();
+  });
+});
+
+describe("useNutritionLookup — error announcement", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("network down")),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // The hook used to carry its own iOS-gated announcer for `error`, on the
+  // same silenced-collision premise as the deleted notices effect (see the
+  // docblock above the deleted `useEffect` in useNutritionLookup.ts). #753
+  // added `InlineError` (client/components/InlineError.tsx) as a second,
+  // duplicate announcer for this screen's error state; deleting the hook's
+  // effect is what leaves `InlineError` sole. This pins the hook's half of
+  // that split — it still SETS `error`, it just does not SPEAK it.
+  //
+  // Total outage drives the error: both `fetch` calls in `fetchBarcodeData`
+  // (the server leg and the direct-OFF fallback) reject, so the outer `catch`
+  // runs `setError("Failed to fetch product data")` — the one error path with
+  // no dependency on a particular response shape.
+  it("does not announce the fetch-failure error — InlineError owns it", async () => {
+    const announce = vi
+      .spyOn(AccessibilityInfo, "announceForAccessibility")
+      .mockImplementation(() => {});
+
+    try {
+      const { wrapper } = createQueryWrapper();
+      const { result } = renderHook(
+        () => useNutritionLookup({ barcode: "06772408" }),
+        { wrapper },
+      );
+
+      // Negative control: the error state really fired.
+      await waitFor(() => expect(result.current.error).toBeTruthy());
+      // Unlike the notices case above, `error` and `isLoading: false` land in
+      // the SAME commit here (outer `catch` → `finally`, no `await` between
+      // them), so this second wait is already satisfied the instant the first
+      // one resolves — it doesn't widen the observation window. Kept anyway so
+      // the assertion below doesn't depend on which of the two happens to
+      // settle first.
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+      expect(result.current.error).toBe("Failed to fetch product data");
+      // Stated precondition, not an assumption: the silence assertion below
+      // guards against a reintroduced iOS-gated announcer only while the
+      // harness resolves Platform.OS to "ios" (test/mocks/react-native.ts
+      // default) — if that default ever changes, fail loudly here instead of
+      // letting the guard pass vacuously.
+      expect(Platform.OS).toBe("ios");
+      expect(announce).not.toHaveBeenCalled();
+    } finally {
+      announce.mockRestore();
+    }
   });
 });
