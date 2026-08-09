@@ -142,8 +142,10 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`; evidence and the doob
 - **Deferral share moved 2.6% → 5.4%**, confirming the known weakness of the 07-16 provisional
   analysis (`docs/solutions/logic-errors/multi-metric-stability-claim-checked-for-one-metric-2026-07-16.md`):
   the early "stable" figure under-sampled a workload-dependent metric. Weekly series is
-  1.6 → 4.1 → 8.5 → 7.3 → 4.9 — **peaked mid-window and receding**, so this corroborates the
-  sampling flaw rather than revealing a new upward trend. A single 8.5% week does not approach
+  1.6 → 4.1 → 8.5 → 7.3 → 4.9 — **peaked mid-window and receding**. Note the final bucket
+  (w/c 2026-08-03) is a partial 6-day week; the decline is therefore asserted on the two
+  COMPLETE weeks 8.5 → 7.3 and does not depend on that partial point. This corroborates the
+  sampling flaw rather than revealing a new upward trend; a single 8.5% week does not approach
   a threshold explicitly scoped to 30 days.
 - **New signal the 07-16 run did not have — deferral is domain-concentrated** (small
   denominators noted): `api` 19/104 = 18.3%, `client-state` 48/349 = 13.8%, `testing`
