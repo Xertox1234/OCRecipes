@@ -41,8 +41,10 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
   no deep link, or dismissing a system modal. They live in the separate `ui-automation` workflow
   and are **not registered unless it is explicitly enabled**.
 
-  **Check first, don't assume:** look for `mcp__XcodeBuildMCP__tap` in the available tools. The
-  server also logs `Registered N tools from workflows: ...` at startup.
+  **Check first, don't assume.** The `ToolSearch` preload in the Tools section below doubles as
+  the check: if `mcp__XcodeBuildMCP__tap` is missing from its result, `ui-automation` is not
+  enabled and you are capture-only. The server also logs `Registered N tools from workflows: ...`
+  at startup.
 
   Two mechanisms enable it, and **the project file wins over the env var** (config resolution
   order is overrides → project file → env → default — the reverse of the usual convention):
@@ -62,13 +64,24 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
      help. A session launched from the main checkout keeps the tools after entering a worktree,
      because the server already loaded its config.
 
-     To make worktree sessions work without duplicating the file, set
-     `XCODEBUILDMCP_CWD=/absolute/path/to/main/checkout` in the server's `env` block; it
-     `chdir`s at bootstrap, so the config lookup always resolves the main checkout.
+     To give worktree-launched sessions the tools, prefer the env var in (2) — it has no cwd
+     dependency at all. `XCODEBUILDMCP_CWD=<main checkout>` also works (it `chdir`s at bootstrap,
+     so the lookup always resolves the main checkout), but **mind its blast radius**:
+     XcodeBuildMCP is typically registered once in the top-level `mcpServers` of `~/.claude.json`,
+     which makes that variable pin the server's cwd for _every_ Apple project on the machine —
+     another project's own `.xcodebuildmcp/config.yaml` would then never resolve, and its
+     relative paths would resolve inside this repo. Only reach for it if you work in one Apple
+     project.
 
   2. **User-level** `XCODEBUILDMCP_ENABLED_WORKFLOWS=simulator,ui-automation` in the
-     XcodeBuildMCP server's `env` block in `~/.claude.json`. Lower precedence, but it is the one
-     that survives a clone — prefer it if you keep hitting this.
+     XcodeBuildMCP server's `env` block in `~/.claude.json`. This is the durable fix — it needs
+     no cwd and survives a clone. (Measured: from a directory with no `.xcodebuildmcp/`, the
+     server registers 24 tools without it and 36 with it, adding `ui-automation`.)
+
+     Because the project file wins wherever it exists, the env var only takes effect where there
+     is **no** `.xcodebuildmcp/config.yaml`. Keep the two lists in sync — otherwise adding a
+     workflow to only one of them makes the same repo expose different tool sets depending on
+     which directory Claude was launched from.
 
   Either way, config changes only take effect **after a Claude restart**. Without the tools the
   skill still runs **capture-only** — set defaults, launch, deep-link, screenshot, snapshot —
