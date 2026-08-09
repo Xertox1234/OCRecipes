@@ -33,8 +33,11 @@ either:
 - A count (`| wc -l`, `grep -c`) over proxied output disagrees with what a scoped query reports.
 - A `--watch`-style polling command's summary counts far exceed the number of objects that
   exist (a PR with 10 checks reporting >100).
-- The verification is unbounded (`git log` with no `-n`) — large output is exactly what the
-  proxy compresses, so big listings are the most dangerous to pipe.
+- The verification is unbounded (`git log` with no `-n`) — large output is what the proxy
+  compresses hardest, so big listings are the most dangerous to pipe.
+- **The pattern you are grepping for lives at the END of a line** — a `(#NNN)` PR suffix, a
+  trailing timestamp, a status word. Per-line elision cuts the tail first, so line-trailing
+  tokens are the single most fragile thing to match on.
 
 ## Why
 
@@ -45,19 +48,38 @@ git log --oneline main | grep -c '(#787)'              # -> 0   (through the hoo
 rtk proxy git log --oneline main | grep -c '(#787)'    # -> 1   (raw, unfiltered)
 ```
 
-The commit `b23e63d2 docs(todos): ... (#787)` existed on `main` in both cases. The unbounded
-`git log --oneline main` produces a long listing, which the proxy compresses before it reaches
-the pipe — so `grep` searched a truncated remnant and correctly reported "not found" about
-text that was simply not in what it was given.
+The commit `b23e63d2 docs(todos): ... (#787)` existed on `main` in both cases — and it was
+`main`'s **tip**, i.e. line 1 of the listing. That detail rules out the obvious explanation:
+this was not a case of the wanted line falling off the end of a shortened list.
 
-Crucially, the same command with a small bound printed fine:
+The proxy truncates on **two independent axes**, and it is the second that caused the miss:
 
-```bash
-git log --oneline -3 main    # displays "b23e63d2 ... (#787)" intact
+```text
+hooked: b23e63d2 docs(todos): record 2026-08-08 telemetry re-check for PG injection r...
+raw:    b23e63d2 docs(todos): record 2026-08-08 telemetry re-check for PG injection ranking (#787)
 ```
 
-Output small enough to survive the proxy passes through unchanged, which is what makes this
-trap so easy to miss: the interactive spot-check succeeds while the piped verification fails.
+1. **Line count** — 50 lines emitted vs 2,021 raw (`| wc -l` on each).
+2. **Per-line width** — every line is clipped to a hard 82 characters with a trailing `...`
+   (measured: max line length 82 hooked vs 145 raw).
+
+`(#787)` sat at the end of line 1 and was elided by axis 2. `grep` never saw it, and reported
+"not found" entirely correctly about the text it was actually given. Note that a shorter
+subject on the same page kept its suffix (`... (P3) (#786)`), so the corruption is per-line and
+content-dependent — some matches survive, which makes a spot-check especially misleading.
+
+Both caps engaged on the large listing and neither on a small one (the exact threshold was not
+measured — only that a 3-line result passed through intact and a 2,021-line one did not):
+
+```bash
+git log --oneline -3 main | grep -c '(#787)'    # -> 1   (bounded: no elision)
+git log --oneline    main | grep -c '(#787)'    # -> 0   (unbounded: tail elided)
+```
+
+Same command, same repo, same instant, opposite answers — the only variable is how much output
+the proxy was asked to carry. That is what makes the trap so easy to miss: the bounded
+interactive spot-check you would naturally reach for to double-check *succeeds*, at exactly the
+moment the unbounded piped verification is failing.
 
 A second symptom the same session, attributed to this cause but **not** separately isolated:
 `gh pr checks <n> --watch` returned a "CI Checks Summary: Passed: 101, Pending: 35" for a PR
