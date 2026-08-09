@@ -55,9 +55,16 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
      ```
 
      This repo has one, but it is **git-excluded** (`.git/info/exclude`), so it is absent from a
-     fresh clone and from every worktree. The server reads it **once at startup, from its cwd** —
-     so a session launched inside a worktree gets no `ui-automation`, while a session launched
-     from the main checkout keeps it even after entering one.
+     fresh clone and from every worktree. The lookup is `<cwd>/.xcodebuildmcp/config.yaml` with
+     **no parent-directory walk** (`getConfigDir` in `utils/project-config.js` is a plain
+     `path.join`), read once at startup. So a session launched inside a worktree gets no
+     `ui-automation` even though the worktree sits under the main checkout — nesting does not
+     help. A session launched from the main checkout keeps the tools after entering a worktree,
+     because the server already loaded its config.
+
+     To make worktree sessions work without duplicating the file, set
+     `XCODEBUILDMCP_CWD=/absolute/path/to/main/checkout` in the server's `env` block; it
+     `chdir`s at bootstrap, so the config lookup always resolves the main checkout.
 
   2. **User-level** `XCODEBUILDMCP_ENABLED_WORKFLOWS=simulator,ui-automation` in the
      XcodeBuildMCP server's `env` block in `~/.claude.json`. Lower precedence, but it is the one
