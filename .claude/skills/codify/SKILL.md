@@ -259,29 +259,37 @@ Stage every codification target together — solution files under `docs/solution
 ```bash
 # Example — substitute the actual files you wrote/updated:
 git add docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md .claude/agents/security-auditor.md
-git commit -m "docs(solutions): codify findings from $(git branch --show-current)"
-
 # Refresh the Step 6b near-dup projection so the NEXT codify can see what this one wrote.
 # Without it the projection freezes at its last manual --rebuild and 6b searches a stale
 # corpus while looking exactly like a healthy one — measured 2026-08-09 at 153 of 768 docs
-# invisible.
+# invisible. CHAINED TO THE COMMIT (&&) on purpose: if lint-staged rejects it, the rebuild
+# must not index a working-tree doc that is not in git, or a later 6b hit cites a path that
+# does not exist.
 #
-# PRIMARY CHECKOUT ONLY. --rebuild TRUNCATEs and repopulates from the CHECKED-OUT
-# docs/solutions into a lab DB shared by every checkout, so a rebuild from a todo/audit
-# worktree would replace main's corpus with (fork-point ∪ this branch) and drop every
-# sibling worktree's just-committed doc — persistent lag, not self-correcting drift.
-# --path-format=absolute is required: a bare --git-dir is absolute from a subdirectory
-# while --git-common-dir stays relative, which false-skips in the primary checkout.
+# What this guarantees: the projection mirrors THIS CHECKOUT's docs/solutions.
+# What it does NOT guarantee: parity with main. Step 7 always runs on a feature branch
+# (committing to main is forbidden), so a branch forked before a docs merge rebuilds a
+# projection missing those docs. That is bounded and is restored by the next codify from a
+# re-based checkout. The linked-worktree case below is the one that does NOT self-correct:
+# /todo runs 4-5 executors in parallel worktrees, and each rebuild TRUNCATEs, so they would
+# take turns dropping each other's just-committed docs — last writer wins.
 #
-# Never blocks — the projection is an advisory derived index, not a source of truth. Do
-# NOT silence it: the "✓ rebuilt ... N rows" line is the only freshness signal there is,
-# and swallowing stderr would re-hide exactly the failure this step exists to prevent
-# (psql missing, LAB_DATABASE_URL refusal, load failure).
-if [ "$(git rev-parse --path-format=absolute --git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
-  scripts/pg-lab/codify-neardup.sh --rebuild || echo "note: near-dup projection refresh failed — advisory only, continue"
-else
-  echo "note: linked worktree — near-dup projection refresh skipped by design (see Step 6b)"
-fi
+# Both absolute-path forms are load-bearing from a subdirectory: a bare --git-dir is
+# absolute there while --git-common-dir stays relative (false-skips in the primary
+# checkout), and a relative script path is simply not found (the || below would then
+# report a "failure" that is really a wrong cwd).
+#
+# Never blocks, and never silenced: the "✓ rebuilt … N rows" line is the freshness signal,
+# and swallowing stderr would re-hide psql-missing / LAB_DATABASE_URL refusal / load
+# failure — the exact invisibility this step exists to prevent.
+git commit -m "docs(solutions): codify findings from $(git branch --show-current)" && {
+  if [ "$(git rev-parse --path-format=absolute --git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+    "$(git rev-parse --show-toplevel)"/scripts/pg-lab/codify-neardup.sh --rebuild ||
+      echo "note: near-dup projection refresh failed — advisory only, continue"
+  else
+    echo "note: linked worktree — near-dup projection refresh skipped by design (see Step 6b)"
+  fi
+}
 ```
 
 A solution persists by this commit — always commit when any file was written.

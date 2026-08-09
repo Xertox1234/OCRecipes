@@ -60,21 +60,47 @@ SELECT max(created) FROM harness.solution_titles;   -- 2026-07-09 while the corp
 
 ```bash
 # freshness by size: projection row count vs source file count
-psql -tA -d "$LAB_DATABASE_URL" -c 'SELECT count(*) FROM harness.solution_titles'   # 615
+psql -tA -d "${LAB_DATABASE_URL:-postgresql://localhost/ocrecipes_lab}" \
+  -c 'SELECT count(*) FROM harness.solution_titles'                                            # 615
 find docs/solutions -type f -name '*.md' ! -path '*/_manifests/*' ! -name 'README.md' | wc -l  # 768
 ```
 
-Better still, remove the drift rather than instrument it — refresh the projection at the one
-place that writes the source. `/codify` Step 7 now rebuilds after each commit, fail-silent per
-the PG Lab rail so a down lab DB still cannot block a codify:
+**But equality is not the test, and treating it as one repeats the original mistake in a new
+place.** Three benign causes produce `count(*) < find | wc -l` with no staleness at all: the
+extractor emits a row only for a file with a parseable `title:` **and** a non-blank, non-heading
+first body line, so one malformed doc silently drops out; the refresh runs from a feature branch,
+which may legitimately lack docs merged since it forked; and a linked worktree skips the refresh
+by design. Read a mismatch as *inspect*, never as *stale*.
+
+The decisive move is cheaper than the comparison — rebuild from an up-to-date checkout and read
+the count it prints, which is ground truth by construction:
 
 ```bash
-if [ "$(git rev-parse --path-format=absolute --git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
-  scripts/pg-lab/codify-neardup.sh --rebuild || echo "note: refresh failed — advisory only"
-fi
+scripts/pg-lab/codify-neardup.sh --rebuild    # prints "✓ rebuilt harness.solution_titles: N rows"
 ```
 
-Two things that guard has to get right, and both are easy to get wrong:
+Better still, remove the drift rather than instrument it — refresh the projection at the one
+place that writes the source. `/codify` Step 7 rebuilds after each codify commit, chained to that
+commit so an uncommitted doc is never indexed, and non-blocking so a down lab DB cannot stop a
+codify:
+
+```bash
+git commit -m "…" && {
+  if [ "$(git rev-parse --path-format=absolute --git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+    "$(git rev-parse --show-toplevel)"/scripts/pg-lab/codify-neardup.sh --rebuild ||
+      echo "note: refresh failed — advisory only"
+  fi
+}
+```
+
+Three things that guard has to get right, and all three are easy to get wrong:
+
+**Scope the claim to what the guard actually checks.** It tests checkout *identity*, not corpus
+*currency* — so it prevents the destructive case below, but it does not deliver parity with
+`main`. Committing to `main` is forbidden here, so this always runs on a feature branch; a branch
+forked before a docs merge rebuilds a projection missing those docs. That is bounded and the next
+codify from a re-based checkout restores it. State that, or the freshness check above gets read as
+a staleness alarm every time it fires.
 
 **Refresh only from the checkout the projection is supposed to mirror.** `--rebuild` derives from
 the **checked-out** `docs/solutions` but writes a lab DB **shared by every checkout**. A rebuild
@@ -101,6 +127,7 @@ later reader can tell what was actually searched. A bare score is not self-descr
 - "Unpopulated" and "stale" are different failures. Instrumenting the first is not instrumenting the second, and the second is overwhelmingly more likely — a projection is empty only before its first build.
 - Anything described as "only as fresh as the last manual rebuild" has no owner. Grep for callers of the refresh command; if the only hits are its own tests, it will never run again after the day it shipped.
 - A value probe with a prune date inherits the validity of whatever it measured. Before acting on it, confirm the feature was healthy for the window the probe covers.
+- Check that the replacement check **discriminates**. A comparison with several benign failure modes is no better than the boolean it replaced — it just fires more often. If a mismatch has three innocent explanations, it is a prompt to inspect, not a verdict. Prefer re-deriving the quantity (here: rebuild and read the printed count) over comparing two proxies for it.
 
 ## Related Files
 

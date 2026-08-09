@@ -83,9 +83,14 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md` (design rails §1-4 ar
   projection only from the **primary checkout**: worktree codifies (`/todo`, `/todo-fast`,
   `/audit`) skip it by design — a rebuild there would repopulate the shared projection from
   that branch's corpus and drop every sibling worktree's just-committed doc — and
-  `todo-executor.md` Step 9 has its own codify commit path that never reaches Step 7. Before
-  drawing a conclusion from the log, check the projection against the corpus:
-  `SELECT count(*), max(created) FROM harness.solution_titles;` vs
-  `find docs/solutions -type f -name '*.md' ! -path '*/_manifests/*' ! -name 'README.md' | wc -l`.
+  `todo-executor.md` Step 9 has its own codify commit path that never reaches Step 7.
+- **Before drawing any conclusion from the log, rebuild first.** Do NOT diagnose freshness by
+  comparing `count(*)` against a `find | wc -l` of the corpus — that comparison does not
+  discriminate. It under-counts benignly when a doc has no parseable title or no body line
+  (the extractor skips it), when the last refresh ran from a feature branch that had not yet
+  merged main, and when the last codify ran in a worktree. Instead run
+  `scripts/pg-lab/codify-neardup.sh --rebuild` from an up-to-date primary checkout and read the
+  `✓ rebuilt … N rows` it prints — that is ground truth by construction, and it costs one
+  command. Only then read `harness.codify_neardup_log`.
 - Full analysis: `docs/solutions/logic-errors/freshness-guard-as-emptiness-check-passes-when-partially-stale-2026-08-09.md`
   and `docs/solutions/conventions/replay-eval-ground-truth-mutated-by-the-feature-under-test-2026-08-09.md`.
