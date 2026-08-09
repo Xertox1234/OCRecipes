@@ -72,6 +72,13 @@ the PG Lab rail so a down lab DB still cannot block a codify:
 scripts/pg-lab/codify-neardup.sh --rebuild >/dev/null 2>&1 || true
 ```
 
+Know what that refresh is derived *from*: `--rebuild` reads the **checked-out** `docs/solutions`,
+while the lab DB is shared across checkouts. A codify run from a branch or worktree whose corpus
+lags `main` writes that smaller corpus into the shared projection — observed this session, where
+rebuilding from a feature branch produced 766 rows while `main` held 768. The next codify from a
+current checkout restores it, so this oscillates rather than converging. Acceptable here because
+the projection is advisory and derived; it would not be for anything load-bearing.
+
 When a probe gates a dated decision, record the corpus size alongside each measurement so a
 later reader can tell what was actually searched. A bare score is not self-describing.
 
