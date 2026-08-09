@@ -1,9 +1,11 @@
 ---
 title: "Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade"
-status: blocked
+status: archived
 priority: medium
 created: 2026-07-25
 updated: 2026-08-08
+archived: 2026-08-08
+archived_with_residual: "AC #5's Android barcode DECODE was never verified. The upgrade is LIVE on main and everything else is confirmed — including, on Android, that the app builds, installs, launches, mounts the camera and loads the bundled MLKit barcode module. What was never observed is a barcode actually decoding through useBarcodeScannerOutput on Android. It needs a REAL ANDROID DEVICE; the emulator was proven insufficient over two sessions (adb cannot aim the virtual-scene camera, and mouse drag and WASD are both inert while the app holds the camera). Archived by explicit decision 2026-08-08 rather than left open indefinitely, because no further progress is possible without hardware that does not exist here. If Android barcode scanning is ever reported broken, THIS is the untested path — start here, not at a regression hunt."
 assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
@@ -13,7 +15,31 @@ blocked_reason: "SHIPPED 2026-07-29 — the upgrade is LIVE on main. 7 of 8 crit
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
 
-## ▶ RESUME HERE (updated 2026-08-08 — read this first)
+## ⛔ ARCHIVED 2026-08-08 — 7 of 8 criteria closed, one residual left UNVERIFIED
+
+**This todo is closed by decision, not by completion.** The dependency migration
+it exists for is DONE and LIVE on `main` (#728, #729). Seven of eight acceptance
+criteria are verified, several on physical hardware.
+
+**The one thing never verified: a barcode actually DECODING on Android.**
+`useBarcodeScannerOutput` has never produced a result. Everything up to that
+point is confirmed on Android — build, install, launch, camera mount, and the
+bundled MLKit barcode module loading in-process — so the untested surface is
+narrow, but it is real and it is shipped.
+
+It was archived rather than left open because **no further progress is possible
+without hardware that does not exist here**: the decode needs a real Android
+device, and the emulator was proven insufficient over two sessions (`adb` cannot
+aim the virtual-scene camera; mouse drag and WASD are both inert while the app
+holds the camera).
+
+> **If Android barcode scanning is ever reported broken, start HERE.** This is
+> the one path in the 5.1.1 + MLKit 9 upgrade that was never observed working.
+> Do not begin with a regression hunt — begin by assuming this was never proven.
+
+---
+
+### Original resume notes (historical)
 
 **2026-08-08 — 7 of 8 criteria are CLOSED. One item remains: AC #5's Android
 barcode DECODE, and it needs a REAL ANDROID DEVICE.** The emulator has been
