@@ -9,7 +9,7 @@ blocked_reason: "30-day usage-telemetry window (2026-07-11 user decision); re-ch
 human_led: true
 priority: low
 created: 2026-07-05
-updated: 2026-07-16
+updated: 2026-08-08
 assignee:
 labels: [deferred, harness, spec-first]
 github_issue:
@@ -121,3 +121,47 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md`; evidence and the doob
   — its "stable metrics" justification was verified for only the deferral share.
 - Process followup filed: `todos/P3-2026-07-16-blocked-until-machine-checkable-gate.md`
   (make date gates frontmatter-visible so orchestrators refuse to dispatch past them).
+
+### 2026-08-08 — telemetry re-check (date gate passed; NO decision recorded)
+
+- **Gate satisfied.** `blocked_until: 2026-08-05` has passed. The full window is now real:
+  33 days (2026-07-06 → 2026-08-08), 7,841 rows, 147 sessions. Re-ran the volume queries
+  against `harness.injection_log` in `ocrecipes_lab` per the 2026-07-11 instructions.
+  (The process followup above shipped — `blocked_until` / `human_led` are frontmatter fields
+  now, which is why this gate surfaced as a clean date check rather than buried prose.)
+- **Action mix:** 6,449 pointer (82.2%) / 969 injected (12.4%) / 423 deferred (5.4%).
+- **Re-trigger sweep — none fired:**
+  - _deferral >10% / 30d_ → trailing-30d **5.6%** (7,267 rows). NOT fired.
+  - _corpus >1,300 docs_ → **767**. NOT fired. (671 → 767 in 23 days ≈ 4.2 docs/day, which
+    reaches 1,300 around mid-December 2026 at the current rate.)
+  - _read-through telemetry showing unread injections_ → **unevaluable, not un-fired.** No such
+    instrumentation exists: `injection_log` records delivery only (`pointer`/`injected`/
+    `deferred`), and a schema-wide search of `harness` for any read/open/used/hit column returns
+    nothing. This re-trigger cannot fire until that telemetry is built — it is not a dormant
+    condition, it is an unmeasured one.
+- **Deferral share moved 2.6% → 5.4%**, confirming the known weakness of the 07-16 provisional
+  analysis (`docs/solutions/logic-errors/multi-metric-stability-claim-checked-for-one-metric-2026-07-16.md`):
+  the early "stable" figure under-sampled a workload-dependent metric. Weekly series is
+  1.6 → 4.1 → 8.5 → 7.3 → 4.9 — **peaked mid-window and receding**. Note the final bucket
+  (w/c 2026-08-03) is a partial 6-day week; the decline is therefore asserted on the two
+  COMPLETE weeks 8.5 → 7.3 and does not depend on that partial point. This corroborates the
+  sampling flaw rather than revealing a new upward trend; a single 8.5% week does not approach
+  a threshold explicitly scoped to 30 days.
+- **New signal the 07-16 run did not have — deferral is domain-concentrated** (small
+  denominators noted): `api` 19/104 = 18.3%, `client-state` 48/349 = 13.8%, `testing`
+  84/1,028 = 8.2%; zero deferrals in `accessibility` (1,453 rows), `security` (152),
+  `ai-prompting` (73). Reading the >10% re-trigger at _domain_ granularity is NOT supported by
+  its text (written unqualified ⇒ aggregate); recorded here as an input for the human session,
+  explicitly NOT as a fired trigger.
+- **Dead weight** (the stat 07-11 deferred to the full window): **208 of 767** solution docs
+  have ever been delivered (27.1%); **559 never have**. Basis, stated explicitly because this
+  file's history is a record of stats verified on the wrong one: `doc_paths` mixes rules and
+  solutions, so the unfiltered distinct count is 222 = 208 solutions + 14 `docs/rules/` files —
+  the rules files must be excluded. All 208 delivered paths still resolve on disk (no
+  rename/delete drift), so `767 − 208` is a sound subtraction. Recomputed on this same basis,
+  the 07-16 figure is **120**, not the 116 recorded in that entry.
+- **No decision recorded.** The gated fields are unchanged: `status` is still `blocked`,
+  `blocked_until` still `2026-08-05`, `human_led` still `true`. The only frontmatter edit is
+  `updated: 2026-07-16 → 2026-08-08`, describing this write itself. The 2026-07-16 reopen note
+  reserves the verdict for a HUMAN-LED brainstorming/decision session; this entry is a data
+  checkpoint only, on the precedent of the 2026-07-11 entry.
