@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { AccessibilityInfo, Platform } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import {
   useMutation,
@@ -189,12 +188,15 @@ export function useNutritionLookup(params: {
   // the same `!itemId` condition that mounts `NoticeStack` (see the saved-item
   // note above `existingItem`) — there is no state where a notice is set and
   // no announcer is listening.
-
-  useEffect(() => {
-    if (Platform.OS === "ios" && error) {
-      void AccessibilityInfo.announceForAccessibility(error);
-    }
-  }, [error]);
+  //
+  // The `error` string had the identical duplicate — an iOS-gated `useEffect`
+  // here re-announced it alongside `InlineError`'s own iOS-gated announce
+  // (`client/components/InlineError.tsx:24-28`), which docs/rules/accessibility.md
+  // prohibits. Deleted for the same reason; `InlineError` is now this screen's
+  // sole announcer for the error state — a claim held in place by two tests:
+  // the hook-silence test in `__tests__/useNutritionLookup.labelRead.test.tsx`
+  // and the InlineError exactly-once assertion in
+  // `client/screens/__tests__/NutritionDetailScreen.test.tsx`.
 
   // Derive per-100g values: prefer validatedData when available,
   // otherwise back-calculate from whatever nutrition state we have

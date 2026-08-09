@@ -1,9 +1,9 @@
 ---
 title: "Delete useNutritionLookup's duplicate iOS ERROR announcer — InlineError owns it after slice 2c (the notices half landed in #753)"
-status: backlog
+status: done
 priority: high
 created: 2026-08-04
-updated: 2026-08-06
+updated: 2026-08-09
 assignee:
 labels: [deferred, accessibility, hooks]
 github_issue:
@@ -66,11 +66,16 @@ on 2026-08-05** — see the update below.
 - [x] ~~The notices effect (`useNutritionLookup.ts:169-177`) is deleted.~~ **Done in #753**,
       commit `be48907b` (test) + the deletion it covers. Replaced by a docblock explaining why
       `NoticeStack` is now the sole announcer on both platforms.
-- [ ] The error effect (**now `useNutritionLookup.ts:192-197`** on `feat/nutrition-detail-2c`;
-      the old `:179-183` reference predates the notices deletion) is deleted.
-- [ ] `Platform` and `AccessibilityInfo` imports are removed from the hook **if** nothing else in
-      the file uses them; if something does, leave them and say what. (Still blocked by the error
-      effect — it is the last consumer of both imports, so this closes with it.)
+- [x] ~~The error effect (**now `useNutritionLookup.ts:192-197`** on `feat/nutrition-detail-2c`;
+      the old `:179-183` reference predates the notices deletion) is deleted.~~ **Done in this
+      todo's PR** (was `:193-197` on merged `main` — one more line of drift). TDD: the new
+      hook-silence test was observed RED against the announcer (called once with the error
+      string), then GREEN after the deletion.
+- [x] ~~`Platform` and `AccessibilityInfo` imports are removed from the hook **if** nothing else in
+      the file uses them; if something does, leave them and say what.~~ **Done in this todo's
+      PR** — grep and two reviewers confirmed the error effect was the last consumer of both, so
+      the whole line-2 `react-native` import went with it. (`useEffect` from `"react"` stays —
+      still used by the load effect.)
 - [x] ~~`NoticeStack.tsx`'s docblock and `client/components/nutrition/NoticeStack-utils.ts`
       describe the announcer accurately afterwards.~~ **Done in #753** — verified 2026-08-06:
       the docblock now states it is "the ONLY announcer for these notices on either" platform and
@@ -80,10 +85,18 @@ on 2026-08-05** — see the update below.
       **call count**.~~ **Done in #753** — `be48907b` proves the hook is silent on both of the
       deleted effect's triggers; `ab51e8e3` asserts the error-state suppression stops the
       ANNOUNCEMENT rather than only the render.
-- [ ] A test proves the error is announced exactly once on iOS.
+- [x] ~~A test proves the error is announced exactly once on iOS.~~ **Done as a composite** — the
+      new hook-silence test (`useNutritionLookup.labelRead.test.tsx`, "useNutritionLookup — error
+      announcement") proves the hook never announces `error`, with an
+      `expect(Platform.OS).toBe("ios")` precondition so the guard cannot die silently if the
+      harness default ever changes; the pre-existing, untouched screen test
+      (`NutritionDetailScreen.test.tsx:1755-1781`) proves `InlineError` announces it exactly once.
+      jsdom observes mock calls only — the device criterion below stays the real gate.
 - [ ] Device pass for the error only: iOS VoiceOver hears it once. Android TalkBack is unchanged
       (it never heard the hook's version — the effect is `Platform.OS === "ios"`-gated). The
-      notices half of this criterion moved onto **#753's own device checklist**.
+      notices half of this criterion moved onto **#753's own device checklist**. **2026-08-09:
+      transferred onto this todo's own PR device checklist**, mirroring the #753 pattern — the PR
+      must not merge before it passes, which is why auto-merge stays disarmed.
 
 ## Implementation Notes
 
@@ -176,3 +189,19 @@ prohibits, and this todo is what removes it. Sequence: #753 merges → this beco
 safe → delete.
 
 Priority stays `high` for the merge-gate reason in the note at the top, not for severity.
+
+### 2026-08-09 — executed via /todo-fast with an in-session human gate override
+
+- Gate context: `human_led: true` fired as designed; a human confirmed the override in-session
+  after seeing the gate reason. #753's merge was verified fresh via the GitHub API (merged
+  2026-08-08) before any work began, closing the "deleting first leaves iOS silent" hazard the
+  blocked_reason guarded. The gate frontmatter is deliberately untouched — the run was a one-time
+  sanctioned exception, not a gate edit.
+- Deleted the error effect and the `AccessibilityInfo, Platform` import; extended the hook's
+  announcer docblock to cover both deletions and name the two tests that hold the
+  "InlineError is sole announcer" claim in place.
+- Review (code-reviewer + mobile-reviewer): 0 CRITICAL. Two WARNINGs fixed inline — a provenance
+  inversion in the new test's comment (#753 _introduced_ the duplicate; this deletion is what
+  makes `InlineError` sole), and the silence assertion's unstated dependence on the harness's
+  `Platform.OS === "ios"` default, now pinned by an explicit precondition assertion.
+- Full gate green: 7563 tests / 497 files, tsc clean, lint 0 errors (verified exit codes).
