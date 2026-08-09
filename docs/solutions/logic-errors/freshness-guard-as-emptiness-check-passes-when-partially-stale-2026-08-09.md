@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [harness, telemetry, derived-projection, staleness, value-probe, pg-lab]
 module: shared
-applies_to: ["scripts/pg-lab/**", ".claude/skills/**", ".claude/hooks/**"]
+applies_to: ["scripts/pg-lab/**", ".claude/skills/codify/**"]
 symptoms: ["A derived projection silently serves results computed over a subset of its source while every check reports normal", "A value probe shows a plausible-but-low hit rate with no way to tell 'nothing to find' from 'searched an incomplete corpus'", "The only staleness signal fires on a zero count — a state the source reaches once, at init, and never again", "Projection row count is stable and non-zero, so nothing looks broken", "The refresh command's only callers in the repo are its own tests"]
 severity: medium
 created: 2026-08-09
@@ -69,15 +69,28 @@ place that writes the source. `/codify` Step 7 now rebuilds after each commit, f
 the PG Lab rail so a down lab DB still cannot block a codify:
 
 ```bash
-scripts/pg-lab/codify-neardup.sh --rebuild >/dev/null 2>&1 || true
+if [ "$(git rev-parse --path-format=absolute --git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+  scripts/pg-lab/codify-neardup.sh --rebuild || echo "note: refresh failed — advisory only"
+fi
 ```
 
-Know what that refresh is derived *from*: `--rebuild` reads the **checked-out** `docs/solutions`,
-while the lab DB is shared across checkouts. A codify run from a branch or worktree whose corpus
-lags `main` writes that smaller corpus into the shared projection — observed this session, where
-rebuilding from a feature branch produced 766 rows while `main` held 768. The next codify from a
-current checkout restores it, so this oscillates rather than converging. Acceptable here because
-the projection is advisory and derived; it would not be for anything load-bearing.
+Two things that guard has to get right, and both are easy to get wrong:
+
+**Refresh only from the checkout the projection is supposed to mirror.** `--rebuild` derives from
+the **checked-out** `docs/solutions` but writes a lab DB **shared by every checkout**. A rebuild
+from a worktree therefore replaces the canonical corpus with `(fork-point ∪ that branch)` — and
+with 4–5 parallel todo executors it is last-writer-wins, each dropping its siblings' just-committed
+docs. That is persistent lag, not drift that self-corrects. Observed directly: rebuilding from a
+feature branch produced 766 rows while `main` held 768.
+
+**Do not silence the refresh.** `>/dev/null 2>&1 || true` would swallow psql-missing, the
+`LAB_DATABASE_URL` safety refusal, the refuse-to-truncate-on-zero-files guard, and a load failure —
+re-creating the exact invisibility this entry documents, one level up. The `✓ rebuilt … N rows`
+line **is** the freshness signal; keep it visible and non-blocking rather than silent.
+
+Note `--path-format=absolute`: a bare `git rev-parse --git-dir` returns an absolute path when run
+from a subdirectory while `--git-common-dir` stays relative, so the naive string comparison
+false-skips in the primary checkout — the guard silently stops guarding what it was written for.
 
 When a probe gates a dated decision, record the corpus size alongside each measurement so a
 later reader can tell what was actually searched. A bare score is not self-describing.

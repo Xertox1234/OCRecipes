@@ -78,7 +78,14 @@ Master plan: `docs/research/2026-07-05-pg-lab-roadmap.md` (design rails §1-4 ar
   re-measure before deciding. A time-correct replay of all 112 queries returns the same 1
   hit, and a corpus-wide census finds only 10 near-dup pairs in the whole corpus, all from
   the May/June bulk-import era, none involving the 153 docs the stale projection could not
-  see. Step 7 of `/codify` now refreshes the projection, so data from 2026-08-09 onward is
-  measured against a complete corpus.
+  see.
+- **Freshness from 2026-08-09 is better but NOT guaranteed.** `/codify` Step 7 refreshes the
+  projection only from the **primary checkout**: worktree codifies (`/todo`, `/todo-fast`,
+  `/audit`) skip it by design — a rebuild there would repopulate the shared projection from
+  that branch's corpus and drop every sibling worktree's just-committed doc — and
+  `todo-executor.md` Step 9 has its own codify commit path that never reaches Step 7. Before
+  drawing a conclusion from the log, check the projection against the corpus:
+  `SELECT count(*), max(created) FROM harness.solution_titles;` vs
+  `find docs/solutions -type f -name '*.md' ! -path '*/_manifests/*' ! -name 'README.md' | wc -l`.
 - Full analysis: `docs/solutions/logic-errors/freshness-guard-as-emptiness-check-passes-when-partially-stale-2026-08-09.md`
   and `docs/solutions/conventions/replay-eval-ground-truth-mutated-by-the-feature-under-test-2026-08-09.md`.

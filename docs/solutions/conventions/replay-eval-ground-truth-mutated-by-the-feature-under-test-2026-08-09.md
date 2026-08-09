@@ -4,7 +4,7 @@ track: knowledge
 category: conventions
 tags: [harness, testing, replay-eval, telemetry, measurement, pg-lab]
 module: shared
-applies_to: ["scripts/pg-lab/**", ".claude/skills/**", "evals/**"]
+applies_to: ["scripts/pg-lab/**", ".claude/skills/codify/**", "evals/**"]
 created: 2026-08-09
 ---
 
@@ -61,18 +61,24 @@ Reconstruct the corpus at query time, and exclude the query's own output:
 ```sql
 -- CEILING: same-day siblings included (the highest-prior-probability genuine dup case),
 -- but still exposed to both contamination paths. Upper bound only.
-SELECT max(similarity(st.title, l.candidate))
-FROM harness.solution_titles st
-WHERE st.created <= l.ts::date        -- corpus as it existed when the query ran
-  AND st.title <> l.candidate;        -- weak: only catches an unedited title
+SELECT l.ts::date AS query_day, l.candidate,
+       (SELECT max(similarity(st.title, l.candidate))
+          FROM harness.solution_titles st
+         WHERE st.created <= l.ts::date     -- corpus as it existed when the query ran
+           AND st.title <> l.candidate)     -- weak: only catches an unedited title
+       AS score_ceiling
+FROM harness.codify_neardup_log l;
 ```
 
 ```sql
 -- FLOOR: strictly pre-existing docs. Immune to path 1 by construction; drops genuine
 -- same-day siblings, so it under-counts. The truth lies between floor and ceiling.
-SELECT max(similarity(st.title, l.candidate))
-FROM harness.solution_titles st
-WHERE st.created < l.ts::date;
+SELECT l.ts::date AS query_day, l.candidate,
+       (SELECT max(similarity(st.title, l.candidate))
+          FROM harness.solution_titles st
+         WHERE st.created < l.ts::date)
+       AS score_floor
+FROM harness.codify_neardup_log l;
 ```
 
 Best of all, measure on a quantity the feature cannot write. Comparing distinct *files* to each

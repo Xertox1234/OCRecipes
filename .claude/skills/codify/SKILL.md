@@ -194,9 +194,11 @@ below too — never skip them just because the advisory ran:
 ```bash
 # pg_trgm advisory — silent (no output, exit 0) when ocrecipes_lab is unreachable/unbuilt
 # or nothing scores above threshold; a hit prints "<path> (score <n>)" lines. Step 7
-# refreshes the projection after every codify, so it covers everything codified so far —
-# but the fail-silent rail still conflates unreachable with no-match, so a miss remains
-# weak evidence: run the greps below regardless.
+# refreshes the projection only when codify runs from the PRIMARY checkout with the lab DB
+# up — not from a todo/audit worktree, and todo-executor.md's own codify path never
+# invokes Step 7 at all — so coverage is "fresher", never "guaranteed complete". That plus
+# the fail-silent rail (unreachable is indistinguishable from no-match) keeps a miss weak
+# evidence: run the greps below regardless.
 scripts/pg-lab/codify-neardup.sh "<intended title>"
 ```
 
@@ -260,10 +262,26 @@ git add docs/solutions/<category>/<slug>-<YYYY-MM-DD>.md .claude/agents/security
 git commit -m "docs(solutions): codify findings from $(git branch --show-current)"
 
 # Refresh the Step 6b near-dup projection so the NEXT codify can see what this one wrote.
-# Fail-silent per the PG Lab rail (lab DB down => no-op, never block a codify). Without it
-# the projection freezes at its last manual --rebuild and 6b searches a stale corpus while
-# looking exactly like a healthy one — measured 2026-08-09 at 153 of 768 docs invisible.
-scripts/pg-lab/codify-neardup.sh --rebuild >/dev/null 2>&1 || true
+# Without it the projection freezes at its last manual --rebuild and 6b searches a stale
+# corpus while looking exactly like a healthy one — measured 2026-08-09 at 153 of 768 docs
+# invisible.
+#
+# PRIMARY CHECKOUT ONLY. --rebuild TRUNCATEs and repopulates from the CHECKED-OUT
+# docs/solutions into a lab DB shared by every checkout, so a rebuild from a todo/audit
+# worktree would replace main's corpus with (fork-point ∪ this branch) and drop every
+# sibling worktree's just-committed doc — persistent lag, not self-correcting drift.
+# --path-format=absolute is required: a bare --git-dir is absolute from a subdirectory
+# while --git-common-dir stays relative, which false-skips in the primary checkout.
+#
+# Never blocks — the projection is an advisory derived index, not a source of truth. Do
+# NOT silence it: the "✓ rebuilt ... N rows" line is the only freshness signal there is,
+# and swallowing stderr would re-hide exactly the failure this step exists to prevent
+# (psql missing, LAB_DATABASE_URL refusal, load failure).
+if [ "$(git rev-parse --path-format=absolute --git-dir)" = "$(git rev-parse --path-format=absolute --git-common-dir)" ]; then
+  scripts/pg-lab/codify-neardup.sh --rebuild || echo "note: near-dup projection refresh failed — advisory only, continue"
+else
+  echo "note: linked worktree — near-dup projection refresh skipped by design (see Step 6b)"
+fi
 ```
 
 A solution persists by this commit — always commit when any file was written.
