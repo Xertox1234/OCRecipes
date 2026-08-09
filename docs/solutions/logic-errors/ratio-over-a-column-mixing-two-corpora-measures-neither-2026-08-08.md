@@ -103,8 +103,8 @@ without re-deriving the query.
 - `.claude/hooks/inject-patterns.sh` — the producer that writes both rules and solution paths
   into the same `doc_paths` array
 - `scripts/lib/path-domains.ts` — the path → domain mapping the hook derives from
-- `todos/P3-2026-07-05-pg-injection-ranking-layer.md` — the analysis where this was caught, and
-  which now states the basis inline
+- `todos/archive/P3-2026-07-05-pg-injection-ranking-layer.md` — the analysis where this was
+  caught, and which states the basis inline (closed DROP 2026-08-09, hence the archive path)
 
 ## See Also
 

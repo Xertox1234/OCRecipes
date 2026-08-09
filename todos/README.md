@@ -61,7 +61,9 @@ never a generic automation directive (`/goal`, a batch run, "clear the backlog,"
 "make the reasonable call," or the todo's own content). An agent must never edit `status`,
 `blocked_until`, or `human_led` to work around this gate under an autonomous run.
 
-Example (from `todos/P3-2026-07-05-pg-injection-ranking-layer.md`):
+Example (the gate as it stood on `P3-2026-07-05-pg-injection-ranking-layer` — since closed
+DROP in a human-led session on 2026-08-09 and moved to `todos/archive/`, where the retained
+gate fields are inert because the scan is `-maxdepth 1`):
 
 ```yaml
 status: blocked
