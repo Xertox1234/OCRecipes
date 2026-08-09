@@ -78,10 +78,11 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
      no cwd and survives a clone. (Measured: from a directory with no `.xcodebuildmcp/`, the
      server registers 24 tools without it and 36 with it, adding `ui-automation`.)
 
-     Because the project file wins wherever it exists, the env var only takes effect where there
-     is **no** `.xcodebuildmcp/config.yaml`. Keep the two lists in sync — otherwise adding a
-     workflow to only one of them makes the same repo expose different tool sets depending on
-     which directory Claude was launched from.
+     Precedence is resolved **per key**, not per file, so the env var takes effect wherever the
+     project file does not itself set `enabledWorkflows` — that includes a `config.yaml` which
+     exists but only carries `sessionDefaults` (what `xcodebuildmcp setup` writes). Keep the two
+     in sync: setting a workflow in only one of them makes the same repo expose different tool
+     sets depending on which directory Claude was launched from.
 
   Either way, config changes only take effect **after a Claude restart**. Without the tools the
   skill still runs **capture-only** — set defaults, launch, deep-link, screenshot, snapshot —
