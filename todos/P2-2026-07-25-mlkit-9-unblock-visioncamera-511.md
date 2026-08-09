@@ -8,23 +8,30 @@ assignee:
 labels: [camera, dependencies, ios, ocr, native-build]
 github_issue:
 human_led: true
-blocked_reason: "SHIPPED 2026-07-29 — the upgrade is LIVE on main; what remains is device verification only, which is why this stays blocked rather than open. Criteria #1, #2, #3, #4, #6 CLOSED. #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) MERGED to main 2026-07-29 as ed8ec449 (squash) — merged with criteria #5-Android, #7 and #8 still OPEN, so the upgrade is live and unverified in exactly those three respects. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. DEVICE PASS RUN 2026-07-28: a VisionCamera 5.1.1 codegen regression aborted the app on camera mount (SIGABRT) — FIXED via patch-package in 34d75bef. AC #4 then CLOSED on device (Cherry Coke 06772408: Trust-the-Label conflict UI, Label column 140 kcal matching the can) — MLKit 9 TextRecognition confirmed compatible, and the first runtime verification of PR #695. No correctness defect blocks #729. Remaining work is device-only coverage, unreachable by any autonomous executor: #5 barcode on Android — NARROWED 2026-08-08 to the DECODE only: the Android build, install, launch and CAMERA MOUNT all PASSED on the emulator (session OPEN, bundled MLKit barcode module loaded, zero crashes), and the #729 prediction that Android would hit the same enableJsiParser crash is RETIRED; what remains is getting a barcode into the virtual-scene camera's view — and that is NOT achievable on the emulator (proven over two sessions 2026-08-08: adb cannot aim the scene camera, and mouse drag and WASD are both inert while the app holds the camera), so the decode needs a REAL ANDROID DEVICE or a non-virtualscene camera-injection route; do not retry on the emulator (iOS half PASSED), #7 tap-to-focus (not exercisable in the barcode flow — it auto-advances; use a no-barcode HUNTING state), #8 useCameraDevice lens selection at 10-15cm (normal range PASSED). RESIDUAL RISK NOW CARRIED ON MAIN: patches/react-native-vision-camera+5.1.1.patch is load-bearing — it restores the enableJsiParser flag VisionCamera 5.1.1 dropped, and without it the camera aborts (SIGABRT) on mount. The upstream regression was still NOT reported as of 2026-08-08 and 5.2.0 carries the same bug, so any future VisionCamera bump must carry this patch forward or silently re-break camera mount. Device testing needs a native build at runtimeVersion 1.2.0; an OTA can neither deliver nor validate any of this."
+blocked_reason: "SHIPPED 2026-07-29 — the upgrade is LIVE on main. 7 of 8 criteria CLOSED as of 2026-08-08; the ONLY thing left is AC #5's Android barcode DECODE, which needs a real Android device (NOT the emulator — see below). Criteria #1, #2, #3, #4, #6 CLOSED; #7 tap-to-focus CLOSED 2026-08-08 on device (preview visibly refocused — the load-bearing observation, since the focus ring animating is JS-side feedback that proves nothing; this retroactively validates the workaround removal that shipped in #729 ahead of the pass); #8 close-range lens CLOSED 2026-08-08 on device (10-15cm scanning works, so 5.1.0's #4053 default-camera change does not strand barcode range on a multi-lens Pro). #728 (OCR library swap) MERGED to main as dfadf651. #729 (VisionCamera 5.1.1 + GoogleMLKit 9) MERGED to main 2026-07-29 as ed8ec449 (squash) — merged with criteria #5-Android, #7 and #8 still OPEN, so the upgrade is live and unverified in exactly those three respects. Note #728 was SQUASH-merged, which made #729 read as CONFLICTING — same content via two paths, not a real conflict; resolved with a `-s ours` merge of main, verified byte-identical by tree hash to a clean rebase. The Release-configuration build blocker is CLEARED 2026-07-27 (BUILD SUCCEEDED, 0 errors, zero LLVM-verify-pass crashes and zero frontend ICEs — the -Onone carve-out survived the pod change); note it is a Release SIMULATOR build, a proxy for and not equivalent to a signed EAS device archive. DEVICE PASS RUN 2026-07-28: a VisionCamera 5.1.1 codegen regression aborted the app on camera mount (SIGABRT) — FIXED via patch-package in 34d75bef. AC #4 then CLOSED on device (Cherry Coke 06772408: Trust-the-Label conflict UI, Label column 140 kcal matching the can) — MLKit 9 TextRecognition confirmed compatible, and the first runtime verification of PR #695. No correctness defect blocks #729. Remaining work is device-only coverage, unreachable by any autonomous executor: #5 barcode on Android — NARROWED 2026-08-08 to the DECODE only: the Android build, install, launch and CAMERA MOUNT all PASSED on the emulator (session OPEN, bundled MLKit barcode module loaded, zero crashes), and the #729 prediction that Android would hit the same enableJsiParser crash is RETIRED; what remains is getting a barcode into the virtual-scene camera's view — and that is NOT achievable on the emulator (proven over two sessions 2026-08-08: adb cannot aim the scene camera, and mouse drag and WASD are both inert while the app holds the camera), so the decode needs a REAL ANDROID DEVICE or a non-virtualscene camera-injection route; do not retry on the emulator (iOS half PASSED), #7 tap-to-focus (not exercisable in the barcode flow — it auto-advances; use a no-barcode HUNTING state), #8 useCameraDevice lens selection at 10-15cm (normal range PASSED). RESIDUAL RISK NOW CARRIED ON MAIN: patches/react-native-vision-camera+5.1.1.patch is load-bearing — it restores the enableJsiParser flag VisionCamera 5.1.1 dropped, and without it the camera aborts (SIGABRT) on mount. The upstream regression was still NOT reported as of 2026-08-08 and 5.2.0 carries the same bug, so any future VisionCamera bump must carry this patch forward or silently re-break camera mount. Device testing needs a native build at runtimeVersion 1.2.0; an OTA can neither deliver nor validate any of this."
 ---
 
 # Resolve the GoogleMLKit 8→9 conflict blocking the VisionCamera 5.1.1 upgrade
 
 ## ▶ RESUME HERE (updated 2026-08-08 — read this first)
 
-**2026-07-29 — BOTH PRs ARE MERGED. This todo is no longer about landing the
-upgrade; it is about verifying what already shipped.** #729 merged as
-`ed8ec449` (squash) with three acceptance criteria still open, all of them
-device-only: **AC #5 (Android barcode), AC #7 (tap-to-focus), AC #8 (close-range
-lens).** Nothing below asks you to write code — the code is on `main`.
+**2026-08-08 — 7 of 8 criteria are CLOSED. One item remains: AC #5's Android
+barcode DECODE, and it needs a REAL ANDROID DEVICE.** The emulator has been
+proven insufficient for it over two sessions (see the emulator entries below) —
+do not retry there. Everything else is done: the upgrade shipped in #729, and
+every iOS criterion has now been verified on hardware.
 
-⚠️ **AC #7 is the one that matters.** The iOS metering workaround is already
-REMOVED on `main`, and its removal rests on reading 5.1.1's native source plus
-unit tests that mock `focusTo`. Tap-to-focus — the entire reason this upgrade
-exists — has never once been exercised on hardware.
+✅ **AC #7 (tap-to-focus) CLOSED 2026-08-08 — the preview visibly refocused.**
+That was the whole point of the upgrade, and it is the correct pass condition:
+the focus ring animating would not have counted (JS-side feedback, renders on
+tap regardless of the native result — how the original defect hid). It also
+retroactively validates the metering-workaround removal that shipped in #729
+_ahead_ of the device pass. Residual unchanged: the empty-set guard is still
+untested by design — it fires only on a device supporting no metering at all.
+
+✅ **AC #8 (close-range lens) CLOSED 2026-08-08** — 10–15 cm scanning works on
+the multi-lens Pro Max, so 5.1.0's #4053 default-camera change does not strand
+barcode range.
 
 **2026-07-28 — DEVICE PASS RUN. One blocker found and FIXED; AC #4 CLOSED.**
 The device session is no longer pending — it happened. Read this before the
@@ -329,7 +336,7 @@ linkage` (the LLVM verify-pass crash) and **0** frontend ICEs — i.e. the
       signed device archive; an EAS archive additionally does device-arch
       codegen, dSYM generation, and symbol stripping. It closes the specific
       documented optimizer failure mode, not the whole archive pipeline.
-- [ ] Tap-to-focus re-verified on a physical device; then remove the
+- [x] Tap-to-focus re-verified on a physical device; then remove the
       `Platform.OS === "ios"` workaround branch in
       `client/camera/hooks/useCameraFocusAndZoom.ts` and its
       `supportedMeteringModes()` helper
@@ -362,9 +369,29 @@ Metering` flags derive from `is*ModeSupported()`, while native reads
       `is*PointOfInterestSupported()`, and VisionCamera exposes no
       point-of-interest flag to JS. Only AWB agrees. Details in the solution
       doc's new Resolution section.
-- [ ] `useCameraDevice` device selection re-verified — 5.1.0 shipped
+      → **CLOSED 2026-08-08 on device (user-reported).** Pass condition met as
+      written: **the preview image visibly refocused.** That is the load-bearing
+      observation — the focus ring animating would NOT have counted, since it is
+      JS-side feedback rendered on tap regardless of whether the native promise
+      resolved, which is exactly how the original defect stayed invisible
+      (`docs/solutions/conventions/js-rendered-feedback-not-evidence-native-call-succeeded-2026-07-25.md`).
+      **This retroactively validates a removal that is already live on `main`:**
+      the criterion was written as "verify, THEN remove the workaround", but the
+      `options = { modes }` removal shipped in #729 ahead of the device pass. It
+      is now confirmed correct rather than assumed.
+      The **empty-set guard remains untested and deliberately so** — it fires
+      only on a device supporting no metering at all, which no modern iPhone is;
+      it is retained on the strength of reading `HybridCameraController.swift`,
+      not a device test. That residual is unchanged by this pass.
+- [x] `useCameraDevice` device selection re-verified — 5.1.0 shipped
       "Better `useCameraDevice(...)` including default Cameras" (#4053), a
       behavioral change to which physical camera gets picked
+      → **CLOSED 2026-08-08 on device (user-reported): close-range scanning
+      works.** This is the case that mattered — 5.1.0's #4053 changed default
+      camera selection, and Pro main lenses cannot focus nearer than ~20 cm
+      (upstream #2246), which is inside barcode range. A multi-lens iPhone 16 Pro
+      Max is the hardware that can actually fail this; it passed, so the new
+      default selection does not strand barcode scanning at close range.
 
 ## Implementation Notes
 
