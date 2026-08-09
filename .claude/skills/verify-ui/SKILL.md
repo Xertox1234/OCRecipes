@@ -36,14 +36,59 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
 
 ## Prerequisites
 
-- **XcodeBuildMCP UI-automation tools must be enabled** (`tap`, `type_text`, `swipe`) for any
-  step that _interacts_ with the app: logging in, tapping through to a screen with no deep link,
-  or dismissing a system modal. They are **off by default** — only capture tools (`screenshot`,
-  `snapshot_ui`) plus build/launch/session tools are enabled. Turn the UI-automation group on
-  (user config + Claude restart): https://xcodebuildmcp.com/docs/configuration. Without them,
-  the skill can still set defaults, launch, deep-link, screenshot, and snapshot — so it works
-  **capture-only** for a target reachable without interaction (an already-authenticated
-  deep-link screen, or the login screen itself).
+- **XcodeBuildMCP UI-automation tools** (`tap`, `type_text`, `swipe`, `gesture`, `button`) are
+  needed for any step that _interacts_ with the app: logging in, tapping through to a screen with
+  no deep link, or dismissing a system modal. They live in the separate `ui-automation` workflow
+  and are **not registered unless it is explicitly enabled**.
+
+  **Check first, don't assume.** The `ToolSearch` preload in the Tools section below doubles as
+  the check: if `mcp__XcodeBuildMCP__tap` is missing from its result, `ui-automation` is not
+  enabled and you are capture-only. The server also logs `Registered N tools from workflows: ...`
+  at startup.
+
+  Two mechanisms enable it, and **the project file wins over the env var** (config resolution
+  order is overrides → project file → env → default — the reverse of the usual convention):
+  1. **Project-local** `.xcodebuildmcp/config.yaml` at the repo root:
+
+     ```yaml
+     enabledWorkflows:
+       - simulator
+       - ui-automation
+     ```
+
+     This repo has one, but it is **git-excluded** (`.git/info/exclude`), so it is absent from a
+     fresh clone and from every worktree. The lookup is `<cwd>/.xcodebuildmcp/config.yaml` with
+     **no parent-directory walk** (`getConfigDir` in `utils/project-config.js` is a plain
+     `path.join`), read once at startup. So a session launched inside a worktree gets no
+     `ui-automation` even though the worktree sits under the main checkout — nesting does not
+     help. A session launched from the main checkout keeps the tools after entering a worktree,
+     because the server already loaded its config.
+
+     To give worktree-launched sessions the tools, prefer the env var in (2) — it has no cwd
+     dependency at all. `XCODEBUILDMCP_CWD=<main checkout>` also works (it `chdir`s at bootstrap,
+     so the lookup always resolves the main checkout), but **mind its blast radius**:
+     XcodeBuildMCP is typically registered once in the top-level `mcpServers` of `~/.claude.json`,
+     which makes that variable pin the server's cwd for _every_ Apple project on the machine —
+     another project's own `.xcodebuildmcp/config.yaml` would then never resolve, and its
+     relative paths would resolve inside this repo. Only reach for it if you work in one Apple
+     project.
+
+  2. **User-level** `XCODEBUILDMCP_ENABLED_WORKFLOWS=simulator,ui-automation` in the
+     XcodeBuildMCP server's `env` block in `~/.claude.json`. This is the durable fix — it needs
+     no cwd and survives a clone. (Measured: from a directory with no `.xcodebuildmcp/`, the
+     server registers 24 tools without it and 36 with it, adding `ui-automation`.)
+
+     Precedence is resolved **per key**, not per file, so the env var takes effect wherever the
+     project file does not itself set `enabledWorkflows` — that includes a `config.yaml` which
+     exists but only carries `sessionDefaults` (what `xcodebuildmcp setup` writes). Keep the two
+     in sync: setting a workflow in only one of them makes the same repo expose different tool
+     sets depending on which directory Claude was launched from.
+
+  Either way, config changes only take effect **after a Claude restart**. Without the tools the
+  skill still runs **capture-only** — set defaults, launch, deep-link, screenshot, snapshot —
+  enough for any target reachable without interaction (an already-authenticated deep-link
+  screen, or the login screen itself). Reference: https://xcodebuildmcp.com/docs/configuration
+
 - Auth-gated screens need the backend up (`npm run server:dev`) and Metro running.
 
 ## Tools
