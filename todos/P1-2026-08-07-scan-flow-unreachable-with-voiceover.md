@@ -65,28 +65,6 @@ feature branch whose reviewed head would be invalidated by an unrelated commit.
 The original "custom gesture handler" guess is wrong: both controls are plain `Pressable`s with
 correct `accessibilityRole="button"` and labels. The defects are structural.
 
-### Defect 2 (capture button) — silent phase gate, not an activation failure
-
-- `onShutterPress` silently drops the press when the phase doesn't capture:
-  `client/screens/ScanScreen.tsx:465-468` — `if (!getCapturePlan(phase).capture) return;`.
-- Phase map (`client/screens/scan-screen-utils.ts:330-356`): dead in `IDLE`,
-  `BARCODE_TRACKING`, and all reviewing/classifying phases; armed in `HUNTING`,
-  `BARCODE_LOCKED`, `LABEL_PROMPTED`, `STEP2_CONFIRMED`.
-- `CAMERA_READY` fires on screen focus (`ScanScreen.tsx:165-169`) → `HUNTING`. Holding a
-  product with the barcode in frame → `BARCODE_TRACKING` → **shutter dead by design**
-  (auto-scan phase). That is the natural posture when testing the barcode flow.
-- The armed state is mirrored **only visually** — `shutterArmed` drives a yellow border/glow
-  (`ScanScreen.tsx:721`, styles at 1095-1110). The `Pressable` (720-725) never sets
-  `accessibilityState.disabled`, has no hint, and its label is always "Take photo". A VoiceOver
-  user in a dead phase hears an active-sounding button and gets silence on activation —
-  indistinguishable from a broken control.
-- Historical echo: `getCapturePlan`'s docstring records the sighted twin of this bug (the
-  `LABEL_PROMPTED` dead-end). The accessibility tree is the one remaining consumer that still
-  doesn't read the shared gate.
-- Residual uncertainty: in `HUNTING` with no barcode in frame, the shutter SHOULD capture
-  (smart route → `takePicture`). If the device pass shows double-tap failing there too, an
-  additional native activation failure exists — discriminator T4.
-
 ### Defect 1 (scan-menu item) — the backdrop button is what activates
 
 - If the item's `onPress` had run, the menu would close AND navigate: `ScanFAB.tsx:91-95` calls
@@ -114,6 +92,28 @@ correct `accessibilityRole="button"` and labels. The defects are structural.
   `Tab.Navigator` (`client/navigation/MainTabNavigator.tsx:204`), so `accessibilityViewIsModal`
   correctly suppresses the tab bar and screen content.
 
+### Defect 2 (capture button) — silent phase gate, not an activation failure
+
+- `onShutterPress` silently drops the press when the phase doesn't capture:
+  `client/screens/ScanScreen.tsx:465-468` — `if (!getCapturePlan(phase).capture) return;`.
+- Phase map (`client/screens/scan-screen-utils.ts:330-356`): dead in `IDLE`,
+  `BARCODE_TRACKING`, and all reviewing/classifying phases; armed in `HUNTING`,
+  `BARCODE_LOCKED`, `LABEL_PROMPTED`, `STEP2_CONFIRMED`.
+- `CAMERA_READY` fires on screen focus (`ScanScreen.tsx:165-169`) → `HUNTING`. Holding a
+  product with the barcode in frame → `BARCODE_TRACKING` → **shutter dead by design**
+  (auto-scan phase). That is the natural posture when testing the barcode flow.
+- The armed state is mirrored **only visually** — `shutterArmed` drives a yellow border/glow
+  (`ScanScreen.tsx:721`, styles at 1095-1110). The `Pressable` (720-725) never sets
+  `accessibilityState.disabled`, has no hint, and its label is always "Take photo". A VoiceOver
+  user in a dead phase hears an active-sounding button and gets silence on activation —
+  indistinguishable from a broken control.
+- Historical echo: `getCapturePlan`'s docstring records the sighted twin of this bug (the
+  `LABEL_PROMPTED` dead-end). The accessibility tree is the one remaining consumer that still
+  doesn't read the shared gate.
+- Residual uncertainty: in `HUNTING` with no barcode in frame, the shutter SHOULD capture
+  (smart route → `takePicture`). If the device pass shows double-tap failing there too, an
+  additional native activation failure exists — discriminator T4.
+
 ### Fix shape (post-confirmation)
 
 - **SpeedDial:** hide the backdrop from the a11y tree (`accessibilityElementsHidden` +
@@ -121,7 +121,10 @@ correct `accessibilityRole="button"` and labels. The defects are structural.
   add `onAccessibilityEscape={onClose}` on the wrapper (two-finger scrub = the canonical modal
   escape). Merge pill + button into ONE accessible element per action (row-level `Pressable`, or
   `accessible={false}` on the pill). Optionally `onAccessibilityTap={action.onPress}` and
-  focus the first item on open (`AccessibilityInfo.setAccessibilityFocus`).
+  focus the first item on open (`AccessibilityInfo.setAccessibilityFocus`). In-codebase
+  precedent for correct camera-adjacent modal scoping to model on:
+  `client/camera/components/ProductChip.tsx:232`,
+  `client/screens/MenuScanResultScreen.tsx:334-370`.
 - **Shutter:** derive `accessibilityState={{ disabled: !shutterArmed }}` from the SAME
   `shutterArmed` the visual reads (the file's own source-of-truth discipline); replace the
   silent `return` at `ScanScreen.tsx:468` with an `announceForAccessibility` explaining the
