@@ -3,7 +3,7 @@ title: Fire-and-forget for non-critical background operations
 track: knowledge
 category: design-patterns
 module: server
-tags: [database, async, background, error-handling, performance]
+tags: [api, routes, database, async, background, error-handling, performance]
 applies_to: [server/routes/**/*.ts, server/storage/**/*.ts, server/services/**/*.ts]
 created: '2026-05-13'
 ---

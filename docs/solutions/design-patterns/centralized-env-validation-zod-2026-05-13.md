@@ -4,7 +4,7 @@ track: knowledge
 category: design-patterns
 module: server
 tags: [api, env, zod, startup, validation]
-applies_to: [server/lib/env.ts, server/index.ts, server/lib/env-boot.ts]
+applies_to: [server/lib/env.ts, server/index.ts, server/lib/env-boot.ts, server/**/*.ts]
 created: '2026-05-13'
 last_updated: '2026-06-10'
 ---
