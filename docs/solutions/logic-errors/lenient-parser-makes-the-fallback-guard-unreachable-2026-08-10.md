@@ -86,6 +86,29 @@ export function normalizeToPerHundredGrams(
 It rejects `"1 serving"` and `"2 cups"` outright and correctly reads `240` out of
 `"1 cup (240g)"` — the case bare `parseFloat` got wrong by 240×.
 
+### The narrowed hole is still a hole — say so out loud
+
+`(?:g|ml)` is a **prefix** test, not a unit test: the alternation has no word boundary,
+so any unit merely *beginning* with `g` or `ml` still parses as a mass. Measured:
+
+| input          | `parseServingGrams` | should be |
+| -------------- | ------------------- | --------- |
+| `"1 gallon"`   | **1**               | reject    |
+| `"2 glasses"`  | **2**               | reject    |
+| `"3 gummies"`  | **3**               | reject    |
+| `"100 grams"`  | 100                 | 100 ✓     |
+| `"250 millilitres"` | **null**       | 250       |
+
+So it is wrong in both directions — it accepts `"1 gallon"` as one gram and rejects a
+spelled-out `"250 millilitres"`. Swapping in a bare `\b` (`(?:g|ml)\b`) fixes the first
+three and **breaks `"100 grams"`**, which is why the correct repair is an explicit unit
+alternation (`(?:g|grams?|ml|millilitres?|milliliters?)\b`) pinned by characterisation
+tests over each caller's real inputs — not a one-character patch.
+
+The general lesson: **a parser that narrows the hole is an improvement, not a proof.**
+When you cite one as "requires the unit", verify the anchor exists before writing that
+claim down — an unanchored alternation reads exactly like an anchored one.
+
 Then make every caller handle the refusal. A nullable return is what forces this: the
 type checker enumerates the call sites for you. **Discard the value; never substitute a
 default at the call site**, or you have reintroduced the same bug one level up.
@@ -93,7 +116,8 @@ default at the call site**, or you have reintroduced the same bug one level up.
 ## Prevention
 
 - Never `parseFloat` a string that carries a unit. If the unit is what makes the number
-  meaningful, the parser must require it.
+  meaningful, the parser must require it — and **anchor** it. `(?:g|ml)` matches the
+  first two letters of `"gallon"`; only `(?:g|ml)\b` matches the unit.
 - Treat `x = parse(...) || DEFAULT` as a smell. Ask which inputs reach the `||` — if a
   lenient parser sits on the left, the answer is usually "only the ones that were
   already obvious."

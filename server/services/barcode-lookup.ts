@@ -719,6 +719,11 @@ export async function lookupBarcode(
     // numbers scaled from a basis we invented. Deliberately not the throwing
     // INVARIANT guard above: that defends a code contract, whereas this is
     // upstream data we must not crash a live lookup over.
+    // CAVEAT if that hardcode ever changes: this path still reaches
+    // `insertBarcodeNutritionIfAbsent` below, which is first-write-wins — so a
+    // dropped basis persists an all-null nutrition row for the barcode that a
+    // later, normalizable scan will NOT repair. Prefer returning null here over
+    // widening the drop, or the Public API product DB accumulates dead rows.
     const usdaPer100g = normalizeToPerHundredGrams(usdaByUPC.product);
     if (!usdaPer100g) {
       log.warn(
