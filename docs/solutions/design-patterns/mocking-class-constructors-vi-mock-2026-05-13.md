@@ -76,3 +76,4 @@ vi.mock("@apple/app-store-server-library", async () => {
 
 - [Mocking constructable web APIs (XMLHttpRequest) in Vitest](mocking-constructable-web-apis-xhr-vitest-2026-05-13.md)
 - [Controllable mock via `vi.hoisted`](controllable-mock-via-vi-hoisted-2026-05-13.md)
+- [Vitest 4: mocking a `new`-ed dependency needs a real class, not an arrow vi.fn()](../runtime-errors/vitest4-mock-new-needs-real-class-not-arrow-vifn-2026-06-19.md) — the bug-track incident of this rule (Vitest-4 strictness, hoisting `mock`-prefix rule, pg Client recurrence)

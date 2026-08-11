@@ -48,5 +48,4 @@ const usdaApiKey = process.env.USDA_API_KEY || "DEMO_KEY";
 
 ## See Also
 
-- [Fail-fast environment validation at module load](fail-fast-environment-validation-2026-05-13.md)
 - [Centralized environment validation with Zod schema](../design-patterns/centralized-env-validation-zod-2026-05-13.md)

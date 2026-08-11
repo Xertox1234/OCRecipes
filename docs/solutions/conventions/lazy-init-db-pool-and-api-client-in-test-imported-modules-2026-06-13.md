@@ -3,7 +3,7 @@ title: Lazy-initialize DB pools and API clients in modules that tests import
 track: knowledge
 category: conventions
 module: server
-tags: [vitest, ci, database-pool, openai, lazy-init, test-isolation, import-side-effects]
+tags: [vitest, ci, database-pool, openai, external-clients, lazy-init, test-isolation, import-side-effects]
 symptoms: [A unit test connects to a real DB or needs an API key even though it only exercises pure logic, 'CI fails at test collection with a connection error, before any test body runs', A module-level `new Pool(...)` or `new OpenAI(...)` runs the instant a test imports the file]
 applies_to: [scripts/**/*.ts, server/**/*.ts]
 created: '2026-06-13'
@@ -14,6 +14,12 @@ created: '2026-06-13'
 ## Rule
 
 A module that a `*.test.ts` file imports must **not** construct a DB pool, HTTP/SDK client, or any other live connection at module top level. Build them lazily — behind a factory function or a lazily-populated singleton — and make external clients **injectable** so tests pass a fake.
+
+## Smell patterns
+
+- `const openai = new OpenAI({ apiKey: process.env.X })` (or `new Pool(...)`, `new Stripe(...)`) at the top of any `server/**` or `scripts/**` module
+- Tests crashing on `import` before they ever execute, with an env-var-missing or constructor error
+- Pure helper functions in the same file are technically testable but unreachable because the module import itself fails
 
 ## Why
 
@@ -61,9 +67,11 @@ Entrypoint scripts that are *never* imported by a test (run via `tsx`, gated beh
 
 ## Related Files
 
-- `scripts/solutions-db/lib/db.ts`, `scripts/solutions-db/lib/embeddings.ts` — lazy factory / lazy client
-- `scripts/solutions-db/integration-check.ts` — standalone (not vitest) real-DB check
+- `server/services/meal-suggestions.ts` — lazy `getOpenAI()` singleton, the original of this pattern
+- `evals/lib/eval-results-store.ts`, `server/lib/contract-snapshot.ts` — live followers of the lazy-pool rule
 
 ## See Also
 
 - [../runtime-errors/pg-pooled-connection-poisoned-without-rollback-in-finally-2026-06-13.md](../runtime-errors/pg-pooled-connection-poisoned-without-rollback-in-finally-2026-06-13.md) — the other half of pool discipline (transaction cleanup)
+- [`__DEV__` conditional require for mock vs real module switching](../design-patterns/dev-conditional-require-mock-vs-real-module-2026-05-13.md) — sibling rule for the client side; both address "loading the wrong implementation at import time"
+- [Module-level mutable state is a React smell](../code-quality/module-level-mutable-state-react-smell-2026-05-13.md) — related anti-pattern on the client

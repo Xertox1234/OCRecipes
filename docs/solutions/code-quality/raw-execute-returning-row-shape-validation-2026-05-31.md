@@ -116,5 +116,5 @@ already remaps keys to camelCase and parses timestamps to `Date`, so
 
 ## See Also
 
-- [Drizzle sql<Date> on aggregates is a type lie — PG returns strings](../runtime-errors/drizzle-sql-date-type-lie-pg-strings-2026-05-13.md)
+- [PostgreSQL DECIMAL and timestamp aggregates return strings — Drizzle sql<T> is a lie](../runtime-errors/pg-decimal-aggregate-returns-string-2026-05-13.md)
 - [Drizzle SQL type hint is not a runtime coercion](../conventions/drizzle-sql-type-hint-not-runtime-coercion-2026-05-13.md)

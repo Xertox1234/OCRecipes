@@ -51,4 +51,4 @@ const rows = await db.select({
 
 ## See Also
 
-- [Drizzle sql template treats ${column} as bound parameters](drizzle-sql-template-bound-parameters-2026-05-13.md)
+- [Drizzle sql template parameterizes column references inside subqueries](../runtime-errors/drizzle-sql-template-column-ref-as-param-2026-05-13.md)

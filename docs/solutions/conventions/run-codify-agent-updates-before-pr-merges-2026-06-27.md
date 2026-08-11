@@ -38,9 +38,10 @@ lets one reviewer see the change *and* the rule it produced.
 
 ## Exceptions
 
-- The solution-DB docs (`npm run solutions:db:add`) can be written anytime — they live in
-  the `ocrecipes_solutions` DB, not git, so they need no PR and aren't subject to this
-  ordering. Only the git-tracked `.claude/agents/*.md` edits are.
+- (Former exception, gone since the 2026-07 markdown-canonical cutover.) Solution docs
+  used to live in the `ocrecipes_solutions` DB and were exempt from this ordering; PR #491
+  made `docs/solutions/*.md` git-tracked, so they now ride the same PR as the change they
+  codify — the same ordering applies to them as to the `.claude/agents/*.md` edits.
 - A deliberate post-merge codify of *someone else's* just-merged change (one you didn't
   branch from) legitimately needs its own PR — but expect the divergence-conflict risk and
   branch off **fresh** `origin/main`.

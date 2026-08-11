@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: server
 severity: high
-tags: [drizzle, sql-template, postgresql, subquery, correlated-subquery]
+tags: [database, drizzle, sql, sql-template, postgresql, subquery, correlated-subquery]
 symptoms: [Correlated subquery with Drizzle sql template returns 0 always, Generated SQL has $1 where a column name was expected, Same SQL run directly in psql returns the correct value]
 applies_to: [server/storage/**/*.ts]
 created: '2026-03-23'
@@ -71,4 +71,4 @@ const rows = await db
 ## See Also
 
 - [Drizzle sql template documentation](https://orm.drizzle.team/docs/sql)
-- [Drizzle sql template bound parameters](../conventions/drizzle-sql-template-bound-parameters-2026-05-13.md)
+- [Drizzle sql<T> is a type hint, not a runtime coercion](../conventions/drizzle-sql-type-hint-not-runtime-coercion-2026-05-13.md)

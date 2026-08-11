@@ -36,6 +36,27 @@ try {
 }
 ```
 
+## Variant: return the existing record instead of 409
+
+When the endpoint's semantics are idempotent ("save this; give me the record either way"), catch the 23505, re-fetch, and return the existing record — the race becomes a graceful success instead of an error:
+
+```typescript
+} catch (error) {
+  // Concurrent request created the record after our dedup check
+  if (error instanceof Error && "code" in error && (error as { code: string }).code === "23505") {
+    const existing = await storage.findByExternalId(userId, externalId);
+    if (existing) { res.json(existing); return; }
+  }
+  handleRouteError(res, error, "create record");
+}
+```
+
+This form also fits inserts too complex for `onConflictDoUpdate`/`onConflictDoNothing` (e.g. multi-table creates) — when `ON CONFLICT` works, prefer it; it's simpler.
+
+## Prerequisite
+
+The target table must actually have the unique constraint. Without it, the race creates real duplicate rows and there is nothing to catch.
+
 ## When to use
 
 - Uniqueness is already enforced by a DB constraint (username, email, one-confirmation-per-item)
@@ -55,10 +76,10 @@ PostgreSQL error code `23505` is the unique violation. Drizzle surfaces it in th
 
 - `server/routes/auth.ts` — registration username uniqueness
 - `server/routes/meal-plan.ts` — meal plan confirmation dedup (partial unique index on `userId, mealPlanItemId` where not null)
+- `server/routes/recipes.ts` — catalog recipe save (return-existing variant; audit #6 M10)
 - `shared/schema.ts` — `daily_logs_unique_meal_plan_confirm` partial unique index
 
 ## See Also
 
 - [Transaction-wrapped count-then-insert to prevent TOCTOU](transaction-wrapped-count-then-insert-toctou-2026-05-13.md)
-- [TOCTOU race recovery via unique constraint catch](toctou-race-recovery-unique-constraint-catch-2026-05-13.md)
 - [Toggle via transaction to prevent duplicate inserts](toggle-via-transaction-prevent-duplicate-inserts-2026-05-13.md)

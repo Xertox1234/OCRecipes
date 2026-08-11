@@ -66,4 +66,3 @@ Rule: apply this guard whenever a conditionally-rendered child needs to announce
 
 - [Cross-platform live region announcements](../design-patterns/cross-platform-live-region-announcements-2026-05-13.md)
 - [Ref guard for one-shot effects](../design-patterns/ref-guard-for-one-shot-effects-2026-05-13.md)
-- [Dynamic accessibility announcements](../design-patterns/dynamic-accessibility-announcements-2026-05-13.md)

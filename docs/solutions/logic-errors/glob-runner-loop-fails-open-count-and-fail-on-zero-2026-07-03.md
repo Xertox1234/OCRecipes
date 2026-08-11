@@ -86,3 +86,4 @@ test failure fail-fasts before the guard.
 
 - [empty probe output needs exit-code check](empty-probe-output-needs-exit-code-check-2026-07-02.md) — same fail-open family: absence and failure sharing one channel
 - [pipefail grep condition fails open via SIGPIPE](pipefail-echo-grep-condition-fails-open-via-sigpipe-2026-06-27.md) — another silent shell fail-open in the same toolchain
+- [A verification that scans ZERO inputs is green and meaningless](../code-quality/verification-that-scans-zero-inputs-is-green-and-meaningless-2026-08-07.md) — later incident of the same rule (macOS /var symlink variant); assert the count, not just the exit code

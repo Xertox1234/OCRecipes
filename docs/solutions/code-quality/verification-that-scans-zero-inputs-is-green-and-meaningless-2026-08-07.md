@@ -96,3 +96,4 @@ the suite goes red. Before the fix it stayed green.
 - [A comparison over a lossy projection reports a false match](../logic-errors/comparison-over-a-lossy-projection-reports-a-false-match-2026-08-07.md) — same session, the other way a check passes without checking
 - [Probes that signal absence by empty output must also check the exit code](../logic-errors/empty-probe-output-needs-exit-code-check-2026-07-02.md)
 - [git diff can never show wholly untracked files](../logic-errors/git-diff-invisible-to-untracked-files-2026-07-15.md) — verification scoped off a source that cannot see the thing
+- [Glob-runner loop fails open — count and fail on zero](../logic-errors/glob-runner-loop-fails-open-count-and-fail-on-zero-2026-07-03.md) — earlier incident of the same rule (bash nullglob variant); distinct mechanics, same "assert the count" fix

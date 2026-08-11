@@ -78,3 +78,4 @@ When NOT to use:
 ## See Also
 
 - [Graceful 404 handling with raw fetch (bypass apiRequest throw)](../design-patterns/graceful-404-handling-raw-fetch-2026-05-13.md)
+- [A dead apiRequest guard hides a broken error branch](../logic-errors/dead-apirequest-guard-hides-broken-error-branch-2026-05-31.md) — later incident: the dead guard was the sole producer of a string a consumer matched on; branch on ErrorCode instead

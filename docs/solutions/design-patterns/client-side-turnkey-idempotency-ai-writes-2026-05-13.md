@@ -77,4 +77,4 @@ Any AI-generated write that can be retried — assistant messages, recipe saves,
 ## See Also
 
 - [Defensive cache writes with onConflictDoNothing](../conventions/defensive-cache-writes-onconflictdonothing-2026-05-13.md)
-- [TOCTOU race recovery via unique constraint catch](toctou-race-recovery-unique-constraint-catch-2026-05-13.md)
+- [Unique constraint as TOCTOU safety net](unique-constraint-toctou-safety-net-2026-05-13.md) — includes the catch-23505-and-return-existing recovery variant

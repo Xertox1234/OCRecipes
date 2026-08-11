@@ -67,5 +67,5 @@ If both branches _can_ coexist (no native dependency, no Expo Go crash), prefer 
 
 ## See Also
 
-- [Lazy-singleton external service clients so tests can import the module](../conventions/lazy-singleton-external-clients-test-import-2026-05-13.md) — server-side complement (same "don't load the wrong implementation at import time" problem)
+- [Lazy-initialize DB pools and API clients in modules that tests import](../conventions/lazy-init-db-pool-and-api-client-in-test-imported-modules-2026-06-13.md) — server-side complement (same "don't load the wrong implementation at import time" problem)
 - [Mounted ref guard for async hooks](mounted-ref-guard-async-hooks-2026-05-13.md) — used inside `usePurchase`, the consumer of this pattern

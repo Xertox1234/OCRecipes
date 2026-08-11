@@ -81,3 +81,4 @@ put the spy on the prototype.
 ## See Also
 
 - [pre-commit skips type-aware eslint run it before push](../conventions/pre-commit-skips-type-aware-eslint-run-it-before-push-2026-06-19.md) — another local-vs-CI test/lint gotcha from the same feature
+- [Mocking class constructors with vi.mock](../design-patterns/mocking-class-constructors-vi-mock-2026-05-13.md) — the knowledge-track pattern (importActual/spread, reset guidance) this incident re-proved under Vitest 4

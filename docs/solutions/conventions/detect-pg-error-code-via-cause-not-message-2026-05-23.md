@@ -58,6 +58,6 @@ meal-plan confirm, recipe-catalog, favourite-recipes, fasting); see the migratio
 
 ## See Also
 
-- [Drizzle sql template treats ${column} as bound parameters](drizzle-sql-template-bound-parameters-2026-05-13.md)
+- [Drizzle sql template parameterizes column references inside subqueries](../runtime-errors/drizzle-sql-template-column-ref-as-param-2026-05-13.md)
 - [Defensive cache writes with onConflictDoNothing](defensive-cache-writes-onconflictdonothing-2026-05-13.md)
 - [Auditing dependencies in the Expo + drizzle + zod stack](../best-practices/auditing-dependencies-expo-drizzle-zod-stack-2026-05-23.md)
