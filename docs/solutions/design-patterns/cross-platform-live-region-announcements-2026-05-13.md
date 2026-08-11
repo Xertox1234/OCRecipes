@@ -14,6 +14,8 @@ created: '2026-05-13'
 
 Use `AccessibilityInfo.announceForAccessibility()` for all cross-platform screen reader announcements. Do **not** combine it with `accessibilityLiveRegion` — combining both causes TalkBack to announce the text twice on Android.
 
+**When to announce:** state changes that focus doesn't reveal — success/error outcomes of async operations (a save completing, a barcode firing), content updates not caused by user navigation, and timer-based notifications. Screen reader users navigate by focus; a change that doesn't move focus is invisible to them without an announcement. Pair the announcement with a haptic (`Haptics.notificationAsync`) so the same signal reaches users who feel rather than hear it.
+
 ## Examples
 
 ```typescript
@@ -69,7 +71,6 @@ useEffect(() => {
 
 ## See Also
 
-- [Dynamic accessibility announcements](dynamic-accessibility-announcements-2026-05-13.md)
 - [accessibilityLiveRegion on frequently updating content](../conventions/accessibilitylive-region-frequently-updating-content-2026-05-13.md)
 - [Ref guard for one-shot effects](ref-guard-for-one-shot-effects-2026-05-13.md)
 - [Skip-first-render guard for accessibility announcements](../conventions/skip-first-render-guard-accessibility-announcements-2026-05-13.md)

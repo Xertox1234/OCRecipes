@@ -73,4 +73,4 @@ All services import `getOpenAI()` and call it inside their public functions. Tes
 
 ## See Also
 
-- [Lazy singleton external clients for test importability](../conventions/lazy-singleton-external-clients-test-import-2026-05-13.md)
+- [Lazy-initialize DB pools and API clients in modules that tests import](../conventions/lazy-init-db-pool-and-api-client-in-test-imported-modules-2026-06-13.md)

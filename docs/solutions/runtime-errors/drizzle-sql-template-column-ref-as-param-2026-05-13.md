@@ -71,4 +71,4 @@ const rows = await db
 ## See Also
 
 - [Drizzle sql template documentation](https://orm.drizzle.team/docs/sql)
-- [Drizzle sql template bound parameters](../conventions/drizzle-sql-template-bound-parameters-2026-05-13.md)
+- [Drizzle sql<T> is a type hint, not a runtime coercion](../conventions/drizzle-sql-type-hint-not-runtime-coercion-2026-05-13.md)

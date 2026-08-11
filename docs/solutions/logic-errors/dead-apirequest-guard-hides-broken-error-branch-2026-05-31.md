@@ -57,5 +57,6 @@ Three coordinated changes:
 ## See Also
 
 - `docs/solutions/conventions/apierror-code-driven-static-copy-2026-05-31.md` — the consumer-side `.code`-driven copy pattern
+- [apiRequest never returns non-ok — every `if (!res.ok)` after it is dead code](../code-quality/api-request-never-returns-non-ok-dead-code-2026-05-13.md) — the original finding, with cleanup mechanics (mock blast radius, raw-fetch false positives)
 - `docs/rules/client-state.md` — apiRequest-always-throws + branch-on-code rules
 - The companion cleanup todo `todos/2026-05-31-dead-apirequest-guard-cleanup.md` (~30 other dead guards)

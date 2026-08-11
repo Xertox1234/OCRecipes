@@ -19,6 +19,8 @@ Every Express server startup. Call `validateEnv()` before any other module initi
 
 For projects with many env vars, scattered inline checks fail one at a time — fix `JWT_SECRET`, restart, then learn `DATABASE_URL` is also missing. A single schema collects all failures and reports them together. Typed access (`getEnv()`) eliminates `process.env.X!` non-null assertions throughout the codebase.
 
+Whatever the mechanism, validation must run at **startup, not request time**: failing on the first real request means the operator learns about the misconfiguration hours after deploy, from a 500, instead of immediately from the startup logs.
+
 ## Examples
 
 ```typescript
@@ -136,9 +138,9 @@ Note that `vi.mock` persists across `vi.resetModules()` because they use separat
 
 `server/db.ts` deliberately keeps its own `DATABASE_URL` throw as defense-in-depth for direct-entry scripts (`server/scripts/*`, seeds) that never load `index.ts`. The bootstrap pattern is the primary guard; the db module guard is the backup for non-server contexts.
 
-## Relation to existing pattern
+## Relation to inline checks
 
-This supersedes the simpler [fail-fast environment validation](../conventions/fail-fast-environment-validation-2026-05-13.md) pattern for projects with many env vars. Small projects with 1-2 required vars can still use inline checks.
+This supersedes scattered inline `if (!process.env.X) throw` checks for projects with many env vars. A module with 1-2 required vars can still use an inline module-load check (e.g. `server/middleware/auth.ts`'s `JWT_SECRET` guard) — the startup-not-request-time rule binds either way.
 
 ## Related Files
 
@@ -149,6 +151,5 @@ This supersedes the simpler [fail-fast environment validation](../conventions/fa
 
 ## See Also
 
-- [Fail-fast environment validation at module load](../conventions/fail-fast-environment-validation-2026-05-13.md)
 - [Startup warning for optional env vars](../conventions/startup-warning-optional-env-vars-2026-05-13.md)
 - [Service availability guard checkAiConfigured](service-availability-guard-check-ai-configured-2026-05-13.md)

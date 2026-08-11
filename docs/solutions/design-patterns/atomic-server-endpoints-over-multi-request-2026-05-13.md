@@ -44,6 +44,22 @@ app.post("/api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry",
 );
 ```
 
+## Variant: flag-on-create
+
+When step 2 merely sets a flag on the resource step 1 creates (generate → share), fold the flag into the creation request instead of a follow-up call:
+
+```typescript
+// Bad: two-step — recipe exists but stays private if the share call never lands
+POST /api/recipes            → { id: "r123", isPublic: false }
+POST /api/recipes/r123/share → { isPublic: true }
+
+// Good: atomic flag in the creation schema
+POST /api/recipes { title: "...", shareToPublic: true }
+// server sets isPublic inside the creation transaction
+```
+
+Add the flag to the shared zod schema (`shareToPublic: z.boolean().optional()`), set the column inside the creation transaction, and delete the second client request. (Origin: audit finding M1, 2026-04-26.)
+
 ## Key benefits
 
 1. **Atomicity** — both operations succeed or fail together (use `db.transaction()` if strict DB atomicity is needed)
@@ -54,6 +70,7 @@ app.post("/api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry",
 ## When to use
 
 - Two or more writes that are logically one user action (check off + add to pantry, confirm meal + create daily log)
+- Generate + share, create + enable, upload + process — any creation whose follow-up flag belongs in the creation request (flag-on-create variant)
 - When partial failure would leave the UI in an inconsistent state
 - When the client would need to coordinate rollback logic
 
@@ -66,8 +83,8 @@ app.post("/api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry",
 
 - `server/routes.ts` — `POST /api/meal-plan/grocery-lists/:id/items/:itemId/add-to-pantry`
 - `client/hooks/useGroceryList.ts` — `useAddGroceryItemToPantry` mutation
+- `shared/schemas/recipe.ts` — `recipeGenerationSchema` with `shareToPublic` (flag-on-create)
 
 ## See Also
 
-- [Atomic operations in single request (no two-step race condition)](atomic-operations-single-request-2026-05-13.md)
-- [Fire-and-forget background operations after response](fire-and-forget-background-operations-2026-05-13.md)
+- [Fire-and-forget for non-critical background operations](fire-and-forget-non-critical-background-2026-05-13.md)

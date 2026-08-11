@@ -42,4 +42,3 @@ useEffect(() => {
 ## See Also
 
 - [Cross-platform live region announcements](../design-patterns/cross-platform-live-region-announcements-2026-05-13.md)
-- [Dynamic accessibility announcements](../design-patterns/dynamic-accessibility-announcements-2026-05-13.md)

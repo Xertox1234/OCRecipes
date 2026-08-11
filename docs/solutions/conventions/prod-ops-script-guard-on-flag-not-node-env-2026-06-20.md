@@ -91,4 +91,4 @@ if (isMain) void main();
 ## See Also
 
 - [Lazy-initialize DB pools and API clients in modules that tests import](lazy-init-db-pool-and-api-client-in-test-imported-modules-2026-06-13.md)
-- [Fail-fast environment variable validation at module load](fail-fast-environment-validation-2026-05-13.md)
+- [Centralized environment validation with Zod schema](../design-patterns/centralized-env-validation-zod-2026-05-13.md)
