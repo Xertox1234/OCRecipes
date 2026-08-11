@@ -67,8 +67,9 @@ Whenever you manually `BEGIN` on a pooled client, the matching `ROLLBACK`/`COMMI
 
 ## Related Files
 
-- `scripts/solutions-db/mcp-server.ts` — the `sql` tool's transaction block
-- `scripts/solutions-db/lib/sql-guard.ts` — the read-only heuristic guard (orthogonal defense)
+- `scripts/solutions-db/mcp-server.ts` — the `sql` tool's transaction block (toolchain retired 2026-07, PR #491; historical example)
+- `scripts/solutions-db/lib/sql-guard.ts` — the read-only heuristic guard (orthogonal defense) (toolchain retired 2026-07, PR #491; historical example)
+- `scripts/pg-lab/symbol-graph.ts` — live example: `rebuildDb`'s BEGIN/COMMIT with guaranteed error-path ROLLBACK and `release(err)` so the pool destroys a client left in an unknown transaction state
 
 ## See Also
 

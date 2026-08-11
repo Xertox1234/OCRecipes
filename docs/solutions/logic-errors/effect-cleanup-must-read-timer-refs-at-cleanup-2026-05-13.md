@@ -6,7 +6,7 @@ module: client
 severity: medium
 tags: [react, useEffect, useRef, timers, cleanup, exhaustive-deps]
 symptoms: [Timer fires after the component unmounts, 'Cleanup function clears a captured local variable, not the current `.current`', '`exhaustive-deps` autofix suggested capturing ref in a variable']
-applies_to: [client/camera/hooks/useScanClassification.ts, client/**/use*.ts]
+applies_to: [client/camera/hooks/useCamera.ts, client/**/use*.ts]
 created: '2026-04-07'
 ---
 
@@ -60,7 +60,8 @@ If `exhaustive-deps` warns, suppress with a comment explaining these are timer I
 
 ## Related Files
 
-- `client/camera/hooks/useScanClassification.ts` — cleanup now reads `.current` directly
+- `client/camera/hooks/useScanClassification.ts` (deleted in the scan-flow rework; historical origin of the bug)
+- `client/camera/hooks/useCamera.ts` — live example: cleanup reads `scanTimeoutRef.current` directly at cleanup time
 - Audit: 2026-04-07-full-2 finding M13
 
 ## See Also

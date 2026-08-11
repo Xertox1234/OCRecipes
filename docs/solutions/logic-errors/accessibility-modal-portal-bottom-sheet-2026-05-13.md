@@ -6,7 +6,7 @@ module: client
 severity: high
 tags: [accessibility, voiceover, bottom-sheet, modal, react-native, portal]
 symptoms: [VoiceOver cannot reach a BottomSheetModal even though it is visible on screen, Screen reader skips over modal content when the screen container has accessibilityViewIsModal=true]
-applies_to: [client/hooks/useConfirmationModal.ts, client/components/**/*BottomSheet*.tsx]
+applies_to: [client/components/ConfirmationModal.tsx, client/components/**/*BottomSheet*.tsx]
 created: '2026-03-25'
 ---
 
@@ -51,7 +51,8 @@ Place the `<ConfirmationModal />` **inside** the `accessibilityViewIsModal` cont
 
 ## Related Files
 
-- `client/hooks/useConfirmationModal.ts`
+- `client/components/ConfirmationModal.tsx` (hook `useConfirmationModal` now lives in this component file)
+- `client/screens/meal-plan/PantryScreen.tsx` — live example: renders `<ConfirmationModal />` inside its `accessibilityViewIsModal` container
 - `docs/legacy-patterns/react-native.md` — "Modal Focus Trapping" pattern (portal caveat documented)
 
 ## See Also

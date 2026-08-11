@@ -6,7 +6,7 @@ module: client
 severity: high
 tags: [react, hooks, useCallback, useMemo, component-identity, bottom-sheet]
 symptoms: [BottomSheetModal dismisses itself immediately after presenting, Hook-returned component loses internal state between renders, Modal animation flickers because the component instance is replaced each render]
-applies_to: [client/hooks/useConfirmationModal.ts, client/hooks/use*Modal.ts]
+applies_to: [client/components/ConfirmationModal.tsx, client/hooks/use*Modal.ts]
 created: '2026-03-25'
 ---
 
@@ -61,7 +61,8 @@ const ConfirmationModal = useMemo(
 
 ## Related Files
 
-- `client/hooks/useConfirmationModal.ts`
+- `client/components/ConfirmationModal.tsx` (hook `useConfirmationModal` now lives in this component file)
+- `client/hooks/useBeverageSheet.ts` — same stable-identity `useMemo` + revision-counter pattern
 - `docs/legacy-patterns/hooks.md` — "Hook-Returned Component Pattern for BottomSheetModal"
 
 ## See Also

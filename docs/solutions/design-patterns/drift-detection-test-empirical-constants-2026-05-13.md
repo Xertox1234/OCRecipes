@@ -52,11 +52,11 @@ it("matches the empirical grep result", () => {
 
 ## Pair with
 
-`--check`-mode build script if the constant feeds a generated artifact — see `architecture.md` "CI Drift-Check for Generated Artifacts."
+`--check`-mode build script if the constant feeds a generated artifact — see `docs/legacy-patterns/architecture.md` "CI Drift-Check for Generated Tracked Artifacts."
 
 ## Related Files
 
-- `scripts/__tests__/delegate-copilot-issue.test.ts` — `LLM_TOUCHING_SERVICES drift detection` block
+- `scripts/lib/__tests__/path-domains.test.ts` — `LLM_TOUCHING_SERVICES drift detection` block (moved here when the Copilot delegation pipeline was deleted 2026-07)
 
 ## See Also
 

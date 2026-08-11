@@ -64,8 +64,8 @@ Any library that *parses* external/authored text (YAML, JSON5, TOML, a custom DS
 
 ## Related Files
 
-- `scripts/solutions-db/lib/parse.ts` — `parseSolution()`, the guarded `matter()` call
-- `scripts/solutions-db/__tests__/parse.test.ts` — malformed-YAML regression test
+- `scripts/solutions-db/lib/parse.ts` — `parseSolution()`, the guarded `matter()` call (toolchain retired 2026-07, PR #491; `gray-matter` is no longer a dependency — historical example)
+- `scripts/solutions-db/__tests__/parse.test.ts` — malformed-YAML regression test (toolchain retired 2026-07, PR #491; historical example)
 
 ## See Also
 

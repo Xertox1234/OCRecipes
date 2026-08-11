@@ -17,7 +17,8 @@ When a storage method supports optional filtering by date range, pagination, or 
 ## Examples
 
 ```typescript
-// server/storage.ts — shared filter pattern used by 6+ methods
+// server/storage.ts getWeightLogs (weight-log feature removed; historical
+// example — the storage monolith was since domain-split into server/storage/*)
 async getWeightLogs(
   userId: string,
   options?: { from?: Date; to?: Date; limit?: number },
@@ -63,4 +64,7 @@ const all = await storage.getWeightLogs(userId); // no filters
 
 ## Related Files
 
-- `server/storage.ts` — `getWeightLogs()`, `getExerciseLogs()`, `getScannedItems()`, `getFastingLogs()`, `getMedicationLogs()`, `getChatMessages()`
+- `server/storage/coach-notebook.ts` — `getNotebookEntries()` (`opts?: { type?; status?; page?; limit? }`)
+- `server/storage/chat.ts` — `getChatConversations()` (`opts?: { search?; page? }`)
+- `server/storage/canonical-recipes.ts` — `getCuratedRecipes()` (`opts?: { limit?; offset? }`)
+- `server/storage.ts` `getWeightLogs()`, `getExerciseLogs()`, `getFastingLogs()`, `getMedicationLogs()` (features removed; historical examples). `getScannedItems()` and `getChatMessages()` live on in `server/storage/nutrition.ts` / `server/storage/chat.ts` but now take positional `limit`/`offset` parameters, not a filter object.

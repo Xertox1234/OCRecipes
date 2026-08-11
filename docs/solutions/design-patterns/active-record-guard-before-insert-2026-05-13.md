@@ -17,7 +17,8 @@ When a table tracks resources with a lifecycle (start -> active -> end), prevent
 ## Examples
 
 ```typescript
-// server/routes/fasting.ts — prevent starting a second fast
+// server/routes/fasting.ts (feature removed; historical example) —
+// prevent starting a second fast
 app.post(
   "/api/fasting/start",
   requireAuth,
@@ -67,4 +68,4 @@ app.post(
 
 ## Related Files
 
-- `server/routes/fasting.ts` — `POST /api/fasting/start`
+- `server/routes/fasting.ts` — `POST /api/fasting/start` (feature removed; historical example — current 409s in the codebase are uniqueness conflicts, not this lifecycle guard)

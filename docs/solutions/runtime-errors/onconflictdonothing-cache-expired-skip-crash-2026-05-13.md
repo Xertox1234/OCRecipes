@@ -55,7 +55,7 @@ Also: avoid trailing non-null assertions on values that came from a query that m
 
 ## Related Files
 
-- `server/storage/meal-suggestions-cache.ts`
+- `server/storage/cache.ts` — `mealSuggestionCache` upsert (formerly `server/storage/meal-suggestions-cache.ts`)
 - Audit 2026-04-28 H3
 
 ## See Also

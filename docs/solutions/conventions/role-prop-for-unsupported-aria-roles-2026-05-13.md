@@ -36,7 +36,8 @@ When NOT to use: Roles that `accessibilityRole` already supports (`"button"`, `"
 
 ## Related Files
 
-- `client/screens/GLP1CompanionScreen.tsx` — `role="group"` on checkbox group container
+- `client/components/coach/blocks/CommitmentCard.tsx` — `role="group"` with a summary `accessibilityLabel` on the card container
+- `client/screens/GLP1CompanionScreen.tsx` (feature removed; historical example) — `role="group"` on checkbox group container
 
 ## See Also
 

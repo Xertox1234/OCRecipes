@@ -47,7 +47,9 @@ A route may look safe because it first looks up the active record by `userId` an
 
 ## Related Files
 
-- `server/storage.ts` — `endFastingLog`, `deleteMenuScan`, `deleteMedicationLog`, `softDeleteScannedItem`
+- `server/storage/nutrition.ts` — `softDeleteScannedItem` (`userId` in the mutation WHERE)
+- `server/storage/menu.ts` — `deleteMenuScan` (`userId` in the mutation WHERE)
+- `server/storage.ts` `endFastingLog`, `deleteMedicationLog` (features removed; historical examples — the storage monolith was domain-split into `server/storage/*`)
 - LEARNINGS.md — "IDOR in Micronutrients and Chat Routes"
 
 ## See Also

@@ -61,8 +61,8 @@ so a parity gate stays green.
 
 ## Related Files
 
-- `scripts/solutions-db/lib/embeddings.ts` — `embedBatch` (the fix)
-- `scripts/solutions-db/lib/upsert.ts` — downstream positional `vectors[i]` map (safe once embedBatch is ordered)
+- `scripts/solutions-db/lib/embeddings.ts` — `embedBatch` (the fix) (toolchain retired 2026-07, PR #491; historical example — no live `embeddings.create` call remains in the repo)
+- `scripts/solutions-db/lib/upsert.ts` — downstream positional `vectors[i]` map (safe once embedBatch is ordered) (toolchain retired 2026-07, PR #491; historical example)
 
 ## See Also
 

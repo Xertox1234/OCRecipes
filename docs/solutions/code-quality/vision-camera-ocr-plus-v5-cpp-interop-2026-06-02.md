@@ -144,8 +144,8 @@ it. Pre-existing, independent of this OCR fix.
 ## Related Files
 
 - `ios/Podfile` (`post_install`) — the fix
-- `client/camera/hooks/useOCRDetection.ts` — live consumer of `react-native-vision-camera-ocr-plus`
-- `node_modules/react-native-vision-camera-ocr-plus/ios/RemoveLanguageModel.swift` — the file in the failing command
+- `client/camera/hooks/useOCRDetection.ts` — live consumer of `react-native-vision-camera-ocr-plus` (deleted 2026-06-03 in the final resolution above; historical)
+- `node_modules/react-native-vision-camera-ocr-plus/ios/RemoveLanguageModel.swift` — the file in the failing command (package removed 2026-06-03; historical)
 
 ## See Also
 

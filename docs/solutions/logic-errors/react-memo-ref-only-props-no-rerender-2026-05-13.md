@@ -6,7 +6,7 @@ module: client
 severity: medium
 tags: [react, react-memo, useRef, hook-returned-component, confirmation-modal]
 symptoms: [Confirmation dialog shows stale title/message from a previous `confirm()` call, Memoized inner component never re-renders despite ref changes, Shallow comparison sees identical props because all props are refs]
-applies_to: [client/hooks/useConfirmationModal.ts, client/hooks/**/*.ts]
+applies_to: [client/components/ConfirmationModal.tsx, client/hooks/**/*.ts]
 created: '2026-03-25'
 ---
 
@@ -53,7 +53,7 @@ function ConfirmationModalInner({ optionsRef, sheetRef, revision }) {
 
 ## Related Files
 
-- `client/hooks/useConfirmationModal.ts` — removed `React.memo`, added `revision` counter
+- `client/components/ConfirmationModal.tsx` — removed `React.memo`, added `revision` counter (hook `useConfirmationModal` now lives in this component file)
 - `docs/legacy-patterns/hooks.md` — "Hook-Returned Component Pattern for BottomSheetModal"
 
 ## See Also

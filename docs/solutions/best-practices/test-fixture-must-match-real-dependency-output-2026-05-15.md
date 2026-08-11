@@ -65,7 +65,9 @@ The faithful fixture reproduces the bug on a red test; the strawman never does.
 ## Related Files
 
 - `.claude/hooks/test-kimi-review.sh` — hook test whose `clean` stub now emits
-  the real kimi-review clean-output message
+  the real kimi-review clean-output message (hook + test retired in the
+  reviewer-roster consolidation; historical example — the lesson stands for any
+  fixture)
 
 ## See Also
 

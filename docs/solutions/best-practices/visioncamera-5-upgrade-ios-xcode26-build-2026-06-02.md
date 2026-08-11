@@ -58,7 +58,7 @@ Then `cd ios && pod install` → `npx expo run:ios`. Confirm the **real** exit c
 - `package.json` — the version set
 - `ios/Podfile.properties.json` — `buildReactNativeFromSource` toggle (gitignored)
 - `ios/Podfile` — MLKit `EXCLUDED_ARCHS` deletion + `singlefile` workarounds (gitignored)
-- `client/camera/hooks/useOCRDetection.ts` — the ocr-plus consumer (unchanged by v2)
+- `client/camera/hooks/useOCRDetection.ts` — the ocr-plus consumer (unchanged by v2; since deleted 2026-06-03 when ocr-plus was removed entirely — see [vision-camera-ocr-plus v5 C++ interop](../code-quality/vision-camera-ocr-plus-v5-cpp-interop-2026-06-02.md))
 - `scripts/patch-mlkit-simulator.py` — the MLKit fat-binary re-tagger
 
 ## See Also
