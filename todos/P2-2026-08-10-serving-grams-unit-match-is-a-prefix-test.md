@@ -104,10 +104,19 @@ either. Verified by running both regexes side by side. Do not ship that patch.
 ## Dependencies
 
 - None. PR #794 has landed the sibling fix; this is the residual it did not close.
-- Related but independent: `coerceNumber` (`server/services/nutrition-lookup.ts:40-42`)
-  maps a non-numeric **string** to `0` rather than failing the parse, so an API Ninjas
-  `serving_size_g` arriving as a JSON string becomes `"0g"`. Different file, different
-  defect; surfaced in #794's PR body and still unfiled by decision.
+- **Correction to #794's PR body — `coerceNumber` is NOT a defect.** That PR described
+  `coerceNumber` (`server/services/nutrition-lookup.ts:40-42`) as mapping a string to
+  `0` "rather than failing the parse", implying an oversight. It is deliberate: the
+  comment at `:38` records that API Ninjas' **free tier returns gated fields as the
+  literal string `"Only available for premium subscribers."`**, and `0` is the agreed
+  sentinel for "incomplete" — `:733`, `:758` and `:794` all gate on `calories > 0`.
+  Do not "fix" it; rejecting those strings would break every free-tier response.
+- **Real consequence worth knowing when picking this up:** on a free API Ninjas key
+  `serving_size_g` is gated → `0` → `"0g"`, which #794 now **discards** where it
+  previously normalized at factor 1. That is the correct trade (honest no-data over a
+  fabricated basis) but it means API Ninjas contributes fewer cross-validation
+  secondaries than the test fixtures — which all use a numeric `serving_size_g` —
+  suggest. Confirm the deployed key's tier before reading coverage numbers.
 
 ## Risks
 

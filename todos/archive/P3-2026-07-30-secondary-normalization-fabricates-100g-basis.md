@@ -141,6 +141,14 @@ producer-characterisation tests stay GREEN. The integration test fails under the
 mutation with `expected 7 to be undefined` — proving the discarded secondary really
 would have gap-filled the primary's fiber.
 
+**RETRACTED 2026-08-10 — the claim below was wrong.** `coerceNumber`'s string→`0` is
+deliberate, not an oversight: the comment at `nutrition-lookup.ts:38` records that API
+Ninjas' free tier returns gated fields as `"Only available for premium subscribers."`,
+and `0` is the sentinel for "incomplete" that `:733`/`:758`/`:794` gate on. Nothing to
+fix. What IS true: on a free key `serving_size_g` is gated → `"0g"`, which this todo's
+fix now discards where it previously normalized at factor 1 — correct, but it reduces
+API Ninjas secondary coverage. Original text kept below for the record:
+
 **Surfaced, not fixed (out of scope contract):** `coerceNumber`
 (`server/services/nutrition-lookup.ts:40-42`) maps a non-numeric **string** to `0`
 rather than failing the parse, so an API Ninjas `serving_size_g` arriving as a JSON
