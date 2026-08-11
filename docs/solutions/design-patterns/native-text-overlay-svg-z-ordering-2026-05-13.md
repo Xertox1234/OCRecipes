@@ -48,7 +48,8 @@ Three things to get right:
 
 ## Related Files
 
-- `client/components/FastingTimer.tsx` — time display overlay on SVG circular progress ring
+- `client/components/FastingTimer.tsx` (feature removed; historical example) — time display overlay on SVG circular progress ring
+- `client/components/ProgressRing.tsx` — current live overlay-on-SVG instance: native children centered over the ring via `StyleSheet.absoluteFillObject` (does not use the `zIndex` fix to date)
 - Discovered during PR #25 physical device testing
 
 ## See Also

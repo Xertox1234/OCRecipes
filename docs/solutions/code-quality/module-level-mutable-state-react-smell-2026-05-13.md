@@ -54,7 +54,7 @@ function TipCard() {
 
 ## Related Files
 
-- `client/components/quick-log/TipCard.tsx`
+- `client/components/quick-log/TipCard.tsx` (component removed with the quick-log tips UI; historical example)
 
 ## See Also
 

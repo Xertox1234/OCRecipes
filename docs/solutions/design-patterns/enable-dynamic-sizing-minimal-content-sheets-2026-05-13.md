@@ -63,8 +63,8 @@ When NOT to use: Multi-section sheets with scrollable content — use fixed `sna
 
 ## Related Files
 
-- `client/hooks/useConfirmationModal.ts` — dynamically-sized confirmation sheet
-- Existing fixed-snap-point sheets: `RecipeCreateScreen`, `GroceryListScreen`
+- `client/components/ConfirmationModal.tsx` — dynamically-sized confirmation sheet (hook `useConfirmationModal` now lives in this component file)
+- Existing fixed-snap-point sheets: `client/screens/meal-plan/MealPlanHomeScreen.tsx`, `client/screens/meal-plan/RecipeBrowserScreen.tsx` (the former `RecipeCreateScreen`/`GroceryListScreen` examples no longer use snap points)
 
 ## See Also
 

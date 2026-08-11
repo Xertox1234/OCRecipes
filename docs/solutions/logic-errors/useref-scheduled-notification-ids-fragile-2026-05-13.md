@@ -6,7 +6,7 @@ module: client
 severity: medium
 tags: [expo-notifications, useref, react-native, component-lifecycle]
 symptoms: [Notifications fire after the user ended the fast, ID list is empty when handleEndFast tries to cancel, Bug only reproduces after navigating away and back]
-applies_to: [client/screens/FastingScreen.tsx]
+applies_to: [client/screens/**/*.tsx, client/hooks/**/*.ts]
 created: '2026-03-21'
 ---
 
@@ -51,7 +51,7 @@ await Notifications.cancelAllScheduledNotificationsAsync();
 
 ## Related Files
 
-- `client/screens/FastingScreen.tsx` — `handleEndFast` uses global cancel
+- `client/screens/FastingScreen.tsx` — `handleEndFast` uses global cancel (fasting feature removed; historical example — `expo-notifications` itself remains a live dependency, so the lesson still applies to any future scheduled-notification code)
 
 ## See Also
 

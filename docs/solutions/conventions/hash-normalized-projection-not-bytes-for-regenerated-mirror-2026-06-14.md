@@ -5,7 +5,7 @@ category: conventions
 module: shared
 tags: [content-hash, serialization, mirror, canonical-store, database, architecture, parity, sync, shared]
 symptoms: ['A ''has this file changed?'' hash flips on a no-op reformat (key reorder, quoting, whitespace)', Re-exporting a file from the DB makes a byte-hash parity check fail even though nothing changed, You want to regenerate files from a store but a raw-bytes hash makes them look perpetually dirty]
-applies_to: [scripts/solutions-db/**/*.ts]
+applies_to: [scripts/**/*.ts, server/lib/contract-snapshot.ts]
 created: '2026-06-14'
 ---
 
@@ -71,9 +71,10 @@ round-trip test — never reimplemented.
 
 ## Related Files
 
-- `scripts/solutions-db/lib/parse.ts` — `canonicalProjection` / `computeContentHash` / `deepSortKeys`
-- `scripts/solutions-db/lib/serialize.ts` — the inverse serializer (must round-trip to the same hash)
-- `scripts/solutions-db/parity-check.ts`, `export.ts --verify` — the gates built on the projection hash
+- `scripts/solutions-db/lib/parse.ts` — `canonicalProjection` / `computeContentHash` / `deepSortKeys` (toolchain retired 2026-07, PR #491; historical example)
+- `scripts/solutions-db/lib/serialize.ts` — the inverse serializer (must round-trip to the same hash) (toolchain retired 2026-07, PR #491; historical example)
+- `scripts/solutions-db/parity-check.ts`, `export.ts --verify` — the gates built on the projection hash (toolchain retired 2026-07, PR #491; historical example)
+- `server/lib/contract-snapshot.ts` — live analogue: `recordSnapshot` compares a normalized projection (JSON round-trip + `deriveShape`) against the stored mirror, not raw bytes
 
 ## See Also
 

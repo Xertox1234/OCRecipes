@@ -81,8 +81,8 @@ when the user scrolls near the end.
 
 ## Related Files
 
-- `server/routes/scanned-items.ts` — paginated endpoint pattern.
-- `client/hooks/useScannedItems.ts` — `useInfiniteQuery` pairing.
+- `server/routes/nutrition.ts` — `GET /api/scanned-items` paginated endpoint pattern (`parseQueryInt` clamp, default 50 / max 100; formerly `server/routes/scanned-items.ts`).
+- `client/hooks/useHistoryData.ts` — `useInfiniteQuery` pairing over `/api/scanned-items` (formerly `client/hooks/useScannedItems.ts`).
 
 ## See Also
 

@@ -59,7 +59,7 @@ When to use: any screen migrating from `Alert.alert` to bottom sheet confirmatio
 ## Related Files
 
 - Related: "Unsaved Changes Navigation Guard" in `docs/legacy-patterns/documentation.md`
-- `client/hooks/useConfirmationModal.ts` — `confirm()` pattern
+- `client/components/ConfirmationModal.tsx` — `confirm()` pattern (hook `useConfirmationModal` now lives in this component file)
 
 ## See Also
 

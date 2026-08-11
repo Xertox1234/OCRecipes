@@ -61,7 +61,7 @@ When NOT to use: components that explicitly do NOT own haptic feedback (e.g., pl
 
 ## Related Files
 
-- `client/hooks/useConfirmationModal.ts` — owns warning haptic on destructive confirm
+- `client/components/ConfirmationModal.tsx` — owns warning haptic on destructive confirm (hook `useConfirmationModal` now lives in this component file)
 - Related: "Haptic Feedback on User Actions" and "Accessibility-Aware Haptics Pattern" in this file
 
 ## See Also

@@ -36,7 +36,7 @@ created: '2026-05-13'
 
 ## Related Files
 
-- `client/components/FastingTimer.tsx` — milestone markers with summary label on wrapping View
+- `client/components/CalorieRing.tsx` — summary `accessibilityLabel` + `accessibilityRole="progressbar"` on the wrapping element; the SVG ring inside is purely visual (formerly demonstrated in `client/components/FastingTimer.tsx`, feature removed)
 - Discovered during PR #25 accessibility review
 
 ## See Also

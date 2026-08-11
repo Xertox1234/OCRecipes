@@ -5,7 +5,7 @@ category: conventions
 module: shared
 tags: [verification, testing, gates, parity, round-trip, code-review, independent-reader, reliability, shared]
 symptoms: ['A parity/round-trip gate is green, yet the underlying data is wrong', Both sides of a correctness check are computed by the same parser/serializer/hash, A bug survived a passing gate because the gate could only see what that function produced]
-applies_to: [scripts/solutions-db/**/*.ts]
+applies_to: [scripts/**/*.ts, shared/constants/nutrition-bands.ts]
 created: '2026-06-14'
 last_updated: '2026-07-31'
 ---
@@ -92,8 +92,9 @@ drift detection, not correctness — it passes for any shared mistake.
 
 ## Related Files
 
-- `scripts/solutions-db/parity-check.ts` — same-parser parity (drift gate; blind to parser bugs)
-- `scripts/solutions-db/hook-equivalence-check.ts` — grep-vs-DB (independent reader; caught the bug)
+- `scripts/solutions-db/parity-check.ts` — same-parser parity (drift gate; blind to parser bugs) (toolchain retired 2026-07, PR #491; historical example)
+- `scripts/solutions-db/hook-equivalence-check.ts` — grep-vs-DB (independent reader; caught the bug) (toolchain retired 2026-07, PR #491; historical example)
+- `shared/constants/nutrition-bands.ts` — `FSA_FOOD`, the 2026-07-31 same-source-document example
 
 ## See Also
 

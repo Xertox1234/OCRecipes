@@ -59,7 +59,8 @@ When the JSONB value has already been validated by Zod `safeParse()` earlier in 
 
 ## Related Files
 
-- `server/services/glp1-insights.ts` — `sideEffects` JSONB column. Also applies to `allergies`, `foodDislikes`, and other JSONB array columns in `userProfiles`
+- `server/services/ingredient-substitution.ts` — `Array.isArray` guards on the `allergies` and `foodDislikes` JSONB columns (`userProfiles` in `shared/schema.ts`)
+- `server/services/glp1-insights.ts` (feature removed; historical example) — `sideEffects` JSONB column
 
 ## See Also
 

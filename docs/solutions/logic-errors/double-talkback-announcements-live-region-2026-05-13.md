@@ -52,7 +52,7 @@ Audit any component that uses both APIs. The pattern docs at `docs/legacy-patter
 
 ## Related Files
 
-- `client/screens/TastePicksScreen.tsx` — selection-count chip
+- `client/screens/onboarding/TastePicksScreen.tsx` — selection-count chip
 - `docs/legacy-patterns/react-native.md` — updated to remove the pairing recommendation
 
 ## See Also

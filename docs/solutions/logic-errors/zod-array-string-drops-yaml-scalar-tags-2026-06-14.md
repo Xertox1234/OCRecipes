@@ -6,7 +6,7 @@ module: server
 severity: medium
 tags: [zod, yaml, gray-matter, frontmatter, validation, tags, silent-failure, data-integrity, typescript, server]
 symptoms: [A frontmatter list (tags/symptoms) that clearly has values comes back empty after parse, 'Only SOME files lose their list — the ones whose list contains a number, `null`, or `true`/`false`', 'No error or warning beyond a generic ''tags missing'' — the data is gone, not flagged']
-applies_to: [scripts/solutions-db/lib/parse.ts]
+applies_to: [scripts/**/*.ts]
 created: '2026-06-14'
 ---
 
@@ -61,8 +61,8 @@ Apply the same to every author-typed list field (`symptoms`, etc.). A genuinely 
 
 ## Related Files
 
-- `scripts/solutions-db/lib/parse.ts` — `FrontmatterSchema` tags/symptoms coercion
-- `scripts/solutions-db/__tests__/parse.test.ts` — the numeric + null/boolean lock tests
+- `scripts/solutions-db/lib/parse.ts` — `FrontmatterSchema` tags/symptoms coercion (toolchain retired 2026-07, PR #491; historical example)
+- `scripts/solutions-db/__tests__/parse.test.ts` — the numeric + null/boolean lock tests (toolchain retired 2026-07, PR #491; historical example)
 
 ## See Also
 
