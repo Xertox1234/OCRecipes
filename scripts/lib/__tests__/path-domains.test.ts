@@ -59,6 +59,14 @@ describe("harness never leaks into worktree app files", () => {
     ]);
   });
 
+  it("a worktree's OWN corpus docs still get harness", () => {
+    expect(
+      rulesDomainsForPath(
+        ".claude/worktrees/wt-a/docs/solutions/conventions/foo-2026-08-11.md",
+      ),
+    ).toEqual(["harness"]);
+  });
+
   it("a worktree's OWN harness files still get harness", () => {
     expect(
       rulesDomainsForPath(
@@ -146,6 +154,21 @@ describe("rulesDomainsForPath", () => {
     // `.husky/**` in applies_to, so this routing has to exist for those globs to fire.
     [".husky/pre-push", ["harness"]],
     [".husky/pre-commit", ["harness"]],
+    // docs/solutions/** + docs/rules/** are the knowledge base itself; several corpus
+    // solutions declare these paths in applies_to, so this routing has to exist for
+    // those globs to fire (same rationale as .husky/** above — PR #798 review finding).
+    [
+      "docs/solutions/conventions/merging-corpus-docs-must-union-routing-metadata-2026-08-10.md",
+      ["harness"],
+    ],
+    ["docs/solutions/README.md", ["harness"]],
+    ["docs/rules/harness.md", ["harness"]],
+    ["docs/rules/lsp.md", ["harness"]],
+    // Decline-side pins: the rules are docs/solutions + docs/rules SPECIFICALLY, never a
+    // blanket docs/ rule — collapsing them to `dir: "docs"` would tag the whole docs tree
+    // (in every worktree) with harness and must turn these RED.
+    ["docs/AI_WORKFLOW.md", []],
+    ["docs/legacy-patterns/typescript.md", []],
   ];
   it.each(cases)("%s", (input, expected) => {
     expect(rulesDomainsForPath(input).sort()).toEqual(expected);

@@ -3,7 +3,7 @@ title: docs/rules/*.md must stay terse — the inject hook embeds them inline un
 track: knowledge
 category: conventions
 module: shared
-tags: [docs-rules, pattern-injection, hook-scripts, context-budget, maintainability]
+tags: [harness, docs-rules, pattern-injection, hook-scripts, context-budget, maintainability]
 applies_to: [docs/rules/*.md, .claude/hooks/inject-patterns.sh]
 created: '2026-06-05'
 last_updated: '2026-08-07'

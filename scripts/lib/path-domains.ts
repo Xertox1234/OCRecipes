@@ -287,6 +287,25 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     domains: ["harness"],
     description: "`.husky/**`",
   },
+  {
+    // The knowledge base itself. Several corpus solutions declare docs/solutions/** or
+    // docs/rules/** in applies_to (frontmatter format, tag routing, merge-metadata rules),
+    // but with no routing rule those globs were structurally inert — editing a corpus doc
+    // injected nothing at all, including the very lessons about maintaining the corpus
+    // (PR #798 review finding). Deliberately NOT covering todos/**, docs/research/**, or
+    // docs/superpowers/specs/** — todo edits are constant enough that harness injection
+    // there is noise, and the latter two are gitignored planning scratch. Like the
+    // `scripts` rule above, these also match node_modules/**/docs/rules/** etc. —
+    // harmless, the same accepted over-match class.
+    match: { kind: "recursive-dir", dir: "docs/solutions" },
+    domains: ["harness"],
+    description: "`docs/solutions/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "docs/rules" },
+    domains: ["harness"],
+    description: "`docs/rules/**`",
+  },
 ];
 
 function escapeRe(s: string): string {
