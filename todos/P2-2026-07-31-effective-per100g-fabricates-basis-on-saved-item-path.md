@@ -3,7 +3,7 @@ title: "effectivePer100g fabricates a per-100g basis on the saved-item path (arm
 status: backlog
 priority: medium
 created: 2026-07-31
-updated: 2026-07-31
+updated: 2026-08-10
 assignee:
 labels: [deferred, hooks, client-state]
 github_issue:
@@ -84,9 +84,15 @@ discloses it.
 - [ ] `recalculateNutrition`'s existing behaviour is **unchanged** for every case that works
       today: it already returns early on `!effectivePer100g` (`:273`), so a null must fall
       into that path, not into the per-serving branch at `:246`
-- [ ] A test asserts that on the saved-item path (`itemId` set, `servingSizeGrams` null)
-      `effectivePer100g` is null — pinning that a future consumer cannot silently read a
-      fabricated basis
+- [ ] A test proves that on the saved-item path (`itemId` set, `servingSizeGrams` null)
+      the basis is unresolvable — pinning that a future consumer cannot silently read a
+      fabricated one. **`effectivePer100g` is NOT directly assertable**: it is an
+      internal `useMemo` and is not on the hook's return surface. Observe it through
+      `recalculateNutrition`, which the hook **does** return (`:981`) and which a test
+      can therefore call without `ServingControls` ever rendering: on the saved-item
+      path it must early-return on `!effectivePer100g` and leave `nutrition` untouched.
+      Exporting the memo instead is acceptable **only** if the reviewer agrees widening
+      the hook's public surface is worth it — prefer the behavioural assertion
 - [ ] A test covers the scan path with `validatedData` present, proving it still returns
       `validatedData.per100g` byte-identically
 - [ ] A test covers `servingSizeGrams === 0` proving it yields null, not `Infinity`
@@ -126,6 +132,26 @@ discloses it.
   a regression there is less likely to be noticed in manual testing. Lean on the tests.
 
 ## Updates
+
+### 2026-08-10 — ACs amended, line citations re-verified
+
+Triaged during the PR #794 session; **not started**, still `backlog`.
+
+- **One AC was unsatisfiable as written** and would have blocked whoever picked this up:
+  it demanded a test asserting `effectivePer100g` is null, but that value is an internal
+  `useMemo` with no path out of the hook. Rewritten above to assert the observable
+  consequence via `recalculateNutrition` (which _is_ returned), with exporting the memo
+  as an explicitly-reviewed fallback rather than an accident.
+- **Every line citation in this file has drifted** — PR #792 deleted the duplicate iOS
+  announcer above them. Re-verified against current `main`:
+  `effectivePer100g` `:186-190` → **`:212-216`**; `servingOptions`' out-of-scope
+  `|| 100` `:216` → **`:242`**; `recalculateNutrition`'s early return `:273` →
+  **`:299`**; the initialiser `:92` and the `existingItem` effect `:782-787` were not
+  re-checked. Re-locate by symbol, not by line.
+- The latency argument still holds: `effectivePer100g`'s only consumer is still
+  `recalculateNutrition` (`:299`/`:301`), and `showServingControls` is still gated on
+  `!itemId` (`NutritionDetailScreen.tsx:261`). Slice 2c relocated markup around it
+  without adding a reader.
 
 ### 2026-07-31
 
