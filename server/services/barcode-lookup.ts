@@ -214,9 +214,25 @@ export function scaleNutrients(
 /**
  * Normalize a NutritionData result (from API Ninjas/USDA) to per-100g.
  * API Ninjas returns values per serving_size_g; USDA returns per 100g.
+ *
+ * Returns `null` when `servingSize` cannot be placed on a gram basis. Callers
+ * MUST discard the result rather than substitute a default: these values feed
+ * `reconcilePer100g`, which can replace a product's primary nutrition, so a
+ * fabricated basis is a wrong-number path with no user-visible disclosure.
+ *
+ * Uses `parseServingGrams` rather than `parseFloat` because `parseFloat` reads
+ * the leading count of a compound string and silently mis-scales by it:
+ * `"1 serving"` -> 1 -> factor 100 (every nutrient inflated 100x), and
+ * `"1 cup (240g)"` -> 1 -> factor 100 where the correct factor is 100/240.
+ * The old `|| 100` fallback never even fired for those — it only caught the
+ * non-numeric-prefix case, and it also swallowed a legitimate 0.
  */
-function normalizeToPerHundredGrams(data: NutritionData): BarcodePer100g {
-  const grams = parseFloat(data.servingSize) || 100;
+export function normalizeToPerHundredGrams(
+  data: NutritionData,
+): BarcodePer100g | null {
+  const grams = parseServingGrams(data.servingSize);
+  // `!(grams > 0)` rather than `<= 0` so a NaN basis is rejected too.
+  if (grams === null || !(grams > 0)) return null;
   const factor = 100 / grams;
   return {
     calories: Math.round(data.calories * factor),
@@ -593,7 +609,22 @@ export async function lookupBarcode(
       log.debug({ barcode: code, term }, "trying CNF lookup");
       const cnfResult = await lookupCNF(term);
       if (cnfResult && cnfResult.calories > 0) {
-        secondaryPer100g = normalizeToPerHundredGrams(cnfResult);
+        const normalized = normalizeToPerHundredGrams(cnfResult);
+        if (!normalized) {
+          // Discard rather than cross-validate against a basis we cannot
+          // place. Keep searching the remaining terms — a later one may
+          // return a match we can normalize.
+          log.warn(
+            {
+              barcode: code,
+              match: cnfResult.name,
+              servingSize: cnfResult.servingSize,
+            },
+            "CNF match discarded — serving size has no gram basis",
+          );
+          continue;
+        }
+        secondaryPer100g = normalized;
         secondarySource = "cnf";
         log.debug(
           {
@@ -619,9 +650,24 @@ export async function lookupBarcode(
       );
       const secondary = await lookupNutrition(usdaSearchTerm);
       if (secondary) {
-        secondaryPer100g = normalizeToPerHundredGrams(secondary);
-        secondarySource =
-          secondary.source === "cache" ? "usda" : secondary.source;
+        const normalized = normalizeToPerHundredGrams(secondary);
+        if (normalized) {
+          secondaryPer100g = normalized;
+          secondarySource =
+            secondary.source === "cache" ? "usda" : secondary.source;
+        } else {
+          // Leave both `secondaryPer100g` and `secondarySource` unset so
+          // reconcilePer100g sees exactly the "no secondary was found" state
+          // and the source label keeps its plain form.
+          log.warn(
+            {
+              barcode: code,
+              source: secondary.source,
+              servingSize: secondary.servingSize,
+            },
+            "secondary nutrition discarded — serving size has no gram basis",
+          );
+        }
       }
     } catch (err) {
       log.warn({ err: toError(err) }, "secondary nutrition lookup failed");
@@ -665,7 +711,25 @@ export async function lookupBarcode(
     }
     resolvedProductName = usdaByUPC.product.name;
     resolvedBrandName = usdaByUPC.brandName || undefined;
-    per100g = normalizeToPerHundredGrams(usdaByUPC.product);
+    // This sets the PRIMARY, so a null basis cannot fall back to a default.
+    // `mapUsdaFoodToNutrition` hardcodes `servingSize: "100g"`, so null is
+    // unreachable today; if a future mapper stops hardcoding it, degrade to an
+    // empty per-100g set. Step 5's no-data check below then returns the
+    // product identified but without nutrition, which is honest — unlike
+    // numbers scaled from a basis we invented. Deliberately not the throwing
+    // INVARIANT guard above: that defends a code contract, whereas this is
+    // upstream data we must not crash a live lookup over.
+    const usdaPer100g = normalizeToPerHundredGrams(usdaByUPC.product);
+    if (!usdaPer100g) {
+      log.warn(
+        {
+          barcode: code,
+          servingSize: usdaByUPC.product.servingSize,
+        },
+        "USDA-by-UPC nutrition dropped — serving size has no gram basis",
+      );
+    }
+    per100g = usdaPer100g ?? {};
     source = "usda";
     // USDA's own label serving size (from its `servingSize`/`servingSizeUnit`
     // fields, in a unit we can convert) — when present, this is real

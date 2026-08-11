@@ -1,9 +1,9 @@
 ---
 title: "normalizeToPerHundredGrams fabricates a 100 g basis for an unparseable secondary serving"
-status: backlog
+status: done
 priority: low
 created: 2026-07-30
-updated: 2026-07-30
+updated: 2026-08-10
 assignee:
 labels: [deferred, api]
 github_issue:
@@ -44,18 +44,18 @@ correct — do not touch it.** Only `:219` fabricates without disclosure.
 
 ## Acceptance Criteria
 
-- [ ] An unparseable or non-positive `servingSize` no longer normalizes at a fabricated
+- [x] An unparseable or non-positive `servingSize` no longer normalizes at a fabricated
       factor of 1
-- [ ] A secondary that cannot be normalized is **discarded** rather than fed to
+- [x] A secondary that cannot be normalized is **discarded** rather than fed to
       `reconcileWithSecondary` — a source we cannot place on a known basis must not be
       able to override the primary
-- [ ] The discard is logged at `warn` with the barcode and the offending `servingSize`,
+- [x] The discard is logged at `warn` with the barcode and the offending `servingSize`,
       so a future producer regression is visible rather than silent
-- [ ] A test covers each current producer's shape (`"100g"`, `` `${n}g` ``) proving they
+- [x] A test covers each current producer's shape (`"100g"`, `` `${n}g` ``) proving they
       are byte-identical to today
-- [ ] A test covers an unparseable secondary (`"1 serving"`) proving it is discarded and
+- [x] A test covers an unparseable secondary (`"1 serving"`) proving it is discarded and
       the primary survives unchanged
-- [ ] `barcode-lookup.ts:723` (`finalGrams`) is **unchanged**
+- [x] `barcode-lookup.ts:723` (`finalGrams`) is **unchanged**
 
 ## Implementation Notes
 
@@ -100,3 +100,50 @@ correct — do not touch it.** Only `:219` fabricates without disclosure.
 
 - Filed while fixing the client-side sibling (PR #740). Verified latent against all
   three current producers — no live wrong-number path today.
+
+### 2026-08-10 — RESOLVED
+
+Fixed by swapping the parser, not by adding a guard around `parseFloat`.
+
+**The filed severity was understated.** This todo described the failure as
+"normalizes at factor 1". Measured against the committed code, the dangerous case is
+the one `|| 100` never reaches — a numeric prefix with a non-mass unit:
+
+| `servingSize`    | old result         | correct          |
+| ---------------- | ------------------ | ---------------- |
+| `"1 serving"`    | calories **25000** | reject           |
+| `"2 cups"`       | calories **12500** | reject           |
+| `"1 cup (240g)"` | calories **25000** | calories **104** |
+
+`parseFloat("1 serving")` is `1`, not `NaN`, so the fallback never fired and the
+factor became 100 — a 100× inflation, and 240× for the compound string.
+
+**Resolution:** `normalizeToPerHundredGrams` now returns `BarcodePer100g | null` and
+parses with the existing `parseServingGrams` (`:180`), which requires a `g`/`ml` unit
+and so rejects all of the above while correctly reading 240 out of `"1 cup (240g)"`.
+Guard is `grams === null || !(grams > 0)` — the `!(x > 0)` form also rejects NaN and
+the legitimate-zero case the old `||` swallowed.
+
+Call sites: the two secondaries discard and `log.warn` (CNF continues to the next
+search term; USDA/API-Ninjas leaves both `secondaryPer100g` and `secondarySource`
+unset so `reconcilePer100g` sees exactly the "no secondary" state). The `:668`
+primary — the open judgment call — degrades to an empty per-100g set rather than
+throwing: `mapUsdaFoodToNutrition` hardcodes `servingSize: "100g"` so null is
+unreachable there today, and unlike the `INVARIANT VIOLATION` guard directly above it
+this is bad upstream data, not a broken code contract, so it must not crash a live
+lookup.
+
+**Verification:** 9 new tests in
+`server/services/__tests__/barcode-lookup-normalization.test.ts`; 252 tests green
+across the four barcode suites plus five downstream consumers. Two-sided mutation
+check: reverting the parser to `parseFloat(...) || 100` turns 7 tests RED while the 2
+producer-characterisation tests stay GREEN. The integration test fails under the
+mutation with `expected 7 to be undefined` — proving the discarded secondary really
+would have gap-filled the primary's fiber.
+
+**Surfaced, not fixed (out of scope contract):** `coerceNumber`
+(`server/services/nutrition-lookup.ts:40-42`) maps a non-numeric **string** to `0`
+rather than failing the parse, so an API Ninjas `serving_size_g` arriving as a JSON
+string becomes `"0g"`. `barcode-lookup` now rejects that safely, but the coercion
+itself weakens this todo's "purely latent" premise and lives in a file this todo's
+Scope Contract excludes.
