@@ -19,13 +19,15 @@ When two `docs/solutions/` docs merge, folding the loser's **prose** into the su
 A merge that is content-complete can still be retrieval-incomplete. The PR #795 dedup pass proved this three times in one review:
 
 - The deleted `drizzle-sql-template-bound-parameters` was the only `database`-tagged carrier of the `${column}`-binds-a-parameter gotcha; the surviving bug doc lacked the tag, so `server/storage/**` edits stopped surfacing the lesson entirely.
-- The deleted fire-and-forget doc carried `api`/`routes` tags the surviving helper doc lacked — route-file sessions, the pattern's primary audience, lost it.
+- The deleted fire-and-forget doc carried the `api` tag — the load-bearing domain tag for route files (`routes` is not a registered domain and has no mechanical effect) — which the surviving helper doc lacked; route-file sessions, the pattern's primary audience, lost it.
 - The deleted `fail-fast-environment-validation` carried `applies_to: [server/**/*.ts]`; the Zod survivor listed only three exact env files, dropping the folded startup-not-request-time rule from glob tier to general tier for every other server file.
+
+**Reach note:** `domain-map.sh` has no rule for `docs/**` paths, so no doc — this one included — injects while you are editing corpus docs; the `applies_to` above follows corpus convention but is structurally inert there. This doc's live injection reach is its `harness` tag (hook/script edits). Treat the checklist below as part of the merge procedure itself — the hook will not remind you mid-merge.
 
 ## Checklist for a corpus-doc merge
 
 1. Fold the loser's unique prose into the survivor.
-2. **Diff the two `tags:` lines** — add every loser tag the survivor lacks (at minimum every tag that is a path-domain name).
+2. **Diff the two `tags:` lines** — union them, dropping a loser tag only when it is wrong for the merged content. Do NOT filter by "is this a domain name": `domain_tag_pattern` matches alternations, not just literal domain names (`tooling`/`pg-lab`/`worktree`/`agents` all select the `harness` pool; any `ai-*` tag selects `ai-prompting`).
 3. **Diff the two `applies_to:` lines** — carry over any glob that widens the survivor's reach to files the loser covered.
 4. Repoint inbound See-Also links, delete the loser.
 5. Keep the frontmatter arrays single-line inline-flow (`scripts/check-solution-frontmatter.js` enforces this).
