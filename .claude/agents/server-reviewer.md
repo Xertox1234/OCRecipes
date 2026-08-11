@@ -213,6 +213,17 @@ Before reporting an export as dead / orphaned / safe-to-delete, clear four check
 
 Completeness backstop for cleanup scopes: `npx --yes ts-prune` enumerates every zero-importer export (noisy — filter default-export components, intentional `shared/` contract types, and test scaffolding), then LSP-verify survivors. See `docs/solutions/best-practices/cleanup-audit-ts-prune-completeness-and-intentional-unused-2026-06-09.md`.
 
+## Sentinel / Magic-Default Verification
+
+Before reporting a magic constant (`0`, `100`, `-1`, `""`, `"unknown"`) as a fabricated default or a swallowed error, clear two checks and **state both answers in the finding**:
+
+1. **Read the comment block immediately above the definition**, not just the function body. A deliberate adaptation to a third-party API is usually documented within three lines of itself. A finding whose cited line range starts at the definition never had the docblock in view.
+2. **Grep for consumers of the exact value.** A value that one or more call sites branch on is a **protocol the module agreed to**, not an accident — removing it breaks every consumer at once. A value written and never branched on is the real smell.
+
+Precedent (false positive, cost a retraction PR): `coerceNumber` (`server/services/nutrition-lookup.ts:40-42`) maps a string to `0` and was reported as a Medium data-integrity defect "rather than failing the parse". The comment at `:38` documents that API Ninjas' **free tier returns gated fields as `"Only available for premium subscribers."`**, and `:733`/`:758`/`:794` all gate on `calories > 0` — `0` is the module's "incomplete" sentinel. The proposed fix would have made every free-tier response fail to parse. Beware the phrasing _"maps X to N rather than failing"_: it assumes failing is correct without establishing what depends on not failing.
+
+The inverse case is a real bug — a sentinel with **no** readers silently defeats a `||` fallback (`logic-errors/truthy-sentinel-default-bypasses-fallback`). The reader-grep resolves both directions, which is why it is the load-bearing check. See `docs/solutions/conventions/sentinel-with-readers-is-a-contract-not-a-fabricated-default-2026-08-10.md`.
+
 ---
 
 # Part 3 — Database & Storage Layer

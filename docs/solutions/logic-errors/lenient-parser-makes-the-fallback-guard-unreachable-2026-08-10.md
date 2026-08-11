@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [parsing, validation, nutrition, units, fallback, wrong-number, latent, guard]
+tags: [architecture, hooks, client-state, parsing, validation, nutrition, units, fallback, wrong-number, guard]
 applies_to: [server/services/**/*.ts, shared/lib/**/*.ts, client/hooks/**/*.ts]
 symptoms: [A value is scaled by a wildly wrong factor (100x, 50x) rather than by the intended default, A `|| defaultValue` guard exists but reviewing it does not explain an observed wrong number, parseFloat/parseInt used on a string that carries a unit or a count, A defect is filed as "falls back to the default" but the observed output is not the default]
 created: '2026-08-10'
