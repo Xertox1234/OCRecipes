@@ -126,6 +126,8 @@ A solution with **no** `applies_to` can only ever reach the third tier, where it
 
 **`tags` and `applies_to` are a two-part precondition — a glob alone is not enough.** Retrieval selects by `tags` **first**: the hook builds the candidate set from solutions whose `tags` contain the domain the edited file routed to, and only *then* partitions that set by `applies_to`. So a glob naming a path whose domain never intersects your `tags` can never fire, however precise the glob is. Check the path's domains against `scripts/lib/path-domains.ts` (or run `npx tsx scripts/lib/path-domains.ts <path>`) before writing the glob. Worked example: a solution tagged only `database` with `applies_to: [server/routes/**/*.ts]` is inert — `server/routes/**` routes to `api, security, architecture`, never `database`. Either tag it `api` too, or point the glob at `server/storage/**` where `database` actually applies.
 
+**Enforced at commit time since 2026-08-11.** `scripts/check-solution-frontmatter.js` fails any staged doc whose `tags` match **no** routed domain at all — the universally-unreachable case, where the doc is in no domain's candidate pool and `applies_to` cannot rescue it. It does not (and cannot cheaply) check the narrower "this glob's domain isn't in my tags" case above, so the worked example still needs your judgement. Note the two alternations the hook honours: `harness` also accepts `tooling`/`pg-lab`/`worktree`/`agents`, and `ai-prompting` accepts any `ai-*` tag. 144 pre-existing docs violate this and are grandfathered — the check only fires on docs you stage, so each is fixed as it is next touched.
+
 ## Body Template
 
 Both tracks share the same file shape; section headings adapt to the content:

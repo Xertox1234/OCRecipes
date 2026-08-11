@@ -65,6 +65,42 @@ const REQUIRED_KEYS = [
 const BUG_REQUIRED_KEYS = ["severity", "symptoms"];
 const INLINE_FLOW_KEYS = ["tags", "applies_to", "symptoms"];
 
+/**
+ * Tag patterns that make a doc REACHABLE by the inject hook.
+ *
+ * `solutions_from_markdown()` (.claude/hooks/inject-patterns.sh) builds its
+ * candidate pool with `grep -rlE "^tags:.*<pattern>"` BEFORE partitioning by
+ * `applies_to`. A doc matching no pattern is excluded from every domain's pool,
+ * so it can never be injected for any file — `applies_to` cannot rescue it.
+ * The failure is silent in both directions: no error, no warning, the doc just
+ * never appears.
+ *
+ * Mirrors `domain_tag_pattern()` in the hook: a literal `\b<domain>\b` for each
+ * of the 14 rules-domains, plus two alternations. Keep in sync — the per-domain
+ * acceptance cases in scripts/__tests__/check-solution-frontmatter.test.ts are
+ * driven by RULES_DOMAINS and go red if a domain is added here without a tag
+ * pattern.
+ */
+const ROUTABLE_TAG_PATTERNS = [
+  ["accessibility", /\baccessibility\b/],
+  // ai-prompting is an alternation: any bare `ai` or `ai-*` tag routes.
+  ["ai-prompting", /\bai(-[a-z]+)?\b/],
+  ["api", /\bapi\b/],
+  ["architecture", /\barchitecture\b/],
+  ["client-state", /\bclient-state\b/],
+  ["database", /\bdatabase\b/],
+  ["design-system", /\bdesign-system\b/],
+  // harness is an alternation: the corpus predates the domain, so these
+  // synonyms are what make it reachable.
+  ["harness", /\b(harness|tooling|pg-lab|worktree|agents)\b/],
+  ["hooks", /\bhooks\b/],
+  ["performance", /\bperformance\b/],
+  ["react-native", /\breact-native\b/],
+  ["security", /\bsecurity\b/],
+  ["testing", /\btesting\b/],
+  ["typescript", /\btypescript\b/],
+];
+
 /** Repo-relative POSIX path for a (possibly absolute) input path. */
 function relPath(filePath) {
   const repoRoot = path.resolve(__dirname, "..");
@@ -117,6 +153,30 @@ function checkFile(filePath) {
     if (fm.has(key) && fm.get(key) !== "" && !/^\[.*\]$/.test(fm.get(key))) {
       problems.push(
         `'${key}:' must be a SINGLE-LINE inline-flow array ([a, b, c]) — a wrapped array is invisible to the '^${key}:' grep`,
+      );
+    }
+  }
+  // A wrapped array leaves the key with an EMPTY value, which the loop above
+  // skips — so the block form slipped past the very guard written to catch it.
+  // Detect it by its continuation lines instead.
+  for (let i = 1; i < closeIdx; i++) {
+    const m = lines[i].match(/^(tags|applies_to|symptoms):[ \t]*$/);
+    if (m && /^[ \t]+-[ \t]/.test(lines[i + 1] ?? "")) {
+      problems.push(
+        `'${m[1]}:' must be a SINGLE-LINE inline-flow array ([a, b, c]) — a wrapped array is invisible to the '^${m[1]}:' grep`,
+      );
+    }
+  }
+  // Routing reachability — see ROUTABLE_TAG_PATTERNS. Only meaningful once
+  // 'tags:' exists at all; a missing key is already reported above.
+  const tagsValue = fm.get("tags");
+  if (tagsValue) {
+    const reachable = ROUTABLE_TAG_PATTERNS.some(([, re]) =>
+      re.test(tagsValue),
+    );
+    if (!reachable) {
+      problems.push(
+        `'tags:' matches no routed domain, so this doc NEVER injects — the hook greps '^tags:.*<domain>' to build each domain's pool BEFORE applies_to is consulted, so applies_to cannot rescue it. Add the domain(s) your applies_to paths route to; check with: npx tsx scripts/lib/path-domains.ts <a path this doc covers>. Valid: ${ROUTABLE_TAG_PATTERNS.map(([d]) => d).join(", ")} (harness also accepts tooling|pg-lab|worktree|agents; ai-prompting accepts any ai-* tag)`,
       );
     }
   }
