@@ -22,7 +22,7 @@ A merge that is content-complete can still be retrieval-incomplete. The PR #795 
 - The deleted fire-and-forget doc carried the `api` tag — the load-bearing domain tag for route files (`routes` is not a registered domain and has no mechanical effect) — which the surviving helper doc lacked; route-file sessions, the pattern's primary audience, lost it.
 - The deleted `fail-fast-environment-validation` carried `applies_to: [server/**/*.ts]`; the Zod survivor listed only three exact env files, dropping the folded startup-not-request-time rule from glob tier to general tier for every other server file.
 
-**Reach note:** `domain-map.sh` has no rule for `docs/**` paths, so no doc — this one included — injects while you are editing corpus docs; the `applies_to` above follows corpus convention but is structurally inert there. This doc's live injection reach is its `harness` tag (hook/script edits). Treat the checklist below as part of the merge procedure itself — the hook will not remind you mid-merge.
+**Reach note:** `docs/solutions/**` and `docs/rules/**` route to the `harness` domain (rule added 2026-08-11, after this doc's own review flagged that no `docs/**` path routed anywhere), so harness-tagged lessons — this one included — inject while you edit corpus docs, with `applies_to` ranking within that pool. Still treat the checklist below as part of the merge procedure itself rather than relying on the reminder.
 
 ## Checklist for a corpus-doc merge
 
