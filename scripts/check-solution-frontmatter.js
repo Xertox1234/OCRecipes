@@ -183,7 +183,7 @@ function checkFile(filePath) {
     );
     if (!reachable) {
       problems.push(
-        `'tags:' matches no routed domain, so this doc NEVER injects — the hook greps '^tags:.*<domain>' to build each domain's pool BEFORE applies_to is consulted, so applies_to cannot rescue it. Add the domain(s) your applies_to paths route to; check with: npx tsx scripts/lib/path-domains.ts <a path this doc covers> (that CLI prints NOTHING and exits 0 for a path routing nowhere — docs/** and shared/lib/** both do — so blank output means point applies_to somewhere else, not that no tag exists). Valid: ${ROUTABLE_TAG_PATTERNS.map(([d]) => d).join(", ")} (harness also accepts tooling|pg-lab|worktree|agents; ai-prompting accepts any ai-* tag)`,
+        `'tags:' matches no routed domain, so this doc NEVER injects — the hook greps '^tags:.*<domain>' to build each domain's pool BEFORE applies_to is consulted, so applies_to cannot rescue it. Add the domain(s) your applies_to paths route to; check with: npx tsx scripts/lib/path-domains.ts <a path this doc covers> (that CLI prints NOTHING and exits 0 for a path routing nowhere — shared/lib/** does — so blank output means point applies_to somewhere else, not that no tag exists; note docs/solutions/** and docs/rules/** route to 'harness' as of PR #799). Valid: ${ROUTABLE_TAG_PATTERNS.map(([d]) => d).join(", ")} (harness also accepts tooling|pg-lab|worktree|agents; ai-prompting accepts any ai-* tag)`,
       );
     }
   }
