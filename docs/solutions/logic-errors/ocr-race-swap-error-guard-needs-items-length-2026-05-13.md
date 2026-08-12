@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [ocr, race-condition, error-handling, fallback, graceful-degradation]
+tags: [react-native, ocr, race-condition, error-handling, fallback, graceful-degradation]
 symptoms: [User sees error UI even though locally-parsed OCR items were visible, AI failure discards valid OCR results instead of letting them remain, '`scanMutation.isError` flips hard error state when partial results exist']
 applies_to: [client/screens/**/*.tsx]
 created: '2026-04-28'

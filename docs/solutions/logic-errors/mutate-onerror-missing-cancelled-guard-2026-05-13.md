@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [tanstack-query, mutations, unmount, cancelled-ref, useEffect]
+tags: [react-native, tanstack-query, mutations, unmount, cancelled-ref, useEffect]
 symptoms: [Unmounted-component warnings after a network error in a `useEffect`-launched mutation, '`onSuccess` guards with a `cancelled` ref but `onError` does not', Mutation `onError` path mutates state on a screen that has already unmounted]
 applies_to: [client/screens/**/*.tsx, client/components/**/*.tsx]
 created: '2026-04-28'

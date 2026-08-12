@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: medium
-tags: [ci, prettier, solutions-db, inject-patterns, yaml-frontmatter, grep, fixtures, hook-equivalence]
+tags: [harness, ci, prettier, solutions-db, inject-patterns, yaml-frontmatter, grep, fixtures, hook-equivalence]
 symptoms: ['CI ''Solutions-DB gates'' job fails at Gate C with ''GATE C FAILED: N/M probes diverged.''', hook-equivalence-check.ts reports 'MISMATCH for <file> (md=0 db=2)' with the same solution listed twice under db-only, A solution the DB inject path surfaces is invisible to the markdown fallback path (md=0) even though its tags clearly match the domain, The divergence is on exactly one fixture; the other probes pass]
 applies_to: [.prettierignore, docs/solutions/**/*.md, .claude/hooks/inject-patterns.sh, .gitignore]
 created: '2026-06-21'

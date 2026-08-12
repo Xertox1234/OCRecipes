@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: server
 severity: high
-tags: [drizzle, cache, on-conflict, ttl, non-null-assertion]
+tags: [database, drizzle, cache, on-conflict, ttl, non-null-assertion]
 symptoms: [Cache refresh appears to succeed but the TTL'd row never changes, Non-null assertion (`!`) crashes the request on cache refresh, Cache table holds an expired row that no new write can overwrite]
 applies_to: [server/storage/**/*.ts]
 created: '2026-04-28'

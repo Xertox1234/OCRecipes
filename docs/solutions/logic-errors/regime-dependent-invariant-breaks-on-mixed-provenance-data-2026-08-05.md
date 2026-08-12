@@ -2,7 +2,7 @@
 title: "A cross-field invariant that holds under ONE regulatory regime is not an invariant on a mixed-provenance corpus"
 track: bug
 category: logic-errors
-tags: [nutrition, open-food-facts, provenance, invariants, eu-vs-us, fibre, validation, ocr]
+tags: [architecture, typescript, nutrition, open-food-facts, provenance, invariants, eu-vs-us, fibre, validation, ocr]
 module: shared
 applies_to: ["client/lib/nutrition-ocr-parser.ts", "server/services/**/*.ts", "shared/lib/**/*.ts"]
 symptoms: ["A containment or sum check rejects correct data for one class of products", "The rule was reasoned from a single jurisdiction's label format", "The failures cluster on imported, EU-sourced or high-fibre products", "A correct value is silently 'corrected' to a wrong one rather than dropped"]

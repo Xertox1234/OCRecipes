@@ -2,7 +2,7 @@
 title: A similarity-matched secondary source must never replace identity-matched, self-consistent label data
 track: bug
 category: logic-errors
-tags: [nutrition, barcode, data-provenance, cross-validation, openfoodfacts, cnf]
+tags: [architecture, nutrition, barcode, data-provenance, cross-validation, openfoodfacts, cnf]
 module: server
 applies_to: [server/services/**/*.ts]
 symptoms: [Displayed calories wildly off (e.g. 98 shown for a package stating 310 per 90g) while the serving size is correct, The wrong value scales exactly as per100g x servingGrams/100 from a calorie density belonging to a DIFFERENT generic food, lookupBarcode result source is "cnf"/"usda" for a product whose barcode was found in OFF with complete nutriments]

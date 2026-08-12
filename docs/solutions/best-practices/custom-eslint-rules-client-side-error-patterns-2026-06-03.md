@@ -3,7 +3,7 @@ title: Adding client-side rules to eslint-plugin-ocrecipes for error-handling pa
 track: knowledge
 category: best-practices
 module: client
-tags: [eslint, client, error-handling, silent-failures, custom-rules, automated-enforcement]
+tags: [typescript, eslint, client, error-handling, silent-failures, custom-rules, automated-enforcement]
 applies_to: [eslint-plugin-ocrecipes/index.js, eslint.config.js, 'client/**/*.{ts,tsx}']
 created: '2026-06-03'
 last_updated: '2026-06-03'

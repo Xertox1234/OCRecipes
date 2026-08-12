@@ -3,7 +3,7 @@ title: 'A bash destructive-action safety check must not suppress its own stderr'
 track: knowledge
 category: conventions
 module: server
-tags: [bash, safety-check, fail-open, destructive-action, stderr, git, cleanup-script]
+tags: [harness, bash, safety-check, fail-open, destructive-action, stderr, git, cleanup-script]
 applies_to: ['.claude/skills/*.md', '.claude/agents/*.md', 'scripts/*.sh']
 created: '2026-07-07'
 last_updated: '2026-07-07'

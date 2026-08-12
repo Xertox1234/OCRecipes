@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 module: camera
 severity: high
-tags: [camera, visioncamera, ocr, nitro, ios, build, cocoapods, swift-cxx-interop]
+tags: [react-native, camera, visioncamera, ocr, nitro, ios, build, cocoapods, swift-cxx-interop]
 symptoms: [xcodebuild error 65 with 'could not build Objective-C module NitroImage', 'JSIConverter.hpp: unknown type name ''namespace'' / jsi.h: ''cassert'' file not found', SwiftCompile RemoveLanguageModel.swift fails in target RNVisionCameraOCR]
 applies_to: [ios/Podfile, ios/**, client/camera/**]
 created: '2026-06-02'

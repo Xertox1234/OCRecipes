@@ -2,7 +2,7 @@
 title: A todo whose acceptance criteria need a human decision — or verification an executor cannot reach — must carry human_led, not just a priority
 track: knowledge
 category: conventions
-tags: [todos, automation, workflow, human-led, gating, todo-executor, verification]
+tags: [harness, todos, automation, workflow, human-led, gating, todo-executor, verification]
 module: shared
 applies_to: ["todos/*.md"]
 symptoms: ["An autonomous run reports a todo 'done' against criteria nobody could have verified", "A decision record exists for a choice no human made", "A todo asks the executor to pick between options with materially different costs", "Acceptance criteria require a physical device, a cloud build, or real-world data"]

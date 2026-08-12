@@ -2,7 +2,7 @@
 title: "Bash guard scripts must strip quotes on every gated field AND fail-closed on unrecognized values — not just equality-check the happy path"
 track: bug
 category: logic-errors
-tags: [bash, guard-script, frontmatter, fail-closed, quoting, validation, yaml]
+tags: [harness, bash, guard-script, frontmatter, fail-closed, quoting, validation, yaml]
 module: shared
 applies_to: ["scripts/**/*.sh"]
 symptoms: [A frontmatter boolean/enum field wrapped in quotes silently fails a gate open instead of matching, An unrecognized or malformed field value (an inline comment, or a YAML boolean synonym like "yes"/"on" instead of true/false) is read as not-matching and silently treated as "not gated", A fail-closed guard script's own header comment promises fail-closed behavior but only some of its extracted fields actually enforce it, A regression test that writes the expected value via host-language string interpolation never actually exercises a quoted or malformed file byte]

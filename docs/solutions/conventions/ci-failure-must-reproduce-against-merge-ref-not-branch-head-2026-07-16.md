@@ -3,7 +3,7 @@ title: "A PR's CI failure must be reproduced against the merge ref, not the bare
 track: knowledge
 category: conventions
 module: shared
-tags: [ci, github-actions, debugging, git, pull-request]
+tags: [testing, ci, github-actions, debugging, git, pull-request]
 created: '2026-07-16'
 ---
 

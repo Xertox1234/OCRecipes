@@ -2,7 +2,7 @@
 title: "A presence matcher for a negatable attribute false-flags the 'free-from' form (caffeine-free → Contains caffeine)"
 track: bug
 category: logic-errors
-tags: [ingredient-matching, regex, false-positive, i18n, caffeine, nutrition, negation, detection]
+tags: [architecture, ingredient-matching, regex, false-positive, i18n, caffeine, nutrition, negation, detection]
 module: server
 applies_to: ["server/services/nutrition-flag-rules.ts", "server/services/universal-flags.ts", "shared/constants/allergens.ts"]
 symptoms: ["A 'Contains X' flag/label appears on a product that explicitly declares it is X-FREE", "The false positive is multilingual — triggers on foreign-language 'free-from' phrasings even when the English one was hand-checked", "An explicit numeric 0 (or a broad category) is treated as presence of the attribute"]

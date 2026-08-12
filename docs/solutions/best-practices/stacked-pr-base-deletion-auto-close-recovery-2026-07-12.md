@@ -2,7 +2,7 @@
 title: Landing a stacked PR chain — GitHub may auto-close a child PR when its base branch is deleted; re-file, the verdict carries over on a byte-identical tree
 track: knowledge
 category: best-practices
-tags: [git, github, stacked-prs, merge-workflow, land]
+tags: [harness, git, github, stacked-prs, merge-workflow, land]
 module: shared
 created: 2026-07-12
 ---

@@ -2,7 +2,7 @@
 title: A rolling [now-Nd, now) instant window buckets into N+1 calendar dates — clamp before rendering X/N fractions
 track: bug
 category: logic-errors
-tags: [timezone, date-bucketing, coach, prompt-context, fractions]
+tags: [architecture, database, timezone, date-bucketing, coach, prompt-context, fractions]
 module: server
 applies_to: ["server/services/**/*.ts", "server/storage/**/*.ts"]
 symptoms: ["A fraction rendered as X/N shows X > N (e.g. 'logged food on 8/7 days')", "Counts derived from calendar-day bucketing exceed the nominal window length", "Bug only reproduces for users active on both the earliest partial day and today"]

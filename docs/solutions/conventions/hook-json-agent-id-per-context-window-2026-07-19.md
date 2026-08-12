@@ -3,7 +3,7 @@ title: 'Claude Code hook JSON carries a per-dispatch `agent_id` — use it to ke
 track: knowledge
 category: conventions
 module: shared
-tags: [hook-scripts, claude-code, session-id, agent-id, subagent, pattern-injection, dedup]
+tags: [harness, hook-scripts, claude-code, session-id, agent-id, subagent, pattern-injection, dedup]
 applies_to: [.claude/hooks/*.sh]
 created: '2026-07-19'
 ---

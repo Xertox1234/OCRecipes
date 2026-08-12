@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: server
 severity: high
-tags: [postgres, node-postgres, pg, transaction, connection-pool, rollback, resource-leak]
+tags: [database, harness, postgres, node-postgres, pg, transaction, connection-pool, rollback, resource-leak]
 symptoms: ['Intermittent ''current transaction is aborted, commands ignored until end of transaction block''', 'Intermittent ''there is already a transaction in progress'' on a later, unrelated query', The first bad query in a tool works once; every subsequent call on the same long-lived server behaves wrong]
 applies_to: [scripts/**/*.ts, server/**/*.ts]
 created: '2026-06-13'

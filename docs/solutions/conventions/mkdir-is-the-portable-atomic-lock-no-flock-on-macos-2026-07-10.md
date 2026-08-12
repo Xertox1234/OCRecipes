@@ -2,7 +2,7 @@
 title: "flock(1) does not exist on stock macOS — use atomic `mkdir` as the portable shell mutual-exclusion guard"
 track: knowledge
 category: conventions
-tags: [bash, flock, mkdir, macos, portability, lock, mutual-exclusion]
+tags: [harness, bash, flock, mkdir, macos, portability, lock, mutual-exclusion]
 module: shared
 applies_to: ["scripts/**/*.sh", ".claude/hooks/**/*.sh"]
 created: 2026-07-10

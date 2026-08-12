@@ -3,7 +3,7 @@ title: "A doc section that instructs 'implement X' must flip to 'X is shipped â€
 track: knowledge
 category: conventions
 module: shared
-tags: [documentation, skills, codification, staleness, docs-lifecycle, review]
+tags: [harness, documentation, skills, codification, staleness, docs-lifecycle, review]
 symptoms: ["skill or rules doc still says 'implement/promote/add' something the codebase now contains", "future agent re-implements an existing shared pattern because the doc told it to", "doc snippet prescribes an approach that diverges from what actually shipped"]
 created: 2026-07-17
 ---

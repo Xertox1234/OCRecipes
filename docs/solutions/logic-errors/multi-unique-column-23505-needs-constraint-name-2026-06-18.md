@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: low
-tags: [drizzle, postgres, unique-constraint, error-handling, auth, conflict-409]
+tags: [api, drizzle, postgres, unique-constraint, error-handling, auth, conflict-409]
 symptoms: [A 409 conflict returns the wrong field's message (e.g. 'Username already exists' when the email collided), 'Only reproduces under a concurrent-insert race (both requests pass the pre-check, one loses the unique insert)', Status code is correct (409); only the message body is wrong]
 applies_to: [server/routes/**/*.ts, server/lib/db-errors.ts]
 created: '2026-06-18'

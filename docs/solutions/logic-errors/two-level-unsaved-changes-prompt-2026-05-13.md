@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [react-navigation, beforeRemove, unsaved-changes, wizard, alert]
+tags: [react-native, react-navigation, beforeRemove, unsaved-changes, wizard, alert]
 symptoms: [Discard-changes Alert appears twice when the user backs out of a wizard, User must tap 'Discard' twice to actually exit, Child component and parent screen each own a copy of the prompt]
 applies_to: [client/components/recipe-wizard/WizardShell.tsx, client/screens/meal-plan/RecipeCreateScreen.tsx]
 created: '2026-04-17'

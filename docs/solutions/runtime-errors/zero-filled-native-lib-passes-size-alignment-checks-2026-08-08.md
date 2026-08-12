@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: client
 severity: high
-tags: [android, gradle, native-libs, soloader, reanimated, elf, build-artifacts, disk-pressure, zipalign, verification]
+tags: [react-native, android, gradle, native-libs, soloader, reanimated, elf, build-artifacts, disk-pressure, zipalign, verification]
 applies_to: [android/**, node_modules/react-native-reanimated/**]
 symptoms: [App aborts at startup with "com.facebook.soloader.MinElf$ElfError: file is not ELF: magic is 0x0, it should be 464c457f", Crash stack runs installTurboModule -> NativeReanimatedModule -> createNativeReanimatedModule before any app code, Gradle reports BUILD SUCCESSFUL and the APK contains the .so at plausible size, zipalign -c verification succeeds and the lib is stored uncompressed and correctly aligned, A stripped .so is implausibly tiny (tens of bytes) while its merged input is tens of megabytes]
 created: '2026-08-08'

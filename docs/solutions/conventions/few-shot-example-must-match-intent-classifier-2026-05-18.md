@@ -3,7 +3,7 @@ title: few-shot-example-must-match-intent-classifier
 track: knowledge
 category: conventions
 module: server
-tags: [prompt-engineering, few-shot, intent-classifier, llm]
+tags: [ai-prompting, prompt-engineering, few-shot, intent-classifier, llm]
 applies_to: [server/services/nutrition-coach.ts, server/services/coach-intent-classifier.ts]
 created: '2026-05-18'
 ---

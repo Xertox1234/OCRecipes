@@ -3,7 +3,7 @@ title: 'A failed CI test shard may be a Docker Hub service-container pull timeou
 track: knowledge
 category: best-practices
 module: server
-tags: [ci, github-actions, docker, postgres, test-flake, rerun, diagnosis]
+tags: [testing, ci, github-actions, docker, postgres, test-flake, rerun, diagnosis]
 applies_to: [.github/workflows/ci.yml]
 created: '2026-06-25'
 ---

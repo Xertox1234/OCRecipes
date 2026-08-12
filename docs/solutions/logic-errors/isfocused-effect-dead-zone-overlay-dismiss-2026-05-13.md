@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [react-navigation, focus, useeffect, camera, overlays]
+tags: [react-native, react-navigation, focus, useeffect, camera, overlays]
 symptoms: [Scanner remains permanently blocked after dismissing an in-screen overlay, useEffect on `isFocused` never re-runs when overlay closes on the same focused screen, Reset/re-initialize logic relies on `isFocused` but the screen stayed focused]
 applies_to: [client/screens/**/*.tsx]
 created: '2026-05-02'

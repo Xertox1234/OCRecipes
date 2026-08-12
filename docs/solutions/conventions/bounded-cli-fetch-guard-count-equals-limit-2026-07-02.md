@@ -3,7 +3,7 @@ title: A --limit-bounded CLI fetch must treat count == limit as truncated — ne
 track: knowledge
 category: conventions
 module: shared
-tags: [gh, cli, pagination, limit, truncation, sweep, magic-constants, drift, shell]
+tags: [harness, gh, cli, pagination, limit, truncation, sweep, magic-constants, drift, shell]
 applies_to: [.claude/skills/**/*.md, scripts/*.sh, .github/workflows/*.yml]
 created: '2026-07-02'
 ---

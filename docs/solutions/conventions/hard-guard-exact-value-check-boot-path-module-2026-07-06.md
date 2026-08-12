@@ -2,7 +2,7 @@
 title: 'A module-level hard guard reachable from the server boot path must check exact env values, not bare truthiness'
 track: knowledge
 category: conventions
-tags: [env-vars, guard-rails, fail-fast, server-boot, prod-safety]
+tags: [architecture, env-vars, guard-rails, fail-fast, server-boot, prod-safety]
 module: server
 created: '2026-07-06'
 ---

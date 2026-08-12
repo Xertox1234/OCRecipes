@@ -3,7 +3,7 @@ title: 'iOS native asset sync for persistent ios/ directory (icon, splash, colou
 track: knowledge
 category: best-practices
 module: client
-tags: [ios, expo, prebuild, assets, icon, splash, rebrand]
+tags: [react-native, ios, expo, prebuild, assets, icon, splash, rebrand]
 applies_to: [ios/**, assets/images/**, app.json]
 created: '2026-05-13'
 ---

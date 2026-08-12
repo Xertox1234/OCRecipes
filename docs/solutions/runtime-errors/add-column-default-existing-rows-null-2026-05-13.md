@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: server
 severity: high
-tags: [drizzle, postgres, migration, alter-table, default, 'null', schema-evolution]
+tags: [database, drizzle, postgres, migration, alter-table, default, 'null', schema-evolution]
 symptoms: [Newly added column has the expected default for new inserts but NULL for all pre-migration rows, '`WHERE column = ''[]''` finds zero rows even though the schema declares `.default([])`', 'Equality checks against the default sentinel silently skip legacy rows because `NULL = ''[]''` is `NULL`, not `FALSE`']
 applies_to: [shared/schema.ts, server/storage/**/*.ts, server/services/**/*.ts]
 created: '2026-05-13'

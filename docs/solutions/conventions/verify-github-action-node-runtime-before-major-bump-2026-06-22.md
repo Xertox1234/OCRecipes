@@ -3,7 +3,7 @@ title: Verify a GitHub Action's Node runtime via runs.using before bumping its m
 track: knowledge
 category: conventions
 module: shared
-tags: [github-actions, ci, node-runtime, deprecation, version-pinning]
+tags: [architecture, github-actions, ci, node-runtime, deprecation, version-pinning]
 applies_to: [.github/workflows/**]
 created: '2026-06-22'
 ---

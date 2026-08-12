@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [expo-push, notifications, indexing, filter, chunking]
+tags: [architecture, expo-push, notifications, indexing, filter, chunking]
 symptoms: [Wrong token deleted when push delivery returns an error ticket, Push ticket array indices don't align with raw token array indices, Stale push tokens accumulate because deletion targets the wrong record]
 applies_to: [server/services/push-notifications.ts]
 created: '2026-04-29'

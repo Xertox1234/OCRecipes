@@ -2,7 +2,7 @@
 title: "A bash EXIT trap referencing a `local` variable fires after the function returns — under set -u the trap aborts and the cleanup silently never runs"
 track: bug
 category: logic-errors
-tags: [bash, trap, exit, local, set-u, cleanup, lockdir]
+tags: [harness, bash, trap, exit, local, set-u, cleanup, lockdir]
 module: shared
 applies_to: ["scripts/**/*.sh", ".claude/hooks/**/*.sh"]
 symptoms: [A lock directory / temp file cleaned by an EXIT trap leaks on the SUCCESS path but is cleaned on error paths, The guarded operation works exactly once, then every later run silently no-ops (guard sees the leaked lock), Stray 'unbound variable' from a trap at script exit (visible only without 2>/dev/null)]

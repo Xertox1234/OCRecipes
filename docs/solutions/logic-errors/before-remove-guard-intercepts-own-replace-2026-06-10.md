@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [react-navigation, beforeRemove, navigation-guard, data-loss]
+tags: [react-native, react-navigation, beforeRemove, navigation-guard, data-loss]
 symptoms: [Primary flow shows a destructive discard confirm when the user taps Done, Confirming wipes the context the destination screen reads — silent data loss]
 created: '2026-06-10'
 source: '2026-06-10 full audit (H3, BatchScanScreen)'

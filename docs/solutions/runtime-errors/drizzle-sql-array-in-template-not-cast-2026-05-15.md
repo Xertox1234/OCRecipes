@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: server
 severity: high
-tags: [drizzle, sql-template, postgresql, array, in-array]
+tags: [database, drizzle, sql-template, postgresql, array, in-array]
 symptoms: ['PostgreSQL error: malformed array literal', 'PostgreSQL error: op ANY/ALL (array) requires array on right side', Failure only appears when the JavaScript array is non-empty, Silent success when the table is empty due to an earlier length guard]
 applies_to: [server/storage/**/*.ts]
 created: '2026-05-15'

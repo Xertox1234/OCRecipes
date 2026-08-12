@@ -3,7 +3,7 @@ title: Timezone-aware day boundaries using Intl.DateTimeFormat
 track: knowledge
 category: conventions
 module: server
-tags: [timezone, dates, intl, pattern, day-boundary]
+tags: [database, hooks, timezone, dates, intl, pattern, day-boundary]
 applies_to: [server/storage/helpers.ts, server/routes/_helpers.ts, client/hooks/useDailyBudget.ts, client/hooks/useHistoryData.ts, client/screens/DailyNutritionDetailScreen.tsx, client/screens/meal-plan/MealPlanHomeScreen.tsx]
 created: '2026-05-31'
 last_updated: '2026-05-31'

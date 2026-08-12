@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: medium
-tags: [prettier, lint-staged, generated-files, ci, drift-check]
+tags: [harness, testing, prettier, lint-staged, generated-files, ci, drift-check]
 symptoms: [CI `--check` step fails on a generated file the developer didn't touch, 'Committed bytes differ from `npm run build:foo` output even though manual pre-stage check passed', Prettier silently pads markdown table columns or swaps `*italic*` for `_italic_`]
 applies_to: [.prettierignore, scripts/build-*.ts, .github/workflows/**/*.yml]
 created: '2026-05-11'

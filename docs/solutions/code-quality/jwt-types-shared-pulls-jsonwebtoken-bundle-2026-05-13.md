@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 module: shared
 severity: medium
-tags: [bundling, metro, shared-types, jsonwebtoken, node-modules]
+tags: [typescript, bundling, metro, shared-types, jsonwebtoken, node-modules]
 symptoms: [React Native bundle pulls `jsonwebtoken` and Node `crypto` polyfills, '`shared/` file imports a server-only package', Bundle size increases unexpectedly after a 'pure types' refactor]
 applies_to: [shared/types/**/*.ts, server/lib/**/*.ts]
 created: '2026-03-27'

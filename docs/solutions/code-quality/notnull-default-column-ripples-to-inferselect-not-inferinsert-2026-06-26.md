@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 module: shared
 severity: medium
-tags: [drizzle, drizzle-zod, schema, inferSelect, inferInsert, createInsertSchema, jsonb, test-factory, type-safety]
+tags: [database, testing, drizzle, drizzle-zod, schema, inferSelect, inferInsert, createInsertSchema, jsonb, test-factory, type-safety]
 symptoms: [Adding a `.notNull()` column with a `.default()` to a Drizzle table compiles fine for inserts but fails `tsc` on unrelated hand-built object literals, '`check:types` errors like `Property ''notificationPrefs'' is missing in type ''{...}'' but required in type ''UserProfile''` in test factories / mock builders', 'The new column does NOT break `createInsertSchema(table).omit({...})`-derived insert types, so storage insert callers compile unchanged — masking the select-side break until a full type-check']
 applies_to: [shared/schema.ts, server/**/__tests__/**/*.ts, server/**/factories/*.ts]
 created: '2026-06-26'

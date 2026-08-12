@@ -2,7 +2,7 @@
 title: "DB-sourced ids flowing into a keyed-map deref need a skip-unknown guard at the lookup point"
 track: knowledge
 category: conventions
-tags: [client, allergens, jsonb, error-boundary, fail-safe, zod, render-crash]
+tags: [react-native, client, allergens, jsonb, error-boundary, fail-safe, zod, render-crash]
 module: client
 applies_to: [client/components/recipe-allergen-label-utils.ts, client/components/**/*.tsx]
 created: '2026-07-24'

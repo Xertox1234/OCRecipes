@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [react-query, useInfiniteQuery, optimistic-update, pagination, tanstack]
+tags: [client-state, react-query, useInfiniteQuery, optimistic-update, pagination, tanstack]
 symptoms: ['After optimistic discard, the next page fetch skips or duplicates items', '`page.total` on every page decremented in lockstep, corrupting offsets', Item counts drift over time as users discard items]
 applies_to: [client/hooks/**/*.ts, client/screens/**/*.tsx]
 created: '2026-02-12'

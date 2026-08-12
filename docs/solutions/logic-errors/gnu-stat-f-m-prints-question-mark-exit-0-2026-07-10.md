@@ -2,7 +2,7 @@
 title: 'GNU stat -f %m prints a literal "?" and exits 0 — the portable-mtime fallback must be `stat -c %Y || stat -f %m`, GNU first'
 track: bug
 category: logic-errors
-tags: [bash, stat, gnu, bsd, macos, linux, portability, mtime]
+tags: [harness, bash, stat, gnu, bsd, macos, linux, portability, mtime]
 module: shared
 applies_to: ["scripts/**/*.sh", ".claude/hooks/**/*.sh"]
 symptoms: [mtime-based logic (staleness checks, cache expiry, lock recovery) works on macOS but silently never fires on Linux, Arithmetic errors or empty values downstream of a stat call, only on Linux/CI, A `stat -f %m file` probe on Linux outputs '?' with exit code 0]

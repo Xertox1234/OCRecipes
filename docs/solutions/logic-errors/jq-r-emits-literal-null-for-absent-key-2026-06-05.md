@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: medium
-tags: [jq, shell, hook-scripts, session-state, claude-code, fail-safe]
+tags: [harness, jq, shell, hook-scripts, session-state, claude-code, fail-safe]
 symptoms: [A shell hook keyed on an optional JSON field (e.g. session_id) behaves as if every caller shares one identity, Per-session state file is created with a literal `-null` suffix (e.g. /tmp/prefix-null), 'Session-less / field-less callers (CI, tests, older harness) get state-dependent behavior they should be exempt from', 'A `[ -z "$VAR" ]` emptiness guard never fires even though the JSON field was absent']
 applies_to: [.claude/hooks/**/*.sh]
 created: '2026-06-05'

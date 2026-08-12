@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [tanstack-query, mutations, error-handling, alert, ui-consistency]
+tags: [react-native, tanstack-query, mutations, error-handling, alert, ui-consistency]
 symptoms: ['A new `mutate(vars, { onError })` handler only plays a haptic/notification on failure, with no `Alert.alert` or visible message', 'A sibling mutation call in the SAME component already shows `Alert.alert` on its own `onError`', 'User taps an action, it silently fails, and nothing on screen explains why']
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx]
 created: '2026-07-14'

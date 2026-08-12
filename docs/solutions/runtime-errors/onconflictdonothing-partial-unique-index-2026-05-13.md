@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: server
 severity: high
-tags: [drizzle, postgres, partial-index, on-conflict, insert]
+tags: [database, drizzle, postgres, partial-index, on-conflict, insert]
 symptoms: ['Insert with `onConflictDoNothing({ target })` throws a constraint-violation at runtime', Duplicate rows appear despite an `ON CONFLICT DO NOTHING` clause, Drizzle-generated SQL targets a column list but the constraint is a partial unique index]
 applies_to: [server/storage/**/*.ts, shared/schema.ts]
 created: '2026-05-09'

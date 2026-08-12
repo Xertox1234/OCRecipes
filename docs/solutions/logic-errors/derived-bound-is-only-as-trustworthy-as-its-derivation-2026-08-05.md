@@ -2,7 +2,7 @@
 title: "A derived bound is only as trustworthy as the derivation that produced it — a non-null check is not a trust check"
 track: bug
 category: logic-errors
-tags: [ocr, parsing, inference, nutrition, validation, plausibility, trust-propagation]
+tags: [typescript, ocr, parsing, inference, nutrition, validation, plausibility, trust-propagation]
 module: client
 applies_to: ["client/lib/nutrition-ocr-parser.ts", "client/lib/**/*.ts", "shared/lib/**/*.ts"]
 symptoms: ["A plausibility rule adopts a value that is wrong by an order of magnitude", "The rule's guard checks only that the reference field is non-null", "The reference field was itself read through the same tolerant path the rule is adjudicating", "A field that used to decline now returns a confident number, and the change looks like recall improvement"]

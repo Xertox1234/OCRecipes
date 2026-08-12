@@ -2,7 +2,7 @@
 title: Podfile.lock is a snapshot constraint — pod install REFUSES a transitive native-major bump, and pod update crosses it one cascading conflict at a time
 track: knowledge
 category: best-practices
-tags: [cocoapods, native-build, ios, dependencies, lockfile, mlkit, visioncamera, version-pinning]
+tags: [react-native, cocoapods, native-build, ios, dependencies, lockfile, mlkit, visioncamera, version-pinning]
 module: shared
 applies_to: ["ios/Podfile", "ios/Podfile.lock", "package.json"]
 symptoms: ["pod install fails with 'could not find compatible versions' naming a version that IS in the snapshot", "The error says 'In snapshot (Podfile.lock)' and points at the version you are trying to move off", "An npm bump succeeded but pod install refuses to follow it", "pod update <pod> fixes the first conflict and immediately surfaces a second one on a sibling pod", "CocoaPods suggests 'run pod update <POD> to apply changes you've made' and it is literally correct"]

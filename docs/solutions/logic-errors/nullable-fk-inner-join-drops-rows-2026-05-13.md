@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [sql, postgres, inner-join, left-join, coalesce, nullable-foreign-key, aggregation, drizzle]
+tags: [database, sql, postgres, inner-join, left-join, coalesce, nullable-foreign-key, aggregation, drizzle]
 symptoms: [Aggregation query returns a plausible number but is missing rows, Daily-summary totals don't include records whose FK was made nullable, INNER JOIN on a previously-required FK drops rows after the column is relaxed to nullable]
 applies_to: [server/storage/**/*.ts]
 created: '2026-05-13'

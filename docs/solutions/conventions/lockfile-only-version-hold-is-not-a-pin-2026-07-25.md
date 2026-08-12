@@ -2,7 +2,7 @@
 title: A dependency version held only by the lockfile is not pinned — put a deliberate hold in package.json
 track: knowledge
 category: conventions
-tags: [dependencies, npm, semver, lockfile, dependabot, cocoapods, native-build, version-pinning]
+tags: [architecture, dependencies, npm, semver, lockfile, dependabot, cocoapods, native-build, version-pinning]
 module: shared
 applies_to: ["package.json", "package-lock.json"]
 symptoms: ["A dependency you deliberately held back reappears at the newer version after an unrelated npm install", "A native build breaks with a pod/gradle conflict that npm install reported no problem with", "A Dependabot PR crosses a version boundary a todo said not to cross", "Nobody can reconstruct why a version was being held", "A hold is set at the version named in the resolver error, and a slightly older release in the same series is equally broken"]

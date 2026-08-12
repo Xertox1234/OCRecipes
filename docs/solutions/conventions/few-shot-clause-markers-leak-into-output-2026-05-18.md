@@ -3,7 +3,7 @@ title: Never embed clause markers in few-shot assistant examples
 track: knowledge
 category: conventions
 module: server
-tags: [prompt-engineering, llm, few-shot, clause-markers, system-prompt]
+tags: [ai-prompting, prompt-engineering, llm, few-shot, clause-markers, system-prompt]
 applies_to: [server/services/nutrition-coach.ts]
 created: '2026-05-18'
 ---

@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [anti-enumeration, postgres, unique-violation, error-handling, auth]
+tags: [security, anti-enumeration, postgres, unique-violation, error-handling, auth]
 symptoms: [A neutral anti-enumeration endpoint returns 200 for a free target but 500 for an already-taken one (or vice-versa) — a status-code existence oracle., A duplicate-handling catch checks uniqueViolationConstraint(err)?.includes("...") and falls through to `throw err` when the constraint name is absent/unrecognized.]
 applies_to: [server/routes/**/*.ts]
 created: '2026-06-24'

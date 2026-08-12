@@ -3,7 +3,7 @@ title: 'Guard one-shot prod-ops scripts on an explicit flag, not NODE_ENV (railw
 track: knowledge
 category: conventions
 module: server
-tags: [scripts, ops, railway, guard, prod-safety, node-env, backfill, idempotency]
+tags: [harness, scripts, ops, railway, guard, prod-safety, node-env, backfill, idempotency]
 applies_to: [server/scripts/**/*.ts, scripts/**/*.ts]
 created: '2026-06-20'
 ---

@@ -3,7 +3,7 @@ title: Dropping a timezone-local dedup pre-check for a UTC-day unique index pres
 track: knowledge
 category: conventions
 module: server
-tags: [dedup, idempotency, timezone, unique-index, cron, onConflictDoNothing, scheduler, behavior-preservation]
+tags: [architecture, dedup, idempotency, timezone, unique-index, cron, onConflictDoNothing, scheduler, behavior-preservation]
 applies_to: [server/services/notification-scheduler.ts, server/services/**/*scheduler*.ts]
 created: '2026-06-26'
 ---

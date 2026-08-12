@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [react-navigation, native-stack, navigation, screen-registration]
+tags: [react-native, react-navigation, native-stack, navigation, screen-registration]
 symptoms: [navigate() to a sibling screen animates as a pop instead of a push, Forward navigation has no back button, Transition animation plays in reverse]
 applies_to: [client/navigation/*StackNavigator.tsx]
 created: '2026-03-24'

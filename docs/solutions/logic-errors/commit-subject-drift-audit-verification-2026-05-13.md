@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [code-review, audit, merge-conflict, regression, process]
+tags: [architecture, code-review, audit, merge-conflict, regression, process]
 symptoms: [Commit message advertises a fix that the current code does not actually implement, Earlier audit todo is marked closed but the symptom is still present, Merge conflict resolution silently dropped part of the change]
 applies_to: [server/services/nutrition-coach.ts]
 created: '2026-04-17'

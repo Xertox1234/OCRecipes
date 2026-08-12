@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [concurrency, race-condition, teardown, cross-user-bleed, async-storage, auth-teardown]
+tags: [client-state, concurrency, race-condition, teardown, cross-user-bleed, async-storage, auth-teardown]
 symptoms: ['A teardown/clear function stamps a generation/epoch counter and a fresh reader re-checks it, yet a prior user''s per-user data still resurfaces under the next user on a shared device.', 'Resurrection reproduces ONLY when the reader STARTS during the sweep''s async side-effect (e.g. AsyncStorage.removeItem), not when the reader was already in flight before the sweep.', 'The forward-race test (reader in flight, then clear) passes, but a mirror test (clear first, then a fresh reader during the sweep) fails or is missing.']
 applies_to: [client/lib/*-storage.ts, client/lib/offline-queue.ts]
 created: '2026-06-25'

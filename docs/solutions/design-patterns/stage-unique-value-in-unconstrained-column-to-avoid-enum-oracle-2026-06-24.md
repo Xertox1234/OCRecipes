@@ -3,7 +3,7 @@ title: Stage a unique value in an unconstrained column to verify it without a st
 track: knowledge
 category: design-patterns
 module: server
-tags: [anti-enumeration, email-verification, unique-constraint, staging-column, idempotency, auth]
+tags: [security, database, anti-enumeration, email-verification, unique-constraint, staging-column, idempotency, auth]
 applies_to: [server/routes/auth.ts, server/storage/users.ts]
 created: '2026-06-24'
 ---

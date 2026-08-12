@@ -3,7 +3,7 @@ title: 'Verify lockfile churn semantically (parse + per-path compare), never by 
 track: knowledge
 category: conventions
 module: shared
-tags: [npm, lockfile, package-lock, dependencies, code-review, git-diff]
+tags: [architecture, npm, lockfile, package-lock, dependencies, code-review, git-diff]
 applies_to: [package-lock.json]
 created: '2026-06-23'
 ---

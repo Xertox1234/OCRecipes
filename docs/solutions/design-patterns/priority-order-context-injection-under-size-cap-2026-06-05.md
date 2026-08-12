@@ -3,7 +3,7 @@ title: Priority-order and never half-emit when injecting shared context under a 
 track: knowledge
 category: design-patterns
 module: shared
-tags: [hook-scripts, pattern-injection, context-budget, truncation, claude-code]
+tags: [harness, hook-scripts, pattern-injection, context-budget, truncation, claude-code]
 applies_to: [.claude/hooks/*.sh]
 created: '2026-06-05'
 last_updated: '2026-07-03'

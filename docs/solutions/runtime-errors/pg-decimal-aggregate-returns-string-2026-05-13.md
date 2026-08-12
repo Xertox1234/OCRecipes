@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: server
 severity: high
-tags: [drizzle, postgresql, decimal, timestamp, sql-template, arithmetic, type-coercion]
+tags: [database, api, drizzle, postgresql, decimal, timestamp, sql-template, arithmetic, type-coercion]
 symptoms: [proteinGoal - totalProtein produces NaN or string concatenation, Aggregate SUM(CAST(... AS DECIMAL)) compiles as number but is a string at runtime, 'TypeError: maxLoggedAt.toISOString is not a function', Compiles cleanly but crashes or produces nonsense on the first real request, Bug only reproduces against real PostgreSQL — mocked storage returns true numbers/Dates]
 applies_to: [server/storage/**/*.ts, server/routes/medication.ts]
 created: '2026-02-24'

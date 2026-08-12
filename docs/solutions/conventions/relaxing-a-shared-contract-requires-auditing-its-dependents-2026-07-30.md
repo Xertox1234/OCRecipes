@@ -2,7 +2,7 @@
 title: Relaxing or extending a shared contract requires auditing what relied on the old guarantee
 track: knowledge
 category: conventions
-tags: [validation, shared-types, preconditions, discriminated-union, fail-silent, review-checklist]
+tags: [architecture, typescript, validation, shared-types, preconditions, discriminated-union, fail-silent, review-checklist]
 module: shared
 applies_to: ["shared/types/**/*.ts", "server/services/**/*.ts", "client/lib/**/*.ts"]
 symptoms: ["A gate is loosened and something unrelated downstream quietly stops working", "A new union member is added and never appears in the UI", "No test fails, no type error appears, and the regression is only visible on a device", "A correct, well-commented, tested behaviour becomes a bug without its code changing"]

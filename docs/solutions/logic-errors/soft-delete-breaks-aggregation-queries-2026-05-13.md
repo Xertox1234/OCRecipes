@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [soft-delete, sql, aggregation, drizzle, postgres]
+tags: [database, soft-delete, sql, aggregation, drizzle, postgres]
 symptoms: [Daily summary / aggregate totals include rows the user discarded, Discarded items still contribute to calorie / macro / count totals, 'Numbers look plausible but are inflated — no error, no test failure']
 applies_to: [server/storage/**/*.ts]
 created: '2026-02-12'

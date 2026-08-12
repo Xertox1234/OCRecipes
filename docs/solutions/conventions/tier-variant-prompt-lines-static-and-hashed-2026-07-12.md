@@ -2,7 +2,7 @@
 title: Variant-gated prompt lines must be static per variant, and the template-version hash must render every variant combination
 track: knowledge
 category: conventions
-tags: [prompt-engineering, caching, template-hash, coach, tiers]
+tags: [ai-prompting, prompt-engineering, caching, template-hash, coach, tiers]
 module: server
 applies_to: ["server/services/nutrition-coach.ts", "server/services/coach-pro-chat.ts"]
 created: 2026-07-12

@@ -2,7 +2,7 @@
 title: A persisted serving-size label and its scaled nutrition values must derive from the same base — writing one from per-100g and the other from a real serving desyncs them
 track: bug
 category: logic-errors
-tags: [nutrition, barcode, data-provenance, unit-conversion, caching]
+tags: [architecture, nutrition, barcode, data-provenance, unit-conversion, caching]
 module: server
 applies_to: [server/services/**/*.ts]
 symptoms: [A cache/DB row stores a human-readable serving-size label alongside macro values, but the macro values are computed from a DIFFERENT base (per-100g) than what the label implies (per-serving), A correction path reassigns the scale factor / grams variable but not the display label that was derived from the pre-correction raw value, leaving the label and the values it's paired with describing two different servings, No existing test asserts on the persisted write itself — only on the function's RETURNED result — so the mismatch ships invisibly even though the returned result is correct]

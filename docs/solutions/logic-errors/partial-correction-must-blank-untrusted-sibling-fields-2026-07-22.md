@@ -2,7 +2,7 @@
 title: "Partially correcting a uniformly-wrong record must blank the un-corrected fields, not inherit them"
 track: bug
 category: logic-errors
-tags: [data-integrity, nutrition, override, cross-field-invariant, fail-safe, trust-the-source]
+tags: [architecture, data-integrity, nutrition, override, cross-field-invariant, fail-safe, trust-the-source]
 module: server
 applies_to: ["server/services/label-override.ts"]
 symptoms: ["a 'corrected' record shows an impossible cross-field relationship (sugar > total carbs, saturated fat > total fat)", "the override fixes the fields you compared but nonsense appears in fields you didn't", "the impossibility only shows on real data, never in test fixtures that omit the sibling fields"]

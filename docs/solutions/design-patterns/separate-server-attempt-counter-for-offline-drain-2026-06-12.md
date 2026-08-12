@@ -3,7 +3,7 @@ title: Separate server-attempt counter to isolate network errors from eviction b
 track: knowledge
 category: design-patterns
 module: client
-tags: [offline-queue, retry, error-classification, network-errors, TypeError]
+tags: [client-state, offline-queue, retry, error-classification, network-errors, TypeError]
 applies_to: [client/lib/offline-queue-drain.ts, client/lib/**/*.ts]
 created: '2026-06-12'
 last_updated: '2026-06-20'

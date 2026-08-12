@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [code-review, sse, copy-paste, protocol-parsing, audit]
+tags: [react-native, code-review, sse, copy-paste, protocol-parsing, audit]
 symptoms: [Two components implement the same wire protocol via copy-paste, Fixing the bug in one leaves an identical bug in the other, '`isStreaming` stuck `true` because server-sent error events are silently dropped']
 applies_to: [client/components/CoachChat.tsx, client/components/CoachOverlayContent.tsx]
 created: '2026-04-12'

@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [drizzle, postgres, timezone, utc, daily-logs, date-helpers]
+tags: [database, drizzle, postgres, timezone, utc, daily-logs, date-helpers]
 symptoms: [Day-boundary queries return wrong results in non-UTC timezones, Item logged at 11 PM Eastern shows up as next-day in `getDailyLogs`, Tests pass on UTC CI but fail on a developer machine in America/New_York]
 applies_to: [server/db.ts, server/storage/helpers.ts, server/storage/**/*.ts]
 created: '2026-03-27'

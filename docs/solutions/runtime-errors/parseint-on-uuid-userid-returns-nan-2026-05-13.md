@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: server
 severity: high
-tags: [auth, uuid, parseint, zod, type-coercion]
+tags: [api, auth, uuid, parseint, zod, type-coercion]
 symptoms: [Zod z.number() validation fails on every authenticated request, 500 error on routes that parse `req.userId`, TypeScript happy because parseInt returns number — but NaN is a number]
 applies_to: [server/routes/**/*.ts]
 created: '2026-04-28'

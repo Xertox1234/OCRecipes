@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 module: server
 severity: medium
-tags: [logging, error-handling, observability, resend, sdk, toError]
+tags: [architecture, logging, error-handling, observability, resend, sdk, toError]
 symptoms: ['Logs show err/message: "[object Object]" instead of a real error string', A third-party SDK call "fails" in the logs but gives no actionable reason, The failing log entry's stack runs through `toError` / `new Error(String(value))`]
 applies_to: [server/services/**/*.ts, server/lib/logger.ts]
 created: '2026-06-22'

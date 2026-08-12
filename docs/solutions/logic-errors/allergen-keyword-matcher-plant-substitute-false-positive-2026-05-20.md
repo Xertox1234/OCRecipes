@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: medium
-tags: [allergens, nutrition, safety, string-matching, regex]
+tags: [typescript, allergens, nutrition, safety, string-matching, regex]
 symptoms: [Dairy-free / gluten-free recipes excluded by the safeForMe filter, almond milk / oat flour / coconut cream / peanut butter tagged with dairy or wheat, Denormalized allergens cache contains allergens the recipe doesn't have]
 applies_to: [shared/constants/allergens.ts]
 created: '2026-05-20'

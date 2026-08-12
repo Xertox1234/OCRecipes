@@ -3,7 +3,7 @@ title: Inline `db.transaction()` Instead of a `withTransaction()` Helper
 track: knowledge
 category: conventions
 module: server
-tags: [drizzle, abstraction, simplicity, postgres, transactions]
+tags: [database, drizzle, abstraction, simplicity, postgres, transactions]
 applies_to: [server/storage/**/*.ts]
 created: '2026-05-13'
 ---

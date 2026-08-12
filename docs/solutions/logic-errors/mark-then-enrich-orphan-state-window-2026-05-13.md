@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [background-jobs, async, multi-phase, retry, eligibility-query]
+tags: [architecture, database, background-jobs, async, multi-phase, retry, eligibility-query]
 symptoms: [Curated/canonical badges on recipes with no images or chef tips, 'Records stuck with phase-1=done, phase-2=null and never re-queued', Enrichment failures leave permanent orphan state]
 applies_to: [server/storage/**/*.ts, server/services/**/*.ts]
 created: '2026-05-09'

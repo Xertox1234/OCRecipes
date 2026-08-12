@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [react-19, batching, setstate, error-handling, useeffect]
+tags: [client-state, react-native, react-19, batching, setstate, error-handling, useeffect]
 symptoms: [Error message never appears in UI despite setRequestError(errorMsg), Set-then-clear pattern inside try/finally collapses to the cleared value, Error state set in the same synchronous frame as a finally-block reset never renders]
 applies_to: [client/hooks/**/*.ts, client/screens/**/*.tsx]
 created: '2026-05-01'
