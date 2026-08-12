@@ -29,10 +29,10 @@
  *   node scripts/check-solution-frontmatter.js              # whole corpus
  *
  * NOTE: the pre-existing routing-check backlog was cleared in the 143-doc
- * retag sweep (PR #801) — whole-corpus mode now exits 0, so wiring it into CI
- * as a gate is unblocked (a deliberate decision, not an automatic follow-on:
- * see the newly-required-check precedent before promoting it). Only
- * lint-staged invokes this script today (package.json), with explicit paths.
+ * retag sweep (PR #801); whole-corpus mode exits 0 and is now a CI gate — a
+ * step in the required "Lint · Types · Patterns" job (.github/workflows/
+ * ci.yml) runs this script with no args on every PR. lint-staged additionally
+ * invokes it with explicit paths at commit time (package.json).
  */
 
 import fs from "fs";
@@ -239,6 +239,16 @@ function main() {
       : args
           .map((f) => path.resolve(f))
           .filter((f) => isInScope(f) && fs.existsSync(f));
+
+  // Whole-corpus mode is a CI merge gate: a scan of zero inputs must fail, not
+  // pass green (count-and-fail-on-zero). Path-args mode legitimately filters to
+  // zero (e.g. a commit staging only docs/solutions/README.md), so no guard there.
+  if (args.length === 0 && files.length === 0) {
+    console.log(
+      `${colors.red}✗ corpus discovery found 0 files — docs/solutions missing or unreadable${colors.reset}`,
+    );
+    process.exit(1);
+  }
 
   let failures = 0;
   for (const filePath of files) {
