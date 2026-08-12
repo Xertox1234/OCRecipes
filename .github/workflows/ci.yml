@@ -60,6 +60,12 @@ jobs:
       - name: Rules file size cap (docs/rules/*.md)
         run: node scripts/check-rules-file-size.js
 
+      # Whole-corpus mode (no args). Gates the docs/solutions frontmatter contract,
+      # including routing reachability (tags must match a routed domain — PR #800);
+      # the pre-existing violator backlog was cleared in PR #801, so this holds at zero.
+      - name: Solution frontmatter contract (docs/solutions, whole corpus)
+        run: node scripts/check-solution-frontmatter.js
+
       - name: Verify .github/copilot-instructions.md is current
         run: npm run build:copilot-instructions:check
 

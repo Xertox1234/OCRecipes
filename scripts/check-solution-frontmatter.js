@@ -29,10 +29,10 @@
  *   node scripts/check-solution-frontmatter.js              # whole corpus
  *
  * NOTE: the pre-existing routing-check backlog was cleared in the 143-doc
- * retag sweep (PR #801) — whole-corpus mode now exits 0, so wiring it into CI
- * as a gate is unblocked (a deliberate decision, not an automatic follow-on:
- * see the newly-required-check precedent before promoting it). Only
- * lint-staged invokes this script today (package.json), with explicit paths.
+ * retag sweep (PR #801); whole-corpus mode exits 0 and is now a CI gate — a
+ * step in the required "Lint · Types · Patterns" job (.github/workflows/
+ * ci.yml) runs this script with no args on every PR. lint-staged additionally
+ * invokes it with explicit paths at commit time (package.json).
  */
 
 import fs from "fs";
