@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [error-handling, auth, login, diagnosability, ux, network-errors, static-copy, anti-enumeration]
+tags: [react-native, error-handling, auth, login, diagnosability, ux, network-errors, static-copy, anti-enumeration]
 applies_to: [client/screens/LoginScreen-utils.ts, client/screens/**/*-utils.ts]
 symptoms: [Login shows "Incorrect username or password" while the same credentials return 200 when POSTed directly, The server logs zero requests from the device during the failed sign-in, A user retypes a correct password repeatedly because the UI names the wrong cause, An unreachable backend, a DNS failure and a genuine 401 are indistinguishable on screen]
 created: '2026-08-08'

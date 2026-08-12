@@ -3,7 +3,7 @@ title: Custom ESLint rules in `eslint-plugin-ocrecipes` for server-side patterns
 track: knowledge
 category: best-practices
 module: server
-tags: [eslint, server, routes, custom-rules, automated-enforcement]
+tags: [typescript, eslint, server, routes, custom-rules, automated-enforcement]
 applies_to: [eslint.config.js, server/routes/**/*.ts]
 created: '2026-05-13'
 ---

@@ -3,7 +3,7 @@ title: Auditing dependencies in the Expo + drizzle + zod stack
 track: knowledge
 category: best-practices
 module: shared
-tags: [dependencies, expo, upgrades, npm, drizzle, zod, gotchas]
+tags: [architecture, dependencies, expo, upgrades, npm, drizzle, zod, gotchas]
 applies_to: [package.json]
 created: '2026-05-23'
 ---

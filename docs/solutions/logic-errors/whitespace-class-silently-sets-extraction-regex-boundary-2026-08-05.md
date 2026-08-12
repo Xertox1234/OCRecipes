@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [regex, ocr, nutrition-label, parsing, mlkit, whitespace, tokenization]
+tags: [typescript, regex, ocr, nutrition-label, parsing, mlkit, whitespace, tokenization]
 symptoms: ["A field the recogniser read PERFECTLY parses as null", "A pattern only matches the glued unit form (`400mg`) and never the spaced one (`400 mg`)", "A field takes its value from one line and its unit from another", "A marketing badge on the line above supplies a panel value", "`confidence` is far lower than the label's legibility suggests"]
 applies_to: ["client/lib/*-ocr-parser.ts", "client/lib/**/*parser*.ts", "server/services/ocr/**/*.ts"]
 created: '2026-08-05'

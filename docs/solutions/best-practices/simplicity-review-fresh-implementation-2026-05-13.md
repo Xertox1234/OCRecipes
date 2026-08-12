@@ -3,7 +3,7 @@ title: Run a simplicity review immediately after every feature implementation
 track: knowledge
 category: best-practices
 module: client
-tags: [simplicity, code-review, yagni, duplication, process]
+tags: [react-native, simplicity, code-review, yagni, duplication, process]
 created: '2026-03-19'
 ---
 

@@ -3,7 +3,7 @@ title: gh pr diff --name-only lists renames by new path only — patch parsing m
 track: knowledge
 category: conventions
 module: shared
-tags: [gh, github-cli, pr-diff, rename, similarity-index, frontmatter, automation]
+tags: [harness, gh, github-cli, pr-diff, rename, similarity-index, frontmatter, automation]
 symptoms: ['A PR-inspecting script sees no frontmatter for a file that was renamed in the PR', 'Automation keyed on gh pr diff output silently skips todos/archive moves']
 applies_to: [scripts/**, .claude/hooks/**, .claude/skills/**]
 created: '2026-07-10'

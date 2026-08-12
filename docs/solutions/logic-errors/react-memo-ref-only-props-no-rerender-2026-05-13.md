@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [react, react-memo, useRef, hook-returned-component, confirmation-modal]
+tags: [react-native, performance, react, react-memo, useRef, hook-returned-component, confirmation-modal]
 symptoms: [Confirmation dialog shows stale title/message from a previous `confirm()` call, Memoized inner component never re-renders despite ref changes, Shallow comparison sees identical props because all props are refs]
 applies_to: [client/components/ConfirmationModal.tsx, client/hooks/**/*.ts]
 created: '2026-03-25'

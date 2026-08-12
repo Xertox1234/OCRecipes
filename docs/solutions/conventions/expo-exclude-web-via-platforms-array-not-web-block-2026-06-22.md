@@ -3,7 +3,7 @@ title: 'Exclude web from `eas update --platform all` via the `platforms` array, 
 track: knowledge
 category: conventions
 module: client
-tags: [expo, eas-update, app-json, platforms, web, ota, build, mobile-only]
+tags: [react-native, expo, eas-update, app-json, platforms, web, ota, build, mobile-only]
 applies_to: [app.json]
 created: '2026-06-22'
 ---

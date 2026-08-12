@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [auth, jwt, feature-flag, rollout, requireAuth, lockout]
+tags: [security, auth, jwt, feature-flag, rollout, requireAuth, lockout]
 symptoms: ['After enabling an auth gate (e.g. email-verified) in prod, users who logged in during the gate-OFF window get 403 on every authenticated request until they re-login.', A one-time DB backfill 'grandfathers' existing rows but those users are still locked out.]
 applies_to: [server/middleware/auth.ts, server/routes/auth.ts]
 created: '2026-06-19'

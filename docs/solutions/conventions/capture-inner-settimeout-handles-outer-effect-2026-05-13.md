@@ -3,7 +3,7 @@ title: Capture inner setTimeout handles in outer useEffect closures
 track: knowledge
 category: conventions
 module: client
-tags: [react, useeffect, settimeout, cleanup, closures]
+tags: [react-native, hooks, react, useeffect, settimeout, cleanup, closures]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx, client/hooks/**/*.ts]
 created: '2026-05-13'
 ---

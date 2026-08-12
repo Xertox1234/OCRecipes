@@ -3,7 +3,7 @@ title: Tier Limits Have One Source of Truth — `TIER_FEATURES`
 track: knowledge
 category: conventions
 module: shared
-tags: [subscription, tier-limits, premium, config-drift, single-source-of-truth, magic-numbers]
+tags: [architecture, react-native, subscription, tier-limits, premium, config-drift, single-source-of-truth, magic-numbers]
 applies_to: [server/storage/**/*.ts, client/components/**/*.tsx, client/screens/**/*.tsx, shared/types/premium.ts]
 created: '2026-05-13'
 ---

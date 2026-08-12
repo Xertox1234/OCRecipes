@@ -3,7 +3,7 @@ title: 'node -p require(...) prints the string "undefined" for a missing field â
 track: bug
 category: logic-errors
 module: shared
-tags: [bash, node, package-json, require, undefined, fail-open, shell-guard, psql, allowlist, silent-desync]
+tags: [harness, bash, node, package-json, require, undefined, fail-open, shell-guard, psql, allowlist, silent-desync]
 applies_to: [scripts/pg-lab/symbol-graph.sh]
 symptoms: ['A bash guard reads a Node/JS field via node -p "require(...).someField" and treats a non-empty stdout as "the field was present"', 'node -p "require(...).missingField" prints the 9-character string undefined (not an empty string) with exit code 0 when the field is absent', 'A [ -z "$VAR" ] bash emptiness check silently passes when $VAR holds the string undefined, letting a missing-field case fall through to the success path', 'The literal string undefined ends up embedded downstream (e.g. in a SQL query, a file path, or a shell command) instead of the guard\'s intended loud failure']
 created: '2026-07-09'

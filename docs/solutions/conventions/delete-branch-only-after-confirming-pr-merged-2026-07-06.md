@@ -3,7 +3,7 @@ title: 'Deleting a branch that is an open PR''s head closes the PR unmerged'
 track: knowledge
 category: conventions
 module: shared
-tags: [git, github, pull-request, automation, process]
+tags: [harness, git, github, pull-request, automation, process]
 applies_to: [.claude/skills/todo/SKILL.md]
 created: '2026-07-06'
 ---

@@ -3,7 +3,7 @@
 title: "Explicit-zero corroboration must not inherit the nonzero path's guards and must cross-check the record's own redundant fields"
 track: bug
 category: logic-errors
-tags: [nutrition, barcode, data-trust, sentinel-values, self-consistency, zero-handling]
+tags: [architecture, nutrition, barcode, data-trust, sentinel-values, self-consistency, zero-handling]
 module: server
 applies_to: ["server/services/**/*.ts"]
 symptoms: ["Zero-calorie product cached with phantom calories despite the explicit-zero shield shipping", "Unfilled OFF stub (placeholder-zero energy, real macros) locked in at 0 kcal — secondary rescue never fires", "Fix passes its test but fails in prod for the same product class — test input matched the one format the inherited guard accepts"]

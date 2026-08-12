@@ -4,7 +4,7 @@ track: knowledge
 category: best-practices
 module: shared
 severity: medium
-tags: [audit, dead-code, ts-prune, lsp, cleanup, kimi-review]
+tags: [typescript, audit, dead-code, ts-prune, lsp, cleanup, kimi-review]
 applies_to: [client/**/*.ts, client/**/*.tsx, server/**/*.ts, shared/**/*.ts]
 created: '2026-06-09'
 ---

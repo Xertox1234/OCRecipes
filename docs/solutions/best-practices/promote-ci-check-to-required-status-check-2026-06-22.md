@@ -3,7 +3,7 @@ title: Promote a CI check to a required status check without bricking PRs (gate 
 track: knowledge
 category: best-practices
 module: shared
-tags: [github-actions, branch-protection, ci, codeql, auto-merge, required-checks]
+tags: [architecture, github-actions, branch-protection, ci, codeql, auto-merge, required-checks]
 applies_to: [.github/workflows/**]
 created: '2026-06-22'
 ---

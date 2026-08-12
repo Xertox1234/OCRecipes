@@ -3,7 +3,7 @@ title: 'Two-stage file→applies_to glob retrieval (dual-grep, then case-match)'
 track: knowledge
 category: design-patterns
 module: shared
-tags: [docs-solutions, glob-matching, grep, retrieval, agent-workflow, codify]
+tags: [harness, docs-solutions, glob-matching, grep, retrieval, agent-workflow, codify]
 applies_to: [.claude/agents/todo-executor.md, .claude/agents/todo-researcher.md, .claude/hooks/inject-patterns.sh]
 created: '2026-05-25'
 ---

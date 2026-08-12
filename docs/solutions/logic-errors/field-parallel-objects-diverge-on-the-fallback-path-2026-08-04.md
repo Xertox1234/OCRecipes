@@ -2,7 +2,7 @@
 title: Two objects that are usually field-parallel diverge on the fallback path
 track: bug
 category: logic-errors
-tags: [data-integrity, fallback-path, nutrition, invariants, code-review, client, defensive-gating]
+tags: [client-state, react-native, data-integrity, fallback-path, nutrition, invariants, code-review, client, defensive-gating]
 module: client
 applies_to: [client/components/nutrition/**/*.ts, client/hooks/**/*.ts, client/lib/serving-size-utils.ts]
 symptoms: ["A value is right on the happy path and wrong only when an upstream source degrades or is unreachable", "Two surfaces on one screen disagree about the same datum — one says Not recorded while the other makes a confident claim", "A warning stops appearing and nothing in the diff deleted a warning", "The suite is green through the defect because each half of the code is internally consistent", "Every test fixture sets both objects to the same value, so no test can tell them apart"]

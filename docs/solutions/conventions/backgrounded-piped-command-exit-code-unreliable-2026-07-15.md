@@ -2,7 +2,7 @@
 title: "A backgrounded command's reported exit code is unreliable when the command includes a pipe"
 track: knowledge
 category: conventions
-tags: [bash, background-tasks, exit-code, pipe, verification]
+tags: [harness, bash, background-tasks, exit-code, pipe, verification]
 module: agents
 applies_to: [".claude/agents/**/*.md", ".claude/skills/**/*.md"]
 created: 2026-07-15

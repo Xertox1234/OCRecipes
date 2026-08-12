@@ -3,7 +3,7 @@ title: Railway variables are per-environment — verify the scope before trustin
 track: knowledge
 category: best-practices
 module: server
-tags: [railway, environment-variables, deployment, ops, prod-config]
+tags: [architecture, railway, environment-variables, deployment, ops, prod-config]
 created: '2026-06-25'
 ---
 

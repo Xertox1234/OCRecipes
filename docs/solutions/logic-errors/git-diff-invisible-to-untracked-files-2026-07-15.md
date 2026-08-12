@@ -2,7 +2,7 @@
 title: "git diff can never show wholly untracked files — scoping mid-pipeline verification off it silently misses new files"
 track: bug
 category: logic-errors
-tags: [git, diff, untracked-files, preflight, scoping, verification]
+tags: [harness, git, diff, untracked-files, preflight, scoping, verification]
 module: scripts
 applies_to: ["scripts/preflight.sh", ".claude/hooks/*.sh"]
 symptoms: [A new file created during implementation is silently absent from a changed-file scope, Lint/type-check/related-tests never run against a file that was clearly just written, A test written moments ago for the exact bug being fixed is not included in a "scoped fast check"]

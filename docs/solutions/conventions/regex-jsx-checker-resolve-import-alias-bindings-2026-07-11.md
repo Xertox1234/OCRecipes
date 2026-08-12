@@ -2,7 +2,7 @@
 title: A regex JSX-presence checker must resolve import alias bindings, not just the literal component name
 track: knowledge
 category: conventions
-tags: [knowledge-base, import-alias, jsx-presence, regex, false-negative]
+tags: [harness, knowledge-base, import-alias, jsx-presence, regex, false-negative]
 module: shared
 created: '2026-07-11'
 applies_to: [scripts/check-*.js]

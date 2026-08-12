@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [concurrency, single-flight, race-condition, minisearch, search-index]
+tags: [architecture, concurrency, single-flight, race-condition, minisearch, search-index]
 symptoms: ['A rebuild/refresh endpoint intermittently 500s under concurrent calls (admin double-click, retry, rebuild right after deploy)', MiniSearch throws a duplicate-ID error from addAll(), 'The in-memory index is briefly left empty after the throw, then self-heals on the next read', Single calls always succeed; only overlapping calls fail (classic race)]
 applies_to: [server/services/recipe-search.ts, server/lib/search-index.ts]
 created: '2026-06-25'

@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: medium
-tags: [git, ls-remote, shell, probes, fail-open, exit-codes, gh, renames, find, destructive-ops]
+tags: [harness, git, ls-remote, shell, probes, fail-open, exit-codes, gh, renames, find, destructive-ops]
 symptoms: [A collision/existence pre-check "passes" during a network or auth outage and duplicate work is only caught later (or never), An instruction reads "no output → does not exist" and a transport failure takes the same branch as genuine absence, git ls-remote prints nothing on rc=0 (absent) AND rc=128 (failure) — only stdout was inspected, A backgrounded command is reported as "exit code 0" while its log ends in BUILD FAILED because a trailing echo supplied the status]
 applies_to: [.claude/agents/**/*.md, scripts/*.sh, .husky/**]
 created: '2026-07-02'

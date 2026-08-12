@@ -3,7 +3,7 @@ title: Migrate prod schema before merging a column-adding PR (Railway auto-deplo
 track: knowledge
 category: best-practices
 module: server
-tags: [railway, deployment, drizzle, migration, expand-contract, zero-downtime, schema]
+tags: [database, railway, deployment, drizzle, migration, expand-contract, zero-downtime, schema]
 applies_to: [shared/schema.ts]
 created: '2026-06-18'
 ---

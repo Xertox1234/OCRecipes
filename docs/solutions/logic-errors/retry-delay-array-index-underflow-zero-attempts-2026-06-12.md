@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: low
-tags: [offline-queue, retry, array-indexing, backoff]
+tags: [client-state, offline-queue, retry, array-indexing, backoff]
 symptoms: [First drain attempt after reconnect takes 8 seconds instead of firing immediately, Fake-timer drain tests hang indefinitely waiting for an 8000ms delay that should be 0ms, Queue items feel slow to replay even on strong connections]
 applies_to: [client/lib/offline-queue-drain.ts]
 created: '2026-06-12'

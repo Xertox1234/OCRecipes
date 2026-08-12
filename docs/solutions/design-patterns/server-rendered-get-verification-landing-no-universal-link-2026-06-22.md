@@ -3,7 +3,7 @@ title: Server-rendered GET landing for token verification when there's no univer
 track: knowledge
 category: design-patterns
 module: server
-tags: [email-verification, deep-linking, universal-links, auth, deployment, mobile]
+tags: [api, email-verification, deep-linking, universal-links, auth, deployment, mobile]
 applies_to: [server/routes/auth.ts, server/lib/verify-email-page.ts]
 created: '2026-06-22'
 ---

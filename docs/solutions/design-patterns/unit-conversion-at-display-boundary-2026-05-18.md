@@ -3,7 +3,7 @@ title: Unit conversion at display boundary — canonical metric storage with lea
 track: knowledge
 category: design-patterns
 module: shared
-tags: [unit-conversion, display-boundary, measurement-unit, canonical-units, input-validation, rounding]
+tags: [react-native, unit-conversion, display-boundary, measurement-unit, canonical-units, input-validation, rounding]
 applies_to: [shared/lib/units.ts, client/**/*.tsx, server/**/*.ts]
 created: '2026-05-18'
 ---

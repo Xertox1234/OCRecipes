@@ -3,7 +3,7 @@ title: 'React inside a vi.mock() factory — top-level ESM import when used lazi
 track: knowledge
 category: conventions
 module: client
-tags: [vitest, mocking, react, esm, hoisting, eslint]
+tags: [testing, vitest, mocking, react, esm, hoisting, eslint]
 applies_to: [client/**/__tests__/*.test.tsx, client/**/*.test.tsx]
 created: '2026-06-22'
 last_updated: '2026-07-03'

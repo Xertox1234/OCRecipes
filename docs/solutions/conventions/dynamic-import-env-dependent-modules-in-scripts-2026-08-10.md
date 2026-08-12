@@ -3,7 +3,7 @@ title: Dynamic import for env-dependent modules in scripts
 track: knowledge
 category: conventions
 module: server
-tags: [scripts, env, dynamic-import, module-loading, dotenv, import-hoisting]
+tags: [harness, scripts, env, dynamic-import, module-loading, dotenv, import-hoisting]
 applies_to: [scripts/**/*.ts, server/**/*.ts]
 created: '2026-08-10'
 ---

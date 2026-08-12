@@ -4,7 +4,7 @@ track: bug
 category: runtime-errors
 module: server
 severity: medium
-tags: [gray-matter, js-yaml, frontmatter, ingestion, parsing, error-handling]
+tags: [harness, gray-matter, js-yaml, frontmatter, ingestion, parsing, error-handling]
 symptoms: [A batch ingest/parse run crashes on a single file instead of skipping or warning, 'An unhandled exception from js-yaml (e.g. ''unidentified alias'', ''reserved indicator'') aborts the whole pass', A parser designed to accumulate warnings still throws before any warning is recorded]
 applies_to: [scripts/**/*.ts]
 created: '2026-06-13'

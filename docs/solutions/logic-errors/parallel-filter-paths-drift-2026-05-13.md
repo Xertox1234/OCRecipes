@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [search-index, sql-fallback, schema-rollout, query-paths, code-review]
+tags: [database, architecture, search-index, sql-fallback, schema-rollout, query-paths, code-review]
 symptoms: [Filter works through one query path but silently no-ops through another, Cold-start / index-not-warm / bypass-flag requests return wrong filtered results, Source comment in the unfixed path reads 'this column does not exist' even though it now does]
 applies_to: [server/storage/meal-plans.ts, server/storage/community.ts]
 created: '2026-04-18'

@@ -2,7 +2,7 @@
 title: "A shell variable captured in one Phase's Bash call is gone by the next Phase's separate Bash call"
 track: knowledge
 category: conventions
-tags: [bash, orchestrator, skill-authoring, cwd, shell-state, multi-phase]
+tags: [harness, bash, orchestrator, skill-authoring, cwd, shell-state, multi-phase]
 module: agents
 applies_to: [".claude/skills/**/*.md", ".claude/agents/**/*.md"]
 symptoms: [A skill's later Phase references a variable ($WORKTREE, $BASE_BRANCH, $MAIN_CHECKOUT) captured in an earlier Phase's bash block with no instruction to re-derive or literally substitute it, An agent's own bash cwd unexpectedly reverts to its session's ambient default between two separate Bash tool calls despite an earlier `cd`]

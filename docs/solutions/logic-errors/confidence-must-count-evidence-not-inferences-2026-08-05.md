@@ -2,7 +2,7 @@
 title: "A confidence score that counts inferences gates itself — count evidence, not conclusions"
 track: bug
 category: logic-errors
-tags: [confidence, inference, ocr, nutrition, gating, metrics, self-fulfilling, containment, lookup-table]
+tags: [typescript, react-native, confidence, inference, ocr, nutrition, gating, metrics, self-fulfilling, containment, lookup-table]
 module: client
 applies_to: ["client/lib/nutrition-ocr-parser.ts", "client/screens/LabelAnalysisScreen.tsx", "client/lib/**/*.ts", "server/services/label-override.ts"]
 symptoms: ["Adding a recovery rule raises a confidence score, which then clears a gate that recovery was supposed to be judged by", "A quality metric rises without any improvement in input quality", "Inferred values are displayed with nothing distinguishing them from measured ones", "The threshold that was tuned against direct readings now admits derived ones", "A comment or review rule enumerates several cases while the code beside it handles one, both written in the same commit", "A merged result displays a nutritionally impossible pair such as sugar exceeding carbohydrate or saturated fat exceeding total fat"]

@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 module: server
 severity: medium
-tags: [vitest, vi-mock, storage-facade, async-factory, test-doubles]
+tags: [testing, vitest, vi-mock, storage-facade, async-factory, test-doubles]
 symptoms: [Tests fail because in-memory session logic was reimplemented as a `vi.fn()` and diverged from production, Cross-test pollution from leftover module-level state, Mocking the entire storage facade means hand-writing session lifecycle behavior]
 applies_to: [server/routes/__tests__/**/*.test.ts]
 created: '2026-03-26'

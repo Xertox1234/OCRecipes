@@ -2,7 +2,7 @@
 title: A defect spec's acceptance criteria must be derived from the source, not from the reproduction the author happened to hit
 track: knowledge
 category: conventions
-tags: [todos, spec-review, acceptance-criteria, code-review, scope, root-cause]
+tags: [harness, todos, spec-review, acceptance-criteria, code-review, scope, root-cause]
 module: shared
 applies_to: ["todos/**/*.md", "docs/superpowers/specs/**/*.md"]
 symptoms: ["A todo's ACs each name a specific mechanism drawn from one observed reproduction", "The spec's title states a cause ('when X is a shell variable') narrower than the code path it cites", "An AC pins existing behavior as 'unchanged' for cases the author never tested", "Completing every checkbox would still leave the reported class of failure reachable"]

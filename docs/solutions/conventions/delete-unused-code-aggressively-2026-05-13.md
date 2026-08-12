@@ -3,7 +3,7 @@ title: Delete Unused Code Aggressively — Git History Is Your Safety Net
 track: knowledge
 category: conventions
 module: shared
-tags: [simplification, yagni, cleanup, code-review, dead-code]
+tags: [architecture, simplification, yagni, cleanup, code-review, dead-code]
 applies_to: ['**/*.ts', '**/*.tsx']
 created: '2026-05-13'
 ---

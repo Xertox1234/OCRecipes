@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [auth, offline, async-storage, multi-account, privacy, data-integrity, logout, tanstack-query]
+tags: [client-state, auth, offline, async-storage, multi-account, privacy, data-integrity, logout, tanstack-query]
 symptoms: ['On a shared device, user B sees user A''s scanned items / data appear seconds after signing in', An account-delete is silently undone — the "erased" data reappears under whoever signs in next, A queued offline mutation POSTs/DELETEs under the wrong account after a logout + re-login]
 applies_to: [client/hooks/useAuth.ts, client/lib/offline-queue.ts, client/lib/offline-queue-drain.ts]
 created: '2026-06-19'

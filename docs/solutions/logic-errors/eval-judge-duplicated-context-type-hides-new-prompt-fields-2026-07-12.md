@@ -2,7 +2,7 @@
 title: A hand-duplicated eval-judge context type silently hides new prompt fields from the judge scoring them
 track: bug
 category: logic-errors
-tags: [evals, llm-judge, prompt-engineering, type-drift, coach]
+tags: [ai-prompting, testing, evals, llm-judge, prompt-engineering, type-drift, coach]
 module: server
 applies_to: ["evals/**/*.ts", "server/services/nutrition-coach.ts"]
 symptoms: ["Personalization eval scores don't move after adding a new context field the model demonstrably uses", "Judge rationales never mention the new field, even on cases built specifically to exercise it", "tsc is silent: the real context type structurally satisfies the judge's wider inline literal"]

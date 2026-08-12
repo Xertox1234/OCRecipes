@@ -2,7 +2,7 @@
 title: A derived caption on a multi-mode screen must be gated to the entry modes that populate its source state — other modes render it from defaults
 track: bug
 category: logic-errors
-tags: [nutrition, serving-size, multi-mode-screen, derived-state, ui-labels, design-import]
+tags: [react-native, nutrition, serving-size, multi-mode-screen, derived-state, ui-labels, design-import]
 module: client
 symptoms: [A "Per serving" / "Per 100 g" style caption showing a generic or wrong unit on the saved-item (itemId) view, A caption derived from useState defaults because the entry mode never runs the flow that sets them, Label contradicting an adjacent "Serving size X" line for the same item]
 created: 2026-07-17

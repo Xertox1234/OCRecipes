@@ -3,7 +3,7 @@ title: Upgrading to VisionCamera 5 (Nitro) and building for iOS on Xcode 26
 track: knowledge
 category: best-practices
 module: client
-tags: [ios, visioncamera, nitro, reanimated, worklets, expo, build, xcode26, ocr]
+tags: [react-native, ios, visioncamera, nitro, reanimated, worklets, expo, build, xcode26, ocr]
 applies_to: [package.json, ios/Podfile.properties.json, ios/Podfile, client/camera/**]
 created: '2026-06-02'
 ---

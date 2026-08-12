@@ -3,7 +3,7 @@ title: 'A column backfilled from another column in one UPDATE must live on that 
 track: knowledge
 category: conventions
 module: shared
-tags: [migration, backfill, drizzle, jsonb, schema, expand-contract, user_profiles, postgres]
+tags: [database, migration, backfill, drizzle, jsonb, schema, expand-contract, user_profiles, postgres]
 applies_to: [migrations/*.sql, shared/schema.ts, server/storage/*-backfill.ts]
 created: '2026-06-26'
 ---

@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 module: client
 severity: low
-tags: [ios, xcode, cocoapods, podfile, pbxproj, sentry, eas, build]
+tags: [react-native, ios, xcode, cocoapods, podfile, pbxproj, sentry, eas, build]
 symptoms: ['Xcode build log: "Script has ambiguous dependencies causing it to run on every build."', A Run Script build phase re-runs on every build even when nothing changed (wasted rebuild work)., 'The fix-it hint points at a phase under Build Phases (e.g. "[MLKit] Patch for platform" or "Upload Debug Symbols to Sentry").']
 applies_to: [ios/Podfile, ios/**/project.pbxproj]
 created: '2026-06-23'

@@ -2,7 +2,7 @@
 title: "Restore and merge a closed PR after its head branch was deleted"
 track: knowledge
 category: best-practices
-tags: [github, pull-request, git, branch-restore, reopen, checks]
+tags: [harness, github, pull-request, git, branch-restore, reopen, checks]
 module: shared
 created: 2026-07-11
 ---

@@ -3,7 +3,7 @@ title: 'Batch-merging independent PRs: re-verify mergeable_state before each mer
 track: knowledge
 category: best-practices
 module: shared
-tags: [process, git, github, merge-conflicts, batch-merge, ci]
+tags: [harness, process, git, github, merge-conflicts, batch-merge, ci]
 applies_to: [docs/rules/*.md]
 created: '2026-07-06'
 ---

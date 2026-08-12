@@ -2,7 +2,7 @@
 title: Two unrelated features "reverting" at once implicates ONE stale process — not two lost commits
 track: bug
 category: logic-errors
-tags: [dev-server, tsx, watch, hot-reload, phantom-regression, branch-switching, express, debugging, scan, barcode]
+tags: [architecture, dev-server, tsx, watch, hot-reload, phantom-regression, branch-switching, express, debugging, scan, barcode]
 module: server
 applies_to: ["package.json", "server/**/*.ts"]
 symptoms: ["A fix you know you made is gone, but git shows it on main", "Two or more unrelated features regress at the same moment", "The source file on disk is correct but the running app behaves like an older version", "Behavior reverts after switching git branches, with no code change", "A server-side fix appears to work for a while and then stops"]

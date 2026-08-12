@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: low
-tags: [shell, grep, hook-self-tests, assertions, comments, husky, false-positive, tdd]
+tags: [harness, shell, grep, hook-self-tests, assertions, comments, husky, false-positive, tdd]
 symptoms: [A "hook must NOT run X" self-test fails RED even though the hook never executes X, The offending match is a doc comment that names the command (e.g. a pointer to where moved logic lives), The naive fix is to delete a useful comment just to satisfy grep]
 applies_to: [.claude/hooks/**, .husky/**, scripts/*.sh]
 created: '2026-07-05'

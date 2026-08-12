@@ -2,7 +2,7 @@
 title: A disjunctive gate whose alternatives fail to the same root cause is a single point of failure wearing an OR
 track: bug
 category: logic-errors
-tags: [validation, ocr, nutrition, label-override, fail-silent, corroboration, gate-design]
+tags: [architecture, client-state, validation, ocr, nutrition, label-override, fail-silent, corroboration, gate-design]
 module: shared
 applies_to: ["client/lib/nutrition-ocr-parser.ts", "server/services/label-override.ts", "client/hooks/useNutritionLookup.ts"]
 symptoms: ["A photographed label is discarded and database values are shown, with no error and no notice", "The discarded label visibly contained the right numbers — a human reading the OCR dump can see them", "The displayed value is an exact per-100 g/mL figure presented as if it were the whole serving", "Requiring 'field A or field B' looks like cheap redundancy but rejects nearly every real input"]

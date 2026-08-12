@@ -3,7 +3,7 @@ title: After retiring a mechanism, sweep surviving prose for the retired vocabul
 track: knowledge
 category: best-practices
 module: shared
-tags: [documentation, cutover, migration, agent-files, prose-drift]
+tags: [harness, documentation, cutover, migration, agent-files, prose-drift]
 applies_to: [.claude/agents/**/*.md, .claude/skills/**/*.md]
 created: '2026-07-03'
 ---

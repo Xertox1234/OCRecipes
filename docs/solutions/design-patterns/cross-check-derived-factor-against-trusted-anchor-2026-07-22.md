@@ -2,7 +2,7 @@
 title: "Cross-check an input-derived scaling factor against a trusted anchor before trusting the computed comparison"
 track: knowledge
 category: design-patterns
-tags: [data-integrity, ocr, input-validation, fail-safe, nutrition, computed-comparison, normalization]
+tags: [architecture, data-integrity, ocr, input-validation, fail-safe, nutrition, computed-comparison, normalization]
 module: server
 applies_to: ["server/services/label-override.ts"]
 created: 2026-07-22

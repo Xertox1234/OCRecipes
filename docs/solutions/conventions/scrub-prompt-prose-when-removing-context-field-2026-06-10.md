@@ -3,7 +3,7 @@ title: Scrub residual prose references when removing a context field
 track: knowledge
 category: conventions
 module: server
-tags: [prompt-engineering, llm, few-shot, context-object, feature-removal, system-prompt]
+tags: [ai-prompting, prompt-engineering, llm, few-shot, context-object, feature-removal, system-prompt]
 applies_to: [server/services/nutrition-coach.ts, server/services/coach-pro-chat.ts, evals/datasets/coach-cases.json]
 created: '2026-06-10'
 ---

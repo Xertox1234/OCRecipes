@@ -28,12 +28,11 @@
  *   node scripts/check-solution-frontmatter.js [files...]   # lint-staged
  *   node scripts/check-solution-frontmatter.js              # whole corpus
  *
- * NOTE: whole-corpus mode currently exits 1 — 144 pre-existing docs fail the
- * routing check below and there is deliberately no allowlist (see
- * ROUTABLE_TAG_PATTERNS). It is a backlog report, not a gate, and must NOT be
- * wired into CI until that backlog is cleared. Only lint-staged invokes this
- * script (package.json), and it passes explicit paths — so enforcement is a
- * ratchet scoped to the docs you actually stage.
+ * NOTE: the pre-existing routing-check backlog was cleared in the 143-doc
+ * retag sweep (PR #801) — whole-corpus mode now exits 0, so wiring it into CI
+ * as a gate is unblocked (a deliberate decision, not an automatic follow-on:
+ * see the newly-required-check precedent before promoting it). Only
+ * lint-staged invokes this script today (package.json), with explicit paths.
  */
 
 import fs from "fs";

@@ -4,7 +4,7 @@ track: bug
 category: code-quality
 module: server
 severity: medium
-tags: [drizzle, drizzle-zod, raw-sql, execute, returning, timestamp, snake-case, type-safety, zod]
+tags: [database, drizzle, drizzle-zod, raw-sql, execute, returning, timestamp, snake-case, type-safety, zod]
 symptoms: [A field typed `Date` (e.g. `loggedAt`) is a string at runtime after a raw `db.execute(...RETURNING)` — `.toISOString()` / date math fails, 'A camelCase property read off `result.rows[0]` is `undefined` because the driver key is snake_case (`logged_at`)', '`result.rows[0] as WeightLog` / `execute<WeightLog>()` compiles but the object''s real shape does not match the type']
 applies_to: [server/storage/**/*.ts]
 created: '2026-05-31'

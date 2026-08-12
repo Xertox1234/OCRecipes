@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [tanstack-query, react, mutations, stale-closure, hook-params]
+tags: [client-state, react-native, tanstack-query, react, mutations, stale-closure, hook-params]
 symptoms: [Mutation fires with stale state (typically `null`/`0`) right after `setState`, Server receives a path or body containing the pre-render value, Bug only reproduces when both `setState` and `mutateAsync` run in the same handler]
 applies_to: [client/hooks/**/*.ts, client/screens/**/*.tsx]
 created: '2026-04-18'

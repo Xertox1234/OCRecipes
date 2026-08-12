@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [postgres, transactions, timestamps, drizzle, test-isolation]
+tags: [testing, postgres, transactions, timestamps, drizzle, test-isolation]
 symptoms: [ORDER BY created_at DESC returns rows in arbitrary order in tests, Two rows inserted with await sleep(50ms) between them get identical createdAt, Test passes when run individually but fails in suite due to shared transaction]
 applies_to: [server/storage/**/__tests__/**/*.ts, test/**/*.ts]
 created: '2026-05-10'

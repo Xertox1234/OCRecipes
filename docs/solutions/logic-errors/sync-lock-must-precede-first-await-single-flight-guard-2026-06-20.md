@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [concurrency, async, race-condition, offline, single-flight, guard, lock]
+tags: [client-state, concurrency, async, race-condition, offline, single-flight, guard, lock]
 symptoms: [A "concurrent calls are a no-op" lock-guard test starts failing after an await was added near the top of the guarded function, A function expected to run once fires its side effect (apiRequest/fetch) twice when invoked twice in the same tick]
 applies_to: [client/lib/offline-queue-drain.ts, client/lib/**/*.ts]
 created: '2026-06-20'

@@ -3,7 +3,7 @@ title: Dirty state sync via ref callbacks (child to parent without re-renders)
 track: knowledge
 category: design-patterns
 module: client
-tags: [react, refs, callbacks, beforeRemove, child-to-parent]
+tags: [react-native, react, refs, callbacks, beforeRemove, child-to-parent]
 applies_to: [client/components/**/*.tsx, client/screens/**/*.tsx]
 created: '2026-05-13'
 ---

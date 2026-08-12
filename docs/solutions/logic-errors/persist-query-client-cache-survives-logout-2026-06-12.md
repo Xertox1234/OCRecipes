@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [tanstack-query, persistence, auth, asyncstorage, offline]
+tags: [client-state, tanstack-query, persistence, auth, asyncstorage, offline]
 symptoms: ['Cold launch after another user logs in shows the previous user''s nutrition data, history, or profile briefly', Stale query data visible before the new user's queries resolve, App appears logged-out but still displays private data from the prior session]
 applies_to: [client/hooks/useAuth.ts, client/lib/query-client.ts]
 created: '2026-06-12'

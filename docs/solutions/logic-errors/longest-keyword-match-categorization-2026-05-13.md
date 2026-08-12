@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [keyword-matching, categorization, string-search, ingredients, grocery]
+tags: [architecture, keyword-matching, categorization, string-search, ingredients, grocery]
 symptoms: ['Compound ingredient names land in the wrong grocery category (e.g., cumin appears under meat)', First-match keyword search assigns to a generic short keyword before the specific long one is checked]
 applies_to: [server/services/grocery-generation.ts, server/services/**/categori*.ts]
 created: '2026-05-13'

@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: high
-tags: [race-condition, transaction, drizzle, postgres, join-table, idempotency]
+tags: [database, race-condition, transaction, drizzle, postgres, join-table, idempotency]
 symptoms: [Rapid double-tap on a toggle button produces a duplicate row or 500 error, Unique constraint violation surfaces to the client instead of a clean toggle, Two concurrent requests both see 'no existing favourite' and both insert]
 applies_to: [server/storage/**/*.ts]
 created: '2026-02-12'

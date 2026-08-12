@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: medium
-tags: [react, useEffect, useRef, timers, cleanup, exhaustive-deps]
+tags: [hooks, react, useEffect, useRef, timers, cleanup, exhaustive-deps]
 symptoms: [Timer fires after the component unmounts, 'Cleanup function clears a captured local variable, not the current `.current`', '`exhaustive-deps` autofix suggested capturing ref in a variable']
 applies_to: [client/camera/hooks/useCamera.ts, client/**/use*.ts]
 created: '2026-04-07'

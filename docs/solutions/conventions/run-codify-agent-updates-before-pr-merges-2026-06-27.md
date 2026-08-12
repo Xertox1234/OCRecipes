@@ -3,7 +3,7 @@ title: Run /codify's agent updates before the PR merges
 track: knowledge
 category: conventions
 module: shared
-tags: [codify, workflow, agent-rules, pull-request, ordering]
+tags: [harness, codify, workflow, agent-rules, pull-request, ordering]
 created: '2026-06-27'
 ---
 

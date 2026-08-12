@@ -3,7 +3,7 @@ title: Cross-reference code from live comments by stable name, never by file:lin
 track: knowledge
 category: conventions
 module: shared
-tags: [comments, documentation, cross-references, drift, maintenance, mirrors]
+tags: [harness, architecture, comments, documentation, cross-references, drift, maintenance, mirrors]
 created: '2026-07-03'
 ---
 

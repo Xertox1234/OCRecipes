@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: client
 severity: high
-tags: [regex, alternation, backtracking, lazy-quantifier, ocr, nutrition-label, parsing, fault-tolerance]
+tags: [typescript, regex, alternation, backtracking, lazy-quantifier, ocr, nutrition-label, parsing, fault-tolerance]
 symptoms: ["A tolerant fallback matches even though the exact form was present", "A numeric value is silently truncated to its first digit or two", "A regex violates an invariant its own comment claims to enforce", "The bug is invisible in every test because the boundary suite only tests one side of the boundary"]
 applies_to: ["client/lib/*-ocr-parser.ts", "client/lib/**/*parser*.ts", "server/services/ocr/**/*.ts"]
 created: '2026-08-05'

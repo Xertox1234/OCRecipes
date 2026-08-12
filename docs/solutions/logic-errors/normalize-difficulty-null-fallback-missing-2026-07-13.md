@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [recipes, normalization, drizzle, data-integrity, code-review]
+tags: [database, recipes, normalization, drizzle, data-integrity, code-review]
 symptoms: [A recipe with a difficulty string outside the fixed Easy/Medium/Hard vocabulary (e.g. legacy chat metadata, a remix carrying forward an off-vocabulary value) is stored with difficulty null instead of the original string, A difficulty badge silently disappears from a UI card for an otherwise-normal recipe with no error or log line, Two sibling storage functions normalize the same fields but only one applies a raw-value fallback for difficulty]
 applies_to: [server/storage/**/*.ts]
 created: '2026-07-13'
