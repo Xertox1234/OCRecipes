@@ -7,13 +7,15 @@ updated: 2026-08-11
 assignee:
 labels: [deferred, harness]
 github_issue:
+human_led: true
+blocked_reason: "Per-surface routing-vs-general-tier tradeoff (injection noise on package.json/ios edits vs anchored-doc value) is a human call — an unattended run would write the tradeoff into the todo as settled fact"
 ---
 
 # Decide routing for unrouted file surfaces
 
 ## Summary
 
-The 143-doc retag sweep (PR pending) surfaced file surfaces that route to NO injection domain: `ios/**`, `android/**`, `package.json`/`package-lock.json`, `app.json`, and non-schema `shared/**` (`shared/constants/**`, `shared/types/**`, `shared/lib/**`) plus `server/lib/**`. Thirteen docs anchored to these surfaces were given content-honest best-fit tags (react-native / architecture / typescript / harness), which makes them lint-clean and general-tier reachable — but their `applies_to` globs stay inert until the surfaces route somewhere.
+The 143-doc retag sweep (PR #801) surfaced file surfaces that route to NO injection domain: `ios/**`, `android/**`, `package.json`/`package-lock.json`, `app.json`, and non-schema `shared/**` (`shared/constants/**`, `shared/types/**`, `shared/lib/**`) plus `server/lib/**`. The docs anchored to these surfaces (see PR #801's body for the list) were given content-honest best-fit tags (react-native / architecture / typescript / harness), which makes them lint-clean and general-tier reachable — but their `applies_to` globs stay inert until the surfaces route somewhere. Two docs deserve explicit naming because their real content locus is `server/lib/image-store.ts` and only a `scripts/**`-catch-all sibling path keeps them lint-clean: `logic-errors/derive-storage-key-must-strip-query-before-delete-2026-06-29.md` and `conventions/overwrite-in-place-bump-version-to-bust-client-cache-2026-06-29.md` — a session editing `image-store.ts` sees neither until `server/lib/**` routes.
 
 ## Background
 
