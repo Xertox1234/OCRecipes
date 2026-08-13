@@ -43,9 +43,12 @@ const {
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
 
-// Per-test unique barcodes — flagReformulation calls db.transaction() internally
-// and the same transaction-leak workaround used in verification.test.ts applies
-// here (see todos/2026-05-11-db-test-utils-savepoint-leak.md).
+// Per-test unique barcodes. The savepoint leak this once worked around is
+// FIXED (2026-05-15 — setupTestTransaction returns a NodePgTransaction, so an
+// inner db.transaction() emits SAVEPOINT; todo archived `complete`). Unique
+// barcodes are still required, for a live reason documented in the
+// getReformulationFlagCount block below: a sibling file commits real rows to
+// this table, so ownership is what makes an assertion deterministic.
 let barcodeSeq = 0;
 function makeBarcode(): string {
   barcodeSeq++;
@@ -404,8 +407,8 @@ describe("reformulation storage", () => {
   // getReformulationFlagCount
   // --------------------------------------------------------------------------
   describe("getReformulationFlagCount", () => {
-    // These tests assert a LOWER BOUND over rows this test owns — never a
-    // before/after delta, for ANY status filter.
+    // Which assertion shape is safe depends on WHICH STATUS the foreign
+    // writer touches — do not generalise from one status to all of them.
     //
     // `reformulation_flags` has a writer that runs outside the savepoint
     // harness: `verification.concurrent.test.ts` COMMITS `flagged` rows and
@@ -419,24 +422,40 @@ describe("reformulation storage", () => {
     // was exposed; that was wrong — the concurrent writer's rows are
     // `flagged`, so the `"flagged"` delta was exposed too.
     //
-    // A lower bound is the one property foreign churn cannot falsify, since it
-    // can only push an unscoped count UP. Be precise about what that does NOT
-    // buy — for the very same reason, the bound can be SATISFIED by foreign
-    // rows alone (the concurrent writer commits ~46 `flagged` rows before its
-    // `afterAll` removes them), so on its own it proves neither that the owned
-    // rows exist nor that the status filter works:
+    // That churn is confined to ONE status. The concurrent writer only ever
+    // calls `flagReformulation`, never `resolveReformulationFlag`, and its
+    // cleanup deletes by barcode — so it creates and removes `flagged` rows
+    // and never touches `resolved` ones. Hence:
     //
-    //   * Owned-row existence is recovered below with a barcode-scoped
-    //     `getReformulationFlag` assertion — deterministic, since no other
-    //     worker can touch a barcode this test generated.
-    //   * The status filter of THIS function is genuinely unasserted. Catching
-    //     a dropped filter (`count(*)`) or an inverted one needs an UPPER
-    //     bound, and no upper bound on an unscoped count exists while another
-    //     worker may commit a row at any moment. Do NOT rationalise it away
-    //     via the sibling `filters by status=…` tests: `getReformulationFlags`
-    //     declares its own `conditions` local, separate from this function's —
-    //     identical text, independent code, so exercising one says nothing
-    //     about the other.
+    //   * `"flagged"` and the UNFILTERED count are foreign-churned. Only a
+    //     LOWER BOUND survives there — and note what a bound does NOT buy:
+    //     the property that makes it unfalsifiable (churn can only push an
+    //     unscoped count UP) is the same one that lets ~46 foreign rows
+    //     SATISFY it outright, so it proves neither that the owned rows exist
+    //     nor that the filter works. Owned-row existence is recovered with a
+    //     barcode-scoped `getReformulationFlag` assertion, which no foreign
+    //     row can satisfy on our behalf.
+    //   * `"resolved"` has NO foreign writer, so its population is stable and
+    //     an EXACT delta is deterministic there. `counts resolved rows` uses
+    //     one, plus a flagged negative control, and it is what makes a dropped
+    //     or inverted `conditions` detectable at all. Verified by mutation
+    //     under the hazard pairing: `conditions = undefined` and `ne`-for-`eq`
+    //     both go RED.
+    //
+    // An earlier revision of this comment claimed no exact assertion was
+    // possible "for ANY status filter" because an unscoped count admits no
+    // upper bound. That over-generalised from `flagged` to every status and
+    // was wrong — the same modelling error as the "workers only ADD rows"
+    // claim it replaced. Establish which statuses a foreign writer actually
+    // touches before deciding a shape is unavailable.
+    //
+    // Residual: a change to the ternary's ELSE arm alone (`undefined` →
+    // `eq(status, "flagged")`) is caught by `counts rows when no status filter
+    // is given` only when this file runs ALONE; under the full suite foreign
+    // `flagged` rows satisfy its bound. Do not paper over that by citing the
+    // sibling `filters by status=…` tests — `getReformulationFlags` declares
+    // its own `conditions` local, so exercising it says nothing about this
+    // function's.
     it("counts flagged rows", async () => {
       const myBarcodes = [makeBarcode(), makeBarcode()];
       for (const b of myBarcodes) {
@@ -455,6 +474,11 @@ describe("reformulation storage", () => {
     });
 
     it("counts resolved rows", async () => {
+      // This one CAN assert an exact delta, and it is the only test that
+      // discriminates the status filter — see the note above for why the
+      // `resolved` population is the exception.
+      const before = await getReformulationFlagCount("resolved");
+
       const myBarcodes = [makeBarcode(), makeBarcode()];
       for (const b of myBarcodes) {
         await seedBarcodeVerification(b);
@@ -463,15 +487,23 @@ describe("reformulation storage", () => {
         await resolveReformulationFlag(flag!.id);
       }
 
-      // getReformulationFlag returns only `flagged` rows, so null proves each
-      // owned row actually left `flagged` — again barcode-scoped, so foreign
-      // rows cannot satisfy it on the owned rows' behalf.
+      // Negative control: an owned row left FLAGGED. Without it the delta
+      // cannot tell a working filter from a dropped one — our own inserts move
+      // a filtered and an unfiltered count by the same amount. With it, a
+      // dropped `conditions` moves the count by 3 and an inverted one by 1.
+      const stillFlagged = makeBarcode();
+      await seedBarcodeVerification(stillFlagged);
+      await flagReformulation(stillFlagged, 5, makeConsensus(), "verified", 3);
+
+      // Barcode-scoped ground truth: the two are out of `flagged`, the control
+      // is still in it.
       for (const b of myBarcodes) {
         expect(await getReformulationFlag(b)).toBeNull();
       }
+      expect(await getReformulationFlag(stillFlagged)).not.toBeNull();
 
-      const count = await getReformulationFlagCount("resolved");
-      expect(count).toBeGreaterThanOrEqual(myBarcodes.length);
+      const after = await getReformulationFlagCount("resolved");
+      expect(after - before).toBe(myBarcodes.length);
     });
 
     it("counts rows when no status filter is given", async () => {
@@ -497,19 +529,5 @@ describe("reformulation storage", () => {
       const count = await getReformulationFlagCount();
       expect(count).toBeGreaterThanOrEqual(2);
     });
-
-    // Residual — tracked in
-    // todos/P3-2026-08-13-reformulation-flag-count-status-filter-unasserted.md
-    //
-    // None of the three bounds above can catch a dropped or inverted status
-    // filter: that needs an UPPER bound on an unscoped count, and no upper
-    // bound exists while another worker may commit a row at any moment. The
-    // unfiltered test does discriminate when this file runs ALONE (an else-arm
-    // narrowed to `flagged` would miss the owned resolved row and the count
-    // would be 1), but that is a property of isolation, not a guarantee — the
-    // full suite supplies foreign `flagged` rows that satisfy the bound
-    // regardless. Do not "fix" this by pointing at the sibling
-    // getReformulationFlags tests: that function declares its own `conditions`
-    // local, so exercising it says nothing about this one.
   });
 });

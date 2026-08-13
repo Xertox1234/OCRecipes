@@ -75,13 +75,32 @@ cross.
   head of the ordering: see
   [far-future ordering pin](../design-patterns/far-future-ordering-pin-for-deterministic-paging-2026-08-13.md).
 
-- **Unscoped aggregates (`count(*)`)** — a deterministic two-read delta does **not
-  exist**. Every workaround fails for the same reason (scoped subtraction, a
-  three-read sandwich, a status-transition delta, an in-transaction delete of the
-  foreign rows, `REPEATABLE READ` — which cannot be set after the transaction's
-  first statement anyway). A **lower bound** over owned rows is the one
-  deterministic property, because foreign churn can only push an unscoped count
-  UP relative to rows you own:
+- **Unscoped aggregates (`count(*)`) — first establish WHICH partition the foreign
+  writer touches.** This is the step that is easy to skip, and skipping it is
+  itself the bug. The committer here only ever calls `flagReformulation`, never
+  `resolveReformulationFlag`, and deletes by barcode — so it churns `flagged`
+  rows and never `resolved` ones.
+
+  For the **untouched partition**, the population is stable and an **exact delta
+  is deterministic**. Use one, with a **negative control** in the other partition
+  — without it the delta cannot tell a working filter from a dropped one, since
+  your own inserts move a filtered and an unfiltered count by the same amount:
+
+  ```ts
+  const before = await getReformulationFlagCount("resolved");
+  // ... seed 2 owned rows and resolve them ...
+  // Negative control: one owned row left FLAGGED. A dropped `conditions` now
+  // moves the count by 3, an inverted one by 1.
+  await flagReformulation(control, 5, makeConsensus(), "verified", 3);
+  const after = await getReformulationFlagCount("resolved");
+  expect(after - before).toBe(2); // ✅ stable AND mutation-killing
+  ```
+
+  For the **churned partition**, a deterministic two-read delta genuinely does
+  not exist (scoped subtraction, a three-read sandwich, an in-transaction delete
+  of the foreign rows, and `REPEATABLE READ` — unsettable after the transaction's
+  first statement — all fail). There a **lower bound** over owned rows is the
+  surviving property, because foreign churn can only push the count UP:
 
   ```ts
   const myBarcodes = [makeBarcode(), makeBarcode()];
@@ -110,13 +129,17 @@ cross.
   expect(count).toBeGreaterThanOrEqual(myBarcodes.length);
   ```
 
-  **The filter itself stays unasserted, and no sibling test fixes that.**
-  Catching a dropped (`count(*)`) or inverted filter requires an UPPER bound,
-  which cannot exist while another worker may commit a row at any moment. Do
-  not rationalise the gap away by pointing at a sibling listing test that
+  **Do not conclude from the churned partition that the filter is unassertable
+  everywhere.** That over-generalisation is the same modelling error as the
+  "workers only ADD rows" claim this doc exists to correct — one partition's
+  behaviour was projected onto all of them. The exact-delta-plus-negative-control
+  above lives in the untouched partition and kills both the dropped and the
+  inverted mutant. Only record a residual for what genuinely remains (here: a
+  change to the ternary's ELSE arm alone, detectable only when the file runs in
+  isolation). And never close the gap by pointing at a sibling listing test that
   "builds the identical condition expression" — identical *text* in two
   functions is two independent code paths, so exercising one says nothing about
-  the other. Record it as a residual instead.
+  the other.
 
 ## Prevention
 
