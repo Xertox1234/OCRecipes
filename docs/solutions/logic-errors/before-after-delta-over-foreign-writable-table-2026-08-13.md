@@ -93,11 +93,30 @@ cross.
   expect(count).toBeGreaterThanOrEqual(myBarcodes.length); // ✅ never falsifiable
   ```
 
-  Seed **two or more** rows, not one — the bound then still fails a stubbed or
-  `LIMIT 1`-truncated implementation. Accept and **document** the coverage this
-  gives up: a lower bound cannot detect a dropped `WHERE status = ?`. Cover that
-  branch with a sibling listing test that builds the identical condition
-  expression over an owned, deterministic window.
+  **A lower bound is weaker than it looks — pair it with a scoped assertion.**
+  The property that makes it unfalsifiable (foreign churn only pushes the count
+  UP) is the same property that lets foreign rows **satisfy** it outright: with
+  ~46 committed rows in the window, `expect(count).toBeGreaterThanOrEqual(2)`
+  passes even if the seeding silently did nothing. Seeding two rows instead of
+  one does **not** rescue it. Recover owned-row existence with a genuinely
+  scoped assertion beside the bound:
+
+  ```ts
+  // Barcode-scoped, so no foreign row can satisfy it on our behalf.
+  for (const b of myBarcodes) {
+    expect(await getReformulationFlag(b)).not.toBeNull();
+  }
+  const count = await getReformulationFlagCount("flagged");
+  expect(count).toBeGreaterThanOrEqual(myBarcodes.length);
+  ```
+
+  **The filter itself stays unasserted, and no sibling test fixes that.**
+  Catching a dropped (`count(*)`) or inverted filter requires an UPPER bound,
+  which cannot exist while another worker may commit a row at any moment. Do
+  not rationalise the gap away by pointing at a sibling listing test that
+  "builds the identical condition expression" — identical *text* in two
+  functions is two independent code paths, so exercising one says nothing about
+  the other. Record it as a residual instead.
 
 ## Prevention
 
@@ -141,3 +160,4 @@ cross.
 - [truthiness guard deletion drops unanalyzed falsy cases](truthiness-guard-deletion-drops-unanalyzed-falsy-cases-2026-07-30.md) — another "the model was narrower than reality" defect
 - [far-future ordering pin](../design-patterns/far-future-ordering-pin-for-deterministic-paging-2026-08-13.md) — the ownership-scoping technique for ordered queries
 - [a verification that scans zero inputs is green and meaningless](../code-quality/verification-that-scans-zero-inputs-is-green-and-meaningless-2026-08-07.md) — assert the count, not just the exit code
+- [a gate over two derivations of the same function is blind](../conventions/gate-over-two-derivations-of-same-function-is-blind-2026-06-14.md) — why "the sibling test builds the identical expression" is not coverage

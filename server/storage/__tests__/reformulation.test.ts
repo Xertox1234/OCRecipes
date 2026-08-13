@@ -417,12 +417,24 @@ describe("reformulation storage", () => {
     // was exposed; that was wrong — the concurrent writer's rows are
     // `flagged`, so the `"flagged"` delta was exposed too.
     //
-    // A lower bound is the one deterministic property available here: foreign
-    // churn can only push an unscoped count UP relative to the rows we own, so
-    // it can never falsify the bound. The status filter itself
-    // (`status ? eq(...) : undefined`) is proven over an owned, deterministic
-    // window by the `filters by status=…` tests above — getReformulationFlags
-    // builds the identical `conditions` expression.
+    // A lower bound is the one property foreign churn cannot falsify, since it
+    // can only push an unscoped count UP. Be precise about what that does NOT
+    // buy — for the very same reason, the bound can be SATISFIED by foreign
+    // rows alone (the concurrent writer commits ~46 `flagged` rows before its
+    // `afterAll` removes them), so on its own it proves neither that the owned
+    // rows exist nor that the status filter works:
+    //
+    //   * Owned-row existence is recovered below with a barcode-scoped
+    //     `getReformulationFlag` assertion — deterministic, since no other
+    //     worker can touch a barcode this test generated.
+    //   * The status filter of THIS function is genuinely unasserted. Catching
+    //     a dropped filter (`count(*)`) or an inverted one needs an UPPER
+    //     bound, and no upper bound on an unscoped count exists while another
+    //     worker may commit a row at any moment. Do NOT rationalise it away
+    //     via the sibling `filters by status=…` tests: `getReformulationFlags`
+    //     declares its own `conditions` local, separate from this function's —
+    //     identical text, independent code, so exercising one says nothing
+    //     about the other.
     it("counts flagged rows", async () => {
       const myBarcodes = [makeBarcode(), makeBarcode()];
       for (const b of myBarcodes) {
@@ -430,8 +442,12 @@ describe("reformulation storage", () => {
         await flagReformulation(b, 5, makeConsensus(), "verified", 3);
       }
 
-      // Two owned rows, so a stubbed/short-circuited count (0, 1, LIMIT 1)
-      // still fails.
+      // Barcode-scoped and therefore immune to foreign churn. Without this the
+      // bound below passes even if the seeding above silently did nothing.
+      for (const b of myBarcodes) {
+        expect(await getReformulationFlag(b)).not.toBeNull();
+      }
+
       const count = await getReformulationFlagCount("flagged");
       expect(count).toBeGreaterThanOrEqual(myBarcodes.length);
     });
@@ -443,6 +459,13 @@ describe("reformulation storage", () => {
         await flagReformulation(b, 5, makeConsensus(), "verified", 3);
         const flag = await getReformulationFlag(b);
         await resolveReformulationFlag(flag!.id);
+      }
+
+      // getReformulationFlag returns only `flagged` rows, so null proves each
+      // owned row actually left `flagged` — again barcode-scoped, so foreign
+      // rows cannot satisfy it on the owned rows' behalf.
+      for (const b of myBarcodes) {
+        expect(await getReformulationFlag(b)).toBeNull();
       }
 
       const count = await getReformulationFlagCount("resolved");
