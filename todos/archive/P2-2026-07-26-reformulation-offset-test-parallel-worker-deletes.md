@@ -151,22 +151,47 @@ guarantee rests entirely on the stored value.
 latent bug; they did, and they were not latent: `counts flagged rows` reproduced
 at **2/10** under the pairing (`expected -3 to be 1`), also surviving `retry: 2`.
 The file's own comment claiming only the UNFILTERED count was flake-prone was
-falsified — the concurrent writer's rows are `flagged`. An unscoped `count(*)`
-admits no deterministic two-read delta under foreign churn (every alternative
-was enumerated and rejected: scoped subtract, sandwich, transition delta,
-REPEATABLE READ, in-transaction delete of foreign rows), so these now assert a
-**lower bound** over owned rows — foreign churn can only push an unscoped count
-up, never falsifying the bound. The `status` filter itself is proven over an
-owned deterministic window by the sibling `filters by status=…` tests, which
-exercise the identical `conditions` expression.
+falsified — the concurrent writer's rows are `flagged`.
 
-**Verification:** hazard pairing 0/10 failures against a red baseline for both
-modes; file alone 16/16; three consecutive `npm run test:run` passes
-(7646/7646, exit 0 each). Per this todo's Risks section, the pairing loop is the
-proof and the full-suite runs are confirmation.
+**The assertion shape depends on WHICH partition the foreign writer touches.**
+An intermediate revision of this fix asserted a lower bound for _both_ count
+tests, on the reasoning that an unscoped `count(*)` admits no deterministic
+two-read delta at all. Review disproved that, and it is worth recording why: the
+claim generalised from `flagged` to every status, which is the same modelling
+error as the original "parallel workers only ADD rows" comment. The committer
+only ever calls `flagReformulation`, never `resolveReformulationFlag`, and
+deletes by barcode. So as shipped:
 
-**Residual (not fixed, by design):** the cross-file hazard itself remains —
-`verification.concurrent.test.ts` must commit real rows to do its job, and any
-future test asserting an exact unscoped aggregate over `reformulation_flags`
-will hit the same wall. The mitigation is the pattern, not a barrier: assert
-over rows you own, or over a bound foreign churn cannot cross.
+- `"flagged"` and the unfiltered count are foreign-churned → **lower bound**,
+  paired with a barcode-scoped `getReformulationFlag` assertion. The bound alone
+  is satisfiable by foreign rows and would pass even with the seeding disabled.
+- `"resolved"` has no foreign writer → stable population → **exact delta** with
+  a flagged **negative control**. Without the control a delta cannot distinguish
+  a working filter from a dropped one, since the test's own inserts move a
+  filtered and an unfiltered count identically. This is the only
+  mutation-killing assertion in the block — do **not** "simplify" it back to a
+  lower bound.
+
+Correspondingly, do not repeat the claim that the `status` filter is covered by
+the sibling `filters by status=…` tests: `getReformulationFlags` declares its
+own `conditions` local, so exercising it says nothing about
+`getReformulationFlagCount`'s.
+
+**Verification (final, against the merged code — earlier figures in this file's
+history predate the count-test reshaping):** hazard pairing 0/10 failures
+against a red baseline for both original modes; file alone 17/17 exit 0;
+mutation-killed `.offset(0)`, `conditions = undefined`, `ne`-for-`eq`, and
+seeding-disabled; three consecutive `npm run test:run` passes. Per this todo's
+Risks section, the pairing loop is the proof and the full-suite runs are
+confirmation.
+
+**Residuals (not fixed, by design):**
+
+- The cross-file hazard itself — `verification.concurrent.test.ts` must commit
+  real rows to do its job, so any future test asserting an exact _unscoped_
+  aggregate over `reformulation_flags` hits the same wall.
+- The exact `resolved` delta depends on an invariant owned by that other file
+  (it never resolves a flag). A note beside its `flagReformulation` import
+  records the constraint where someone would break it.
+- A change to the `conditions` ternary's ELSE arm alone is caught only when
+  `reformulation.test.ts` runs in isolation.

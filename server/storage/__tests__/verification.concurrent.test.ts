@@ -28,6 +28,15 @@ import {
   verificationHistory,
 } from "@shared/schema";
 import { submitVerification } from "../verification";
+// Do NOT add a resolveReformulationFlag call here. Because this file commits
+// real rows, its writes are visible to every other worker — and
+// reformulation.test.ts relies on this file touching ONLY `flagged` rows:
+// `counts resolved rows` asserts an exact delta over the `resolved` count,
+// which is deterministic precisely because nothing outside the savepoint
+// harness produces a resolved row. Resolving one here would make that delta
+// unstable in both directions again, reproducing the `expected -3 to be 1`
+// class with nothing pointing back at this file. See
+// docs/solutions/logic-errors/before-after-delta-over-foreign-writable-table-2026-08-13.md
 import { flagReformulation } from "../reformulation";
 import type { VerificationNutrition } from "@shared/types/verification";
 
