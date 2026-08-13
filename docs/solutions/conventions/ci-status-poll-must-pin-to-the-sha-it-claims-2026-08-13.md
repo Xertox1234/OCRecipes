@@ -18,11 +18,15 @@ commit by construction rather than by inference:
 
 ```bash
 # "finished?" and "green?" are different questions — ask them separately.
-gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" \
+gh api "repos/{owner}/{repo}/commits/$SHA/check-runs?per_page=100" \
   --jq '[.check_runs[]] | length>0 and all(.[]; .status=="completed")'    # finished
-gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" \
+gh api "repos/{owner}/{repo}/commits/$SHA/check-runs?per_page=100" \
   --jq '[.check_runs[]] | length>0 and all(.[]; .conclusion=="success")'  # green
 ```
+
+`per_page=100` is not decoration: this endpoint **paginates** and `gh api` does not auto-paginate,
+so the bare URL silently evaluates page one and reports on a subset. Do not "fix" that with
+`--paginate` — it prints one boolean **per page**, so a caller testing `= "true"` never matches.
 
 A **failed** check is `status: "completed"`, and so is a **cancelled** one — so the first predicate
 alone is a *completion* gate, never a pass. Reporting it as "CI green" is the same vacuous-success
@@ -122,6 +126,13 @@ green", so a stale reading is falsifiable by anyone reading the sentence.
   `completed`/`success`, while the resulting squash commit `7a50a1db` on `main` has **`total_count:
   0`**. Asking a post-merge SHA "were your checks green?" gets an empty set — which is precisely why
   the `length>0` guard matters: without it, an empty set answers **yes**.
+- **Pinning fixes "wrong commit", not "incomplete commit".** A check that has not been _created_ yet
+  is absent from `check_runs` entirely — it is not present with `conclusion: null` — so a SHA whose
+  checks are only half-registered and all green answers **true**. `length>0` cannot catch this; it
+  only rejects the fully-empty set. Branch protection still refuses a merge missing a _required_
+  check, so the exposure is mainly in what you **report**: do not say "CI green on `$SHA`" off a
+  single read taken seconds after a push. Wait until the expected number of checks is present, or
+  compare against a known required-check count rather than a bare `length>0`.
 
 ## Related Files
 
