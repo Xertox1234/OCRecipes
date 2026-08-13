@@ -18,7 +18,11 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
 import type * as schema from "@shared/schema";
-import { barcodeVerifications, verificationHistory } from "@shared/schema";
+import {
+  barcodeVerifications,
+  reformulationFlags,
+  verificationHistory,
+} from "@shared/schema";
 import type { ConsensusNutritionData } from "@shared/types/verification";
 
 // Mock the db import so the storage functions use our test transaction.
@@ -39,9 +43,12 @@ const {
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
 
-// Per-test unique barcodes — flagReformulation calls db.transaction() internally
-// and the same transaction-leak workaround used in verification.test.ts applies
-// here (see todos/2026-05-11-db-test-utils-savepoint-leak.md).
+// Per-test unique barcodes. The savepoint leak this once worked around is
+// FIXED (2026-05-15 — setupTestTransaction returns a NodePgTransaction, so an
+// inner db.transaction() emits SAVEPOINT; todo archived `complete`). Unique
+// barcodes are still required, for a live reason documented in the
+// getReformulationFlagCount block below: a sibling file commits real rows to
+// this table, so ownership is what makes an assertion deterministic.
 let barcodeSeq = 0;
 function makeBarcode(): string {
   barcodeSeq++;
@@ -199,31 +206,74 @@ describe("reformulation storage", () => {
     });
 
     it("respects offset parameter", async () => {
-      // getReformulationFlags orders by `desc(detectedAt)` — and detectedAt is
-      // CURRENT_TIMESTAMP which is fixed per-transaction, so multiple flags
-      // inserted in this test can share a timestamp. We therefore assert
-      // page-size only, plus that the offset window advances at least one
-      // row (no overlap), without depending on a specific tie-break order.
-      // Parallel-worker safety: query a wide window first to capture the
-      // count we control, then derive expected page sizes from it.
-      const before = await getReformulationFlagCount();
+      // getReformulationFlags orders by `desc(detectedAt)` and offers no
+      // ownership filter, so any assertion about a page is at the mercy of
+      // rows this test does not own. `verification.concurrent.test.ts`
+      // deliberately runs OUTSIDE the savepoint harness: it COMMITS
+      // reformulation_flags rows and bulk-deletes them in its `afterAll`. The
+      // foreign population visible here therefore both grows and shrinks, and
+      // under READ COMMITTED every statement re-snapshots — so consecutive
+      // queries can disagree. An earlier version of this test derived expected
+      // page sizes from two whole-table counts and red the suite on both
+      // directions of that churn (a mid-window insert broke the count delta; a
+      // mid-window shift broke the no-overlap check).
+      //
+      // Fix: pin this test's rows to distinct FAR-FUTURE detectedAt values.
+      // Every foreign row is stamped at or before now, so ours provably hold
+      // ordering positions 0, 1 and 2 whatever else is in the table — paging
+      // over the head of the list stays entirely inside rows we own. Distinct
+      // values also remove the intra-test tie that CURRENT_TIMESTAMP (fixed
+      // per transaction) would otherwise create between all three rows.
+      // Mid-year base so subtracting per-row minutes cannot walk back across
+      // the year boundary (Jan 1 minus a minute is the PREVIOUS year).
+      const PIN_BASE_MS = Date.UTC(2999, 5, 1);
       const myBarcodes = [makeBarcode(), makeBarcode(), makeBarcode()];
-      for (const b of myBarcodes) {
+      for (const [i, b] of myBarcodes.entries()) {
         await seedBarcodeVerification(b);
         await flagReformulation(b, 5, makeConsensus(), "verified", 3);
+        // Descending by index, so desc(detectedAt) order is exactly myBarcodes.
+        const pinned = await tx
+          .update(reformulationFlags)
+          .set({ detectedAt: new Date(PIN_BASE_MS - i * 60_000) })
+          .where(eq(reformulationFlags.barcode, b))
+          .returning({
+            id: reformulationFlags.id,
+            detectedAt: reformulationFlags.detectedAt,
+          });
+        // A pin that matched no row, or that did not survive the timestamptz
+        // round-trip, would leave every assertion below passing for the wrong
+        // reason — the ordering guarantee rests entirely on the stored value.
+        expect(pinned).toHaveLength(1);
+        expect(pinned[0].detectedAt.getUTCFullYear()).toBe(2999);
       }
-      const after = await getReformulationFlagCount();
-      const totalNow = after; // includes other workers' rows
-      expect(after - before).toBe(3);
 
+      // limit caps the page; offset 0 starts at our newest row.
       const firstPage = await getReformulationFlags(undefined, 2, 0);
+      expect(firstPage.map((r) => r.barcode)).toEqual([
+        myBarcodes[0],
+        myBarcodes[1],
+      ]);
+
+      // This window lies wholly inside the rows we own, so it is the strongest
+      // available proof that offset shifts the window rather than re-slicing
+      // page one.
+      const shiftedPage = await getReformulationFlags(undefined, 2, 1);
+      expect(shiftedPage.map((r) => r.barcode)).toEqual([
+        myBarcodes[1],
+        myBarcodes[2],
+      ]);
+
+      // Offset past our first page: position 2 is our last row. The EXACT
+      // length is foreign-dependent (1 when this file runs alone, 2 when a
+      // foreign row trails ours), but `limit` bounds it unconditionally, so
+      // both sides are still assertable.
       const secondPage = await getReformulationFlags(undefined, 2, 2);
+      expect(secondPage.length).toBeGreaterThanOrEqual(1);
+      expect(secondPage.length).toBeLessThanOrEqual(2);
+      expect(secondPage[0].barcode).toBe(myBarcodes[2]);
 
-      // Each page is bounded by min(limit, total - offset).
-      expect(firstPage.length).toBe(Math.min(2, totalNow));
-      expect(secondPage.length).toBe(Math.min(2, Math.max(totalNow - 2, 0)));
-
-      // No id overlaps the offset window.
+      // No id overlaps the offset window. firstPage is entirely ours, so a
+      // foreign row trailing in secondPage cannot collide either.
       const firstIds = new Set(firstPage.map((r) => r.id));
       for (const row of secondPage) {
         expect(firstIds.has(row.id)).toBe(false);
@@ -357,38 +407,127 @@ describe("reformulation storage", () => {
   // getReformulationFlagCount
   // --------------------------------------------------------------------------
   describe("getReformulationFlagCount", () => {
-    // These tests use specific status filters and assert that this-test
-    // additions are reflected in the count delta — never an absolute count,
-    // because parallel test workers may share rows in the un-filtered query.
-    // (Verification tests use the same delta pattern.)
+    // Which assertion shape is safe depends on WHICH STATUS the foreign
+    // writer touches — do not generalise from one status to all of them.
+    //
+    // `reformulation_flags` has a writer that runs outside the savepoint
+    // harness: `verification.concurrent.test.ts` COMMITS `flagged` rows and
+    // bulk-deletes them in its `afterAll`. The foreign population visible to
+    // this transaction therefore both grows and shrinks, and READ COMMITTED
+    // re-snapshots per statement, so a delta across two unscoped `count(*)`
+    // reads is unstable in BOTH directions — observed reds include
+    // `expected -3 to be 1` and `expected 2 to be 1`, all three `retry: 2`
+    // attempts failing because they re-run inside the same hazard window.
+    // An earlier version of this comment claimed only the UNFILTERED count
+    // was exposed; that was wrong — the concurrent writer's rows are
+    // `flagged`, so the `"flagged"` delta was exposed too.
+    //
+    // That churn is confined to ONE status. The concurrent writer only ever
+    // calls `flagReformulation`, never `resolveReformulationFlag`, and its
+    // cleanup deletes by barcode — so it creates and removes `flagged` rows
+    // and never touches `resolved` ones. Hence:
+    //
+    //   * `"flagged"` and the UNFILTERED count are foreign-churned. Only a
+    //     LOWER BOUND survives there — and note what a bound does NOT buy:
+    //     the property that makes it unfalsifiable (churn can only push an
+    //     unscoped count UP) is the same one that lets ~46 foreign rows
+    //     SATISFY it outright, so it proves neither that the owned rows exist
+    //     nor that the filter works. Owned-row existence is recovered with a
+    //     barcode-scoped `getReformulationFlag` assertion, which no foreign
+    //     row can satisfy on our behalf.
+    //   * `"resolved"` has NO foreign writer, so its population is stable and
+    //     an EXACT delta is deterministic there. `counts resolved rows` uses
+    //     one, plus a flagged negative control, and it is what makes a dropped
+    //     or inverted `conditions` detectable at all. Verified by mutation
+    //     under the hazard pairing: `conditions = undefined` and `ne`-for-`eq`
+    //     both go RED.
+    //
+    // An earlier revision of this comment claimed no exact assertion was
+    // possible "for ANY status filter" because an unscoped count admits no
+    // upper bound. That over-generalised from `flagged` to every status and
+    // was wrong — the same modelling error as the "workers only ADD rows"
+    // claim it replaced. Establish which statuses a foreign writer actually
+    // touches before deciding a shape is unavailable.
+    //
+    // Residual: a change to the ternary's ELSE arm alone (`undefined` →
+    // `eq(status, "flagged")`) is caught by `counts rows when no status filter
+    // is given` only when this file runs ALONE; under the full suite foreign
+    // `flagged` rows satisfy its bound. Do not paper over that by citing the
+    // sibling `filters by status=…` tests — `getReformulationFlags` declares
+    // its own `conditions` local, so exercising it says nothing about this
+    // function's.
     it("counts flagged rows", async () => {
-      const before = await getReformulationFlagCount("flagged");
+      const myBarcodes = [makeBarcode(), makeBarcode()];
+      for (const b of myBarcodes) {
+        await seedBarcodeVerification(b);
+        await flagReformulation(b, 5, makeConsensus(), "verified", 3);
+      }
 
-      const barcode = makeBarcode();
-      await seedBarcodeVerification(barcode);
-      await flagReformulation(barcode, 5, makeConsensus(), "verified", 3);
+      // Barcode-scoped and therefore immune to foreign churn. Without this the
+      // bound below passes even if the seeding above silently did nothing.
+      for (const b of myBarcodes) {
+        expect(await getReformulationFlag(b)).not.toBeNull();
+      }
 
-      const after = await getReformulationFlagCount("flagged");
-      expect(after - before).toBe(1);
+      const count = await getReformulationFlagCount("flagged");
+      expect(count).toBeGreaterThanOrEqual(myBarcodes.length);
     });
 
     it("counts resolved rows", async () => {
+      // This one CAN assert an exact delta, and it is the only test that
+      // discriminates the status filter — see the note above for why the
+      // `resolved` population is the exception.
       const before = await getReformulationFlagCount("resolved");
 
-      const barcode = makeBarcode();
-      await seedBarcodeVerification(barcode);
-      await flagReformulation(barcode, 5, makeConsensus(), "verified", 3);
-      const flag = await getReformulationFlag(barcode);
-      await resolveReformulationFlag(flag!.id);
+      const myBarcodes = [makeBarcode(), makeBarcode()];
+      for (const b of myBarcodes) {
+        await seedBarcodeVerification(b);
+        await flagReformulation(b, 5, makeConsensus(), "verified", 3);
+        const flag = await getReformulationFlag(b);
+        await resolveReformulationFlag(flag!.id);
+      }
+
+      // Negative control: an owned row left FLAGGED. Without it the delta
+      // cannot tell a working filter from a dropped one — our own inserts move
+      // a filtered and an unfiltered count by the same amount. With it, a
+      // dropped `conditions` moves the count by 3 and an inverted one by 1.
+      const stillFlagged = makeBarcode();
+      await seedBarcodeVerification(stillFlagged);
+      await flagReformulation(stillFlagged, 5, makeConsensus(), "verified", 3);
+
+      // Barcode-scoped ground truth: the two are out of `flagged`, the control
+      // is still in it.
+      for (const b of myBarcodes) {
+        expect(await getReformulationFlag(b)).toBeNull();
+      }
+      expect(await getReformulationFlag(stillFlagged)).not.toBeNull();
 
       const after = await getReformulationFlagCount("resolved");
-      expect(after - before).toBe(1);
+      expect(after - before).toBe(myBarcodes.length);
     });
 
-    // The "no status filter" branch is covered transitively by the two
-    // filtered count tests above (`status ? eq(...) : undefined`). Asserting
-    // an unscoped delta is flake-prone under the documented test-tx leak
-    // (`todos/2026-05-11-db-test-utils-savepoint-leak.md`) because parallel
-    // workers can insert rows between the `before` and `after` snapshots.
+    it("counts rows when no status filter is given", async () => {
+      // The `undefined` arm is LIVE production code, not a theoretical branch:
+      // GET /api/verification/reformulation-flags omits `status` for the admin
+      // list and its `total` drives the pagination footer. An earlier revision
+      // of this file claimed the arm was "covered transitively" by the two
+      // filtered tests above — it is not, they both pass a status, and the arm
+      // had ZERO call sites in the suite.
+      const flagged = makeBarcode();
+      const resolved = makeBarcode();
+      for (const b of [flagged, resolved]) {
+        await seedBarcodeVerification(b);
+        await flagReformulation(b, 5, makeConsensus(), "verified", 3);
+      }
+      const toResolve = await getReformulationFlag(resolved);
+      await resolveReformulationFlag(toResolve!.id);
+
+      // One owned row per status, proven barcode-scoped as above.
+      expect(await getReformulationFlag(flagged)).not.toBeNull();
+      expect(await getReformulationFlag(resolved)).toBeNull();
+
+      const count = await getReformulationFlagCount();
+      expect(count).toBeGreaterThanOrEqual(2);
+    });
   });
 });
