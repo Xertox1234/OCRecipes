@@ -1,9 +1,9 @@
 ---
 title: "reformulation offset test reds the full suite when a parallel worker deletes rows mid-window"
-status: backlog
+status: resolved
 priority: medium
 created: 2026-07-26
-updated: 2026-07-26
+updated: 2026-08-13
 assignee:
 labels: [testing, database, ci-reliability]
 github_issue:
@@ -54,17 +54,17 @@ between the two reads drives the delta negative, which is exactly the observed
 
 ## Acceptance Criteria
 
-- [ ] The offset test no longer depends on a whole-table count taken across a
+- [x] The offset test no longer depends on a whole-table count taken across a
       window in which other workers may insert **or delete** rows
-- [ ] The test's assertions are scoped to rows this test owns (e.g. filter by the
+- [x] The test's assertions are scoped to rows this test owns (e.g. filter by the
       barcodes it seeded via `makeBarcode()`), so a concurrent worker's
       `afterEach` cannot affect the result in either direction
-- [ ] The page-size / non-overlap intent of the original test is preserved — it
+- [x] The page-size / non-overlap intent of the original test is preserved — it
       must still prove `getReformulationFlags` respects `limit` and `offset`, not
       merely that seeding worked
-- [ ] The misleading "Parallel-worker safety" comment is corrected or removed, so
+- [x] The misleading "Parallel-worker safety" comment is corrected or removed, so
       the next reader does not re-derive the same insufficient model
-- [ ] Running the full suite repeatedly (at least 3 consecutive `npm run test:run`
+- [x] Running the full suite repeatedly (at least 3 consecutive `npm run test:run`
       passes) shows no recurrence
 
 ## Implementation Notes
@@ -113,3 +113,60 @@ between the two reads drives the delta negative, which is exactly the observed
 - Initial creation. Observed during `/todo` Phase 5 verification; isolated to a
   concurrent-delete window rather than CPU contention, and confirmed to survive
   `retry: 2`.
+
+### 2026-08-13 — RESOLVED
+
+Fixed in `fix/reformulation-offset-test-isolation`. Two corrections to this
+todo's original analysis, both established by forcing the interleaving rather
+than waiting for it:
+
+```
+npx vitest run server/storage/__tests__/reformulation.test.ts \
+               server/storage/__tests__/verification.concurrent.test.ts
+```
+
+1. **The deleter is not another worker's `afterEach`.** It is
+   `verification.concurrent.test.ts`, which deliberately opts out of the
+   savepoint harness (it needs real distinct pool connections to exercise a lock
+   race), COMMITS ~46 `status='flagged'` rows across its loops, and bulk-deletes
+   them in `afterAll`. Those committed rows are visible to this file's
+   transaction and then vanish. It is the only committer of `reformulation_flags`
+   in the repo.
+2. **Two failures, not one.** The forced pairing red on the first run with both
+   `expected 4 to be 3` (a mid-window **insert** — so the original "absorbs their
+   inserts" model was wrong in both directions) and `expected true to be false`
+   at the **no-overlap** assertion (a row shifted between the two page queries,
+   because READ COMMITTED re-snapshots per statement). The second was not
+   identified in this todo and rules out fixing the count alone.
+
+**Fix (offset test):** pin the three owned rows to distinct far-future
+`detectedAt` values. Every foreign row is stamped at or before now, so ours
+provably hold ordering positions 0/1/2 whatever else is in the table, and paging
+over the head of the list stays inside owned rows. Assertions are now exact page
+contents by barcode, including an `offset=1` window lying wholly within owned
+rows. The pin asserts its own `timestamptz` round-trip, since the ordering
+guarantee rests entirely on the stored value.
+
+**Also fixed — the sibling count tests.** This todo predicted they shared the
+latent bug; they did, and they were not latent: `counts flagged rows` reproduced
+at **2/10** under the pairing (`expected -3 to be 1`), also surviving `retry: 2`.
+The file's own comment claiming only the UNFILTERED count was flake-prone was
+falsified — the concurrent writer's rows are `flagged`. An unscoped `count(*)`
+admits no deterministic two-read delta under foreign churn (every alternative
+was enumerated and rejected: scoped subtract, sandwich, transition delta,
+REPEATABLE READ, in-transaction delete of foreign rows), so these now assert a
+**lower bound** over owned rows — foreign churn can only push an unscoped count
+up, never falsifying the bound. The `status` filter itself is proven over an
+owned deterministic window by the sibling `filters by status=…` tests, which
+exercise the identical `conditions` expression.
+
+**Verification:** hazard pairing 0/10 failures against a red baseline for both
+modes; file alone 16/16; three consecutive `npm run test:run` passes
+(7646/7646, exit 0 each). Per this todo's Risks section, the pairing loop is the
+proof and the full-suite runs are confirmation.
+
+**Residual (not fixed, by design):** the cross-file hazard itself remains —
+`verification.concurrent.test.ts` must commit real rows to do its job, and any
+future test asserting an exact unscoped aggregate over `reformulation_flags`
+will hit the same wall. The mitigation is the pattern, not a barrier: assert
+over rows you own, or over a bound foreign churn cannot cross.
