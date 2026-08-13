@@ -354,3 +354,145 @@ describe("emission coverage for previously-unpinned constants", () => {
     expect(flags.map((f) => f.id)).not.toContain("nutrient:sodium");
   });
 });
+
+/**
+ * CHARACTERISATION — the drink x per-portion cross.
+ *
+ * No test above reaches it: every per-portion test passes `categoriesTags: []`
+ * (food) and every drink test omits `perServing`/`servingGrams`. The two axes
+ * were never crossed, which is how a FOOD-scale portion table came to be
+ * applied to beverages unnoticed.
+ *
+ * These pin what the code does TODAY, before the FSA drink portion table
+ * lands. Two of them are expected to INVERT when it does, and the comment on
+ * each says which way and why; the rest must not move at all. Written first
+ * and green against unmodified source, so the threshold change fails loudly
+ * rather than silently.
+ */
+describe("CHARACTERISATION — drink x per-portion, before the drink table", () => {
+  const drink = ["en:beverages"];
+
+  it("emits NOTHING for a 500 ml drink holding 20 g of sugar", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { sugar: 4 }, // 20 g / 500 ml — under FSA_DRINK.sugar.high 11.25
+      perServing: { sugar: 20 },
+      servingGrams: 500,
+      categoriesTags: drink,
+    });
+    // WILL INVERT to a flag. The drink is judged on the per-100ml line and the
+    // per-portion FOOD line simultaneously, and clears both: 4 < 11.25, and
+    // 20 < 27. The FSA drink portion line is 13.5, so this should be RED.
+    expect(ids(flags)).not.toContain("nutrient:sugar");
+  });
+
+  it("emits nothing for a 140 ml drink holding 14 g of sugar", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { sugar: 10 }, // 14 g / 140 ml — under FSA_DRINK.sugar.high 11.25
+      perServing: { sugar: 14 },
+      servingGrams: 140,
+      categoriesTags: drink,
+    });
+    // MUST STAY GREEN — but for a DIFFERENT reason on each side of the fix, so
+    // do not read it as a no-op. Today it passes because 14 is under the food
+    // portion line of 27. Afterwards 14 IS over the drink portion line of
+    // 13.5, and this stays silent only because the FSA drink trigger is a
+    // portion over 150 ml rather than over 100. It is the one test here that
+    // fails if the drink lines land without their trigger.
+    expect(ids(flags)).not.toContain("nutrient:sugar");
+  });
+
+  it("escalates a 120 ml drink whose per-serving sugar clears the FOOD line", () => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { sugar: 5 },
+      perServing: { sugar: 30 },
+      servingGrams: 120,
+      categoriesTags: drink,
+    });
+    // WILL INVERT to no flag: the FSA drink trigger is a portion over 150 ml,
+    // so 120 ml earns no per-portion escalation at all.
+    //
+    // This input is reachable only by constructing it directly, as here. Both
+    // production paths build `perServing` as `scaleNutrients(per100g, ...)`
+    // (barcode-lookup.ts, label-override.ts), so a real record's two halves
+    // always agree — and for a self-consistent drink at 120 ml, 30 g of sugar
+    // is 25 g/100 ml, which clears the per-100 line of 11.25 on its own. The
+    // claim is about the function, not about any record that reaches it.
+    expect(ids(flags)).toContain("nutrient:sugar");
+  });
+});
+
+/**
+ * CHARACTERISATION — the FOOD portion arm, which the drink table must NOT
+ * disturb. Every per100g here sits under its per-100 food line, so only the
+ * portion arm can decide the outcome.
+ */
+describe("CHARACTERISATION — the food portion arm holds still", () => {
+  it("fires just over each food portion line at a >100 g portion", () => {
+    expect(
+      ids(
+        evaluateUniversalFlags({
+          ...base,
+          per100g: { sugar: 1 },
+          perServing: { sugar: 27.1 },
+          servingGrams: 240,
+        }),
+      ),
+    ).toContain("nutrient:sugar");
+    expect(
+      ids(
+        evaluateUniversalFlags({
+          ...base,
+          per100g: { saturatedFat: 0.1 },
+          perServing: { saturatedFat: 6.1 },
+          servingGrams: 240,
+        }),
+      ),
+    ).toContain("nutrient:saturated_fat");
+    expect(
+      ids(
+        evaluateUniversalFlags({
+          ...base,
+          per100g: { sodium: 10 },
+          perServing: { sodium: 720.1 },
+          servingGrams: 240,
+        }),
+      ),
+    ).toContain("nutrient:sodium");
+  });
+
+  it("stays silent AT each food portion line (the line itself is not 'above')", () => {
+    expect(
+      ids(
+        evaluateUniversalFlags({
+          ...base,
+          per100g: { sugar: 1 },
+          perServing: { sugar: 27 },
+          servingGrams: 240,
+        }),
+      ),
+    ).not.toContain("nutrient:sugar");
+    expect(
+      ids(
+        evaluateUniversalFlags({
+          ...base,
+          per100g: { saturatedFat: 0.1 },
+          perServing: { saturatedFat: 6 },
+          servingGrams: 240,
+        }),
+      ),
+    ).not.toContain("nutrient:saturated_fat");
+    expect(
+      ids(
+        evaluateUniversalFlags({
+          ...base,
+          per100g: { sodium: 10 },
+          perServing: { sodium: 720 },
+          servingGrams: 240,
+        }),
+      ),
+    ).not.toContain("nutrient:sodium");
+  });
+});

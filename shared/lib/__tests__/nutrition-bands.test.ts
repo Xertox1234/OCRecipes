@@ -175,6 +175,50 @@ describe("concernBand — per-portion HIGH override", () => {
   });
 });
 
+/**
+ * CHARACTERISATION — what the per-portion override does TODAY, before the FSA
+ * drink portion table lands.
+ *
+ * The first case is expected to INVERT; the rest pin the food arm, whose
+ * arithmetic a follow-up commit rewrites (the portion value will be derived
+ * from per-100 rather than read straight off `perServingValue`) and must
+ * therefore be shown to be behaviour-preserving rather than assumed so.
+ */
+describe("CHARACTERISATION — per-portion override, before the drink table", () => {
+  it("ignores portionGrams entirely on an already-per-100 (factor 1) basis", () => {
+    // The SCAN PATH's shape: `validatedData.per100g` resolves to factor 1, so
+    // `perServingValue` is a per-100 number. Today the override is gated to
+    // food AND compares that per-100 number against the portion line, so a
+    // drink can never promote here however heavy the portion.
+    //
+    // WILL INVERT to "high": 11.0 g/100 ml across a 355 ml can is 39 g in the
+    // portion, over the FSA drink line of 13.5, at a portion over 150 ml.
+    const drink355: Basis = { kind: "resolved", scale: "drink", factor: 1 };
+    expect(concernBand("sugar", 11.0, drink355, 355)).toBe("medium");
+  });
+
+  it("food saved-item shape: saturated fat, either side of the portion line", () => {
+    // `factor = 100/Q` with `portionGrams = Q` — the saved-item shape, and the
+    // one the arithmetic change round-trips through. Off-the-line values, not
+    // 6.0 exactly: the new derivation is floating-point.
+    const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 240 };
+    expect(concernBand("saturatedFat", 6.1, basis, 240)).toBe("high");
+    expect(concernBand("saturatedFat", 5.9, basis, 240)).toBe("medium");
+  });
+
+  it("food saved-item shape: sodium, either side of the portion line", () => {
+    const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 300 };
+    expect(concernBand("sodium", 721, basis, 300)).toBe("high");
+    expect(concernBand("sodium", 700, basis, 300)).toBe("medium");
+  });
+
+  it("food saved-item shape: sugar, either side of the portion line", () => {
+    const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 200 };
+    expect(concernBand("sugar", 27.1, basis, 200)).toBe("high");
+    expect(concernBand("sugar", 26.9, basis, 200)).toBe("medium");
+  });
+});
+
 describe("benefitBand", () => {
   it.each([
     [2.9, "none"],
