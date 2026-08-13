@@ -59,11 +59,11 @@ describe("isBandedByPanel", () => {
    * band that can HIGH and the badge dedups. Do not read that as "the layers
    * always agree now" and delete this test.
    *
-   * What still separates them is the portion WEIGHT, not the rule: the client
-   * derives `isServingDataTrusted` from its own plausibility pass
-   * (`client/lib/serving-size-utils.ts`) rather than reading the server's, so
-   * it can withhold the override where the server applied it. The badge then
-   * asserts HIGH against a panel MEDIUM, exactly the shape below.
+   * What still separates them is the portion WEIGHT, not the rule: the panel
+   * withholds the override whenever it has no trusted portion weight, while
+   * the server can still warn off its per-100 arm. The badge then asserts HIGH
+   * against a panel MEDIUM, exactly the shape below. See the module docblock
+   * for the full list, and for which entries on it are verified.
    */
   it("is FALSE when a warn badge says HIGH and the panel only bands MEDIUM", () => {
     expect(

@@ -41,7 +41,16 @@
  * PRODUCT's declared portion — `validatedData.servingInfo.grams` on the scan
  * path, the stored serving string on the saved-item path — sits in exactly the
  * same serving-control-invariant place the values and the scale already come
- * from. `recalculateNutrition` never calls `setValidatedData`.
+ * from.
+ *
+ * That invariance was re-checked against the hook rather than inherited from
+ * this docblock's earlier wording, because it is now load-bearing for a band
+ * VALUE and not just for the values and the scale: in `useNutritionLookup.ts`,
+ * `validatedData` is `useState` written only by the lookup paths, and no
+ * serving-control handler touches it. The nearby memo that DOES depend on
+ * `servingSizeGrams` and looks like a `servingInfo` is `servingOptions`; it
+ * builds its own local object for `getServingSizeOptions` and never feeds
+ * `validatedData`. Do not wire `portionGrams` to that one.
  *
  * So the override is applied, and the guarantee is stated precisely below
  * rather than as a blanket "nothing about banding moves with the serving" —

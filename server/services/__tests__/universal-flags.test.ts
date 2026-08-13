@@ -522,9 +522,24 @@ describe("evaluateUniversalFlags — the food portion arm holds still", () => {
  * the user sees one warning, two, or none.
  *
  * Every product here is SELF-CONSISTENT (`perServing = per100 x portion/100`),
- * which is what both production paths build via `scaleNutrients`. That is the
- * domain over which the two layers are required to agree; hand-built
- * inconsistent inputs are not, and are covered separately above.
+ * which is the shape both production paths build via `scaleNutrients`.
+ * Hand-built inconsistent inputs are outside the domain and are covered
+ * separately above.
+ *
+ * ONE KNOWN LIMIT, stated because the fixtures below compute the EXACT product
+ * and production does not: `scaleNutrients` rounds `perServing` to one decimal
+ * (`barcode-lookup.ts` — `roundToOneDecimal(v * factor)`). So the two layers
+ * agree exactly only away from a rounding boundary. In the 0.05-wide band
+ * where the exact portion value clears a line but its rounded form does not
+ * (13.51 -> 13.5 against the 13.5 sugar line), the server goes silent while
+ * the client, which multiplies unrounded, bands high.
+ *
+ * That residual is one-directional, which is why it is documented rather than
+ * chased: rounding can only pull the server's value DOWN across a line it had
+ * cleared, never up across one it had not (a value at or under the line cannot
+ * round to more than the line). So the disagreement is always panel-stronger —
+ * a red row with no badge beside it — and `dropPanelBandedFlags` only ever
+ * REMOVES badges, so it cannot turn that into a lost warning.
  *
  * The comparison is deliberately `flagEmitted === (band === "high")` rather
  * than two hardcoded expectations — a case added later cannot be filled in

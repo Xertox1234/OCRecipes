@@ -41,6 +41,12 @@ export type Basis =
  * indexing with `fat` is a miss (`undefined`) rather than a compile error. Both
  * tables genuinely omit `fat` — the FSA publishes the figure but no total-fat
  * flag consumes it. See the tables' own docblock.
+ *
+ * Note the cost of that `Partial`: adding `fat` to either table's `lines`
+ * would activate a fat portion override HERE with no other edit and no
+ * compile error. The predecessor's hand-written three-key projection made
+ * that a compile step. The guard is now a test — "keeps both portion tables
+ * red-only and fat-free" in the constants suite — not the type system.
  */
 const PORTION_TABLES: Record<
   "food" | "drink",

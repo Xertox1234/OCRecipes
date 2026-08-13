@@ -33,13 +33,22 @@
  * same two arms off the same numbers and Cherry Coke dedups instead of
  * double-reporting.
  *
- * What is left is the panel holding a WEAKER portion weight than the server,
- * which is structural rather than hypothetical: the client runs its own
- * `validateAndNormalizeNutrition` with its own `MAX_PLAUSIBLE_SERVING_GRAMS`
- * and derives `isServingDataTrusted` itself (`client/lib/serving-size-utils.ts`),
- * so it can mark a serving corrected — and withhold the override — where the
- * server did not. The badge then asserts HIGH against a panel MEDIUM. The
- * direction is safe (the panel withholds, the badge survives), but only
+ * What is left is the panel holding a weaker portion weight than the server.
+ * Two mechanisms, at different confidence — do not upgrade the first to the
+ * second when quoting this:
+ *
+ *   - VERIFIED: the panel withholds the override whenever it has no trusted
+ *     portion weight (unresolved basis, an estimated serving, a saved item
+ *     whose serving string does not parse) while the server still emits from
+ *     its per-100 arm. The badge then asserts HIGH against a panel MEDIUM or
+ *     `unknown`.
+ *   - NOT verified, only possible: the client derives `isServingDataTrusted`
+ *     from its own plausibility pass (`client/lib/serving-size-utils.ts`)
+ *     rather than reading the server's. The two use the same limits today, so
+ *     no divergent input has been demonstrated — but they are computed twice
+ *     and nothing holds them equal.
+ *
+ * Both directions are safe (the panel withholds, the badge survives) only
  * because of the rule below.
  *
  * So the test is still AGREEMENT, not existence, and the `unknown` guard is
