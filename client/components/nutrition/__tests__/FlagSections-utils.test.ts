@@ -46,24 +46,24 @@ describe("isBandedByPanel", () => {
   });
 
   /**
-   * The round-2 fix, and the flagship Trust-the-Label product proves it.
+   * A MEDIUM band is a strictly weaker statement than "High in sugar", so it
+   * does not REPLACE the badge and the badge must survive. This is a contract
+   * test over hand-built bands: it holds whatever mechanism produced the
+   * weaker band, which is the point — the rule must not depend on the current
+   * list of ways the two layers can diverge.
    *
-   * Cherry Coke: 39 g sugar in a 355 mL can = 10.99 g per 100 mL, against
-   * `FSA_DRINK.sugar.high` = 11.25 → the panel bands MEDIUM. The server bands
-   * the same can HIGH, because `high()`'s SECOND clause
-   * (`server/services/universal-flags.ts:55-70`) fires on the per-PORTION line:
-   * `servingGrams 355 > 100 && perServing 39 > FSA_PORTION.sugar 27`. That
-   * clause is reachable on real records — `server/routes/nutrition.ts:99-107`
-   * populates `perServing` whenever `isServingDataTrusted`, and
-   * `server/services/label-override.ts:190-191` sets serving-trusted expressly
-   * so the per-portion path runs.
+   * That list used to have one headline entry, and it is now CLOSED: Cherry
+   * Coke (39 g sugar in a 355 mL can, 10.99 per 100 mL) banded MEDIUM here
+   * while the server warned, because the panel passed no `portionGrams` and so
+   * could not run the FSA per-portion arm at all. It now does — both layers
+   * band that can HIGH and the badge dedups. Do not read that as "the layers
+   * always agree now" and delete this test.
    *
-   * The panel CANNOT reproduce that judgement: it passes no `portionGrams` to
-   * `concernBand` on purpose (`nutrition-band-source.ts` — a portion-aware band
-   * would move with the user's serving choice). So a MEDIUM band does not
-   * replace a HIGH warning; it is a strictly weaker statement about the same
-   * nutrient, and deleting the badge loses the warning outright. `main` showed
-   * this badge.
+   * What still separates them is the portion WEIGHT, not the rule: the client
+   * derives `isServingDataTrusted` from its own plausibility pass
+   * (`client/lib/serving-size-utils.ts`) rather than reading the server's, so
+   * it can withhold the override where the server applied it. The badge then
+   * asserts HIGH against a panel MEDIUM, exactly the shape below.
    */
   it("is FALSE when a warn badge says HIGH and the panel only bands MEDIUM", () => {
     expect(
@@ -75,11 +75,17 @@ describe("isBandedByPanel", () => {
   });
 
   /**
-   * The colour-inverting case, and the reason this is a health defect rather
-   * than a cosmetic one: a 700 g portion at 4 g sugar/100 g clears the FSA
-   * per-portion line (700 > 100 && 28 > 27) so the server warns, while per-100
-   * 4 <= `FSA_FOOD.sugar.low` 5 bands LOW. Dropping the badge leaves a green
-   * check dot and a "LOW" pill standing exactly where the red warning was.
+   * The colour-INVERTING case, and the reason this is a health defect rather
+   * than a cosmetic one: dropping the badge here leaves a green check dot and
+   * a "LOW" pill standing exactly where a red warning was.
+   *
+   * LOW rather than MEDIUM is its own case because it is the one a reader is
+   * most likely to dismiss as impossible — "surely a per-100 value low enough
+   * to band LOW cannot also warn". It can: the two arms measure different
+   * things, and a large portion of a mildly sugary food clears the per-portion
+   * line while its per-100 value sits under the green boundary. Whether both
+   * layers see that portion is the variable (see the MEDIUM case above); the
+   * rule must hold when only one of them does.
    */
   it("is FALSE when a warn badge says HIGH and the panel bands LOW", () => {
     expect(

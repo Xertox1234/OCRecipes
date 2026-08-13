@@ -75,7 +75,14 @@ describe("selectBandSource — serving invariance (the defect this module exists
     });
   });
 
-  it("bands Cherry Coke MEDIUM on the drink scale, not HIGH", () => {
+  it("bands Cherry Coke HIGH via the drink per-portion override", () => {
+    // 11.0 g/100 ml is MEDIUM on the per-100 drink scale — the portion arm is
+    // what makes this red: 355 ml holds 39 g, over the FSA drink portion line
+    // of 13.5, at a portion over the 150 ml trigger.
+    //
+    // The portion weight comes from `validatedData.servingInfo.grams`, which
+    // the serving controls never rewrite — that is what lets the panel apply
+    // an override the module once had to skip.
     const { rows } = buildPanelRows({
       itemId: undefined,
       validatedData: cherryCokeValidated,
@@ -83,10 +90,14 @@ describe("selectBandSource — serving invariance (the defect this module exists
       isBeverage: true,
     });
     const sugar = rows.find((r) => r.row.key === "sugar");
-    expect(sugar?.band).toEqual({ group: "concern", band: "medium" });
+    expect(sugar?.band).toEqual({ group: "concern", band: "high" });
   });
 
-  it("bands sugar MEDIUM even at quantity 2, while the DISPLAYED value doubles", () => {
+  it("keeps that band at quantity 2, while the DISPLAYED value doubles", () => {
+    // The invariance claim, now with the override live — which makes it a
+    // stronger statement than before, not a weaker one: the override is the
+    // one part of banding that takes a WEIGHT, so if any serving choice could
+    // move a band it would move it here.
     const doubled: NutritionData = { ...cherryCokeNutrition, sugar: 78 };
     const { rows } = buildPanelRows({
       itemId: undefined,
@@ -95,8 +106,23 @@ describe("selectBandSource — serving invariance (the defect this module exists
       isBeverage: true,
     });
     const sugar = rows.find((r) => r.row.key === "sugar");
-    expect(sugar?.band).toEqual({ group: "concern", band: "medium" });
+    expect(sugar?.band).toEqual({ group: "concern", band: "high" });
     expect(sugar?.displayValue).toBe(78);
+  });
+
+  it("skips the override when the serving was ESTIMATED, mirroring the server", () => {
+    // `isServingDataTrusted: false` is how the server decides not to pass
+    // `perServing` to `evaluateUniversalFlags` at all. The panel must not
+    // escalate off a portion weight the server refused to trust, or the two
+    // disagree on screen in the over-warning direction.
+    const { rows } = buildPanelRows({
+      itemId: undefined,
+      validatedData: { ...cherryCokeValidated, isServingDataTrusted: false },
+      nutrition: cherryCokeNutrition,
+      isBeverage: true,
+    });
+    const sugar = rows.find((r) => r.row.key === "sugar");
+    expect(sugar?.band).toEqual({ group: "concern", band: "medium" });
   });
 });
 
@@ -368,19 +394,31 @@ describe("buildPanelRows — the direct-OFF fallback's ASYMMETRIC sources", () =
   });
 
   it("still bands from the UN-SCALED per-100 value when both sources agree", () => {
-    // The gate must not become a second value source. Same record, but the
-    // per-serving fields are present too — `nutrition` is the serving-scaled
-    // display state (39 g in the can) while the band still reads per-100
-    // (11.0), which is MEDIUM on the drink scale, not HIGH.
+    // The gate must not become a second VALUE source: `nutrition` decides
+    // whether a band is published, never what it says.
+    //
+    // The per-100 sugar is dropped to 2.0 here rather than reusing the
+    // fixture's 11.0 for a reason. At 11.0 the two readings no longer differ
+    // in BAND — 11.0 across a 355 ml can is 39 g, over the drink portion line,
+    // and the display value 39 read as a per-100 number is over the per-100
+    // line, so both routes land on "high" and the test would pass while
+    // proving nothing. At 2.0 they diverge: the correct answer is LOW (2.0 is
+    // under the 2.5 drink low line, and 7.1 g in the can is under the 13.5
+    // portion line), while a leak from `displayValue` would read 39 g/100 ml
+    // and say HIGH.
     const { rows } = buildPanelRows({
       ...divergentInput,
+      validatedData: {
+        ...divergentValidated,
+        per100g: { ...divergentValidated.per100g, sugar: 2.0 },
+      },
       nutrition: { ...divergentNutrition, sugar: 39 },
     });
     const sugar = rows.find((r) => r.row.key === "sugar");
 
     expect(sugar?.hasValue).toBe(true);
     expect(sugar?.displayValue).toBe(39);
-    expect(sugar?.band).toEqual({ group: "concern", band: "medium" });
+    expect(sugar?.band).toEqual({ group: "concern", band: "low" });
   });
 });
 

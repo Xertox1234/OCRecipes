@@ -3,6 +3,10 @@ import {
   evaluateUniversalFlags,
   type UniversalFlagInput,
 } from "../universal-flags";
+// The client's band layer, imported so the two can be compared directly. This
+// file is scanned by no-server-fsa-constants.test.ts: importing shared symbols
+// is fine, DECLARING an `FSA_`-prefixed const here is not.
+import { concernBand } from "@shared/lib/nutrition-bands";
 
 const base: UniversalFlagInput = {
   per100g: {},
@@ -52,7 +56,7 @@ describe("evaluateUniversalFlags — FSA per-portion escalation (perServing > po
     const flags = evaluateUniversalFlags({
       ...base,
       per100g: { sugar: 20 }, // below FSA_FOOD.sugar (22.5)
-      perServing: { sugar: 30 }, // above FSA_PORTION.sugar (27)
+      perServing: { sugar: 30 }, // above FSA_PORTION_FOOD.lines.sugar (27)
       servingGrams: 250, // > 100
     });
     expect(ids(flags)).toContain("nutrient:sugar");
@@ -319,7 +323,7 @@ describe("emission coverage for previously-unpinned constants", () => {
     expect(flags.map((f) => f.id)).not.toContain("nutrient:sodium");
   });
 
-  // FSA_PORTION.saturatedFat = 6, only applies when servingGrams > 100
+  // FSA_PORTION_FOOD.lines.saturatedFat = 6, at a portion over 100 g
   it("flags saturated fat via the per-portion override", () => {
     const flags = evaluateUniversalFlags({
       ...base,
@@ -331,7 +335,7 @@ describe("emission coverage for previously-unpinned constants", () => {
     expect(flags.map((f) => f.id)).toContain("nutrient:saturated_fat");
   });
 
-  // FSA_PORTION.sodium = 720
+  // FSA_PORTION_FOOD.lines.sodium = 720
   it("flags sodium via the per-portion override", () => {
     const flags = evaluateUniversalFlags({
       ...base,
@@ -356,20 +360,20 @@ describe("emission coverage for previously-unpinned constants", () => {
 });
 
 /**
- * CHARACTERISATION — the drink x per-portion cross.
+ * The drink x per-portion cross — the FSA drink portion table.
  *
- * No test above reaches it: every per-portion test passes `categoriesTags: []`
- * (food) and every drink test omits `perServing`/`servingGrams`. The two axes
- * were never crossed, which is how a FOOD-scale portion table came to be
- * applied to beverages unnoticed.
+ * No test above reaches this cross: every per-portion test passes
+ * `categoriesTags: []` (food) and every drink test omits
+ * `perServing`/`servingGrams`. The two axes were never crossed, which is how a
+ * FOOD-scale portion table came to be applied to beverages unnoticed in two
+ * layers at once.
  *
- * These pin what the code does TODAY, before the FSA drink portion table
- * lands. Two of them are expected to INVERT when it does, and the comment on
- * each says which way and why; the rest must not move at all. Written first
- * and green against unmodified source, so the threshold change fails loudly
- * rather than silently.
+ * These three landed one commit earlier pinning the PRE-fix behaviour, so the
+ * diff that introduced the drink table is the record of exactly which
+ * emissions moved: the 500 ml case gained a flag, the 120 ml case lost one,
+ * and the 140 ml case did not move at all.
  */
-describe("CHARACTERISATION — drink x per-portion, before the drink table", () => {
+describe("evaluateUniversalFlags — drink x per-portion (FSA drink table)", () => {
   const drink = ["en:beverages"];
 
   it("emits NOTHING for a 500 ml drink holding 20 g of sugar", () => {
@@ -380,10 +384,12 @@ describe("CHARACTERISATION — drink x per-portion, before the drink table", () 
       servingGrams: 500,
       categoriesTags: drink,
     });
-    // WILL INVERT to a flag. The drink is judged on the per-100ml line and the
-    // per-portion FOOD line simultaneously, and clears both: 4 < 11.25, and
-    // 20 < 27. The FSA drink portion line is 13.5, so this should be RED.
-    expect(ids(flags)).not.toContain("nutrient:sugar");
+    // THE DEFECT, now fixed. Before the drink portion table this emitted
+    // nothing at all: the bottle cleared the per-100ml line (4 < 11.25) and
+    // was then measured against the per-portion FOOD line (20 < 27). Against
+    // the published drink line of 13.5 it is a red, and 500 ml clears the
+    // 150 ml trigger.
+    expect(ids(flags)).toContain("nutrient:sugar");
   });
 
   it("emits nothing for a 140 ml drink holding 14 g of sugar", () => {
@@ -403,7 +409,7 @@ describe("CHARACTERISATION — drink x per-portion, before the drink table", () 
     expect(ids(flags)).not.toContain("nutrient:sugar");
   });
 
-  it("escalates a 120 ml drink whose per-serving sugar clears the FOOD line", () => {
+  it("does NOT escalate a 120 ml drink, even over the FOOD portion line", () => {
     const flags = evaluateUniversalFlags({
       ...base,
       per100g: { sugar: 5 },
@@ -411,25 +417,30 @@ describe("CHARACTERISATION — drink x per-portion, before the drink table", () 
       servingGrams: 120,
       categoriesTags: drink,
     });
-    // WILL INVERT to no flag: the FSA drink trigger is a portion over 150 ml,
-    // so 120 ml earns no per-portion escalation at all.
+    // The ONE emission this change removes. Before the drink trigger, 120 ml
+    // cleared the food trigger of 100 and 30 g cleared the food line of 27,
+    // so this flagged. The FSA drink trigger is a portion over 150 ml, so a
+    // 120 ml portion earns no per-portion escalation at all.
     //
-    // This input is reachable only by constructing it directly, as here. Both
-    // production paths build `perServing` as `scaleNutrients(per100g, ...)`
-    // (barcode-lookup.ts, label-override.ts), so a real record's two halves
-    // always agree — and for a self-consistent drink at 120 ml, 30 g of sugar
-    // is 25 g/100 ml, which clears the per-100 line of 11.25 on its own. The
-    // claim is about the function, not about any record that reaches it.
-    expect(ids(flags)).toContain("nutrient:sugar");
+    // Removing a warning deserves the scrutiny the rest of this change does
+    // not, so: this input is reachable only by constructing it directly, as
+    // here. Both production paths build `perServing` as
+    // `scaleNutrients(per100g, ...)` (barcode-lookup.ts, label-override.ts),
+    // so a real record's two halves always agree — and for a self-consistent
+    // drink at 120 ml, 30 g of sugar is 25 g/100 ml, which clears the per-100
+    // line of 11.25 on its own and still flags. The claim is about the
+    // function, not about any record that reaches it.
+    expect(ids(flags)).not.toContain("nutrient:sugar");
   });
 });
 
 /**
- * CHARACTERISATION — the FOOD portion arm, which the drink table must NOT
- * disturb. Every per100g here sits under its per-100 food line, so only the
- * portion arm can decide the outcome.
+ * The FOOD portion arm, which the drink table must NOT disturb. Every per100g
+ * here sits under its per-100 food line, so only the portion arm can decide
+ * the outcome. Landed with the characterisation commit and unchanged since —
+ * that it never moved is the point.
  */
-describe("CHARACTERISATION — the food portion arm holds still", () => {
+describe("evaluateUniversalFlags — the food portion arm holds still", () => {
   it("fires just over each food portion line at a >100 g portion", () => {
     expect(
       ids(
@@ -494,5 +505,155 @@ describe("CHARACTERISATION — the food portion arm holds still", () => {
         }),
       ),
     ).not.toContain("nutrient:sodium");
+  });
+});
+
+/**
+ * SERVER AND CLIENT MUST AGREE.
+ *
+ * `evaluateUniversalFlags` (server — emits the `nutrient:*` "Heads up" badge)
+ * and `concernBand` (shared — drives the client's traffic-light row) implement
+ * the same FSA rules twice, in two layers, from the same constants. Nothing
+ * structural keeps them in step, and they have already drifted: the per-portion
+ * table was food-only in both, then gated to the food scale in the band layer
+ * alone, so for a whole release a drink could earn a badge from one and no
+ * escalation at all from the other. `dropPanelBandedFlags` compares the two
+ * verdicts on screen, so a disagreement is not academic — it decides whether
+ * the user sees one warning, two, or none.
+ *
+ * Every product here is SELF-CONSISTENT (`perServing = per100 x portion/100`),
+ * which is what both production paths build via `scaleNutrients`. That is the
+ * domain over which the two layers are required to agree; hand-built
+ * inconsistent inputs are not, and are covered separately above.
+ *
+ * The comparison is deliberately `flagEmitted === (band === "high")` rather
+ * than two hardcoded expectations — a case added later cannot be filled in
+ * wrongly on one side only.
+ */
+describe("evaluateUniversalFlags and concernBand agree on the same product", () => {
+  const CASES = [
+    // --- drink scale: the arm that was broken -------------------------------
+    {
+      what: "500 ml drink, 20 g sugar — portion arm only (the fixed defect)",
+      drink: true,
+      key: "sugar",
+      flagId: "nutrient:sugar",
+      per100: 4,
+      portionGrams: 500,
+    },
+    {
+      what: "140 ml drink, 14 g sugar — over the drink line, under the trigger",
+      drink: true,
+      key: "sugar",
+      flagId: "nutrient:sugar",
+      per100: 10,
+      portionGrams: 140,
+    },
+    {
+      what: "355 ml can, 39 g sugar — Cherry Coke",
+      drink: true,
+      key: "sugar",
+      flagId: "nutrient:sugar",
+      per100: 11.0,
+      portionGrams: 355,
+    },
+    {
+      what: "100 ml drink over the per-100 line — the other arm still fires",
+      drink: true,
+      key: "sugar",
+      flagId: "nutrient:sugar",
+      per100: 12.5,
+      portionGrams: 100,
+    },
+    {
+      what: "500 ml drink, 10 g sugar — under both lines",
+      drink: true,
+      key: "sugar",
+      flagId: "nutrient:sugar",
+      per100: 2,
+      portionGrams: 500,
+    },
+    {
+      what: "600 ml drink, 3.6 g saturated fat — the snake_case bridge",
+      drink: true,
+      key: "saturatedFat",
+      flagId: "nutrient:saturated_fat",
+      per100: 0.6,
+      portionGrams: 600,
+    },
+    {
+      what: "500 ml drink, 400 mg sodium — over the drink portion line",
+      drink: true,
+      key: "sodium",
+      flagId: "nutrient:sodium",
+      per100: 80,
+      portionGrams: 500,
+    },
+    // --- food scale: must not have moved ------------------------------------
+    {
+      what: "240 g food, 24 g sugar — under the food portion line",
+      drink: false,
+      key: "sugar",
+      flagId: "nutrient:sugar",
+      per100: 10,
+      portionGrams: 240,
+    },
+    {
+      what: "240 g food, 28.8 g sugar — over the food portion line",
+      drink: false,
+      key: "sugar",
+      flagId: "nutrient:sugar",
+      per100: 12,
+      portionGrams: 240,
+    },
+    {
+      what: "100 g food over the per-100 line, portion arm shut",
+      drink: false,
+      key: "sugar",
+      flagId: "nutrient:sugar",
+      per100: 23,
+      portionGrams: 100,
+    },
+    {
+      what: "240 g food, 7.2 g saturated fat — over the food portion line",
+      drink: false,
+      key: "saturatedFat",
+      flagId: "nutrient:saturated_fat",
+      per100: 3,
+      portionGrams: 240,
+    },
+  ] as const;
+
+  it.each(CASES)("$what", ({ drink, key, flagId, per100, portionGrams }) => {
+    const flags = evaluateUniversalFlags({
+      ...base,
+      per100g: { [key]: per100 },
+      perServing: { [key]: (per100 * portionGrams) / 100 },
+      servingGrams: portionGrams,
+      categoriesTags: drink ? ["en:beverages"] : [],
+    });
+    const band = concernBand(
+      key,
+      per100,
+      { kind: "resolved", scale: drink ? "drink" : "food", factor: 1 },
+      portionGrams,
+    );
+
+    expect(ids(flags).includes(flagId)).toBe(band === "high");
+  });
+
+  it("exercises both verdicts, so the agreement is not vacuously one-sided", () => {
+    // Without this, a bug that made BOTH layers silent for every case above
+    // would leave every assertion trivially true.
+    const verdicts = CASES.map(({ drink, key, per100, portionGrams }) =>
+      concernBand(
+        key,
+        per100,
+        { kind: "resolved", scale: drink ? "drink" : "food", factor: 1 },
+        portionGrams,
+      ),
+    );
+    expect(verdicts).toContain("high");
+    expect(verdicts.filter((v) => v !== "high").length).toBeGreaterThan(0);
   });
 });

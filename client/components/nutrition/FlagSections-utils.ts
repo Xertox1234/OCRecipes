@@ -25,19 +25,25 @@
  * warning the pre-2c screen displayed is simply gone.
  *
  * GAP 2 — the panel may band the nutrient and still be saying something
- * WEAKER than the badge. The panel is serving-invariant by design and passes
- * no `portionGrams` to `concernBand` (`nutrition-band-source.ts`), so it can
- * never reproduce the FSA per-PORTION override the server applies in
- * `high()`'s second clause (`server/services/universal-flags.ts:55-70`:
- * `servingGrams > 100 && perServing > FSA_PORTION[n]`). That clause fires on
- * real records — `server/routes/nutrition.ts:99-107` populates `perServing`
- * whenever `isServingDataTrusted`, and `server/services/label-override.ts:190-191`
- * sets serving-trusted expressly so the per-portion path runs. Cherry Coke,
- * the flagship Trust-the-Label product, is exactly this shape: 39 g sugar in a
- * 355 mL can bands MEDIUM per-100 (10.99 vs `FSA_DRINK.sugar.high` 11.25) while
- * the server emits "High in sugar". A larger food portion inverts the colour
- * outright — 700 g at 4 g/100 g is a server HIGH against a panel LOW, i.e. a
- * green check dot and a "LOW" pill standing where the red warning was.
+ * WEAKER than the badge. This gap has NARROWED, and the old wording ("the
+ * panel is serving-invariant by design and so can NEVER reproduce the FSA
+ * per-PORTION override") is now false: `nutrition-band-source.ts` passes the
+ * PRODUCT's declared portion to `concernBand`, which is serving-control-
+ * invariant, so on a trusted, scale-resolved record the two layers now run the
+ * same two arms off the same numbers and Cherry Coke dedups instead of
+ * double-reporting.
+ *
+ * What is left is the panel holding a WEAKER portion weight than the server,
+ * which is structural rather than hypothetical: the client runs its own
+ * `validateAndNormalizeNutrition` with its own `MAX_PLAUSIBLE_SERVING_GRAMS`
+ * and derives `isServingDataTrusted` itself (`client/lib/serving-size-utils.ts`),
+ * so it can mark a serving corrected — and withhold the override — where the
+ * server did not. The badge then asserts HIGH against a panel MEDIUM. The
+ * direction is safe (the panel withholds, the badge survives), but only
+ * because of the rule below.
+ *
+ * So the test is still AGREEMENT, not existence, and the `unknown` guard is
+ * still load-bearing for GAP 1. What changed is only how OFTEN the two agree.
  *
  * So the test is AGREEMENT, not existence: a `warn`/`danger` nutrient badge
  * survives unless the panel's own band is `high`. An `info`-severity badge

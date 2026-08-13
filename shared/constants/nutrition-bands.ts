@@ -6,8 +6,9 @@
  * SOURCES — check the numbers against these, not against this file:
  * - Concern bands: UK FSA front-of-pack nutrition labelling guidance (the
  *   red/amber/green criteria). LOW and MEDIUM are per 100 g / 100 ml; the
- *   HIGH band additionally uses a per-portion override for portions over
- *   100 g/ml, which is why FSA_PORTION is red-only.
+ *   HIGH band additionally uses a per-portion override — for portions over
+ *   100 g on the food scale and over 150 ml on the drink scale, which is why
+ *   the two portion tables are red-only.
  * - Benefit bands: EU Regulation 1924/2006, Annex (nutrition claims) —
  *   "source of fibre" / "high fibre", "source of protein" / "high protein".
  *
@@ -41,21 +42,38 @@ export const FSA_DRINK = {
 } as const satisfies Record<string, ConcernBandLimits>;
 
 /**
- * Per portion, FOOD scale only (triggers at portion > 100 g). RED-ONLY by FSA
- * design — there is no published green band for portions. The FSA publishes a
- * per-portion fat threshold (>21 g), but this constant omits the fat key
- * because no total-fat flag is emitted anywhere in the app today — adding it
- * would be dead data. If you need to emit a fat flag, that flag and this key
- * must be added together.
+ * Per-portion RED lines, one table per FSA scale. RED-ONLY by FSA design —
+ * there is no published green band for portions.
  *
- * Note: The FSA also publishes a separate per-portion table for drinks with
- * different thresholds (fat >10.5 g) and a different trigger (portion > 150 ml).
- * That table is not implemented here.
+ * THE TRIGGER LIVES IN THE TABLE, not beside it. Separating them is the defect
+ * this shape exists to prevent: a single `FSA_PORTION` constant whose name did
+ * not say "food" was applied to drinks in two different layers, months apart,
+ * by two authors who each read the silence as "scale-agnostic". Selecting a
+ * table now carries its own trigger, so a caller cannot pick the drink lines
+ * and keep the food trigger.
+ *
+ * `triggerGrams` is millilitres on the drink table. Portion weight is carried
+ * as grams for both scales throughout the codebase (`servingInfo.grams` is 355
+ * for a 355 mL can), so one field name serves both.
+ *
+ * Both tables omit `fat` DELIBERATELY. The FSA does publish per-portion fat
+ * thresholds (>21 g food, >10.5 g drink), but no total-fat flag is emitted
+ * anywhere in the app, so the key would be dead data. If you need to emit a fat
+ * flag, that flag and both keys must be added together.
  */
-export const FSA_PORTION = {
-  sugar: 27,
-  saturatedFat: 6,
-  sodium: 720,
+export const FSA_PORTION_FOOD = {
+  triggerGrams: 100,
+  lines: { sugar: 27, saturatedFat: 6, sodium: 720 },
+} as const;
+
+/**
+ * Per portion, DRINK scale — roughly half the food figures, at a larger
+ * trigger. Sodium is salt (g) x 400 like every other sodium figure here
+ * (0.9 g salt -> 360 mg). See `FSA_PORTION_FOOD` for the shape's rationale.
+ */
+export const FSA_PORTION_DRINK = {
+  triggerGrams: 150,
+  lines: { sugar: 13.5, saturatedFat: 3, sodium: 360 },
 } as const;
 
 /**
