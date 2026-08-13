@@ -3,6 +3,8 @@
 set -uo pipefail
 HOOK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/pr-preflight-guard.sh"
 FAIL=0
+# Pre-initialized so the EXIT trap below is safe under `set -u` before the fixtures exist.
+HELPER_T=""; NOLIB=""
 assert_contains() { case "$3" in *"$2"*) echo "ok: $1";; *) echo "FAIL: $1 — expected '$2' in: $3"; FAIL=1;; esac; }
 assert_empty()    { if [ -z "$3" ]; then echo "ok: $1"; else echo "FAIL: $1 — expected empty, got: $3"; FAIL=1; fi; }
 
@@ -22,7 +24,9 @@ HEAD=$(git rev-parse HEAD 2>/dev/null || echo deadbeef)
 STAMP_FILE="$(mktemp "${TMPDIR:-/tmp}/ocrecipes-preflight-test.XXXXXX")"
 rm -f "$STAMP_FILE"   # start with NO stamp present
 export PREFLIGHT_STAMP_FILE="$STAMP_FILE"
-trap 'rm -f "$STAMP_FILE"' EXIT
+# Covers the two mktemp -d fixtures too: their inline `rm -rf`s only run on the happy path,
+# so an interrupted run (Ctrl-C / SIGTERM — bash runs the EXIT trap for both) leaked them.
+trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}"' EXIT
 
 # 1. Non-create gh commands pass through (no deny).
 OUT=$(run_hook "gh pr view 42")
@@ -165,10 +169,19 @@ assert_contains "missing helper denies (fail-safe)" '"permissionDecision": "deny
 rm -f "$STAMP_FILE"
 rm -rf "$HELPER_T"
 
-# 14. Lib UNSOURCEABLE → still DENY (fail-CLOSED). The sourced-scanner refactor must not
-# reintroduce a fail-OPEN: run a COPY of the hook from a dir with NO lib/ subdir (so
-# cmd-detect.sh can't be sourced) while CWD stays in the real repo (git + stamp helper still
-# resolve). A plain `gh pr create` with no stamp must still deny via the raw-substring fallback.
+# 14. Scanner lib UNSOURCEABLE → still DENY (fail-CLOSED). The sourced-scanner refactor must
+# not reintroduce a fail-OPEN: run a COPY of the hook from a dir with NO lib/ subdir, so
+# cmd-detect.sh cannot be sourced. A plain `gh pr create` with no stamp must still deny via
+# the raw-substring fallback.
+#
+# SCOPE, precisely: $ROOT is ${BASH_SOURCE[0]}-derived (pr-preflight-guard.sh:60), so the
+# copy's root is the mktemp dir's GRANDPARENT — the stamp helper does not resolve there
+# either, and the rm below has already removed the stamp. The DENY is therefore
+# OVER-DETERMINED: it proves "no fail-OPEN when the scanner lib is unsourceable", but it is
+# NOT attributable to the missing lib alone. Test 13 above is the lib-ISOLATING, two-sided
+# one (docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md).
+# The paired `ls -la` assertion below is this test's own control: same fixture, unrelated
+# command, must NOT deny — which is what pins the fallback's SCOPE.
 rm -f "$STAMP_FILE"
 NOLIB=$(mktemp -d)
 cp "$HOOK" "$NOLIB/pr-preflight-guard.sh"
