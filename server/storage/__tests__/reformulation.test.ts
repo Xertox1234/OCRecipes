@@ -260,11 +260,13 @@ describe("reformulation storage", () => {
         myBarcodes[2],
       ]);
 
-      // Offset past our first page: position 2 is our last row. Length is
-      // deliberately NOT asserted — it is 1 when this file runs alone and 2
-      // when a foreign row trails ours.
+      // Offset past our first page: position 2 is our last row. The EXACT
+      // length is foreign-dependent (1 when this file runs alone, 2 when a
+      // foreign row trails ours), but `limit` bounds it unconditionally, so
+      // both sides are still assertable.
       const secondPage = await getReformulationFlags(undefined, 2, 2);
       expect(secondPage.length).toBeGreaterThanOrEqual(1);
+      expect(secondPage.length).toBeLessThanOrEqual(2);
       expect(secondPage[0].barcode).toBe(myBarcodes[2]);
 
       // No id overlaps the offset window. firstPage is entirely ours, so a
@@ -472,8 +474,42 @@ describe("reformulation storage", () => {
       expect(count).toBeGreaterThanOrEqual(myBarcodes.length);
     });
 
-    // The "no status filter" branch is covered transitively by the two
-    // filtered count tests above — it is the same `status ? eq(...) :
-    // undefined` expression with the ternary's other arm taken.
+    it("counts rows when no status filter is given", async () => {
+      // The `undefined` arm is LIVE production code, not a theoretical branch:
+      // GET /api/verification/reformulation-flags omits `status` for the admin
+      // list and its `total` drives the pagination footer. An earlier revision
+      // of this file claimed the arm was "covered transitively" by the two
+      // filtered tests above — it is not, they both pass a status, and the arm
+      // had ZERO call sites in the suite.
+      const flagged = makeBarcode();
+      const resolved = makeBarcode();
+      for (const b of [flagged, resolved]) {
+        await seedBarcodeVerification(b);
+        await flagReformulation(b, 5, makeConsensus(), "verified", 3);
+      }
+      const toResolve = await getReformulationFlag(resolved);
+      await resolveReformulationFlag(toResolve!.id);
+
+      // One owned row per status, proven barcode-scoped as above.
+      expect(await getReformulationFlag(flagged)).not.toBeNull();
+      expect(await getReformulationFlag(resolved)).toBeNull();
+
+      const count = await getReformulationFlagCount();
+      expect(count).toBeGreaterThanOrEqual(2);
+    });
+
+    // Residual — tracked in
+    // todos/P3-2026-08-13-reformulation-flag-count-status-filter-unasserted.md
+    //
+    // None of the three bounds above can catch a dropped or inverted status
+    // filter: that needs an UPPER bound on an unscoped count, and no upper
+    // bound exists while another worker may commit a row at any moment. The
+    // unfiltered test does discriminate when this file runs ALONE (an else-arm
+    // narrowed to `flagged` would miss the owned resolved row and the count
+    // would be 1), but that is a property of isolation, not a guarantee — the
+    // full suite supplies foreign `flagged` rows that satisfy the bound
+    // regardless. Do not "fix" this by pointing at the sibling
+    // getReformulationFlags tests: that function declares its own `conditions`
+    // local, so exercising it says nothing about this one.
   });
 });
