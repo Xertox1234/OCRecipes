@@ -51,12 +51,11 @@
  * Both directions are safe (the panel withholds, the badge survives) only
  * because of the rule below.
  *
- * So the test is still AGREEMENT, not existence, and the `unknown` guard is
- * still load-bearing for GAP 1. What changed is only how OFTEN the two agree.
- *
  * So the test is AGREEMENT, not existence: a `warn`/`danger` nutrient badge
  * survives unless the panel's own band is `high`. An `info`-severity badge
- * makes no severity claim of its own, so any resolved band supersedes it.
+ * makes no severity claim of its own, so any resolved band supersedes it. The
+ * `unknown` guard stays load-bearing for GAP 1. What the portion-override
+ * change altered is only how OFTEN the two layers agree, not the rule.
  *
  * This cannot over-keep: there is no badge to keep unless the server emitted
  * one, and the common case (per-100 over the line → server HIGH → panel HIGH)

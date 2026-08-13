@@ -54,6 +54,29 @@ const PORTION_TABLES: Record<
 > = { food: FSA_PORTION_FOOD, drink: FSA_PORTION_DRINK };
 
 /**
+ * Grams of a nutrient in the whole portion, derived from its per-100 value.
+ *
+ * ROUNDED, and the rounding is load-bearing rather than cosmetic. On the
+ * saved-item shape the caller's `factor` is `100/Q` and `portionGrams` is that
+ * same `Q`, so this is a multiply-then-divide round trip that should return
+ * the original number — and at floating point it sometimes does not. 6.0 g of
+ * saturated fat in a 500 g portion comes back as 6.000000000000001, one ULP
+ * above the 6 g line the raw value sits exactly ON, which flips the band to
+ * "high". It is input-specific (500 g reproduces, 240 g does not), so it
+ * cannot be reasoned away as "never hits a real value": 6 g saturated fat,
+ * 27 g sugar and 720 mg sodium are all ordinary round label figures.
+ *
+ * Six decimal places is far below any real precision here — label values carry
+ * at most one decimal and every FSA line at most two — so this only discards
+ * float noise. Without it this function disagrees with `high()` in
+ * `server/services/universal-flags.ts`, which compares the un-round-tripped
+ * per-serving value directly and so says "medium" on the same input.
+ */
+function portionValueOf(per100: number, portionGrams: number): number {
+  return Math.round(((per100 * portionGrams) / 100) * 1e6) / 1e6;
+}
+
+/**
  * Classify a concern nutrient into a traffic-light band (high/medium/low).
  *
  * `portionGrams` is the weight of the WHOLE portion. It deliberately does not
@@ -61,7 +84,10 @@ const PORTION_TABLES: Record<
  * derived from per-100, which both caller shapes reduce to, so both work —
  *
  *   - per-portion values with `factor = 100/portionGrams` (the saved-item
- *     path): the derivation round-trips back to `perServingValue`;
+ *     path): the derivation round-trips back to `perServingValue` — to six
+ *     decimal places, not exactly. See `portionValueOf`: the raw round trip
+ *     lands one ULP high on some inputs and would band a value sitting ON a
+ *     line as though it were above it;
  *   - already-per-100 values with `factor = 1` (the scan path): it scales up
  *     to what the portion actually holds.
  *
@@ -103,7 +129,7 @@ export function concernBand(
     portionLine !== undefined &&
     portionGrams != null &&
     portionGrams > portion.triggerGrams &&
-    (per100 * portionGrams) / 100 > portionLine
+    portionValueOf(per100, portionGrams) > portionLine
   ) {
     return "high";
   }

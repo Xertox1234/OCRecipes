@@ -110,6 +110,65 @@ describe("selectBandSource — serving invariance (the defect this module exists
     expect(sugar?.displayValue).toBe(78);
   });
 
+  it("saved-item path APPLIES the override when a real portion crosses it", () => {
+    // The positive case for the saved-item branch, which nothing else covers:
+    // every other saved-item test lands under a portion line and so only ever
+    // proves the override does NOT fire. 28 g of sugar in a 700 g serving is
+    // 4 g/100 g — LOW on its own — so the per-100 arm cannot produce this
+    // verdict and only the portion arm can (28 > 27, 700 > 100).
+    const { rows } = buildPanelRows({
+      itemId: 42,
+      validatedData: null,
+      nutrition: {
+        productName: "Big tub",
+        servingSize: "700 g",
+        calories: 500,
+        sugar: 28,
+      },
+      isBeverage: false,
+    });
+    const sugar = rows.find((r) => r.row.key === "sugar");
+    expect(sugar?.band).toEqual({ group: "concern", band: "high" });
+  });
+
+  it("saved-item path stays unbanded on an ESTIMATED serving string", () => {
+    // The module docblock calls this "fragile" and nothing pinned it. A
+    // corrected serving is stored as `~355g (estimated)`; `parseServingBasis`
+    // returns null for it (the `~` defeats its token anchor), so the basis is
+    // unknown and NOTHING bands — which is the only thing stopping the saved
+    // item path from banding off an invented denominator. If a future edit
+    // widens the parser's leading-character tolerance, this goes red.
+    const { rows } = buildPanelRows({
+      itemId: 42,
+      validatedData: null,
+      nutrition: {
+        productName: "Corrected serving",
+        servingSize: "~355g (estimated)",
+        calories: 156,
+        sugar: 39,
+      },
+      isBeverage: true,
+    });
+    const sugar = rows.find((r) => r.row.key === "sugar");
+    expect(sugar?.band).toEqual({ group: "concern", band: "unknown" });
+    // Non-vacuity: the same numbers with a PARSEABLE serving do band, so the
+    // `unknown` above is the parser refusing the string, not an absent value.
+    const parseable = buildPanelRows({
+      itemId: 42,
+      validatedData: null,
+      nutrition: {
+        productName: "Same numbers",
+        servingSize: "355 ml",
+        calories: 156,
+        sugar: 39,
+      },
+      isBeverage: true,
+    });
+    expect(parseable.rows.find((r) => r.row.key === "sugar")?.band).not.toEqual(
+      { group: "concern", band: "unknown" },
+    );
+  });
+
   it("skips the override when the serving was ESTIMATED, mirroring the server", () => {
     // `isServingDataTrusted: false` is how the server decides not to pass
     // `perServing` to `evaluateUniversalFlags` at all. The panel must not

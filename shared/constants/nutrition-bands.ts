@@ -4,11 +4,15 @@
  * how display and emission desync, which this repo has already been bitten by.
  *
  * SOURCES — check the numbers against these, not against this file:
- * - Concern bands: UK FSA front-of-pack nutrition labelling guidance (the
- *   red/amber/green criteria). LOW and MEDIUM are per 100 g / 100 ml; the
- *   HIGH band additionally uses a per-portion override — for portions over
- *   100 g on the food scale and over 150 ml on the drink scale, which is why
- *   the two portion tables are red-only.
+ * - Concern bands: UK FSA / DH "Guide to creating a front of pack (FoP)
+ *   nutrition label for pre-packed products sold through retail outlets"
+ *   (the red/amber/green criteria).
+ *   https://assets.publishing.service.gov.uk/government/uploads/system/uploads/attachment_data/file/566251/FoP_Nutrition_labelling_UK_guidance.pdf
+ *   LOW and MEDIUM are per 100 g / 100 ml; the HIGH band additionally uses a
+ *   per-portion override — for portions over 100 g on the food scale and over
+ *   150 ml on the drink scale ("'per portion' criteria for red ... applied to
+ *   drinks served in portion sizes over 150 ml"), which is why the two portion
+ *   tables are red-only.
  * - Benefit bands: EU Regulation 1924/2006, Annex (nutrition claims) —
  *   "source of fibre" / "high fibre", "source of protein" / "high protein".
  *

@@ -241,11 +241,98 @@ describe("concernBand — per-portion override across both caller shapes", () =>
 
   it("food saved-item shape: saturated fat, either side of the portion line", () => {
     // `factor = 100/Q` with `portionGrams = Q` — the saved-item shape, and the
-    // one the arithmetic change round-trips through. Off-the-line values, not
-    // 6.0 exactly: the new derivation is floating-point.
+    // one the arithmetic change round-trips through.
     const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 240 };
     expect(concernBand("saturatedFat", 6.1, basis, 240)).toBe("high");
     expect(concernBand("saturatedFat", 5.9, basis, 240)).toBe("medium");
+  });
+
+  // An earlier version of the test above avoided exactly-on-the-line values
+  // ("off-the-line values, not 6.0 exactly: the new derivation is floating
+  // point"), which is the wrong instinct: a threshold's boundary is the one
+  // input most worth pinning, and every FSA line here is a round number that
+  // real labels hit (6 g saturated fat, 27 g sugar, 720 mg sodium).
+  //
+  // Pinning it caught a real regression. The round trip `v * (100/Q) * Q/100`
+  // returned 6.000000000000001 for v=6.0 at Q=500 and banded HIGH, where the
+  // pre-change code compared 6.0 > 6 directly and said MEDIUM. It is
+  // input-specific — 500 reproduces, 240 does not — so a spot check at one
+  // portion size would have missed it. `portionValueOf` rounds it away.
+  describe("a value exactly ON the portion line is not above it", () => {
+    const foodAt = (q: number): Basis => ({
+      kind: "resolved",
+      scale: "food",
+      factor: 100 / q,
+    });
+    const drinkAt = (q: number): Basis => ({
+      kind: "resolved",
+      scale: "drink",
+      factor: 100 / q,
+    });
+
+    /**
+     * The claim is "the override did not fire", NOT "the band is medium" —
+     * those come apart at large portions, where the per-100 value drops under
+     * the LOW line and the correct answer is `low` (6 g of saturated fat
+     * spread over 1000 g is 0.6/100 g). An earlier draft of this block
+     * asserted `medium` and failed for exactly that reason.
+     *
+     * So assert the mechanism directly: the band must equal what the SAME call
+     * returns with `portionGrams` omitted, where the override cannot run at
+     * all. The `not.toBe("high")` guards the equality from passing vacuously
+     * if both sides ever became `high`.
+     */
+    const overrideDidNotFire = (
+      nutrient: "sugar" | "saturatedFat" | "sodium",
+      value: number,
+      basis: Basis,
+      q: number,
+    ) => {
+      expect(concernBand(nutrient, value, basis, q)).not.toBe("high");
+      expect(concernBand(nutrient, value, basis, q)).toBe(
+        concernBand(nutrient, value, basis),
+      );
+    };
+
+    it.each([200, 240, 500, 1000])(
+      "saturated fat at exactly 6 g in a %d g portion does not promote",
+      (q) => overrideDidNotFire("saturatedFat", 6, foodAt(q), q),
+    );
+
+    it.each([200, 240, 500, 1000])(
+      "sugar at exactly 27 g in a %d g portion does not promote",
+      (q) => overrideDidNotFire("sugar", 27, foodAt(q), q),
+    );
+
+    it.each([200, 240, 500, 1000])(
+      "sodium at exactly 720 mg in a %d g portion does not promote",
+      (q) => overrideDidNotFire("sodium", 720, foodAt(q), q),
+    );
+
+    it.each([200, 330, 500, 1000])(
+      "drink sugar at exactly 13.5 g in a %d ml portion does not promote",
+      (q) => overrideDidNotFire("sugar", 13.5, drinkAt(q), q),
+    );
+
+    it("still promotes a hair ABOVE the line, so the rounding did not blunt it", () => {
+      // Non-vacuity for the whole block: if `portionValueOf` rounded coarsely
+      // enough to swallow a real exceedance, every assertion above would pass
+      // for the wrong reason. 6.01 is finer than the label precision the
+      // rounding is scoped to discard.
+      expect(concernBand("saturatedFat", 6.01, foodAt(500), 500)).toBe("high");
+      expect(concernBand("sugar", 27.01, foodAt(500), 500)).toBe("high");
+    });
+
+    it("agrees with the scan-path shape on the same product", () => {
+      // Same portion, values expressed per-100 with factor 1 instead of
+      // per-portion with factor 100/Q. The two shapes must not disagree about
+      // a boundary — that divergence is what `portionValueOf` exists to close.
+      const per100 = 6 / 5; // 6 g across a 500 g portion
+      const scanPath: Basis = { kind: "resolved", scale: "food", factor: 1 };
+      expect(concernBand("saturatedFat", per100, scanPath, 500)).toBe(
+        concernBand("saturatedFat", 6, foodAt(500), 500),
+      );
+    });
   });
 
   it("food saved-item shape: sodium, either side of the portion line", () => {
