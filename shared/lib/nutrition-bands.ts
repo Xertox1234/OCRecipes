@@ -1,7 +1,8 @@
 import {
   FSA_FOOD,
   FSA_DRINK,
-  FSA_PORTION,
+  FSA_PORTION_FOOD,
+  FSA_PORTION_DRINK,
   FIBRE_CLAIM,
   PROTEIN_ENERGY_CLAIM,
 } from "@shared/constants/nutrition-bands";
@@ -31,32 +32,73 @@ export type Basis =
     }
   | { kind: "unknown" };
 
-/** Nutrients with a published per-portion RED override. Total fat has none. */
-const PORTION_LINES: Partial<Record<ConcernNutrient, number>> = {
-  sugar: FSA_PORTION.sugar,
-  saturatedFat: FSA_PORTION.saturatedFat,
-  sodium: FSA_PORTION.sodium,
-};
+/**
+ * The per-portion RED tables, reached by `basis.scale` — the SAME discriminant
+ * that picks the per-100 limits below, so the two selections cannot disagree
+ * about which scale a product is on.
+ *
+ * Typed with a `Partial<Record<ConcernNutrient, number>>` for `lines` so that
+ * indexing with `fat` is a miss (`undefined`) rather than a compile error. Both
+ * tables genuinely omit `fat` — the FSA publishes the figure but no total-fat
+ * flag consumes it. See the tables' own docblock.
+ *
+ * Note the cost of that `Partial`: adding `fat` to either table's `lines`
+ * would activate a fat portion override HERE with no other edit and no
+ * compile error. The predecessor's hand-written three-key projection made
+ * that a compile step. The guard is now a test — "keeps both portion tables
+ * red-only and fat-free" in the constants suite — not the type system.
+ */
+const PORTION_TABLES: Record<
+  "food" | "drink",
+  { triggerGrams: number; lines: Partial<Record<ConcernNutrient, number>> }
+> = { food: FSA_PORTION_FOOD, drink: FSA_PORTION_DRINK };
+
+/**
+ * Grams of a nutrient in the whole portion, derived from its per-100 value.
+ *
+ * ROUNDED, and the rounding is load-bearing rather than cosmetic. On the
+ * saved-item shape the caller's `factor` is `100/Q` and `portionGrams` is that
+ * same `Q`, so this is a multiply-then-divide round trip that should return
+ * the original number — and at floating point it sometimes does not. 6.0 g of
+ * saturated fat in a 500 g portion comes back as 6.000000000000001, one ULP
+ * above the 6 g line the raw value sits exactly ON, which flips the band to
+ * "high". It is input-specific (500 g reproduces, 240 g does not), so it
+ * cannot be reasoned away as "never hits a real value": 6 g saturated fat,
+ * 27 g sugar and 720 mg sodium are all ordinary round label figures.
+ *
+ * Six decimal places is far below any real precision here — label values carry
+ * at most one decimal and every FSA line at most two — so this only discards
+ * float noise. Without it this function disagrees with `high()` in
+ * `server/services/universal-flags.ts`, which compares the un-round-tripped
+ * per-serving value directly and so says "medium" on the same input.
+ */
+function portionValueOf(per100: number, portionGrams: number): number {
+  return Math.round(((per100 * portionGrams) / 100) * 1e6) / 1e6;
+}
 
 /**
  * Classify a concern nutrient into a traffic-light band (high/medium/low).
  *
- * Precondition: When `portionGrams` is supplied, it must be the weight of the
- * same portion that `perServingValue` describes. When `basis.factor` is 1
- * (values already per-100), `portionGrams` should not be supplied.
+ * `portionGrams` is the weight of the WHOLE portion. It deliberately does not
+ * have to be on the same scale as `perServingValue`: the portion value is
+ * derived from per-100, which both caller shapes reduce to, so both work —
  *
- * If a future caller violates that precondition anyway (factor 1 WITH a
- * portionGrams override), the override compares a per-100 value against a
- * portion line — harmless today because every FSA_PORTION line sits above
- * its FSA_FOOD high line (27 > 22.5 sugar, 6 > 5 saturatedFat, 720 > 600
- * sodium), so anything exceeding the portion line had already banded
- * "high" on the ordinary per-100 comparison below. That headroom holds
- * under the FSA drink portion table a follow-up todo will add too
- * (13.5 > 11.25, 3 > 2.5, 360 > 300). Nothing pins this — it is recorded
- * here so a future reader does not have to re-derive it.
+ *   - per-portion values with `factor = 100/portionGrams` (the saved-item
+ *     path): the derivation round-trips back to `perServingValue` — to six
+ *     decimal places, not exactly. See `portionValueOf`: the raw round trip
+ *     lands one ULP high on some inputs and would band a value sitting ON a
+ *     line as though it were above it;
+ *   - already-per-100 values with `factor = 1` (the scan path): it scales up
+ *     to what the portion actually holds.
  *
- * The per-portion override can only promote to high, only for portions over
- * 100 g/ml, and only on the food scale (FSA_PORTION applies to food only).
+ * An earlier version compared `perServingValue` to the portion line directly
+ * and so silently mis-judged the second shape — it read a per-100 number as
+ * though it were a whole portion, which under-warns by the portion's own size
+ * (11 g/100 ml of sugar in a 355 ml can reads as 11 g, not 39 g). Do not
+ * reintroduce that; there is no precondition left for a caller to violate.
+ *
+ * The override can only ever promote TO high — it never demotes — and only for
+ * portions over the scale's own trigger (100 g food, 150 ml drink).
  */
 export function concernBand(
   nutrient: ConcernNutrient,
@@ -72,17 +114,22 @@ export function concernBand(
   const limits = (basis.scale === "drink" ? FSA_DRINK : FSA_FOOD)[nutrient];
   const per100 = perServingValue * basis.factor;
 
-  // The per-portion override can only ever promote TO high, and only for
-  // portions over 100 g/ml. Skipping it when the weight is unknown fails
-  // toward under-warning, which is the established direction for nutrient
-  // flags (allergen flags fail the other way).
-  const portionLine = PORTION_LINES[nutrient];
+  // The per-portion override can only ever promote TO high. Skipping it when
+  // the weight is unknown fails toward under-warning, which is the established
+  // direction for nutrient flags (allergen flags fail the other way).
+  //
+  // Both the table AND its trigger come off `basis.scale`, so a drink is never
+  // judged against the food figures — the defect this pairing exists to
+  // prevent. The portion value is derived from per-100 rather than read off
+  // `perServingValue`; see the docblock for why that is what makes the
+  // already-per-100 caller correct.
+  const portion = PORTION_TABLES[basis.scale];
+  const portionLine = portion.lines[nutrient];
   if (
-    basis.scale === "food" &&
     portionLine !== undefined &&
     portionGrams != null &&
-    portionGrams > 100 &&
-    perServingValue > portionLine
+    portionGrams > portion.triggerGrams &&
+    portionValueOf(per100, portionGrams) > portionLine
   ) {
     return "high";
   }

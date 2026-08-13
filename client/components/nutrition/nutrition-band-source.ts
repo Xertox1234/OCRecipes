@@ -33,14 +33,46 @@
  * property of this branch, asserted by tests here, rather than an accident of
  * which components happen to render.
  *
- * ── WHAT THIS COSTS ───────────────────────────────────────────────────────
- * A serving-invariant band cannot apply the FSA per-portion HIGH override:
- * that needs the actual portion weight, which by definition moves with the
- * user's serving choice. So no `portionGrams` is passed to `concernBand`.
- * Skipping it can only fail toward under-warning, which is the established
- * direction. The server still applies the override when emitting `nutrient:*`
- * flags, but slice 2c stops rendering those, so the two never disagree on
- * screen.
+ * ── THE PER-PORTION OVERRIDE, AND WHAT IT DOES NOT COST ───────────────────
+ * An earlier version of this module passed no `portionGrams` to `concernBand`,
+ * on the reasoning that the FSA per-portion HIGH override needs a portion
+ * weight and a portion weight moves with the user's serving choice. The first
+ * half is true; the second is not, for the weight this module uses. The
+ * PRODUCT's declared portion — `validatedData.servingInfo.grams` on the scan
+ * path, the stored serving string on the saved-item path — sits in exactly the
+ * same serving-control-invariant place the values and the scale already come
+ * from.
+ *
+ * That invariance was re-checked against the hook rather than inherited from
+ * this docblock's earlier wording, because it is now load-bearing for a band
+ * VALUE and not just for the values and the scale: in `useNutritionLookup.ts`,
+ * `validatedData` is `useState` written only by the lookup paths, and no
+ * serving-control handler touches it. The nearby memo that DOES depend on
+ * `servingSizeGrams` and looks like a `servingInfo` is `servingOptions`; it
+ * builds its own local object for `getServingSizeOptions` and never feeds
+ * `validatedData`. Do not wire `portionGrams` to that one.
+ *
+ * So the override is applied, and the guarantee is stated precisely below
+ * rather than as a blanket "nothing about banding moves with the serving" —
+ * because that blanket claim is not true of this function any more (see
+ * `buildPanelRows`' docblock on `hasValue`).
+ *
+ *   - The override's VALUE is serving-invariant. No serving choice can move a
+ *     nutrient from MEDIUM to HIGH.
+ *   - The override's PRESENCE is not, and cannot be: it rides `hasValue`,
+ *     which tracks displayability, which the serving controls do rewrite.
+ *     Don't band what the screen cannot show.
+ *
+ * TRUST DIFFERS BY PATH, deliberately. The scan path gates the override on
+ * `isServingDataTrusted`, mirroring the server (`server/routes/nutrition.ts`
+ * passes `perServing` only when trusted), so an ESTIMATED serving feeds the
+ * override on neither side. The saved-item path has no such flag and accepts
+ * the stored serving as declared — safe for a structural reason worth knowing
+ * because it is fragile: a corrected serving is stored as `~355g (estimated)`,
+ * which `parseServingBasis` cannot parse (the `~` defeats its token anchor, and
+ * `(estimated)` holds no digits), so the basis is already `unknown` and the row
+ * is unbanded entirely. Stripping that cosmetic `~` would silently start
+ * banding estimated servings off an invented denominator.
  */
 import {
   resolveBasis,
@@ -49,6 +81,7 @@ import {
   type Basis,
   type NutrientBands,
 } from "@shared/lib/nutrition-bands";
+import { parseServingBasis } from "@shared/lib/label-serving";
 import type { NutritionData } from "@/hooks/useNutritionLookup";
 import type {
   ValidatedNutrition,
@@ -72,6 +105,12 @@ export interface BandSource {
   /** Values on ONE consistent, un-scaled basis. Empty when unresolvable. */
   values: NutritionPer100g;
   basis: Basis;
+  /**
+   * The PRODUCT's declared portion weight, for the FSA per-portion override.
+   * Never the user's serving choice. `null` whenever the override must not
+   * run — no serving data, an estimated one, or an unparseable string.
+   */
+  portionGrams: number | null;
 }
 
 export function selectBandSource(input: BandSourceInput): BandSource {
@@ -82,7 +121,9 @@ export function selectBandSource(input: BandSourceInput): BandSource {
     // `resolveBasis` must also come from `validatedData`, not from
     // `nutrition.servingSize` — `servingInfo.displayLabel` is the product's
     // original serving text and is never touched by the serving controls.
-    if (!input.validatedData) return { values: {}, basis: { kind: "unknown" } };
+    if (!input.validatedData) {
+      return { values: {}, basis: { kind: "unknown" }, portionGrams: null };
+    }
     return {
       values: input.validatedData.per100g,
       basis: resolveBasis({
@@ -90,6 +131,12 @@ export function selectBandSource(input: BandSourceInput): BandSource {
         servingSize: input.validatedData.servingInfo.displayLabel,
         isBeverage: input.isBeverage,
       }),
+      // Gated on trust to mirror the server, which passes `perServing` to
+      // `evaluateUniversalFlags` only when `isServingDataTrusted`. An
+      // estimated portion must escalate a band on neither side.
+      portionGrams: input.validatedData.isServingDataTrusted
+        ? input.validatedData.servingInfo.grams
+        : null,
     };
   }
 
@@ -97,7 +144,9 @@ export function selectBandSource(input: BandSourceInput): BandSource {
   // its `servingSize` field — is the un-scaled per-serving source, and
   // resolveBasis back-calculates from the stored serving string — never from
   // a `|| 100` default.
-  if (!input.nutrition) return { values: {}, basis: { kind: "unknown" } };
+  if (!input.nutrition) {
+    return { values: {}, basis: { kind: "unknown" }, portionGrams: null };
+  }
   return {
     values: input.nutrition,
     basis: resolveBasis({
@@ -105,6 +154,12 @@ export function selectBandSource(input: BandSourceInput): BandSource {
       servingSize: input.nutrition.servingSize,
       isBeverage: input.isBeverage,
     }),
+    // The SAME string `resolveBasis` derives `factor` from, through the same
+    // parser — so the portion weight and the per-100 denominator can never
+    // describe different portions. No trust flag exists on this path; see the
+    // module docblock for why the stored serving is safe to take as declared.
+    portionGrams:
+      parseServingBasis(input.nutrition.servingSize)?.quantity ?? null,
   };
 }
 
@@ -161,8 +216,10 @@ export interface PanelData {
  * `hasValue` is therefore gated on BOTH sources. State the guarantee precisely,
  * because it is narrower than "nothing about banding moves with the serving":
  *
- *   - A band's VALUE stays serving-invariant. `concernBand`/`benefitBand` still
- *     receive the un-scaled per-100 number and still no `portionGrams`, so no
+ *   - A band's VALUE stays serving-invariant. `concernBand`/`benefitBand`
+ *     receive the un-scaled per-100 number, and the `portionGrams` that feeds
+ *     the per-portion override is the PRODUCT's declared portion (from
+ *     `validatedData`/the stored serving string), not the user's chip — so no
  *     serving choice can move a nutrient from MEDIUM to HIGH.
  *   - A band's PRESENCE now tracks DISPLAYABILITY, and displayability is a
  *     property of `nutrition`, which the serving controls do rewrite. On the
@@ -203,8 +260,11 @@ export function buildPanelRows(input: BandSourceInput): PanelData {
         row.key,
         hasValue ? sourceValue : undefined,
         source.basis,
-        // No portionGrams — see the module docblock. A portion-aware band
-        // would move with the user's serving choice.
+        // The PRODUCT's portion, not the user's serving choice — see the
+        // module docblock. `concernBand` derives the portion value from
+        // per-100, so passing an already-per-100 `sourceValue` alongside it is
+        // correct rather than a precondition violation.
+        source.portionGrams,
       );
       bands.concerns[row.key] = { band, hasValue };
       rows.push({

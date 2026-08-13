@@ -2,7 +2,8 @@ import type { NutrientKind, ScanFlag } from "@shared/types/scan-flags";
 import {
   FSA_FOOD,
   FSA_DRINK,
-  FSA_PORTION,
+  FSA_PORTION_FOOD,
+  FSA_PORTION_DRINK,
   isBeverageCategory,
 } from "@shared/constants/nutrition-bands";
 import {
@@ -83,11 +84,12 @@ function high(
   servingGrams: number | undefined,
   per100Line: number,
   portionLine: number,
+  portionTriggerGrams: number,
 ): boolean {
   if (per100g !== undefined && per100g > per100Line) return true;
   if (
     perServing !== undefined &&
-    (servingGrams ?? 0) > 100 &&
+    (servingGrams ?? 0) > portionTriggerGrams &&
     perServing > portionLine
   )
     return true;
@@ -97,20 +99,38 @@ function high(
 export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
   const flags: ScanFlag[] = [];
   const drink = isBeverageCategory(input.categoriesTags);
+  // Both FSA tables are selected off the SAME boolean, side by side on
+  // purpose: the per-portion figures are food-vs-drink exactly as the per-100
+  // ones are (roughly 2x apart), and picking one scale for the first line and
+  // the other for the second is the defect this pairing exists to make
+  // visually impossible. Each portion table carries its own trigger (>100 g
+  // food, >150 ml drink), so that cannot desync either.
   const per100 = drink ? FSA_DRINK : FSA_FOOD;
+  const portion = drink ? FSA_PORTION_DRINK : FSA_PORTION_FOOD;
   const s = input.per100g;
   const sv = input.perServing;
 
+  // Takes the two per-nutrient LINES; the portion trigger is read from
+  // `portion` in closure, so it cannot be transposed with them at a call site.
   const nutrientFlag = (
     nk: keyof typeof NUTRIENT_META,
     line: number,
-    portion: number,
+    portionLine: number,
   ) => {
     // Values read THROUGH the shared map, not passed in by the call site —
     // that is what keeps `NUTRIENT_FLAG_SOURCE_FIELD` honest for the route
     // that consumes it (see its docblock).
     const f = NUTRIENT_FLAG_SOURCE_FIELD[nk];
-    if (high(s[f], sv?.[f], input.servingGrams, line, portion)) {
+    if (
+      high(
+        s[f],
+        sv?.[f],
+        input.servingGrams,
+        line,
+        portionLine,
+        portion.triggerGrams,
+      )
+    ) {
       flags.push({
         id: `nutrient:${nk}`,
         kind: "nutrient",
@@ -123,13 +143,13 @@ export function evaluateUniversalFlags(input: UniversalFlagInput): ScanFlag[] {
     }
   };
 
-  nutrientFlag("sugar", per100.sugar.high, FSA_PORTION.sugar);
+  nutrientFlag("sugar", per100.sugar.high, portion.lines.sugar);
   nutrientFlag(
     "saturated_fat",
     per100.saturatedFat.high,
-    FSA_PORTION.saturatedFat,
+    portion.lines.saturatedFat,
   );
-  nutrientFlag("sodium", per100.sodium.high, FSA_PORTION.sodium);
+  nutrientFlag("sodium", per100.sodium.high, portion.lines.sodium);
 
   if (input.novaGroup === 4) {
     flags.push({

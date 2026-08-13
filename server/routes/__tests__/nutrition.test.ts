@@ -1123,7 +1123,13 @@ describe("Nutrition Routes", () => {
       const labelFlagIds = res.body.conflict.label.flags.map(
         (f: { id: string }) => f.id,
       );
-      expect(labelFlagIds).toContain("nutrient:sugar"); // High in Sugar now fires
+      // High in Sugar fires on the per-PORTION arm, not per-100: 39 g in
+      // 355 mL is 10.99 g/100 mL, under the 11.25 drink line. It clears the
+      // drink portion line instead (39 > 13.5, at a 355 mL portion over the
+      // 150 ml trigger). Before the FSA drink portion table this assertion
+      // also passed, via 39 > 27 — the FOOD line applied to a drink. Same
+      // verdict, different arithmetic; do not re-derive it from 27.
+      expect(labelFlagIds).toContain("nutrient:sugar");
       expect(labelFlagIds).toContain("processing:ultra"); // NOVA-4 retained from DB
       // Category-derived (en:colas, from the DB's categoriesTags, retained
       // on the label result) — fires even though the label never read a

@@ -1,9 +1,9 @@
 ---
 title: "FSA per-portion thresholds are the FOOD table but are applied to drinks (two sites, ~2x under-warning)"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-31
-updated: 2026-07-31
+updated: 2026-08-12
 assignee:
 labels: [deferred, api, nutrition]
 github_issue:
@@ -87,22 +87,22 @@ Renaming it as part of this work is likely the highest-leverage part of the fix.
 
 ## Acceptance Criteria
 
-- [ ] Characterisation tests for the **current** emission behaviour are written and committed
+- [x] Characterisation tests for the **current** emission behaviour are written and committed
       **before** any threshold change, so a behaviour change fails loudly (same discipline as
       PR #747's `2bb8fa60`)
-- [ ] A drink per-portion table exists with the four verified values above, sourced from the
+- [x] A drink per-portion table exists with the four verified values above, sourced from the
       same shared constants module as `FSA_FOOD`/`FSA_DRINK` — no second copy
-- [ ] `FSA_PORTION` is renamed to make its scale explicit (e.g. `FSA_PORTION_FOOD`), and the
+- [x] `FSA_PORTION` is renamed to make its scale explicit (e.g. `FSA_PORTION_FOOD`), and the
       guard test in `server/services/__tests__/no-server-fsa-constants.test.ts` still passes
-- [ ] `universal-flags.ts` selects the portion table on the same `drink` boolean it already
+- [x] `universal-flags.ts` selects the portion table on the same `drink` boolean it already
       computes for the per-100 table
-- [ ] The portion trigger is >100 g for food and >150 ml for drinks, not >100 uniformly
-- [ ] `concernBand`'s per-portion override applies the drink table when `basis.scale === "drink"`
+- [x] The portion trigger is >100 g for food and >150 ml for drinks, not >100 uniformly
+- [x] `concernBand`'s per-portion override applies the drink table when `basis.scale === "drink"`
       instead of skipping the override entirely
-- [ ] Server and client agree: a test pins that the same product yields the same band from
+- [x] Server and client agree: a test pins that the same product yields the same band from
       `evaluateUniversalFlags` and from `concernBand`
-- [ ] The 500 ml / 20 g sugar case from D1 above emits a red where it previously emitted nothing
-- [ ] No nutrient gains or loses a flag except via the intended threshold correction, and the
+- [x] The 500 ml / 20 g sugar case from D1 above emits a red where it previously emitted nothing
+- [x] No nutrient gains or loses a flag except via the intended threshold correction, and the
       characterisation tests document exactly which emissions changed
 
 ## Implementation Notes
@@ -156,3 +156,46 @@ Renaming it as part of this work is likely the highest-leverage part of the fix.
   portion-override test used a food basis — the two axes were never crossed.
 - FSA table independently verified against the published guidance rather than taken from an
   agent's report.
+
+### 2026-08-12 — RESOLVED
+
+Two commits on `fix/fsa-drink-portion-thresholds`:
+
+1. Characterisation of the drink x per-portion cross, green against unmodified
+   source (AC 1). Also pinned the food arm on the saved-item shape, because
+   commit 2 rewrites that arithmetic.
+2. `FSA_PORTION` -> `FSA_PORTION_FOOD` + `FSA_PORTION_DRINK`, each carrying its
+   own `triggerGrams`. The trigger lives IN the table: separating the lines
+   from their trigger is what let D1 and D2 exist independently.
+
+**Emissions moved in exactly three places**, which is what the two-commit split
+exists to evidence: gained a flag (500 ml / 20 g drink — the reported defect),
+lost one (120 ml drink over the food line), unchanged (140 ml drink, held
+silent by the new trigger). The food arm did not move.
+
+The removal deserves its own note: a 120-150 ml drink over the FOOD portion
+line no longer escalates, which is correct per the >150 ml FSA trigger. It is
+unreachable through either production path — both build `perServing` via
+`scaleNutrients(per100g, ...)`, and for a self-consistent drink at <=150 ml
+anything over 27 g of sugar already clears the per-100 line of 11.25.
+
+**SCOPE WIDENED, with the user's explicit approval mid-planning.** The Scope
+Contract above lists four files. A fifth, `client/components/nutrition/
+nutrition-band-source.ts`, now passes `portionGrams` to `concernBand` — without
+it, fixing D3 would have been correct but user-invisible, since no production
+caller passed a portion weight. That required a further change the ACs did not
+anticipate: `concernBand` now DERIVES the portion value from per-100 instead of
+reading `perServingValue` directly, because the scan path's values are already
+per-100 and the old comparison silently mis-read them. This also deletes the
+"factor 1 + portionGrams compares the wrong scale" trap the function documented
+against itself. `FlagSections-utils.ts` took comment-only edits (its GAP 2
+narrowed).
+
+Known residual, documented in the agreement test rather than fixed: production
+rounds `perServing` to one decimal (`scaleNutrients`), so within 0.05 of a
+portion line the server can go silent while the client bands high. One-
+directional and panel-stronger, so it cannot lose a warning.
+
+Not done, deliberately: total fat stays out of both tables (no consumer), and
+the panel's own `hasValue` gate still means the override's PRESENCE tracks
+displayability even though its VALUE is serving-invariant.

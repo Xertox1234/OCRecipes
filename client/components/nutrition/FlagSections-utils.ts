@@ -25,23 +25,37 @@
  * warning the pre-2c screen displayed is simply gone.
  *
  * GAP 2 — the panel may band the nutrient and still be saying something
- * WEAKER than the badge. The panel is serving-invariant by design and passes
- * no `portionGrams` to `concernBand` (`nutrition-band-source.ts`), so it can
- * never reproduce the FSA per-PORTION override the server applies in
- * `high()`'s second clause (`server/services/universal-flags.ts:55-70`:
- * `servingGrams > 100 && perServing > FSA_PORTION[n]`). That clause fires on
- * real records — `server/routes/nutrition.ts:99-107` populates `perServing`
- * whenever `isServingDataTrusted`, and `server/services/label-override.ts:190-191`
- * sets serving-trusted expressly so the per-portion path runs. Cherry Coke,
- * the flagship Trust-the-Label product, is exactly this shape: 39 g sugar in a
- * 355 mL can bands MEDIUM per-100 (10.99 vs `FSA_DRINK.sugar.high` 11.25) while
- * the server emits "High in sugar". A larger food portion inverts the colour
- * outright — 700 g at 4 g/100 g is a server HIGH against a panel LOW, i.e. a
- * green check dot and a "LOW" pill standing where the red warning was.
+ * WEAKER than the badge. This gap has NARROWED, and the old wording ("the
+ * panel is serving-invariant by design and so can NEVER reproduce the FSA
+ * per-PORTION override") is now false: `nutrition-band-source.ts` passes the
+ * PRODUCT's declared portion to `concernBand`, which is serving-control-
+ * invariant, so on a trusted, scale-resolved record the two layers now run the
+ * same two arms off the same numbers and Cherry Coke dedups instead of
+ * double-reporting.
+ *
+ * What is left is the panel holding a weaker portion weight than the server.
+ * Two mechanisms, at different confidence — do not upgrade the first to the
+ * second when quoting this:
+ *
+ *   - VERIFIED: the panel withholds the override whenever it has no trusted
+ *     portion weight (unresolved basis, an estimated serving, a saved item
+ *     whose serving string does not parse) while the server still emits from
+ *     its per-100 arm. The badge then asserts HIGH against a panel MEDIUM or
+ *     `unknown`.
+ *   - NOT verified, only possible: the client derives `isServingDataTrusted`
+ *     from its own plausibility pass (`client/lib/serving-size-utils.ts`)
+ *     rather than reading the server's. The two use the same limits today, so
+ *     no divergent input has been demonstrated — but they are computed twice
+ *     and nothing holds them equal.
+ *
+ * Both directions are safe (the panel withholds, the badge survives) only
+ * because of the rule below.
  *
  * So the test is AGREEMENT, not existence: a `warn`/`danger` nutrient badge
  * survives unless the panel's own band is `high`. An `info`-severity badge
- * makes no severity claim of its own, so any resolved band supersedes it.
+ * makes no severity claim of its own, so any resolved band supersedes it. The
+ * `unknown` guard stays load-bearing for GAP 1. What the portion-override
+ * change altered is only how OFTEN the two layers agree, not the rule.
  *
  * This cannot over-keep: there is no badge to keep unless the server emitted
  * one, and the common case (per-100 over the line → server HIGH → panel HIGH)

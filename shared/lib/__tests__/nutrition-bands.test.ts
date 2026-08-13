@@ -112,7 +112,7 @@ describe("concernBand — per-portion HIGH override", () => {
   it("promotes to HIGH when a >100g portion exceeds the portion line", () => {
     const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 240 };
     // 6.1g satfat in 240g = 2.54/100g -> MEDIUM by per-100, but the portion
-    // itself exceeds FSA_PORTION.saturatedFat (6).
+    // itself exceeds FSA_PORTION_FOOD.lines.saturatedFat (6).
     expect(concernBand("saturatedFat", 6.1, basis, 240)).toBe("high");
   });
 
@@ -123,14 +123,25 @@ describe("concernBand — per-portion HIGH override", () => {
     expect(concernBand("saturatedFat", 6.1, basis, 100)).toBe("medium");
   });
 
-  // NOT TESTED, deliberately: a portion at or under 100g that exceeds the
-  // portion line but not the per-100 line. That state is unreachable. Every
-  // portion line sits ABOVE its per-100 counterpart (satfat 6 vs 5, sodium
-  // 720 vs 600, sugar 27 vs 22.5), and for a portion <= 100g the per-100
-  // value is >= the raw value — so exceeding the portion line already
-  // implies exceeding the per-100 line. Do not write a test asserting a
-  // distinction the thresholds make impossible; it would pass for the
-  // wrong reason.
+  // FOOD ONLY, and no longer a general claim — read this before reusing the
+  // argument on the drink scale, where it is false.
+  //
+  // Not tested for food, deliberately: a portion at or under 100 g that
+  // exceeds the portion line but not the per-100 line is unreachable. Every
+  // food portion line sits ABOVE its per-100 counterpart (satfat 6 vs 5,
+  // sodium 720 vs 600, sugar 27 vs 22.5), and at a portion <= 100 g the
+  // per-100 value is >= the portion value — so clearing the portion line
+  // already implies clearing the per-100 line. A test there would pass for
+  // the wrong reason.
+  //
+  // That second step is what breaks on the drink scale. The step holds only
+  // because the food TRIGGER (100 g) equals the per-100 basis; the drink
+  // trigger is 150 ml, so a 150 ml portion has a per-100 value of two thirds
+  // the portion value, and 14 g of sugar is 9.33 g/100 ml — over the 13.5
+  // portion line, under the 11.25 per-100 line. That state IS reachable, and
+  // the trigger is the only thing suppressing it, so it is pinned by name
+  // ("does NOT promote a drink portion at or under the 150 ml trigger")
+  // rather than argued away here.
 
   it("never applies a portion override to total fat", () => {
     // FSA publishes no per-portion figure for total fat; inventing one would
@@ -145,33 +156,195 @@ describe("concernBand — per-portion HIGH override", () => {
     expect(concernBand("saturatedFat", 6.1, basis, null)).toBe("medium");
   });
 
-  it("gating the override to food: Cherry Coke on drink scale with portion weight", () => {
-    // 39g in 355ml = 11.0g/100ml, comfortably medium on the drink scale.
-    // If the override leaked onto drinks, this would falsely promote to high
-    // (39 > 27, the food sugar line). With the scale gate, it stays medium.
+  it("Cherry Coke: promotes on the DRINK portion line, at the drink trigger", () => {
+    // 39 g in 355 ml is 11.0 g/100 ml — under the 11.25 per-100 drink line, so
+    // the per-100 arm says medium and only the portion arm can decide this.
+    // 39 > 13.5 at a 355 ml portion (> the 150 ml trigger) makes it RED.
+    //
+    // This product is the reason to read the arithmetic and not just the
+    // verdict. Before the drink table existed the code ALSO said high here,
+    // via 39 > 27 — the food line applied to a drink. Right answer, wrong
+    // reason. The assertion below is the same word for a different sum.
     const drinkBasis: Basis = {
       kind: "resolved",
       scale: "drink",
       factor: 100 / 355,
     };
-    expect(concernBand("sugar", 39, drinkBasis, 355)).toBe("medium");
+    expect(concernBand("sugar", 39, drinkBasis, 355)).toBe("high");
   });
 
-  it("gating the override to food: invented-red case (5.6g/100ml drink)", () => {
-    // 28g sugar in 500ml drink = 5.6g/100ml, safely medium by drink standards.
-    // Without the scale gate, 28 > 27 (food line) would promote it to high.
+  it("500 ml drink at 28 g sugar promotes — the food line missed it by 1 g", () => {
+    // 28 g in 500 ml is 5.6 g/100 ml, well under the per-100 drink line, so
+    // again only the portion arm decides. Against the drink line it is red
+    // (28 > 13.5, 500 > 150).
+    //
+    // Named the "invented-red case" when the food line was what fired here,
+    // because 28 > 27 was arithmetic about a food. Under the published drink
+    // table the red is not invented, it is required — and a 20 g bottle, which
+    // the food line cleared entirely, is red now too.
     const drinkBasis: Basis = {
       kind: "resolved",
       scale: "drink",
       factor: 100 / 500,
     };
-    expect(concernBand("sugar", 28, drinkBasis, 500)).toBe("medium");
+    expect(concernBand("sugar", 28, drinkBasis, 500)).toBe("high");
+    expect(concernBand("sugar", 20, drinkBasis, 500)).toBe("high");
+  });
+
+  it("does NOT promote a drink portion at or under the 150 ml trigger", () => {
+    // The trigger is the only thing standing between the drink portion line
+    // and a 100-150 ml portion, because the food trigger of 100 would let
+    // this through: 14 > 13.5 already.
+    const drinkBasis: Basis = {
+      kind: "resolved",
+      scale: "drink",
+      factor: 100 / 140,
+    };
+    expect(concernBand("sugar", 14, drinkBasis, 140)).toBe("medium");
+    expect(concernBand("sugar", 14, drinkBasis, 150)).toBe("medium");
   });
 
   it("food-basis override still promotes when all conditions are met", () => {
     // Sanity check: the gate does not disable the override for food.
     const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 240 };
     expect(concernBand("saturatedFat", 6.1, basis, 240)).toBe("high");
+  });
+});
+
+/**
+ * The per-portion override across both caller SHAPES.
+ *
+ * The first case pins the already-per-100 shape (the scan path), which the
+ * override previously mis-read; it landed one commit earlier asserting
+ * "medium" so the inversion is on the record. The rest pin the per-portion
+ * shape (the saved-item path), whose arithmetic that same commit rewrote —
+ * the portion value is now derived from per-100 instead of read straight off
+ * `perServingValue` — and which had to be shown behaviour-preserving rather
+ * than assumed so.
+ */
+describe("concernBand — per-portion override across both caller shapes", () => {
+  it("applies the override to an already-per-100 (factor 1) basis", () => {
+    // The SCAN PATH's shape: `validatedData.per100g` resolves to factor 1, so
+    // `perServingValue` is a per-100 number, NOT a portion. The override
+    // derives the portion value from it (11.0 g/100 ml across 355 ml = 39 g),
+    // which is over the 13.5 drink line at a portion over 150 ml.
+    //
+    // Non-vacuity: this returned "medium" before the derivation landed,
+    // because the raw 11.0 was compared to the portion line as though a
+    // whole can held 11 g of sugar. That is the under-warning this shape
+    // exists to catch, and it is the shape the nutrition panel actually uses.
+    const drink: Basis = { kind: "resolved", scale: "drink", factor: 1 };
+    expect(concernBand("sugar", 11.0, drink, 355)).toBe("high");
+    // Same value, portion under the trigger — the override cannot reach it.
+    expect(concernBand("sugar", 11.0, drink, 150)).toBe("medium");
+  });
+
+  it("food saved-item shape: saturated fat, either side of the portion line", () => {
+    // `factor = 100/Q` with `portionGrams = Q` — the saved-item shape, and the
+    // one the arithmetic change round-trips through.
+    const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 240 };
+    expect(concernBand("saturatedFat", 6.1, basis, 240)).toBe("high");
+    expect(concernBand("saturatedFat", 5.9, basis, 240)).toBe("medium");
+  });
+
+  // An earlier version of the test above avoided exactly-on-the-line values
+  // ("off-the-line values, not 6.0 exactly: the new derivation is floating
+  // point"), which is the wrong instinct: a threshold's boundary is the one
+  // input most worth pinning, and every FSA line here is a round number that
+  // real labels hit (6 g saturated fat, 27 g sugar, 720 mg sodium).
+  //
+  // Pinning it caught a real regression. The round trip `v * (100/Q) * Q/100`
+  // returned 6.000000000000001 for v=6.0 at Q=500 and banded HIGH, where the
+  // pre-change code compared 6.0 > 6 directly and said MEDIUM. It is
+  // input-specific — 500 reproduces, 240 does not — so a spot check at one
+  // portion size would have missed it. `portionValueOf` rounds it away.
+  describe("a value exactly ON the portion line is not above it", () => {
+    const foodAt = (q: number): Basis => ({
+      kind: "resolved",
+      scale: "food",
+      factor: 100 / q,
+    });
+    const drinkAt = (q: number): Basis => ({
+      kind: "resolved",
+      scale: "drink",
+      factor: 100 / q,
+    });
+
+    /**
+     * The claim is "the override did not fire", NOT "the band is medium" —
+     * those come apart at large portions, where the per-100 value drops under
+     * the LOW line and the correct answer is `low` (6 g of saturated fat
+     * spread over 1000 g is 0.6/100 g). An earlier draft of this block
+     * asserted `medium` and failed for exactly that reason.
+     *
+     * So assert the mechanism directly: the band must equal what the SAME call
+     * returns with `portionGrams` omitted, where the override cannot run at
+     * all. The `not.toBe("high")` guards the equality from passing vacuously
+     * if both sides ever became `high`.
+     */
+    const overrideDidNotFire = (
+      nutrient: "sugar" | "saturatedFat" | "sodium",
+      value: number,
+      basis: Basis,
+      q: number,
+    ) => {
+      expect(concernBand(nutrient, value, basis, q)).not.toBe("high");
+      expect(concernBand(nutrient, value, basis, q)).toBe(
+        concernBand(nutrient, value, basis),
+      );
+    };
+
+    it.each([200, 240, 500, 1000])(
+      "saturated fat at exactly 6 g in a %d g portion does not promote",
+      (q) => overrideDidNotFire("saturatedFat", 6, foodAt(q), q),
+    );
+
+    it.each([200, 240, 500, 1000])(
+      "sugar at exactly 27 g in a %d g portion does not promote",
+      (q) => overrideDidNotFire("sugar", 27, foodAt(q), q),
+    );
+
+    it.each([200, 240, 500, 1000])(
+      "sodium at exactly 720 mg in a %d g portion does not promote",
+      (q) => overrideDidNotFire("sodium", 720, foodAt(q), q),
+    );
+
+    it.each([200, 330, 500, 1000])(
+      "drink sugar at exactly 13.5 g in a %d ml portion does not promote",
+      (q) => overrideDidNotFire("sugar", 13.5, drinkAt(q), q),
+    );
+
+    it("still promotes a hair ABOVE the line, so the rounding did not blunt it", () => {
+      // Non-vacuity for the whole block: if `portionValueOf` rounded coarsely
+      // enough to swallow a real exceedance, every assertion above would pass
+      // for the wrong reason. 6.01 is finer than the label precision the
+      // rounding is scoped to discard.
+      expect(concernBand("saturatedFat", 6.01, foodAt(500), 500)).toBe("high");
+      expect(concernBand("sugar", 27.01, foodAt(500), 500)).toBe("high");
+    });
+
+    it("agrees with the scan-path shape on the same product", () => {
+      // Same portion, values expressed per-100 with factor 1 instead of
+      // per-portion with factor 100/Q. The two shapes must not disagree about
+      // a boundary — that divergence is what `portionValueOf` exists to close.
+      const per100 = 6 / 5; // 6 g across a 500 g portion
+      const scanPath: Basis = { kind: "resolved", scale: "food", factor: 1 };
+      expect(concernBand("saturatedFat", per100, scanPath, 500)).toBe(
+        concernBand("saturatedFat", 6, foodAt(500), 500),
+      );
+    });
+  });
+
+  it("food saved-item shape: sodium, either side of the portion line", () => {
+    const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 300 };
+    expect(concernBand("sodium", 721, basis, 300)).toBe("high");
+    expect(concernBand("sodium", 700, basis, 300)).toBe("medium");
+  });
+
+  it("food saved-item shape: sugar, either side of the portion line", () => {
+    const basis: Basis = { kind: "resolved", scale: "food", factor: 100 / 200 };
+    expect(concernBand("sugar", 27.1, basis, 200)).toBe("high");
+    expect(concernBand("sugar", 26.9, basis, 200)).toBe("medium");
   });
 });
 

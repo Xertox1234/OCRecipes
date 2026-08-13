@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   FSA_FOOD,
   FSA_DRINK,
-  FSA_PORTION,
+  FSA_PORTION_FOOD,
+  FSA_PORTION_DRINK,
   FIBRE_CLAIM,
   PROTEIN_ENERGY_CLAIM,
   BEVERAGE_PARENT,
@@ -38,9 +39,79 @@ describe("FSA concern thresholds", () => {
     expect(FSA_DRINK.sodium.high).not.toBe(FSA_FOOD.sodium.high);
   });
 
-  it("keeps FSA_PORTION red-only and fat-free", () => {
-    expect(FSA_PORTION).toEqual({ sugar: 27, saturatedFat: 6, sodium: 720 });
-    expect("fat" in FSA_PORTION).toBe(false);
+  it("pins the per-portion food table, trigger included", () => {
+    expect(FSA_PORTION_FOOD).toEqual({
+      triggerGrams: 100,
+      lines: { sugar: 27, saturatedFat: 6, sodium: 720 },
+    });
+  });
+
+  it("pins the per-portion drink table, trigger included", () => {
+    // Roughly half the food lines, at a LARGER trigger. The trigger is the
+    // half that has no analogue in the per-100 tables and so has no second
+    // pin anywhere else — a wrong 100 here is invisible downstream except on
+    // portions between 100 and 150 ml.
+    expect(FSA_PORTION_DRINK).toEqual({
+      triggerGrams: 150,
+      lines: { sugar: 13.5, saturatedFat: 3, sodium: 360 },
+    });
+  });
+
+  it("keeps both portion tables red-only and fat-free", () => {
+    // No `low` key on either: the FSA publishes no green band per portion.
+    // No `fat` key on either: the figures exist (>21 g / >10.5 g) but no
+    // total-fat flag consumes them, and a dead key invites a consumer.
+    expect("fat" in FSA_PORTION_FOOD.lines).toBe(false);
+    expect("fat" in FSA_PORTION_DRINK.lines).toBe(false);
+  });
+
+  it("holds every portion line at exactly 1.2x its per-100 counterpart", () => {
+    // A SECOND, INDEPENDENT PIN on the portion figures, which otherwise have
+    // none: the literal `toEqual` pins above were transcribed from the same
+    // reading of the FSA guidance as the implementation, so a mis-transcribed
+    // number would be wrong on both sides and green forever.
+    //
+    // The ratio is not a coincidence to be "simplified" into a derivation. The
+    // FSA publishes both tables as independent figures; that they land on a
+    // uniform 1.2x is a property to CHECK, not a rule to compute from — a
+    // future edition could revise one line without the other, and this test
+    // going red is the correct outcome if it does.
+    const RATIO = 1.2;
+    const pairs: [number | undefined, number, string][] = [
+      [FSA_PORTION_FOOD.lines.sugar, FSA_FOOD.sugar.high, "food sugar"],
+      [
+        FSA_PORTION_FOOD.lines.saturatedFat,
+        FSA_FOOD.saturatedFat.high,
+        "food saturatedFat",
+      ],
+      [FSA_PORTION_FOOD.lines.sodium, FSA_FOOD.sodium.high, "food sodium"],
+      [FSA_PORTION_DRINK.lines.sugar, FSA_DRINK.sugar.high, "drink sugar"],
+      [
+        FSA_PORTION_DRINK.lines.saturatedFat,
+        FSA_DRINK.saturatedFat.high,
+        "drink saturatedFat",
+      ],
+      [FSA_PORTION_DRINK.lines.sodium, FSA_DRINK.sodium.high, "drink sodium"],
+    ];
+    expect(pairs).toHaveLength(6); // all three nutrients on both scales
+    for (const [portionLine, per100High, label] of pairs) {
+      expect(portionLine, label).toBeDefined();
+      expect(portionLine! / per100High, label).toBeCloseTo(RATIO, 10);
+    }
+  });
+
+  it("keeps every drink portion line ABOVE its per-100ml counterpart", () => {
+    // The headroom `concernBand` relies on: a value big enough to trip the
+    // portion line has already tripped the per-100 line whenever the portion
+    // is no larger than 100 ml, which is what makes the >150 ml trigger the
+    // only thing separating the two arms on the drink scale.
+    expect(FSA_PORTION_DRINK.lines.sugar).toBeGreaterThan(FSA_DRINK.sugar.high);
+    expect(FSA_PORTION_DRINK.lines.saturatedFat).toBeGreaterThan(
+      FSA_DRINK.saturatedFat.high,
+    );
+    expect(FSA_PORTION_DRINK.lines.sodium).toBeGreaterThan(
+      FSA_DRINK.sodium.high,
+    );
   });
 
   it("preserves the shipped HIGH values exactly", () => {
