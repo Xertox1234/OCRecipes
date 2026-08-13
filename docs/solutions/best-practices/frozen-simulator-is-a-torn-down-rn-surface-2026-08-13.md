@@ -114,7 +114,9 @@ looking at a slow load, not a teardown.
   rather than assuming a shell override won:
   `curl "http://localhost:8081/index.bundle?platform=ios&dev=true" | grep -o '.\{110\}localhost:3000.\{60\}'`
   A hit on the long `process.env=Object.defineProperties(...)` line is the inlined value — the
-  domain the app will actually use; no output means the override did not win. The interval is
+  domain the app will actually use. No output means `localhost:3000` is not inlined — either the
+  override did not win, or curl never reached Metro (its connection error prints separately, so
+  check for that first). The interval is
   pinned at `.\{110\}` on purpose: `getApiBaseUrl()`'s short fallback literals mention the same
   host in **every** bundle regardless of the active domain, so loosening it to `.\{0,110\}` matches
   those too and the check stops discriminating.
