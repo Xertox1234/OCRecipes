@@ -24,18 +24,28 @@ gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" \
   --jq '[.check_runs[]] | length>0 and all(.[]; .conclusion=="success")'  # green
 ```
 
-A failed check is also `status: "completed"`, so the first predicate alone is a *completion* gate,
-never a pass. Reporting it as "CI green" is the same vacuous-success mistake this rule exists to
-prevent.
+A **failed** check is `status: "completed"`, and so is a **cancelled** one — so the first predicate
+alone is a *completion* gate, never a pass. Reporting it as "CI green" is the same vacuous-success
+mistake this rule exists to prevent.
+
+`cancelled` is the likelier accident of the two, because pushing a new commit cancels the previous
+head's in-flight runs. That produces the perfect trap: a poll still watching the old head sees its
+runs flip to `completed`, announces done, and the conclusions are a mix of `cancelled` and
+`success`. Observed on this branch 2026-08-13 — `6d39ce78`'s runs were cancelled by the push of
+`99dfd912`, and a poll left armed on the old SHA reported "CI COMPLETE" for them.
 
 Weaker but often adequate — correlate the head OID with the check states:
 
 ```bash
-SHA=<full-or-short-sha>
-until [ "$(gh pr view "$N" --json headRefOid --jq '.headRefOid[0:8]')" = "$SHA" ] \
+SHA=<full-or-short-sha>   # compared as a PREFIX, so either length works
+until case "$(gh pr view "$N" --json headRefOid --jq .headRefOid)" in "$SHA"*) true;; *) false;; esac \
       && gh pr checks "$N" --json name,bucket | jq -e 'length>0 and all(.[]; .bucket!="pending")' >/dev/null
 do sleep 20; done
 ```
+
+Compare as a prefix, not with `=` against a fixed slice. `--jq '.headRefOid[0:8]'` returns exactly
+8 characters, so an equality test silently never matches a full 40-char SHA **or** git's default
+7-char short SHA — the loop just spins forever, which reads as "CI is slow".
 
 **Know what that second form does and does not prove.** It is two independent API calls — `gh pr
 view` resolves `pullRequest.headRefOid`, `gh pr checks` resolves the commit's `statusCheckRollup` —
