@@ -135,6 +135,9 @@ else
     "NPX_ARGV: eslint --no-warn-ignored --fix $SUBDIR/foo.ts" "$OUT"
   # Negative control — the UNPINNED form. Without line 30 the hook hands eslint a bare
   # relative path, which resolves against the project root it cd'd into.
+  # The exact-argv assertion ABOVE is the load-bearing one; keep it. This is a second
+  # predicate over the same invocation, not an independent run, so it is strictly weaker:
+  # it would still pass for a mutant that emitted some OTHER wrong absolute path.
   assert_not_contains "relative file_path is never left unresolved" \
     "--fix foo.ts" "$OUT"
   # The pin's other branch: an absolute path is passed through untouched.
