@@ -151,6 +151,11 @@ before calling them.
 - `mcp__XcodeBuildMCP__snapshot_ui` — read the accessibility tree (it returns elementRef
   targets). If the first snapshot comes back empty, call it once more — a cold first call can
   return nothing (same warm-up quirk as the LSP server).
+- **The screenshot is ground truth; the a11y tree is a cache that can outlive the screen.** A
+  snapshot coming back _populated_ does not make it trustworthy — after a surface teardown it keeps
+  serving the last screen that rendered, and taps against it appear to succeed (`screenHash` even
+  changes). When the two disagree — full tree, but a launch-image or blank screenshot — believe the
+  screenshot and go to Troubleshooting.
 
 ### 5. Assert and report
 
@@ -161,3 +166,57 @@ before calling them.
   - **ISSUES** — list what is wrong (missing element, error state, layout) + the screenshot
     path.
 - This skill never blocks a commit; it only reports.
+
+## Troubleshooting
+
+### Frozen app — the RN surface was torn down
+
+Screenshots show only the native launch image, indefinitely, while `snapshot_ui` still returns a
+full screen. The process stays alive, so it reads as frozen rather than crashed, and there is **no
+redbox, no crash report, and no Metro error** — nothing in any of the usual places.
+
+The only evidence is the app runtime log, whose path `launch_app_sim` returns as `runtimeLogPath`
+(note it on every launch — you cannot recover it afterwards):
+
+```bash
+grep -nE 'Scheduler::~Scheduler|UIManagerBinding::~UIManagerBinding|UIManager::~UIManager' "<runtimeLogPath>"
+```
+
+Those are **destructors** — the Fabric surface was destroyed and never rebuilt, usually followed
+later by `Couldn't connect to packager, will silently retry`. Recovery: restart Metro, then
+
+```bash
+xcrun simctl terminate booted com.williamtower.ocrecipes
+```
+
+then `launch_app_sim` again and confirm the **new** log has **zero** `~Scheduler`/`~UIManager`
+lines. The trigger is not established — do not assert a cause without reading the solution doc
+linked below.
+
+### Frozen vs. still loading
+
+A spinner animates; a dead surface does not. Capture twice and compare hashes:
+
+```bash
+xcrun simctl io booted screenshot /tmp/s1.png; sleep 2; xcrun simctl io booted screenshot /tmp/s2.png
+md5 -q /tmp/s1.png /tmp/s2.png
+```
+
+Identical = nothing is animating (frozen). Differing = the render loop is live, so wait longer.
+`xcrun simctl io` doubles as a second, independent capture path — use it to cross-check a
+screenshot before trusting either capture.
+
+### Screens hang on loading skeletons with no error
+
+Suspect a stale `EXPO_PUBLIC_DOMAIN` rather than a teardown (the runtime log will have no
+destructors). `EXPO_PUBLIC_*` values are inlined at **bundle** time, so a LAN IP that died when the
+machine changed networks keeps pointing at nothing until Metro is restarted. Compare
+`ipconfig getifaddr en0` with the `.env` line. Prefer a shell-level override over editing the
+user's `.env`, and confirm what actually reached the bundle instead of assuming the override won:
+
+```bash
+curl "http://localhost:8081/index.bundle?platform=ios&dev=true" | grep -o '.\{110\}localhost:3000.\{60\}'
+```
+
+Full signature, evidence, recovery, and the open questions:
+`docs/solutions/best-practices/frozen-simulator-is-a-torn-down-rn-surface-2026-08-13.md`

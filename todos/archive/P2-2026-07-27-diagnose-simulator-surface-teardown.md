@@ -1,9 +1,9 @@
 ---
 title: "Diagnose the iOS Simulator dev loop: RN surface teardown leaves a permanently frozen app"
-status: backlog
+status: done
 priority: medium
 created: 2026-07-27
-updated: 2026-07-27
+updated: 2026-08-13
 assignee:
 labels: [deferred, tooling, react-native]
 github_issue:
@@ -88,3 +88,47 @@ Note this is expensive to test: `npm ci` replaces whatever the current branch ne
 
 - Initial creation, filed at the user's request after the incident during PR #730 verification.
 - Evidence captured above from the live session; recovery confirmed working, root cause NOT established.
+
+### 2026-08-13 — closed as documented, root cause still NOT established
+
+Closed at the user's direction under this todo's own Risks clause ("treat documented signature +
+reliable recovery as a legitimate completion"). **No reproduction was attempted.** The simulator,
+Metro, and the backend were never started.
+
+Landed:
+
+- `docs/solutions/best-practices/frozen-simulator-is-a-torn-down-rn-surface-2026-08-13.md` — the
+  signature, the stale-a11y-tree trap, the two-capture cross-check, the `md5` frozen-vs-loading
+  test, and the known-good recovery. Tagged to route to the `harness` domain so it injects when
+  the `verify-ui` skill is edited.
+- `.claude/skills/verify-ui/SKILL.md` — Step 4 corrected in place (its old advice, "if the first
+  snapshot comes back empty, call it once more", implied a _populated_ tree is trustworthy, which
+  is precisely the trap), plus a new `## Troubleshooting` section.
+
+Why the leading hypothesis was not tested: the JS/native mismatch it names existed **only** between
+PR #724 (2026-07-26, exact-pinned VisionCamera 5.0.11) and PR #729 (2026-07-29, landed 5.1.1). The
+incident falls inside that window. `main` is now uniformly 5.1.1 across `package.json`, the
+lockfile, `node_modules`, `ios/Podfile.lock`, and `patches/react-native-vision-camera+5.1.1.patch`,
+and `feat/visioncamera-511-mlkit-9` is deleted locally and on origin. Reproducing the mismatch would
+mean fabricating it, so it is **set aside, not falsified**.
+
+Acceptance criteria status:
+
+- AC1 (reproduce the teardown) — **not attempted**, by decision.
+- AC2 (determine the trigger) — **unresolved**. Documented as a suspected-but-unverified trigger: a
+  reload issued while Metro was down or mid-`--clear` restart, tearing down the surface with nothing
+  arriving to rebuild it. The 3-minute gap between the destructors and `Couldn't connect to
+packager` is the supporting evidence. Confirm by killing the packager with the app attached,
+  triggering a reload, and checking the log.
+- AC3 (why the recovered app hung on its spinner) — **unresolved**, and not answerable from
+  archaeology: the 2026-07-27 logs are gone, so it needs the recovery path re-run. Leading benign
+  explanation (first bundle build after `--clear` is genuinely slow) is recorded as untested.
+- AC4 (document the signature + recovery) — **done**, in both files above.
+- AC5 (reach the Cookbook create screen) — **not attempted**. Noted for whoever picks this up:
+  `CookbookCreate` is registered in `client/navigation/MealPlanStackNavigator.tsx` but is **absent
+  from `client/navigation/linking.ts`**, so it has no deep link — reaching it needs tap-through
+  (Plan → Cookbooks → New), which requires the `ui-automation` XcodeBuildMCP workflow plus a demo
+  login, and therefore the backend on `:3000`.
+
+Both open questions are recorded in the solution doc's `Exceptions` section rather than left in a
+todo, so they surface at the moment someone hits this again.
