@@ -137,8 +137,8 @@ fi
 
 # Positive — run the ACTUAL registered string from settings.json, so this asserts against
 # the real registration rather than a hand-copied duplicate that could drift from it.
-GUARD_HITS=$(grep -cF "$GUARD" "$CMD_FILE")
-GS_CMD=$(grep -F "$GUARD" "$CMD_FILE" | head -1)
+GUARD_HITS=$(grep -cF -- "$GUARD" "$CMD_FILE")
+GS_CMD=$(grep -F -- "$GUARD" "$CMD_FILE" | head -1)
 if [ "$GUARD_HITS" -ne 1 ]; then
   bad "expected exactly 1 $GUARD registration, found $GUARD_HITS" \
       "a second registration would go untested by the assertion below"
