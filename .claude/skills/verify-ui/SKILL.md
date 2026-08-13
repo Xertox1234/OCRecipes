@@ -93,7 +93,8 @@ Maestro e2e suite (`e2e/flows/*`); it does not replace it and writes no committe
 
 ## Tools
 
-This skill drives the **XcodeBuildMCP** server plus one `xcrun simctl` Bash command. The
+This skill drives the **XcodeBuildMCP** server plus a few `xcrun simctl` Bash commands (deep link
+and dev-client connect in the Procedure; terminate and screenshot in Troubleshooting). The
 XcodeBuildMCP tools are deferred — load their schemas first, e.g.
 `ToolSearch("select:mcp__XcodeBuildMCP__session_show_defaults,mcp__XcodeBuildMCP__session_set_defaults,mcp__XcodeBuildMCP__list_sims,mcp__XcodeBuildMCP__boot_sim,mcp__XcodeBuildMCP__launch_app_sim,mcp__XcodeBuildMCP__build_run_sim,mcp__XcodeBuildMCP__screenshot,mcp__XcodeBuildMCP__snapshot_ui,mcp__XcodeBuildMCP__tap")`,
 before calling them.
@@ -217,6 +218,12 @@ user's `.env`, and confirm what actually reached the bundle instead of assuming 
 ```bash
 curl "http://localhost:8081/index.bundle?platform=ios&dev=true" | grep -o '.\{110\}localhost:3000.\{60\}'
 ```
+
+A hit on the long `process.env=Object.defineProperties(...)` line is the inlined value — that is
+the domain the app will actually use. No output means the override did **not** win. Ignore the
+short `getApiBaseUrl()` fallback literals: they sit in every bundle regardless of the active
+domain, which is exactly why the interval is pinned at `.\{110\}` — loosening it to `.\{0,110\}`
+matches those fallbacks too and turns the discriminator into a constant.
 
 Full signature, evidence, recovery, and the open questions:
 `docs/solutions/best-practices/frozen-simulator-is-a-torn-down-rn-surface-2026-08-13.md`

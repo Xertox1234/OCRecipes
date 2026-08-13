@@ -113,6 +113,11 @@ looking at a slow load, not a teardown.
   `ipconfig getifaddr en0` against the `.env` line, and confirm what actually reached the bundle
   rather than assuming a shell override won:
   `curl "http://localhost:8081/index.bundle?platform=ios&dev=true" | grep -o '.\{110\}localhost:3000.\{60\}'`
+  A hit on the long `process.env=Object.defineProperties(...)` line is the inlined value — the
+  domain the app will actually use; no output means the override did not win. The interval is
+  pinned at `.\{110\}` on purpose: `getApiBaseUrl()`'s short fallback literals mention the same
+  host in **every** bundle regardless of the active domain, so loosening it to `.\{0,110\}` matches
+  those too and the check stops discriminating.
 - **Open question — the post-recovery spinner.** In the original incident the recovered app rendered
   but then sat on its loading spinner and never reached Home, despite a reachable backend. The
   mundane explanation is that the first bundle build after `--clear` is genuinely slow; that was
