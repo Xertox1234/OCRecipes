@@ -33,8 +33,10 @@ Add the troubleshooting section too — but as the complement, never as the subs
   relative to the claim, not how many lines went red.)
 - The offending line is *locally true*. It is advice that works in the common case and quietly
   generalizes into a case where it is wrong.
-- The correction ends up positioned *after* the text it corrects, so a reader meets the misleading
-  version first.
+- The correction ends up in a *different section* from the text it corrects, so a reader can finish
+  the procedure without ever meeting it. (Merely coming *after* is fine and usually right — an
+  immediately-following caveat is read as part of the same instruction. Distance is the problem,
+  not order.)
 
 ## Why
 

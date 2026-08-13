@@ -13,8 +13,8 @@ created: '2026-08-13'
 ## Rule
 
 Any automated wait-for-CI must pin to the **commit SHA** whose result it claims to report, not to
-the PR number. Strongest form — ask for the checks **of that SHA**, so one response answers both
-questions:
+the PR number. Strongest form — ask for the checks **of that SHA**, so every answer is bound to the
+commit by construction rather than by inference:
 
 ```bash
 # "finished?" and "green?" are different questions — ask them separately.
@@ -96,7 +96,8 @@ green", so a stale reading is falsifiable by anyone reading the sentence.
 ## Exceptions
 
 - **A poll that will only ever see one head** (nothing else can push, and you will not) does not
-  need the guard — but the guard costs one `gh pr view` per iteration, so prefer it by default.
+  strictly need the guard — but pinning is free in the SHA-keyed form (the SHA *is* the query) and
+  costs one extra `gh pr view` per iteration in the weaker one, so prefer it by default.
 - **The `--auto` merge path does not need this at all.** `gh pr merge --auto` is evaluated
   server-side by GitHub against the PR's current head on every push, so an armed auto-merge cannot
   land a commit whose checks did not pass. This rule is about *your own* reporting and gating loops.
