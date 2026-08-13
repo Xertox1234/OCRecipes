@@ -43,8 +43,8 @@ run_dry() { # $1 repo, remaining args = preflight flags. Captures dry-run stdout
   ( cd "$repo" && PATH="$BIN:$PATH" PREFLIGHT_DRY_RUN=1 PREFLIGHT_STAMP_FILE="$repo/.stamp" bash "$SCRIPT" "$@" 2>&1 )
 }
 
-assert_contains()     { if printf '%s' "$2" | grep -q "$3"; then echo "PASS: $1"; PASS=$((PASS+1)); else echo "FAIL: $1 (missing: $3)"; FAIL=$((FAIL+1)); fi; }
-assert_not_contains()  { if printf '%s' "$2" | grep -q "$3"; then echo "FAIL: $1 (unexpectedly present: $3)"; FAIL=$((FAIL+1)); else echo "PASS: $1"; PASS=$((PASS+1)); fi; }
+assert_contains()     { if printf '%s' "$2" | grep -q -- "$3"; then echo "PASS: $1"; PASS=$((PASS+1)); else echo "FAIL: $1 (missing: $3)"; FAIL=$((FAIL+1)); fi; }
+assert_not_contains()  { if printf '%s' "$2" | grep -q -- "$3"; then echo "FAIL: $1 (unexpectedly present: $3)"; FAIL=$((FAIL+1)); else echo "PASS: $1"; PASS=$((PASS+1)); fi; }
 assert_no_stamp_file() { if [ -f "$2" ]; then echo "FAIL: $1 (stamp WAS written)"; FAIL=$((FAIL+1)); else echo "PASS: $1"; PASS=$((PASS+1)); fi; }
 
 pg_stub 0

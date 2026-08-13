@@ -32,7 +32,7 @@ assert_warn_contains() {
   if echo "$out" | grep -q '"permissionDecision"'; then
     echo "FAIL: $name (advisor must never block)"; FAIL=$((FAIL+1)); return
   fi
-  if echo "$out" | grep -q '"additionalContext"' && echo "$out" | grep -qF "$3"; then
+  if echo "$out" | grep -q '"additionalContext"' && echo "$out" | grep -qF -- "$3"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected additionalContext containing: $3)"
