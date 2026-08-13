@@ -13,7 +13,22 @@ created: '2026-08-13'
 ## Rule
 
 Any automated wait-for-CI must pin to the **commit SHA** whose result it claims to report, not to
-the PR number. Poll the head OID and the check states together, and require both to line up:
+the PR number. Strongest form — ask for the checks **of that SHA**, so one response answers both
+questions:
+
+```bash
+# "finished?" and "green?" are different questions — ask them separately.
+gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" \
+  --jq '[.check_runs[]] | length>0 and all(.[]; .status=="completed")'    # finished
+gh api "repos/{owner}/{repo}/commits/$SHA/check-runs" \
+  --jq '[.check_runs[]] | length>0 and all(.[]; .conclusion=="success")'  # green
+```
+
+A failed check is also `status: "completed"`, so the first predicate alone is a *completion* gate,
+never a pass. Reporting it as "CI green" is the same vacuous-success mistake this rule exists to
+prevent.
+
+Weaker but often adequate — correlate the head OID with the check states:
 
 ```bash
 SHA=<full-or-short-sha>
@@ -21,6 +36,18 @@ until [ "$(gh pr view "$N" --json headRefOid --jq '.headRefOid[0:8]')" = "$SHA" 
       && gh pr checks "$N" --json name,bucket | jq -e 'length>0 and all(.[]; .bucket!="pending")' >/dev/null
 do sleep 20; done
 ```
+
+**Know what that second form does and does not prove.** It is two independent API calls — `gh pr
+view` resolves `pullRequest.headRefOid`, `gh pr checks` resolves the commit's `statusCheckRollup` —
+with no shared response tying them to the same commit, and `gh pr checks --json` exposes **no
+oid/sha field at all** (its full field set is `bucket, completedAt, description, event, link, name,
+startedAt, state, workflow`). So it is a *correlation*, not an atomic read: it closes the window
+this rule is about, but a head change landing between the two calls is still unobserved. Prefer the
+SHA-keyed form when the claim matters.
+
+The `length>0` guard is not optional in either form. `jq 'all(.[]; …)'` is **vacuously true on an
+empty array**, so without it a poll passes the instant the check list is empty — which is exactly
+the state right after a push.
 
 If you push while a poll is already running, **stop the poll and restart it against the new SHA**.
 
@@ -70,11 +97,20 @@ green", so a stale reading is falsifiable by anyone reading the sentence.
 
 - **A poll that will only ever see one head** (nothing else can push, and you will not) does not
   need the guard — but the guard costs one `gh pr view` per iteration, so prefer it by default.
-- **The `--auto` merge path does not need this at all.** `gh pr merge --auto` is evaluated by GitHub
-  against the current head, so an armed auto-merge cannot land a commit whose checks did not pass.
-  This rule is about *your own* reporting and gating loops.
+- **The `--auto` merge path does not need this at all.** `gh pr merge --auto` is evaluated
+  server-side by GitHub against the PR's current head on every push, so an armed auto-merge cannot
+  land a commit whose checks did not pass. This rule is about *your own* reporting and gating loops.
+  Read the exception narrowly: a **non-`--auto`** `gh pr merge` fired after a poll is precisely the
+  case that does need pinning — and `gh` ships a native flag for it, `--match-head-commit SHA`
+  (present in `gh` 2.95.0), which refuses the merge if the head moved. Prefer it over a hand-rolled
+  guard.
 - **Do not substitute a fixed sleep.** "Wait five minutes then read" has the same defect with worse
   ergonomics — it still cannot say which commit the reading belongs to.
+- **Pin to the PR *head*, not to the squash-merge commit.** Squash-merging creates a new commit that
+  CI never ran on. Measured on this repo 2026-08-13: the PR head `8aafefe0` has 10 check-runs, all
+  `completed`/`success`, while the resulting squash commit `7a50a1db` on `main` has **`total_count:
+  0`**. Asking a post-merge SHA "were your checks green?" gets an empty set — which is precisely why
+  the `length>0` guard matters: without it, an empty set answers **yes**.
 
 ## Related Files
 

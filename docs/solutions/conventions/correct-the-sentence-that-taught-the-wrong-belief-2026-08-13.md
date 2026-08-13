@@ -1,5 +1,5 @@
 ---
-title: When a doc misleads, fix the sentence that made the wrong belief reasonable — not just the gap
+title: When a doc misleads, correct or bound the misleading sentence in place — not just add the gap
 track: knowledge
 category: conventions
 module: shared
@@ -8,13 +8,17 @@ applies_to: [.claude/skills/**, docs/rules/**, docs/solutions/**]
 created: '2026-08-13'
 ---
 
-# When a doc misleads, fix the sentence that made the wrong belief reasonable — not just the gap
+# When a doc misleads, correct or bound the misleading sentence in place — not just add the gap
 
 ## Rule
 
 When documentation misled someone, do not stop at adding the missing section. Find the **existing
-sentence that made the wrong belief reasonable**, and correct it where it lives. An appendix the
-reader may never scroll to does not undo an instruction sitting on the path they actually walk.
+sentence that made the wrong belief reasonable**, and either correct it or bound its scope — **in
+place, adjacent to the claim itself**. An appendix the reader may never scroll to does not undo an
+instruction sitting on the path they actually walk.
+
+The test is co-location, not deletion. Bounding a locally-true line with an immediately-following
+caveat satisfies this rule; relegating the same caveat to a section 60 lines away does not.
 
 Add the troubleshooting section too — but as the complement, never as the substitute.
 
@@ -22,8 +26,11 @@ Add the troubleshooting section too — but as the complement, never as the subs
 
 - A postmortem concludes "the docs didn't cover X" — yet a reader following those docs would have
   formed a specific *wrong belief*, not merely lacked information.
-- The proposed fix is entirely additive: a new `## Troubleshooting` section, a new doc, a new
-  warning box — **zero deletions in the diff**.
+- The proposed fix lands **away from the claim it corrects** — a new `## Troubleshooting` section, a
+  new doc, a warning box at the bottom — while the misleading sentence itself is untouched context
+  in the diff. (Do not use "zero deletions" as the tell: the right fix is often an insertion
+  _immediately after_ the offending line, which deletes nothing. Ask where the correction sits
+  relative to the claim, not how many lines went red.)
 - The offending line is *locally true*. It is advice that works in the common case and quietly
   generalizes into a case where it is wrong.
 - The correction ends up positioned *after* the text it corrects, so a reader meets the misleading
@@ -31,9 +38,11 @@ Add the troubleshooting section too — but as the complement, never as the subs
 
 ## Why
 
-Missing information and wrong information fail differently. A gap leaves a reader uncertain, and
-uncertainty prompts them to check. A near-miss instruction leaves them **confident and wrong**, and
-that confidence suppresses the very check that would have caught it.
+Missing information and wrong information tend to fail differently. A gap usually leaves a reader
+uncertain, and uncertainty prompts them to check. A near-miss instruction more often leaves them
+**confident and wrong**, and that confidence suppresses the very check that would have caught it.
+(A heuristic, not a law — the operative test is in Exceptions: can you name the false belief the
+existing text produces?)
 
 So the most expensive documentation defect is rarely the absent paragraph. It is the true-but-
 overgeneralizing one, because it manufactures the belief that closes the investigation early.
@@ -45,8 +54,9 @@ in the procedure and the correction in an appendix, and the earlier text wins on
 
 `.claude/skills/verify-ui/SKILL.md` told readers, in its capture step:
 
-> `snapshot_ui` — read the accessibility tree. If the first snapshot comes back **empty**, call it
-> once more — a cold first call can return nothing.
+> - `mcp__XcodeBuildMCP__snapshot_ui` — read the accessibility tree (it returns elementRef
+>   targets). If the first snapshot comes back empty, call it once more — a cold first call can
+>   return nothing (same warm-up quirk as the LSP server).
 
 Locally true: cold calls really do return empty. But it establishes the inference *populated ⇒
 trustworthy*, which is exactly the belief that cost about an hour on 2026-07-27. A torn-down React
