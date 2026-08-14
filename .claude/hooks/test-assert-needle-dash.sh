@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Static guard: in a hook self-test, every `grep` whose needle is a VARIABLE must pass `--`
-# before it.
+# Static guard: in a hook self-test, a `grep`/`egrep`/`fgrep` whose needle is a DOUBLE-QUOTED
+# variable, on one line, must pass `--` before it.
+#
+# That is narrower than the rule it defends, deliberately — see RESIDUALS at the bottom of this
+# header. Shell parsing by regex has a real ceiling, and widening further would endanger the
+# property the whole gate rests on: `grep -qF -- "$needle"` must keep being ACCEPTED. A gate
+# that flags compliant files gets deleted by the next person it inconveniences.
 #
 # Why this is a gate and not a style nit: `grep -qF "$needle"` parses a needle beginning with
 # `-` as an OPTION. grep prints `grep: unrecognized option ...` and exits 2 — and `if grep -q
@@ -14,6 +19,19 @@
 # Scope is deliberately `.claude/hooks/test-*.sh` — the assert-helper population. Production
 # scripts (e.g. scripts/todo-automerge-guard.sh) pass hardcoded alternation constants that can
 # never begin with `-`; widening there would be churn, not safety.
+#
+# RESIDUALS — shapes this does NOT catch, all failing OPEN. Zero instances exist in the scanned
+# population today (verified); they are recorded so nobody mistakes this gate for total coverage:
+#   1. an UNQUOTED needle          — `grep -qF $needle`      (the regex requires a literal `"`)
+#   2. a long option with a quoted or glob argument — `grep --include='*.md' -qF "$needle"`
+#      (the flag-word class excludes `'` and `*`, so the whole line stops matching)
+#   3. a needle on a CONTINUATION line — the scan is per-line
+# Adding a case here means adding its fixture to the FIXTURES heredoc below, never widening the
+# regex alone: an unproven widening is the decoration this gate exists to prevent.
+#
+# It also over-flags `grep -e "$needle"`, which is already safe (`-e` consumes its argument as
+# the pattern regardless of a leading dash). Over-flagging is the harmless direction — the fix
+# is a redundant `--`, not a bypass.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
