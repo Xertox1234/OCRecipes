@@ -42,6 +42,7 @@ When editing a file, identify its domain(s) using the table below. The correspon
 | `.husky/**` | harness |
 | `docs/solutions/**` | harness |
 | `docs/rules/**` | harness |
+| `ios/**` (any directory named `ios`, incl. `node_modules/**/ios/**`) | react-native |
 | `server/services/<llm-touching>.ts` (see LLM_TOUCHING_SERVICES) | architecture, ai-prompting |
 
 In addition, `typescript` rules apply to every `.ts` or `.tsx` file regardless of other domain matches.

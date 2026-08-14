@@ -169,6 +169,24 @@ describe("rulesDomainsForPath", () => {
     // (in every worktree) with harness and must turn these RED.
     ["docs/AI_WORKFLOW.md", []],
     ["docs/legacy-patterns/typescript.md", []],
+    // --- ios native build ---
+    ["ios/Podfile", ["react-native"]],
+    ["ios/OCRecipes.xcodeproj/project.pbxproj", ["react-native"]],
+    ["ios/Podfile.properties.json", ["react-native"]],
+    // Union with the test-file matcher: `ios` is NOT in TS_TEST_EXCLUDING_DIRS (unlike
+    // server/routes|server/storage), so a test file under ios/ keeps react-native AND
+    // gains testing — same union behavior as the client/screens case below.
+    ["ios/__tests__/Podfile.test.ts", ["react-native", "testing"]],
+    // Decline-side pin: `(^|/)ios/` requires "ios" as a full path SEGMENT. A filename that
+    // merely contains the substring "ios" (no "ios/" segment) must NOT gain react-native —
+    // this pins the anchoring, not the accepted directory-name over-match documented on the
+    // rule itself.
+    ["client/lib/ios-format.ts", ["client-state", "typescript"]],
+    // Decline-side pin for the OTHER half of the anchor: a directory whose name merely ENDS
+    // in "ios" (not IS "ios") must not match either. "audios/" contains the bare substring
+    // "ios/" (a-u-d-[i-o-s-/]), so this pins the `(^|/)` left-anchor specifically — without
+    // it, this path would wrongly gain react-native with no other test catching it.
+    ["client/lib/audios/track.ts", ["client-state", "typescript"]],
   ];
   it.each(cases)("%s", (input, expected) => {
     expect(rulesDomainsForPath(input).sort()).toEqual(expected);
@@ -268,6 +286,11 @@ const PARITY_CORPUS = [
   "scripts/lib/__tests__/path-domains.test.ts",
   "server/scripts/backfill-recipe-images.ts",
   ".husky/pre-push",
+  "ios/Podfile",
+  "x/ios/Podfile",
+  "ios/__tests__/Podfile.test.ts",
+  "client/lib/ios-format.ts",
+  "client/lib/audios/track.ts",
 ];
 
 describe("regex<->bash-glob parity", () => {

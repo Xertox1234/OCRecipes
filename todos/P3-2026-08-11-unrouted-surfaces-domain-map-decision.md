@@ -48,6 +48,43 @@ Precedent and mechanics: PR #799 (docs/\*\* → harness) is the template — rul
 
 ## Updates
 
+### 2026-08-13
+
+- The `ios/**` surface (one of the four listed in this todo's scope) was decided
+  and shipped **separately**, in `todos/archive/P3-2026-07-26-ios-path-domain-mapping-gap-and-doc-nits.md`:
+  the human made the call in-session (`ios/** → react-native`, expressed as
+  `{ kind: "recursive-dir", dir: "ios" }` — the `Matcher` vocabulary has no way
+  to scope more narrowly than a directory name, so the accepted over-match is
+  `(^|/)ios/`, matching any directory literally named `ios` including
+  `node_modules/**/ios/**`). Injection noise on unrelated native edits (asset
+  catalogs, `Info.plist`) was weighed and accepted in favour of one simple
+  rule — recorded inline as a comment on the rule in `scripts/lib/path-domains.ts`.
+  Verified empirically: editing `ios/Podfile` now injects up to 4
+  `react-native`-tagged solution docs (capped by `SOLUTIONS_PER_DOMAIN`,
+  newest-first).
+- **The other three surfaces in this todo's scope remain OPEN and undecided**:
+  `android/**`, package manifests (`package.json`/`package-lock.json`/`app.json`),
+  and non-schema `shared/**` + `server/lib/**`. This todo stays `backlog` /
+  `human_led: true` for those.
+- Evidence migrated from the closed `ios/**` todo — the six `docs/solutions`
+  files whose `applies_to` named `ios/**`/`ios/Podfile` and were inert before
+  this rule landed (five already carried a `react-native` tag; the sixth,
+  `in-place-dep-patch-survives-reinstall-teardown-false-green-2026-07-26.md`,
+  needed the tag added — done in the same PR):
+  - `docs/solutions/logic-errors/in-place-dep-patch-survives-reinstall-teardown-false-green-2026-07-26.md`
+  - `docs/solutions/code-quality/vision-camera-ocr-plus-v5-cpp-interop-2026-06-02.md`
+  - `docs/solutions/code-quality/vision-camera-v4-to-v5-migration-2026-05-13.md`
+  - `docs/solutions/code-quality/xcode-ambiguous-deps-alwaysoutofdate-committed-pbxproj-2026-06-23.md`
+  - `docs/solutions/best-practices/visioncamera-5-upgrade-ios-xcode26-build-2026-06-02.md`
+  - `docs/solutions/best-practices/ios-native-asset-sync-persistent-ios-directory-2026-05-13.md`
+  - Observed empirically (2026-08-13): only 3 of these 6 actually surface on an
+    `ios/Podfile` edit — the `SOLUTIONS_PER_DOMAIN=4` ranking cap (newest-first
+    within the `applies_to`-matched tier) bumped the two oldest (both dated
+    2026-05-13) and left one slot to a newer, unrelated `react-native`+iOS doc
+    (`podfile-lock-snapshot-refuses-native-major-pod-update-cascades-2026-07-27.md`).
+    Routing is correctly wired; this is normal date-tier truncation, not a bug —
+    worth knowing if `android/**` routing is added later and hits the same cap.
+
 ### 2026-08-11
 
 - Initial creation (deferred from the 143-doc retag sweep; agent C's systemic observation).
