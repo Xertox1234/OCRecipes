@@ -5,7 +5,7 @@ category: logic-errors
 module: server
 severity: medium
 tags: [harness, ci, shell, bash, github-actions, pipefail, sigpipe, grep, head, awk, printf, command-substitution, change-detection, testing, flaky-tests]
-symptoms: [A self-scoping CI gate green-lights a PR that DID change the guarded files, A change-detection `if cmd | grep -q ...` step takes the wrong branch only on large inputs, 'Works for small PRs, silently fails open for PRs that touch thousands of files', A script under set -euo pipefail dies with exit 141 outside its documented exit-code contract, 'A test assert_contains helper intermittently reports a needle as missing when the captured output DOES contain it, with `printf: write error: Broken pipe` nearby', 'An assert_not_contains / must-not-appear check reports PASS without ever searching, with `grep: unrecognized option` printed beside it because the needle began with a dash']
+symptoms: [A self-scoping CI gate green-lights a PR that DID change the guarded files, A change-detection `if cmd | grep -q ...` step takes the wrong branch only on large inputs, 'Works for small PRs, silently fails open for PRs that touch thousands of files', A script under set -euo pipefail dies with exit 141 outside its documented exit-code contract, 'A test assert_contains helper intermittently reports a needle as missing when the captured output DOES contain it, with `printf: write error: Broken pipe` nearby', 'An assert_not_contains / must-not-appear check reports PASS without ever searching because the needle began with a dash and grep parsed it as an option — loudly with `grep: unrecognized option` beside it, or SILENTLY when the needle happens to be a valid flag like -n or -v']
 applies_to: [.github/workflows/*.yml, .husky/**, scripts/*.sh, .claude/hooks/test-*.sh]
 created: '2026-06-27'
 last_updated: '2026-08-13'
@@ -138,12 +138,23 @@ Generalizes past `grep`: any predicate helper that forwards caller data as a lea
 argument (`rm`, `test`, `printf`, `sed`) needs `--` before the untrusted value.
 
 **Enforced, not just documented**, by `.claude/hooks/test-assert-needle-dash.sh` — a static
-scan over every `.claude/hooks/test-*.sh` for `grep` + flags + `"$var"` with no `--`, carrying
-its own positive and negative controls plus a non-vacuity check on the scan population. A
-Prevention bullet with nothing behind it is the same decoration this doc warns about. Note the
-matcher spells its word boundary `(^|[^[:alnum:]_])` rather than `\b`: `\b` is a GNU extension
-that BSD `grep -E` treats as a literal `b`, which would silently match nothing — and without
-any boundary the scan false-positives on `pgrep -P "$PID"`.
+scan over every `.claude/hooks/test-*.sh` for `grep`/`egrep`/`fgrep` + flags + `"$var"` with
+no `--`, carrying one positive control per covered shape, a negative control, a word-boundary
+control, and a non-vacuity floor on the scan population. A Prevention bullet with nothing
+behind it is the same decoration this doc warns about.
+
+Two things that guard got wrong first, both worth stealing:
+
+- **Cover the reflexive substitution.** A matcher for `grep` alone fails OPEN on `egrep`/`fgrep`
+  — the exact commands someone reaches for when "fixing" a flagged `grep -E`/`grep -F` without
+  adding `--`. A gate that a one-word rename defeats is not a gate.
+- **Spell the word boundary `(^|[^[:alnum:]_])`, not `\b`** — because `\b` is a GNU extension
+  POSIX ERE does not define (same reason as
+  [facade-only-enforced-by-source-grep-guard-test](../design-patterns/facade-only-enforced-by-source-grep-guard-test-2026-06-26.md)),
+  **not** because BSD grep mis-parses it. Measured: BSD grep 2.6.0-FreeBSD implements `\b`
+  correctly (`grepb` is rejected, `foo-bar` matches `foo\b`). The real first-run bug was having
+  no LEADING boundary at all, which matched `pgrep -P "$PID"`; `\bgrep\b` would have fixed that
+  too. Reach for the portability argument, which is true, not the mis-parse one, which is not.
 
 ## Prevention
 

@@ -26,27 +26,54 @@ bad() { echo "FAIL: $1"; [ $# -gt 1 ] && printf '  %s\n' "$2"; FAIL=$((FAIL+1));
 # logic — a re-typed copy would only prove the copy works (per
 # docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md).
 #
-# `grep`, then any number of single-dash flag words, then a double-quoted expansion. The `--`
-# form is excluded for free: `-[A-Za-z]+` requires a letter after the dash, so the flag-word
-# repetition cannot consume `--`, and the needle no longer sits immediately after the flags.
+# `grep`/`egrep`/`fgrep`, then any number of flag words, then a double-quoted expansion.
+# The `--` form is excluded for free: both flag alternatives require a character after the
+# dashes, so neither can consume a bare `--`, and the needle then no longer sits immediately
+# after the flags. `egrep`/`fgrep` are covered because they are the reflexive substitution a
+# contributor reaches for when "fixing" a flagged `grep -E`/`grep -F` — silently reproducing
+# the bug one level down is exactly the failure this gate exists to stop.
 #
-# The `(^|[^[:alnum:]_])` prefix is a hand-rolled word boundary, NOT `\b`: `\b` is a GNU
-# extension that BSD grep -E (macOS default) silently treats as a literal `b`, which would
-# make this matcher quietly match nothing. Without the boundary it also matched `pgrep -P
-# "$PID"` in test-db-serial-lock.sh — a real false positive this caught on its first run.
-NEEDLE_RE='(^|[^[:alnum:]_])grep( +-[A-Za-z]+)* +"\$'
+# `(^|[^[:alnum:]_])` is a hand-rolled word boundary rather than `\b` because `\b` is a GNU
+# extension POSIX ERE does not define — the same portability reason recorded in
+# docs/solutions/design-patterns/facade-only-enforced-by-source-grep-guard-test-2026-06-26.md.
+# (It is NOT that BSD grep mis-parses it: BSD grep 2.6.0-FreeBSD implements `\b` correctly —
+# verified. The `pgrep -P "$PID"` false positive this hit on its first run came from having no
+# LEADING boundary at all, which `\bgrep\b` would also have fixed.)
+NEEDLE_RE='(^|[^[:alnum:]_])(e|f)?grep( +-[A-Za-z]+| +--[A-Za-z0-9=_.-]+)* +"\$'
 offenders_in() { grep -nE -- "$NEEDLE_RE" "$@" 2>/dev/null || true; }
 
-# --- Control 1 (positive): the matcher MUST flag the broken form. ---------------------------
-# Lives in a temp file, never inline: this file is itself inside the scanned glob, and an
-# inline fixture would self-match and make the tree scan below permanently red.
+# --- Control 1 (positive): the matcher MUST flag every broken shape it claims to cover. ------
+# Fixtures live in temp files, never inline: this file is itself inside the scanned glob, and
+# an inline fixture would self-match and make the tree scan below permanently red.
+# One fixture per covered shape — a widened regex with no widened control is the same
+# decoration this gate exists to prevent.
 CTRL=$(mktemp -d); trap 'rm -rf "${CTRL:-}"' EXIT
-printf '%s\n' '  if grep -qF "$needle" <<<"$out"; then' > "$CTRL/broken.sh"
-if [ -n "$(offenders_in "$CTRL/broken.sh")" ]; then
-  ok "matcher flags an unguarded variable needle (positive control)"
+i=0
+while IFS= read -r fixture; do
+  [ -n "$fixture" ] || continue
+  i=$((i+1))
+  printf '%s\n' "$fixture" > "$CTRL/broken$i.sh"
+  if [ -n "$(offenders_in "$CTRL/broken$i.sh")" ]; then
+    ok "matcher flags: $fixture"
+  else
+    bad "matcher did NOT flag: $fixture — the tree scan below proves less than it claims" \
+        "regex: $NEEDLE_RE"
+  fi
+done <<'FIXTURES'
+  if grep -qF "$needle" <<<"$out"; then
+  if egrep -q "$needle" <<<"$out"; then
+  if fgrep -q "$needle" <<<"$out"; then
+  if grep --color -qF "$needle" <<<"$out"; then
+HITS=$(grep -nE "$RE" "$f")
+FIXTURES
+
+# The boundary must still reject a command that merely ENDS in `grep` — the false positive
+# this gate hit on its own first run (`pgrep -P "$WRAPPER_PID"` in test-db-serial-lock.sh).
+printf '%s\n' '  PSQL_PID=$(pgrep -P "$WRAPPER_PID" 2>/dev/null)' > "$CTRL/pgrep.sh"
+if [ -z "$(offenders_in "$CTRL/pgrep.sh")" ]; then
+  ok "matcher rejects pgrep (word-boundary control)"
 else
-  bad "matcher did NOT flag the broken form — the tree scan below proves nothing" \
-      "regex: $NEEDLE_RE"
+  bad "matcher flagged pgrep — the leading word boundary is broken"
 fi
 
 # --- Control 2 (negative): the matcher must NOT flag the fixed form. -------------------------
@@ -63,11 +90,18 @@ fi
 FILES=()
 for f in "$HERE"/test-*.sh; do
   [ -f "$f" ] || continue
-  # Skip self: the controls above write example call sites, and this file's own source
-  # necessarily discusses the offending shape. Coverage for that blind spot IS Control 1.
+  # Skip self: this file's source necessarily SPELLS the offending shape (the regex, the
+  # fixture strings), so scanning it would be permanently red. Control 1 proves the MATCHER
+  # works — it does not prove this file's own real code complies. That residual is a genuine
+  # blind spot: an unguarded `grep ... "$var"` introduced into this file's live logic would
+  # be caught by nothing. Keep `offenders_in` (line ~43) the only grep here, and keep it `--`.
   [ "$(basename "$f")" = "$SELF" ] && continue
   FILES+=("$f")
 done
+# `-gt 5`, not `-gt 0`: a known-minimum floor is stronger than bare fail-on-zero (per
+# docs/solutions/logic-errors/glob-runner-loop-fails-open-count-and-fail-on-zero-2026-07-03.md).
+# 5 is a floor with wide margin against the ~31 files present today, not a required count —
+# it exists to catch a broken glob, so lower it only if the suite genuinely shrinks.
 if [ "${#FILES[@]}" -gt 5 ]; then
   ok "scan population is non-empty (${#FILES[@]} hook self-tests)"
 else
