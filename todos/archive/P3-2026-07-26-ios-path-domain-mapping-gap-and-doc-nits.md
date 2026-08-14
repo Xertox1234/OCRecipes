@@ -51,8 +51,10 @@ Currently-inert `applies_to: ios/...` declarations:
       `native-build`) or maps onto an existing one — adding a **new** domain
       label means a new `docs/rules/<domain>.md` and touches the
       copilot-instructions generator, so this is a real design choice, not a
-      one-line addition. **Decided 2026-08-13 (human, in-session): `ios/**`    maps onto the existing`react-native`domain — no new domain label.**
-  Recorded as an inline comment on the rule in`scripts/lib/path-domains.ts`.
+      one-line addition. **Decided 2026-08-13 (human, in-session):** the `ios/`
+      tree maps onto the existing `react-native` domain — no new domain label.
+      Recorded as an inline comment on the rule in
+      `scripts/lib/path-domains.ts`.
 - [x] `scripts/lib/path-domains.ts` maps `ios/**` (at minimum `ios/Podfile`,
       `ios/*.podspec`, `ios/**/*.pbxproj`) to the chosen domain(s). Implemented
       as `{ kind: "recursive-dir", dir: "ios" }` (the only `Matcher` kind that
