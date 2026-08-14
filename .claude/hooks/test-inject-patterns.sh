@@ -34,7 +34,7 @@ check() {
   local name="$1" input="$2" pattern="$3"
   local combined
   combined=$(run_hook "$input")
-  if echo "$combined" | grep -q "$pattern"; then
+  if echo "$combined" | grep -q -- "$pattern"; then
     echo "PASS: $name"; PASS=$((PASS + 1))
   else
     echo "FAIL: $name"; echo "  expected to find (in stdout or spill): $pattern"; FAIL=$((FAIL + 1))
@@ -45,7 +45,7 @@ check_no_match() {
   local name="$1" input="$2" pattern="$3"
   local combined
   combined=$(run_hook "$input")
-  if echo "$combined" | grep -q "$pattern"; then
+  if echo "$combined" | grep -q -- "$pattern"; then
     echo "FAIL: $name (expected NOT to find: $pattern)"; FAIL=$((FAIL + 1))
   else
     echo "PASS: $name"; PASS=$((PASS + 1))
@@ -87,7 +87,7 @@ check_not() {
   local name="$1" input="$2" pattern="$3"
   local output
   output=$(echo "$input" | bash "$HOOK" 2>/dev/null || true)
-  if echo "$output" | grep -q "$pattern"; then
+  if echo "$output" | grep -q -- "$pattern"; then
     echo "FAIL: $name (pattern '$pattern' should be absent)"; FAIL=$((FAIL + 1))
   else
     echo "PASS: $name"; PASS=$((PASS + 1))

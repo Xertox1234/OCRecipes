@@ -62,7 +62,7 @@ run_update() {
 
 assert_contains() {
   local name="$1" needle="$2" out="$3"
-  if grep -qF "$needle" <<<"$out"; then
+  if grep -qF -- "$needle" <<<"$out"; then
     echo "PASS: $name"; PASS=$((PASS+1))
   else
     echo "FAIL: $name (expected substring: $needle)"
@@ -84,7 +84,7 @@ assert_silent() {
 
 assert_not_contains() {
   local name="$1" needle="$2" out="$3"
-  if grep -qF "$needle" <<<"$out"; then
+  if grep -qF -- "$needle" <<<"$out"; then
     echo "FAIL: $name (unexpected substring: $needle)"
     printf '  got: %s\n' "$(printf '%s' "$out" | head -3)"
     FAIL=$((FAIL+1))

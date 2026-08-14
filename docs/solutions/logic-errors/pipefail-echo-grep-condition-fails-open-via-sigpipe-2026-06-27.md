@@ -4,11 +4,11 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [ci, shell, bash, github-actions, pipefail, sigpipe, grep, head, awk, printf, command-substitution, change-detection, testing, flaky-tests]
-symptoms: [A self-scoping CI gate green-lights a PR that DID change the guarded files, A change-detection `if cmd | grep -q ...` step takes the wrong branch only on large inputs, 'Works for small PRs, silently fails open for PRs that touch thousands of files', A script under set -euo pipefail dies with exit 141 outside its documented exit-code contract, 'A test assert_contains helper intermittently reports a needle as missing when the captured output DOES contain it, with `printf: write error: Broken pipe` nearby']
+tags: [harness, ci, shell, bash, github-actions, pipefail, sigpipe, grep, head, awk, printf, command-substitution, change-detection, testing, flaky-tests]
+symptoms: [A self-scoping CI gate green-lights a PR that DID change the guarded files, A change-detection `if cmd | grep -q ...` step takes the wrong branch only on large inputs, 'Works for small PRs, silently fails open for PRs that touch thousands of files', A script under set -euo pipefail dies with exit 141 outside its documented exit-code contract, 'A test assert_contains helper intermittently reports a needle as missing when the captured output DOES contain it, with `printf: write error: Broken pipe` nearby', 'An assert_not_contains / must-not-appear check reports PASS without ever searching because the needle began with a dash and grep parsed it as an option — loudly with `grep: unrecognized option`/`usage: grep` beside it, or SILENTLY when the needle is a valid flag (-n, -v) AND a trailing file operand is present for grep to consume as the pattern instead']
 applies_to: [.github/workflows/*.yml, .husky/**, scripts/*.sh, .claude/hooks/test-*.sh]
 created: '2026-06-27'
-last_updated: '2026-07-09'
+last_updated: '2026-08-13'
 ---
 
 # A `cmd | grep -q` shell condition under `set -o pipefail` fails open via SIGPIPE
@@ -108,8 +108,59 @@ does not transfer. Perversely, the *earlier and more successful* the match, the 
 the flake. Fix is the same here-string: `if grep -qF -- "$3" <<<"$2"` — the shell buffers
 the whole string before grep runs, so there is no writer left to break.
 
+### Variant: a needle starting with `-` is parsed as an OPTION, and the usage error reads as "no match" (2026-08-13)
+
+A fourth face, and the only one that is not about pipes at all — but it lands on the same
+helper with the same observable, so it belongs here. In `.claude/hooks/test-eslint-fix.sh`:
+
+```bash
+assert_not_contains "..." "--fix foo.ts" "$OUT"    # helper does: grep -qF "$needle" <<<"$out"
+```
+
+`grep` parses `--fix foo.ts` as an **option**, prints
+`grep: unrecognized option '--fix foo.ts'`, and exits **2**. An `if grep -q ...` sees only
+"non-zero", which is the same branch a genuine no-match takes — so the assertion reported
+**PASS without ever searching**. It was caught only because grep's usage text happened to be
+visible in the test output; had stderr been redirected, it would have been silent.
+
+Fix: `grep -qF -- "$needle"`. The `--` in this doc's other examples is load-bearing for this
+reason, not decoration.
+
+The exposure is asymmetric and worth internalizing: a **positive** assertion degrades safely
+(a broken grep reports FAIL, which someone investigates), but a **negative** assertion's
+healthy state is *also* "grep found nothing" — so a broken grep and a passing assertion are
+observationally identical. Any `assert_not_contains` / "must not appear" check is one
+argument-parse away from being permanently green. This is the same family as the two-sided
+negative-control rule: if the mutation you claim to catch cannot turn the check red, the
+check is decoration.
+
+Generalizes past `grep`: any predicate helper that forwards caller data as a leading
+argument (`rm`, `test`, `printf`, `sed`) needs `--` before the untrusted value.
+
+**Enforced, not just documented**, by `.claude/hooks/test-assert-needle-dash.sh` — a static
+scan over every `.claude/hooks/test-*.sh` for `grep`/`egrep`/`fgrep` + flags + `"$var"` with
+no `--`, carrying one positive control per covered shape, a negative control, a word-boundary
+control, and a non-vacuity floor on the scan population. A Prevention bullet with nothing
+behind it is the same decoration this doc warns about.
+
+Two things that guard got wrong first, both worth stealing:
+
+- **Cover the reflexive substitution.** A matcher for `grep` alone fails OPEN on `egrep`/`fgrep`
+  — the exact commands someone reaches for when "fixing" a flagged `grep -E`/`grep -F` without
+  adding `--`. A gate that a one-word rename defeats is not a gate.
+- **Spell the word boundary `(^|[^[:alnum:]_])`, not `\b`** — because `\b` is a GNU extension
+  POSIX ERE does not define (same reason as
+  [facade-only-enforced-by-source-grep-guard-test](../design-patterns/facade-only-enforced-by-source-grep-guard-test-2026-06-26.md)),
+  **not** because BSD grep mis-parses it. Measured: BSD grep 2.6.0-FreeBSD implements `\b`
+  correctly (`grepb` is rejected, `foo-bar` matches `foo\b`). The real first-run bug was having
+  no LEADING boundary at all, which matched `pgrep -P "$PID"`; `\bgrep\b` would have fixed that
+  too. Reach for the portability argument, which is true, not the mis-parse one, which is not.
+
 ## Prevention
 
+- Put `--` before any variable needle in an assert helper. A needle is caller-supplied data,
+  not a flag; without `--`, a value that happens to start with `-` silently changes the
+  helper's meaning — and for a negative assertion, silently disarms it.
 - Treat **any** `producer | grep -q` (or `| head`, `| sed q`) used as an `if` / `&&` /
   `||` condition under `pipefail` as suspect: the consumer short-circuits, the producer
   takes SIGPIPE, and `pipefail` turns that into a non-zero pipeline. Prefer a here-string.

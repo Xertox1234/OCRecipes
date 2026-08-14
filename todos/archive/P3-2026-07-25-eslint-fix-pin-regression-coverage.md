@@ -1,9 +1,9 @@
 ---
 title: "Assert the eslint-fix relative-path pin, and tidy two test-hygiene nits in test-pr-preflight-guard.sh"
-status: backlog
+status: done
 priority: low
 created: 2026-07-25
-updated: 2026-07-25
+updated: 2026-08-13
 assignee:
 labels: [deferred, testing, hooks]
 github_issue:
@@ -82,3 +82,39 @@ write-path behavior is the same footgun one level down — hence this todo.
 
 - Filed from the pre-merge review of PR #718. All three findings were rated non-blocking
   by the reviewer, which is why #718 merged without them.
+
+### 2026-08-13 — DONE (PR #808)
+
+All five acceptance criteria met. `bash scripts/run-hook-tests.sh` green.
+
+**AC-1 implemented with one deliberate deviation.** The stated negative needle
+(`NOT <project-root>/foo.ts`) can never fire: an unpinned hook emits a bare `--fix foo.ts`,
+which does not contain `<project-root>/foo.ts` either, so the assertion would pass in both
+directions. Implemented against the form the bug actually produces. The positive assertion
+(exact argv via a new `echoargs` stub mode) is independently mutation-proof.
+
+**AC-2 mutation check.** Commenting out `eslint-fix.sh:30` → `9 passed, 2 failed`: both
+relative-pin assertions RED, the original 8 and the new absolute-path case GREEN. Review
+added two more mutants: dropping the `/` join → 10/1; applying the pin unconditionally →
+caught by the absolute-path case.
+
+**AC-4 premise verified rather than assumed.** bash runs the EXIT trap on SIGINT (130) and
+SIGTERM (143), so the prescribed plain `EXIT` does deliver the stated "interrupted run"
+motivation — no `INT TERM` needed.
+
+**Found and fixed en route (not in the original scope).** The new negative assertion was
+itself vacuous: `grep -qF "--fix foo.ts"` parses the needle as an option, exits 2, and
+`if grep -q` reads that as "not found" — PASS without searching. Hardened every
+variable-needle assert helper in `.claude/hooks/test-*.sh` with `grep -- `, codified the
+mechanism as a fourth variant on
+`docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-2026-06-27.md`,
+and added `.claude/hooks/test-assert-needle-dash.sh` to ENFORCE it (static scan, two-sided
+controls, non-vacuity check) so the convention cannot decay back into prose.
+
+**Residual, deliberately not fixed.** Test 14 in `test-pr-preflight-guard.sh` remains
+one-sided; per this todo's scope only its comment was corrected, and it now states plainly
+that its DENY is over-determined. Separately, adding `harness` to the solution doc's tags
+removes a categorical routing exclusion but does not yet yield delivery: the doc ranks
+#10 of 16 glob-tier matches for `.claude/hooks/test-*.sh`, and that tier truncates to 8
+then caps at 4 — a date-ordered truncation ahead of relevance, in the retrieval layer
+(`.claude/hooks/inject-patterns.sh:326-345`). Noted, not pursued.
