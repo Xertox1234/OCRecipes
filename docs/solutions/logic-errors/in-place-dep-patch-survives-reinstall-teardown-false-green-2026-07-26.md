@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: shared
 severity: medium
-tags: [cocoapods, ios, native-build, dependency-patching, post-install, verification, tooling, fmt]
+tags: [cocoapods, ios, react-native, native-build, dependency-patching, post-install, verification, tooling, fmt]
 symptoms: ['Deleting a dependency patch and rebuilding "clean" succeeds locally, but CI/EAS fails with the exact errors the patch existed to suppress', 'A build hook that mutates a vendored file prints nothing on the second `pod install` / `npm install` — it silently takes an already-patched branch', 'The patched file is gitignored, so `git status` is clean and nothing signals that the tree is in a non-pristine state', 'Two developers on the same commit get different build results depending on whether they ever ran the patching version of the hook']
 applies_to: [ios/Podfile, package.json, patches/**]
 created: '2026-07-26'
@@ -81,16 +81,40 @@ Name the **package** cache, not the build cache, in the removal instruction:
 # EAS — which pod-installs into a pristine sandbox — fails.
 ```
 
-Verify the mechanism rather than reasoning about it. Run the reinstall and check
-whether the patch marker is still present and un-duplicated:
+Verify the mechanism rather than reasoning about it — demonstrate that a *plain*
+reinstall does not re-extract the pod, with the hook still in place and the
+sandbox already patched from a prior run. Run the reinstall and check two
+separate things — they are not interchangeable, and only one of them
+discriminates:
 
 ```bash
-pod install                                        # expect NO "[fmt] patched ..." line
-grep -c "patched by Podfile" ios/Pods/fmt/include/fmt/base.h   # expect exactly 1
+pod install                                        # CHECK 1 — expect NO "[fmt] patched ..." line
+grep -c "patched by Podfile" ios/Pods/fmt/include/fmt/base.h   # CHECK 2 — expect exactly 1
 ```
 
-A silent run with the marker still at 1 **is** the proof: the sandbox was not
-re-extracted, so a hook deletion would have left the patch in place.
+**Check 1 (the silent `pod install`) is the actual proof of non-re-extraction —
+for THIS specific invocation: a plain reinstall, hook still present, sandbox
+already patched.** CocoaPods only prints the patch hook's `[fmt] patched ...`
+message when it re-extracts the pod and the hook runs against it again.
+Silence here means the sandbox was never touched by this command — which is
+exactly the hazard: it demonstrates that deleting the hook and running this
+same plain `pod install` would leave the already-patched header in place
+untouched, unrelated to whether the hook is even still there to re-apply it.
+**This inverts for the doc's own recommended removal check** (`rm -rf ios/Pods
+&& pod install`, above): that command forces re-extraction, so with the hook
+still present the `[fmt] patched ...` line correctly **does** print — expected
+and healthy, not a failure. Check 1 is a mechanism demonstration you run
+*before* deciding whether the hook can be removed, not a post-deletion
+verification step.
+
+**Check 2 (`grep -c … # expect 1`) proves only non-duplication, and cannot by
+itself tell the two worlds apart.** It returns `1` in *both*: the sandbox was
+left alone (the stale marker from a prior run survives untouched), **and** the
+sandbox was re-extracted and the hook re-ran and re-patched it (a fresh marker,
+also count 1). A reader who skims to this line and stops has exactly the "check
+that cannot fail" this solution's own Prevention section warns against — Check
+2 only rules out a double-patch; Check 1 is what rules out re-extraction (for
+the plain-reinstall invocation it's scoped to, above).
 
 Also give every skip path a warning. A patch hook that no-ops silently — because
 the target file moved, not just because the anchor changed — reproduces this

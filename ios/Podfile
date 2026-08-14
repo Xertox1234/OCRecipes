@@ -123,9 +123,9 @@ target 'OCRecipes' do
                        'format-inl.h, update or remove this Podfile patch.'
         end
       else
-        # Same reasoning as the anchor-missing warn above. A pod rename,
-        # use_frameworks!, a modular-headers change, or RN vendoring fmt
-        # elsewhere would move this path and skip the patch in total silence.
+        # Same reasoning as the anchor-missing warn above. A pod rename, or RN
+        # vendoring fmt elsewhere, would move this path and skip the patch in
+        # total silence.
         Pod::UI.warn "[fmt] base.h not found at #{fmt_base_h} — the pod layout " \
                      'may have changed, so the consteval patch was NOT applied. ' \
                      'Expect a clean build to fail in fmt/format-inl.h.'

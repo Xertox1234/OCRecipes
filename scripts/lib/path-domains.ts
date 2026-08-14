@@ -306,6 +306,23 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     domains: ["harness"],
     description: "`docs/rules/**`",
   },
+  // --- ios native build ---
+  // Decision recorded 2026-08-13 (human call, in-session): ios/** routes to the existing
+  // react-native domain rather than a new domain label — see
+  // todos/archive/P3-2026-07-26-ios-path-domain-mapping-gap-and-doc-nits.md. `recursive-dir`
+  // is the only Matcher kind that can express this (no kind can target `*.podspec` /
+  // `**/*.pbxproj` specifically), so `(^|/)ios/` is the compiled form: it matches ANY
+  // directory literally named `ios`, including `node_modules/**/ios/**` — the same accepted
+  // over-match class already documented on the `scripts`/`docs/solutions` rules above. That
+  // also means unrelated native edits (asset catalogs, Info.plist) inject the iOS corpus as
+  // noise; weighed and ACCEPTED in favour of one simple rule rather than scoping to a
+  // narrower matcher this vocabulary can't express.
+  {
+    match: { kind: "recursive-dir", dir: "ios" },
+    domains: ["react-native"],
+    description:
+      "`ios/**` (any directory named `ios`, incl. `node_modules/**/ios/**`)",
+  },
 ];
 
 function escapeRe(s: string): string {
