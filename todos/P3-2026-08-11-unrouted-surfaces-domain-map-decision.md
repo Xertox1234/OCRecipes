@@ -77,13 +77,25 @@ Precedent and mechanics: PR #799 (docs/\*\* → harness) is the template — rul
   - `docs/solutions/code-quality/xcode-ambiguous-deps-alwaysoutofdate-committed-pbxproj-2026-06-23.md`
   - `docs/solutions/best-practices/visioncamera-5-upgrade-ios-xcode26-build-2026-06-02.md`
   - `docs/solutions/best-practices/ios-native-asset-sync-persistent-ios-directory-2026-05-13.md`
-  - Observed empirically (2026-08-13): only 3 of these 6 actually surface on an
-    `ios/Podfile` edit — the `SOLUTIONS_PER_DOMAIN=4` ranking cap (newest-first
-    within the `applies_to`-matched tier) bumped the two oldest (both dated
-    2026-05-13) and left one slot to a newer, unrelated `react-native`+iOS doc
-    (`podfile-lock-snapshot-refuses-native-major-pod-update-cascades-2026-07-27.md`).
-    Routing is correctly wired; this is normal date-tier truncation, not a bug —
-    worth knowing if `android/**` routing is added later and hits the same cap.
+  - Observed empirically (2026-08-13, by running the hook — before: preamble
+    only, 1155 B; after: 6063 B with a `[RULES — react-native]` block and 4
+    solution refs). Only **3 of these 6** surface on an `ios/Podfile` edit. The
+    `SOLUTIONS_PER_DOMAIN=4` cap fills newest-first, so the 4 delivered slots
+    are `podfile-lock-snapshot-…-2026-07-27` (**not** one of the six),
+    `in-place-dep-patch-…-2026-07-26`, `xcode-ambiguous-deps-…-2026-06-23`, and
+    `vision-camera-ocr-plus-…-2026-06-02`. The **3** displaced are
+    `visioncamera-5-upgrade-…-2026-06-02` (same date as the one above it — ties
+    break reverse-lexicographically on path, so `code-quality/` won over
+    `best-practices/`), `vision-camera-v4-to-v5-migration-2026-05-13`, and
+    `ios-native-asset-sync-…-2026-05-13`.
+  - Read that as **signal, not noise**, when deciding `android/**`: the
+    non-listed doc that took a slot is about `Podfile.lock` update cascades —
+    more on-point for a Podfile edit than the two 2026-05-13 migration docs it
+    displaced. Routing is correctly wired; this is ordinary newest-first
+    truncation, not a bug. The lesson for the remaining surfaces is that
+    _adding a route does not guarantee any specific doc is delivered_ — only
+    that the pool becomes reachable. Verify by running the hook, never by
+    reading the mapping table.
 
 ### 2026-08-11
 

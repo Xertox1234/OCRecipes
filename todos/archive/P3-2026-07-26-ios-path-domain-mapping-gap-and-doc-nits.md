@@ -52,7 +52,7 @@ Currently-inert `applies_to: ios/...` declarations:
       label means a new `docs/rules/<domain>.md` and touches the
       copilot-instructions generator, so this is a real design choice, not a
       one-line addition. **Decided 2026-08-13 (human, in-session): `ios/**`    maps onto the existing`react-native`domain — no new domain label.**
-    Recorded as an inline comment on the rule in`scripts/lib/path-domains.ts`.
+  Recorded as an inline comment on the rule in`scripts/lib/path-domains.ts`.
 - [x] `scripts/lib/path-domains.ts` maps `ios/**` (at minimum `ios/Podfile`,
       `ios/*.podspec`, `ios/**/*.pbxproj`) to the chosen domain(s). Implemented
       as `{ kind: "recursive-dir", dir: "ios" }` (the only `Matcher` kind that
@@ -72,15 +72,20 @@ Currently-inert `applies_to: ios/...` declarations:
       `file_path`, both agree). Result: 4 `react-native` solution refs surface
       (capped by `SOLUTIONS_PER_DOMAIN=4`, newest-first within the
       `applies_to`-matched tier) — 3 of the 6 originally-named docs
-      (`xcode-ambiguous-deps-alwaysoutofdate-committed-pbxproj`,
-      `vision-camera-ocr-plus-v5-cpp-interop`,
-      `in-place-dep-patch-survives-reinstall-teardown-false-green`) plus one
-      newer unrelated react-native+iOS doc
-      (`podfile-lock-snapshot-refuses-native-major-pod-update-cascades-2026-07-27.md`).
-      The other 3 named docs (both 2026-05-13-dated, plus
-      `vision-camera-v4-to-v5-migration`) lose their slot to the date-tier cap —
-      routing is correctly wired; this is expected ranking truncation, not a
-      defect. Full detail migrated to `todos/P3-2026-08-11-unrouted-surfaces-domain-map-decision.md`.
+      (`in-place-dep-patch-survives-reinstall-teardown-false-green-2026-07-26`,
+      `xcode-ambiguous-deps-alwaysoutofdate-committed-pbxproj-2026-06-23`,
+      `vision-camera-ocr-plus-v5-cpp-interop-2026-06-02`) plus one newer doc
+      that was NOT on the six-doc list
+      (`podfile-lock-snapshot-refuses-native-major-pod-update-cascades-2026-07-27.md`
+      — on-point for a Podfile edit, so the slot is signal, not noise).
+      The 3 that lose their slot to the cap are
+      `visioncamera-5-upgrade-ios-xcode26-build-2026-06-02` (same date as
+      `vision-camera-ocr-plus`; ties break reverse-lexicographically on path, so
+      `code-quality/` won over `best-practices/`),
+      `vision-camera-v4-to-v5-migration-2026-05-13`, and
+      `ios-native-asset-sync-persistent-ios-directory-2026-05-13`. Routing is
+      correctly wired; this is expected newest-first truncation, not a defect.
+      Full detail migrated to `todos/P3-2026-08-11-unrouted-surfaces-domain-map-decision.md`.
 - [x] `docs/solutions/logic-errors/in-place-dep-patch-survives-reinstall-teardown-false-green-2026-07-26.md`
       — split the two verification checks in the `## Solution` recipe. Silent
       `pod install` output proves non-re-extraction; `grep -c … # expect 1`
