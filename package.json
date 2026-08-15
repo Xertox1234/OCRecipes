@@ -94,6 +94,7 @@
     "drizzle-orm": "^0.45.2",
     "drizzle-zod": "^0.7.1",
     "expo": "^54.0.23",
+    "expo-application": "~55.0.10",
     "expo-blur": "~15.0.8",
     "expo-clipboard": "~8.0.8",
     "expo-constants": "~18.0.9",
