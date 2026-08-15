@@ -1,6 +1,6 @@
 ---
 title: "No in-app build/runtimeVersion display, so a stale binary is undiagnosable on-device"
-status: backlog
+status: done
 priority: low
 created: 2026-07-30
 updated: 2026-07-30
@@ -90,3 +90,43 @@ causes) and `docs/solutions/logic-errors/two-features-reverting-at-once-implicat
 
 - Initial creation, deferred out of the barcode scan flow 2.0 Phase 1 device-verification
   session (PR #736).
+
+### 2026-08-14 — DONE
+
+**Premise 1 was false when this was filed.** `SettingsScreen.tsx` already rendered a
+`Version X (Y)` label, shipped 2026-05-11 in commit `140e44cd` out of
+`todos/archive/2026-05-10-privacy-policy-link.md` — 2.5 months before this todo. The grep
+recorded in Background was accurate but its terms (`runtimeVersion`, `nativeBuildVersion`, …)
+could never have matched the actual implementation, which used `Constants.expoConfig`. Second
+recorded instance of
+`docs/solutions/logic-errors/symbol-existence-grep-is-not-claim-verification-2026-07-05.md`.
+
+That existing label was also the _wrong source_: `Constants.expoConfig` describes the running
+manifest, so after an OTA it reports the update's version rather than the binary's — and since
+`app.json` declares no `ios.buildNumber`, its build-number branch had nothing to read and
+always degraded to a bare `Version 1.0.0`.
+
+Shipped instead: a three-line block reading `expo-application` (installed binary) and
+`expo-updates` (update runtime), one a11y node, tap-to-copy a structured payload.
+
+Deviations from the ACs above, both deliberate:
+
+- **AC#5's `accessibilityRole="text"` → `"button"`.** AC#4 requires the value be copyable,
+  which requires a `Pressable`; `role="text"` on an actionable element lies to VoiceOver. The
+  intent — one node, one label reading end-to-end — is met via `accessible={false}` children.
+- **Scope Contract's "no new dependency" → `expo-application` declared.** Its pod
+  (`EXApplication 55.0.10`) already shipped transitively via `expo-notifications`, so
+  `ios/Podfile.lock` diffs empty: no native rebuild, no `runtimeVersion` bump. The contract's
+  purpose was met; only its letter was not.
+
+Two defects the unit tests could not have caught, both found by running the screen:
+
+- The dev branch keyed off `Updates.isEnabled`. A Metro-served dev client actually reports
+  `isEnabled: true`, so it fell through and rendered a nonexistent "Bundle: OTA unknown".
+- The block grew one line to three and the last sat behind the floating tab bar.
+
+**Open, needs a real preview build:** only the `!isEnabled`/dev-server branch is observable
+locally. The embedded-vs-OTA branches and the no-channel discriminator are unit-tested but
+unverified on-device. Also unconfirmed: whether the copy toast paints (the handler provably
+runs — clipboard written, catch block never entered — but a 3s toast could not be captured
+with the available simulator tooling).
