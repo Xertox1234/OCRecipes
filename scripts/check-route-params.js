@@ -48,11 +48,10 @@ const colors = {
 };
 
 /**
- * An inline object literal as the ParamList argument to `RouteProp`.
+ * Form 1 — an inline object literal as the ParamList argument to `RouteProp`.
  *
  * The `\s*` is load-bearing, not defensive tidiness. Prettier owns formatting
- * and runs BEFORE this check in the same lint-staged array, so a violation
- * with a longer alias name reaches us already wrapped:
+ * in this repo, so the construct may already be committed wrapped:
  *
  *   useRoute<
  *     RouteProp<
@@ -61,10 +60,37 @@ const colors = {
  *     >
  *   >();
  *
- * A bare `RouteProp<{` literal match would pass that silently — which is the
- * shape a real future violation is most likely to take.
+ * A bare `RouteProp<{` literal match passes that silently. This is not a
+ * hypothetical: `ItemDetailScreen` was committed in exactly that shape and
+ * escaped BOTH greps used to bound the defect class (see the 2026-08-15
+ * conventions doc in `## Prevention` below).
+ *
+ * Note the ordering is NOT guaranteed either way — `prettier --write` sits in
+ * the `*.{ts,tsx}` lint-staged entry while this check sits in
+ * `client/**\/*.{ts,tsx}`, and lint-staged runs separate glob entries
+ * concurrently. The regex must therefore tolerate both forms on its own merits
+ * rather than relying on running after the formatter.
  */
 const INLINE_PARAMLIST = /RouteProp\s*<\s*\{/g;
+
+/**
+ * Form 2 — a NAMED local alias as the ParamList argument:
+ *
+ *   type LocalParams = { imageUri: string };
+ *   type ScreenRoute = RouteProp<LocalParams, "LabelAnalysis">;
+ *
+ * Semantically identical to form 1 and equally invisible to `tsc`, but a
+ * two-line extract-variable refactor walks straight past a form-1-only rule.
+ *
+ * The discriminator is `export`: every canonical ParamList in this repo is
+ * declared `export type <Name>ParamList = {` in its navigator module, so an
+ * EXPORTED object-literal alias is a source of truth and an unexported one is
+ * a shadow. The negative lookahead is what keeps the navigator modules
+ * themselves from tripping the rule on their own declarations.
+ */
+const LOCAL_OBJECT_ALIAS =
+  /^[ \t]*(?!export\b)type\s+([A-Za-z_$][\w$]*)\s*=\s*\{/gm;
+const ROUTEPROP_NAMED_ARG = /RouteProp\s*<\s*([A-Za-z_$][\w$]*)\s*,/g;
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx"];
 
@@ -98,19 +124,48 @@ function findSourceFiles(rootDir) {
   return results;
 }
 
+/** 1-indexed line number for a match offset. Regexes here can span newlines. */
+function lineAt(content, index) {
+  return content.slice(0, index).split("\n").length;
+}
+
 /**
- * Returns one `{ line }` entry per inline-ParamList occurrence. The regex can
- * span newlines, so the line number is derived from the match index rather
- * than from a per-line scan.
+ * Returns one `{ line, detail }` entry per shadowed ParamList, covering both
+ * forms: an inline object literal, and a named local (unexported)
+ * object-literal alias passed as the ParamList argument.
  */
 function findViolations(content) {
   const violations = [];
-  INLINE_PARAMLIST.lastIndex = 0;
   let match;
+
+  INLINE_PARAMLIST.lastIndex = 0;
   while ((match = INLINE_PARAMLIST.exec(content)) !== null) {
-    const line = content.slice(0, match.index).split("\n").length;
-    violations.push({ line });
+    violations.push({
+      line: lineAt(content, match.index),
+      detail: "an inline object literal",
+    });
   }
+
+  // Collect the file's unexported object-literal type aliases first, then flag
+  // any RouteProp whose ParamList argument names one of them.
+  const localAliases = new Set();
+  LOCAL_OBJECT_ALIAS.lastIndex = 0;
+  while ((match = LOCAL_OBJECT_ALIAS.exec(content)) !== null) {
+    localAliases.add(match[1]);
+  }
+
+  if (localAliases.size > 0) {
+    ROUTEPROP_NAMED_ARG.lastIndex = 0;
+    while ((match = ROUTEPROP_NAMED_ARG.exec(content)) !== null) {
+      if (localAliases.has(match[1])) {
+        violations.push({
+          line: lineAt(content, match.index),
+          detail: `the local type alias \`${match[1]}\``,
+        });
+      }
+    }
+  }
+
   return violations;
 }
 
@@ -147,8 +202,8 @@ function main() {
       );
       process.exit(1);
     }
-    for (const { line } of findViolations(content)) {
-      failures.push({ filePath, line });
+    for (const { line, detail } of findViolations(content)) {
+      failures.push({ filePath, line, detail });
     }
   }
 
@@ -165,7 +220,7 @@ function main() {
   if (failures.length === 0) {
     if (filesChecked > 0) {
       console.log(
-        `${colors.green}✓ No inline route-param shadows in ${filesChecked} file${
+        `${colors.green}✓ No route-param shadows in ${filesChecked} file${
           filesChecked === 1 ? "" : "s"
         }${colors.reset}`,
       );
@@ -176,9 +231,9 @@ function main() {
   console.log(
     `${colors.bold}Local route params shadow the navigator:${colors.reset}\n`,
   );
-  for (const { filePath, line } of failures) {
+  for (const { filePath, line, detail } of failures) {
     console.log(
-      `${colors.cyan}${filePath}:${line}${colors.reset}: RouteProp takes an inline object literal instead of indexing RootStackParamList`,
+      `${colors.cyan}${filePath}:${line}${colors.reset}: RouteProp takes ${detail} instead of indexing RootStackParamList`,
     );
   }
   console.log(`\n${colors.bold}Summary:${colors.reset}`);

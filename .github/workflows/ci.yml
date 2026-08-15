@@ -51,6 +51,9 @@ jobs:
       - name: BottomSheetModal BackHandler wiring
         run: node scripts/check-bottomsheet-backhandler.js
 
+      - name: Route-param shadow check
+        run: node scripts/check-route-params.js
+
       - name: IDOR storage check
         run: node scripts/check-idor-storage.js
 

@@ -58,9 +58,14 @@ describe("check-route-params.js", () => {
   });
 
   // The regression case for the `\s*` in the pattern. Prettier owns formatting
-  // and runs BEFORE this checker in the same lint-staged array, so a violation
-  // with a longer alias name reaches the checker already wrapped across lines.
-  // A bare `RouteProp<{` literal match would pass this silently.
+  // in this repo, so a violation can be COMMITTED already wrapped across lines
+  // — which is how ItemDetailScreen escaped both greps used to bound the defect
+  // class. A bare `RouteProp<{` literal match would pass this silently.
+  //
+  // Note there is no ordering guarantee to lean on: `prettier --write` lives in
+  // the `*.{ts,tsx}` lint-staged entry and this check in `client/**/*.{ts,tsx}`,
+  // and lint-staged runs separate glob entries concurrently. The pattern has to
+  // tolerate both forms on its own merits.
   it("exits 1 on the Prettier-wrapped multi-line form", () => {
     const file = writeTsx(`
       type SomeLongerAliasNameForRouteParams = {
@@ -83,6 +88,45 @@ describe("check-route-params.js", () => {
     // also exits 1, so a status-only assertion here would pass for the wrong
     // reason — and this is the case guarding the `\s*` in the pattern.
     expect(stdout).toContain("RootStackParamList");
+  });
+
+  // Extracting the inline literal to a name is a two-line refactor that leaves
+  // the shadow — and its silent param-drop — completely intact. A rule that only
+  // knows the inline form is not a rule about the defect class.
+  it("exits 1 when the ParamList argument is a NAMED local object-literal alias", () => {
+    const file = writeTsx(`
+      type LocalParams = {
+        imageUri: string;
+      };
+      type ScreenRoute = RouteProp<LocalParams, "LabelAnalysis">;
+
+      export default function Screen() {
+        const route = useRoute<ScreenRoute>();
+        return <View uri={route.params.imageUri} />;
+      }
+    `);
+    const { status, stdout } = runCheck(file);
+    expect(status).toBe(1);
+    expect(stdout).toContain("LocalParams");
+  });
+
+  // The discriminator between "shadow" and "source of truth" is `export`: every
+  // canonical ParamList in this repo is `export type <Name>ParamList = {` in its
+  // navigator module. Without this carve-out the navigators would flag themselves.
+  it("exits 0 when the named alias is EXPORTED (a navigator's own ParamList)", () => {
+    const file = writeTsx(`
+      export type ProfileStackParamList = {
+        ItemDetail: { itemId: number };
+      };
+      type ScreenRoute = RouteProp<ProfileStackParamList, "ItemDetail">;
+
+      export default function Screen() {
+        const route = useRoute<ScreenRoute>();
+        return <View id={route.params.itemId} />;
+      }
+    `);
+    const { status } = runCheck(file);
+    expect(status).toBe(0);
   });
 
   it("exits 0 when RouteProp indexes the canonical ParamList", () => {

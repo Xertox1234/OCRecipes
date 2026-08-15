@@ -91,9 +91,27 @@ one-off grep:
    every instance at the right line; a guard only ever observed passing is a
    decoration.
 
-The ordering constraint is real: in `lint-staged`, `prettier --write` runs
-against the same files, so a checker in that slot must assume it may see either
-the pre- or post-format text.
+Two things the guard must NOT rely on:
+
+- **Formatter ordering.** In `lint-staged`, `prettier --write` and a checker
+  registered under a *different* glob key run **concurrently** — separate glob
+  entries have no ordering relative to each other (only the commands inside one
+  entry's array are sequential). The pattern has to tolerate both the wrapped and
+  unwrapped forms on its own merits. The wrapped form also arrives via already-
+  committed code, which is the case that actually bit here.
+- **One syntactic shape standing in for the class.** A rule that matched only the
+  inline literal was walked past by a two-line extract-variable refactor:
+
+  ```ts
+  type LocalParams = { imageUri: string };            // same shadow…
+  type ScreenRoute = RouteProp<LocalParams, "Foo">;   // …invisible to a form-1-only rule
+  ```
+
+  Enumerate the *forms the defect takes*, then find a discriminator that separates
+  them from the legitimate shape. Here it is `export`: a canonical ParamList is
+  always `export type <Name>ParamList = {` in its navigator module, so an
+  unexported object-literal alias is a shadow and an exported one is a source of
+  truth — which also stops the navigators from flagging their own declarations.
 
 ## Exceptions
 
