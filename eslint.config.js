@@ -109,6 +109,7 @@ module.exports = defineConfig([
     rules: {
       "ocrecipes/no-error-message-in-ui": "error",
       "ocrecipes/no-dead-apiRequest-guard": "error",
+      "ocrecipes/no-shadowed-route-paramlist": "error",
     },
   },
   {

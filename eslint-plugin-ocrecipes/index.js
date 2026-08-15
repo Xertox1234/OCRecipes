@@ -7,9 +7,13 @@
  * - no-as-string-req:         Ban `as string` casts on `req.params.*` / `req.query.*`.
  * - no-error-message-in-ui:   Ban direct user-facing `error.message` rendering in client UI.
  * - no-dead-apiRequest-guard: Ban unreachable `if (!res.ok)` checks after `await apiRequest(...)`.
+ * - no-shadowed-route-paramlist: Ban a `RouteProp`/`NativeStackScreenProps` ParamList argument
+ *                             that is not a navigator's canonical ParamList.
  */
 
 "use strict";
+
+const path = require("path");
 
 // ─── no-bare-error-response ─────────────────────────────────────────────────
 // Detects: res.status(N).json({ error: ... }) or res.status(N).json({ message: ... })
@@ -583,6 +587,378 @@ const noDeadApiRequestGuard = {
   },
 };
 
+// ─── no-shadowed-route-paramlist ───────────────────────────────────────────
+//
+// Rejects a route-param type constructor whose ParamList argument is anything
+// other than a navigator's canonical ParamList.
+//
+// Why this exists:
+//   A local restatement of the route params is not a duplicate, it is a
+//   SHADOW. TypeScript cannot warn that you ignored a field your own type says
+//   does not exist, so a param added to the navigator produces no error at any
+//   layer and silently never arrives at the screen. `NutritionDetail` lost two
+//   user-captured photo URIs to exactly this (PR #742) — the user completed a
+//   three-step capture flow and got back a stock image, with strict mode and CI
+//   green throughout.
+//
+//   See docs/solutions/logic-errors/
+//       local-route-param-type-shadows-canonical-paramlist-2026-07-30.md
+//
+// This replaced `scripts/check-route-params.js`, a single-file TEXT scanner
+// (PR #812). The move to an AST rule is not a refinement of the same technique
+// — it changes what is reachable. The scanner's four documented residuals were
+// all consequences of matching characters:
+//
+//   1. `type P<T> = { … }` / `type P = Readonly<{ … }>` broke the `type <Name> = {`
+//      adjacency the pattern required;
+//   2. `export type P = { … }` inside a screen was indistinguishable from a
+//      navigator's own declaration, because `export` was the only available
+//      discriminator;
+//   3. a shadow declared in ANOTHER module and imported — declared "unreachable
+//      in principle for a single-file scanner";
+//   4. a same-line comment defeated the `^` line anchor.
+//
+// Asking where an identifier is BOUND rather than what the text near it looks
+// like closes all four. Residual 3 in particular was only ever unreachable for a
+// *text* scanner: the declaration is in another file, but the *import statement*
+// is in this one, so scope analysis sees it without a program load. That is why
+// this is a plain (non-type-aware) rule and can run in lint-staged as well as CI.
+//
+// Known coverage gaps (patterns that bypass this rule):
+//
+// 1. A wrong ParamList declared in, or re-exported from, an ALLOWLISTED module
+//    — `client/navigation/<X>Navigator.*` or `client/types/navigation.ts`.
+//    Irreducible: something has to be the source of truth, and these are it.
+//
+// 2. The constructor bypassed entirely by hand-writing the route object shape:
+//
+//      useRoute<{ params: X; name: string; key: string }>()
+//
+//    No route-param constructor is named, so nothing here fires. Vanishingly
+//    unlikely and visible in review.
+//
+// 3. Navigation-only constructors (`NativeStackNavigationProp`,
+//    `CompositeNavigationProp`, `BottomTabNavigationProp`) also take a ParamList
+//    but carry no route params. Deliberately out of scope: a shadow there
+//    degrades `navigate()` autocomplete, it does not silently drop a param.
+//    `CompositeScreenProps` is out of scope for a different reason — its first
+//    type argument is a ScreenProps object, not a ParamList (see the Set below).
+//
+// 4. A generic type PARAMETER in the ParamList position is reported as a local
+//    declaration, so a generic route-helper wrapper cannot be written without a
+//    disable comment. Deliberate — see the note at the `variable.defs` branch;
+//    exempting type parameters would turn such a wrapper into a laundering path.
+//
+// NOT a gap, though an earlier revision made it one: a shadow imported from a
+// module that merely LOOKS like a navigator (`./FakeNavigator` beside a screen).
+// The allowlist resolves the specifier against the importing file and requires
+// it to land under `client/navigation/` or `client/types/navigation`. Matching
+// the specifier text accepted that shadow from anywhere in the tree — which is
+// residual 3, the reason this rule exists, reopened by its own allowlist.
+
+/**
+ * Type constructors whose FIRST type argument is a ParamList *and* which carry
+ * route params through to the screen (each exposes `route: RouteProp<P, K>`).
+ *
+ * `CompositeScreenProps` is deliberately absent and must stay absent: its first
+ * type argument is another *ScreenProps object type*, not a ParamList
+ * (`CompositeScreenProps<A extends { navigation; route }, B extends { navigation }>`
+ * — @react-navigation/core types.d.ts), so guarding it would reject the correct
+ * `CompositeScreenProps<NativeStackScreenProps<RootStackParamList, "X">, …>`.
+ * Same reasoning excludes the navigation-only constructors; see gap 3 below.
+ */
+const ROUTE_PARAM_CONSTRUCTORS = new Set([
+  // ParamList-first signature VERIFIED against the installed .d.ts files.
+  "RouteProp", // @react-navigation/native
+  "NativeStackScreenProps", // @react-navigation/native-stack
+  "BottomTabScreenProps", // @react-navigation/bottom-tabs
+  //
+  // The rest of the family, whose packages are NOT installed here — so their
+  // signatures are asserted from react-navigation's uniform
+  // `XScreenProps<ParamList, RouteName>` convention and are UNVERIFIED against
+  // real typings. Listed anyway because the cost is asymmetric: a name nobody
+  // imports is inert, whereas installing one of these navigators would
+  // otherwise silently reopen the hole. If one turns out to have a different
+  // shape, it surfaces as a false positive the moment the package is added,
+  // which is the loud direction to be wrong in.
+  //
+  // This list is the whole family, not a sample — an earlier revision listed
+  // two of them and omitted `Drawer`/`MaterialBottomTab` for no stated reason,
+  // which made the comment's own rationale untrue.
+  "StackScreenProps", // @react-navigation/stack
+  "MaterialTopTabScreenProps", // @react-navigation/material-top-tabs
+  "DrawerScreenProps", // @react-navigation/drawer
+  "MaterialBottomTabScreenProps", // @react-navigation/material-bottom-tabs
+]);
+
+const NAVIGATION_PACKAGE = /^@react-navigation\//;
+
+/**
+ * The repo root, derived from this plugin's own location
+ * (`<root>/eslint-plugin-ocrecipes/index.js`) rather than from `process.cwd()`,
+ * which varies with how eslint was invoked. In a git worktree this resolves to
+ * that worktree's root, which is what we want.
+ */
+const PROJECT_ROOT = path
+  .resolve(path.dirname(module.filename), "..")
+  .replace(/\\/g, "/");
+
+/**
+ * A path as POSIX and relative to the repo root. A file outside the root comes
+ * back with a leading `../`, which every anchored pattern below then rejects.
+ */
+function toRepoRelative(filePath) {
+  const raw = String(filePath).replace(/\\/g, "/");
+  const abs = raw.startsWith("/") ? raw : path.posix.join(PROJECT_ROOT, raw);
+  return path.posix.relative(PROJECT_ROOT, abs);
+}
+
+/**
+ * Where a module specifier lands, as a repo-root-relative POSIX path. Returns
+ * null for a bare package specifier, which is never canonical.
+ */
+function resolveSpecifier(source, filename) {
+  // The `@/` alias maps to ./client (tsconfig paths); `@shared/` cannot hold a
+  // ParamList, so it falls through to the bare-specifier branch.
+  if (source.startsWith("@/")) {
+    return path.posix.normalize("client/" + source.slice(2));
+  }
+  if (source.startsWith("./") || source.startsWith("../")) {
+    const dir = path.posix.dirname(toRepoRelative(filename));
+    return path.posix.normalize(path.posix.join(dir, source));
+  }
+  return null;
+}
+
+/**
+ * A ParamList is canonical only when its module LIVES at
+ * `client/navigation/<X>Navigator` or `client/types/navigation` — resolved
+ * against the importing file, not pattern-matched against the specifier text.
+ *
+ * The first implementation tested the TEXT (`/^\.{1,2}\/[A-Za-z0-9_$]+Navigator$/`
+ * and two similarly unanchored patterns) and was wrong in precisely the way this
+ * rule exists to prevent. `./FakeNavigator` sitting next to a screen satisfied
+ * it from anywhere in the tree, so "extract the shadow to a shared file" — the
+ * mutation residual 3 is *named after* — was accepted whenever the extracted
+ * file happened to be called `*Navigator`. Verified before the fix: a shadow in
+ * `client/screens/__probeFakeNavigator.ts`, imported by a sibling screen, went
+ * unreported.
+ *
+ * Spelling only ever CORRELATED with location. Location is the condition, and
+ * this is the third time in this rule's lineage that a correlate was shipped in
+ * place of the condition — see the paired conventions doc.
+ */
+function isCanonicalParamListModule(source, filename) {
+  const resolved = resolveSpecifier(source, filename);
+  if (resolved === null) return false;
+  // START-anchored, against a repo-root-relative path. The first attempt at
+  // this fix used `(?:^|\/)client\/navigation\/…`, which matches wherever a
+  // slash precedes — so `client/screens/vendor/client/navigation/EvilNavigator`
+  // and even a path climbing clean out of the repo
+  // (`../../evil-sibling/client/navigation/FooNavigator`) both passed as
+  // canonical. Verified before this fix; both are now regression cases.
+  return (
+    /^client\/navigation\/[A-Za-z0-9_$]+Navigator$/.test(resolved) ||
+    resolved === "client/types/navigation"
+  );
+}
+
+/**
+ * True when the file BEING LINTED is itself an allowlisted module, in which
+ * case a locally declared ParamList is the source of truth rather than a shadow.
+ *
+ * Discriminating by filename is what closes residual 2. The text scanner had to
+ * excuse every `export`ed alias to avoid flagging the navigators' own
+ * declarations, which also excused a screen that exported one.
+ */
+function isCanonicalParamListFile(filename) {
+  // Same start-anchoring as isCanonicalParamListModule, and for the same
+  // reason: an unrooted pattern here would let a real on-disk file at
+  // `client/screens/…/client/navigation/FooNavigator.tsx` declare its own
+  // ParamList and be believed. The two halves of this allowlist must answer
+  // "is this canonical?" the same way — an asymmetry between them was how the
+  // module half stayed wrong for a round after the file half was already right.
+  const rel = toRepoRelative(filename);
+  return (
+    /^client\/navigation\/[A-Za-z0-9_$]+Navigator\.tsx?$/.test(rel) ||
+    rel === "client/types/navigation.ts"
+  );
+}
+
+const noShadowedRouteParamList = {
+  meta: {
+    type: "problem",
+    docs: {
+      description:
+        "Disallow a RouteProp/NativeStackScreenProps ParamList argument that is not a navigator's canonical ParamList",
+    },
+    messages: {
+      shadowedParamList:
+        "`{{constructor}}`'s ParamList argument is {{detail}}, not a navigator's canonical ParamList. Import the ParamList from its navigator (e.g. `RootStackParamList` from `@/navigation/RootStackNavigator`) and index that. A local or foreign restatement is a SHADOW — a param added to the navigator silently never reaches the screen, with no error at any layer. See docs/solutions/logic-errors/local-route-param-type-shadows-canonical-paramlist-2026-07-30.md",
+    },
+    schema: [],
+  },
+  create(context) {
+    const sourceCode = context.sourceCode;
+    const selfIsCanonical = isCanonicalParamListFile(context.filename);
+
+    /** Walk the scope chain outward for the variable `name` resolves to. */
+    function resolveVariable(node, name) {
+      let scope = sourceCode.getScope(node);
+      while (scope) {
+        const found = scope.variables.find((v) => v.name === name);
+        if (found) return found;
+        scope = scope.upper;
+      }
+      return null;
+    }
+
+    /**
+     * The import a name is bound to, or null when it is declared locally or
+     * resolves to nothing. `exported` is the name the *module* exports, which
+     * differs from the local name under an alias (`RouteProp as RP`).
+     */
+    function importBindingOf(node, name) {
+      const variable = resolveVariable(node, name);
+      const def = variable && variable.defs[0];
+      if (!def || def.type !== "ImportBinding") return null;
+      const specifier = def.node;
+      const imported =
+        specifier.type === "ImportSpecifier" &&
+        specifier.imported &&
+        specifier.imported.type === "Identifier"
+          ? specifier.imported.name
+          : name;
+      return { source: def.parent.source.value, exported: imported };
+    }
+
+    /**
+     * The guarded constructor a type name denotes, or null.
+     *
+     * Judged by binding, never by spelling — an unbound name is NOT guarded.
+     * `RouteProp` and `NativeStackScreenProps` are ordinary named exports, never
+     * ambient globals, so in any code that compiles a real reference is always
+     * import-bound. A name-match fallback for the unbound case would therefore
+     * fire only on an unrelated local type that happens to share the name, e.g.
+     *
+     *   type RouteProp<P, K extends keyof P> = { params: P[K] };  // not ours
+     *
+     * — reintroducing, at the entry point, exactly the match-the-characters
+     * failure this rule replaced. An earlier revision had that fallback; it was
+     * removed once a mutation run showed 11 of the suite's invalid cases were
+     * passing through it rather than through scope resolution.
+     */
+    function guardedConstructor(typeName, node) {
+      // `RouteProp<…>`
+      if (typeName.type === "Identifier") {
+        const binding = importBindingOf(node, typeName.name);
+        if (!binding) return null;
+        return NAVIGATION_PACKAGE.test(binding.source) &&
+          ROUTE_PARAM_CONSTRUCTORS.has(binding.exported)
+          ? binding.exported
+          : null;
+      }
+
+      // `Nav.RouteProp<…>` via a namespace import. `shadowDetail` already walks
+      // qualified names on the ParamList side; without the same walk here the
+      // rule is asymmetric — it judges the argument but not the constructor.
+      if (typeName.type === "TSQualifiedName") {
+        if (typeName.right.type !== "Identifier") return null;
+        let root = typeName.left;
+        while (root.type === "TSQualifiedName") root = root.left;
+        if (root.type !== "Identifier") return null;
+        const binding = importBindingOf(root, root.name);
+        if (!binding) return null;
+        return NAVIGATION_PACKAGE.test(binding.source) &&
+          ROUTE_PARAM_CONSTRUCTORS.has(typeName.right.name)
+          ? typeName.right.name
+          : null;
+      }
+
+      return null;
+    }
+
+    /**
+     * Why a ParamList type argument is not canonical, or null when it is.
+     * The string is quoted into the diagnostic, so it names the actual defect
+     * rather than restating the rule.
+     */
+    function shadowDetail(typeNode) {
+      if (!typeNode) return null;
+
+      // An intersection is only as canonical as its weakest member. The
+      // `MealPlanStackParamList & ProfileStackParamList` shape is legitimate
+      // (FavouriteRecipes is registered in both stacks); adding a local alias
+      // to that intersection reintroduces the shadow.
+      if (typeNode.type === "TSIntersectionType") {
+        for (const member of typeNode.types) {
+          const detail = shadowDetail(member);
+          if (detail) return detail;
+        }
+        return null;
+      }
+
+      if (typeNode.type === "TSTypeLiteral") return "an inline object literal";
+      if (typeNode.type !== "TSTypeReference") {
+        return `a \`${typeNode.type}\` in the ParamList position`;
+      }
+
+      // `Nav.RootStackParamList` — the namespace binding is what to judge.
+      let root = typeNode.typeName;
+      while (root.type === "TSQualifiedName") root = root.left;
+      if (root.type !== "Identifier") {
+        return "a ParamList reference that is not a plain name";
+      }
+
+      const binding = importBindingOf(root, root.name);
+      if (binding) {
+        return isCanonicalParamListModule(binding.source, context.filename)
+          ? null
+          : `\`${root.name}\`, imported from "${binding.source}"`;
+      }
+
+      const variable = resolveVariable(root, root.name);
+      if (variable && variable.defs.length > 0) {
+        // NOTE this also catches a generic type PARAMETER, so a generic route
+        // helper — `useTypedRoute<P extends ParamListBase, K extends keyof P>()`
+        // wrapping `useRoute<RouteProp<P, K>>()` — is rejected as "the locally
+        // declared type `P`". That is a deliberate trade, not an oversight:
+        // skipping `def.type === "TypeParameter"` would make such a wrapper a
+        // laundering path, since the shadow would arrive at the CALL site
+        // (`useTypedRoute<LocalParams, "Foo">()`), which is a CallExpression
+        // this rule does not visit. No such helper exists in the tree; if one is
+        // ever wanted, it needs a disable comment and a reason.
+        return selfIsCanonical
+          ? null
+          : `the locally declared type \`${root.name}\``;
+      }
+
+      // Bound to nothing here — a global wrapper like `Readonly<{ … }>`, or a
+      // name that does not exist. Either way it is not a navigator's ParamList.
+      return `\`${root.name}\`, which resolves to no import in this file`;
+    }
+
+    return {
+      TSTypeReference(node) {
+        const constructorName = guardedConstructor(node.typeName, node);
+        if (!constructorName) return;
+
+        const typeArgs = node.typeArguments || node.typeParameters;
+        if (!typeArgs || typeArgs.params.length === 0) return;
+
+        const detail = shadowDetail(typeArgs.params[0]);
+        if (!detail) return;
+
+        context.report({
+          node,
+          messageId: "shadowedParamList",
+          data: { constructor: constructorName, detail },
+        });
+      },
+    };
+  },
+};
+
 // ─── Plugin export ──────────────────────────────────────────────────────────
 module.exports = {
   rules: {
@@ -591,5 +967,6 @@ module.exports = {
     "no-as-string-req": noAsStringReq,
     "no-error-message-in-ui": noErrorMessageInUi,
     "no-dead-apiRequest-guard": noDeadApiRequestGuard,
+    "no-shadowed-route-paramlist": noShadowedRouteParamList,
   },
 };
