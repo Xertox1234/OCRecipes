@@ -314,6 +314,38 @@ That makes **three** correlate-instead-of-condition substitutions in this rule's
 constructor"; specifier shape for "lives in a navigator module"), which is the durable
 lesson now written up in the conventions doc.
 
+**Third review round found a FOURTH — inside the fix for the third.** The location fix
+resolved the specifier but anchored it to nothing: `(?:^|\/)client\/navigation\/…` matches
+wherever a slash precedes, and `resolveSpecifier` had no project root. So "lives in the
+repo's `client/navigation/`" had degraded to "the resolved string _ends_ in
+`.../client/navigation/<Name>Navigator`". Two spoofs were accepted, both reproduced against
+the real eslint CLI with real planted files before fixing:
+
+```ts
+import type { P } from "@/screens/vendor/client/navigation/EvilNavigator"; // nested
+import type { P } from "../../../../evil-sibling/client/navigation/FooNavigator"; // outside the repo
+```
+
+Fixed by deriving `PROJECT_ROOT` from the plugin's own location (not `process.cwd()`, which
+varies with invocation), resolving every specifier to a repo-root-relative path, and
+start-anchoring both halves of the allowlist. A path outside the root comes back from
+`path.relative` with a leading `../`, so anchoring closes the climb-out case for free.
+
+The sharpest part of the record: **the attack was named and shipped anyway.** The dispatch
+prompt for that review explicitly listed "a path containing a `client/navigation` segment
+that is NOT the repo's" as something to check. Naming an attack is not running it.
+
+Verification after the fourth fix: the battery grew to **11 mutants, zero survivors**. Three
+of them survived on the first run and drove three new tests — most importantly one proving
+the suite could not distinguish a repo-rooted resolution from an unrooted one, because every
+fixture passed a _relative_ filename while real eslint passes an _absolute_ one. A suite
+that never sees production's input shape is not testing production.
+
+Also this round: the constructor list now covers the whole `*ScreenProps` family
+(`Drawer`/`MaterialBottomTab` were missing, making the comment's own stated rationale
+untrue), and the entries whose packages are not installed are labelled UNVERIFIED against
+real typings rather than asserted.
+
 Also in this round:
 
 - `BottomTabScreenProps` added to the guarded set (takes a ParamList first, exposes

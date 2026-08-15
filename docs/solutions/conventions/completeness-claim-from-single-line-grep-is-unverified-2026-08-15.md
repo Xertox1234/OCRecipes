@@ -283,13 +283,43 @@ extracted file happened to be called `*Navigator`. Reproduced against the real
 tree: a shadow in `client/screens/__probeFakeNavigator.ts`, imported by a sibling
 screen, produced no diagnostic.
 
-The condition is *where the module lives*. Spelling merely correlated with it:
+The condition is *where the module lives*. Spelling merely correlated with it.
+
+The first attempt at that fix **was still a correlate**, and this is the part
+worth reading twice:
 
 ```js
-// GOOD — resolve against the importing file, then test the location
+// STILL WRONG — resolves against the importing file, but anchors to nothing
 const resolved = resolveSpecifier(source, filename); // "@/x" → "client/x"; "./x" → dirname + x
 /(?:^|\/)client\/navigation\/[A-Za-z0-9_$]+Navigator$/.test(resolved);
 ```
+
+`(?:^|\/)` matches wherever a slash precedes, and `resolveSpecifier` never
+anchored to a known project root — so the test degraded from "lives in the
+repo's `client/navigation/`" to "the resolved string happens to *end* in
+`.../client/navigation/<Name>Navigator`". Both of these were accepted as
+canonical, verified against the real eslint CLI with real planted files:
+
+```ts
+// a shadow nested under a screen, no traversal tricks at all
+import type { P } from "@/screens/vendor/client/navigation/EvilNavigator";
+// a path that climbs clean out of the repository
+import type { P } from "../../../../evil-sibling/client/navigation/FooNavigator";
+```
+
+```js
+// GOOD — resolve to a REPO-ROOT-relative path, then start-anchor
+const PROJECT_ROOT = path.resolve(path.dirname(module.filename), ".."); // not process.cwd()
+const resolved = resolveSpecifier(source, filename); // repo-root-relative
+/^client\/navigation\/[A-Za-z0-9_$]+Navigator$/.test(resolved);
+```
+
+Two transferable details. **Derive the root from the tool's own location, not
+`process.cwd()`** — cwd varies with how the linter was invoked, and a root that
+moves is not a root. And **a path outside the root comes back from
+`path.relative` with a leading `../`**, which a start-anchored pattern rejects
+for free; that is why anchoring closes the climb-out case without a separate
+check for it.
 
 Note the shape of the miss. The *other* half of the same allowlist —
 `isCanonicalParamListFile`, which decides whether the file being linted may
@@ -298,21 +328,44 @@ two different definitions of "canonical", and the weaker half was the one facing
 the untrusted input.
 
 **Count the instances before concluding it was bad luck.** In this one rule's
-lineage the same substitution shipped three times:
+lineage the same substitution shipped four times:
 
 | # | Condition | Correlate that shipped |
 | --- | --- | --- |
 | 1 | is this declaration a navigator's own? | does the line start with `export`? |
 | 2 | is this constructor react-navigation's? | is it *spelled* `RouteProp`? |
 | 3 | does this ParamList live in a navigator module? | does the specifier *look* like a navigator path? |
+| 4 | …*same condition*, after fixing #3 | does the resolved path *end* in a navigator path? |
 
 Each passed review. Each was green on the whole tree. Each failed on the first
 input that separated the correlate from the condition — which is also the test
 nobody writes, because the fixture that separates them is the one you have to
-already suspect. Two habits catch it where reading does not: **when a check has
-two halves, make both answer the question the same way** (asymmetry is the
-tell), and **plant the adversarial input rather than reasoning about it** —
-finding 3 above was found by writing the file, not by reading the regex.
+already suspect.
+
+Row 4 is the one to internalise: **fixing a correlate is the moment you are most
+likely to ship another one.** The fix for #3 was written, reviewed and shipped
+as "test location, not spelling" — while still testing a *substring* of the
+location. The intent was right and the implementation stopped one step short,
+which is exactly the state that reads as done. Worse, the person who shipped it
+had explicitly listed "a path containing a `client/navigation` segment that is
+not the repo's" as an attack to check, and shipped it anyway: naming the attack
+is not running it.
+
+Three habits catch this where reading does not:
+
+- **When a check has two halves, make both answer the question the same way.**
+  Asymmetry is the tell. Here `isCanonicalParamListFile` (location-based) and
+  `isCanonicalParamListModule` (text-based) disagreed for a full round, and the
+  weaker half was the one facing untrusted input.
+- **Plant the adversarial input; do not reason about the pattern.** Every one of
+  these four was found by writing a file and running the real tool, and none by
+  reading the regex — including by readers who were specifically looking.
+- **Mutate the fix, then check what the mutant kills.** After #4 was fixed, a
+  mutation reverting the anchor was killed by only 2 tests, and three other
+  mutants survived outright — including one proving the suite could not tell a
+  repo-rooted resolution from an unrooted one, because every fixture passed a
+  *relative* filename while real eslint passes an *absolute* one. A suite that
+  never sees production's input shape is not testing production.
 
 Where the compiler *does* adjudicate, let it: an `interface`-based shadow needs no
 rule at all, because interfaces get no implicit index signature and `tsc` rejects

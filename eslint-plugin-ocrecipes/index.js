@@ -668,26 +668,63 @@ const noDeadApiRequestGuard = {
  * Same reasoning excludes the navigation-only constructors; see gap 3 below.
  */
 const ROUTE_PARAM_CONSTRUCTORS = new Set([
+  // ParamList-first signature VERIFIED against the installed .d.ts files.
   "RouteProp", // @react-navigation/native
   "NativeStackScreenProps", // @react-navigation/native-stack
   "BottomTabScreenProps", // @react-navigation/bottom-tabs
-  // Not installed today; listed so adding the navigator does not silently
-  // reopen the hole, which is cheaper than remembering to come back here.
+  //
+  // The rest of the family, whose packages are NOT installed here — so their
+  // signatures are asserted from react-navigation's uniform
+  // `XScreenProps<ParamList, RouteName>` convention and are UNVERIFIED against
+  // real typings. Listed anyway because the cost is asymmetric: a name nobody
+  // imports is inert, whereas installing one of these navigators would
+  // otherwise silently reopen the hole. If one turns out to have a different
+  // shape, it surfaces as a false positive the moment the package is added,
+  // which is the loud direction to be wrong in.
+  //
+  // This list is the whole family, not a sample — an earlier revision listed
+  // two of them and omitted `Drawer`/`MaterialBottomTab` for no stated reason,
+  // which made the comment's own rationale untrue.
   "StackScreenProps", // @react-navigation/stack
   "MaterialTopTabScreenProps", // @react-navigation/material-top-tabs
+  "DrawerScreenProps", // @react-navigation/drawer
+  "MaterialBottomTabScreenProps", // @react-navigation/material-bottom-tabs
 ]);
 
 const NAVIGATION_PACKAGE = /^@react-navigation\//;
 
 /**
- * Where a module specifier lands, as a path whose tail can be tested. Returns
+ * The repo root, derived from this plugin's own location
+ * (`<root>/eslint-plugin-ocrecipes/index.js`) rather than from `process.cwd()`,
+ * which varies with how eslint was invoked. In a git worktree this resolves to
+ * that worktree's root, which is what we want.
+ */
+const PROJECT_ROOT = path
+  .resolve(path.dirname(module.filename), "..")
+  .replace(/\\/g, "/");
+
+/**
+ * A path as POSIX and relative to the repo root. A file outside the root comes
+ * back with a leading `../`, which every anchored pattern below then rejects.
+ */
+function toRepoRelative(filePath) {
+  const raw = String(filePath).replace(/\\/g, "/");
+  const abs = raw.startsWith("/") ? raw : path.posix.join(PROJECT_ROOT, raw);
+  return path.posix.relative(PROJECT_ROOT, abs);
+}
+
+/**
+ * Where a module specifier lands, as a repo-root-relative POSIX path. Returns
  * null for a bare package specifier, which is never canonical.
  */
 function resolveSpecifier(source, filename) {
-  // The `@/` alias maps to ./client (tsconfig paths).
-  if (source.startsWith("@/")) return "client/" + source.slice(2);
+  // The `@/` alias maps to ./client (tsconfig paths); `@shared/` cannot hold a
+  // ParamList, so it falls through to the bare-specifier branch.
+  if (source.startsWith("@/")) {
+    return path.posix.normalize("client/" + source.slice(2));
+  }
   if (source.startsWith("./") || source.startsWith("../")) {
-    const dir = path.posix.dirname(String(filename).replace(/\\/g, "/"));
+    const dir = path.posix.dirname(toRepoRelative(filename));
     return path.posix.normalize(path.posix.join(dir, source));
   }
   return null;
@@ -714,9 +751,15 @@ function resolveSpecifier(source, filename) {
 function isCanonicalParamListModule(source, filename) {
   const resolved = resolveSpecifier(source, filename);
   if (resolved === null) return false;
+  // START-anchored, against a repo-root-relative path. The first attempt at
+  // this fix used `(?:^|\/)client\/navigation\/…`, which matches wherever a
+  // slash precedes — so `client/screens/vendor/client/navigation/EvilNavigator`
+  // and even a path climbing clean out of the repo
+  // (`../../evil-sibling/client/navigation/FooNavigator`) both passed as
+  // canonical. Verified before this fix; both are now regression cases.
   return (
-    /(?:^|\/)client\/navigation\/[A-Za-z0-9_$]+Navigator$/.test(resolved) ||
-    /(?:^|\/)client\/types\/navigation$/.test(resolved)
+    /^client\/navigation\/[A-Za-z0-9_$]+Navigator$/.test(resolved) ||
+    resolved === "client/types/navigation"
   );
 }
 
@@ -729,11 +772,16 @@ function isCanonicalParamListModule(source, filename) {
  * declarations, which also excused a screen that exported one.
  */
 function isCanonicalParamListFile(filename) {
-  const normalized = String(filename).replace(/\\/g, "/");
+  // Same start-anchoring as isCanonicalParamListModule, and for the same
+  // reason: an unrooted pattern here would let a real on-disk file at
+  // `client/screens/…/client/navigation/FooNavigator.tsx` declare its own
+  // ParamList and be believed. The two halves of this allowlist must answer
+  // "is this canonical?" the same way — an asymmetry between them was how the
+  // module half stayed wrong for a round after the file half was already right.
+  const rel = toRepoRelative(filename);
   return (
-    /(?:^|\/)client\/navigation\/[A-Za-z0-9_$]+Navigator\.tsx?$/.test(
-      normalized,
-    ) || /(?:^|\/)client\/types\/navigation\.ts$/.test(normalized)
+    /^client\/navigation\/[A-Za-z0-9_$]+Navigator\.tsx?$/.test(rel) ||
+    rel === "client/types/navigation.ts"
   );
 }
 

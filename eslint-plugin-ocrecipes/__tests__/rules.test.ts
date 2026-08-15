@@ -1,7 +1,23 @@
 import { createRequire } from "node:module";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
 import { ESLint, RuleTester } from "eslint";
 import * as tsParser from "@typescript-eslint/parser";
+
+/**
+ * Real eslint passes an ABSOLUTE filename; RuleTester passes whatever you give
+ * it, and every case here would otherwise pass a repo-relative one. That
+ * difference is not cosmetic — it is the only input that exercises the
+ * repo-root anchoring, and a mutation run proved the suite could not tell a
+ * rooted `toRepoRelative` from an unrooted one until these cases existed.
+ */
+const REPO_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
+const abs = (p: string) => path.join(REPO_ROOT, p);
 
 const require = createRequire(import.meta.url);
 const plugin = require("../index.js") as {
@@ -175,6 +191,26 @@ tester.run(
           '  NativeStackScreenProps<RootStackParamList, "Scan">,',
           '  BottomTabScreenProps<MainTabParamList, "HomeTab">',
           ">;",
+        ].join("\n"),
+      },
+      // ABSOLUTE filename — the shape real eslint actually passes. Without a
+      // case like this the suite cannot distinguish a repo-root-anchored
+      // resolution from an unanchored one, since every other filename here is
+      // already repo-relative and `toRepoRelative` is an identity on those.
+      {
+        filename: abs("client/navigation/linking.ts"),
+        code: [
+          RP,
+          'import type { RootStackParamList } from "./RootStackNavigator";',
+          'type R = RouteProp<RootStackParamList, "Scan">;',
+        ].join("\n"),
+      },
+      {
+        filename: abs("client/navigation/RootStackNavigator.tsx"),
+        code: [
+          RP,
+          "export type RootStackParamList = { Scan: { mode: string } };",
+          'type R = RouteProp<RootStackParamList, "Scan">;',
         ].join("\n"),
       },
       // Negative control for the namespace branch's package check — the mirror
@@ -361,6 +397,75 @@ tester.run(
         code: [
           RP,
           'import type { EvilParams } from "@/screens/nested/navigation/EvilNavigator";',
+          'type R = RouteProp<EvilParams, "Foo">;',
+        ].join("\n"),
+        errors: [{ messageId: "shadowedParamList" }],
+      },
+      // The two cases the FIRST location fix still let through, because its
+      // pattern was `(?:^|\/)client\/navigation\/…` — matching wherever a slash
+      // precedes — against a path never anchored to the repo root. Both were
+      // reproduced against the real eslint CLI with real planted files before
+      // being fixed; the case just above does NOT cover them, since it lacks
+      // the doubled `client/` segment that exploits the boundary tolerance.
+      {
+        filename: "client/screens/EvilScreen.tsx",
+        code: [
+          RP,
+          'import type { EvilParams } from "@/screens/vendor/client/navigation/EvilNavigator";',
+          'type R = RouteProp<EvilParams, "Foo">;',
+        ].join("\n"),
+        errors: [{ messageId: "shadowedParamList" }],
+      },
+      // …and a specifier that climbs clean out of the repository.
+      {
+        filename: "client/screens/EvilScreen.tsx",
+        code: [
+          RP,
+          'import type { EvilParams } from "../../../../evil-sibling/client/navigation/FooNavigator";',
+          'type R = RouteProp<EvilParams, "Foo">;',
+        ].join("\n"),
+        errors: [{ messageId: "shadowedParamList" }],
+      },
+      // The file-side half of the allowlist needs the same anchoring: a real
+      // file at this path must not be trusted to declare its own ParamList.
+      {
+        filename: "client/screens/vendor/client/navigation/FooNavigator.tsx",
+        code: [
+          RP,
+          "export type RootStackParamList = { Scan: { mode: string } };",
+          'type R = RouteProp<RootStackParamList, "Scan">;',
+        ].join("\n"),
+        errors: [{ messageId: "shadowedParamList" }],
+      },
+      // The types-barrel half is spoofable the same way, and was only ever
+      // checked by a tail match until a mutation run showed nothing covered it.
+      {
+        filename: "client/screens/EvilScreen.tsx",
+        code: [
+          RP,
+          'import type { EvilParams } from "@/screens/vendor/client/types/navigation";',
+          'type R = RouteProp<EvilParams, "Foo">;',
+        ].join("\n"),
+        errors: [{ messageId: "shadowedParamList" }],
+      },
+      // A BARE package specifier is never canonical, even when spelled exactly
+      // like the real navigator path — nothing resolves it into this repo.
+      {
+        filename: "client/screens/EvilScreen.tsx",
+        code: [
+          RP,
+          'import type { EvilParams } from "client/navigation/RootStackNavigator";',
+          'type R = RouteProp<EvilParams, "Foo">;',
+        ].join("\n"),
+        errors: [{ messageId: "shadowedParamList" }],
+      },
+      // Absolute-filename counterpart of the sibling-shadow case, so the
+      // rejecting direction is exercised under real-eslint path shapes too.
+      {
+        filename: abs("client/screens/EvilScreen.tsx"),
+        code: [
+          RP,
+          'import type { EvilParams } from "./FakeNavigator";',
           'type R = RouteProp<EvilParams, "Foo">;',
         ].join("\n"),
         errors: [{ messageId: "shadowedParamList" }],
