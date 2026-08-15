@@ -1,9 +1,9 @@
 ---
 title: "LabelAnalysisScreen and PhotoAnalysisScreen still restate their route params — latent shadows of RootStackParamList"
-status: backlog
+status: done
 priority: low
 created: 2026-07-31
-updated: 2026-07-31
+updated: 2026-08-15
 assignee:
 labels: [deferred, typescript, react-native, navigation]
 github_issue:
@@ -36,15 +36,18 @@ time this is picked up, the drift itself is the bug and this stops being low-sev
 
 ## Acceptance Criteria
 
-- [ ] `LabelAnalysisScreen` uses `RouteProp<RootStackParamList, "LabelAnalysis">`; its
+- [x] `LabelAnalysisScreen` uses `RouteProp<RootStackParamList, "LabelAnalysis">`; its
       local `RouteParams` is deleted.
-- [ ] `PhotoAnalysisScreen` uses `RouteProp<RootStackParamList, "PhotoAnalysis">`; its
+- [x] `PhotoAnalysisScreen` uses `RouteProp<RootStackParamList, "PhotoAnalysis">`; its
       local `RouteParams` is deleted.
-- [ ] Any param the swap reveals as previously-ignored is either read or explicitly
+- [x] Any param the swap reveals as previously-ignored is either read or explicitly
       documented as deliberately unused — surfacing them is the point, not a side effect.
-- [ ] No behavior change: `route.params` destructuring and every downstream consumer
+      **No-op:** both local types matched their navigator entry field-for-field and
+      every param was already consumed, so the swap revealed nothing.
+- [x] No behavior change: `route.params` destructuring and every downstream consumer
       behave identically. Existing tests for both screens still pass unchanged.
-- [ ] A `git grep "type RouteParams" client/screens/` returns nothing afterwards.
+      Every destructuring line is byte-identical in the diff.
+- [x] A `git grep "type RouteParams" client/screens/` returns nothing afterwards.
 
 ## Implementation Notes
 
@@ -81,3 +84,31 @@ time this is picked up, the drift itself is the bug and this stops being low-sev
 ### 2026-07-31
 
 - Initial creation, deferred out of the PR #744 review.
+
+### 2026-08-15 — done
+
+**No drift.** Both local types still matched their navigator entry field-for-field, and
+every param was consumed. Still latent, still low-severity; the swap revealed nothing.
+
+**The todo's premise was wrong: there were three instances, not two.**
+`client/screens/ItemDetailScreen.tsx:21` shadowed `ProfileStackParamList` with
+`RouteProp<{ ItemDetail: { itemId: number } }, "ItemDetail">`. Both this todo's
+`git grep "type RouteParams"` and my own `grep "RouteProp<{"` missed it, for two
+separate reasons: it does not use the name `RouteParams`, and Prettier had wrapped it
+across four lines so no single-line literal matched. It was in sync with its navigator,
+so it too was latent — but it is the clearest possible evidence that a name-based or
+single-line grep cannot bound this defect class.
+
+Scope was widened once, deliberately (user-approved): the fix ships with
+`scripts/check-route-params.js`, wired into lint-staged on `client/**/*.{ts,tsx}`. The
+rule is **structural, not nominal** — it rejects an inline object literal as `RouteProp`'s
+ParamList argument, tolerating whitespace and newlines between `RouteProp<` and `{`, and
+deliberately permits a _derived_ `type RouteParams = ParamList["Foo"]`, which is the form
+we want people to write. A nominal ban would have rejected the good form and still missed
+`ItemDetailScreen`. Whole-tree sweep: 697 files, 0 violations.
+
+Deliberately NOT fixed, surfaced instead: `PhotoAnalysisScreenNavigationProp` is declared
+three times — exported at `client/types/navigation.ts:108`, re-declared locally in
+`PhotoAnalysisScreen.tsx` and `usePhotoAnalysis.ts`. Same shadow class, different axis
+(navigation prop, not route params). Separate change: it reaches a third file and is
+asymmetric, since `LabelAnalysisScreen` has no counterpart export to reuse.

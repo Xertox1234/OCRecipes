@@ -34,7 +34,6 @@ import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { RecipeGenerationModal } from "@/components/RecipeGenerationModal";
 import { usePhotoAnalysis } from "@/hooks/usePhotoAnalysis";
 import { FoodCategory } from "@shared/constants/preparation";
-import type { PhotoIntent } from "@shared/constants/preparation";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { FoodItem } from "@/lib/photo-upload";
@@ -44,10 +43,7 @@ type PhotoAnalysisScreenNavigationProp = NativeStackNavigationProp<
   "PhotoAnalysis"
 >;
 
-type RouteParams = {
-  imageUri: string;
-  intent: PhotoIntent;
-};
+type PhotoAnalysisRouteProp = RouteProp<RootStackParamList, "PhotoAnalysis">;
 
 function ConfidenceBadge({ confidence }: { confidence: number }) {
   const { theme } = useTheme();
@@ -353,7 +349,7 @@ export default function PhotoAnalysisScreen() {
   const { theme } = useTheme();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<PhotoAnalysisScreenNavigationProp>();
-  const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
+  const route = useRoute<PhotoAnalysisRouteProp>();
 
   const { imageUri, intent } = route.params;
   const headerPaddingStyle = useMemo(

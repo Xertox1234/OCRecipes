@@ -220,6 +220,9 @@
       "node scripts/check-hardcoded-colors.js",
       "node scripts/check-bottomsheet-backhandler.js"
     ],
+    "client/**/*.{ts,tsx}": [
+      "node scripts/check-route-params.js"
+    ],
     "client/components/**/__tests__/*.test.tsx": [
       "node scripts/check-jsdom-pragma.js"
     ],
