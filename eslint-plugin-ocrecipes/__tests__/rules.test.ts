@@ -437,9 +437,18 @@ tester.run(
         ].join("\n"),
         errors: [{ messageId: "shadowedParamList" }],
       },
-      // …and at the absolute path shape real eslint passes. The relative case
-      // above leaves `toRepoRelative` an identity, so on its own it cannot tell
-      // a repo-rooted file check from an unrooted one.
+      // …and at the absolute path shape real eslint passes, for consistency
+      // with the accept-direction rows.
+      //
+      // This row adds NO detection power, and saying otherwise would be the
+      // mistake this whole rule keeps making. A reject-direction case is
+      // insensitive to rooting: an unrooted path fails the start-anchored
+      // pattern just as a correctly-rooted foreign one does, so "still
+      // rejected" is the answer either way. Verified — reducing
+      // `toRepoRelative` to a passthrough leaves both this row and its relative
+      // sibling green. Rooting for the FILE-side check is pinned by the
+      // accept-direction case above, `abs("client/navigation/RootStackNavigator.tsx")`,
+      // which is what actually turns red.
       {
         filename: abs(
           "client/screens/vendor/client/navigation/FooNavigator.tsx",
