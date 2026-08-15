@@ -8,7 +8,7 @@ import {
   Linking,
   Share,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Application from "expo-application";
@@ -72,7 +72,7 @@ export default function SettingsScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const toast = useToast();
-  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const { logout, deleteAccount, changeEmail, user, updateUser } =
     useAuthContext();
@@ -281,7 +281,9 @@ export default function SettingsScreen() {
     <ScreenScrollView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       contentContainerStyle={{
-        paddingBottom: insets.bottom + Spacing.xl,
+        // Tab-bar height, not the bare safe-area inset: the tab bar floats over
+        // this stack, and the inset alone clips the last rows behind it.
+        paddingBottom: tabBarHeight + Spacing.xl,
       }}
     >
       <Card elevation={1} style={styles.card}>

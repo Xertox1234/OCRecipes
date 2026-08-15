@@ -105,10 +105,21 @@ describe("formatBuildInfo", () => {
   // The bundle line is the whole point of this row: it must distinguish a
   // binary that is merely up to date from one that can never be updated.
   describe("bundle line", () => {
-    it("names a development build so a dev never reads it as a stale binary", () => {
+    it("names an updates-disabled build rather than implying a bundle state", () => {
       expect(formatBuildInfo(build({ isEnabled: false })).lines[2]).toBe(
-        "Bundle: development build (updates disabled)",
+        "Bundle: updates disabled",
       );
+    });
+
+    // Observed on the iOS Simulator 2026-08-14: a dev client served by Metro
+    // reports isEnabled TRUE, isEmbeddedLaunch false, and a null updateId — so
+    // an isEnabled-only dev check falls through and mislabels it as an OTA.
+    // Neither an embedded bundle nor an update means no packaged bundle at all.
+    it("names a Metro-served dev launch instead of calling it an OTA", () => {
+      expect(
+        formatBuildInfo(build({ isEmbeddedLaunch: false, updateId: null }))
+          .lines[2],
+      ).toBe("Bundle: development server (not a packaged build)");
     });
 
     it("flags an embedded launch with no channel as permanently un-updatable", () => {
@@ -151,9 +162,9 @@ describe("formatBuildInfo", () => {
       );
     });
 
-    it("says unknown when a non-embedded launch reports no update id", () => {
+    it("prefers the dev-server reading over an OTA with no id", () => {
       expect(formatBuildInfo(build({ updateId: null })).lines[2]).toBe(
-        "Bundle: OTA unknown · 2026-08-12 14:32 UTC",
+        "Bundle: development server (not a packaged build)",
       );
     });
   });
@@ -176,12 +187,21 @@ describe("formatBuildInfo", () => {
       );
     });
 
-    it("spells out the development case", () => {
+    it("spells out the updates-disabled case", () => {
       expect(
         formatBuildInfo(build({ isEnabled: false })).accessibilityLabel,
       ).toBe(
         "App version 1.0.0, build 4, runtime version 1.2.0, channel preview. " +
-          "Currently running a development build with updates disabled.",
+          "Currently running a build with updates disabled.",
+      );
+    });
+
+    it("spells out the dev-server case", () => {
+      expect(
+        formatBuildInfo(build({ updateId: null })).accessibilityLabel,
+      ).toBe(
+        "App version 1.0.0, build 4, runtime version 1.2.0, channel preview. " +
+          "Currently running from the development server, not a packaged build.",
       );
     });
 

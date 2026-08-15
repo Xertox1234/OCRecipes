@@ -117,11 +117,21 @@ export function formatBuildInfo(input: BuildInfoInput): BuildInfoDisplay {
   let bundleLine: string;
   let bundleSpoken: string;
   let bundleClipboard: string;
+  let isOtaLaunch = false;
 
   if (!isEnabled) {
-    bundleLine = "Bundle: development build (updates disabled)";
-    bundleSpoken = "a development build with updates disabled";
-    bundleClipboard = "development build (updates disabled)";
+    bundleLine = "Bundle: updates disabled";
+    bundleSpoken = "a build with updates disabled";
+    bundleClipboard = "updates disabled";
+  } else if (!isEmbeddedLaunch && !updateId) {
+    // Neither an embedded bundle nor an applied update means there is no
+    // packaged bundle at all — the JS is coming off a Metro dev server.
+    // Measured on the iOS Simulator 2026-08-14: a dev client reports
+    // `isEnabled: true` here, so keying dev off `isEnabled` alone silently
+    // mislabels every local run as an OTA with an unknown id.
+    bundleLine = "Bundle: development server (not a packaged build)";
+    bundleSpoken = "from the development server, not a packaged build";
+    bundleClipboard = "development server (not a packaged build)";
   } else if (isEmbeddedLaunch && !hasChannel) {
     bundleLine =
       "Bundle: embedded — no channel, this build can never receive an OTA";
@@ -140,6 +150,7 @@ export function formatBuildInfo(input: BuildInfoInput): BuildInfoDisplay {
       ? `over-the-air update ${updateIdPrefix}, published ${publishedAt}`
       : `over-the-air update ${updateIdPrefix}`;
     bundleClipboard = "OTA";
+    isOtaLaunch = true;
   }
 
   const versionSpoken = buildNumber
@@ -159,7 +170,7 @@ export function formatBuildInfo(input: BuildInfoInput): BuildInfoDisplay {
     `Bundle: ${bundleClipboard}`,
   ];
   // The full id, not the display prefix — a bug report needs the whole thing.
-  if (isEnabled && !isEmbeddedLaunch) {
+  if (isOtaLaunch) {
     clipboardLines.push(`Update ID: ${updateId ?? "unknown"}`);
     if (publishedAt) clipboardLines.push(`Published: ${publishedAt}`);
   }
