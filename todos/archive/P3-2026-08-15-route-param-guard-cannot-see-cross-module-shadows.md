@@ -227,7 +227,27 @@ not a mechanism.
 note assumed the new layer would be CI-only (A) or would leave non-screen files uncovered
 (B). Under C the rule runs on the same glob, in the same two places, and catches a strict
 superset — so there was no division of labour to state, only two residual lists to keep in
-sync. Its ten test cases were ported into the RuleTester suite.
+sync.
+
+Its ten test cases did **not** all "port" — and in a todo about unverified
+completeness claims, the exact accounting is the point:
+
+- **7 ported directly** — inline literal, Prettier-wrapped literal, named local
+  alias, `declare`-prefixed alias, canonical ParamList, a `RouteParams` alias
+  derived from the canonical list, and a file with no `RouteProp`.
+- **2 inverted by design** — `export declare type P = { … }` and an exported
+  `ProfileStackParamList` declared inside a screen were `exit 0` (valid) for the
+  scanner and are **errors** now. That is residual 2 closing: `export` was only
+  ever a proxy for "this is a navigator's own declaration", and the filename
+  carve-out tests the real condition. The valid counterpart is the new
+  `client/navigation/RootStackNavigator.tsx` case.
+- **1 dropped** — "reports how many files it actually scanned". ESLint has no
+  equivalent, so the _property_ it protected (a guard that checks nothing is
+  green and meaningless) moved to a new `eslint.config.js wiring` test asserting
+  the rule resolves to `error` for client paths and to nothing for server paths.
+  That pins the glob rather than a file count, and it was verified two-sided:
+  removing the rule from `eslint.config.js` fails it with
+  `expected null to deeply equal [ 2 ]`.
 
 Evidence: 698 client files linted with 0 violations; a deliberate two-sided control (a real
 cross-module shadow planted in `client/screens/`) was rejected with the right diagnostic

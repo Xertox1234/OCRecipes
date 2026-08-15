@@ -95,6 +95,16 @@ one-off grep:
    every instance at the right line; a guard only ever observed passing is a
    decoration.
 
+Both properties are about the guard, not about the guard's *implementation*, so
+carry them across when you replace one. When this scanner became an ESLint rule
+(below), property 1's implementation — a hard failure on a whole-tree run that
+matched zero files — had no ESLint equivalent and was nearly dropped on the
+floor. It became a test asserting the rule *resolves* to `error` for a client
+path and to nothing for a server path, which pins the enabling glob rather than
+a file count. A rule enabled under a `files:` glob that quietly stops matching is
+the same vacuous green as a sweep over zero inputs, and nothing else in the
+pipeline notices.
+
 Two things the guard must NOT rely on:
 
 - **Formatter ordering.** In `lint-staged`, `prettier --write` and a checker

@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
-import { RuleTester } from "eslint";
+import { describe, it, expect } from "vitest";
+import { ESLint, RuleTester } from "eslint";
 import * as tsParser from "@typescript-eslint/parser";
 
 const require = createRequire(import.meta.url);
@@ -457,3 +458,35 @@ tester.run(
     ],
   },
 );
+
+// ─── The rules are actually WIRED ──────────────────────────────────────────
+//
+// RuleTester proves a rule's logic and nothing about whether the repo runs it.
+// A rule enabled under a `files:` glob that stops matching is unenforced and
+// silent — CI stays green because zero files were ever checked. That is the
+// same defect as a sweep that scans zero inputs
+// (docs/solutions/code-quality/verification-that-scans-zero-inputs-is-green-and-meaningless-2026-08-07.md).
+//
+// The scanner this replaced guarded that property itself, by hard-failing a
+// whole-tree run that matched no files. Deleting it would have dropped the
+// property, so it moves here — and lands more precisely, since it pins the
+// GLOB rather than a file count that a shrinking tree could satisfy.
+describe("eslint.config.js wiring", () => {
+  const resolveRule = async (filePath: string) => {
+    const config = await new ESLint({}).calculateConfigForFile(filePath);
+    return config.rules?.["ocrecipes/no-shadowed-route-paramlist"] ?? null;
+  };
+
+  it("enables no-shadowed-route-paramlist as an error for client sources", async () => {
+    // Screens are the defect's home, but the rule is registered for all of
+    // client/ — client/hooks/useHistoryData.ts also takes a RouteProp.
+    expect(await resolveRule("client/screens/ScanScreen.tsx")).toEqual([2]);
+    expect(await resolveRule("client/hooks/useHistoryData.ts")).toEqual([2]);
+  });
+
+  it("leaves server sources alone", async () => {
+    // The negative side matters: a config edit that widened the glob to the
+    // whole repo would still pass the assertion above.
+    expect(await resolveRule("server/index.ts")).toBeNull();
+  });
+});
