@@ -11,7 +11,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import Constants from "expo-constants";
+import * as Application from "expo-application";
+import * as Clipboard from "expo-clipboard";
+import { ImpactFeedbackStyle } from "expo-haptics";
+import * as Updates from "expo-updates";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
@@ -23,11 +26,13 @@ import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
 import { usePremiumContext } from "@/context/PremiumContext";
+import { useToast } from "@/context/ToastContext";
 import { useMeasurementUnit } from "@/hooks/useMeasurementUnit";
 import { apiRequest } from "@/lib/query-client";
 import { logger } from "@/lib/logger";
 import { Spacing, BorderRadius, withOpacity } from "@/constants/theme";
 import { PRIVACY_POLICY_URL, TERMS_URL } from "@/constants/legal";
+import { formatBuildInfo, toCreatedAtIso } from "./settings-version-utils";
 import type { MeasurementUnit } from "@shared/lib/units";
 import type { ProfileScreenNavigationProp } from "@/types/navigation";
 
@@ -66,6 +71,7 @@ const SETTINGS_ITEMS: SettingsItemConfig[] = [
 export default function SettingsScreen() {
   const { theme } = useTheme();
   const haptics = useHaptics();
+  const toast = useToast();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const { logout, deleteAccount, changeEmail, user, updateUser } =
@@ -245,16 +251,31 @@ export default function SettingsScreen() {
     [haptics],
   );
 
-  const appVersion = Constants.expoConfig?.version ?? "—";
-  const buildNumber =
-    Platform.OS === "ios"
-      ? (Constants.expoConfig?.ios?.buildNumber ?? null)
-      : Constants.expoConfig?.android?.versionCode != null
-        ? String(Constants.expoConfig.android.versionCode)
-        : null;
-  const versionLabel = buildNumber
-    ? `Version ${appVersion} (${buildNumber})`
-    : `Version ${appVersion}`;
+  // Read from the installed binary (`expo-application`) and the update runtime
+  // (`expo-updates`), NOT `Constants.expoConfig` — that describes the running
+  // manifest, so after an OTA it reports the update's version instead of the
+  // binary's, which is the exact confusion this block exists to resolve.
+  const buildInfo = formatBuildInfo({
+    appVersion: Application.nativeApplicationVersion,
+    buildNumber: Application.nativeBuildVersion,
+    runtimeVersion: Updates.runtimeVersion,
+    channel: Updates.channel,
+    updateId: Updates.updateId,
+    createdAtIso: toCreatedAtIso(Updates.createdAt),
+    isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+    isEnabled: Updates.isEnabled,
+  });
+
+  const handleCopyBuildInfo = useCallback(async () => {
+    try {
+      await Clipboard.setStringAsync(buildInfo.clipboardText);
+      haptics.impact(ImpactFeedbackStyle.Light);
+      toast.success("Build details copied");
+    } catch (error) {
+      logger.warn("Failed to copy build details", { error });
+      toast.error("Couldn't copy build details");
+    }
+  }, [buildInfo.clipboardText, haptics, toast]);
 
   return (
     <ScreenScrollView
@@ -426,9 +447,32 @@ export default function SettingsScreen() {
         </ThemedText>
       )}
 
-      <ThemedText style={[styles.versionLabel, { color: theme.textSecondary }]}>
-        {versionLabel}
-      </ThemedText>
+      {/*
+        One a11y node, not three: the composed label reads as prose so a bug
+        reporter can hear the whole build identity in one focus. Role is
+        "button" rather than "text" because the row genuinely acts on tap —
+        claiming "text" would hide the copy affordance from VoiceOver.
+      */}
+      <Pressable
+        onPress={handleCopyBuildInfo}
+        accessibilityRole="button"
+        accessibilityLabel={buildInfo.accessibilityLabel}
+        accessibilityHint="Copies build details to the clipboard for a bug report"
+        style={({ pressed }) => [
+          styles.versionBlock,
+          pressed && { opacity: 0.7 },
+        ]}
+      >
+        {buildInfo.lines.map((line) => (
+          <ThemedText
+            key={line}
+            accessible={false}
+            style={[styles.versionLabel, { color: theme.textSecondary }]}
+          >
+            {line}
+          </ThemedText>
+        ))}
+      </Pressable>
 
       <UpgradeModal
         visible={showUpgradeModal}
@@ -518,9 +562,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: Spacing.xl,
   },
+  // minHeight keeps the three 11pt lines above the 44pt touch-target floor.
+  versionBlock: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+  },
   versionLabel: {
     textAlign: "center",
     fontSize: 11,
-    marginTop: Spacing.sm,
+    lineHeight: 16,
   },
 });
