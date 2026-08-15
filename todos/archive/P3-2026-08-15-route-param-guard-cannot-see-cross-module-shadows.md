@@ -1,6 +1,6 @@
 ---
 title: "check-route-params.js cannot see a cross-module route-param shadow — close the residual by construction, not by a wider regex"
-status: backlog
+status: completed
 priority: low
 created: 2026-08-15
 updated: 2026-08-15
@@ -122,18 +122,27 @@ worth it — A is a genuine fallback, not a consolation.
 
 ## Acceptance Criteria
 
-- [ ] A route-param shadow declared in a **separate module** and imported into a screen is
+- [x] A route-param shadow declared in a **separate module** and imported into a screen is
       rejected. Add a test that pins exactly this — it is the residual this todo exists for.
-- [ ] The other three documented residuals are closed, or any still open is re-documented
+      → first `invalid` case of `no-shadowed-route-paramlist`, asserting the message `data`
+      so the diagnostic must keep naming the offending module.
+- [x] The other three documented residuals are closed, or any still open is re-documented
       accurately (a residual list that silently goes stale is worse than none — see the
-      conventions doc).
-- [ ] `scripts/check-route-params.js`'s KNOWN RESIDUALS block and the matching section in
+      conventions doc). → all four closed; one `invalid` case each. Three _new_, narrower
+      residuals documented in the rule header.
+- [x] `scripts/check-route-params.js`'s KNOWN RESIDUALS block and the matching section in
       `docs/solutions/conventions/completeness-claim-from-single-line-grep-is-unverified-2026-08-15.md`
-      are updated to state what is now closed and by which layer.
-- [ ] No behavior change to any screen: `route.params` destructuring and downstream
-      consumers are identical. `npm run check:types` is the evidence.
-- [ ] The new check runs in CI (and in lint-staged if Option B).
-- [ ] Whole-tree run is clean and reports a non-zero scanned/checked count.
+      are updated to state what is now closed and by which layer. → the scanner is deleted, so
+      its block moved into the rule; the conventions doc's "unreachable in principle" claim is
+      corrected **in place** (not merely appended to) and gained a "Where this ended up" section.
+- [x] No behavior change to any screen: `route.params` destructuring and downstream
+      consumers are identical. `npm run check:types` is the evidence. → stronger than asked:
+      **zero** files under `client/` changed. `tsc --noEmit` exit 0.
+- [x] The new check runs in CI (and in lint-staged if Option B). → both, via `npm run lint`
+      (CI) and the `*.{ts,tsx}` lint-staged eslint entry. Needs no type information, so
+      `ESLINT_NO_TYPE_AWARE=1` does not disable it.
+- [x] Whole-tree run is clean and reports a non-zero scanned/checked count. → 698 client
+      files linted, 0 violations; repo-wide `npm run lint` 0 errors.
 
 ## Implementation Notes
 
@@ -179,6 +188,62 @@ worth it — A is a genuine fallback, not a consolation.
   in sync with their navigators; this todo is about the guard, not the app code.
 
 ## Updates
+
+### 2026-08-15 — RESOLVED, but by neither option above
+
+Shipped **Option C**: a new `ocrecipes/no-shadowed-route-paramlist` rule in the existing
+`eslint-plugin-ocrecipes`. It resolves the ParamList argument of `RouteProp` /
+`NativeStackScreenProps` through ESLint scope analysis and requires it to bind to an import
+from a navigator module (`@/navigation/<X>Navigator`, `./<X>Navigator`) or the
+`@/types/navigation` barrel.
+
+**Why the framing above was wrong.** This todo, the scanner's header, and the conventions
+doc all asserted residual 3 was "unreachable **in principle** for a single-file scanner".
+That is true of a _text_ scanner and false of an _AST_ one: the declaration is in another
+module, but the `import` statement is in the linted file, so scope analysis resolves it
+with no program load. Verified in-memory against this repo's eslint 9.39.1 +
+`@typescript-eslint/parser` before any code was written — a cross-module import reports
+`IMPORT<./shadow-types>`, a local alias `LOCAL:TSTypeAliasDeclaration`, a `Readonly<{…}>`
+wrapper `NODEF:Readonly`. That single overstatement made a 31-file source migration look
+like the only escape, which is the real cost of an imprecise bound.
+
+Option C dominates both options as written:
+
+|                                 | A (ts-morph)      | B (ban `RouteProp`) | **C (shipped)**                       |
+| ------------------------------- | ----------------- | ------------------- | ------------------------------------- |
+| Closes residual 3               | yes               | yes                 | yes                                   |
+| Closes residuals 1, 2, 4        | yes               | yes                 | yes                                   |
+| App-code migration              | 0 files           | 31 files            | **0 files**                           |
+| Runs in lint-staged             | no (CI only)      | yes                 | **yes**                               |
+| Covers `NativeStackScreenProps` | no                | **no**              | **yes**                               |
+| New tooling                     | ts-morph consumer | second convention   | none — 6th rule in an existing plugin |
+
+**Departure from the Scope Contract** ("No new mechanisms… for B, `no-restricted-imports`;
+for A, `ts-morph`") was explicit and user-approved, not silent. `eslint-plugin-ocrecipes`
+already had five rules, a `RuleTester` harness, and scope-manager use — so C adds a rule,
+not a mechanism.
+
+`scripts/check-route-params.js` was **deleted**, against this todo's "keep it" note. That
+note assumed the new layer would be CI-only (A) or would leave non-screen files uncovered
+(B). Under C the rule runs on the same glob, in the same two places, and catches a strict
+superset — so there was no division of labour to state, only two residual lists to keep in
+sync. Its ten test cases were ported into the RuleTester suite.
+
+Evidence: 698 client files linted with 0 violations; a deliberate two-sided control (a real
+cross-module shadow planted in `client/screens/`) was rejected with the right diagnostic
+before being removed; `npm run lint` 0 errors repo-wide with type-aware rules on;
+`tsc --noEmit` exit 0; 569 tests pass; `lint:suppress:check` exit 0 with
+`eslint-suppressions.json` unchanged (the rule is not absorbed into suppressions).
+
+Residuals now, all documented in the rule's own header: a wrong ParamList declared in an
+allowlisted module (irreducible — something must be the source of truth); `useRoute<{ params;
+name; key }>()` hand-written to name no constructor; and navigation-only constructors
+(`NativeStackNavigationProp`, `CompositeNavigationProp`), which take a ParamList but carry
+no route params, so a shadow there degrades autocomplete rather than dropping a param.
+
+Also filed under an existing todo rather than duplicated: `eslint-plugin-ocrecipes/**`
+routes to no injection domain, so editing the repo's own lint rules gets zero pattern
+injection — appended to `todos/P3-2026-08-11-unrouted-surfaces-domain-map-decision.md`.
 
 ### 2026-08-15
 

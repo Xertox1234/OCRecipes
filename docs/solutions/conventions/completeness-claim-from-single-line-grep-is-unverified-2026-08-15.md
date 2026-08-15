@@ -77,9 +77,13 @@ grep -rn "RouteProp<{" client/                  # finds the same 2 of 3
 ```
 
 ```js
-// GOOD — structural, whitespace-tolerant, and committed as a guard
+// BETTER — structural, whitespace-tolerant, and committed as a guard
 const INLINE_PARAMLIST = /RouteProp\s*<\s*\{/g;
 ```
+
+("Better", not "good": this guard was later replaced outright. See **Where this
+ended up** below — the residuals it had to document turned out to be properties
+of scanning text, not of this particular pattern.)
 
 Two properties make the committed form worth the extra file over a better
 one-off grep:
@@ -141,9 +145,9 @@ a completeness guarantee it never was. For the route-param guard those are:
    or a non-literal RHS like `Readonly<{ … }>`;
 2. an exported alias declared inside a screen, indistinguishable from a
    navigator's own canonical declaration;
-3. a shadow declared in another module and imported — **unreachable in principle**
-   for a single-file text scanner, and the natural next mutation of the very bug
-   the rule was written for;
+3. a shadow declared in another module and imported — unreachable for a text
+   scanner, and the natural next mutation of the very bug the rule was written
+   for;
 4. a same-line comment ahead of the declaration, which defeats the line anchor.
 
 State plainly that such a list is what you have *considered*, not a proof of
@@ -151,10 +155,56 @@ exhaustiveness — the first version of this one omitted the `declare` case, and
 list presented as complete is worse than no list, because it stops the next
 person looking.
 
-Residual 3 is the important one to state, because it is a bound on the technique
+Residual 3 was the important one to state, because it is a bound on the technique
 rather than a gap in the regex. Knowing which residuals are "not yet handled" and
 which are "cannot be handled here" is what tells the next person whether to extend
 the tool or reach for a different one.
+
+**But be exact about which technique the bound applies to.** This list originally
+called residual 3 "unreachable **in principle** for a single-file scanner", and
+that overstatement cost real design time: it made a 31-file source migration look
+like the only way out, because detection appeared to be off the table. The true
+statement is narrower — it is unreachable for a scanner that matches **text**. A
+single-file *AST* rule reaches it easily, because the declaration is in another
+file but the `import` statement is in this one, and scope analysis resolves the
+binding without any cross-file program load.
+
+"In principle" is a strong claim about a whole class of tools. Reserve it for
+cases where the information genuinely is not present in the input; here the
+information was sitting in the file's own import list.
+
+## Where this ended up
+
+`scripts/check-route-params.js` was deleted and replaced by the
+`ocrecipes/no-shadowed-route-paramlist` ESLint rule
+(`eslint-plugin-ocrecipes/index.js`), which resolves the ParamList argument of
+`RouteProp` / `NativeStackScreenProps` through scope analysis and requires it to
+bind to an import from a navigator module or the `@/types/navigation` barrel.
+
+All four residuals above close at once, and not one at a time — they were all
+symptoms of asking *what does the text near this look like* instead of *where is
+this identifier bound*:
+
+| Residual | Why it closed |
+| --- | --- |
+| 1 — `type P<T> = { … }`, `Readonly<{ … }>` | The rule never reads the declaration's syntax; a local binding is a local binding. |
+| 2 — exported alias inside a screen | The navigator carve-out is by **filename**, so `export` is no longer load-bearing. That the regex had to trust `export` at all was a symptom, not a design choice. |
+| 3 — cross-module import | The import statement is in the linted file. |
+| 4 — same-line comment | There is no line anchor to defeat. |
+
+The generalisable part: when a scanner's residual list stops being a set of
+independent gaps and starts being one repeated sentence about its *technique*,
+that is the signal to change technique rather than widen the pattern. Widening
+was actively considered here and correctly declined — skipping a type-parameter
+list textually needs `(?:\s*<[^{]*>)?`, which then breaks on a brace-containing
+constraint (`<T extends { x: string }>`), trading a known gap for a new wrong
+case.
+
+Two things that made the replacement cheap, and are worth checking for before
+concluding a rewrite is expensive: the destination already existed
+(`eslint-plugin-ocrecipes` had five rules and a `RuleTester` harness), and the
+rule needs no type information, so it runs in `lint-staged` *and* CI where a
+`ts-morph`/program-load approach would have been CI-only.
 
 Where the compiler *does* adjudicate, let it: an `interface`-based shadow needs no
 rule at all, because interfaces get no implicit index signature and `tsc` rejects
@@ -174,10 +224,15 @@ them against `ParamListBase`.
 
 ## Related Files
 
-- `scripts/check-route-params.js` — the structural, whitespace-tolerant guard
-- `scripts/__tests__/check-route-params.test.ts` — carries an explicit
-  Prettier-wrapped regression case, because that is the form a real violation takes
+- `eslint-plugin-ocrecipes/index.js` → `no-shadowed-route-paramlist` — the guard
+  that replaced the scanner, with its own (much shorter) coverage-gap block
+- `eslint-plugin-ocrecipes/__tests__/rules.test.ts` — keeps the Prettier-wrapped
+  regression case, because that is the form a real violation takes, plus one case
+  per residual the text scanner could not reach
 - `client/screens/ItemDetailScreen.tsx` — the instance both greps missed
+- `scripts/check-route-params.js` — **deleted**; the structural, whitespace-tolerant
+  regex guard this doc was written about. Kept in the narrative because the
+  residuals it was forced to document are the whole lesson.
 
 ## See Also
 
