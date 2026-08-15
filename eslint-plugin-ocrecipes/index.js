@@ -13,6 +13,8 @@
 
 "use strict";
 
+const path = require("path");
+
 // ─── no-bare-error-response ─────────────────────────────────────────────────
 // Detects: res.status(N).json({ error: ... }) or res.status(N).json({ message: ... })
 // These should use `sendError(res, N, "...")` instead.
@@ -639,29 +641,82 @@ const noDeadApiRequestGuard = {
 //    `CompositeNavigationProp`, `BottomTabNavigationProp`) also take a ParamList
 //    but carry no route params. Deliberately out of scope: a shadow there
 //    degrades `navigate()` autocomplete, it does not silently drop a param.
+//    `CompositeScreenProps` is out of scope for a different reason — its first
+//    type argument is a ScreenProps object, not a ParamList (see the Set below).
+//
+// 4. A generic type PARAMETER in the ParamList position is reported as a local
+//    declaration, so a generic route-helper wrapper cannot be written without a
+//    disable comment. Deliberate — see the note at the `variable.defs` branch;
+//    exempting type parameters would turn such a wrapper into a laundering path.
+//
+// NOT a gap, though an earlier revision made it one: a shadow imported from a
+// module that merely LOOKS like a navigator (`./FakeNavigator` beside a screen).
+// The allowlist resolves the specifier against the importing file and requires
+// it to land under `client/navigation/` or `client/types/navigation`. Matching
+// the specifier text accepted that shadow from anywhere in the tree — which is
+// residual 3, the reason this rule exists, reopened by its own allowlist.
 
 /**
  * Type constructors whose FIRST type argument is a ParamList *and* which carry
- * route params through to the screen.
+ * route params through to the screen (each exposes `route: RouteProp<P, K>`).
+ *
+ * `CompositeScreenProps` is deliberately absent and must stay absent: its first
+ * type argument is another *ScreenProps object type*, not a ParamList
+ * (`CompositeScreenProps<A extends { navigation; route }, B extends { navigation }>`
+ * — @react-navigation/core types.d.ts), so guarding it would reject the correct
+ * `CompositeScreenProps<NativeStackScreenProps<RootStackParamList, "X">, …>`.
+ * Same reasoning excludes the navigation-only constructors; see gap 3 below.
  */
 const ROUTE_PARAM_CONSTRUCTORS = new Set([
   "RouteProp", // @react-navigation/native
   "NativeStackScreenProps", // @react-navigation/native-stack
+  "BottomTabScreenProps", // @react-navigation/bottom-tabs
+  // Not installed today; listed so adding the navigator does not silently
+  // reopen the hole, which is cheaper than remembering to come back here.
+  "StackScreenProps", // @react-navigation/stack
+  "MaterialTopTabScreenProps", // @react-navigation/material-top-tabs
 ]);
 
 const NAVIGATION_PACKAGE = /^@react-navigation\//;
 
 /**
- * Modules permitted to declare or re-export a canonical ParamList:
- *   `@/navigation/RootStackNavigator`, `../navigation/RootStackNavigator`
- *   `./RootStackNavigator`   — the relative form used inside client/navigation/
- *   `@/types/navigation`     — the barrel that re-exports every ParamList
+ * Where a module specifier lands, as a path whose tail can be tested. Returns
+ * null for a bare package specifier, which is never canonical.
  */
-function isCanonicalParamListModule(source) {
+function resolveSpecifier(source, filename) {
+  // The `@/` alias maps to ./client (tsconfig paths).
+  if (source.startsWith("@/")) return "client/" + source.slice(2);
+  if (source.startsWith("./") || source.startsWith("../")) {
+    const dir = path.posix.dirname(String(filename).replace(/\\/g, "/"));
+    return path.posix.normalize(path.posix.join(dir, source));
+  }
+  return null;
+}
+
+/**
+ * A ParamList is canonical only when its module LIVES at
+ * `client/navigation/<X>Navigator` or `client/types/navigation` — resolved
+ * against the importing file, not pattern-matched against the specifier text.
+ *
+ * The first implementation tested the TEXT (`/^\.{1,2}\/[A-Za-z0-9_$]+Navigator$/`
+ * and two similarly unanchored patterns) and was wrong in precisely the way this
+ * rule exists to prevent. `./FakeNavigator` sitting next to a screen satisfied
+ * it from anywhere in the tree, so "extract the shadow to a shared file" — the
+ * mutation residual 3 is *named after* — was accepted whenever the extracted
+ * file happened to be called `*Navigator`. Verified before the fix: a shadow in
+ * `client/screens/__probeFakeNavigator.ts`, imported by a sibling screen, went
+ * unreported.
+ *
+ * Spelling only ever CORRELATED with location. Location is the condition, and
+ * this is the third time in this rule's lineage that a correlate was shipped in
+ * place of the condition — see the paired conventions doc.
+ */
+function isCanonicalParamListModule(source, filename) {
+  const resolved = resolveSpecifier(source, filename);
+  if (resolved === null) return false;
   return (
-    /(?:^|\/)navigation\/[A-Za-z0-9_$]+Navigator$/.test(source) ||
-    /^\.{1,2}\/[A-Za-z0-9_$]+Navigator$/.test(source) ||
-    /(?:^|\/)types\/navigation$/.test(source)
+    /(?:^|\/)client\/navigation\/[A-Za-z0-9_$]+Navigator$/.test(resolved) ||
+    /(?:^|\/)client\/types\/navigation$/.test(resolved)
   );
 }
 
@@ -809,13 +864,22 @@ const noShadowedRouteParamList = {
 
       const binding = importBindingOf(root, root.name);
       if (binding) {
-        return isCanonicalParamListModule(binding.source)
+        return isCanonicalParamListModule(binding.source, context.filename)
           ? null
           : `\`${root.name}\`, imported from "${binding.source}"`;
       }
 
       const variable = resolveVariable(root, root.name);
       if (variable && variable.defs.length > 0) {
+        // NOTE this also catches a generic type PARAMETER, so a generic route
+        // helper — `useTypedRoute<P extends ParamListBase, K extends keyof P>()`
+        // wrapping `useRoute<RouteProp<P, K>>()` — is rejected as "the locally
+        // declared type `P`". That is a deliberate trade, not an oversight:
+        // skipping `def.type === "TypeParameter"` would make such a wrapper a
+        // laundering path, since the shadow would arrive at the CALL site
+        // (`useTypedRoute<LocalParams, "Foo">()`), which is a CallExpression
+        // this rule does not visit. No such helper exists in the tree; if one is
+        // ever wanted, it needs a disable comment and a reason.
         return selfIsCanonical
           ? null
           : `the locally declared type \`${root.name}\``;

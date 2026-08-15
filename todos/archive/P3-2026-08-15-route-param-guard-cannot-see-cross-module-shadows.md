@@ -294,6 +294,42 @@ The lesson is the todo's own, one level up: **a guard's tests can pass through t
 mechanism the guard was written to abolish, and a green suite will not tell you.** Only
 deleting the suspect branch and re-running did.
 
+**Second review round (`/code-review medium` + a delta re-review) found the residual was
+still open — in the allowlist.** `isCanonicalParamListModule` tested the import specifier's
+TEXT with three unanchored patterns, so `./FakeNavigator` sitting beside a screen was
+accepted as canonical from anywhere in the tree. That is "extract the shadow to a shared
+file" — the exact mutation residual 3 is named after — passing, whenever the extracted file
+happened to be named `*Navigator`. Reproduced against the real tree before fixing: a shadow
+in `client/screens/__probeFakeNavigator.ts` imported by a sibling screen produced no
+diagnostic. The PR's original two-sided control had planted its shadow under a
+non-`Navigator` name and so validated only the easier half.
+
+Fixed by resolving the specifier against the importing file and requiring it to land at
+`client/navigation/<X>Navigator` or `client/types/navigation` — the same location test the
+sibling helper `isCanonicalParamListFile` already used. One rule, two halves, two
+definitions of "canonical", and the weaker half was the one facing untrusted input.
+
+That makes **three** correlate-instead-of-condition substitutions in this rule's lineage
+(`export` for "is a navigator's declaration"; spelling for "is react-navigation's
+constructor"; specifier shape for "lives in a navigator module"), which is the durable
+lesson now written up in the conventions doc.
+
+Also in this round:
+
+- `BottomTabScreenProps` added to the guarded set (takes a ParamList first, exposes
+  `route`), plus `StackScreenProps` / `MaterialTopTabScreenProps` for when those navigators
+  are installed. `CompositeScreenProps` deliberately **excluded** and documented — its first
+  type argument is a ScreenProps object, not a ParamList, so guarding it would reject the
+  correct composition. (The review suggested including it; the typings say otherwise.)
+- A generic type parameter in the ParamList position is reported as a local declaration, so
+  a generic route-helper wrapper needs a disable comment. Kept deliberately: exempting type
+  parameters would make such a wrapper a laundering path, since the shadow would arrive at
+  the call site, which this rule does not visit. Documented as gap 4.
+- The namespace-qualified branch had no negative controls — three separate mutants of it
+  each killed **zero** tests. Verification is now a 7-mutant battery across every helper
+  with **zero survivors**; reverting the allowlist to text-matching alone kills 12 tests, so
+  that regression cannot return silently.
+
 ### 2026-08-15
 
 - Created from the residual flagged when PR #812 merged. The guard closed every form that

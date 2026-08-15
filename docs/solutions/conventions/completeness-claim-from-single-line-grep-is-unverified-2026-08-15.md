@@ -245,9 +245,17 @@ Three things generalise:
    under-specified — and silently, because under-specified fixtures still pass.
 2. **Delete the branch you suspect and re-run.** Not "read it and reason about
    it": the fallback survived a self-review and a full green suite. One mutation
-   run produced the count — 11 — that no amount of reading did. Do the same for
-   the fix: breaking `importBindingOf` now fails 15 of 15, which is the evidence
-   that the repair is real and not a second decoration.
+   run produced the count — 11 — that no amount of reading did.
+
+   Then note what that single mutant does *not* prove. Breaking
+   `importBindingOf` failed 15 of 15 invalid cases, which was read at the time as
+   "the repair is real" — but it only proved the fixtures now route through
+   binding resolution *for the forms already covered*. The same commit had added
+   a second branch (namespace-qualified access), and three separate mutants of
+   **that** branch each killed zero tests. One mutant is evidence about one
+   branch. Scope the claim to the mutant, or run a battery: the eventual battery
+   here was 7 mutants across every helper, and only a zero-survivor result is
+   evidence about the rule.
 3. **A compatibility fallback needs a named legitimate trigger.** "Covers the
    case with no import in scope" sounds like defensive engineering until you ask
    which compiling file that is. `RouteProp` is an ordinary named export, never
@@ -255,6 +263,56 @@ Three things generalise:
    could only ever fire on an unrelated type that shared the name. A fallback
    whose only reachable input is the false positive is not insurance, it is the
    bug.
+
+## The same substitution, a third time — now in the allowlist
+
+The rule's allowlist answered "is this ParamList canonical?" by testing the
+import specifier's **text**:
+
+```js
+// BAD — three unanchored patterns, none of which is the condition
+/(?:^|\/)navigation\/[A-Za-z0-9_$]+Navigator$/.test(source) ||
+  /^\.{1,2}\/[A-Za-z0-9_$]+Navigator$/.test(source) ||
+  /(?:^|\/)types\/navigation$/.test(source);
+```
+
+Every one of those matches from anywhere in the tree. `./FakeNavigator` sitting
+next to a screen satisfied the second — so "extract the shadow to a shared file",
+**the exact mutation residual 3 is named after**, was accepted whenever the
+extracted file happened to be called `*Navigator`. Reproduced against the real
+tree: a shadow in `client/screens/__probeFakeNavigator.ts`, imported by a sibling
+screen, produced no diagnostic.
+
+The condition is *where the module lives*. Spelling merely correlated with it:
+
+```js
+// GOOD — resolve against the importing file, then test the location
+const resolved = resolveSpecifier(source, filename); // "@/x" → "client/x"; "./x" → dirname + x
+/(?:^|\/)client\/navigation\/[A-Za-z0-9_$]+Navigator$/.test(resolved);
+```
+
+Note the shape of the miss. The *other* half of the same allowlist —
+`isCanonicalParamListFile`, which decides whether the file being linted may
+declare its own ParamList — was already location-based. One rule, two halves,
+two different definitions of "canonical", and the weaker half was the one facing
+the untrusted input.
+
+**Count the instances before concluding it was bad luck.** In this one rule's
+lineage the same substitution shipped three times:
+
+| # | Condition | Correlate that shipped |
+| --- | --- | --- |
+| 1 | is this declaration a navigator's own? | does the line start with `export`? |
+| 2 | is this constructor react-navigation's? | is it *spelled* `RouteProp`? |
+| 3 | does this ParamList live in a navigator module? | does the specifier *look* like a navigator path? |
+
+Each passed review. Each was green on the whole tree. Each failed on the first
+input that separated the correlate from the condition — which is also the test
+nobody writes, because the fixture that separates them is the one you have to
+already suspect. Two habits catch it where reading does not: **when a check has
+two halves, make both answer the question the same way** (asymmetry is the
+tell), and **plant the adversarial input rather than reasoning about it** —
+finding 3 above was found by writing the file, not by reading the regex.
 
 Where the compiler *does* adjudicate, let it: an `interface`-based shadow needs no
 rule at all, because interfaces get no implicit index signature and `tsc` rejects

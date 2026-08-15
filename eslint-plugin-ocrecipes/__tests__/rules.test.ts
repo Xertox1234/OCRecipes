@@ -129,12 +129,72 @@ tester.run(
         ].join("\n"),
       },
       // Relative form, used inside client/navigation/ itself
-      // (linking.ts, navigationRef.ts).
+      // (linking.ts, navigationRef.ts). The `filename` is load-bearing now:
+      // a specifier is resolved against the importing file, so `./X` is
+      // canonical here and NOT canonical from a screen directory.
       {
+        filename: "client/navigation/linking.ts",
         code: [
           RP,
           'import type { RootStackParamList } from "./RootStackNavigator";',
           'type R = RouteProp<RootStackParamList, "Scan">;',
+        ].join("\n"),
+      },
+      // A deep relative path that climbs back to the real navigator directory
+      // is equally canonical — the test is where it LANDS, not how it is spelt.
+      {
+        filename: "client/screens/meal-plan/RecipeCreateScreen.tsx",
+        code: [
+          RP,
+          'import type { MealPlanStackParamList } from "../../navigation/MealPlanStackNavigator";',
+          'type R = RouteProp<MealPlanStackParamList, "RecipeCreate">;',
+        ].join("\n"),
+      },
+      // BottomTabScreenProps takes a ParamList first and exposes
+      // `route: RouteProp<P, K>`, so it is guarded like the stack variant.
+      {
+        filename: "client/screens/SomeTabScreen.tsx",
+        code: [
+          'import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";',
+          'import type { MainTabParamList } from "@/navigation/MainTabNavigator";',
+          'type Props = BottomTabScreenProps<MainTabParamList, "HomeTab">;',
+        ].join("\n"),
+      },
+      // `CompositeScreenProps` must stay UNGUARDED: its first type argument is
+      // another ScreenProps object, not a ParamList, so guarding it would
+      // reject the correct composition below.
+      {
+        filename: "client/screens/SomeScreen.tsx",
+        code: [
+          NSSP,
+          'import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";',
+          'import type { CompositeScreenProps } from "@react-navigation/native";',
+          CANONICAL_IMPORT,
+          'import type { MainTabParamList } from "@/navigation/MainTabNavigator";',
+          "type Props = CompositeScreenProps<",
+          '  NativeStackScreenProps<RootStackParamList, "Scan">,',
+          '  BottomTabScreenProps<MainTabParamList, "HomeTab">',
+          ">;",
+        ].join("\n"),
+      },
+      // Negative control for the namespace branch's package check — the mirror
+      // of the `./my-own-graph-helpers` control on the Identifier branch.
+      // Without it, deleting `NAVIGATION_PACKAGE.test` from that branch killed
+      // no test at all.
+      {
+        code: [
+          'import * as Local from "./my-own-graph-helpers";',
+          'type R = Local.RouteProp<{ Foo: { x: string } }, "Foo">;',
+        ].join("\n"),
+      },
+      // …and for its member check: a @react-navigation namespace used with a
+      // navigation-only constructor must stay out of scope (gap 3) through the
+      // namespace path too.
+      {
+        code: [
+          'import * as Nav from "@react-navigation/native";',
+          "type LocalParams = { Foo: { x: string } };",
+          "type N = Nav.NavigationProp<LocalParams>;",
         ].join("\n"),
       },
       // FavouriteRecipesScreen is registered in two navigators; its
@@ -271,6 +331,49 @@ tester.run(
             },
           },
         ],
+      },
+      // ── The allowlist tests LOCATION, not spelling ────────────────────────
+      // "Extract the shadow to a shared file" is the mutation residual 3 is
+      // named after, and an earlier revision of this rule accepted it whenever
+      // the extracted file happened to be called `*Navigator` — because the
+      // allowlist pattern-matched the specifier TEXT with nothing anchoring it
+      // to where the module actually lives. All three cases below passed
+      // silently then; the first was reproduced against the real tree.
+      {
+        filename: "client/screens/EvilScreen.tsx",
+        code: [
+          RP,
+          'import type { EvilParams } from "./FakeNavigator";',
+          'type R = RouteProp<EvilParams, "Foo">;',
+        ].join("\n"),
+        errors: [
+          {
+            messageId: "shadowedParamList",
+            data: {
+              constructor: "RouteProp",
+              detail: '`EvilParams`, imported from "./FakeNavigator"',
+            },
+          },
+        ],
+      },
+      {
+        filename: "client/screens/EvilScreen.tsx",
+        code: [
+          RP,
+          'import type { EvilParams } from "@/screens/nested/navigation/EvilNavigator";',
+          'type R = RouteProp<EvilParams, "Foo">;',
+        ].join("\n"),
+        errors: [{ messageId: "shadowedParamList" }],
+      },
+      // A bare package specifier can never be canonical, however it is named.
+      {
+        filename: "client/screens/EvilScreen.tsx",
+        code: [
+          RP,
+          'import type { EvilParams } from "some-pkg/navigation/EvilNavigator";',
+          'type R = RouteProp<EvilParams, "Foo">;',
+        ].join("\n"),
+        errors: [{ messageId: "shadowedParamList" }],
       },
       // ── Form 1 — the inline object literal (PR #742's actual defect) ──────
       {
@@ -429,7 +532,36 @@ tester.run(
           "type LocalParams = { Foo: { x: string } };",
           'type R = Nav.RouteProp<LocalParams, "Foo">;',
         ].join("\n"),
-        errors: [{ messageId: "shadowedParamList" }],
+        // `constructor` must be the MEMBER name, not the namespace binding's
+        // local name — reporting "`Nav`'s ParamList argument is…" is a broken
+        // diagnostic, and a messageId-only assertion here let that mutant live.
+        errors: [
+          {
+            messageId: "shadowedParamList",
+            data: {
+              constructor: "RouteProp",
+              detail: "the locally declared type `LocalParams`",
+            },
+          },
+        ],
+      },
+      // The tab variant of the props constructor — same first-argument shape,
+      // same silent param drop.
+      {
+        code: [
+          'import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";',
+          "type LocalParams = { HomeTab: { filter: string } };",
+          'type Props = BottomTabScreenProps<LocalParams, "HomeTab">;',
+        ].join("\n"),
+        errors: [
+          {
+            messageId: "shadowedParamList",
+            data: {
+              constructor: "BottomTabScreenProps",
+              detail: "the locally declared type `LocalParams`",
+            },
+          },
+        ],
       },
       // Same defect through the props-object constructor.
       {
