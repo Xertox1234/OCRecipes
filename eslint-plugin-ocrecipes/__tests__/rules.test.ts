@@ -437,6 +437,29 @@ tester.run(
         ].join("\n"),
         errors: [{ messageId: "shadowedParamList" }],
       },
+      // …and at the absolute path shape real eslint passes, for consistency
+      // with the accept-direction rows.
+      //
+      // This row adds NO detection power, and saying otherwise would be the
+      // mistake this whole rule keeps making. A reject-direction case is
+      // insensitive to rooting: an unrooted path fails the start-anchored
+      // pattern just as a correctly-rooted foreign one does, so "still
+      // rejected" is the answer either way. Verified — reducing
+      // `toRepoRelative` to a passthrough leaves both this row and its relative
+      // sibling green. Rooting for the FILE-side check is pinned by the
+      // accept-direction case above, `abs("client/navigation/RootStackNavigator.tsx")`,
+      // which is what actually turns red.
+      {
+        filename: abs(
+          "client/screens/vendor/client/navigation/FooNavigator.tsx",
+        ),
+        code: [
+          RP,
+          "export type RootStackParamList = { Scan: { mode: string } };",
+          'type R = RouteProp<RootStackParamList, "Scan">;',
+        ].join("\n"),
+        errors: [{ messageId: "shadowedParamList" }],
+      },
       // The types-barrel half is spoofable the same way, and was only ever
       // checked by a tail match until a mutation run showed nothing covered it.
       {
@@ -924,6 +947,28 @@ describe("no-shadowed-route-paramlist — specifier resolution", () => {
     ["the shared workspace", "@shared/schema", SCREEN],
     // Landing on the types BARREL's directory is not landing on the barrel.
     ["the types directory itself", "@/types", SCREEN],
+    // The table's other rows vary the SPECIFIER against a screen filename;
+    // these two vary the FILENAME to a canonical one while keeping a shadow
+    // specifier — the axis nothing else crosses.
+    //
+    // Being a navigator buys a file the right to declare its OWN ParamList,
+    // nothing more: importing someone else's restatement is still a shadow.
+    // The distinction is that `selfIsCanonical` gates only the
+    // local-declaration branch of `shadowDetail`, never the import branch. That
+    // holds today, but nothing pinned it, and the regression it invites is this
+    // rule's exact recurring shape — a plausible "navigators can't shadow
+    // themselves" simplification that short-circuits on `selfIsCanonical` would
+    // turn all seven navigator modules into laundering paths with no red test.
+    [
+      "shadow specifier imported BY a navigator file",
+      "./route-types",
+      "client/navigation/RootStackNavigator.tsx",
+    ],
+    [
+      "…same, at real-eslint absolute path shape",
+      "./route-types",
+      abs("client/navigation/RootStackNavigator.tsx"),
+    ],
   ];
 
   it.each(CANONICAL)("accepts %s", (_label, specifier, filename) => {
