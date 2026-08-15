@@ -103,7 +103,7 @@ Two things the guard must NOT rely on:
   inline literal was walked past by a two-line extract-variable refactor:
 
   ```ts
-  type LocalParams = { imageUri: string };            // same shadow…
+  type LocalParams = { Foo: { imageUri: string } };   // same shadow…
   type ScreenRoute = RouteProp<LocalParams, "Foo">;   // …invisible to a form-1-only rule
   ```
 
@@ -112,6 +112,32 @@ Two things the guard must NOT rely on:
   always `export type <Name>ParamList = {` in its navigator module, so an
   unexported object-literal alias is a shadow and an exported one is a source of
   truth — which also stops the navigators from flagging their own declarations.
+  (Implement that as a line anchor requiring `type` at column 0, not as a
+  `(?!export\b)` lookahead in front of the literal `type` — such a lookahead is
+  dead code, since it can only fail where the literal already fails.)
+
+## The scanner is not exhaustive either — say where it stops
+
+Replacing a grep with a structural scan raises the floor; it does not reach a
+proof. The same discipline applies one level up: **write down the shapes your
+scanner does not cover**, in the scanner, or the next reader inherits your tool as
+a completeness guarantee it never was. For the route-param guard those are:
+
+1. a wrapped or computed RHS — `type P = Readonly<{ … }>`, `type P<T> = { … } & T`;
+2. an exported alias declared inside a screen, indistinguishable from a
+   navigator's own canonical declaration;
+3. a shadow declared in another module and imported — **unreachable in principle**
+   for a single-file text scanner, and the natural next mutation of the very bug
+   the rule was written for.
+
+Residual 3 is the important one to state, because it is a bound on the technique
+rather than a gap in the regex. Knowing which residuals are "not yet handled" and
+which are "cannot be handled here" is what tells the next person whether to extend
+the tool or reach for a different one.
+
+Where the compiler *does* adjudicate, let it: an `interface`-based shadow needs no
+rule at all, because interfaces get no implicit index signature and `tsc` rejects
+them against `ParamListBase`.
 
 ## Exceptions
 

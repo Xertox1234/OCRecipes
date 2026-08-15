@@ -76,20 +76,43 @@ const INLINE_PARAMLIST = /RouteProp\s*<\s*\{/g;
 /**
  * Form 2 — a NAMED local alias as the ParamList argument:
  *
- *   type LocalParams = { imageUri: string };
+ *   type LocalParams = { LabelAnalysis: { imageUri: string } };
  *   type ScreenRoute = RouteProp<LocalParams, "LabelAnalysis">;
  *
  * Semantically identical to form 1 and equally invisible to `tsc`, but a
  * two-line extract-variable refactor walks straight past a form-1-only rule.
  *
- * The discriminator is `export`: every canonical ParamList in this repo is
- * declared `export type <Name>ParamList = {` in its navigator module, so an
- * EXPORTED object-literal alias is a source of truth and an unexported one is
- * a shadow. The negative lookahead is what keeps the navigator modules
- * themselves from tripping the rule on their own declarations.
+ * (Note the alias must be keyed BY ROUTE NAME — `RouteProp<P, "X">` resolves to
+ * `P["X"]`, and `ParamListBase` is `Record<string, object | undefined>`, so a
+ * flat `{ imageUri: string }` is a TS2344 and could never be committed.)
+ *
+ * The intended discriminator is `export`: every canonical ParamList in this
+ * repo is declared `export type <Name>ParamList = {` in its navigator module,
+ * so an EXPORTED object-literal alias is a source of truth and an unexported
+ * one is a shadow. Mechanically that exclusion is performed by the `^[ \t]*`
+ * anchor — the line must begin with `type`, so `export type …` simply never
+ * matches. (An earlier revision credited a `(?!export\b)` lookahead here; that
+ * was dead code. A lookahead sitting immediately before the literal `type` can
+ * never block a match the literal does not already block, because `[ \t]*`
+ * cannot consume `export`.)
+ *
+ * KNOWN RESIDUALS — shapes this scanner does NOT catch. Listed because the
+ * paired conventions doc is specifically about not overclaiming what a scan
+ * proves; treat this rule as covering the two forms that have actually
+ * occurred, not as an exhaustive decision procedure:
+ *
+ *   1. A wrapped or computed RHS: `type P = Readonly<{ … }>`, `type P<T> = { … } & T`.
+ *   2. An exported alias inside a screen: `export type P = { … }` — indistinguishable
+ *      here from a navigator's own canonical declaration.
+ *   3. A shadow declared in ANOTHER module and imported. Unreachable in principle
+ *      for a single-file text scanner, and it is the natural next mutation of the
+ *      bug this rule was written for ("extract to a shared file").
+ *
+ * An `interface`-based shadow is NOT in this list: interfaces get no implicit
+ * index signature, so `tsc` rejects them against `ParamListBase` and the
+ * compiler is already the authority there.
  */
-const LOCAL_OBJECT_ALIAS =
-  /^[ \t]*(?!export\b)type\s+([A-Za-z_$][\w$]*)\s*=\s*\{/gm;
+const LOCAL_OBJECT_ALIAS = /^[ \t]*type\s+([A-Za-z_$][\w$]*)\s*=\s*\{/gm;
 const ROUTEPROP_NAMED_ARG = /RouteProp\s*<\s*([A-Za-z_$][\w$]*)\s*,/g;
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx"];

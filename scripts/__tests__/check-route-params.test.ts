@@ -94,9 +94,12 @@ describe("check-route-params.js", () => {
   // the shadow — and its silent param-drop — completely intact. A rule that only
   // knows the inline form is not a rule about the defect class.
   it("exits 1 when the ParamList argument is a NAMED local object-literal alias", () => {
+    // Keyed by route name, not flat: `RouteProp<P, "X">` resolves to `P["X"]`
+    // and `ParamListBase` is `Record<string, object | undefined>`, so a flat
+    // `{ imageUri: string }` is a TS2344 that could never reach the repo.
     const file = writeTsx(`
       type LocalParams = {
-        imageUri: string;
+        LabelAnalysis: { imageUri: string };
       };
       type ScreenRoute = RouteProp<LocalParams, "LabelAnalysis">;
 
@@ -110,9 +113,11 @@ describe("check-route-params.js", () => {
     expect(stdout).toContain("LocalParams");
   });
 
-  // The discriminator between "shadow" and "source of truth" is `export`: every
-  // canonical ParamList in this repo is `export type <Name>ParamList = {` in its
-  // navigator module. Without this carve-out the navigators would flag themselves.
+  // The intended discriminator between "shadow" and "source of truth" is
+  // `export` — every canonical ParamList here is `export type <Name>ParamList =
+  // {` in its navigator module. Mechanically the `^[ \t]*type` anchor performs
+  // it: the line must START with `type`, so `export type …` never matches.
+  // Without that, the navigator modules would flag their own declarations.
   it("exits 0 when the named alias is EXPORTED (a navigator's own ParamList)", () => {
     const file = writeTsx(`
       export type ProfileStackParamList = {
