@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, expect } from "vitest";
-import { ESLint, RuleTester } from "eslint";
+import { ESLint, Linter, RuleTester } from "eslint";
 import * as tsParser from "@typescript-eslint/parser";
 
 /**
@@ -813,6 +813,127 @@ tester.run(
     ],
   },
 );
+
+// ─── Specifier resolution, enumerated ──────────────────────────────────────
+//
+// Four separate defects in this rule's history were all one mistake: a check
+// that CORRELATED with "does this ParamList live in a navigator module" instead
+// of testing it. Each was fixed by sampling — someone thought of one bad input,
+// added one case. The fix for the third contained the fourth.
+//
+// This table exists to stop sampling. It enumerates the specifier/filename
+// space in one place — alias and relative forms, absolute and repo-relative
+// filenames, and every spoof shape found so far — so that a future change to
+// `resolveSpecifier`/`toRepoRelative` has to satisfy the whole space at once
+// rather than the one example its author happened to picture.
+//
+// Add a row here before changing either function. A row is cheaper than a round.
+describe("no-shadowed-route-paramlist — specifier resolution", () => {
+  const linter = new Linter();
+
+  /** Lint one import shape and report whether the ParamList was accepted. */
+  const accepts = (specifier: string, filename: string): boolean => {
+    const code = [
+      'import type { RouteProp } from "@react-navigation/native";',
+      `import type { P } from "${specifier}";`,
+      'type R = RouteProp<P, "Foo">;',
+    ].join("\n");
+    const messages = linter.verify(
+      code,
+      [
+        {
+          files: ["**/*.{ts,tsx}"],
+          languageOptions: {
+            parser: tsParser,
+            parserOptions: { ecmaVersion: "latest", sourceType: "module" },
+          },
+          plugins: { ocrecipes: plugin },
+          rules: { "ocrecipes/no-shadowed-route-paramlist": "error" },
+        },
+      ],
+      filename,
+    );
+    // A config that matches nothing yields a message with a null ruleId and
+    // would otherwise read as "accepted" — the harness lying rather than the
+    // rule passing. Fail loudly instead.
+    const unmatched = messages.find((m: Linter.LintMessage) => !m.ruleId);
+    if (unmatched)
+      throw new Error(`harness misconfigured: ${unmatched.message}`);
+    return messages.length === 0;
+  };
+
+  const SCREEN = "client/screens/EvilScreen.tsx";
+  const NESTED_SCREEN = "client/screens/meal-plan/RecipeCreateScreen.tsx";
+  const NAV = "client/navigation/linking.ts";
+
+  const CANONICAL: [string, string, string][] = [
+    ["alias to a navigator", "@/navigation/RootStackNavigator", SCREEN],
+    ["alias to the types barrel", "@/types/navigation", SCREEN],
+    ["relative, inside navigation/", "./RootStackNavigator", NAV],
+    [
+      "relative, climbing back to navigation/",
+      "../../navigation/MealPlanStackNavigator",
+      NESTED_SCREEN,
+    ],
+    [
+      "absolute filename, alias",
+      "@/navigation/RootStackNavigator",
+      abs(SCREEN),
+    ],
+    ["absolute filename, relative specifier", "./RootStackNavigator", abs(NAV)],
+  ];
+
+  const SHADOWS: [string, string, string][] = [
+    ["sibling file named like a navigator", "./FakeNavigator", SCREEN],
+    [
+      "nested client/navigation segment (alias)",
+      "@/screens/vendor/client/navigation/EvilNavigator",
+      SCREEN,
+    ],
+    [
+      "nested client/navigation segment (relative)",
+      "./vendor/client/navigation/EvilNavigator",
+      SCREEN,
+    ],
+    [
+      "nested client/types/navigation segment",
+      "@/screens/vendor/client/types/navigation",
+      SCREEN,
+    ],
+    [
+      "climbs out of the repository",
+      "../../../../evil-sibling/client/navigation/FooNavigator",
+      SCREEN,
+    ],
+    [
+      "bare package spelled like the navigator path",
+      "client/navigation/RootStackNavigator",
+      SCREEN,
+    ],
+    [
+      "bare package, navigator-ish tail",
+      "some-pkg/navigation/XNavigator",
+      SCREEN,
+    ],
+    [
+      "extra segment under navigation/",
+      "@/navigation/sub/RootStackNavigator",
+      SCREEN,
+    ],
+    ["a screen, not a navigator", "@/screens/SomeScreen", SCREEN],
+    ["the shared workspace", "@shared/schema", SCREEN],
+    // Landing on the types BARREL's directory is not landing on the barrel.
+    ["the types directory itself", "@/types", SCREEN],
+  ];
+
+  it.each(CANONICAL)("accepts %s", (_label, specifier, filename) => {
+    expect(accepts(specifier, filename)).toBe(true);
+  });
+
+  it.each(SHADOWS)("rejects %s", (_label, specifier, filename) => {
+    expect(accepts(specifier, filename)).toBe(false);
+  });
+});
 
 // ─── The rules are actually WIRED ──────────────────────────────────────────
 //
