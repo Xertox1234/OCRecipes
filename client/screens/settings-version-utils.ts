@@ -24,8 +24,19 @@ export interface BuildInfoInput {
   /** `Updates.createdAt` pre-serialised by the caller, keeping this pure data. */
   createdAtIso: string | null;
   isEmbeddedLaunch: boolean;
-  /** `false` in dev clients and Expo Go, where every other field is unreliable. */
+  /** `Updates.isEnabled` — false only when updates were compiled out. */
   isEnabled: boolean;
+  /**
+   * `__DEV__`. The only POSITIVE signal that this is a development build.
+   * Every `Updates.*` field is unreliable here — a Metro-served dev client
+   * reports `isEnabled: true` with a null `updateId`, and expo-updates
+   * documents `channel` as always null on dev builds — so dev must be
+   * identified by this, never inferred from the absence of the others.
+   */
+  isDevelopment: boolean;
+  /** `Updates.isEmergencyLaunch` — an update downloaded but threw on launch. */
+  isEmergencyLaunch: boolean;
+  emergencyLaunchReason: string | null;
 }
 
 export interface BuildInfoDisplay {
@@ -76,16 +87,23 @@ export function toCreatedAtIso(createdAt: Date | null): string | null {
  * The third line is the load-bearing one. `expo-updates` matches
  * `runtimeVersion` *exactly*, so a binary older than the published
  * `runtimeVersion` keeps its embedded bundle forever with no error and no log
- * line. Two embedded states look identical on screen but mean opposite things,
- * so they get distinct copy:
+ * line. Several states render as "the embedded bundle" yet mean entirely
+ * different things, so each gets its own branch rather than collapsing into
+ * one reassuring label:
  *
- * - **no channel stamped** (a local `expo run:` build) — this binary can never
- *   receive an OTA at all, no matter what is published;
- * - **channel stamped, still embedded** — the OTA lane is healthy and simply
- *   has nothing newer to hand over.
+ * - **development build** — nothing below is meaningful; identified by
+ *   `__DEV__` alone, never inferred from the `Updates.*` fields;
+ * - **updates disabled** — compiled out;
+ * - **emergency launch** — an update downloaded and *failed to run*; the lane
+ *   is broken, which is the opposite of "nothing newer yet";
+ * - **no channel stamped** (a release `expo run:` build) — can never receive
+ *   an OTA at all, no matter what is published;
+ * - **channel stamped, still embedded** — the lane is healthy and simply has
+ *   nothing newer to hand over;
+ * - **no launch source at all** — reported as unknown rather than assumed.
  *
- * Collapsing both into "embedded bundle" would reproduce the ambiguity the
- * block was added to remove.
+ * Collapsing any pair of these would reproduce the ambiguity the block was
+ * added to remove.
  */
 export function formatBuildInfo(input: BuildInfoInput): BuildInfoDisplay {
   const {
@@ -97,6 +115,9 @@ export function formatBuildInfo(input: BuildInfoInput): BuildInfoDisplay {
     createdAtIso,
     isEmbeddedLaunch,
     isEnabled,
+    isDevelopment,
+    isEmergencyLaunch,
+    emergencyLaunchReason,
   } = input;
 
   const version = appVersion ?? "unknown";
@@ -119,20 +140,38 @@ export function formatBuildInfo(input: BuildInfoInput): BuildInfoDisplay {
   let bundleClipboard: string;
   let isOtaLaunch = false;
 
-  if (!isEnabled) {
+  // Order matters. `isDevelopment` comes first because every Updates.* field
+  // below is unreliable on a dev build, and the no-channel branch would
+  // otherwise tell a dev-build tester a flat falsehood (see that branch).
+  if (isDevelopment) {
+    bundleLine = "Bundle: development build (update state not meaningful)";
+    bundleSpoken =
+      "a development build, where the update state is not meaningful";
+    bundleClipboard = "development build (update state not meaningful)";
+  } else if (!isEnabled) {
     bundleLine = "Bundle: updates disabled";
     bundleSpoken = "a build with updates disabled";
     bundleClipboard = "updates disabled";
-  } else if (!isEmbeddedLaunch && !updateId) {
-    // Neither an embedded bundle nor an applied update means there is no
-    // packaged bundle at all — the JS is coming off a Metro dev server.
-    // Measured on the iOS Simulator 2026-08-14: a dev client reports
-    // `isEnabled: true` here, so keying dev off `isEnabled` alone silently
-    // mislabels every local run as an OTA with an unknown id.
-    bundleLine = "Bundle: development server (not a packaged build)";
-    bundleSpoken = "from the development server, not a packaged build";
-    bundleClipboard = "development server (not a packaged build)";
+  } else if (isEmergencyLaunch) {
+    // An update downloaded, threw on launch, and expo-updates fell back to the
+    // embedded bundle. This is *not* "no update applied yet" — reporting it as
+    // a healthy lane tells the bug reporter the opposite of the truth at the
+    // exact moment the lane is broken.
+    const reason = emergencyLaunchReason?.trim();
+    bundleLine = reason
+      ? `Bundle: embedded after a failed update — ${reason}`
+      : "Bundle: embedded after a failed update";
+    bundleSpoken = reason
+      ? `the embedded bundle after an update failed to launch: ${reason}`
+      : "the embedded bundle after an update failed to launch";
+    bundleClipboard = reason
+      ? `embedded after a failed update (${reason})`
+      : "embedded after a failed update";
   } else if (isEmbeddedLaunch && !hasChannel) {
+    // Only reachable on a RELEASE build, which is what makes the claim safe:
+    // expo-updates documents `channel` as always null on Expo Go and dev
+    // builds, which "can run any updates compatible with their native
+    // runtime" — so this hard "never" would be false for them.
     bundleLine =
       "Bundle: embedded — no channel, this build can never receive an OTA";
     bundleSpoken =
@@ -142,7 +181,7 @@ export function formatBuildInfo(input: BuildInfoInput): BuildInfoDisplay {
     bundleLine = `Bundle: embedded (channel ${channelName}, no update applied yet)`;
     bundleSpoken = `the embedded bundle on channel ${channelName}, no update applied yet`;
     bundleClipboard = "embedded (no update applied yet)";
-  } else {
+  } else if (updateId) {
     bundleLine = publishedAt
       ? `Bundle: OTA ${updateIdPrefix} · ${publishedAt}`
       : `Bundle: OTA ${updateIdPrefix}`;
@@ -151,6 +190,13 @@ export function formatBuildInfo(input: BuildInfoInput): BuildInfoDisplay {
       : `over-the-air update ${updateIdPrefix}`;
     bundleClipboard = "OTA";
     isOtaLaunch = true;
+  } else {
+    // Neither embedded nor an applied update, on a non-dev build. Say so
+    // plainly rather than defaulting into the OTA branch and asserting an
+    // update that was never established.
+    bundleLine = "Bundle: unknown (no launch source reported)";
+    bundleSpoken = "an unknown bundle — no launch source was reported";
+    bundleClipboard = "unknown (no launch source reported)";
   }
 
   const versionSpoken = buildNumber

@@ -49,26 +49,48 @@ actually serving the JS right now.
 
 ## Solution
 
-Branch on **observed runtime identity**, not on a declared capability. Ask what the
-running bundle actually is:
+Use the **positive signal for the environment itself** — here `__DEV__`, which the
+bundler resolves to a literal and which no runtime state can contradict:
 
 ```ts
-if (!isEnabled) {
+if (isDevelopment) {          // __DEV__, passed in as plain data
+  // nothing below is meaningful on a dev build
+} else if (!isEnabled) {
   // updates compiled out — a narrower, honest claim
-} else if (!isEmbeddedLaunch && !updateId) {
-  // Neither an embedded bundle nor an applied update ⇒ no packaged bundle
-  // at all ⇒ Metro dev server.
 } else if (isEmbeddedLaunch) {
   ...
 }
 ```
 
-`!isEmbeddedLaunch && !updateId` is sound because a packaged build always has one or
-the other: launched from its embedded bundle (`isEmbeddedLaunch`) or from a
-downloaded update (`updateId`). Neither means nothing was packaged.
+The capability flag keeps a role — it just gets a narrower, truthful one ("updates
+compiled out") instead of standing in for "development".
 
-Note the flag keeps a role — it just gets a narrower, truthful one ("updates compiled
-out") instead of standing in for "development".
+### The first fix was the same mistake again
+
+The original correction here was **not** `__DEV__`. It was:
+
+```ts
+} else if (!isEmbeddedLaunch && !updateId) {   // "must be Metro"
+```
+
+reasoned as "a packaged build always has one or the other, so neither means nothing
+was packaged." That is *another proxy* — it infers identity from absent evidence
+rather than reading it. Code review killed it on two counts:
+
+1. **It can be wrong in the other direction.** Any state reporting neither flag — a
+   fetched-but-not-yet-launched update, an unresolved launch source at startup —
+   makes a *shipped store binary* tell a real user it is a development build.
+2. **It left a sibling bug standing.** `expo-updates` documents `channel` as always
+   `null` on Expo Go and development builds, which "can run any updates compatible
+   with their native runtime". A separate branch read null-channel as "this build can
+   never receive an OTA" — a false hard *never* aimed exactly at the dev-build testers
+   most likely to be reading it. Ordering `__DEV__` first fixed that branch for free,
+   because a dev build no longer reaches it.
+
+The lesson is not "pick a better proxy." It is that **a proxy for identity keeps
+producing this bug class until it is replaced by identity.** The second attempt felt
+more rigorous than the first and was still the same error, which is why the review
+catch matters more than the reasoning did.
 
 ## Why it matters
 
@@ -88,9 +110,13 @@ synthetic fixture structurally cannot catch.
 
 - Treat any `isEnabled` / `isConfigured` / `isAvailable` flag as **"this build may do
   X"**, never **"this is environment Y"**. They answer different questions.
-- To identify an environment, prefer a value that is a *consequence* of running in it
-  (a bundle id, a launch source, a served-from URL) over a value that was *declared*
-  before it ran.
+- To identify an environment, use the signal that *is* the environment (`__DEV__`,
+  an explicit build-variant constant) — not a value you reason must accompany it.
+  "A implies B, so B implies A" is where the second attempt above went wrong.
+- Order the environment check **first**. Once a dev build is claimed by its own
+  branch, every downstream branch may assume a release build, which lets those
+  branches make strong claims (like a permanent "never") that would be false
+  otherwise.
 - When a branch is meant to fire in development, **verify it fires in development** by
   running the app — a green unit test proves the copy, not the reachability.
 - When a truth table has a state that means "none of the above", write it as its own

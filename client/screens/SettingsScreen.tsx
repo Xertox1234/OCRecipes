@@ -264,11 +264,21 @@ export default function SettingsScreen() {
     createdAtIso: toCreatedAtIso(Updates.createdAt),
     isEmbeddedLaunch: Updates.isEmbeddedLaunch,
     isEnabled: Updates.isEnabled,
+    isDevelopment: __DEV__,
+    isEmergencyLaunch: Updates.isEmergencyLaunch,
+    emergencyLaunchReason: Updates.emergencyLaunchReason,
   });
 
   const handleCopyBuildInfo = useCallback(async () => {
     try {
-      await Clipboard.setStringAsync(buildInfo.clipboardText);
+      // Resolves false when the write did not happen. Announcing "copied"
+      // regardless would hand the user an empty paste — the same class of
+      // confident falsehood this whole block exists to stop telling.
+      const copied = await Clipboard.setStringAsync(buildInfo.clipboardText);
+      if (!copied) {
+        toast.error("Couldn't copy build details");
+        return;
+      }
       haptics.impact(ImpactFeedbackStyle.Light);
       toast.success("Build details copied");
     } catch (error) {

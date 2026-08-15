@@ -19,6 +19,9 @@ const OTA_BUILD: BuildInfoInput = {
   createdAtIso: "2026-08-12T14:32:00.000Z",
   isEmbeddedLaunch: false,
   isEnabled: true,
+  isDevelopment: false,
+  isEmergencyLaunch: false,
+  emergencyLaunchReason: null,
 };
 
 const build = (over?: Partial<BuildInfoInput>): BuildInfoInput => ({
@@ -38,6 +41,9 @@ const DEGRADED_INPUTS: BuildInfoInput[] = [
   build({ createdAtIso: "not-a-date" }),
   build({ isEnabled: false }),
   build({ isEmbeddedLaunch: true, channel: null }),
+  build({ isDevelopment: true }),
+  build({ isEmergencyLaunch: true, emergencyLaunchReason: null }),
+  build({ isEmbeddedLaunch: false, updateId: null }),
   {
     appVersion: null,
     buildNumber: null,
@@ -47,6 +53,9 @@ const DEGRADED_INPUTS: BuildInfoInput[] = [
     createdAtIso: null,
     isEmbeddedLaunch: true,
     isEnabled: false,
+    isDevelopment: true,
+    isEmergencyLaunch: true,
+    emergencyLaunchReason: null,
   },
 ];
 
@@ -111,15 +120,73 @@ describe("formatBuildInfo", () => {
       );
     });
 
-    // Observed on the iOS Simulator 2026-08-14: a dev client served by Metro
-    // reports isEnabled TRUE, isEmbeddedLaunch false, and a null updateId — so
-    // an isEnabled-only dev check falls through and mislabels it as an OTA.
-    // Neither an embedded bundle nor an update means no packaged bundle at all.
-    it("names a Metro-served dev launch instead of calling it an OTA", () => {
+    // `__DEV__` is the only POSITIVE signal for "this is a development build".
+    // Every runtime field is unreliable here: a Metro-served dev client reports
+    // isEnabled TRUE with a null updateId (measured on the Simulator), and
+    // expo-updates documents `channel` as always null on dev builds. Inferring
+    // dev from the absence of those is what the first attempt got wrong.
+    it("names a development build from __DEV__, not from absent evidence", () => {
+      expect(formatBuildInfo(build({ isDevelopment: true })).lines[2]).toBe(
+        "Bundle: development build (update state not meaningful)",
+      );
+    });
+
+    it("keeps the development reading even when updates report as enabled", () => {
+      expect(
+        formatBuildInfo(
+          build({
+            isDevelopment: true,
+            isEnabled: true,
+            isEmbeddedLaunch: false,
+            updateId: null,
+            channel: null,
+          }),
+        ).lines[2],
+      ).toBe("Bundle: development build (update state not meaningful)");
+    });
+
+    // expo-updates Updates.d.ts: "Expo Go and development builds are not set to
+    // a specific channel and CAN RUN ANY UPDATES compatible with their native
+    // runtime. Therefore this value will always be null" — so a null channel on
+    // a dev build must never be reported as a permanent inability to update.
+    it("never tells a development build it can never receive an OTA", () => {
+      const line = formatBuildInfo(
+        build({ isDevelopment: true, isEmbeddedLaunch: true, channel: null }),
+      ).lines[2];
+      expect(line).not.toContain("never");
+      expect(line).toBe(
+        "Bundle: development build (update state not meaningful)",
+      );
+    });
+
+    // A downloaded update that throws on launch makes expo-updates fall back to
+    // the embedded bundle. Reporting that as "no update applied yet" tells the
+    // reporter the lane is healthy at the exact moment it is broken.
+    it("flags an emergency launch instead of calling the lane healthy", () => {
+      expect(
+        formatBuildInfo(
+          build({
+            isEmbeddedLaunch: true,
+            isEmergencyLaunch: true,
+            emergencyLaunchReason: "Failed to load bundle",
+          }),
+        ).lines[2],
+      ).toBe("Bundle: embedded after a failed update — Failed to load bundle");
+    });
+
+    it("still flags an emergency launch when no reason is supplied", () => {
+      expect(
+        formatBuildInfo(
+          build({ isEmbeddedLaunch: true, isEmergencyLaunch: true }),
+        ).lines[2],
+      ).toBe("Bundle: embedded after a failed update");
+    });
+
+    it("reports an unresolvable launch source as unknown, not as an OTA", () => {
       expect(
         formatBuildInfo(build({ isEmbeddedLaunch: false, updateId: null }))
           .lines[2],
-      ).toBe("Bundle: development server (not a packaged build)");
+      ).toBe("Bundle: unknown (no launch source reported)");
     });
 
     it("flags an embedded launch with no channel as permanently un-updatable", () => {
@@ -161,12 +228,6 @@ describe("formatBuildInfo", () => {
         "Bundle: OTA a1b2c3d4",
       );
     });
-
-    it("prefers the dev-server reading over an OTA with no id", () => {
-      expect(formatBuildInfo(build({ updateId: null })).lines[2]).toBe(
-        "Bundle: development server (not a packaged build)",
-      );
-    });
   });
 
   describe("accessibilityLabel", () => {
@@ -196,12 +257,27 @@ describe("formatBuildInfo", () => {
       );
     });
 
-    it("spells out the dev-server case", () => {
+    it("spells out the development case", () => {
       expect(
-        formatBuildInfo(build({ updateId: null })).accessibilityLabel,
+        formatBuildInfo(build({ isDevelopment: true })).accessibilityLabel,
       ).toBe(
         "App version 1.0.0, build 4, runtime version 1.2.0, channel preview. " +
-          "Currently running from the development server, not a packaged build.",
+          "Currently running a development build, where the update state is not meaningful.",
+      );
+    });
+
+    it("spells out a failed update rather than a healthy lane", () => {
+      expect(
+        formatBuildInfo(
+          build({
+            isEmbeddedLaunch: true,
+            isEmergencyLaunch: true,
+            emergencyLaunchReason: "Failed to load bundle",
+          }),
+        ).accessibilityLabel,
+      ).toBe(
+        "App version 1.0.0, build 4, runtime version 1.2.0, channel preview. " +
+          "Currently running the embedded bundle after an update failed to launch: Failed to load bundle.",
       );
     });
 
