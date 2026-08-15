@@ -265,6 +265,35 @@ Also filed under an existing todo rather than duplicated: `eslint-plugin-ocrecip
 routes to no injection domain, so editing the repo's own lint rules gets zero pattern
 injection — appended to `todos/P3-2026-08-11-unrouted-surfaces-domain-map-decision.md`.
 
+**Review round (code-reviewer, PR #816) found the first cut was wrong in the same way #812
+was wrong three times.** `guardedConstructor` ended with a name-match fallback: when a type
+name resolved to no import, it matched the literal string `RouteProp`. That is
+match-the-characters behaviour smuggled back in at the rule's entry point, and it was worse
+than cosmetic:
+
+- **False positive.** An unrelated local `type RouteProp<P, K> = { params: P[K] }` was
+  flagged and told to "import the ParamList from its navigator" — advice about a library the
+  file never mentions. The fallback had no legitimate trigger to compensate: `RouteProp` and
+  `NativeStackScreenProps` are ordinary named exports, never ambient globals, so in code that
+  compiles a real reference is always import-bound.
+- **It was silently load-bearing for the test suite.** Deleting it failed **11 of 14** invalid
+  cases — those cases had never imported the constructor, so they were passing through the
+  fallback, not through scope resolution. The suite's own header claimed to prove "where the
+  identifier is BOUND, not what the text near it looks like", and for most cases proved the
+  opposite. The valid case pinning the navigator filename carve-out was worse still: it would
+  have passed if the rule did nothing at all.
+
+Fixed by deleting the fallback, importing the constructor in every case, and re-verifying by
+mutation: breaking `importBindingOf` now fails **15 of 15** invalid cases (was 4). A second
+finding — `Nav.RouteProp<…>` through a namespace import was unguarded, because
+`shadowDetail` walked `TSQualifiedName` on the ParamList side and `guardedConstructor` did
+not on the constructor side — was closed rather than documented, since it was three lines of
+symmetry. Whole-tree re-verified after both changes: 698 files, 0 violations.
+
+The lesson is the todo's own, one level up: **a guard's tests can pass through the exact
+mechanism the guard was written to abolish, and a green suite will not tell you.** Only
+deleting the suspect branch and re-running did.
+
 ### 2026-08-15
 
 - Created from the residual flagged when PR #812 merged. The guard closed every form that

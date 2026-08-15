@@ -90,6 +90,19 @@ tester.run("no-error-message-in-ui", plugin.rules["no-error-message-in-ui"], {
 // (`@/navigation/<X>Navigator`, `./<X>Navigator`) or the `@/types/navigation`
 // re-export barrel. Anything else — inline literal, local alias, foreign
 // import, unresolved global — is a shadow.
+//
+// EVERY case below imports the constructor it uses, and that is load-bearing,
+// not boilerplate. The rule resolves `RouteProp` through its import BINDING and
+// deliberately does not match the bare name, so a case with no import exercises
+// nothing at all. An earlier revision of this suite omitted the imports; a
+// mutation run (delete the rule's name-match fallback, re-run) showed 11 of the
+// invalid cases were passing through that fallback rather than through scope
+// resolution — i.e. asserting the match-the-characters behaviour the rule was
+// written to replace. The fallback is now gone; these imports are what keeps
+// the suite honest about which mechanism it proves.
+const RP = 'import type { RouteProp } from "@react-navigation/native";';
+const NSSP =
+  'import type { NativeStackScreenProps } from "@react-navigation/native-stack";';
 const CANONICAL_IMPORT =
   'import type { RootStackParamList } from "@/navigation/RootStackNavigator";';
 
@@ -101,6 +114,7 @@ tester.run(
       // The shape every screen actually uses today.
       {
         code: [
+          RP,
           CANONICAL_IMPORT,
           'type ScreenRoute = RouteProp<RootStackParamList, "LabelAnalysis">;',
         ].join("\n"),
@@ -109,6 +123,7 @@ tester.run(
       // documented convention home, so importing from it must not error.
       {
         code: [
+          RP,
           'import type { MealPlanStackParamList } from "@/types/navigation";',
           'type R = RouteProp<MealPlanStackParamList, "RecipeCreate">;',
         ].join("\n"),
@@ -117,6 +132,7 @@ tester.run(
       // (linking.ts, navigationRef.ts).
       {
         code: [
+          RP,
           'import type { RootStackParamList } from "./RootStackNavigator";',
           'type R = RouteProp<RootStackParamList, "Scan">;',
         ].join("\n"),
@@ -126,6 +142,7 @@ tester.run(
       // side must be allowed to as well. Every member is canonical.
       {
         code: [
+          RP,
           'import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";',
           'import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";',
           "type R = RouteProp<",
@@ -138,16 +155,28 @@ tester.run(
       // binding still resolves to a navigator module.
       {
         code: [
+          RP,
           'import type { RootStackParamList as RSP } from "@/navigation/RootStackNavigator";',
           'type R = RouteProp<RSP, "Scan">;',
+        ].join("\n"),
+      },
+      // A namespace-imported ParamList is judged by the namespace's own binding.
+      {
+        code: [
+          RP,
+          'import * as Nav from "@/navigation/RootStackNavigator";',
+          'type R = RouteProp<Nav.RootStackParamList, "Scan">;',
         ].join("\n"),
       },
       // A navigator declaring its own ParamList locally is the SOURCE of truth,
       // not a shadow. Discriminated by filename, not by `export` — `export`
       // cannot tell a navigator's declaration from a screen's (residual 2).
+      // Note the `RP` import: without it the constructor is unrecognised and
+      // this case would pass even if the rule did nothing whatsoever.
       {
         filename: "client/navigation/RootStackNavigator.tsx",
         code: [
+          RP,
           "export type RootStackParamList = {",
           "  Scan: { mode: string };",
           "};",
@@ -158,6 +187,7 @@ tester.run(
       // the convention asks for. The rule is structural, never nominal.
       {
         code: [
+          RP,
           CANONICAL_IMPORT,
           'type RouteParams = RootStackParamList["LabelAnalysis"];',
           'type R = RouteProp<RootStackParamList, "LabelAnalysis">;',
@@ -171,8 +201,8 @@ tester.run(
       // the same defect surface. VerifyEmailScreen/CoachChatScreen use this.
       {
         code: [
+          NSSP,
           CANONICAL_IMPORT,
-          'import type { NativeStackScreenProps } from "@react-navigation/native-stack";',
           'type Props = NativeStackScreenProps<RootStackParamList, "VerifyEmail">;',
         ].join("\n"),
       },
@@ -184,17 +214,27 @@ tester.run(
           "type R = RouteProp<{ a: 1 }, 2>;",
         ].join("\n"),
       },
+      // Same point with no import at all: an unbound name is NOT guarded. This
+      // pins the removal of the old name-match fallback, which flagged this
+      // exact snippet and told the author to "import the ParamList from its
+      // navigator" — advice about a library the file never mentions.
+      {
+        code: [
+          "type RouteProp<P, K extends keyof P> = { params: P[K] };",
+          'type R = RouteProp<{ Foo: { x: string } }, "Foo">;',
+        ].join("\n"),
+      },
     ],
     invalid: [
       // ── RESIDUAL 3 — the reason this rule exists ──────────────────────────
       // A shadow extracted to a shared module ("let's not repeat this type")
       // and imported back in. `scripts/check-route-params.js` could not see
-      // this in principle: the declaration is in another file. The rule sees
-      // it because it asks where the identifier is BOUND, not what the text
-      // near it looks like.
+      // this: the declaration is in another file. The rule sees it because it
+      // asks where the identifier is BOUND, not what the text near it looks
+      // like — and the import statement is right here.
       {
         code: [
-          'import type { RouteProp } from "@react-navigation/native";',
+          RP,
           'import type { ScreenParams } from "./route-types";',
           'type R = RouteProp<ScreenParams, "LabelAnalysis">;',
         ].join("\n"),
@@ -217,21 +257,43 @@ tester.run(
       // the types barrel, not the folder.
       {
         code: [
+          RP,
           'import type { ScreenParams } from "@/navigation/routeShapes";',
           'type R = RouteProp<ScreenParams, "Scan">;',
         ].join("\n"),
-        errors: [{ messageId: "shadowedParamList" }],
+        errors: [
+          {
+            messageId: "shadowedParamList",
+            data: {
+              constructor: "RouteProp",
+              detail:
+                '`ScreenParams`, imported from "@/navigation/routeShapes"',
+            },
+          },
+        ],
       },
       // ── Form 1 — the inline object literal (PR #742's actual defect) ──────
       {
-        code: 'const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();',
-        errors: [{ messageId: "shadowedParamList" }],
+        code: [
+          RP,
+          'const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();',
+        ].join("\n"),
+        errors: [
+          {
+            messageId: "shadowedParamList",
+            data: {
+              constructor: "RouteProp",
+              detail: "an inline object literal",
+            },
+          },
+        ],
       },
       // Prettier owns formatting here and may commit the construct already
       // wrapped — ItemDetailScreen was. An AST rule is indifferent to where
       // the line breaks fall, which is the whole point of leaving text behind.
       {
         code: [
+          RP,
           "const route = useRoute<",
           "  RouteProp<",
           "    { params: SomeLongerAliasNameForRouteParams },",
@@ -244,15 +306,25 @@ tester.run(
       // ── Form 2 — extract-variable refactor of form 1 ──────────────────────
       {
         code: [
+          RP,
           "type LocalParams = {",
           "  LabelAnalysis: { imageUri: string };",
           "};",
           'type ScreenRoute = RouteProp<LocalParams, "LabelAnalysis">;',
         ].join("\n"),
-        errors: [{ messageId: "shadowedParamList" }],
+        errors: [
+          {
+            messageId: "shadowedParamList",
+            data: {
+              constructor: "RouteProp",
+              detail: "the locally declared type `LocalParams`",
+            },
+          },
+        ],
       },
       {
         code: [
+          RP,
           "declare type LocalParams = {",
           "  LabelAnalysis: { imageUri: string };",
           "};",
@@ -267,6 +339,7 @@ tester.run(
       {
         filename: "client/screens/LabelAnalysisScreen.tsx",
         code: [
+          RP,
           "export type RootStackParamList = {",
           "  LabelAnalysis: { imageUri: string };",
           "};",
@@ -279,6 +352,7 @@ tester.run(
       // is a plain object literal, because the cause was the adjacency.
       {
         code: [
+          RP,
           "type LocalParams<Unused = void> = {",
           "  LabelAnalysis: { imageUri: string };",
           "};",
@@ -289,6 +363,7 @@ tester.run(
       // ── RESIDUAL 1b — a non-object-literal RHS ────────────────────────────
       {
         code: [
+          RP,
           "type LocalParams = Readonly<{",
           "  LabelAnalysis: { imageUri: string };",
           "}>;",
@@ -299,12 +374,24 @@ tester.run(
       // …and the same wrapper applied inline, where the ParamList argument
       // resolves to no binding at all (`Readonly` is a global).
       {
-        code: 'type R = RouteProp<Readonly<{ Foo: { x: string } }>, "Foo">;',
-        errors: [{ messageId: "shadowedParamList" }],
+        code: [
+          RP,
+          'type R = RouteProp<Readonly<{ Foo: { x: string } }>, "Foo">;',
+        ].join("\n"),
+        errors: [
+          {
+            messageId: "shadowedParamList",
+            data: {
+              constructor: "RouteProp",
+              detail: "`Readonly`, which resolves to no import in this file",
+            },
+          },
+        ],
       },
       // ── RESIDUAL 4 — a same-line comment defeated the line anchor ─────────
       {
         code: [
+          RP,
           "/* keep in sync */ type LocalParams = { Foo: { x: string } };",
           'type R = RouteProp<LocalParams, "Foo">;',
         ].join("\n"),
@@ -320,12 +407,34 @@ tester.run(
           "type LocalParams = { Foo: { x: string } };",
           'type R = RP<LocalParams, "Foo">;',
         ].join("\n"),
+        // `constructor` is the EXPORTED name, not the local alias — the
+        // diagnostic should name the thing the reader can look up.
+        errors: [
+          {
+            messageId: "shadowedParamList",
+            data: {
+              constructor: "RouteProp",
+              detail: "the locally declared type `LocalParams`",
+            },
+          },
+        ],
+      },
+      // …and reached through a namespace import, which `shadowDetail` already
+      // handled on the ParamList side. Without the matching walk in
+      // guardedConstructor the rule judged the argument but not the
+      // constructor, and this went unreported.
+      {
+        code: [
+          'import * as Nav from "@react-navigation/native";',
+          "type LocalParams = { Foo: { x: string } };",
+          'type R = Nav.RouteProp<LocalParams, "Foo">;',
+        ].join("\n"),
         errors: [{ messageId: "shadowedParamList" }],
       },
       // Same defect through the props-object constructor.
       {
         code: [
-          'import type { NativeStackScreenProps } from "@react-navigation/native-stack";',
+          NSSP,
           "type LocalParams = { VerifyEmail: { token: string } };",
           'type Props = NativeStackScreenProps<LocalParams, "VerifyEmail">;',
         ].join("\n"),
@@ -334,11 +443,20 @@ tester.run(
       // An intersection is only as canonical as its weakest member.
       {
         code: [
+          RP,
           'import type { MealPlanStackParamList } from "@/navigation/MealPlanStackNavigator";',
           "type LocalParams = { FavouriteRecipes: { id: number } };",
           'type R = RouteProp<MealPlanStackParamList & LocalParams, "FavouriteRecipes">;',
         ].join("\n"),
-        errors: [{ messageId: "shadowedParamList" }],
+        errors: [
+          {
+            messageId: "shadowedParamList",
+            data: {
+              constructor: "RouteProp",
+              detail: "the locally declared type `LocalParams`",
+            },
+          },
+        ],
       },
     ],
   },

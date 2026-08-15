@@ -216,6 +216,46 @@ concluding a rewrite is expensive: the destination already existed
 rule needs no type information, so it runs in `lint-staged` *and* CI where a
 `ts-morph`/program-load approach would have been CI-only.
 
+## The replacement's own tests passed through the mechanism it abolished
+
+The first cut of the AST rule ended its constructor check with a fallback: when
+a type name resolved to no import, match the literal string `RouteProp`. It read
+as harmless insurance. It was the old technique, smuggled back in at the new
+rule's entry point — and the tests hid it, because **a test written before the
+mechanism changed will still exercise the old one if the fixture allows it.**
+
+Most `invalid` fixtures had been written as bare snippets — `type R =
+RouteProp<LocalParams, "Foo">` with no `import` line, because under a text
+scanner the import never mattered. Every one of them therefore reached the rule
+with `RouteProp` unbound, matched the fallback, and reported. The suite was
+green, and its header claimed it proved resolution "by binding, not spelling".
+Deleting the fallback failed 11 of 14 cases.
+
+The valid side was worse. The case pinning the navigator carve-out also omitted
+the import, so the constructor was unrecognised and the rule short-circuited to
+zero errors — indistinguishable from "correctly judged canonical". That test
+would have passed against a rule that did nothing at all.
+
+Three things generalise:
+
+1. **Migrating a check to a new mechanism does not migrate its tests.** Fixtures
+   encode the *old* mechanism's assumptions about what is irrelevant. Text
+   scanners do not care where a name comes from, so nobody wrote the import
+   down; the moment provenance became the whole rule, every fixture was
+   under-specified — and silently, because under-specified fixtures still pass.
+2. **Delete the branch you suspect and re-run.** Not "read it and reason about
+   it": the fallback survived a self-review and a full green suite. One mutation
+   run produced the count — 11 — that no amount of reading did. Do the same for
+   the fix: breaking `importBindingOf` now fails 15 of 15, which is the evidence
+   that the repair is real and not a second decoration.
+3. **A compatibility fallback needs a named legitimate trigger.** "Covers the
+   case with no import in scope" sounds like defensive engineering until you ask
+   which compiling file that is. `RouteProp` is an ordinary named export, never
+   an ambient global, so a real reference is *always* import-bound: the fallback
+   could only ever fire on an unrelated type that shared the name. A fallback
+   whose only reachable input is the false positive is not insurance, it is the
+   bug.
+
 Where the compiler *does* adjudicate, let it: an `interface`-based shadow needs no
 rule at all, because interfaces get no implicit index signature and `tsc` rejects
 them against `ParamListBase`.

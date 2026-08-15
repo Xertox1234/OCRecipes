@@ -732,20 +732,47 @@ const noShadowedRouteParamList = {
     /**
      * The guarded constructor a type name denotes, or null.
      *
-     * Judged by binding, not spelling: a renamed import is still caught, and an
-     * unrelated `RouteProp` from some other package is left alone. The name
-     * fallback covers a reference with no import in scope.
+     * Judged by binding, never by spelling — an unbound name is NOT guarded.
+     * `RouteProp` and `NativeStackScreenProps` are ordinary named exports, never
+     * ambient globals, so in any code that compiles a real reference is always
+     * import-bound. A name-match fallback for the unbound case would therefore
+     * fire only on an unrelated local type that happens to share the name, e.g.
+     *
+     *   type RouteProp<P, K extends keyof P> = { params: P[K] };  // not ours
+     *
+     * — reintroducing, at the entry point, exactly the match-the-characters
+     * failure this rule replaced. An earlier revision had that fallback; it was
+     * removed once a mutation run showed 11 of the suite's invalid cases were
+     * passing through it rather than through scope resolution.
      */
     function guardedConstructor(typeName, node) {
-      if (typeName.type !== "Identifier") return null;
-      const binding = importBindingOf(node, typeName.name);
-      if (binding) {
+      // `RouteProp<…>`
+      if (typeName.type === "Identifier") {
+        const binding = importBindingOf(node, typeName.name);
+        if (!binding) return null;
         return NAVIGATION_PACKAGE.test(binding.source) &&
           ROUTE_PARAM_CONSTRUCTORS.has(binding.exported)
           ? binding.exported
           : null;
       }
-      return ROUTE_PARAM_CONSTRUCTORS.has(typeName.name) ? typeName.name : null;
+
+      // `Nav.RouteProp<…>` via a namespace import. `shadowDetail` already walks
+      // qualified names on the ParamList side; without the same walk here the
+      // rule is asymmetric — it judges the argument but not the constructor.
+      if (typeName.type === "TSQualifiedName") {
+        if (typeName.right.type !== "Identifier") return null;
+        let root = typeName.left;
+        while (root.type === "TSQualifiedName") root = root.left;
+        if (root.type !== "Identifier") return null;
+        const binding = importBindingOf(root, root.name);
+        if (!binding) return null;
+        return NAVIGATION_PACKAGE.test(binding.source) &&
+          ROUTE_PARAM_CONSTRUCTORS.has(typeName.right.name)
+          ? typeName.right.name
+          : null;
+      }
+
+      return null;
     }
 
     /**
