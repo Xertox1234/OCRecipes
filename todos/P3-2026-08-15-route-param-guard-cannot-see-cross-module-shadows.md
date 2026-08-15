@@ -95,6 +95,19 @@ A screen that cannot import `RouteProp` cannot pass a non-canonical ParamList to
 expressible rather than becoming detectable.
 
 - Uses a **stock ESLint rule**, no type information, so it runs in lint-staged _and_ CI.
+- **Verified 2026-08-15** against this repo's eslint + `@typescript-eslint/parser`, because
+  it is the mechanism the whole option rests on and base `no-restricted-imports` is not
+  obviously type-import aware. It flags **both** forms:
+
+  ```
+  typeonly.ts     1:15  error  'RouteProp' import from '@react-navigation/native' is restricted
+  valueimport.ts  1:20  error  'RouteProp' import from '@react-navigation/native' is restricted
+  ```
+
+  So no `@typescript-eslint/no-restricted-imports` upgrade is needed. (That variant exists
+  and adds `allowTypeImports` — which is the option you would want if you ever needed the
+  opposite behaviour. We do not.)
+
 - Cost is a one-time mechanical migration: **32 files** reference `RouteProp` under
   `client/` (31 under `client/screens/`, plus `client/hooks/useHistoryData.ts`).
   `tsc --noEmit` verifies the migration completely — a missed site cannot compile.
