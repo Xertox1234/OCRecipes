@@ -112,9 +112,21 @@ Two things the guard must NOT rely on:
   always `export type <Name>ParamList = {` in its navigator module, so an
   unexported object-literal alias is a shadow and an exported one is a source of
   truth — which also stops the navigators from flagging their own declarations.
-  (Implement that as a line anchor requiring `type` at column 0, not as a
-  `(?!export\b)` lookahead in front of the literal `type` — such a lookahead is
-  dead code, since it can only fail where the literal already fails.)
+
+  **Implement the discriminator you described, literally.** Two attempts at that
+  `export` rule shipped before one was real, and both read as correct:
+
+  | Attempt | Why it wasn't the stated rule |
+  | --- | --- |
+  | `(?!export\b)type` | Dead code. `[ \t]*` cannot consume `export`, so wherever the literal `type` matches, the text cannot also be `export…`. The lookahead could never reject anything the literal didn't already reject. |
+  | `^[ \t]*type` (bare anchor) | *Positional, not semantic.* It excused every declaration with any leading token — so `declare type P = { … }`, valid and committable, silently passed. Only `export` was ever meant to be excused. |
+  | `^[ \t]*((?:(?:export\|declare)[ \t]+)*)type` + skip when group 1 has `export` | Actually tests the stated condition. |
+
+  The failure mode is subtle and worth naming: a comment describing a *semantic*
+  rule, sitting above a regex implementing a *positional* approximation of it.
+  The approximation agrees with the rule on every input anyone happened to try,
+  so the comment reads as verified. Prefer a pattern that names the condition
+  over one that merely correlates with it.
 
 ## The scanner is not exhaustive either — say where it stops
 
@@ -128,7 +140,13 @@ a completeness guarantee it never was. For the route-param guard those are:
    navigator's own canonical declaration;
 3. a shadow declared in another module and imported — **unreachable in principle**
    for a single-file text scanner, and the natural next mutation of the very bug
-   the rule was written for.
+   the rule was written for;
+4. a same-line comment ahead of the declaration, which defeats the line anchor.
+
+State plainly that such a list is what you have *considered*, not a proof of
+exhaustiveness — the first version of this one omitted the `declare` case, and a
+list presented as complete is worse than no list, because it stops the next
+person looking.
 
 Residual 3 is the important one to state, because it is a bound on the technique
 rather than a gap in the regex. Knowing which residuals are "not yet handled" and

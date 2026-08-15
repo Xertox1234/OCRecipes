@@ -113,11 +113,38 @@ describe("check-route-params.js", () => {
     expect(stdout).toContain("LocalParams");
   });
 
-  // The intended discriminator between "shadow" and "source of truth" is
-  // `export` — every canonical ParamList here is `export type <Name>ParamList =
-  // {` in its navigator module. Mechanically the `^[ \t]*type` anchor performs
-  // it: the line must START with `type`, so `export type …` never matches.
-  // Without that, the navigator modules would flag their own declarations.
+  // `declare` is the regression pin for the positional-vs-semantic bug: an
+  // earlier revision excluded exported aliases with a bare `^[ \t]*type` anchor,
+  // which excused EVERY leading token rather than just `export`. This is valid,
+  // committable TypeScript and it silently passed.
+  it("exits 1 on a `declare`-prefixed local alias (not exported, so still a shadow)", () => {
+    const file = writeTsx(`
+      declare type LocalParams = {
+        LabelAnalysis: { imageUri: string };
+      };
+      type ScreenRoute = RouteProp<LocalParams, "LabelAnalysis">;
+    `);
+    const { status, stdout } = runCheck(file);
+    expect(status).toBe(1);
+    expect(stdout).toContain("LocalParams");
+  });
+
+  it("exits 0 on `export declare type` (exported — still a source of truth)", () => {
+    const file = writeTsx(`
+      export declare type RootStackParamList = {
+        LabelAnalysis: { imageUri: string };
+      };
+      type ScreenRoute = RouteProp<RootStackParamList, "LabelAnalysis">;
+    `);
+    const { status } = runCheck(file);
+    expect(status).toBe(0);
+  });
+
+  // The discriminator between "shadow" and "source of truth" is `export` —
+  // every canonical ParamList here is `export type <Name>ParamList = {` in its
+  // navigator module. The regex captures the declaration's leading modifiers
+  // and the caller skips the alias when `export` is among them. Without that
+  // carve-out the navigator modules would flag their own declarations.
   it("exits 0 when the named alias is EXPORTED (a navigator's own ParamList)", () => {
     const file = writeTsx(`
       export type ProfileStackParamList = {
