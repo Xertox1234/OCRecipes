@@ -110,7 +110,17 @@ const INLINE_PARAMLIST = /RouteProp\s*<\s*\{/g;
  * proves. This list is what has been *considered*; it is not itself a proof of
  * exhaustiveness:
  *
- *   1. A wrapped or computed RHS: `type P = Readonly<{ … }>`, `type P<T> = { … } & T`.
+ *   1. Anything that breaks the literal `type <Name> = {` adjacency this pattern
+ *      requires. Two distinct mechanisms, both evading:
+ *        a. a type-parameter list between the name and `=` — `type P<T> = { … }`,
+ *           and note it evades even when the parameter is unused and the RHS is a
+ *           plain object literal (`type P<Unused = void> = { … }`), so the cause is
+ *           the adjacency, NOT the RHS shape;
+ *        b. a non-object-literal RHS — `type P = Readonly<{ … }>`, `type P = { … } & T`.
+ *      Deliberately not chased: skipping a generic parameter list textually needs
+ *      something like `(?:\s*<[^{]*>)?`, which itself breaks on a constraint
+ *      containing braces (`<T extends { x: string }>`). That trade buys little and
+ *      adds a new wrong case.
  *   2. An exported alias inside a screen: `export type P = { … }` — indistinguishable
  *      here from a navigator's own canonical declaration.
  *   3. A shadow declared in ANOTHER module and imported. Unreachable in principle

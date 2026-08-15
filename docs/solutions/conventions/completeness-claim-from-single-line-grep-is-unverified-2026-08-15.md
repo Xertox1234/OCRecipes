@@ -135,7 +135,10 @@ proof. The same discipline applies one level up: **write down the shapes your
 scanner does not cover**, in the scanner, or the next reader inherits your tool as
 a completeness guarantee it never was. For the route-param guard those are:
 
-1. a wrapped or computed RHS — `type P = Readonly<{ … }>`, `type P<T> = { … } & T`;
+1. anything breaking the literal `type <Name> = {` adjacency the pattern requires —
+   a type-parameter list between the name and `=` (**even an unused one over a
+   plain object-literal RHS**, so the cause is the adjacency, not the RHS shape),
+   or a non-literal RHS like `Readonly<{ … }>`;
 2. an exported alias declared inside a screen, indistinguishable from a
    navigator's own canonical declaration;
 3. a shadow declared in another module and imported — **unreachable in principle**
