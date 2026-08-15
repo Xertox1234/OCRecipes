@@ -17,11 +17,9 @@ import { useHeaderContentInset } from "@/hooks/useHeaderContentInset";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { formatDateLong as formatDate } from "@/lib/format";
 import type { ScannedItemResponse } from "@/types/api";
+import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
-type ItemDetailRouteProp = RouteProp<
-  { ItemDetail: { itemId: number } },
-  "ItemDetail"
->;
+type ItemDetailRouteProp = RouteProp<ProfileStackParamList, "ItemDetail">;
 
 function NutritionRow({
   label,

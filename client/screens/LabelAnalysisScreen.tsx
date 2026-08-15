@@ -61,13 +61,7 @@ type LabelAnalysisNavigationProp = NativeStackNavigationProp<
   "LabelAnalysis"
 >;
 
-type RouteParams = {
-  imageUri: string;
-  barcode?: string;
-  verificationMode?: boolean;
-  verifyBarcode?: string;
-  localOCRText?: string;
-};
+type LabelAnalysisRouteProp = RouteProp<RootStackParamList, "LabelAnalysis">;
 
 export default function LabelAnalysisScreen() {
   const insets = useSafeAreaInsets();
@@ -77,7 +71,7 @@ export default function LabelAnalysisScreen() {
   const toast = useToast();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<LabelAnalysisNavigationProp>();
-  const route = useRoute<RouteProp<{ params: RouteParams }, "params">>();
+  const route = useRoute<LabelAnalysisRouteProp>();
   const queryClient = useQueryClient();
 
   const { imageUri, barcode, verificationMode, verifyBarcode } = route.params;
