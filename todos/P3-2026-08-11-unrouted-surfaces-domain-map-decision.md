@@ -99,14 +99,14 @@ Precedent and mechanics: PR #799 (docs/\*\* → harness) is the template — rul
 
 ### 2026-08-15
 
-- **One more unrouted surface found: `eslint-plugin-ocrecipes/**`.**
-`npx tsx scripts/lib/path-domains.ts eslint-plugin-ocrecipes/index.js`returns
-empty, so a session editing the repo's own ESLint rules gets **zero** pattern
-injection — no`docs/rules/harness.md`, no solutions. Noticed while adding
-`no-shadowed-route-paramlist`there; the`harness`domain is the obvious
-destination (the directory is repo tooling, exactly like`scripts/\*\*`, which
-  already routes). Folding into this todo rather than filing a duplicate, since
-  it is the same decision on one more path.
+- **One more unrouted surface found: the `eslint-plugin-ocrecipes/` directory.**
+  `npx tsx scripts/lib/path-domains.ts eslint-plugin-ocrecipes/index.js` returns
+  empty, so a session editing the repo's own ESLint rules gets zero pattern
+  injection — no `docs/rules/harness.md`, no solutions. Noticed while adding the
+  `no-shadowed-route-paramlist` rule there; the `harness` domain is the obvious
+  destination (the directory is repo tooling, exactly like the `scripts`
+  directory, which already routes). Folding into this todo rather than filing a
+  duplicate, since it is the same decision on one more path.
 
 ### 2026-08-11
 
