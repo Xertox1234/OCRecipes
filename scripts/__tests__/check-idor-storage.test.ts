@@ -134,16 +134,63 @@ describe("check-idor-storage.js", () => {
       expect(out).toContain("No IDOR-risk storage functions found in 1 files");
     });
 
-    it("pins the known matcher blind spot: exported arrow consts are invisible", () => {
-      // EXPORT_FN_START only matches `export [async] function name(` — an
-      // exported arrow function with a naked id param passes the scan today.
-      // Documented follow-up, not a behavior this test endorses; widening the
-      // matcher requires re-auditing server/storage and the ALLOWLIST.
+    it("detects an exported async arrow-function const with a naked id param", () => {
+      // EXPORT_FN_START now also matches `export const name = [async] (` —
+      // an exported arrow function with a naked id param is caught.
       const dir = makeTmpDir();
       const file = writeFixture(
         dir,
         "arrows.ts",
         "export const getEntryById = async (entryId: number) => {\n  return entryId;\n};\n",
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryById");
+      expect(out).toContain("entryId");
+      expect(out).toContain("without a userId parameter");
+    });
+
+    it("detects an exported sync (non-async) arrow-function const with a naked id param", () => {
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrows-sync.ts",
+        "export const getEntryByIdSync = (entryId: number) => {\n  return entryId;\n};\n",
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryByIdSync");
+      expect(out).toContain("entryId");
+      expect(out).toContain("without a userId parameter");
+    });
+
+    it("flags a multi-line arrow-export signature (params spanning several lines)", () => {
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrow-multiline.ts",
+        [
+          "export const updateGroceryNote = async (",
+          "  noteId: number,",
+          "  data: Partial<Note>,",
+          ") => {",
+          "  return data;",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("updateGroceryNote");
+      expect(out).toContain("noteId");
+    });
+
+    it("passes a user-scoped arrow-function export", () => {
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrows-safe.ts",
+        "export const getEntryForUser = async (entryId: number, userId: string) => {\n  return { entryId, userId };\n};\n",
       );
       const { status, out } = run(realScript, [file]);
       expect(status, out).toBe(0);

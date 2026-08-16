@@ -104,7 +104,9 @@ const ALLOWLIST = new Set([
 ]);
 
 // Matches the START of an exported function: export [async] function name(
-const EXPORT_FN_START = /^export\s+(?:async\s+)?function\s+(\w+)\s*\(/;
+// or an exported arrow-function const: export const name = [async] (
+const EXPORT_FN_START =
+  /^export\s+(?:async\s+)?function\s+(\w+)\s*\(|^export\s+const\s+(\w+)\s*=\s*(?:async\s*)?\(/;
 
 // Matches id-like parameter names: id, itemId, logId, recipeId, flagId, etc.
 // Must be a standalone param name (word boundary), not part of userId/ownerId/authorId
@@ -201,7 +203,13 @@ function checkFile(filePath) {
     const match = line.match(EXPORT_FN_START);
     if (!match) continue;
 
-    const fnName = match[1];
+    // match[1] = `export function name(` capture; match[2] = the arrow-const
+    // capture (`export const name = ...(`). Given the current two-branch
+    // EXPORT_FN_START, exactly one is set per match — guard anyway so a
+    // future third branch fails closed (skip) instead of reporting an
+    // issue with an undefined function name.
+    const fnName = match[1] || match[2];
+    if (!fnName) continue;
 
     // Skip allowlisted functions
     if (ALLOWLIST.has(fnName)) continue;
