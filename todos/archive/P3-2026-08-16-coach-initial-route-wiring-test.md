@@ -1,6 +1,6 @@
 ---
 title: "Pin ChatStackNavigator's coachInitialRoute call-site wiring"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-08-16
@@ -48,3 +48,16 @@ The spy approach is far cheaper than a native-stack render harness: mock `@/hook
 ### 2026-08-16
 
 - Initial creation from PR #826 review residual.
+- Implemented: `client/navigation/__tests__/ChatStackNavigator.test.tsx` — mocks
+  `createNativeStackNavigator` to a thin `Navigator`/`Screen` double so the test
+  asserts the actual `initialRouteName` prop (stronger than spying on the pure
+  `coachInitialRoute` call args). Two tests pin AC1 (Pro → CoachPro, free →
+  ChatList); a mutation test (temporarily inverting the wiring to
+  `coachInitialRoute(!isCoachPro)`) confirmed both go red, then reverted clean —
+  proof the tests aren't vacuous. Three tests pin AC2's `isPremiumResolved`
+  guard: loading, hard-error retry (with `refreshSubscription` wiring pinned),
+  and the previously-untested resolved-but-currently-erroring cell (guard's
+  `isError && !isPremiumResolved` conjunct). AC3: extended
+  `docs/solutions/conventions/rn-component-render-test-jsdom-pattern-2026-05-16.md`
+  with a "Rendering a navigator" section. No production change to
+  `ChatStackNavigator.tsx` (Scope Contract honored).
