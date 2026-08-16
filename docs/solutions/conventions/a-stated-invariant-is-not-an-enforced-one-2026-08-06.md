@@ -174,6 +174,43 @@ apply a property, that is not the same as the property being **on** the shared v
 they built it from. Ask "if I read only this constant's definition, is the claim in its
 docblock still true?" — not "do today's consumers happen to make it true?"
 
+### 6. "The no-jq path already covers this" — a comment naming a fallback that never runs for this input (2026-08-16)
+
+`.claude/hooks/guard-outward-cli.sh` sources a shared lib for its precise
+command matching. If the source fails, the code fell through to `exit 0`
+(allow everything), justified by:
+
+> If the shared lib is unsourceable (broken install), allow: the precise
+> matcher cannot run at all, and the no-jq path above already covers the
+> crude fail-closed case for a genuinely broken environment.
+
+False: the no-jq branch is gated on `! command -v jq`, an entirely
+independent condition from "the lib file is missing or fails to source."
+`jq` present + lib missing hits neither branch's guard — it falls straight
+through to the bare `exit 0`, unprotected, exactly as if no check existed.
+Code review caught it not by re-reading the comment more carefully but by
+reproducing the claimed condition directly: copy the hook into a directory
+with no sibling `lib/`, feed it a real deny-shaped command, and check
+whether it actually denies. It didn't. The fix factors the crude smell-test
+into one function and calls it from **both** fallback branches, so "does
+condition B fail closed" is enforced by the same code path proven for
+condition A, not by a second comment asserting they're equivalent.
+
+A third degraded state, found in a later review round, makes the same point
+one level deeper: with `jq` present and the lib sourceable but `awk` ABSENT,
+`declare -F cmd_bare` succeeds — the function is DEFINED — so neither
+fallback branch fires, yet `cmd_bare`'s internal `awk` fails and it emits
+nothing, so every downstream `grep` matches an empty string and the hook
+allows everything. `declare -F` answers "is it defined?", not "does it
+work?". The fix treats an all-blank result from a non-blank input as a
+failed primitive and degrades to the same crude test.
+
+The pattern is identical to instance 3 above (a safety claim whose premise
+is a property of a DIFFERENT piece of code, not of the code beside the
+comment) but on a control-flow axis instead of a data-shape one: "the other
+branch covers it" is exactly the kind of two-case claim this file's Rule
+section asks for a table, not a comment, to carry.
+
 ## Exceptions
 
 - **A comment explaining WHY is not the target.** "We poll here because the native
@@ -195,6 +232,8 @@ docblock still true?" — not "do today's consumers happen to make it true?"
 - `.claude/hooks/lib/cmd-detect.sh` — `cmd_gh_pr_write_subcommand`, `cmd_gh_pr_ref`
 - `.claude/agents/ai-reviewer.md` — the containment rule from instance 1
 - `server/services/barcode-lookup.ts` — `SERVING_UNIT`, instance 5
+- `.claude/hooks/guard-outward-cli.sh` — `crude_smells_outward()`, instance 6's fix
+- `.claude/hooks/test-guard-outward-cli.sh` — the `NOLIB_DIR` and `NOAWK_BIN` fixtures that reproduce instance 6's two conditions directly instead of trusting the comment
 
 ## See Also
 

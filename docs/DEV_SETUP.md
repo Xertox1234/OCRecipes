@@ -182,8 +182,12 @@ EMAIL_VERIFY_BASE_URL=https://ocrecipes.app
    public URL:
 
    ```bash
-   railway run --service Postgres -- sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" npx tsx server/scripts/backfill-email-verified.ts --allow-prod-backfill'
+   ALLOW_OUTWARD_CLI=1 railway run --service Postgres -- sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" npx tsx server/scripts/backfill-email-verified.ts --allow-prod-backfill'
    ```
+
+   The `ALLOW_OUTWARD_CLI=1` prefix is required — `.claude/hooks/guard-outward-cli.sh`
+   denies the unprefixed form, because `railway run` executes an arbitrary
+   command against the LIVE service env (production `DATABASE_URL` included).
 
 4. Set `RESEND_API_KEY` in the Railway service env → the gate is now ON. New
    signups must verify; existing users are grandfathered by step 3.

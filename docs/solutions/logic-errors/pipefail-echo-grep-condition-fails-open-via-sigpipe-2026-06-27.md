@@ -8,7 +8,7 @@ tags: [harness, ci, shell, bash, github-actions, pipefail, sigpipe, grep, head, 
 symptoms: [A self-scoping CI gate green-lights a PR that DID change the guarded files, A change-detection `if cmd | grep -q ...` step takes the wrong branch only on large inputs, 'Works for small PRs, silently fails open for PRs that touch thousands of files', A script under set -euo pipefail dies with exit 141 outside its documented exit-code contract, 'A test assert_contains helper intermittently reports a needle as missing when the captured output DOES contain it, with `printf: write error: Broken pipe` nearby', 'An assert_not_contains / must-not-appear check reports PASS without ever searching because the needle began with a dash and grep parsed it as an option — loudly with `grep: unrecognized option`/`usage: grep` beside it, or SILENTLY when the needle is a valid flag (-n, -v) AND a trailing file operand is present for grep to consume as the pattern instead']
 applies_to: [.github/workflows/*.yml, .husky/**, scripts/*.sh, .claude/hooks/test-*.sh]
 created: '2026-06-27'
-last_updated: '2026-08-13'
+last_updated: '2026-08-16'
 ---
 
 # A `cmd | grep -q` shell condition under `set -o pipefail` fails open via SIGPIPE
@@ -176,6 +176,7 @@ Two things that guard got wrong first, both worth stealing:
 - `.github/workflows/mutation-goal-safety.yml` — same change-detection pattern, same fix
 - `scripts/todo-automerge-guard.sh` — priority extraction (single-awk form of the variant)
 - `.claude/hooks/test-*.sh` — all assert helpers use the here-string form since the 2026-07-10 sweep (26 instances across 17 files; the shared copied preamble had propagated the pipe form everywhere)
+- `.claude/hooks/guard-outward-cli.sh` — `if`-condition form, caught by review before merge (a new PreToolUse deny hook's `printf '%s' "$VAR" | grep -Eq ...` predicates converted to `grep -Eq '...' <<< "$VAR"`); notable because this one is a **security** gate — the fail-open direction here is a silent ALLOW of the exact outward-CLI mutation the hook exists to deny, not merely a skipped CI step
 
 ## See Also
 

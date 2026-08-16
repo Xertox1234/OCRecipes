@@ -39,7 +39,11 @@ export const REFUSAL_MESSAGE =
   `Refusing to run the email_verified backfill without ${ALLOW_FLAG}.\n` +
   `This statement writes UPDATE users SET email_verified = true.\n` +
   `Re-run with the flag once you have confirmed the target DB, e.g.:\n` +
-  `  railway run --service Postgres -- sh -c ` +
+  // The ALLOW_OUTWARD_CLI=1 prefix is load-bearing, not decoration:
+  // .claude/hooks/guard-outward-cli.sh denies an unprefixed `railway run`
+  // (it executes an arbitrary command against the LIVE service env). A hint
+  // that prints a command the harness blocks is a hint the operator cannot use.
+  `  ALLOW_OUTWARD_CLI=1 railway run --service Postgres -- sh -c ` +
   `'DATABASE_URL="$DATABASE_PUBLIC_URL" npx tsx ` +
   `server/scripts/backfill-email-verified.ts ${ALLOW_FLAG}'`;
 
