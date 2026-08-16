@@ -5,28 +5,59 @@
  * be imported in a test; the deletion predicate lives here so the suite
  * asserts on the exact SQL the script executes.
  */
-import { and, ilike, or, sql } from "drizzle-orm";
-import { communityRecipes } from "../shared/schema";
+import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { communityRecipes, users } from "../shared/schema";
 
 /**
- * The deletion perimeter. Junk criteria (any of):
+ * The deletion perimeter. Scoped to orphan (`authorId IS NULL`), or to the
+ * account currently holding the username `demo` — mirroring
+ * `cleanup-seed-recipes-utils.ts`'s `authorIdCondition` — ANDed with any of
+ * the junk criteria:
  *   - title is exactly "test recipe" (case-insensitive, NO wildcards)
- *   - trimmed title under 3 characters
+ *   - trimmed title under 3 characters. Kept in scope deliberately: a
+ *     legitimate short title like "GF" could match, but under this author
+ *     scope it can only ever delete an orphan (`authorId IS NULL` — note
+ *     `authorId` is `onDelete: "set null"`, so this includes recipes left
+ *     behind by a deleted account, not only seed/test cruft) or a row
+ *     authored by whoever holds `demo`. That residual is the same one the
+ *     sibling `cleanup-seed-recipes` script's orphan scope already accepts,
+ *     and is a large reduction from the prior no-scoping perimeter
+ *     (deletable regardless of author). Decided here rather than raising the
+ *     threshold, since the author scope already shrinks the blast radius.
  *   - empty instructions AND empty ingredients (both — a draft with only
  *     instructions must survive)
- * NOTE: no authorId scoping (unlike cleanup-seed-recipes) — deletes across
- * all users. Surfaced as a follow-up finding, deliberately unchanged here.
+ *
+ * NOT an absolute "never touches a real user's recipe" guarantee: the caller
+ * resolves the demo account with `eq(users.username, "demo")`, and `demo` is
+ * NOT a reserved username — `registerSchema` (`server/routes/_schemas.ts`)
+ * enforces only 3-30 chars, `/^[a-zA-Z0-9_]+$/`, and uniqueness. In an
+ * environment with no pre-existing demo account a real user can hold it, and
+ * their junk-matching rows enter this perimeter. The sibling
+ * `server/scripts/cleanup-seed-recipes.ts` resolves the demo user the same
+ * way, so reserving the name would have to land in both.
  */
-export function buildJunkCommunityRecipeWhere() {
-  return or(
-    // Exact "Test Recipe" match (case-insensitive)
-    ilike(communityRecipes.title, "test recipe"),
-    // Title under 3 chars
-    sql`LENGTH(TRIM(${communityRecipes.title})) < 3`,
-    // Empty instructions AND empty ingredients
-    and(
-      sql`COALESCE(jsonb_array_length(${communityRecipes.instructions}), 0) = 0`,
-      sql`COALESCE(jsonb_array_length(${communityRecipes.ingredients}), 0) = 0`,
+export function buildJunkCommunityRecipeWhere(
+  demoUserId: (typeof users.$inferSelect)["id"] | null,
+) {
+  const authorIdCondition = demoUserId
+    ? or(
+        isNull(communityRecipes.authorId),
+        eq(communityRecipes.authorId, demoUserId),
+      )
+    : isNull(communityRecipes.authorId);
+
+  return and(
+    authorIdCondition,
+    or(
+      // Exact "Test Recipe" match (case-insensitive)
+      ilike(communityRecipes.title, "test recipe"),
+      // Title under 3 chars
+      sql`LENGTH(TRIM(${communityRecipes.title})) < 3`,
+      // Empty instructions AND empty ingredients
+      and(
+        sql`COALESCE(jsonb_array_length(${communityRecipes.instructions}), 0) = 0`,
+        sql`COALESCE(jsonb_array_length(${communityRecipes.ingredients}), 0) = 0`,
+      ),
     ),
   );
 }
