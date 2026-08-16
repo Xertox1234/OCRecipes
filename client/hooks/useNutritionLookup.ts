@@ -99,6 +99,26 @@ export function useNutritionLookup(params: {
   const [error, setError] = useState<string | null>(null);
   const [isPer100g, setIsPer100g] = useState(false);
   const [servingQuantity, setServingQuantity] = useState(1);
+  /**
+   * Stays null for the whole itemId/saved-item path, deliberately. Only the
+   * barcode handlers below assign it, and every consumer — `ServingControls`,
+   * `getServingContextLabel`, `servingOptions`, `effectivePer100g` — is behind
+   * `showServingControls` (`!itemId`, NutritionDetailScreen.tsx), so nothing
+   * reads it there.
+   *
+   * Do not "fix" that by parsing `existingItem.servingSize` into it. A saved
+   * item's serving string IS parsed on that path, by `selectBandSource`'s
+   * saved-item branch in `client/components/nutrition/nutrition-band-source.ts`
+   * — which resolves the FSA basis and the portion weight from the one string
+   * through the one parser, precisely so those two can never describe
+   * different portions. Populating this as a second, independent answer to the
+   * same question reintroduces exactly that drift, and buys nothing: saved-item
+   * bands already work.
+   *
+   * Per-consumer parsing is the standing pattern here. Decision recorded
+   * 2026-08-15 (human-led) in
+   * `todos/archive/P3-2026-08-15-should-saved-item-path-populate-servingsizegrams.md`.
+   */
   const [servingSizeGrams, setServingSizeGrams] = useState<number | null>(null);
   const [customGramsInput, setCustomGramsInput] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);

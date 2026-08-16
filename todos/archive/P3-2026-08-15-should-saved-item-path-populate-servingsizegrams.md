@@ -1,6 +1,6 @@
 ---
 title: "Decide whether the saved-item path should populate servingSizeGrams at all — the follow-on's original premise is superseded"
-status: backlog
+status: completed
 priority: low
 created: 2026-08-15
 updated: 2026-08-15
@@ -97,21 +97,21 @@ implementer's.
 
 ## Acceptance Criteria
 
-- [ ] The question above is answered explicitly by a human, not inferred
-- [ ] **If per-consumer parsing stands:** the rationale is recorded where the next person
+- [x] The question above is answered explicitly by a human, not inferred
+- [x] **If per-consumer parsing stands:** the rationale is recorded where the next person
       will hit it — a short note on `servingSizeGrams`' initialiser in
       `client/hooks/useNutritionLookup.ts` pointing at
       `nutrition-band-source.ts:143-163` as the worked precedent. Then archive this todo.
       No code behaviour changes.
-- [ ] **If hook-level resolve wins instead:** `existingItem.servingSize` is parsed with
+- [ ] ~~**If hook-level resolve wins instead:**~~ NOT TAKEN — `existingItem.servingSize` is parsed with
       `parseServingBasis` from `@shared/lib/label-serving` (never a new parser, never
       `parseLabelServingGrams` — that one backs the label-readiness gates and its docblock
       forbids narrowing it), `setServingSizeGrams` is called only for a `unit === "g"`
       result, and `nutrition-band-source` is migrated to read the resolved value so there
       is exactly ONE parse of the string, not two
-- [ ] Either way, no change to `servingOptions`' `|| 100` at `useNutritionLookup.ts:242`
+- [x] Either way, no change to `servingOptions`' `|| 100` at `useNutritionLookup.ts:242`
       and no change to `effectivePer100g`'s guard from #819
-- [ ] This todo closes with zero follow-ups — make the call, execute it, archive
+- [x] This todo closes with zero follow-ups — make the call, execute it, archive
 
 ## Implementation Notes
 
@@ -156,6 +156,30 @@ implementer's.
   archive entry. That is the correct outcome, not a failure to deliver.
 
 ## Updates
+
+### 2026-08-15 — CLOSED WON'T-DO (human-led decision)
+
+**Per-consumer parsing of `nutrition.servingSize` is the standing pattern on the
+saved-item path.** The hook does not resolve a gram basis there, and
+`servingSizeGrams` stays null for the whole path by design.
+
+Decided by the user, not inferred by the implementer — this todo was filed
+specifically to put the call in front of a human rather than let an
+already-superseded follow-on sit in the backlog looking actionable.
+
+Executed in the same PR that filed it, so no backlog entry ever landed on `main`
+needing a second close:
+
+- A docblock on `servingSizeGrams`' initialiser
+  (`client/hooks/useNutritionLookup.ts`) records why it stays null and names
+  `selectBandSource`'s saved-item branch as the worked precedent — the place
+  where a saved item's serving string _is_ parsed, once, feeding both the FSA
+  basis and the portion weight so the two cannot disagree. It says outright: do
+  not populate this by parsing `existingItem.servingSize`.
+- No behaviour changed. `servingOptions`' `|| 100` and `effectivePer100g`'s #819
+  guard are both untouched.
+
+Zero follow-ups, per the decision-todo convention.
 
 ### 2026-08-15
 
