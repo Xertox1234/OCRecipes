@@ -20,32 +20,34 @@ env:
 - tapOn: "Plan"
 
 # Verify meal plan home elements
-- assertVisible:
-    text: "Recipes"
+- extendedWaitUntil:
+    visible:
+      text: "Recipes"
     timeout: 5000
 - assertVisible: "Pantry"
 - assertVisible: "Grocery Lists"
 
 # Verify meal slot sections (at least one should be visible)
-- assertVisible:
-    text: "Breakfast"
+- extendedWaitUntil:
+    visible:
+      text: "Breakfast"
     timeout: 3000
-  optional: true
+    optional: true
 - assertVisible:
     text: "Lunch"
-  optional: true
+    optional: true
 - assertVisible:
     text: "Dinner"
-  optional: true
+    optional: true
 - assertVisible:
     text: "Snack"
-  optional: true
+    optional: true
 
 # Check daily total section
 - scrollUntilVisible:
     element: "Daily Total"
     direction: DOWN
-  optional: true
+    optional: true
 
 # Navigate to Pantry
 - scrollUntilVisible:
@@ -54,21 +56,23 @@ env:
 - tapOn: "Pantry"
 
 # Verify pantry screen
-- assertVisible:
-    text: "Your Pantry"
+- extendedWaitUntil:
+    visible:
+      text: "Your Pantry"
     timeout: 5000
-  optional: true
+    optional: true
 
 # May see empty state
-- assertVisible:
-    text: "Pantry is Empty"
+- extendedWaitUntil:
+    visible:
+      text: "Pantry is Empty"
     timeout: 3000
-  optional: true
+    optional: true
 
 # Check add item input
 - assertVisible:
     text: "Add pantry item..."
-  optional: true
+    optional: true
 
 # Go back to plan home
 - back

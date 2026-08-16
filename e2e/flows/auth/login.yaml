@@ -29,8 +29,9 @@ tags:
 - tapOn: "Sign In"
 
 # Verify we navigate away from login
-- assertNotVisible:
-    text: "Sign In"
+- extendedWaitUntil:
+    notVisible:
+      text: "Sign In"
     timeout: 10000
 
 # Toggle to register mode

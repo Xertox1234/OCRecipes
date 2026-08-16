@@ -20,16 +20,18 @@ env:
 - scrollUntilVisible:
     element: "Scan History"
     direction: DOWN
-  optional: true
+    optional: true
 - tapOn: "Scan History"
 
 # Verify the history screen loads (header title)
-- assertVisible:
-    text: "Scan History"
+- extendedWaitUntil:
+    visible:
+      text: "Scan History"
     timeout: 5000
 
 # Verify the scan CTA is visible (shown when no items today)
-- assertVisible:
-    text: "Scan barcode"
+- extendedWaitUntil:
+    visible:
+      text: "Scan barcode"
     timeout: 3000
-  optional: true
+    optional: true

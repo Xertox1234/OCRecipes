@@ -1,0 +1,9 @@
+# Workspace configuration for the Maestro CLI. Flow files live in nested
+# subdirectories (flows/auth/, flows/home/, etc.) — by default Maestro only
+# discovers Flows at the top level of the directory it's pointed at, so
+# without this file `maestro test e2e/` finds nothing. `helpers/` is
+# deliberately excluded from the glob: those files are runFlow dependencies,
+# not standalone Flows, and must never be discovered/run on their own.
+appId: com.ocrecipes.app
+flows:
+  - "flows/**"

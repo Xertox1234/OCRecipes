@@ -16,42 +16,51 @@ env:
       PASSWORD: ${PASSWORD}
 
 # Navigate to exercise log from home screen (mandatory navigation)
+- extendedWaitUntil:
+    visible:
+      text: "Exercise"
+    timeout: 5000
 - tapOn:
     text: "Exercise"
-    timeout: 5000
 
 # Verify exercise type chips are visible (mandatory — proves screen loaded)
-- assertVisible:
-    text: "Cardio"
+- extendedWaitUntil:
+    visible:
+      text: "Cardio"
     timeout: 5000
 - assertVisible: "Strength"
 
 # Select exercise type
-- tapOn: "Cardio"
-  optional: true
+- tapOn:
+    text: "Cardio"
+    optional: true
 
 # Tap search to find an exercise
 - tapOn:
     id: "search-exercise"
-  optional: true
+    optional: true
 
 # If search screen opens
-- assertVisible:
-    text: "Search exercises..."
+- extendedWaitUntil:
+    visible:
+      text: "Search exercises..."
     timeout: 3000
-  optional: true
+    optional: true
 
-- tapOn: "Search exercises..."
-  optional: true
-- inputText: "running"
-  optional: true
+- tapOn:
+    text: "Search exercises..."
+    optional: true
+- inputText:
+    text: "running"
+    optional: true
 
 # Wait for results
-- assertVisible:
-    text: "Running"
+- extendedWaitUntil:
+    visible:
+      text: "Running"
     timeout: 5000
-  optional: true
+    optional: true
 
 # Go back
-- back
-  optional: true
+- back:
+    optional: true

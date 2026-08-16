@@ -17,40 +17,46 @@ env:
       PASSWORD: ${PASSWORD}
 
 # Verify Home tab (default after login)
-- assertVisible:
-    text: "Hello"
+- extendedWaitUntil:
+    visible:
+      text: "Hello"
     timeout: 10000
 
 # Navigate to Plan tab
 - tapOn: "Plan"
-- assertVisible:
-    text: "Recipes"
+- extendedWaitUntil:
+    visible:
+      text: "Recipes"
     timeout: 5000
 
 # Navigate to Coach tab. Free tier lands on the chat list ("NutriCoach"
 # header); Pro lands on the Coach Pro surface — so the assertion is optional.
 - tapOn: "Coach"
-- assertVisible:
-    text: "NutriCoach"
+- extendedWaitUntil:
+    visible:
+      text: "NutriCoach"
     timeout: 5000
-  optional: true
+    optional: true
 
 # Scan is a floating action button, not a tab — confirm it is present without
 # opening it (the scan menu is covered by the scan flows).
-- assertVisible:
-    text: "Open scan menu"
+- extendedWaitUntil:
+    visible:
+      text: "Open scan menu"
     timeout: 3000
-  optional: true
+    optional: true
 
 # Navigate to Profile tab
 - tapOn: "Profile"
-- assertVisible:
-    text: "Tap to change profile picture"
+- extendedWaitUntil:
+    visible:
+      text: "Tap to change profile picture"
     timeout: 5000
-  optional: true
+    optional: true
 
 # Navigate back to Home
 - tapOn: "Home"
-- assertVisible:
-    text: "Hello"
+- extendedWaitUntil:
+    visible:
+      text: "Hello"
     timeout: 5000

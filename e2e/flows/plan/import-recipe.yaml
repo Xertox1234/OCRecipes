@@ -17,20 +17,23 @@ env:
 
 # Navigate to Plan tab
 - tapOn: "Plan"
-- assertVisible:
-    text: "Recipes"
+- extendedWaitUntil:
+    visible:
+      text: "Recipes"
     timeout: 5000
 
 # Open recipe browser
 - tapOn: "Recipes"
-- assertVisible:
-    text: "Search recipes..."
+- extendedWaitUntil:
+    visible:
+      text: "Search recipes..."
     timeout: 5000
 
 # Tap Import button
 - tapOn: "Import"
-- assertVisible:
-    text: "https://example.com/recipe"
+- extendedWaitUntil:
+    visible:
+      text: "https://example.com/recipe"
     timeout: 3000
 
 # Verify import UI elements

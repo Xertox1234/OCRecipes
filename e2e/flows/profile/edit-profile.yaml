@@ -16,8 +16,9 @@ env:
 
 # Navigate to Profile tab
 - tapOn: "Profile"
-- assertVisible:
-    text: "Edit Profile"
+- extendedWaitUntil:
+    visible:
+      text: "Edit Profile"
     timeout: 5000
 
 # Verify profile sections are visible
@@ -28,8 +29,9 @@ env:
 
 # Open Dietary Profile
 - tapOn: "Dietary Profile"
-- assertVisible:
-    text: "Save Changes"
+- extendedWaitUntil:
+    visible:
+      text: "Save Changes"
     timeout: 5000
 
 # Verify dietary profile sections exist

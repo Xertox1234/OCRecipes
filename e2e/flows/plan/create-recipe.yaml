@@ -17,20 +17,23 @@ env:
 
 # Navigate to Plan tab
 - tapOn: "Plan"
-- assertVisible:
-    text: "Recipes"
+- extendedWaitUntil:
+    visible:
+      text: "Recipes"
     timeout: 5000
 
 # Open recipe browser
 - tapOn: "Recipes"
-- assertVisible:
-    text: "Search recipes..."
+- extendedWaitUntil:
+    visible:
+      text: "Search recipes..."
     timeout: 5000
 
 # Tap Create button
 - tapOn: "Create"
-- assertVisible:
-    text: "What are you making?"
+- extendedWaitUntil:
+    visible:
+      text: "What are you making?"
     timeout: 3000
 
 # Enter recipe title
@@ -50,11 +53,12 @@ env:
 
 # Open Ingredients section
 - tapOn: "Ingredients"
-- assertVisible:
-    text: "Add ingredient"
+- extendedWaitUntil:
+    visible:
+      text: "Add ingredient"
     timeout: 3000
-  optional: true
+    optional: true
 
 # Go back
-- back
-  optional: true
+- back:
+    optional: true

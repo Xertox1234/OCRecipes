@@ -1,6 +1,6 @@
 ---
 title: "E2E Regression has never passed — 34/34 nightly runs failed, so the suite has produced zero signal since it landed"
-status: backlog
+status: in-progress
 priority: medium
 created: 2026-08-15
 updated: 2026-08-15

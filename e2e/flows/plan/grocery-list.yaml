@@ -17,42 +17,47 @@ env:
 
 # Navigate to Plan tab
 - tapOn: "Plan"
-- assertVisible:
-    text: "Grocery Lists"
+- extendedWaitUntil:
+    visible:
+      text: "Grocery Lists"
     timeout: 5000
 
 # Open grocery lists
 - tapOn: "Grocery Lists"
 
 # May see empty state or existing lists
-- assertVisible:
-    text: "No Grocery Lists"
+- extendedWaitUntil:
+    visible:
+      text: "No Grocery Lists"
     timeout: 3000
-  optional: true
+    optional: true
 
 # Tap FAB to create a new list (if FAB exists)
 - tapOn:
     id: "create-grocery-list"
-  optional: true
+    optional: true
 
 # If date picker appears, fill in dates and generate
-- assertVisible:
-    text: "Generate"
+- extendedWaitUntil:
+    visible:
+      text: "Generate"
     timeout: 3000
-  optional: true
+    optional: true
 
 - tapOn:
     text: "Generate"
-  optional: true
+    optional: true
 
 # If we have a list, verify items structure
-- assertVisible:
-    text: "items"
+- extendedWaitUntil:
+    visible:
+      text: "items"
     timeout: 3000
-  optional: true
+    optional: true
 
 # Check add item input
-- assertVisible:
-    text: "Add item..."
+- extendedWaitUntil:
+    visible:
+      text: "Add item..."
     timeout: 3000
-  optional: true
+    optional: true

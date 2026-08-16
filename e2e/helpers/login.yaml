@@ -12,6 +12,7 @@ appId: com.ocrecipes.app
     id: "input-password"
 - inputText: ${PASSWORD}
 - tapOn: "Sign In"
-- assertNotVisible:
-    text: "Sign In"
+- extendedWaitUntil:
+    notVisible:
+      text: "Sign In"
     timeout: 5000
