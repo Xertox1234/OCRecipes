@@ -8,6 +8,7 @@ assignee:
 labels: [incident, deployment]
 github_issue:
 human_led: true
+blocked_reason: "channel-mutating EAS command — a human must confirm the target group id against eas update:list before republishing"
 ---
 
 # Roll back the accidental preview-channel OTA (2026-08-16 review incident)
@@ -22,6 +23,7 @@ Incident details: update group `2735c5f5-7b5a-468e-852c-1184e93fa49c`, message "
 
 ## Acceptance Criteria
 
+- [ ] VERIFY FIRST: `eas update:list --branch preview --limit 5` confirms the incident group `2735c5f5…` is at the head and `ffa0af0b…` ("wip(probe): console.log emitters…") is the immediately-previous group — do not republish a group you have not just confirmed
 - [ ] Run: `eas update:republish --group ffa0af0b-cc3b-4e6d-b9bf-b6e580398476 -m "rollback: revert accidental publish (group 2735c5f5)" --non-interactive`
 - [ ] `eas update:list --branch preview --limit 2` shows the republished group at the head
 - [ ] Decide separately whether `preview` should get a fresh proper publish from `main` (`npm run update:preview -- --message ...`) — the restored head is the week-old "DO NOT MERGE" probe build

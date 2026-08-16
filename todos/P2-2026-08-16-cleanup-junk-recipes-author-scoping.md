@@ -1,11 +1,11 @@
 ---
 title: "cleanup-junk-recipes: add author scoping and fix the 2-char-title branch"
 status: backlog
-priority: low
+priority: medium
 created: 2026-08-16
 updated: 2026-08-16
 assignee:
-labels: [deferred, database]
+labels: [deferred, database, security]
 github_issue:
 ---
 
@@ -13,7 +13,7 @@ github_issue:
 
 ## Summary
 
-`scripts/cleanup-junk-recipes.ts` deletes community recipes across ALL users with no `authorId` scoping (unlike `cleanup-seed-recipes`, whose header documents scoping as the safety pattern), and its `LENGTH(TRIM(title)) < 3` branch would delete a legitimate two-character title (e.g. "Pho" trimmed of a stray space is safe at 3, but "GF" is not).
+`scripts/cleanup-junk-recipes.ts` deletes community recipes across ALL users with no `authorId` scoping (unlike `cleanup-seed-recipes`, whose header documents scoping as the safety pattern), and its `LENGTH(TRIM(title)) < 3` branch would delete a legitimate two-character title ("GF"). **On `main` today the script is additionally LIVE-BY-DEFAULT** (`--dry-run` is opt-in) — PR #825 fixes that default; this todo covers the scoping residual that remains after it merges. Filed `medium` + `security` (per review of PR #827: the same risk class is rated high in the lookalike solution doc, and a security label keeps the eventual fix PR out of auto-merge).
 
 ## Background
 
