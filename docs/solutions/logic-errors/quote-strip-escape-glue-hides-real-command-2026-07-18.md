@@ -2,12 +2,12 @@
 title: "Quoted-span stripping without an escape pre-pass glues spans together and hides a real command from a matcher hook"
 track: bug
 category: logic-errors
-tags: [bash, hooks, awk, quote-aware, quote-stripping, tokenizer, command-matcher, pr-gate, fail-closed, regex]
+tags: [bash, hooks, awk, quote-aware, quote-stripping, tokenizer, command-matcher, pr-gate, fail-closed, regex, testing, typescript]
 module: shared
-applies_to: [".claude/hooks/**/*.sh", "scripts/**/*.sh"]
-symptoms: ["A command-matching hook that strips quoted spans before matching silently allows or ignores a REAL invocation when an earlier argument contains a backslash-escaped quote or a bare apostrophe inside a double-quoted word", "Independent per-quote-type span substitutions pair a quote inside one argument with the quote opening a LATER argument and delete the separator and command between them", "A deny gate falls through its final match-or-exit-0 line on input that visibly contains the gated command"]
+applies_to: [".claude/hooks/**/*.sh", "scripts/**/*.sh", "scripts/**/*.ts"]
+symptoms: ["A command-matching hook that strips quoted spans before matching silently allows or ignores a REAL invocation when an earlier argument contains a backslash-escaped quote or a bare apostrophe inside a double-quoted word", "Independent per-quote-type span substitutions pair a quote inside one argument with the quote opening a LATER argument and delete the separator and command between them", "A deny gate falls through its final match-or-exit-0 line on input that visibly contains the gated command", "A single backreference regex meant to detect one string literal instead spans from one string's closing quote to a LATER string's opening quote of the same type, incorrectly flagging or matching the code in between as if it were inside a literal"]
 created: 2026-07-18
-last_updated: 2026-08-05
+last_updated: 2026-08-16
 severity: high
 ---
 
@@ -134,12 +134,84 @@ POSIX extended regular expressions (ERE — the `grep -E` / `sed -E` dialect use
 
 **Rule of thumb:** When an ERE's only successful parse of some input is the WRONG parse, don't fight the engine for a lookahead it doesn't have — accept the over-match and filter the result afterward with information the pattern couldn't express.
 
+### A single backreference regex can glue two SEPARATE literals together, not just two quotes inside one argument
+
+The bash cases above are a *chain* of context-free substitutions misreading
+one command string. The same root cause — treating "next same-type quote
+character" as sufficient proof of "closes THIS literal" — also breaks a
+*single* regex with **no chained passes at all**, in a non-shell, non-security
+context.
+
+`scripts/coverage-ratchet.ts` needed to detect a brace character accidentally
+placed inside a JSON-ish config string literal (a per-glob threshold key using
+brace-expansion syntax, e.g. `"client/{screens,components}/**"`). A candidate
+check used:
+
+```ts
+/(["'`])[^"'`]*?[{}][^"'`]*?\1/
+```
+
+— capture a quote char, lazily consume non-quote characters, require a brace,
+lazily consume more non-quote characters, then require the *same* quote
+character to close. On a config with two adjacent, well-formed per-glob
+entries:
+
+```ts
+"client/**": { lines: 80, functions: 70, branches: 60, statements: 80 },
+"server/**": { lines: 70, functions: 60, branches: 50, statements: 70 },
+```
+
+the engine fails starting at `"client/**"`'s opening quote (no brace before
+its own closing quote), then retries starting at `"client/**"`'s **closing**
+quote: group 1 = `"`, the lazy non-quote class consumes `: `, matches the
+per-glob value object's real `{`, keeps consuming non-quote characters
+(`}` is not excluded — only quote characters are) through ` lines: 80 },\n`,
+and closes on `"server/**"`'s **opening** quote. The match spans a real,
+legal `{ ... }` value object between two separate string literals and
+false-positives on valid config — verified empirically (`buggy.test(twoGlobs)
+=== true`).
+
+**Fix:** stop trying to bound "a literal" by searching for the next same-type
+quote character from an arbitrary starting position. Enumerate actual,
+self-contained literals instead — each one anchored at its own open quote and
+required to close before any unescaped newline or its own quote type reopens:
+
+```ts
+const STRING_LITERAL =
+  /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+```
+
+then test each individually-matched literal's content for the disallowed
+character (here, `{`/`}`), never the raw text between two arbitrary quote
+positions. This is the JS/TS analog of `cmd-detect.sh`'s shared scanner: don't
+chain or single-shot a quote-boundary regex over the whole string; enumerate
+complete, self-delimited tokens and inspect each one's own content.
+
+A related trap in the same fix: comments can contain apostrophes. `// don't
+use {invalid}, that's the point` has two apostrophes straddling a brace —
+even the correct per-literal regex above will treat `'t use {invalid}, that'`
+as a matched single-quote literal if line comments aren't stripped first.
+Strip `//…$` from the scanned text before the literal scan (two lines) rather
+than trying to make the literal regex itself comment-aware.
+
 ## Prevention
 
 - **Detect commands with the shared scanner, never a bespoke per-hook quote
   strip.** A new matcher hook sources `cmd-detect.sh`; if it needs a new target,
   add a predicate there. Any hand-rolled `s/'…'//g; s/"…"//g` in a hook is the
   smell.
+- **Never bound "a string literal" by searching for the next same-type quote
+  character from an arbitrary position — in bash OR in a regex engine.** The
+  smell generalizes past shell: `/(["'`])[^"'`]*?…\1/`-shaped patterns (open
+  quote … same close quote, excluding only quote chars in between) can span
+  across two SEPARATE literals whenever nothing but non-quote characters lies
+  between them. Enumerate complete, self-delimited literals
+  (`"(?:[^"\\\n]|\\.)*"` per quote type) and inspect each match's own content;
+  never test the raw span between two matched quote positions. Write the
+  fixture with TWO adjacent quoted values of the target shape as the
+  regression test — a single-literal fixture cannot distinguish a correct
+  per-literal check from a quote-spanning one (see coverage-ratchet.ts's test
+  for this exact shape).
 - **The regex "matcher recipe" is necessary but NOT sufficient.** Command-position
   legs still matter *after* the quote-aware strip — separator class `(^|[;&|(])`
   (else compound `git add -A && git commit` slips), env-assignment prefix with
@@ -173,6 +245,8 @@ POSIX extended regular expressions (ERE — the `grep -E` / `sed -E` dialect use
 - `.claude/hooks/pr-preflight-guard.sh` — the gate (deny-side); `commit-verify.sh`, `pr-verify.sh` — advisory
 - `.claude/hooks/{core-bare-guard,drift-detect,drift-detect-update,branch-preflight}.sh` — the git-state sibling hooks, ported onto the same helper (2026-07-20) so quoted mentions stop false-firing. New predicates added to `cmd-detect.sh`: `cmd_is_git`, `cmd_is_git_commit_or_push`, `cmd_is_git_head_mover` (plus the existing `cmd_is_git_commit` for branch-preflight). Fail-safe is contract-specific: the three advisory hooks fail SILENT on an unsourceable lib (a skipped heal/warning is safe — git's own errors are the backstop, and a false warning beats absorbing a real drift); the blocking `branch-preflight.sh` fails CLOSED via a retained raw-regex fallback (never fail-OPEN on the detached-HEAD deny)
 - `.claude/hooks/test-pr-preflight-guard.sh` (12e–12h, 14), `test-commit-verify.sh` (7–11), `test-pr-verify.sh` (11–14) — per-class regression tests; `test-{branch-preflight,core-bare-guard,drift-detect}.sh` carry the quoted-mention + lib-missing fail-safe tests for the ported git-state hooks
+- `scripts/coverage-ratchet.ts` (`assertNoBraceInStringLiteral`, `STRING_LITERAL`) — a FOURTH, non-shell variant of the same family: a single backreference regex meant to flag a brace inside one glob-key string literal instead spanned across two adjacent per-glob keys' `{ ... }` value object (2026-08-16, `P3-2026-08-16-coverage-ratchet-test-residuals.md`). Fixed with per-literal enumeration instead of quote-to-quote spanning; see the dedicated subsection above.
+- `scripts/__tests__/coverage-ratchet.test.ts` — the two-adjacent-glob-keys regression test that discriminates a per-literal check from a quote-spanning one, plus the apostrophe-straddled-brace-in-comment test for the comment-stripping fix
 
 ## See Also
 
