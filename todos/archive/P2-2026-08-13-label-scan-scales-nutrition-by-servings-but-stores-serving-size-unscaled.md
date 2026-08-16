@@ -146,15 +146,20 @@ committing to it.
   the risk the todo flagged for option (1) does not apply here.
 - **Full reader sweep** (`grep -rn` over `server/` for every
   `scannedItems.(calories|protein|carbs|fat|sugar|sodium|fiber)` read) found
-  exactly two aggregate sites — `getDailySummary` and
-  `getPlannedNutritionSummary` — both already multiplying by an independent
-  servings/quantity column, so both become correct automatically with no
-  code change. Every other reader (`getScannedItems`, `ItemDetailScreen.tsx`,
-  `HistoryScreen.tsx`, CSV export) either dumps the raw row or displays
-  `item.calories` next to `item.servingSize` under a "Per serving"/"Serving:"
-  label — i.e. the UI already asserts per-serving semantics, which this fix
-  satisfies for the first time on the label-scan path (previously that
-  labeling was itself misleading whenever `servingsConsumed > 1`).
+  exactly two AGGREGATE sites that sum a macro across rows — `getDailySummary`
+  and `getPlannedNutritionSummary` — both already multiplying by an
+  independent servings/quantity column, so both become correct automatically
+  with no code change. `server/scripts/backfill-barcode-nutrition.ts` also
+  reads the macro columns directly (copying them 1:1 into `barcodeNutrition`
+  alongside `servingSize`), but it is not an aggregate and stays
+  self-consistent — arguably improved — under the new unscaled semantics; it
+  is a manual maintenance script, not a request-path reader. Every other
+  reader (`getScannedItems`, `ItemDetailScreen.tsx`, `HistoryScreen.tsx`, CSV
+  export) either dumps the raw row or displays `item.calories` next to
+  `item.servingSize` under a "Per serving"/"Serving:" label — i.e. the UI
+  already asserts per-serving semantics, which this fix satisfies for the
+  first time on the label-scan path (previously that labeling was itself
+  misleading whenever `servingsConsumed > 1`).
   `client/hooks/useNutritionLookup.ts`'s saved-item/`itemId` branch has no
   production caller (confirmed in that hook's own docblock and in
   `todos/archive/P3-2026-08-15-should-saved-item-path-populate-servingsizegrams.md`)
@@ -187,8 +192,19 @@ committing to it.
   just a persistence one — a new case in the existing (untouched-source)
   `client/components/nutrition/__tests__/nutrition-band-source.test.ts`
   feeding `buildPanelRows` the fixed row's shape (`servingSize: "150 g"`,
-  `sugar: 10`) and asserting the sugar band is not `high`: 10 g is under the
-  27 g FSA per-portion line (`shared/constants/nutrition-bands.ts`), where
-  the pre-fix 30 g would have crossed it. This adds a test case to that
-  file's existing suite only — `nutrition-band-source.ts` itself (the Scope
-  Contract's explicit exclusion) is untouched.
+  `sugar: 10`) and asserting the sugar band is exactly `medium` (pinned to
+  the specific value, not just "not `high`", so the assertion cannot pass
+  vacuously if the row stopped banding at all): 10 g is under the 27 g FSA
+  per-portion line (`shared/constants/nutrition-bands.ts`), where the pre-fix
+  30 g would have crossed it. This adds a test case to that file's existing
+  suite only — `nutrition-band-source.ts` itself (the Scope Contract's
+  explicit exclusion) is untouched.
+- **Review**: three reviewers dispatched (`ai-reviewer`, `server-reviewer`,
+  `code-reviewer`) — all three ultimately returned **No findings** /
+  no unresolved CRITICALs. `code-reviewer` raised one WARNING (AC5 was
+  provable by composing two already-passing tests but nothing directly
+  composed the write with a `getDailySummary` read) — fixed inline by
+  extending the `logOverrides.servings` storage test to assert the daily
+  total via `getDailySummary` directly. Two SUGGESTION-level doc-accuracy
+  nits in this Updates section (the reader-sweep bound and this paragraph's
+  own wording) were also corrected inline.

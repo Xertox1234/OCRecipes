@@ -1013,6 +1013,18 @@ describe("nutrition storage", () => {
         .where(eq(dailyLogs.scannedItemId, item.id));
       expect(log.servings).toBe("3.00");
       expect(log.mealType).toBe("snack");
+
+      // AC5, composed directly rather than argued from separately-passing
+      // tests: the daily-log TOTAL must equal what the old (buggy) write —
+      // which baked servingsConsumed into the macros and hardcoded
+      // dailyLogs.servings to "1" — would have produced for the same
+      // servingsConsumed = 3. Old: 200 * 3 = 600. New: unscaled 200 * servings
+      // 3 = 600, via getDailySummary's read-time multiplication.
+      const summary = await getDailySummary(testUser.id, new Date());
+      expect(Number(summary.totalCalories)).toBeCloseTo(600, 0);
+      expect(Number(summary.totalProtein)).toBeCloseTo(18, 0);
+      expect(Number(summary.totalCarbs)).toBeCloseTo(120, 0);
+      expect(Number(summary.totalFat)).toBeCloseTo(15, 0);
     });
 
     it("rolls back both inserts if daily log insert fails", async () => {
