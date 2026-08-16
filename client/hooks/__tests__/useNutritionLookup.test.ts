@@ -841,6 +841,14 @@ describe("useNutritionLookup — per-100g basis on the saved-item path", () => {
     // positive-grams guard must sit BELOW the validatedData branch: one line
     // higher and it nulls this out, killing the serving controls on a path
     // that works today.
+    //
+    // This test is green both before and after the fix — it is a placement
+    // pin, not a bug reproduction — so its value rests on mutation evidence
+    // rather than a natural RED. Executed 2026-08-15: hoisting the guard above
+    // `if (validatedData) return validatedData.per100g;` turns THIS test red
+    // (calories stay at the pre-recalc 100 instead of reaching 21) while the
+    // two saved-item tests above stay green. Re-run that mutation before
+    // deleting or weakening this test.
     mockServerFetch
       .mockRejectedValueOnce(new Error("server unreachable"))
       .mockResolvedValueOnce({

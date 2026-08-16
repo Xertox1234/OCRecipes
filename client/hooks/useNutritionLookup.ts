@@ -100,20 +100,50 @@ export function useNutritionLookup(params: {
   const [isPer100g, setIsPer100g] = useState(false);
   const [servingQuantity, setServingQuantity] = useState(1);
   /**
-   * Stays null for the whole itemId/saved-item path, deliberately. Every
-   * assignment below is downstream of `fetchBarcodeData` — including
+   * Stays null for the whole itemId/saved-item path, deliberately.
+   *
+   * Two bounds on that sentence, both verified 2026-08-15, neither enforced by
+   * the compiler:
+   *   - `RootStackParamList["NutritionDetail"]` declares `barcode?`,
+   *     `imageUri?` and `itemId?` INDEPENDENTLY optional, so nothing stops a
+   *     caller passing `itemId` AND `barcode`. On the renders before the
+   *     `existingItem` query settles, both early returns in the effect below
+   *     are false and it falls through to `fetchBarcodeData(barcode)` — which
+   *     assigns this with `itemId` set. A discriminated union on those params
+   *     would make the invariant checkable; today it is convention.
+   *   - No caller passes `itemId` at all. `ScanScreen` sends barcode-only;
+   *     `CoachChat` is Zod-narrowed to `{ barcode }` (`shared/schemas/
+   *     coach-blocks.ts`), which strips an `itemId`; and history taps go to
+   *     the separate `ItemDetail` screen (`useHistoryData.ts`), which does not
+   *     use this hook. So the saved-item branch is wired and typed but has no
+   *     production producer — do not read the scan-vs-Today framing in the
+   *     memo comment below as a flow a user can reach today.
+   *
+   * Every assignment below is downstream of `fetchBarcodeData` — including
    * `chooseSource`'s (needs a `conflict`/`dbSnapshot` only it sets) and
    * `handleManualSearch`'s (needs `showManualSearch`, likewise) — and the
    * `existingItem` effect returns before ever calling it.
    *
-   * Nothing reads it there either. `getServingContextLabel` and
-   * `ServingControls` are both behind `showServingControls`
-   * (`!itemId && !!barcode && …`, NutritionDetailScreen.tsx), and
-   * `effectivePer100g` returns null on that path by its own guard below.
-   * `servingOptions` is the exception that looks like a counter-example: its
-   * memo DOES run every render here and its `|| 100` DOES fabricate — but its
-   * only reader is `ServingControls`, so the fabricated option list is built
-   * and discarded. Do not cite it as a live consumer.
+   * Nothing reads it there either — but only ONE of the three reasons is
+   * caller-side gating, so do not restate this as "the consumers are gated".
+   *
+   *   - `ServingControls` genuinely is: `showServingControls`
+   *     (`!itemId && !!barcode && …`, NutritionDetailScreen.tsx) is false here,
+   *     so it never mounts.
+   *   - `effectivePer100g` returns null by its own guard below.
+   *   - `getServingContextLabel` is CALLED UNCONDITIONALLY
+   *     (NutritionDetailScreen.tsx, alongside `showServingControls` — only its
+   *     OUTPUT is gated, at the `servingContextLabel` prop). It runs here every
+   *     render with this null and with `servingOptions`' fabricated `|| 100`
+   *     list. It is harmless solely because of its OWN
+   *     `if (servingSizeGrams === null)` early return
+   *     (`client/screens/nutrition-detail-utils.ts`), which returns before
+   *     touching `servingOptions` — a property of the callee, not of the call
+   *     site. Reorder that branch and the fabricated list becomes live.
+   *
+   * So the protection here is one gate plus two callee-side early returns.
+   * That is thinner than it looks, and it is why the guard below returns null
+   * rather than trusting the absence of readers.
    *
    * Do not "fix" that by parsing `existingItem.servingSize` into it. A saved
    * item's serving string IS parsed on that path, by `selectBandSource`'s

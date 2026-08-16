@@ -225,7 +225,8 @@ export interface PanelData {
  *     property of `nutrition`, which the serving controls do rewrite. On the
  *     divergent OFF shape below, `recalculateNutrition`'s gram branch rebuilds
  *     every field from `effectivePer100g` (= `validatedData.per100g` whenever
- *     `validatedData` exists, useNutritionLookup.ts:196-197), so a serving edit
+ *     `validatedData` exists — the memo's first branch in
+ *     useNutritionLookup.ts), so a serving edit
  *     repopulates `nutrition.sugar` and the band — the correct MEDIUM, never a
  *     different one — appears alongside the value it judges.
  *
