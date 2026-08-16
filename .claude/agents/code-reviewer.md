@@ -195,3 +195,4 @@ Vitest (NOT Jest); tests co-located in `__tests__/` directories. The pre-commit 
 - **Prioritize correctly** — CRITICAL issues before style suggestions
 - **Consider context** — migration code may temporarily break patterns
 - **Defer domain depth** — the domain reviewers carry the server/mobile/AI/security checklists; flag stray domain defects in one line and move on
+- **Show the command behind a bounding claim** — "no caller passes that", "only these N sites", "not currently reachable" set the finding's severity and get quoted verbatim into todos and PR bodies. A wrong negative is self-concealing: it tells the reader there is nothing to check. Cite the search that produced it (`grep -rn ... client/` and its output), or say plainly that you enumerated by reading. A bound with no command behind it is an opinion. See `docs/solutions/conventions/agent-report-bounding-claims-need-reverification-2026-08-15.md`
