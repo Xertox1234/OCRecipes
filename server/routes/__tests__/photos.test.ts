@@ -529,6 +529,120 @@ describe("Photos Routes", () => {
         code: "NOT_FOUND",
       });
     });
+
+    // Regression coverage for todos/archive/P2-2026-08-13-label-scan-scales-
+    // nutrition-by-servings-but-stores-serving-size-unscaled.md: a label scan
+    // must persist macros for the label's OWN declared serving, never a
+    // multiple of it — the consumption multiplier belongs on the daily log.
+    it("stores unscaled per-serving macros and puts servingsConsumed on the daily log, not the scanned item", async () => {
+      const sessionId = storage.createLabelSession("1", {
+        servingSize: "150 g",
+        servingsPerContainer: 1,
+        calories: 200,
+        totalFat: 5,
+        saturatedFat: 1,
+        transFat: 0,
+        cholesterol: 0,
+        sodium: 100,
+        totalCarbs: 40,
+        dietaryFiber: 2,
+        totalSugars: 10, // 10 g per 150 g serving — the todo's own worked example
+        addedSugars: 0,
+        protein: 6,
+        vitaminD: 0,
+        calcium: 0,
+        iron: 0,
+        potassium: 0,
+        confidence: 0.9,
+        productName: "Trail Mix",
+      });
+
+      const mockItem = createMockScannedItem({
+        id: 42,
+        userId: "1",
+        productName: "Trail Mix",
+        sourceType: "label",
+      });
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(mockItem);
+
+      const res = await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId, servingsConsumed: 3, mealType: "snack" });
+
+      expect(res.status).toBe(201);
+      // Macros match the label's own 150 g serving — NOT tripled. Sugar in
+      // particular: 10 g unscaled is under the 27 g per-portion RED line
+      // (todo Background table); the pre-fix bug stored 30 g (10 x 3), which
+      // crosses it and produces a false "High in sugar".
+      expect(storage.createScannedItemWithLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          servingSize: "150 g",
+          calories: "200",
+          protein: "6",
+          carbs: "40",
+          fat: "5",
+          fiber: "2",
+          sugar: "10",
+          sodium: "100",
+        }),
+        { mealType: "snack", servings: "3" },
+      );
+    });
+
+    it("yields identical stored macros regardless of servingsConsumed — only the daily log's servings differs", async () => {
+      const labelData = {
+        servingSize: "1 cup",
+        servingsPerContainer: 2,
+        calories: 120,
+        totalFat: 3,
+        saturatedFat: 0.5,
+        transFat: 0,
+        cholesterol: 0,
+        sodium: 60,
+        totalCarbs: 18,
+        dietaryFiber: 1,
+        totalSugars: 8,
+        addedSugars: 2,
+        protein: 4,
+        vitaminD: 0,
+        calcium: 0,
+        iron: 0,
+        potassium: 0,
+        confidence: 0.9,
+        productName: "Yogurt Cup",
+      };
+
+      const mockItem = createMockScannedItem({
+        id: 7,
+        userId: "1",
+        productName: "Yogurt Cup",
+        sourceType: "label",
+      });
+      vi.mocked(storage.createScannedItemWithLog).mockResolvedValue(mockItem);
+
+      const session1 = storage.createLabelSession("1", labelData);
+      await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId: session1, servingsConsumed: 1 });
+
+      const session3 = storage.createLabelSession("1", labelData);
+      await request(app)
+        .post("/api/photos/confirm-label")
+        .set("Authorization", "Bearer token")
+        .send({ sessionId: session3, servingsConsumed: 3 });
+
+      const calls = vi.mocked(storage.createScannedItemWithLog).mock.calls;
+      expect(calls).toHaveLength(2);
+      const [itemArgAt1] = calls[0];
+      const [itemArgAt3, logArgAt3] = calls[1];
+
+      // Same product, same macros — the bands describe the product, not how
+      // much of it was eaten (AC1).
+      expect(itemArgAt3).toEqual(itemArgAt1);
+      expect(logArgAt3).toEqual(expect.objectContaining({ servings: "3" }));
+    });
   });
 
   describe("Session bounds", () => {
