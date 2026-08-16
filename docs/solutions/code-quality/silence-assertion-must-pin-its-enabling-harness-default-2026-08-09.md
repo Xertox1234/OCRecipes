@@ -82,6 +82,7 @@ announcer; the fix is one assertion and one import.
 
 ## See Also
 
+- [Pin a silence claim to the stream the claim is about](silence-claim-must-pin-the-stream-it-claims-2026-08-16.md) — the sibling facet: this doc pins the enabling condition, that one the observed surface (stdout vs combined stream).
 - [A verification that scans ZERO inputs is green and meaningless](verification-that-scans-zero-inputs-is-green-and-meaningless-2026-08-07.md) — the same vacuous-green family, for verification runs.
 - [A test comment must claim only what its own harness can observe](a-test-comment-must-claim-only-what-its-own-harness-can-observe-2026-08-06.md) — the sibling mock-boundary rule; both came out of the same announcer cleanup.
 - [A stated invariant is not an enforced one](../conventions/a-stated-invariant-is-not-an-enforced-one-2026-08-06.md) — the general principle this specializes to negative tests.

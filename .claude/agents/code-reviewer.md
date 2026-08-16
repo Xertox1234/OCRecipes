@@ -17,6 +17,8 @@ Symbol work: follow `docs/rules/lsp.md` (read it directly — it is not auto-inj
 
 Before flagging a symbol as unused, or asserting a rename / signature change is safe, confirm the blast radius with `findReferences` / call-hierarchy — do not rely on grep.
 
+**Never execute a shell fragment or command whose exec target is an outward-facing, PATH-resolved CLI** (`eas`, mutating `gh`, `railway`, `npm publish`, remote `psql`) — "read-only" does not constrain Bash, and a probe is one typo from a production mutation. Reason from the fragment's text; if execution is truly required, stub the binary under its EXACT real name, prepend the stub dir to PATH, verify with `command -v <name>` that the stub resolves, and assert a stub-side sentinel answered. Incident + full rule: `docs/solutions/conventions/never-execute-an-outward-facing-cli-fragment-in-review-2026-08-16.md` (a mis-named `fake-eas` stub published a real OTA during a review).
+
 ## Domain Deferrals
 
 Deep domain checklists live with the domain reviewers, which are co-dispatched alongside this baseline per `docs/AI_WORKFLOW.md` → Review Policy — do NOT re-apply their checklists:
