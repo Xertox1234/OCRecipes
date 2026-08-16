@@ -5,28 +5,50 @@
  * be imported in a test; the deletion predicate lives here so the suite
  * asserts on the exact SQL the script executes.
  */
-import { and, ilike, or, sql } from "drizzle-orm";
-import { communityRecipes } from "../shared/schema";
+import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { communityRecipes, users } from "../shared/schema";
 
 /**
- * The deletion perimeter. Junk criteria (any of):
+ * The deletion perimeter. Scoped to orphan (`authorId IS NULL`) or
+ * demo-authored rows — mirroring `cleanup-seed-recipes-utils.ts`'s
+ * `authorIdCondition` — ANDed with any of the junk criteria:
  *   - title is exactly "test recipe" (case-insensitive, NO wildcards)
- *   - trimmed title under 3 characters
+ *   - trimmed title under 3 characters. Kept in scope deliberately: a
+ *     legitimate short title like "GF" could match, but under this author
+ *     scope it can only ever delete an orphan (`authorId IS NULL` — note
+ *     `authorId` is `onDelete: "set null"`, so this includes recipes left
+ *     behind by a deleted account, not only seed/test cruft) or a
+ *     demo-authored row — never a live real user's recipe. That residual
+ *     is the same one the sibling `cleanup-seed-recipes` script's orphan
+ *     scope already accepts, and is a large reduction from the prior
+ *     no-scoping perimeter (deletable regardless of author). Decided here
+ *     rather than raising the threshold, since the author scope already
+ *     closes the live-user blast radius.
  *   - empty instructions AND empty ingredients (both — a draft with only
  *     instructions must survive)
- * NOTE: no authorId scoping (unlike cleanup-seed-recipes) — deletes across
- * all users. Surfaced as a follow-up finding, deliberately unchanged here.
  */
-export function buildJunkCommunityRecipeWhere() {
-  return or(
-    // Exact "Test Recipe" match (case-insensitive)
-    ilike(communityRecipes.title, "test recipe"),
-    // Title under 3 chars
-    sql`LENGTH(TRIM(${communityRecipes.title})) < 3`,
-    // Empty instructions AND empty ingredients
-    and(
-      sql`COALESCE(jsonb_array_length(${communityRecipes.instructions}), 0) = 0`,
-      sql`COALESCE(jsonb_array_length(${communityRecipes.ingredients}), 0) = 0`,
+export function buildJunkCommunityRecipeWhere(
+  demoUserId: (typeof users.$inferSelect)["id"] | null,
+) {
+  const authorIdCondition = demoUserId
+    ? or(
+        isNull(communityRecipes.authorId),
+        eq(communityRecipes.authorId, demoUserId),
+      )
+    : isNull(communityRecipes.authorId);
+
+  return and(
+    authorIdCondition,
+    or(
+      // Exact "Test Recipe" match (case-insensitive)
+      ilike(communityRecipes.title, "test recipe"),
+      // Title under 3 chars
+      sql`LENGTH(TRIM(${communityRecipes.title})) < 3`,
+      // Empty instructions AND empty ingredients
+      and(
+        sql`COALESCE(jsonb_array_length(${communityRecipes.instructions}), 0) = 0`,
+        sql`COALESCE(jsonb_array_length(${communityRecipes.ingredients}), 0) = 0`,
+      ),
     ),
   );
 }

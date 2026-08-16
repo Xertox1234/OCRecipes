@@ -1,6 +1,6 @@
 ---
 title: "cleanup-junk-recipes: add author scoping and fix the 2-char-title branch"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-16
 updated: 2026-08-16
@@ -21,9 +21,9 @@ Surfaced in PR #825's review and PR body as a known-gap, deliberately unchanged 
 
 ## Acceptance Criteria
 
-- [ ] `buildJunkCommunityRecipeWhere` scopes to orphan (`authorId IS NULL`) or demo-authored rows, mirroring `cleanup-seed-recipes`' `authorIdCondition`
-- [ ] Decision recorded on the `< 3` branch: either raise/remove it or keep it inside the author scope with a comment
-- [ ] SQL-rendering tests updated: author perimeter ANDed around the OR group; conflict/param-count non-vacuity kept green
+- [x] `buildJunkCommunityRecipeWhere` scopes to orphan (`authorId IS NULL`) or demo-authored rows, mirroring `cleanup-seed-recipes`' `authorIdCondition`
+- [x] Decision recorded on the `< 3` branch: either raise/remove it or keep it inside the author scope with a comment
+- [x] SQL-rendering tests updated: author perimeter ANDed around the OR group; conflict/param-count non-vacuity kept green
 
 ## Implementation Notes
 
@@ -48,3 +48,20 @@ Copy the `authorIdCondition` shape from `server/scripts/cleanup-seed-recipes-uti
 ### 2026-08-16
 
 - Initial creation from PR #825 known-gap.
+- Implemented: `buildJunkCommunityRecipeWhere(demoUserId)` now scopes to
+  orphan-or-demo-authored rows via `and(authorIdCondition, or(...criteria))`,
+  copied verbatim in shape from `cleanup-seed-recipes-utils.ts`. Kept the
+  `< 3` char branch inside the author scope (not raised/removed) — a
+  legitimate short title can only be deleted if orphaned or demo-authored,
+  never a live real user's recipe; documented in the leaf's doc comment.
+  Added a positive structural pin for the null-demoUserId branch and a
+  two-sided negative-control test proving both structural pins correctly
+  reject a flattened `or(authorCond, ...criteria)` regression (verified by
+  hand-mutating the source and confirming both tests go red, then
+  restoring). Dev-DB dry-run diff: unscoped vs. scoped match counts were
+  identical (3) on `nutricam` today — no regression, and the scope is a
+  forward-looking safety net. Reviewed by code-reviewer, server-reviewer,
+  and security-auditor — no CRITICAL findings; addressed 2 WARNINGs
+  (comment overstated the `< 3` branch's safety guarantee; missing
+  structural assertion on the null branch) and 2 SUGGESTIONs (operator
+  log line for demo-user resolution; negative-control test) inline.
