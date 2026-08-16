@@ -176,38 +176,79 @@ function estimateServingGrams(
 
 /**
  * Metric units as parseServingGrams accepts them. The trailing `\b` is baked
- * into this constant (not appended where it's used) so the alternation
- * cannot settle on a prefix (`g` inside `gallon`) in any regex built from
- * it. Longest-first ordering, matching the sibling constant this was built
- * from (`shared/lib/label-serving.ts`'s UNIT). Starts from that constant's
- * vocabulary — kept local rather than imported, since that module's own
- * docblock deliberately leaves this function's own callers alone — and adds
- * `grammes?`/`gms?`/`mls?`: this function parses OFF's crowdsourced free-text
- * `serving_size` field (not OCR'd printed labels like the sibling module),
- * where informal abbreviations are common. `gr` is deliberately NOT accepted
- * — it collides with the apothecary unit "grain", a genuinely different mass.
+ * into this constant (not appended where it's used) so the alternation cannot
+ * settle on a prefix (`g` inside `gallon`) in any regex built from it. The
+ * `\b` alone does that work: JS alternation backtracks, so `(?:g|grams?)\b`
+ * still reads "grams" correctly and reordering the alternatives changes no
+ * parse result, only backtracking cost. Do NOT assume inserting a new
+ * spelling "in the right position" is sufficient — it must end at a word
+ * boundary, and it must be pinned by a test.
+ *
+ * Vocabulary started from the sibling constant `shared/lib/label-serving.ts`'s
+ * UNIT — kept local rather than imported, since that module's own docblock
+ * deliberately leaves this function's callers alone — and then widened,
+ * because this function parses OFF's crowdsourced free-text `serving_size`
+ * field rather than OCR'd printed labels: informal abbreviations
+ * (`gm`/`gms`), the British `gramme(s)`, and non-English spellings
+ * (`grammi`/`gramos`/`gramas`/`gramm`, plus `grs`/`grm`) all appear there and
+ * were all accepted by the predecessor prefix-match.
+ *
+ * Bare `gr` is deliberately NOT accepted: on its own it is the symbol for the
+ * apothecary "grain", a genuinely different mass, and unit symbols do not
+ * pluralize — so `grs`/`grm` are not grain abbreviations and are safe to
+ * accept. That judgment is this module's own, not inherited from the sibling
+ * constant (which mentions neither `gr` nor `grain`).
  */
-const SERVING_UNIT = String.raw`(?:grammes?|grams?|gms?|g|millilit(?:re|er)s?|mls?)\b`;
+const SERVING_UNIT = String.raw`(?:grammes?|grammi|gramm|grams?|gramos|gramas|gms?|grs|grm|g|millilit(?:re|er)s?|mls?)\b`;
+
+/**
+ * The serving figure. `\.\d*` reproduces the predecessor's dot handling
+ * exactly; `,\d{1,2}` adds the continental-European decimal comma ("12,5 g"),
+ * which the European unit spellings above made reachable — without it the
+ * engine skips the "12," and matches the trailing "5", returning a plausible
+ * but 2.5x-wrong basis.
+ *
+ * The `{1,2}` bound is load-bearing, not tidying: a comma before exactly three
+ * digits is genuinely ambiguous ("1,000" is 1 in the EU and 1000 in the US),
+ * so the group declines to consume it and the value is refused rather than
+ * guessed at. A plain `[.,]?\d*` here would read "1,000 g" as 1 g — newly
+ * ACCEPTING a 1000x-wrong basis where today's code rejects it.
+ *
+ * Commas are normalized to `.` in `parseServingGrams` before `parseFloat`,
+ * which understands only `.`.
+ */
+const SERVING_FIGURE = String.raw`(\d+(?:\.\d*|,\d{1,2})?)`;
+
 const SERVING_GRAMS_PAREN = new RegExp(
-  String.raw`\((\d+\.?\d*)\s*${SERVING_UNIT}\)`,
+  String.raw`\(${SERVING_FIGURE}\s*${SERVING_UNIT}\)`,
 );
 const SERVING_GRAMS_BARE = new RegExp(
-  String.raw`(\d+\.?\d*)\s*${SERVING_UNIT}`,
+  String.raw`${SERVING_FIGURE}\s*${SERVING_UNIT}`,
 );
 
 /**
- * Parse numeric grams from a serving size string like "30g" or "1 cup (240g)".
+ * Parse a numeric serving basis from a serving size string like "30g" or
+ * "1 cup (240g)".
  *
  * The unit is matched as a whole word (trailing `\b`): "1 gallon" and
  * "2 glasses" must not read as 1 and 2 grams just because their unit begins
  * with "g" — the old alternation had no boundary and accepted any unit that
  * merely started with "g" or "ml".
+ *
+ * CAVEAT — the return is named grams but volume units are accepted and
+ * returned UNCONVERTED, i.e. assuming density = 1 g/ml. That is close enough
+ * for water-like drinks (and "250 millilitres" reading as 250 is a genuine
+ * improvement over refusing it outright), but it is wrong wherever density
+ * isn't ~1: oils (~0.92, ~8% over-reported), syrups (~1.4, ~29%
+ * under-reported), spirits (~0.79, ~21% over-reported). A real conversion
+ * needs a per-product density, which OFF does not reliably carry, so it is
+ * deliberately not attempted here.
  */
 export function parseServingGrams(raw: string): number | null {
   if (!raw) return null;
   const lower = raw.toLowerCase();
   const m = lower.match(SERVING_GRAMS_PAREN) || lower.match(SERVING_GRAMS_BARE);
-  return m ? parseFloat(m[1]) : null;
+  return m ? parseFloat(m[1].replace(",", ".")) : null;
 }
 
 /**
