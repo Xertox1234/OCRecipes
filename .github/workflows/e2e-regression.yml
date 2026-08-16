@@ -80,6 +80,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # macos-14 defaults to Xcode 15.4, but React Native 0.81 requires >= 16.1
+      # (`pod install` fails with "Please upgrade XCode" otherwise). 16.1/16.2
+      # are already installed on the image side-by-side — just not selected.
+      - name: Select Xcode 16.2
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
       # macOS runners do NOT ship a startable Postgres — install it explicitly
       # (matches the Postgres 16 used by the Android job's service container and
       # ci.yml), then start it and provision the role + database the server
