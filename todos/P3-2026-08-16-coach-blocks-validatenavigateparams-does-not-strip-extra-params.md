@@ -45,10 +45,30 @@ Related: `docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2
 
 ## Acceptance Criteria
 
+**AC1 and AC2 do NOT depend on PR #837** — they are implementable against current `main`
+today. Only AC3 and AC4 need #837 (see Dependencies). Do not let the live data-integrity
+bug sit open waiting on #837 if it stalls.
+
 - [ ] `validateNavigateParams` reassigns `val.params` to the parsed/stripped `result.data`
-      on success (or otherwise guarantees the navigated object carries only schema keys)
+      on success — **but first widen the two schemas below, or stripping will silently
+      break working behaviour.** Verified 2026-08-16 by probing the live module: two other
+      screens currently rely on extra keys surviving validation, and a naive "strip
+      everything not in the schema" fix would delete them: - `screenParamSchemas.FeaturedRecipeDetail = z.object({ recipeId: z.number() })`
+      (`shared/schemas/coach-blocks.ts:46`) — `recipeType` and `type` survive today and
+      are real fields on `RootStackParamList["FeaturedRecipeDetail"]`
+      (`client/navigation/RootStackNavigator.tsx:114-120`). - `screenParamSchemas.RecipeChat = z.object({ conversationId: z.number() })`
+      (`coach-blocks.ts:47`) — `initialMessage`, `remixSourceRecipeId`, and
+      `remixSourceRecipeTitle` survive today and are real fields on
+      `RootStackParamList["RecipeChat"]` (`RootStackNavigator.tsx:155-161`).
+      `initialMessage` is plausibly how the coach pre-fills a RecipeChat message.
+      For each: either widen the schema to include the tolerated field, or confirm and
+      document that the LLM never emits it before tightening.
 - [ ] A test proves a `{ itemId, barcode }` payload for `screen: "NutritionDetail"` has
-      `itemId` removed after validation — verified RED first against the current code
+      `itemId` removed after validation — verified RED first against the current code.
+      Exercise **both** call sites, not just `action_card`: the `suggestion_list` path
+      (`suggestionListSchema`, via `navigateActionSchema.superRefine`) reproduces the
+      identical leak and has zero existing coverage for it in
+      `shared/schemas/__tests__/coach-blocks.test.ts`.
 - [ ] The `as RootStackParamList["NutritionDetail"]` cast in `CoachChat.tsx` is either
       removed in favour of the now-trustworthy narrowed type, or its remaining necessity
       is documented at the call site
@@ -60,8 +80,12 @@ Related: `docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2
 
 - The single-line shape of the bug is `schema.safeParse(val.params)` used only for its
   `.success` boolean. Zod returns the stripped object on `result.data`; nothing reads it.
-- Check every branch of `validateNavigateParams`, not just the `NutritionDetail` arm —
-  the same validate-but-discard shape may repeat per screen.
+- Shape of the work, verified rather than guessed (2026-08-16): `validateNavigateParams`
+  is **one function with two call sites** covering **three screens** — one fix location.
+  The call sites are `blockActionSchema`'s inline `.superRefine` (`coach-blocks.ts:83-87`)
+  and the standalone `navigateActionSchema.superRefine(validateNavigateParams)` backing
+  `suggestionListSchema` (`coach-blocks.ts:126-128`). There are no per-screen branches to
+  hunt for.
 - Prefer fixing the stripping over deleting the `as` cast alone; the cast is a symptom,
   the non-stripping validator is the cause.
 - Depends on PR #837 having merged (it introduces the discriminated union this relies on).
@@ -77,13 +101,24 @@ Related: `docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2
 
 ## Dependencies
 
-- PR #837 (`todo/P2-2026-08-15-nutritiondetail-route-params-permit-illegal-mode-combinations`)
-  must merge first — it introduces the discriminated union and the docblock this updates.
+- **AC3 and AC4 only:** PR #837
+  (`todo/P2-2026-08-15-nutritiondetail-route-params-permit-illegal-mode-combinations`)
+  must merge first — it introduces the discriminated union that makes the cast removable
+  (AC3), and the `useNutritionLookup.ts` docblock text AC4 updates exists only on that
+  branch, not on `main`.
+- **AC1 and AC2 have no dependency.** Verified: #837's diff touches
+  `client/hooks/useNutritionLookup.ts` and `client/navigation/RootStackNavigator.tsx` and
+  never `shared/schemas/coach-blocks.ts` or `CoachChat.tsx`. The reassignment fix and its
+  regression test can land against `main` today. AC5 (zero follow-ups) means the todo
+  cannot _close_ until #837 lands, but the bug fix need not wait.
 
 ## Risks
 
-- Stripping changes what downstream consumers receive. Confirm no screen relies on an
-  extra key currently surviving validation before tightening.
+- Stripping changes what downstream consumers receive — and two concrete instances already
+  exist, enumerated under AC1: `FeaturedRecipeDetail` (`recipeType`, `type`) and
+  `RecipeChat` (`initialMessage`, `remixSourceRecipeId`, `remixSourceRecipeTitle`). These
+  are not hypothetical; they survive validation on `main` today. Widen those schemas or
+  document the fields as unused before tightening, or the fix silently breaks them.
 - Low reachability means a test is the only practical evidence; a manual repro would
   require coaxing the LLM into emitting the malformed payload.
 
