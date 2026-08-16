@@ -15,6 +15,7 @@ import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
 import { usePremiumContext } from "@/context/PremiumContext";
 import { useTheme } from "@/hooks/useTheme";
+import { coachInitialRoute } from "./coachInitialRoute";
 
 export type ChatStackParamList = {
   ChatList: undefined;
@@ -79,7 +80,7 @@ export default function ChatStackNavigator() {
   return (
     <Stack.Navigator
       screenOptions={screenOptions}
-      initialRouteName={isCoachPro ? "CoachPro" : "ChatList"}
+      initialRouteName={coachInitialRoute(isCoachPro)}
     >
       <Stack.Screen
         name="ChatList"
