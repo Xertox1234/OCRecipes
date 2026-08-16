@@ -132,10 +132,42 @@ getById<T>(recipeId: number)` was blind on both `main` and the first
   `ARROW_TAIL` gate was added, and came back clean — so "clean" is not an
   artifact of the gate hiding a true positive. Re-run after the gate: still
   clean.
+- **W2 follow-up — the gate initially removed coverage; closed.** Requiring
+  `=>` on the _same line_ as the closing paren introduced a **net-new** false
+  negative that the first widening had detected: a prettier-wrapped signature
+  puts the arrow on its own line —
+
+  ```ts
+  export const getEntryById = async (
+    entryId: number
+  )
+    : Promise<Entry> => {
+  ```
+
+  — leaving the same-line tail empty, so the gate skipped it. Confirmed by
+  probe: branch HEAD `exit=1 FLAGGED`, first gate `exit=0 not flagged`. A
+  security detector must not lose a shape it already covered, so this was
+  fixed rather than documented: `extractParams` now also returns `restLine`,
+  and `hasArrowTail()` looks ahead to the next non-blank line (bounded by
+  `ARROW_TAIL_LOOKAHEAD_LINES = 5`) **only when the closing paren ends its
+  line**. `ARROW_TAIL` is start-anchored, so an unrelated following statement
+  (`const x = () => 1;`) does not satisfy it, and both wrapped non-function
+  const variants stay unflagged. Two tests added (deny: wrapped arrow — RED
+  against the pre-lookahead commit; pass: wrapped non-function const).
+
+- **Callers re-verified this round** (not inherited): `git grep -n
+"check-idor-storage"` returns exactly three invocation sites —
+  `package.json` lint-staged under the `server/storage/*.ts` glob,
+  `.github/workflows/ci.yml:55` (no-arg), and `scripts/preflight.sh:175`
+  (no-arg). Both modes are scoped to `server/storage`; there is no third
+  caller with a broader glob.
 - **Known residuals** (documented in the script, none present in
-  `server/storage/` today): an arrow whose `=>` sits on a line _after_ its
-  closing paren; nested generics (`<T extends Record<string, number>>`, since
-  `[^>]*` stops at the first `>`); function-expression consts
+  `server/storage/` today, all pre-existing — none introduced by this round):
+  nested generics (`<T extends Record<string, number>>`, since `[^>]*` stops
+  at the first `>`); function-expression consts
   (`export const foo = function (id) {…}`); curried arrow chains.
-- Tests: 12 → 16 in `scripts/__tests__/check-idor-storage.test.ts`, all green.
-  The four new/changed cases were verified RED before the fix.
+- Tests: 12 → 18 in `scripts/__tests__/check-idor-storage.test.ts`, all green.
+  Every new/changed case was verified RED against the right baseline first
+  (the arrow/generic deny cases and the non-function pass case against branch
+  HEAD; S1 against `origin/main`; the wrapped-arrow deny case against the
+  pre-lookahead commit `ccf442c6`).

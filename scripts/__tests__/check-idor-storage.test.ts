@@ -248,6 +248,52 @@ describe("check-idor-storage.js", () => {
       expect(out).toContain("No IDOR-risk storage functions found in 1 files");
     });
 
+    it("detects an arrow export whose `=>` wrapped onto a line after the closing paren", () => {
+      // Regression guard for the `=>`-required gate: a prettier-wrapped
+      // signature puts `): Promise<T> => {` on its own line, so the closing
+      // paren ends its line and the same-line tail is empty. Without the
+      // lookahead the gate turns a real arrow export invisible — a strictly
+      // worse failure than the false positive the gate exists to stop.
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrow-wrapped.ts",
+        [
+          "export const getEntryByIdWrapped = async (",
+          "  entryId: number",
+          ")",
+          "  : Promise<Entry> => {",
+          "  return entryId;",
+          "};",
+          "",
+        ].join("\n"),
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryByIdWrapped");
+      expect(out).toContain("entryId");
+    });
+
+    it("still ignores a non-function const whose closing paren ends its line", () => {
+      // The other side of the lookahead: a bare `)` on its own line must not
+      // become a licence to treat any parenthesised const as a function.
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "non-function-wrapped.ts",
+        [
+          "export const cachedRecipeIds = (",
+          "  someRecipeId",
+          ")",
+          ";",
+          "",
+        ].join("\n"),
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status, out).toBe(0);
+      expect(out).toContain("No IDOR-risk storage functions found in 1 files");
+    });
+
     it("parses arrow exports rather than skipping them — flags only the unscoped one", () => {
       // Discriminating by construction: with the pre-widening regex BOTH
       // exports are invisible and the run exits 0, so naming exactly one of
