@@ -26,7 +26,10 @@ describe("cleanup-junk-mealplan-recipes-utils", () => {
   describe("buildJunkMealplanTitleWhere — the deletion perimeter", () => {
     it("targets meal_plan_recipes.title with an IN over exactly the junk list", () => {
       const q = render(buildJunkMealplanTitleWhere());
-      expect(q.sql.toLowerCase()).toContain('"title" in (');
+      // Table-qualified on purpose: the two cleanup leaves are structurally
+      // near-identical, so a copy-paste of the wrong table's column would
+      // pass a bare `"title"` check silently.
+      expect(q.sql.toLowerCase()).toContain('"meal_plan_recipes"."title" in (');
       expect(q.params).toEqual(JUNK_TITLES);
     });
 
@@ -69,6 +72,18 @@ describe("cleanup-junk-mealplan-recipes-utils", () => {
       expect(parseCleanupFlags(["node", "s", "--dry-run"])).toEqual({
         commit: false,
       });
+    });
+
+    it("--dry-run WINS over --commit in either order (safety flag is a veto)", () => {
+      // An operator keeping a habitual --dry-run in a saved command while
+      // adding --commit plausibly believes the safety flag still protects
+      // them. Both flags together must preview, never delete.
+      expect(parseCleanupFlags(["node", "s", "--commit", "--dry-run"])).toEqual(
+        { commit: false },
+      );
+      expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual(
+        { commit: false },
+      );
     });
   });
 

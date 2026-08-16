@@ -35,12 +35,13 @@ export function buildJunkMealplanTitleWhere() {
 }
 
 /**
- * CLI contract: preview by default; deletion only on an explicit --commit.
- * (`--dry-run` is accepted as a no-op alias so stale invocations from the old
- * live-by-default contract keep previewing — the safe failure direction.)
+ * CLI contract: preview by default; deletion only on an explicit --commit,
+ * and `--dry-run` is a VETO — it wins even alongside --commit, so a stale
+ * habitual --dry-run in a saved command stays a safety net rather than being
+ * silently ignored (the safe failure direction in every combination).
  */
 export function parseCleanupFlags(argv: readonly string[]): {
   commit: boolean;
 } {
-  return { commit: argv.includes("--commit") };
+  return { commit: argv.includes("--commit") && !argv.includes("--dry-run") };
 }

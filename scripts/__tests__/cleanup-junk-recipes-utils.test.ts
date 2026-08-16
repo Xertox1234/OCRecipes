@@ -27,9 +27,10 @@ describe("cleanup-junk-recipes-utils", () => {
       expect(sql).toContain("ilike");
       expect(sql).toContain("length(trim(");
       expect(sql).toContain("jsonb_array_length");
-      expect(sql).toContain('"title"');
-      expect(sql).toContain('"instructions"');
-      expect(sql).toContain('"ingredients"');
+      // Table-qualified on purpose — see the mealplan sibling's rationale.
+      expect(sql).toContain('"community_recipes"."title"');
+      expect(sql).toContain('"community_recipes"."instructions"');
+      expect(sql).toContain('"community_recipes"."ingredients"');
     });
 
     it("PIN: the title match is the exact phrase 'test recipe' — no wildcards", () => {
@@ -72,6 +73,15 @@ describe("cleanup-junk-recipes-utils", () => {
       expect(parseCleanupFlags(["node", "s", "--dry-run"])).toEqual({
         commit: false,
       });
+    });
+
+    it("--dry-run WINS over --commit in either order (safety flag is a veto)", () => {
+      expect(parseCleanupFlags(["node", "s", "--commit", "--dry-run"])).toEqual(
+        { commit: false },
+      );
+      expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual(
+        { commit: false },
+      );
     });
   });
 
