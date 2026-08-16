@@ -212,7 +212,36 @@ export function useNutritionLookup(params: {
   const effectivePer100g = useMemo((): NutritionPer100g | null => {
     if (validatedData) return validatedData.per100g;
     if (!nutrition || nutrition.calories === undefined) return null;
-    const grams = servingSizeGrams || 100;
+    // NOT `|| 100`. Without a gram weight there is no per-100g basis to
+    // back-calculate, and a fabricated one is worse than none: `|| 100` made
+    // `factor` exactly 1, so the PER-SERVING values in `nutrition` were
+    // returned labelled per-100 g. `isPer100g` stays false on that path too,
+    // so not even the "Values shown per 100g" banner disclosed it.
+    //
+    // The itemId/saved-item path is where that state is reached: its effect
+    // calls only `setNutrition` (see `existingItem` below), leaving
+    // `servingSizeGrams` at its null initialiser while a `scanned_items` row's
+    // per-serving values sit on screen. Amy's chili — 680 mg of sodium in a
+    // 236 g can — then reads as 680 mg/100 g instead of 288: an FSA HIGH band
+    // where the truth is MEDIUM, and the same product banding differently
+    // depending on whether it was opened from a scan or from Today.
+    //
+    // No consumer reads it there today — `recalculateNutrition` is the only
+    // one, and it is reachable only through `ServingControls`, gated on
+    // `!itemId` (NutritionDetailScreen.tsx). That is an accident of which
+    // components happen to render, not a guard, and it would arm silently.
+    //
+    // `> 0`, not `!= null`, for the same reason as `recalculateNutrition`'s
+    // guard below: `0 || 100` is 100, so a zero basis fabricated identically
+    // rather than dividing by zero. A zero is not a measurement.
+    //
+    // Placement matters: this sits BELOW the `validatedData` branch. The
+    // direct-OFF fallback legitimately pairs a null `servingSizeGrams` with a
+    // real `validatedData.per100g` (an OFF record whose serving_size is "1
+    // bottle"), and hoisting this guard above that branch would blank the
+    // serving controls on a path that works. Pinned by a test.
+    const grams = servingSizeGrams;
+    if (!(grams != null && grams > 0)) return null;
     const factor = 100 / grams;
     return {
       calories:

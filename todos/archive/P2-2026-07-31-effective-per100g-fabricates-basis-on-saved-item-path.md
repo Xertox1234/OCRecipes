@@ -1,9 +1,9 @@
 ---
 title: "effectivePer100g fabricates a per-100g basis on the saved-item path (armed by any new consumer)"
-status: backlog
+status: completed
 priority: medium
 created: 2026-07-31
-updated: 2026-08-10
+updated: 2026-08-15
 assignee:
 labels: [deferred, hooks, client-state]
 github_issue:
@@ -77,14 +77,14 @@ discloses it.
 
 ## Acceptance Criteria
 
-- [ ] `effectivePer100g` returns `null` when the gram basis cannot be established, rather
+- [x] `effectivePer100g` returns `null` when the gram basis cannot be established, rather
       than fabricating `factor = 1` from `|| 100`
-- [ ] The guard rejects a non-positive basis, not only `null` — `0` currently passes `||`
+- [x] The guard rejects a non-positive basis, not only `null` — `0` currently passes `||`
       but would divide to `Infinity`
-- [ ] `recalculateNutrition`'s existing behaviour is **unchanged** for every case that works
+- [x] `recalculateNutrition`'s existing behaviour is **unchanged** for every case that works
       today: it already returns early on `!effectivePer100g` (`:273`), so a null must fall
       into that path, not into the per-serving branch at `:246`
-- [ ] A test proves that on the saved-item path (`itemId` set, `servingSizeGrams` null)
+- [x] A test proves that on the saved-item path (`itemId` set, `servingSizeGrams` null)
       the basis is unresolvable — pinning that a future consumer cannot silently read a
       fabricated one. **`effectivePer100g` is NOT directly assertable**: it is an
       internal `useMemo` and is not on the hook's return surface. Observe it through
@@ -93,10 +93,10 @@ discloses it.
       path it must early-return on `!effectivePer100g` and leave `nutrition` untouched.
       Exporting the memo instead is acceptable **only** if the reviewer agrees widening
       the hook's public surface is worth it — prefer the behavioural assertion
-- [ ] A test covers the scan path with `validatedData` present, proving it still returns
+- [x] A test covers the scan path with `validatedData` present, proving it still returns
       `validatedData.per100g` byte-identically
-- [ ] A test covers `servingSizeGrams === 0` proving it yields null, not `Infinity`
-- [ ] `servingOptions`' `|| 100` at `:216` is **unchanged**
+- [x] A test covers `servingSizeGrams === 0` proving it yields null, not `Infinity`
+- [x] `servingOptions`' `|| 100` at `:216` is **unchanged**
 
 ## Implementation Notes
 
@@ -132,6 +132,57 @@ discloses it.
   a regression there is less likely to be noticed in manual testing. Lean on the tests.
 
 ## Updates
+
+### 2026-08-15 — SHIPPED (null guard only; optional follow-on deliberately not taken)
+
+`const grams = servingSizeGrams || 100` → `const grams = servingSizeGrams;` plus
+`if (!(grams != null && grams > 0)) return null;`, placed **below** the `validatedData`
+branch. Same `!(x != null && x > 0)` idiom the file already uses twice — in
+`recalculateNutrition`'s guard and in the direct-OFF `trustedGrams` assignment — so the
+three sites now read alike. Three tests added to
+`client/hooks/__tests__/useNutritionLookup.test.ts`; 120 tests green across the hook, its
+two sibling files, `NutritionDetailScreen`, `ServingControls`, and `nutrition-band-source`.
+
+**Latency claim re-verified before changing anything**, since these citations have drifted
+once already: `grep -rn recalculateNutrition client/` returns exactly one production call
+site (`ServingControls.tsx`, wired from `NutritionDetailScreen.tsx:445`), and
+`showServingControls` (`:261`) is still `!itemId && !!barcode && …`. Latent, not live —
+the PR description says so, and nothing user-visible changes.
+
+**The two saved-item tests were red first** and the red matters more than usual here. The
+obvious fixture — copied from the existing saved-item test in the isBeverage block — seeds
+a `scanned_items` row with **no `calories`**, which trips `effectivePer100g`'s _earlier_
+`nutrition.calories === undefined` guard and passes with or without this fix. The fixture
+carries calories precisely so the assertion reaches the code under test. Cf.
+`docs/solutions/code-quality/verification-that-scans-zero-inputs-is-green-and-meaningless-2026-08-07.md`.
+
+Two claims in the text above are wrong; left in place so this reads as written, corrected
+here:
+
+- **AC2's mechanism.** `0 || 100` is `100`, so a zero basis never divided to `Infinity` —
+  it fabricated a 100 g basis exactly as a null did. The guard is still right and still
+  needed; only the stated failure mode was wrong. The test asserts the real behaviour, and
+  drives the zero through the exported `setServingSizeGrams` (no producer writes one on
+  this path today).
+- **The Risks note on identity churn is inverted.** A stable `null` churns _less_ than a
+  fresh object literal per `nutrition` change, so `recalculateNutrition`'s identity got
+  more stable, not less. No render loop is reachable from this direction and no test was
+  written for one.
+
+**A third test guards the real footgun in this edit**, which is placement rather than
+logic: the direct-OFF fallback legitimately pairs `servingSizeGrams === null` with a real
+`validatedData.per100g` (an OFF record whose `serving_size` is "1 bottle"). A guard hoisted
+one line higher would null that out and kill the serving controls on a path that works
+today. That test passes pre-fix by design — it is a placement pin, not a bug reproduction.
+
+**The optional follow-on (parse `existingItem.servingSize` → `setServingSizeGrams`) was
+not taken**, and should not be filed as its own todo without a consumer to justify it. It
+would have zero user-visible effect today: `servingSizeGrams` reaches the UI only through
+`servingContextLabel`, which `NutritionDetailScreen:538` renders as
+`showServingControls ? servingContextLabel : undefined` — undefined on exactly the
+saved-item path the parse would serve. It buys a real basis for a future band consumer and
+nothing else, so it belongs to whoever adds that consumer, together with the
+`label-serving.ts` permissiveness review its docblock demands.
 
 ### 2026-08-10 — ACs amended, line citations re-verified
 

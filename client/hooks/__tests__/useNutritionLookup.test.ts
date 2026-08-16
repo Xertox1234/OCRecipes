@@ -717,6 +717,175 @@ describe("useNutritionLookup — unknown serving weight (direct-OFF fallback)", 
   });
 });
 
+/**
+ * The same `|| 100` defect shape as the block above, one layer up: this one is
+ * in `effectivePer100g` rather than `recalculateNutrition`.
+ *
+ * These tests exist because the saved-item path has NO serving controls
+ * (`showServingControls` is gated on `!itemId`, NutritionDetailScreen.tsx), so
+ * the fabricated basis is computed every render and never read. The protection
+ * is an accident of which components happen to render, not a guard — any
+ * future consumer of the per-100g basis that runs with `itemId` set (FSA
+ * traffic-light bands were the near miss) arms the bug with no test failure and
+ * no visible signal. `recalculateNutrition` is the observable proxy: it is on
+ * the hook's return surface, so a test can call it without `ServingControls`
+ * ever mounting.
+ */
+describe("useNutritionLookup — per-100g basis on the saved-item path", () => {
+  const mockServerFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockServerFetch);
+    // The micronutrients query fires on the itemId path — resolve it so it
+    // can't derail the assertions under test.
+    mockApiRequest.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        hasFrontLabelData: false,
+        foodName: "Organic Medium Chili",
+        micronutrients: [],
+      }),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /**
+   * A `scanned_items` row as `/api/scanned-items/:id` returns it: PER-SERVING
+   * values against a `servingSize` TEXT column that carries the weight only as
+   * prose. Amy's chili — 680 mg of sodium in a 236 g can, whose true basis is
+   * 288 mg/100 g (a MEDIUM FSA band) but which a fabricated basis reports as
+   * 680 (HIGH).
+   *
+   * `calories` is load-bearing in this fixture. `effectivePer100g` bails
+   * earlier on `nutrition.calories === undefined`, so a fixture without them
+   * exercises that guard instead of the one under test and passes either way.
+   */
+  const SAVED_ITEM = {
+    id: 42,
+    productName: "Organic Medium Chili",
+    brandName: "Amy's",
+    servingSize: "1 can (236 g)",
+    calories: 280,
+    protein: 14,
+    carbs: 35,
+    fat: 9,
+    fiber: 10,
+    sugar: 6,
+    sodium: 680,
+  };
+
+  function renderSavedItem() {
+    const { wrapper, queryClient } = createQueryWrapper();
+    // The scanned-items query has no queryFn of its own — it reads the cache.
+    // Freeze it so mounting doesn't attempt a background refetch against a
+    // bare test QueryClient (mirrors the isBeverage saved-item test above).
+    queryClient.setQueryDefaults(["/api/scanned-items"], {
+      staleTime: Infinity,
+    });
+    queryClient.setQueryData(["/api/scanned-items", 42], SAVED_ITEM);
+    return renderHook(() => useNutritionLookup({ itemId: 42 }), { wrapper });
+  }
+
+  it("leaves the per-100g basis unresolvable when the saved item carries no gram weight", async () => {
+    const { result } = renderSavedItem();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // The exact state that arms the bug: the itemId branch calls only
+    // `setNutrition`, so `validatedData` and `servingSizeGrams` both keep
+    // their null initialisers while real per-serving values are on screen.
+    expect(result.current.validatedData).toBeNull();
+    expect(result.current.servingSizeGrams).toBeNull();
+    expect(result.current.nutrition?.calories).toBe(280);
+
+    const before = result.current.nutrition;
+
+    // Stand in for a future consumer resolving the can's real weight and
+    // asking for it. `|| 100` made the memo's factor exactly 1, handing back
+    // the CAN's values labelled per-100 g — so this rescaled 280 kcal to
+    // 660.8 for the very same can, wrong in the alarming direction.
+    act(() => result.current.recalculateNutrition(236, 1));
+
+    expect(result.current.nutrition).toEqual(before);
+    expect(result.current.nutrition?.calories).toBe(280);
+    // Not "236g" — the per-100g branch overwrites `servingSize`, so the
+    // product's own wording surviving is itself evidence the branch was
+    // never entered.
+    expect(result.current.nutrition?.servingSize).toBe("1 can (236 g)");
+  });
+
+  it("treats a zero gram basis as unresolvable, not as 100 g", async () => {
+    const { result } = renderSavedItem();
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    // No producer writes 0 on this path today, so drive it through the setter
+    // the hook exports — the guard has to reject a non-positive basis, not
+    // merely a null one. `0 || 100` is 100, so pre-fix a zero fabricated
+    // exactly like a null did.
+    act(() => result.current.setServingSizeGrams(0));
+    const before = result.current.nutrition;
+
+    act(() => result.current.recalculateNutrition(236, 1));
+
+    expect(result.current.nutrition).toEqual(before);
+    expect(result.current.nutrition?.calories).toBe(280);
+  });
+
+  it("regression: a validated per-100g basis still wins when the weight is unknown", async () => {
+    // The direct-OFF fallback publishes trustworthy per-serving values against
+    // a serving of unknown weight, so it reaches `effectivePer100g` with
+    // `servingSizeGrams === null` AND a real `validatedData.per100g`. The new
+    // positive-grams guard must sit BELOW the validatedData branch: one line
+    // higher and it nulls this out, killing the serving controls on a path
+    // that works today.
+    mockServerFetch
+      .mockRejectedValueOnce(new Error("server unreachable"))
+      .mockResolvedValueOnce({
+        json: async () => ({
+          status: 1,
+          product: {
+            product_name: "Kombucha, Ginger Lemon",
+            brands: "GT's",
+            serving_size: "1 bottle",
+            nutriments: {
+              "energy-kcal_100g": 21,
+              proteins_100g: 0,
+              carbohydrates_100g: 5,
+              fat_100g: 0,
+              sugars_100g: 4,
+              "energy-kcal_serving": 100,
+              proteins_serving: 0,
+              carbohydrates_serving: 24,
+              fat_serving: 0,
+              sugars_serving: 19,
+            },
+          },
+        }),
+      });
+
+    const { wrapper } = createQueryWrapper();
+    const { result } = renderHook(
+      () => useNutritionLookup({ barcode: "0722430900001" }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.servingSizeGrams).toBeNull();
+    expect(result.current.validatedData).not.toBeNull();
+
+    // Factor is exactly 1, so the card must land on `validatedData.per100g`
+    // byte-identically.
+    act(() => result.current.recalculateNutrition(100, 1));
+
+    expect(result.current.nutrition?.calories).toBe(21);
+    expect(result.current.nutrition?.carbs).toBe(5);
+    expect(result.current.nutrition?.sugar).toBe(4);
+  });
+});
+
 describe("useNutritionLookup — isBeverage (Task 8)", () => {
   const mockServerFetch = vi.fn();
 
