@@ -239,5 +239,23 @@ describe("check-hardcoded-colors.js", () => {
       // Non-vacuity: a broken walker that finds nothing would also exit 0.
       expect(out).toContain("No hardcoded colors found in 2 files");
     });
+
+    it("excludes a stray client/*.test.tsx from the file count", () => {
+      // Pins findTsxFiles' own shouldSkipFile filtering (checkFile would skip
+      // these anyway; the walker filter keeps the reported "N files" count
+      // honest). The stray file carries a real hex color: a regressed walker
+      // that stops excluding .test. files would misreport the count (the
+      // load-bearing assertion below), and — were checkFile's own redundant
+      // skip check to regress too — the color would leak into the output,
+      // giving status/out a second, independent discriminator.
+      const root = makeRepo({
+        "A.tsx": "export const a = (t: T) => t.background;\n",
+        "Stray.test.tsx": 'export const s = { backgroundColor: "#FF6B35" };\n',
+      });
+      const { status, out } = runNoArg(root);
+      expect(status, out).toBe(0);
+      expect(out).toContain("No hardcoded colors found in 1 files");
+      expect(out).not.toContain("#FF6B35");
+    });
   });
 });

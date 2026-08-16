@@ -157,6 +157,41 @@ export function computeTotals(data: CoverageFinal): Totals {
 const DEFAULT_CONFIG = path.resolve(scriptDir, "../vitest.config.ts");
 
 /**
+ * Matches a single string/template literal, quote-type aware — used to
+ * enumerate actual literals rather than naively spanning between any two
+ * quote characters (which would treat everything between the end of one
+ * glob key and the start of the next as one "literal").
+ */
+const STRING_LITERAL =
+  /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
+
+/**
+ * `locateThresholdsBlock`'s brace counting and `maskNestedObjects`' depth
+ * tracking both assume no brace characters occur inside string literals
+ * within the block — true for a flat thresholds config, but a per-glob key
+ * using brace-expansion syntax (`"client/{screens,components}/**"`) would
+ * violate it and silently desync depth tracking instead of failing loudly.
+ * Detect that case and fail loudly instead. Strip line comments first — an
+ * apostrophe in a comment ("don't") followed by another apostrophe later on
+ * the same line, with a brace between them, would otherwise open a false
+ * pseudo-literal.
+ */
+function assertNoBraceInStringLiteral(block: string, configFile: string): void {
+  const withoutComments = block.replace(/\/\/[^\n]*/g, "");
+  for (const match of withoutComments.matchAll(STRING_LITERAL)) {
+    if (/[{}]/.test(match[0])) {
+      throw new Error(
+        `thresholds: { ... } block in ${configFile} contains a brace inside ` +
+          `a string literal (${match[0]}) — e.g. a glob key like ` +
+          `"client/{a,b}/**". This script's brace-counting parser cannot ` +
+          `handle brace-expansion in per-glob keys safely; rewrite the glob ` +
+          `to avoid { } characters.`,
+      );
+    }
+  }
+}
+
+/**
  * Isolate the COMPLETE `thresholds: { ... }` block by brace counting.
  * Whole-file `metric:\s*(\d+)` regexes with first-match semantics were
  * silently retargeted by any earlier `lines: NN` mention (a baseline comment,
@@ -164,7 +199,9 @@ const DEFAULT_CONFIG = path.resolve(scriptDir, "../vitest.config.ts");
  * non-greedy regex is not enough either: it ends at the FIRST `}`, truncating
  * before the flat metrics whenever a per-glob sub-object precedes them.
  * (Assumes no brace characters inside string literals within the block —
- * true for any plausible thresholds config.)
+ * enforced by assertNoBraceInStringLiteral below, scoped to this block only
+ * so a brace-containing string elsewhere in the file, e.g. a coverage
+ * `include` glob above the block, is out of scope and never trips it.)
  */
 function locateThresholdsBlock(
   source: string,
@@ -187,11 +224,9 @@ function locateThresholdsBlock(
       depth--;
       if (depth === 0) {
         const end = i + 1;
-        return {
-          start: startMatch.index,
-          end,
-          block: source.slice(startMatch.index, end),
-        };
+        const block = source.slice(startMatch.index, end);
+        assertNoBraceInStringLiteral(block, configFile);
+        return { start: startMatch.index, end, block };
       }
     }
   }

@@ -262,6 +262,89 @@ describe("coverage-ratchet", () => {
       expect(() => readCurrentThresholds(cfg)).toThrow(/thresholds/);
     });
 
+    it("throws /Unbalanced/ when the thresholds block never closes", () => {
+      // Distinct from the "no thresholds block" case above: here the
+      // `thresholds: {` match succeeds (so the block-locate loop starts),
+      // but depth never returns to 0 — the loop falls through to the
+      // Unbalanced throw instead of the "Could not find" one.
+      const dir = makeTmpDir();
+      const cfg = path.join(dir, "vitest.config.ts");
+      fs.writeFileSync(
+        cfg,
+        [
+          "export default defineConfig({",
+          "  test: {",
+          "    coverage: {",
+          "      thresholds: {",
+          "        lines: 50,",
+          "        statements: 50,",
+          // deliberately no closing braces
+        ].join("\n"),
+      );
+      expect(() => readCurrentThresholds(cfg)).toThrow(/Unbalanced/);
+    });
+
+    it("throws a clear error instead of silently mis-parsing a brace inside a glob key", () => {
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        '        "client/{screens,components}/**": { lines: 80, functions: 70, branches: 60, statements: 80 },',
+      );
+      expect(() => readCurrentThresholds(cfg)).toThrow(/brace/i);
+    });
+
+    it("does not throw on two adjacent per-glob keys (discriminates against a quote-spanning regex)", () => {
+      // Regression guard: a candidate implementation matched from a quote
+      // character to a LATER same-type quote character while excluding only
+      // quote characters (not braces) from the interior. Since the value
+      // object between "client/**" and "server/**" below (`: { lines: 80,
+      // ... },`) contains no quote characters, that construction tunnels
+      // straight through it — closing quote of "client/**" to opening quote
+      // of "server/**" — and false-positives on this legal config. This
+      // pins the fix: literals must be matched as complete, self-contained
+      // tokens (STRING_LITERAL), not spans between arbitrary quote pairs.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        [
+          '        "client/**": { lines: 80, functions: 70, branches: 60, statements: 80 },',
+          '        "server/**": { lines: 70, functions: 60, branches: 50, statements: 70 },',
+        ].join("\n"),
+      );
+      expect(() => readCurrentThresholds(cfg)).not.toThrow();
+    });
+
+    it("does not throw on a brace-containing string literal above the block (out of scope)", () => {
+      // Mirrors the real vitest.config.ts: `coverage.include` (a sibling of
+      // `thresholds`) uses a brace-expansion glob string. The check must be
+      // scoped to the located thresholds block only, or this would throw on
+      // the repo's own real config.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        '    include: ["client/**/*.{ts,tsx}"],',
+      );
+      expect(() => readCurrentThresholds(cfg)).not.toThrow();
+    });
+
+    it("does not throw when two apostrophes in a line comment straddle a brace", () => {
+      // Without stripping comments first, "don't" ... "that's" forms a false
+      // pseudo string-literal ("t use {invalid}, that") spanning the brace.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        "        // don't use {invalid}, that's the point",
+      );
+      expect(() => readCurrentThresholds(cfg)).not.toThrow();
+    });
+
     it("reads the FLAT metrics when a per-glob sub-object precedes them", () => {
       // Vitest supports per-glob threshold sub-objects INSIDE the block. The
       // naive non-greedy block regex ended at the sub-object's own `}` and a
