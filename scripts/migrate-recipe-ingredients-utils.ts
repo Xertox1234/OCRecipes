@@ -4,6 +4,28 @@
  * `main()` at module load).
  */
 
+/**
+ * CLI contract: preview by default; writes only on an explicit --commit, and
+ * `--dry-run` is a VETO — it wins even alongside --commit, so a stale
+ * habitual --dry-run in a saved command stays a safety net rather than being
+ * silently ignored (the safe failure direction in every combination).
+ * `vetoed` reports the conflict so the script's banner can NAME --dry-run as
+ * the reason, instead of telling the operator to pass a --commit they
+ * already passed. Same shape as `scripts/cleanup-junk-recipes-utils.ts`
+ * (PR #825) — see docs/solutions/logic-errors/safety-flag-must-veto-not-alias-2026-08-16.md.
+ */
+export function parseCleanupFlags(argv: readonly string[]): {
+  commit: boolean;
+  vetoed: boolean;
+} {
+  const commitRequested = argv.includes("--commit");
+  const dryRun = argv.includes("--dry-run");
+  return {
+    commit: commitRequested && !dryRun,
+    vetoed: commitRequested && dryRun,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Ingredient parsing
 // ---------------------------------------------------------------------------
@@ -85,6 +107,12 @@ export function cleanInstructionLine(raw: string): string {
  *   Pattern B — markdown "### Ingredients:" header with \n separation
  *   Pattern C — bold "**Ingredients**:" label embedded in a numbered element
  *   Pattern D — separate array elements with plain "Ingredients:" / "Instructions:" labels
+ *
+ * Returns `null` — meaning "skip this row, write nothing" — whenever the blob
+ * cannot be split into BOTH a non-empty ingredients list and a non-empty
+ * instruction list. All four null paths (no ingredients header, no steps
+ * header, empty ingredients section, empty steps section) are equivalent to
+ * the caller: the row is left exactly as it was found.
  */
 export function splitInstructionsArray(lines: string[]): SplitResult | null {
   // Join everything into one blob so multi-line strings are handled uniformly
@@ -134,6 +162,13 @@ export function splitInstructionsArray(lines: string[]): SplitResult | null {
         line.length > 0 &&
         !/^(?:instructions|steps|preparation|cooking|directions)/i.test(line),
     );
+
+  // DATA-LOSS GUARD, mirroring the ingredients guard above. The caller writes
+  // `instructions` straight over `communityRecipes.instructions` on --commit,
+  // and this script keeps NO backup table (unlike migrate-instructions.ts),
+  // so an empty array here would destroy the original prose irrecoverably.
+  // Skipping the row costs a manual follow-up; writing [] costs the recipe.
+  if (instructionLines.length === 0) return null;
 
   return { ingredients, instructions: instructionLines };
 }

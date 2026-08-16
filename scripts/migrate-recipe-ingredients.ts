@@ -6,9 +6,19 @@
  * Affected recipes have `ingredients: []` and their ingredient list stored
  * inside `instructions`, bracketed by "Ingredients:" and "Instructions:" labels.
  *
+ * Polarity: dry-run by DEFAULT — pass --commit (without --dry-run, which
+ * vetoes it) to actually write changes.
+ *
+ * This script creates NO backup table and its write REPLACES both
+ * `ingredients` and `instructions` on the matched row, so a bad split is
+ * unrecoverable. `splitInstructionsArray` therefore refuses any row it cannot
+ * split into a non-empty ingredients AND instructions pair; every refusal is
+ * printed as an explicit `[SKIP] ... NOTHING WRITTEN` line.
+ *
  * Usage:
- *   npx tsx scripts/migrate-recipe-ingredients.ts           # live run
- *   npx tsx scripts/migrate-recipe-ingredients.ts --dry-run # preview only
+ *   npx tsx scripts/migrate-recipe-ingredients.ts            # dry-run (default)
+ *   npx tsx scripts/migrate-recipe-ingredients.ts --commit   # actually write changes
+ *   (--dry-run vetoes --commit if both are passed)
  */
 import "dotenv/config";
 import { db } from "../server/db";
@@ -16,16 +26,47 @@ import { communityRecipes } from "../shared/schema";
 import { sql, eq } from "drizzle-orm";
 // Parsers live in the -utils leaf (DB-free) so the A-D pattern matrix is
 // unit-tested against the exact functions this script executes.
-import { splitInstructionsArray } from "./migrate-recipe-ingredients-utils";
+import {
+  splitInstructionsArray,
+  parseCleanupFlags,
+} from "./migrate-recipe-ingredients-utils";
 
-const DRY_RUN = process.argv.includes("--dry-run");
+// Dry-run by DEFAULT — pass --commit (without --dry-run, which vetoes it)
+// to actually write changes.
+const { commit: COMMIT, vetoed: VETOED } = parseCleanupFlags(process.argv);
+
+/**
+ * Best-effort, redacted description of the connection target, logged in the
+ * banner so the operator can confirm which DB they are about to rewrite before
+ * typing --commit. Never prints credentials (host/port/db name only).
+ * Mirrors `server/scripts/backfill-email-verified.ts::describeTarget`.
+ */
+function describeTarget(): string {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return "(DATABASE_URL unset)";
+  try {
+    const url = new URL(raw);
+    const dbName = url.pathname.replace(/^\//, "") || "(default)";
+    const port = url.port ? `:${url.port}` : "";
+    return `${url.hostname}${port}/${dbName}`;
+  } catch {
+    return "(unparseable DATABASE_URL)";
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log(DRY_RUN ? "=== DRY RUN ===" : "=== LIVE RUN ===");
+  console.log(
+    COMMIT
+      ? "=== LIVE RUN ==="
+      : VETOED
+        ? "=== DRY RUN ===  (--dry-run overrides --commit; drop --dry-run to write changes)"
+        : "=== DRY RUN ===  (pass --commit to write changes)",
+  );
+  console.log(`Target DB: ${describeTarget()}`);
   console.log();
 
   // Query all community recipes where ingredients array is empty
@@ -60,8 +101,13 @@ async function main() {
     const result = splitInstructionsArray(instructions);
 
     if (!result) {
+      // POSITIVE skip signal. `splitInstructionsArray` returns null for all
+      // four unsplittable shapes — including an empty steps section, which
+      // before the guard produced a [MIGRATE] line whose only tell was an
+      // ABSENT "First instruction step:" preview. Never leave "nothing was
+      // written" to be inferred from a missing line.
       console.log(
-        `[SKIP] #${recipe.id} "${recipe.title}" — no Ingredients:/Instructions: markers found`,
+        `[SKIP] #${recipe.id} "${recipe.title}" — NOTHING WRITTEN: could not split into a non-empty ingredients AND instructions pair (missing Ingredients:/Instructions: markers, or a section that parsed empty). Row left untouched.`,
       );
       skippedCount++;
       continue;
@@ -75,23 +121,22 @@ async function main() {
       `  After:  ${result.instructions.length} instruction steps, ${result.ingredients.length} ingredients`,
     );
 
-    if (result.ingredients.length > 0) {
-      console.log("  Sample ingredients:");
-      result.ingredients.slice(0, 3).forEach((ing) => {
-        const parts = [ing.quantity, ing.unit, ing.name].filter(Boolean);
-        console.log(`    - ${parts.join(" ")}`);
-      });
-      if (result.ingredients.length > 3) {
-        console.log(`    ... and ${result.ingredients.length - 3} more`);
-      }
+    // Both arrays are guaranteed non-empty here — `splitInstructionsArray`
+    // returns null rather than a half-empty result, so these previews always
+    // print for a [MIGRATE] row.
+    console.log("  Sample ingredients:");
+    result.ingredients.slice(0, 3).forEach((ing) => {
+      const parts = [ing.quantity, ing.unit, ing.name].filter(Boolean);
+      console.log(`    - ${parts.join(" ")}`);
+    });
+    if (result.ingredients.length > 3) {
+      console.log(`    ... and ${result.ingredients.length - 3} more`);
     }
 
-    if (result.instructions.length > 0) {
-      console.log(`  First instruction step: "${result.instructions[0]}"`);
-    }
+    console.log(`  First instruction step: "${result.instructions[0]}"`);
     console.log();
 
-    if (!DRY_RUN) {
+    if (COMMIT) {
       await db
         .update(communityRecipes)
         .set({
@@ -105,13 +150,19 @@ async function main() {
   }
 
   console.log("---");
-  console.log(`Migrated: ${migratedCount}`);
+  console.log(`${COMMIT ? "Migrated" : "Would migrate"}: ${migratedCount}`);
   console.log(`Skipped:  ${skippedCount}`);
 
-  if (DRY_RUN) {
-    console.log("\nDry run complete — no changes written.");
-  } else {
+  if (COMMIT) {
     console.log("\nMigration complete.");
+  } else if (VETOED) {
+    console.log(
+      "\nDry run complete — no changes written. (--dry-run overrode --commit)",
+    );
+  } else {
+    console.log(
+      "\nDry run complete — no changes written. Pass --commit to write changes.",
+    );
   }
 }
 

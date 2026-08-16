@@ -6,6 +6,7 @@ import {
   cleanIngredientLine,
   cleanInstructionLine,
   splitInstructionsArray,
+  parseCleanupFlags,
 } from "../migrate-recipe-ingredients-utils";
 
 describe("migrate-recipe-ingredients-utils", () => {
@@ -156,6 +157,81 @@ describe("migrate-recipe-ingredients-utils", () => {
       expect(
         splitInstructionsArray(["Ingredients:\nInstructions:\nMix well"]),
       ).toBeNull();
+    });
+
+    // DATA-LOSS GUARD. The caller writes `result.instructions` straight over
+    // `communityRecipes.instructions` on --commit, and this script has NO
+    // backup table (unlike migrate-instructions.ts). Before this guard existed
+    // a blob whose "Instructions:" marker sat at the very end returned
+    // `{ ingredients: [...], instructions: [] }`, so a live run replaced the
+    // original prose with an empty array — unrecoverable, and visible in the
+    // dry run only as an ABSENT "First instruction step:" line.
+    it("returns null when the steps section is empty (never write [] over the prose)", () => {
+      expect(
+        splitInstructionsArray(["Ingredients:\n2 cups oats\nInstructions:\n"]),
+      ).toBeNull();
+    });
+
+    it("returns null when the steps section is whitespace-only", () => {
+      expect(
+        splitInstructionsArray([
+          "Ingredients:\n2 cups oats\nInstructions:\n   \n",
+        ]),
+      ).toBeNull();
+    });
+
+    it("returns null when the steps section holds only a repeated header line", () => {
+      // The steps filter drops lines starting with the header words, so a
+      // duplicated "Directions" label leaves nothing behind.
+      // NOT an endorsement of that filter: it is over-broad and also eats a
+      // legitimate step like "Cooking time is 20 minutes". This test pins
+      // only the case where the filter empties the list — the guard then
+      // skips the row. The partial case (one step of five swallowed) is a
+      // SEPARATE open defect and is deliberately not asserted here.
+      expect(
+        splitInstructionsArray([
+          "Ingredients:",
+          "2 cups oats",
+          "Instructions:",
+          "Directions",
+          "",
+        ]),
+      ).toBeNull();
+    });
+  });
+
+  describe("parseCleanupFlags — dry-run by default", () => {
+    it("defaults to commit: false (a bare run must PREVIEW, never write)", () => {
+      // Regression-by-design: the script used to LIVE-write by default with
+      // opt-in --dry-run — the inverse of the repo's own cleanup-seed-recipes
+      // safety pattern. A bare invocation now previews.
+      expect(parseCleanupFlags(["node", "script.ts"])).toEqual({
+        commit: false,
+        vetoed: false,
+      });
+    });
+
+    it("arms writes only on an explicit --commit", () => {
+      expect(parseCleanupFlags(["node", "s", "--commit"])).toEqual({
+        commit: true,
+        vetoed: false,
+      });
+    });
+
+    it("accepts legacy --dry-run as a harmless no-op alias (nothing vetoed)", () => {
+      expect(parseCleanupFlags(["node", "s", "--dry-run"])).toEqual({
+        commit: false,
+        vetoed: false,
+      });
+    });
+
+    it("--dry-run WINS over --commit in either order — and REPORTS the veto", () => {
+      expect(parseCleanupFlags(["node", "s", "--commit", "--dry-run"])).toEqual(
+        { commit: false, vetoed: true },
+      );
+      expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual(
+        { commit: false, vetoed: true },
+      );
     });
   });
 

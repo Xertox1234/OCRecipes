@@ -8,6 +8,7 @@ applies_to: ["server/scripts/**", "scripts/**"]
 symptoms: ["A test file's header claims it 'pins the contract the SQL filter uses' but the tested function has zero importers outside the test", "Mutating the production predicate (e.g. anchoring an ILIKE pattern to unanchored) leaves the suite green", "A utils module exports both constants the script consumes AND a classifier function only the test consumes"]
 created: 2026-08-16
 severity: high
+last_updated: 2026-08-16
 ---
 
 # A lookalike test of a reimplemented predicate guards nothing — render the real query
@@ -68,6 +69,43 @@ its green is cited as evidence. Assert table-QUALIFIED columns
 (`"community_recipes"."title"`, not bare `"title"`) when sibling leaves are
 structurally similar, so a wrong-table copy-paste cannot pass.
 
+Even after implementing the "render the real query" fix, a structural-shape
+assertion like the regex above can still be too weak. During the
+`unify --dry-run/--commit polarity` work, a reviewer demonstrated that
+pulling the `LEGACY_TEST_PRODUCT_NAMES` `inArray()` disjunct out of the inner
+OR and top-level OR-ing it with the author-scoped AND — exactly the
+regression this file's scoping exists to prevent — still produced SQL that
+matched the `/\(.*author_id.*\)\s+and\s+\(/` regex **and** kept the same
+param count. A real user's "Original Pasta" recipe would again be deletable
+regardless of `authorId` while this regex-based guard stayed green.
+
+**Prefer exact full-string SQL assertions over regex/substring checks** when
+the rendered predicate is small enough to pin verbatim. For the same
+`null-demoUserId` case in
+`server/scripts/__tests__/cleanup-seed-recipes-utils.test.ts`, the verified
+fix replaces the regex with:
+
+```ts
+expect(q.sql).toBe(
+  '("community_recipes"."author_id" is null and ' +
+    '("community_recipes"."normalized_product_name" ilike $1 or ' +
+    '"community_recipes"."normalized_product_name" ilike $2 or ' +
+    '"community_recipes"."normalized_product_name" in ($3, $4, $5)))',
+);
+expect(q.params).toEqual([
+  SEED_PREFIX + "%",
+  TEST_PREFIX + "%",
+  ...LEGACY_TEST_PRODUCT_NAMES,
+]);
+```
+
+An exact match is tamper-evident against **any** regrouping, not just the
+specific one the regex author had in mind. When the predicate is too large
+for a full-string match (e.g., many disjuncts from a dynamic list), at least
+assert the **tree shape** of the condition (e.g., via a structured snapshot
+of the AST or by counting parenthesized groups at each depth) rather than
+relying on regex patterns that can be accidentally matched.
+
 ## Prevention
 
 - Before trusting any test that claims to pin a query/filter/predicate
@@ -78,6 +116,13 @@ structurally similar, so a wrong-table copy-paste cannot pass.
   (db-free leaf policy) and test that.
 - `PgDialect().sqlToQuery()` renders any Drizzle condition deterministically —
   DB-free, so preflight's pg_isready skip never applies.
+- When asserting the rendered SQL, prefer an **exact full-string match** on
+  `q.sql` together with `expect(q.params).toEqual(...)` over regex/substring
+  checks. A regex written to catch one known-bad regrouping can still pass a
+  different regrouping that breaks the same invariant. Reserve regex assertions
+  only for predicates that are genuinely too large to pin verbatim, and in that
+  case assert the AST structure (e.g., via a snapshot of the condition tree)
+  rather than a flat pattern.
 
 ## Related Files
 
