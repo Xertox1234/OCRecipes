@@ -6,7 +6,7 @@ module: shared
 tags: [npm, package-json, shell, eas, tooling, devops]
 applies_to: [package.json]
 created: '2026-06-22'
-last_updated: '2026-06-22'
+last_updated: '2026-08-16'
 ---
 
 # Guarding and forwarding npm-run args in a package.json script (`sh -c '...' --`)
@@ -76,9 +76,31 @@ Verify behavior without authenticating by shimming the wrapped binary on `PATH`
 with a stub that prints `"$@"`, then run the real npm script:
 
 ```sh
-PATH="$PWD/.tmp-bin:$PATH" npm run --silent update:preview -- --message "fix login"
+ALLOW_OUTWARD_CLI=1 PATH="$PWD/.tmp-bin:$PATH" npm run --silent update:preview -- --message "fix login"
 # stub sees: update --branch preview --platform all --message "fix login"  (one message arg)
 ```
+
+> **The `ALLOW_OUTWARD_CLI=1` prefix is required and is not optional noise.**
+> `.claude/hooks/guard-outward-cli.sh` denies this script in command position —
+> including every flag spelling between the runner, `run`, and the script name
+> (`-s`, `--silent`, `--flag=value`, `--flag value`), and the `yarn`/`pnpm`
+> equivalents — because it execs a real OTA against the production domain.
+> It is a guardrail, **not** a sandbox: quoted command words
+> (`npm run "update:preview"`), `corepack`/`bunx`-style wrappers, and an
+> interpreter `-c` string all still get through. The hook's own header carries
+> the full residuals list; read that rather than assuming coverage from this
+> sentence.
+> This recipe is indistinguishable from a real publish at the point the hook
+> sees it — the stub only exists further down the PATH, and the 2026-08-16
+> incident was caused by exactly this shape: an agent probing a PATH-stub
+> hypothesis whose stub was not actually in front of the real binary. Requiring
+> the explicit bypass is the point, not a workaround for it.
+>
+> This block previously omitted the prefix, and for a window the hook's
+> `npm run` matcher did not catch `--silent` between `run` and the script name —
+> so a doc that auto-injects into future sessions demonstrated a working bypass
+> of the gate protecting against the incident it describes. Both are fixed; see
+> `docs/solutions/logic-errors/deny-gate-flag-presence-check-needs-raw-text-and-every-spelling-2026-08-16.md`.
 
 ## Exceptions
 
