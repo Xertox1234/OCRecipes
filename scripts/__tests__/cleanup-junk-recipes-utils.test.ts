@@ -60,27 +60,30 @@ describe("cleanup-junk-recipes-utils", () => {
     it("defaults to commit: false (a bare run must PREVIEW, never delete)", () => {
       expect(parseCleanupFlags(["node", "script.ts"])).toEqual({
         commit: false,
+        vetoed: false,
       });
     });
 
     it("arms deletion only on an explicit --commit", () => {
       expect(parseCleanupFlags(["node", "s", "--commit"])).toEqual({
         commit: true,
+        vetoed: false,
       });
     });
 
-    it("accepts legacy --dry-run as a harmless no-op alias", () => {
+    it("accepts legacy --dry-run as a harmless no-op alias (nothing vetoed)", () => {
       expect(parseCleanupFlags(["node", "s", "--dry-run"])).toEqual({
         commit: false,
+        vetoed: false,
       });
     });
 
-    it("--dry-run WINS over --commit in either order (safety flag is a veto)", () => {
+    it("--dry-run WINS over --commit in either order — and REPORTS the veto", () => {
       expect(parseCleanupFlags(["node", "s", "--commit", "--dry-run"])).toEqual(
-        { commit: false },
+        { commit: false, vetoed: true },
       );
       expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual(
-        { commit: false },
+        { commit: false, vetoed: true },
       );
     });
   });

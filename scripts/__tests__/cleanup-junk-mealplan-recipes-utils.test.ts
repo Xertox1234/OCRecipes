@@ -58,31 +58,36 @@ describe("cleanup-junk-mealplan-recipes-utils", () => {
       // safety pattern. A bare invocation now previews.
       expect(parseCleanupFlags(["node", "script.ts"])).toEqual({
         commit: false,
+        vetoed: false,
       });
     });
 
     it("arms deletion only on an explicit --commit", () => {
       expect(parseCleanupFlags(["node", "s", "--commit"])).toEqual({
         commit: true,
+        vetoed: false,
       });
     });
 
-    it("accepts legacy --dry-run as a harmless no-op alias", () => {
+    it("accepts legacy --dry-run as a harmless no-op alias (nothing vetoed)", () => {
       // Stale invocations from old runbooks must keep previewing.
       expect(parseCleanupFlags(["node", "s", "--dry-run"])).toEqual({
         commit: false,
+        vetoed: false,
       });
     });
 
-    it("--dry-run WINS over --commit in either order (safety flag is a veto)", () => {
+    it("--dry-run WINS over --commit in either order — and REPORTS the veto", () => {
       // An operator keeping a habitual --dry-run in a saved command while
       // adding --commit plausibly believes the safety flag still protects
-      // them. Both flags together must preview, never delete.
+      // them. Both flags together must preview, never delete — and `vetoed`
+      // lets the script's banner NAME --dry-run as the reason, instead of
+      // telling the operator to pass the --commit they already passed.
       expect(parseCleanupFlags(["node", "s", "--commit", "--dry-run"])).toEqual(
-        { commit: false },
+        { commit: false, vetoed: true },
       );
       expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual(
-        { commit: false },
+        { commit: false, vetoed: true },
       );
     });
   });

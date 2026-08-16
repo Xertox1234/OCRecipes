@@ -13,12 +13,17 @@ import {
 } from "./cleanup-junk-mealplan-recipes-utils";
 
 // Predicate + flags live in the -utils leaf so the deletion perimeter is
-// unit-tested. Dry-run by DEFAULT — pass --commit to actually delete.
-const { commit: COMMIT } = parseCleanupFlags(process.argv);
+// unit-tested. Dry-run by DEFAULT — pass --commit (without --dry-run, which
+// vetoes it) to actually delete.
+const { commit: COMMIT, vetoed: VETOED } = parseCleanupFlags(process.argv);
 
 async function main() {
   console.log(
-    COMMIT ? "=== LIVE RUN ===" : "=== DRY RUN ===  (pass --commit to delete)",
+    COMMIT
+      ? "=== LIVE RUN ==="
+      : VETOED
+        ? "=== DRY RUN ===  (--dry-run overrides --commit; drop --dry-run to delete)"
+        : "=== DRY RUN ===  (pass --commit to delete)",
   );
 
   const junk = await db

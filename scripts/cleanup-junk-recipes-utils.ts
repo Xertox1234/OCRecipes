@@ -36,9 +36,18 @@ export function buildJunkCommunityRecipeWhere() {
  * and `--dry-run` is a VETO — it wins even alongside --commit, so a stale
  * habitual --dry-run in a saved command stays a safety net rather than being
  * silently ignored (the safe failure direction in every combination).
+ * `vetoed` reports the conflict so the script's banner can NAME --dry-run as
+ * the reason, instead of telling the operator to pass a --commit they
+ * already passed.
  */
 export function parseCleanupFlags(argv: readonly string[]): {
   commit: boolean;
+  vetoed: boolean;
 } {
-  return { commit: argv.includes("--commit") && !argv.includes("--dry-run") };
+  const commitRequested = argv.includes("--commit");
+  const dryRun = argv.includes("--dry-run");
+  return {
+    commit: commitRequested && !dryRun,
+    vetoed: commitRequested && dryRun,
+  };
 }

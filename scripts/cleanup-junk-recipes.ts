@@ -10,6 +10,7 @@
  *
  * Usage: npx tsx scripts/cleanup-junk-recipes.ts            # dry-run (default)
  *        npx tsx scripts/cleanup-junk-recipes.ts --commit   # actually delete
+ *        (--dry-run vetoes --commit if both are passed)
  */
 import "dotenv/config";
 import { db } from "../server/db";
@@ -20,12 +21,17 @@ import {
   parseCleanupFlags,
 } from "./cleanup-junk-recipes-utils";
 
-// Dry-run by DEFAULT — pass --commit to actually delete.
-const { commit: COMMIT } = parseCleanupFlags(process.argv);
+// Dry-run by DEFAULT — pass --commit (without --dry-run, which vetoes it)
+// to actually delete.
+const { commit: COMMIT, vetoed: VETOED } = parseCleanupFlags(process.argv);
 
 async function main() {
   console.log(
-    COMMIT ? "=== LIVE RUN ===" : "=== DRY RUN ===  (pass --commit to delete)",
+    COMMIT
+      ? "=== LIVE RUN ==="
+      : VETOED
+        ? "=== DRY RUN ===  (--dry-run overrides --commit; drop --dry-run to delete)"
+        : "=== DRY RUN ===  (pass --commit to delete)",
   );
 
   // Find junk recipes
