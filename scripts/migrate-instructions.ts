@@ -5,10 +5,20 @@
  * Polarity: no --dry-run/--commit pair — this script has NO preview mode and
  * always runs live on invocation (backup tables + ALTER TABLE column-type
  * changes can't be meaningfully "previewed" without a preview-aware verifier
- * too). Safety comes primarily from the --force-rerun guard below (refuses
- * to destroy an existing rollback point) plus the pre-ALTER verification
- * step, which aborts before the destructive column-type change if any row
- * fails to parse as a valid JSON array.
+ * too). What each safety mechanism actually covers:
+ *   - FIRST run: the rollback point is step 1's backup tables. That is the
+ *     only recovery path. `evaluateRerunGuard` is a no-op here — with no
+ *     backups on disk it never refuses, with or without --force-rerun.
+ *   - SECOND run: the --force-rerun guard is what protects you, by refusing
+ *     to let step 1 DROP the backups that are still your rollback point.
+ *   - Step 5's pre-ALTER verification only has teeth for rows the loop did
+ *     NOT process (pre-existing NULLs, a concurrent INSERT). Steps 2/3 write
+ *     `JSON.stringify(steps)` where `steps` is always a string[], so a row
+ *     the loop touched is a valid JSON array by construction and can never
+ *     trip the check.
+ *   - NOTHING here catches a semantically WRONG split by `parseTextToSteps`
+ *     — the text is already re-serialized as valid JSON by the time step 5
+ *     looks at it. Restoring from the backup tables is the only remedy.
  *
  * Run BEFORE changing the Drizzle schema:
  *   npx tsx scripts/migrate-instructions.ts
@@ -40,7 +50,30 @@ const FORCE_RERUN = process.argv.includes("--force-rerun");
 
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
 
+/**
+ * Best-effort, redacted description of the connection target. This script has
+ * no preview mode, so the banner is the operator's ONLY chance to notice they
+ * are pointed at the wrong DB. Never prints credentials (host/port/db only).
+ * Mirrors `server/scripts/backfill-email-verified.ts::describeTarget`.
+ */
+function describeTarget(): string {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return "(DATABASE_URL unset)";
+  try {
+    const url = new URL(raw);
+    const dbName = url.pathname.replace(/^\//, "") || "(default)";
+    const port = url.port ? `:${url.port}` : "";
+    return `${url.hostname}${port}/${dbName}`;
+  } catch {
+    return "(unparseable DATABASE_URL)";
+  }
+}
+
 async function migrate() {
+  // Printed before anything else — this script runs LIVE on invocation.
+  console.log("=== Migrate instructions text -> jsonb (LIVE, no dry run) ===");
+  console.log(`Target DB: ${describeTarget()}\n`);
+
   const client = await pool.connect();
 
   try {

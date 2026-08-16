@@ -158,6 +158,41 @@ describe("migrate-recipe-ingredients-utils", () => {
         splitInstructionsArray(["Ingredients:\nInstructions:\nMix well"]),
       ).toBeNull();
     });
+
+    // DATA-LOSS GUARD. The caller writes `result.instructions` straight over
+    // `communityRecipes.instructions` on --commit, and this script has NO
+    // backup table (unlike migrate-instructions.ts). Before this guard existed
+    // a blob whose "Instructions:" marker sat at the very end returned
+    // `{ ingredients: [...], instructions: [] }`, so a live run replaced the
+    // original prose with an empty array — unrecoverable, and visible in the
+    // dry run only as an ABSENT "First instruction step:" line.
+    it("returns null when the steps section is empty (never write [] over the prose)", () => {
+      expect(
+        splitInstructionsArray(["Ingredients:\n2 cups oats\nInstructions:\n"]),
+      ).toBeNull();
+    });
+
+    it("returns null when the steps section is whitespace-only", () => {
+      expect(
+        splitInstructionsArray([
+          "Ingredients:\n2 cups oats\nInstructions:\n   \n",
+        ]),
+      ).toBeNull();
+    });
+
+    it("returns null when the steps section holds only a repeated header line", () => {
+      // The steps filter drops lines starting with the header words, so a
+      // duplicated "Directions" label leaves nothing behind.
+      expect(
+        splitInstructionsArray([
+          "Ingredients:",
+          "2 cups oats",
+          "Instructions:",
+          "Directions",
+          "",
+        ]),
+      ).toBeNull();
+    });
   });
 
   describe("parseCleanupFlags — dry-run by default", () => {

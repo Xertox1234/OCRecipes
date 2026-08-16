@@ -56,6 +56,25 @@ const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
 // by `server/lib/image-store.ts::saveRecipeImage` (currently `.png`).
 const IMAGE_FILENAME_PATTERN = /^[a-zA-Z0-9._-]+\.(jpg|jpeg|png|webp)$/;
 
+/**
+ * Best-effort, redacted description of the connection target, logged in the
+ * banner so the operator can confirm which DB they are about to delete from
+ * before typing --commit. Never prints credentials (host/port/db name only).
+ * Mirrors `backfill-email-verified.ts::describeTarget`.
+ */
+function describeTarget(): string {
+  const raw = process.env.DATABASE_URL;
+  if (!raw) return "(DATABASE_URL unset)";
+  try {
+    const url = new URL(raw);
+    const dbName = url.pathname.replace(/^\//, "") || "(default)";
+    const port = url.port ? `:${url.port}` : "";
+    return `${url.hostname}${port}/${dbName}`;
+  } catch {
+    return "(unparseable DATABASE_URL)";
+  }
+}
+
 async function main() {
   const { commit, vetoed } = parseCleanupFlags(process.argv.slice(2));
   const mode = commit ? "COMMIT" : "DRY-RUN";
@@ -66,6 +85,7 @@ async function main() {
       : "  (pass --commit to delete)";
 
   console.log("=== Cleanup Junk Recipes ===");
+  console.log(`Target DB: ${describeTarget()}`);
   console.log(`Mode: ${mode}${modeNote}\n`);
 
   // Resolve demo user ID so we can restrict deletion to orphan/demo-authored
