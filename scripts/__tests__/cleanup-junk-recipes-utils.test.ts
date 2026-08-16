@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { eq, ilike, isNull, or, sql as drizzleSql } from "drizzle-orm";
+import { and, eq, ilike, isNull, or, sql as drizzleSql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { communityRecipes } from "../../shared/schema";
 import {
@@ -11,11 +11,12 @@ import {
 } from "../cleanup-junk-recipes-utils";
 
 /**
- * cleanup-junk-recipes deletes community recipes scoped to orphan
+ * cleanup-junk-recipes permanently DELETES community recipes, scoped to orphan
  * (authorId IS NULL) or demo-authored rows, mirroring
  * `server/scripts/cleanup-seed-recipes-utils.ts`'s `authorIdCondition`.
- * These tests render the real Drizzle predicate to SQL and pin both the
- * three OR junk-criteria branches and the author-scope conjunct.
+ * These tests render the real Drizzle predicate with `PgDialect().sqlToQuery()`
+ * and pin the WHOLE rendered string for both branches of the `demoUserId`
+ * ternary.
  */
 
 const DEMO_ID = "demo-user-42";
@@ -25,72 +26,126 @@ function render(where: SQL | undefined) {
   return new PgDialect().sqlToQuery(where);
 }
 
+/**
+ * The EXACT rendered SQL of the deletion perimeter — inline literals, on
+ * purpose, for a statement that permanently deletes rows:
+ *
+ *  - NOT a structural regex. A loose shape check such as
+ *    `/\(.*author_id.*\)\s+and\s+\(/` observes only that SOME author-scoped
+ *    conjunct exists somewhere in the string. It is satisfied by a PARTIAL
+ *    escape — `or(and(authorCond, or(a, b)), c)`, one junk criterion hoisted
+ *    OUT of the author scope — which would delete any user's matching recipe,
+ *    and which leaves the param list byte-identical so the param pins below
+ *    can't catch it either. The REGRESSION GUARD test constructs exactly that
+ *    shape and proves it.
+ *  - NOT `toMatchSnapshot()`. A snapshot gets re-blessed by `vitest -u`
+ *    without anyone reading the diff — the quiet-disarm failure mode this
+ *    perimeter can least afford.
+ *
+ * Table-qualification (`"community_recipes"."title"`, deliberate — see the
+ * mealplan sibling's rationale) and the `ILIKE`-without-wildcards phrasing are
+ * both inside the pin.
+ *
+ * Trade-off, accepted knowingly: an exact pin also goes red on a
+ * semantically-equivalent conjunct REORDER. For a permanent-DELETE perimeter
+ * that is the correct trade, not a defect — re-render the predicate, read the
+ * new SQL, and update the literal deliberately.
+ */
+const EXPECTED_SQL_WITH_DEMO =
+  '(("community_recipes"."author_id" is null or "community_recipes"."author_id" = $1) and ("community_recipes"."title" ilike $2 or LENGTH(TRIM("community_recipes"."title")) < 3 or (COALESCE(jsonb_array_length("community_recipes"."instructions"), 0) = 0 and COALESCE(jsonb_array_length("community_recipes"."ingredients"), 0) = 0)))';
+const EXPECTED_SQL_ORPHAN_ONLY =
+  '("community_recipes"."author_id" is null and ("community_recipes"."title" ilike $1 or LENGTH(TRIM("community_recipes"."title")) < 3 or (COALESCE(jsonb_array_length("community_recipes"."instructions"), 0) = 0 and COALESCE(jsonb_array_length("community_recipes"."ingredients"), 0) = 0)))';
+
+/**
+ * The three junk criteria, faithful to the source — INCLUDING the `and()`
+ * emptiness branch, which is the only construct in the real predicate that
+ * contributes an `and` to the rendered string. A negative-control fixture that
+ * drops it is not exercising the shape these pins have to discriminate.
+ */
+const junkCriteria = () =>
+  [
+    ilike(communityRecipes.title, "test recipe"),
+    drizzleSql`LENGTH(TRIM(${communityRecipes.title})) < 3`,
+    and(
+      drizzleSql`COALESCE(jsonb_array_length(${communityRecipes.instructions}), 0) = 0`,
+      drizzleSql`COALESCE(jsonb_array_length(${communityRecipes.ingredients}), 0) = 0`,
+    ),
+  ] as const;
+
+const authorScopeWithDemo = () =>
+  or(isNull(communityRecipes.authorId), eq(communityRecipes.authorId, DEMO_ID));
+
+/** `or(and(authorCond, or(ilike, emptiness)), shortTitle)` — the `< 3` branch
+ *  hoisted OUTSIDE the author scope. */
+function partialEscape(authorScope: SQL | undefined) {
+  const [ilikeCriterion, shortTitle, emptiness] = junkCriteria();
+  return render(
+    or(and(authorScope, or(ilikeCriterion, emptiness)), shortTitle),
+  );
+}
+
 describe("cleanup-junk-recipes-utils", () => {
   describe("buildJunkCommunityRecipeWhere — the deletion perimeter", () => {
-    it("with a demo user: scopes to orphan OR demo-authored, ANDed with the junk criteria", () => {
+    it("with a demo user: renders EXACTLY the orphan-OR-demo scope ANDed with the junk criteria", () => {
       const q = render(buildJunkCommunityRecipeWhere(DEMO_ID));
-      const sql = q.sql.toLowerCase();
-      expect(sql).toContain('"author_id" is null');
-      expect(sql).toContain("ilike");
-      expect(sql).toContain("length(trim(");
-      expect(sql).toContain("jsonb_array_length");
+      expect(q.sql).toBe(EXPECTED_SQL_WITH_DEMO);
       expect(q.params).toContain(DEMO_ID);
-      // The author scope must be a conjunct of the whole clause, not one arm
-      // of the junk-criteria OR — the and() wrapper renders as
-      // (author...) and (criteria...). This is the assertion that catches a
-      // regression flattening and(authorCond, or(a,b,c)) into
-      // or(authorCond, a, b, c), which would silently re-open the perimeter
-      // to every user.
-      expect(sql).toMatch(/\(.*author_id.*\)\s+and\s+\(/);
     });
 
-    it("without a demo user: bare orphan scope, demo id absent from params", () => {
+    it("without a demo user: renders EXACTLY the bare orphan scope, demo id absent from params", () => {
+      // The `null` branch is the one silently reached whenever the demo-user
+      // lookup fails to resolve — it degrades to the NARROWER orphan-only
+      // scope, and `isNull()` renders unparenthesized, so it is a genuinely
+      // different SQL shape that needs its own pin.
       const q = render(buildJunkCommunityRecipeWhere(null));
-      const sql = q.sql.toLowerCase();
-      expect(sql).toContain('"author_id" is null');
+      expect(q.sql).toBe(EXPECTED_SQL_ORPHAN_ONLY);
       expect(q.params).not.toContain(DEMO_ID);
-      // Table-qualified on purpose — see the mealplan sibling's rationale.
-      expect(sql).toContain('"community_recipes"."title"');
-      expect(sql).toContain('"community_recipes"."instructions"');
-      expect(sql).toContain('"community_recipes"."ingredients"');
-      // Same conjunct-structure guarantee as the demo-id case above, but
-      // isNull() renders unparenthesized (no leading "(" before "is null"),
-      // so the correct shape is `"author_id" is null and (...)`, not the
-      // `(...) and (...)` form the demo-id branch uses. Without this, a
-      // regression flattening and(isNull(authorId), or(a,b,c)) into
-      // or(isNull(authorId), a, b, c) — re-opening deletion to every user
-      // whenever the demo account can't be resolved — passes every other
-      // assertion in this file unchanged.
-      expect(sql).toMatch(/"author_id" is null\s+and\s+\(/);
     });
 
-    it("REGRESSION GUARD: a flattened or(authorCond, ...criteria) must NOT satisfy either structural pin above", () => {
-      // Two-sided negative control (docs/rules/harness.md: "a gate test
-      // needs a two-sided negative control") — constructs the exact
-      // flattened shape the structural pins above are meant to catch and
-      // confirms both regexes correctly reject it.
+    it("REGRESSION GUARD: neither a flattened NOR a partial author-scope escape satisfies the exact pins", () => {
+      // Two-sided negative control (docs/rules/harness.md: "a gate test needs
+      // a two-sided negative control"). Each fixture is built from
+      // `junkCriteria()` so it stays faithful to the real predicate.
+
+      // (a) Fully flattened: or(authorCond, ...criteria) — deletion re-opened
+      // to every user. The loose regexes this pin replaced DID catch this one.
       const flattenedWithDemo = render(
-        or(
-          isNull(communityRecipes.authorId),
-          eq(communityRecipes.authorId, DEMO_ID),
-          ilike(communityRecipes.title, "test recipe"),
-          drizzleSql`LENGTH(TRIM(${communityRecipes.title})) < 3`,
-        ),
+        or(authorScopeWithDemo(), ...junkCriteria()),
       );
+      expect(flattenedWithDemo.sql).not.toBe(EXPECTED_SQL_WITH_DEMO);
       expect(flattenedWithDemo.sql.toLowerCase()).not.toMatch(
         /\(.*author_id.*\)\s+and\s+\(/,
       );
 
-      const flattenedWithoutDemo = render(
-        or(
-          isNull(communityRecipes.authorId),
-          ilike(communityRecipes.title, "test recipe"),
-          drizzleSql`LENGTH(TRIM(${communityRecipes.title})) < 3`,
-        ),
+      const flattenedOrphanOnly = render(
+        or(isNull(communityRecipes.authorId), ...junkCriteria()),
       );
-      expect(flattenedWithoutDemo.sql.toLowerCase()).not.toMatch(
+      expect(flattenedOrphanOnly.sql).not.toBe(EXPECTED_SQL_ORPHAN_ONLY);
+      expect(flattenedOrphanOnly.sql.toLowerCase()).not.toMatch(
         /"author_id" is null\s+and\s+\(/,
       );
+
+      // (b) PARTIAL escape: only the `LENGTH(TRIM(title)) < 3` branch hoisted
+      // out of the author scope — enough to delete ANY user's recipe with a
+      // trimmed title under 3 chars. This is why the pin is an exact string:
+      // the fixture still SATISFIES the old loose regexes (asserted below) and
+      // its param list is byte-identical to the correct predicate's, so every
+      // structural and param assertion in this file passed it unchanged.
+      const partialWithDemo = partialEscape(authorScopeWithDemo());
+      expect(partialWithDemo.sql).not.toBe(EXPECTED_SQL_WITH_DEMO);
+      expect(partialWithDemo.sql.toLowerCase()).toMatch(
+        /\(.*author_id.*\)\s+and\s+\(/,
+      );
+      expect(partialWithDemo.params).toEqual([DEMO_ID, "test recipe"]);
+
+      const partialOrphanOnly = partialEscape(
+        isNull(communityRecipes.authorId),
+      );
+      expect(partialOrphanOnly.sql).not.toBe(EXPECTED_SQL_ORPHAN_ONLY);
+      expect(partialOrphanOnly.sql.toLowerCase()).toMatch(
+        /"author_id" is null\s+and\s+\(/,
+      );
+      expect(partialOrphanOnly.params).toEqual(["test recipe"]);
     });
 
     it("PIN: the title match is the exact phrase 'test recipe' — no wildcards", () => {

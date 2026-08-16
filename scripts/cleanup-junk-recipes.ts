@@ -10,8 +10,11 @@
  *
  * Safety:
  *   - Defaults to DRY-RUN. Pass `--commit` to actually delete.
- *   - Scoped to orphan (authorId IS NULL) or the demo user only — never
- *     touches a real user's community recipe. See
+ *   - Scoped to orphan (authorId IS NULL), or the account currently holding
+ *     the username `demo`. NOT an absolute real-user exclusion: `demo` is not
+ *     a reserved username (`registerSchema` in `server/routes/_schemas.ts`
+ *     enforces only 3-30 chars, `/^[a-zA-Z0-9_]+$/`, and uniqueness), so where
+ *     no demo account was seeded first a real user can hold it. See
  *     `docs/solutions/conventions/seed-cleanup-scripts-scope-by-authorid-2026-05-13.md`.
  *
  * Usage: npx tsx scripts/cleanup-junk-recipes.ts            # dry-run (default)
@@ -40,9 +43,11 @@ async function main() {
         : "=== DRY RUN ===  (pass --commit to delete)",
   );
 
-  // Resolve demo user ID so we can restrict deletion to orphan/demo-authored
-  // rows and NEVER touch real user recipes that happen to share a junk-looking
-  // title or content.
+  // Resolve the demo user ID so deletion is restricted to orphan rows or rows
+  // authored by whoever currently holds the username `demo`, instead of every
+  // row that happens to share a junk-looking title or content. `demo` is not a
+  // reserved username, so this narrows the blast radius rather than closing it
+  // — see the header comment.
   const demoUserRows = await db
     .select({ id: users.id })
     .from(users)
@@ -90,14 +95,24 @@ async function main() {
           ),
         );
     }
-    // Delete the recipes
+    // Delete the recipes. Defense in depth: re-apply the full perimeter at the
+    // destructive statement rather than trusting the id list the SELECT
+    // produced, so a row that stopped qualifying between the two statements is
+    // not deleted on the strength of its primary key alone.
     for (const id of ids) {
-      await tx.delete(communityRecipes).where(eq(communityRecipes.id, id));
+      await tx
+        .delete(communityRecipes)
+        .where(
+          and(
+            eq(communityRecipes.id, id),
+            buildJunkCommunityRecipeWhere(demoUserId),
+          ),
+        );
     }
   });
 
   console.log(
-    `Deleted ${ids.length} junk recipes and associated cookbook entries.`,
+    `Deleted up to ${ids.length} junk recipes and associated cookbook entries.`,
   );
   process.exit(0);
 }
