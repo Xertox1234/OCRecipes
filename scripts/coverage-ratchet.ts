@@ -374,14 +374,28 @@ export function main(args: string[]): number {
     return 2;
   }
 
-  const data: CoverageFinal = JSON.parse(fs.readFileSync(coverageFile, "utf8"));
-  const actual = computeTotals(data);
+  let actual: Totals;
+  try {
+    const data: CoverageFinal = JSON.parse(
+      fs.readFileSync(coverageFile, "utf8"),
+    );
+    actual = computeTotals(data);
+  } catch (err) {
+    // A truncated/malformed coverage-final.json (an interrupted
+    // test:coverage run) is a usage error (exit 2), never the
+    // "coverage is failing" exit 1 an uncaught throw would produce.
+    console.error(
+      red(
+        `Could not read coverage data: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+    return 2;
+  }
   let current: Thresholds;
   try {
     current = readCurrentThresholds(configFile);
   } catch (err) {
-    // A malformed config is a usage error (exit 2), never the
-    // "coverage is failing" exit 1 an uncaught throw would produce.
+    // Same contract for a malformed config.
     console.error(red(err instanceof Error ? err.message : String(err)));
     return 2;
   }

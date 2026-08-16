@@ -329,6 +329,39 @@ describe("coverage-ratchet", () => {
       expect(source).toContain("branches: 63,");
       expect(source).not.toContain("lines: 40,");
     });
+
+    it("stays index-accurate when replacements cross digit-length boundaries", () => {
+      // patchMetric re-masks the CURRENT block on every call precisely so a
+      // 1→3-digit replacement can't drift later matches' indices. A hoisted
+      // once-computed mask would pass the equal-length fixture above and
+      // silently corrupt this one — this fixture is the discriminator.
+      const dir = makeTmpDir();
+      const nested =
+        '        "client/**": { lines: 80, functions: 70, branches: 60, statements: 80 },';
+      const cfg = writeConfig(
+        dir,
+        { lines: 9, functions: 8, branches: 7, statements: 6 },
+        "",
+        nested,
+      );
+      applyThresholds(
+        { lines: 100, statements: 61, functions: 62, branches: 63 },
+        cfg,
+      );
+      const source = fs.readFileSync(cfg, "utf8");
+      expect(source).toContain(nested.trim());
+      expect(source).toContain("lines: 100,");
+      expect(source).toContain("statements: 61,");
+      expect(source).toContain("functions: 62,");
+      expect(source).toContain("branches: 63,");
+      // Round-trip through the reader proves the block is still parseable.
+      expect(readCurrentThresholds(cfg)).toEqual({
+        lines: 100,
+        statements: 61,
+        functions: 62,
+        branches: 63,
+      });
+    });
   });
 
   describe("parseArgs", () => {
@@ -504,6 +537,37 @@ describe("coverage-ratchet", () => {
       ]);
       expect(status).toBe(2);
       expect(out).toContain("Config file not found");
+    });
+
+    it("exits 2 with a clean message on malformed or wrong-shape coverage JSON", () => {
+      // An interrupted test:coverage run leaves a truncated JSON file — a
+      // real failure mode. An uncaught SyntaxError exits 1, which this
+      // script's contract defines as "coverage is failing"; it must be a
+      // clean usage-error 2 instead (same contract as the config guards).
+      const dir = makeTmpDir();
+      const cfg = writeConfig(dir, {
+        lines: 46,
+        functions: 46,
+        branches: 46,
+        statements: 46,
+      });
+      const malformed = path.join(dir, "coverage-final.json");
+      fs.writeFileSync(malformed, '{"truncated": ');
+      const bad = runCli(["--coverage-file", malformed, "--config-file", cfg]);
+      expect(bad.status).toBe(2);
+      expect(bad.out).toContain("Could not read coverage data");
+
+      // Well-formed JSON with the wrong shape (entry.s missing) is the same
+      // contract violation via TypeError instead of SyntaxError.
+      fs.writeFileSync(malformed, '{"/x/a.ts": {"path": "/x/a.ts"}}');
+      const wrongShape = runCli([
+        "--coverage-file",
+        malformed,
+        "--config-file",
+        cfg,
+      ]);
+      expect(wrongShape.status).toBe(2);
+      expect(wrongShape.out).toContain("Could not read coverage data");
     });
 
     it("exits 2 with a clean message when the config has no thresholds block", () => {
