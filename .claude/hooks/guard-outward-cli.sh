@@ -228,7 +228,7 @@ crude_smells_outward() {
   local t=${1//$'\n'/ }
   t=${t//\\n/ }
   # Command-word patterns — case-INSENSITIVE (macOS APFS resolves `EAS`).
-  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)[^a-zA-Z]+(run-script|run)[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
+  grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run-script|run)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
   # Flag-correlated patterns — case-SENSITIVE (a case-insensitive `-R` would
   # false-match the `-r` inside `--remove-reviewer`).
   grep -Eq 'gh[^a-zA-Z]+pr[^a-zA-Z]+(create|comment)[^;&|]*(--repo|-R)' <<< "$t" && return 0
@@ -418,8 +418,22 @@ fi
 # crude test; a command-position anchor sees the `p` before `npm` and misses it
 # (caught by this file's own `pnpm run update:preview` case). The bare-script
 # spelling that yarn/pnpm accept WITHOUT `run` gets its own pattern.
-if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)[[:space:]]+(run-script|run)[[:space:]]+update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$BARE" \
-   || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)[[:space:]]+update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$BARE"; then
+#
+# FLAG RUNS: the first shape of this pattern required the script name to sit
+# IMMEDIATELY after `run`, so any flag between them walked straight through —
+# `npm run --silent update:preview`, `npm run -s update:preview`, and
+# `npm --loglevel=error run update:preview` all ALLOWED, on the exact command
+# class this block exists for. That is this repo's own
+# `deny-gate-flag-presence-check-needs-raw-text-and-every-spelling` lesson
+# recurring inside its own fix: matching the bare spelling of a command is not
+# matching the command. `_OUT_FLAG_RUN` absorbs zero-or-more `-`/`--` flag words
+# (with or without `=value`) in BOTH positions — before `run` (npm global flags)
+# and after it (npm run flags). It deliberately does NOT absorb a non-flag word,
+# so `npm run build update:preview` still does not match: only flags may
+# intervene, never another script name.
+_OUT_FLAG_RUN='([[:space:]]+-{1,2}[^[:space:]]*)*[[:space:]]+'
+if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$BARE" \
+   || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$BARE"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 

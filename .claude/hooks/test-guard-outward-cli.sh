@@ -166,6 +166,35 @@ assert_deny "pnpm update:production denies (bare-script spelling, no 'run')" \
   "npm run update:preview/update:production"
 assert_allow "the sanctioned bypassed form allows (ALLOW_OUTWARD_CLI=1 npm run update:preview)" \
   "$(jsonc 'ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message "ship it"')"
+# FLAG RUNS between the runner, `run`, and the script name. The first version of
+# this block required the script name IMMEDIATELY after `run`, so every one of
+# these ALLOWED — on the exact command class the block exists for. Found while
+# verifying a claim that the hook denied
+# docs/solutions/design-patterns/npm-script-arg-guard-and-passthrough-2026-06-22.md's
+# `npm run --silent update:preview` recipe; it did not. Same lesson as
+# docs/solutions/logic-errors/deny-gate-flag-presence-check-needs-raw-text-and-every-spelling-2026-08-16.md,
+# recurring inside the fix for its own first instance.
+assert_deny "npm run --silent update:preview denies (long flag between run and script)" \
+  "$(json 'npm run --silent update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "npm run -s update:preview denies (short flag between run and script)" \
+  "$(json 'npm run -s update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "npm --loglevel=error run update:preview denies (global flag before run)" \
+  "$(json 'npm --loglevel=error run update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "npm run --silent update:production denies" \
+  "$(json 'npm run --silent update:production')" \
+  "npm run update:preview/update:production"
+assert_deny "pnpm run --silent update:preview denies" \
+  "$(json 'pnpm run --silent update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "yarn --silent update:preview denies (bare-script spelling with a flag)" \
+  "$(json 'yarn --silent update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "the documented PATH-stub recipe denies (it is a real publish path)" \
+  "$(jsonc 'PATH="$PWD/.tmp-bin:$PATH" npm run --silent update:preview -- --message "fix login"')" \
+  "npm run update:preview/update:production"
 # Negative controls: every OTHER npm script stays untouched.
 assert_allow "npm run test allows (unrelated script)" \
   "$(json 'npm run test')"
@@ -173,6 +202,14 @@ assert_allow "npm run preflight allows (unrelated script)" \
   "$(json 'npm run preflight')"
 assert_allow "npm run update:deps allows (a script whose name merely starts with update:)" \
   "$(json 'npm run update:deps')"
+assert_allow "npm run --silent lint allows (flag run, unrelated script)" \
+  "$(json 'npm run --silent lint')"
+# Two-sided control for the flag run: it absorbs FLAG words only. A non-flag word
+# between `run` and the script name means a different script is being run, and
+# must NOT match — otherwise the pattern would deny any command that merely
+# mentions update:preview somewhere after a `run`.
+assert_allow "npm run build update:preview allows (non-flag word is not a flag run)" \
+  "$(json 'npm run build update:preview')"
 
 # ---------- gh pr merge (--auto carve-out) ----------
 assert_deny "bare gh pr merge (no --auto) denies" \
