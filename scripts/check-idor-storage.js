@@ -103,10 +103,33 @@ const ALLOWLIST = new Set([
   "getRecipeById", // server-side seed/admin utility; not user-facing
 ]);
 
-// Matches the START of an exported function: export [async] function name(
-// or an exported arrow-function const: export const name = [async] (
+// Matches the START of an exported function declaration:
+//   export [async] function name[<T>](
+// or an exported arrow-function const, including an explicit type annotation
+// and/or type parameters:
+//   export const name[: Type] = [async] [<T,>](
+// The arrow branch is deliberately loose here — `= (` alone also matches
+// non-function consts like `export const LIMIT = (MAX + 1);`. checkFile
+// disambiguates by requiring a `=>` after the closing paren (see ARROW_TAIL).
+// Residual: an arrow whose `=>` sits on a LATER line than its closing paren is
+// not matched. Nested generics (`<T extends Record<string, number>>`) are also
+// not matched — `[^>]*` stops at the first `>`.
 const EXPORT_FN_START =
-  /^export\s+(?:async\s+)?function\s+(\w+)\s*\(|^export\s+const\s+(\w+)\s*=\s*(?:async\s*)?\(/;
+  /^export\s+(?:async\s+)?function\s+(\w+)\s*(?:<[^>]*>\s*)?\(|^export\s+const\s+(\w+)\s*(?::[^=]*)?=\s*(?:async\s*)?(?:<[^>]*>\s*)?\(/;
+
+// Applied to whatever follows an arrow-branch match's closing ")" on the same
+// line: an optional return-type annotation, then the fat arrow. Without this a
+// plain parenthesised const is reported as an IDOR-risk "function", which
+// trains developers to silence the guard with `// idor-safe` on a non-function.
+const ARROW_TAIL = /^\s*(?::[^=]*)?=>/;
+
+// Exports that EXPORT_FN_START matched but could not name. Unreachable while
+// both branches carry a capture group; recorded so main() can fail the run
+// rather than silently skipping a declaration it was unable to inspect.
+// NOTE: main() ends its clean path with an explicit process.exit(0), which
+// would clobber a `process.exitCode = 1` set from here — the signal has to be
+// read by main() before that call.
+const unnamedMatches = [];
 
 // Matches id-like parameter names: id, itemId, logId, recipeId, flagId, etc.
 // Must be a standalone param name (word boundary), not part of userId/ownerId/authorId
@@ -119,24 +142,29 @@ const USER_ID_PARAM_PATTERN = /\b(?:userId|ownerId|authorId)\b/;
 /**
  * Extract the full parameter list for a function starting at lineIndex.
  * Handles multi-line signatures by collecting lines until the closing ")".
+ *
+ * Returns `{ params, rest }` where `rest` is the remainder of the line that
+ * held the closing ")" — the caller needs it to tell an arrow function
+ * (`) => {`) from a parenthesised expression (`);`).
  */
 function extractParams(lines, lineIndex) {
   let depth = 0;
   let params = "";
   for (let j = lineIndex; j < lines.length && j < lineIndex + 20; j++) {
     const line = lines[j];
-    for (const ch of line) {
+    for (let k = 0; k < line.length; k++) {
+      const ch = line[k];
       if (ch === "(") depth++;
       else if (ch === ")") {
         depth--;
-        if (depth === 0) return params;
+        if (depth === 0) return { params, rest: line.slice(k + 1) };
       } else if (depth > 0) {
         params += ch;
       }
     }
     if (depth > 0) params += " ";
   }
-  return params;
+  return { params, rest: "" };
 }
 
 /**
@@ -205,17 +233,32 @@ function checkFile(filePath) {
 
     // match[1] = `export function name(` capture; match[2] = the arrow-const
     // capture (`export const name = ...(`). Given the current two-branch
-    // EXPORT_FN_START, exactly one is set per match — guard anyway so a
-    // future third branch fails closed (skip) instead of reporting an
-    // issue with an undefined function name.
+    // EXPORT_FN_START exactly one is always set, so this branch is unreachable
+    // today. It is NOT a safe default: skipping a matched-but-unnamed export
+    // would fail OPEN for a detector — a silently missed IDOR. So a future
+    // third branch that forgets to add its capture here fails the run loudly
+    // instead of going quiet.
     const fnName = match[1] || match[2];
-    if (!fnName) continue;
+    if (!fnName) {
+      console.error(
+        `${colors.red}${filePath}:${i + 1}: matched an exported declaration but captured no name — EXPORT_FN_START has a branch with no capture group.${colors.reset}`,
+      );
+      unnamedMatches.push({ file: filePath, line: i + 1 });
+      continue;
+    }
 
     // Skip allowlisted functions
     if (ALLOWLIST.has(fnName)) continue;
 
     // Collect full parameter list (may span multiple lines)
-    const params = extractParams(lines, i);
+    const { params, rest } = extractParams(lines, i);
+
+    // The arrow branch of EXPORT_FN_START matches on `= (`, which also fires on
+    // a parenthesised non-function const (`export const LIMIT = (MAX_id + 1);`).
+    // Require a real `=>` after the closing paren before treating it as a
+    // function. Only the arrow branch needs this — `export function name(` is
+    // unambiguous, and demanding `=>` there would silence the whole guard.
+    if (match[2] && !ARROW_TAIL.test(rest)) continue;
 
     // Extract only parameter names, ignoring type annotations
     const paramNames = extractParamNames(params);
@@ -273,6 +316,19 @@ function main() {
       allIssues.push(...issues);
       filesChecked++;
     }
+  }
+
+  // An export the matcher could not name was never inspected — that is a hole
+  // in the scan, not a clean result. Fail before any success path.
+  if (unnamedMatches.length > 0) {
+    console.error(
+      colors.red +
+        "Aborting: " +
+        unnamedMatches.length +
+        " exported declaration(s) matched but could not be named — the scan is incomplete." +
+        colors.reset,
+    );
+    process.exit(1);
   }
 
   if (allIssues.length === 0) {
