@@ -37,6 +37,7 @@ function writeConfig(
     statements: number;
   },
   before = "",
+  nestedBefore = "",
 ): string {
   const file = path.join(dir, "vitest.config.ts");
   fs.writeFileSync(
@@ -48,6 +49,7 @@ function writeConfig(
       before,
       "    coverage: {",
       "      thresholds: {",
+      nestedBefore,
       "        autoUpdate: false,",
       `        lines: ${thresholds.lines},`,
       `        functions: ${thresholds.functions},`,
@@ -259,6 +261,26 @@ describe("coverage-ratchet", () => {
       fs.writeFileSync(cfg, "export default {};\n");
       expect(() => readCurrentThresholds(cfg)).toThrow(/thresholds/);
     });
+
+    it("reads the FLAT metrics when a per-glob sub-object precedes them", () => {
+      // Vitest supports per-glob threshold sub-objects INSIDE the block. The
+      // naive non-greedy block regex ended at the sub-object's own `}` and a
+      // first-match metric scan then read the per-glob numbers — the exact
+      // retargeting failure class this refactor claims to eliminate.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        '        "client/**": { lines: 80, functions: 70, branches: 60, statements: 80 },',
+      );
+      expect(readCurrentThresholds(cfg)).toEqual({
+        lines: 53,
+        statements: 53,
+        functions: 58,
+        branches: 55,
+      });
+    });
   });
 
   describe("applyThresholds", () => {
@@ -281,6 +303,31 @@ describe("coverage-ratchet", () => {
       // The decoy is untouched — and no stray 40 survives in the block.
       expect(source).toContain("lines: 99");
       expect(source).not.toContain(": 40,");
+    });
+
+    it("patches ONLY the flat metrics when a per-glob sub-object precedes them", () => {
+      const dir = makeTmpDir();
+      const nested =
+        '        "client/**": { lines: 80, functions: 70, branches: 60, statements: 80 },';
+      const cfg = writeConfig(
+        dir,
+        { lines: 40, functions: 41, branches: 42, statements: 43 },
+        "",
+        nested,
+      );
+      applyThresholds(
+        { lines: 60, statements: 61, functions: 62, branches: 63 },
+        cfg,
+      );
+      const source = fs.readFileSync(cfg, "utf8");
+      // The per-glob sub-object survives byte-for-byte…
+      expect(source).toContain(nested.trim());
+      // …and the flat metrics (not the nested ones) took the new values.
+      expect(source).toContain("lines: 60,");
+      expect(source).toContain("statements: 61,");
+      expect(source).toContain("functions: 62,");
+      expect(source).toContain("branches: 63,");
+      expect(source).not.toContain("lines: 40,");
     });
   });
 
@@ -441,6 +488,37 @@ describe("coverage-ratchet", () => {
       const { status, out } = runCli(["--nope"]);
       expect(status).toBe(2);
       expect(out).toContain("Unknown argument");
+    });
+
+    it("exits 2 when the config file does not exist (not the coverage-failing 1)", () => {
+      // Exit 1 means "coverage is failing" per the documented contract; a
+      // missing/unreadable config is a usage error and must be a clean 2,
+      // not an uncaught ENOENT stack trace.
+      const dir = makeTmpDir();
+      const cov = writeCoverage(dir, halfCoveredCoverage());
+      const { status, out } = runCli([
+        "--coverage-file",
+        cov,
+        "--config-file",
+        path.join(dir, "nope.config.ts"),
+      ]);
+      expect(status).toBe(2);
+      expect(out).toContain("Config file not found");
+    });
+
+    it("exits 2 with a clean message when the config has no thresholds block", () => {
+      const dir = makeTmpDir();
+      const cov = writeCoverage(dir, halfCoveredCoverage());
+      const cfg = path.join(dir, "vitest.config.ts");
+      fs.writeFileSync(cfg, "export default {};\n");
+      const { status, out } = runCli([
+        "--coverage-file",
+        cov,
+        "--config-file",
+        cfg,
+      ]);
+      expect(status).toBe(2);
+      expect(out).toContain("thresholds");
     });
   });
 });

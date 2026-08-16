@@ -18,6 +18,9 @@
  * Usage:
  *   node scripts/check-hardcoded-colors.js [files...]
  *   node scripts/check-hardcoded-colors.js client/screens/ScanScreen.tsx
+ *
+ * When run with no arguments, scans all client/**\/*.tsx files (the CI and
+ * preflight invocation shape).
  */
 
 import fs from "fs";
@@ -163,7 +166,13 @@ function findTsxFiles(dir) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory() && !shouldSkipFile(fullPath)) {
         files.push(...findTsxFiles(fullPath));
-      } else if (entry.isFile() && entry.name.endsWith(".tsx")) {
+      } else if (
+        entry.isFile() &&
+        entry.name.endsWith(".tsx") &&
+        !shouldSkipFile(fullPath)
+      ) {
+        // checkFile would skip these anyway; filtering here keeps the
+        // reported "N files" count honest for e.g. a stray client/*.test.tsx.
         files.push(fullPath);
       }
     }

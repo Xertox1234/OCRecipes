@@ -157,33 +157,75 @@ export function computeTotals(data: CoverageFinal): Totals {
 const DEFAULT_CONFIG = path.resolve(scriptDir, "../vitest.config.ts");
 
 /**
- * Isolate the `thresholds: { ... }` block before matching metric names.
+ * Isolate the COMPLETE `thresholds: { ... }` block by brace counting.
  * Whole-file `metric:\s*(\d+)` regexes with first-match semantics were
  * silently retargeted by any earlier `lines: NN` mention (a baseline comment,
- * a per-glob thresholds addition) — for both the read AND the patch.
+ * a per-glob thresholds addition) — for both the read AND the patch. A
+ * non-greedy regex is not enough either: it ends at the FIRST `}`, truncating
+ * before the flat metrics whenever a per-glob sub-object precedes them.
+ * (Assumes no brace characters inside string literals within the block —
+ * true for any plausible thresholds config.)
  */
 function locateThresholdsBlock(
   source: string,
   configFile: string,
 ): { start: number; end: number; block: string } {
-  const match = source.match(/thresholds:\s*\{[\s\S]*?\}/);
-  if (!match || match.index === undefined) {
+  const startMatch = source.match(/thresholds:\s*\{/);
+  if (!startMatch || startMatch.index === undefined) {
     throw new Error(
       `Could not find a thresholds: { ... } block in ${configFile}`,
     );
   }
-  return {
-    start: match.index,
-    end: match.index + match[0].length,
-    block: match[0],
-  };
+  let depth = 0;
+  for (
+    let i = startMatch.index + startMatch[0].length - 1;
+    i < source.length;
+    i++
+  ) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        const end = i + 1;
+        return {
+          start: startMatch.index,
+          end,
+          block: source.slice(startMatch.index, end),
+        };
+      }
+    }
+  }
+  throw new Error(`Unbalanced thresholds: { ... } block in ${configFile}`);
+}
+
+/**
+ * Blank the contents of nested sub-objects (per-glob thresholds) with spaces,
+ * preserving length and indices, so metric regexes only ever match the
+ * block's own top-level keys — for the read AND the patch.
+ */
+function maskNestedObjects(block: string): string {
+  let depth = 0;
+  let out = "";
+  for (const ch of block) {
+    if (ch === "{") {
+      depth++;
+      out += depth > 1 ? " " : ch;
+    } else if (ch === "}") {
+      out += depth > 1 ? " " : ch;
+      depth--;
+    } else {
+      out += depth > 1 && ch !== "\n" ? " " : ch;
+    }
+  }
+  return out;
 }
 
 export function readCurrentThresholds(configFile: string): Thresholds {
   const source = fs.readFileSync(configFile, "utf8");
   const { block } = locateThresholdsBlock(source, configFile);
+  const masked = maskNestedObjects(block);
   const extract = (metric: string): number => {
-    const match = block.match(new RegExp(`\\b${metric}:\\s*(\\d+)`));
+    const match = masked.match(new RegExp(`\\b${metric}:\\s*(\\d+)`));
     if (!match)
       throw new Error(
         `Could not parse threshold for "${metric}" in ${configFile}`,
@@ -204,13 +246,24 @@ export function applyThresholds(
 ): void {
   const source = fs.readFileSync(configFile, "utf8");
   const { start, end, block } = locateThresholdsBlock(source, configFile);
-  const patch = (src: string, metric: string, value: number): string =>
-    src.replace(new RegExp(`(\\b${metric}:\\s*)\\d+`), `$1${value}`);
   let patched = block;
-  patched = patch(patched, "lines", proposed.lines);
-  patched = patch(patched, "statements", proposed.statements);
-  patched = patch(patched, "functions", proposed.functions);
-  patched = patch(patched, "branches", proposed.branches);
+  const patchMetric = (metric: string, value: number): void => {
+    // Match on the masked copy (indices are length-preserving), splice into
+    // the real block — a nested per-glob metric can never be the target.
+    const match = maskNestedObjects(patched).match(
+      new RegExp(`(\\b${metric}:\\s*)(\\d+)`),
+    );
+    if (!match || match.index === undefined) return;
+    const at = match.index + match[1].length;
+    patched =
+      patched.slice(0, at) +
+      String(value) +
+      patched.slice(at + match[2].length);
+  };
+  patchMetric("lines", proposed.lines);
+  patchMetric("statements", proposed.statements);
+  patchMetric("functions", proposed.functions);
+  patchMetric("branches", proposed.branches);
   fs.writeFileSync(
     configFile,
     source.slice(0, start) + patched + source.slice(end),
@@ -316,9 +369,22 @@ export function main(args: string[]): number {
     return 2;
   }
 
+  if (!fs.existsSync(configFile)) {
+    console.error(red(`Config file not found: ${configFile}`));
+    return 2;
+  }
+
   const data: CoverageFinal = JSON.parse(fs.readFileSync(coverageFile, "utf8"));
   const actual = computeTotals(data);
-  const current = readCurrentThresholds(configFile);
+  let current: Thresholds;
+  try {
+    current = readCurrentThresholds(configFile);
+  } catch (err) {
+    // A malformed config is a usage error (exit 2), never the
+    // "coverage is failing" exit 1 an uncaught throw would produce.
+    console.error(red(err instanceof Error ? err.message : String(err)));
+    return 2;
+  }
   const proposed = proposeThresholds(current, actual, buffer);
 
   // ─── Report ───────────────────────────────────────────────────────────────
