@@ -8,6 +8,7 @@ tags: [retrieval, ranking, inject-patterns, harness, tooling, pagination, silent
 applies_to: [.claude/hooks/inject-patterns.sh, .claude/hooks/**/*.sh, scripts/**/*.ts, server/services/**/*.ts, server/storage/**/*.ts]
 symptoms: [A relevance/priority field exists and is documented as live, but changing it has no observable effect, A "top N" list is dominated by whatever is newest rather than whatever fits, A corpus/index grows steadily while the set actually served stays the same size, Docs cite records by name that the system can never surface]
 created: '2026-08-06'
+last_updated: '2026-08-16'
 ---
 
 # A pipeline that truncates before it ranks silently discards its best candidates
@@ -82,6 +83,16 @@ five-process pipeline, which kept it within noise of the original.
 - Honest scope: this removes a hard exclusion; it does not make ranking fine-grained. 47
   accessibility solutions match `client/screens/**/*.tsx`, so within a heavily-matched domain the
   tier still collapses to date order internally.
+
+### The residual landed too (added 2026-08-16)
+
+The "tier still collapses to date order internally" residual above is now fixed one level
+down: the glob tier is ranked by `applies_to` specificity (longest literal prefix before the
+first wildcard), date remaining the tie-break. Measured on the harness domain: reachable docs
++27–30%, starved-with-a-matching-glob −17–20%. Still bimodal, not uniform — a domain where
+every glob shares the same prefix shape (react-native's `client/components/**/*.tsx`) sees a
+much smaller delta, confirming rather than contradicting the honest-scope note above; see
+`injection-glob-tier-ranked-by-date-not-specificity-2026-08-13` in `todos/archive/`.
 
 ## Related Files
 

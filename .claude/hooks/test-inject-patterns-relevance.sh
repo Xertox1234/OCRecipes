@@ -21,6 +21,8 @@
 #
 # Fixture path client/context/AuthContext.tsx maps to exactly ONE domain (client-state), so
 # exactly one SOLUTIONS block is emitted and assertions cannot be confused by a second domain.
+# Test 18 needs the harness domain instead and uses .claude/agents/example.md, which is
+# likewise single-domain.
 set -uo pipefail
 
 # Never write the shared pg-lab telemetry table from a test run.
@@ -321,6 +323,75 @@ sol "logic-errors/general-bug-2026-08-09.md" "client-state" "" "General-tier bug
 out=$(sols "$EDITED")
 assert_has "reserve_bug_slot — a bug-track ref in the GENERAL tier still takes the last slot" \
   "$out" "logic-errors/general-bug-2026-08-09.md"
+
+# ---------------------------------------------------------------------------
+# 16. Specificity within the GLOB tier — a narrower, OLDER glob outranks a broader,
+#     NEWER glob. Neither fixture's applies_to equals $EDITED (both are glob matches,
+#     not exact), so this stays within the glob tier and does not degenerate into test
+#     6's exact-vs-glob case. Mutation-checked per gate-test-needs-two-sided-negative-
+#     control-2026-07-25.md: reverting solutions_from_markdown's glob-tier sort back to
+#     plain date order turns this red (verified manually during implementation, not
+#     re-asserted here — the guard is this test's own existence, kept honest by the
+#     mutation check rather than a second committed fixture).
+# ---------------------------------------------------------------------------
+reset_corpus
+sol "conventions/broad-new-2026-08-05.md" "client-state" "client/**/*.tsx" "Broad new"
+sol "design-patterns/narrow-old-2026-01-01.md" "client-state" "client/context/Auth*.tsx" "Narrow old"
+out=$(sols "$EDITED")
+assert_before "glob tier — a narrower, older glob outranks a broader, newer one" \
+  "$out" "design-patterns/narrow-old-2026-01-01.md" "conventions/broad-new-2026-08-05.md"
+
+# ---------------------------------------------------------------------------
+# 17. Glob-tier rebuild preserves the tier boundary — the ranked glob tier is now
+#     rebuilt via `sort`/`cut` in a $(...) subshell, which strips exactly one trailing
+#     newline. A missing re-added newline would fuse the last glob-tier path with the
+#     first general-tier path into one bogus line, silently dropping both real refs.
+#     assert_count catches the dropped line; assert_has confirms neither ref was
+#     corrupted into a garbage path.
+# ---------------------------------------------------------------------------
+reset_corpus
+sol "design-patterns/glob-only-2026-01-01.md" "client-state" "client/context/Auth*.tsx" "Glob only"
+for d in 03 02 01; do
+  sol "conventions/general-only-2026-07-${d}.md" "client-state" "" "General only ${d}"
+done
+out=$(sols "$EDITED")
+assert_count "glob tier followed by general tier — all 4 refs present, none fused" "$out" 4
+assert_has "glob-tier entry intact after the rebuild (not fused)" \
+  "$out" "design-patterns/glob-only-2026-01-01.md"
+assert_has "general-tier entry intact after the rebuild (not fused)" \
+  "$out" "conventions/general-only-2026-07-03.md"
+
+# ---------------------------------------------------------------------------
+# 18. MIRROR GUARD (hook side) — domain_tag_pattern()'s harness alternation must keep
+#     honouring the PLURAL `worktrees` tag. The alternation is hand-mirrored in
+#     scripts/check-solution-frontmatter.js's ROUTABLE_TAG_PATTERNS, kept in sync by
+#     nothing but a code comment — and that comment already failed once: the hook was
+#     widened to `worktrees?` while the mirror kept the singular `worktree`, so a
+#     plural-only doc was live-reachable yet rejected at pre-commit. See docs/solutions/
+#     logic-errors/documented-mirror-invariant-desyncs-when-only-one-side-is-edited-2026-
+#     08-16.md.
+#
+#     The mirrored JS-side case lives in scripts/__tests__/check-solution-frontmatter.test.ts
+#     ("accepts a `worktrees`-only doc"). BOTH are required: reverting `worktrees?` ->
+#     `worktree` in the hook turns only THIS test red and leaves vitest green; reverting it
+#     in the JS mirror turns only vitest red and leaves this suite green. A test on one side
+#     alone would reproduce the very desync the pair exists to pin.
+#
+#     Fixture path: .claude/agents/example.md routes to exactly ONE domain (harness), the
+#     same single-domain isolation $EDITED gives the client-state tests. It need not exist
+#     on disk — routing is by path shape (tests 1/2/6 rely on the same).
+# ---------------------------------------------------------------------------
+reset_corpus
+HARNESS_EDITED=".claude/agents/example.md" # -> harness, single domain
+sol "conventions/worktrees-plural-2026-08-16.md" "worktrees" "" "Worktrees plural"
+# Negative control: proves the assert_has above comes from the harness alternation
+# matching `worktrees`, not from the pool admitting every doc regardless of tag.
+sol "conventions/unrouted-tag-2026-08-15.md" "parsing" "" "Unrouted control"
+out=$(sols "$HARNESS_EDITED")
+assert_has "mirror guard — a \`worktrees\`-only (plural) doc is delivered by the harness alternation" \
+  "$out" "conventions/worktrees-plural-2026-08-16.md"
+assert_lacks "mirror guard negative control — a doc whose tag routes nowhere is not delivered" \
+  "$out" "conventions/unrouted-tag-2026-08-15.md"
 
 # ---------------------------------------------------------------------------
 echo
