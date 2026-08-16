@@ -1,6 +1,6 @@
 ---
 title: "NutritionDetail's route params declare three mutually-exclusive modes as independent optionals, so an illegal combination type-checks"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-15
 updated: 2026-08-15
@@ -178,3 +178,20 @@ NutritionDetail:
 - Filed at the user's request from a `code-reviewer` finding on the
   `be3ba334..ca4b1894` review pass. Producer enumeration and the "no current `itemId`
   producer" bound verified the same day against `ca4b1894`.
+- Implemented as a 3-arm discriminated union on `RootStackParamList["NutritionDetail"]`
+  (every arm declares all six keys — the owning selector plus `?: never` on the rest —
+  so `NutritionDetailScreen`'s single `route.params || {}` destructure keeps compiling).
+  AC #6's docblock update (`useNutritionLookup.ts`) deliberately states a **narrower**
+  claim than "compiler-enforced" verbatim: enforcement holds at the
+  `RootStackParamList` route-params boundary, not for every caller of the hook —
+  `NutritionDetailScreen` destructures `route.params` and re-widens all three
+  selectors back to independent optionals before calling the hook, and
+  `CoachChat.tsx`'s pre-existing `as RootStackParamList["NutritionDetail"]` cast is a
+  live bypass of the union today (its runtime backstop, `coach-blocks.ts`'s
+  `validateNavigateParams`, checks `schema.safeParse(...).success` but never
+  reassigns `val.params` to the parsed/stripped result, so an LLM action payload
+  carrying `itemId` alongside `barcode` is not actually stripped). That gap is
+  pre-existing and out of this todo's Scope Contract to fix; the docblock names it
+  rather than overclaiming blanket enforcement. Flagged by `code-reviewer` and
+  `mobile-reviewer` during Step 6 review; both review rounds otherwise clean
+  (zero CRITICAL, two small doc-accuracy WARNINGs fixed inline).

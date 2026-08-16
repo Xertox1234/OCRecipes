@@ -379,8 +379,12 @@ type NutritionDetailParams = RootStackParamList["NutritionDetail"] & {
  * silently dropping the field — the exact failure this helper exists to
  * prevent. Both annotations (return type AND the local accumulator) must stay
  * derived, or the object literal is still checked against a stale hand-written
- * type. `barcode` is optional on the route (the imageUri/itemId entry points
- * omit it) but required for a completed barcode session, hence the intersection.
+ * type. `RootStackParamList["NutritionDetail"]` is a discriminated union of
+ * the three entry modes, and `barcode` is `?: never` (not merely absent) on
+ * the itemId/imageUri arms — intersecting with `{ barcode: string }` selects
+ * the barcode arm of that union rather than narrowing an independent
+ * optional, which is what makes `barcode` required here for a completed
+ * barcode session.
  */
 export function buildNutritionDetailParams(
   phase: Extract<ScanPhase, { type: "SESSION_COMPLETE" }>,
