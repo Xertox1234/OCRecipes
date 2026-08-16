@@ -258,6 +258,22 @@ assert_allow "gh pr create --base main allows (negative control: no --repo, and 
   "$(jsonc 'gh pr create --base main --title x --body y')"
 assert_allow "gh pr comment with --remove-reviewer-like text allows (case-sensitive -R, no false match on -r)" \
   "$(jsonc 'gh pr comment 42 --body "please --remove-reviewer next time"')"
+# The --repo/-R check must be CLAUSE-scoped, not a whole-command scan: `-R` is
+# `cp -R`, `grep -R`, `ls -R`, `rsync -R`. A whole-$CMD scan denied this repo's
+# own PR-creation pipeline (caught in review before it shipped).
+assert_allow "cp -R ... && gh pr create allows (-R belongs to cp, not to gh)" \
+  "$(jsonc 'cp -R src dst && gh pr create --title x --body y')"
+assert_allow "grep -R ... && gh pr comment allows (-R belongs to grep)" \
+  "$(jsonc 'grep -R eas . && gh pr comment 42 --body x')"
+assert_allow "ls -R && gh pr merge --auto allows (-R belongs to ls)" \
+  "$(json 'ls -R && gh pr merge 42 --auto --squash')"
+assert_allow "rsync -R ...; gh pr create allows (-R belongs to rsync)" \
+  "$(jsonc 'rsync -R a b; gh pr create --title x --body y')"
+# ...and the quoted flag NAME must still be seen (a quoted "--repo" is a real
+# argv token), which is why the clause is taken from RAW $CMD, not $BARE.
+assert_deny "gh pr comment \"--repo\" other/repo denies (quoted flag name is still a real argv token)" \
+  "$(jsonc 'gh pr comment 42 "--repo" other/repo --body x')" \
+  "'gh pr create/comment' with --repo/-R"
 
 # ---------- gh api: mutating HTTP method ----------
 # gh api can reach the SAME PR-merge action the dedicated clause above gates,

