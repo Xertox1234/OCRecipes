@@ -2,23 +2,37 @@
 /**
  * One-time script to delete junk community recipes from the database.
  *
- * Criteria for junk:
+ * Criteria for junk (predicate lives in cleanup-junk-recipes-utils, where it
+ * is unit-tested):
  * - Title is exactly "Test Recipe" (case-insensitive)
  * - Title is under 3 characters
  * - Empty instructions AND empty ingredients
  *
- * Usage: npx tsx scripts/cleanup-junk-recipes.ts
- * Add --dry-run to preview what would be deleted without actually deleting.
+ * Usage: npx tsx scripts/cleanup-junk-recipes.ts            # dry-run (default)
+ *        npx tsx scripts/cleanup-junk-recipes.ts --commit   # actually delete
+ *        (--dry-run vetoes --commit if both are passed)
  */
 import "dotenv/config";
 import { db } from "../server/db";
 import { communityRecipes, cookbookRecipes } from "../shared/schema";
-import { eq, and, sql, or, ilike } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import {
+  buildJunkCommunityRecipeWhere,
+  parseCleanupFlags,
+} from "./cleanup-junk-recipes-utils";
 
-const DRY_RUN = process.argv.includes("--dry-run");
+// Dry-run by DEFAULT — pass --commit (without --dry-run, which vetoes it)
+// to actually delete.
+const { commit: COMMIT, vetoed: VETOED } = parseCleanupFlags(process.argv);
 
 async function main() {
-  console.log(DRY_RUN ? "=== DRY RUN ===" : "=== LIVE RUN ===");
+  console.log(
+    COMMIT
+      ? "=== LIVE RUN ==="
+      : VETOED
+        ? "=== DRY RUN ===  (--dry-run overrides --commit; drop --dry-run to delete)"
+        : "=== DRY RUN ===  (pass --commit to delete)",
+  );
 
   // Find junk recipes
   const junkRecipes = await db
@@ -28,19 +42,7 @@ async function main() {
       authorId: communityRecipes.authorId,
     })
     .from(communityRecipes)
-    .where(
-      or(
-        // Exact "Test Recipe" match (case-insensitive)
-        ilike(communityRecipes.title, "test recipe"),
-        // Title under 3 chars
-        sql`LENGTH(TRIM(${communityRecipes.title})) < 3`,
-        // Empty instructions AND empty ingredients
-        and(
-          sql`COALESCE(jsonb_array_length(${communityRecipes.instructions}), 0) = 0`,
-          sql`COALESCE(jsonb_array_length(${communityRecipes.ingredients}), 0) = 0`,
-        ),
-      ),
-    );
+    .where(buildJunkCommunityRecipeWhere());
 
   console.log(`Found ${junkRecipes.length} junk recipes:`);
   for (const r of junkRecipes) {
@@ -49,7 +51,7 @@ async function main() {
     );
   }
 
-  if (DRY_RUN || junkRecipes.length === 0) {
+  if (!COMMIT || junkRecipes.length === 0) {
     console.log("No changes made.");
     process.exit(0);
   }
