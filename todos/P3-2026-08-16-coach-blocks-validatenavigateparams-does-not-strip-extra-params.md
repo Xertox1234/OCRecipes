@@ -88,7 +88,6 @@ bug sit open waiting on #837 if it stalls.
   hunt for.
 - Prefer fixing the stripping over deleting the `as` cast alone; the cast is a symptom,
   the non-stripping validator is the cause.
-- Depends on PR #837 having merged (it introduces the discriminated union this relies on).
 
 ## Scope Contract
 
