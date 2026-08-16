@@ -102,22 +102,43 @@ export function useNutritionLookup(params: {
   /**
    * Stays null for the whole itemId/saved-item path, deliberately.
    *
-   * Two bounds on that sentence, both verified 2026-08-15, neither enforced by
-   * the compiler:
-   *   - `RootStackParamList["NutritionDetail"]` declares `barcode?`,
-   *     `imageUri?` and `itemId?` INDEPENDENTLY optional, so nothing stops a
-   *     caller passing `itemId` AND `barcode`. On the renders before the
-   *     `existingItem` query settles, both early returns in the effect below
-   *     are false and it falls through to `fetchBarcodeData(barcode)` — which
-   *     assigns this with `itemId` set. A discriminated union on those params
-   *     would make the invariant checkable; today it is convention.
-   *   - No caller passes `itemId` at all. `ScanScreen` sends barcode-only;
-   *     `CoachChat` is Zod-narrowed to `{ barcode }` (`shared/schemas/
-   *     coach-blocks.ts`), which strips an `itemId`; and history taps go to
-   *     the separate `ItemDetail` screen (`useHistoryData.ts`), which does not
-   *     use this hook. So the saved-item branch is wired and typed but has no
-   *     production producer — do not read the scan-vs-Today framing in the
-   *     memo comment below as a flow a user can reach today.
+   * Two bounds on that sentence, both verified 2026-08-15:
+   *   - `RootStackParamList["NutritionDetail"]` is a discriminated union of
+   *     the three entry modes (barcode / itemId / imageUri), each arm typing
+   *     the other selectors `?: never` — so `{ itemId, barcode }` together is
+   *     a COMPILE ERROR at the route-params boundary (proven in
+   *     `client/navigation/__tests__/RootStackNavigator.paramlist.test.ts`).
+   *     That enforcement is conditional on going through that boundary,
+   *     though: this hook's OWN parameter object below (`params: { barcode?,
+   *     imageUri?, itemId?, ocrText? }`) still declares the three selectors
+   *     as independent optionals — `NutritionDetailScreen` reconstructs them
+   *     by destructuring `route.params`, which re-widens each field back to
+   *     `T | undefined` across the union's arms — so a caller of this hook
+   *     that is NOT the route boundary could still pass two. This is not
+   *     only a hypothetical future caller: `CoachChat.tsx`'s
+   *     `params as RootStackParamList["NutritionDetail"]` cast (an `as`,
+   *     which bypasses the union entirely) is a LIVE bypass today.
+   *     `shared/schemas/coach-blocks.ts`'s `validateNavigateParams` does NOT
+   *     strip an `itemId` the way a reader might assume from "Zod-narrowed
+   *     to `{ barcode }`" — it only checks `schema.safeParse(val.params)
+   *     .success` and never reassigns `val.params` to the parsed/stripped
+   *     `result.data`, so an LLM action payload of
+   *     `{ itemId, barcode }` for `screen: "NutritionDetail"` passes
+   *     validation (barcode alone satisfies the schema) with `itemId` still
+   *     attached, and reaches this hook via `navigation.navigate` with both
+   *     set. Pre-existing, out of this todo's scope to fix. See
+   *     docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2026-08-06.md
+   *     — do not read this docblock as claiming the exclusivity is enforced
+   *     everywhere; it is enforced at the one boundary that matters today,
+   *     and the Coach action-card path is a real, present-day exception.
+   *   - No caller passes `itemId` at all IN PRACTICE — but "practice" here
+   *     excludes the Coach bypass just described, which could carry one if a
+   *     model ever emitted it; nothing has been observed to. `ScanScreen`
+   *     sends barcode-only; history taps go to the separate `ItemDetail`
+   *     screen (`useHistoryData.ts`), which does not use this hook. So the
+   *     saved-item branch is wired and typed but has no production producer
+   *     — do not read the scan-vs-Today framing in the memo comment below as
+   *     a flow a user can reach today.
    *
    * Every assignment below is downstream of `fetchBarcodeData` — including
    * `chooseSource`'s (needs a `conflict`/`dbSnapshot` only it sets) and
@@ -920,6 +941,14 @@ export function useNutritionLookup(params: {
     [barcode],
   );
 
+  // Dispatch priority: existingItem/existingItemFailed (itemId path) > barcode
+  // > imageUri > "no scan data". `RootStackParamList["NutritionDetail"]`'s
+  // discriminated union means a caller reaching this hook THROUGH the route
+  // boundary can never supply two of `barcode`/`imageUri`/`itemId` at once —
+  // that combination is a compile error there, not merely a convention this
+  // effect has to police at runtime. This effect's own fallthrough order is
+  // unchanged and still the correct defense for a non-route caller (see the
+  // `servingSizeGrams` docblock above for the exact scope of that guarantee).
   useEffect(() => {
     if (existingItem) {
       setNutrition(existingItem);

@@ -9,7 +9,7 @@ env:
   PASSWORD: ${PASSWORD}
 ---
 # Login first
-- launchApp
+- runFlow: ../../helpers/launch-app.yaml
 - runFlow:
     file: ../../helpers/login.yaml
     env:
@@ -17,36 +17,42 @@ env:
       PASSWORD: ${PASSWORD}
 
 # Navigate to chat from home — NutriCoach entry point must be reachable
+- extendedWaitUntil:
+    visible:
+      text: "NutriCoach"
+    timeout: 5000
 - tapOn:
     text: "NutriCoach"
-    timeout: 5000
 
 # Verify we reached a chat-related screen (mandatory)
-- assertVisible:
-    text: "NutriCoach"
+- extendedWaitUntil:
+    visible:
+      text: "NutriCoach"
     timeout: 5000
 
 # Start a new chat if on chat list
 - tapOn:
     text: "New Chat"
-  optional: true
+    optional: true
 
 # Verify suggested prompts are visible
-- assertVisible:
-    text: "What should I eat today?"
+- extendedWaitUntil:
+    visible:
+      text: "What should I eat today?"
     timeout: 3000
-  optional: true
+    optional: true
 - assertVisible:
     text: "How can I hit my protein goal?"
-  optional: true
+    optional: true
 
 # Tap a suggested prompt
 - tapOn:
     text: "What should I eat today?"
-  optional: true
+    optional: true
 
 # Wait for response
-- assertVisible:
-    text: ".*"
+- extendedWaitUntil:
+    visible:
+      text: ".*"
     timeout: 10000
-  optional: true
+    optional: true

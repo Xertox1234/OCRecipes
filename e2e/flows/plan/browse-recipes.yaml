@@ -8,7 +8,7 @@ env:
   PASSWORD: ${PASSWORD}
 ---
 # Login first
-- launchApp
+- runFlow: ../../helpers/launch-app.yaml
 - runFlow:
     file: ../../helpers/login.yaml
     env:
@@ -17,14 +17,16 @@ env:
 
 # Navigate to Plan tab
 - tapOn: "Plan"
-- assertVisible:
-    text: "Recipes"
+- extendedWaitUntil:
+    visible:
+      text: "Recipes"
     timeout: 5000
 
 # Open recipe browser
 - tapOn: "Recipes"
-- assertVisible:
-    text: "Search recipes..."
+- extendedWaitUntil:
+    visible:
+      text: "Search recipes..."
     timeout: 5000
 
 # Verify filter chips are visible
@@ -34,14 +36,15 @@ env:
 # Search for a recipe
 - tapOn: "Search recipes..."
 - inputText: "chicken"
-- assertVisible:
-    text: "chicken"
+- extendedWaitUntil:
+    visible:
+      text: "chicken"
     timeout: 3000
 
 # Clear search
 - tapOn:
     id: "clear-search"
-  optional: true
+    optional: true
 
 # Tap a cuisine filter
 - tapOn: "Italian"
@@ -50,13 +53,14 @@ env:
 - tapOn:
     index: 0
     text: ".*"
-  optional: true
+    optional: true
 
 # If recipe detail opened, verify sections
-- assertVisible:
-    text: "Ingredients"
+- extendedWaitUntil:
+    visible:
+      text: "Ingredients"
     timeout: 3000
-  optional: true
+    optional: true
 - assertVisible:
     text: "Instructions"
-  optional: true
+    optional: true

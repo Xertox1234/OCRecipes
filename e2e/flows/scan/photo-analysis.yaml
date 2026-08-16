@@ -9,7 +9,7 @@ env:
   PASSWORD: ${PASSWORD}
 ---
 # Login first
-- launchApp
+- runFlow: ../../helpers/launch-app.yaml
 - runFlow:
     file: ../../helpers/login.yaml
     env:
@@ -22,26 +22,27 @@ env:
 # Camera permission may appear
 - tapOn:
     text: "Allow"
-  optional: true
+    optional: true
 
 # The photo intent screen requires a photo to be taken first.
 # In simulator, camera is unavailable — these assertions validate the
 # intent screen UI only when reachable (e.g. via gallery selection).
-- assertVisible:
-    text: "Log this meal"
+- extendedWaitUntil:
+    visible:
+      text: "Log this meal"
     timeout: 5000
-  optional: true
+    optional: true
 - assertVisible:
     text: "Quick calorie check"
-  optional: true
+    optional: true
 - assertVisible:
     text: "Just identify"
-  optional: true
+    optional: true
 
 # Premium features should show lock indicator
 - assertVisible:
     text: "Find recipes"
-  optional: true
+    optional: true
 - assertVisible:
     text: "Scan restaurant menu"
-  optional: true
+    optional: true

@@ -7,7 +7,7 @@ env:
   PASSWORD: ${PASSWORD}
 ---
 # Login first
-- launchApp
+- runFlow: ../../helpers/launch-app.yaml
 - runFlow:
     file: ../../helpers/login.yaml
     env:
@@ -16,46 +16,54 @@ env:
 
 # Navigate to Profile tab
 - tapOn: "Profile"
-- assertVisible:
-    text: "Nutrition Goals"
+- extendedWaitUntil:
+    visible:
+      text: "Nutrition Goals"
     timeout: 5000
 
 # Open Nutrition Goals
 - tapOn: "Nutrition Goals"
-- assertVisible:
-    text: "Set Your Goals"
+- extendedWaitUntil:
+    visible:
+      text: "Set Your Goals"
     timeout: 5000
 
 # Fill in physical profile
 - tapOn:
     id: "input-age"
-  optional: true
-- inputText: "30"
-  optional: true
+    optional: true
+- inputText:
+    text: "30"
+    optional: true
 
 - tapOn:
     id: "input-weight"
-  optional: true
-- inputText: "75"
-  optional: true
+    optional: true
+- inputText:
+    text: "75"
+    optional: true
 
 - tapOn:
     id: "input-height"
-  optional: true
-- inputText: "175"
-  optional: true
+    optional: true
+- inputText:
+    text: "175"
+    optional: true
 
 # Select gender
-- tapOn: "Male"
-  optional: true
+- tapOn:
+    text: "Male"
+    optional: true
 
 # Select activity level
-- tapOn: "Moderately Active"
-  optional: true
+- tapOn:
+    text: "Moderately Active"
+    optional: true
 
 # Select primary goal
-- tapOn: "Maintain"
-  optional: true
+- tapOn:
+    text: "Maintain"
+    optional: true
 
 # Verify calculate button
 - assertVisible: "Calculate My Goals"

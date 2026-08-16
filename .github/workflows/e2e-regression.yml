@@ -16,8 +16,11 @@
 #   fast lint/type/test preflight path that gates PRs today.
 #
 #   This workflow is intentionally NOT in the branch-protection required-check
-#   list; a red run never blocks a merge. Failures surface on the Actions tab
-#   (and via GitHub's scheduled-workflow failure notifications).
+#   list; a red run never blocks a merge. GitHub's scheduled-workflow failure
+#   notifications and the Actions tab are NOT relied on (34 straight failures
+#   went unnoticed for a month under that assumption) — a failed run instead
+#   files/updates a GitHub Issue labelled `e2e-regression-failure` via the
+#   `notify-on-failure` job below, so a red night is visible in the Issues tab.
 #
 #   Cost note: the repo is public, so standard GitHub-hosted runners — including
 #   macOS — are free; the previous "manual-only to save paid macOS minutes"
@@ -27,9 +30,12 @@
 # single transient flake doesn't produce a red night. A flow that fails twice
 # in a row is a real signal.
 #
-# NOTE: This workflow cannot be validated from a worktree — expect the first
-# scheduled/dispatched runs to need one or two iterations to settle the native
-# builds and simulator/emulator boot on the runners.
+# Status (2026-08-16): NOT YET VERIFIED GREEN. This workflow's two jobs went
+# from "never executed a single flow" to "genuinely builds, boots a
+# simulator/emulator, and runs all 8 regression flows" this session, but no
+# `workflow_dispatch` run has gone fully green yet — see
+# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md for the
+# full diagnostic trail and what's still open on each platform.
 
 name: E2E Regression
 
@@ -81,11 +87,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # macOS runners ship Postgres but leave it stopped; start it and provision
-      # the role + database the server expects.
+      # macos-14 defaults to Xcode 15.4, but React Native 0.81 requires >= 16.1
+      # (`pod install` fails with "Please upgrade XCode" otherwise). 16.1/16.2
+      # are already installed on the image side-by-side — just not selected.
+      - name: Select Xcode 16.2
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
+      # macOS runners do NOT ship a startable Postgres — install it explicitly
+      # (matches the Postgres 16 used by the Android job's service container and
+      # ci.yml), then start it and provision the role + database the server
+      # expects. postgresql@16 is keg-only, so its bin/ isn't on PATH by default.
       - name: Start Postgres
         run: |
-          brew services start postgresql@14 || brew services start postgresql
+          brew install postgresql@16
+          PG_PREFIX="$(brew --prefix postgresql@16)"
+          export PATH="$PG_PREFIX/bin:$PATH"
+          brew services start postgresql@16
           for i in $(seq 1 30); do
             if pg_isready -q; then break; fi
             sleep 2
@@ -105,11 +122,23 @@ jobs:
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       # Boot an iOS simulator for Maestro to drive. macos-14 ships Xcode with
-      # iPhone simulators preinstalled.
+      # iPhone simulators preinstalled. Export the resolved UDID so the
+      # failure-diagnostic step below can target the exact same device by id
+      # (a name-based -destination lookup is ambiguous across the multiple
+      # "iPhone 15" runtimes the image ships and can itself fail to resolve).
       - name: Boot iOS simulator
         run: |
           xcrun simctl boot "iPhone 15" || true
           xcrun simctl bootstatus "iPhone 15" -b
+          UDID="$(xcrun simctl list devices booted -j | node -e '
+            const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            for (const devices of Object.values(data.devices)) {
+              const match = devices.find((d) => d.name === "iPhone 15" && d.state === "Booted");
+              if (match) { console.log(match.udid); process.exit(0); }
+            }
+            process.exit(1);
+          ')"
+          echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
 
       # Start the backend the flows talk to; keep it running for the rest of the job.
       - name: Start backend
@@ -137,9 +166,33 @@ jobs:
       # Build the native iOS app and install it on the booted simulator.
       # --no-bundler because Metro is already running in the background above.
       - name: Build and install iOS app
+        id: build-ios
         run: npx expo run:ios --no-bundler
 
-      # Runs `maestro test --tags regression e2e/flows/` (see e2e/README.md for
+      # `expo run:ios` wraps xcodebuild in its own formatter, which can swallow
+      # the actual error — its own failure message admits this ("try building
+      # the app with Xcode directly"). On failure, re-invoke xcodebuild
+      # directly (no wrapper) so the raw compiler/linker output reaches the
+      # log. DerivedData is already warm from the attempt above, so this only
+      # redoes the work needed to reach the same failure, not a full rebuild
+      # — bounded separately in case that assumption is wrong (e.g. the real
+      # failure was upstream of the build step, so DerivedData was never
+      # populated and this would otherwise attempt a full cold build inside
+      # the job's remaining time budget).
+      #
+      # Gated on the build step's own outcome, not job-wide `if: failure()`:
+      # a job-wide gate would also fire (and burn job-timeout budget) on an
+      # unrelated earlier failure (Postgres, Metro, simulator boot), where
+      # $IOS_SIMULATOR_UDID may not even be set.
+      - name: Diagnose iOS build failure (raw xcodebuild output)
+        if: failure() && steps.build-ios.outcome == 'failure'
+        working-directory: ios
+        timeout-minutes: 15
+        run: |
+          xcodebuild -workspace OCRecipes.xcworkspace -configuration Debug -scheme OCRecipes \
+            -destination "id=$IOS_SIMULATOR_UDID" build 2>&1
+
+      # Runs `maestro test --include-tags regression e2e/` (see e2e/README.md for
       # the tagged flow inventory). One retry absorbs a transient flake; two
       # consecutive failures fail the job.
       - name: Run Maestro regression flows
@@ -157,6 +210,7 @@ jobs:
           path: |
             server.log
             metro.log
+            e2e/maestro-output/
           if-no-files-found: warn
 
   e2e-android:
@@ -248,6 +302,14 @@ jobs:
 
       # Boots the emulator, then builds + installs the app and runs the flows
       # against it. Same regression tag set and retry policy as the iOS job.
+      #
+      # reactivecircus/android-emulator-runner executes `script:` ONE LINE PER
+      # `sh -c` INVOCATION (verified against run 31874413569's logs — each line
+      # gets its own separate `[command]/usr/bin/sh -c <line>`). A multi-line
+      # `||  { ...; }` retry construct therefore cannot survive here: the `{`
+      # opens a group its own single-line shell never sees the closing `}` for.
+      # The retry must stay on one line — do not reformat this back to a
+      # multi-line block.
       - name: Build app and run Maestro regression flows
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -259,10 +321,7 @@ jobs:
             adb reverse tcp:3000 tcp:3000
             adb reverse tcp:8081 tcp:8081
             npx expo run:android --no-bundler
-            npm run e2e:regression || {
-              echo "::warning::Maestro regression flows failed once — retrying"
-              npm run e2e:regression
-            }
+            npm run e2e:regression || { echo "::warning::Maestro regression flows failed once — retrying"; npm run e2e:regression; }
 
       - name: Upload logs on failure
         if: failure()
@@ -272,4 +331,74 @@ jobs:
           path: |
             server.log
             metro.log
+            e2e/maestro-output/
           if-no-files-found: warn
+
+  # A red run that no one reads is not a signal (see docs/solutions/best-practices/
+  # a-ci-job-neither-required-nor-watched-is-invisible-2026-08-15.md). This job
+  # files or updates a single GitHub Issue on failure so it shows up in the
+  # Issues tab instead of relying on the Actions tab or scheduled-workflow email,
+  # neither of which anyone was actually watching (that's how this workflow
+  # reached 34/34 failures unnoticed). No new secrets — uses the default
+  # GITHUB_TOKEN via actions/github-script.
+  notify-on-failure:
+    name: Notify on regression failure
+    needs: [e2e-ios, e2e-android]
+    if: always() && (needs.e2e-ios.result == 'failure' || needs.e2e-android.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update failure issue
+        uses: actions/github-script@v7
+        env:
+          IOS_RESULT: ${{ needs.e2e-ios.result }}
+          ANDROID_RESULT: ${{ needs.e2e-android.result }}
+        with:
+          script: |
+            const label = 'e2e-regression-failure';
+            const title = 'E2E Regression: nightly run failed';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              'The E2E Regression workflow failed.',
+              '',
+              `- iOS job: ${process.env.IOS_RESULT}`,
+              `- Android job: ${process.env.ANDROID_RESULT}`,
+              `- Run: ${runUrl}`,
+              '',
+              'This issue is updated automatically on each subsequent failure. Close it once the suite is green again.',
+            ].join('\n');
+
+            // Ensure the label exists before filtering/creating with it — the
+            // Issues API does not reliably auto-create an unknown label.
+            try {
+              await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name: label });
+            } catch {
+              await github.rest.issues.createLabel({ owner: context.repo.owner, repo: context.repo.repo, name: label, color: 'd73a4a' });
+            }
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+            // Match by title, not just the label, in case the label is ever reused.
+            const existing = issues.find((issue) => issue.title === title);
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: [label],
+              });
+            }

@@ -1,6 +1,6 @@
 ---
 title: "coverage-ratchet: three deferred test/robustness residuals from delta review"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-08-16
@@ -21,9 +21,9 @@ All three are SUGGESTIONs deferred per "fix high/critical, defer the rest" (2026
 
 ## Acceptance Criteria
 
-- [ ] Unit test: a thresholds block with a missing closing brace → `readCurrentThresholds` throws `/Unbalanced/`
-- [ ] Colors-checker no-arg test: `makeRepo({ "A.tsx": clean, "Stray.test.tsx": clean })` → output anchors `in 1 files` (not 2)
-- [ ] Brace-in-string decision recorded: either make the scanners string-aware, or detect a brace-containing string in the block and throw a clear error (the silent-desync path is the only unacceptable outcome)
+- [x] Unit test: a thresholds block with a missing closing brace → `readCurrentThresholds` throws `/Unbalanced/`
+- [x] Colors-checker no-arg test: `makeRepo({ "A.tsx": clean, "Stray.test.tsx": clean })` → output anchors `in 1 files` (not 2)
+- [x] Brace-in-string decision recorded: either make the scanners string-aware, or detect a brace-containing string in the block and throw a clear error (the silent-desync path is the only unacceptable outcome)
 
 ## Implementation Notes
 
@@ -48,3 +48,14 @@ All in `scripts/__tests__/coverage-ratchet.test.ts` + `scripts/__tests__/check-h
 ### 2026-08-16
 
 - Initial creation from PR #822 delta-review suggestions.
+- Implemented: added the `Unbalanced` throw test and the colors-checker
+  stray-`.test.tsx` count-pinning test; chose the throw-on-detection branch
+  for the brace-in-string decision, adding an unexported
+  `assertNoBraceInStringLiteral` check (single call site inside
+  `locateThresholdsBlock`, covering both the read and `--apply` write paths)
+  plus three negative-control tests. Advisor review caught that the
+  Implementation Notes' suggested quote-spanning regex false-positives
+  across two adjacent per-glob keys — replaced with per-literal enumeration
+  (`STRING_LITERAL`) and comment-stripping before the scan; verified
+  empirically. Code review (one round) fixed a test-comment overclaim and
+  strengthened the colors-checker test to also assert on error content.

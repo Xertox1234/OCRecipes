@@ -1,6 +1,6 @@
 ---
 title: 'parseServingGrams matches a unit PREFIX, not a unit — "1 gallon" parses as 1 gram, "250 millilitres" is rejected'
-status: backlog
+status: done
 priority: medium
 created: 2026-08-10
 updated: 2026-08-10

@@ -157,14 +157,80 @@ export function computeTotals(data: CoverageFinal): Totals {
 const DEFAULT_CONFIG = path.resolve(scriptDir, "../vitest.config.ts");
 
 /**
+ * Matches one complete, self-delimited string/template literal OR one line
+ * comment, whichever starts first at the current scan position. Two reasons
+ * for the shape:
+ *
+ * - Literals are enumerated as whole tokens rather than as the span between
+ *   any two quote characters, which would treat everything between the end of
+ *   one glob key and the start of the next as one "literal".
+ * - The `//` alternative is part of the SAME alternation rather than a
+ *   comment-strip pre-pass, because comments and literals are mutually
+ *   exclusive at a given position and a pre-pass gets both directions wrong:
+ *   stripping first corrupts a literal that contains `//`
+ *   (`"https://example.com/{a"` → `"https`, which then matches nothing and
+ *   silently skips the check), while not stripping at all lets the two
+ *   apostrophes in `// don't use {invalid}, that's the point` open a false
+ *   pseudo-literal spanning the brace. Scanning left to right, the literal
+ *   alternative wins at the `"` of a URL and eats its `//`; the comment
+ *   alternative wins at the `//` of a comment and eats both apostrophes.
+ */
+const STRING_LITERAL_OR_LINE_COMMENT =
+  /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*/g;
+
+/**
+ * `locateThresholdsBlock`'s brace counting and `maskNestedObjects`' depth
+ * tracking both assume string literals inside the block contribute a NET ZERO
+ * brace delta. A per-glob key using vitest-native brace-expansion syntax
+ * (`"client/{screens,components}/**"`) satisfies that — the pair self-corrects
+ * the depth counter (1→2→1) before any real metric is reached, and both the
+ * read and the patch stay correct — so it is deliberately NOT rejected. An
+ * UNBALANCED brace inside a literal is the shape that actually desyncs the
+ * counter; it already failed, but only via a downstream
+ * `Could not parse threshold for "lines"`. This turns that into a message
+ * naming the real cause.
+ *
+ * Residual: only a `{`-first imbalance reaches here. A literal whose first
+ * unmatched brace is `}` drives depth to 0 and truncates the block MID-literal,
+ * so no complete literal is ever scanned and the pre-existing
+ * `Could not parse threshold` error still surfaces instead.
+ */
+function assertNoUnbalancedBraceInStringLiteral(
+  block: string,
+  configFile: string,
+): void {
+  for (const match of block.matchAll(STRING_LITERAL_OR_LINE_COMMENT)) {
+    if (match[0].startsWith("//")) continue;
+    let delta = 0;
+    for (const ch of match[0]) {
+      if (ch === "{") delta++;
+      else if (ch === "}") delta--;
+    }
+    if (delta !== 0) {
+      throw new Error(
+        `thresholds: { ... } block in ${configFile} contains an unbalanced ` +
+          `brace inside a string literal (${match[0]}). This script isolates ` +
+          `the block by brace counting, so an unmatched { or } in a literal ` +
+          `desyncs the count and truncates the block. Balance the braces in ` +
+          `that string (a balanced glob like "client/{a,b}/**" is fine) or ` +
+          `rewrite it to avoid { } characters.`,
+      );
+    }
+  }
+}
+
+/**
  * Isolate the COMPLETE `thresholds: { ... }` block by brace counting.
  * Whole-file `metric:\s*(\d+)` regexes with first-match semantics were
  * silently retargeted by any earlier `lines: NN` mention (a baseline comment,
  * a per-glob thresholds addition) — for both the read AND the patch. A
  * non-greedy regex is not enough either: it ends at the FIRST `}`, truncating
  * before the flat metrics whenever a per-glob sub-object precedes them.
- * (Assumes no brace characters inside string literals within the block —
- * true for any plausible thresholds config.)
+ * (Assumes string literals within the block contribute a net-zero brace delta
+ * — enforced by assertNoUnbalancedBraceInStringLiteral below, scoped to this
+ * block only so an unbalanced-brace string elsewhere in the file, e.g. a
+ * coverage `include` glob above the block, is out of scope and never trips
+ * it.)
  */
 function locateThresholdsBlock(
   source: string,
@@ -187,11 +253,9 @@ function locateThresholdsBlock(
       depth--;
       if (depth === 0) {
         const end = i + 1;
-        return {
-          start: startMatch.index,
-          end,
-          block: source.slice(startMatch.index, end),
-        };
+        const block = source.slice(startMatch.index, end);
+        assertNoUnbalancedBraceInStringLiteral(block, configFile);
+        return { start: startMatch.index, end, block };
       }
     }
   }

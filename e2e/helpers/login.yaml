@@ -4,7 +4,22 @@ appId: com.ocrecipes.app
 #   USERNAME (default: testuser)
 #   PASSWORD (default: testpass123)
 ---
-- assertVisible: "Sign In"
+# NOTE (2026-08-16): two DIFFERENT failure modes were confirmed via
+# Maestro's own screenshot artifact on live CI (run 31938889879) — see
+# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md Updates.
+# (1) The FIRST flow in a run can still be showing "Bundling 96.0%..." when
+#     the wait times out — a real cold-start race against Metro, which is
+#     why this timeout has margin above the default. (2) Every flow after
+#     that hits the Expo dev-client's own "developer menu" welcome overlay
+#     popping up on top of an already-rendered Sign In screen — see
+#     e2e/helpers/launch-app.yaml, which dismisses it before this wait
+#     runs. Two earlier single-cause theories (bundle-speed only; bare
+#     launchApp never connecting at all) were each tested and were each
+#     only PART of the picture — this is the first evidence from an actual
+#     screenshot rather than inferred from timing.
+- extendedWaitUntil:
+    visible: "Sign In"
+    timeout: 45000
 - tapOn:
     id: "input-username"
 - inputText: ${USERNAME}
@@ -12,6 +27,7 @@ appId: com.ocrecipes.app
     id: "input-password"
 - inputText: ${PASSWORD}
 - tapOn: "Sign In"
-- assertNotVisible:
-    text: "Sign In"
+- extendedWaitUntil:
+    notVisible:
+      text: "Sign In"
     timeout: 5000

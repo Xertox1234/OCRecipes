@@ -143,7 +143,38 @@ mechanism of the bug, so the fix re-specified it as containment
 Co-location is the weakest possible enforcement: it survives exactly until someone has a
 reason to move one of the two.
 
-### 5. "The no-jq path already covers this" — a comment naming a fallback that never runs for this input (2026-08-16)
+### 5. An anchor asserted on a constant, enforced at its call sites (added 2026-08-16)
+
+`server/services/barcode-lookup.ts`'s `parseServingGrams` fix (P2-2026-08-10) went
+through two shapes in the same PR. The first:
+
+```ts
+/** Metric units ... anchored so the alternation cannot settle on a prefix. */
+const SERVING_UNIT = String.raw`(?:grams?|g|millilit(?:re|er)s?|ml)`;
+const SERVING_GRAMS_PAREN = new RegExp(String.raw`\((\d+\.?\d*)\s*${SERVING_UNIT}\b\)`);
+const SERVING_GRAMS_BARE = new RegExp(String.raw`(\d+\.?\d*)\s*${SERVING_UNIT}\b`);
+```
+
+Both regexes built from `SERVING_UNIT` were correctly anchored — every test passed —
+but the docblock's claim ("anchored") was true of the two call sites, not of
+`SERVING_UNIT` itself. `SERVING_UNIT` alone, matched with no boundary, still accepts
+`"1 gallon"` as a gram. A reviewer's second pass caught it not because anything was
+broken, but because the assertion was attached to the wrong symbol: "a future third
+regex built from `SERVING_UNIT` inherits the docblock's promise and none of the
+anchoring behavior." The fix baked the `\b` into `SERVING_UNIT` itself and dropped it
+from both call sites, so the property travels with the value instead of needing to be
+re-supplied at every future use:
+
+```ts
+const SERVING_UNIT = String.raw`(?:grammes?|grams?|gms?|g|millilit(?:re|er)s?|mls?)\b`;
+```
+
+Same rule as instances 1–4, one level more specific: when N call sites all correctly
+apply a property, that is not the same as the property being **on** the shared value
+they built it from. Ask "if I read only this constant's definition, is the claim in its
+docblock still true?" — not "do today's consumers happen to make it true?"
+
+### 6. "The no-jq path already covers this" — a comment naming a fallback that never runs for this input (2026-08-16)
 
 `.claude/hooks/guard-outward-cli.sh` sources a shared lib for its precise
 command matching. If the source fails, the code fell through to `exit 0`
@@ -164,6 +195,15 @@ whether it actually denies. It didn't. The fix factors the crude smell-test
 into one function and calls it from **both** fallback branches, so "does
 condition B fail closed" is enforced by the same code path proven for
 condition A, not by a second comment asserting they're equivalent.
+
+A third degraded state, found in a later review round, makes the same point
+one level deeper: with `jq` present and the lib sourceable but `awk` ABSENT,
+`declare -F cmd_bare` succeeds — the function is DEFINED — so neither
+fallback branch fires, yet `cmd_bare`'s internal `awk` fails and it emits
+nothing, so every downstream `grep` matches an empty string and the hook
+allows everything. `declare -F` answers "is it defined?", not "does it
+work?". The fix treats an all-blank result from a non-blank input as a
+failed primitive and degrades to the same crude test.
 
 The pattern is identical to instance 3 above (a safety claim whose premise
 is a property of a DIFFERENT piece of code, not of the code beside the
@@ -191,8 +231,9 @@ section asks for a table, not a comment, to carry.
 - `client/lib/nutrition-ocr-parser.ts` — `directReads` vs `extracted`, `substitutedUnit`
 - `.claude/hooks/lib/cmd-detect.sh` — `cmd_gh_pr_write_subcommand`, `cmd_gh_pr_ref`
 - `.claude/agents/ai-reviewer.md` — the containment rule from instance 1
-- `.claude/hooks/guard-outward-cli.sh` — `crude_smells_outward()`, instance 5's fix
-- `.claude/hooks/test-guard-outward-cli.sh` — the `NOLIB_DIR` fixture that reproduces instance 5's condition directly instead of trusting the comment
+- `server/services/barcode-lookup.ts` — `SERVING_UNIT`, instance 5
+- `.claude/hooks/guard-outward-cli.sh` — `crude_smells_outward()`, instance 6's fix
+- `.claude/hooks/test-guard-outward-cli.sh` — the `NOLIB_DIR` and `NOAWK_BIN` fixtures that reproduce instance 6's two conditions directly instead of trusting the comment
 
 ## See Also
 

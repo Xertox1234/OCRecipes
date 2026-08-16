@@ -5,9 +5,12 @@ tags:
   - regression
   - onboarding
 ---
-# Launch fresh app
+# Launch fresh app — clearState wipes the dev-launcher's remembered server
+# too, so reconnect explicitly afterward (see e2e/helpers/launch-app.yaml,
+# whose own header documents this exact two-step pattern)
 - launchApp:
     clearState: true
+- runFlow: ../../helpers/launch-app.yaml
 
 # Switch to register mode
 - assertVisible: "Sign In"
@@ -27,8 +30,9 @@ tags:
 - tapOn: "Create Account"
 
 # Wait for Welcome screen
-- assertVisible:
-    text: "Get Started"
+- extendedWaitUntil:
+    visible:
+      text: "Get Started"
     timeout: 10000
 
 # Screen 1: Welcome
@@ -39,36 +43,45 @@ tags:
 - tapOn: "Omnivore"
 
 # Screen 3: Allergies — skip without selecting
-- assertVisible:
-    text: "Go back"
+- extendedWaitUntil:
+    visible:
+      text: "Go back"
     timeout: 3000
-- tapOn: "No Allergies"
-  optional: true
-- tapOn: "Continue"
-  optional: true
+- tapOn:
+    text: "No Allergies"
+    optional: true
+- tapOn:
+    text: "Continue"
+    optional: true
 
 # Screen 4: Health Conditions — skip without selecting
-- assertVisible:
-    text: "Go back"
+- extendedWaitUntil:
+    visible:
+      text: "Go back"
     timeout: 3000
-- tapOn: "None of These"
-  optional: true
-- tapOn: "Continue"
-  optional: true
+- tapOn:
+    text: "None of These"
+    optional: true
+- tapOn:
+    text: "Continue"
+    optional: true
 
 # Screen 5: Goals — continue
-- assertVisible:
-    text: "Go back"
+- extendedWaitUntil:
+    visible:
+      text: "Go back"
     timeout: 3000
 - tapOn: "Continue"
 
 # Screen 6: Preferences
-- assertVisible:
-    text: "Complete setup"
+- extendedWaitUntil:
+    visible:
+      text: "Complete setup"
     timeout: 5000
 - tapOn: "Complete setup"
 
 # Should land on home screen after onboarding
-- assertVisible:
-    text: "Hello"
+- extendedWaitUntil:
+    visible:
+      text: "Hello"
     timeout: 10000

@@ -644,6 +644,38 @@ describe("nutrition storage", () => {
       expect(Number(summary.totalProtein)).toBeCloseTo(30, 0);
       expect(Number(summary.itemCount)).toBe(1);
     });
+
+    // `dailyLogs.servings` is nullable at the DDL level (`.default("1")` with no
+    // `.notNull()`), and `CHECK (servings > 0)` does NOT reject NULL — SQL
+    // evaluates it to `unknown`, and a CHECK passes on anything that is not
+    // `false`. Without a COALESCE on the multiplier, `macro * NULL` is NULL,
+    // `SUM()` skips NULLs, and the outer `COALESCE(SUM(...), 0)` absorbs the
+    // gap: the row silently contributes ZERO calories with no error anywhere.
+    // Fail safe toward the column's own default (1 = unscaled) instead.
+    it("treats a NULL servings multiplier as 1 rather than dropping the row's macros", async () => {
+      const item = await insertScannedItem(testUser.id, {
+        calories: "200",
+        protein: "10",
+        carbs: "25",
+        fat: "8",
+      });
+      const log = await insertDailyLog(testUser.id, {
+        scannedItemId: item.id,
+        servings: null,
+      });
+
+      // Guard against a vacuous test: if Drizzle collapsed the explicit `null`
+      // into the column DEFAULT ("1"), the assertions below would pass with or
+      // without the COALESCE and prove nothing.
+      expect(log.servings).toBeNull();
+
+      const summary = await getDailySummary(testUser.id, new Date());
+      expect(Number(summary.totalCalories)).toBeCloseTo(200, 0);
+      expect(Number(summary.totalProtein)).toBeCloseTo(10, 0);
+      expect(Number(summary.totalCarbs)).toBeCloseTo(25, 0);
+      expect(Number(summary.totalFat)).toBeCloseTo(8, 0);
+      expect(Number(summary.itemCount)).toBe(1);
+    });
   });
 
   describe("getDailyScanCount", () => {
@@ -978,6 +1010,53 @@ describe("nutrition storage", () => {
         .from(dailyLogs)
         .where(eq(dailyLogs.scannedItemId, item.id));
       expect(log.servings).toBe("1.00");
+    });
+
+    it("applies a logOverrides.servings multiplier without scaling the scanned item's own macros", async () => {
+      // Regression test for the label-scan bug: a "servings consumed"
+      // multiplier belongs on the daily log, never baked into the scanned
+      // item's own per-serving macro columns.
+      const item = await createScannedItemWithLog(
+        {
+          userId: testUser.id,
+          productName: "Trail Mix",
+          calories: "200",
+          protein: "6",
+          carbs: "40",
+          fat: "5",
+          fiber: "2",
+          sugar: "30",
+          sodium: "100",
+          servingSize: "150 g",
+          sourceType: "label",
+        },
+        { mealType: "snack", servings: "3" },
+      );
+
+      // The scanned item stores exactly what was passed in — unscaled.
+      expect(item.servingSize).toBe("150 g");
+      expect(item.calories).toBe("200.00");
+      expect(item.sugar).toBe("30.00");
+
+      const t = getTestTx();
+      const [log] = await t
+        .select()
+        .from(dailyLogs)
+        .where(eq(dailyLogs.scannedItemId, item.id));
+      expect(log.servings).toBe("3.00");
+      expect(log.mealType).toBe("snack");
+
+      // AC5, composed directly rather than argued from separately-passing
+      // tests: the daily-log TOTAL must equal what the old (buggy) write —
+      // which baked servingsConsumed into the macros and hardcoded
+      // dailyLogs.servings to "1" — would have produced for the same
+      // servingsConsumed = 3. Old: 200 * 3 = 600. New: unscaled 200 * servings
+      // 3 = 600, via getDailySummary's read-time multiplication.
+      const summary = await getDailySummary(testUser.id, new Date());
+      expect(Number(summary.totalCalories)).toBeCloseTo(600, 0);
+      expect(Number(summary.totalProtein)).toBeCloseTo(18, 0);
+      expect(Number(summary.totalCarbs)).toBeCloseTo(120, 0);
+      expect(Number(summary.totalFat)).toBeCloseTo(15, 0);
     });
 
     it("rolls back both inserts if daily log insert fails", async () => {

@@ -154,6 +154,48 @@ describe("meal-plan-analytics storage", () => {
       // the left-join discards the scanned item.
       expect(Number(summary.plannedCalories)).toBe(0);
     });
+
+    // `mealPlanItems.servings` is nullable at the DDL level (`.default("1")`
+    // with no `.notNull()`), and `CHECK (servings > 0)` does NOT reject NULL —
+    // SQL evaluates it to `unknown`, and a CHECK passes on anything that is not
+    // `false`. Without a COALESCE on the multiplier, `macro * NULL` is NULL,
+    // `SUM()` skips NULLs, and the outer `COALESCE(SUM(...), 0)` absorbs the
+    // gap: the row silently contributes ZERO calories with no error anywhere.
+    // Fail safe toward the column's own default (1 = unscaled) instead.
+    it("treats a NULL servings multiplier as 1 rather than dropping the item's macros", async () => {
+      const recipe = await createRecipe(testUser.id, {
+        caloriesPerServing: "400",
+        proteinPerServing: "30",
+        carbsPerServing: "40",
+        fatPerServing: "10",
+      });
+      const [item] = await tx
+        .insert(mealPlanItems)
+        .values({
+          userId: testUser.id,
+          recipeId: recipe.id,
+          plannedDate: "2026-05-15",
+          mealType: "lunch",
+          servings: null,
+        })
+        .returning();
+
+      // Guard against a vacuous test: if Drizzle collapsed the explicit `null`
+      // into the column DEFAULT ("1"), the assertions below would pass with or
+      // without the COALESCE and prove nothing.
+      expect(item.servings).toBeNull();
+
+      const summary = await getPlannedNutritionSummary(
+        testUser.id,
+        new Date("2026-05-15T12:00:00Z"),
+        [],
+      );
+      expect(Number(summary.plannedCalories)).toBe(400);
+      expect(Number(summary.plannedProtein)).toBe(30);
+      expect(Number(summary.plannedCarbs)).toBe(40);
+      expect(Number(summary.plannedFat)).toBe(10);
+      expect(Number(summary.plannedItemCount)).toBe(1);
+    });
   });
 
   describe("getMealPlanIngredientsForDateRange", () => {

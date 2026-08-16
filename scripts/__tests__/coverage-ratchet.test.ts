@@ -262,6 +262,142 @@ describe("coverage-ratchet", () => {
       expect(() => readCurrentThresholds(cfg)).toThrow(/thresholds/);
     });
 
+    it("throws /Unbalanced/ when the thresholds block never closes", () => {
+      // Distinct from the "no thresholds block" case above: here the
+      // `thresholds: {` match succeeds (so the block-locate loop starts),
+      // but depth never returns to 0 — the loop falls through to the
+      // Unbalanced throw instead of the "Could not find" one.
+      const dir = makeTmpDir();
+      const cfg = path.join(dir, "vitest.config.ts");
+      fs.writeFileSync(
+        cfg,
+        [
+          "export default defineConfig({",
+          "  test: {",
+          "    coverage: {",
+          "      thresholds: {",
+          "        lines: 50,",
+          "        statements: 50,",
+          // deliberately no closing braces
+        ].join("\n"),
+      );
+      expect(() => readCurrentThresholds(cfg)).toThrow(/Unbalanced/);
+    });
+
+    it("parses correctly with a BALANCED brace-expansion glob key", () => {
+      // `"client/{a,b}/**"` is vitest-native and already the house style in
+      // the repo's own `coverage.include`. The brace PAIR self-corrects the
+      // depth counter (1→2→1) before any real metric is reached, so both the
+      // block-locate and the mask stay correct. A guard that rejected "any
+      // brace in a literal" broke this working input — this pins that it
+      // parses, and returns the FLAT metrics, not the per-glob ones.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        '        "client/{screens,components}/**": { lines: 80, functions: 70, branches: 60, statements: 80 },',
+      );
+      expect(readCurrentThresholds(cfg)).toEqual({
+        lines: 53,
+        statements: 53,
+        functions: 58,
+        branches: 55,
+      });
+    });
+
+    it("throws a clear error on an UNBALANCED brace inside a glob key", () => {
+      // The shape that genuinely desyncs the brace counter. It already failed
+      // before the check existed — but only downstream, as a misleading
+      // `Could not parse threshold for "lines"`. Pin the message that names
+      // the real cause.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        '        "client/{screens/**": { lines: 80, functions: 70, branches: 60, statements: 80 },',
+      );
+      expect(() => readCurrentThresholds(cfg)).toThrow(
+        /unbalanced brace inside a string literal/i,
+      );
+    });
+
+    it("still sees an unbalanced brace in a literal that contains `//`", () => {
+      // Regression: a comment-strip PRE-PASS (`block.replace(/\/\/[^\n]*/g,
+      // "")`) is not literal-aware — it truncated `"https://example.com/{a"`
+      // to `"https`, which then matched no complete literal, so the check
+      // silently did not fire and the failure degraded back to the
+      // downstream `Could not parse threshold` message. The fixture pairs
+      // `//` with an UNBALANCED brace on purpose: a BALANCED one would parse
+      // correctly under both the broken and the fixed scan and so could not
+      // discriminate between them.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        '        "https://example.com/{a": { lines: 80, functions: 70, branches: 60, statements: 80 },',
+      );
+      expect(() => readCurrentThresholds(cfg)).toThrow(
+        /unbalanced brace inside a string literal/i,
+      );
+    });
+
+    it("does not throw on two adjacent per-glob keys", () => {
+      // History: a candidate implementation matched from a quote character to
+      // a LATER same-type quote character while excluding only quote
+      // characters (not braces) from the interior. Since the value object
+      // between "client/**" and "server/**" below (`: { lines: 80, ... },`)
+      // contains no quote characters, that construction tunnelled straight
+      // through it — closing quote of "client/**" to opening quote of
+      // "server/**" — and false-positived on this legal config.
+      //
+      // NOTE this fixture no longer *discriminates* against that
+      // construction: the span it would capture is itself brace-BALANCED, so
+      // the narrowed unbalanced-only check passes it either way. It is kept
+      // as a plain "legal config must not throw" regression, not as a proof
+      // that literals are enumerated as whole tokens.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        [
+          '        "client/**": { lines: 80, functions: 70, branches: 60, statements: 80 },',
+          '        "server/**": { lines: 70, functions: 60, branches: 50, statements: 70 },',
+        ].join("\n"),
+      );
+      expect(() => readCurrentThresholds(cfg)).not.toThrow();
+    });
+
+    it("does not throw on a brace-containing string literal above the block (out of scope)", () => {
+      // Mirrors the real vitest.config.ts: `coverage.include` (a sibling of
+      // `thresholds`) uses a brace-expansion glob string. The check must be
+      // scoped to the located thresholds block only, or this would throw on
+      // the repo's own real config.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        '    include: ["client/**/*.{ts,tsx}"],',
+      );
+      expect(() => readCurrentThresholds(cfg)).not.toThrow();
+    });
+
+    it("does not throw when two apostrophes in a line comment straddle a brace", () => {
+      // Without stripping comments first, "don't" ... "that's" forms a false
+      // pseudo string-literal ("t use {invalid}, that") spanning the brace.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        "        // don't use {invalid}, that's the point",
+      );
+      expect(() => readCurrentThresholds(cfg)).not.toThrow();
+    });
+
     it("reads the FLAT metrics when a per-glob sub-object precedes them", () => {
       // Vitest supports per-glob threshold sub-objects INSIDE the block. The
       // naive non-greedy block regex ended at the sub-object's own `}` and a
@@ -323,6 +459,36 @@ describe("coverage-ratchet", () => {
       // The per-glob sub-object survives byte-for-byte…
       expect(source).toContain(nested.trim());
       // …and the flat metrics (not the nested ones) took the new values.
+      expect(source).toContain("lines: 60,");
+      expect(source).toContain("statements: 61,");
+      expect(source).toContain("functions: 62,");
+      expect(source).toContain("branches: 63,");
+      expect(source).not.toContain("lines: 40,");
+    });
+
+    it("patches correctly through a BALANCED brace-expansion glob key", () => {
+      // The write half of the read test above. `--apply` REWRITES the real
+      // vitest.config.ts, so re-permitting this input class is only safe if
+      // the patch path is correct on it too — the balanced pair must keep
+      // maskNestedObjects aligned so the first `lines:` match in the mask is
+      // the FLAT one and the length-preserving indices still splice right.
+      const dir = makeTmpDir();
+      const nested =
+        '        "client/{screens,components}/**": { lines: 80, functions: 70, branches: 60, statements: 80 },';
+      const cfg = writeConfig(
+        dir,
+        { lines: 40, functions: 41, branches: 42, statements: 43 },
+        "",
+        nested,
+      );
+      applyThresholds(
+        { lines: 60, statements: 61, functions: 62, branches: 63 },
+        cfg,
+      );
+      const source = fs.readFileSync(cfg, "utf8");
+      // The brace-expansion key and its sub-object survive byte-for-byte…
+      expect(source).toContain(nested.trim());
+      // …and only the flat metrics moved.
       expect(source).toContain("lines: 60,");
       expect(source).toContain("statements: 61,");
       expect(source).toContain("functions: 62,");

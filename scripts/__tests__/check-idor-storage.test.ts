@@ -134,11 +134,9 @@ describe("check-idor-storage.js", () => {
       expect(out).toContain("No IDOR-risk storage functions found in 1 files");
     });
 
-    it("pins the known matcher blind spot: exported arrow consts are invisible", () => {
-      // EXPORT_FN_START only matches `export [async] function name(` — an
-      // exported arrow function with a naked id param passes the scan today.
-      // Documented follow-up, not a behavior this test endorses; widening the
-      // matcher requires re-auditing server/storage and the ALLOWLIST.
+    it("detects an exported async arrow-function const with a naked id param", () => {
+      // EXPORT_FN_START now also matches `export const name = [async] (` —
+      // an exported arrow function with a naked id param is caught.
       const dir = makeTmpDir();
       const file = writeFixture(
         dir,
@@ -146,8 +144,177 @@ describe("check-idor-storage.js", () => {
         "export const getEntryById = async (entryId: number) => {\n  return entryId;\n};\n",
       );
       const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryById");
+      expect(out).toContain("entryId");
+      expect(out).toContain("without a userId parameter");
+    });
+
+    it("detects an exported sync (non-async) arrow-function const with a naked id param", () => {
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrows-sync.ts",
+        "export const getEntryByIdSync = (entryId: number) => {\n  return entryId;\n};\n",
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryByIdSync");
+      expect(out).toContain("entryId");
+      expect(out).toContain("without a userId parameter");
+    });
+
+    it("flags a multi-line arrow-export signature (params spanning several lines)", () => {
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrow-multiline.ts",
+        [
+          "export const updateGroceryNote = async (",
+          "  noteId: number,",
+          "  data: Partial<Note>,",
+          ") => {",
+          "  return data;",
+          "}",
+          "",
+        ].join("\n"),
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("updateGroceryNote");
+      expect(out).toContain("noteId");
+    });
+
+    it("detects an arrow export whose const carries a type annotation", () => {
+      // `: Getter` sits between the name and `=`, which the first widening of
+      // EXPORT_FN_START (`(\w+)\s*=`) could not cross.
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrow-typed.ts",
+        "export const getEntryByIdTyped: Getter = async (entryId: number) => {\n  return entryId;\n};\n",
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryByIdTyped");
+      expect(out).toContain("entryId");
+      expect(out).toContain("without a userId parameter");
+    });
+
+    it("detects a generic arrow export (type params between async and the parens)", () => {
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrow-generic.ts",
+        "export const getEntryByIdGeneric = async <T,>(entryId: number) => {\n  return entryId as T;\n};\n",
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryByIdGeneric");
+      expect(out).toContain("entryId");
+      expect(out).toContain("without a userId parameter");
+    });
+
+    it("detects a generic function declaration (type params between name and parens)", () => {
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "fn-generic.ts",
+        "export async function getEntryByIdFnGeneric<T>(entryId: number) {\n  return entryId as T;\n}\n",
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryByIdFnGeneric");
+      expect(out).toContain("entryId");
+    });
+
+    it("ignores parenthesised non-function consts (no `=>` after the closing paren)", () => {
+      // The arrow branch matches on `= (`, so these would otherwise be reported
+      // as IDOR-risk "functions" — training developers to add `// idor-safe`
+      // or an ALLOWLIST entry to something that is not a function at all.
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "non-functions.ts",
+        [
+          "export const cache = (recipeId);",
+          "export const LIMIT = (MAX_recipeId + 1);",
+          "export const cachedIds = (() => { const recipeId = 1; return recipeId; })();",
+          "",
+        ].join("\n"),
+      );
+      const { status, out } = run(realScript, [file]);
       expect(status, out).toBe(0);
       expect(out).toContain("No IDOR-risk storage functions found in 1 files");
+    });
+
+    it("detects an arrow export whose `=>` wrapped onto a line after the closing paren", () => {
+      // Regression guard for the `=>`-required gate: a prettier-wrapped
+      // signature puts `): Promise<T> => {` on its own line, so the closing
+      // paren ends its line and the same-line tail is empty. Without the
+      // lookahead the gate turns a real arrow export invisible — a strictly
+      // worse failure than the false positive the gate exists to stop.
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrow-wrapped.ts",
+        [
+          "export const getEntryByIdWrapped = async (",
+          "  entryId: number",
+          ")",
+          "  : Promise<Entry> => {",
+          "  return entryId;",
+          "};",
+          "",
+        ].join("\n"),
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryByIdWrapped");
+      expect(out).toContain("entryId");
+    });
+
+    it("still ignores a non-function const whose closing paren ends its line", () => {
+      // The other side of the lookahead: a bare `)` on its own line must not
+      // become a licence to treat any parenthesised const as a function.
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "non-function-wrapped.ts",
+        [
+          "export const cachedRecipeIds = (",
+          "  someRecipeId",
+          ")",
+          ";",
+          "",
+        ].join("\n"),
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status, out).toBe(0);
+      expect(out).toContain("No IDOR-risk storage functions found in 1 files");
+    });
+
+    it("parses arrow exports rather than skipping them — flags only the unscoped one", () => {
+      // Discriminating by construction: with the pre-widening regex BOTH
+      // exports are invisible and the run exits 0, so naming exactly one of
+      // them proves the arrow branch matched and then judged each on its params.
+      const dir = makeTmpDir();
+      const file = writeFixture(
+        dir,
+        "arrows-safe.ts",
+        [
+          "export const getEntryForUser = async (entryId: number, userId: string) => {",
+          "  return { entryId, userId };",
+          "};",
+          "export const getEntryById = async (entryId: number) => entryId;",
+          "",
+        ].join("\n"),
+      );
+      const { status, out } = run(realScript, [file]);
+      expect(status).toBe(1);
+      expect(out).toContain("getEntryById");
+      expect(out).not.toContain("getEntryForUser");
+      expect(out).toContain("Errors: 1");
     });
 
     it("silently ignores a nonexistent path and reports a zero-file scan", () => {
