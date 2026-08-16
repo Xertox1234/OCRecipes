@@ -67,7 +67,10 @@ applied to the sibling module the codified instance explicitly names.
 ## Implementation Notes
 
 - Mirror the shape #833 landed:
-  `const SERVING_UNIT = String.raw`(?:grammes?|grams?|gms?|g|millilit(?:re|er)s?|mls?)\b`;`
+  the real constant on `main` (`server/services/barcode-lookup.ts:202`), which already
+  carries the six extra spellings #833 restored — do NOT copy the shorter illustrative
+  string from the `a-stated-invariant-is-not-an-enforced-one` write-up, which predates them:
+  `(?:grammes?|grammi|gramm|grams?|gramos|gramas|gms?|grs|grm|g|millilit(?:re|er)s?|mls?)\b`
 - Consider whether this module should also accept the six spellings #833 restored
   (`grammi`, `gramos`, `gramas`, `gramm`, `grs`, `grm`). It parses **label OCR text**, not
   crowdsourced Open Food Facts free text, so the vocabulary case is weaker here — decide

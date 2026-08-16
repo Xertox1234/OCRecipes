@@ -7,6 +7,8 @@ updated: 2026-08-16
 assignee:
 labels: [deferred, harness, agents]
 github_issue:
+human_led: true
+blocked_reason: "AC #1 is a decision, not a spec: whether heredoc bodies should be blanked like quoted spans (option a) or deliberately left visible with `--body-file` as the documented pattern (option b). The two options differ by roughly an order of magnitude in cost — (a) needs a parser that knows which command consumes the redirect, (b) is a comment and a deny-message line — and (a) weakens a real attack surface, since a heredoc piped into `bash`/`eval` IS an invocation. An unattended run would pick whichever is cheaper and write it up as a settled decision record for a security guard. The eventual PR would touch `.claude/hooks/**/*.sh`, which is NOT on todo-automerge-guard's SAFE_ALLOWLIST, so the guard would HOLD it — but the guard cannot stop the decision itself from being invented."
 ---
 
 # A heredoc body reads as command position, so documenting a deny trips the deny

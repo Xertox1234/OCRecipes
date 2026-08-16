@@ -23,11 +23,19 @@ independently proved a partial escape passes it. The null-demo branch in this sa
 
 PR #836 established that the structural regex catches a **fully** flattened predicate
 (`or(authorCond, a, b, c)`) but passes a **partial escape** — one criterion arm hoisted
-outside the author scope:
+outside the author scope.
+
+**Use this file's own criteria, not the sibling's.** `buildJunkRecipeWhere`
+(`server/scripts/cleanup-seed-recipes-utils.ts`) has an `or()` group of
+`ilike(seed-%)`, `ilike(test-%)`, `inArray(LEGACY_TEST_PRODUCT_NAMES)` — it has **no**
+emptiness or short-title branch (those belong to the sibling
+`buildJunkCommunityRecipeWhere`). The mutant for THIS file is:
 
 ```
-or(and(authorCond, or(ilike, emptiness)), sql`LENGTH(TRIM(title)) < 3`)
+or(and(authorCond, or(ilike(seed-%), ilike(test-%))), inArray(legacyNames))
 ```
+
+Confirmed to still defeat the `:44` regex and leave the param list byte-identical.
 
 That mutant still renders a `) and (` inside the scoped sub-clause, so the regex matches;
 it also leaves the parameter list byte-identical, so the param pins pass too. #836's fix
@@ -47,8 +55,12 @@ worth folding into the exact pin rather than leaving beside it.
 
 - [ ] `:44`'s regex replaced with an inline exact-string `expect(q.sql).toBe("<rendered>")`
       for the demo-user branch, matching the null branch's existing shape at `:61`
-- [ ] Verified RED first: build the partial-escape mutant above by hand-editing the
-      predicate source, confirm the new pin fails and the old regex passed
+- [ ] Verified RED first with an **in-test** mutant fixture — do NOT hand-edit the
+      predicate source (it is out of scope below, and a throwaway mutation leaves no
+      permanent guard). Mirror the sibling's committed helper at
+      `scripts/__tests__/cleanup-junk-recipes-utils.test.ts:80-85`, which builds
+      `or(and(authorScope, or(...)), hoistedCriterion)` from imported `drizzle-orm`
+      operators inside the test file and asserts the pin rejects it
 - [ ] An inline literal, **not** `toMatchSnapshot()` — a snapshot gets blessed with `-u`
       without anyone reading the diff, which is the quiet-disarm mode a permanent-delete
       perimeter can least afford (#836's reasoning, recorded beside its pins)

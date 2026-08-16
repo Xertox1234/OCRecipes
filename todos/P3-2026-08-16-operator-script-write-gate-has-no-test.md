@@ -21,8 +21,8 @@ return` in `server/scripts/cleanup-seed-recipes.ts`, and the equivalent in
 
 ## Background
 
-Verified on `main` 2026-08-16. Each script ends with a bare `main().catch(...)` /
-`migrate().catch(...)` at module load, so importing it in a test would **execute the
+Verified on `main` 2026-08-16. Each script defines and calls `main()` — no `migrate()` function exists in any of
+them — with a bare `main().catch(...)` at module load, so importing it in a test would **execute the
 script**. Consequently the test files import only the `-utils` leaf:
 
 ```
@@ -48,8 +48,18 @@ loud. But these scripts permanently delete or overwrite rows, and
 ## Acceptance Criteria
 
 - [ ] A `spawnSync`-based smoke test per script asserts the observable difference between a
-      bare invocation and `--commit` — e.g. the `LIVE RUN` banner appears only with
-      `--commit`, and the dry-run banner names `--dry-run` as the veto when both are passed
+      bare invocation and `--commit`. **The banner text differs per script — there is no
+      single portable string.** Verified on `main` 2026-08-16:
+
+      | script | commit banner | dry-run banner | `Target DB:` line? |
+      | --- | --- | --- | --- |
+      | `scripts/migrate-recipe-ingredients.ts` | `=== LIVE RUN ===` (`:64`) | `=== DRY RUN ===` (`:66-67`) | yes (`:69`) |
+      | `scripts/cleanup-junk-recipes.ts` | `=== LIVE RUN ===` (`:40`) | `=== DRY RUN ===` (`:42-43`) | **no** |
+      | `server/scripts/cleanup-seed-recipes.ts` | `Mode: COMMIT` (`:89`) | `Mode: DRY-RUN` (`:89`) | yes (`:88`) |
+
+      Assert on the right string for each. The dry-run banner should also name `--dry-run`
+      as the veto when both flags are passed
+
 - [ ] The test runs the script with **no reachable database** and asserts on stdout before
       any connection is attempted, so it neither needs nor touches a DB
 - [ ] Verified RED first by inverting each script's gate condition and confirming the smoke
@@ -68,8 +78,10 @@ loud. But these scripts permanently delete or overwrite rows, and
   assert on it without a database. Check each script; if a banner currently prints after
   connect, moving it earlier is in scope and is an improvement in its own right (an
   operator should see the target before anything happens).
-- PR #840 added a `Target DB: <host:port/dbname>` banner to all three — that line is
-  another stable, DB-free assertion target.
+- PR #840 added a `Target DB:` banner to `migrate-recipe-ingredients.ts` and
+  `cleanup-seed-recipes.ts` but **not** to `cleanup-junk-recipes.ts` (verified:
+  `git show 53f5c0ef -- scripts/cleanup-junk-recipes.ts` has no such line). It is a
+  stable DB-free assertion target for the two that have it, not for all three.
 - Do **not** restructure the scripts to export `main()` purely for testability unless that
   turns out to be the only workable route; if it is, say so and keep the change minimal.
 
