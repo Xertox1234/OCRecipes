@@ -42,7 +42,14 @@ function makeFakeEasBin(): string {
   );
   tmpDirs.push(dir);
   const bin = path.join(dir, "eas");
-  fs.writeFileSync(bin, '#!/usr/bin/env bash\necho "EAS_CALLED: $@"\nexit 0\n');
+  // Bracket each argv token individually: an unquoted `echo $@` collapses
+  // token boundaries, making "one arg containing spaces" and "several args"
+  // print identically — which would blind the suite to an unquoting
+  // regression on the fragment's own `... "$@"` exec line.
+  fs.writeFileSync(
+    bin,
+    '#!/usr/bin/env bash\nprintf "EAS_CALLED:"\nfor a in "$@"; do printf " [%s]" "$a"; done\nprintf "\\n"\nexit 0\n',
+  );
   fs.chmodSync(bin, 0o755);
   return dir;
 }
@@ -95,15 +102,17 @@ describe("EAS update publish guards (package.json inline scripts)", () => {
     it("forwards a labeled publish to eas with the locked platform/branch", () => {
       const r = runGuard(name, ["--message", "fix login"]);
       expect(r.status, r.stderr).toBe(0);
+      // The message must arrive as ONE argv token — an unquoted `$@` in the
+      // fragment's exec line would split it into [fix] [login].
       expect(r.stdout).toContain(
-        `EAS_CALLED: update --branch ${branch} --platform all --message fix login`,
+        `EAS_CALLED: [update] [--branch] [${branch}] [--platform] [all] [--message] [fix login]`,
       );
     });
 
     it("accepts the --message=value form", () => {
       const r = runGuard(name, ["--message=fix login"]);
       expect(r.status, r.stderr).toBe(0);
-      expect(r.stdout).toContain("--message=fix login");
+      expect(r.stdout).toContain("[--message=fix login]");
     });
 
     it("rejects a forwarded --platform (script owns the platform)", () => {
@@ -130,7 +139,8 @@ describe("EAS update publish guards (package.json inline scripts)", () => {
       // legitimate publish. Tokens, not substrings.
       const r = runGuard(name, ["--message", "fix the --platform bug"]);
       expect(r.status, r.stderr).toBe(0);
-      expect(r.stdout).toContain("EAS_CALLED:");
+      // And the whole message survives as one token, --platform text included.
+      expect(r.stdout).toContain("[fix the --platform bug]");
     });
 
     it("REGRESSION: --messages must NOT satisfy the --message requirement", () => {
