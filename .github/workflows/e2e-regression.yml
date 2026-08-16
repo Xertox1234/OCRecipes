@@ -167,6 +167,7 @@ jobs:
           path: |
             server.log
             metro.log
+            e2e/maestro-output/
           if-no-files-found: warn
 
   e2e-android:
@@ -287,6 +288,7 @@ jobs:
           path: |
             server.log
             metro.log
+            e2e/maestro-output/
           if-no-files-found: warn
 
   # A red run that no one reads is not a signal (see docs/solutions/best-practices/

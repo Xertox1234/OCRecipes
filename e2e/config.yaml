@@ -7,3 +7,8 @@
 appId: com.ocrecipes.app
 flows:
   - "flows/**"
+# Screenshots + view hierarchy JSON per failing step, uploaded as a CI
+# artifact on failure (see .github/workflows/e2e-regression.yml) — without
+# this, a failed run's only evidence is server.log/metro.log, neither of
+# which can show what was actually on screen.
+testOutputDir: maestro-output

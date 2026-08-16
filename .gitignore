@@ -118,3 +118,7 @@ reports/mutation/
 
 # Art-direction preview batch (dev-only eyeball output from preview:art-direction)
 scratch/art-direction-preview/
+
+# Maestro E2E debug output (screenshots, view hierarchy, logs) — runtime only,
+# uploaded as a CI artifact on failure instead
+e2e/maestro-output/
