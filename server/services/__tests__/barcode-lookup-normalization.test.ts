@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { lookupBarcode, normalizeToPerHundredGrams } from "../barcode-lookup";
+import {
+  lookupBarcode,
+  normalizeToPerHundredGrams,
+  parseServingGrams,
+} from "../barcode-lookup";
 import {
   _resetCNFCacheForTesting,
   type NutritionData,
@@ -118,6 +122,77 @@ describe("normalizeToPerHundredGrams", () => {
         sodium: 166.7,
       });
     });
+  });
+});
+
+// ── parseServingGrams — the unit match must be a whole word ────────────
+// `normalizeToPerHundredGrams` calls this, but two more call sites
+// (`offLabelGrams`, `servingGrams` in `lookupBarcode`) feed it live OFF
+// `serving_size` text directly, so it needs its own direct coverage.
+describe("parseServingGrams", () => {
+  // ── Characterisation ────────────────────────────────────────────────
+  // Pins every real producer's shape. These pass both before and after the
+  // anchor change below — if one goes red, a real producer's output changed.
+  describe("current producer shapes are byte-identical to today", () => {
+    it.each([
+      ["100g", 100],
+      ["30g", 30],
+      ["355 ml", 355],
+      ["1 cup (240g)", 240],
+    ])("parses %j as %j", (input, expected) => {
+      expect(parseServingGrams(input)).toBe(expected);
+    });
+
+    it("returns null for a string with no metric unit", () => {
+      expect(parseServingGrams("1 bottle")).toBeNull();
+      expect(parseServingGrams("")).toBeNull();
+    });
+  });
+
+  // ── The fix ─────────────────────────────────────────────────────────
+  // The old alternation `(?:g|ml)` had no word boundary, so it matched the
+  // first two letters of any unit merely BEGINNING with `g` or `ml`.
+  describe("rejects a unit that is only a prefix of a longer word", () => {
+    it.each(["1 gallon", "2 glasses", "3 gummies", "1 grande"])(
+      "returns null for %j",
+      (input) => {
+        expect(parseServingGrams(input)).toBeNull();
+      },
+    );
+  });
+
+  describe("reads a spelled-out unit", () => {
+    it.each([
+      ["100 grams", 100],
+      ["250 millilitres", 250],
+      ["250 milliliters", 250],
+    ])("parses %j as %j", (input, expected) => {
+      expect(parseServingGrams(input)).toBe(expected);
+    });
+  });
+
+  // ── A deliberate narrowing, not an accident ────────────────────────────
+  // The old prefix-match also accepted these — they are NOT preserved. None
+  // is backed by a real captured OFF `serving_size` value anywhere in this
+  // repo's fixtures, and the sibling label parser
+  // (`shared/lib/label-serving.ts`), which was built by studying this exact
+  // function's accepted inputs, excludes them too. Adding an unattested
+  // spelling here would violate the todo's own risk note: "every accepted
+  // spelling should be justified by a real OFF value, or the list becomes
+  // unfalsifiable."
+  describe("does not accept spellings the old prefix-match let through by accident", () => {
+    it.each(["30 grammes", "1 gramme", "30 gr", "250 mls"])(
+      "returns null for %j",
+      (input) => {
+        expect(parseServingGrams(input)).toBeNull();
+      },
+    );
+  });
+
+  it("does not misread a milligram figure as grams (unaffected by this fix)", () => {
+    // True before and after: neither the old nor the new alternation
+    // includes `mg`. Pinned so a future vocabulary change cannot regress it.
+    expect(parseServingGrams("30 mg")).toBeNull();
   });
 });
 
