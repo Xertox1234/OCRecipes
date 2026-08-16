@@ -67,6 +67,11 @@ desync documented here undetected. Both carry a negative control (a doc tagged w
 genuinely unrouted must be rejected/undelivered), so neither can pass by waving everything
 through.
 
+Both are reachable from what CI actually runs, which is a separate claim from "the test exists"
+and was verified separately: `.github/workflows/ci.yml` invokes `bash scripts/run-hook-tests.sh`,
+and with the hook reverted that runner exits **1** (not merely the relevance script run directly).
+A test the CI entrypoint never reaches would have re-created this exact bug one level up.
+
 This pins the specific class of drift that occurred; it does not make the mirror structurally
 impossible — see Prevention.
 
@@ -84,9 +89,12 @@ impossible — see Prevention.
   languages/runtimes (here: a bash hook vs. a Node lint script) and a generator would be more
   machinery than the drift risk justifies.
 - If a single source of truth genuinely isn't feasible, cover **both** copies against the same
-  fixture — as done here — turning the documented mirror into an enforced one, cheaply, without
-  unifying the implementations. Covering only the copy you happened to edit is the trap: that
-  test is green in exactly the state the desync produces.
+  fixture, cheaply, without unifying the implementations. Covering only the copy you happened to
+  edit is the trap: that test is green in exactly the state the desync produces. Note what this
+  buys and what it doesn't — the pair added here enforces the one token that drifted
+  (`worktrees?`), not the alternation as a whole. Per-token pinning is a ratchet, not a proof:
+  it makes each *known* desync unrepeatable, and the next edit to an uncovered token is still
+  unguarded.
 
 ## Related Files
 
