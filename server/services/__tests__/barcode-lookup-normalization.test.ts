@@ -132,10 +132,11 @@ describe("normalizeToPerHundredGrams", () => {
 //
 // Mutation check (performed, not just claimed — P2-2026-08-10). The fix has
 // THREE independent levers in `barcode-lookup.ts` — `SERVING_UNIT`'s trailing
-// `\b`, `SERVING_UNIT`'s vocabulary, and `SERVING_FIGURE`'s digit group. Each
-// was reverted alone against the regex text (not by editing the source file)
-// and every case below re-evaluated. Blocks named, not counted, so the claim
-// survives adding a case to one of them:
+// `\b`, `SERVING_UNIT`'s vocabulary, and `SERVING_FIGURE`'s digit group —
+// plus a FOURTH mutation that is not a revert but the plausible future
+// "simplification" of the fourth. Each was applied alone against the regex
+// text (not by editing the source file) and every case below re-evaluated.
+// Blocks named, not counted, so the claim survives adding a case to one:
 //   - Reverting ONLY the trailing `\b` (keeping the full vocabulary) turns
 //     "rejects a unit that is only a prefix" and the "gr"/"grain" test red —
 //     "g" alone is always in the vocabulary, so without the boundary it still
@@ -147,11 +148,18 @@ describe("normalizeToPerHundredGrams", () => {
 //     — none of those units is "g" or "ml" verbatim, so they depend on the
 //     added alternatives, not the anchor.
 //   - Reverting ONLY the figure group (back to the dot-only `\d+\.?\d*`)
-//     turns every comma case red, and turns them red by returning a WRONG
-//     NUMBER rather than null: 5, 5, 50, 0, 5. That is the point of the
-//     block — the failure mode is a plausible value, not a refusal.
-// The characterisation block and "30 mg" are insensitive to all three levers
-// and stay green under every mutation.
+//     turns 5 of the 6 "comma decimal" cases red — and turns them red by
+//     returning a WRONG NUMBER rather than null: 5, 5, 50, 0, 5. That is the
+//     point of the block: the failure mode is a plausible value, not a
+//     refusal. The 6th ("1,000 g") is insensitive to this lever BY DESIGN —
+//     it pins a value the fix deliberately leaves unchanged.
+//   - "1,000 g" has its own discriminating mutation, and it is the one a
+//     future editor is most likely to try: "simplifying" the figure group to
+//     `\d+[.,]?\d*`. That turns ONLY that case red, and again by returning a
+//     number — 1 g for a figure the current code refuses. It is the sole
+//     guard on the `{1,2}` bound, so do not delete it as redundant.
+// The characterisation block and "30 mg" are insensitive to all four
+// mutations and stay green under every one.
 describe("parseServingGrams", () => {
   // ── Characterisation ────────────────────────────────────────────────
   // Pins every real producer's shape. These pass both before and after the
