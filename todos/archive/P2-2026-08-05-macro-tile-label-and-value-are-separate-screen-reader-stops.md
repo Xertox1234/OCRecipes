@@ -1,9 +1,9 @@
 ---
 title: "Group the macro tiles for screen readers — label and value are two stops and the unit is a bare letter"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-05
-updated: 2026-08-05
+updated: 2026-08-16
 assignee:
 labels: [accessibility, react-native, client]
 github_issue:
@@ -65,7 +65,7 @@ has no equivalent label.
 - [ ] A `—` value announces as "not recorded", matching the panel's wording for the same state,
       not as a literal em dash.
 - [ ] The calorie row is one stop too: `139 kcal` (or "not recorded"), with `accessibilityRole=
-  "header"` preserved on the group rather than dropped.
+"header"` preserved on the group rather than dropped.
 - [ ] Tests assert the composed `accessibilityLabel` on the tile group for a recorded value, a
       zero value, and an absent (`undefined`) value. Use `renderComponent` from
       `test/utils/render-component`, not `@testing-library/react-native`.
@@ -161,3 +161,22 @@ single `focusable="true"` node carrying the composed label.
   on `feat/nutrition-detail-2c`, confirmed with `git ls-tree` / `git grep` against both branches.
   The "no behavioural dependency" claim in Dependencies was false. #753 is now a stated
   prerequisite. The markup claims above re-checked against `main` at the same time and all hold.
+
+### 2026-08-16
+
+- Implemented against `client/components/nutrition/NutritionSummaryCard.tsx` (PR #753 confirmed
+  MERGED, so this — not the `main` fallback — is the correct target). Each macro tile and the
+  calorie row are now a single `accessible` group with a composed `accessibilityLabel`, reusing
+  `composeNutrientRowLabel` from `NutritionPanel-utils.ts` (read-only; not modified) so the
+  "g" → "grams" spelling can't drift from the panel's own. Value passed to the composer is
+  pre-rounded once and reused for the visible figure, so the two can never disagree.
+  Reviewed by `code-reviewer` + `mobile-reviewer`: zero CRITICAL findings, Scope Contract
+  respected (verified `NutritionPanel.tsx`/`NutritionPanel-utils.ts` diff is empty).
+- **Two acceptance criteria could not be executed in the isolated worktree this ran in**: AC6
+  (pixel-identical before/after screenshot — no booted simulator) and AC7 (Android
+  `uiautomator dump --compressed` single-focusable-node check — no adb/Android device reachable).
+  Both left unchecked in the PR's test plan; the code mirrors the exact wrapper shape
+  (`accessible` + composed `accessibilityLabel`, no suppressed children) this todo's own
+  Background section confirms already produces one `focusable="true"` node for `NutritionPanel`'s
+  rows, but that is an argument, not a measurement — a human device pass is still needed to
+  close these two boxes.
