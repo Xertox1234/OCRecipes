@@ -4,17 +4,21 @@ appId: com.ocrecipes.app
 #   USERNAME (default: testuser)
 #   PASSWORD (default: testpass123)
 ---
-# The FIRST JS bundle fetch after a fresh `expo run:*` install on a CI runner
-# has a cold Metro transform cache — verified 58s to bundle 3217 modules on a
-# real run (metro.log: "Bundled 58345ms client/index.js (3217 modules)").
-# Maestro's default assertVisible wait (~17-20s) is nowhere near enough, so
-# every flow that runFlow's this helper failed identically on "Sign In" is
-# visible before the bundle had even finished loading. Every subsequent
-# screen in the same session is fast (bundle already cached in memory) —
-# only this very first wait needs the generous timeout.
+# NOTE (2026-08-16): a cold-Metro-bundle theory for the "Sign In" wait was
+# tested and DISPROVEN on live CI — metro.log showed the bundle completing
+# in ~54-58s, but flows still failed after the full 90s extendedWaitUntil
+# below was exhausted. The real cause of "Sign In never becomes visible" is
+# still open (see todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md
+# Updates) — leading suspect is that Maestro's bare `launchApp` (appId only,
+# no dev-client server URL) never reaches the running Metro server at all and
+# instead lands on the Expo dev-launcher's own picker screen. Do not extend
+# this timeout further as a fix — it will not help until that is resolved.
+# Left at a modest margin over Maestro's own default rather than reverted to
+# it, since a real cold-start screen (not a dev-launcher picker) may still
+# need more than the ~17-20s default.
 - extendedWaitUntil:
     visible: "Sign In"
-    timeout: 90000
+    timeout: 30000
 - tapOn:
     id: "input-username"
 - inputText: ${USERNAME}
