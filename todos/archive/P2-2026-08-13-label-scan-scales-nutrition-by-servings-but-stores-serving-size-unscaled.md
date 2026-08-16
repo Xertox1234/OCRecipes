@@ -164,7 +164,8 @@ committing to it.
   production caller (confirmed in that hook's own docblock and in
   `todos/archive/P3-2026-08-15-should-saved-item-path-populate-servingsizegrams.md`)
   — unaffected either way.
-- **Existing rows (AC4) — explicit decision: leave them as-is, no backfill.**
+- **Existing rows (AC4) — explicit decision: leave them as-is, no backfill
+  _for the `getDailySummary` read path_.**
   Every prior `confirm-label` write hardcoded `dailyLogs.servings = "1"` while
   scaling the macros into `scannedItems` by the real (now-lost)
   `servingsConsumed`. A historical row's `scannedItems.calories` (etc.) is
@@ -180,6 +181,24 @@ committing to it.
   something a migration cannot actually verify. Leaving historical rows
   untouched is therefore not a deferral — it is the only option that doesn't
   either invent data or move a total a user already saw.
+- **Scope correction to the AC4 claim (added in the #835 review pass).** The
+  paragraph above is sound only for the direct scan-and-log path, i.e. reads
+  through `getDailySummary`, where `dailyLogs.servings = "1"` makes the
+  pre-scaled macros still land on the historical total. It does NOT cover the
+  second aggregate that can reach the same `scannedItems` row through a
+  DIFFERENT multiplier column: `POST /api/meal-plan/items`
+  (`server/routes/meal-plan.ts:399-452`, `addMealPlanItemSchema` at :77-83)
+  accepts an EXISTING `scannedItemId` plus its own `servings`, and
+  `getPlannedNutritionSummary` multiplies by `mealPlanItems.servings`. A
+  historical pre-fix label-scan row (macros already scaled) attached that way
+  with `servings > 1` is double-scaled and OVER-reports; attached with
+  `servings = 1` it is still accidentally correct, same as the `dailyLogs`
+  path. This is **pre-existing and neither introduced nor worsened by this
+  diff** — the pre-fix `confirm-label` handler never wrote a `mealPlanItems`
+  row at all (verified: `git show origin/main:server/routes/photos.ts` has
+  zero `mealPlanItem`/`addMealPlanItem` references), so it requires a separate
+  user action to reach. Deliberately not fixed here; recorded so the "no
+  backfill needed" reasoning is not read as unqualified.
 - **Regression coverage** (AC1/AC3, using the todo's own worked numbers — a
   150 g serving with 10 g of sugar, servingsConsumed = 3): a route-level
   test asserting `createScannedItemWithLog` is called with the unscaled
@@ -208,3 +227,29 @@ committing to it.
   total via `getDailySummary` directly. Two SUGGESTION-level doc-accuracy
   nits in this Updates section (the reader-sweep bound and this paragraph's
   own wording) were also corrected inline.
+- **Read-side NULL hardening (#835 review pass).** This PR is what promotes
+  `servings` from an incidental column to a documented reusable knob, so the
+  read side was hardened to match. Both `dailyLogs.servings`
+  (`shared/schema.ts:288`) and `mealPlanItems.servings` (`:913`) are
+  `decimal(...).default("1")` with **no `.notNull()`**, and their
+  `CHECK (servings > 0)` constraint does not reject NULL — `NULL > 0` is
+  `unknown`, and a CHECK passes on anything that is not `false` (verified
+  against the live DB). Both aggregates coalesced the MACRO operand but not
+  the multiplier beside it, so `macro * NULL` → NULL → skipped by `SUM()` →
+  absorbed by the outer `COALESCE(SUM(...), 0)`: a NULL-servings row silently
+  contributed ZERO, under-reporting with no error anywhere. Fixed by wrapping
+  the multiplier — `COALESCE(CAST(<col> AS DECIMAL), 1)` — on all 8 metric
+  expressions (4 in `getDailySummary`, 4 in `getPlannedNutritionSummary`);
+  `itemCount`/`plannedItemCount` are `COUNT(id)` and need no guard. A
+  `grep -rn "servings} AS DECIMAL" server/` confirms these are the only two
+  sites. One new DB-backed test per aggregate asserts a NULL-`servings` row
+  contributes its UNSCALED macros rather than zero, each with an
+  `expect(row.servings).toBeNull()` vacuity guard so the assertion cannot pass
+  by Drizzle silently collapsing the explicit `null` into the column DEFAULT.
+  Both verified RED first (`expected +0 to be 400` / `to be close to 200`).
+  `.notNull()` on the two columns was considered and rejected as out of the
+  Scope Contract: it needs DDL plus a `WHERE servings IS NULL` backfill and
+  the `MIGRATE PROD SCHEMA BEFORE MERGING` ordering step this todo explicitly
+  avoided. COALESCE is the correct in-scope fix and fails safe toward
+  unscaled rather than toward zero; the `.notNull()` hardening remains the
+  durable follow-up.

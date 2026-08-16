@@ -14,7 +14,16 @@ created: 2026-08-16
 
 When a write path logs "N servings of X," the item's own macro columns (`scannedItems.calories`/`protein`/`carbs`/`fat`/`fiber`/`sugar`/`sodium`) must always describe **one unscaled serving** — the same serving `servingSize` names. The consumption multiplier (`N`) belongs on the **logging-event row** instead (`dailyLogs.servings` for a direct scan-and-log; `mealPlanItems.servings` for a planned meal), never multiplied into the item's macros before the write.
 
-Readers that need a total multiply at read time: `SUM(scannedItems.<macro> * dailyLogs.servings)` (`getDailySummary`) or `* mealPlanItems.servings` (`getPlannedNutritionSummary`). Any new aggregate must follow the same shape.
+Readers that need a total multiply at read time: `getDailySummary` (`* dailyLogs.servings`) or `getPlannedNutritionSummary` (`* mealPlanItems.servings`). Any new aggregate must follow the same shape — **and must COALESCE the multiplier, not just the macro**:
+
+```sql
+COALESCE(SUM(
+  COALESCE(CAST(item.<macro> AS DECIMAL), CAST(recipe.<macro>PerServing AS DECIMAL), 0)
+  * COALESCE(CAST(log.servings AS DECIMAL), 1)   -- <- the multiplier needs its own guard
+), 0)
+```
+
+Both `dailyLogs.servings` and `mealPlanItems.servings` are `decimal(...).default("1")` with **no `.notNull()`**, and their `CHECK (servings > 0)` constraint does not reject NULL — SQL evaluates `NULL > 0` to `unknown`, and a CHECK passes on anything that is not `false`. An unguarded multiplier therefore fails toward silent under-reporting: `macro * NULL` is NULL, `SUM()` skips NULLs, and the outer `COALESCE(SUM(...), 0)` absorbs the gap, so the row contributes ZERO with no error anywhere. Coalescing to `1` fails toward the column's own default (unscaled macros) instead — wrong by at most the multiplier, never by the whole row. Coalescing only the macro operand (the shape both aggregates originally had) does not help: the NULL is on the other side of the `*`.
 
 ## When this applies
 
@@ -53,6 +62,12 @@ await storage.createScannedItemWithLog(
 ## Exceptions
 
 A write path with no independent multiplier concept (a plain barcode scan, a photo-meal confirm summing already-eaten foods) should omit `logOverrides.servings` and take the `"1"` default — do not invent a multiplier where none exists.
+
+## Migrating an existing write path: the "no backfill needed" claim is per-reader, not global
+
+Flipping a pre-scaling write path to this convention needs no backfill **for the aggregate that reads the same log row the old write path created**. Historical `confirm-label` rows carry `dailyLogs.servings = "1"` alongside already-scaled macros, so `getDailySummary`'s `scaled_macro * 1` still lands on the historical total — correct by construction.
+
+That reasoning does **not** transfer to a second aggregate reading the same item row through a *different* multiplier column. `POST /api/meal-plan/items` (`server/routes/meal-plan.ts`) lets a user attach an **existing** `scannedItemId` to a meal plan with its own `mealPlanItems.servings`; a historical pre-fix (already-scaled) item attached that way with `servings > 1` is double-scaled by `getPlannedNutritionSummary` and over-reports. The pre-fix write path never created a `mealPlanItems` row itself, so this needs a separate user action and is neither introduced nor worsened by the convention change — but it is the reason the claim must be stated as "no backfill needed **for `getDailySummary`**" rather than unqualified. When migrating a write path, enumerate every aggregate that can reach the item row, not just the one the write path itself feeds.
 
 ## Related Files
 

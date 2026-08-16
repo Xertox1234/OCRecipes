@@ -644,6 +644,38 @@ describe("nutrition storage", () => {
       expect(Number(summary.totalProtein)).toBeCloseTo(30, 0);
       expect(Number(summary.itemCount)).toBe(1);
     });
+
+    // `dailyLogs.servings` is nullable at the DDL level (`.default("1")` with no
+    // `.notNull()`), and `CHECK (servings > 0)` does NOT reject NULL — SQL
+    // evaluates it to `unknown`, and a CHECK passes on anything that is not
+    // `false`. Without a COALESCE on the multiplier, `macro * NULL` is NULL,
+    // `SUM()` skips NULLs, and the outer `COALESCE(SUM(...), 0)` absorbs the
+    // gap: the row silently contributes ZERO calories with no error anywhere.
+    // Fail safe toward the column's own default (1 = unscaled) instead.
+    it("treats a NULL servings multiplier as 1 rather than dropping the row's macros", async () => {
+      const item = await insertScannedItem(testUser.id, {
+        calories: "200",
+        protein: "10",
+        carbs: "25",
+        fat: "8",
+      });
+      const log = await insertDailyLog(testUser.id, {
+        scannedItemId: item.id,
+        servings: null,
+      });
+
+      // Guard against a vacuous test: if Drizzle collapsed the explicit `null`
+      // into the column DEFAULT ("1"), the assertions below would pass with or
+      // without the COALESCE and prove nothing.
+      expect(log.servings).toBeNull();
+
+      const summary = await getDailySummary(testUser.id, new Date());
+      expect(Number(summary.totalCalories)).toBeCloseTo(200, 0);
+      expect(Number(summary.totalProtein)).toBeCloseTo(10, 0);
+      expect(Number(summary.totalCarbs)).toBeCloseTo(25, 0);
+      expect(Number(summary.totalFat)).toBeCloseTo(8, 0);
+      expect(Number(summary.itemCount)).toBe(1);
+    });
   });
 
   describe("getDailyScanCount", () => {

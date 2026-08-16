@@ -425,19 +425,19 @@ export async function getDailySummary(
     .select({
       totalCalories: sql<number>`COALESCE(SUM(
         COALESCE(CAST(${scannedItems.calories} AS DECIMAL), CAST(${mealPlanRecipes.caloriesPerServing} AS DECIMAL), 0)
-        * CAST(${dailyLogs.servings} AS DECIMAL)
+        * COALESCE(CAST(${dailyLogs.servings} AS DECIMAL), 1)
       ), 0)`,
       totalProtein: sql<number>`COALESCE(SUM(
         COALESCE(CAST(${scannedItems.protein} AS DECIMAL), CAST(${mealPlanRecipes.proteinPerServing} AS DECIMAL), 0)
-        * CAST(${dailyLogs.servings} AS DECIMAL)
+        * COALESCE(CAST(${dailyLogs.servings} AS DECIMAL), 1)
       ), 0)`,
       totalCarbs: sql<number>`COALESCE(SUM(
         COALESCE(CAST(${scannedItems.carbs} AS DECIMAL), CAST(${mealPlanRecipes.carbsPerServing} AS DECIMAL), 0)
-        * CAST(${dailyLogs.servings} AS DECIMAL)
+        * COALESCE(CAST(${dailyLogs.servings} AS DECIMAL), 1)
       ), 0)`,
       totalFat: sql<number>`COALESCE(SUM(
         COALESCE(CAST(${scannedItems.fat} AS DECIMAL), CAST(${mealPlanRecipes.fatPerServing} AS DECIMAL), 0)
-        * CAST(${dailyLogs.servings} AS DECIMAL)
+        * COALESCE(CAST(${dailyLogs.servings} AS DECIMAL), 1)
       ), 0)`,
       itemCount: sql<number>`COUNT(${dailyLogs.id})`,
     })

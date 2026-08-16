@@ -60,28 +60,28 @@ export async function getPlannedNutritionSummary(
           CAST(${mealPlanRecipes.caloriesPerServing} AS DECIMAL),
           CAST(${scannedItems.calories} AS DECIMAL),
           0
-        ) * CAST(${mealPlanItems.servings} AS DECIMAL)
+        ) * COALESCE(CAST(${mealPlanItems.servings} AS DECIMAL), 1)
       ), 0)`,
       plannedProtein: sql<number>`COALESCE(SUM(
         COALESCE(
           CAST(${mealPlanRecipes.proteinPerServing} AS DECIMAL),
           CAST(${scannedItems.protein} AS DECIMAL),
           0
-        ) * CAST(${mealPlanItems.servings} AS DECIMAL)
+        ) * COALESCE(CAST(${mealPlanItems.servings} AS DECIMAL), 1)
       ), 0)`,
       plannedCarbs: sql<number>`COALESCE(SUM(
         COALESCE(
           CAST(${mealPlanRecipes.carbsPerServing} AS DECIMAL),
           CAST(${scannedItems.carbs} AS DECIMAL),
           0
-        ) * CAST(${mealPlanItems.servings} AS DECIMAL)
+        ) * COALESCE(CAST(${mealPlanItems.servings} AS DECIMAL), 1)
       ), 0)`,
       plannedFat: sql<number>`COALESCE(SUM(
         COALESCE(
           CAST(${mealPlanRecipes.fatPerServing} AS DECIMAL),
           CAST(${scannedItems.fat} AS DECIMAL),
           0
-        ) * CAST(${mealPlanItems.servings} AS DECIMAL)
+        ) * COALESCE(CAST(${mealPlanItems.servings} AS DECIMAL), 1)
       ), 0)`,
       plannedItemCount: sql<number>`COUNT(${mealPlanItems.id})`,
     })
