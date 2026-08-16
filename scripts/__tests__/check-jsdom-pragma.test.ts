@@ -35,6 +35,7 @@ function run(scriptPath: string, args: string[]) {
   return {
     status: result.status ?? -1,
     out: (result.stdout ?? "") + (result.stderr ?? ""),
+    stdout: result.stdout ?? "",
   };
 }
 
@@ -148,9 +149,14 @@ describe("check-jsdom-pragma.js", () => {
       fs.mkdirSync(dir, { recursive: true });
       const outOfScope = path.join(dir, "NotATest.tsx"); // .tsx, not .test.tsx
       fs.writeFileSync(outOfScope, BODY);
-      const { status, out } = run(realScript, [outOfScope]);
+      const { status, stdout } = run(realScript, [outOfScope]);
       expect(status).toBe(0);
-      expect(out.trim()).toBe("");
+      // Pin the SCRIPT's silence on stdout only — newer Node versions print a
+      // MODULE_TYPELESS_PACKAGE_JSON warning to stderr when spawning this
+      // ESM-syntax .js file (no "type" in package.json), which is harness
+      // noise, not script output. Asserting the combined stream empty made
+      // this green locally and red on CI's Node.
+      expect(stdout.trim()).toBe("");
     });
 
     it("PIN: no-arg run with no client/components dir exits 0 with a notice", () => {
