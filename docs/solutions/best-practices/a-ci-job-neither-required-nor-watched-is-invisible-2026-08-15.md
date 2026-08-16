@@ -4,8 +4,8 @@ track: knowledge
 category: best-practices
 module: shared
 tags: [architecture, testing, ci, github-actions, scheduled-workflows, e2e, maestro, commissioning]
-applies_to: [.github/workflows/**, e2e/**]
-symptoms: ['A workflow exists and is referred to as coverage, but nobody can name the last time it passed', 'A scheduled job is red on the Actions tab and no one has mentioned it', 'A workflow header says failures "surface on the Actions tab" as if that were a notification mechanism', 'A new workflow landed with a note that it will "need an iteration or two to settle" — and no dated follow-up exists', 'A CI job fails at its FIRST infrastructure step, so its logs never contain anything about the code it was meant to test']
+applies_to: [.github/workflows/**]
+symptoms: ['A workflow exists and is referred to as coverage, but nobody can name the last time it passed', 'A scheduled job is red on the Actions tab and no one has mentioned it', 'A workflow header says failures "surface on the Actions tab" as if that were a notification mechanism', 'A new workflow landed with a note that it will "need an iteration or two to settle" — and no dated follow-up exists', 'A CI job fails at its FIRST infrastructure step, so its logs never contain anything about the code it was meant to test', 'A CI job emits a long successful-looking build log and then a two-line error at the very end, so a skim reads it as nearly-working']
 created: '2026-08-15'
 ---
 
@@ -39,9 +39,11 @@ it — not a later nicety.
 ## Why
 
 `.github/workflows/e2e-regression.yml` (OCRecipes) failed **34 of 34 runs — zero successes
-— from 2026-07-13 to 2026-08-15**. Both jobs died during setup; not one Maestro flow ever
-executed. The repo believed it had nightly E2E regression coverage for a month and had
-none.
+— from 2026-07-13 to 2026-08-15**. Not one Maestro flow ever executed, on either job. The
+repo believed it had nightly E2E regression coverage for a month and had none.
+
+The two jobs failed for entirely different reasons, and the difference matters more than the
+count does — see "Two failures, two lessons" below.
 
 The oldest retained run and the newest fail with byte-identical errors, so this was never a
 regression. It never worked.
@@ -57,14 +59,45 @@ Three properties combined to make a month of nothing look like a month of covera
   "on the Actions tab (and via GitHub's scheduled-workflow failure notifications)."
   Empirically, 34 consecutive failures surfaced to no one.
 
-Worth naming separately: the job died at its **first infrastructure step**, so its logs
-contain nothing about the app at all. That makes the failure *less* visible, not more — a
-log full of `##[error]Formula postgresql@14 is not installed` reads as an environment
-hiccup rather than a suite that has never run. The concrete gotcha, for the record: GitHub's
-hosted macOS runner images do **not** ship a startable Postgres, so
+### Two failures, two lessons
+
+The jobs failed at opposite ends of their pipelines, and each is invisible in its own way.
+
+**iOS — died at its first infrastructure step**, so its logs contain nothing about the app at
+all. That makes the failure *less* visible, not more: a log full of
+`##[error]Formula postgresql@14 is not installed` reads as an environment hiccup rather than
+a suite that has never run. The concrete gotcha, for the record: GitHub's hosted macOS runner
+images do **not** ship a startable Postgres, so
 `brew services start postgresql@14 || brew services start postgresql` fails on both the pin
 and the fallback. The step's comment asserting "macOS runners ship Postgres but leave it
 stopped" was false when it was written.
+
+**Android — got all the way to a launched app, and still produced nothing.** It cleared
+checkout, deps, schema push, emulator boot, `npx expo run:android`, install, and the deep-link
+launch (`› Opening exp+ocrecipes://… on test`), then died invoking the test command:
+
+```
+[command]/usr/bin/sh -c npm run e2e:regression || {
+/usr/bin/sh: 1: Syntax error: end of file unexpected (expecting "}")
+```
+
+The multi-line brace-delimited retry block does not survive however
+`reactivecircus/android-emulator-runner` passes its `script:` input to `sh -c` — the closing
+brace and retry body are lost. A **shell-quoting bug in the workflow**, one line from the
+finish, not an environment gap.
+
+This is the more instructive half. A job that fails at step 1 at least *looks* broken. This
+one produced seventeen minutes of successful-looking build output and then a two-line syntax
+error, which is precisely the shape a human skimming the Actions tab does not register — and
+it is why "read the last error" is not a substitute for "did this ever go green".
+
+**Beware the plausible red herring.** The same Android log contains
+`ERROR | Unable to connect to adb daemon on port: 5037` — benign cold-start chatter, emitted
+*before* the build succeeds and the app launches. The first written diagnosis of this failure
+took that line as the root cause and concluded "the emulator never becomes usable", which
+sent the resulting todo's acceptance criteria after a problem that does not exist. In a log
+that ends in failure, an earlier line containing `ERROR` is not evidence of the cause;
+timestamps and what succeeded *after* it are.
 
 ## Examples
 
@@ -75,6 +108,10 @@ first thing to run when a workflow's health is in doubt:
 gh run list --workflow="E2E Regression" --limit 100 \
   --json conclusion --jq '[.[].conclusion] | group_by(.) | map({(.[0]): length}) | add'
 # {"failure":34}   ← no success key at all: it has never passed
+# null             ← ZERO runs — a different, weaker finding, and the same
+#                    signature as "ran and always failed". Distinguish them
+#                    before concluding anything: an empty array has no success
+#                    key either, so absence-of-success is not evidence of failure.
 ```
 
 Then confirm whether it is one break or an original defect, by comparing the oldest

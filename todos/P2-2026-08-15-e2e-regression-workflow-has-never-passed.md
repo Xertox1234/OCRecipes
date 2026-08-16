@@ -1,5 +1,5 @@
 ---
-title: "E2E Regression has never passed — 34/34 nightly runs failed at infrastructure setup, so the suite has produced zero signal since it landed"
+title: "E2E Regression has never passed — 34/34 nightly runs failed, so the suite has produced zero signal since it landed"
 status: backlog
 priority: medium
 created: 2026-08-15
@@ -14,9 +14,10 @@ github_issue:
 ## Summary
 
 `.github/workflows/e2e-regression.yml` has failed **every run in its entire retained
-history — 34 of 34, 2026-07-13 through 2026-08-15, zero successes.** Both jobs die during
-setup, before a single Maestro flow executes. The repo has believed it had nightly E2E
-regression coverage for a month and has had none.
+history — 34 of 34, 2026-07-13 through 2026-08-15, zero successes.** No Maestro flow has
+ever executed on either job. The repo has believed it had nightly E2E regression coverage for
+a month and has had none. The two jobs fail for entirely different reasons — the iOS job at
+its first infrastructure step, the Android job one line from the finish.
 
 ## Background
 
@@ -63,15 +64,30 @@ metro.log`). Fixing Postgres will reveal the next layer, not finish the job.
 
 ### Android job — `runs-on: ubuntu-latest`, step `Build app and run Maestro regression flows`
 
-Gets substantially further — backend and Metro readiness checks pass — then:
+**Corrected 2026-08-15 — the original diagnosis in this todo was wrong.** It read
+`ERROR | Unable to connect to adb daemon on port: 5037` as the root cause and concluded "the
+emulator never becomes usable". That line is benign cold-start chatter: it is emitted at
+`08:27:00`, _before_ `npx expo run:android --no-bundler` succeeds at `08:27:36` and the app
+launches at `08:44:20` (`› Opening exp+ocrecipes://… on test`). The emulator is fine.
+
+The job clears everything — checkout, deps, `pg_trgm`, schema push, Maestro install, KVM
+perms, backend, Metro, emulator boot, native build, install, deep-link launch — and then dies
+at `08:44:24` invoking the test command:
 
 ```
-ERROR | Unable to connect to adb daemon on port: 5037
-The process '/usr/local/lib/android/sdk/platform-tools/adb' failed with exit code 1
+[command]/usr/bin/sh -c npm run e2e:regression || {
+/usr/bin/sh: 1: Syntax error: end of file unexpected (expecting "}")
+##[error]The process '/usr/bin/sh' failed with exit code 2
 ```
 
-The emulator never becomes usable. The workflow's built-in single retry fires
-(`::warning::Maestro regression flows failed once — retrying`) and fails again.
+The multi-line brace-delimited retry block does not survive however
+`reactivecircus/android-emulator-runner@v2` passes its `script:` input to `sh -c` — the
+closing brace and the retry body are lost, so the shell aborts at parse time. That is also why
+the "built-in single retry" never actually retried anything.
+
+**This is a shell-quoting bug in the workflow YAML, not an environment or emulator problem.**
+Verify against run `31874413569` before changing anything: `gh run view 31874413569
+--log-failed | grep -E "Syntax error|Opening exp\+|expo run:android"`.
 
 ## Acceptance Criteria
 
@@ -80,8 +96,9 @@ The emulator never becomes usable. The workflow's built-in single retry fires
 - [ ] If commissioning: the iOS job provisions Postgres against a version that actually
       exists on `macos-14` (install explicitly rather than assuming the image ships one;
       GitHub-hosted macOS runners have no Docker, so a service container is not available).
-- [ ] If commissioning: the Android job boots an emulator that `adb` can reach, and the
-      run reaches and executes Maestro flows on both platforms.
+- [ ] If commissioning: the Android job's retry wrapper is rewritten so the shell it is
+      handed actually parses (see the corrected diagnosis above — the emulator is NOT the
+      problem), and the run reaches and executes Maestro flows on both platforms.
 - [ ] At least one **fully green** run exists, triggered via `workflow_dispatch`, before
       this todo is closed. A run that merely gets _further_ is not done — that is precisely
       how this reached 34 failures.
