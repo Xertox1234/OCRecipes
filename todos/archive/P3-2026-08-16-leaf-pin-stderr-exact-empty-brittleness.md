@@ -1,6 +1,6 @@
 ---
 title: "Leaf-pin tests: stop asserting stderr === '' exactly (Node-version brittleness)"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-08-16
@@ -21,9 +21,9 @@ This exact class already bit PR #822 on CI (`MODULE_TYPELESS_PACKAGE_JSON` on st
 
 ## Acceptance Criteria
 
-- [ ] Every "importable without DATABASE_URL" test asserts `r.status === 0` plus a targeted negative (e.g. `expect(r.stderr).not.toMatch(/error|DATABASE_URL/i)`) instead of exact-empty stderr
-- [ ] `server/services/__tests__/barcode-policy.test.ts` (the precedent others copy) updated first, with a comment explaining why exact-empty is banned
-- [ ] All copies swept: `grep -rln "stderr).toBe(\"\")" --include="*.test.ts"` returns nothing
+- [x] Every "importable without DATABASE_URL" test asserts `r.status === 0` plus a targeted negative (e.g. `expect(r.stderr).not.toMatch(/error|DATABASE_URL/i)`) instead of exact-empty stderr
+- [x] `server/services/__tests__/barcode-policy.test.ts` (the precedent others copy) updated first, with a comment explaining why exact-empty is banned
+- [x] All copies swept: `grep -rln "stderr).toBe(\"\")" --include="*.test.ts"` returns nothing — **verified on this branch only** (forked from main before this todo's edits landed). PRs #836 and #840 (open at time of this todo, from the same batch run) touch 3 of the 6 swept files in different regions (new test cases, not the stderr assertion lines) — the grep MUST be re-run on `main` after this PR and #836/#840 all merge to confirm no re-introduction.
 
 ## Implementation Notes
 
@@ -48,3 +48,4 @@ One mechanical pattern, ~6 files: barcode-policy, cleanup-seed-recipes-utils, cl
 ### 2026-08-16
 
 - Initial creation from PR #824 review suggestion + the PR #822 CI incident.
+- Implemented: all six files updated (status-first, targeted stderr negative). Short-circuited research onto `docs/solutions/code-quality/silence-claim-must-pin-the-stream-it-claims-2026-08-16.md`, which named this exact task as a known residual. `code-reviewer` found no CRITICAL findings; one WARNING (the solution doc's now-stale "known residual" parenthetical) addressed via Step 9 codify (update-existing-file path). AC #3's grep was verified on this branch only — see the AC #3 checkbox note re: PRs #836/#840.
