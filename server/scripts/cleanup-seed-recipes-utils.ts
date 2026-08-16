@@ -17,6 +17,9 @@
  * a few release cycles.
  */
 
+import { and, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { communityRecipes, users } from "@shared/schema";
+
 export const SEED_PREFIX = "seed-";
 export const TEST_PREFIX = "test-";
 
@@ -37,15 +40,43 @@ export const LEGACY_TEST_PRODUCT_NAMES: string[] = [
 ];
 
 /**
- * Returns true if `normalizedProductName` matches the seed/test cleanup
- * contract: either a known prefix, or one of the legacy allowlist names.
+ * The REAL deletion perimeter `cleanup-seed-recipes.ts` executes — moved here
+ * verbatim so the test suite asserts on the SQL the script actually runs
+ * (its predecessor, `isJunkRecipeName`, was a TypeScript reimplementation the
+ * script never called; an unanchored ILIKE regression stayed green there).
  *
- * Case-insensitive to mirror the SQL `ILIKE` used by the cleanup query.
+ * Scope: (orphan OR demo-authored) AND (seed-prefix OR test-prefix OR legacy
+ * name). The author scope is what keeps real user recipes untouchable even
+ * when they share a junk-looking name.
  */
-export function isJunkRecipeName(normalizedProductName: string): boolean {
-  const lower = normalizedProductName.toLowerCase();
-  if (lower.startsWith(SEED_PREFIX)) return true;
-  if (lower.startsWith(TEST_PREFIX)) return true;
-  if (LEGACY_TEST_PRODUCT_NAMES.includes(lower)) return true;
-  return false;
+export function buildJunkRecipeWhere(
+  demoUserId: (typeof users.$inferSelect)["id"] | null,
+) {
+  const authorIdCondition = demoUserId
+    ? or(
+        isNull(communityRecipes.authorId),
+        eq(communityRecipes.authorId, demoUserId),
+      )
+    : isNull(communityRecipes.authorId);
+
+  return and(
+    authorIdCondition,
+    or(
+      // `seed-*` → seed script output
+      ilike(communityRecipes.normalizedProductName, `${SEED_PREFIX}%`),
+      // `test-*` → Vitest test factories / insert helpers
+      ilike(communityRecipes.normalizedProductName, `${TEST_PREFIX}%`),
+      // Back-compat for pre-convention dev DBs
+      inArray(
+        communityRecipes.normalizedProductName,
+        LEGACY_TEST_PRODUCT_NAMES,
+      ),
+    ),
+  );
+}
+
+/** CLI contract: dry-run by default; deletion only on an explicit --commit. */
+export function parseArgs(argv: string[]): { commit: boolean } {
+  const commit = argv.includes("--commit");
+  return { commit };
 }

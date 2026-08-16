@@ -75,3 +75,56 @@ export function assertLocalDbForDemoAccount(
     );
   }
 }
+
+/**
+ * The M3 production guard `main()` enforces before anything else runs:
+ * ensureDemoUser() writes a privileged "demo" user with a scripted password,
+ * so a prod run must be an explicit opt-in. Returns the decision plus the
+ * exact operator-facing messages; `main()` owns the side effects
+ * (console.error, pool.end, exit).
+ *
+ * Interplay with shouldSeedAsPlatformOwned: when this guard refuses, that
+ * helper's "production without the flag" branch is unreachable from main() —
+ * it is retained anyway as layer 2 of the defense stack (guard →
+ * platform-owned → assertLocalDbForDemoAccount), so a future reorder of
+ * main() still cannot create a demo account in prod.
+ */
+export function evaluateProdSeedGuard(opts: {
+  nodeEnv: string | undefined;
+  allowProdSeed: boolean;
+}): { refuse: true; messages: string[] } | { refuse: false; warning?: string } {
+  if (opts.nodeEnv === "production" && !opts.allowProdSeed) {
+    return {
+      refuse: true,
+      messages: [
+        "Refusing to seed in NODE_ENV=production without --allow-prod-seed.",
+        "Re-run as: npm run seed:recipes -- --allow-prod-seed   (you will be held to this)",
+      ],
+    };
+  }
+  if (opts.nodeEnv === "production" && opts.allowProdSeed) {
+    return {
+      refuse: false,
+      warning:
+        "⚠  NODE_ENV=production with --allow-prod-seed: creating demo user in a live DB.",
+    };
+  }
+  return { refuse: false };
+}
+
+/**
+ * Resolve the demo account's plaintext password. Preserves ensureDemoUser()'s
+ * exact semantics: the env value wins when non-nullish (`??` — an explicitly
+ * empty SEED_DEMO_PASSWORD is still used verbatim), while `fromEnv` mirrors
+ * the TRUTHINESS check that decides whether to print the reproducible-login
+ * tip. The two deliberately disagree on the empty string.
+ */
+export function resolveDemoPassword(
+  envValue: string | undefined,
+  generate: () => string,
+): { password: string; fromEnv: boolean } {
+  return {
+    password: envValue ?? generate(),
+    fromEnv: Boolean(envValue),
+  };
+}

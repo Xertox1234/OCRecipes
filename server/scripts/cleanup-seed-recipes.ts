@@ -38,9 +38,10 @@ import {
   recipeDismissals,
   users,
 } from "@shared/schema";
-import { eq, and, ilike, inArray, or, sql, isNull } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import {
-  LEGACY_TEST_PRODUCT_NAMES,
+  buildJunkRecipeWhere,
+  parseArgs,
   SEED_PREFIX,
   TEST_PREFIX,
 } from "./cleanup-seed-recipes-utils";
@@ -52,11 +53,6 @@ const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
 // malicious `imageUrl` in the DB. Keep in sync with allowed extensions used
 // by `server/lib/image-store.ts::saveRecipeImage` (currently `.png`).
 const IMAGE_FILENAME_PATTERN = /^[a-zA-Z0-9._-]+\.(jpg|jpeg|png|webp)$/;
-
-function parseArgs(argv: string[]): { commit: boolean } {
-  const commit = argv.includes("--commit");
-  return { commit };
-}
 
 async function main() {
   const { commit } = parseArgs(process.argv.slice(2));
@@ -73,14 +69,9 @@ async function main() {
     .where(eq(users.username, "demo"));
   const demoUserId = demoUserRows[0]?.id ?? null;
 
-  const authorIdCondition = demoUserId
-    ? or(
-        isNull(communityRecipes.authorId),
-        eq(communityRecipes.authorId, demoUserId),
-      )
-    : isNull(communityRecipes.authorId);
-
-  // Find all junk recipes: seeds + leaked test data — scoped to orphan or demo author
+  // Find all junk recipes: seeds + leaked test data — scoped to orphan or demo
+  // author. The predicate lives in cleanup-seed-recipes-utils so the test
+  // suite asserts on the exact SQL this script executes.
   const junkRecipes = await db
     .select({
       id: communityRecipes.id,
@@ -90,22 +81,7 @@ async function main() {
       imageUrl: communityRecipes.imageUrl,
     })
     .from(communityRecipes)
-    .where(
-      and(
-        authorIdCondition,
-        or(
-          // `seed-*` → seed script output
-          ilike(communityRecipes.normalizedProductName, `${SEED_PREFIX}%`),
-          // `test-*` → Vitest test factories / insert helpers
-          ilike(communityRecipes.normalizedProductName, `${TEST_PREFIX}%`),
-          // Back-compat for pre-convention dev DBs
-          inArray(
-            communityRecipes.normalizedProductName,
-            LEGACY_TEST_PRODUCT_NAMES,
-          ),
-        ),
-      ),
-    );
+    .where(buildJunkRecipeWhere(demoUserId));
 
   if (junkRecipes.length === 0) {
     console.log("No junk recipes found. Database is clean.");

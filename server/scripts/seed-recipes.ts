@@ -49,6 +49,8 @@ import {
   ALLOW_PROD_SEED_FLAG,
   shouldSeedAsPlatformOwned,
   assertLocalDbForDemoAccount,
+  evaluateProdSeedGuard,
+  resolveDemoPassword,
 } from "./seed-recipes-utils";
 
 const MIN_INGREDIENTS = 4;
@@ -249,8 +251,11 @@ async function ensureDemoUser(): Promise<string> {
     return demo.id;
   }
 
-  const plaintextPassword =
-    process.env.SEED_DEMO_PASSWORD ?? crypto.randomBytes(12).toString("hex"); // 24 hex chars
+  const { password: plaintextPassword, fromEnv: passwordFromEnv } =
+    resolveDemoPassword(
+      process.env.SEED_DEMO_PASSWORD,
+      () => crypto.randomBytes(12).toString("hex"), // 24 hex chars
+    );
   const hashedPassword = await bcrypt.hash(plaintextPassword, 12);
   const [user] = await db
     .insert(users)
@@ -282,7 +287,7 @@ async function ensureDemoUser(): Promise<string> {
   console.log(
     `  Demo user password (shown ONCE, save it now): ${plaintextPassword}`,
   );
-  if (!process.env.SEED_DEMO_PASSWORD) {
+  if (!passwordFromEnv) {
     console.log(
       "  Tip: set SEED_DEMO_PASSWORD in your shell/.env for reproducible logins.",
     );
@@ -513,21 +518,19 @@ async function main() {
   // ── M3: production guard ───────────────────────────────────────────
   // ensureDemoUser() writes a privileged "demo" user with a scripted
   // password. Refuse to run in prod unless the caller explicitly opts in.
+  // The decision lives in seed-recipes-utils so it is unit-testable.
   const allowProdSeed = process.argv.includes(ALLOW_PROD_SEED_FLAG);
-  if (process.env.NODE_ENV === "production" && !allowProdSeed) {
-    console.error(
-      "Refusing to seed in NODE_ENV=production without --allow-prod-seed.",
-    );
-    console.error(
-      "Re-run as: npm run seed:recipes -- --allow-prod-seed   (you will be held to this)",
-    );
+  const guard = evaluateProdSeedGuard({
+    nodeEnv: process.env.NODE_ENV,
+    allowProdSeed,
+  });
+  if (guard.refuse) {
+    for (const message of guard.messages) console.error(message);
     await pool.end();
     process.exit(1);
   }
-  if (process.env.NODE_ENV === "production" && allowProdSeed) {
-    console.warn(
-      "⚠  NODE_ENV=production with --allow-prod-seed: creating demo user in a live DB.",
-    );
+  if (guard.warning) {
+    console.warn(guard.warning);
   }
 
   console.log(
