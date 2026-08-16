@@ -255,8 +255,11 @@ describe("migrate-recipe-ingredients-utils", () => {
         ],
         { encoding: "utf8", timeout: 15_000, cwd: ROOT, env },
       );
-      expect(r.stderr).toBe("");
+      // Status carries the invariant; stderr uses a targeted negative, never
+      // exact-empty — see server/services/__tests__/barcode-policy.test.ts
+      // for why.
       expect(r.status).toBe(0);
+      expect(r.stderr).not.toMatch(/error|DATABASE_URL/i);
     });
   });
 });

@@ -68,7 +68,16 @@ describe("module import graph", () => {
       ],
       { encoding: "utf8", timeout: 15_000, cwd: ROOT, env },
     );
-    expect(r.stderr).toBe("");
+    // Assert status FIRST so a real import failure reports the exit code,
+    // not just a stderr diff. stderr is asserted with a targeted negative,
+    // never exact-empty: stderr is shared with the Node runtime (deprecation
+    // and experimental-feature warnings are version-dependent), so
+    // `toBe("")` fails on any future Node diagnostic unrelated to this
+    // module's own behavior (PR #822 CI incident — see docs/solutions/
+    // code-quality/silence-claim-must-pin-the-stream-it-claims-2026-08-16.md).
+    // `status` carries the invariant; the stderr negative is a backstop
+    // against a silent-but-degraded import, not the primary assertion.
     expect(r.status).toBe(0);
+    expect(r.stderr).not.toMatch(/error|DATABASE_URL/i);
   });
 });
