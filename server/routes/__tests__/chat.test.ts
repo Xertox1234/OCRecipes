@@ -9,6 +9,7 @@ import {
   generateCoachResponse,
   generateCoachProResponse,
 } from "../../services/nutrition-coach";
+import { generateRecipeChatResponse } from "../../services/recipe-chat";
 import { register } from "../chat";
 import {
   createMockChatConversation,
@@ -77,6 +78,19 @@ vi.mock("../../services/coach-pro-chat", async () => {
   return {
     ...actual,
     tryArchiveNotebook: vi.fn().mockResolvedValue(undefined),
+  };
+});
+
+// Stub ONLY the streaming generator — buildRecipeContext/buildRemixSystemPrompt
+// from the same module must stay real (the recipe branch calls them before
+// streaming). Async factory because vi.mock is hoisted.
+vi.mock("../../services/recipe-chat", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../services/recipe-chat")
+  >("../../services/recipe-chat");
+  return {
+    ...actual,
+    generateRecipeChatResponse: vi.fn(),
   };
 });
 
@@ -331,6 +345,108 @@ describe("Chat Routes", () => {
         .send({ content: "" });
 
       expect(res.status).toBe(400);
+    });
+
+    describe("premium gate — recipe/remix conversations", () => {
+      // Free tier has aiCoach: true (throttled 3/day → the 429 tests below);
+      // only recipe/remix message sends are premium-gated (recipeGeneration).
+      it("returns 403 PREMIUM_REQUIRED for free tier on a recipe conversation and never starts work", async () => {
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation({ type: "recipe" }),
+        );
+        vi.mocked(storage.getSubscriptionStatus).mockResolvedValue({
+          tier: "free",
+          expiresAt: null,
+        });
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+
+        const res = await request(app)
+          .post("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token")
+          .send({ content: "Make me a pasta recipe" });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe("PREMIUM_REQUIRED");
+        expect(res.body.error).toContain("Recipe Generation");
+        // The denial happened BEFORE any work: no message row, no AI call.
+        expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
+      });
+
+      it("returns 403 PREMIUM_REQUIRED for free tier on a remix conversation", async () => {
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation({ type: "remix" }),
+        );
+        vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
+
+        const res = await request(app)
+          .post("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token")
+          .send({ content: "Remix this with tofu" });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe("PREMIUM_REQUIRED");
+        expect(res.body.error).toContain("Recipe Remix");
+        expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+      });
+
+      it("premium tier passes the gate on a recipe conversation and streams (non-vacuity control)", async () => {
+        mockStreamingSetup();
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation({ type: "recipe" }),
+        );
+        vi.mocked(generateRecipeChatResponse).mockImplementation(
+          async function* () {
+            yield { content: "Sure! Here's a pasta idea." };
+          },
+        );
+
+        const res = await request(app)
+          .post("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token")
+          .send({ content: "Make me a pasta recipe" });
+
+        expect(res.status).toBe(200);
+        expect(res.text).toContain('"done":true');
+        // Load-bearing gate-passage proof: the limit check ran with the
+        // PREMIUM recipe allocation (dailyRecipeGenerations: 20) on the
+        // recipe path — i.e. checkPremiumFeature returned the features object.
+        expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
+          1,
+          "1",
+          expect.any(String),
+          20,
+          "recipe",
+        );
+      });
+
+      it("free coach conversation passes the premium gate — throttled (429), never 403", async () => {
+        // Two-sided control for the featureKey dispatch: a coach conversation
+        // on the free tier reaches the daily-limit check (aiCoach is free,
+        // dailyCoachMessages: 3), so a regression gating ALL chat as premium
+        // turns this 429 into a 403.
+        vi.mocked(storage.getChatConversation).mockResolvedValue(
+          createMockChatConversation(),
+        );
+        vi.mocked(storage.getUser).mockResolvedValue(createMockUser());
+        vi.mocked(storage.createChatMessageWithLimitCheck).mockResolvedValue(
+          null,
+        );
+
+        const res = await request(app)
+          .post("/api/chat/conversations/1/messages")
+          .set("Authorization", "Bearer token")
+          .send({ content: "Hello" });
+
+        expect(res.status).toBe(429);
+        expect(storage.createChatMessageWithLimitCheck).toHaveBeenCalledWith(
+          1,
+          "1",
+          expect.any(String),
+          3,
+          "coach",
+        );
+      });
     });
 
     it("returns 429 when free tier daily coach limit reached", async () => {
