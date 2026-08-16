@@ -7,6 +7,7 @@ tags: [invariants, code-review, comments, typescript, architecture, client-state
 applies_to: [server/services/**/*.ts, client/lib/**/*.ts, .claude/agents/*.md, .claude/hooks/**/*.sh]
 symptoms: [A docblock names several cases while the conditional beside it handles one, A comment asserts two values are "the same source/kind/shape" with no code establishing it, A cost or safety argument whose premise is a property of the current data shape rather than of the code]
 created: '2026-08-06'
+last_updated: '2026-08-16'
 ---
 
 # A stated invariant is not an enforced one
@@ -142,6 +143,34 @@ mechanism of the bug, so the fix re-specified it as containment
 Co-location is the weakest possible enforcement: it survives exactly until someone has a
 reason to move one of the two.
 
+### 5. "The no-jq path already covers this" — a comment naming a fallback that never runs for this input (2026-08-16)
+
+`.claude/hooks/guard-outward-cli.sh` sources a shared lib for its precise
+command matching. If the source fails, the code fell through to `exit 0`
+(allow everything), justified by:
+
+> If the shared lib is unsourceable (broken install), allow: the precise
+> matcher cannot run at all, and the no-jq path above already covers the
+> crude fail-closed case for a genuinely broken environment.
+
+False: the no-jq branch is gated on `! command -v jq`, an entirely
+independent condition from "the lib file is missing or fails to source."
+`jq` present + lib missing hits neither branch's guard — it falls straight
+through to the bare `exit 0`, unprotected, exactly as if no check existed.
+Code review caught it not by re-reading the comment more carefully but by
+reproducing the claimed condition directly: copy the hook into a directory
+with no sibling `lib/`, feed it a real deny-shaped command, and check
+whether it actually denies. It didn't. The fix factors the crude smell-test
+into one function and calls it from **both** fallback branches, so "does
+condition B fail closed" is enforced by the same code path proven for
+condition A, not by a second comment asserting they're equivalent.
+
+The pattern is identical to instance 3 above (a safety claim whose premise
+is a property of a DIFFERENT piece of code, not of the code beside the
+comment) but on a control-flow axis instead of a data-shape one: "the other
+branch covers it" is exactly the kind of two-case claim this file's Rule
+section asks for a table, not a comment, to carry.
+
 ## Exceptions
 
 - **A comment explaining WHY is not the target.** "We poll here because the native
@@ -162,6 +191,8 @@ reason to move one of the two.
 - `client/lib/nutrition-ocr-parser.ts` — `directReads` vs `extracted`, `substitutedUnit`
 - `.claude/hooks/lib/cmd-detect.sh` — `cmd_gh_pr_write_subcommand`, `cmd_gh_pr_ref`
 - `.claude/agents/ai-reviewer.md` — the containment rule from instance 1
+- `.claude/hooks/guard-outward-cli.sh` — `crude_smells_outward()`, instance 5's fix
+- `.claude/hooks/test-guard-outward-cli.sh` — the `NOLIB_DIR` fixture that reproduces instance 5's condition directly instead of trusting the comment
 
 ## See Also
 
