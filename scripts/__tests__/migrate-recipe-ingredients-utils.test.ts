@@ -183,6 +183,11 @@ describe("migrate-recipe-ingredients-utils", () => {
     it("returns null when the steps section holds only a repeated header line", () => {
       // The steps filter drops lines starting with the header words, so a
       // duplicated "Directions" label leaves nothing behind.
+      // NOT an endorsement of that filter: it is over-broad and also eats a
+      // legitimate step like "Cooking time is 20 minutes". This test pins
+      // only the case where the filter empties the list — the guard then
+      // skips the row. The partial case (one step of five swallowed) is a
+      // SEPARATE open defect and is deliberately not asserted here.
       expect(
         splitInstructionsArray([
           "Ingredients:",
