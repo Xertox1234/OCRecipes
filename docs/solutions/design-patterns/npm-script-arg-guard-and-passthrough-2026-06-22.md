@@ -6,7 +6,7 @@ module: shared
 tags: [npm, package-json, shell, eas, tooling, devops]
 applies_to: [package.json]
 created: '2026-06-22'
-last_updated: '2026-06-22'
+last_updated: '2026-08-16'
 ---
 
 # Guarding and forwarding npm-run args in a package.json script (`sh -c '...' --`)
@@ -81,8 +81,15 @@ ALLOW_OUTWARD_CLI=1 PATH="$PWD/.tmp-bin:$PATH" npm run --silent update:preview -
 ```
 
 > **The `ALLOW_OUTWARD_CLI=1` prefix is required and is not optional noise.**
-> `.claude/hooks/guard-outward-cli.sh` denies `npm run update:preview` in every
-> spelling, because that script execs a real OTA against the production domain.
+> `.claude/hooks/guard-outward-cli.sh` denies this script in command position —
+> including every flag spelling between the runner, `run`, and the script name
+> (`-s`, `--silent`, `--flag=value`, `--flag value`), and the `yarn`/`pnpm`
+> equivalents — because it execs a real OTA against the production domain.
+> It is a guardrail, **not** a sandbox: quoted command words
+> (`npm run "update:preview"`), `corepack`/`bunx`-style wrappers, and an
+> interpreter `-c` string all still get through. The hook's own header carries
+> the full residuals list; read that rather than assuming coverage from this
+> sentence.
 > This recipe is indistinguishable from a real publish at the point the hook
 > sees it — the stub only exists further down the PATH, and the 2026-08-16
 > incident was caused by exactly this shape: an agent probing a PATH-stub

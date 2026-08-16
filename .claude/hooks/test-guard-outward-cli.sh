@@ -195,6 +195,40 @@ assert_deny "yarn --silent update:preview denies (bare-script spelling with a fl
 assert_deny "the documented PATH-stub recipe denies (it is a real publish path)" \
   "$(jsonc 'PATH="$PWD/.tmp-bin:$PATH" npm run --silent update:preview -- --message "fix login"')" \
   "npm run update:preview/update:production"
+# SPACE-SEPARATED flag values. The first version of this fix modelled a flag as
+# one self-contained word, so `--loglevel error` broke the run at the mandatory
+# trailing space and every one of these ALLOWED — while the doc it shipped
+# claimed "every spelling". Same overclaim, one layer down.
+assert_deny "npm --loglevel error run update:preview denies (space-separated flag value)" \
+  "$(json 'npm --loglevel error run update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "npm --loglevel error run-script update:preview denies" \
+  "$(json 'npm --loglevel error run-script update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "npm run --loglevel error update:preview denies" \
+  "$(json 'npm run --loglevel error update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "npm -w foo run update:preview denies (short flag with value)" \
+  "$(json 'npm -w foo run update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "npm --workspace foo run update:preview denies" \
+  "$(json 'npm --workspace foo run update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "npm --prefix . run update:preview denies" \
+  "$(json 'npm --prefix . run update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "pnpm --dir . run update:preview denies" \
+  "$(json 'pnpm --dir . run update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "yarn --cwd . update:preview denies (bare-script spelling with a valued flag)" \
+  "$(json 'yarn --cwd . update:preview')" \
+  "npm run update:preview/update:production"
+# The accepted cost of absorbing a value token, pinned so it is a decision and
+# not a surprise: a DIFFERENT script run with a flag, naming update:preview as a
+# later argument, now denies. Fail-CLOSED, and essentially nobody writes it.
+assert_deny "npm run --silent build update:preview denies (accepted over-block; see _OUT_FLAG_RUN)" \
+  "$(json 'npm run --silent build update:preview')" \
+  "npm run update:preview/update:production"
 # Negative controls: every OTHER npm script stays untouched.
 assert_allow "npm run test allows (unrelated script)" \
   "$(json 'npm run test')"
