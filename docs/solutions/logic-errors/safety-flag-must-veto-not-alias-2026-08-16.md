@@ -42,15 +42,33 @@ operator confusion, and confusion must preview, not delete.
 
 ## Solution
 
+The veto must also be **visible**. The first fix (`commit: has(commit) &&
+!has(dry)`) previewed correctly but rendered the default banner — telling an
+operator who HAD passed `--commit` to "pass --commit to delete", never naming
+`--dry-run` as the reason (found in the follow-up delta review: the leaf's
+contract widened, but the consumer scripts that render it to the human were
+never swept, and the unchanged `{ commit: boolean }` type let the drift
+compile and test green). Report the conflict and name it in the banner:
+
 ```ts
-return { commit: argv.includes("--commit") && !argv.includes("--dry-run") };
+const commitRequested = argv.includes("--commit");
+const dryRun = argv.includes("--dry-run");
+return { commit: commitRequested && !dryRun, vetoed: commitRequested && dryRun };
 ```
 
-Plus a both-orders regression test:
+```ts
+COMMIT
+  ? "=== LIVE RUN ==="
+  : VETOED
+    ? "=== DRY RUN ===  (--dry-run overrides --commit; drop --dry-run to delete)"
+    : "=== DRY RUN ===  (pass --commit to delete)";
+```
+
+Plus a both-orders regression test on the conflict cell:
 
 ```ts
-expect(parseCleanupFlags(["node", "s", "--commit", "--dry-run"])).toEqual({ commit: false });
-expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual({ commit: false });
+expect(parseCleanupFlags(["node", "s", "--commit", "--dry-run"])).toEqual({ commit: false, vetoed: true });
+expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual({ commit: false, vetoed: true });
 ```
 
 ## Prevention
@@ -59,10 +77,16 @@ expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual({ comm
   the conflict-cell test first — it is the cell where docstring claims break.
 - The word "alias" in a safety-flag docstring is the smell: an alias is inert;
   a safety flag must be a veto.
+- A safety net that activates silently misleads the operator it protects —
+  when a parser resolves a flag conflict, surface WHICH flag won in the
+  tool's own output. Widening a parser's semantics without sweeping the
+  consumers that render them is invisible to tsc when the return type is
+  unchanged.
 
 ## Related Files
 
-- `scripts/cleanup-junk-mealplan-recipes-utils.ts`, `scripts/cleanup-junk-recipes-utils.ts` — the veto (PR #825).
+- `scripts/cleanup-junk-mealplan-recipes-utils.ts`, `scripts/cleanup-junk-recipes-utils.ts` — the veto + `vetoed` reporting (PR #825).
+- `scripts/cleanup-junk-mealplan-recipes.ts`, `scripts/cleanup-junk-recipes.ts` — the three-way banners that name the veto.
 - `scripts/__tests__/cleanup-junk-mealplan-recipes-utils.test.ts` — the conflict-cell tests.
 
 ## See Also
