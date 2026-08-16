@@ -615,14 +615,23 @@ export function register(app: Express): void {
         // Clamp negative AI values to 0 (defense-in-depth for DB CHECK constraints)
         const clamp = (v: number | null) => Math.max(v ?? 0, 0);
 
-        // Scale values by servings consumed
-        const scaledCalories = clamp(labelData.calories) * servings;
-        const scaledProtein = clamp(labelData.protein) * servings;
-        const scaledCarbs = clamp(labelData.totalCarbs) * servings;
-        const scaledFat = clamp(labelData.totalFat) * servings;
-        const scaledFiber = clamp(labelData.dietaryFiber) * servings;
-        const scaledSugar = clamp(labelData.totalSugars) * servings;
-        const scaledSodium = clamp(labelData.sodium) * servings;
+        // `scannedItems` stores UNSCALED per-serving values — matching the
+        // label's own `servingSize` string, never a multiple of it. The
+        // servings-consumed multiplier lives on the daily log entry instead
+        // (`dailyLogs.servings`, below) and is applied at read time by
+        // `getDailySummary`/`getPlannedNutritionSummary`, exactly like every
+        // other scannedItems-backed total in this codebase. Scaling the
+        // macros here while leaving `servingSize` unscaled was the bug this
+        // fixes: it produced a row whose stored ratio no longer matched its
+        // own declared serving. See todos/archive/
+        // P2-2026-08-13-label-scan-scales-nutrition-by-servings-but-stores-serving-size-unscaled.md
+        const perServingCalories = clamp(labelData.calories);
+        const perServingProtein = clamp(labelData.protein);
+        const perServingCarbs = clamp(labelData.totalCarbs);
+        const perServingFat = clamp(labelData.totalFat);
+        const perServingFiber = clamp(labelData.dietaryFiber);
+        const perServingSugar = clamp(labelData.totalSugars);
+        const perServingSodium = clamp(labelData.sodium);
 
         const productName = labelData.productName || "Nutrition label scan";
 
@@ -632,17 +641,20 @@ export function register(app: Express): void {
             barcode: barcode || null,
             productName,
             servingSize: labelData.servingSize || null,
-            calories: scaledCalories.toString(),
-            protein: scaledProtein.toString(),
-            carbs: scaledCarbs.toString(),
-            fat: scaledFat.toString(),
-            fiber: scaledFiber.toString(),
-            sugar: scaledSugar.toString(),
-            sodium: scaledSodium.toString(),
+            calories: perServingCalories.toString(),
+            protein: perServingProtein.toString(),
+            carbs: perServingCarbs.toString(),
+            fat: perServingFat.toString(),
+            fiber: perServingFiber.toString(),
+            sugar: perServingSugar.toString(),
+            sodium: perServingSodium.toString(),
             sourceType: "label",
             aiConfidence: labelData.confidence.toString(),
           },
-          { mealType: validated.mealType || null },
+          {
+            mealType: validated.mealType || null,
+            servings: servings.toString(),
+          },
         );
 
         // Silent cache seeding: if barcode was provided and NO cache entry

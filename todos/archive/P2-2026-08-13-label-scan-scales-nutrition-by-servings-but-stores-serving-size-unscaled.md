@@ -1,6 +1,6 @@
 ---
 title: "A label scan scales nutrition by servingsConsumed but stores servingSize unscaled — the ratio is unrecoverable, and the band layer now reads it"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-13
 updated: 2026-08-13
@@ -59,16 +59,16 @@ is the direction this codebase's nutrient flags are otherwise built to avoid.
 
 ## Acceptance Criteria
 
-- [ ] A label-scan saved item logged with `servingsConsumed > 1` yields the same
+- [x] A label-scan saved item logged with `servingsConsumed > 1` yields the same
       nutrient bands as the same product logged at 1 serving — the bands describe
       the product, not how much of it was eaten
-- [ ] The stored row is self-consistent: whatever `servingSize` says, the macro
+- [x] The stored row is self-consistent: whatever `servingSize` says, the macro
       columns are the values for THAT serving
-- [ ] A regression test covers the 150 g / 3-servings shape above and asserts no
+- [x] A regression test covers the 150 g / 3-servings shape above and asserts no
       spurious `high` sugar band
-- [ ] Existing rows are considered: either a migration, or an explicit written
+- [x] Existing rows are considered: either a migration, or an explicit written
       decision that historical rows stay as-is and why
-- [ ] The daily-log total a user sees for that entry does not change — whatever
+- [x] The daily-log total a user sees for that entry does not change — whatever
       fixes the stored ratio must not silently halve or triple what they logged
 
 ## Implementation Notes
@@ -127,3 +127,68 @@ committing to it.
 - Filed from the PR #803 roster review. Root cause verified directly at
   `server/routes/photos.ts:618-632` and `shared/schema.ts` rather than accepted
   from the reviewer's report.
+
+### 2026-08-16
+
+- **Implemented option (1) without a schema change.** `shared/schema.ts`
+  already has the column this todo asked for — just on `dailyLogs`, not
+  `scannedItems`: `dailyLogs.servings` (decimal, default `"1"`), and
+  `getDailySummary`/`getPlannedNutritionSummary` already multiply
+  `scannedItems.<macro> * dailyLogs.servings` / `* mealPlanItems.servings` at
+  read time. `POST /api/photos/confirm-label` (`server/routes/photos.ts`) was
+  the one write site that diverged from that convention: it baked
+  `servingsConsumed` into the `scannedItems` macros while leaving
+  `dailyLogs.servings` hardcoded at `"1"`. The fix stops scaling the macros
+  and passes `servings: servingsConsumed.toString()` into
+  `createScannedItemWithLog`'s `logOverrides` (`server/storage/nutrition.ts`),
+  which now threads it onto the `dailyLogs` insert instead of the hardcoded
+  `"1"`. No DDL, no migration, no `MIGRATE PROD SCHEMA BEFORE MERGING` step —
+  the risk the todo flagged for option (1) does not apply here.
+- **Full reader sweep** (`grep -rn` over `server/` for every
+  `scannedItems.(calories|protein|carbs|fat|sugar|sodium|fiber)` read) found
+  exactly two aggregate sites — `getDailySummary` and
+  `getPlannedNutritionSummary` — both already multiplying by an independent
+  servings/quantity column, so both become correct automatically with no
+  code change. Every other reader (`getScannedItems`, `ItemDetailScreen.tsx`,
+  `HistoryScreen.tsx`, CSV export) either dumps the raw row or displays
+  `item.calories` next to `item.servingSize` under a "Per serving"/"Serving:"
+  label — i.e. the UI already asserts per-serving semantics, which this fix
+  satisfies for the first time on the label-scan path (previously that
+  labeling was itself misleading whenever `servingsConsumed > 1`).
+  `client/hooks/useNutritionLookup.ts`'s saved-item/`itemId` branch has no
+  production caller (confirmed in that hook's own docblock and in
+  `todos/archive/P3-2026-08-15-should-saved-item-path-populate-servingsizegrams.md`)
+  — unaffected either way.
+- **Existing rows (AC4) — explicit decision: leave them as-is, no backfill.**
+  Every prior `confirm-label` write hardcoded `dailyLogs.servings = "1"` while
+  scaling the macros into `scannedItems` by the real (now-lost)
+  `servingsConsumed`. A historical row's `scannedItems.calories` (etc.) is
+  therefore the OLD convention's total-for-the-log-entry, and
+  `dailyLogs.servings = "1"` makes `getDailySummary`'s
+  `calories * servings` arithmetic still land on the correct historical
+  daily total. What's unrecoverable is only the split: "3 servings of a
+  150 g label" and "1 serving of a 450 g portion" produced byte-identical
+  rows before this fix, so there is no way to tell them apart after the
+  fact, and no migration can restore it. Repairing the ratio in place would
+  require guessing which case applied and risks silently changing a
+  historical daily total (the Risk section's own dominant concern) for
+  something a migration cannot actually verify. Leaving historical rows
+  untouched is therefore not a deferral — it is the only option that doesn't
+  either invent data or move a total a user already saw.
+- **Regression coverage** (AC1/AC3, using the todo's own worked numbers — a
+  150 g serving with 10 g of sugar, servingsConsumed = 3): a route-level
+  test asserting `createScannedItemWithLog` is called with the unscaled
+  `sugar: "10"` (not the pre-fix `"30"`) and `servings: "3"` on the log
+  override; a second route-level test asserting the stored macros are
+  byte-identical whether `servingsConsumed` is 1 or 3 (the AC1 invariance
+  property directly, not a single hardcoded snapshot); a storage-level test
+  asserting `logOverrides.servings` reaches the `dailyLogs` insert instead of
+  the old hardcoded `"1"`; and — because AC3 names a _band_ assertion, not
+  just a persistence one — a new case in the existing (untouched-source)
+  `client/components/nutrition/__tests__/nutrition-band-source.test.ts`
+  feeding `buildPanelRows` the fixed row's shape (`servingSize: "150 g"`,
+  `sugar: 10`) and asserting the sugar band is not `high`: 10 g is under the
+  27 g FSA per-portion line (`shared/constants/nutrition-bands.ts`), where
+  the pre-fix 30 g would have crossed it. This adds a test case to that
+  file's existing suite only — `nutrition-band-source.ts` itself (the Scope
+  Contract's explicit exclusion) is untouched.

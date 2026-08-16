@@ -274,6 +274,33 @@ describe("selectBandSource — path selection", () => {
     expect(sodium?.band).toEqual({ group: "concern", band: "medium" });
   });
 
+  it("bands a label scan's saved item the SAME whether servingsConsumed was 1 or 3 (regression, todo P2-2026-08-13)", () => {
+    // The confirm-label route no longer scales macros by servingsConsumed
+    // before writing — the scanned item stores unscaled per-serving values
+    // that match its OWN servingSize. 10 g of sugar in a 150 g serving is
+    // 6.67 g/100 g (MEDIUM on the per-100 food scale: over the 5.0 low line,
+    // under the 22.5 high line) and well under the 27 g per-portion RED
+    // line, so no override fires and the band stays MEDIUM. Before the fix,
+    // servingsConsumed = 3 would have written 30 g (10 x 3) against the SAME
+    // "150 g" label — crossing the portion line and producing a false
+    // "High in sugar" (see the todo's Background table). Pinning the exact
+    // MEDIUM band, not just "not high", so this can't pass vacuously if the
+    // row stops banding at all.
+    const { rows } = buildPanelRows({
+      itemId: 42,
+      validatedData: null,
+      nutrition: {
+        productName: "Trail Mix",
+        servingSize: "150 g",
+        calories: 200,
+        sugar: 10,
+      },
+      isBeverage: null,
+    });
+    const sugar = rows.find((r) => r.row.key === "sugar");
+    expect(sugar?.band).toEqual({ group: "concern", band: "medium" });
+  });
+
   it("holds a good per-100 payload and STILL renders unbanded when no scale resolves", () => {
     // The most counterintuitive outcome in the slice, and the one most likely
     // to be "fixed" later by defaulting to food. Food thresholds are roughly

@@ -359,10 +359,19 @@ export async function createDailyLog(log: InsertDailyLog): Promise<DailyLog> {
 /**
  * Atomically creates a scanned item and its associated daily log entry.
  * Used by nutrition, photos, cooking, and beverages routes.
+ *
+ * `item`'s macro columns must always be UNSCALED per-serving values (matching
+ * `item.servingSize`) — any consumption multiplier (e.g. a label scan's
+ * "servings consumed" stepper) belongs on `logOverrides.servings`, not baked
+ * into the macros. Readers that need a total (`getDailySummary`,
+ * `getPlannedNutritionSummary`) multiply by `dailyLogs.servings` /
+ * `mealPlanItems.servings` at read time — never scale `scannedItems` itself.
  */
 export async function createScannedItemWithLog(
   item: InsertScannedItem,
-  logOverrides?: Partial<Pick<InsertDailyLog, "mealType" | "source">>,
+  logOverrides?: Partial<
+    Pick<InsertDailyLog, "mealType" | "source" | "servings">
+  >,
 ): Promise<ScannedItem> {
   return db.transaction(async (tx) => {
     const [scannedItem] = await tx
@@ -373,7 +382,7 @@ export async function createScannedItemWithLog(
     await tx.insert(dailyLogs).values({
       userId: item.userId,
       scannedItemId: scannedItem.id,
-      servings: "1",
+      servings: logOverrides?.servings ?? "1",
       mealType: logOverrides?.mealType ?? null,
       source: logOverrides?.source ?? "scan",
     });

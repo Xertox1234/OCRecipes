@@ -980,6 +980,41 @@ describe("nutrition storage", () => {
       expect(log.servings).toBe("1.00");
     });
 
+    it("applies a logOverrides.servings multiplier without scaling the scanned item's own macros", async () => {
+      // Regression test for the label-scan bug: a "servings consumed"
+      // multiplier belongs on the daily log, never baked into the scanned
+      // item's own per-serving macro columns.
+      const item = await createScannedItemWithLog(
+        {
+          userId: testUser.id,
+          productName: "Trail Mix",
+          calories: "200",
+          protein: "6",
+          carbs: "40",
+          fat: "5",
+          fiber: "2",
+          sugar: "30",
+          sodium: "100",
+          servingSize: "150 g",
+          sourceType: "label",
+        },
+        { mealType: "snack", servings: "3" },
+      );
+
+      // The scanned item stores exactly what was passed in — unscaled.
+      expect(item.servingSize).toBe("150 g");
+      expect(item.calories).toBe("200.00");
+      expect(item.sugar).toBe("30.00");
+
+      const t = getTestTx();
+      const [log] = await t
+        .select()
+        .from(dailyLogs)
+        .where(eq(dailyLogs.scannedItemId, item.id));
+      expect(log.servings).toBe("3.00");
+      expect(log.mealType).toBe("snack");
+    });
+
     it("rolls back both inserts if daily log insert fails", async () => {
       // Verify atomicity by creating 3 items and checking that exactly
       // 3 daily logs exist — each call creates one item + one log.
