@@ -5,7 +5,7 @@ category: code-quality
 module: shared
 severity: medium
 tags: [testing, harness, typescript, verification, false-negative, eslint, lint-rules]
-applies_to: [scripts/__tests__/**/*.test.ts, client/**/__tests__/**/*.test.ts, server/**/__tests__/**/*.test.ts]
+applies_to: [eslint-plugin-ocrecipes/__tests__/**/*.test.ts, scripts/__tests__/**/*.test.ts, client/**/__tests__/**/*.test.ts, server/**/__tests__/**/*.test.ts]
 symptoms: [An ad-hoc lint probe reports every case the same way — all rejected or all accepted, including cases that must differ, A rule you just verified by hand behaves differently under the real CLI, A "no violations" result that is really "the rule never ran", Confident probe results that contradict a passing test suite]
 created: '2026-08-15'
 ---

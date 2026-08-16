@@ -7,6 +7,8 @@ updated: 2026-08-15
 assignee:
 labels: [react-native, navigation, ai, data-integrity]
 github_issue:
+human_led: true
+blocked_reason: "AC #2 is a product decision, not a spec: whether the coach's 'Add to meal plan' button is meant to carry the recipe into the browser or only open it. Every file in the Scope Contract matches todo-automerge-guard's SAFE_ALLOWLIST and none matches SENSITIVE_OVERRIDE, so without this gate an unattended /todo run would invent the answer, write it up as a settled decision record, and auto-merge it."
 ---
 
 # RecipeBrowserModal's params are checked by nothing, in both directions
@@ -43,8 +45,14 @@ Two distinct instances, verified against `50bed11d`:
 | `client/screens/meal-plan/RecipeBrowserScreen.tsx:437` | `const isBrowseOnly = !plannedDate \|\| !mealType;`                           |
 
 Anything setting `date` opens the modal in browse-only mode instead of add-to-plan-for-that-
-date. No in-app caller sets it today, so this half is a trap rather than a live break — but
-the field is declared, which is what makes it look supported.
+date. This half is a trap rather than a live break — but the field is declared, which is what
+makes it look supported.
+
+Callers, enumerated 2026-08-15 with `git grep -n 'RecipeBrowserModal\|"RecipeBrowser"' main -- client/`
+(8 hits): `CoachChat.tsx:411` → `{ planDays }`; `RecipeCard.tsx:61` → `{ recipeId }`; the rest
+are type/comment references. **None passes `date`.** The command is written down because a
+bound with nothing behind it is an opinion, and the first draft of this todo inherited a wrong
+one — see the Updates section.
 
 ### 2. `recipeId` is sent and declared by nothing — this one fires today
 
@@ -94,9 +102,11 @@ this screen with no validation, and so can the UI.
       for it, so an unknown or misspelled field is rejected at the boundary instead of
       silently dropped.
 - [ ] A test pins the dispatch path end to end: a navigate action carrying a planned date
-      (and a recipe, if honoured) arrives as a value the screen actually reads. Asserting only
-      that `navigate` was called with some object does not cover this — that is exactly what
-      exists today (`client/components/coach/__tests__/CoachChat.branches.test.tsx:670-673`).
+      (and a recipe, if honoured) arrives as a value the screen actually reads. Asserting the
+      navigate call's arguments does not prove the screen reads them — the existing test at
+      `client/components/coach/__tests__/CoachChat.branches.test.tsx:670-673` does assert a
+      precise shape (`toHaveBeenCalledWith("RecipeBrowserModal", { planDays: [] })`), and is
+      still satisfied by a screen that ignores the param entirely.
 - [ ] `docs/solutions/conventions/align-route-params-dual-navigator-screens-2026-05-13.md` is
       updated. It already codifies this class and names `planDays` as the aligned field, but
       misses the `date`/`plannedDate` divergence sitting in its own subject matter — a
@@ -138,8 +148,9 @@ this screen with no validation, and so can the UI.
 
 - Tightening `screenParamSchemas` could start rejecting coach actions that previously passed.
   Check the coach prompt and eval set before narrowing.
-- Renaming a route param touches the deep-link surface. `client/navigation/linking.ts` has no
-  `RecipeBrowser` or `date` mapping today (checked), but re-confirm before renaming.
+- Renaming a route param touches the deep-link surface.
+  `grep -n "RecipeBrowser\|date" client/navigation/linking.ts` returned nothing on 2026-08-15,
+  so no deep link maps either name — re-run it before renaming rather than trusting this line.
 - Instance 2 is a product decision, not just a type fix. Do not silently delete the
   `recipeId` param to make types line up — that would erase the evidence of intent.
 

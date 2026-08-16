@@ -4,7 +4,7 @@ track: knowledge
 category: conventions
 tags: [harness, agents, testing, verification, review, delegation]
 module: shared
-applies_to: [.claude/agents/**/*.md, .claude/skills/**/*.md, docs/solutions/**/*.md, todos/**/*.md]
+applies_to: [.claude/agents/**/*.md, .claude/skills/**/*.md, docs/solutions/**/*.md]
 symptoms: ["A review or research report bounds a defect with a negative — \"no caller does X\", \"only these N sites\", \"not currently reachable\"", A finding is filed at lower severity because the report said nothing triggers it, A todo written from a report turns out to understate the defect once someone opens the files, Two agents reviewing the same code disagree about which call sites exist]
 created: '2026-08-15'
 ---
