@@ -4,7 +4,17 @@ appId: com.ocrecipes.app
 #   USERNAME (default: testuser)
 #   PASSWORD (default: testpass123)
 ---
-- assertVisible: "Sign In"
+# The FIRST JS bundle fetch after a fresh `expo run:*` install on a CI runner
+# has a cold Metro transform cache — verified 58s to bundle 3217 modules on a
+# real run (metro.log: "Bundled 58345ms client/index.js (3217 modules)").
+# Maestro's default assertVisible wait (~17-20s) is nowhere near enough, so
+# every flow that runFlow's this helper failed identically on "Sign In" is
+# visible before the bundle had even finished loading. Every subsequent
+# screen in the same session is fast (bundle already cached in memory) —
+# only this very first wait needs the generous timeout.
+- extendedWaitUntil:
+    visible: "Sign In"
+    timeout: 90000
 - tapOn:
     id: "input-username"
 - inputText: ${USERNAME}
