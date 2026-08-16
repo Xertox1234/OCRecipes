@@ -142,10 +142,15 @@ character" as sufficient proof of "closes THIS literal" — also breaks a
 *single* regex with **no chained passes at all**, in a non-shell, non-security
 context.
 
-`scripts/coverage-ratchet.ts` needed to detect a brace character accidentally
-placed inside a JSON-ish config string literal (a per-glob threshold key using
-brace-expansion syntax, e.g. `"client/{screens,components}/**"`). A candidate
-check used:
+`scripts/coverage-ratchet.ts` needed to detect an **unbalanced** brace
+accidentally placed inside a JSON-ish config string literal — the shape that
+desyncs its brace-counting block locator. (A *balanced* brace-expansion glob
+key such as `"client/{screens,components}/**"` is vitest-native, is already the
+house style in the repo's own `coverage.include`, and parses correctly: the
+pair self-corrects the depth counter 1→2→1 before any real metric is reached.
+An early version of this check rejected *any* brace in a literal and so broke
+that working input — see "Narrow the predicate to the shape that actually
+breaks" below.) A candidate check used:
 
 ```ts
 /(["'`])[^"'`]*?[{}][^"'`]*?\1/
@@ -190,9 +195,57 @@ complete, self-delimited tokens and inspect each one's own content.
 A related trap in the same fix: comments can contain apostrophes. `// don't
 use {invalid}, that's the point` has two apostrophes straddling a brace —
 even the correct per-literal regex above will treat `'t use {invalid}, that'`
-as a matched single-quote literal if line comments aren't stripped first.
-Strip `//…$` from the scanned text before the literal scan (two lines) rather
-than trying to make the literal regex itself comment-aware.
+as a matched single-quote literal if line comments aren't accounted for.
+
+**A comment-strip PRE-PASS is the wrong fix, and was shipped before being
+caught.** `block.replace(/\/\/[^\n]*/g, "")` is not literal-aware, so it
+breaks the opposite direction: a literal that legitimately contains `//`
+(`"https://example.com/{a"`) is truncated to `"https`, which then matches no
+complete literal at all and the check **silently does not fire**. Comments and
+literals are mutually exclusive *at a given scan position*, so resolve both in
+one left-to-right alternation instead of two ordered passes:
+
+```ts
+const STRING_LITERAL_OR_LINE_COMMENT =
+  /"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/[^\n]*/g;
+```
+
+`matchAll`, skip any match starting with `//`, inspect the rest. At the `"` of
+a URL the literal alternative wins and eats its `//`; at the `//` of a comment
+the comment alternative wins and eats both apostrophes. Neither direction can
+corrupt the other, because there is only one pass.
+
+### Narrow the predicate to the shape that actually breaks
+
+The first shipped version of this check rejected **any** brace inside a
+literal. That is strictly wider than the failure, and the excess was a real
+regression: `"client/{screens,components}/**"` — the check's own cited
+example, and legal vitest syntax — extracts correctly, because the balanced
+pair returns the depth counter to where it started before any real metric is
+reached. Rejecting it hard-failed `readCurrentThresholds` and `--apply` on a
+config that had worked.
+
+Worse, the widened check was justified by a claim nobody ran: that the input
+"would silently desync depth tracking instead of failing loudly." Executing
+the shipped locator against that exact input returned the **correct** values.
+And the genuinely dangerous shape — an unbalanced brace — was **already**
+failing loudly before the check existed, as a downstream
+`Could not parse threshold for "lines"`. So the check's real value was never
+"prevents a silent failure"; it was "replaces a misleading error message with
+an accurate one." Sizing the guard to that honest value shrinks it from
+"any brace" to "net brace delta ≠ 0".
+
+**Rule of thumb:** before writing a guard, *run* the unguarded code against
+the input you are about to reject. If it produces the right answer, the guard
+is a regression, not a safety net. If it already fails, you are improving an
+error message — scope the guard to that, and say so.
+
+A residual worth documenting rather than hiding: only a `{`-first imbalance
+reaches the check. A literal whose first unmatched brace is `}` drives the
+depth counter to 0 and truncates the block *mid-literal*, so no complete
+literal is ever scanned and the pre-existing `Could not parse threshold` error
+surfaces instead. Documented in the function, not papered over with an
+untestable branch.
 
 ## Prevention
 
@@ -210,8 +263,27 @@ than trying to make the literal regex itself comment-aware.
   never test the raw span between two matched quote positions. Write the
   fixture with TWO adjacent quoted values of the target shape as the
   regression test — a single-literal fixture cannot distinguish a correct
-  per-literal check from a quote-spanning one (see coverage-ratchet.ts's test
-  for this exact shape).
+  per-literal check from a quote-spanning one. (Caveat learned later in
+  `coverage-ratchet.ts`: once its predicate narrowed from "any brace" to
+  "unbalanced brace", its own two-adjacent-keys fixture stopped
+  discriminating, because the span a quote-spanning regex would capture
+  between the two keys is itself brace-balanced. Narrowing a predicate can
+  silently retire the test that pinned it — recheck each guard fixture's
+  discriminating power against the NEW predicate, and downgrade the comment
+  honestly when it no longer discriminates.)
+- **Never ship a guard without running the unguarded code against the input it
+  rejects.** Both halves of the justification must be executed, not asserted:
+  that the input really breaks, and that it breaks *silently*. In
+  `coverage-ratchet.ts` neither held — the cited input parsed correctly, and
+  the genuinely broken input already threw. A guard whose stated value is
+  "prevents a silent failure" but whose real value is "improves an error
+  message" will be sized for the wrong job and reject working inputs.
+- **Two ordered passes over the same text (strip, then scan) is a smell when
+  the two grammars are mutually exclusive.** Whichever runs first corrupts
+  input for the second in the direction it does not model — a comment strip
+  breaks `"https://…"`, a literal scan breaks `// don't … that's`. Put both
+  alternatives in ONE left-to-right alternation and discard the matches you
+  do not care about.
 - **The regex "matcher recipe" is necessary but NOT sufficient.** Command-position
   legs still matter *after* the quote-aware strip — separator class `(^|[;&|(])`
   (else compound `git add -A && git commit` slips), env-assignment prefix with
@@ -245,8 +317,8 @@ than trying to make the literal regex itself comment-aware.
 - `.claude/hooks/pr-preflight-guard.sh` — the gate (deny-side); `commit-verify.sh`, `pr-verify.sh` — advisory
 - `.claude/hooks/{core-bare-guard,drift-detect,drift-detect-update,branch-preflight}.sh` — the git-state sibling hooks, ported onto the same helper (2026-07-20) so quoted mentions stop false-firing. New predicates added to `cmd-detect.sh`: `cmd_is_git`, `cmd_is_git_commit_or_push`, `cmd_is_git_head_mover` (plus the existing `cmd_is_git_commit` for branch-preflight). Fail-safe is contract-specific: the three advisory hooks fail SILENT on an unsourceable lib (a skipped heal/warning is safe — git's own errors are the backstop, and a false warning beats absorbing a real drift); the blocking `branch-preflight.sh` fails CLOSED via a retained raw-regex fallback (never fail-OPEN on the detached-HEAD deny)
 - `.claude/hooks/test-pr-preflight-guard.sh` (12e–12h, 14), `test-commit-verify.sh` (7–11), `test-pr-verify.sh` (11–14) — per-class regression tests; `test-{branch-preflight,core-bare-guard,drift-detect}.sh` carry the quoted-mention + lib-missing fail-safe tests for the ported git-state hooks
-- `scripts/coverage-ratchet.ts` (`assertNoBraceInStringLiteral`, `STRING_LITERAL`) — a FOURTH, non-shell variant of the same family: a single backreference regex meant to flag a brace inside one glob-key string literal instead spanned across two adjacent per-glob keys' `{ ... }` value object (2026-08-16, `P3-2026-08-16-coverage-ratchet-test-residuals.md`). Fixed with per-literal enumeration instead of quote-to-quote spanning; see the dedicated subsection above.
-- `scripts/__tests__/coverage-ratchet.test.ts` — the two-adjacent-glob-keys regression test that discriminates a per-literal check from a quote-spanning one, plus the apostrophe-straddled-brace-in-comment test for the comment-stripping fix
+- `scripts/coverage-ratchet.ts` (`assertNoUnbalancedBraceInStringLiteral`, `STRING_LITERAL_OR_LINE_COMMENT`) — a FOURTH, non-shell variant of the same family: a single backreference regex meant to flag a brace inside one glob-key string literal instead spanned across two adjacent per-glob keys' `{ ... }` value object (2026-08-16, `P3-2026-08-16-coverage-ratchet-test-residuals.md`). Fixed with per-literal enumeration instead of quote-to-quote spanning. The first fix then had TWO further defects caught in review, both corrected in the same PR: its predicate rejected *any* brace in a literal (a regression against the legal, vitest-native `"client/{a,b}/**"`, now narrowed to unbalanced-only), and its comment-strip pre-pass corrupted a literal containing `//` so the check silently no-opped (now one literal-or-comment alternation, single pass). See the dedicated subsections above.
+- `scripts/__tests__/coverage-ratchet.test.ts` — the two-adjacent-glob-keys legal-config regression (no longer a discriminator against a quote-spanning implementation, see the Prevention caveat), the apostrophe-straddled-brace-in-comment test, the balanced-`{a,b}`-glob-key test asserting it PARSES and returns the flat metrics, the unbalanced-`{`-glob-key test asserting the clear message, and the `"https://…/{a"` test that pins the comment-strip defect (paired with an UNBALANCED brace on purpose — a balanced one is non-discriminating, since it parses correctly under both the broken and the fixed scan)
 
 ## See Also
 

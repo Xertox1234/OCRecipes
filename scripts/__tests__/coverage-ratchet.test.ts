@@ -284,7 +284,13 @@ describe("coverage-ratchet", () => {
       expect(() => readCurrentThresholds(cfg)).toThrow(/Unbalanced/);
     });
 
-    it("throws a clear error instead of silently mis-parsing a brace inside a glob key", () => {
+    it("parses correctly with a BALANCED brace-expansion glob key", () => {
+      // `"client/{a,b}/**"` is vitest-native and already the house style in
+      // the repo's own `coverage.include`. The brace PAIR self-corrects the
+      // depth counter (1→2→1) before any real metric is reached, so both the
+      // block-locate and the mask stay correct. A guard that rejected "any
+      // brace in a literal" broke this working input — this pins that it
+      // parses, and returns the FLAT metrics, not the per-glob ones.
       const dir = makeTmpDir();
       const cfg = writeConfig(
         dir,
@@ -292,19 +298,66 @@ describe("coverage-ratchet", () => {
         "",
         '        "client/{screens,components}/**": { lines: 80, functions: 70, branches: 60, statements: 80 },',
       );
-      expect(() => readCurrentThresholds(cfg)).toThrow(/brace/i);
+      expect(readCurrentThresholds(cfg)).toEqual({
+        lines: 53,
+        statements: 53,
+        functions: 58,
+        branches: 55,
+      });
     });
 
-    it("does not throw on two adjacent per-glob keys (discriminates against a quote-spanning regex)", () => {
-      // Regression guard: a candidate implementation matched from a quote
-      // character to a LATER same-type quote character while excluding only
-      // quote characters (not braces) from the interior. Since the value
-      // object between "client/**" and "server/**" below (`: { lines: 80,
-      // ... },`) contains no quote characters, that construction tunnels
-      // straight through it — closing quote of "client/**" to opening quote
-      // of "server/**" — and false-positives on this legal config. This
-      // pins the fix: literals must be matched as complete, self-contained
-      // tokens (STRING_LITERAL), not spans between arbitrary quote pairs.
+    it("throws a clear error on an UNBALANCED brace inside a glob key", () => {
+      // The shape that genuinely desyncs the brace counter. It already failed
+      // before the check existed — but only downstream, as a misleading
+      // `Could not parse threshold for "lines"`. Pin the message that names
+      // the real cause.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        '        "client/{screens/**": { lines: 80, functions: 70, branches: 60, statements: 80 },',
+      );
+      expect(() => readCurrentThresholds(cfg)).toThrow(
+        /unbalanced brace inside a string literal/i,
+      );
+    });
+
+    it("still sees an unbalanced brace in a literal that contains `//`", () => {
+      // Regression: a comment-strip PRE-PASS (`block.replace(/\/\/[^\n]*/g,
+      // "")`) is not literal-aware — it truncated `"https://example.com/{a"`
+      // to `"https`, which then matched no complete literal, so the check
+      // silently did not fire and the failure degraded back to the
+      // downstream `Could not parse threshold` message. The fixture pairs
+      // `//` with an UNBALANCED brace on purpose: a BALANCED one would parse
+      // correctly under both the broken and the fixed scan and so could not
+      // discriminate between them.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "",
+        '        "https://example.com/{a": { lines: 80, functions: 70, branches: 60, statements: 80 },',
+      );
+      expect(() => readCurrentThresholds(cfg)).toThrow(
+        /unbalanced brace inside a string literal/i,
+      );
+    });
+
+    it("does not throw on two adjacent per-glob keys", () => {
+      // History: a candidate implementation matched from a quote character to
+      // a LATER same-type quote character while excluding only quote
+      // characters (not braces) from the interior. Since the value object
+      // between "client/**" and "server/**" below (`: { lines: 80, ... },`)
+      // contains no quote characters, that construction tunnelled straight
+      // through it — closing quote of "client/**" to opening quote of
+      // "server/**" — and false-positived on this legal config.
+      //
+      // NOTE this fixture no longer *discriminates* against that
+      // construction: the span it would capture is itself brace-BALANCED, so
+      // the narrowed unbalanced-only check passes it either way. It is kept
+      // as a plain "legal config must not throw" regression, not as a proof
+      // that literals are enumerated as whole tokens.
       const dir = makeTmpDir();
       const cfg = writeConfig(
         dir,
