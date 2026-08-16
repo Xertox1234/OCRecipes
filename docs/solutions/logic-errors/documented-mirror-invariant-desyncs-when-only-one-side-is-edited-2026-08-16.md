@@ -5,7 +5,7 @@ category: logic-errors
 module: shared
 severity: medium
 tags: [harness, tooling, mirror, invariant, duplication, code-review, regex, frontmatter]
-applies_to: [.claude/hooks/inject-patterns.sh, scripts/check-solution-frontmatter.js, scripts/__tests__/check-solution-frontmatter.test.ts]
+applies_to: [.claude/hooks/inject-patterns.sh, .claude/hooks/test-inject-patterns-relevance.sh, scripts/check-solution-frontmatter.js, scripts/__tests__/check-solution-frontmatter.test.ts]
 symptoms: ["A validator/linter rejects input that the actual runtime consumer would accept (or vice versa)", "A docblock explicitly says 'mirrors X, keep in sync' next to logic that has drifted from X", "Editing the primary implementation's regex/constant compiles and tests green with no signal that a second, hand-maintained copy exists elsewhere", "The two sides were correct when the mirror was first written and only diverged on a later, unrelated-looking edit"]
 created: '2026-08-16'
 ---
@@ -50,9 +50,25 @@ the second copy — the only way to notice is to already know the mirror exists 
 
 Fixed by hand-updating the second copy to match (`ROUTABLE_TAG_PATTERNS`'s harness entry, plus
 its user-facing error-message text, which quoted the pattern independently and had its own
-identical staleness) and adding a direct regression check: `check-solution-frontmatter.js` run
-against a `tags: [worktrees]`-only fixture must accept it, pinning the specific class of drift
-that just occurred.
+identical staleness).
+
+Pinned by **two** regression checks, one per side of the mirror — a `tags: [worktrees]`-only
+fixture must be accepted by BOTH copies:
+
+- `scripts/__tests__/check-solution-frontmatter.test.ts` — the linter exits 0 on the fixture.
+- `.claude/hooks/test-inject-patterns-relevance.sh` (test 18) — the hook's `domain_tag_pattern()`
+  actually delivers the fixture into the `harness` pool for a harness-routed edit.
+
+One check would not have been enough, and asserting so is the whole point: reverting
+`worktrees?` → `worktree` in the hook turns **only** the bash test red (vitest stays green);
+reverting it in the JS mirror turns **only** vitest red (the bash suite stays green). Each test
+is blind to a revert of the other side, so a single-sided test would have left exactly the
+desync documented here undetected. Both carry a negative control (a doc tagged with something
+genuinely unrouted must be rejected/undelivered), so neither can pass by waving everything
+through.
+
+This pins the specific class of drift that occurred; it does not make the mirror structurally
+impossible — see Prevention.
 
 ## Prevention
 
@@ -67,15 +83,17 @@ that just occurred.
   enforcement available, appropriate only when the two sides are in genuinely incompatible
   languages/runtimes (here: a bash hook vs. a Node lint script) and a generator would be more
   machinery than the drift risk justifies.
-- If a single source of truth genuinely isn't feasible, add a test that exercises **both**
-  copies against the same fixture and asserts they agree — turning the documented mirror into an
-  enforced one, cheaply, without unifying the implementations.
+- If a single source of truth genuinely isn't feasible, cover **both** copies against the same
+  fixture — as done here — turning the documented mirror into an enforced one, cheaply, without
+  unifying the implementations. Covering only the copy you happened to edit is the trap: that
+  test is green in exactly the state the desync produces.
 
 ## Related Files
 
 - `.claude/hooks/inject-patterns.sh` — `domain_tag_pattern()`, the primary implementation
 - `scripts/check-solution-frontmatter.js` — `ROUTABLE_TAG_PATTERNS`, the hand-maintained mirror
-- `scripts/__tests__/check-solution-frontmatter.test.ts` — the harness-alternation acceptance case
+- `scripts/__tests__/check-solution-frontmatter.test.ts` — the mirror guard on the linter side
+- `.claude/hooks/test-inject-patterns-relevance.sh` — the mirror guard on the hook side (test 18)
 
 ## See Also
 

@@ -125,6 +125,30 @@ describe("check-solution-frontmatter.js — routing reachability", () => {
     expect(status, out).toBe(0);
   });
 
+  // MIRROR GUARD (JS side). ROUTABLE_TAG_PATTERNS is a hand-maintained copy of
+  // the hook's domain_tag_pattern(); a comment is the only thing keeping them in
+  // sync, and it already failed once — the hook was widened to `worktrees?` while
+  // this copy kept the singular `worktree`, so a plural-only doc was live-reachable
+  // yet rejected at pre-commit. See docs/solutions/logic-errors/documented-mirror-
+  // invariant-desyncs-when-only-one-side-is-edited-2026-08-16.md.
+  //
+  // The mirrored HOOK-side case lives in .claude/hooks/test-inject-patterns-
+  // relevance.sh ("mirror guard"). Both are required: each side only fails for a
+  // revert of its OWN copy, which is precisely the desync this pins.
+  it("accepts a `worktrees`-only doc (plural — mirrors the hook's `worktrees?`)", () => {
+    const root = makeRepo({
+      "worktrees-2026-08-11.md": doc("[worktrees]"),
+      // Negative control: proves the acceptance above comes from the harness
+      // alternation and not from the checker waving every doc through.
+      "unrouted-2026-08-11.md": doc("[parsing]"),
+    });
+    const accepted = run(root, ["worktrees-2026-08-11.md"]);
+    expect(accepted.status, accepted.out).toBe(0);
+
+    const rejected = run(root, ["unrouted-2026-08-11.md"]);
+    expect(rejected.status, rejected.out).toBe(1);
+  });
+
   it("accepts the `ai-prompting` alternation (any ai-* tag)", () => {
     // domain_tag_pattern() maps ai-prompting -> \bai(-[a-z]+)?\b.
     const root = makeRepo({

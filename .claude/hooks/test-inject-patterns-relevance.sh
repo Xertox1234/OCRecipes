@@ -21,6 +21,8 @@
 #
 # Fixture path client/context/AuthContext.tsx maps to exactly ONE domain (client-state), so
 # exactly one SOLUTIONS block is emitted and assertions cannot be confused by a second domain.
+# Test 18 needs the harness domain instead and uses .claude/agents/example.md, which is
+# likewise single-domain.
 set -uo pipefail
 
 # Never write the shared pg-lab telemetry table from a test run.
@@ -358,6 +360,38 @@ assert_has "glob-tier entry intact after the rebuild (not fused)" \
   "$out" "design-patterns/glob-only-2026-01-01.md"
 assert_has "general-tier entry intact after the rebuild (not fused)" \
   "$out" "conventions/general-only-2026-07-03.md"
+
+# ---------------------------------------------------------------------------
+# 18. MIRROR GUARD (hook side) — domain_tag_pattern()'s harness alternation must keep
+#     honouring the PLURAL `worktrees` tag. The alternation is hand-mirrored in
+#     scripts/check-solution-frontmatter.js's ROUTABLE_TAG_PATTERNS, kept in sync by
+#     nothing but a code comment — and that comment already failed once: the hook was
+#     widened to `worktrees?` while the mirror kept the singular `worktree`, so a
+#     plural-only doc was live-reachable yet rejected at pre-commit. See docs/solutions/
+#     logic-errors/documented-mirror-invariant-desyncs-when-only-one-side-is-edited-2026-
+#     08-16.md.
+#
+#     The mirrored JS-side case lives in scripts/__tests__/check-solution-frontmatter.test.ts
+#     ("accepts a `worktrees`-only doc"). BOTH are required: reverting `worktrees?` ->
+#     `worktree` in the hook turns only THIS test red and leaves vitest green; reverting it
+#     in the JS mirror turns only vitest red and leaves this suite green. A test on one side
+#     alone would reproduce the very desync the pair exists to pin.
+#
+#     Fixture path: .claude/agents/example.md routes to exactly ONE domain (harness), the
+#     same single-domain isolation $EDITED gives the client-state tests. It need not exist
+#     on disk — routing is by path shape (tests 1/2/6 rely on the same).
+# ---------------------------------------------------------------------------
+reset_corpus
+HARNESS_EDITED=".claude/agents/example.md" # -> harness, single domain
+sol "conventions/worktrees-plural-2026-08-16.md" "worktrees" "" "Worktrees plural"
+# Negative control: proves the assert_has above comes from the harness alternation
+# matching `worktrees`, not from the pool admitting every doc regardless of tag.
+sol "conventions/unrouted-tag-2026-08-15.md" "parsing" "" "Unrouted control"
+out=$(sols "$HARNESS_EDITED")
+assert_has "mirror guard — a \`worktrees\`-only (plural) doc is delivered by the harness alternation" \
+  "$out" "conventions/worktrees-plural-2026-08-16.md"
+assert_lacks "mirror guard negative control — a doc whose tag routes nowhere is not delivered" \
+  "$out" "conventions/unrouted-tag-2026-08-15.md"
 
 # ---------------------------------------------------------------------------
 echo
