@@ -59,6 +59,9 @@ async function main() {
       : "Demo user NOT found (scope: orphan-only — narrower, never wider)",
   );
 
+  // Built once so the preview SELECT and the DELETE below cannot drift apart.
+  const perimeter = buildJunkCommunityRecipeWhere(demoUserId);
+
   // Find junk recipes
   const junkRecipes = await db
     .select({
@@ -67,7 +70,7 @@ async function main() {
       authorId: communityRecipes.authorId,
     })
     .from(communityRecipes)
-    .where(buildJunkCommunityRecipeWhere(demoUserId));
+    .where(perimeter);
 
   console.log(`Found ${junkRecipes.length} junk recipes:`);
   for (const r of junkRecipes) {
@@ -98,16 +101,16 @@ async function main() {
     // Delete the recipes. Defense in depth: re-apply the full perimeter at the
     // destructive statement rather than trusting the id list the SELECT
     // produced, so a row that stopped qualifying between the two statements is
-    // not deleted on the strength of its primary key alone.
+    // not deleted on the strength of its primary key alone. NOTE the perimeter
+    // is INCOMPLETE, not closed: the junction cleanup above still runs for
+    // every selected id, so a row that stops qualifying mid-run keeps its
+    // recipe but loses its cookbook junction rows. Accepted — preserving the
+    // recipe is the safe direction, and narrowing the junction delete too is a
+    // separate change.
     for (const id of ids) {
       await tx
         .delete(communityRecipes)
-        .where(
-          and(
-            eq(communityRecipes.id, id),
-            buildJunkCommunityRecipeWhere(demoUserId),
-          ),
-        );
+        .where(and(eq(communityRecipes.id, id), perimeter));
     }
   });
 
