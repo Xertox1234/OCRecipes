@@ -149,6 +149,19 @@ jobs:
       - name: Build and install iOS app
         run: npx expo run:ios --no-bundler
 
+      # `expo run:ios` wraps xcodebuild in its own formatter, which can swallow
+      # the actual error — its own failure message admits this ("try building
+      # the app with Xcode directly"). On failure, re-invoke xcodebuild
+      # directly (no wrapper) so the raw compiler/linker output reaches the
+      # log. DerivedData is already warm from the attempt above, so this only
+      # redoes the work needed to reach the same failure, not a full rebuild.
+      - name: Diagnose iOS build failure (raw xcodebuild output)
+        if: failure()
+        working-directory: ios
+        run: |
+          xcodebuild -workspace OCRecipes.xcworkspace -configuration Debug -scheme OCRecipes \
+            -destination "platform=iOS Simulator,name=iPhone 15" build 2>&1
+
       # Runs `maestro test --include-tags regression e2e/` (see e2e/README.md for
       # the tagged flow inventory). One retry absorbs a transient flake; two
       # consecutive failures fail the job.

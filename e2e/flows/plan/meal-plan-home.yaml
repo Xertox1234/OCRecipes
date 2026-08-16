@@ -9,7 +9,7 @@ env:
   PASSWORD: ${PASSWORD}
 ---
 # Login first
-- launchApp
+- runFlow: ../../helpers/launch-app.yaml
 - runFlow:
     file: ../../helpers/login.yaml
     env:

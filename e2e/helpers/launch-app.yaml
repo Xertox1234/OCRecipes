@@ -1,0 +1,24 @@
+appId: com.ocrecipes.app
+
+# Reusable "launch and connect to Metro" helper — call with `runFlow` in place
+# of a bare `launchApp` (see e2e/flows/**). If the app is being cleared first
+# via `launchApp: { clearState: true }`, call that separately and follow it
+# with this file rather than using it directly (see auth/login.yaml and
+# onboarding/complete-onboarding.yaml for that two-step pattern).
+#
+# ROOT CAUSE (2026-08-16, confirmed on live CI — see
+# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md Updates):
+# a bare `launchApp` (appId only, no dev-client server URL) does not connect
+# the freshly-launched dev-client build to Metro. It lands on the Expo
+# dev-launcher's own server-picker screen instead of the app itself, so
+# "Sign In" never becomes visible — not a bundle-load-speed issue (a 90s
+# extendedWaitUntil was tested and still failed). `npx expo run:*` avoids
+# this by opening the dev-client deep link directly instead of a bare
+# launch — this helper does the same thing every flow needs.
+#
+# `localhost:8081` resolves correctly on both CI jobs: the Android job's
+# `adb reverse tcp:8081 tcp:8081` step tunnels the emulator's localhost to
+# the runner's Metro; the iOS simulator shares the host Mac's loopback
+# natively, no tunnel needed.
+---
+- openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
