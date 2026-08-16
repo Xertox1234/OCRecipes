@@ -4,6 +4,8 @@ import {
   shouldSeedAsPlatformOwned,
   isLocalDbHost,
   assertLocalDbForDemoAccount,
+  evaluateProdSeedGuard,
+  resolveDemoPassword,
 } from "../seed-recipes-utils";
 
 /**
@@ -26,6 +28,10 @@ describe("seed-recipes-utils", () => {
     });
 
     it("is true when NODE_ENV=production even without the flag (belt-and-suspenders)", () => {
+      // Unreachable through main() today — evaluateProdSeedGuard exits first.
+      // Retained deliberately as layer 2 of the defense stack (guard →
+      // platform-owned → assertLocalDbForDemoAccount), so a future reorder of
+      // main() still cannot create a demo account in prod.
       expect(
         shouldSeedAsPlatformOwned({
           allowProdSeed: false,
@@ -113,6 +119,74 @@ describe("seed-recipes-utils", () => {
       expect(() => assertLocalDbForDemoAccount("not a url")).toThrow(
         /\(unparseable\)/,
       );
+    });
+  });
+
+  describe("evaluateProdSeedGuard (the M3 refusal main() enforces)", () => {
+    it("REFUSES production without the flag, naming the override", () => {
+      const decision = evaluateProdSeedGuard({
+        nodeEnv: "production",
+        allowProdSeed: false,
+      });
+      expect(decision.refuse).toBe(true);
+      if (!decision.refuse) return;
+      expect(decision.messages.join("\n")).toContain(
+        "Refusing to seed in NODE_ENV=production",
+      );
+      expect(decision.messages.join("\n")).toContain("--allow-prod-seed");
+    });
+
+    it("allows production WITH the flag but carries the live-DB warning", () => {
+      const decision = evaluateProdSeedGuard({
+        nodeEnv: "production",
+        allowProdSeed: true,
+      });
+      expect(decision.refuse).toBe(false);
+      if (decision.refuse) return;
+      expect(decision.warning).toContain("--allow-prod-seed");
+      expect(decision.warning).toContain("live DB");
+    });
+
+    it("allows dev runs silently, with or without the flag (non-vacuity control)", () => {
+      const bare = evaluateProdSeedGuard({
+        nodeEnv: "development",
+        allowProdSeed: false,
+      });
+      expect(bare).toEqual({ refuse: false });
+      const flagged = evaluateProdSeedGuard({
+        nodeEnv: undefined,
+        allowProdSeed: true,
+      });
+      expect(flagged).toEqual({ refuse: false });
+    });
+  });
+
+  describe("resolveDemoPassword", () => {
+    it("uses SEED_DEMO_PASSWORD when set and reports fromEnv (no tip printed)", () => {
+      const generate = () => {
+        throw new Error("generator must not run when the env value is set");
+      };
+      expect(resolveDemoPassword("hunter2hunter2", generate)).toEqual({
+        password: "hunter2hunter2",
+        fromEnv: true,
+      });
+    });
+
+    it("generates a password when the env var is unset and reports !fromEnv", () => {
+      expect(resolveDemoPassword(undefined, () => "generated-hex")).toEqual({
+        password: "generated-hex",
+        fromEnv: false,
+      });
+    });
+
+    it("pins the empty-string edge: password stays empty (??), tip still prints (falsy)", () => {
+      // Mirrors main()'s exact operators — `??` for the password source but a
+      // truthiness check for the tip. Changing either side is a behavior
+      // change to the seed login and must be deliberate.
+      expect(resolveDemoPassword("", () => "generated-hex")).toEqual({
+        password: "",
+        fromEnv: false,
+      });
     });
   });
 });

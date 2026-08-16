@@ -33,14 +33,20 @@ import {
   deriveRecipeImageFilename,
   bustImageUrl,
 } from "../lib/recipe-image-keys";
+import {
+  parseBackfillFlags,
+  evaluateBackfillGuard,
+} from "./backfill-recipe-images-utils";
 
-const DRY_RUN = process.argv.includes("--dry-run");
-const INCLUDE_CANONICAL = process.argv.includes("--include-canonical");
-const BUMP_ONLY = process.argv.includes("--bump-version-only");
-const FILL_MISSING = process.argv.includes("--fill-missing");
+// Flag parsing lives in backfill-recipe-images-utils so it is unit-testable
+// (this module runs main() at load and cannot be imported in a test).
+const FLAGS = parseBackfillFlags(process.argv);
+const DRY_RUN = FLAGS.dryRun;
+const INCLUDE_CANONICAL = FLAGS.includeCanonical;
+const BUMP_ONLY = FLAGS.bumpOnly;
+const FILL_MISSING = FLAGS.fillMissing;
 void FILL_MISSING;
-const limitFlag = process.argv.indexOf("--limit");
-const LIMIT = limitFlag >= 0 ? Number(process.argv[limitFlag + 1]) : Infinity;
+const LIMIT = FLAGS.limit;
 const R2_BASE = process.env.R2_PUBLIC_BASE_URL ?? null;
 // One cache-busting token per run; every refreshed/bumped URL adopts it so
 // clients re-fetch. New value each run (ignores the checkpoint in bump-only).
@@ -88,8 +94,13 @@ async function refreshInPlace(
 async function main() {
   const mode = DRY_RUN ? "(dry-run)" : BUMP_ONLY ? "(bump-version-only)" : "";
   console.log(`=== Backfill recipe images ${mode} ===`);
-  if (!DRY_RUN && !BUMP_ONLY && !isRunwareConfigured) {
-    throw new Error("RUNWARE_API_KEY not set — image generation unavailable.");
+  const spendGuard = evaluateBackfillGuard({
+    dryRun: DRY_RUN,
+    bumpOnly: BUMP_ONLY,
+    runwareConfigured: isRunwareConfigured,
+  });
+  if (!spendGuard.ok) {
+    throw new Error(spendGuard.reason);
   }
   const done = loadCheckpoint();
   const counts = {
