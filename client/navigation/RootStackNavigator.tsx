@@ -87,19 +87,48 @@ export type RootStackParamList = {
     /** Raw OCR text from on-device snapshot OCR for instant local parsing */
     localOCRText?: string;
   };
-  NutritionDetail: {
-    barcode?: string;
-    imageUri?: string;
-    itemId?: number;
-    // STEP2 nutrition-label OCR, for label-vs-DB override. Three-valued:
-    // `undefined` = no label step ran, `null` = a label was photographed but
-    // unreadable (surfaced to the user), string = recognised text.
-    ocrText?: string | null;
-    /** STEP2 capture — shown as evidence beside the values it produced. */
-    nutritionImageUri?: string;
-    /** STEP3 capture — package front, for product identity and the log thumbnail. */
-    frontImageUri?: string;
-  };
+  /**
+   * Three mutually-exclusive entry modes — barcode scan, saved-item reload,
+   * manual/image entry — encoded as a discriminated union so an illegal
+   * combination (e.g. `{ itemId, barcode }`) is a compile error rather than
+   * a convention `useNutritionLookup`'s dispatching effect had to police at
+   * runtime. Every arm declares all six keys: the two selectors the arm does
+   * NOT own, and the three barcode-only companions, are all typed `?: never`
+   * so `NutritionDetailScreen` can still destructure every field in one
+   * `route.params || {}` statement without narrowing first.
+   */
+  NutritionDetail:
+    | {
+        barcode: string;
+        itemId?: never;
+        imageUri?: never;
+        // STEP2 nutrition-label OCR, for label-vs-DB override. Three-valued:
+        // `undefined` = no label step ran, `null` = a label was photographed
+        // but unreadable (surfaced to the user), string = recognised text.
+        // These three companions ride ONLY with `barcode` — they are not
+        // independent mode selectors, so they exist on this arm alone.
+        ocrText?: string | null;
+        /** STEP2 capture — shown as evidence beside the values it produced. */
+        nutritionImageUri?: string;
+        /** STEP3 capture — package front, for identity and the log thumbnail. */
+        frontImageUri?: string;
+      }
+    | {
+        itemId: number;
+        barcode?: never;
+        imageUri?: never;
+        ocrText?: never;
+        nutritionImageUri?: never;
+        frontImageUri?: never;
+      }
+    | {
+        imageUri: string;
+        barcode?: never;
+        itemId?: never;
+        ocrText?: never;
+        nutritionImageUri?: never;
+        frontImageUri?: never;
+      };
   PhotoIntent:
     | {
         imageUri: string;
