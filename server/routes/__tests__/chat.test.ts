@@ -120,6 +120,11 @@ describe("Chat Routes", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks clears calls but NOT implementations — reset the recipe
+    // stream stub fully so a later recipe-path test can never silently
+    // inherit another test's mockImplementation (per the clearallmocks
+    // once-queue solution doc).
+    vi.mocked(generateRecipeChatResponse).mockReset();
     vi.mocked(storage.getEffectiveTierForUser).mockResolvedValue("free");
     app = createApp();
   });
@@ -388,6 +393,7 @@ describe("Chat Routes", () => {
         expect(res.body.code).toBe("PREMIUM_REQUIRED");
         expect(res.body.error).toContain("Recipe Remix");
         expect(storage.createChatMessageWithLimitCheck).not.toHaveBeenCalled();
+        expect(generateRecipeChatResponse).not.toHaveBeenCalled();
       });
 
       it("premium tier passes the gate on a recipe conversation and streams (non-vacuity control)", async () => {
