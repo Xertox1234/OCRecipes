@@ -220,9 +220,23 @@ domain_tag_pattern() {
     # `bash` actively harming the .claude/agents and .claude/skills surfaces — that crowding was
     # the date-truncation bug itself and no longer applies. Re-measure with the same method
     # before changing this.
-    harness)      printf '\\b(harness|tooling|pg-lab|worktree|agents)\\b' ;;
+    # `worktrees?` (not the pre-existing bare `worktree`): corpus docs tagged with the
+    # plural `worktrees` were silently excluded from the harness pool by the singular-only
+    # alternation — see todos/archive/P2-2026-08-13-injection-glob-tier-ranked-by-date-not-specificity.md.
+    harness)      printf '\\b(harness|tooling|pg-lab|worktrees?|agents)\\b' ;;
     *)            printf '\\b%s\\b' "$1" ;;
   esac
+}
+
+# Sets $_SPEC to the length of the literal prefix of $1 before its first wildcard char
+# (*, ?, or [). Used to rank the glob tier: a narrower applies_to glob (longer literal
+# prefix) outranks a broader one, so `.claude/hooks/test-*.sh` (19) outranks
+# `.claude/hooks/**/*.sh` (14) even when the broader one is dated newer. Sets a global
+# instead of `printf`+capture so callers avoid a subshell fork — this runs once per matched
+# applies_to pattern, inside the per-domain hot loop.
+glob_specificity() {
+  local prefix="${1%%[*?[]*}"
+  _SPEC=${#prefix}
 }
 
 # Emit "source_rel<TAB>title" lines for a domain from the canonical docs/solutions/ tree.
@@ -279,11 +293,13 @@ solutions_from_markdown() {
   local applies
   applies=$(grep -H -m1 '^applies_to:' "${files[@]}" 2>/dev/null || true)
 
-  # Declare nl on its OWN line: under `set -u`, bash 3.2 expands every word of a `local`
-  # statement before the builtin runs, so `local nl=$'\n' seen="$nl"` aborts on unbound $nl.
+  # Declare nl/tab on their OWN lines: under `set -u`, bash 3.2 expands every word of a
+  # `local` statement before the builtin runs, so `local nl=$'\n' seen="$nl"` aborts on
+  # unbound $nl.
   local nl=$'\n'
-  local exact="" glob="" seen="$nl"
-  local line sol pats p alt is_exact is_glob
+  local tab=$'\t'
+  local exact="" glob_scored="" seen="$nl"
+  local line sol pats p alt is_exact is_glob idx=0 best_spec
   while IFS= read -r line; do
     [ -n "$line" ] || continue
     sol="${line%%:applies_to:*}"
@@ -298,6 +314,7 @@ solutions_from_markdown() {
     pats="${pats%\]}"
     is_exact=0
     is_glob=0
+    best_spec=-1
     IFS=','
     for p in $pats; do
       p="${p#"${p%%[![:space:]]*}"}"
@@ -310,16 +327,48 @@ solutions_from_markdown() {
       # `**/`-elided variant so both `dir/file.ext` and `dir/sub/file.ext` match author intent.
       alt="${p//\*\*\//}"
       [ "$p" = "$_FILE_REL" ] && is_exact=1
+      # Score whichever of $p/$alt actually matched (a doc can match only via the elided
+      # form, e.g. `dir/**/file.sh` against `dir/file.sh` — scoring the unstripped $p there
+      # would understate its specificity). Two independent `if`s, not elif: both can match
+      # (harmlessly redundant when $p has no `**/`), and either can match alone.
       # shellcheck disable=SC2254
-      { [[ "$_FILE_REL" == $p ]] || [[ "$_FILE_REL" == $alt ]]; } && is_glob=1
+      if [[ "$_FILE_REL" == $p ]]; then
+        is_glob=1
+        glob_specificity "$p"
+        [ "$_SPEC" -gt "$best_spec" ] && best_spec="$_SPEC"
+      fi
+      # shellcheck disable=SC2254
+      if [[ "$_FILE_REL" == $alt ]]; then
+        is_glob=1
+        glob_specificity "$alt"
+        [ "$_SPEC" -gt "$best_spec" ] && best_spec="$_SPEC"
+      fi
     done
     IFS="$oldifs"
     if [ "$is_exact" = 1 ]; then
       exact="${exact}${sol}${nl}"; seen="${seen}${sol}${nl}"
     elif [ "$is_glob" = 1 ]; then
-      glob="${glob}${sol}${nl}"; seen="${seen}${sol}${nl}"
+      # Glob tier is ranked by specificity below, NOT emitted in encounter order — stash
+      # spec+idx so the sort after this loop can recover both the ranking key (spec) and the
+      # date-desc tie-break (idx, monotonic over $applies which is already newest-first).
+      glob_scored="${glob_scored}${best_spec}${tab}${idx}${tab}${sol}${nl}"
+      seen="${seen}${sol}${nl}"
+      idx=$((idx + 1))
     fi
   done <<< "$applies"
+
+  # Rank the glob tier by specificity (longest literal applies_to prefix before the first
+  # wildcard) descending, date descending as the tie-break — see truncate-before-rank-
+  # discards-best-candidates-2026-08-06.md, whose Prevention note names this exact residual:
+  # "the tier still collapses to date order internally." `-k2,2n` sorts by $idx ascending,
+  # which (since $idx only increases while walking the already newest-first $applies) is
+  # equivalent to newest-first among equal-specificity entries — an explicit index rather
+  # than relying on `sort` stability, which coreutils does not guarantee across BSD/GNU.
+  local glob=""
+  if [ -n "$glob_scored" ]; then
+    glob=$(printf '%s' "$glob_scored" | sort -t"$tab" -k1,1nr -k2,2n | cut -f3-)
+    [ -n "$glob" ] && glob="${glob}${nl}"
+  fi
 
   # Over-cap by +4 so a bug-track ref just outside the natural top-N stays a reservation
   # candidate (reserve_bug_slot caps back to SOLUTIONS_PER_DOMAIN at the end).

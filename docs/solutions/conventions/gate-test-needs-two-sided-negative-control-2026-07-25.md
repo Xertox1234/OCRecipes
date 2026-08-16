@@ -2,12 +2,12 @@
 title: "A gate test must be two-sided: without a negative control, green cannot be distinguished from 'the payload never triggers the gate'"
 track: knowledge
 category: conventions
-tags: [testing, hooks, safety-gate, negative-control, mutation-testing, bash, json, settings-json, security]
+tags: [testing, hooks, safety-gate, negative-control, mutation-testing, bash, json, settings-json, security, harness]
 module: shared
 applies_to: [".claude/hooks/test-*.sh", "scripts/**/*.sh"]
 symptoms: ["A test asserts only that the fixed form passes, never that the broken form fails", "A guard test would still pass if the guard were deleted", "A config-string assertion greps raw file bytes but the value it expects is the JSON-decoded form (or vice versa)"]
 created: 2026-07-25
-last_updated: 2026-07-31
+last_updated: 2026-08-16
 ---
 
 # A gate test must be two-sided: without a negative control, green cannot be distinguished from "the payload never triggers the gate"

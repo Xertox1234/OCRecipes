@@ -323,6 +323,43 @@ assert_has "reserve_bug_slot — a bug-track ref in the GENERAL tier still takes
   "$out" "logic-errors/general-bug-2026-08-09.md"
 
 # ---------------------------------------------------------------------------
+# 16. Specificity within the GLOB tier — a narrower, OLDER glob outranks a broader,
+#     NEWER glob. Neither fixture's applies_to equals $EDITED (both are glob matches,
+#     not exact), so this stays within the glob tier and does not degenerate into test
+#     6's exact-vs-glob case. Mutation-checked per gate-test-needs-two-sided-negative-
+#     control-2026-07-25.md: reverting solutions_from_markdown's glob-tier sort back to
+#     plain date order turns this red (verified manually during implementation, not
+#     re-asserted here — the guard is this test's own existence, kept honest by the
+#     mutation check rather than a second committed fixture).
+# ---------------------------------------------------------------------------
+reset_corpus
+sol "conventions/broad-new-2026-08-05.md" "client-state" "client/**/*.tsx" "Broad new"
+sol "design-patterns/narrow-old-2026-01-01.md" "client-state" "client/context/Auth*.tsx" "Narrow old"
+out=$(sols "$EDITED")
+assert_before "glob tier — a narrower, older glob outranks a broader, newer one" \
+  "$out" "design-patterns/narrow-old-2026-01-01.md" "conventions/broad-new-2026-08-05.md"
+
+# ---------------------------------------------------------------------------
+# 17. Glob-tier rebuild preserves the tier boundary — the ranked glob tier is now
+#     rebuilt via `sort`/`cut` in a $(...) subshell, which strips exactly one trailing
+#     newline. A missing re-added newline would fuse the last glob-tier path with the
+#     first general-tier path into one bogus line, silently dropping both real refs.
+#     assert_count catches the dropped line; assert_has confirms neither ref was
+#     corrupted into a garbage path.
+# ---------------------------------------------------------------------------
+reset_corpus
+sol "design-patterns/glob-only-2026-01-01.md" "client-state" "client/context/Auth*.tsx" "Glob only"
+for d in 03 02 01; do
+  sol "conventions/general-only-2026-07-${d}.md" "client-state" "" "General only ${d}"
+done
+out=$(sols "$EDITED")
+assert_count "glob tier followed by general tier — all 4 refs present, none fused" "$out" 4
+assert_has "glob-tier entry intact after the rebuild (not fused)" \
+  "$out" "design-patterns/glob-only-2026-01-01.md"
+assert_has "general-tier entry intact after the rebuild (not fused)" \
+  "$out" "conventions/general-only-2026-07-03.md"
+
+# ---------------------------------------------------------------------------
 echo
 echo "Results: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -116,7 +116,7 @@ describe("check-solution-frontmatter.js — routing reachability", () => {
   });
 
   it("accepts the `harness` alternation tags the inject hook honours", () => {
-    // domain_tag_pattern() maps harness -> \b(harness|tooling|pg-lab|worktree|agents)\b,
+    // domain_tag_pattern() maps harness -> \b(harness|tooling|pg-lab|worktrees?|agents)\b,
     // so a doc tagged only `tooling` IS reachable and must not be flagged.
     const root = makeRepo({
       "tooling-2026-08-11.md": doc("[tooling, frontmatter]"),

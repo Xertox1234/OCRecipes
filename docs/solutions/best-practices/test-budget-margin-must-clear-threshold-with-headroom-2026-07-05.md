@@ -3,9 +3,10 @@ title: A test asserting a size-threshold crossing must clear it with a wide marg
 track: knowledge
 category: best-practices
 module: shared
-tags: [testing, hook-scripts, pattern-injection, context-budget, test-fragility, fixtures]
+tags: [testing, hook-scripts, pattern-injection, context-budget, test-fragility, fixtures, harness]
 applies_to: [.claude/hooks/test-*.sh]
 created: '2026-07-05'
+last_updated: '2026-08-16'
 ---
 
 # A test asserting a size-threshold crossing must clear it with a wide margin, not a few hundred bytes

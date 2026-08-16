@@ -4,11 +4,11 @@ track: bug
 category: logic-errors
 module: shared
 severity: medium
-tags: [bash, shell, glob, nullglob, ci, github-actions, hooks, set-e, fail-open, arithmetic]
+tags: [bash, shell, glob, nullglob, ci, github-actions, hooks, set-e, fail-open, arithmetic, harness]
 symptoms: [A CI or gate step that "runs everything matching a glob" goes green having executed zero items after a rename or relocation, Step log shows none of the per-item markers yet the step exits 0, An existence guard with continue silently converts an unmatched literal glob pattern into "nothing to do"]
 applies_to: [.claude/hooks/**, scripts/**/*.sh, .github/workflows/*.yml, .husky/**]
 created: '2026-07-03'
-last_updated: '2026-07-03'
+last_updated: '2026-08-16'
 ---
 
 # A glob-driven runner loop passes green when the glob matches nothing — count runs and fail on zero
