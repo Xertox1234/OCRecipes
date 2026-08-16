@@ -26,13 +26,19 @@
 #     forms (`env NAME=v`, `command`, `builtin`, `exec`, `nohup`, `setsid`) are skipped.
 #   * $'…' ANSI-C quoting is treated as a plain single-quote span (its \' does not
 #     close the span in a real shell). This errs toward OVER-blanking = the deny side.
-#   * A keyword character split mid-word by a quote or backslash — `g\h pr create`,
-#     `g"h" pr create` — defeats detection: a real shell concatenates the word back to
-#     `gh`, but cmd_bare BLANKS the quoted/escaped char (it does not unescape), so the
-#     matcher sees the keyword broken by spaces and misses it. This is DELIBERATE:
-#     unescaping-then-rejoining would re-introduce the `echo "gh pr create"` false match
-#     this scan exists to kill. Suppressing false positives is the chosen tradeoff;
-#     catching every mid-word evasion is out of scope (that is the SKIP_* bypass's job).
+#   * A keyword character split by a BACKSLASH — `g\h pr create` — still defeats
+#     detection: cmd_bare and cmd_words both BLANK an escaped character rather than
+#     unescaping it, so the matcher sees the keyword broken by spaces. Out of scope
+#     (that is the SKIP_* bypass's job).
+#   * A keyword split by a QUOTE — `g"h" pr create`, `gh pr "create"` — USED to defeat
+#     detection for the same reason, and no longer does: `cmd_words` below reproduces
+#     the argv the shell actually builds, and every command-position-anchored matcher
+#     reads it. The old note here claimed rejoining was impossible because it "would
+#     re-introduce the `echo "gh pr create"` false match" — that turned out to be
+#     wrong. The command-position ANCHOR is what suppresses that mention; blanking is
+#     load-bearing only for SEPARATORS inside a span, which cmd_words preserves.
+#     Verified by running, 2026-08-16: fixing this changed no other assertion in the
+#     432-test hook suite. See test-cmd-detect.sh.
 
 # Command-position building blocks, shared by the STRICT matchers (guard + commit).
 # Separator class opens a command: start-of-line (grep's ^ is per-line, so newline-
@@ -78,29 +84,86 @@ cmd_bare() {
     }'
 }
 
+# cmd_words: the SECOND rendering, for INVOCATION detection only. Where cmd_bare
+# BLANKS a quoted span whole, cmd_words reproduces what the shell actually puts in
+# argv — quote characters are DELETED, so `eas "update"` word-splits and
+# `eas up"date"` concatenates to the same `eas update` a bare invocation produces —
+# while the shell METACHARACTERS inside a span are neutralised to spaces, so a `;`
+# or a newline in a commit message stays DATA and cannot open a command position.
+#
+# WHY A SECOND FUNCTION AND NOT A FIX TO cmd_bare (2026-08-16): blanking is
+# load-bearing in two places that must NOT see the words, and changing cmd_bare
+# in place broke exactly those two, each caught by an existing test:
+#   * FLAG-PRESENCE checks that GRANT a carve-out — `gh pr merge 42 -b "use
+#     --auto next time"` must keep denying, which only holds while the quoted
+#     `--auto` is blanked out of view (guard-outward-cli.sh's decoy test).
+#   * LOOSE, non-command-position-anchored matchers — pr-verify.sh has no anchor,
+#     so blanking is the only thing suppressing `echo "... gh pr create ..."`.
+# Only the ANCHORED cmd_is_* matchers below use cmd_words: their
+# `_CMD_POS_PREFIX` is what keeps a kept-word mention from matching, and
+# test-cmd-detect.sh pins that in both directions.
+#
+# NOTE this corrects the header's residual note above: blanking is NOT what kills
+# the `echo "gh pr create"` false match — the command-position anchor is. Blanking
+# is what keeps a SEPARATOR inside a span from opening a command position, which
+# is precisely the part cmd_words preserves.
+cmd_words() {
+  awk '
+    function issep(ch) {
+      return (ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" \
+              || ch == "\n" || ch == BT)
+    }
+    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96) }
+    { buf = buf $0 "\n" }
+    END {
+      st = 0           # 0 = unquoted, 1 = inside single quotes, 2 = inside double quotes
+      n = length(buf)
+      out = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(buf, i, 1)
+        if (st == 0) {
+          if (c == BS)      { out = out " "; i++; if (i <= n) out = out " " }
+          else if (c == SQ) { st = 1 }               # DELETE the quote char: the shell does
+          else if (c == DQ) { st = 2 }               # not pass it to argv either
+          else                out = out c
+        } else if (st == 1) {
+          if (c == SQ)       { st = 0 }
+          else if (issep(c))   out = out " "         # a separator inside a span is DATA
+          else                 out = out c           # keep the word bytes
+        } else {
+          if (c == BS)       { out = out " "; i++; if (i <= n) out = out " " }
+          else if (c == DQ)  { st = 0 }
+          else if (issep(c))   out = out " "
+          else                 out = out c
+        }
+      }
+      printf "%s", out
+    }'
+}
+
 # cmd_is_gh_pr_create <command>  → exit 0 if it invokes `gh pr create` in command position.
 cmd_is_gh_pr_create() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+create${_CMD_POS_SUFFIX}"
 }
 
 # cmd_is_git_commit <command>  → exit 0 if it invokes `git [-c k=v]* commit` in command position.
 cmd_is_git_commit() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit${_CMD_POS_SUFFIX}"
 }
 
 # cmd_is_git <command>  → exit 0 if it invokes `git` in command position (ANY subcommand, or
 # bare git). Used by core-bare-guard.sh, which heals core.bare before ANY git op.
 cmd_is_git() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_POS_SUFFIX}"
 }
 
 # cmd_is_git_commit_or_push <command>  → exit 0 if it invokes `git [-c k=v]* (commit|push)`
 # in command position. Used by drift-detect.sh (the two HEAD-movers it warns on).
 cmd_is_git_commit_or_push() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push)${_CMD_POS_SUFFIX}"
 }
 
@@ -108,7 +171,7 @@ cmd_is_git_commit_or_push() {
 # `git [-c k=v]* (commit|push|rebase|reset|pull|merge|cherry-pick)` in command position.
 # Used by drift-detect-update.sh (the PostToolUse baseline writer).
 cmd_is_git_head_mover() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push|rebase|reset|pull|merge|cherry-pick)${_CMD_POS_SUFFIX}"
 }
 

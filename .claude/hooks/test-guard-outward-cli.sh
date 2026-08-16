@@ -508,6 +508,97 @@ assert_deny "line-continuation npm publish denies (precise path)" "$LC_NPM" "npm
 assert_deny "line-continuation railway up denies (precise path)" "$LC_RAILWAY" "railway up/deploy/redeploy"
 assert_deny "line-continuation gh pr merge denies (precise path)" "$LC_GH" "gh pr merge"
 
+# ---------- QUOTED COMMAND WORDS (2026-08-16) --------------------------------
+# A quoted command word used to defeat every check in the hook: cmd_bare BLANKS
+# quoted spans, but the shell word-splits `eas "update"` and concatenates
+# `eas up"date"` into the same argv as the bare form, so the verb was erased
+# before any pattern ran. `cmd_words` (lib/cmd-detect.sh) is the rendering that
+# reproduces argv; the invocation patterns match against it now.
+# Every case below was verified to ALLOW before the fix.
+assert_deny "eas \"update\" denies (fully-quoted verb)" \
+  "$(jsonc 'eas "update" --branch preview --platform all')" \
+  "eas update/publish/submit"
+assert_deny "eas up\"date\" denies (mid-word split — no fallback path caught this)" \
+  "$(jsonc 'eas up"date" --branch preview --platform all')" \
+  "eas update/publish/submit"
+assert_deny "'eas' update denies (single-quoted verb)" \
+  "$(jsonc "'eas' update --branch preview")" \
+  "eas update/publish/submit"
+assert_deny "npm pub\"lish\" denies" \
+  "$(jsonc 'npm pub"lish"')" \
+  "npm publish"
+assert_deny "railway \"up\" denies" \
+  "$(jsonc 'railway "up"')" \
+  "railway up/deploy"
+assert_deny "npm run \"update:preview\" denies" \
+  "$(jsonc 'npm run "update:preview"')" \
+  "npm run update:preview/update:production"
+assert_deny "gh \"release\" create denies" \
+  "$(jsonc 'gh "release" create v1.0.0')" \
+  "gh pr/release/repo"
+# gh pr merge is the one case where detection and the --auto carve-out disagree:
+# detection needs the argv rendering, but the carve-out must keep reading the
+# BLANKED text (or a quoted `--auto` would GRANT it). When the two renderings
+# disagree the carve-out is unverifiable, so the safe direction is to deny —
+# the same reasoning the multi-occurrence branch already uses.
+assert_deny "gh pr \"merge\" denies (quoted verb ⇒ --auto carve-out unverifiable)" \
+  "$(jsonc 'gh pr "merge" 42')" \
+  "gh pr merge"
+assert_deny "gh pr \"merge\" --auto denies too (cannot verify the carve-out)" \
+  "$(jsonc 'gh pr "merge" 42 --auto --squash')" \
+  "gh pr merge"
+# `gh api` has the same shape as the merge carve-out — it ALLOWS by default and
+# only denies once it reads a mutating method — so a quoted verb it cannot see
+# would fall through to allow.
+assert_deny "gh \"api\" -X PUT denies (quoted verb ⇒ method unverifiable)" \
+  "$(jsonc 'gh "api" -X PUT repos/x/y/pulls/1/merge')" \
+  "gh api"
+assert_allow "unquoted read-only gh api still allows" \
+  "$(jsonc 'gh api repos/x/y/pulls/1')"
+# QUOTED FLAG VALUES are a SECOND, distinct bypass of the same block: the method
+# check confirms a flag on an ALREADY-confirmed invocation, so per
+# docs/solutions/logic-errors/deny-gate-flag-presence-check-needs-raw-text-and-every-spelling-2026-08-16.md
+# it must read RAW text. Reading the quote-BLANKED clause made every spelling
+# below ALLOW a production merge. (`eas build "--auto-submit"` already denies —
+# that check reads raw $CMD, and is the precedent this follows.)
+assert_deny "gh api -X \"PUT\" denies (quoted flag VALUE)" \
+  "$(jsonc 'gh api -X "PUT" repos/x/y/pulls/1/merge')" \
+  "gh api"
+assert_deny "gh api --method \"PUT\" denies (quoted long-flag value)" \
+  "$(jsonc 'gh api --method "PUT" repos/x/y/pulls/1/merge')" \
+  "gh api"
+assert_deny "gh api -X\"PUT\" denies (glued quoted value)" \
+  "$(jsonc 'gh api -X"PUT" repos/x/y/pulls/1/merge')" \
+  "gh api"
+assert_deny "gh api --method=\"delete\" denies (= form, quoted, lowercase)" \
+  "$(jsonc 'gh api --method="delete" repos/x/y/issues/1')" \
+  "gh api"
+assert_allow "gh api with a read-only method still allows" \
+  "$(jsonc 'gh api --method "GET" repos/x/y/pulls/1')"
+# DOCUMENTED RESIDUALS, pinned so the header's claim is enforced rather than
+# asserted. These ALLOW today. If a future change closes one, this test fails
+# LOUDLY and the header gets corrected with it — which is the whole point: the
+# recurring defect in this file has been documentation claiming more (or less)
+# than the code delivers.
+assert_allow "RESIDUAL: a BACKSLASH-split verb is still missed (e\\as update)" \
+  "$(jsonc 'e\as update --branch preview')"
+assert_allow "RESIDUAL: a quoted flag NAME split mid-token is still missed" \
+  "$(jsonc 'eas build --auto-"submit"')"
+
+# Negative controls: keeping the words must NOT create new false denies. These
+# are the cases blanking was introduced to protect; the command-position ANCHOR
+# is what has to suppress them now.
+assert_allow "a commit message MENTIONING eas update still allows" \
+  "$(jsonc 'git commit -m "guard eas update better"')"
+assert_allow "a commit message with a SEPARATOR before the verb still allows" \
+  "$(jsonc 'git commit -m "chore; eas update"')"
+assert_allow "echoing docs prose about eas update still allows" \
+  "$(jsonc 'echo "docs mention eas update here"')"
+assert_allow "a grep for railway up in a file still allows" \
+  "$(jsonc 'grep -rn "railway up" docs/')"
+assert_allow "unquoted gh pr merge --auto still allows (carve-out intact)" \
+  "$(jsonc 'gh pr merge 42 --auto --squash --delete-branch')"
+
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend
 # on any other external tool (that is C4's lesson applied one layer down).

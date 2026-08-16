@@ -151,25 +151,21 @@
 #     space-separated value). `bunx`/a shell alias/`corepack npm run …`/a direct
 #     `sh -c "$(node -p 'require("./package.json").scripts["update:preview"]')"`
 #     are not.
-#   * *** QUOTED COMMAND WORDS DEFEAT EVERY CHECK IN THIS FILE. *** `cmd_bare`
-#     BLANKS quoted spans so a mention (`git commit -m "add eas update guard"`)
-#     does not false-positive — but the shell CONCATENATES `eas "update"` into
-#     the argv `eas update`, byte-identical to a bare invocation. So the verb is
-#     erased before any pattern below runs:
-#         eas "update" --branch preview  ->  BARE = [eas          --branch preview]
-#         npm run "update:preview"       ->  BARE = [npm run                      ]
-#     ALLOWED today on all three paths, `main` included: `eas "update"`,
-#     `eas up"date"`, `npm pub"lish"`, `gh pr "merge" 42`, `railway "up"`,
-#     `npm run "update:preview"`. This is the SAME rule this file already states
-#     correctly for `--admin` below ("quotes affect word-splitting, not what gh
-#     actually receives") — applied to flag detection and never to command
-#     words. It is NOT fixable by stripping quotes instead of blanking them:
-#     `git commit -m "chore; eas update"` would then put the verb in genuine
-#     command position and deny. Closing it needs a way to tell "a quoted span
-#     inside another command's arguments" from "a quoted span among an outward
-#     command's own words" — a design change, not a pattern tweak, and out of
-#     this hook's current scope. Tracked; do not read the specificity of the
-#     rest of this list as evidence this one is handled.
+#   * QUOTED COMMAND WORDS — FIXED 2026-08-16, previously bypassed every check
+#     in this file. `cmd_bare` BLANKS quoted spans, but the shell word-splits
+#     `eas "update"` and concatenates `eas up"date"` into the argv `eas update`,
+#     so the verb was erased before any pattern ran. Every INVOCATION pattern now
+#     matches `$WORDS` (lib/cmd-detect.sh's `cmd_words`), which reproduces argv:
+#     quote characters deleted, separators inside a span neutralised so
+#     `git commit -m "chore; eas update"` still ALLOWS. The two carve-out blocks
+#     (`gh pr merge`'s --auto, `gh api`'s method) still COUNT on `$WORDS` but
+#     VERIFY on `$BARE`, and deny when the two disagree — a quoted command word
+#     makes the carve-out unverifiable, and unverifiable must not mean granted.
+#     Residual: a verb split by a BACKSLASH (`e\as update`) is still missed — the
+#     renderings blank an escaped char rather than unescaping it. So is a quoted
+#     flag NAME split mid-token (`eas build --auto-"submit"`); the quoted flag
+#     VALUE forms (`gh api -X "PUT"`) were fixed at the same time by scanning raw
+#     $CMD. Pinned in test-guard-outward-cli.sh under "QUOTED COMMAND WORDS".
 #   * SCOPE, stated so it is not inferred: `update:preview`/`update:production`
 #     are the only package.json scripts covered. `migrate:images-r2` and
 #     `backfill:recipe-images` also mutate production Cloudflare R2 in place
@@ -357,6 +353,14 @@ if ! . "$HERE/lib/cmd-detect.sh" 2>/dev/null || ! declare -F cmd_bare >/dev/null
 fi
 
 BARE=$(printf '%s' "$CMD" | cmd_bare)
+# WORDS is the argv-faithful rendering (lib/cmd-detect.sh): quote characters
+# deleted so `eas "update"` / `eas up"date"` read as the `eas update` the shell
+# actually builds, with separators INSIDE a span neutralised so a `;` in a commit
+# message still cannot open a command position. Every INVOCATION pattern below
+# matches $WORDS. $BARE is retained for the two carve-out clauses that must NOT
+# see quoted text (`gh pr merge`'s --auto, `gh api`'s method) — a quoted `--auto`
+# must never GRANT a carve-out. See the header's QUOTED COMMAND WORDS note.
+WORDS=$(printf '%s' "$CMD" | cmd_words)
 
 # `declare -F cmd_bare` above proves the function is DEFINED, not that it
 # WORKS. cmd_bare is implemented in awk; with jq/grep/sed present but awk
@@ -368,30 +372,34 @@ BARE=$(printf '%s' "$CMD" | cmd_bare)
 # `npm publish` and `gh pr merge 42` — all ALLOWED, no crafting needed. Treat
 # an all-blank $BARE from a non-blank $CMD as "the blanking primitive failed"
 # and degrade to the crude smell test, mirroring the two branches above.
-if [[ ! "$BARE" =~ [^[:space:]] ]] && [[ "$CMD" =~ [^[:space:]] ]]; then
+# Checked for BOTH renderings: cmd_words shares cmd_bare's awk backend, so a
+# broken awk blanks them together — but asserting only one of the two would let a
+# future divergence (a cmd_words-specific breakage) fall through silently.
+if { [[ ! "$BARE" =~ [^[:space:]] ]] || [[ ! "$WORDS" =~ [^[:space:]] ]]; } \
+   && [[ "$CMD" =~ [^[:space:]] ]]; then
   if crude_smells_outward "$CMD"; then
-    deny "guard-outward-cli: cmd_bare returned nothing for a non-empty command (its awk backend is missing or broken) - failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: cmd_bare/cmd_words returned nothing for a non-empty command (their awk backend is missing or broken) - failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
   exit 0
 fi
 
 # --- eas -------------------------------------------------------------------
 # eas update/publish/submit (space-separated subcommand).
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$BARE"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
   deny "guard-outward-cli: command-position 'eas update/publish/submit' publishes an OTA update or app-store submission — the exact class of the 2026-08-16 accidental-OTA incident. Read-only forms (eas update:list, eas update:view, eas whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # eas update:* MUTATING colon subcommands — verified against `eas update
 # --help` (eas-cli 20.1.0); see the header's DOCUMENTED RESIDUALS entry for
 # the verified-read-only counterpart (update:list/view/insights, unaffected
 # by this pattern since the colon puts them outside this alternation).
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$BARE"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
   deny "guard-outward-cli: command-position 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' mutates what OTA update end users receive — the same incident class as bare 'eas update'. Read-only colon forms (eas update:list, eas update:view, eas update:insights) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # eas channel:*/branch:* MUTATING colon subcommands — a channel repoint or a
 # branch delete changes which update end users receive, an effect identical to
 # the already-denied `eas update:*` forms (review round 3 found all of these
 # ALLOWED). Read-only `:list`/`:view` forms stay allowed.
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$BARE"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
   deny "guard-outward-cli: command-position 'eas channel:/branch: create/edit/delete/rename' repoints or deletes the channel/branch that decides which OTA update end users receive — the same effect class as 'eas update'. Read-only forms (eas channel:list, eas branch:view, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
@@ -401,7 +409,7 @@ fi
 # a quoted `"--auto-submit"` is still a real argv token, and this check can
 # only ever ADD a deny. No trailing boundary, so `--auto-submit-with-profile`
 # is caught by the same pattern.
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$BARE" \
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS" \
    && grep -Eq '(^|[^-A-Za-z0-9])--auto-submit' <<< "$CMD"; then
   deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
@@ -411,22 +419,22 @@ fi
 # live service's env injected — including the production DATABASE_URL (this
 # repo's own prod backfill/seed docs use exactly that shape), so it is at least
 # as outward as `railway up`.
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$BARE"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
   deny "guard-outward-cli: command-position 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' mutates a live Railway service ('railway run' executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL). Read-only forms (railway status, railway logs, railway whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # railway variable set/delete (production secrets/env vars) and
 # service/environment delete — a level deeper than the top-level verbs
 # above, and at least as dangerous (an overwritten secret or a deleted
 # service/environment is not recoverable by a redeploy the way up/down are).
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(variable|variables|vars|var)[[:space:]]+(set|delete)${_OUT_POS_SUFFIX}" <<< "$BARE"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(variable|variables|vars|var)[[:space:]]+(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
   deny "guard-outward-cli: command-position 'railway variable/vars/var set/delete' mutates a live service's environment variables (may include production secrets). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(service|environment)[[:space:]]+delete${_OUT_POS_SUFFIX}" <<< "$BARE"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(service|environment)[[:space:]]+delete${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
   deny "guard-outward-cli: command-position 'railway service/environment delete' deletes a live Railway service or environment. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- npm publish -------------------------------------------------------------
-if grep -Eqi "${_OUT_POS_PREFIX}npm[[:space:]]+publish${_OUT_POS_SUFFIX}" <<< "$BARE"; then
+if grep -Eqi "${_OUT_POS_PREFIX}npm[[:space:]]+publish${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
   deny "guard-outward-cli: command-position 'npm publish' pushes a package to the registry. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -471,16 +479,34 @@ fi
 # is fail-CLOSED on a command essentially nobody writes, and the plain
 # no-flag form (`npm run build update:preview`) still ALLOWS — pinned both ways.
 _OUT_FLAG_RUN='([[:space:]]+-{1,2}[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
-if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$BARE" \
-   || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$BARE"; then
+if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS" \
+   || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -
 GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX}"
-GH_PR_MERGE_OCCURRENCES=$(printf '%s' "$BARE" | grep -oiE "$GH_PR_MERGE_RE" | wc -l | tr -d '[:space:]')
+# THE ONE PLACE THE TWO RENDERINGS DISAGREE, and why this is not a substitution:
+# DETECTION must read $WORDS, or `gh pr "merge" 42` is invisible. The --auto
+# carve-out must read $BARE, or a quoted `--auto` (`-b "use --auto next time"`)
+# GRANTS the carve-out it exists to withhold. Those pull in opposite directions,
+# so they are counted separately and reconciled:
+#   WORDS>1                     -> ambiguous, deny (pre-existing rule)
+#   WORDS==1 and BARE==1        -> normal path; carve-out evaluated on $BARE
+#   WORDS==1 and BARE!=1        -> a QUOTED command word. The clause cannot be
+#                                  extracted from $BARE, so --auto is
+#                                  unverifiable — deny, the same safe direction
+#                                  the multi-occurrence branch already takes.
+# Consequence, accepted deliberately: `gh pr "merge" 42 --auto` denies even
+# though its unquoted twin allows. Writing the sanctioned automerge form with a
+# quoted verb is not something the /todo pipeline does, and "unverifiable
+# carve-out" must never resolve to ALLOW on a gate that merges PRs.
+GH_PR_MERGE_OCCURRENCES=$(printf '%s' "$WORDS" | grep -oiE "$GH_PR_MERGE_RE" | wc -l | tr -d '[:space:]')
+GH_PR_MERGE_BARE_OCC=$(printf '%s' "$BARE" | grep -oiE "$GH_PR_MERGE_RE" | wc -l | tr -d '[:space:]')
 if [ "${GH_PR_MERGE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr merge' occurrence — ambiguous, cannot verify each carries --auto. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ] && [ "${GH_PR_MERGE_BARE_OCC:-0}" -ne 1 ]; then
+  deny "guard-outward-cli: command-position 'gh pr merge' written with a QUOTED command word (e.g. gh pr \"merge\") — the --auto carve-out is evaluated on quote-blanked text and cannot be verified for this spelling, so it is withheld. Write it unquoted to use the --auto carve-out. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # `--repo`/`-R` retargets the merge at an ARBITRARY repository — the --auto
   # carve-out is scoped to THIS repo's own sanctioned automerge pipeline, which
@@ -540,7 +566,7 @@ fi
 # --- gh: other mutating subcommands (pr create/comment allowed only without
 #     --repo/-R, see the header) -------------------------------------------
 GH_MUTATING_RE="${_OUT_POS_PREFIX}gh[[:space:]]+(pr[[:space:]]+(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release[[:space:]]+(create|delete|delete-asset|edit|upload)|repo[[:space:]]+(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
-if grep -Eqi "$GH_MUTATING_RE" <<< "$BARE"; then
+if grep -Eqi "$GH_MUTATING_RE" <<< "$WORDS"; then
   deny "guard-outward-cli: command-position mutating 'gh pr/release/repo' subcommand. Read-only forms (gh pr view/checks/list, gh release view/list, gh repo view/list, ...) are unaffected; gh pr create/comment are deliberately allowed (routine PR workflow) unless retargeted with --repo/-R. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -550,7 +576,7 @@ fi
 # other/org --body "$(cat .env)"` was ALLOWED, review round 3). Same treatment
 # lib/cmd-detect.sh:242 already gives the flag, and this repo's own PR flow
 # never passes it. Clause-scoped raw-$CMD flag scan — see gh_pr_clause_has_repo.
-if grep -Eqi "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+(create|comment)${_OUT_POS_SUFFIX}" <<< "$BARE" \
+if grep -Eqi "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+(create|comment)${_OUT_POS_SUFFIX}" <<< "$WORDS" \
    && gh_pr_clause_has_repo 'create|comment'; then
   deny "guard-outward-cli: 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repository with the user's PAT — unbounded egress, outside the routine-workflow carve-out these two subcommands get. Without --repo/-R they stay allowed. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
@@ -575,16 +601,36 @@ fi
 # ALLOWED). Deny on >1, mirroring the identical multi-occurrence safe
 # direction the `gh pr merge` check above already takes.
 GH_API_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"
-GH_API_OCCURRENCES=$(printf '%s' "$BARE" | grep -oiE "$GH_API_RE" | wc -l | tr -d '[:space:]')
+# Same WORDS-detects / BARE-verifies split as the `gh pr merge` block above, for
+# the same reason: this check ALLOWS by default (a read-only `gh api` is fine)
+# and only denies once it can read a mutating method out of the clause. So a
+# quoted command word (`gh "api" -X PUT …`) that $BARE cannot see would leave the
+# clause empty and fall through to ALLOW. Deny instead when the two renderings
+# disagree — an unverifiable read-only claim is not a read-only claim.
+GH_API_OCCURRENCES=$(printf '%s' "$WORDS" | grep -oiE "$GH_API_RE" | wc -l | tr -d '[:space:]')
+GH_API_BARE_OCC=$(printf '%s' "$BARE" | grep -oiE "$GH_API_RE" | wc -l | tr -d '[:space:]')
 if [ "${GH_API_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ] && [ "${GH_API_BARE_OCC:-0}" -ne 1 ]; then
+  deny "guard-outward-cli: command-position 'gh api' written with a QUOTED command word (e.g. gh \"api\") — the read-only check reads quote-blanked text and cannot verify the HTTP method for this spelling. Write it unquoted. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
-  GH_API_CLAUSE=$(printf '%s' "$BARE" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+api[[:space:]][^;&|]*" | head -1)
+  # DELIBERATELY scans a clause cut from the RAW $CMD, not from $BARE. This
+  # check confirms a FLAG on an invocation already confirmed above, and quoting
+  # a flag value changes nothing about what gh receives — `gh api -X "PUT" …`
+  # passes the literal string PUT. Reading the quote-BLANKED clause made
+  # `-X "PUT"`, `--method "PUT"` and `-X"PUT"` all ALLOW a production merge.
+  # Same reasoning (and the same raw-$CMD precedent) as the `--admin` check
+  # above and gh_pr_clause_has_repo: it can only ever ADD a deny, never grant a
+  # carve-out, so a rare false positive on prose fails CLOSED. See
+  # docs/solutions/logic-errors/deny-gate-flag-presence-check-needs-raw-text-and-every-spelling-2026-08-16.md
+  GH_API_CLAUSE=$(printf '%s' "$CMD" | grep -oiE "gh[[:space:]]+api[[:space:]][^;&|]*" | head -1)
   # Matches BOTH the spaced/`=` form (-X POST, -X=POST, --method POST,
   # --method=POST) AND the glued short-flag form (-XPOST — the common
   # curl-style spelling; found bypassing a separator-only pattern in review
-  # round 2), case-insensitively.
-  if [ -n "$GH_API_CLAUSE" ] && grep -Eqi '(^|[[:space:]])(-X(post|put|patch|delete)([[:space:]]|$)|(-X|--method)([[:space:]]+|=)(post|put|patch|delete)([[:space:]]|$))' <<< "$GH_API_CLAUSE"; then
+  # round 2), case-insensitively, with the value optionally quoted in either
+  # style and the quote character accepted as its closing boundary.
+  _GH_API_Q="[\"']"
+  if [ -n "$GH_API_CLAUSE" ] && grep -Eqi "(^|[[:space:]])(-X${_GH_API_Q}?(post|put|patch|delete)([[:space:]]|${_GH_API_Q}|$)|(-X|--method)([[:space:]]+|=)${_GH_API_Q}?(post|put|patch|delete)([[:space:]]|${_GH_API_Q}|$))" <<< "$GH_API_CLAUSE"; then
     deny "guard-outward-cli: command-position 'gh api' with a mutating HTTP method (-X/--method POST/PUT/PATCH/DELETE, spaced/=/glued) can invoke an arbitrary GitHub REST mutation — including a PR merge via a different subcommand than the dedicated 'gh pr merge' check above. Read-only 'gh api' (GET, the default with no -X/--method) is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
 fi

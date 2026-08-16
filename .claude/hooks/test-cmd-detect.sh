@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Unit tests for lib/cmd-detect.sh's TWO renderings — run from anywhere.
+#
+# Pure string predicates: sources the lib and calls its functions on command
+# STRINGS. Nothing is ever executed, so no git/gh/eas/railway process runs here.
+#
+# WHY THIS FILE EXISTS (2026-08-16): the lib had exactly one rendering,
+# `cmd_bare`, which BLANKS quoted spans. A real shell word-splits `git "commit"`
+# and concatenates `git com"mit"` into the same argv as the bare form, so
+# blanking erased the verb before any matcher ran and EVERY command-position
+# detector in this lib — and therefore commit-verify, drift-detect,
+# pr-preflight-guard, branch-preflight and core-bare-guard — went blind to a
+# quoted command word. `cmd_words` is the second rendering that fixes it.
+#
+# The two renderings are NOT interchangeable and this file pins both directions:
+# merging them re-breaks either flag-presence checks (a quoted `--auto` must not
+# GRANT a carve-out) or the loose non-anchored matchers (which have no
+# command-position anchor to suppress a mention with).
+set -uo pipefail
+
+LIB="$(cd "$(dirname "$0")" && pwd)/lib/cmd-detect.sh"
+PASS=0; FAIL=0
+
+# Harness control: a probe that cannot see the thing it tests reports a clean
+# bill of health. Prove the lib sourced and the functions exist before asserting.
+# shellcheck source=/dev/null
+. "$LIB" || { echo "FAIL: lib/cmd-detect.sh is not sourceable"; exit 1; }
+for f in cmd_bare cmd_words cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
+         cmd_is_git_commit_or_push cmd_is_git_head_mover; do
+  declare -F "$f" >/dev/null || { echo "FAIL: $f is not defined by the lib"; exit 1; }
+done
+
+# det <fn> <command> <yes|no> <label>
+det() {
+  local fn="$1" cmd="$2" want="$3" label="$4" got=no
+  "$fn" "$cmd" && got=yes
+  if [ "$got" = "$want" ]; then
+    echo "PASS: $label"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $label (got detected=$got, want $want)"; FAIL=$((FAIL+1))
+  fi
+}
+
+# render <fn> <command> <expected-substring-present|absent> <needle> <label>
+render() {
+  local fn="$1" cmd="$2" mode="$3" needle="$4" label="$5" out
+  out=$(printf '%s' "$cmd" | "$fn")
+  if [ "$mode" = present ]; then
+    if grep -qF -- "$needle" <<< "$out"; then echo "PASS: $label"; PASS=$((PASS+1))
+    else echo "FAIL: $label (expected '$needle' in: $out)"; FAIL=$((FAIL+1)); fi
+  else
+    if grep -qF -- "$needle" <<< "$out"; then
+      echo "FAIL: $label (unexpected '$needle' in: $out)"; FAIL=$((FAIL+1))
+    else echo "PASS: $label"; PASS=$((PASS+1)); fi
+  fi
+}
+
+echo "--- cmd_bare keeps blanking (its contract is UNCHANGED) ---"
+# These pin the property that flag-presence checks and loose matchers depend on.
+render cmd_bare 'gh pr merge 42 -b "use --auto next time"' absent '--auto' \
+  "cmd_bare blanks a quoted --auto (carve-out decoy stays blanked)"
+render cmd_bare 'echo "gh pr create"' absent 'gh pr create' \
+  "cmd_bare blanks a quoted mention (loose matchers rely on this)"
+render cmd_bare 'git commit -m x' present 'git commit' \
+  "cmd_bare leaves unquoted words alone"
+
+echo "--- cmd_words reproduces argv: quotes deleted, separators neutralised ---"
+render cmd_words 'eas "update" --branch preview' present 'eas update' \
+  "cmd_words rejoins a fully-quoted word"
+render cmd_words 'eas up"date" --branch preview' present 'eas update' \
+  "cmd_words rejoins a MID-WORD split (no fallback path catches this form)"
+render cmd_words 'git commit -m "chore; eas update"' absent ';' \
+  "cmd_words neutralises a separator INSIDE a span (stays data, not a new command)"
+# A newline inside a span must become a SPACE, not survive: grep's ^ is per-line,
+# so a surviving newline would hand `gh pr create` a start-of-line command position.
+# Asserting the words end up on ONE line proves the substitution happened.
+render cmd_words 'git commit -m "wip
+gh pr create"' present 'wip gh pr create' \
+  "cmd_words neutralises a NEWLINE inside a span (grep ^ is per-line)"
+render cmd_words 'echo hi; git commit' present ';' \
+  "cmd_words keeps a separator OUTSIDE a span"
+
+echo "--- the bypass: every anchored detector must see a quoted command word ---"
+det cmd_is_git_commit       'git "commit" -m x'            yes "cmd_is_git_commit: git \"commit\""
+det cmd_is_git_commit       'git com"mit" -m x'            yes "cmd_is_git_commit: git com\"mit\" (mid-word)"
+det cmd_is_git_commit       '"git" commit -m x'            yes "cmd_is_git_commit: \"git\" commit"
+det cmd_is_git_commit       "git 'commit' -m x"            yes "cmd_is_git_commit: single-quoted verb"
+det cmd_is_gh_pr_create     'gh pr "create" --fill'        yes "cmd_is_gh_pr_create: gh pr \"create\""
+det cmd_is_gh_pr_create     'gh "pr" create --fill'        yes "cmd_is_gh_pr_create: gh \"pr\" create"
+det cmd_is_gh_pr_create     'gh pr cre"ate" --fill'        yes "cmd_is_gh_pr_create: mid-word"
+det cmd_is_git              'git "status"'                 yes "cmd_is_git: quoted subcommand"
+det cmd_is_git_commit_or_push 'git "push" origin main'     yes "cmd_is_git_commit_or_push: git \"push\""
+det cmd_is_git_head_mover   'git "reset" --hard HEAD~1'    yes "cmd_is_git_head_mover: git \"reset\""
+det cmd_is_git_head_mover   'git re"set" --hard HEAD~1'    yes "cmd_is_git_head_mover: mid-word"
+
+echo "--- negative controls: bare forms still detected (probe can see anything) ---"
+det cmd_is_git_commit   'git commit -m x'      yes "bare git commit still detected"
+det cmd_is_gh_pr_create 'gh pr create --fill'  yes "bare gh pr create still detected"
+
+echo "--- negative controls: MENTIONS must stay undetected (no new false denies) ---"
+# These are the cases blanking was introduced to protect. cmd_words keeps the
+# words, so the COMMAND-POSITION ANCHOR is what has to suppress them — pin it.
+det cmd_is_git_commit   'echo "run git commit later"'          no "mention inside echo stays undetected"
+det cmd_is_git_commit   'git log --grep "commit"'              no "flag value 'commit' stays undetected"
+det cmd_is_gh_pr_create 'git commit -m "then gh pr create"'    no "mention in a commit message stays undetected"
+det cmd_is_gh_pr_create 'git commit -m "chore; gh pr create"'  no "SEPARATOR in a commit message does not open a command position"
+det cmd_is_git_head_mover 'echo "git reset --hard is bad"'     no "mention of a head-mover stays undetected"
+det cmd_is_git_commit   'git commit -m "a" && echo done'       yes "real commit with a quoted arg still detected"
+
+echo ""
+echo "Results: $PASS passed, $FAIL failed"
+[ $FAIL -eq 0 ]
