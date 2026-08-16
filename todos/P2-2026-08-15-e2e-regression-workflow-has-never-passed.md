@@ -66,9 +66,10 @@ metro.log`). Fixing Postgres will reveal the next layer, not finish the job.
 
 **Corrected 2026-08-15 — the original diagnosis in this todo was wrong.** It read
 `ERROR | Unable to connect to adb daemon on port: 5037` as the root cause and concluded "the
-emulator never becomes usable". That line is benign cold-start chatter: it is emitted at
-`08:27:00`, _before_ `npx expo run:android --no-bundler` succeeds at `08:27:36` and the app
-launches at `08:44:20` (`› Opening exp+ocrecipes://… on test`). The emulator is fine.
+emulator never becomes usable". That line is benign cold-start chatter, emitted at `08:27:00`
+— before the build even starts. `npx expo run:android --no-bundler` is invoked at `08:27:36`,
+reports `BUILD SUCCESSFUL in 16m 41s` at `08:44:19`, and the app launches one second later at
+`08:44:20` (`› Opening exp+ocrecipes://… on test`). The emulator is fine.
 
 The job clears everything — checkout, deps, `pg_trgm`, schema push, Maestro install, KVM
 perms, backend, Metro, emulator boot, native build, install, deep-link launch — and then dies
@@ -80,12 +81,17 @@ at `08:44:24` invoking the test command:
 ##[error]The process '/usr/bin/sh' failed with exit code 2
 ```
 
-The multi-line brace-delimited retry block does not survive however
-`reactivecircus/android-emulator-runner@v2` passes its `script:` input to `sh -c` — the
-closing brace and the retry body are lost, so the shell aborts at parse time. That is also why
-the "built-in single retry" never actually retried anything.
+`reactivecircus/android-emulator-runner@v2` runs the `script:` block **one line per `sh -c`
+invocation** — the log shows a separate `[command]/usr/bin/sh -c <line>` for each. The last
+line is therefore handed to a shell on its own, opens a brace group, and hits EOF. That is also
+why the "built-in single retry" never actually retried anything: the retry body lives on lines
+that shell never saw.
 
-**This is a shell-quoting bug in the workflow YAML, not an environment or emulator problem.**
+**This constrains the fix.** No amount of quoting _inside_ the block helps — a multi-line
+construct cannot survive per-line execution. The retry must collapse onto a single line, or
+move out of `script:` into its own `run:` step.
+
+**A workflow-authoring bug, not an environment or emulator problem.**
 Verify against run `31874413569` before changing anything: `gh run view 31874413569
 --log-failed | grep -E "Syntax error|Opening exp\+|expo run:android"`.
 
@@ -96,9 +102,11 @@ Verify against run `31874413569` before changing anything: `gh run view 31874413
 - [ ] If commissioning: the iOS job provisions Postgres against a version that actually
       exists on `macos-14` (install explicitly rather than assuming the image ships one;
       GitHub-hosted macOS runners have no Docker, so a service container is not available).
-- [ ] If commissioning: the Android job's retry wrapper is rewritten so the shell it is
-      handed actually parses (see the corrected diagnosis above — the emulator is NOT the
-      problem), and the run reaches and executes Maestro flows on both platforms.
+- [ ] If commissioning: the Android job's retry wrapper is rewritten as a **single line**, or
+      moved out of the action's `script:` input into its own `run:` step — the action executes
+      `script:` one line per shell, so re-quoting the existing block cannot work (see the
+      corrected diagnosis above; the emulator is NOT the problem). The run then reaches and
+      executes Maestro flows on both platforms.
 - [ ] At least one **fully green** run exists, triggered via `workflow_dispatch`, before
       this todo is closed. A run that merely gets _further_ is not done — that is precisely
       how this reached 34 failures.

@@ -81,10 +81,23 @@ launch (`› Opening exp+ocrecipes://… on test`), then died invoking the test 
 /usr/bin/sh: 1: Syntax error: end of file unexpected (expecting "}")
 ```
 
-The multi-line brace-delimited retry block does not survive however
-`reactivecircus/android-emulator-runner` passes its `script:` input to `sh -c` — the closing
-brace and retry body are lost. A **shell-quoting bug in the workflow**, one line from the
-finish, not an environment gap.
+The mechanism is visible in the log, not inferred: `reactivecircus/android-emulator-runner`
+runs the `script:` block **one line per `sh -c` invocation**.
+
+```
+[command]/usr/bin/sh -c adb reverse tcp:3000 tcp:3000
+[command]/usr/bin/sh -c npx expo run:android --no-bundler
+[command]/usr/bin/sh -c npm run e2e:regression || {     ← its own shell; the brace never arrives
+```
+
+So the last line is handed to a shell alone, opens a brace group, and hits EOF. That also
+explains why the "built-in single retry" never retried anything: the retry body lives on lines
+that shell never saw.
+
+The consequence for anyone fixing it: **no amount of quoting inside the block helps.** A
+multi-line construct cannot survive per-line execution — the retry has to collapse onto one
+line, or move out of `script:` into its own `run:` step. A **workflow-authoring bug**, one
+line from the finish, not an environment gap.
 
 This is the more instructive half. A job that fails at step 1 at least *looks* broken. This
 one produced seventeen minutes of successful-looking build output and then a two-line syntax
