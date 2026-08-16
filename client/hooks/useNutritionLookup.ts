@@ -100,11 +100,20 @@ export function useNutritionLookup(params: {
   const [isPer100g, setIsPer100g] = useState(false);
   const [servingQuantity, setServingQuantity] = useState(1);
   /**
-   * Stays null for the whole itemId/saved-item path, deliberately. Only the
-   * barcode handlers below assign it, and every consumer — `ServingControls`,
-   * `getServingContextLabel`, `servingOptions`, `effectivePer100g` — is behind
-   * `showServingControls` (`!itemId`, NutritionDetailScreen.tsx), so nothing
-   * reads it there.
+   * Stays null for the whole itemId/saved-item path, deliberately. Every
+   * assignment below is downstream of `fetchBarcodeData` — including
+   * `chooseSource`'s (needs a `conflict`/`dbSnapshot` only it sets) and
+   * `handleManualSearch`'s (needs `showManualSearch`, likewise) — and the
+   * `existingItem` effect returns before ever calling it.
+   *
+   * Nothing reads it there either. `getServingContextLabel` and
+   * `ServingControls` are both behind `showServingControls`
+   * (`!itemId && !!barcode && …`, NutritionDetailScreen.tsx), and
+   * `effectivePer100g` returns null on that path by its own guard below.
+   * `servingOptions` is the exception that looks like a counter-example: its
+   * memo DOES run every render here and its `|| 100` DOES fabricate — but its
+   * only reader is `ServingControls`, so the fabricated option list is built
+   * and discarded. Do not cite it as a live consumer.
    *
    * Do not "fix" that by parsing `existingItem.servingSize` into it. A saved
    * item's serving string IS parsed on that path, by `selectBandSource`'s

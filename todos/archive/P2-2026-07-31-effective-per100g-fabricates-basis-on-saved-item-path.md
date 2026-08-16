@@ -60,6 +60,16 @@ explicit `Basis` and degrades to an unbanded row when it cannot be resolved. So 
 not a blocker for that work. Fixing it would let saved items show bands instead of degrading,
 which is the user-visible payoff.
 
+> **Correction, 2026-08-15 — the payoff sentence above was true when written and is now
+> false.** "Routes around it" turned into a full replacement: `selectBandSource`'s
+> saved-item branch (`client/components/nutrition/nutrition-band-source.ts`) resolves the
+> basis from `nutrition.servingSize` itself, so saved items **already** show bands. There
+> is no unbanded state left for a gram basis to fix. The 2026-08-10 triage below
+> re-verified every line citation in this file and did not re-check this claim — which is
+> the general lesson, codified in
+> `docs/solutions/logic-errors/citation-refresh-is-not-premise-refresh-2026-08-15.md`.
+> Bounded in place rather than deleted so the original reasoning stays legible.
+
 ### This is the third instance of one defect shape, and it is NOT the open sibling
 
 Do not conflate these — they are different files and different liveness:
