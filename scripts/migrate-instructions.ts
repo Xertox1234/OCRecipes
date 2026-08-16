@@ -4,8 +4,11 @@
  *
  * Run BEFORE changing the Drizzle schema:
  *   npx tsx scripts/migrate-instructions.ts
+ *   npx tsx scripts/migrate-instructions.ts --force-rerun  # re-run despite existing backups
  *
  * This script:
+ * 0. Refuses a re-run while backup tables exist (they are the rollback point
+ *    and step 1 would DROP them) unless --force-rerun is passed
  * 1. Creates backup tables for rollback
  * 2. Parses text instructions into string[] (JSON arrays)
  * 3. Backfills NULL rows to '[]'
@@ -14,6 +17,10 @@
  */
 
 import pg from "pg";
+import {
+  parseTextToSteps,
+  evaluateRerunGuard,
+} from "./migrate-instructions-utils";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -21,47 +28,32 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
+const FORCE_RERUN = process.argv.includes("--force-rerun");
+
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
-
-function parseTextToSteps(text: string): string[] {
-  if (!text || !text.trim()) return [];
-
-  // Strip HTML tags (Spoonacular / imported recipes)
-  let cleaned = text.replace(/<[^>]*>/g, "").trim();
-  if (!cleaned) return [];
-
-  // Try splitting on numbered patterns: "1. ", "1) ", "Step 1:", "Step 1 -"
-  const numberedPattern = /(?:^|\n)\s*(?:step\s+)?\d+[\.\)\:\-]\s*/i;
-  if (numberedPattern.test(cleaned)) {
-    const steps = cleaned
-      .split(/\n\s*(?:(?:step\s+)?\d+[\.\)\:\-]\s*)/i)
-      .map((s) => s.replace(/^(?:step\s+)?\d+[\.\)\:\-]\s*/i, "").trim())
-      .filter((s) => s.length > 0);
-    if (steps.length > 1) return steps;
-  }
-
-  // Try splitting on double newlines (paragraph-style)
-  const paragraphs = cleaned
-    .split(/\n\s*\n/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-  if (paragraphs.length > 1) return paragraphs;
-
-  // Fall back to single newlines
-  const lines = cleaned
-    .split(/\n/)
-    .map((s) => s.replace(/^[-*•]\s*/, "").trim()) // strip bullet markers
-    .filter((s) => s.length > 0);
-  if (lines.length > 1) return lines;
-
-  // Single block of text — return as one step
-  return [cleaned];
-}
 
 async function migrate() {
   const client = await pool.connect();
 
   try {
+    // Step 0: refuse a re-run that would destroy the previous rollback point —
+    // step 1 DROPs the backup tables, so without this guard a second run
+    // silently discarded the only rollback while the error handler still
+    // claimed "Backup tables exist for rollback."
+    const backupProbe = await client.query(
+      "SELECT to_regclass('public.community_recipes_instructions_backup') AS cr, " +
+        "to_regclass('public.meal_plan_recipes_instructions_backup') AS mr",
+    );
+    const rerunGuard = evaluateRerunGuard({
+      backupsExist:
+        Boolean(backupProbe.rows[0]?.cr) || Boolean(backupProbe.rows[0]?.mr),
+      force: FORCE_RERUN,
+    });
+    if (rerunGuard.refuse) {
+      console.error(rerunGuard.reason);
+      process.exit(1);
+    }
+
     // Step 1: Create backup tables
     console.log("Creating backup tables...");
     await client.query(`

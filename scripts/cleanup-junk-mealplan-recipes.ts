@@ -7,38 +7,28 @@ import {
   cookbookRecipes,
 } from "../shared/schema";
 import { sql, eq, and, inArray } from "drizzle-orm";
+import {
+  buildJunkMealplanTitleWhere,
+  parseCleanupFlags,
+} from "./cleanup-junk-mealplan-recipes-utils";
 
-const JUNK_TITLES = [
-  "Full Recipe",
-  "Ordered",
-  "Shared Recipe",
-  "Other Recipe",
-  "With Ingredients",
-  "Test Recipe",
-  "Chicken Rice",
-  "Meal 1",
-  "Meal 2",
-  "Simple Meal",
-];
-
-const DRY_RUN = process.argv.includes("--dry-run");
+// Predicate + flags live in the -utils leaf so the deletion perimeter is
+// unit-tested. Dry-run by DEFAULT — pass --commit to actually delete.
+const { commit: COMMIT } = parseCleanupFlags(process.argv);
 
 async function main() {
-  console.log(DRY_RUN ? "=== DRY RUN ===" : "=== LIVE RUN ===");
+  console.log(
+    COMMIT ? "=== LIVE RUN ===" : "=== DRY RUN ===  (pass --commit to delete)",
+  );
 
   const junk = await db
     .select({ id: mealPlanRecipes.id, title: mealPlanRecipes.title })
     .from(mealPlanRecipes)
-    .where(
-      sql`${mealPlanRecipes.title} IN (${sql.join(
-        JUNK_TITLES.map((t) => sql`${t}`),
-        sql`, `,
-      )})`,
-    );
+    .where(buildJunkMealplanTitleWhere());
 
   console.log(`Found ${junk.length} junk meal plan recipes.`);
 
-  if (DRY_RUN || junk.length === 0) {
+  if (!COMMIT || junk.length === 0) {
     const counts: Record<string, number> = {};
     for (const r of junk) {
       counts[r.title] = (counts[r.title] ?? 0) + 1;
