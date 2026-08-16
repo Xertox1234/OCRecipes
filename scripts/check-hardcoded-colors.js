@@ -18,10 +18,17 @@
  * Usage:
  *   node scripts/check-hardcoded-colors.js [files...]
  *   node scripts/check-hardcoded-colors.js client/screens/ScanScreen.tsx
+ *
+ * When run with no arguments, scans all client/**\/*.tsx files (the CI and
+ * preflight invocation shape).
  */
 
 import fs from "fs";
-import path from "path";
+import path, { dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const colors = {
   red: "\x1b[31m",
@@ -120,47 +127,70 @@ function checkFile(filePath) {
 
     // Check named CSS colors (only in code portion, not trailing comments)
     // Exclude patterns like `"red" as const` which are type literals, not CSS color values
-    const namedMatches = codePortion.match(NAMED_COLOR_PATTERN);
-    if (namedMatches) {
-      for (const match of namedMatches) {
-        // Skip if followed by "as const" — it's a discriminant/type literal, not a CSS color
-        const matchIdx = codePortion.indexOf(match);
-        const afterMatch = codePortion
-          .substring(matchIdx + match.length)
-          .trim();
-        if (
-          afterMatch.startsWith("as const") ||
-          afterMatch.startsWith("as const;")
-        ) {
-          continue;
-        }
-        // Skip if it's in a comparison (=== or !==)
-        const beforeMatch = codePortion.substring(0, matchIdx).trimEnd();
-        if (beforeMatch.endsWith("===") || beforeMatch.endsWith("!==")) {
-          continue;
-        }
-        issues.push({
-          file: filePath,
-          line: i + 1,
-          color: match,
-          context:
-            trimmed.substring(0, 80) + (trimmed.length > 80 ? "..." : ""),
-        });
+    for (const m of codePortion.matchAll(NAMED_COLOR_PATTERN)) {
+      const match = m[0];
+      // Skip if followed by "as const" — it's a discriminant/type literal, not a CSS color.
+      // Each occurrence uses its OWN index: indexOf(match) resolved duplicates
+      // to the first occurrence, letting a second identical literal inherit an
+      // exemption that belonged to the first.
+      const matchIdx = m.index;
+      const afterMatch = codePortion.substring(matchIdx + match.length).trim();
+      if (
+        afterMatch.startsWith("as const") ||
+        afterMatch.startsWith("as const;")
+      ) {
+        continue;
       }
+      // Skip if it's in a comparison (=== or !==)
+      const beforeMatch = codePortion.substring(0, matchIdx).trimEnd();
+      if (beforeMatch.endsWith("===") || beforeMatch.endsWith("!==")) {
+        continue;
+      }
+      issues.push({
+        file: filePath,
+        line: i + 1,
+        color: match,
+        context: trimmed.substring(0, 80) + (trimmed.length > 80 ? "..." : ""),
+      });
     }
   }
 
   return issues;
 }
 
+function findTsxFiles(dir) {
+  const files = [];
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory() && !shouldSkipFile(fullPath)) {
+        files.push(...findTsxFiles(fullPath));
+      } else if (
+        entry.isFile() &&
+        entry.name.endsWith(".tsx") &&
+        !shouldSkipFile(fullPath)
+      ) {
+        // checkFile would skip these anyway; filtering here keeps the
+        // reported "N files" count honest for e.g. a stray client/*.test.tsx.
+        files.push(fullPath);
+      }
+    }
+  } catch (_err) {
+    // Directory doesn't exist or can't be read
+  }
+  return files;
+}
+
 function main() {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
-    console.log(
-      `${colors.yellow}Usage: node scripts/check-hardcoded-colors.js <files...>${colors.reset}`,
-    );
-    process.exit(0);
+    // CI and preflight invoke this script with no arguments — discover the
+    // client tree instead of exiting 0 over zero files scanned.
+    console.log("No files provided, checking all client/**/*.tsx files...\n");
+    const clientDir = path.join(__dirname, "..", "client");
+    args.push(...findTsxFiles(clientDir));
   }
 
   let allIssues = [];

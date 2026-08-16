@@ -15,6 +15,7 @@
  *   tsx scripts/coverage-ratchet.ts --apply            # update vitest.config.ts
  *   tsx scripts/coverage-ratchet.ts --buffer 3         # tighter buffer
  *   tsx scripts/coverage-ratchet.ts --coverage-file coverage/coverage-final.json
+ *   tsx scripts/coverage-ratchet.ts --config-file vitest.config.ts
  *
  * Exit codes:
  *   0  all metrics are at or above their thresholds (coverage is passing)
@@ -25,6 +26,9 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -94,7 +98,7 @@ function dim(s: string): string {
 
 // ─── Coverage computation ─────────────────────────────────────────────────────
 
-function computeTotals(data: CoverageFinal): Totals {
+export function computeTotals(data: CoverageFinal): Totals {
   let totalLines = 0;
   let coveredLines = 0;
   let totalStmts = 0;
@@ -106,7 +110,7 @@ function computeTotals(data: CoverageFinal): Totals {
 
   for (const entry of Object.values(data)) {
     // Statements
-    for (const [key, count] of Object.entries(entry.s)) {
+    for (const count of Object.values(entry.s)) {
       totalStmts++;
       if (count > 0) coveredStmts++;
     }
@@ -150,15 +154,81 @@ function computeTotals(data: CoverageFinal): Totals {
 
 // ─── vitest.config.ts threshold parsing and patching ─────────────────────────
 
-const VITEST_CONFIG = path.resolve(__dirname, "../vitest.config.ts");
+const DEFAULT_CONFIG = path.resolve(scriptDir, "../vitest.config.ts");
 
-function readCurrentThresholds(): Thresholds {
-  const source = fs.readFileSync(VITEST_CONFIG, "utf8");
+/**
+ * Isolate the COMPLETE `thresholds: { ... }` block by brace counting.
+ * Whole-file `metric:\s*(\d+)` regexes with first-match semantics were
+ * silently retargeted by any earlier `lines: NN` mention (a baseline comment,
+ * a per-glob thresholds addition) — for both the read AND the patch. A
+ * non-greedy regex is not enough either: it ends at the FIRST `}`, truncating
+ * before the flat metrics whenever a per-glob sub-object precedes them.
+ * (Assumes no brace characters inside string literals within the block —
+ * true for any plausible thresholds config.)
+ */
+function locateThresholdsBlock(
+  source: string,
+  configFile: string,
+): { start: number; end: number; block: string } {
+  const startMatch = source.match(/thresholds:\s*\{/);
+  if (!startMatch || startMatch.index === undefined) {
+    throw new Error(
+      `Could not find a thresholds: { ... } block in ${configFile}`,
+    );
+  }
+  let depth = 0;
+  for (
+    let i = startMatch.index + startMatch[0].length - 1;
+    i < source.length;
+    i++
+  ) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        const end = i + 1;
+        return {
+          start: startMatch.index,
+          end,
+          block: source.slice(startMatch.index, end),
+        };
+      }
+    }
+  }
+  throw new Error(`Unbalanced thresholds: { ... } block in ${configFile}`);
+}
+
+/**
+ * Blank the contents of nested sub-objects (per-glob thresholds) with spaces,
+ * preserving length and indices, so metric regexes only ever match the
+ * block's own top-level keys — for the read AND the patch.
+ */
+function maskNestedObjects(block: string): string {
+  let depth = 0;
+  let out = "";
+  for (const ch of block) {
+    if (ch === "{") {
+      depth++;
+      out += depth > 1 ? " " : ch;
+    } else if (ch === "}") {
+      out += depth > 1 ? " " : ch;
+      depth--;
+    } else {
+      out += depth > 1 && ch !== "\n" ? " " : ch;
+    }
+  }
+  return out;
+}
+
+export function readCurrentThresholds(configFile: string): Thresholds {
+  const source = fs.readFileSync(configFile, "utf8");
+  const { block } = locateThresholdsBlock(source, configFile);
+  const masked = maskNestedObjects(block);
   const extract = (metric: string): number => {
-    const match = source.match(new RegExp(`${metric}:\\s*(\\d+)`));
+    const match = masked.match(new RegExp(`\\b${metric}:\\s*(\\d+)`));
     if (!match)
       throw new Error(
-        `Could not parse threshold for "${metric}" in vitest.config.ts`,
+        `Could not parse threshold for "${metric}" in ${configFile}`,
       );
     return parseInt(match[1], 10);
   };
@@ -170,22 +240,79 @@ function readCurrentThresholds(): Thresholds {
   };
 }
 
-function applyThresholds(proposed: Thresholds): void {
-  let source = fs.readFileSync(VITEST_CONFIG, "utf8");
-  const patch = (src: string, metric: string, value: number): string =>
-    src.replace(new RegExp(`(\\b${metric}:\\s*)\\d+`), `$1${value}`);
-  source = patch(source, "lines", proposed.lines);
-  source = patch(source, "statements", proposed.statements);
-  source = patch(source, "functions", proposed.functions);
-  source = patch(source, "branches", proposed.branches);
-  fs.writeFileSync(VITEST_CONFIG, source, "utf8");
+export function applyThresholds(
+  proposed: Thresholds,
+  configFile: string,
+): void {
+  const source = fs.readFileSync(configFile, "utf8");
+  const { start, end, block } = locateThresholdsBlock(source, configFile);
+  let patched = block;
+  const patchMetric = (metric: string, value: number): void => {
+    // Match on the masked copy (indices are length-preserving), splice into
+    // the real block — a nested per-glob metric can never be the target.
+    const match = maskNestedObjects(patched).match(
+      new RegExp(`(\\b${metric}:\\s*)(\\d+)`),
+    );
+    if (!match || match.index === undefined) return;
+    const at = match.index + match[1].length;
+    patched =
+      patched.slice(0, at) +
+      String(value) +
+      patched.slice(at + match[2].length);
+  };
+  patchMetric("lines", proposed.lines);
+  patchMetric("statements", proposed.statements);
+  patchMetric("functions", proposed.functions);
+  patchMetric("branches", proposed.branches);
+  fs.writeFileSync(
+    configFile,
+    source.slice(0, start) + patched + source.slice(end),
+    "utf8",
+  );
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+export function proposeThresholds(
+  current: Thresholds,
+  actual: Totals,
+  buffer: number,
+): Thresholds {
+  const propose = (metric: keyof Thresholds): number =>
+    Math.max(current[metric], Math.floor(actual[metric]) - buffer);
+  return {
+    lines: propose("lines"),
+    statements: propose("statements"),
+    functions: propose("functions"),
+    branches: propose("branches"),
+  };
+}
 
-function main(): void {
-  const args = process.argv.slice(2);
-  let coverageFile = path.resolve(__dirname, "../coverage/coverage-final.json");
+// ─── CLI argument parsing ─────────────────────────────────────────────────────
+
+export type ParsedArgs =
+  | {
+      kind: "ok";
+      coverageFile: string;
+      configFile: string;
+      buffer: number;
+      applyMode: boolean;
+    }
+  | { kind: "help" }
+  | { kind: "error"; message: string };
+
+const HELP_TEXT = [
+  "Usage: tsx scripts/coverage-ratchet.ts [options]",
+  "",
+  "Options:",
+  "  --apply                  Update vitest.config.ts with proposed thresholds",
+  "  --buffer N               Buffer below actual (default: 4)",
+  "  --coverage-file PATH     Path to coverage-final.json",
+  "  --config-file PATH       Path to the vitest config to read/patch",
+  "  --help                   Show this message",
+].join("\n");
+
+export function parseArgs(args: string[]): ParsedArgs {
+  let coverageFile = path.resolve(scriptDir, "../coverage/coverage-final.json");
+  let configFile = DEFAULT_CONFIG;
   let buffer = 4;
   let applyMode = false;
 
@@ -194,31 +321,43 @@ function main(): void {
       applyMode = true;
     } else if (args[i] === "--coverage-file" && args[i + 1]) {
       coverageFile = path.resolve(args[++i]);
+    } else if (args[i] === "--config-file" && args[i + 1]) {
+      configFile = path.resolve(args[++i]);
     } else if (args[i] === "--buffer" && args[i + 1]) {
       buffer = parseInt(args[++i], 10);
       if (isNaN(buffer) || buffer < 0) {
-        console.error("--buffer must be a non-negative integer");
-        process.exit(2);
+        return {
+          kind: "error",
+          message: "--buffer must be a non-negative integer",
+        };
       }
     } else if (args[i] === "--help") {
-      console.log(
-        [
-          "Usage: tsx scripts/coverage-ratchet.ts [options]",
-          "",
-          "Options:",
-          "  --apply                  Update vitest.config.ts with proposed thresholds",
-          "  --buffer N               Buffer below actual (default: 4)",
-          "  --coverage-file PATH     Path to coverage-final.json",
-          "  --help                   Show this message",
-        ].join("\n"),
-      );
-      process.exit(0);
+      return { kind: "help" };
     } else {
       // A typo like `--aply` must not silently run in report-only mode.
-      console.error(`Unknown argument: ${args[i]} (see --help)`);
-      process.exit(2);
+      return {
+        kind: "error",
+        message: `Unknown argument: ${args[i]} (see --help)`,
+      };
     }
   }
+
+  return { kind: "ok", coverageFile, configFile, buffer, applyMode };
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+export function main(args: string[]): number {
+  const parsed = parseArgs(args);
+  if (parsed.kind === "help") {
+    console.log(HELP_TEXT);
+    return 0;
+  }
+  if (parsed.kind === "error") {
+    console.error(parsed.message);
+    return 2;
+  }
+  const { coverageFile, configFile, buffer, applyMode } = parsed;
 
   if (!fs.existsSync(coverageFile)) {
     console.error(
@@ -227,22 +366,40 @@ function main(): void {
         bold("npm run test:coverage") +
         " first.",
     );
-    process.exit(2);
+    return 2;
   }
 
-  const data: CoverageFinal = JSON.parse(fs.readFileSync(coverageFile, "utf8"));
-  const actual = computeTotals(data);
-  const current = readCurrentThresholds();
+  if (!fs.existsSync(configFile)) {
+    console.error(red(`Config file not found: ${configFile}`));
+    return 2;
+  }
 
-  const propose = (metric: keyof Thresholds): number =>
-    Math.max(current[metric], Math.floor(actual[metric]) - buffer);
-
-  const proposed: Thresholds = {
-    lines: propose("lines"),
-    statements: propose("statements"),
-    functions: propose("functions"),
-    branches: propose("branches"),
-  };
+  let actual: Totals;
+  try {
+    const data: CoverageFinal = JSON.parse(
+      fs.readFileSync(coverageFile, "utf8"),
+    );
+    actual = computeTotals(data);
+  } catch (err) {
+    // A truncated/malformed coverage-final.json (an interrupted
+    // test:coverage run) is a usage error (exit 2), never the
+    // "coverage is failing" exit 1 an uncaught throw would produce.
+    console.error(
+      red(
+        `Could not read coverage data: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+    return 2;
+  }
+  let current: Thresholds;
+  try {
+    current = readCurrentThresholds(configFile);
+  } catch (err) {
+    // Same contract for a malformed config.
+    console.error(red(err instanceof Error ? err.message : String(err)));
+    return 2;
+  }
+  const proposed = proposeThresholds(current, actual, buffer);
 
   // ─── Report ───────────────────────────────────────────────────────────────
 
@@ -335,7 +492,7 @@ function main(): void {
         " to update vitest.config.ts.",
     );
   } else {
-    applyThresholds(proposed);
+    applyThresholds(proposed, configFile);
     console.log(green("✓ vitest.config.ts updated with proposed thresholds."));
     console.log(
       dim(
@@ -350,8 +507,16 @@ function main(): void {
   // Exit 1 if any threshold would be raised (useful for CI "should I ratchet?")
   // or if coverage is failing.
   if (!allPassing || (anyRaise && !applyMode)) {
-    process.exit(1);
+    return 1;
   }
+  return 0;
 }
 
-main();
+// Only run the CLI when invoked directly — importing this module (e.g. from
+// the test suite) must not read the real config or call process.exit.
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  process.exit(main(process.argv.slice(2)));
+}
