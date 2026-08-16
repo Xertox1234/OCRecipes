@@ -48,11 +48,28 @@ Anything setting `date` opens the modal in browse-only mode instead of add-to-pl
 date. This half is a trap rather than a live break — but the field is declared, which is what
 makes it look supported.
 
-Callers, enumerated 2026-08-15 with `git grep -n 'RecipeBrowserModal\|"RecipeBrowser"' main -- client/`
-(8 hits): `CoachChat.tsx:411` → `{ planDays }`; `RecipeCard.tsx:61` → `{ recipeId }`; the rest
-are type/comment references. **None passes `date`.** The command is written down because a
-bound with nothing behind it is an opinion, and the first draft of this todo inherited a wrong
-one — see the Updates section.
+Callers, enumerated 2026-08-15 against `50bed11d` with
+`git grep -n 'RecipeBrowserModal\|"RecipeBrowser"' -- client/` — **22 lines across 14 files**.
+Eight are live call sites; the remaining 14 lines are type declarations, tests, and comments:
+
+| Call site                                        | Params passed                         |
+| ------------------------------------------------ | ------------------------------------- |
+| `components/coach/CoachChat.tsx:411`             | `{ planDays }`                        |
+| `components/coach/blocks/RecipeCard.tsx:61`      | `{ recipeId }` — see instance 2       |
+| `components/home/RecipeSearchDrawer.tsx:100`     | `{ searchQuery }` (via `MealPlanTab`) |
+| `components/home/action-config.ts:46`            | `{}` (via `MealPlanTab`)              |
+| `components/profile/library-config.ts:89`        | none                                  |
+| `screens/meal-plan/CookbookDetailScreen.tsx:91`  | `{}`                                  |
+| `screens/meal-plan/RecipeEntryHubScreen.tsx:248` | `{}`                                  |
+| `screens/meal-plan/MealPlanHomeScreen.tsx:1044`  | `{}`                                  |
+
+**No caller in `client/` passes `date`.** Scoped deliberately: it is not an unqualified
+"nothing sets it", because the coach's navigate action reaches `navigation.navigate` through
+a blanket `z.record(z.unknown())` and an `as` cast (see "Why the boundary does not catch
+either"), so the model can emit `date` without any `client/` code doing so.
+
+The command and its real output are written down because a bound with nothing behind it is an
+opinion — and both earlier drafts of this todo got this bound wrong. See the Updates section.
 
 ### 2. `recipeId` is sent and declared by nothing — this one fires today
 
