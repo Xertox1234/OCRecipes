@@ -6,6 +6,7 @@ module: client
 tags: [testing, vitest, react-native, render-tests, jsdom]
 applies_to: [client/**/__tests__/*.test.tsx, test/utils/render-component.tsx, test/mocks/react-native.ts]
 created: '2026-05-16'
+last_updated: '2026-08-16'
 ---
 
 # RN component render-test pattern (jsdom)
@@ -33,6 +34,9 @@ Any test that mounts a `client/components/**` or `client/screens/**` component
 and asserts on rendered output or interaction. The 10+ existing render tests
 under `client/components/home/__tests__/` and `client/components/recipe-wizard/__tests__/`
 all follow this shape — match it; do not introduce `@testing-library/react-native`.
+Also applies to a `client/navigation/**` navigator component (e.g. a
+`createNativeStackNavigator`-based stack) — see "Rendering a navigator"
+below for the extra mocking that path needs.
 
 ## Why
 
@@ -108,9 +112,66 @@ describe("CoachChat", () => {
 Note: this repo's render tests assert with plain `toBeTruthy()` / `toBeNull()`
 on query results — `jest-dom` matchers like `toBeInTheDocument()` are not set up.
 
+### Rendering a navigator (mount-time prop assertions)
+
+A screen-level navigator (e.g. one built with `createNativeStackNavigator`)
+cannot be rendered through its **real** `Stack.Navigator`/`Stack.Screen` —
+React Navigation throws `"Couldn't find a navigation context. Have you
+wrapped your app with 'NavigationContainer'?"` at render time even for a
+root navigator with no parent. Wrapping in a real `NavigationContainer`
+is one fix, but for pinning a **mount-time prop** (`initialRouteName`,
+`screenOptions`, etc.) the cheaper and more precise fix is to mock the
+factory itself and assert against a thin double, rather than exercising
+real React Navigation machinery you don't need:
+
+```tsx
+vi.mock("@react-navigation/native-stack", () => ({
+  createNativeStackNavigator: () => ({
+    Navigator: ({
+      initialRouteName,
+      children,
+    }: {
+      initialRouteName?: string;
+      children?: React.ReactNode;
+    }) => (
+      <div>
+        <div>{`initial:${initialRouteName}`}</div>
+        {children}
+      </div>
+    ),
+    // Records each registered screen's `name` so a test can confirm
+    // initialRouteName still points at a screen that exists — without
+    // this, deleting/renaming the target Stack.Screen while
+    // initialRouteName keeps its old string value goes undetected.
+    Screen: ({ name }: { name: string }) => {
+      registeredScreenNames.push(name);
+      return null;
+    },
+  }),
+}));
+```
+
+Because the double's `Navigator`/`Screen` are the only things that ever
+execute, `NavigationContainer` is **not needed** — the real native-stack
+components (the ones that require it) never run. Asserting the rendered
+`initial:<name>` text (or a `data-testid`) is strictly stronger than
+`vi.mock`-spying the pure function that computes the route name: a spy
+only proves the function was *called* with the right argument, while the
+prop assertion also catches a hardcoded route name, a swapped return
+value, or the pure function silently not running at all. Mock every
+screen component the navigator imports (`vi.mock("@/screens/Foo", () =>
+({ default: () => null }))`) to a thin double — the navigator's wiring is
+under test, not the screens it hosts, and importing them for real pulls
+in their whole hook/context trees just to satisfy a module import.
+
+This is the repo's first navigator render test —
+`client/navigation/__tests__/ChatStackNavigator.test.tsx` is the worked
+example (see `## Related Files`).
+
 ## Related Files
 
 - `client/components/coach/__tests__/CoachChat.test.tsx` — full worked example
+- `client/navigation/__tests__/ChatStackNavigator.test.tsx` — navigator-mount pattern worked example (mocked `createNativeStackNavigator`, no `NavigationContainer`)
 - `test/utils/render-component.tsx` — the `QueryClientProvider` render helper
 - `test/mocks/react-native.ts` — the DOM-rendering RN mock
 - `vitest.config.ts` — aliases `react-native` to the mock
