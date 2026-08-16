@@ -15,9 +15,31 @@ import {
   withOpacity,
 } from "@/constants/theme";
 import { BADGE_SEVERITY_FILL_OPACITY } from "@/components/badge-severity-visuals";
-import { bandTagText, bandVisuals } from "./NutritionPanel-utils";
+import {
+  bandTagText,
+  bandVisuals,
+  composeNutrientRowLabel,
+  NUTRIENT_ROWS,
+} from "./NutritionPanel-utils";
 import { standoutCopy } from "./NutritionSummaryCard-utils";
 import type { Standout } from "@shared/lib/nutrition-bands";
+
+/**
+ * The rendered and spoken forms of this strip's "g" unit — both sourced from
+ * the panel's own NUTRIENT_ROWS rather than re-typed here, so neither can
+ * drift if the panel's spelling ever changes. NUTRIENT_ROWS has no `carbs`
+ * entry and its `fat` entry is labelled "Total fat" (this strip needs "Fat"),
+ * so the three macro rows below are built locally rather than reusing the
+ * registry wholesale for one macro and not the others — only these two unit
+ * strings are shared; `key`/`sourceKey`/`zone`/`group` on each local row are
+ * inert padding required to satisfy the exported `NutrientRow` type (only
+ * `label` and `spokenUnit` are read by `composeNutrientRowLabel`) and are NOT
+ * authoritative for banding — protein/fat are genuinely "banded" in
+ * NUTRIENT_ROWS itself; here they're deliberately "unbanded" because this
+ * strip never bands them.
+ */
+const GRAMS_UNIT = NUTRIENT_ROWS.protein.unit;
+const GRAMS_SPOKEN_UNIT = NUTRIENT_ROWS.protein.spokenUnit;
 
 interface NutritionSummaryCardProps {
   standouts: Standout[];
@@ -82,9 +104,17 @@ export function NutritionSummaryCard({
           </ThemedText>
         ) : null}
 
-        <View style={styles.calorieRow}>
+        <View
+          style={styles.calorieRow}
+          accessible
+          accessibilityRole="header"
+          accessibilityLabel={
+            calories !== undefined
+              ? `${Math.round(calories)} kcal`
+              : "not recorded"
+          }
+        >
           <ThemedText
-            accessibilityRole="header"
             style={[styles.calorieValue, { color: theme.calorieAccent }]}
           >
             {calories !== undefined ? Math.round(calories) : "—"}
@@ -112,49 +142,104 @@ export function NutritionSummaryCard({
                 label: "Protein",
                 value: protein,
                 color: theme.proteinAccent,
-              },
-              { label: "Carbs", value: carbs, color: theme.carbsAccent },
-              { label: "Fat", value: fat, color: theme.fatAccent },
-            ] as const
-          ).map((macro) => (
-            <View
-              key={macro.label}
-              style={[
-                styles.macroTile,
-                {
-                  backgroundColor: isDark
-                    ? theme.backgroundTertiary
-                    : theme.backgroundSecondary,
+                // The composeNutrientRowLabel input shape — not a new
+                // registry, just this call's required argument. All three
+                // rows are local (rather than reusing NUTRIENT_ROWS.protein
+                // for this one and not the other two) since NUTRIENT_ROWS
+                // has no `carbs` entry and labels `fat` "Total fat".
+                row: {
+                  key: "protein",
+                  sourceKey: "protein",
+                  label: "Protein",
+                  unit: GRAMS_UNIT,
+                  spokenUnit: GRAMS_SPOKEN_UNIT,
+                  zone: "unbanded",
+                  group: "none",
                 },
-              ]}
-            >
-              {/* textSecondary fails AA (4.31:1) on the light-mode tile
-                  fill (backgroundSecondary) — use full text there; the
-                  dark tile passes with textSecondary. */}
-              <ThemedText
+              },
+              {
+                label: "Carbs",
+                value: carbs,
+                color: theme.carbsAccent,
+                row: {
+                  key: "carbs",
+                  sourceKey: "carbs",
+                  label: "Carbs",
+                  unit: GRAMS_UNIT,
+                  spokenUnit: GRAMS_SPOKEN_UNIT,
+                  zone: "unbanded",
+                  group: "none",
+                },
+              },
+              {
+                label: "Fat",
+                value: fat,
+                color: theme.fatAccent,
+                row: {
+                  key: "fat",
+                  sourceKey: "fat",
+                  label: "Fat",
+                  unit: GRAMS_UNIT,
+                  spokenUnit: GRAMS_SPOKEN_UNIT,
+                  zone: "unbanded",
+                  group: "none",
+                },
+              },
+            ] as const
+          ).map((macro) => {
+            // Round once — composeNutrientRowLabel's formatValue rounds to
+            // one decimal, which is a no-op on an already-rounded integer,
+            // so the spoken and printed figures can never disagree (see
+            // docs/solutions/logic-errors/field-parallel-objects-diverge-on-the-fallback-path-2026-08-04.md).
+            const displayValue =
+              macro.value !== undefined ? Math.round(macro.value) : undefined;
+
+            return (
+              <View
+                key={macro.label}
+                accessible
+                accessibilityLabel={composeNutrientRowLabel({
+                  row: macro.row,
+                  value: displayValue,
+                  tag: null,
+                })}
                 style={[
-                  styles.macroTileLabel,
-                  { color: isDark ? theme.textSecondary : theme.text },
+                  styles.macroTile,
+                  {
+                    backgroundColor: isDark
+                      ? theme.backgroundTertiary
+                      : theme.backgroundSecondary,
+                  },
                 ]}
               >
-                {macro.label}
-              </ThemedText>
-              <ThemedText
-                style={[styles.macroTileValue, { color: macro.color }]}
-              >
-                {macro.value !== undefined ? Math.round(macro.value) : "—"}
+                {/* textSecondary fails AA (4.31:1) on the light-mode tile
+                    fill (backgroundSecondary) — use full text there; the
+                    dark tile passes with textSecondary. */}
                 <ThemedText
                   style={[
-                    styles.macroTileUnit,
+                    styles.macroTileLabel,
                     { color: isDark ? theme.textSecondary : theme.text },
                   ]}
                 >
-                  {" "}
-                  g
+                  {macro.label}
                 </ThemedText>
-              </ThemedText>
-            </View>
-          ))}
+                <ThemedText
+                  style={[styles.macroTileValue, { color: macro.color }]}
+                >
+                  {displayValue !== undefined ? displayValue : "—"}
+                  <ThemedText
+                    style={[
+                      styles.macroTileUnit,
+                      { color: isDark ? theme.textSecondary : theme.text },
+                    ]}
+                  >
+                    {" "}
+                    g
+                  </ThemedText>
+                </ThemedText>
+              </View>
+            );
+          })}
         </View>
       </Card>
     </Animated.View>

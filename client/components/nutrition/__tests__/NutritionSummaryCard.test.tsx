@@ -123,4 +123,67 @@ describe("NutritionSummaryCard", () => {
     );
     expect(without.container.textContent).not.toContain("Per ");
   });
+
+  it("composes one accessibility stop per macro tile, unit spoken as a word", () => {
+    // Each assertion targets an EXACT [aria-label] value with querySelector,
+    // not a bare `[aria-label]` presence/count check — the card now carries
+    // four labelled groups (calorie row + three tiles), so a global count
+    // would not distinguish them. Zero is included (fat) to prove it renders
+    // as a real value, not the "not recorded" branch a falsy check would take.
+    const { container } = renderComponent(
+      <NutritionSummaryCard
+        standouts={[]}
+        calories={156}
+        protein={2}
+        carbs={39}
+        fat={0}
+      />,
+    );
+    expect(
+      container.querySelector('[aria-label="Protein, 2 grams"]'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[aria-label="Carbs, 39 grams"]'),
+    ).toBeTruthy();
+    expect(container.querySelector('[aria-label="Fat, 0 grams"]')).toBeTruthy();
+  });
+
+  it("announces a macro tile with no recorded value as 'not recorded', not a literal dash", () => {
+    const { container } = renderComponent(
+      <NutritionSummaryCard
+        standouts={[]}
+        calories={156}
+        protein={undefined}
+        carbs={undefined}
+        fat={undefined}
+      />,
+    );
+    expect(
+      container.querySelector('[aria-label="Protein, not recorded"]'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[aria-label="Carbs, not recorded"]'),
+    ).toBeTruthy();
+    expect(
+      container.querySelector('[aria-label="Fat, not recorded"]'),
+    ).toBeTruthy();
+  });
+
+  it("composes the calorie figure into one accessible header stop", () => {
+    const { container } = renderComponent(
+      <NutritionSummaryCard standouts={[]} calories={139} />,
+    );
+    expect(
+      container.querySelector('[role="header"][aria-label="139 kcal"]'),
+    ).toBeTruthy();
+  });
+
+  it("announces an absent calorie figure as 'not recorded' on the header stop", () => {
+    const { container } = renderComponent(
+      <NutritionSummaryCard standouts={[]} calories={undefined} />,
+    );
+    expect(
+      container.querySelector('[role="header"][aria-label="not recorded"]'),
+    ).toBeTruthy();
+  });
 });
