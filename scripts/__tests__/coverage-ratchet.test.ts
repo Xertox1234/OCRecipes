@@ -466,6 +466,36 @@ describe("coverage-ratchet", () => {
       expect(source).not.toContain("lines: 40,");
     });
 
+    it("patches correctly through a BALANCED brace-expansion glob key", () => {
+      // The write half of the read test above. `--apply` REWRITES the real
+      // vitest.config.ts, so re-permitting this input class is only safe if
+      // the patch path is correct on it too — the balanced pair must keep
+      // maskNestedObjects aligned so the first `lines:` match in the mask is
+      // the FLAT one and the length-preserving indices still splice right.
+      const dir = makeTmpDir();
+      const nested =
+        '        "client/{screens,components}/**": { lines: 80, functions: 70, branches: 60, statements: 80 },';
+      const cfg = writeConfig(
+        dir,
+        { lines: 40, functions: 41, branches: 42, statements: 43 },
+        "",
+        nested,
+      );
+      applyThresholds(
+        { lines: 60, statements: 61, functions: 62, branches: 63 },
+        cfg,
+      );
+      const source = fs.readFileSync(cfg, "utf8");
+      // The brace-expansion key and its sub-object survive byte-for-byte…
+      expect(source).toContain(nested.trim());
+      // …and only the flat metrics moved.
+      expect(source).toContain("lines: 60,");
+      expect(source).toContain("statements: 61,");
+      expect(source).toContain("functions: 62,");
+      expect(source).toContain("branches: 63,");
+      expect(source).not.toContain("lines: 40,");
+    });
+
     it("stays index-accurate when replacements cross digit-length boundaries", () => {
       // patchMetric re-masks the CURRENT block on every call precisely so a
       // 1→3-digit replacement can't drift later matches' indices. A hoisted
