@@ -10,6 +10,13 @@ tags:
 - launchApp:
     clearState: true
 - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 5000
+    optional: true
+- tapOn:
+    text: "Continue"
+    optional: true
 
 # Switch to register mode
 - assertVisible: "Sign In"

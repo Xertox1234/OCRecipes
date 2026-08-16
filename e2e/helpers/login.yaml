@@ -4,21 +4,22 @@ appId: com.ocrecipes.app
 #   USERNAME (default: testuser)
 #   PASSWORD (default: testpass123)
 ---
-# NOTE (2026-08-16): a cold-Metro-bundle theory for the "Sign In" wait was
-# tested and DISPROVEN on live CI — metro.log showed the bundle completing
-# in ~54-58s, but flows still failed after the full 90s extendedWaitUntil
-# below was exhausted. The real cause of "Sign In never becomes visible" is
-# still open (see todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md
-# Updates) — leading suspect is that Maestro's bare `launchApp` (appId only,
-# no dev-client server URL) never reaches the running Metro server at all and
-# instead lands on the Expo dev-launcher's own picker screen. Do not extend
-# this timeout further as a fix — it will not help until that is resolved.
-# Left at a modest margin over Maestro's own default rather than reverted to
-# it, since a real cold-start screen (not a dev-launcher picker) may still
-# need more than the ~17-20s default.
+# NOTE (2026-08-16): two DIFFERENT failure modes were confirmed via
+# Maestro's own screenshot artifact on live CI (run 31938889879) — see
+# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md Updates.
+# (1) The FIRST flow in a run can still be showing "Bundling 96.0%..." when
+#     the wait times out — a real cold-start race against Metro, which is
+#     why this timeout has margin above the default. (2) Every flow after
+#     that hits the Expo dev-client's own "developer menu" welcome overlay
+#     popping up on top of an already-rendered Sign In screen — see
+#     e2e/helpers/launch-app.yaml, which dismisses it before this wait
+#     runs. Two earlier single-cause theories (bundle-speed only; bare
+#     launchApp never connecting at all) were each tested and were each
+#     only PART of the picture — this is the first evidence from an actual
+#     screenshot rather than inferred from timing.
 - extendedWaitUntil:
     visible: "Sign In"
-    timeout: 30000
+    timeout: 45000
 - tapOn:
     id: "input-username"
 - inputText: ${USERNAME}

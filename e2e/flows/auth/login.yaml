@@ -5,9 +5,9 @@ tags:
   - regression
   - auth
 ---
-# Launch the app and connect to Metro (bare launchApp lands on the Expo
-# dev-launcher's own server picker, not the app — see
-# e2e/helpers/launch-app.yaml for the root cause)
+# Launch the app, connect to Metro, and dismiss the dev-client's developer
+# menu welcome overlay if it appears (see e2e/helpers/launch-app.yaml for
+# the confirmed root cause)
 - runFlow: ../../helpers/launch-app.yaml
 
 # Verify login screen loads
@@ -41,6 +41,13 @@ tags:
 - launchApp:
     clearState: true
 - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+- extendedWaitUntil:
+    visible: "Continue"
+    timeout: 5000
+    optional: true
+- tapOn:
+    text: "Continue"
+    optional: true
 - assertVisible: "Sign In"
 - tapOn: "Switch to sign up"
 - assertVisible: "Create Account"

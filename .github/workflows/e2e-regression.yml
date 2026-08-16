@@ -115,11 +115,23 @@ jobs:
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       # Boot an iOS simulator for Maestro to drive. macos-14 ships Xcode with
-      # iPhone simulators preinstalled.
+      # iPhone simulators preinstalled. Export the resolved UDID so the
+      # failure-diagnostic step below can target the exact same device by id
+      # (a name-based -destination lookup is ambiguous across the multiple
+      # "iPhone 15" runtimes the image ships and can itself fail to resolve).
       - name: Boot iOS simulator
         run: |
           xcrun simctl boot "iPhone 15" || true
           xcrun simctl bootstatus "iPhone 15" -b
+          UDID="$(xcrun simctl list devices booted -j | node -e '
+            const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            for (const devices of Object.values(data.devices)) {
+              const match = devices.find((d) => d.name === "iPhone 15" && d.state === "Booted");
+              if (match) { console.log(match.udid); process.exit(0); }
+            }
+            process.exit(1);
+          ')"
+          echo "IOS_SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
 
       # Start the backend the flows talk to; keep it running for the rest of the job.
       - name: Start backend
@@ -160,7 +172,7 @@ jobs:
         working-directory: ios
         run: |
           xcodebuild -workspace OCRecipes.xcworkspace -configuration Debug -scheme OCRecipes \
-            -destination "platform=iOS Simulator,name=iPhone 15" build 2>&1
+            -destination "id=$IOS_SIMULATOR_UDID" build 2>&1
 
       # Runs `maestro test --include-tags regression e2e/` (see e2e/README.md for
       # the tagged flow inventory). One retry absorbs a transient flake; two
