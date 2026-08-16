@@ -6,17 +6,11 @@ tags:
   - onboarding
 ---
 # Launch fresh app — clearState wipes the dev-launcher's remembered server
-# too, so reconnect explicitly afterward (see e2e/helpers/launch-app.yaml)
+# too, so reconnect explicitly afterward (see e2e/helpers/launch-app.yaml,
+# whose own header documents this exact two-step pattern)
 - launchApp:
     clearState: true
-- openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
-- extendedWaitUntil:
-    visible: "Continue"
-    timeout: 5000
-    optional: true
-- tapOn:
-    text: "Continue"
-    optional: true
+- runFlow: ../../helpers/launch-app.yaml
 
 # Switch to register mode
 - assertVisible: "Sign In"

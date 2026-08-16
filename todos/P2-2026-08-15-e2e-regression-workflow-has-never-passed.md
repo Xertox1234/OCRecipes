@@ -284,3 +284,19 @@ goes green, that confirms the dev-menu-dismiss fix and the todo can likely close
 If iOS still fails, the new diagnostic step should — for the first time — show the actual
 `xcodebuild` error; read it and fix accordingly. Budget at least 2-3 more iterations; do not
 assume the first re-run is green.
+
+**Code-review finding worth flagging explicitly (not fixed, by design):** fixing the
+`optional: true` sibling-nesting bug (see "previously-undiscovered layer" above) converts ~59
+previously-broken-but-accidentally-_mandatory_ assertions into genuinely skippable ones — and
+in several flows, the assertions covering the flow's own stated subject matter are now
+entirely optional (e.g. `home/chat.yaml`: past login, every NutriCoach-specific step —
+opening a new chat, seeing suggested prompts, tapping one, waiting for a response — is
+`optional: true`, so a flow named "NutriCoach chat interaction" can complete having asserted
+nothing chat-related; similar shape in `plan/browse-recipes.yaml`, `plan/grocery-list.yaml`,
+`plan/meal-plan-home.yaml`, `profile/goal-setup.yaml`). This is a correct, necessary
+consequence of fixing a real schema bug — the steps were clearly _authored_ to be optional,
+just malformed in a way Maestro silently ignored — not something to revert. Flagging it here
+because it's the same _class_ of defect ("looks like it verifies something, actually doesn't")
+that this whole todo exists to eliminate, just one level down from workflow-granularity to
+flow-granularity. Follow-up (not done this session, out of the immediate CI-attempt budget):
+audit each touched flow for at least one assertion that mandatorily pins its stated purpose.

@@ -37,17 +37,11 @@ tags:
     timeout: 10000
 
 # Toggle to register mode — clearState wipes the dev-launcher's remembered
-# server too, so reconnect explicitly afterward (see e2e/helpers/launch-app.yaml)
+# server too, so reconnect explicitly afterward (see e2e/helpers/launch-app.yaml,
+# whose own header documents this exact two-step pattern)
 - launchApp:
     clearState: true
-- openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
-- extendedWaitUntil:
-    visible: "Continue"
-    timeout: 5000
-    optional: true
-- tapOn:
-    text: "Continue"
-    optional: true
+- runFlow: ../../helpers/launch-app.yaml
 - assertVisible: "Sign In"
 - tapOn: "Switch to sign up"
 - assertVisible: "Create Account"
@@ -59,4 +53,5 @@ tags:
 # Toggle back to login
 - tapOn: "Switch to sign in"
 - assertVisible: "Sign In"
-- assertNotVisible: "input-confirm-password"
+- assertNotVisible:
+    id: "input-confirm-password"
