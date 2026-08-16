@@ -5,7 +5,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import {
   buildJunkRecipeWhere,
-  parseArgs,
+  parseCleanupFlags,
   LEGACY_TEST_PRODUCT_NAMES,
   SEED_PREFIX,
   TEST_PREFIX,
@@ -46,9 +46,29 @@ describe("cleanup-seed-recipes-utils", () => {
 
     it("without a demo user: bare orphan scope, demo id absent from params", () => {
       const q = render(buildJunkRecipeWhere(null));
-      expect(q.sql.toLowerCase()).toContain('"author_id" is null');
       expect(q.params).not.toContain("demo-user-42");
-      expect(q.params.length).toBe(5); // 2 prefixes + 3 legacy names, no id
+      // Exact-string match rather than a substring/regex check: the predicate
+      // is small and fully deterministic, and an exact match is tamper-evident
+      // against ANY regrouping — including one a regex can miss. A regex like
+      // `/author_id"\s+is\s+null\s+and\s+\(/` still matches if the legacy-name
+      // `inArray(...)` disjunct is pulled OUT of the inner OR and top-level
+      // OR'd with the author-scoped AND (exactly the 2026-04-17 audit H1
+      // incident this scoping exists to prevent — see
+      // docs/solutions/conventions/seed-cleanup-scripts-scope-by-authorid-2026-05-13.md)
+      // — that mutation still contains the "author_id" is null AND ( substring
+      // even though a real user's "Original Pasta" recipe would again be
+      // deletable regardless of authorId. Only the full string is safe.
+      expect(q.sql).toBe(
+        '("community_recipes"."author_id" is null and ' +
+          '("community_recipes"."normalized_product_name" ilike $1 or ' +
+          '"community_recipes"."normalized_product_name" ilike $2 or ' +
+          '"community_recipes"."normalized_product_name" in ($3, $4, $5)))',
+      );
+      expect(q.params).toEqual([
+        SEED_PREFIX + "%",
+        TEST_PREFIX + "%",
+        ...LEGACY_TEST_PRODUCT_NAMES,
+      ]);
     });
 
     it("REGRESSION GUARD: prefixes are start-anchored ('seed-%', never '%seed-%')", () => {
@@ -81,14 +101,38 @@ describe("cleanup-seed-recipes-utils", () => {
     });
   });
 
-  describe("parseArgs — dry-run by default", () => {
+  describe("parseCleanupFlags — dry-run by default", () => {
     it("defaults to commit: false (a bare run must never delete)", () => {
-      expect(parseArgs([])).toEqual({ commit: false });
-      expect(parseArgs(["--verbose"])).toEqual({ commit: false });
+      expect(parseCleanupFlags([])).toEqual({ commit: false, vetoed: false });
+      expect(parseCleanupFlags(["--verbose"])).toEqual({
+        commit: false,
+        vetoed: false,
+      });
     });
 
     it("arms deletion only on an explicit --commit", () => {
-      expect(parseArgs(["--commit"])).toEqual({ commit: true });
+      expect(parseCleanupFlags(["--commit"])).toEqual({
+        commit: true,
+        vetoed: false,
+      });
+    });
+
+    it("accepts legacy --dry-run as a harmless no-op alias (nothing vetoed)", () => {
+      expect(parseCleanupFlags(["--dry-run"])).toEqual({
+        commit: false,
+        vetoed: false,
+      });
+    });
+
+    it("--dry-run WINS over --commit in either order — and REPORTS the veto", () => {
+      expect(parseCleanupFlags(["--commit", "--dry-run"])).toEqual({
+        commit: false,
+        vetoed: true,
+      });
+      expect(parseCleanupFlags(["--dry-run", "--commit"])).toEqual({
+        commit: false,
+        vetoed: true,
+      });
     });
   });
 

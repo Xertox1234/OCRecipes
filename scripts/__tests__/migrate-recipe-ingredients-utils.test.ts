@@ -6,6 +6,7 @@ import {
   cleanIngredientLine,
   cleanInstructionLine,
   splitInstructionsArray,
+  parseCleanupFlags,
 } from "../migrate-recipe-ingredients-utils";
 
 describe("migrate-recipe-ingredients-utils", () => {
@@ -156,6 +157,41 @@ describe("migrate-recipe-ingredients-utils", () => {
       expect(
         splitInstructionsArray(["Ingredients:\nInstructions:\nMix well"]),
       ).toBeNull();
+    });
+  });
+
+  describe("parseCleanupFlags — dry-run by default", () => {
+    it("defaults to commit: false (a bare run must PREVIEW, never write)", () => {
+      // Regression-by-design: the script used to LIVE-write by default with
+      // opt-in --dry-run — the inverse of the repo's own cleanup-seed-recipes
+      // safety pattern. A bare invocation now previews.
+      expect(parseCleanupFlags(["node", "script.ts"])).toEqual({
+        commit: false,
+        vetoed: false,
+      });
+    });
+
+    it("arms writes only on an explicit --commit", () => {
+      expect(parseCleanupFlags(["node", "s", "--commit"])).toEqual({
+        commit: true,
+        vetoed: false,
+      });
+    });
+
+    it("accepts legacy --dry-run as a harmless no-op alias (nothing vetoed)", () => {
+      expect(parseCleanupFlags(["node", "s", "--dry-run"])).toEqual({
+        commit: false,
+        vetoed: false,
+      });
+    });
+
+    it("--dry-run WINS over --commit in either order — and REPORTS the veto", () => {
+      expect(parseCleanupFlags(["node", "s", "--commit", "--dry-run"])).toEqual(
+        { commit: false, vetoed: true },
+      );
+      expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual(
+        { commit: false, vetoed: true },
+      );
     });
   });
 

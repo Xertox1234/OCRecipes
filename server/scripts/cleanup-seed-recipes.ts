@@ -16,7 +16,8 @@
  * after a few release cycles. (L-4, audit 2026-04-17.)
  *
  * Safety:
- *   - Defaults to DRY-RUN. Pass `--commit` to actually delete.
+ *   - Defaults to DRY-RUN. Pass `--commit` to actually delete. `--dry-run`
+ *     is a VETO — it wins even alongside --commit, in either order.
  *   - Scoped to orphan (authorId IS NULL) or the demo user only — never
  *     touches real user recipes. See
  *     `docs/legacy-patterns/security.md` → "Seed / Cleanup Scripts Must Scope by
@@ -25,6 +26,7 @@
  * Usage:
  *   npm run cleanup:seeds              # dry-run (default)
  *   npm run cleanup:seeds -- --commit  # actually delete
+ *   (--dry-run vetoes --commit if both are passed)
  */
 import "dotenv/config";
 import fs from "node:fs";
@@ -41,7 +43,7 @@ import {
 import { eq, and, inArray, sql } from "drizzle-orm";
 import {
   buildJunkRecipeWhere,
-  parseArgs,
+  parseCleanupFlags,
   SEED_PREFIX,
   TEST_PREFIX,
 } from "./cleanup-seed-recipes-utils";
@@ -55,11 +57,16 @@ const RECIPE_IMAGES_DIR = path.resolve(process.cwd(), "uploads/recipe-images");
 const IMAGE_FILENAME_PATTERN = /^[a-zA-Z0-9._-]+\.(jpg|jpeg|png|webp)$/;
 
 async function main() {
-  const { commit } = parseArgs(process.argv.slice(2));
+  const { commit, vetoed } = parseCleanupFlags(process.argv.slice(2));
   const mode = commit ? "COMMIT" : "DRY-RUN";
+  const modeNote = commit
+    ? ""
+    : vetoed
+      ? "  (--dry-run overrides --commit; drop --dry-run to delete)"
+      : "  (pass --commit to delete)";
 
   console.log("=== Cleanup Junk Recipes ===");
-  console.log(`Mode: ${mode}${commit ? "" : "  (pass --commit to delete)"}\n`);
+  console.log(`Mode: ${mode}${modeNote}\n`);
 
   // Resolve demo user ID so we can restrict deletion to orphan/demo-authored
   // rows and NEVER touch real user recipes that happen to share a test name.
@@ -177,7 +184,9 @@ async function main() {
 
   if (!commit) {
     console.log(
-      "DRY-RUN: no changes committed. Re-run with --commit to delete.",
+      vetoed
+        ? "DRY-RUN: no changes committed. (--dry-run overrode --commit)"
+        : "DRY-RUN: no changes committed. Re-run with --commit to delete.",
     );
     await pool.end();
     return;

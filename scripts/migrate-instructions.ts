@@ -2,6 +2,14 @@
  * One-time migration: Convert `instructions` column from text to JSONB string[]
  * on both community_recipes and meal_plan_recipes tables.
  *
+ * Polarity: no --dry-run/--commit pair — this script has NO preview mode and
+ * always runs live on invocation (backup tables + ALTER TABLE column-type
+ * changes can't be meaningfully "previewed" without a preview-aware verifier
+ * too). Safety comes primarily from the --force-rerun guard below (refuses
+ * to destroy an existing rollback point) plus the pre-ALTER verification
+ * step, which aborts before the destructive column-type change if any row
+ * fails to parse as a valid JSON array.
+ *
  * Run BEFORE changing the Drizzle schema:
  *   npx tsx scripts/migrate-instructions.ts
  *   npx tsx scripts/migrate-instructions.ts --force-rerun  # re-run despite existing backups

@@ -6,9 +6,13 @@
  * Affected recipes have `ingredients: []` and their ingredient list stored
  * inside `instructions`, bracketed by "Ingredients:" and "Instructions:" labels.
  *
+ * Polarity: dry-run by DEFAULT — pass --commit (without --dry-run, which
+ * vetoes it) to actually write changes.
+ *
  * Usage:
- *   npx tsx scripts/migrate-recipe-ingredients.ts           # live run
- *   npx tsx scripts/migrate-recipe-ingredients.ts --dry-run # preview only
+ *   npx tsx scripts/migrate-recipe-ingredients.ts            # dry-run (default)
+ *   npx tsx scripts/migrate-recipe-ingredients.ts --commit   # actually write changes
+ *   (--dry-run vetoes --commit if both are passed)
  */
 import "dotenv/config";
 import { db } from "../server/db";
@@ -16,16 +20,27 @@ import { communityRecipes } from "../shared/schema";
 import { sql, eq } from "drizzle-orm";
 // Parsers live in the -utils leaf (DB-free) so the A-D pattern matrix is
 // unit-tested against the exact functions this script executes.
-import { splitInstructionsArray } from "./migrate-recipe-ingredients-utils";
+import {
+  splitInstructionsArray,
+  parseCleanupFlags,
+} from "./migrate-recipe-ingredients-utils";
 
-const DRY_RUN = process.argv.includes("--dry-run");
+// Dry-run by DEFAULT — pass --commit (without --dry-run, which vetoes it)
+// to actually write changes.
+const { commit: COMMIT, vetoed: VETOED } = parseCleanupFlags(process.argv);
 
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
 async function main() {
-  console.log(DRY_RUN ? "=== DRY RUN ===" : "=== LIVE RUN ===");
+  console.log(
+    COMMIT
+      ? "=== LIVE RUN ==="
+      : VETOED
+        ? "=== DRY RUN ===  (--dry-run overrides --commit; drop --dry-run to write changes)"
+        : "=== DRY RUN ===  (pass --commit to write changes)",
+  );
   console.log();
 
   // Query all community recipes where ingredients array is empty
@@ -91,7 +106,7 @@ async function main() {
     }
     console.log();
 
-    if (!DRY_RUN) {
+    if (COMMIT) {
       await db
         .update(communityRecipes)
         .set({
@@ -105,13 +120,19 @@ async function main() {
   }
 
   console.log("---");
-  console.log(`Migrated: ${migratedCount}`);
+  console.log(`${COMMIT ? "Migrated" : "Would migrate"}: ${migratedCount}`);
   console.log(`Skipped:  ${skippedCount}`);
 
-  if (DRY_RUN) {
-    console.log("\nDry run complete — no changes written.");
-  } else {
+  if (COMMIT) {
     console.log("\nMigration complete.");
+  } else if (VETOED) {
+    console.log(
+      "\nDry run complete — no changes written. (--dry-run overrode --commit)",
+    );
+  } else {
+    console.log(
+      "\nDry run complete — no changes written. Pass --commit to write changes.",
+    );
   }
 }
 

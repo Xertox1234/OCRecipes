@@ -75,8 +75,24 @@ export function buildJunkRecipeWhere(
   );
 }
 
-/** CLI contract: dry-run by default; deletion only on an explicit --commit. */
-export function parseArgs(argv: string[]): { commit: boolean } {
-  const commit = argv.includes("--commit");
-  return { commit };
+/**
+ * CLI contract: preview by default; deletion only on an explicit --commit,
+ * and `--dry-run` is a VETO — it wins even alongside --commit, so a stale
+ * habitual --dry-run in a saved command stays a safety net rather than being
+ * silently ignored (the safe failure direction in every combination).
+ * `vetoed` reports the conflict so the script's banner can NAME --dry-run as
+ * the reason, instead of telling the operator to pass a --commit they
+ * already passed. Same shape as `scripts/cleanup-junk-recipes-utils.ts`
+ * (PR #825) — see docs/solutions/logic-errors/safety-flag-must-veto-not-alias-2026-08-16.md.
+ */
+export function parseCleanupFlags(argv: readonly string[]): {
+  commit: boolean;
+  vetoed: boolean;
+} {
+  const commitRequested = argv.includes("--commit");
+  const dryRun = argv.includes("--dry-run");
+  return {
+    commit: commitRequested && !dryRun,
+    vetoed: commitRequested && dryRun,
+  };
 }
