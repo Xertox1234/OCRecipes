@@ -175,14 +175,38 @@ function estimateServingGrams(
 }
 
 /**
+ * Metric units as parseServingGrams accepts them. The trailing `\b` is baked
+ * into this constant (not appended where it's used) so the alternation
+ * cannot settle on a prefix (`g` inside `gallon`) in any regex built from
+ * it. Longest-first ordering, matching the sibling constant this was built
+ * from (`shared/lib/label-serving.ts`'s UNIT). Starts from that constant's
+ * vocabulary — kept local rather than imported, since that module's own
+ * docblock deliberately leaves this function's own callers alone — and adds
+ * `grammes?`/`gms?`/`mls?`: this function parses OFF's crowdsourced free-text
+ * `serving_size` field (not OCR'd printed labels like the sibling module),
+ * where informal abbreviations are common. `gr` is deliberately NOT accepted
+ * — it collides with the apothecary unit "grain", a genuinely different mass.
+ */
+const SERVING_UNIT = String.raw`(?:grammes?|grams?|gms?|g|millilit(?:re|er)s?|mls?)\b`;
+const SERVING_GRAMS_PAREN = new RegExp(
+  String.raw`\((\d+\.?\d*)\s*${SERVING_UNIT}\)`,
+);
+const SERVING_GRAMS_BARE = new RegExp(
+  String.raw`(\d+\.?\d*)\s*${SERVING_UNIT}`,
+);
+
+/**
  * Parse numeric grams from a serving size string like "30g" or "1 cup (240g)".
+ *
+ * The unit is matched as a whole word (trailing `\b`): "1 gallon" and
+ * "2 glasses" must not read as 1 and 2 grams just because their unit begins
+ * with "g" — the old alternation had no boundary and accepted any unit that
+ * merely started with "g" or "ml".
  */
 export function parseServingGrams(raw: string): number | null {
   if (!raw) return null;
   const lower = raw.toLowerCase();
-  const m =
-    lower.match(/\((\d+\.?\d*)\s*(?:g|ml)\)/) ||
-    lower.match(/(\d+\.?\d*)\s*(?:g|ml)/);
+  const m = lower.match(SERVING_GRAMS_PAREN) || lower.match(SERVING_GRAMS_BARE);
   return m ? parseFloat(m[1]) : null;
 }
 

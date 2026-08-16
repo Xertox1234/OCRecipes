@@ -129,6 +129,23 @@ describe("normalizeToPerHundredGrams", () => {
 // `normalizeToPerHundredGrams` calls this, but two more call sites
 // (`offLabelGrams`, `servingGrams` in `lookupBarcode`) feed it live OFF
 // `serving_size` text directly, so it needs its own direct coverage.
+//
+// Two-sided mutation check (performed, not just claimed — P2-2026-08-10).
+// The fix has two independent levers in `SERVING_UNIT`/`SERVING_GRAMS_PAREN`/
+// `SERVING_GRAMS_BARE` (`barcode-lookup.ts`); each was reverted alone against
+// the regex text (not by editing the source file) and the 19 `it()` bodies
+// in this describe block were re-evaluated:
+//   - Reverting ONLY the trailing `\b` (keeping the full unit vocabulary)
+//     turns exactly 5 tests red: the 4 "rejects a prefix" cases plus "gr" —
+//     "g" alone is always in the vocabulary, so without the boundary it
+//     still matches the first letter of "gallon"/"glasses"/"gummies"/
+//     "grande"/"gr".
+//   - Reverting ONLY the vocabulary (back to bare `g|ml`, keeping `\b`)
+//     turns exactly 8 tests red: the 3 "spelled-out unit" cases plus all 5
+//     "informal spellings" cases — none of those units is "g" or "ml"
+//     verbatim, so they depend on the added alternatives, not the anchor.
+// The other 6 tests (5 characterisation + "30 mg") are insensitive to
+// either lever alone and stay green under both mutations.
 describe("parseServingGrams", () => {
   // ── Characterisation ────────────────────────────────────────────────
   // Pins every real producer's shape. These pass both before and after the
@@ -171,22 +188,33 @@ describe("parseServingGrams", () => {
     });
   });
 
+  // ── Predecessor-accepted informal spellings, kept on purpose ───────────
+  // This function parses OFF's crowdsourced free-text `serving_size` field —
+  // not OCR'd printed labels like `shared/lib/label-serving.ts` — where
+  // informal abbreviations ("gm", "gms") and non-US spellings ("gramme(s)")
+  // are common. The old prefix-match accepted all of these; narrowing them
+  // away would be the exact "replacement must accept predecessor inputs"
+  // mistake documented in
+  // docs/solutions/conventions/replacement-must-accept-predecessor-inputs-2026-07-30.md.
+  describe("still accepts informal spellings the old prefix-match happened to get right", () => {
+    it.each([
+      ["30 grammes", 30],
+      ["1 gramme", 1],
+      ["30 gm", 30],
+      ["500 gms", 500],
+      ["250 mls", 250],
+    ])("parses %j as %j", (input, expected) => {
+      expect(parseServingGrams(input)).toBe(expected);
+    });
+  });
+
   // ── A deliberate narrowing, not an accident ────────────────────────────
-  // The old prefix-match also accepted these — they are NOT preserved. None
-  // is backed by a real captured OFF `serving_size` value anywhere in this
-  // repo's fixtures, and the sibling label parser
-  // (`shared/lib/label-serving.ts`), which was built by studying this exact
-  // function's accepted inputs, excludes them too. Adding an unattested
-  // spelling here would violate the todo's own risk note: "every accepted
-  // spelling should be justified by a real OFF value, or the list becomes
-  // unfalsifiable."
-  describe("does not accept spellings the old prefix-match let through by accident", () => {
-    it.each(["30 grammes", "1 gramme", "30 gr", "250 mls"])(
-      "returns null for %j",
-      (input) => {
-        expect(parseServingGrams(input)).toBeNull();
-      },
-    );
+  // "gr" is NOT accepted: it collides with "grain", a genuinely different
+  // (apothecary) unit of mass, so accepting it would silently misread a
+  // grain-labelled serving as grams. Every other spelling the old
+  // prefix-match happened to accept is preserved above.
+  it('rejects "gr" — ambiguous with the unit "grain", not a gram abbreviation', () => {
+    expect(parseServingGrams("30 gr")).toBeNull();
   });
 
   it("does not misread a milligram figure as grams (unaffected by this fix)", () => {
