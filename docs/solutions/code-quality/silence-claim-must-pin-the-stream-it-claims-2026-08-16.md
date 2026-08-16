@@ -8,6 +8,7 @@ applies_to: ["scripts/__tests__/**", "server/scripts/__tests__/**", ".claude/hoo
 symptoms: ["A spawned-process 'no output' test is green locally and red on CI with an unrelated Node warning in the assertion diff", "expect(out.trim()).toBe('') fails with MODULE_TYPELESS_PACKAGE_JSON or an experimental-feature warning", "The assertion concatenates stdout + stderr before asserting emptiness"]
 created: 2026-08-16
 severity: medium
+last_updated: 2026-08-16
 ---
 
 # Pin a silence claim to the stream the claim is about — a combined-stream assertion inherits runtime diagnostics
@@ -65,9 +66,11 @@ stderr cleanliness genuinely matters, assert targeted negatives
 - When writing any emptiness/silence assertion over process output, name the
   stream in the claim and assert only that stream.
 - Audit shortcut: `expect(...stderr...).toBe("")` and helpers returning only
-  `stdout + stderr` are the smells. (Known residual: the leaf-pin tests copied
-  from the barcode-policy precedent assert `stderr === ""` exactly — green on
-  today's CI Node, tracked as a todo for the same hardening.)
+  `stdout + stderr` are the smells. The leaf-pin "importable without
+  DATABASE_URL" tests (`barcode-policy.test.ts` and its five copies) follow
+  this convention: assert `status` first, then a targeted stderr negative
+  (`expect(r.stderr).not.toMatch(/error|DATABASE_URL/i)`), never exact-empty
+  — apply the same shape to any new copy of this pin test.
 
 ## Related Files
 
