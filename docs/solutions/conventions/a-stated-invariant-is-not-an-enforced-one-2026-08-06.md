@@ -7,6 +7,7 @@ tags: [invariants, code-review, comments, typescript, architecture, client-state
 applies_to: [server/services/**/*.ts, client/lib/**/*.ts, .claude/agents/*.md, .claude/hooks/**/*.sh]
 symptoms: [A docblock names several cases while the conditional beside it handles one, A comment asserts two values are "the same source/kind/shape" with no code establishing it, A cost or safety argument whose premise is a property of the current data shape rather than of the code]
 created: '2026-08-06'
+last_updated: '2026-08-16'
 ---
 
 # A stated invariant is not an enforced one
@@ -142,6 +143,37 @@ mechanism of the bug, so the fix re-specified it as containment
 Co-location is the weakest possible enforcement: it survives exactly until someone has a
 reason to move one of the two.
 
+### 5. An anchor asserted on a constant, enforced at its call sites (added 2026-08-16)
+
+`server/services/barcode-lookup.ts`'s `parseServingGrams` fix (P2-2026-08-10) went
+through two shapes in the same PR. The first:
+
+```ts
+/** Metric units ... anchored so the alternation cannot settle on a prefix. */
+const SERVING_UNIT = String.raw`(?:grams?|g|millilit(?:re|er)s?|ml)`;
+const SERVING_GRAMS_PAREN = new RegExp(String.raw`\((\d+\.?\d*)\s*${SERVING_UNIT}\b\)`);
+const SERVING_GRAMS_BARE = new RegExp(String.raw`(\d+\.?\d*)\s*${SERVING_UNIT}\b`);
+```
+
+Both regexes built from `SERVING_UNIT` were correctly anchored — every test passed —
+but the docblock's claim ("anchored") was true of the two call sites, not of
+`SERVING_UNIT` itself. `SERVING_UNIT` alone, matched with no boundary, still accepts
+`"1 gallon"` as a gram. A reviewer's second pass caught it not because anything was
+broken, but because the assertion was attached to the wrong symbol: "a future third
+regex built from `SERVING_UNIT` inherits the docblock's promise and none of the
+anchoring behavior." The fix baked the `\b` into `SERVING_UNIT` itself and dropped it
+from both call sites, so the property travels with the value instead of needing to be
+re-supplied at every future use:
+
+```ts
+const SERVING_UNIT = String.raw`(?:grammes?|grams?|gms?|g|millilit(?:re|er)s?|mls?)\b`;
+```
+
+Same rule as instances 1–4, one level more specific: when N call sites all correctly
+apply a property, that is not the same as the property being **on** the shared value
+they built it from. Ask "if I read only this constant's definition, is the claim in its
+docblock still true?" — not "do today's consumers happen to make it true?"
+
 ## Exceptions
 
 - **A comment explaining WHY is not the target.** "We poll here because the native
@@ -162,6 +194,7 @@ reason to move one of the two.
 - `client/lib/nutrition-ocr-parser.ts` — `directReads` vs `extracted`, `substitutedUnit`
 - `.claude/hooks/lib/cmd-detect.sh` — `cmd_gh_pr_write_subcommand`, `cmd_gh_pr_ref`
 - `.claude/agents/ai-reviewer.md` — the containment rule from instance 1
+- `server/services/barcode-lookup.ts` — `SERVING_UNIT`, instance 5
 
 ## See Also
 

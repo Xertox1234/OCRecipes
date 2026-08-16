@@ -127,6 +127,23 @@ The general lesson: **a parser that narrows the hole is an improvement, not a pr
 When you cite one as "requires the unit", verify the anchor exists before writing that
 claim down — an unanchored alternation reads exactly like an anchored one.
 
+### A second, still-open gap: the digit side, not the unit side (found 2026-08-16, NOT fixed)
+
+The unit-side gap above is closed, but `SERVING_GRAMS_PAREN`/`SERVING_GRAMS_BARE`'s
+digit group (`\d+\.?\d*`) has the same shape of problem on the other half of the match.
+A comma-decimal serving size — routine in EU-sourced OFF `serving_size` free text, e.g.
+`"12,5 g"` — does not parse as 12.5. `\d+` stops at the comma; the regex engine then
+retries starting from the `5`, and the alternation matches `"5 g"` — returning **5**,
+silently. `!(grams > 0)` is true for 5, so the wrong value sails through
+`normalizeToPerHundredGrams` and scales nutrition by `100/5 = 20×` instead of the
+correct `100/12.5 = 8×`, a 2.5× inflation. (A different comma placement, e.g.
+`"100,0 g"`, happens to land on 0 and gets caught by the existing zero-guard — so the
+failure is silent only for some comma positions, which makes it easy to miss in ad hoc
+testing.) This is the exact failure mode this document is about, on the digit side
+rather than the unit side — filed here rather than fixed, since P2-2026-08-10's Scope
+Contract was the unit alternation only. Do not assume this document's "closed" language
+above covers the digit group too.
+
 Then make every caller handle the refusal. A nullable return is what forces this: the
 type checker enumerates the call sites for you. **Discard the value; never substitute a
 default at the call site**, or you have reintroduced the same bug one level up.
