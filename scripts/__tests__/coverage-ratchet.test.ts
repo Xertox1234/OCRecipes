@@ -1,0 +1,446 @@
+import { describe, it, expect, afterEach } from "vitest";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { spawnSync } from "child_process";
+import {
+  computeTotals,
+  parseArgs,
+  proposeThresholds,
+  readCurrentThresholds,
+  applyThresholds,
+} from "../coverage-ratchet";
+
+const SCRIPT = path.resolve(__dirname, "..", "coverage-ratchet.ts");
+
+const tmpDirs: string[] = [];
+
+function makeTmpDir(): string {
+  const root = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), "ratchet-")),
+  );
+  tmpDirs.push(root);
+  return root;
+}
+
+/**
+ * A config file mimicking the real vitest.config.ts thresholds block.
+ * `before` is inserted ABOVE the block — used to plant decoy `lines: NN`
+ * matches that the old whole-file regexes latched onto.
+ */
+function writeConfig(
+  dir: string,
+  thresholds: {
+    lines: number;
+    functions: number;
+    branches: number;
+    statements: number;
+  },
+  before = "",
+): string {
+  const file = path.join(dir, "vitest.config.ts");
+  fs.writeFileSync(
+    file,
+    [
+      'import { defineConfig } from "vitest/config";',
+      "export default defineConfig({",
+      "  test: {",
+      before,
+      "    coverage: {",
+      "      thresholds: {",
+      "        autoUpdate: false,",
+      `        lines: ${thresholds.lines},`,
+      `        functions: ${thresholds.functions},`,
+      `        branches: ${thresholds.branches},`,
+      `        statements: ${thresholds.statements},`,
+      "      },",
+      "    },",
+      "  },",
+      "});",
+      "",
+    ].join("\n"),
+  );
+  return file;
+}
+
+/** Minimal complete Istanbul file-coverage entry. */
+function istanbulFile(opts: {
+  path: string;
+  statements: { line: number; hits: number }[];
+  fnHits: number[];
+  branchHits: number[][];
+}) {
+  const statementMap: Record<
+    string,
+    {
+      start: { line: number; column: number };
+      end: { line: number; column: number };
+    }
+  > = {};
+  const s: Record<string, number> = {};
+  opts.statements.forEach((st, i) => {
+    statementMap[String(i)] = {
+      start: { line: st.line, column: 0 },
+      end: { line: st.line, column: 10 },
+    };
+    s[String(i)] = st.hits;
+  });
+  const fnMap: Record<
+    string,
+    { name: string; loc: (typeof statementMap)[string] }
+  > = {};
+  const f: Record<string, number> = {};
+  opts.fnHits.forEach((hits, i) => {
+    fnMap[String(i)] = {
+      name: `fn${i}`,
+      loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } },
+    };
+    f[String(i)] = hits;
+  });
+  const branchMap: Record<
+    string,
+    { type: string; locations: (typeof statementMap)[string][]; line: number }
+  > = {};
+  const b: Record<string, number[]> = {};
+  opts.branchHits.forEach((hits, i) => {
+    branchMap[String(i)] = { type: "if", locations: [], line: 1 };
+    b[String(i)] = hits;
+  });
+  return { path: opts.path, statementMap, fnMap, branchMap, s, f, b };
+}
+
+/** Coverage where every metric is exactly 50%. */
+function halfCoveredCoverage() {
+  return {
+    "/x/a.ts": istanbulFile({
+      path: "/x/a.ts",
+      statements: [
+        { line: 1, hits: 1 },
+        { line: 2, hits: 0 },
+      ],
+      fnHits: [1, 0],
+      branchHits: [[1, 0]],
+    }),
+  };
+}
+
+function writeCoverage(dir: string, data: unknown): string {
+  const file = path.join(dir, "coverage-final.json");
+  fs.writeFileSync(file, JSON.stringify(data));
+  return file;
+}
+
+function runCli(args: string[]) {
+  const result = spawnSync(
+    process.execPath,
+    ["--import=tsx", SCRIPT, ...args],
+    { encoding: "utf8", timeout: 30_000 },
+  );
+  return {
+    status: result.status ?? -1,
+    out: (result.stdout ?? "") + (result.stderr ?? ""),
+  };
+}
+
+describe("coverage-ratchet", () => {
+  afterEach(() => {
+    for (const dir of tmpDirs.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  describe("computeTotals", () => {
+    it("computes all four metrics from a two-file fixture", () => {
+      const data = {
+        "/x/a.ts": istanbulFile({
+          path: "/x/a.ts",
+          statements: [
+            { line: 1, hits: 1 },
+            { line: 2, hits: 0 },
+          ],
+          fnHits: [1],
+          branchHits: [[1, 0]],
+        }),
+        "/x/b.ts": istanbulFile({
+          path: "/x/b.ts",
+          statements: [{ line: 1, hits: 5 }],
+          fnHits: [0],
+          branchHits: [],
+        }),
+      };
+      const totals = computeTotals(data);
+      expect(totals.statements).toBeCloseTo((2 / 3) * 100, 5);
+      expect(totals.functions).toBeCloseTo(50, 5);
+      expect(totals.branches).toBeCloseTo(50, 5);
+      expect(totals.lines).toBeCloseTo((2 / 3) * 100, 5);
+    });
+
+    it("returns 100 for every metric on empty coverage (empty denominators)", () => {
+      const totals = computeTotals({});
+      expect(totals).toEqual({
+        lines: 100,
+        statements: 100,
+        functions: 100,
+        branches: 100,
+      });
+    });
+
+    it("counts a line once even when several statements share it", () => {
+      const data = {
+        "/x/a.ts": istanbulFile({
+          path: "/x/a.ts",
+          statements: [
+            { line: 1, hits: 0 },
+            { line: 1, hits: 2 },
+          ],
+          fnHits: [],
+          branchHits: [],
+        }),
+      };
+      const totals = computeTotals(data);
+      expect(totals.lines).toBe(100); // one line, covered by its second statement
+      expect(totals.statements).toBe(50);
+    });
+  });
+
+  describe("proposeThresholds", () => {
+    const t = (n: number) => ({
+      lines: n,
+      statements: n,
+      functions: n,
+      branches: n,
+    });
+
+    it("never lowers a threshold (ratchet-up-only)", () => {
+      // floor(50.9) - 4 = 46 < current 48 → stays 48.
+      expect(proposeThresholds(t(48), t(50.9), 4)).toEqual(t(48));
+    });
+
+    it("raises to floor(actual) - buffer when that exceeds current", () => {
+      expect(proposeThresholds(t(40), t(50.9), 4)).toEqual(t(46));
+    });
+  });
+
+  describe("readCurrentThresholds", () => {
+    it("reads the four metrics from the thresholds block", () => {
+      const dir = makeTmpDir();
+      const cfg = writeConfig(dir, {
+        lines: 53,
+        functions: 58,
+        branches: 55,
+        statements: 53,
+      });
+      expect(readCurrentThresholds(cfg)).toEqual({
+        lines: 53,
+        statements: 53,
+        functions: 58,
+        branches: 55,
+      });
+    });
+
+    it("is not fooled by a decoy metric mention above the block", () => {
+      // Regression: the old whole-file regex took the FIRST `lines: N` in the
+      // file — a baseline comment or per-glob config above the block silently
+      // retargeted both the read and the patch.
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 53, functions: 58, branches: 55, statements: 53 },
+        "    // legacy baseline — lines: 99, statements: 99",
+      );
+      const current = readCurrentThresholds(cfg);
+      expect(current.lines).toBe(53);
+      expect(current.statements).toBe(53);
+    });
+
+    it("throws when the config has no thresholds block", () => {
+      const dir = makeTmpDir();
+      const cfg = path.join(dir, "vitest.config.ts");
+      fs.writeFileSync(cfg, "export default {};\n");
+      expect(() => readCurrentThresholds(cfg)).toThrow(/thresholds/);
+    });
+  });
+
+  describe("applyThresholds", () => {
+    it("patches inside the block and leaves a decoy above it untouched", () => {
+      const dir = makeTmpDir();
+      const cfg = writeConfig(
+        dir,
+        { lines: 40, functions: 40, branches: 40, statements: 40 },
+        "    // legacy baseline — lines: 99, statements: 99",
+      );
+      applyThresholds(
+        { lines: 60, statements: 61, functions: 62, branches: 63 },
+        cfg,
+      );
+      const source = fs.readFileSync(cfg, "utf8");
+      expect(source).toContain("lines: 60,");
+      expect(source).toContain("statements: 61,");
+      expect(source).toContain("functions: 62,");
+      expect(source).toContain("branches: 63,");
+      // The decoy is untouched — and no stray 40 survives in the block.
+      expect(source).toContain("lines: 99");
+      expect(source).not.toContain(": 40,");
+    });
+  });
+
+  describe("parseArgs", () => {
+    it("defaults to the repo coverage file and config, buffer 4, report mode", () => {
+      const parsed = parseArgs([]);
+      expect(parsed.kind).toBe("ok");
+      if (parsed.kind !== "ok") return;
+      expect(parsed.buffer).toBe(4);
+      expect(parsed.applyMode).toBe(false);
+      expect(parsed.coverageFile.endsWith("coverage-final.json")).toBe(true);
+      expect(parsed.configFile.endsWith("vitest.config.ts")).toBe(true);
+    });
+
+    it("accepts --apply, --buffer, --coverage-file, and --config-file", () => {
+      const parsed = parseArgs([
+        "--apply",
+        "--buffer",
+        "3",
+        "--coverage-file",
+        "cov.json",
+        "--config-file",
+        "cfg.ts",
+      ]);
+      expect(parsed.kind).toBe("ok");
+      if (parsed.kind !== "ok") return;
+      expect(parsed.applyMode).toBe(true);
+      expect(parsed.buffer).toBe(3);
+      expect(parsed.coverageFile.endsWith("cov.json")).toBe(true);
+      expect(parsed.configFile.endsWith("cfg.ts")).toBe(true);
+    });
+
+    it("rejects an unknown argument instead of silently running in report mode", () => {
+      const parsed = parseArgs(["--aply"]);
+      expect(parsed.kind).toBe("error");
+      if (parsed.kind !== "error") return;
+      expect(parsed.message).toContain("Unknown argument");
+    });
+
+    it("rejects a negative buffer", () => {
+      expect(parseArgs(["--buffer", "-1"]).kind).toBe("error");
+    });
+
+    it("recognizes --help", () => {
+      expect(parseArgs(["--help"]).kind).toBe("help");
+    });
+  });
+
+  describe("CLI", () => {
+    it("exits 2 when the coverage file does not exist", () => {
+      const dir = makeTmpDir();
+      const cfg = writeConfig(dir, {
+        lines: 46,
+        functions: 46,
+        branches: 46,
+        statements: 46,
+      });
+      const { status, out } = runCli([
+        "--coverage-file",
+        path.join(dir, "nope.json"),
+        "--config-file",
+        cfg,
+      ]);
+      expect(status).toBe(2);
+      expect(out).toContain("Coverage file not found");
+    });
+
+    it("exits 1 when a metric is below its threshold", () => {
+      const dir = makeTmpDir();
+      const cov = writeCoverage(dir, {
+        "/x/a.ts": istanbulFile({
+          path: "/x/a.ts",
+          statements: [{ line: 1, hits: 0 }],
+          fnHits: [0],
+          branchHits: [[0]],
+        }),
+      });
+      const cfg = writeConfig(dir, {
+        lines: 50,
+        functions: 50,
+        branches: 50,
+        statements: 50,
+      });
+      const { status, out } = runCli([
+        "--coverage-file",
+        cov,
+        "--config-file",
+        cfg,
+      ]);
+      expect(status).toBe(1);
+      expect(out).toContain("below their thresholds");
+    });
+
+    it("exits 0 with no raise needed when passing at the buffered threshold", () => {
+      const dir = makeTmpDir();
+      const cov = writeCoverage(dir, halfCoveredCoverage());
+      const cfg = writeConfig(dir, {
+        lines: 46,
+        functions: 46,
+        branches: 46,
+        statements: 46,
+      });
+      const { status, out } = runCli([
+        "--coverage-file",
+        cov,
+        "--config-file",
+        cfg,
+      ]);
+      expect(status, out).toBe(0);
+      // Non-vacuity: the report actually rendered over the fixture.
+      expect(out).toContain("Coverage Ratchet");
+      expect(out).toContain("No threshold updates needed");
+    });
+
+    it("exits 1 and points at --apply when a raise is available", () => {
+      const dir = makeTmpDir();
+      const cov = writeCoverage(dir, halfCoveredCoverage());
+      const cfg = writeConfig(dir, {
+        lines: 40,
+        functions: 40,
+        branches: 40,
+        statements: 40,
+      });
+      const { status, out } = runCli([
+        "--coverage-file",
+        cov,
+        "--config-file",
+        cfg,
+      ]);
+      expect(status).toBe(1);
+      expect(out).toContain("--apply");
+    });
+
+    it("--apply rewrites the given config file in place and exits 0", () => {
+      const dir = makeTmpDir();
+      const cov = writeCoverage(dir, halfCoveredCoverage());
+      const cfg = writeConfig(dir, {
+        lines: 40,
+        functions: 40,
+        branches: 40,
+        statements: 40,
+      });
+      const { status, out } = runCli([
+        "--coverage-file",
+        cov,
+        "--config-file",
+        cfg,
+        "--apply",
+      ]);
+      expect(status, out).toBe(0);
+      expect(out).toContain("updated with proposed thresholds");
+      const source = fs.readFileSync(cfg, "utf8");
+      expect(source).toContain("lines: 46,"); // floor(50) - 4
+      expect(source).not.toContain("lines: 40,");
+    });
+
+    it("exits 2 on an unknown argument", () => {
+      const { status, out } = runCli(["--nope"]);
+      expect(status).toBe(2);
+      expect(out).toContain("Unknown argument");
+    });
+  });
+});

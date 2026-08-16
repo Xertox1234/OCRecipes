@@ -15,6 +15,7 @@
  *   tsx scripts/coverage-ratchet.ts --apply            # update vitest.config.ts
  *   tsx scripts/coverage-ratchet.ts --buffer 3         # tighter buffer
  *   tsx scripts/coverage-ratchet.ts --coverage-file coverage/coverage-final.json
+ *   tsx scripts/coverage-ratchet.ts --config-file vitest.config.ts
  *
  * Exit codes:
  *   0  all metrics are at or above their thresholds (coverage is passing)
@@ -25,6 +26,9 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -94,7 +98,7 @@ function dim(s: string): string {
 
 // ─── Coverage computation ─────────────────────────────────────────────────────
 
-function computeTotals(data: CoverageFinal): Totals {
+export function computeTotals(data: CoverageFinal): Totals {
   let totalLines = 0;
   let coveredLines = 0;
   let totalStmts = 0;
@@ -106,7 +110,7 @@ function computeTotals(data: CoverageFinal): Totals {
 
   for (const entry of Object.values(data)) {
     // Statements
-    for (const [key, count] of Object.entries(entry.s)) {
+    for (const count of Object.values(entry.s)) {
       totalStmts++;
       if (count > 0) coveredStmts++;
     }
@@ -150,15 +154,39 @@ function computeTotals(data: CoverageFinal): Totals {
 
 // ─── vitest.config.ts threshold parsing and patching ─────────────────────────
 
-const VITEST_CONFIG = path.resolve(__dirname, "../vitest.config.ts");
+const DEFAULT_CONFIG = path.resolve(scriptDir, "../vitest.config.ts");
 
-function readCurrentThresholds(): Thresholds {
-  const source = fs.readFileSync(VITEST_CONFIG, "utf8");
+/**
+ * Isolate the `thresholds: { ... }` block before matching metric names.
+ * Whole-file `metric:\s*(\d+)` regexes with first-match semantics were
+ * silently retargeted by any earlier `lines: NN` mention (a baseline comment,
+ * a per-glob thresholds addition) — for both the read AND the patch.
+ */
+function locateThresholdsBlock(
+  source: string,
+  configFile: string,
+): { start: number; end: number; block: string } {
+  const match = source.match(/thresholds:\s*\{[\s\S]*?\}/);
+  if (!match || match.index === undefined) {
+    throw new Error(
+      `Could not find a thresholds: { ... } block in ${configFile}`,
+    );
+  }
+  return {
+    start: match.index,
+    end: match.index + match[0].length,
+    block: match[0],
+  };
+}
+
+export function readCurrentThresholds(configFile: string): Thresholds {
+  const source = fs.readFileSync(configFile, "utf8");
+  const { block } = locateThresholdsBlock(source, configFile);
   const extract = (metric: string): number => {
-    const match = source.match(new RegExp(`${metric}:\\s*(\\d+)`));
+    const match = block.match(new RegExp(`\\b${metric}:\\s*(\\d+)`));
     if (!match)
       throw new Error(
-        `Could not parse threshold for "${metric}" in vitest.config.ts`,
+        `Could not parse threshold for "${metric}" in ${configFile}`,
       );
     return parseInt(match[1], 10);
   };
@@ -170,22 +198,68 @@ function readCurrentThresholds(): Thresholds {
   };
 }
 
-function applyThresholds(proposed: Thresholds): void {
-  let source = fs.readFileSync(VITEST_CONFIG, "utf8");
+export function applyThresholds(
+  proposed: Thresholds,
+  configFile: string,
+): void {
+  const source = fs.readFileSync(configFile, "utf8");
+  const { start, end, block } = locateThresholdsBlock(source, configFile);
   const patch = (src: string, metric: string, value: number): string =>
     src.replace(new RegExp(`(\\b${metric}:\\s*)\\d+`), `$1${value}`);
-  source = patch(source, "lines", proposed.lines);
-  source = patch(source, "statements", proposed.statements);
-  source = patch(source, "functions", proposed.functions);
-  source = patch(source, "branches", proposed.branches);
-  fs.writeFileSync(VITEST_CONFIG, source, "utf8");
+  let patched = block;
+  patched = patch(patched, "lines", proposed.lines);
+  patched = patch(patched, "statements", proposed.statements);
+  patched = patch(patched, "functions", proposed.functions);
+  patched = patch(patched, "branches", proposed.branches);
+  fs.writeFileSync(
+    configFile,
+    source.slice(0, start) + patched + source.slice(end),
+    "utf8",
+  );
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+export function proposeThresholds(
+  current: Thresholds,
+  actual: Totals,
+  buffer: number,
+): Thresholds {
+  const propose = (metric: keyof Thresholds): number =>
+    Math.max(current[metric], Math.floor(actual[metric]) - buffer);
+  return {
+    lines: propose("lines"),
+    statements: propose("statements"),
+    functions: propose("functions"),
+    branches: propose("branches"),
+  };
+}
 
-function main(): void {
-  const args = process.argv.slice(2);
-  let coverageFile = path.resolve(__dirname, "../coverage/coverage-final.json");
+// ─── CLI argument parsing ─────────────────────────────────────────────────────
+
+export type ParsedArgs =
+  | {
+      kind: "ok";
+      coverageFile: string;
+      configFile: string;
+      buffer: number;
+      applyMode: boolean;
+    }
+  | { kind: "help" }
+  | { kind: "error"; message: string };
+
+const HELP_TEXT = [
+  "Usage: tsx scripts/coverage-ratchet.ts [options]",
+  "",
+  "Options:",
+  "  --apply                  Update vitest.config.ts with proposed thresholds",
+  "  --buffer N               Buffer below actual (default: 4)",
+  "  --coverage-file PATH     Path to coverage-final.json",
+  "  --config-file PATH       Path to the vitest config to read/patch",
+  "  --help                   Show this message",
+].join("\n");
+
+export function parseArgs(args: string[]): ParsedArgs {
+  let coverageFile = path.resolve(scriptDir, "../coverage/coverage-final.json");
+  let configFile = DEFAULT_CONFIG;
   let buffer = 4;
   let applyMode = false;
 
@@ -194,31 +268,43 @@ function main(): void {
       applyMode = true;
     } else if (args[i] === "--coverage-file" && args[i + 1]) {
       coverageFile = path.resolve(args[++i]);
+    } else if (args[i] === "--config-file" && args[i + 1]) {
+      configFile = path.resolve(args[++i]);
     } else if (args[i] === "--buffer" && args[i + 1]) {
       buffer = parseInt(args[++i], 10);
       if (isNaN(buffer) || buffer < 0) {
-        console.error("--buffer must be a non-negative integer");
-        process.exit(2);
+        return {
+          kind: "error",
+          message: "--buffer must be a non-negative integer",
+        };
       }
     } else if (args[i] === "--help") {
-      console.log(
-        [
-          "Usage: tsx scripts/coverage-ratchet.ts [options]",
-          "",
-          "Options:",
-          "  --apply                  Update vitest.config.ts with proposed thresholds",
-          "  --buffer N               Buffer below actual (default: 4)",
-          "  --coverage-file PATH     Path to coverage-final.json",
-          "  --help                   Show this message",
-        ].join("\n"),
-      );
-      process.exit(0);
+      return { kind: "help" };
     } else {
       // A typo like `--aply` must not silently run in report-only mode.
-      console.error(`Unknown argument: ${args[i]} (see --help)`);
-      process.exit(2);
+      return {
+        kind: "error",
+        message: `Unknown argument: ${args[i]} (see --help)`,
+      };
     }
   }
+
+  return { kind: "ok", coverageFile, configFile, buffer, applyMode };
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+export function main(args: string[]): number {
+  const parsed = parseArgs(args);
+  if (parsed.kind === "help") {
+    console.log(HELP_TEXT);
+    return 0;
+  }
+  if (parsed.kind === "error") {
+    console.error(parsed.message);
+    return 2;
+  }
+  const { coverageFile, configFile, buffer, applyMode } = parsed;
 
   if (!fs.existsSync(coverageFile)) {
     console.error(
@@ -227,22 +313,13 @@ function main(): void {
         bold("npm run test:coverage") +
         " first.",
     );
-    process.exit(2);
+    return 2;
   }
 
   const data: CoverageFinal = JSON.parse(fs.readFileSync(coverageFile, "utf8"));
   const actual = computeTotals(data);
-  const current = readCurrentThresholds();
-
-  const propose = (metric: keyof Thresholds): number =>
-    Math.max(current[metric], Math.floor(actual[metric]) - buffer);
-
-  const proposed: Thresholds = {
-    lines: propose("lines"),
-    statements: propose("statements"),
-    functions: propose("functions"),
-    branches: propose("branches"),
-  };
+  const current = readCurrentThresholds(configFile);
+  const proposed = proposeThresholds(current, actual, buffer);
 
   // ─── Report ───────────────────────────────────────────────────────────────
 
@@ -335,7 +412,7 @@ function main(): void {
         " to update vitest.config.ts.",
     );
   } else {
-    applyThresholds(proposed);
+    applyThresholds(proposed, configFile);
     console.log(green("✓ vitest.config.ts updated with proposed thresholds."));
     console.log(
       dim(
@@ -350,8 +427,16 @@ function main(): void {
   // Exit 1 if any threshold would be raised (useful for CI "should I ratchet?")
   // or if coverage is failing.
   if (!allPassing || (anyRaise && !applyMode)) {
-    process.exit(1);
+    return 1;
   }
+  return 0;
 }
 
-main();
+// Only run the CLI when invoked directly — importing this module (e.g. from
+// the test suite) must not read the real config or call process.exit.
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  process.exit(main(process.argv.slice(2)));
+}
