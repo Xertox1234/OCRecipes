@@ -8,7 +8,7 @@ env:
   PASSWORD: ${PASSWORD}
 ---
 # Login first
-- launchApp
+- runFlow: ../../helpers/launch-app.yaml
 - runFlow:
     file: ../../helpers/login.yaml
     env:
@@ -20,19 +20,22 @@ env:
 
 # Camera permission flow — in simulator camera may not work but the
 # screen must load with either a permission prompt or camera controls.
-- assertVisible:
-    text: "Enable camera access"
+- extendedWaitUntil:
+    visible:
+      text: "Enable camera access"
     timeout: 5000
-  optional: true
+    optional: true
 
 # If permission is already granted, we should see camera controls
-- assertVisible:
-    text: "Take photo of food"
+- extendedWaitUntil:
+    visible:
+      text: "Take photo of food"
     timeout: 5000
-  optional: true
+    optional: true
 
 # Check gallery button is available
-- assertVisible:
-    text: "Choose photo from gallery"
+- extendedWaitUntil:
+    visible:
+      text: "Choose photo from gallery"
     timeout: 3000
-  optional: true
+    optional: true

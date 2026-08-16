@@ -1,9 +1,9 @@
 ---
 title: "E2E Regression has never passed — 34/34 nightly runs failed, so the suite has produced zero signal since it landed"
-status: backlog
+status: blocked
 priority: medium
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-08-16
 assignee:
 labels: [ci, e2e, maestro, harness, android, ios]
 github_issue:
@@ -97,23 +97,23 @@ Verify against run `31874413569` before changing anything: `gh run view 31874413
 
 ## Acceptance Criteria
 
-- [ ] A decision is recorded (see below) — **commission** or **delete**. Do not leave a
-      third state where the workflow exists and is red.
-- [ ] If commissioning: the iOS job provisions Postgres against a version that actually
+- [x] A decision is recorded (see below) — **commission** or **delete**. Do not leave a
+      third state where the workflow exists and is red. — **Commission** (2026-08-16).
+- [x] If commissioning: the iOS job provisions Postgres against a version that actually
       exists on `macos-14` (install explicitly rather than assuming the image ships one;
       GitHub-hosted macOS runners have no Docker, so a service container is not available).
-- [ ] If commissioning: the Android job's retry wrapper is rewritten as a **single line**, or
+- [x] If commissioning: the Android job's retry wrapper is rewritten as a **single line**, or
       moved out of the action's `script:` input into its own `run:` step — the action executes
       `script:` one line per shell, so re-quoting the existing block cannot work (see the
       corrected diagnosis above; the emulator is NOT the problem). The run then reaches and
       executes Maestro flows on both platforms.
-- [ ] At least one **fully green** run exists, triggered via `workflow_dispatch`, before
-      this todo is closed. A run that merely gets _further_ is not done — that is precisely
-      how this reached 34 failures.
-- [ ] The false comment at `.github/workflows/e2e-regression.yml:84-85` is corrected or
+- [ ] **At least one fully green run exists, triggered via `workflow_dispatch`, before
+      this todo is closed. NOT MET — still open, see 2026-08-16 Update.** A run that merely
+      gets _further_ is not done — that is precisely how this reached 34 failures.
+- [x] The false comment at `.github/workflows/e2e-regression.yml:84-85` is corrected or
       removed.
-- [ ] Failures reach a human. A scheduled job nobody watches is the root cause of the
-      one-month gap, not a side note — the fix is not complete without it.
+- [x] Failures reach a human. A scheduled job nobody watches is the root cause of the
+      one-month gap, not a side note — the fix is not complete without it. GitHub Issue #832.
 
 ## Implementation Notes
 
@@ -173,3 +173,130 @@ status quo. The failure mode to avoid is doing neither.
 - Filed after noticing the standing red while verifying the post-merge state of PR #812.
   Root causes for both jobs confirmed against run 31874413569, and the identical failure
   confirmed on the oldest retained run (2026-07-13), establishing it has never worked.
+
+### 2026-08-16 — Decision: COMMISSION. Both original bugs fixed and verified; new layers found underneath; reporting BLOCKED, not done
+
+**Decision recorded:** commission, not delete. Both jobs now genuinely build the app, boot a
+simulator/emulator, and execute real Maestro flows with real assertions — this was not true
+before this session (see "Two originally-diagnosed bugs" below). The remaining blockers are
+narrower and better-understood than "zero signal ever produced."
+
+**Acceptance criteria status:**
+
+- [x] Decision recorded (commission).
+- [x] iOS Postgres provisions a version that exists on `macos-14` (`postgresql@16`, explicit
+      install + PATH export — the pinned `postgresql@14`/bare-fallback bug is fixed and
+      confirmed not to recur across 3 live runs).
+- [x] Android retry collapsed to a single line — confirmed fixed across all 3 live runs
+      (the `sh: Syntax error` never recurred; the retry genuinely re-invokes).
+- [x] False Postgres-availability comment corrected.
+- [x] Failures reach a human — `notify-on-failure` job files/updates GitHub Issue #832,
+      verified working on every one of the 3 live failing runs (issue body on first failure,
+      one comment per failure after).
+- [ ] **At least one fully green `workflow_dispatch` run — NOT MET.** This is why the todo is
+      `blocked`, not `done`, despite the above. Three live `workflow_dispatch` runs on
+      `wip-e2e-regression-commission` (31935149988, 31937173879, 31938889879) all ended
+      `failure` on both jobs. The session's CI-attempt budget is exhausted for now.
+
+**Two originally-diagnosed bugs — CONFIRMED FIXED across all 3 live runs:**
+
+1. iOS Postgres: `brew install postgresql@16` + PATH export + `brew services start`, matching
+   the version ci.yml and the Android job's service container already use.
+2. Android retry: collapsed the `||  { ...; }` block in
+   `reactivecircus/android-emulator-runner`'s `script:` to one line (the action runs
+   `script:` one shell per line, so a multi-line brace group can never survive it).
+
+**Previously-undiscovered layer, found and fixed once the above stopped blocking either job
+from ever reaching Maestro at all:** the Maestro CLI's real surface didn't match what the
+pre-existing flow files assumed — `--tags` doesn't exist (`--include-tags` does); flow
+discovery isn't recursive by default (added `e2e/config.yaml` with `flows: ["flows/**"]`);
+`assertVisible`/`tapOn` + a sibling `timeout:` is invalid schema (converted to
+`extendedWaitUntil`); a sibling-level `optional: true` is invalid (must nest inside the
+command's own map). All 15 flow files + the shared login helper were fixed and independently
+re-verified by `code-reviewer`. Once fixed, both jobs began genuinely building, installing,
+and running all 8 regression-tagged flows — this is the biggest structural change from this
+session: **the suite executes for the first time in its history.**
+
+**Android — root cause chased through 3 competing theories; only the 3rd was checked against
+a screenshot, and it's the one that held up.** All 8 flows failed identically for all 3 runs
+on `Assertion is false: "Sign In" is visible`, which looks like one bug but is two:
+
+1. _Cold-Metro-bundle theory_ (session's first guess): extended the login wait 20s→90s.
+   Falsified — flows still failed after exhausting the full 90s, even though metro.log showed
+   the bundle completing in ~54-58s, well inside the window.
+2. _Bare-`launchApp`-never-reaches-Metro theory_ (session's second guess, informed by
+   `code-reviewer`'s skepticism of theory 1): replaced every flow's bare `launchApp` with
+   `openLink` to the dev-client deep link (`exp+ocrecipes://expo-development-client/?url=
+http://localhost:8081`), reusing the Android job's existing `adb reverse tcp:8081 tcp:8081`
+   tunnel. Also falsified on the very next live run — byte-identical 8/8 failure, same
+   assertion, same timings.
+3. _Confirmed, via Maestro's own screenshot artifact_ (the debug-output config from theory 2's
+   run had silently written nothing — `testOutputDir` is not a real `e2e/config.yaml` key for
+   Maestro 2.6.0; fixed by moving to the `--debug-output`/`--flatten-debug-output` CLI flags on
+   the `e2e:*` npm scripts, which is when screenshots finally appeared): **there are two
+   different failure modes, not one.**
+   - The _first_ flow to run in a session can still be mid-bundle — its screenshot shows
+     `Bundling 96.0%…` at the moment the assertion times out. Genuinely a cold-start race,
+     just one closer to the timeout than the 90s test suggested (bumped the wait 30s→45s).
+   - _Every subsequent flow_ shows the actual Sign In screen correctly rendered underneath —
+     dimmed by the Expo dev-client's own "developer menu" welcome overlay (`This is the
+developer menu… Continue`) popping up on top of it. Neither theory 1 nor 2 could have
+     found this; both were timing/connectivity theories about a screen that, it turns out, was
+     rendering fine.
+   - Fix (commit `32fa60b`, **NOT YET VALIDATED ON CI** — this session's attempt budget was
+     spent confirming theories 1 and 2 before this one was found): dismiss the overlay
+     (`optional` `tapOn: "Continue"`) right after connecting, in `e2e/helpers/launch-app.yaml`
+     and the two flows that reconnect manually after `clearState`.
+   - Lesson for next time, worth codifying: a screenshot beats two rounds of timing theories.
+     The debug-output misconfiguration (a wrong config.yaml key, silently producing zero
+     files) cost a full CI round-trip that would have shown this immediately.
+
+**iOS — still a black box, one layer deeper than the original diagnosis, with no fix landed.**
+
+1. Fixed and confirmed not to recur: `macos-14` defaults to Xcode 15.4; React Native 0.81
+   needs ≥16.1. Added `sudo xcode-select -s /Applications/Xcode_16.2.app` before the Postgres
+   step.
+2. Current blocker: `xcodebuild` reports `0 error(s), and 6 warning(s)` and then exits 65
+   (`CommandError: Failed to build iOS project`). Confirmed the vision-camera patch
+   (`patches/react-native-vision-camera+5.1.1.patch`) and the fmt/clang Podfile `post_install`
+   patch both apply correctly in CI (`patch-package` reports success; `[fmt] patched base.h`
+   appears in the log) — neither of the two repo-specific "known load-bearing" risks is the
+   cause. Grepped two full job logs for `error:`/`fatal error:`/`BUILD FAILED` — zero matches
+   in either. `expo run:ios`'s own wrapper appears to genuinely not have the real error to
+   show (its failure message says as much: "try building the app with Xcode directly").
+   Added a failure-only diagnostic step that re-invokes `xcodebuild` directly (bypassing
+   expo's formatter) — its first version used a name-based `-destination` that doesn't
+   resolve on this runner image and never reached the real error either (fixed in commit
+   `32fa60b` to resolve and reuse the exact booted simulator UDID, the same way `expo run:ios`
+   itself does). **This diagnostic step is unvalidated — no live run has exercised the fixed
+   version yet.**
+
+**Why this is `blocked`, not `done`:** the dispatching session's explicit binding constraint
+was that a genuinely green `workflow_dispatch` run is required before closing this todo — "a
+run that merely gets further is not done." Two more root causes were found and fixed this
+session (Android's dev-menu overlay; iOS's UDID-based diagnostic step), but neither has been
+validated by a live run — the session's bounded CI-attempt budget (3 attempts, per explicit
+orchestrator instruction) was exhausted reaching this diagnosis. Landing an unvalidated fix
+and calling it done would repeat exactly the failure mode this todo exists to fix.
+
+**Next session should:** dispatch `workflow_dispatch` on the current branch tip. If Android
+goes green, that confirms the dev-menu-dismiss fix and the todo can likely close on that side.
+If iOS still fails, the new diagnostic step should — for the first time — show the actual
+`xcodebuild` error; read it and fix accordingly. Budget at least 2-3 more iterations; do not
+assume the first re-run is green.
+
+**Code-review finding worth flagging explicitly (not fixed, by design):** fixing the
+`optional: true` sibling-nesting bug (see "previously-undiscovered layer" above) converts ~59
+previously-broken-but-accidentally-_mandatory_ assertions into genuinely skippable ones — and
+in several flows, the assertions covering the flow's own stated subject matter are now
+entirely optional (e.g. `home/chat.yaml`: past login, every NutriCoach-specific step —
+opening a new chat, seeing suggested prompts, tapping one, waiting for a response — is
+`optional: true`, so a flow named "NutriCoach chat interaction" can complete having asserted
+nothing chat-related; similar shape in `plan/browse-recipes.yaml`, `plan/grocery-list.yaml`,
+`plan/meal-plan-home.yaml`, `profile/goal-setup.yaml`). This is a correct, necessary
+consequence of fixing a real schema bug — the steps were clearly _authored_ to be optional,
+just malformed in a way Maestro silently ignored — not something to revert. Flagging it here
+because it's the same _class_ of defect ("looks like it verifies something, actually doesn't")
+that this whole todo exists to eliminate, just one level down from workflow-granularity to
+flow-granularity. Follow-up (not done this session, out of the immediate CI-attempt budget):
+audit each touched flow for at least one assertion that mandatorily pins its stated purpose.

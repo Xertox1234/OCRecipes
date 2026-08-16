@@ -1,0 +1,17 @@
+# Workspace configuration for the Maestro CLI. Flow files live in nested
+# subdirectories (flows/auth/, flows/home/, etc.) — by default Maestro only
+# discovers Flows at the top level of the directory it's pointed at, so
+# without this file `maestro test e2e/` finds nothing. `helpers/` is
+# deliberately excluded from the glob: those files are runFlow dependencies,
+# not standalone Flows, and must never be discovered/run on their own.
+appId: com.ocrecipes.app
+flows:
+  - "flows/**"
+# Screenshots + view hierarchy JSON per failing step are NOT configured here —
+# `testOutputDir` is not a recognized config.yaml key for this Maestro
+# version (2.6.0; confirmed empirically: it silently produced nothing on
+# live CI). The real mechanism is the `--debug-output` CLI flag, set on the
+# `e2e:*` npm scripts in package.json, uploaded as a CI artifact on failure
+# (see .github/workflows/e2e-regression.yml) — without this, a failed run's
+# only evidence is server.log/metro.log, neither of which can show what was
+# actually on screen.

@@ -48,6 +48,11 @@ workflow is intentionally **not** in the branch-protection required-check list;
 a red run never blocks a merge. Flake tolerance: the Maestro step retries once
 before failing the job.
 
+**Failure notification (2026-08).** The workflow does not rely on the Actions
+tab or GitHub's scheduled-workflow email — a failed run files or updates a
+single GitHub Issue labelled `e2e-regression-failure` (see the `notify-on-failure`
+job) so a red night is visible without anyone watching the tab.
+
 ### Critical-flow coverage (`regression` tag)
 
 | Target critical flow | Flow file                                            | Coverage notes                                                                                                                                                                              |
@@ -69,6 +74,11 @@ physical device and stays out of CI scope.
 
 ```
 e2e/
+  config.yaml            # Workspace config — Maestro only discovers Flows at
+                          # the top level of a directory by default; this
+                          # opts into recursive discovery under flows/ and
+                          # deliberately excludes helpers/ (runFlow deps, not
+                          # standalone Flows)
   helpers/
     login.yaml          # Reusable login helper
   flows/
