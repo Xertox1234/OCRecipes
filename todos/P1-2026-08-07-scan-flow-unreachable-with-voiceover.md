@@ -1,6 +1,6 @@
 ---
 title: "VoiceOver cannot start a scan — the scan-menu item and the camera capture button both fail to activate on double-tap"
-status: in_progress
+status: in-progress
 priority: high
 created: 2026-08-07
 updated: 2026-08-17
