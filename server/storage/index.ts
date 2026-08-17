@@ -38,7 +38,11 @@ import * as exportStorage from "./export";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
-export { RESERVED_USERNAMES, ReservedUsernameError } from "./users";
+// `RESERVED_USERNAMES` is deliberately NOT re-exported here — nothing consumes
+// it through the barrel (users.ts uses it internally; the test imports it from
+// "../users" directly). These two ARE load-bearing: server/routes/auth.ts
+// imports both from "../storage", matching the BatchStorageError precedent below.
+export { ReservedUsernameError, isReservedUsername } from "./users";
 export type { FeaturedRecipe } from "./community";
 export type { PersonalRecipeBrief } from "./meal-plans";
 export { BatchStorageError } from "./batch";

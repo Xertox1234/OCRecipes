@@ -116,8 +116,18 @@ export class ReservedUsernameError extends Error {
  * exact-string match on the stored value, so `Demo`/`DEMO`/` demo ` are all
  * just as dangerous as `demo`. Whole-string, never a prefix — `demo_user`
  * and `demonstration` stay registerable.
+ *
+ * EXPORTED so `server/routes/auth.ts` can reject a reserved name at its
+ * username pre-check — the one signup slot that is deliberately NOT the
+ * neutral check-inbox response. Rejecting only via `createUser`'s throw put
+ * the 409 AFTER the neutral email-existence branch, which made
+ * `POST /api/auth/register` a single-request email-existence oracle: with a
+ * reserved username held fixed, a taken email returned the neutral 200 and a
+ * free email returned the 409 (review, 2026-08-17). Route and storage MUST
+ * share this one normalizer — a re-implemented trim/lowercase in the route
+ * can drift and the differential comes straight back.
  */
-function isReservedUsername(username: string): boolean {
+export function isReservedUsername(username: string): boolean {
   return (RESERVED_USERNAMES as readonly string[]).includes(
     username.trim().toLowerCase(),
   );

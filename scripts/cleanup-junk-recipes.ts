@@ -11,10 +11,12 @@
  * Safety:
  *   - Defaults to DRY-RUN. Pass `--commit` to actually delete.
  *   - Scoped to orphan (authorId IS NULL), or the account currently holding
- *     the username `demo`. NOT an absolute real-user exclusion: `demo` is not
- *     a reserved username (`registerSchema` in `server/routes/_schemas.ts`
- *     enforces only 3-30 chars, `/^[a-zA-Z0-9_]+$/`, and uniqueness), so where
- *     no demo account was seeded first a real user can hold it. See
+ *     the username `demo`. `demo` IS reserved as of 2026-08-16
+ *     (`RESERVED_USERNAMES` in `server/storage/users.ts`, enforced in
+ *     `createUser` and at the register route's username pre-check), so no NEW
+ *     real user can take the name. Residual: an account that ALREADY held it
+ *     before the reservation landed is unaffected — the check runs at creation,
+ *     not retroactively. See
  *     `docs/solutions/conventions/seed-cleanup-scripts-scope-by-authorid-2026-05-13.md`.
  *
  * Usage: npx tsx scripts/cleanup-junk-recipes.ts            # dry-run (default)
@@ -45,9 +47,9 @@ async function main() {
 
   // Resolve the demo user ID so deletion is restricted to orphan rows or rows
   // authored by whoever currently holds the username `demo`, instead of every
-  // row that happens to share a junk-looking title or content. `demo` is not a
-  // reserved username, so this narrows the blast radius rather than closing it
-  // — see the header comment.
+  // row that happens to share a junk-looking title or content. `demo` is now a
+  // reserved username, so no new real user can enter this scope; a pre-existing
+  // holder still can — see the header comment.
   const demoUserRows = await db
     .select({ id: users.id })
     .from(users)
