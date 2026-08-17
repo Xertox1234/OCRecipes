@@ -140,6 +140,7 @@ export function SpeedDial({ actions, onClose }: SpeedDialProps) {
                   pair; `accessible={false}` alone would leave the `Text` in the
                   Android tree (see docs/rules/accessibility.md). */}
               <View
+                testID="speed-dial-action-label"
                 accessibilityElementsHidden
                 importantForAccessibility="no-hide-descendants"
                 style={[

@@ -106,8 +106,8 @@ defect B), and where "Close speed dial" and "Close scan menu" sit in the order (
 - If it dismisses the menu or does nothing → an additional native activation failure exists.
   **Then retest T3 with Settings → Accessibility → Motion → Reduce Motion ON** (this implicates
   or clears the Reanimated entering animation, defect C).
-- Actual: **********************\_\_**********************
-- Actual with Reduce Motion ON (only if needed): **********\_\_\_**********
+- Actual: **********\*\***********\_\_**********\*\***********
+- Actual with Reduce Motion ON (only if needed): ****\*\*****\_\_\_****\*\*****
 
 ---
 
@@ -126,7 +126,14 @@ Reach the camera by deep link if the menu is unusable: `ocrecipes://scan`
 - Expect: a real capture — haptic + flash + chip appears.
 - Failure here = genuine activation failure beyond the phase gate (the shutter IS armed in
   `HUNTING`). This is the single most diagnostic test in Part B.
-- Actual: **********************\_\_**********************
+- **Actual (2026-08-17): PASSED.** Double-tap fired a real capture; the photo uploaded and
+  analyzed, returning "No food detected" — correct for a blank wall. **No native activation
+  failure exists anywhere in the flow.** The original defect-2 report is fully explained by
+  the silent phase gate (now announced) plus the transient tracking phase (see T5).
+
+**DEVICE PASS COMPLETE (2026-08-17).** T1/T2/T3/T4/T5 all resolved; T6 subsumed by T4 (same
+capture path, no separate activation risk); T7's reachability question stands as the
+pre-existing TalkBack-modality finding noted below, not a blocker for this fix.
 
 ### T5 — shutter in a dead phase (BARCODE_TRACKING)
 
@@ -158,7 +165,7 @@ todo's severity section said was unreachable.
 1. Enter via "Scan Nutrition Label", frame a nutrition panel, double-tap "Take photo".
 
 - Expect: capture → LabelAnalysis.
-- Actual: **********************\_\_**********************
+- Actual: **********\*\***********\_\_**********\*\***********
 
 ### T7 — NEW: is the armed shutter even reachable? (BARCODE_LOCKED / STEP2_CONFIRMED)
 
@@ -170,9 +177,9 @@ VoiceOver inside the chip.
 1. Scan a barcode until it **locks** (chip appears, shutter shows the yellow armed border).
 2. Swipe through **every** element. Can you reach "Take photo" at all?
 
-- Question 1 — is "Take photo" reachable? **********************\_\_**********************
+- Question 1 — is "Take photo" reachable? **********\*\***********\_\_**********\*\***********
 - Question 2 — does the chip's own primary button carry the same action (i.e. is there a
-  working screen-reader path forward without the shutter)? **********\_\_**********
+  working screen-reader path forward without the shutter)? ****\*\*****\_\_****\*\*****
 
 If the shutter is unreachable BUT the chip's button works, this is by-design, not a defect —
 note it and move on. If neither is reachable, the step-by-step barcode flow has no
@@ -246,8 +253,29 @@ fell through to `default: return null` still returns null, so chip visibility di
 
 ### Still outstanding
 
-- T4 / T5 / T7 (shutter) — fix applied, awaiting the device pass.
-- Two-finger scrub dismissal — unverified.
+- ~~T4 / T5 / T7 (shutter)~~ — RESOLVED later this doc (T4 passed; T5's scripted scenario
+  unreachable, unit + component coverage instead; T7 = the pre-existing containment findings).
+- **Two-finger scrub dismissal — STILL UNVERIFIED.** Both 2026-08-17 reviewers flagged this
+  Major: it is now the SOLE non-selection exit on iOS (fixing containment removed the leaked
+  FAB exit). One gesture on the paired iPhone settles it; if it cannot be verified, the PR
+  must state it as an unverified residual risk.
+
+### Review round (2026-08-17, code-reviewer + mobile-reviewer) — all code findings fixed
+
+- Both purpose-built SpeedDial regression tests were VACUOUS (mutation-proven: fix reverted,
+  tests stayed green). Repaired: backdrop asserted by role COUNT (the backdrop no longer has
+  a name to query), pill by testID + aria-hidden. Re-mutation-verified: all three
+  tree-membership tests now go red without the fix.
+- `check-accessibility.js` exemption failed open two ways (comment mention; conditional
+  `={expr}` value) — hardened to comment-stripped, bare-or-`{true}`-only matching, plus
+  quote-form-tolerant value match; 5 new tests in `scripts/__tests__/check-accessibility.test.ts`.
+- The blocked-shutter announce had no coverage at its real call site — added component tests
+  driving the actual shutter binding in `BARCODE_TRACKING` (announce fires, exact copy,
+  aria-disabled mirrored, no capture) with an armed-press negative control.
+- All 8 blocked phases' spoken copy pinned verbatim (swap-proof, not just non-empty).
+- `SMART_ERROR` copy no longer presupposes spatial context ("from the card" → "find the
+  retake button").
+- Stale-hint tradeoff and the TalkBack-activation reasoning documented in code comments.
 
 ## Android — PERMANENTLY no device (stated 2026-08-17)
 

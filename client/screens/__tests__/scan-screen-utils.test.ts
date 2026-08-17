@@ -715,19 +715,34 @@ describe("scan-screen-utils", () => {
         },
       );
 
-      // The phase the original device report was taken in: a barcode is in
-      // frame, the scan is running itself, and the shutter is dead BY DESIGN.
-      // Pinned verbatim because it is user-facing spoken copy — a silent
-      // rewording is a regression a length check would not catch.
-      it("names the auto-scan explicitly in BARCODE_TRACKING", () => {
-        expect(
-          getShutterBlockedReason({
-            type: "BARCODE_TRACKING",
-            barcode: "06772408",
-            bounds,
-            frameCount: 3,
-          }),
-        ).toBe("Scanning the barcode automatically. No photo needed.");
+      // EVERY blocked phase's copy pinned verbatim, not just spot-checked:
+      // this is user-facing spoken copy, and the non-empty check above cannot
+      // catch two phases' strings being swapped (e.g. SMART_ERROR's text
+      // landing on CLASSIFYING) — a review finding on the earlier
+      // BARCODE_TRACKING-only pin. Keyed by phase type so a wrong-phase swap
+      // fails on the exact entry that moved.
+      it("pins every blocked phase's spoken copy verbatim", () => {
+        const spoken = Object.fromEntries(
+          CASES.filter(([, plan]) => !plan.capture).map(([phase]) => [
+            phase.type,
+            getShutterBlockedReason(phase),
+          ]),
+        );
+        expect(spoken).toEqual({
+          // The phase the original device report was taken in: a barcode is
+          // in frame, the scan is running itself, and the shutter is dead BY
+          // DESIGN.
+          BARCODE_TRACKING:
+            "Scanning the barcode automatically. No photo needed.",
+          IDLE: "Camera is still starting.",
+          STEP2_REVIEWING: "Reviewing your photo. Confirm or edit it first.",
+          STEP3_REVIEWING: "Reviewing your photo. Confirm or edit it first.",
+          CLASSIFYING: "Still working on the photo you just took.",
+          SMART_CONFIRMED: "Confirm or retake the photo you just took.",
+          SMART_ERROR:
+            "That photo could not be read. Find the retake button to try again.",
+          SESSION_COMPLETE: "Scan complete.",
+        });
       });
     });
 

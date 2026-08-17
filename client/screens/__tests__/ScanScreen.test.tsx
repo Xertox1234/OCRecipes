@@ -7,6 +7,7 @@ import { renderComponent } from "../../../test/utils/render-component";
 import ScanScreen from "../ScanScreen";
 import { useBarcodeScannerOutput } from "react-native-vision-camera-barcode-scanner";
 import * as Haptics from "expo-haptics";
+import { AccessibilityInfo } from "react-native";
 
 const {
   mockGoBack,
@@ -872,6 +873,65 @@ describe("ScanScreen — the shutter captures from LABEL_PROMPTED (whole-branch 
     expect(
       await screen.findByLabelText("Finish scan", {}, { timeout: 3000 }),
     ).toBeTruthy();
+  });
+
+  // The other half of the same defect class, at the real call site: in a
+  // blocked phase the press must ANNOUNCE why it did nothing, not silently
+  // return — the pure agreement test in scan-screen-utils.test.ts proves the
+  // map is consistent but never exercises onShutterPress itself (review
+  // finding 2026-08-17).
+  it("announces the blocked reason on a shutter press in BARCODE_TRACKING, with the disabled state mirrored", async () => {
+    const announceSpy = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+    announceSpy.mockClear();
+
+    renderComponent(<ScanScreen />);
+    const attach = vi.mocked(useBarcodeScannerOutput).mock.calls[0][0];
+    const handler = attach.onBarcodeScanned;
+    expect(handler).toBeDefined();
+    // ONE frame: FIRST_BARCODE_DETECTED → BARCODE_TRACKING, well short of the
+    // lock threshold — the phase the original report was almost certainly in.
+    await act(async () => {
+      handler!([
+        {
+          rawValue: "0778918011332",
+          format: "ean-13",
+          boundingBox: { left: 0.3, top: 0.4, right: 0.7, bottom: 0.6 },
+        },
+      ] as Parameters<NonNullable<typeof handler>>[0]);
+    });
+
+    const shutter = screen.getByLabelText("Take photo");
+    // The state mirror: same source as the visual glow.
+    expect(shutter.getAttribute("aria-disabled")).toBe("true");
+
+    await act(async () => {
+      fireEvent.click(shutter);
+    });
+    expect(announceSpy).toHaveBeenCalledWith(
+      "Scanning the barcode automatically. No photo needed.",
+    );
+    expect(mockCapturePhotoToFile).not.toHaveBeenCalled();
+  });
+
+  it("mirrors the armed state as enabled on arrival (HUNTING)", () => {
+    renderComponent(<ScanScreen />);
+    expect(
+      screen.getByLabelText("Take photo").getAttribute("aria-disabled"),
+    ).toBe("false");
+  });
+
+  // Negative control through the SAME armed-press flow the suite already
+  // exercises (LABEL_PROMPTED): an armed press must never fire a blocked
+  // announcement. Not driven through HUNTING — that route's smart-capture
+  // continuation needs classification API mocks this control doesn't want.
+  it("does not announce a blocked reason when the shutter is armed", async () => {
+    const announceSpy = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+    announceSpy.mockClear();
+
+    await proceedToLabelThenShoot();
+    expect(announceSpy).not.toHaveBeenCalledWith(
+      "Scanning the barcode automatically. No photo needed.",
+    );
   });
 
   // Pins the trap in the obvious fix: admitting LABEL_PROMPTED to the capture

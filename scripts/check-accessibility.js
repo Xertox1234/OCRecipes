@@ -144,9 +144,28 @@ function checkFile(filePath) {
   // focus landed on it and activating it dismissed instead of navigating).
   // One hiding prop alone does NOT exempt: that hides a single platform and
   // leaves the other needing the label this check demands.
-  const isHiddenFromA11yTree = (text) =>
-    text.includes("accessibilityElementsHidden") &&
-    text.includes('importantForAccessibility="no-hide-descendants"');
+  // The exemption FAILS CLOSED (review finding 2026-08-17):
+  //  - comments are stripped first, so a comment inside the opening tag that
+  //    merely mentions the marker props cannot exempt a visible element
+  //    (over-stripping can only re-require a label, never skip one);
+  //  - accessibilityElementsHidden must be the bare prop or ={true} — a
+  //    conditional value ({isHidden}) is sometimes visible and keeps its
+  //    label requirement;
+  //  - the importantForAccessibility value matches any quote form so a
+  //    formatter change cannot silently un-exempt a legitimate element.
+  const isHiddenFromA11yTree = (rawText) => {
+    const text = rawText
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return (
+      /\baccessibilityElementsHidden(?![\w-])(?!\s*=(?!\s*\{\s*true\s*\}))/.test(
+        text,
+      ) &&
+      /importantForAccessibility\s*=\s*(?:(["'])no-hide-descendants\1|\{\s*(["'])no-hide-descendants\2\s*\})/.test(
+        text,
+      )
+    );
+  };
 
   // Check Pressable elements
   const pressables = extractJsxElements(content, "Pressable");

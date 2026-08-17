@@ -469,9 +469,14 @@ export default function ScanScreen() {
     if (!capturePlan.capture) {
       // Was a bare `return`. Silence here is indistinguishable from a broken
       // button for a screen-reader user, which is exactly how this was
-      // reported. Ungated across platforms: nothing else announces this drop
-      // (no live region on the shutter), so an iOS-only announce would leave
-      // TalkBack with the original silence. No-op when no reader is running.
+      // reported. Ungated across platforms: on iOS the disabled trait is
+      // descriptive only (Pressable is an RCTView, not a UIControl), so
+      // VoiceOver's double-tap still lands here; on Android the RN delegate
+      // sets the SEMANTIC AccessibilityNodeInfo enabled=false without gating
+      // real click dispatch, so this is expected to fire under TalkBack too —
+      // and if a TalkBack version declines to click a disabled-reporting node,
+      // the announced "disabled" state itself covers the user. No-op when no
+      // reader is running.
       const blocked = getShutterBlockedReason(phase);
       if (blocked) AccessibilityInfo.announceForAccessibility(blocked);
       return;
@@ -742,6 +747,12 @@ export default function ScanScreen() {
           // `disabled` lags behind fast input, and a real `disabled` would also
           // swallow the press before the announcement above could explain it.
           accessibilityState={{ disabled: !shutterArmed }}
+          // Known tradeoff: iOS reads a hint at focus time and does not
+          // re-announce it if the phase changes while focus stays parked here
+          // (e.g. IDLE → HUNTING seconds after mount), so a parked user can
+          // hold a stale hint. Accepted because the press-time announce above
+          // always reports the ACTUAL outcome; the hint is first-contact
+          // orientation, not the source of truth.
           accessibilityHint={
             shutterBlockedReason ?? "Captures a photo of what the camera sees"
           }

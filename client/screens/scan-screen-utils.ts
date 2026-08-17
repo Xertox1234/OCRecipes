@@ -394,7 +394,9 @@ export function getShutterBlockedReason(phase: ScanPhase): string | null {
     case "SMART_CONFIRMED":
       return "Confirm or retake the photo you just took.";
     case "SMART_ERROR":
-      return "That photo could not be read. Retake it from the card.";
+      // No spatial reference ("the card below"): a linear-navigating
+      // screen-reader user may not have reached the error card yet.
+      return "That photo could not be read. Find the retake button to try again.";
     case "SESSION_COMPLETE":
       return "Scan complete.";
   }

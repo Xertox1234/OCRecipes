@@ -23,15 +23,26 @@ describe("SpeedDial", () => {
   // reported "it just closes the screen". See
   // todos/P1-2026-08-07-scan-flow-unreachable-with-voiceover.md.
   //
-  // These assert with *ByRole, never *ByLabelText: ByRole honours aria-hidden
-  // (tree membership, the property under test) while ByLabelText matches
-  // hidden nodes too and would pass even with the bug reintroduced.
+  // What jsdom can and cannot observe here (per docs/solutions/conventions/
+  // jsdom-rn-render-tests-cannot-assert-a11y-tree-hiding): the mock maps the
+  // paired hiding props to aria-hidden, and ByRole excludes aria-hidden nodes
+  // — so ROLE-CARRYING elements (the backdrop Pressable) are count-assertable.
+  // The label pill's View/Text never carry a role in EITHER state, so no
+  // ByRole query can see them; their hiding is asserted via testID +
+  // aria-hidden, and "RN Text is independently focusable under VoiceOver" is
+  // covered only by the device pass + Android uiautomator dump recorded in
+  // todos/deployment/voiceover-scan-device-pass.md. Both anti-vacuity repairs
+  // here are mutation-verified: reverting the hiding props flips them red
+  // (review finding 2026-08-17 — the earlier name-filtered ByRole versions
+  // stayed green with the fix reverted).
   describe("accessibility tree membership", () => {
     it("keeps the dismissal backdrop out of the accessibility tree", () => {
       renderComponent(<SpeedDial actions={mockActions} onClose={vi.fn()} />);
-      expect(
-        screen.queryByRole("button", { name: "Close speed dial" }),
-      ).toBeNull();
+      // Count, not name-filtered: the backdrop no longer HAS a label, so a
+      // name query can never match it and would pass vacuously. The Pressable
+      // mock hardcodes role="button", so the only thing excluding the
+      // backdrop from this count is aria-hidden — exactly the fix.
+      expect(screen.getAllByRole("button")).toHaveLength(mockActions.length);
     });
 
     it("still dismisses on a sighted press of the backdrop", () => {
@@ -57,15 +68,21 @@ describe("SpeedDial", () => {
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
-    it("exposes exactly one accessible element per action", () => {
+    it("hides every action's label pill from the accessibility tree", () => {
       // Regression guard for the decoy label pill: the pill Text and the
       // mini-FAB both announced the same name, so half of every action's
       // VoiceOver stops did nothing when activated. User-reported verbatim:
       // "it announces everything twice. Once for the text and once for the
       // button."
+      //
+      // Asserted via testID + aria-hidden, NOT ByRole: the pill's View/Text
+      // carry no role in either state, so a role query can never see them and
+      // passed identically against the pre-fix code (mutation-proven).
       renderComponent(<SpeedDial actions={mockActions} onClose={vi.fn()} />);
-      for (const { label } of mockActions) {
-        expect(screen.getAllByRole("button", { name: label })).toHaveLength(1);
+      const pills = screen.getAllByTestId("speed-dial-action-label");
+      expect(pills).toHaveLength(mockActions.length);
+      for (const pill of pills) {
+        expect(pill.getAttribute("aria-hidden")).toBe("true");
       }
     });
 
