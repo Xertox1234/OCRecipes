@@ -118,22 +118,33 @@ export function useNutritionLookup(params: {
    *     only a hypothetical future caller: `CoachChat.tsx`'s
    *     `params as RootStackParamList["NutritionDetail"]` cast (an `as`,
    *     which bypasses the union entirely) is a LIVE bypass today.
-   *     `shared/schemas/coach-blocks.ts`'s `validateNavigateParams` does NOT
-   *     strip an `itemId` the way a reader might assume from "Zod-narrowed
-   *     to `{ barcode }`" — it only checks `schema.safeParse(val.params)
-   *     .success` and never reassigns `val.params` to the parsed/stripped
-   *     `result.data`, so an LLM action payload of
-   *     `{ itemId, barcode }` for `screen: "NutritionDetail"` passes
-   *     validation (barcode alone satisfies the schema) with `itemId` still
-   *     attached, and reaches this hook via `navigation.navigate` with both
-   *     set. Pre-existing, out of this todo's scope to fix. See
+   *     `shared/schemas/coach-blocks.ts`'s `validateNavigateParams` used to
+   *     check only `schema.safeParse(val.params).success` and never
+   *     reassign `val.params` to the parsed/stripped `result.data`, so an
+   *     LLM action payload of `{ itemId, barcode }` for
+   *     `screen: "NutritionDetail"` passed validation (barcode alone
+   *     satisfies the schema) with `itemId` still attached, reaching this
+   *     hook via `navigation.navigate` with both set. **That gap is now
+   *     CLOSED** (P3-2026-08-16): `validateNavigateParams` reassigns
+   *     `val.params` to `result.data` on success, so `{ itemId, barcode }`
+   *     is stripped down to `{ barcode }`. This closes the gap for every
+   *     block the client renders, not only newly-generated ones — both
+   *     `CoachChat.tsx`'s `messageBlocks` (persisted history, re-parsed via
+   *     `filterValidBlocks`/`coachBlockSchema` on every `useChatMessages`
+   *     read) and `useCoachStream.ts`'s live-stream path re-validate through
+   *     the current schema before `handleBlockAction` ever sees an action,
+   *     so a block persisted before this fix is stripped too, on read. See
    *     docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2026-08-06.md
    *     — do not read this docblock as claiming the exclusivity is enforced
-   *     everywhere; it is enforced at the one boundary that matters today,
-   *     and the Coach action-card path is a real, present-day exception.
-   *   - No caller passes `itemId` at all IN PRACTICE — but "practice" here
-   *     excludes the Coach bypass just described, which could carry one if a
-   *     model ever emitted it; nothing has been observed to. `ScanScreen`
+   *     everywhere; `CoachChat.tsx`'s
+   *     `params as RootStackParamList["NutritionDetail"]` cast is still an
+   *     `as`, not a compiler-verified narrowing, so TYPE-level exclusivity
+   *     is not enforced through that call site — only the RUNTIME shape (no
+   *     stray `itemId` reaching this hook) is, and now it is enforced both
+   *     at the route-params boundary and by this stripping fix.
+   *   - No caller passes `itemId` at all IN PRACTICE. The one caller that
+   *     could have — the Coach bypass just described — no longer can: its
+   *     `itemId` is stripped before this hook is ever invoked. `ScanScreen`
    *     sends barcode-only; history taps go to the separate `ItemDetail`
    *     screen (`useHistoryData.ts`), which does not use this hook. So the
    *     saved-item branch is wired and typed but has no production producer

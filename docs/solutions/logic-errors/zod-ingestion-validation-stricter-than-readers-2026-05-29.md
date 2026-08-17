@@ -5,10 +5,10 @@ category: logic-errors
 module: server
 severity: medium
 tags: [zod, validation, typescript, architecture, nutrition-pipeline, silent-failure, reliability]
-applies_to: [server/services/**/*.ts, server/lib/**/*.ts, shared/schema.ts]
-symptoms: [A third-party lookup that used to return data now returns null/empty, One bad row/sibling in an upstream response drops the whole valid result, '`.default(0)` does not stop a `null` from failing `z.number()`', A wrong-typed present value (e.g. `"N/A"` string) passes `.optional()` but still rejects the parent object parse]
+applies_to: [server/services/**/*.ts, server/lib/**/*.ts, shared/schema.ts, shared/schemas/**/*.ts]
+symptoms: [A third-party lookup that used to return data now returns null/empty, One bad row/sibling in an upstream response drops the whole valid result, '`.default(0)` does not stop a `null` from failing `z.number()`', A wrong-typed present value (e.g. `"N/A"` string) passes `.optional()` but still rejects the parent object parse, A schema that was only ever checked for `.success` becomes load-bearing after a `result.data` reassignment, One malformed value in a newly-typed field (e.g. recipeType: "spoonacular") fails the entire enclosing array via discriminated-union superRefine]
 created: '2026-05-29'
-last_updated: '2026-05-31'
+last_updated: '2026-08-16'
 ---
 
 # A Zod ingestion schema stricter than its readers is a new silent failure
@@ -17,12 +17,15 @@ last_updated: '2026-05-31'
 
 While adding Zod `safeParse` validation to third-party nutrition ingestion paths (CNF, USDA-UPC, Open Food Facts) during the 2026-05-29 reliability audit, the new schemas were **stricter than the code that consumes them**. The intended fix (stop trusting untrusted upstream shapes) introduced a *new* silent failure: valid data was rejected and the lookup fell through to `null`/empty — the exact "fails quietly" class the audit was closing.
 
+A later instance (2026-08-16) revealed the same class of failure in a completely different domain: `validateNavigateParams` in `shared/schemas/coach-blocks.ts` previously only checked `schema.safeParse(val.params).success` without ever using `result.data` — an inert schema. When the fix reassigned `val.params = result.data` on success, the schema's exact field typing became load-bearing for the first time, exposing that fields previously unlisted in the schema survived only because Zod silently strips unlisted keys from output but never rejects the parse due to them.
+
 ## Symptoms
 
 - A branded-food (USDA-UPC) lookup that previously matched now returns no product, because one **sibling** food in the same response page had `value: null`.
 - A CNF nutrient lookup drops because an **unread** field (`food_code`, `nutrient_name_id`) was `null` in the upstream row.
 - No error is thrown — the `!parsed.success` branch silently `continue`s / `return null`s.
 - An Open Food Facts lookup returns no product because a single nutriment field (e.g. `sugars_100g`) is `"N/A"` — a wrong-typed-present value that `.optional()` tolerates but `z.number()` rejects, dropping the entire food object.
+- A `validateNavigateParams` schema that was only ever checked for `.success` becomes load-bearing after a `result.data` reassignment: fields previously unlisted (and thus silently preserved by Zod's stripping behavior) are now stripped from the output, and when widened into typed fields, a malformed value (e.g. `recipeType: "spoonacular"` — a valid enum value from a sibling schema in the same file) fails `safeParse` for the entire containing object, which cascades to fail the entire `suggestion_list` array via discriminated-union `superRefine`, dropping all sibling suggestions.
 
 ## Root Cause
 
@@ -31,8 +34,9 @@ Three distinct Zod footguns, all = "schema demands more than the reader needs":
 1. **`.default(0)` does not catch `null`.** `z.number().optional().default(0)` supplies `0` only when the value is `undefined`. Upstream APIs (USDA) return `value: null` for no-data nutrients; `null` fails `z.number()` and rejects the whole object. The pre-existing `f.value || 0` had tolerated `null` — the schema regressed it.
 2. **Validating fields the code never reads.** `cnfNutrientAmountListSchema` required `food_code`/`nutrient_name_id` strictly, but only `nutrient_web_name`/`nutrient_value` are ever read. A `null` in a never-read field failed the parse and dropped a usable result.
 3. **`.optional()` does not catch wrong-typed present values.** `z.string().optional()` tolerates `undefined`/absent, but `"N/A"` is a present string — when the consuming code expects a number (e.g. via `Number(f.sugars_100g) || 0`), the Zod schema `z.number().optional()` fails the whole object parse even though `.optional()` only guards absence. Open Food Facts returns `"N/A"` for unreported nutrients, and the whole object parse rejects the food unless the numeric field defangs such values.
+4. **Activating a previously-dormant `result.data` reassignment makes a schema that was only ever consulted for `.success` into one whose exact shape is now load-bearing.** In `validateNavigateParams`, the old code called `schema.safeParse(val.params).success` but never used the output — unlisted keys survived because Zod silently strips them from the output but never rejects the parse due to their presence. After the fix reassigned `val.params = result.data`, every field previously allowed to pass through untyped must now be explicitly widened into a typed field. Widening an unlisted field to a typed field (e.g. `recipeType: z.enum([...]).optional()`) is not sufficient — a malformed or out-of-vocabulary value (e.g. `"spoonacular"` — a valid enum value from sibling `recipeCardSchema.source` in the same file) now fails `schema.safeParse` for the containing object. Worse: when that object lives inside a `z.array` validated by a discriminated union's `superRefine`, one bad item fails the entire array, dropping every sibling too. **The fix is to add `.catch(undefined)` after `.optional()` on every newly-widened field**, so a malformed value degrades to field-absent — matching its own pre-widening tolerance — instead of rejecting the whole containing object or array.
 
-Compounded by **whole-array/whole-response parsing**: one bad element fails `safeParse` for the entire batch (all 3 USDA candidate foods, the entire CNF list, an entire OFF product), so a single upstream irregularity disables far more than the offending row.
+Compounded by **whole-array/whole-response parsing**: one bad element fails `safeParse` for the entire batch (all 3 USDA candidate foods, the entire CNF list, an entire OFF product, or an entire `suggestion_list` array via `superRefine`), so a single upstream irregularity disables far more than the offending row.
 
 ## Solution
 
@@ -71,6 +75,16 @@ Make the schema exactly as strict as the reader — no stricter:
 - **Crucially: do NOT use `z.coerce.number()` here.** Coercion turns `null` → `0`, poisoning the cache with false zeros. Open Food Facts returns `null` for genuinely unreported nutrients; coercing to `0` would make every missing value look like "this food has zero sugars," which is wrong and monetized. The safe direction for a monetized cache is **drop-not-coerce**.
 - Keep strict typing only on the fields actually consumed (`nutrient_web_name`, `nutrient_value`, `description`, `product_name`).
 - When a TS interface annotates the parsed result, align the interface's optional/nullable-ness with the loosened schema so `z.infer` stays assignable (don't re-tighten via the annotation).
+- **For the "widen-to-preserve" scenario specifically** (converting a formerly-unlisted key into a typed field so it survives the `result.data` reassignment), the safe pattern is:
+  ```ts
+  // A field that was previously unlisted — widens to typed field but must tolerate
+  // any value (including malformed/enum-violating) by degrading to absent.
+  // BEFORE — malformed value fails the whole containing object parse
+  recipeType: z.enum(['offline', 'solo', 'group']).optional(),
+  // AFTER — malformed value degrades to field-absent, matching pre-widening tolerance
+  recipeType: z.enum(['offline', 'solo', 'group']).optional().catch(undefined),
+  ```
+  The `.optional()` keeps the field non-required; the `.catch(undefined)` ensures that *any* value (even a wrong-typed or out-of-vocabulary one) degrades to `undefined` instead of rejecting the entire parent object. This replicates the exact tolerance that existed when the field was unlisted and Zod silently preserved it.
 
 The conservative direction for a monetized/cached data path is still **drop bad values, don't write garbage** — but "drop" must mean "skip the one unusable value," not "reject the whole response."
 
@@ -82,11 +96,14 @@ The conservative direction for a monetized/cached data path is still **drop bad 
 - Never use `z.coerce.number()` for ingestion from untrusted APIs — it poisons `null`/`"N/A"`/empty strings to `0`, creating false data that the cache treats as authoritative.
 - Prefer per-item lenient parse + filter over whole-array `safeParse` when one bad element shouldn't disable the batch.
 - A validation fix is not done until you've confirmed it does not reject inputs the old code accepted — a too-strict guard is a silent failure wearing a safety vest.
+- **When activating a previously-inert schema** (one that was only checked for `.success` without using `result.data`), every field that was previously unlisted must be widened to a typed field with `.optional().catch(undefined)` — not just `.optional()`. Otherwise, any value (including one that is perfectly valid but from a sibling schema's enum) will fail the containing object parse, and if that object is inside a `z.array` validated by a discriminated union's `superRefine`, one bad item will silently drop all siblings.
 
 ## Related Files
 
 - `server/services/nutrition-lookup.ts` — `cnfFoodListSchema`, `cnfNutrientAmountListSchema`, `usdaFoodSchema`/`usdaUpcResponseSchema`, `offNutrimentsSchema` (added 2026-05-30)
-- Caught by the Phase 6 code-reviewer in the 2026-05-29 reliability audit (the per-fix kimi-review passed it).
+- `shared/schemas/coach-blocks.ts` — `screenParamSchemas.FeaturedRecipeDetail`, `.RecipeChat`, `validateNavigateParams` (2026-08-16 instance)
+- `shared/schemas/__tests__/coach-blocks.test.ts` (2026-08-16 test)
+- Caught by the Phase 6 code-reviewer in the 2026-05-29 reliability audit (the per-fix kimi-review passed it). The 2026-08-16 instance was caught during code review of P3-2026-08-16.
 
 ## See Also
 

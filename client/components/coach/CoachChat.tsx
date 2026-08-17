@@ -360,6 +360,16 @@ export default function CoachChat({
         // Params are Zod-validated upstream via NAVIGABLE_SCREENS enum.
         switch (screen) {
           case "NutritionDetail":
+            // This `as` cast remains necessary: `params` is typed
+            // Record<string, unknown> | undefined, and TypeScript cannot
+            // statically narrow that to a discriminated-union arm no matter
+            // what a runtime check proves. What changed (P3-2026-08-16):
+            // shared/schemas/coach-blocks.ts's validateNavigateParams now
+            // reassigns val.params to the parsed/stripped result, so an
+            // illegal `{ itemId, barcode }` pair is stripped down to
+            // `{ barcode }` before this action ever reaches here — the
+            // runtime shape is now trustworthy, only the TYPE-level
+            // narrowing still needs this boundary cast.
             navigation.navigate(
               "NutritionDetail",
               params as RootStackParamList["NutritionDetail"],
