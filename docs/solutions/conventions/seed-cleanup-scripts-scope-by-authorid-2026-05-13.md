@@ -88,7 +88,7 @@ Name patterns collide accidentally. `authorId` is either a known demo/seed user 
    - **Two-sided negative control** (`docs/rules/harness.md`) covering BOTH escape shapes, per branch: the fully flattened `or(authorCond, ...criteria)` **and** the partial `or(and(authorCond, or(a, b)), c)`. Build the fixtures from the real criteria list — a fixture that drops the `and(...)` emptiness branch never exercises the one construct that contributes an `and` to the rendered string, so it isn't the shape the pin has to discriminate. Assert each fixture is rejected by the exact pin, and (for the partial escape) that it still **matches** the old loose regex — that single extra assertion proves the fixture really is the escape and documents why the regex was replaced.
    - **Verify RED by hand-mutating the source**, not by reasoning about the assertion or comparing strings in a scratch script: edit the predicate to the escape shape, run the suite, confirm it fails, revert, confirm green.
 
-   (Found in review 2026-08-16: `server/scripts/__tests__/cleanup-seed-recipes-utils.test.ts` — the very file this convention was drawn from — still has both gaps; its `null`-branch test at `:47-52` asserts `contains('"author_id" is null')` and a param count but never pins the AND-not-OR conjunct structure at all, and its demo-id test at `:44` uses the loose regex that a partial escape defeats. Not yet fixed there — flagged as a deferred warning, out of scope for the todos that surfaced it.)
+   (Found in review 2026-08-16: `server/scripts/__tests__/cleanup-seed-recipes-utils.test.ts` — the very file this convention was drawn from — had both gaps; its `null`-branch test asserted `contains('"author_id" is null')` and a param count but never pinned the AND-not-OR conjunct structure at all, and its demo-id test used the loose regex that a partial escape defeats. Flagged as a deferred warning, out of scope for the todos that surfaced it. **Fixed 2026-08-16** (todo `P3-2026-08-16-cleanup-seed-recipes-demo-branch-loose-pin`): the demo-id branch now pins an exact full-SQL `toBe` string alongside the pre-existing null-branch pin, plus a two-sided REGRESSION GUARD test covering both the flattened and partial escape shapes, mirroring `scripts/__tests__/cleanup-junk-recipes-utils.test.ts:105-148`.)
 
 ## Origin
 
@@ -98,6 +98,7 @@ Name patterns collide accidentally. `authorId` is either a known demo/seed user 
 
 - `server/scripts/cleanup-seed-recipes-utils.ts` — pure classifier with unit tests
 - `server/scripts/cleanup-seed-recipes.ts` — cleanup script
+- `server/scripts/__tests__/cleanup-seed-recipes-utils.test.ts` — exact full-SQL pins for both `demoUserId` branches + the flattened/partial-escape negative controls (measure 5)
 - `scripts/cleanup-junk-recipes-utils.ts` — second application of this convention (top-level operator script, community recipe deletion)
 - `scripts/cleanup-junk-recipes.ts` — cleanup script
 - `scripts/__tests__/cleanup-junk-recipes-utils.test.ts` — exact full-SQL pins for both `demoUserId` branches + the flattened/partial-escape negative controls (measure 5)
