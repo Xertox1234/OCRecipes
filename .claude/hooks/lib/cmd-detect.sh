@@ -37,8 +37,8 @@
 #     re-introduce the `echo "gh pr create"` false match" — that turned out to be
 #     wrong. The command-position ANCHOR is what suppresses that mention; blanking is
 #     load-bearing only for SEPARATORS inside a span, which cmd_words preserves.
-#     Verified by running, 2026-08-16: fixing this changed no other assertion in the
-#     432-test hook suite. See test-cmd-detect.sh.
+#     Verified by running, 2026-08-16: `bash scripts/run-hook-tests.sh` stayed green
+#     across all 34 suites. See test-cmd-detect.sh for the per-rendering pins.
 
 # Command-position building blocks, shared by the STRICT matchers (guard + commit).
 # Separator class opens a command: start-of-line (grep's ^ is per-line, so newline-
@@ -85,11 +85,26 @@ cmd_bare() {
 }
 
 # cmd_words: the SECOND rendering, for INVOCATION detection only. Where cmd_bare
-# BLANKS a quoted span whole, cmd_words reproduces what the shell actually puts in
-# argv — quote characters are DELETED, so `eas "update"` word-splits and
-# `eas up"date"` concatenates to the same `eas update` a bare invocation produces —
-# while the shell METACHARACTERS inside a span are neutralised to spaces, so a `;`
-# or a newline in a commit message stays DATA and cannot open a command position.
+# BLANKS a quoted span whole, cmd_words reproduces the shell's own word model:
+#
+#   A QUOTED SPAN IS EXACTLY ONE ARGV WORD.
+#
+# So the quote characters are DELETED (`eas "update"` word-splits, and
+# `eas up"date"` concatenates, to the same `eas update` a bare invocation
+# produces), and every character inside the span that could break it into two
+# words or open a command position — whitespace, `; & | ( ) { } !`, a backtick,
+# a newline — becomes a single `x` placeholder (alphanumeric on purpose; see BEGIN).
+#
+# Keeping the BYTES is not the invariant; keeping the WORD BOUNDARIES is. An
+# earlier version of this function preserved intra-span whitespace, which split
+# `X="a b" eas update` into the tokens `X=a` and `b` and broke the NAME=value
+# absorber in _CMD_POS_PREFIX — the verb then sat outside command position and
+# every guard in this file ALLOWED it (caught in review, 2026-08-16).
+#
+# The one-word property is load-bearing three times over: a quoted span can never
+# split a token, never contribute a separator, and never equal a bare flag — so
+# `-b "use --auto next time"` yields the single token `usex--autoxnextxtime`,
+# which is not `--auto`, and a carve-out keyed on that flag stays withheld.
 #
 # WHY A SECOND FUNCTION AND NOT A FIX TO cmd_bare (2026-08-16): blanking is
 # load-bearing in two places that must NOT see the words, and changing cmd_bare
@@ -109,11 +124,24 @@ cmd_bare() {
 # is precisely the part cmd_words preserves.
 cmd_words() {
   awk '
-    function issep(ch) {
+    # Everything a quoted span must NOT be able to emit: whitespace (which would
+    # split one argv word into two) and every character that can OPEN or CLOSE a
+    # command position in either anchor — the lib`s `; & | ( )` plus the wider
+    # guard-local set (backtick, `{`, `}`, `!`) and a newline (grep is
+    # line-oriented, so a surviving newline is a start-of-line command position).
+    function neutral(ch) {
       return (ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" \
-              || ch == "\n" || ch == BT)
+              || ch == "{" || ch == "}" || ch == "!" || ch == BT \
+              || ch == "\n" || ch == "\r" || ch == " " || ch == "\t")
     }
-    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96) }
+    # PH must be ALPHANUMERIC, not punctuation. Consumers spell their token
+    # boundaries as `[^-A-Za-z0-9]` (the --repo/--admin/--auto-submit flag
+    # checks), and `_` SATISFIES that class — so an underscore placeholder made
+    # `--title "use --repo carefully"` render as `use_--repo_carefully`, where
+    # the `_` read as a boundary and a prose mention became a flag hit. A letter
+    # is a boundary in none of the classes in play, so a span collapses to one
+    # contiguous word for every consumer, not just the whitespace-based ones.
+    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96); PH = "x" }
     { buf = buf $0 "\n" }
     END {
       st = 0           # 0 = unquoted, 1 = inside single quotes, 2 = inside double quotes
@@ -122,19 +150,23 @@ cmd_words() {
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1)
         if (st == 0) {
+          # An unquoted backslash stays BLANKED, deliberately: it is what
+          # collapses a line-continuation (`eas \<newline>update`) back onto one
+          # line so the verb still matches. Unescaping it instead would break
+          # that covered case to close the far rarer `e\as` split.
           if (c == BS)      { out = out " "; i++; if (i <= n) out = out " " }
           else if (c == SQ) { st = 1 }               # DELETE the quote char: the shell does
           else if (c == DQ) { st = 2 }               # not pass it to argv either
           else                out = out c
         } else if (st == 1) {
-          if (c == SQ)       { st = 0 }
-          else if (issep(c))   out = out " "         # a separator inside a span is DATA
-          else                 out = out c           # keep the word bytes
+          if (c == SQ)         { st = 0 }
+          else if (neutral(c))   out = out PH
+          else                   out = out c         # keep the word bytes
         } else {
-          if (c == BS)       { out = out " "; i++; if (i <= n) out = out " " }
-          else if (c == DQ)  { st = 0 }
-          else if (issep(c))   out = out " "
-          else                 out = out c
+          if (c == BS)         { out = out PH; i++; if (i <= n) out = out PH }
+          else if (c == DQ)    { st = 0 }
+          else if (neutral(c))   out = out PH
+          else                   out = out c
         }
       }
       printf "%s", out

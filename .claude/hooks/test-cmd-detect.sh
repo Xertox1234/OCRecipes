@@ -71,12 +71,33 @@ render cmd_words 'eas up"date" --branch preview' present 'eas update' \
   "cmd_words rejoins a MID-WORD split (no fallback path catches this form)"
 render cmd_words 'git commit -m "chore; eas update"' absent ';' \
   "cmd_words neutralises a separator INSIDE a span (stays data, not a new command)"
-# A newline inside a span must become a SPACE, not survive: grep's ^ is per-line,
-# so a surviving newline would hand `gh pr create` a start-of-line command position.
-# Asserting the words end up on ONE line proves the substitution happened.
+# A newline inside a span must not survive: grep's ^ is per-line, so it would
+# hand `gh pr create` a start-of-line command position. It collapses to the same
+# `x` placeholder as every other neutralised char, leaving ONE token.
 render cmd_words 'git commit -m "wip
-gh pr create"' present 'wip gh pr create' \
+gh pr create"' present 'wipxghxprxcreate' \
   "cmd_words neutralises a NEWLINE inside a span (grep ^ is per-line)"
+
+echo "--- THE ONE-WORD PROPERTY: a quoted span is exactly one argv word ---"
+# Regression pins for the review finding that a space-bearing quoted value split
+# one token into two, breaking the NAME=value absorber in _CMD_POS_PREFIX and
+# letting the verb escape command position in EVERY consuming hook.
+render cmd_words 'X="a b" eas update' present 'X=axb eas update' \
+  "a space inside a span does not split the token"
+render cmd_words "X='a b' eas update" present 'X=axb eas update' \
+  "same for a single-quoted span"
+render cmd_words 'gh pr merge 42 -b "use --auto next time"' absent ' --auto' \
+  "a quoted --auto never becomes a standalone token (carve-out decoy)"
+render cmd_words 'git commit -m "deny { eas update; } form"' absent '{' \
+  "a brace inside a span cannot open a command position"
+render cmd_words 'git commit -m "it works! npm publish"' absent '!' \
+  "a bang inside a span cannot open a command position"
+det cmd_is_git_commit 'GIT_AUTHOR_NAME="Will Tower" git commit -m x' yes \
+  "env assignment with a spaced quoted value still detects the commit"
+det cmd_is_git_head_mover 'GIT_EDITOR="code -w" git rebase -i main' yes \
+  "env assignment with a spaced quoted value still detects a head-mover"
+det cmd_is_gh_pr_create 'X="a b" gh pr create --title t' yes \
+  "env assignment with a spaced quoted value still detects gh pr create"
 render cmd_words 'echo hi; git commit' present ';' \
   "cmd_words keeps a separator OUTSIDE a span"
 
@@ -88,7 +109,11 @@ det cmd_is_git_commit       "git 'commit' -m x"            yes "cmd_is_git_commi
 det cmd_is_gh_pr_create     'gh pr "create" --fill'        yes "cmd_is_gh_pr_create: gh pr \"create\""
 det cmd_is_gh_pr_create     'gh "pr" create --fill'        yes "cmd_is_gh_pr_create: gh \"pr\" create"
 det cmd_is_gh_pr_create     'gh pr cre"ate" --fill'        yes "cmd_is_gh_pr_create: mid-word"
-det cmd_is_git              'git "status"'                 yes "cmd_is_git: quoted subcommand"
+# `git "status"` would NOT discriminate here — cmd_is_git only matches the word
+# `git`, which is unquoted in that string, so it passed on the old code too.
+# Split the word the matcher actually looks for.
+det cmd_is_git              'g"i"t status'                 yes "cmd_is_git: quote splits the matched word"
+det cmd_is_git              '"git" status'                 yes "cmd_is_git: fully-quoted matched word"
 det cmd_is_git_commit_or_push 'git "push" origin main'     yes "cmd_is_git_commit_or_push: git \"push\""
 det cmd_is_git_head_mover   'git "reset" --hard HEAD~1'    yes "cmd_is_git_head_mover: git \"reset\""
 det cmd_is_git_head_mover   'git re"set" --hard HEAD~1'    yes "cmd_is_git_head_mover: mid-word"
@@ -106,6 +131,48 @@ det cmd_is_gh_pr_create 'git commit -m "then gh pr create"'    no "mention in a 
 det cmd_is_gh_pr_create 'git commit -m "chore; gh pr create"'  no "SEPARATOR in a commit message does not open a command position"
 det cmd_is_git_head_mover 'echo "git reset --hard is bad"'     no "mention of a head-mover stays undetected"
 det cmd_is_git_commit   'git commit -m "a" && echo done'       yes "real commit with a quoted arg still detected"
+
+echo "--- residuals pinned AT THE LAYER THAT OWNS THEM ---"
+# The guard suite also pins `e\as update` as an ALLOW, but that pin is
+# over-determined: two independent mechanisms produce the allow there (this
+# rendering, and the necessary-substring fast path). Closing the residual in
+# cmd_words alone would leave the guard-level pin green. Pin it here instead,
+# where exactly one mechanism decides.
+render cmd_words 'e\as update' absent 'eas update' \
+  "RESIDUAL: an unquoted backslash is BLANKED, not unescaped (e\\as stays split)"
+# ...and the reason it is blanked rather than unescaped: blanking is what
+# collapses a line continuation back onto one line so the verb still matches.
+render cmd_words 'eas \
+update --branch preview' present 'eas   update' \
+  "a line continuation collapses so the verb still matches (why BS stays blanked)"
+
+echo "--- the two renderings must not silently drift ---"
+# They differ in exactly three places, all quote/escape handling. On input with
+# no quote and no backslash they must be byte-identical; a divergence here means
+# one was edited without the other.
+DRIFT=0
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  a=$(printf '%s' "$line" | cmd_bare)
+  b=$(printf '%s' "$line" | cmd_words)
+  [ "$a" = "$b" ] || { DRIFT=$((DRIFT+1)); echo "  drift on [$line]: bare=[$a] words=[$b]"; }
+done <<'CORPUS'
+git commit -m x
+gh pr create --fill
+eas update --branch preview --platform all
+npm run test && echo done
+ls -la | grep foo; echo hi
+git log --oneline -5
+FOO=bar git commit
+railway up
+gh api repos/x/y
+npm publish
+CORPUS
+if [ "$DRIFT" -eq 0 ]; then
+  echo "PASS: cmd_bare and cmd_words agree byte-for-byte on quote-free input"; PASS=$((PASS+1))
+else
+  echo "FAIL: $DRIFT quote-free inputs render differently — the two scans have drifted"; FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

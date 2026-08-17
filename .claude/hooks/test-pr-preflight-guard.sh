@@ -136,6 +136,22 @@ rm -f "$STAMP_FILE"
 OUT=$(run_hook 'env GH_TOKEN=x gh pr create --title x')
 assert_contains "env-runner-word create still denies" '"permissionDecision": "deny"' "$OUT"
 
+# 12i. A QUOTE inside a command word (2026-08-16). cmd_is_gh_pr_create reads `cmd_words`, which
+# DELETES quote characters — so the necessary-substring fast path must read that same rendering.
+# While it filtered raw $CMD, `g"h" pr create` contained no literal `gh`, the hook exited 0
+# before the matcher ran, and a PR could be opened with no preflight stamp at all.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'g"h" pr create --title x --body y')
+assert_contains "quoted-runner-word create still denies (fast path reads \$WORDS)" \
+  '"permissionDecision": "deny"' "$OUT"
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'gh pr "create" --title x --body y')
+assert_contains "quoted-subcommand create still denies" '"permissionDecision": "deny"' "$OUT"
+# Negative control for the pair above: the fast path must still let unrelated work through.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'echo "gh pr create is what this gate covers"')
+assert_empty "a quoted MENTION of gh pr create passes through" "" "$OUT"
+
 # 13. Helper UN-SOURCEABLE → DENY. Locks the fail-safe: if the shared stamp-path helper
 # can't be found, the guard must block (never silently allow a PR with no stamp).
 #

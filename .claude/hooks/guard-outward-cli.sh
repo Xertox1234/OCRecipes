@@ -138,12 +138,11 @@
 #     commands); their read-only `:list`/`:view` forms stay allowed, and any
 #     OTHER `eas` namespace (`eas device:*`, `eas credentials`, `eas env:*`,
 #     `eas metadata:push`, …) is explicitly OUT OF SCOPE — not covered.
-#   * `gh api -X "POST" ...` (a QUOTED HTTP method value) is not recognized:
-#     the gh-api check runs on `$BARE`, and `cmd_bare` blanks quoted CONTENT
-#     — the same primitive that stops a quoted MENTION elsewhere in this
-#     hook from a false-positive deny also removes a genuinely quoted flag
-#     value from view. The unquoted form (`-X POST`, the common real-world
-#     spelling) is caught.
+#     (`gh api -X "POST" …`, a QUOTED HTTP method value, WAS listed here as an
+#     accepted residual while the check ran on `$BARE`. It is caught now — the
+#     check reads `$WORDS`, where the quote characters are already gone, so
+#     `-X "PUT"`, `--method "PUT"` and `-X"PUT"` all read as their unquoted
+#     spellings. Pinned in test-guard-outward-cli.sh.)
 #   * `npm run update:preview|update:production` IS covered (see below), as are
 #     the `yarn`/`pnpm` bare-script equivalents, and — since the _OUT_FLAG_RUN
 #     fix — every FLAG spelling between the runner, `run`, and the script name
@@ -220,9 +219,17 @@ _OUT_REPO_FLAG_RE='(^|[^-A-Za-z0-9])(--repo([^-A-Za-z0-9]|$)|-R)'
 # other multi-occurrence sites here (a quoted MENTION preceding a real
 # invocation is searched instead) — deny direction, and the ambiguous-multi
 # case is already denied outright for `merge`.
+# Cuts from $WORDS so the clause is found for the SAME spellings the detector
+# above matches. Left on raw $CMD it silently returned an empty clause — and
+# therefore ALLOWED — for `gh pr "create" --repo other/org`, unbounded PAT egress
+# to an arbitrary repo (review, 2026-08-16). $WORDS loses nothing this check
+# needs: quote characters are already deleted, so a quoted `"--repo"` or
+# `-R "other/org"` is still visible, while a MENTION inside a span collapses to
+# one token (`--title usex--repoxcarefully`) whose `--repo` no longer sits at a
+# token boundary and so cannot false-match.
 gh_pr_clause_has_repo() {
   local clause
-  clause=$(printf '%s' "$CMD" | grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*" | head -1)
+  clause=$(printf '%s' "${WORDS:-$CMD}" | grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*" | head -1)
   [ -n "$clause" ] && grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$clause"
 }
 
@@ -324,18 +331,15 @@ fi
 # for SKIP_WORKTREE_CONTRACT=1).
 case "$CMD" in "ALLOW_OUTWARD_CLI=1 "*) exit 0 ;; esac
 
-# Necessary-substring fast path (project_per_bash_hook_overhead): a command
-# without ANY of these literal substrings cannot match any predicate below —
-# cmd_bare only BLANKS characters, never inserts/moves them, so this is a
-# strict superset of the precise matcher, never a bypass. Matched under
-# `nocasematch` because the predicates below are case-insensitive: a
-# case-SENSITIVE fast path would exit 0 on `EAS update` before any of them ran.
-# (`pnpm` needs no entry of its own — it contains `npm`.)
-shopt -s nocasematch
-_OUT_FASTPATH=0
-case "$CMD" in *eas*|*railway*|*npm*|*yarn*|*gh*) _OUT_FASTPATH=1 ;; esac
-shopt -u nocasematch
-[ "$_OUT_FASTPATH" = 1 ] || exit 0
+# The necessary-substring fast path used to live HERE, matching raw $CMD. It has
+# moved below the renderings, and must stay there. Its old justification —
+# "cmd_bare only BLANKS characters, never inserts/moves them, so this is a strict
+# superset" — was true of cmd_bare and is FALSE of cmd_words, which DELETES the
+# quote character and so synthesises a needle that is absent from raw text:
+# `e"a"s update` contains no `eas`, so a raw fast path exited 0 before any
+# predicate ran, and the verb published an OTA (found in review, 2026-08-16 —
+# the matchers had been repointed at $WORDS while this gatekeeper was left
+# reasoning under the superseded premise).
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # If the shared lib is unsourceable (broken install), jq IS available here
@@ -378,10 +382,29 @@ WORDS=$(printf '%s' "$CMD" | cmd_words)
 if { [[ ! "$BARE" =~ [^[:space:]] ]] || [[ ! "$WORDS" =~ [^[:space:]] ]]; } \
    && [[ "$CMD" =~ [^[:space:]] ]]; then
   if crude_smells_outward "$CMD"; then
-    deny "guard-outward-cli: cmd_bare/cmd_words returned nothing for a non-empty command (their awk backend is missing or broken) - failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+    deny "guard-outward-cli: the quote-aware rendering came back empty for a non-empty command - either its awk backend is missing/broken, or the command's entire text is quoted - so the precise matchers below cannot see it. Failing closed via the crude smell test for a command that looks like an outward-facing CLI mutation. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
   exit 0
 fi
+
+# Necessary-substring fast path (project_per_bash_hook_overhead): a command
+# without ANY of these literal substrings cannot match any predicate below.
+# Matched against $WORDS, NOT raw $CMD — see the note where this check used to
+# live. $WORDS is what every predicate below actually reads, so filtering on it
+# is a true superset by construction rather than by an assumption about how the
+# rendering transforms text.
+# Placement is load-bearing: it must come AFTER the blank-rendering detector
+# above, because on the no-awk path $WORDS is empty and an earlier fast path
+# would exit 0 on every command — turning all six fail-closed no-awk cases into
+# silent ALLOWs (measured, not assumed).
+# Matched under `nocasematch` because the predicates below are case-insensitive:
+# a case-SENSITIVE fast path would exit 0 on `EAS update` before any of them ran.
+# (`pnpm` needs no entry of its own — it contains `npm`.)
+shopt -s nocasematch
+_OUT_FASTPATH=0
+case "$WORDS" in *eas*|*railway*|*npm*|*yarn*|*gh*) _OUT_FASTPATH=1 ;; esac
+shopt -u nocasematch
+[ "$_OUT_FASTPATH" = 1 ] || exit 0
 
 # --- eas -------------------------------------------------------------------
 # eas update/publish/submit (space-separated subcommand).
@@ -486,27 +509,18 @@ fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -
 GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX}"
-# THE ONE PLACE THE TWO RENDERINGS DISAGREE, and why this is not a substitution:
-# DETECTION must read $WORDS, or `gh pr "merge" 42` is invisible. The --auto
-# carve-out must read $BARE, or a quoted `--auto` (`-b "use --auto next time"`)
-# GRANTS the carve-out it exists to withhold. Those pull in opposite directions,
-# so they are counted separately and reconciled:
-#   WORDS>1                     -> ambiguous, deny (pre-existing rule)
-#   WORDS==1 and BARE==1        -> normal path; carve-out evaluated on $BARE
-#   WORDS==1 and BARE!=1        -> a QUOTED command word. The clause cannot be
-#                                  extracted from $BARE, so --auto is
-#                                  unverifiable — deny, the same safe direction
-#                                  the multi-occurrence branch already takes.
-# Consequence, accepted deliberately: `gh pr "merge" 42 --auto` denies even
-# though its unquoted twin allows. Writing the sanctioned automerge form with a
-# quoted verb is not something the /todo pipeline does, and "unverifiable
-# carve-out" must never resolve to ALLOW on a gate that merges PRs.
+# Counted AND clause-scoped on $WORDS, including the --auto carve-out below.
+# That is safe only because a quoted span is ONE WORD there: `-b "use --auto
+# next time"` renders as the single token `usex--autoxnextxtime`, which is not
+# `--auto`, so a quoted decoy cannot grant the carve-out. Reading $BARE here
+# instead would make `gh pr "merge" 42` invisible; an earlier revision counted on
+# both and denied when they disagreed, which was strictly worse — equal counts do
+# not prove the two renderings found the SAME occurrence
+# (`gh pr merge"x" 42 --auto; gh pr "merge" 99` counts 1 in each, from different
+# clauses, and read --auto out of the wrong one).
 GH_PR_MERGE_OCCURRENCES=$(printf '%s' "$WORDS" | grep -oiE "$GH_PR_MERGE_RE" | wc -l | tr -d '[:space:]')
-GH_PR_MERGE_BARE_OCC=$(printf '%s' "$BARE" | grep -oiE "$GH_PR_MERGE_RE" | wc -l | tr -d '[:space:]')
 if [ "${GH_PR_MERGE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr merge' occurrence — ambiguous, cannot verify each carries --auto. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
-elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ] && [ "${GH_PR_MERGE_BARE_OCC:-0}" -ne 1 ]; then
-  deny "guard-outward-cli: command-position 'gh pr merge' written with a QUOTED command word (e.g. gh pr \"merge\") — the --auto carve-out is evaluated on quote-blanked text and cannot be verified for this spelling, so it is withheld. Write it unquoted to use the --auto carve-out. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # `--repo`/`-R` retargets the merge at an ARBITRARY repository — the --auto
   # carve-out is scoped to THIS repo's own sanctioned automerge pipeline, which
@@ -514,7 +528,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   if gh_pr_clause_has_repo 'merge'; then
     deny "guard-outward-cli: 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with the user's PAT — outside the --auto carve-out, which exists only for this repo's own /todo automerge pipeline (it never passes --repo). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
-  CLAUSE=$(printf '%s' "$BARE" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
+  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
   # A naive "--auto present" substring check is bypassable: several of `gh pr
   # merge`'s own flags (and the cross-subcommand --repo/-R every gh command
   # accepts) are VALUE-TAKING, so the token immediately after one of them is
@@ -589,11 +603,15 @@ fi
 # api` usage (scripts/todo-automerge-guard.sh, .claude/skills/land/SKILL.md —
 # both GET, gh api's own default with no -X/--method), which a blanket `gh
 # api` deny would break.
-# NOTE: operating on $BARE (not raw $CMD) means a QUOTED method value (`gh
-# api -X "POST" ...`) is invisible here — cmd_bare blanks quoted CONTENT
-# (that's what stops a quoted MENTION from false-positive-denying elsewhere
-# in this hook), so there is nothing left to match once the value is quoted.
-# Documented residual, same accepted-gap shape as the others in the header.
+# NOTE: this block reads $WORDS throughout — occurrence count AND clause cut.
+# It used to read $BARE, where a QUOTED method value (`gh api -X "POST" …`) was
+# invisible because cmd_bare blanks quoted CONTENT; that was a documented
+# residual and is now closed, since $WORDS has already dropped the quote
+# characters. Do NOT "fix" this by scanning raw $CMD: that was tried and it
+# loses BOTH the command-position anchor and the separator neutralisation with
+# it, so `echo "gh api docs" && gh api -X POST …` cut its clause from the decoy
+# and `-f 'title=a|b'` truncated the clause at a quoted pipe — each an ALLOW on
+# a production merge.
 # More than one command-position `gh api` occurrence is ambiguous — the
 # ORIGINAL round-2 version used `head -1` and silently ignored every
 # occurrence after the first, which let a read-only first call shadow a
@@ -608,29 +626,26 @@ GH_API_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"
 # clause empty and fall through to ALLOW. Deny instead when the two renderings
 # disagree — an unverifiable read-only claim is not a read-only claim.
 GH_API_OCCURRENCES=$(printf '%s' "$WORDS" | grep -oiE "$GH_API_RE" | wc -l | tr -d '[:space:]')
-GH_API_BARE_OCC=$(printf '%s' "$BARE" | grep -oiE "$GH_API_RE" | wc -l | tr -d '[:space:]')
 if [ "${GH_API_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
-elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ] && [ "${GH_API_BARE_OCC:-0}" -ne 1 ]; then
-  deny "guard-outward-cli: command-position 'gh api' written with a QUOTED command word (e.g. gh \"api\") — the read-only check reads quote-blanked text and cannot verify the HTTP method for this spelling. Write it unquoted. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
-  # DELIBERATELY scans a clause cut from the RAW $CMD, not from $BARE. This
-  # check confirms a FLAG on an invocation already confirmed above, and quoting
-  # a flag value changes nothing about what gh receives — `gh api -X "PUT" …`
-  # passes the literal string PUT. Reading the quote-BLANKED clause made
-  # `-X "PUT"`, `--method "PUT"` and `-X"PUT"` all ALLOW a production merge.
-  # Same reasoning (and the same raw-$CMD precedent) as the `--admin` check
-  # above and gh_pr_clause_has_repo: it can only ever ADD a deny, never grant a
-  # carve-out, so a rare false positive on prose fails CLOSED. See
-  # docs/solutions/logic-errors/deny-gate-flag-presence-check-needs-raw-text-and-every-spelling-2026-08-16.md
-  GH_API_CLAUSE=$(printf '%s' "$CMD" | grep -oiE "gh[[:space:]]+api[[:space:]][^;&|]*" | head -1)
+  # Cut from $WORDS, keeping the command-position ANCHOR and the `[^;&|]*`
+  # clause bound. $WORDS is what makes the quoted-flag-value spellings visible
+  # WITHOUT resorting to raw $CMD: the quote characters are already gone, so
+  # `-X "PUT"` reads as `-X PUT` and `-X"PUT"` as `-XPUT`, both matched by the
+  # existing pattern. An earlier revision scanned raw $CMD instead and lost both
+  # the anchor and the separator-neutralisation with it — `echo "gh api docs" &&
+  # gh api -X POST …` cut its clause from the decoy inside the echo, and
+  # `-f 'title=a|b'` truncated the clause at a quoted pipe. Both ALLOWED a
+  # production merge. Raw text is the right source for a flag check only when
+  # the clause boundary does not also come from it (cf. the --admin check
+  # below, which needs no clause).
+  GH_API_CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+api[[:space:]][^;&|]*" | head -1)
   # Matches BOTH the spaced/`=` form (-X POST, -X=POST, --method POST,
   # --method=POST) AND the glued short-flag form (-XPOST — the common
   # curl-style spelling; found bypassing a separator-only pattern in review
-  # round 2), case-insensitively, with the value optionally quoted in either
-  # style and the quote character accepted as its closing boundary.
-  _GH_API_Q="[\"']"
-  if [ -n "$GH_API_CLAUSE" ] && grep -Eqi "(^|[[:space:]])(-X${_GH_API_Q}?(post|put|patch|delete)([[:space:]]|${_GH_API_Q}|$)|(-X|--method)([[:space:]]+|=)${_GH_API_Q}?(post|put|patch|delete)([[:space:]]|${_GH_API_Q}|$))" <<< "$GH_API_CLAUSE"; then
+  # round 2), case-insensitively.
+  if [ -n "$GH_API_CLAUSE" ] && grep -Eqi '(^|[[:space:]])(-X(post|put|patch|delete)([[:space:]]|$)|(-X|--method)([[:space:]]+|=)(post|put|patch|delete)([[:space:]]|$))' <<< "$GH_API_CLAUSE"; then
     deny "guard-outward-cli: command-position 'gh api' with a mutating HTTP method (-X/--method POST/PUT/PATCH/DELETE, spaced/=/glued) can invoke an arbitrary GitHub REST mutation — including a PR merge via a different subcommand than the dedicated 'gh pr merge' check above. Read-only 'gh api' (GET, the default with no -X/--method) is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
 fi

@@ -18,22 +18,41 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 case "$TOOL" in
   Bash)
     CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
-    # Necessary-substring fast path: `cmd_bare` only BLANKS characters (never inserts or moves
-    # them), so any command the precise matcher would DENY must contain the literals `gh`, `pr`
-    # and `create`, in order, in the RAW command. If they are absent, no match is possible — skip
-    # the subshell + lib source. This hook runs on EVERY Bash tool call, so keep the hot path
-    # cheap (per project_per_bash_hook_overhead). This is a SAFE fast path, not a lossy pre-guard:
-    # being a strict superset of the matcher, it can only short-circuit commands the matcher would
-    # also miss — never a bypass.
-    case "$CMD" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+    # Necessary-substring fast path. This hook runs on EVERY Bash tool call, so keep the hot path
+    # cheap (per project_per_bash_hook_overhead).
+    #
+    # It matched RAW $CMD until 2026-08-16, justified as "cmd_bare only BLANKS characters (never
+    # inserts or moves them), so this is a strict superset of the matcher". That premise died when
+    # cmd_is_gh_pr_create moved to `cmd_words`, which DELETES quote characters and therefore
+    # synthesises literals absent from the raw text: `g"h" pr create --fill` contains no `gh`, so
+    # the raw filter exited 0 and this DENY gate never ran — a PR openable with no preflight stamp.
+    # Filtering the SAME text the matcher reads is a superset by construction, not by assumption.
+    # The lib is sourced first now so $words exists; a broken/unsourceable lib skips the fast path
+    # entirely and falls through to the stamp gate, preserving the fail-toward-DENY behaviour.
+    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_words >/dev/null; then
+      words=$(printf '%s' "$CMD" | cmd_words)
+      # An empty rendering from a non-empty command means the awk backend is broken — do NOT
+      # fast-path out on it, fall through to the precise check and the stamp gate.
+      if [ -n "${words//[[:space:]]/}" ]; then
+        case "$words" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+      fi
+    else
+      # Lib unsourceable (broken install): cmd_is_gh_pr_create cannot run either, so this hook
+      # degrades to "raw text plausibly contains gh pr create -> demand a stamp". Keep the RAW
+      # filter here so an unrelated command still exits quietly instead of hitting the stamp
+      # gate — without it, a missing lib turns this into a deny-everything gate (caught by
+      # test-pr-preflight-guard.sh's "lib-missing leaves unrelated bash alone").
+      case "$CMD" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+    fi
     # Precise detection via the shared, quote-AWARE scanner (.claude/hooks/lib/cmd-detect.sh) — the
     # single source of the strip + command-position matcher across all three PR/commit hooks, so
     # this gate no longer re-derives (and can no longer re-break) a context-free quote strip (the
     # apostrophe-glue / env-runner bypasses of the 2026-07-18 audit /code-review). It rejects a
     # `gh pr create` merely MENTIONED inside a quoted argument. If the lib is UNSOURCEABLE (broken
-    # install), FAIL TOWARD DENY: skip the precise check and fall through to the stamp gate (the
-    # fast path already established the raw command plausibly contains `gh pr create`).
-    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # install), FAIL TOWARD DENY: skip the precise check and fall through to the stamp gate.
+    # ($HERE and the lib are already resolved by the fast path above; re-sourcing is idempotent
+    # and keeps this branch correct even if the fast-path block is ever moved or removed.)
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_gh_pr_create >/dev/null; then
       cmd_is_gh_pr_create "$CMD" || exit 0
     fi

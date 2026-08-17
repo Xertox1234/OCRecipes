@@ -544,9 +544,79 @@ assert_deny "gh \"release\" create denies" \
 assert_deny "gh pr \"merge\" denies (quoted verb ⇒ --auto carve-out unverifiable)" \
   "$(jsonc 'gh pr "merge" 42')" \
   "gh pr merge"
-assert_deny "gh pr \"merge\" --auto denies too (cannot verify the carve-out)" \
-  "$(jsonc 'gh pr "merge" 42 --auto --squash')" \
+# The carve-out is EVALUATED on $WORDS, where a quoted span is one word, so a
+# quoted verb is resolved and a quoted `--auto` decoy still cannot grant it.
+# This therefore behaves exactly like its unquoted twin — no special case.
+assert_allow "gh pr \"merge\" --auto allows (carve-out verifiable on \$WORDS)" \
+  "$(jsonc 'gh pr "merge" 42 --auto --squash')"
+assert_deny "gh pr \"merge\" 42 -b \"use --auto next time\" still denies (quoted decoy)" \
+  "$(jsonc 'gh pr "merge" 42 -b "use --auto next time"')" \
   "gh pr merge"
+
+# THE FAST PATH must read the same text the predicates read. A quote splitting
+# the RUNNER WORD leaves no literal needle in raw $CMD, so a raw-$CMD
+# necessary-substring filter exited 0 before any predicate ran — every one of
+# these ALLOWED a real publish/merge until the filter moved to $WORDS.
+assert_deny "e\"a\"s update denies (quote splits the RUNNER word)" \
+  "$(jsonc 'e"a"s update --branch preview --platform all')" \
+  "eas update/publish/submit"
+assert_deny "n\"pm\" publish denies (quote splits the runner word)" \
+  "$(jsonc 'n"pm" publish')" \
+  "npm publish"
+assert_deny "rail\"way\" up denies (quote splits the runner word)" \
+  "$(jsonc 'rail"way" up')" \
+  "railway up/deploy"
+assert_deny "g\"h\" pr merge denies (quote splits the runner word)" \
+  "$(jsonc 'g"h" pr merge 42')" \
+  "gh pr merge"
+assert_deny "y\"arn\" update:preview denies (quote splits the runner word)" \
+  "$(jsonc 'y"arn" update:preview')" \
+  "npm run update:preview/update:production"
+
+# A QUOTED VALUE CONTAINING A SPACE is still ONE argv word. Rendering it as two
+# tokens broke the NAME=value absorber in the command-position prefix and let
+# the verb out of command position — every case here ALLOWED before that fix.
+assert_deny "X=\"a b\" eas update denies (spaced quoted assignment value)" \
+  "$(jsonc 'X="a b" eas update --branch production --platform all')" \
+  "eas update/publish/submit"
+assert_deny "X='a b' npm publish denies (single-quoted spaced value)" \
+  "$(jsonc "X='a b' npm publish")" \
+  "npm publish"
+assert_deny "npm run -w \"my pkg\" update:preview denies (spaced flag value)" \
+  "$(jsonc 'npm run -w "my pkg" update:preview')" \
+  "npm run update:preview/update:production"
+assert_deny "npm --prefix \"/tmp/my dir\" run update:production denies" \
+  "$(jsonc 'npm --prefix "/tmp/my dir" run update:production')" \
+  "npm run update:preview/update:production"
+
+# gh api clause boundaries: a decoy MENTION before the real call, and a quoted
+# separator inside an argument, each truncated or misplaced the clause when it
+# was cut from raw $CMD — both ALLOWED a production merge.
+assert_deny "a gh api decoy mention before the real call still denies" \
+  "$(jsonc 'echo "gh api docs" && gh api -X POST repos/o/r/pulls/1/merge')" \
+  "gh api"
+assert_deny "a quoted pipe inside a gh api argument does not truncate the clause" \
+  "$(jsonc "gh api repos/o/r/issues -f 'title=a|b' -X POST")" \
+  "gh api"
+assert_deny "gh pr \"create\" --repo other/org denies (quoted verb + --repo egress)" \
+  "$(jsonc 'gh pr "create" --repo other/org --title x --body y')" \
+  "'gh pr create/comment' with --repo/-R"
+assert_allow "gh pr \"create\" WITHOUT --repo still allows (routine flow)" \
+  "$(jsonc 'gh pr "create" --title x --body y')"
+assert_allow "a --title MENTIONING --repo does not trip the egress check" \
+  "$(jsonc 'gh pr create --title "use --repo carefully" --body y')"
+
+# Quoted prose containing a command-position OPENER must not deny. `{` and `!`
+# open a command position in this hook's WIDER local anchor, so neutralising
+# only the lib's `; & | ( )` set left them live inside spans — and
+# `{ eas update; }` is the verbatim string in this file's own header.
+assert_allow "a commit message containing { eas update; } still allows" \
+  "$(jsonc 'git commit -m "hooks: deny { eas update; } brace-group form"')"
+assert_allow "a commit message containing ! before a verb still allows" \
+  "$(jsonc 'git commit -m "it works! npm publish is denied now"')"
+assert_allow "a multi-line quoted body mentioning a verb still allows" \
+  "$(jsonc 'git commit -m "wip
+eas update is what this guards"')"
 # `gh api` has the same shape as the merge carve-out — it ALLOWS by default and
 # only denies once it reads a mutating method — so a quoted verb it cannot see
 # would fall through to allow.
