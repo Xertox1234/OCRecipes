@@ -106,8 +106,8 @@ defect B), and where "Close speed dial" and "Close scan menu" sit in the order (
 - If it dismisses the menu or does nothing → an additional native activation failure exists.
   **Then retest T3 with Settings → Accessibility → Motion → Reduce Motion ON** (this implicates
   or clears the Reanimated entering animation, defect C).
-- Actual: **********\*\***********\_\_**********\*\***********
-- Actual with Reduce Motion ON (only if needed): ****\*\*****\_\_\_****\*\*****
+- Actual: ****\*\*****\*\*****\*\*****\_\_****\*\*****\*\*****\*\*****
+- Actual with Reduce Motion ON (only if needed): \***\*\*\*\*\***\_\_\_\***\*\*\*\*\***
 
 ---
 
@@ -165,7 +165,7 @@ todo's severity section said was unreachable.
 1. Enter via "Scan Nutrition Label", frame a nutrition panel, double-tap "Take photo".
 
 - Expect: capture → LabelAnalysis.
-- Actual: **********\*\***********\_\_**********\*\***********
+- Actual: ****\*\*****\*\*****\*\*****\_\_****\*\*****\*\*****\*\*****
 
 ### T7 — NEW: is the armed shutter even reachable? (BARCODE_LOCKED / STEP2_CONFIRMED)
 
@@ -177,9 +177,9 @@ VoiceOver inside the chip.
 1. Scan a barcode until it **locks** (chip appears, shutter shows the yellow armed border).
 2. Swipe through **every** element. Can you reach "Take photo" at all?
 
-- Question 1 — is "Take photo" reachable? **********\*\***********\_\_**********\*\***********
+- Question 1 — is "Take photo" reachable? ****\*\*****\*\*****\*\*****\_\_****\*\*****\*\*****\*\*****
 - Question 2 — does the chip's own primary button carry the same action (i.e. is there a
-  working screen-reader path forward without the shutter)? ****\*\*****\_\_****\*\*****
+  working screen-reader path forward without the shutter)? \***\*\*\*\*\***\_\_\***\*\*\*\*\***
 
 If the shutter is unreachable BUT the chip's button works, this is by-design, not a defect —
 note it and move on. If neither is reachable, the step-by-step barcode flow has no
@@ -255,10 +255,9 @@ fell through to `default: return null` still returns null, so chip visibility di
 
 - ~~T4 / T5 / T7 (shutter)~~ — RESOLVED later this doc (T4 passed; T5's scripted scenario
   unreachable, unit + component coverage instead; T7 = the pre-existing containment findings).
-- **Two-finger scrub dismissal — STILL UNVERIFIED.** Both 2026-08-17 reviewers flagged this
-  Major: it is now the SOLE non-selection exit on iOS (fixing containment removed the leaked
-  FAB exit). One gesture on the paired iPhone settles it; if it cannot be verified, the PR
-  must state it as an unverified residual risk.
+- **Two-finger scrub dismissal — VERIFIED (user, 2026-08-17): "the z with 2 fingers closes
+  the menu."** The sole non-selection iOS exit works on-device; both reviewers' Major is
+  closed. Every iOS claim in this fix is now device-verified.
 
 ### Review round (2026-08-17, code-reviewer + mobile-reviewer) — all code findings fixed
 
