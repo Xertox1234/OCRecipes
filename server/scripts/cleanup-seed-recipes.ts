@@ -75,8 +75,14 @@ function describeTarget(): string {
   }
 }
 
-async function main() {
-  const { commit, vetoed } = parseCleanupFlags(process.argv.slice(2));
+// Exported (rather than a module-private function) so a test can invoke it
+// directly with a controlled argv and a mocked `db`/`pool`, bypassing the
+// auto-run below. The real commit/dry-run gate (`if (!commit)` below) sits
+// behind an unconditional DB read (the `communityRecipes` select above it),
+// so no no-DB spawnSync test can ever reach it — an in-process test with a
+// mocked db is the only route that reaches this gate at all.
+export async function main(argv: readonly string[] = process.argv.slice(2)) {
+  const { commit, vetoed } = parseCleanupFlags(argv);
   const mode = commit ? "COMMIT" : "DRY-RUN";
   const modeNote = commit
     ? ""
@@ -332,7 +338,18 @@ async function main() {
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  void pool.end().then(() => process.exit(1));
-});
+// Guard the auto-run so importing `main` (e.g. from a test with a mocked
+// db/pool) doesn't also trigger the real CLI entrypoint.
+const isMain = (() => {
+  try {
+    return Boolean(process.argv[1]?.includes("cleanup-seed-recipes"));
+  } catch {
+    return false;
+  }
+})();
+if (isMain) {
+  main().catch((err) => {
+    console.error("Fatal error:", err);
+    void pool.end().then(() => process.exit(1));
+  });
+}

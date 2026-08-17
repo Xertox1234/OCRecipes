@@ -1,6 +1,6 @@
 ---
 title: "The destructive write gate in the operator scripts has no test — flipping if (COMMIT) leaves every suite green"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-08-16
@@ -113,3 +113,39 @@ loud. But these scripts permanently delete or overwrite rows, and
 
 - Filed during the review round for PRs #833–#845. Both #840 reviewers raised it
   independently; module-load `main()` and the utils-only imports verified on `main`.
+
+### 2026-08-16 (execution)
+
+- **Empirically confirmed AC #1+#2 (banner-only, no-DB spawnSync) cannot reach the actual
+  write gate** in any of the three scripts: each has an unconditional `await db.select(...)`
+  between the banner and the destructive `if`, so a no-DB run always crashes on that read
+  before the gate's code is ever reached — proven by inverting each script's real gate line
+  with everything else (including the banner) untouched: the banner-only smoke test stayed
+  green. This is exactly the failure mode the todo's own title names. Independently
+  corroborated by the dispatched `todo-researcher` and by `advisor()`.
+- **Used the Implementation Notes' pre-authorized escape hatch**: exported `main(argv)` from
+  each script (previously an unexported, auto-invoked function) behind a guarded `isMain`
+  check, so an in-process test can call it directly with a mocked `db` (and `pool` for
+  cleanup-seed-recipes) and one fixture row. This is the only way that actually reaches and
+  discriminates the real `if (COMMIT)` / `if (!commit)` gates — verified RED-then-GREEN by
+  manually inverting each gate during implementation (not committed).
+- **Kept the AC's literal banner test too** (spawnSync against a syntactically-valid but
+  unreachable `DATABASE_URL`, never deleted — deleting it crashes at import since
+  `server/db.ts` throws synchronously when unset) — it proves a real, previously-uncovered
+  seam (argv → `parseCleanupFlags` → the printed banner, in the script itself) but is
+  explicitly commented as NOT proving the deep gate, per the two-reviewer round's findings.
+- Round-1 review (`code-reviewer` + `server-reviewer`) found no CRITICALs; two WARNINGs fixed
+  (the compound gate's `length === 0` axis was untested — for `cleanup-seed-recipes.ts` this
+  required a different, genuinely-discriminating assertion (`db.select` call count) since
+  `db.transaction` there is nested inside a `for (i < arr.length)` loop and is therefore
+  already unreachable on an empty result regardless of the earlier `if`, unlike its sibling
+  `cleanup-junk-recipes.ts`). Round-2 review found no CRITICALs/WARNINGs; two trivial
+  SUGGESTIONs applied (a test title's query count was off by one; the exit-signal assertion
+  now checks both `instanceof` and the exit code). The `isMain` substring-match guard's
+  robustness (server-reviewer WARNING, precedent-following per code-reviewer) was left as-is
+  — deferred, not fixed, since it matches an established repo-wide pattern
+  (`backfill-email-verified.ts`, `cleanup-retention.ts`) and hardening only these 3 files
+  would create a new inconsistency rather than close one.
+- Closes with zero follow-ups: the actual destructive-write gate in all three scripts now has
+  real, mutation-verified coverage — not merely the banner-only test the AC describes taken
+  literally.
