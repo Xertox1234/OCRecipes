@@ -134,6 +134,21 @@ async function main() {
     }
 
     console.log(`  First instruction step: "${result.instructions[0]}"`);
+
+    // Surface any header-echo line the split filters dropped, so an operator
+    // can eyeball a partial loss rather than discover it only by diffing the
+    // original prose after the fact. On the dry-run path this is a pre-commit
+    // review prompt; on a live run the write happens moments later, so the
+    // wording must not claim there is still time to reconsider.
+    if (result.droppedHeaderLines.length > 0) {
+      console.log(
+        `  ⚠ Dropped ${result.droppedHeaderLines.length} header-echo line(s)${COMMIT ? "" : " — review before --commit"}:`,
+      );
+      result.droppedHeaderLines.forEach((line) => {
+        console.log(`    - "${line}"`);
+      });
+    }
+
     console.log();
 
     if (COMMIT) {

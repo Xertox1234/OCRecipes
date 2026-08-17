@@ -1,6 +1,6 @@
 ---
 title: "migrate-recipe-ingredients drops any instruction step that STARTS with a section-header word — partial, silent, irrecoverable"
-status: backlog
+status: done
 priority: high
 created: 2026-08-16
 updated: 2026-08-16
@@ -57,20 +57,20 @@ irrecoverability; this is the case it does not reach.
 
 ## Acceptance Criteria
 
-- [ ] A line is only treated as a section HEADER when it is header-SHAPED, not merely
+- [x] A line is only treated as a section HEADER when it is header-SHAPED, not merely
       header-prefixed. At minimum require the line to be (a) the whole line, optionally with a
       trailing colon, and (b) short — a header is `Directions:` or `Directions`, never
       `Directions may vary by oven; start checking early.`
-- [ ] Verified RED first with an in-test fixture whose steps begin with each of the five
+- [x] Verified RED first with an in-test fixture whose steps begin with each of the five
       words, asserting they SURVIVE — and confirm the assertion fails against the current
       regex before the fix
-- [ ] The `^ingredients` filter at `:150` gets the same treatment or an explicit written
+- [x] The `^ingredients` filter at `:150` gets the same treatment or an explicit written
       reason it does not need it
-- [ ] A step that is genuinely just a header (`Directions:`) is still dropped — pin both
+- [x] A step that is genuinely just a header (`Directions:`) is still dropped — pin both
       directions, per `docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md`
-- [ ] Consider making a partial-loss case loud: if the filter removes any line from a row,
+- [x] Consider making a partial-loss case loud: if the filter removes any line from a row,
       report it in the dry-run summary so an operator can eyeball it before `--commit`
-- [ ] Closes with zero follow-ups
+- [x] Closes with zero follow-ups
 
 ## Implementation Notes
 
@@ -110,3 +110,22 @@ irrecoverability; this is the case it does not reach.
 - Filed at the user's request after being surfaced (and deliberately not auto-filed) during
   the #833–#848 review round. Filter, caller, and the "no backup table" claim all verified
   against `main` before filing.
+- Implemented, reviewed, and closed same day. Both `STEPS_HEADER_LINE_RE` and
+  `INGREDIENTS_HEADER_LINE_RE` now anchor whole-line (optionally `:`), matching the
+  `client/lib/menu-ocr-parser.ts` `SECTION_HEADER_RE` precedent. Two review rounds
+  (`code-reviewer` + `server-reviewer`) surfaced two additional CRITICALs in the same file,
+  fixed in-round (in scope per the Scope Contract — same file, no new mechanism):
+  - The section-boundary locator regexes (`ingredientMatch`/`stepsMatch`) were unanchored
+    substring matches — a header word appearing mid-line in real content (e.g. "cooking" in
+    "2 tbsp oil for cooking") could hijack the split, truncating ingredients and
+    misclassifying the remainder as steps. Fixed by anchoring both to a line start (`^` + `m`,
+    with `[ \t]*` and an optional numbered-list prefix so indented/numbered headers — Pattern
+    C — still match).
+  - `cleanInstructionLine`'s destructive bold-label strip reduced a step wrapped ENTIRELY in
+    bold with no colon-terminated label (e.g. `"**Press the tofu firmly...**"`) to `""`,
+    vanishing with zero signal. Fixed with a non-destructive fallback, gated on the
+    post-bullet/number intermediate (not raw) so a bare marker like `"1."` or `"-"` still
+    correctly reduces to `""` and trips the empty-result data-loss guard, rather than reviving
+    as fake instruction text.
+  - `droppedHeaderLines` field added to `SplitResult`; the caller's dry-run summary reports
+    any header-echo drop so an operator can eyeball a partial loss.
