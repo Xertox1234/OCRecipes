@@ -25,13 +25,30 @@
  * work and tells the user "we couldn't find nutrition values" when the values
  * were read perfectly well. Every form below is one a real predecessor
  * accepted; the regression tests pin them.
+ *
+ * The quantity group (`\d+(?:\.\d+)?`) accepts a decimal POINT only — a
+ * continental-European decimal comma ("12,5 g") is not read as 12.5.
  */
 
 /**
- * Metric units as they appear on labels, longest-first so the alternation
- * cannot settle on a prefix (`g` inside `grams`) and then fail the `\b`.
+ * Metric units as they appear on printed labels. The trailing `\b` is baked
+ * into this constant (not appended where it's used) so any regex built from
+ * it — now or later — cannot settle on a prefix: `g` inside "gallon" would
+ * otherwise match. Reordering the alternatives does not change which one can
+ * match — JS alternation backtracks, so `(?:g|grams?)\b` still reads "grams"
+ * correctly regardless of order — it only changes backtracking cost.
+ *
+ * Accepts only `grams?`/`g`/`millilit(?:re|er)s?`/`ml`: standard, printed
+ * spellings. It does not accept informal abbreviations or non-English
+ * spellings (contrast `server/services/barcode-lookup.ts`'s `SERVING_UNIT`,
+ * which widens for a different input source).
+ *
+ * Test-only export: nothing outside `__tests__/` may import this, and
+ * nothing may be appended to it — the trailing `\b` is terminal (a future
+ * `${UNIT}s?` would never match, since the anchor already consumed the word
+ * boundary).
  */
-const UNIT = String.raw`(?:grams?|g|millilit(?:re|er)s?|ml)`;
+export const UNIT = String.raw`(?:grams?|g|millilit(?:re|er)s?|ml)\b`;
 
 /**
  * The metric figure inside a parenthetical, e.g. "1 can (355 mL)".
@@ -41,7 +58,7 @@ const UNIT = String.raw`(?:grams?|g|millilit(?:re|er)s?|ml)`;
  * ("(355 mL )") both put something between them, and an earlier version of
  * this module dropped all of those.
  */
-const PAREN = new RegExp(String.raw`\(\s*(\d+(?:\.\d+)?)\s*${UNIT}\b`);
+const PAREN = new RegExp(String.raw`\(\s*(\d+(?:\.\d+)?)\s*${UNIT}`);
 
 /**
  * A bare metric serving, e.g. "355 mL", "30g", "250 grams".
@@ -50,11 +67,11 @@ const PAREN = new RegExp(String.raw`\(\s*(\d+(?:\.\d+)?)\s*${UNIT}\b`);
  * run cannot be mistaken for a serving — while still admitting one that opens
  * a parenthetical, which the anchor would otherwise exclude entirely.
  *
- * The trailing `\b` rejects a unit that is merely a prefix of a longer word:
- * "1 gal" must not read as 1 gram. ("30 mg" was never at risk — neither
- * predecessor matched it, since `mg` is not `g` or `ml`.)
+ * The `\b` baked into `UNIT` rejects a unit that is merely a prefix of a
+ * longer word: "1 gal" must not read as 1 gram. ("30 mg" was never at risk —
+ * neither predecessor matched it, since `mg` is not `g` or `ml`.)
  */
-const BARE = new RegExp(String.raw`(?:^|[\s(])(\d+(?:\.\d+)?)\s*${UNIT}\b`);
+const BARE = new RegExp(String.raw`(?:^|[\s(])(\d+(?:\.\d+)?)\s*${UNIT}`);
 
 /** Grams/millilitres parsed from a label serving string, or null if none. */
 export function parseLabelServingGrams(
@@ -84,13 +101,14 @@ export function parseLabelServingGrams(
  * If captured, it inserts a new group 2 and pushes the unit to group 3,
  * causing `match[2].startsWith("m")` to throw TypeError on integer quantities
  * or silently map decimal fragments (e.g. ".5") to the wrong scale.
+ *
+ * Test-only export: nothing outside `__tests__/` may import this, and
+ * nothing may be appended to it — the trailing `\b` is terminal.
  */
-const UNIT_CAP = String.raw`(grams?|g|millilit(?:re|er)s?|ml)`;
-const PAREN_BASIS = new RegExp(
-  String.raw`\(\s*(\d+(?:\.\d+)?)\s*${UNIT_CAP}\b`,
-);
+export const UNIT_CAP = String.raw`(grams?|g|millilit(?:re|er)s?|ml)\b`;
+const PAREN_BASIS = new RegExp(String.raw`\(\s*(\d+(?:\.\d+)?)\s*${UNIT_CAP}`);
 const BARE_BASIS = new RegExp(
-  String.raw`(?:^|[\s(])(\d+(?:\.\d+)?)\s*${UNIT_CAP}\b`,
+  String.raw`(?:^|[\s(])(\d+(?:\.\d+)?)\s*${UNIT_CAP}`,
 );
 
 /** A serving quantity together with the scale its unit implies. */

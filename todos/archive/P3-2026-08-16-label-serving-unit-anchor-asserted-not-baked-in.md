@@ -1,6 +1,6 @@
 ---
 title: "label-serving's UNIT/UNIT_CAP claim an anchor they don't carry — bake the \\b in, as barcode-lookup now does"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-08-16
