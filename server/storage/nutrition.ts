@@ -14,7 +14,7 @@ import {
 import { type CreateSavedItemInput } from "@shared/schemas/saved-items";
 import { TIER_FEATURES } from "@shared/types/premium";
 import { db } from "../db";
-import { eq, desc, and, gte, lt, sql, isNull, inArray } from "drizzle-orm";
+import { eq, desc, and, gte, lt, lte, sql, isNull, inArray } from "drizzle-orm";
 import { getDayBounds } from "./helpers";
 import { isUniqueViolation } from "../lib/db-errors";
 import { getEffectiveTierForUser } from "./users";
@@ -308,8 +308,26 @@ export async function getDailyLogsInRange(
 
 /**
  * The user's most frequently logged foods in a date range (inclusive start,
- * exclusive end), grouped by name across both log sources: scanned-item
+ * inclusive end), grouped by name across both log sources: scanned-item
  * `productName` and recipe `title`. Feeds the Coach's frequent-foods context.
+ *
+ * The end bound is inclusive (`lte`, not `lt`) deliberately: `to` is typically
+ * "now" at call time, and a row logged at exactly that instant is a row
+ * logged now and must count. A half-open end excluded such a row when its
+ * `loggedAt` tied `to` to the millisecond, which — combined with the
+ * `HAVING count >= 3` floor below — dropped the food from the results
+ * entirely rather than merely undercounting it (see
+ * server/storage/__tests__/nutrition.test.ts's boundary-tie regression test).
+ * This function has exactly one caller (`coach-pro-chat.ts:562`), which passes
+ * a single one-off lookback window, not a tiled/adjacent one, so making the
+ * end inclusive cannot double-count across a seam. `getDailyLogsInRange`
+ * nearby shares the same range shape AND the same `today` boundary object
+ * (`coach-pro-chat.ts:545`, same `Promise.all`) — the identical tie risk
+ * exists there too. It stays half-open deliberately: left out of this fix's
+ * Scope Contract, and lower severity (no `HAVING` floor to amplify a missed
+ * row into a vanished result) — tracked in
+ * `todos/P3-2026-08-16-getdailylogsinrange-boundary-tie.md`, not silently
+ * matched here.
  *
  * `HAVING count >= 3` is a deliberate noise floor — one-off foods carry no
  * personalization signal. Discarded scanned items are excluded (mirrors
@@ -340,7 +358,7 @@ export async function getMostEatenFoods(
       and(
         eq(dailyLogs.userId, userId),
         gte(dailyLogs.loggedAt, from),
-        lt(dailyLogs.loggedAt, to),
+        lte(dailyLogs.loggedAt, to),
         sql`(${scannedItems.discardedAt} IS NULL OR ${dailyLogs.scannedItemId} IS NULL)`,
         sql`${nameExpr} IS NOT NULL`,
       ),

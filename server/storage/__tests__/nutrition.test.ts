@@ -1207,6 +1207,35 @@ describe("nutrition storage", () => {
       expect(result).toEqual([]);
     });
 
+    it("counts a log written at exactly the `to` boundary (window end is inclusive)", async () => {
+      // Deterministic pin — no clock race. Two logs strictly inside the window
+      // plus one log timestamped at exactly `to`: under a half-open `lt(loggedAt,
+      // to)` bound that third row is excluded, dropping the count from 3 to 2,
+      // below the `HAVING count(*) >= 3` floor — the food would vanish entirely
+      // rather than merely undercount (reproduces the intermittent boundary
+      // failure deterministically instead of racing the clock for it).
+      const item = await insertScannedItem(testUser.id, {
+        productName: "Boundary Snack",
+      });
+      const at = new Date();
+      await insertDailyLog(testUser.id, {
+        scannedItemId: item.id,
+        loggedAt: daysAgo(1),
+      });
+      await insertDailyLog(testUser.id, {
+        scannedItemId: item.id,
+        loggedAt: daysAgo(2),
+      });
+      await insertDailyLog(testUser.id, {
+        scannedItemId: item.id,
+        loggedAt: at,
+      });
+
+      const result = await getMostEatenFoods(testUser.id, daysAgo(30), at);
+
+      expect(result).toEqual([{ name: "Boundary Snack", timesLogged: 3 }]);
+    });
+
     it("caps results at the limit", async () => {
       for (let f = 0; f < 7; f++) {
         const item = await insertScannedItem(testUser.id, {
