@@ -1,6 +1,6 @@
 ---
 title: "validateNavigateParams checks safeParse but never reassigns the stripped result, so extra params survive into navigation"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-08-16
@@ -49,7 +49,7 @@ Related: `docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2
 today. Only AC3 and AC4 need #837 (see Dependencies). Do not let the live data-integrity
 bug sit open waiting on #837 if it stalls.
 
-- [ ] `validateNavigateParams` reassigns `val.params` to the parsed/stripped `result.data`
+- [x] `validateNavigateParams` reassigns `val.params` to the parsed/stripped `result.data`
       on success — **but first widen the two schemas below, or stripping will silently
       break working behaviour.** Verified 2026-08-16 by probing the live module: two other
       screens currently rely on extra keys surviving validation, and a naive "strip
@@ -63,18 +63,18 @@ bug sit open waiting on #837 if it stalls.
       `initialMessage` is plausibly how the coach pre-fills a RecipeChat message.
       For each: either widen the schema to include the tolerated field, or confirm and
       document that the LLM never emits it before tightening.
-- [ ] A test proves a `{ itemId, barcode }` payload for `screen: "NutritionDetail"` has
+- [x] A test proves a `{ itemId, barcode }` payload for `screen: "NutritionDetail"` has
       `itemId` removed after validation — verified RED first against the current code.
       Exercise **both** call sites, not just `action_card`: the `suggestion_list` path
       (`suggestionListSchema`, via `navigateActionSchema.superRefine`) reproduces the
       identical leak and has zero existing coverage for it in
       `shared/schemas/__tests__/coach-blocks.test.ts`.
-- [ ] The `as RootStackParamList["NutritionDetail"]` cast in `CoachChat.tsx` is either
+- [x] The `as RootStackParamList["NutritionDetail"]` cast in `CoachChat.tsx` is either
       removed in favour of the now-trustworthy narrowed type, or its remaining necessity
       is documented at the call site
-- [ ] The deferring note in `client/hooks/useNutritionLookup.ts`'s docblock is updated to
+- [x] The deferring note in `client/hooks/useNutritionLookup.ts`'s docblock is updated to
       record that the gap is closed
-- [ ] Closes with zero follow-ups
+- [x] Closes with zero follow-ups
 
 ## Implementation Notes
 

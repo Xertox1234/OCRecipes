@@ -196,3 +196,191 @@ describe("Coach Block Schemas", () => {
     ).toThrow();
   });
 });
+
+describe("validateNavigateParams stripping", () => {
+  // The next two tests are bug-reproduction tests: they fail without
+  // `val.params = result.data` in validateNavigateParams (verified RED
+  // against the pre-fix code) — they pin the reassignment itself.
+  it("strips an illegal itemId from NutritionDetail params via the action_card call site", () => {
+    const card = {
+      type: "action_card",
+      title: "View item",
+      subtitle: "Nutrition facts",
+      action: {
+        type: "navigate",
+        screen: "NutritionDetail",
+        // itemId is not part of screenParamSchemas.NutritionDetail and must
+        // not survive validation alongside barcode.
+        params: { barcode: "012345678905", itemId: 42 },
+      },
+      actionLabel: "View",
+    };
+    const parsed = actionCardSchema.parse(card);
+    if (parsed.action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(parsed.action.params).toEqual({ barcode: "012345678905" });
+    expect(parsed.action.params).not.toHaveProperty("itemId");
+  });
+
+  it("strips an illegal itemId from NutritionDetail params via the suggestion_list call site", () => {
+    const list = {
+      type: "suggestion_list",
+      items: [
+        {
+          title: "View item",
+          subtitle: "Nutrition facts",
+          action: {
+            type: "navigate",
+            screen: "NutritionDetail",
+            params: { barcode: "012345678905", itemId: 42 },
+          },
+        },
+      ],
+    };
+    const parsed = suggestionListSchema.parse(list);
+    const action = parsed.items[0].action;
+    if (!action || action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(action.params).toEqual({ barcode: "012345678905" });
+    expect(action.params).not.toHaveProperty("itemId");
+  });
+
+  // The next two tests are regression guards, not bug-reproduction tests:
+  // they pass identically before and after the reassignment fix (nothing
+  // was being stripped either way pre-fix). They exist to catch a FUTURE
+  // narrowing of screenParamSchemas that would newly start dropping these
+  // real, tolerated fields.
+  it("retains recipeType and type on FeaturedRecipeDetail params after stripping", () => {
+    const list = {
+      type: "suggestion_list",
+      items: [
+        {
+          title: "Greek Chicken Bowl",
+          subtitle: "480 cal - 42g P",
+          action: {
+            type: "navigate",
+            screen: "FeaturedRecipeDetail",
+            params: { recipeId: 123, recipeType: "mealPlan", type: "mealPlan" },
+          },
+        },
+      ],
+    };
+    const parsed = suggestionListSchema.parse(list);
+    const action = parsed.items[0].action;
+    if (!action || action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(action.params).toEqual({
+      recipeId: 123,
+      recipeType: "mealPlan",
+      type: "mealPlan",
+    });
+  });
+
+  it("retains initialMessage, remixSourceRecipeId, and remixSourceRecipeTitle on RecipeChat params after stripping", () => {
+    const card = {
+      type: "action_card",
+      title: "Remix this recipe",
+      subtitle: "Chat with the coach",
+      action: {
+        type: "navigate",
+        screen: "RecipeChat",
+        params: {
+          conversationId: 7,
+          initialMessage: "Make this vegan",
+          remixSourceRecipeId: 99,
+          remixSourceRecipeTitle: "Grilled Chicken Salad",
+        },
+      },
+      actionLabel: "Remix",
+    };
+    const parsed = actionCardSchema.parse(card);
+    if (parsed.action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(parsed.action.params).toEqual({
+      conversationId: 7,
+      initialMessage: "Make this vegan",
+      remixSourceRecipeId: 99,
+      remixSourceRecipeTitle: "Grilled Chicken Salad",
+    });
+  });
+
+  // Proves the mechanism both filterValidBlocks (client, every
+  // useChatMessages read) and validateBlocks (server) rely on:
+  // coachBlockSchema.safeParse(...).data is stripped, so a message
+  // persisted before this fix is stripped too, on next read — not just
+  // freshly-generated ones.
+  it("strips itemId when re-validated through coachBlockSchema, the schema every read path re-parses persisted blocks with", () => {
+    const rawBlock = {
+      type: "action_card",
+      title: "View item",
+      subtitle: "Nutrition facts",
+      action: {
+        type: "navigate",
+        screen: "NutritionDetail",
+        params: { barcode: "012345678905", itemId: 42 },
+      },
+      actionLabel: "View",
+    };
+    const result = coachBlockSchema.safeParse(rawBlock);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const block = result.data;
+    if (block.type !== "action_card" || block.action.type !== "navigate") {
+      throw new Error("expected an action_card with a navigate action");
+    }
+    expect(block.action.params).toEqual({ barcode: "012345678905" });
+  });
+
+  it("drops an out-of-vocabulary recipeType to undefined instead of failing the whole action", () => {
+    const card = {
+      type: "action_card",
+      title: "Greek Chicken Bowl",
+      subtitle: "480 cal - 42g P",
+      action: {
+        type: "navigate",
+        screen: "FeaturedRecipeDetail",
+        // "spoonacular" is a real value elsewhere in this schema
+        // (recipeCardSchema.source) but not a legal FeaturedRecipeDetail
+        // recipeType — must degrade the one field, not reject the action.
+        params: { recipeId: 123, recipeType: "spoonacular" },
+      },
+      actionLabel: "View recipe",
+    };
+    const parsed = actionCardSchema.parse(card);
+    if (parsed.action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(parsed.action.params).toEqual({ recipeId: 123 });
+  });
+
+  it("accepts a RecipeChat navigate action with no conversationId (a fresh remix/prefill chat)", () => {
+    const card = {
+      type: "action_card",
+      title: "Remix this recipe",
+      subtitle: "Chat with the coach",
+      action: {
+        type: "navigate",
+        screen: "RecipeChat",
+        params: {
+          remixSourceRecipeId: 99,
+          remixSourceRecipeTitle: "Grilled Chicken Salad",
+          initialMessage: "Make this vegan",
+        },
+      },
+      actionLabel: "Remix",
+    };
+    const parsed = actionCardSchema.parse(card);
+    if (parsed.action.type !== "navigate") {
+      throw new Error("expected a navigate action");
+    }
+    expect(parsed.action.params).toEqual({
+      remixSourceRecipeId: 99,
+      remixSourceRecipeTitle: "Grilled Chicken Salad",
+      initialMessage: "Make this vegan",
+    });
+  });
+});
