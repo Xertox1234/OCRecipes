@@ -107,8 +107,8 @@ via tests, but the underlying predicate is buggy independent of tests.
 
 - `server/storage/nutrition.ts` — `getMostEatenFoods` (fixed: `lt` → `lte`); `getDailyLogsInRange`
   shares the identical shape and the identical `today` call-site object but was deliberately
-  left half-open (out of scope, lower severity — no `HAVING` floor to amplify it); tracked at
-  `todos/P3-2026-08-16-getdailylogsinrange-boundary-tie.md`.
+  left half-open (out of scope, lower severity — no `HAVING` floor to amplify it). Surfaced
+  in code review as a deferred item for the user to triage, not filed as a follow-up todo.
 - `server/storage/__tests__/nutrition.test.ts` — the deterministic pinned regression test
   ("counts a log written at exactly the `to` boundary").
 - `server/services/coach-pro-chat.ts` — the single production caller (`today = new Date()`

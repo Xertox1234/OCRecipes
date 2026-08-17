@@ -146,10 +146,10 @@ leak other users' logs`:
   day-to-day) and the sibling `getDailyLogsInRange` (same `lt` shape, same `today` call site,
   but zero observed failures and out of this todo's Scope Contract) untouched. Both
   `code-reviewer` and `server-reviewer` independently flagged this as a real, lower-severity
-  (no `HAVING` floor to amplify it) deferred item during review — filed per CLAUDE.md's
-  low-severity auto-file policy as
-  `todos/P3-2026-08-16-getdailylogsinrange-boundary-tie.md`, not left as an unfiled
-  observation.
+  (no `HAVING` floor to amplify it) deferred item during review — per
+  `.claude/agents/todo-executor.md` Step 7.2, a review WARNING not fixed inline is recorded
+  verbatim and returned in the executor's report as a `DEFERRED_WARNING`, not auto-filed as
+  a follow-up todo (a reviewer's suggestion to file one does not override that).
 
 - **TDD.** Added a deterministic pinned regression test (`counts a log written at exactly the
 \`to\` boundary (window end is inclusive)`) to the `getMostEatenFoods`describe block —
@@ -162,8 +162,7 @@ inserts 2 logs strictly inside the window plus 1 log timestamped at exactly`to`,
   not the isolated `-t` filter that never did) — 0 failures. `retry:` was not used to mask
   anything; verification ran with `--retry 0` throughout.
 
-- Closes with no follow-ups on THIS function: `getMostEatenFoods` is fully fixed, verified,
-  and needs no further work. `getDailyLogsInRange`'s identical-shaped, lower-severity,
-  unconfirmed tie is tracked separately at
-  `todos/P3-2026-08-16-getdailylogsinrange-boundary-tie.md` (low-severity, auto-filed per
-  CLAUDE.md — not a reopening of this todo).
+- Closes with zero follow-ups: `getMostEatenFoods` is fully fixed and verified.
+  `getDailyLogsInRange`'s identical-shaped, lower-severity, unconfirmed tie surfaced in
+  review and is returned as a deferred warning for the user to triage — not filed as a
+  follow-up todo.

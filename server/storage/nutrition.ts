@@ -325,9 +325,8 @@ export async function getDailyLogsInRange(
  * (`coach-pro-chat.ts:545`, same `Promise.all`) — the identical tie risk
  * exists there too. It stays half-open deliberately: left out of this fix's
  * Scope Contract, and lower severity (no `HAVING` floor to amplify a missed
- * row into a vanished result) — tracked in
- * `todos/P3-2026-08-16-getdailylogsinrange-boundary-tie.md`, not silently
- * matched here.
+ * row into a vanished result) — do not "fix" it to match without checking
+ * its own callers and adding coverage first.
  *
  * `HAVING count >= 3` is a deliberate noise floor — one-off foods carry no
  * personalization signal. Discarded scanned items are excluded (mirrors
