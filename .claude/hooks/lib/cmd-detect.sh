@@ -150,11 +150,24 @@ cmd_words() {
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1)
         if (st == 0) {
-          # An unquoted backslash stays BLANKED, deliberately: it is what
-          # collapses a line-continuation (`eas \<newline>update`) back onto one
-          # line so the verb still matches. Unescaping it instead would break
-          # that covered case to close the far rarer `e\as` split.
-          if (c == BS)      { out = out " "; i++; if (i <= n) out = out " " }
+          # An unquoted backslash must NEVER render as whitespace. `\ ` is an
+          # escaped space: the shell JOINS on it, so `--body "ship it"\ --auto`
+          # is ONE argv word `ship it --auto` and gh never sees an --auto flag.
+          # Rendering it as spaces SPLIT what the shell joined, manufacturing a
+          # standalone `--auto` token that GRANTED guard-outward-cli`s
+          # immediate-merge carve-out (review, 2026-08-16). Emitting more tokens
+          # than argv contains is harmless for a deny-shaped check and fatal for
+          # a grant-shaped one, so the rendering must not do it at all.
+          #   \<newline>  -> emit NOTHING: a line continuation is REMOVED by the
+          #                  shell, joining the two lines into one word-stream.
+          #   \<anything> -> emit the placeholder twice: keeps the join, keeps
+          #                  the escaped char out of view (so `e\as` stays split
+          #                  and undetected — the documented backslash residual).
+          if (c == BS) {
+            i++
+            if (i <= n) { if (substr(buf, i, 1) != "\n") out = out PH PH }
+            else out = out PH
+          }
           else if (c == SQ) { st = 1 }               # DELETE the quote char: the shell does
           else if (c == DQ) { st = 2 }               # not pass it to argv either
           else                out = out c

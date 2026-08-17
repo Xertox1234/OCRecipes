@@ -152,6 +152,32 @@ rm -f "$STAMP_FILE"
 OUT=$(run_hook 'echo "gh pr create is what this gate covers"')
 assert_empty "a quoted MENTION of gh pr create passes through" "" "$OUT"
 
+# 12j. awk PRESENT BUT BROKEN. `declare -F cmd_words` proves the function is DEFINED, not that
+# it WORKS — cmd_words is implemented in awk, so a broken awk makes it emit NOTHING while the
+# lib still sources cleanly. Both the fast path and cmd_is_gh_pr_create then see an empty
+# rendering and report "no match", which used to skip the stamp gate entirely and ALLOW a real
+# `gh pr create`. Shadow awk with a failing stub rather than stripping PATH, so every other tool
+# this gate needs (git, the stamp helper) stays reachable — a PATH that loses those makes the
+# hook exit for an unrelated reason and the result stops meaning anything.
+AWKSTUB=$(mktemp -d)
+printf '#!/bin/sh\nexit 127\n' > "$AWKSTUB/awk"; chmod +x "$AWKSTUB/awk"
+trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}" "${AWKSTUB:-}"' EXIT
+run_hook_noawk() {
+  printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$1" '$c')" \
+    | PATH="$AWKSTUB:$PATH" bash "$HOOK"
+}
+# Control first: with awk WORKING and no stamp, this denies. If it did not, the two assertions
+# below would be measuring a broken fixture rather than the gate.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'gh pr create --title x --body y')
+assert_contains "control: awk working + no stamp denies" '"permissionDecision": "deny"' "$OUT"
+rm -f "$STAMP_FILE"
+OUT=$(run_hook_noawk 'gh pr create --title x --body y')
+assert_contains "broken awk still demands a stamp (fails CLOSED)" '"permissionDecision": "deny"' "$OUT"
+rm -f "$STAMP_FILE"
+OUT=$(run_hook_noawk 'ls -la')
+assert_empty "broken awk leaves unrelated bash alone" "" "$OUT"
+
 # 13. Helper UN-SOURCEABLE → DENY. Locks the fail-safe: if the shared stamp-path helper
 # can't be found, the guard must block (never silently allow a PR with no stamp).
 #

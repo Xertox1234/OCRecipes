@@ -553,6 +553,43 @@ assert_deny "gh pr \"merge\" 42 -b \"use --auto next time\" still denies (quoted
   "$(jsonc 'gh pr "merge" 42 -b "use --auto next time"')" \
   "gh pr merge"
 
+# AN ESCAPED SPACE JOINS. `--body "ship it"\ --auto` is ONE argv word
+# `ship it --auto`; gh never receives the flag, so --squash merges IMMEDIATELY.
+# Rendering `\ ` as whitespace split what the shell joined and manufactured a
+# standalone `--auto` that GRANTED the carve-out — the only grant-shaped check
+# in this file, so a forged token there is a real immediate merge.
+assert_deny "--body \"ship it\"\\ --auto denies (escaped space, forged --auto)" \
+  "$(jsonc 'gh pr merge 42 --squash --delete-branch --body "ship it"\ --auto')" \
+  "gh pr merge"
+assert_deny "-t \"subj\"\\ --auto denies (same, short flag)" \
+  "$(jsonc 'gh pr merge 42 -t "subj"\ --auto')" \
+  "gh pr merge"
+assert_deny "--body a\\ --auto denies (same, unquoted value)" \
+  "$(jsonc 'gh pr merge 42 --body a\ --auto')" \
+  "gh pr merge"
+assert_allow "a REAL --auto after a quoted body still allows (control)" \
+  "$(jsonc 'gh pr merge 42 --body "ship it" --auto')"
+
+# The placeholder cmd_words inserts is alphanumeric, and the method check was
+# case-INSENSITIVE, so `-f "- post"` rendered as `-xpost` and `-X` matched `-x`.
+# The flag is case-sensitive now; the value stays case-insensitive.
+assert_allow "gh api -f \"- post\" allows (placeholder must not forge -X)" \
+  "$(jsonc 'gh api repos/o/r/x -f "- post"')"
+assert_deny "gh api -X post still denies (lowercase VALUE is a real spelling)" \
+  "$(jsonc 'gh api -X post repos/o/r/pulls/1/merge')" \
+  "gh api"
+
+# Deny-only flag checks read raw $CMD *and* $WORDS, so a quoted split no longer
+# hides them. They can only ADD a deny, never grant a carve-out.
+assert_deny "gh pr merge --auto --ad\"min\" denies (quoted-split --admin)" \
+  "$(jsonc 'gh pr merge 42 --auto --ad"min"')" \
+  "--admin"
+assert_deny "eas build --auto-\"submit\" denies (quoted-split flag name)" \
+  "$(jsonc 'eas build --auto-"submit"')" \
+  "auto-submit"
+assert_allow "eas build without --auto-submit still allows (control)" \
+  "$(jsonc 'eas build --profile production')"
+
 # THE FAST PATH must read the same text the predicates read. A quote splitting
 # the RUNNER WORD leaves no literal needle in raw $CMD, so a raw-$CMD
 # necessary-substring filter exited 0 before any predicate ran — every one of
@@ -652,8 +689,11 @@ assert_allow "gh api with a read-only method still allows" \
 # than the code delivers.
 assert_allow "RESIDUAL: a BACKSLASH-split verb is still missed (e\\as update)" \
   "$(jsonc 'e\as update --branch preview')"
-assert_allow "RESIDUAL: a quoted flag NAME split mid-token is still missed" \
-  "$(jsonc 'eas build --auto-"submit"')"
+assert_allow "RESIDUAL: a leading backslash (alias-bypass idiom) is still missed" \
+  "$(jsonc '\gh pr merge 42')"
+# (The quoted flag-NAME residual that used to be pinned here — `eas build
+# --auto-"submit"` — is CLOSED: the deny-only flag checks read $CMD and $WORDS
+# now, so a quoted split is visible. Its deny is asserted above.)
 
 # Negative controls: keeping the words must NOT create new false denies. These
 # are the cases blanking was introduced to protect; the command-position ANCHOR

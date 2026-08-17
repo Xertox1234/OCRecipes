@@ -160,11 +160,15 @@
 #     (`gh pr merge`'s --auto, `gh api`'s method) still COUNT on `$WORDS` but
 #     VERIFY on `$BARE`, and deny when the two disagree — a quoted command word
 #     makes the carve-out unverifiable, and unverifiable must not mean granted.
-#     Residual: a verb split by a BACKSLASH (`e\as update`) is still missed — the
-#     renderings blank an escaped char rather than unescaping it. So is a quoted
-#     flag NAME split mid-token (`eas build --auto-"submit"`); the quoted flag
-#     VALUE forms (`gh api -X "PUT"`) were fixed at the same time by scanning raw
-#     $CMD. Pinned in test-guard-outward-cli.sh under "QUOTED COMMAND WORDS".
+#     Residual, BACKSLASH forms only: a verb split by a backslash (`e\as
+#     update`) or prefixed by one (`\gh pr merge` — the alias-bypass idiom) is
+#     still missed, because the renderings hide an escaped character rather than
+#     unescaping it. The QUOTED flag forms are covered: quoted flag VALUES
+#     (`gh api -X "PUT"`) via the $WORDS clause, and quoted flag NAMES
+#     (`--ad"min"`, `--auto-"submit"`) because the two deny-only flag checks scan
+#     `$CMD$WORDS` — they can only ADD a deny, never grant a carve-out, so
+#     reading both renderings is free. Pinned in test-guard-outward-cli.sh under
+#     "QUOTED COMMAND WORDS".
 #   * SCOPE, stated so it is not inferred: `update:preview`/`update:production`
 #     are the only package.json scripts covered. `migrate:images-r2` and
 #     `backfill:recipe-images` also mutate production Cloudflare R2 in place
@@ -433,7 +437,7 @@ fi
 # only ever ADD a deny. No trailing boundary, so `--auto-submit-with-profile`
 # is caught by the same pattern.
 if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS" \
-   && grep -Eq '(^|[^-A-Za-z0-9])--auto-submit' <<< "$CMD"; then
+   && grep -Eq '(^|[^-A-Za-z0-9])--auto-submit' <<< "$CMD$WORDS"; then
   deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -572,7 +576,7 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # whitespace-only check). The boundary class is "not a word/dash character"
   # rather than strictly whitespace, so it also catches `--admin=true`,
   # `--admin=1`, and a trailing quote/comma/etc.
-  if grep -Eq '(^|[^-A-Za-z0-9])--admin([^-A-Za-z0-9]|$)' <<< "$CMD"; then
+  if grep -Eq '(^|[^-A-Za-z0-9])--admin([^-A-Za-z0-9]|$)' <<< "$CMD$WORDS"; then
     deny "guard-outward-cli: command-position 'gh pr merge --admin' uses administrator privileges to merge a PR that may not meet requirements — this contradicts the --auto carve-out's premise (branch protection gating). Denying regardless of --auto. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
 fi
@@ -645,7 +649,14 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # --method=POST) AND the glued short-flag form (-XPOST — the common
   # curl-style spelling; found bypassing a separator-only pattern in review
   # round 2), case-insensitively.
-  if [ -n "$GH_API_CLAUSE" ] && grep -Eqi '(^|[[:space:]])(-X(post|put|patch|delete)([[:space:]]|$)|(-X|--method)([[:space:]]+|=)(post|put|patch|delete)([[:space:]]|$))' <<< "$GH_API_CLAUSE"; then
+  # The FLAG is matched case-SENSITIVELY (`-X`, `--method`) and only the VALUE
+  # case-insensitively, per this file's stated flag-detection policy. A blanket
+  # `grep -Eqi` made `-X` also match `-x`, which collides with the alphanumeric
+  # placeholder cmd_words inserts: `gh api repos/o/r -f "- post"` rendered as
+  # `-xpost` and falsely denied (review, 2026-08-16). `-X post` is a real
+  # spelling, so the value must stay case-insensitive.
+  _GH_API_M='([Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])'
+  if [ -n "$GH_API_CLAUSE" ] && grep -Eq "(^|[[:space:]])(-X${_GH_API_M}([[:space:]]|$)|(-X|--method)([[:space:]]+|=)${_GH_API_M}([[:space:]]|$))" <<< "$GH_API_CLAUSE"; then
     deny "guard-outward-cli: command-position 'gh api' with a mutating HTTP method (-X/--method POST/PUT/PATCH/DELETE, spaced/=/glued) can invoke an arbitrary GitHub REST mutation — including a PR merge via a different subcommand than the dedicated 'gh pr merge' check above. Read-only 'gh api' (GET, the default with no -X/--method) is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
 fi

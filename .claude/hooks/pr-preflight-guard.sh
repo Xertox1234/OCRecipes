@@ -32,10 +32,18 @@ case "$TOOL" in
     HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_words >/dev/null; then
       words=$(printf '%s' "$CMD" | cmd_words)
-      # An empty rendering from a non-empty command means the awk backend is broken — do NOT
-      # fast-path out on it, fall through to the precise check and the stamp gate.
+      # An empty rendering from a NON-empty command means the awk backend is missing or broken
+      # (`declare -F cmd_words` proves the function is DEFINED, not that it WORKS — with awk off
+      # PATH the lib sources cleanly and the renderer silently emits nothing). Both the fast path
+      # AND the precise matcher below are then blind, so this hook must NOT consult either: it
+      # degrades to the raw filter and goes straight to the stamp gate. Without this, an awk-less
+      # PATH made `gh pr create --fill` ALLOW outright — no stamp demanded (review, 2026-08-16;
+      # mirrors guard-outward-cli.sh's own blank-rendering detector).
       if [ -n "${words//[[:space:]]/}" ]; then
         case "$words" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+      elif [ -n "${CMD//[[:space:]]/}" ]; then
+        WORDS_BROKEN=1
+        case "$CMD" in *gh*pr*create*) : ;; *) exit 0 ;; esac
       fi
     else
       # Lib unsourceable (broken install): cmd_is_gh_pr_create cannot run either, so this hook
@@ -53,7 +61,11 @@ case "$TOOL" in
     # install), FAIL TOWARD DENY: skip the precise check and fall through to the stamp gate.
     # ($HERE and the lib are already resolved by the fast path above; re-sourcing is idempotent
     # and keeps this branch correct even if the fast-path block is ever moved or removed.)
-    if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_gh_pr_create >/dev/null; then
+    # Skipped when the renderer is broken (WORDS_BROKEN): cmd_is_gh_pr_create reads the same
+    # empty rendering, so it would return "no match" for a REAL `gh pr create` and exit 0,
+    # silently skipping the stamp gate. Falling through to that gate is the fail-closed direction.
+    if [ "${WORDS_BROKEN:-0}" != 1 ] \
+       && . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_gh_pr_create >/dev/null; then
       cmd_is_gh_pr_create "$CMD" || exit 0
     fi
     ;;

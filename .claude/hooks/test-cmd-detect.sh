@@ -139,12 +139,19 @@ echo "--- residuals pinned AT THE LAYER THAT OWNS THEM ---"
 # cmd_words alone would leave the guard-level pin green. Pin it here instead,
 # where exactly one mechanism decides.
 render cmd_words 'e\as update' absent 'eas update' \
-  "RESIDUAL: an unquoted backslash is BLANKED, not unescaped (e\\as stays split)"
-# ...and the reason it is blanked rather than unescaped: blanking is what
-# collapses a line continuation back onto one line so the verb still matches.
+  "RESIDUAL: an unquoted backslash hides the escaped char (e\\as stays split)"
+# An escaped char must never render as WHITESPACE. `\ ` is an escaped space: the
+# shell JOINS on it, so `--body "ship it"\ --auto` is ONE argv word and gh never
+# receives an --auto flag. Rendering spaces there SPLIT what the shell joined and
+# manufactured a standalone `--auto` token, which GRANTED the immediate-merge
+# carve-out. Showing more tokens than argv holds is fatal for a grant-shaped check.
+render cmd_words 'gh pr merge 42 --body "a"\ --auto' absent ' --auto' \
+  "an escaped space JOINS: --auto never becomes a standalone token"
+# A line continuation is the one escape the shell REMOVES entirely, so it must
+# emit nothing and let the surrounding space do the separating.
 render cmd_words 'eas \
-update --branch preview' present 'eas   update' \
-  "a line continuation collapses so the verb still matches (why BS stays blanked)"
+update --branch preview' present 'eas update' \
+  "a line continuation collapses onto one line so the verb still matches"
 
 echo "--- the two renderings must not silently drift ---"
 # They differ in exactly three places, all quote/escape handling. On input with
