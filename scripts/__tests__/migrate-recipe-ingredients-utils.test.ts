@@ -62,6 +62,44 @@ describe("migrate-recipe-ingredients-utils", () => {
       );
       expect(cleanInstructionLine("- Serve hot")).toBe("Serve hot");
     });
+
+    it("falls back to unwrapping bold markers instead of destroying a step with no label colon", () => {
+      // The bold-label strip is destructive by design (a genuine label
+      // should be discarded) — but with no colon to distinguish "label"
+      // from "body", a step wrapped ENTIRELY in bold matches the same
+      // pattern end-to-end and would otherwise be reduced to "".
+      expect(
+        cleanInstructionLine("**Press the tofu firmly between paper towels**"),
+      ).toBe("Press the tofu firmly between paper towels");
+    });
+
+    it("does NOT let the fallback rescue a genuine label — the label is still discarded", () => {
+      // Two-sided pin: the sibling test above proves the fallback fires when
+      // the destructive strip empties the line; this proves the fallback
+      // does NOT fire on the label case, where the destructive strip is
+      // supposed to win and discard "Prep Tofu:". If a future change made
+      // the label case ALSO empty out, the fallback would silently "rescue"
+      // it as "Prep Tofu: press the tofu" instead — a different wrong
+      // answer that a same-value assertion wouldn't catch.
+      const result = cleanInstructionLine("**Prep Tofu:** press the tofu");
+      expect(result).toBe("press the tofu");
+      expect(result).not.toContain("Prep Tofu");
+    });
+
+    // GUARD-DEFEAT FIX. The fallback above is gated on the intermediate
+    // AFTER the bullet/number strips, not on `raw` — a bare marker with NO
+    // real content (just "1." or "-") reduces to "" during the bullet/number
+    // strips alone, before the bold-label strip that the fallback exists to
+    // rescue from ever runs. Gating on `raw` instead would revive these bare
+    // markers as fake instruction text, defeating the caller's empty-result
+    // data-loss guard for the one case it exists to catch. Found in review
+    // by actually running these exact inputs.
+    it.each(["1.", "-"])(
+      "still reduces a bare bullet/number marker with no content to empty: %s",
+      (bareMarker) => {
+        expect(cleanInstructionLine(bareMarker)).toBe("");
+      },
+    );
   });
 
   describe("splitInstructionsArray — the four documented storage patterns", () => {
@@ -181,13 +219,13 @@ describe("migrate-recipe-ingredients-utils", () => {
     });
 
     it("returns null when the steps section holds only a repeated header line", () => {
-      // The steps filter drops lines starting with the header words, so a
-      // duplicated "Directions" label leaves nothing behind.
-      // NOT an endorsement of that filter: it is over-broad and also eats a
-      // legitimate step like "Cooking time is 20 minutes". This test pins
-      // only the case where the filter empties the list — the guard then
-      // skips the row. The partial case (one step of five swallowed) is a
-      // SEPARATE open defect and is deliberately not asserted here.
+      // The steps filter drops only header-SHAPED lines (the whole line,
+      // optionally with a trailing colon), so a bare duplicated "Directions"
+      // label still matches and leaves nothing behind — the guard then skips
+      // the row. A real step that merely BEGINS with a header word (e.g.
+      // "Cooking time is 20 minutes") now SURVIVES — see the "real steps
+      // that begin with a header word" tests below, which pin the fix for
+      // the partial-loss case this comment used to call a separate open defect.
       expect(
         splitInstructionsArray([
           "Ingredients:",
@@ -196,6 +234,172 @@ describe("migrate-recipe-ingredients-utils", () => {
           "Directions",
           "",
         ]),
+      ).toBeNull();
+    });
+
+    // PARTIAL-LOSS FIX. Before this fix, the steps filter matched any line
+    // PREFIXED by a header word, so a real step that happened to start with
+    // "Instructions"/"Steps"/"Preparation"/"Cooking"/"Directions" was
+    // silently swallowed — indistinguishable from an actual section header.
+    // Each fixture below has a SECOND, plain step alongside the header-
+    // prefixed one, so a regression that re-swallows the first step still
+    // leaves a non-empty array (passing the data-loss guard) and would only
+    // be caught by asserting the FULL array — not `toContain`.
+    it.each([
+      "Instructions from the original author call for a 9-inch pan.",
+      "Steps 4 and 5 can be done a day ahead.",
+      "Preparation note: bring the butter to room temperature first.",
+      "Cooking time is about 20 minutes — check at 15.",
+      "Directions may vary by oven; start checking early.",
+    ])(
+      "keeps a real step that begins with a header word: %s",
+      (headerPrefixedStep) => {
+        const result = splitInstructionsArray([
+          `Ingredients:\n1 egg\n2 cups flour\nInstructions:\n${headerPrefixedStep}\nWhisk the egg`,
+        ]);
+        expect(result).not.toBeNull();
+        expect(result!.instructions).toEqual([
+          headerPrefixedStep,
+          "Whisk the egg",
+        ]);
+      },
+    );
+
+    it("still drops a genuine header-only line even among real steps", () => {
+      // Two-sided pin (docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md):
+      // the sibling test above proves a header-PREFIXED sentence survives;
+      // this proves a header-SHAPED line (the whole line, optionally with a
+      // trailing colon) is still dropped, even when real steps surround it.
+      const result = splitInstructionsArray([
+        "Ingredients:\n1 egg\n2 cups flour\nInstructions:\nDirections:\nWhisk the egg\nFry until golden",
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.instructions).toEqual([
+        "Whisk the egg",
+        "Fry until golden",
+      ]);
+    });
+
+    it("keeps a real ingredient line that begins with the word 'ingredients'", () => {
+      // Same header-SHAPED treatment applied to the `^ingredients` filter.
+      const result = splitInstructionsArray([
+        "Ingredients:\nIngredients from a local farm work best\n2 cups flour\nInstructions:\nWhisk the egg",
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.ingredients.map((i) => i.name)).toEqual([
+        "Ingredients from a local farm work best",
+        "flour",
+      ]);
+    });
+
+    it("reports only header-SHAPED drops, never blank-line drops, in droppedHeaderLines", () => {
+      const result = splitInstructionsArray([
+        "Ingredients:\n1 egg\n2 cups flour\nInstructions:\n\nDirections:\nWhisk the egg\n\nFry until golden",
+      ]);
+      expect(result).not.toBeNull();
+      // Blank lines are filtered too, but must NOT show up as "dropped" —
+      // only the genuine header echo ("Directions:") belongs in the report,
+      // or the dry-run summary becomes noise on every row and operators stop
+      // reading it.
+      expect(result!.droppedHeaderLines).toEqual(["Directions:"]);
+    });
+
+    it("reports a header echo from the ingredients side too, in section order", () => {
+      // Counterpart to the steps-side droppedHeaderLines test above — the
+      // `^ingredients` filter got the identical header-SHAPED treatment
+      // (AC: "gets the same treatment"), and the concatenation order
+      // (ingredients half first, then steps half) is otherwise unverified.
+      const result = splitInstructionsArray([
+        "Ingredients:\nIngredients:\n1 egg\n2 cups flour\nInstructions:\nWhisk the egg",
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.ingredients.map((i) => i.name)).toEqual(["egg", "flour"]);
+      expect(result!.droppedHeaderLines).toEqual(["Ingredients:"]);
+    });
+
+    // LOCATOR ANCHOR FIX. Before this fix, the section-boundary regexes that
+    // FIND "Ingredients:"/"Instructions:" (distinct from the per-line filters
+    // above, which only run AFTER the boundary is found) were unanchored
+    // substring matches — a header word appearing anywhere in the blob, even
+    // mid-line inside real content, could hijack the split. Found in review
+    // by actually running this exact input, not by inspection.
+    it("does not let an ingredient line ending in a trigger word hijack the steps boundary", () => {
+      const result = splitInstructionsArray([
+        "Ingredients:\n2 tbsp oil for cooking\n1 egg\nInstructions:\nWhisk",
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.ingredients).toEqual([
+        { quantity: "2", unit: "tbsp", name: "oil for cooking" },
+        { quantity: "1", unit: "", name: "egg" },
+      ]);
+      expect(result!.instructions).toEqual(["Whisk"]);
+      // The tell that the split landed on the REAL "Instructions:" header
+      // instead of eating a fake match mid-ingredient-line: nothing was
+      // dropped as a header echo.
+      expect(result!.droppedHeaderLines).toEqual([]);
+    });
+
+    // DESTRUCTIVE-CLEAN FIX. `cleanInstructionLine`'s bold-label strip is
+    // destructive by design (a genuine "**Step 1:**" label should be
+    // discarded) — but a step wrapped ENTIRELY in bold with no colon to
+    // distinguish "label" from "body" used to match the same pattern
+    // end-to-end and be destroyed to "", vanishing with zero signal (it
+    // never reaches the header-shape filter, since `line.length > 0` runs
+    // first). Found in review by actually running this exact input.
+    it("keeps a step that is wrapped ENTIRELY in bold markdown with no label colon", () => {
+      const result = splitInstructionsArray([
+        "Ingredients:\n1 egg\nInstructions:\n**Press the tofu firmly between paper towels**\nFry until golden",
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.instructions).toEqual([
+        "Press the tofu firmly between paper towels",
+        "Fry until golden",
+      ]);
+    });
+
+    it("still finds an indented header line (leading whitespace tolerance)", () => {
+      // The anchor fix above (`^` + `m`) closes the mid-line-hijack hole, but
+      // a naive anchor would ALSO stop matching a header line that has
+      // leading spaces/tabs — a real, previously-working input class. `[ \t]*`
+      // tolerates the indentation while still requiring the header word to be
+      // the first NON-whitespace content on the line (the sibling hijack
+      // test above pins that "2 tbsp oil for cooking" still does not match).
+      const result = splitInstructionsArray([
+        "  Ingredients:\n1 egg\n2 cups flour\n  Instructions:\nWhisk the egg",
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.ingredients.map((i) => i.name)).toEqual(["egg", "flour"]);
+      expect(result!.instructions).toEqual(["Whisk the egg"]);
+    });
+
+    it("still finds Pattern C's numbered header line (numbered-prefix tolerance)", () => {
+      // Same anchor-vs-coverage trade-off as leading whitespace above, this
+      // time for the docblock's own claimed "Pattern C — bold label embedded
+      // in a numbered element". `(?:\d+[.)]\s*)?` requires the digits be
+      // immediately followed by "." or ")", so "2 tbsp oil for cooking"
+      // (digit then a space) still cannot match it.
+      const result = splitInstructionsArray([
+        "1. **Ingredients**:\n- 1 cucumber\n2. **Steps**:\n- Slice the cucumber",
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.ingredients).toEqual([
+        { quantity: "1", unit: "", name: "cucumber" },
+      ]);
+      expect(result!.instructions).toEqual(["Slice the cucumber"]);
+    });
+
+    // GUARD-DEFEAT FIX (integration level). Counterpart to the
+    // `cleanInstructionLine` unit tests above: a steps section whose ENTIRE
+    // content is a bare bullet/number marker must still trip the
+    // empty-result data-loss guard and return null — not silently write
+    // `["1."]` over the recipe's real prose. Found in review by actually
+    // running this exact input.
+    it("still returns null when the steps section is only a bare number/bullet marker", () => {
+      expect(
+        splitInstructionsArray(["Ingredients:\n1 egg\nInstructions:\n1.\n"]),
+      ).toBeNull();
+      expect(
+        splitInstructionsArray(["Ingredients:\n1 egg\nInstructions:\n-\n"]),
       ).toBeNull();
     });
   });
