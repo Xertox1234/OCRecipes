@@ -589,6 +589,15 @@ assert_deny "eas build --auto-\"submit\" denies (quoted-split flag name)" \
   "auto-submit"
 assert_allow "eas build without --auto-submit still allows (control)" \
   "$(jsonc 'eas build --profile production')"
+# Those two checks scan BOTH renderings, which are fed to grep separated by a
+# NEWLINE. Concatenated directly, the seam spells flags that appear in neither
+# string: end-of-$CMD `--ad` + start-of-$WORDS `min` = `--admin`. Both were
+# false denies (fail-safe), but a fabricated match in a grant-shaped check would
+# be a bypass, so pin that no token may span the boundary.
+assert_allow "the \$CMD/\$WORDS seam cannot forge --admin" \
+  "$(jsonc 'min; gh pr merge 42 --auto --ad')"
+assert_allow "the \$CMD/\$WORDS seam cannot forge --auto-submit" \
+  "$(jsonc 'submit; eas build --auto-')"
 
 # THE FAST PATH must read the same text the predicates read. A quote splitting
 # the RUNNER WORD leaves no literal needle in raw $CMD, so a raw-$CMD

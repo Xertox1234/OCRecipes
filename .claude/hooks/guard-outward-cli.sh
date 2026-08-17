@@ -437,7 +437,8 @@ fi
 # only ever ADD a deny. No trailing boundary, so `--auto-submit-with-profile`
 # is caught by the same pattern.
 if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS" \
-   && grep -Eq '(^|[^-A-Za-z0-9])--auto-submit' <<< "$CMD$WORDS"; then
+   && grep -Eq '(^|[^-A-Za-z0-9])--auto-submit' <<< "$CMD
+$WORDS"; then   # NEWLINE, not concatenation — see the --admin check for why
   deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -576,7 +577,15 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # whitespace-only check). The boundary class is "not a word/dash character"
   # rather than strictly whitespace, so it also catches `--admin=true`,
   # `--admin=1`, and a trailing quote/comma/etc.
-  if grep -Eq '(^|[^-A-Za-z0-9])--admin([^-A-Za-z0-9]|$)' <<< "$CMD$WORDS"; then
+  # Scans BOTH renderings: raw $CMD (a quoted VALUE like `--auto "--admin"` must
+  # still be seen) and $WORDS (a quoted-split NAME like `--ad"min"` is only
+  # visible there). A deny-only check can read both for free — it can add a deny,
+  # never grant a carve-out. They are fed to grep separated by a NEWLINE and must
+  # stay that way: concatenated, the seam spells flags present in NEITHER string
+  # (end-of-$CMD `--ad` + start-of-$WORDS `min` = `--admin`), and grep is
+  # line-oriented so a newline makes a boundary-spanning match impossible.
+  if grep -Eq '(^|[^-A-Za-z0-9])--admin([^-A-Za-z0-9]|$)' <<< "$CMD
+$WORDS"; then
     deny "guard-outward-cli: command-position 'gh pr merge --admin' uses administrator privileges to merge a PR that may not meet requirements — this contradicts the --auto carve-out's premise (branch protection gating). Denying regardless of --auto. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
 fi
