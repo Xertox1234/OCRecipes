@@ -24,12 +24,28 @@
 #     create` while the valid `timeout 30 …` still slips past — which would re-create
 #     the exact false-coverage this refactor deletes. Only the zero-arg / assignment
 #     forms (`env NAME=v`, `command`, `builtin`, `exec`, `nohup`, `setsid`) are skipped.
-#   * $'…' ANSI-C quoting is treated as a plain single-quote span (its \' does not
-#     close the span in a real shell). This errs toward OVER-blanking = the deny side.
-#   * A keyword character split by a BACKSLASH — `g\h pr create` — still defeats
-#     detection: cmd_bare and cmd_words both BLANK an escaped character rather than
-#     unescaping it, so the matcher sees the keyword broken by spaces. Out of scope
-#     (that is the SKIP_* bypass's job).
+#   * $'…' ANSI-C quoting has its OWN scan state as of 2026-08-16. It previously
+#     reused the plain single-quote state, and the note here claimed that "errs
+#     toward OVER-blanking = the deny side". That claim was false in BOTH
+#     directions and the construct was a total bypass, on main and every branch
+#     commit before the fix — verified by running:
+#       - the `$` sigil survived, so `$'eas' update` rendered as `$eas update`,
+#         which no command-position anchor matches: silent ALLOW on every gate;
+#       - `\'` inside the span was read as a CLOSER, but bash treats it as a
+#         literal apostrophe. The span ended early and the trailing quote
+#         re-opened one that swallowed the rest of the command, so the one-token
+#         prefix `echo $'it\'s ok'; ` hid EVERY deny family — and in the other
+#         direction forged a standalone `--auto` token that GRANTED
+#         guard-outward-cli's immediate-merge carve-out.
+#     Pinned in test-cmd-detect.sh and test-guard-outward-cli.sh. The lesson worth
+#     keeping: "errs toward the deny side" is a claim about behaviour and needs a
+#     test, not a comment.
+#   * A keyword character split by a BACKSLASH — `g\h pr create`, and the leading
+#     `\gh pr create` alias-bypass idiom — still defeats detection: both renderings
+#     HIDE an escaped character rather than unescaping it, so the matcher sees the
+#     keyword broken. Out of scope (that is the SKIP_* bypass's job). Note this
+#     also means a deny-only flag scan can MISS a spelling (`--ad\min` is a real
+#     `--admin` to gh); such a scan can only fail to add a deny, never grant.
 #   * A keyword split by a QUOTE — `g"h" pr create`, `gh pr "create"` — USED to defeat
 #     detection for the same reason, and no longer does: `cmd_words` below reproduces
 #     the argv the shell actually builds, and every command-position-anchored matcher
@@ -61,19 +77,38 @@ cmd_bare() {
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\" }
     { buf = buf $0 "\n" }
     END {
-      st = 0           # 0 = unquoted, 1 = inside single quotes, 2 = inside double quotes
+      # 0 = unquoted, 1 = single quotes, 2 = double quotes, 3 = ANSI-C $(quote)
+      st = 0
       n = length(buf)
       out = ""
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1)
         if (st == 0) {
           if (c == BS)      { out = out " "; i++; if (i <= n) out = out " " }
+          # `$` immediately before a quote is a QUOTING SIGIL, not part of the
+          # word: bash strips it from $(sq)…(sq) and $"…". Keeping it left the
+          # verb as `$eas`, which no command-position anchor can match — a
+          # silent ALLOW on every gate (review, 2026-08-16). Consume both.
+          else if (c == "$" && i < n && (substr(buf, i+1, 1) == SQ || substr(buf, i+1, 1) == DQ)) {
+            if (substr(buf, i+1, 1) == SQ) st = 3; else st = 2
+            i++
+            out = out "  "
+          }
           else if (c == SQ) { st = 1; out = out " " }
           else if (c == DQ) { st = 2; out = out " " }
           else                out = out c            # keep separators/words/newlines
         } else if (st == 1) {
           if (c == SQ)      { st = 0; out = out " " }
           else                out = out " "          # single quotes: no escapes inside
+        } else if (st == 3) {
+          # ANSI-C $(sq)…(sq): a backslash ESCAPES the next character, so \(sq)
+          # is a literal apostrophe and does NOT close the span. Treating it as a
+          # closer ended the span early and let the trailing quote re-open one
+          # that swallowed the rest of the command — `echo $(sq)it\(sq)s ok(sq); eas update`
+          # hid EVERY deny family in this lib and its consumers.
+          if (c == BS)      { out = out " "; i++; if (i <= n) out = out " " }
+          else if (c == SQ) { st = 0; out = out " " }
+          else                out = out " "
         } else {
           if (c == BS)      { out = out " "; i++; if (i <= n) out = out " " }  # \" stays in span
           else if (c == DQ) { st = 0; out = out " " }
@@ -144,7 +179,8 @@ cmd_words() {
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96); PH = "x" }
     { buf = buf $0 "\n" }
     END {
-      st = 0           # 0 = unquoted, 1 = inside single quotes, 2 = inside double quotes
+      # 0 = unquoted, 1 = single quotes, 2 = double quotes, 3 = ANSI-C $(quote)
+      st = 0
       n = length(buf)
       out = ""
       for (i = 1; i <= n; i++) {
@@ -168,16 +204,38 @@ cmd_words() {
             if (i <= n) { if (substr(buf, i, 1) != "\n") out = out PH PH }
             else out = out PH
           }
-          else if (c == SQ) { st = 1 }               # DELETE the quote char: the shell does
-          else if (c == DQ) { st = 2 }               # not pass it to argv either
+          # `$` immediately before a quote is a QUOTING SIGIL that bash strips
+          # from the word ($(sq)…(sq) ANSI-C, $"…" locale). Emitting it left the verb
+          # as `$eas`, which no command-position anchor matches — a silent ALLOW
+          # on every gate (review, 2026-08-16). Consume the sigil AND enter the
+          # right span state; a bare `$` (e.g. `$VAR`) is untouched.
+          else if (c == "$" && i < n && (substr(buf, i+1, 1) == SQ || substr(buf, i+1, 1) == DQ)) {
+            if (substr(buf, i+1, 1) == SQ) st = 3; else st = 2
+            i++
+            sp = length(out)
+          }
+          else if (c == SQ) { st = 1; sp = length(out) }   # DELETE the quote char: the
+          else if (c == DQ) { st = 2; sp = length(out) }   # shell omits it from argv too
           else                out = out c
         } else if (st == 1) {
-          if (c == SQ)         { st = 0 }
+          if (c == SQ)         { st = 0; if (length(out) == sp) out = out PH }
           else if (neutral(c))   out = out PH
           else                   out = out c         # keep the word bytes
+        } else if (st == 3) {
+          # ANSI-C $(sq)…(sq): a backslash ESCAPES the next character, so \(sq) is a
+          # literal apostrophe that does NOT close the span. Treating it as a
+          # closer ended the span early and let the trailing quote re-open one
+          # that swallowed the rest of the command — a one-token prefix
+          # (`echo $(sq)it\(sq)s ok(sq); `) hid EVERY deny family, and in the other
+          # direction forged a standalone `--auto` that granted the
+          # immediate-merge carve-out. Escapes keep the span ONE word.
+          if (c == BS) { i++; if (i <= n) out = out PH PH; else out = out PH }
+          else if (c == SQ)    { st = 0; if (length(out) == sp) out = out PH }
+          else if (neutral(c))   out = out PH
+          else                   out = out c
         } else {
           if (c == BS)         { out = out PH; i++; if (i <= n) out = out PH }
-          else if (c == DQ)    { st = 0 }
+          else if (c == DQ)    { st = 0; if (length(out) == sp) out = out PH }
           else if (neutral(c))   out = out PH
           else                   out = out c
         }

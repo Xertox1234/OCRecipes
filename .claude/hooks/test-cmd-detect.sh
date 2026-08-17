@@ -153,6 +153,36 @@ render cmd_words 'eas \
 update --branch preview' present 'eas update' \
   "a line continuation collapses onto one line so the verb still matches"
 
+echo "--- ANSI-C \$'...' quoting: the sigil, and \\' as a LITERAL ---"
+# Bash strips the `$` sigil from $'…'/$"…". Keeping it left the verb as `$eas`,
+# which no command-position anchor matches — a silent ALLOW on every gate.
+render cmd_words "\$'eas' update" present 'eas update' \
+  "cmd_words drops the \$ sigil before a quote"
+render cmd_words '$"gh" pr create' present 'gh pr create' \
+  "...for the \$\"...\" locale form too"
+render cmd_words 'echo $HOME' present '$HOME' \
+  "a bare \$ (not before a quote) is untouched"
+det cmd_is_gh_pr_create "\$'gh' pr create --fill" yes "ANSI-C-quoted verb is detected"
+# Inside $'…' a backslash ESCAPES the next char, so \' is a literal apostrophe and
+# does NOT close the span. Treating it as a closer ended the span early and let the
+# trailing quote re-open one that swallowed the REST OF THE COMMAND — a one-token
+# prefix hid every deny family in this lib and its consumers.
+det cmd_is_git_commit "echo \$'it\\'s ok'; git commit -m x" yes \
+  "a \\' inside \$'...' does not swallow the rest of the command"
+det cmd_is_gh_pr_create "echo \$'it\\'s ok'; gh pr create --fill" yes \
+  "...same for the PR-create gate"
+render cmd_bare "echo \$'it\\'s ok'; git commit" present '; git commit' \
+  "cmd_bare closes the ANSI-C span correctly too"
+
+echo "--- an EMPTY quoted span is still one argv word ---"
+# Rendering it as nothing DELETED the word, so the flag before it became the `prev`
+# of whatever followed: `--body "" --auto` read as `--body --auto`, and the
+# value-flag decoy check then withheld a carve-out it should have granted.
+render cmd_words 'gh pr merge 42 --body "" --auto' present '--body x --auto' \
+  "an empty double-quoted span survives as one token"
+render cmd_words "gh pr merge 42 --body '' --auto" present '--body x --auto' \
+  "an empty single-quoted span survives as one token"
+
 echo "--- the two renderings must not silently drift ---"
 # They differ in exactly three places, all quote/escape handling. On input with
 # no quote and no backslash they must be byte-identical; a divergence here means

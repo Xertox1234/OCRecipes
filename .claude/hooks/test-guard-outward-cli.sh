@@ -599,6 +599,52 @@ assert_allow "the \$CMD/\$WORDS seam cannot forge --admin" \
 assert_allow "the \$CMD/\$WORDS seam cannot forge --auto-submit" \
   "$(jsonc 'submit; eas build --auto-')"
 
+# ---------- ANSI-C $'...' quoting (2026-08-16) --------------------------------
+# Two defects, both PRE-EXISTING on main and both total bypasses:
+#  (1) bash strips the `$` sigil, the scanner kept it, and `$eas` matches no
+#      command-position anchor;
+#  (2) inside $'…' a backslash escapes the next char, so \' is a LITERAL
+#      apostrophe. Treating it as a closer ended the span early and the trailing
+#      quote re-opened one that swallowed the rest of the command — a one-token
+#      prefix disabled EVERY deny family below.
+assert_deny "\$'eas' update denies (ANSI-C-quoted verb)" \
+  "$(jsonc "\$'eas' update --branch production")" \
+  "eas update/publish/submit"
+assert_deny "eas \$'update' denies (ANSI-C-quoted subcommand)" \
+  "$(jsonc "eas \$'update' --branch production")" \
+  "eas update/publish/submit"
+assert_deny "\$\"npm\" publish denies (locale-quoted verb)" \
+  "$(jsonc '$"npm" publish')" \
+  "npm publish"
+# The universal-prefix bypass, asserted against several verb families so a
+# partial regression cannot hide behind one passing case.
+assert_deny "an ANSI-C escaped-quote prefix no longer hides eas update" \
+  "$(jsonc "echo \$'it\\'s ok'; eas update --branch production")" \
+  "eas update/publish/submit"
+assert_deny "...nor npm publish" \
+  "$(jsonc "echo \$'it\\'s ok'; npm publish")" \
+  "npm publish"
+assert_deny "...nor railway up" \
+  "$(jsonc "echo \$'it\\'s ok'; railway up")" \
+  "railway up/deploy"
+assert_deny "...nor an immediate gh pr merge" \
+  "$(jsonc "echo \$'it\\'s ok'; gh pr merge 42")" \
+  "gh pr merge"
+# The FORGE direction of the same defect: the shell gives --body the single word
+# `ok' --auto `, so gh receives NO --auto and merges immediately, while the
+# rendering showed a standalone --auto that granted the carve-out.
+assert_deny "an ANSI-C escaped quote cannot forge --auto" \
+  "$(jsonc "gh pr merge 42 --squash --delete-branch --body \$'ok\\' --auto '")" \
+  "gh pr merge"
+assert_allow "a benign ANSI-C string still allows (control)" \
+  "$(jsonc "echo \$'hello\\tworld'")"
+
+# An EMPTY quoted value is a real argv word; deleting it made the flag before it
+# the `prev` of what followed, so `--body "" --auto` read as `--body --auto` and
+# the value-flag decoy check withheld a carve-out it should have granted.
+assert_allow "gh pr merge --body \"\" --auto allows (empty value is one word)" \
+  "$(jsonc 'gh pr merge 42 --body "" --auto --squash')"
+
 # THE FAST PATH must read the same text the predicates read. A quote splitting
 # the RUNNER WORD leaves no literal needle in raw $CMD, so a raw-$CMD
 # necessary-substring filter exited 0 before any predicate ran — every one of
@@ -700,6 +746,8 @@ assert_allow "RESIDUAL: a BACKSLASH-split verb is still missed (e\\as update)" \
   "$(jsonc 'e\as update --branch preview')"
 assert_allow "RESIDUAL: a leading backslash (alias-bypass idiom) is still missed" \
   "$(jsonc '\gh pr merge 42')"
+assert_allow "RESIDUAL: --ad\\min is a real --admin to gh but is not seen" \
+  "$(jsonc 'gh pr merge 42 --auto --ad\min')"
 # (The quoted flag-NAME residual that used to be pinned here — `eas build
 # --auto-"submit"` — is CLOSED: the deny-only flag checks read $CMD and $WORDS
 # now, so a quoted split is visible. Its deny is asserted above.)

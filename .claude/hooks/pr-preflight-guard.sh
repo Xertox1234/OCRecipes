@@ -43,7 +43,7 @@ case "$TOOL" in
         case "$words" in *gh*pr*create*) : ;; *) exit 0 ;; esac
       elif [ -n "${CMD//[[:space:]]/}" ]; then
         WORDS_BROKEN=1
-        case "$CMD" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+        case "${CMD//[\"\']/}" in *gh*pr*create*) : ;; *) exit 0 ;; esac
       fi
     else
       # Lib unsourceable (broken install): cmd_is_gh_pr_create cannot run either, so this hook
@@ -51,7 +51,7 @@ case "$TOOL" in
       # filter here so an unrelated command still exits quietly instead of hitting the stamp
       # gate — without it, a missing lib turns this into a deny-everything gate (caught by
       # test-pr-preflight-guard.sh's "lib-missing leaves unrelated bash alone").
-      case "$CMD" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+      case "${CMD//[\"\']/}" in *gh*pr*create*) : ;; *) exit 0 ;; esac
     fi
     # Precise detection via the shared, quote-AWARE scanner (.claude/hooks/lib/cmd-detect.sh) — the
     # single source of the strip + command-position matcher across all three PR/commit hooks, so
