@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 
-import { parseServingBasis, parseLabelServingGrams } from "../label-serving";
+import {
+  parseServingBasis,
+  parseLabelServingGrams,
+  UNIT,
+  UNIT_CAP,
+} from "../label-serving";
 
 /**
  * Hard forms that test the regex invariants: each one exercised against both
@@ -54,6 +59,28 @@ const REJECTION_FORMS = [
   "Sodium 30mg", // sodium line, not serving
   "abc123g", // digit in the middle of a longer token
 ];
+
+describe("UNIT / UNIT_CAP carry their own word-boundary anchor", () => {
+  // The anchor must live ON the constant, not be re-supplied by every call
+  // site — a regex built directly from the bare constant, with nothing
+  // appended, must already reject a unit that is only a prefix of a longer
+  // word.
+  it("UNIT alone rejects a unit that is only a prefix of a longer word", () => {
+    expect(new RegExp(UNIT).test("1 gallon")).toBe(false);
+  });
+
+  it("UNIT alone still matches a real unit", () => {
+    expect(new RegExp(UNIT).test("30 grams")).toBe(true);
+  });
+
+  it("UNIT_CAP alone rejects a unit that is only a prefix of a longer word", () => {
+    expect(new RegExp(UNIT_CAP).test("1 gallon")).toBe(false);
+  });
+
+  it("UNIT_CAP alone still matches a real unit", () => {
+    expect(new RegExp(UNIT_CAP).test("30 grams")).toBe(true);
+  });
+});
 
 describe("parseLabelServingGrams", () => {
   it("prefers the metric figure in parentheses over the household measure", () => {
