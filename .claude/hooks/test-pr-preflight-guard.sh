@@ -152,6 +152,16 @@ rm -f "$STAMP_FILE"
 OUT=$(run_hook 'echo "gh pr create is what this gate covers"')
 assert_empty "a quoted MENTION of gh pr create passes through" "" "$OUT"
 
+# 12i-b. $-SIGIL fast-path bypass (2026-08-16 review): cmd_words deletes the `$` when
+# it immediately precedes a quote, rejoining g$'h' -> gh. The fast-path filter's
+# quote-strip omits `$`, so `g$'h' pr create --fill` misses the raw `gh` substring on
+# BOTH stages while cmd_words correctly reconstructs `gh pr create --fill` — the hook
+# exits 0 before cmd_is_gh_pr_create ever runs, opening a PR with no preflight stamp.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook "g\$'h' pr create --fill")
+assert_contains "\$-sigil-split gh still denies (fast path reads the \$-stripped form)" \
+  '"permissionDecision": "deny"' "$OUT"
+
 # 12j. awk PRESENT BUT BROKEN. `declare -F cmd_words` proves the function is DEFINED, not that
 # it WORKS — cmd_words is implemented in awk, so a broken awk makes it emit NOTHING while the
 # lib still sources cleanly. Both the fast path and cmd_is_gh_pr_create then see an empty

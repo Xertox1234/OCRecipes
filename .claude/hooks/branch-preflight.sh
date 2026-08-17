@@ -30,7 +30,7 @@ CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 _PRE=0
 case "$CMD" in *commit*) _PRE=1 ;; esac
 if [ "$_PRE" = 0 ]; then
-  _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}
+  _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}; _T=${_T//\$/}
   case "$_T" in *commit*) _PRE=1 ;; esac
 fi
 [ "$_PRE" = 1 ] || exit 0

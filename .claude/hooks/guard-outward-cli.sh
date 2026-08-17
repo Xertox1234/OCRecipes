@@ -368,7 +368,7 @@ shopt -s nocasematch
 _OUT_FASTPATH=0
 case "$CMD" in *eas*|*railway*|*npm*|*yarn*|*gh*) _OUT_FASTPATH=1 ;; esac
 if [ "$_OUT_FASTPATH" = 0 ]; then
-  _OUT_T=${CMD//\'/}; _OUT_T=${_OUT_T//\"/}; _OUT_T=${_OUT_T//\\/}; _OUT_T=${_OUT_T//$'\n'/}
+  _OUT_T=${CMD//\'/}; _OUT_T=${_OUT_T//\"/}; _OUT_T=${_OUT_T//\\/}; _OUT_T=${_OUT_T//$'\n'/}; _OUT_T=${_OUT_T//\$/}
   case "$_OUT_T" in *eas*|*railway*|*npm*|*yarn*|*gh*) _OUT_FASTPATH=1 ;; esac
 fi
 shopt -u nocasematch

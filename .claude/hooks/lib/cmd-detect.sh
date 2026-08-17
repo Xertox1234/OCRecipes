@@ -177,6 +177,23 @@ cmd_words() {
               || ch == "{" || ch == "}" || ch == "!" || ch == BT \
               || ch == "\n" || ch == "\r" || ch == " " || ch == "\t")
     }
+    # An EMPTY quoted span (open immediately followed by its own close) needs a
+    # placeholder ONLY when it is the WHOLE argv word — flanked by a separator
+    # (or start/end of input) on BOTH sides, e.g. `--body ""`. Real bash deletes
+    # an empty quote and lets adjacent literal text concatenate straight through
+    # it (`eas u''pdate` -> `update`), so a MID-WORD empty span — flanked by a
+    # literal word character on either side — must emit NOTHING. Failing to
+    # distinguish the two shapes rendered `eas u''pdate --branch preview
+    # --platform all` as `eas uxpdate ...`, splitting the verb the
+    # `eas[[:space:]]+update` deny pattern anchors on: a silent ALLOW of a real
+    # OTA publish (review, 2026-08-16). `sp` is the length `out` had when the
+    # span opened, so `substr(out, sp, 1)` is the character that preceded it;
+    # `i` is the position of the CLOSING quote in `buf`, so
+    # `substr(buf, i+1, 1)` is the raw character that follows it.
+    function empty_span_needs_ph(sp,    nc) {
+      nc = (i < n) ? substr(buf, i + 1, 1) : ""
+      return (sp == 0 || neutral(substr(out, sp, 1))) && (nc == "" || neutral(nc))
+    }
     # PH must be ALPHANUMERIC, not punctuation. Consumers spell their token
     # boundaries as `[^-A-Za-z0-9]` (the --repo/--admin/--auto-submit flag
     # checks), and `_` SATISFIES that class — so an underscore placeholder made
@@ -226,7 +243,7 @@ cmd_words() {
           else if (c == DQ) { st = 2; sp = length(out) }   # shell omits it from argv too
           else                out = out c
         } else if (st == 1) {
-          if (c == SQ)         { st = 0; if (length(out) == sp) out = out PH }
+          if (c == SQ)         { st = 0; if (length(out) == sp && empty_span_needs_ph(sp)) out = out PH }
           else if (neutral(c))   out = out PH
           else                   out = out c         # keep the word bytes
         } else if (st == 3) {
@@ -238,12 +255,12 @@ cmd_words() {
           # direction forged a standalone `--auto` that granted the
           # immediate-merge carve-out. Escapes keep the span ONE word.
           if (c == BS) { i++; if (i <= n) out = out PH PH; else out = out PH }
-          else if (c == SQ)    { st = 0; if (length(out) == sp) out = out PH }
+          else if (c == SQ)    { st = 0; if (length(out) == sp && empty_span_needs_ph(sp)) out = out PH }
           else if (neutral(c))   out = out PH
           else                   out = out c
         } else {
           if (c == BS)         { out = out PH; i++; if (i <= n) out = out PH }
-          else if (c == DQ)    { st = 0; if (length(out) == sp) out = out PH }
+          else if (c == DQ)    { st = 0; if (length(out) == sp && empty_span_needs_ph(sp)) out = out PH }
           else if (neutral(c))   out = out PH
           else                   out = out c
         }

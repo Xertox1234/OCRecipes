@@ -37,7 +37,7 @@ case "$TOOL" in
     _PRE=0
     case "$CMD" in *gh*pr*create*) _PRE=1 ;; esac
     if [ "$_PRE" = 0 ]; then
-      _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}
+      _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}; _T=${_T//\$/}
       case "$_T" in *gh*pr*create*) _PRE=1 ;; esac
     fi
     [ "$_PRE" = 1 ] || exit 0

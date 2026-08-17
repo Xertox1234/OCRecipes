@@ -73,6 +73,15 @@ assert_allow "eas whoami allows" \
 assert_deny "eas update:rollback denies (mutating colon subcommand)" \
   "$(json 'eas update:rollback --branch preview --non-interactive')" \
   "eas update:delete/edit/republish"
+# $-SIGIL fast-path bypass (2026-08-16 review): cmd_words deletes the `$` when it
+# immediately precedes a quote, rejoining $'a' -> a (e$'a's -> eas). The fast-path
+# filter's quote-strip omits `$`, so the surviving sigil breaks the raw `eas`
+# substring on BOTH stages while cmd_words correctly reconstructs `eas update` —
+# the hook exits 0 before the lib is even sourced, silently allowing a real OTA
+# publish.
+assert_deny "\$-sigil-split eas still denies (fast path reads the \$-stripped form)" \
+  "$(jsonc "e\$'a's update --branch preview --platform all")" \
+  "eas update/publish/submit"
 assert_deny "eas update:delete denies (mutating colon subcommand)" \
   "$(json 'eas update:delete abc123')" \
   "eas update:delete/edit/republish"

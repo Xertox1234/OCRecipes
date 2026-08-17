@@ -191,6 +191,28 @@ render cmd_words 'gh pr merge 42 --body "" --auto' present '--body x --auto' \
 render cmd_words "gh pr merge 42 --body '' --auto" present '--body x --auto' \
   "an empty single-quoted span survives as one token"
 
+echo "--- ...but a MID-WORD empty span must vanish, not split the word ---"
+# The STANDALONE case above is flanked by separators on both sides, so the
+# placeholder is what stops the argument disappearing. A MID-WORD empty span
+# (flanked by literal word characters, not separators) is a DIFFERENT shape:
+# real bash deletes the quote and concatenates straight through it
+# (`eas u''pdate` -> `update`, `sh -c "printf '%s\n' eas u''pdate"` proves it).
+# The closing-quote check could not tell the two shapes apart — it only asked
+# "did the span emit anything", true for BOTH — so it inserted the placeholder
+# here too, rendering `eas uxpdate ...` and splitting the verb the
+# `eas[[:space:]]+update` deny pattern anchors on: a silent ALLOW of a real OTA
+# publish (review, 2026-08-16). Same bug in all three quote states.
+render cmd_words "eas u''pdate --branch preview --platform all" present 'eas update' \
+  "MID-WORD empty single-quoted span vanishes (not eas uxpdate)"
+render cmd_words 'eas u""pdate --branch preview --platform all' present 'eas update' \
+  "...same for a MID-WORD empty double-quoted span"
+render cmd_words "eas u\$''pdate --branch preview --platform all" present 'eas update' \
+  "...same for a MID-WORD empty ANSI-C \$'...' span"
+det cmd_is_gh_pr_create "gh pr cre''ate --fill" yes \
+  "cmd_is_gh_pr_create still detects create split by a mid-word empty span"
+det cmd_is_git_commit "npm pub''lish; git com''mit -m x" yes \
+  "cmd_is_git_commit unaffected by an unrelated mid-word empty span earlier in the line"
+
 echo "--- the two renderings must not silently drift ---"
 # They differ in exactly three places, all quote/escape handling. On input with
 # no quote and no backslash they must be byte-identical; a divergence here means
