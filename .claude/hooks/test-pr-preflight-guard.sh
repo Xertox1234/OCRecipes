@@ -136,6 +136,74 @@ rm -f "$STAMP_FILE"
 OUT=$(run_hook 'env GH_TOKEN=x gh pr create --title x')
 assert_contains "env-runner-word create still denies" '"permissionDecision": "deny"' "$OUT"
 
+# 12i. A QUOTE inside a command word (2026-08-16). cmd_is_gh_pr_create reads `cmd_words`, which
+# DELETES quote characters — so the necessary-substring fast path must read that same rendering.
+# While it filtered raw $CMD, `g"h" pr create` contained no literal `gh`, the hook exited 0
+# before the matcher ran, and a PR could be opened with no preflight stamp at all.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'g"h" pr create --title x --body y')
+assert_contains "quoted-runner-word create still denies (fast path reads \$WORDS)" \
+  '"permissionDecision": "deny"' "$OUT"
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'gh pr "create" --title x --body y')
+assert_contains "quoted-subcommand create still denies" '"permissionDecision": "deny"' "$OUT"
+# Negative control for the pair above: the fast path must still let unrelated work through.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'echo "gh pr create is what this gate covers"')
+assert_empty "a quoted MENTION of gh pr create passes through" "" "$OUT"
+
+# 12i-b. $-SIGIL fast-path bypass (2026-08-16 review): cmd_words deletes the `$` when
+# it immediately precedes a quote, rejoining g$'h' -> gh. The fast-path filter's
+# quote-strip omits `$`, so `g$'h' pr create --fill` misses the raw `gh` substring on
+# BOTH stages while cmd_words correctly reconstructs `gh pr create --fill` — the hook
+# exits 0 before cmd_is_gh_pr_create ever runs, opening a PR with no preflight stamp.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook "g\$'h' pr create --fill")
+assert_contains "\$-sigil-split gh still denies (fast path reads the \$-stripped form)" \
+  '"permissionDecision": "deny"' "$OUT"
+
+# 12j. awk PRESENT BUT BROKEN. `declare -F cmd_words` proves the function is DEFINED, not that
+# it WORKS — cmd_words is implemented in awk, so a broken awk makes it emit NOTHING while the
+# lib still sources cleanly. Both the fast path and cmd_is_gh_pr_create then see an empty
+# rendering and report "no match", which used to skip the stamp gate entirely and ALLOW a real
+# `gh pr create`. Shadow awk with a failing stub rather than stripping PATH, so every other tool
+# this gate needs (git, the stamp helper) stays reachable — a PATH that loses those makes the
+# hook exit for an unrelated reason and the result stops meaning anything.
+AWKSTUB=$(mktemp -d)
+printf '#!/bin/sh\nexit 127\n' > "$AWKSTUB/awk"; chmod +x "$AWKSTUB/awk"
+trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}" "${AWKSTUB:-}"' EXIT
+run_hook_noawk() {
+  printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$1" '$c')" \
+    | PATH="$AWKSTUB:$PATH" bash "$HOOK"
+}
+# Control first: with awk WORKING and no stamp, this denies. If it did not, the two assertions
+# below would be measuring a broken fixture rather than the gate.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'gh pr create --title x --body y')
+assert_contains "control: awk working + no stamp denies" '"permissionDecision": "deny"' "$OUT"
+rm -f "$STAMP_FILE"
+OUT=$(run_hook_noawk 'gh pr create --title x --body y')
+assert_contains "broken awk still demands a stamp (fails CLOSED)" '"permissionDecision": "deny"' "$OUT"
+rm -f "$STAMP_FILE"
+OUT=$(run_hook_noawk 'ls -la')
+assert_empty "broken awk leaves unrelated bash alone" "" "$OUT"
+
+# 12k. $-SIGIL bypass in the broken-awk fallback (review round 4, 2026-08-17): the
+# WORDS_BROKEN fallback's quote-strip (${CMD//[\"\']/}) omits \, newline, and $ —
+# narrower than the primary fast path's 5-character strip a few lines above it. A
+# $-sigil-split verb reconstructs to `gh pr create --fill` under cmd_words (the
+# working-awk control below proves it denies), but on a broken-awk host the
+# surviving $ hid it from this weaker fallback filter, exiting 0 with no stamp
+# demanded.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook "g\$'h' pr create --fill")
+assert_contains "control: \$-sigil-split gh still denies with awk WORKING" \
+  '"permissionDecision": "deny"' "$OUT"
+rm -f "$STAMP_FILE"
+OUT=$(run_hook_noawk "g\$'h' pr create --fill")
+assert_contains "broken awk + \$-sigil-split gh still demands a stamp (fails CLOSED)" \
+  '"permissionDecision": "deny"' "$OUT"
+
 # 13. Helper UN-SOURCEABLE → DENY. Locks the fail-safe: if the shared stamp-path helper
 # can't be found, the guard must block (never silently allow a PR with no stamp).
 #
@@ -190,6 +258,11 @@ assert_contains "lib-missing still denies (fail-closed)" '"permissionDecision": 
 # ...but lib-missing must NOT block unrelated Bash (the fallback is scoped to plausible creates).
 OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}' | bash "$NOLIB/pr-preflight-guard.sh")
 assert_empty "lib-missing leaves unrelated bash alone" "" "$OUT"
+# Same $-sigil gap as the WORDS_BROKEN fallback (test 12k) — the lib-unsourceable
+# branch uses the identical weaker ${CMD//[\"\']/} strip.
+OUT=$(jq -Rn --arg c "g\$'h' pr create --fill" '{tool_name:"Bash",tool_input:{command:$c}}' | bash "$NOLIB/pr-preflight-guard.sh")
+assert_contains "lib-missing + \$-sigil-split gh still demands a stamp (fails CLOSED)" \
+  '"permissionDecision": "deny"' "$OUT"
 rm -rf "$NOLIB"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

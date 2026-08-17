@@ -29,7 +29,23 @@ CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 # mention like `-m "…; git push …"` must not trip a drift warning. Cheap superset first.
 # Advisory hook → fail SILENT if the lib is unsourceable: a missed warning is the safe direction,
 # whereas matching the raw command would re-open the false warning on quoted mentions.
-case "$CMD" in *git*) : ;; *) exit 0 ;; esac
+# Two-stage necessary-substring filter. Stage 1 is the zero-copy glob on raw $CMD.
+# Stage 2 runs ONLY on a stage-1 miss, retesting with the characters cmd_words can
+# DELETE removed (quotes, backslashes, newlines) — because the cmd_is_* matcher below
+# reads `cmd_words`, which deletes quote characters and so sees a verb this filter's
+# raw text does not contain: `git com"mit"` holds no literal `commit`, so a
+# single-stage filter exited 0 and the matcher was never asked (review, 2026-08-16).
+# cmd_words only deletes those characters or inserts the letter `x`, and the needle
+# below contains no `x`, so stage 2 is a superset by construction. Four literal
+# substitutions, not a bracket class: the class form costs ~1450ms on a 3KB command
+# under bash 3.2 versus ~5.5ms for these.
+_PRE=0
+case "$CMD" in *git*) _PRE=1 ;; esac
+if [ "$_PRE" = 0 ]; then
+  _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}; _T=${_T//\$/}
+  case "$_T" in *git*) _PRE=1 ;; esac
+fi
+[ "$_PRE" = 1 ] || exit 0
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit_or_push >/dev/null || exit 0
 cmd_is_git_commit_or_push "$CMD" || exit 0

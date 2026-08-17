@@ -1,0 +1,284 @@
+#!/usr/bin/env bash
+# Unit tests for lib/cmd-detect.sh's TWO renderings — run from anywhere.
+#
+# Pure string predicates: sources the lib and calls its functions on command
+# STRINGS. Nothing is ever executed, so no git/gh/eas/railway process runs here.
+#
+# WHY THIS FILE EXISTS (2026-08-16): the lib had exactly one rendering,
+# `cmd_bare`, which BLANKS quoted spans. A real shell word-splits `git "commit"`
+# and concatenates `git com"mit"` into the same argv as the bare form, so
+# blanking erased the verb before any matcher ran, so EVERY command-position
+# detector in this lib went blind to a quoted command word.
+#
+# Closing it took TWO changes, and the second is easy to forget: the detectors
+# now read `cmd_words`, AND every hook whose necessary-substring fast path globbed
+# raw $CMD had to re-test a quote-stripped copy — otherwise the hook exits before
+# its (now-fixed) matcher is ever asked. That affected commit-verify,
+# drift-detect, drift-detect-update, pr-preflight-guard, branch-preflight and
+# core-bare-guard; branch-preflight and pr-preflight-guard are blocking gates.
+# The final block in this file enumerates the fast paths rather than naming them,
+# so a NEW hook with a raw single-stage filter fails here instead of in prod.
+#
+# The two renderings are NOT interchangeable and this file pins both directions:
+# merging them re-breaks either flag-presence checks (a quoted `--auto` must not
+# GRANT a carve-out) or the loose non-anchored matchers (which have no
+# command-position anchor to suppress a mention with).
+set -uo pipefail
+
+LIB="$(cd "$(dirname "$0")" && pwd)/lib/cmd-detect.sh"
+PASS=0; FAIL=0
+
+# Harness control: a probe that cannot see the thing it tests reports a clean
+# bill of health. Prove the lib sourced and the functions exist before asserting.
+# shellcheck source=/dev/null
+. "$LIB" || { echo "FAIL: lib/cmd-detect.sh is not sourceable"; exit 1; }
+for f in cmd_bare cmd_words cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
+         cmd_is_git_commit_or_push cmd_is_git_head_mover; do
+  declare -F "$f" >/dev/null || { echo "FAIL: $f is not defined by the lib"; exit 1; }
+done
+
+# det <fn> <command> <yes|no> <label>
+det() {
+  local fn="$1" cmd="$2" want="$3" label="$4" got=no
+  "$fn" "$cmd" && got=yes
+  if [ "$got" = "$want" ]; then
+    echo "PASS: $label"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $label (got detected=$got, want $want)"; FAIL=$((FAIL+1))
+  fi
+}
+
+# render <fn> <command> <expected-substring-present|absent> <needle> <label>
+render() {
+  local fn="$1" cmd="$2" mode="$3" needle="$4" label="$5" out
+  out=$(printf '%s' "$cmd" | "$fn")
+  if [ "$mode" = present ]; then
+    if grep -qF -- "$needle" <<< "$out"; then echo "PASS: $label"; PASS=$((PASS+1))
+    else echo "FAIL: $label (expected '$needle' in: $out)"; FAIL=$((FAIL+1)); fi
+  else
+    if grep -qF -- "$needle" <<< "$out"; then
+      echo "FAIL: $label (unexpected '$needle' in: $out)"; FAIL=$((FAIL+1))
+    else echo "PASS: $label"; PASS=$((PASS+1)); fi
+  fi
+}
+
+echo "--- cmd_bare keeps blanking (its contract is UNCHANGED) ---"
+# These pin the property that flag-presence checks and loose matchers depend on.
+render cmd_bare 'gh pr merge 42 -b "use --auto next time"' absent '--auto' \
+  "cmd_bare blanks a quoted --auto (carve-out decoy stays blanked)"
+render cmd_bare 'echo "gh pr create"' absent 'gh pr create' \
+  "cmd_bare blanks a quoted mention (loose matchers rely on this)"
+render cmd_bare 'git commit -m x' present 'git commit' \
+  "cmd_bare leaves unquoted words alone"
+
+echo "--- cmd_words reproduces argv: quotes deleted, separators neutralised ---"
+render cmd_words 'eas "update" --branch preview' present 'eas update' \
+  "cmd_words rejoins a fully-quoted word"
+render cmd_words 'eas up"date" --branch preview' present 'eas update' \
+  "cmd_words rejoins a MID-WORD split (no fallback path catches this form)"
+render cmd_words 'git commit -m "chore; eas update"' absent ';' \
+  "cmd_words neutralises a separator INSIDE a span (stays data, not a new command)"
+# A newline inside a span must not survive: grep's ^ is per-line, so it would
+# hand `gh pr create` a start-of-line command position. It collapses to the same
+# `x` placeholder as every other neutralised char, leaving ONE token.
+render cmd_words 'git commit -m "wip
+gh pr create"' present 'wipxghxprxcreate' \
+  "cmd_words neutralises a NEWLINE inside a span (grep ^ is per-line)"
+
+echo "--- THE ONE-WORD PROPERTY: a quoted span is exactly one argv word ---"
+# Regression pins for the review finding that a space-bearing quoted value split
+# one token into two, breaking the NAME=value absorber in _CMD_POS_PREFIX and
+# letting the verb escape command position in EVERY consuming hook.
+render cmd_words 'X="a b" eas update' present 'X=axb eas update' \
+  "a space inside a span does not split the token"
+render cmd_words "X='a b' eas update" present 'X=axb eas update' \
+  "same for a single-quoted span"
+render cmd_words 'gh pr merge 42 -b "use --auto next time"' absent ' --auto' \
+  "a quoted --auto never becomes a standalone token (carve-out decoy)"
+render cmd_words 'git commit -m "deny { eas update; } form"' absent '{' \
+  "a brace inside a span cannot open a command position"
+render cmd_words 'git commit -m "it works! npm publish"' absent '!' \
+  "a bang inside a span cannot open a command position"
+det cmd_is_git_commit 'GIT_AUTHOR_NAME="Will Tower" git commit -m x' yes \
+  "env assignment with a spaced quoted value still detects the commit"
+det cmd_is_git_head_mover 'GIT_EDITOR="code -w" git rebase -i main' yes \
+  "env assignment with a spaced quoted value still detects a head-mover"
+det cmd_is_gh_pr_create 'X="a b" gh pr create --title t' yes \
+  "env assignment with a spaced quoted value still detects gh pr create"
+render cmd_words 'echo hi; git commit' present ';' \
+  "cmd_words keeps a separator OUTSIDE a span"
+
+echo "--- the bypass: every anchored detector must see a quoted command word ---"
+det cmd_is_git_commit       'git "commit" -m x'            yes "cmd_is_git_commit: git \"commit\""
+det cmd_is_git_commit       'git com"mit" -m x'            yes "cmd_is_git_commit: git com\"mit\" (mid-word)"
+det cmd_is_git_commit       '"git" commit -m x'            yes "cmd_is_git_commit: \"git\" commit"
+det cmd_is_git_commit       "git 'commit' -m x"            yes "cmd_is_git_commit: single-quoted verb"
+det cmd_is_gh_pr_create     'gh pr "create" --fill'        yes "cmd_is_gh_pr_create: gh pr \"create\""
+det cmd_is_gh_pr_create     'gh "pr" create --fill'        yes "cmd_is_gh_pr_create: gh \"pr\" create"
+det cmd_is_gh_pr_create     'gh pr cre"ate" --fill'        yes "cmd_is_gh_pr_create: mid-word"
+# `git "status"` would NOT discriminate here — cmd_is_git only matches the word
+# `git`, which is unquoted in that string, so it passed on the old code too.
+# Split the word the matcher actually looks for.
+det cmd_is_git              'g"i"t status'                 yes "cmd_is_git: quote splits the matched word"
+det cmd_is_git              '"git" status'                 yes "cmd_is_git: fully-quoted matched word"
+det cmd_is_git_commit_or_push 'git "push" origin main'     yes "cmd_is_git_commit_or_push: git \"push\""
+det cmd_is_git_head_mover   'git "reset" --hard HEAD~1'    yes "cmd_is_git_head_mover: git \"reset\""
+det cmd_is_git_head_mover   'git re"set" --hard HEAD~1'    yes "cmd_is_git_head_mover: mid-word"
+
+echo "--- negative controls: bare forms still detected (probe can see anything) ---"
+det cmd_is_git_commit   'git commit -m x'      yes "bare git commit still detected"
+det cmd_is_gh_pr_create 'gh pr create --fill'  yes "bare gh pr create still detected"
+
+echo "--- negative controls: MENTIONS must stay undetected (no new false denies) ---"
+# These are the cases blanking was introduced to protect. cmd_words keeps the
+# words, so the COMMAND-POSITION ANCHOR is what has to suppress them — pin it.
+det cmd_is_git_commit   'echo "run git commit later"'          no "mention inside echo stays undetected"
+det cmd_is_git_commit   'git log --grep "commit"'              no "flag value 'commit' stays undetected"
+det cmd_is_gh_pr_create 'git commit -m "then gh pr create"'    no "mention in a commit message stays undetected"
+det cmd_is_gh_pr_create 'git commit -m "chore; gh pr create"'  no "SEPARATOR in a commit message does not open a command position"
+det cmd_is_git_head_mover 'echo "git reset --hard is bad"'     no "mention of a head-mover stays undetected"
+det cmd_is_git_commit   'git commit -m "a" && echo done'       yes "real commit with a quoted arg still detected"
+
+echo "--- residuals pinned AT THE LAYER THAT OWNS THEM ---"
+# Pinned HERE, at the rendering that OWNS the residual, so it fails if cmd_words
+# ever starts unescaping. When this pin was added the guard-level twin was
+# over-determined — the fast path globbed raw text, so it produced the same ALLOW
+# for a second, unrelated reason — but that mechanism died when the fast path
+# moved to a quote-stripped rendering later in this branch. Both discriminate
+# now; keeping this one is still right, because one deciding mechanism beats two.
+render cmd_words 'e\as update' absent 'eas update' \
+  "RESIDUAL: an unquoted backslash hides the escaped char (e\\as stays split)"
+# An escaped char must never render as WHITESPACE. `\ ` is an escaped space: the
+# shell JOINS on it, so `--body "ship it"\ --auto` is ONE argv word and gh never
+# receives an --auto flag. Rendering spaces there SPLIT what the shell joined and
+# manufactured a standalone `--auto` token, which GRANTED the immediate-merge
+# carve-out. Showing more tokens than argv holds is fatal for a grant-shaped check.
+render cmd_words 'gh pr merge 42 --body "a"\ --auto' absent ' --auto' \
+  "an escaped space JOINS: --auto never becomes a standalone token"
+# A line continuation is the one escape the shell REMOVES entirely, so it must
+# emit nothing and let the surrounding space do the separating.
+render cmd_words 'eas \
+update --branch preview' present 'eas update' \
+  "a line continuation collapses onto one line so the verb still matches"
+
+echo "--- ANSI-C \$'...' quoting: the sigil, and \\' as a LITERAL ---"
+# Bash strips the `$` sigil from $'…'/$"…". Keeping it left the verb as `$eas`,
+# which no command-position anchor matches — a silent ALLOW on every gate.
+render cmd_words "\$'eas' update" present 'eas update' \
+  "cmd_words drops the \$ sigil before a quote"
+render cmd_words '$"gh" pr create' present 'gh pr create' \
+  "...for the \$\"...\" locale form too"
+render cmd_words 'echo $HOME' present '$HOME' \
+  "a bare \$ (not before a quote) is untouched"
+det cmd_is_gh_pr_create "\$'gh' pr create --fill" yes "ANSI-C-quoted verb is detected"
+# Inside $'…' a backslash ESCAPES the next char, so \' is a literal apostrophe and
+# does NOT close the span. Treating it as a closer ended the span early and let the
+# trailing quote re-open one that swallowed the REST OF THE COMMAND — a one-token
+# prefix hid every deny family in this lib and its consumers.
+det cmd_is_git_commit "echo \$'it\\'s ok'; git commit -m x" yes \
+  "a \\' inside \$'...' does not swallow the rest of the command"
+det cmd_is_gh_pr_create "echo \$'it\\'s ok'; gh pr create --fill" yes \
+  "...same for the PR-create gate"
+render cmd_bare "echo \$'it\\'s ok'; git commit" present '; git commit' \
+  "cmd_bare closes the ANSI-C span correctly too"
+
+echo "--- an EMPTY quoted span is still one argv word ---"
+# Rendering it as nothing DELETED the word, so the flag before it became the `prev`
+# of whatever followed: `--body "" --auto` read as `--body --auto`, and the
+# value-flag decoy check then withheld a carve-out it should have granted.
+render cmd_words 'gh pr merge 42 --body "" --auto' present '--body x --auto' \
+  "an empty double-quoted span survives as one token"
+render cmd_words "gh pr merge 42 --body '' --auto" present '--body x --auto' \
+  "an empty single-quoted span survives as one token"
+
+echo "--- ...but a MID-WORD empty span must vanish, not split the word ---"
+# The STANDALONE case above is flanked by separators on both sides, so the
+# placeholder is what stops the argument disappearing. A MID-WORD empty span
+# (flanked by literal word characters, not separators) is a DIFFERENT shape:
+# real bash deletes the quote and concatenates straight through it
+# (`eas u''pdate` -> `update`, `sh -c "printf '%s\n' eas u''pdate"` proves it).
+# The closing-quote check could not tell the two shapes apart — it only asked
+# "did the span emit anything", true for BOTH — so it inserted the placeholder
+# here too, rendering `eas uxpdate ...` and splitting the verb the
+# `eas[[:space:]]+update` deny pattern anchors on: a silent ALLOW of a real OTA
+# publish (review, 2026-08-16). Same bug in all three quote states.
+render cmd_words "eas u''pdate --branch preview --platform all" present 'eas update' \
+  "MID-WORD empty single-quoted span vanishes (not eas uxpdate)"
+render cmd_words 'eas u""pdate --branch preview --platform all' present 'eas update' \
+  "...same for a MID-WORD empty double-quoted span"
+render cmd_words "eas u\$''pdate --branch preview --platform all" present 'eas update' \
+  "...same for a MID-WORD empty ANSI-C \$'...' span"
+det cmd_is_gh_pr_create "gh pr cre''ate --fill" yes \
+  "cmd_is_gh_pr_create still detects create split by a mid-word empty span"
+det cmd_is_git_commit "npm pub''lish; git com''mit -m x" yes \
+  "cmd_is_git_commit unaffected by an unrelated mid-word empty span earlier in the line"
+
+echo "--- the two renderings must not silently drift ---"
+# They differ in exactly three places, all quote/escape handling. On input with
+# no quote and no backslash they must be byte-identical; a divergence here means
+# one was edited without the other.
+DRIFT=0
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  a=$(printf '%s' "$line" | cmd_bare)
+  b=$(printf '%s' "$line" | cmd_words)
+  [ "$a" = "$b" ] || { DRIFT=$((DRIFT+1)); echo "  drift on [$line]: bare=[$a] words=[$b]"; }
+done <<'CORPUS'
+git commit -m x
+gh pr create --fill
+eas update --branch preview --platform all
+npm run test && echo done
+ls -la | grep foo; echo hi
+git log --oneline -5
+FOO=bar git commit
+railway up
+gh api repos/x/y
+npm publish
+CORPUS
+if [ "$DRIFT" -eq 0 ]; then
+  echo "PASS: cmd_bare and cmd_words agree byte-for-byte on quote-free input"; PASS=$((PASS+1))
+else
+  echo "FAIL: $DRIFT quote-free inputs render differently — the two scans have drifted"; FAIL=$((FAIL+1))
+fi
+
+echo "--- EVERY hook's necessary-substring fast path must be quote-tolerant ---"
+# A hook whose matcher reads cmd_words but whose fast path globs RAW $CMD exits
+# before the matcher is ever asked: `git com"mit"` holds no literal `commit`.
+# That silently disabled five gates, one of them blocking, while the lib itself
+# detected the form. This enumerates the fast paths instead of naming them, so a
+# NEW hook that adds a raw single-stage filter fails here rather than in prod.
+HOOKDIR="$(cd "$(dirname "$0")" && pwd)"
+FASTPATH_BAD=0
+for f in "$HOOKDIR"/*.sh; do
+  case "$(basename "$f")" in test-*) continue ;; esac
+  # The invariant is NOT "every filter strips quotes" — it is "a filter must be a
+  # SUPERSET of what its matcher reads". cmd_bare only ever BLANKS characters, so
+  # a raw glob is already a superset for a cmd_bare-backed matcher (pr-verify's
+  # cmd_gh_pr_write_subcommand / cmd_gh_pr_ref). cmd_words DELETES quote
+  # characters and so synthesises needles absent from raw text, so any hook
+  # calling a cmd_words-backed `cmd_is_*` matcher needs the stripped second stage.
+  if grep -q 'case "\$CMD" in \*' "$f" && grep -q 'cmd_is_[a-z_]' "$f"; then
+    if ! grep -q '_T=\${CMD//' "$f" && ! grep -q '\${CMD//\[' "$f"; then
+      echo "  BAD: $(basename "$f") globs raw \$CMD but its matcher reads cmd_words"
+      FASTPATH_BAD=$((FASTPATH_BAD+1))
+    fi
+  fi
+done
+if [ "$FASTPATH_BAD" -eq 0 ]; then
+  echo "PASS: every raw-\$CMD fast path has a quote-stripped second stage"; PASS=$((PASS+1))
+else
+  echo "FAIL: $FASTPATH_BAD hook(s) can be bypassed by quoting before their matcher runs"
+  FAIL=$((FAIL+1))
+fi
+# Control: the scan must actually find fast paths, or it passes vacuously.
+FASTPATH_SEEN=$(grep -l 'case "\$CMD" in \*' "$HOOKDIR"/*.sh 2>/dev/null | grep -vc '/test-')
+if [ "${FASTPATH_SEEN:-0}" -ge 5 ]; then
+  echo "PASS: control — found $FASTPATH_SEEN hooks with a fast path to check"; PASS=$((PASS+1))
+else
+  echo "FAIL: control — only $FASTPATH_SEEN fast paths found; the scan is not looking at anything"
+  FAIL=$((FAIL+1))
+fi
+
+echo ""
+echo "Results: $PASS passed, $FAIL failed"
+[ $FAIL -eq 0 ]

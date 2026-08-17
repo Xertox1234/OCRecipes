@@ -24,15 +24,45 @@
 #     create` while the valid `timeout 30 …` still slips past — which would re-create
 #     the exact false-coverage this refactor deletes. Only the zero-arg / assignment
 #     forms (`env NAME=v`, `command`, `builtin`, `exec`, `nohup`, `setsid`) are skipped.
-#   * $'…' ANSI-C quoting is treated as a plain single-quote span (its \' does not
-#     close the span in a real shell). This errs toward OVER-blanking = the deny side.
-#   * A keyword character split mid-word by a quote or backslash — `g\h pr create`,
-#     `g"h" pr create` — defeats detection: a real shell concatenates the word back to
-#     `gh`, but cmd_bare BLANKS the quoted/escaped char (it does not unescape), so the
-#     matcher sees the keyword broken by spaces and misses it. This is DELIBERATE:
-#     unescaping-then-rejoining would re-introduce the `echo "gh pr create"` false match
-#     this scan exists to kill. Suppressing false positives is the chosen tradeoff;
-#     catching every mid-word evasion is out of scope (that is the SKIP_* bypass's job).
+#   * $'…' ANSI-C quoting has its OWN scan state as of 2026-08-16. It previously
+#     reused the plain single-quote state, and the note here claimed that "errs
+#     toward OVER-blanking = the deny side". That claim was false in BOTH
+#     directions and the construct was a total bypass, on main and every branch
+#     commit before the fix — verified by running:
+#       - the `$` sigil survived, so `$'eas' update` rendered as `$eas update`,
+#         which no command-position anchor matches: silent ALLOW on every gate;
+#       - `\'` inside the span was read as a CLOSER, but bash treats it as a
+#         literal apostrophe. The span ended early and the trailing quote
+#         re-opened one that swallowed the rest of the command, so the one-token
+#         prefix `echo $'it\'s ok'; ` hid EVERY deny family — and in the other
+#         direction forged a standalone `--auto` token that GRANTED
+#         guard-outward-cli's immediate-merge carve-out.
+#     Pinned in test-cmd-detect.sh and test-guard-outward-cli.sh. The lesson worth
+#     keeping: "errs toward the deny side" is a claim about behaviour and needs a
+#     test, not a comment.
+#   * A keyword character split by a BACKSLASH — `g\h pr create`, and the leading
+#     `\gh pr create` alias-bypass idiom — still defeats detection: neither
+#     rendering UNESCAPES, they only hide. The mechanism differs between the two,
+#     which matters when reasoning about a specific case: cmd_bare blanks to
+#     SPACES (`e\as update` -> `e  s update`) while cmd_words substitutes the
+#     placeholder (`exxs update`). Either way the keyword is broken, and it is out
+#     of scope — that is the SKIP_* bypass's job. Note this also means a deny-only
+#     flag scan can MISS a spelling (`--ad\min` is a real `--admin` to gh); such a
+#     scan can only fail to ADD a deny, never grant one.
+#   * A whitespace-bearing QUOTED FLAG VALUE is unmatchable, because the space
+#     inside the span becomes the placeholder: `gh api -X" PUT"` renders as
+#     `-XxPUT`. Not a working bypass (Go's HTTP client rejects a method token
+#     containing a space, so the call fails rather than mutating), but it belongs
+#     in this list beside the quoted flag forms that ARE covered.
+#   * A keyword split by a QUOTE — `g"h" pr create`, `gh pr "create"` — USED to defeat
+#     detection for the same reason, and no longer does: `cmd_words` below reproduces
+#     the argv the shell actually builds, and every command-position-anchored matcher
+#     reads it. The old note here claimed rejoining was impossible because it "would
+#     re-introduce the `echo "gh pr create"` false match" — that turned out to be
+#     wrong. The command-position ANCHOR is what suppresses that mention; blanking is
+#     load-bearing only for SEPARATORS inside a span, which cmd_words preserves.
+#     Verified by running, 2026-08-16: `bash scripts/run-hook-tests.sh` stayed green
+#     across all 34 suites. See test-cmd-detect.sh for the per-rendering pins.
 
 # Command-position building blocks, shared by the STRICT matchers (guard + commit).
 # Separator class opens a command: start-of-line (grep's ^ is per-line, so newline-
@@ -55,19 +85,38 @@ cmd_bare() {
     BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\" }
     { buf = buf $0 "\n" }
     END {
-      st = 0           # 0 = unquoted, 1 = inside single quotes, 2 = inside double quotes
+      # 0 = unquoted, 1 = single quotes, 2 = double quotes, 3 = ANSI-C $(quote)
+      st = 0
       n = length(buf)
       out = ""
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1)
         if (st == 0) {
           if (c == BS)      { out = out " "; i++; if (i <= n) out = out " " }
+          # `$` immediately before a quote is a QUOTING SIGIL, not part of the
+          # word: bash strips it from $(sq)…(sq) and $"…". Keeping it left the
+          # verb as `$eas`, which no command-position anchor can match — a
+          # silent ALLOW on every gate (review, 2026-08-16). Consume both.
+          else if (c == "$" && i < n && (substr(buf, i+1, 1) == SQ || substr(buf, i+1, 1) == DQ)) {
+            if (substr(buf, i+1, 1) == SQ) st = 3; else st = 2
+            i++
+            out = out "  "
+          }
           else if (c == SQ) { st = 1; out = out " " }
           else if (c == DQ) { st = 2; out = out " " }
           else                out = out c            # keep separators/words/newlines
         } else if (st == 1) {
           if (c == SQ)      { st = 0; out = out " " }
           else                out = out " "          # single quotes: no escapes inside
+        } else if (st == 3) {
+          # ANSI-C $(sq)…(sq): a backslash ESCAPES the next character, so \(sq)
+          # is a literal apostrophe and does NOT close the span. Treating it as a
+          # closer ended the span early and let the trailing quote re-open one
+          # that swallowed the rest of the command — `echo $(sq)it\(sq)s ok(sq); eas update`
+          # hid EVERY deny family in this lib and its consumers.
+          if (c == BS)      { out = out " "; i++; if (i <= n) out = out " " }
+          else if (c == SQ) { st = 0; out = out " " }
+          else                out = out " "
         } else {
           if (c == BS)      { out = out " "; i++; if (i <= n) out = out " " }  # \" stays in span
           else if (c == DQ) { st = 0; out = out " " }
@@ -78,29 +127,171 @@ cmd_bare() {
     }'
 }
 
+# cmd_words: the SECOND rendering, for INVOCATION detection only. Where cmd_bare
+# BLANKS a quoted span whole, cmd_words reproduces the shell's own word model:
+#
+#   A QUOTED SPAN IS EXACTLY ONE ARGV WORD.
+#
+# So the quote characters are DELETED (`eas "update"` word-splits, and
+# `eas up"date"` concatenates, to the same `eas update` a bare invocation
+# produces), and every character inside the span that could break it into two
+# words or open a command position — whitespace, `; & | ( ) { } !`, a backtick,
+# a newline — becomes a single `x` placeholder (alphanumeric on purpose; see BEGIN).
+#
+# Keeping the BYTES is not the invariant; keeping the WORD BOUNDARIES is. An
+# earlier version of this function preserved intra-span whitespace, which split
+# `X="a b" eas update` into the tokens `X=a` and `b` and broke the NAME=value
+# absorber in _CMD_POS_PREFIX — the verb then sat outside command position and
+# every guard in this file ALLOWED it (caught in review, 2026-08-16).
+#
+# The one-word property is load-bearing three times over: a quoted span can never
+# split a token, never contribute a separator, and never equal a bare flag — so
+# `-b "use --auto next time"` yields the single token `usex--autoxnextxtime`,
+# which is not `--auto`, and a carve-out keyed on that flag stays withheld.
+#
+# WHY A SECOND FUNCTION AND NOT A FIX TO cmd_bare (2026-08-16): blanking is
+# load-bearing in two places that must NOT see the words, and changing cmd_bare
+# in place broke exactly those two, each caught by an existing test:
+#   * FLAG-PRESENCE checks that GRANT a carve-out — `gh pr merge 42 -b "use
+#     --auto next time"` must keep denying, which only holds while the quoted
+#     `--auto` is blanked out of view (guard-outward-cli.sh's decoy test).
+#   * LOOSE, non-command-position-anchored matchers — pr-verify.sh has no anchor,
+#     so blanking is the only thing suppressing `echo "... gh pr create ..."`.
+# Only the ANCHORED cmd_is_* matchers below use cmd_words: their
+# `_CMD_POS_PREFIX` is what keeps a kept-word mention from matching, and
+# test-cmd-detect.sh pins that in both directions.
+#
+# NOTE this corrects the header's residual note above: blanking is NOT what kills
+# the `echo "gh pr create"` false match — the command-position anchor is. Blanking
+# is what keeps a SEPARATOR inside a span from opening a command position, which
+# is precisely the part cmd_words preserves.
+cmd_words() {
+  awk '
+    # Everything a quoted span must NOT be able to emit: whitespace (which would
+    # split one argv word into two) and every character that can OPEN or CLOSE a
+    # command position in either anchor — the lib`s `; & | ( )` plus the wider
+    # guard-local set (backtick, `{`, `}`, `!`) and a newline (grep is
+    # line-oriented, so a surviving newline is a start-of-line command position).
+    function neutral(ch) {
+      return (ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" \
+              || ch == "{" || ch == "}" || ch == "!" || ch == BT \
+              || ch == "\n" || ch == "\r" || ch == " " || ch == "\t")
+    }
+    # An EMPTY quoted span (open immediately followed by its own close) needs a
+    # placeholder ONLY when it is the WHOLE argv word — flanked by a separator
+    # (or start/end of input) on BOTH sides, e.g. `--body ""`. Real bash deletes
+    # an empty quote and lets adjacent literal text concatenate straight through
+    # it (`eas u''pdate` -> `update`), so a MID-WORD empty span — flanked by a
+    # literal word character on either side — must emit NOTHING. Failing to
+    # distinguish the two shapes rendered `eas u''pdate --branch preview
+    # --platform all` as `eas uxpdate ...`, splitting the verb the
+    # `eas[[:space:]]+update` deny pattern anchors on: a silent ALLOW of a real
+    # OTA publish (review, 2026-08-16). `sp` is the length `out` had when the
+    # span opened, so `substr(out, sp, 1)` is the character that preceded it;
+    # `i` is the position of the CLOSING quote in `buf`, so
+    # `substr(buf, i+1, 1)` is the raw character that follows it.
+    function empty_span_needs_ph(sp,    nc) {
+      nc = (i < n) ? substr(buf, i + 1, 1) : ""
+      return (sp == 0 || neutral(substr(out, sp, 1))) && (nc == "" || neutral(nc))
+    }
+    # PH must be ALPHANUMERIC, not punctuation. Consumers spell their token
+    # boundaries as `[^-A-Za-z0-9]` (the --repo/--admin/--auto-submit flag
+    # checks), and `_` SATISFIES that class — so an underscore placeholder made
+    # `--title "use --repo carefully"` render as `use_--repo_carefully`, where
+    # the `_` read as a boundary and a prose mention became a flag hit. A letter
+    # is a boundary in none of the classes in play, so a span collapses to one
+    # contiguous word for every consumer, not just the whitespace-based ones.
+    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96); PH = "x" }
+    { buf = buf $0 "\n" }
+    END {
+      # 0 = unquoted, 1 = single quotes, 2 = double quotes, 3 = ANSI-C $(quote)
+      st = 0
+      n = length(buf)
+      out = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(buf, i, 1)
+        if (st == 0) {
+          # An unquoted backslash must NEVER render as whitespace. `\ ` is an
+          # escaped space: the shell JOINS on it, so `--body "ship it"\ --auto`
+          # is ONE argv word `ship it --auto` and gh never sees an --auto flag.
+          # Rendering it as spaces SPLIT what the shell joined, manufacturing a
+          # standalone `--auto` token that GRANTED guard-outward-cli`s
+          # immediate-merge carve-out (review, 2026-08-16). Emitting more tokens
+          # than argv contains is harmless for a deny-shaped check and fatal for
+          # a grant-shaped one, so the rendering must not do it at all.
+          #   \<newline>  -> emit NOTHING: a line continuation is REMOVED by the
+          #                  shell, joining the two lines into one word-stream.
+          #   \<anything> -> emit the placeholder twice: keeps the join, keeps
+          #                  the escaped char out of view (so `e\as` stays split
+          #                  and undetected — the documented backslash residual).
+          if (c == BS) {
+            i++
+            if (i <= n) { if (substr(buf, i, 1) != "\n") out = out PH PH }
+            else out = out PH
+          }
+          # `$` immediately before a quote is a QUOTING SIGIL that bash strips
+          # from the word ($(sq)…(sq) ANSI-C, $"…" locale). Emitting it left the verb
+          # as `$eas`, which no command-position anchor matches — a silent ALLOW
+          # on every gate (review, 2026-08-16). Consume the sigil AND enter the
+          # right span state; a bare `$` (e.g. `$VAR`) is untouched.
+          else if (c == "$" && i < n && (substr(buf, i+1, 1) == SQ || substr(buf, i+1, 1) == DQ)) {
+            if (substr(buf, i+1, 1) == SQ) st = 3; else st = 2
+            i++
+            sp = length(out)
+          }
+          else if (c == SQ) { st = 1; sp = length(out) }   # DELETE the quote char: the
+          else if (c == DQ) { st = 2; sp = length(out) }   # shell omits it from argv too
+          else                out = out c
+        } else if (st == 1) {
+          if (c == SQ)         { st = 0; if (length(out) == sp && empty_span_needs_ph(sp)) out = out PH }
+          else if (neutral(c))   out = out PH
+          else                   out = out c         # keep the word bytes
+        } else if (st == 3) {
+          # ANSI-C $(sq)…(sq): a backslash ESCAPES the next character, so \(sq) is a
+          # literal apostrophe that does NOT close the span. Treating it as a
+          # closer ended the span early and let the trailing quote re-open one
+          # that swallowed the rest of the command — a one-token prefix
+          # (`echo $(sq)it\(sq)s ok(sq); `) hid EVERY deny family, and in the other
+          # direction forged a standalone `--auto` that granted the
+          # immediate-merge carve-out. Escapes keep the span ONE word.
+          if (c == BS) { i++; if (i <= n) out = out PH PH; else out = out PH }
+          else if (c == SQ)    { st = 0; if (length(out) == sp && empty_span_needs_ph(sp)) out = out PH }
+          else if (neutral(c))   out = out PH
+          else                   out = out c
+        } else {
+          if (c == BS)         { out = out PH; i++; if (i <= n) out = out PH }
+          else if (c == DQ)    { st = 0; if (length(out) == sp && empty_span_needs_ph(sp)) out = out PH }
+          else if (neutral(c))   out = out PH
+          else                   out = out c
+        }
+      }
+      printf "%s", out
+    }'
+}
+
 # cmd_is_gh_pr_create <command>  → exit 0 if it invokes `gh pr create` in command position.
 cmd_is_gh_pr_create() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+create${_CMD_POS_SUFFIX}"
 }
 
 # cmd_is_git_commit <command>  → exit 0 if it invokes `git [-c k=v]* commit` in command position.
 cmd_is_git_commit() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit${_CMD_POS_SUFFIX}"
 }
 
 # cmd_is_git <command>  → exit 0 if it invokes `git` in command position (ANY subcommand, or
 # bare git). Used by core-bare-guard.sh, which heals core.bare before ANY git op.
 cmd_is_git() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_POS_SUFFIX}"
 }
 
 # cmd_is_git_commit_or_push <command>  → exit 0 if it invokes `git [-c k=v]* (commit|push)`
 # in command position. Used by drift-detect.sh (the two HEAD-movers it warns on).
 cmd_is_git_commit_or_push() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push)${_CMD_POS_SUFFIX}"
 }
 
@@ -108,7 +299,7 @@ cmd_is_git_commit_or_push() {
 # `git [-c k=v]* (commit|push|rebase|reset|pull|merge|cherry-pick)` in command position.
 # Used by drift-detect-update.sh (the PostToolUse baseline writer).
 cmd_is_git_head_mover() {
-  printf '%s' "$1" | cmd_bare \
+  printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push|rebase|reset|pull|merge|cherry-pick)${_CMD_POS_SUFFIX}"
 }
 
