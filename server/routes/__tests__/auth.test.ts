@@ -3,7 +3,7 @@ import express from "express";
 import request from "supertest";
 import bcrypt from "bcrypt";
 
-import { storage } from "../../storage";
+import { storage, ReservedUsernameError } from "../../storage";
 import { detectImageMimeType } from "../../lib/image-mime";
 import { register } from "../auth";
 import { ZodError } from "zod";
@@ -30,8 +30,19 @@ import {
   mockExpressRes,
 } from "../../__tests__/utils/express-mocks";
 
-// Mock storage before importing routes
+// Mock storage before importing routes.
+// `ReservedUsernameError` MUST be in this factory: auth.ts does
+// `err instanceof ReservedUsernameError` in the register catch block, and an
+// undefined right-hand side makes `instanceof` THROW — which would turn every
+// error reaching that catch (including the unique-violation races below) into
+// a 500. Same shape as batch-scan.test.ts's BatchStorageErrorMock.
 vi.mock("../../storage", () => ({
+  ReservedUsernameError: class ReservedUsernameErrorMock extends Error {
+    constructor(public readonly username: string) {
+      super(`Username "${username}" is reserved and cannot be registered`);
+      this.name = "ReservedUsernameError";
+    }
+  },
   storage: {
     getUserByUsername: vi.fn(),
     getUserByEmail: vi.fn(),
@@ -167,6 +178,29 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(409);
       expect(res.body.error).toBe("Username already exists");
+    });
+
+    it("returns 409 (NOT 500) when createUser rejects a reserved username", async () => {
+      // The storage-layer choke point throws ReservedUsernameError; the route
+      // must map it to a clear 409 rather than letting it fall through to a
+      // 500. Also guards the mock factory above: if ReservedUsernameError is
+      // ever dropped from it, `instanceof` throws and this returns 500.
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockRejectedValue(
+        new ReservedUsernameError("demo"),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "demo",
+        password: "password123",
+        email: "demo-registrant@example.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe(
+        "That username is reserved. Please choose another.",
+      );
     });
 
     it("returns 409 'Email already registered' when createUser loses an email-unique race", async () => {

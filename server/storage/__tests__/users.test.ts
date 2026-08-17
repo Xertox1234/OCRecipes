@@ -51,6 +51,8 @@ const {
   claimTransactionAndUpgrade,
   revokeSubscriptionByTransactionId,
   upsertProfileWithOnboarding,
+  RESERVED_USERNAMES,
+  ReservedUsernameError,
 } = await import("../users");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -164,6 +166,67 @@ describe("users storage", () => {
       // silently break the neutral-response path while a code-only assertion
       // stayed green.
       expect(uniqueViolationConstraint(error)).toContain("email");
+    });
+  });
+
+  describe("createUser — reserved usernames", () => {
+    // WHY THIS LIVES AT THE STORAGE LAYER, NOT THE ROUTE: the two cleanup
+    // scripts resolve their deletion scope with `eq(users.username, "demo")`
+    // (scripts/cleanup-junk-recipes.ts:54, server/scripts/cleanup-seed-recipes.ts).
+    // If a real person registers `demo`, their junk-matching recipes enter a
+    // permanent-DELETE perimeter. A route-only check would leave every non-route
+    // creation path open, and the route tests mock the auth middleware, so a
+    // green route test can sit over an unprotected real path
+    // (project_auth_recurring_breakage). These tests call `createUser` directly.
+    const reject = (username: string) =>
+      createUser({
+        username,
+        email: `${username.trim().toLowerCase()}-x@test.invalid`,
+        password: "hashed_pw",
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+
+    it("rejects the exact reserved username `demo`", async () => {
+      const error = await reject("demo");
+      expect(error).toBeInstanceOf(ReservedUsernameError);
+    });
+
+    it.each(["Demo", "DEMO", "dEmO"])(
+      "rejects case variant %s — the lookup it endangers is an exact-string match",
+      async (username) => {
+        expect(await reject(username)).toBeInstanceOf(ReservedUsernameError);
+      },
+    );
+
+    it.each([" demo", "demo ", "  demo  ", "\tdemo\n"])(
+      "rejects whitespace variant %j",
+      async (username) => {
+        expect(await reject(username)).toBeInstanceOf(ReservedUsernameError);
+      },
+    );
+
+    // NEGATIVE CONTROL — without this, a check that rejected EVERYTHING would
+    // pass every assertion above. Also pins that the match is whole-string, not
+    // a prefix: `demo_user` must remain registerable.
+    it.each(["demo_user", "demonstration", "mydemo", "demo1"])(
+      "still ALLOWS the non-reserved lookalike %s",
+      async (username) => {
+        const created = await createUser({
+          username,
+          email: `${username}@test.invalid`,
+          password: "hashed_pw",
+        });
+        expect(created.username).toBe(username);
+      },
+    );
+
+    it("reserves exactly the username the seed script creates", () => {
+      // server/scripts/seed-recipes.ts inserts `username: "demo"`. If that ever
+      // changes, this list must change with it — the reservation exists to
+      // protect that name specifically.
+      expect(RESERVED_USERNAMES).toContain("demo");
     });
   });
 

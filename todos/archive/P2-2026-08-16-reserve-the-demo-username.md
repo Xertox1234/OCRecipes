@@ -1,6 +1,6 @@
 ---
 title: "Nothing reserves the username `demo`, and two cleanup scripts resolve their deletion scope by that exact string"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-16
 updated: 2026-08-16
@@ -103,3 +103,32 @@ fixes both consumers at once — an instance of
   `AND (seed|test|legacy)` narrowing were verified against `main` — the earlier framing of this
   item ("the fix must land in both scripts") was wrong and is corrected here: the fix belongs at
   the user-creation choke point.
+
+### 2026-08-17 — DONE
+
+- `RESERVED_USERNAMES = ["demo"]` + `ReservedUsernameError` added to
+  `server/storage/users.ts`; `createUser` rejects a reserved name trimmed +
+  lowercased, so `Demo` / `DEMO` / `demo` are all refused. Whole-string, not a
+  prefix — `demo_user`, `demonstration`, `mydemo`, `demo1` stay registerable
+  (pinned by an explicit negative-control test).
+- **AC4 resolved with no bypass flag needed.** `npm run seed:recipes` still
+  creates its demo account because `server/scripts/seed-recipes.ts:261` inserts
+  into `users` DIRECTLY rather than calling `createUser`. That coupling is now
+  documented at the `createUser` docblock: if the seed is ever refactored to go
+  through `createUser`, the fix is an explicit bypass at that call site, NOT
+  removing the reservation.
+- Route surface: `server/routes/auth.ts` maps `ReservedUsernameError` to a 409
+  with "That username is reserved. Please choose another." — verified it is not
+  a 500.
+- Verified RED first (9 failing / 4 negative controls passing), then GREEN.
+- **Defect found and fixed during this work:** adding
+  `err instanceof ReservedUsernameError` to the register catch block broke two
+  PRE-EXISTING unique-violation tests. `auth.test.ts` mocks `../../storage`, so
+  the imported class was `undefined`, and `instanceof undefined` THROWS —
+  converting every error in that catch block into a 500. The mock factory now
+  provides the class (same pattern as `batch-scan.test.ts`'s
+  `BatchStorageErrorMock`), and a new route test pins the 409 so the mock cannot
+  silently regress.
+- Residual, stated not migrated: an account that already held `demo` before this
+  landed is unaffected — the check runs at creation, not retroactively. Recorded
+  in the `scripts/cleanup-junk-recipes-utils.ts` docblock.

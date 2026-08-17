@@ -27,14 +27,22 @@ import { communityRecipes, users } from "../shared/schema";
  *   - empty instructions AND empty ingredients (both — a draft with only
  *     instructions must survive)
  *
- * NOT an absolute "never touches a real user's recipe" guarantee: the caller
- * resolves the demo account with `eq(users.username, "demo")`, and `demo` is
- * NOT a reserved username — `registerSchema` (`server/routes/_schemas.ts`)
- * enforces only 3-30 chars, `/^[a-zA-Z0-9_]+$/`, and uniqueness. In an
- * environment with no pre-existing demo account a real user can hold it, and
- * their junk-matching rows enter this perimeter. The sibling
- * `server/scripts/cleanup-seed-recipes.ts` resolves the demo user the same
- * way, so reserving the name would have to land in both.
+ * The caller resolves the demo account with `eq(users.username, "demo")`.
+ * `demo` IS now a reserved username (2026-08-16): `RESERVED_USERNAMES` in
+ * `server/storage/users.ts`, enforced inside `createUser` — the single
+ * choke point every registration passes through — so no NEW account can take
+ * the name, in any case or whitespace variant. That covers both this script
+ * and the sibling `server/scripts/cleanup-seed-recipes.ts`, which resolves the
+ * demo user the same way; the reservation is at the shared creation site, not
+ * duplicated per script. `npm run seed:recipes` still creates its own demo
+ * account because it inserts into `users` DIRECTLY rather than calling
+ * `createUser`.
+ *
+ * Residual, deliberately not migrated: an account that ALREADY held `demo`
+ * before the reservation landed is unaffected — the check runs at creation,
+ * not retroactively. So this is still not an absolute "never touches a real
+ * user's recipe" guarantee in a pre-existing environment; it is a guarantee
+ * that no new real user can acquire the name from here on.
  */
 export function buildJunkCommunityRecipeWhere(
   demoUserId: (typeof users.$inferSelect)["id"] | null,

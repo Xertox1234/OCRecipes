@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import bcrypt from "bcrypt";
-import { storage } from "../storage";
+import { storage, ReservedUsernameError } from "../storage";
 import type { UpdatableUserFields } from "../storage";
 import {
   requireAuth,
@@ -205,6 +205,20 @@ export function register(app: Express): void {
             email,
           });
         } catch (err) {
+          // Reserved username (server/storage/users.ts RESERVED_USERNAMES).
+          // Typed error -> explicit 409 rather than falling through to a 500.
+          // 409/CONFLICT deliberately mirrors "Username already exists": to the
+          // person registering, both mean "pick a different name", and the
+          // reserved list is a fixed constant, so naming it leaks nothing about
+          // any account.
+          if (err instanceof ReservedUsernameError) {
+            return sendError(
+              res,
+              409,
+              "That username is reserved. Please choose another.",
+              ErrorCode.CONFLICT,
+            );
+          }
           // Catch unique-violation from a concurrent registration (unchanged).
           if (isUniqueViolation(err)) {
             const constraint = uniqueViolationConstraint(err);

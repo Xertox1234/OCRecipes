@@ -38,6 +38,7 @@ import * as exportStorage from "./export";
 
 export { escapeLike, getDayBounds, getMonthBounds } from "./helpers";
 export type { UpdatableUserFields } from "./users";
+export { RESERVED_USERNAMES, ReservedUsernameError } from "./users";
 export type { FeaturedRecipe } from "./community";
 export type { PersonalRecipeBrief } from "./meal-plans";
 export { BatchStorageError } from "./batch";
