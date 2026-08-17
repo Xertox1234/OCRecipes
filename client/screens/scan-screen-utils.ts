@@ -355,6 +355,51 @@ export function getCapturePlan(phase: ScanPhase): CapturePlan {
   }
 }
 
+/**
+ * Why a shutter press does nothing in this phase, or `null` when it captures.
+ *
+ * The shutter's armed state was mirrored ONLY visually (a yellow border/glow),
+ * so a screen-reader user heard an active-sounding "Take photo" button and got
+ * silence on activation — indistinguishable from a broken control, and the
+ * literal report that opened
+ * `todos/P1-2026-08-07-scan-flow-unreachable-with-voiceover.md` ("does not
+ * activate when touched like other elements").
+ *
+ * Keyed on the SAME `ScanPhase` as `getCapturePlan` and asserted against it in
+ * tests, so the spoken explanation cannot drift from what a press actually
+ * does. That drift is not hypothetical: it is how `LABEL_PROMPTED` shipped as
+ * a terminal dead-end (see `getCapturePlan`'s docstring). Exhaustive with NO
+ * `default` clause for the same reason — a new `ScanPhase` must fail `tsc`
+ * here rather than silently announcing nothing.
+ */
+export function getShutterBlockedReason(phase: ScanPhase): string | null {
+  switch (phase.type) {
+    case "HUNTING":
+    case "BARCODE_LOCKED":
+    case "LABEL_PROMPTED":
+    case "STEP2_CONFIRMED":
+      return null;
+    // The natural posture when testing the barcode flow, and the phase the
+    // original report was almost certainly taken in: a barcode is in frame and
+    // the scan is running itself, so the shutter is dead BY DESIGN.
+    case "BARCODE_TRACKING":
+      return "Scanning the barcode automatically. No photo needed.";
+    case "IDLE":
+      return "Camera is still starting.";
+    case "STEP2_REVIEWING":
+    case "STEP3_REVIEWING":
+      return "Reviewing your photo. Confirm or edit it first.";
+    case "CLASSIFYING":
+      return "Still working on the photo you just took.";
+    case "SMART_CONFIRMED":
+      return "Confirm or retake the photo you just took.";
+    case "SMART_ERROR":
+      return "That photo could not be read. Retake it from the card.";
+    case "SESSION_COMPLETE":
+      return "Scan complete.";
+  }
+}
+
 type NutritionDetailParams = RootStackParamList["NutritionDetail"] & {
   barcode: string;
 };

@@ -63,6 +63,7 @@ import {
   buildProductSummary,
   buildNutritionDetailParams,
   getCapturePlan,
+  getShutterBlockedReason,
   type BarcodeTrackingState,
 } from "@/screens/scan-screen-utils";
 import {
@@ -465,7 +466,16 @@ export default function ScanScreen() {
   const onShutterPress = useCallback(async () => {
     const phase = scanPhaseRef.current;
     const capturePlan = getCapturePlan(phase);
-    if (!capturePlan.capture) return;
+    if (!capturePlan.capture) {
+      // Was a bare `return`. Silence here is indistinguishable from a broken
+      // button for a screen-reader user, which is exactly how this was
+      // reported. Ungated across platforms: nothing else announces this drop
+      // (no live region on the shutter), so an iOS-only announce would leave
+      // TalkBack with the original silence. No-op when no reader is running.
+      const blocked = getShutterBlockedReason(phase);
+      if (blocked) AccessibilityInfo.announceForAccessibility(blocked);
+      return;
+    }
 
     // Guard against duplicate captures from rapid taps — ref check is synchronous
     // and avoids the re-render cycle that makes `disabled` lag behind fast input.
@@ -645,6 +655,9 @@ export default function ScanScreen() {
   // rendered un-armed, faithfully reflecting the broken behaviour), nor armed
   // in one that doesn't.
   const shutterArmed = getCapturePlan(scanPhase).capture;
+  // Same phase, same source of truth as `shutterArmed` — drives the hint that
+  // explains a dead shutter before the user taps it, not only after.
+  const shutterBlockedReason = getShutterBlockedReason(scanPhase);
 
   return (
     <View style={styles.root} accessibilityViewIsModal>
@@ -722,6 +735,16 @@ export default function ScanScreen() {
           onPress={onShutterPress}
           accessibilityLabel="Take photo"
           accessibilityRole="button"
+          // Mirrors the armed state into the a11y tree from the SAME
+          // `shutterArmed` the yellow border reads, so the two can't diverge.
+          // Set explicitly rather than via `disabled`: the file deliberately
+          // gates capture on a synchronous ref (see `onShutterPress`) because
+          // `disabled` lags behind fast input, and a real `disabled` would also
+          // swallow the press before the announcement above could explain it.
+          accessibilityState={{ disabled: !shutterArmed }}
+          accessibilityHint={
+            shutterBlockedReason ?? "Captures a photo of what the camera sees"
+          }
         />
         <TouchableOpacity
           style={[styles.iconBtn, styles.iconBtnVisible]}

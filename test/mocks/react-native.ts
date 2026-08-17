@@ -48,6 +48,32 @@ export const NativeModules = {};
 // React-component mocks for jsdom component rendering tests
 // ---------------------------------------------------------------------------
 
+/**
+ * RN's two platform-split "remove this subtree from the accessibility tree"
+ * props, collapsed onto the one ARIA equivalent.
+ *
+ * Without this they fell through `...rest` onto the raw DOM node, so the only
+ * assertion available was reading back a lowercased attribute — a lookalike
+ * test that proves the prop was PASSED, not that the element left the tree.
+ * Mapping them to `aria-hidden` makes `queryByRole` the discriminator instead:
+ * ByRole excludes `aria-hidden` subtrees from the accessible tree by default,
+ * which is the actual property under test. (`getByLabelText` does NOT — it
+ * still matches hidden nodes, so never assert exclusion with it.)
+ *
+ * Either prop alone marks the node hidden: a component that hides correctly on
+ * both platforms sets both, and a component that sets only one is a real
+ * single-platform bug this mock should surface rather than mask.
+ */
+function ariaHiddenProps(
+  accessibilityElementsHidden: unknown,
+  importantForAccessibility: unknown,
+): { "aria-hidden"?: true } {
+  return accessibilityElementsHidden === true ||
+    importantForAccessibility === "no-hide-descendants"
+    ? { "aria-hidden": true }
+    : {};
+}
+
 /** Helper to create a forwarding mock component that renders an HTML element. */
 function mockComponent(
   Element: string,
@@ -65,6 +91,8 @@ function mockComponent(
         accessibilityHint,
         accessibilityState,
         accessibilityLiveRegion,
+        accessibilityElementsHidden,
+        importantForAccessibility,
         ...rest
       },
       ref,
@@ -93,6 +121,10 @@ function mockComponent(
           ...(a11y?.checked != null && {
             "aria-checked": a11y.checked,
           }),
+          ...ariaHiddenProps(
+            accessibilityElementsHidden,
+            importantForAccessibility,
+          ),
           ...rest,
         } as Record<string, unknown>,
         children as React.ReactNode,
@@ -120,6 +152,8 @@ export const Pressable = React.forwardRef<unknown, Record<string, unknown>>(
       accessibilityLabel,
       accessibilityHint,
       accessibilityState,
+      accessibilityElementsHidden,
+      importantForAccessibility,
       style: _style,
       ...rest
     },
@@ -155,6 +189,10 @@ export const Pressable = React.forwardRef<unknown, Record<string, unknown>>(
             ...(a11y?.checked != null && { "aria-checked": a11y.checked }),
           };
         })(),
+        ...ariaHiddenProps(
+          accessibilityElementsHidden,
+          importantForAccessibility,
+        ),
         ...rest,
       } as Record<string, unknown>,
       resolvedChildren as React.ReactNode,

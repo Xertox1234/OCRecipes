@@ -137,11 +137,25 @@ function checkFile(filePath) {
 
   const issues = [];
 
+  // An element deliberately removed from the a11y tree on BOTH platforms is a
+  // sighted-only target and must NOT carry a label — a labelled full-screen
+  // dismissal backdrop is exactly the defect behind
+  // todos/P1-2026-08-07-scan-flow-unreachable-with-voiceover.md (VoiceOver
+  // focus landed on it and activating it dismissed instead of navigating).
+  // One hiding prop alone does NOT exempt: that hides a single platform and
+  // leaves the other needing the label this check demands.
+  const isHiddenFromA11yTree = (text) =>
+    text.includes("accessibilityElementsHidden") &&
+    text.includes('importantForAccessibility="no-hide-descendants"');
+
   // Check Pressable elements
   const pressables = extractJsxElements(content, "Pressable");
   for (const element of pressables) {
     // Only check if it has onPress (interactive)
-    if (element.text.includes("onPress")) {
+    if (
+      element.text.includes("onPress") &&
+      !isHiddenFromA11yTree(element.text)
+    ) {
       // Check for accessibilityLabel
       if (!hasProps(element.text, ["accessibilityLabel"])) {
         issues.push({
@@ -163,7 +177,13 @@ function checkFile(filePath) {
   // Check TouchableOpacity elements
   const touchables = extractJsxElements(content, "TouchableOpacity");
   for (const element of touchables) {
-    if (element.text.includes("onPress")) {
+    // Same exemption as Pressable above — applied to both interactive checks
+    // so the guard can't be dodged by switching component (see
+    // docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md).
+    if (
+      element.text.includes("onPress") &&
+      !isHiddenFromA11yTree(element.text)
+    ) {
       if (!hasProps(element.text, ["accessibilityLabel"])) {
         issues.push({
           file: filePath,

@@ -1,5 +1,11 @@
-import React from "react";
-import { Platform, Pressable, StyleSheet, View } from "react-native";
+import React, { useEffect } from "react";
+import {
+  BackHandler,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { BlurView } from "expo-blur";
 import { Feather } from "@expo/vector-icons";
 import Animated, { FadeIn, FadeInUp } from "react-native-reanimated";
@@ -35,8 +41,39 @@ export function SpeedDial({ actions, onClose }: SpeedDialProps) {
 
   const backdropEntering = reducedMotion ? undefined : FadeIn.duration(200);
 
+  // Android's ONLY exit from the open menu. `onAccessibilityEscape` below is
+  // iOS-only, and the FAB sits outside this modal's focus order: device-
+  // confirmed 2026-08-17 that once the full-screen backdrop leaves the a11y
+  // tree, VoiceOver correctly contains focus and stops at the last action
+  // instead of reaching the FAB. Without this, a TalkBack user who opens the
+  // menu and wants none of the actions is stuck. No open/focus gating needed —
+  // ScanFAB renders <SpeedDial> only while `menuOpen`, so this component's
+  // mount lifetime IS the menu-open lifetime (unlike `useSheetBackHandler`,
+  // whose gorhom hosts outlive their sheets and therefore need ref gates).
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+
+    const subscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      () => {
+        onClose();
+        return true;
+      },
+    );
+
+    return () => subscription.remove();
+  }, [onClose]);
+
   return (
-    <View style={styles.wrapper} accessibilityViewIsModal>
+    <View
+      style={styles.wrapper}
+      accessibilityViewIsModal
+      // Two-finger scrub is the canonical VoiceOver modal escape. iOS-only, so it
+      // is a bonus exit, NOT the only one — the FAB stays in the a11y tree
+      // (labelled "Close scan menu") to keep a dismissal path on TalkBack, which
+      // has neither this prop nor a BackHandler here.
+      onAccessibilityEscape={onClose}
+    >
       <Animated.View
         entering={backdropEntering}
         style={StyleSheet.absoluteFill}
@@ -60,11 +97,18 @@ export function SpeedDial({ actions, onClose }: SpeedDialProps) {
           />
         )}
       </Animated.View>
+      {/* Sighted tap-to-dismiss only. Hidden from the a11y tree: this is an
+          `absoluteFillObject` with no visual affordance, so it overlaps every
+          action's frame and VoiceOver interleaved it between the items
+          (device-confirmed 2026-08-17). Focus landing here and being activated
+          dismissed the menu without navigating — the reported "it just closes
+          the screen". The FAB is the labelled close affordance instead. */}
       <Pressable
+        testID="speed-dial-backdrop"
         style={styles.backdrop}
         onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel="Close speed dial"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
       />
       <View
         style={[
@@ -87,7 +131,17 @@ export function SpeedDial({ actions, onClose }: SpeedDialProps) {
               entering={entering}
               style={styles.actionRow}
             >
+              {/* Visual label only. Hidden from the a11y tree because the
+                  mini-FAB beside it already carries this exact string as its
+                  `accessibilityLabel` — leaving both focusable announced every
+                  action twice, once as dead text and once as the real button
+                  (device-confirmed 2026-08-17). Container WITH a child, so it
+                  needs the `no-hide-descendants` + `accessibilityElementsHidden`
+                  pair; `accessible={false}` alone would leave the `Text` in the
+                  Android tree (see docs/rules/accessibility.md). */}
               <View
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
                 style={[
                   styles.labelContainer,
                   { backgroundColor: theme.backgroundDefault },

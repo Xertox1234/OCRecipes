@@ -10,6 +10,7 @@ import {
   buildProductSummary,
   buildNutritionDetailParams,
   getCapturePlan,
+  getShutterBlockedReason,
 } from "../scan-screen-utils";
 import type { CapturePlan } from "../scan-screen-utils";
 import { logger } from "@/lib/logger";
@@ -689,6 +690,45 @@ describe("scan-screen-utils", () => {
 
     it.each(CASES)("plans %o", (phase, expected) => {
       expect(getCapturePlan(phase)).toEqual(expected);
+    });
+
+    // Lives here, driven by the SAME CASES table, because it is an assertion
+    // about the RELATIONSHIP between the two functions rather than about
+    // either one alone. `getShutterBlockedReason` supplies the screen-reader
+    // copy for a shutter press that does nothing; if it ever disagrees with
+    // the gate that actually drops the press, a VoiceOver user is told the
+    // opposite of what happened. That is the same drift class that shipped
+    // LABEL_PROMPTED as a dead end, so it is pinned rather than trusted.
+    describe("getShutterBlockedReason agrees with the capture gate", () => {
+      it.each(CASES)(
+        "explains %o iff the gate drops the press",
+        (phase, plan) => {
+          const reason = getShutterBlockedReason(phase);
+          if (plan.capture) {
+            expect(reason).toBeNull();
+          } else {
+            expect(reason).not.toBeNull();
+            // Non-empty: an empty string announces as silence, which is the
+            // exact defect this replaces.
+            expect(reason?.trim().length).toBeGreaterThan(0);
+          }
+        },
+      );
+
+      // The phase the original device report was taken in: a barcode is in
+      // frame, the scan is running itself, and the shutter is dead BY DESIGN.
+      // Pinned verbatim because it is user-facing spoken copy — a silent
+      // rewording is a regression a length check would not catch.
+      it("names the auto-scan explicitly in BARCODE_TRACKING", () => {
+        expect(
+          getShutterBlockedReason({
+            type: "BARCODE_TRACKING",
+            barcode: "06772408",
+            bounds,
+            frameCount: 3,
+          }),
+        ).toBe("Scanning the barcode automatically. No photo needed.");
+      });
     });
 
     // The whole-branch-review Critical, pinned at the helper: a shutter press in
