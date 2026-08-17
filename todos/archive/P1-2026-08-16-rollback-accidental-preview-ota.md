@@ -1,6 +1,6 @@
 ---
 title: "Roll back the accidental preview-channel OTA (2026-08-16 review incident)"
-status: backlog
+status: done
 priority: high
 created: 2026-08-16
 updated: 2026-08-16
@@ -51,3 +51,9 @@ Incident details: update group `2735c5f5-7b5a-468e-852c-1184e93fa49c`, message "
 ### 2026-08-16
 
 - Initial creation from the guard-coverage session incident report.
+- RESOLVED same day: the user ran the verify-then-republish runbook; verified
+  via `eas update:list --branch preview` — rollback group `c151b028-7e9c-44f7-b575-a21e9afefbe0`
+  ("rollback: revert accidental publish (group 2735c5f5)") is at the channel
+  head, above the incident group. Residual decision (fresh publish from main
+  vs. leaving the restored probe build) left with the operator; prevention
+  work tracked in `todos/P2-2026-08-16-outward-cli-pretooluse-deny-hook.md`.
