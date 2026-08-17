@@ -87,7 +87,65 @@ export async function getUserByUsernameForAuth(
   return user || undefined;
 }
 
+/**
+ * Usernames that may not be registered by a real person.
+ *
+ * `demo` is here because two cleanup scripts resolve their PERMANENT-DELETE
+ * scope by that exact string — `scripts/cleanup-junk-recipes.ts:54` and
+ * `server/scripts/cleanup-seed-recipes.ts` both do
+ * `eq(users.username, "demo")`. In an environment with no pre-existing demo
+ * account, a real user could register the name and their junk-matching
+ * recipes would enter that deletion perimeter.
+ *
+ * Keep this list TINY and tied to a concrete hazard — it is not a vanity
+ * blocklist. Entries are compared trimmed and lowercased (see
+ * `isReservedUsername`), so they must be written lowercase here.
+ */
+export const RESERVED_USERNAMES = ["demo"] as const;
+
+/** Thrown by `createUser` when the requested username is reserved. */
+export class ReservedUsernameError extends Error {
+  constructor(public readonly username: string) {
+    super(`Username "${username}" is reserved and cannot be registered`);
+    this.name = "ReservedUsernameError";
+  }
+}
+
+/**
+ * Trim + lowercase before comparing: the lookup this protects is an
+ * exact-string match on the stored value, so `Demo`/`DEMO`/` demo ` are all
+ * just as dangerous as `demo`. Whole-string, never a prefix — `demo_user`
+ * and `demonstration` stay registerable.
+ *
+ * EXPORTED so `server/routes/auth.ts` can reject a reserved name at its
+ * username pre-check — the one signup slot that is deliberately NOT the
+ * neutral check-inbox response. Rejecting only via `createUser`'s throw put
+ * the 409 AFTER the neutral email-existence branch, which made
+ * `POST /api/auth/register` a single-request email-existence oracle: with a
+ * reserved username held fixed, a taken email returned the neutral 200 and a
+ * free email returned the 409 (review, 2026-08-17). Route and storage MUST
+ * share this one normalizer — a re-implemented trim/lowercase in the route
+ * can drift and the differential comes straight back.
+ */
+export function isReservedUsername(username: string): boolean {
+  return (RESERVED_USERNAMES as readonly string[]).includes(
+    username.trim().toLowerCase(),
+  );
+}
+
+/**
+ * NOTE ON THE SEED SCRIPT (load-bearing): `npm run seed:recipes` legitimately
+ * owns the name `demo` and is NOT blocked by this check, because
+ * `server/scripts/seed-recipes.ts:261` inserts into `users` DIRECTLY rather
+ * than calling `createUser`. That is the whole bypass — no flag, no
+ * parameter. If the seed is ever refactored to route through `createUser`,
+ * seeding will start failing here, and the fix is an explicit internal
+ * bypass at that call site, NOT deleting the reservation.
+ */
 export async function createUser(insertUser: InsertUser): Promise<User> {
+  if (isReservedUsername(insertUser.username)) {
+    throw new ReservedUsernameError(insertUser.username);
+  }
   const [user] = await db.insert(users).values(insertUser).returning();
   return user;
 }

@@ -3,7 +3,7 @@ import express from "express";
 import request from "supertest";
 import bcrypt from "bcrypt";
 
-import { storage } from "../../storage";
+import { storage, ReservedUsernameError } from "../../storage";
 import { detectImageMimeType } from "../../lib/image-mime";
 import { register } from "../auth";
 import { ZodError } from "zod";
@@ -30,8 +30,31 @@ import {
   mockExpressRes,
 } from "../../__tests__/utils/express-mocks";
 
-// Mock storage before importing routes
+// Mock storage before importing routes.
+// `ReservedUsernameError` MUST be in this factory. Two DISTINCT things break
+// without it, and only the first is about production behaviour:
+//   1. auth.ts does `err instanceof ReservedUsernameError` in the register
+//      catch block. An undefined right-hand side makes `instanceof` THROW, so
+//      EVERY error reaching that catch — including the unique-violation races
+//      below, which have nothing to do with reserved names — becomes a 500.
+//      Observed: dropping it turned two pre-existing 409 tests into 500s.
+//   2. Separately, the defence-in-depth test below constructs
+//      `new ReservedUsernameError(...)`, which would fail at construction.
+// Same shape as batch-scan.test.ts's BatchStorageErrorMock.
 vi.mock("../../storage", () => ({
+  ReservedUsernameError: class ReservedUsernameErrorMock extends Error {
+    constructor(public readonly username: string) {
+      super(`Username "${username}" is reserved and cannot be registered`);
+      this.name = "ReservedUsernameError";
+    }
+  },
+  // Test double for the real normalizer in server/storage/users.ts. The REAL
+  // function's trim/lowercase/whole-string semantics are pinned directly in
+  // server/storage/__tests__/users.test.ts ("isReservedUsername (the real
+  // exported normalizer)"); this stand-in only needs to be faithful enough to
+  // drive the route's branch.
+  isReservedUsername: (username: string) =>
+    username.trim().toLowerCase() === "demo",
   storage: {
     getUserByUsername: vi.fn(),
     getUserByEmail: vi.fn(),
@@ -167,6 +190,106 @@ describe("Auth Routes", () => {
 
       expect(res.status).toBe(409);
       expect(res.body.error).toBe("Username already exists");
+    });
+
+    it("returns 409 for a reserved username, before any email lookup", async () => {
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "demo",
+        password: "password123",
+        email: "demo-registrant@example.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe(
+        "That username is reserved. Please choose another.",
+      );
+      // Rejected BEFORE the email-existence branch — that ordering is the
+      // anti-enumeration property pinned by the differential test below.
+      expect(storage.getUserByEmail).not.toHaveBeenCalled();
+      expect(storage.createUser).not.toHaveBeenCalled();
+    });
+
+    it("still maps a ReservedUsernameError from createUser to 409, not 500 (defense in depth)", async () => {
+      // The route check above should make this unreachable in practice, but
+      // createUser keeps its own throw for non-route callers, so the catch arm
+      // must stay correct. This also guards the mock factory: drop
+      // ReservedUsernameError from it and `instanceof` throws, turning this —
+      // and the unique-violation races above — into 500s.
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+      vi.mocked(storage.createUser).mockRejectedValue(
+        new ReservedUsernameError("demo"),
+      );
+
+      const res = await request(app).post("/api/auth/register").send({
+        username: "not_reserved_here",
+        password: "password123",
+        email: "dind@example.com",
+        ageConfirmed: true,
+      });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toBe(
+        "That username is reserved. Please choose another.",
+      );
+    });
+
+    it("does NOT leak email existence via a reserved username (anti-enumeration)", async () => {
+      // REGRESSION PIN (review, 2026-08-17). When the reserved-name 409 lived
+      // only in createUser's catch — i.e. AFTER the neutral email branch —
+      // holding a reserved username fixed and varying ONLY the email produced
+      // two different responses, making register a single-request
+      // email-existence oracle: taken -> neutral 200, free -> 409.
+      // `DEMO` is the payload on purpose: there is no lower(username) index,
+      // so it MISSES the uniqueness pre-check in every environment and still
+      // reaches the reserved check.
+      vi.mocked(emailVerificationEnabled).mockReturnValue(true);
+      vi.mocked(storage.getUserByUsername).mockResolvedValue(undefined);
+
+      const send = (email: string) =>
+        request(app).post("/api/auth/register").send({
+          username: "DEMO",
+          password: "password123",
+          email,
+          ageConfirmed: true,
+        });
+
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "existing-id", emailVerified: true }),
+      );
+      const taken = await send("taken@example.com");
+
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+      const free = await send("free@example.com");
+
+      expect(taken.status).toBe(free.status);
+      expect(taken.body).toEqual(free.body);
+
+      // NEGATIVE CONTROL: the same two requests with a NON-reserved username
+      // must ALSO be indistinguishable. Without this, the assertion above
+      // would still pass if the endpoint had simply become uniformly broken.
+      vi.mocked(storage.createUser).mockResolvedValue(
+        createMockUser({ id: "new-id", username: "unreserved_xyz" }),
+      );
+      const ctlSend = (email: string) =>
+        request(app).post("/api/auth/register").send({
+          username: "unreserved_xyz",
+          password: "password123",
+          email,
+          ageConfirmed: true,
+        });
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(
+        createMockUser({ id: "existing-id", emailVerified: true }),
+      );
+      const ctlTaken = await ctlSend("taken2@example.com");
+      vi.mocked(storage.getUserByEmail).mockResolvedValue(undefined);
+      const ctlFree = await ctlSend("free2@example.com");
+
+      expect(ctlTaken.status).toBe(ctlFree.status);
+      expect(ctlTaken.body).toEqual(ctlFree.body);
     });
 
     it("returns 409 'Email already registered' when createUser loses an email-unique race", async () => {

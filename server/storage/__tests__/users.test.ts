@@ -15,6 +15,8 @@ import {
   createTestUserProfile,
   getTestTx,
 } from "../../../test/db-test-utils";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type * as schema from "@shared/schema";
 import { users, userProfiles } from "@shared/schema";
@@ -51,6 +53,9 @@ const {
   claimTransactionAndUpgrade,
   revokeSubscriptionByTransactionId,
   upsertProfileWithOnboarding,
+  RESERVED_USERNAMES,
+  ReservedUsernameError,
+  isReservedUsername,
 } = await import("../users");
 
 let tx: NodePgDatabase<typeof schema>;
@@ -164,6 +169,110 @@ describe("users storage", () => {
       // silently break the neutral-response path while a code-only assertion
       // stayed green.
       expect(uniqueViolationConstraint(error)).toContain("email");
+    });
+  });
+
+  describe("createUser — reserved usernames", () => {
+    // WHY THIS LIVES AT THE STORAGE LAYER, NOT THE ROUTE: the two cleanup
+    // scripts resolve their deletion scope with `eq(users.username, "demo")`
+    // (scripts/cleanup-junk-recipes.ts:54, server/scripts/cleanup-seed-recipes.ts).
+    // If a real person registers `demo`, their junk-matching recipes enter a
+    // permanent-DELETE perimeter. A route-only check would leave every non-route
+    // creation path open, and the route tests mock the auth middleware, so a
+    // green route test can sit over an unprotected real path
+    // (project_auth_recurring_breakage). These tests call `createUser` directly.
+    const reject = (username: string) =>
+      createUser({
+        username,
+        email: `${username.trim().toLowerCase()}-x@test.invalid`,
+        password: "hashed_pw",
+      }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+
+    it("rejects the exact reserved username `demo`", async () => {
+      const error = await reject("demo");
+      expect(error).toBeInstanceOf(ReservedUsernameError);
+    });
+
+    it.each(["Demo", "DEMO", "dEmO"])(
+      "rejects case variant %s — the lookup it endangers is an exact-string match",
+      async (username) => {
+        expect(await reject(username)).toBeInstanceOf(ReservedUsernameError);
+      },
+    );
+
+    it.each([" demo", "demo ", "  demo  ", "\tdemo\n"])(
+      "rejects whitespace variant %j",
+      async (username) => {
+        expect(await reject(username)).toBeInstanceOf(ReservedUsernameError);
+      },
+    );
+
+    // NEGATIVE CONTROL — without this, a check that rejected EVERYTHING would
+    // pass every assertion above. Also pins that the match is whole-string, not
+    // a prefix: `demo_user` must remain registerable.
+    it.each(["demo_user", "demonstration", "mydemo", "demo1"])(
+      "still ALLOWS the non-reserved lookalike %s",
+      async (username) => {
+        const created = await createUser({
+          username,
+          email: `${username}@test.invalid`,
+          password: "hashed_pw",
+        });
+        expect(created.username).toBe(username);
+      },
+    );
+
+    // The REAL normalizer, pinned directly. server/routes/auth.ts calls this
+    // exact function at its username pre-check, and auth.test.ts mocks
+    // `../../storage` with a stand-in — so this block is the only place the
+    // production trim/lowercase/whole-string semantics are actually exercised.
+    describe("isReservedUsername (the real exported normalizer)", () => {
+      it.each(["demo", "Demo", "DEMO", " demo ", "\tdemo\n", "  DeMo  "])(
+        "returns true for %j",
+        (username) => {
+          expect(isReservedUsername(username)).toBe(true);
+        },
+      );
+
+      it.each(["demo_user", "demonstration", "mydemo", "demo1", "dem", ""])(
+        "returns false for %j",
+        (username) => {
+          expect(isReservedUsername(username)).toBe(false);
+        },
+      );
+    });
+
+    it("reserves whatever username the seed script actually inserts (drift detection)", () => {
+      // Reads the REAL seed source and extracts the literal it inserts, rather
+      // than asserting a hardcoded "demo" against a hardcoded constant — that
+      // form stays green if the seed renames its account tomorrow, i.e. it
+      // asserts a cross-file invariant it cannot observe. That is precisely the
+      // anti-pattern this whole todo exists to fix
+      // (docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2026-08-06.md),
+      // so it must not be reproduced inside the fix.
+      // process.cwd(), matching auth-route-wiring.test.ts: Vitest runs anchored
+      // at the project root, and a `new URL(..., import.meta.url)` form does not
+      // type-check here (lib.dom's URL and @types/node's URL are structurally
+      // incompatible, which tsc rejects even though Vitest strips types and runs
+      // it happily).
+      const seedSrc = readFileSync(
+        path.join(process.cwd(), "server", "scripts", "seed-recipes.ts"),
+        "utf8",
+      );
+      const match = seedSrc.match(
+        /\.insert\(users\)[\s\S]{0,400}?username:\s*"([^"]+)"/,
+      );
+      // Guard the extractor itself: if the seed is restructured so this regex
+      // no longer matches, the test must go RED rather than silently assert
+      // nothing (a null match would otherwise make the check vacuous).
+      expect(
+        match,
+        "could not locate the seed script's inserted username literal — update this extractor",
+      ).not.toBeNull();
+      expect(RESERVED_USERNAMES).toContain(match![1]);
     });
   });
 

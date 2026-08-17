@@ -1,6 +1,6 @@
 ---
 title: "Nothing reserves the username `demo`, and two cleanup scripts resolve their deletion scope by that exact string"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-16
 updated: 2026-08-16
@@ -103,3 +103,67 @@ fixes both consumers at once — an instance of
   `AND (seed|test|legacy)` narrowing were verified against `main` — the earlier framing of this
   item ("the fix must land in both scripts") was wrong and is corrected here: the fix belongs at
   the user-creation choke point.
+
+### 2026-08-17 — DONE
+
+- `RESERVED_USERNAMES = ["demo"]` + `ReservedUsernameError` added to
+  `server/storage/users.ts`; `createUser` rejects a reserved name trimmed +
+  lowercased, so `Demo` / `DEMO` / `demo` are all refused. Whole-string, not a
+  prefix — `demo_user`, `demonstration`, `mydemo`, `demo1` stay registerable
+  (pinned by an explicit negative-control test).
+- **AC4 resolved with no bypass flag needed.** `npm run seed:recipes` still
+  creates its demo account because `server/scripts/seed-recipes.ts:261` inserts
+  into `users` DIRECTLY rather than calling `createUser`. That coupling is now
+  documented at the `createUser` docblock: if the seed is ever refactored to go
+  through `createUser`, the fix is an explicit bypass at that call site, NOT
+  removing the reservation.
+- Route surface: `server/routes/auth.ts` maps `ReservedUsernameError` to a 409
+  with "That username is reserved. Please choose another." — verified it is not
+  a 500.
+- Verified RED first (9 failing / 4 negative controls passing), then GREEN.
+- **Defect found and fixed during this work:** adding
+  `err instanceof ReservedUsernameError` to the register catch block broke two
+  PRE-EXISTING unique-violation tests. `auth.test.ts` mocks `../../storage`, so
+  the imported class was `undefined`, and `instanceof undefined` THROWS —
+  converting every error in that catch block into a 500. The mock factory now
+  provides the class (same pattern as `batch-scan.test.ts`'s
+  `BatchStorageErrorMock`), and a new route test pins the 409 so the mock cannot
+  silently regress.
+- Residual, stated not migrated: an account that already held `demo` before this
+  landed is unaffected — the check runs at creation, not retroactively. Recorded
+  in the `scripts/cleanup-junk-recipes-utils.ts` docblock.
+
+### 2026-08-17 — security review round: one CRITICAL, found and fixed
+
+- **The first implementation introduced an email-existence oracle.** Rejecting
+  only via `createUser`'s throw put the 409 AFTER the register handler's neutral
+  email-existence branch. Holding a reserved username fixed and varying only the
+  email then gave two different responses: taken -> neutral `200`
+  `verification_pending`, free -> `409` reserved. One request, no side effects,
+  infinitely repeatable — against an endpoint deliberately engineered against
+  exactly this (content-free neutral response, bcrypt pre-paid to flatten
+  timing, `pendingEmail` left unconstrained).
+- `DEMO` (uppercase) is what makes it work in every environment: there is no
+  `lower(username)` unique index (only `migrations/0009_users_email_lower_unique.sql`
+  covers email), so `DEMO` MISSES the username uniqueness pre-check while the
+  case-folded reservation still rejects it.
+- **Fix:** the rejection moved to `server/routes/auth.ts`'s username pre-check —
+  the one signup slot that is deliberately NOT the neutral check-inbox response,
+  so both answers there are username-shaped and varying the email changes
+  nothing. `isReservedUsername` is now exported and shared by route and storage
+  so the two normalizers cannot drift. `createUser`'s throw and the catch arm
+  stay as defense-in-depth for non-route callers.
+- Pinned by a differential test (`does NOT leak email existence via a reserved
+username`) with a non-reserved negative control. **Mutation-verified**:
+  disabling the route check makes `expect(taken.status).toBe(free.status)` fail,
+  so the pin is real and not a decoration.
+- Also fixed: `scripts/cleanup-junk-recipes.ts` (the file that issues the
+  `DELETE`) still asserted in two comments that `demo` is NOT reserved, directly
+  contradicting the sibling docblock updated in the same commit. Contradictory
+  safety documentation on a permanent-delete perimeter is how the next reader
+  mis-scopes a live run.
+- Review also confirmed clean: no reachable normalization bypass (`registerSchema`'s
+  `/^[a-zA-Z0-9_]+$/` rejects every Unicode/zero-width/NUL variant that would slip
+  past the trim+lowercase); no other `insert(users)` path besides the intended
+  seed script; no lockout risk for an existing holder (`UpdatableUserFields`
+  excludes `username`, and login is untouched).

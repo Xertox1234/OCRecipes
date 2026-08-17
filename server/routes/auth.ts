@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import bcrypt from "bcrypt";
-import { storage } from "../storage";
+import { storage, ReservedUsernameError, isReservedUsername } from "../storage";
 import type { UpdatableUserFields } from "../storage";
 import {
   requireAuth,
@@ -153,6 +153,25 @@ export function register(app: Express): void {
           );
         }
 
+        // Reserved names are rejected HERE, in the same non-neutral slot as the
+        // uniqueness 409 — deliberately BEFORE the email-existence branch below.
+        // Relying on createUser's throw alone placed this 409 AFTER that branch,
+        // which made register a single-request email-existence oracle: hold a
+        // reserved username fixed (`DEMO` — there is no lower(username) index,
+        // so it misses the pre-check above in every environment) and a taken
+        // email returned the neutral 200 while a free email returned this 409
+        // (review, 2026-08-17). Both responses are username-shaped here, so
+        // varying the email changes nothing. `isReservedUsername` is imported
+        // from storage rather than re-implemented so the two cannot drift.
+        if (isReservedUsername(username)) {
+          return sendError(
+            res,
+            409,
+            "That username is reserved. Please choose another.",
+            ErrorCode.CONFLICT,
+          );
+        }
+
         // Constant-time anti-enumeration: when verification is ON, pay the
         // bcrypt cost BEFORE the email-existence check so the existing-email
         // and new-account branches take the same wall-clock (~250ms bcrypt
@@ -205,6 +224,20 @@ export function register(app: Express): void {
             email,
           });
         } catch (err) {
+          // Reserved username (server/storage/users.ts RESERVED_USERNAMES).
+          // Typed error -> explicit 409 rather than falling through to a 500.
+          // 409/CONFLICT deliberately mirrors "Username already exists": to the
+          // person registering, both mean "pick a different name", and the
+          // reserved list is a fixed constant, so naming it leaks nothing about
+          // any account.
+          if (err instanceof ReservedUsernameError) {
+            return sendError(
+              res,
+              409,
+              "That username is reserved. Please choose another.",
+              ErrorCode.CONFLICT,
+            );
+          }
           // Catch unique-violation from a concurrent registration (unchanged).
           if (isUniqueViolation(err)) {
             const constraint = uniqueViolationConstraint(err);
