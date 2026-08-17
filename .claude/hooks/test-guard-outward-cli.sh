@@ -354,6 +354,23 @@ assert_allow "rsync -R ...; gh pr create allows (-R belongs to rsync)" \
 assert_deny "gh pr comment \"--repo\" other/repo denies (quoted flag name is still a real argv token)" \
   "$(jsonc 'gh pr comment 42 "--repo" other/repo --body x')" \
   "'gh pr create/comment' with --repo/-R"
+# CLAUSE-ORDER egress bypass (2026-08-17 review): gh_pr_clause_has_repo's
+# `head -1` only ever inspects the FIRST create/comment clause. Unlike
+# merge/api, this family had no occurrence-count ambiguity guard, so a benign
+# first clause let a malicious second clause's --repo/-R sail through
+# unexamined.
+assert_deny "two gh pr create occurrences denies (ambiguous, safe direction — closes the clause-order egress bypass)" \
+  "$(jsonc 'gh pr create --fill && gh pr create --repo other/org --title x')" \
+  "more than one command-position 'gh pr create/comment'"
+assert_deny "malicious --repo clause FIRST still denies (regression pin, now via the ambiguity guard)" \
+  "$(jsonc 'gh pr create --repo other/org --title x && gh pr create --fill')" \
+  "more than one command-position 'gh pr create/comment'"
+assert_deny "-R short spelling in the SECOND clause also denies (ambiguous)" \
+  "$(jsonc 'gh pr create --fill && gh pr create -R other/org --title x')" \
+  "more than one command-position 'gh pr create/comment'"
+assert_deny "two create/comment occurrences denies even with NO --repo anywhere (matches the merge/api safe-direction policy)" \
+  "$(jsonc 'gh pr create --fill && gh pr comment 42 --body x')" \
+  "more than one command-position 'gh pr create/comment'"
 
 # ---------- gh api: mutating HTTP method ----------
 # gh api can reach the SAME PR-merge action the dedicated clause above gates,
@@ -857,6 +874,10 @@ check "no-jq: line-continuation eas update closed"  deny "$(nojq_hook "$LC_EAS")
 check "no-jq: line-continuation npm publish closed" deny "$(nojq_hook "$LC_NPM")"
 check "no-jq: line-continuation railway up closed"  deny "$(nojq_hook "$LC_RAILWAY")"
 check "no-jq: line-continuation gh pr merge closed" deny "$(nojq_hook "$LC_GH")"
+# $-SIGIL bypass on the crude path (review round 4, 2026-08-17): crude_smells_outward
+# is non-quote-aware by design, but a surviving `$` broke the letter-adjacency every
+# regex here requires (e$'a's has no literal "eas" substring).
+check "no-jq: \$-sigil-split eas update fails closed" deny "$(nojq_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
 
 # ---------- lib-unsourceable fallback (jq IS present, lib/cmd-detect.sh is NOT) ----------
 # A prior version of this hook silently ALLOWED every command here on the
@@ -876,6 +897,7 @@ check "no-lib: line-continuation eas update closed"  deny "$(nolib_hook "$LC_EAS
 check "no-lib: line-continuation npm publish closed" deny "$(nolib_hook "$LC_NPM")"
 check "no-lib: line-continuation railway up closed"  deny "$(nolib_hook "$LC_RAILWAY")"
 check "no-lib: line-continuation gh pr merge closed" deny "$(nolib_hook "$LC_GH")"
+check "no-lib: \$-sigil-split eas update fails closed" deny "$(nolib_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
 
 # ---------- ROUND-3 C4: awk missing → cmd_bare returns NOTHING ----------
 # jq/grep/sed present, awk absent: the lib sources fine and `declare -F
@@ -890,6 +912,7 @@ check "no-awk: npm run update:preview closed" deny "$(noawk_hook "$(json 'npm ru
 check "no-awk: benign command stays allowed"  allow "$(noawk_hook "$(json 'ls -la')")"
 check "no-awk: inline bypass prefix allows"   allow "$(noawk_hook "$(json 'ALLOW_OUTWARD_CLI=1 eas update')")"
 check "no-awk: line-continuation eas update closed" deny "$(noawk_hook "$LC_EAS")"
+check "no-awk: \$-sigil-split eas update fails closed" deny "$(noawk_hook "$(jsonc "e\$'a's update --branch preview --platform all")")"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

@@ -56,15 +56,27 @@ case "$TOOL" in
         case "$words" in *gh*pr*create*) : ;; *) exit 0 ;; esac
       elif [ -n "${CMD//[[:space:]]/}" ]; then
         WORDS_BROKEN=1
-        case "${CMD//[\"\']/}" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+        # Same 5-character strip as the stage-1/2 fast path above (quotes,
+        # backslash, newline, and the $ sigil cmd_words itself consumes before
+        # a quote) — the narrower quote-only strip this fallback used to run
+        # left `g$'h' pr create --fill` invisible to this glob even though it
+        # demonstrably reconstructs to `gh pr create --fill` under cmd_words
+        # (the working-awk control in test-pr-preflight-guard.sh proves it),
+        # reopening the exact bypass this hook exists to close on a
+        # broken-awk host (review round 4, 2026-08-17).
+        _FB=${CMD//\'/}; _FB=${_FB//\"/}; _FB=${_FB//\\/}; _FB=${_FB//$'\n'/}; _FB=${_FB//\$/}
+        case "$_FB" in *gh*pr*create*) : ;; *) exit 0 ;; esac
       fi
     else
       # Lib unsourceable (broken install): cmd_is_gh_pr_create cannot run either, so this hook
       # degrades to "raw text plausibly contains gh pr create -> demand a stamp". Keep the RAW
       # filter here so an unrelated command still exits quietly instead of hitting the stamp
       # gate — without it, a missing lib turns this into a deny-everything gate (caught by
-      # test-pr-preflight-guard.sh's "lib-missing leaves unrelated bash alone").
-      case "${CMD//[\"\']/}" in *gh*pr*create*) : ;; *) exit 0 ;; esac
+      # test-pr-preflight-guard.sh's "lib-missing leaves unrelated bash alone"). Same 5-character
+      # strip as the WORDS_BROKEN branch above (review round 4, 2026-08-17) — this fallback had
+      # the identical narrower gap.
+      _FB=${CMD//\'/}; _FB=${_FB//\"/}; _FB=${_FB//\\/}; _FB=${_FB//$'\n'/}; _FB=${_FB//\$/}
+      case "$_FB" in *gh*pr*create*) : ;; *) exit 0 ;; esac
     fi
     # Precise detection via the shared, quote-AWARE scanner (.claude/hooks/lib/cmd-detect.sh) — the
     # single source of the strip + command-position matcher across all three PR/commit hooks, so

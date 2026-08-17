@@ -188,6 +188,22 @@ rm -f "$STAMP_FILE"
 OUT=$(run_hook_noawk 'ls -la')
 assert_empty "broken awk leaves unrelated bash alone" "" "$OUT"
 
+# 12k. $-SIGIL bypass in the broken-awk fallback (review round 4, 2026-08-17): the
+# WORDS_BROKEN fallback's quote-strip (${CMD//[\"\']/}) omits \, newline, and $ —
+# narrower than the primary fast path's 5-character strip a few lines above it. A
+# $-sigil-split verb reconstructs to `gh pr create --fill` under cmd_words (the
+# working-awk control below proves it denies), but on a broken-awk host the
+# surviving $ hid it from this weaker fallback filter, exiting 0 with no stamp
+# demanded.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook "g\$'h' pr create --fill")
+assert_contains "control: \$-sigil-split gh still denies with awk WORKING" \
+  '"permissionDecision": "deny"' "$OUT"
+rm -f "$STAMP_FILE"
+OUT=$(run_hook_noawk "g\$'h' pr create --fill")
+assert_contains "broken awk + \$-sigil-split gh still demands a stamp (fails CLOSED)" \
+  '"permissionDecision": "deny"' "$OUT"
+
 # 13. Helper UN-SOURCEABLE → DENY. Locks the fail-safe: if the shared stamp-path helper
 # can't be found, the guard must block (never silently allow a PR with no stamp).
 #
@@ -242,6 +258,11 @@ assert_contains "lib-missing still denies (fail-closed)" '"permissionDecision": 
 # ...but lib-missing must NOT block unrelated Bash (the fallback is scoped to plausible creates).
 OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}' | bash "$NOLIB/pr-preflight-guard.sh")
 assert_empty "lib-missing leaves unrelated bash alone" "" "$OUT"
+# Same $-sigil gap as the WORDS_BROKEN fallback (test 12k) — the lib-unsourceable
+# branch uses the identical weaker ${CMD//[\"\']/} strip.
+OUT=$(jq -Rn --arg c "g\$'h' pr create --fill" '{tool_name:"Bash",tool_input:{command:$c}}' | bash "$NOLIB/pr-preflight-guard.sh")
+assert_contains "lib-missing + \$-sigil-split gh still demands a stamp (fails CLOSED)" \
+  '"permissionDecision": "deny"' "$OUT"
 rm -rf "$NOLIB"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

