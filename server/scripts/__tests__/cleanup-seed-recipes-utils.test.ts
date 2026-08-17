@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -10,6 +10,73 @@ import {
   SEED_PREFIX,
   TEST_PREFIX,
 } from "../cleanup-seed-recipes-utils";
+import { main } from "../cleanup-seed-recipes";
+import { db } from "../../db";
+
+// Deliberately generic — this mock proves the COMMIT GATE discriminates,
+// not the deletion perimeter (that SQL is pinned separately above by
+// `buildJunkRecipeWhere`'s own tests).
+vi.mock("../../db", () => {
+  // One fixture row, resolved by every terminal DB call (select AND the
+  // delete/returning tail inside a transaction). `imageUrl: null` skips the
+  // real-fs image cleanup branch. Defined INSIDE the factory: vi.mock
+  // factories are hoisted above module-scope const declarations, so an
+  // outer-scope reference here would run before it is initialized.
+  const FIXTURE_ROW = {
+    // Numeric, matching `communityRecipes.id`'s real `serial` type (see
+    // `shared/schema.ts`) — `main()` does `junkIds.map(String)` for
+    // `recipeDismissals.recipeIdentifier`, and a string id here would make
+    // that `.map(String)` a silent no-op, hiding a real coercion bug.
+    id: 1,
+    authorId: null,
+    normalizedProductName: "test-fixture-row",
+    imageUrl: null,
+    count: 0,
+  };
+  // A single flat object that is BOTH chainable (every builder method
+  // returns the same object) AND thenable (awaiting it resolves the
+  // fixture) — so it stands in for a Drizzle query/transaction builder
+  // regardless of whether `.where()` or `.returning()` ends the chain.
+  const chain: Record<string, unknown> = {};
+  Object.assign(chain, {
+    select: vi.fn(() => chain),
+    from: vi.fn(() => chain),
+    where: vi.fn(() => chain),
+    set: vi.fn(() => chain),
+    delete: vi.fn(() => chain),
+    returning: vi.fn(() => chain),
+    then: (resolve: (v: unknown) => void) => resolve([FIXTURE_ROW]),
+  });
+  return {
+    db: {
+      select: vi.fn(() => chain),
+      // The real write gate: `main()` only reaches this on --commit. The
+      // callback receives the same chainable `tx`, so every `tx.delete(...)`
+      // inside it resolves too.
+      transaction: vi.fn((cb: (tx: unknown) => Promise<unknown>) =>
+        Promise.resolve(cb(chain)),
+      ),
+    },
+    pool: { end: vi.fn(async () => undefined) },
+  };
+});
+
+const mockDb = db as unknown as {
+  select: ReturnType<typeof vi.fn>;
+  transaction: ReturnType<typeof vi.fn>;
+};
+
+/** A chainable/thenable stand-in resolving to an EMPTY result set — for
+ * overriding one `db.select(...)` call via `mockImplementationOnce`. */
+function emptySelectChain(): Record<string, unknown> {
+  const c: Record<string, unknown> = {};
+  Object.assign(c, {
+    from: vi.fn(() => c),
+    where: vi.fn(() => c),
+    then: (resolve: (v: unknown) => void) => resolve([]),
+  });
+  return c;
+}
 
 /**
  * The cleanup script's WHERE clause is the security perimeter for
@@ -150,6 +217,112 @@ describe("cleanup-seed-recipes-utils", () => {
         expect(name.startsWith(TEST_PREFIX)).toBe(false);
         expect(name.startsWith(SEED_PREFIX)).toBe(false);
       }
+    });
+  });
+
+  describe("cleanup-seed-recipes main() — the real commit gate (mocked db)", () => {
+    // The banner text (asserted elsewhere via spawnSync against an
+    // unreachable DB) sits BEFORE an unconditional `communityRecipes`
+    // select; the actual `if (!commit) { ...; return; }` gate that decides
+    // whether `db.transaction(...)` runs sits AFTER it. No no-DB spawnSync
+    // test can ever reach that gate — this suite mocks `db`/`pool` so
+    // `main()` runs the real script logic in-process, with one fixture row,
+    // and asserts on the ONE thing that gate actually controls: whether
+    // `db.transaction` is invoked at all.
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("a bare invocation does NOT reach db.transaction (must never delete)", async () => {
+      await main([]);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("--commit DOES reach db.transaction (arms the delete)", async () => {
+      await main(["--commit"]);
+      expect(mockDb.transaction).toHaveBeenCalled();
+    });
+
+    it("--commit --dry-run does NOT reach db.transaction (--dry-run vetoes)", async () => {
+      await main(["--commit", "--dry-run"]);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    // NOTE on the `junkRecipes.length === 0` early return (line ~119, ahead
+    // of the commit check): unlike the sibling cleanup-junk-recipes.ts,
+    // db.transaction here is called INSIDE `for (let i = 0; i <
+    // junkIds.length; ...)`, so it is already unreachable whenever the
+    // result set is empty — proven below by mutation (deleting the early
+    // return does NOT flip a `db.transaction` assertion). What the early
+    // return actually short-circuits is the four cascade-count `db.select`
+    // calls below it; asserting on `db.transaction` here would be a
+    // decorative/non-discriminating test (see
+    // docs/solutions/code-quality/lookalike-test-of-a-reimplemented-predicate-guards-nothing-2026-08-16.md),
+    // so this pins the real observable instead.
+    it("--commit with ZERO junk recipes found skips the cascade-count queries (exactly 2 selects — the guard ran, not just fewer queries)", async () => {
+      mockDb.select
+        .mockImplementationOnce(() => emptySelectChain()) // users lookup
+        .mockImplementationOnce(() => emptySelectChain()); // junk query -> empty
+
+      await main(["--commit"]);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+      expect(mockDb.select).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("cleanup-seed-recipes banner — wiring seam (spawnSync, no DB)", () => {
+    // What this DOES prove: the real script (not the -utils leaf) correctly
+    // wires argv -> parseCleanupFlags -> the printed Mode banner. What it
+    // does NOT prove: that the `if (!commit)` write gate itself is correct —
+    // that gate sits behind an unconditional DB read this process never
+    // reaches (see the mocked-db suite above, which owns that guarantee).
+    //
+    // DATABASE_URL is set to a syntactically-valid but UNREACHABLE address
+    // (never deleted, unlike the db-free import-pin below) — `server/db.ts`
+    // throws synchronously at import if DATABASE_URL is unset, which would
+    // crash before the banner ever prints. `pg`'s Pool connects lazily, so
+    // the banner (printed before any query) is unaffected by the connection
+    // failing a moment later.
+    const ROOT = join(__dirname, "..", "..", "..");
+    const scriptPath = join(
+      ROOT,
+      "server",
+      "scripts",
+      "cleanup-seed-recipes.ts",
+    );
+    const env = {
+      ...process.env,
+      DATABASE_URL: "postgresql://t:t@127.0.0.1:1/nope",
+    };
+
+    function run(...flags: string[]) {
+      return spawnSync(
+        process.execPath,
+        ["--import=tsx", scriptPath, ...flags],
+        {
+          encoding: "utf8",
+          timeout: 10_000,
+          cwd: ROOT,
+          env,
+        },
+      );
+    }
+
+    it("bare invocation prints Mode: DRY-RUN", () => {
+      const r = run();
+      expect(r.stdout).toContain("Mode: DRY-RUN  (pass --commit to delete)");
+    });
+
+    it("--commit prints Mode: COMMIT", () => {
+      const r = run("--commit");
+      expect(r.stdout).toContain("Mode: COMMIT");
+    });
+
+    it("--commit --dry-run prints Mode: DRY-RUN and NAMES --dry-run as the veto", () => {
+      const r = run("--commit", "--dry-run");
+      expect(r.stdout).toContain(
+        "Mode: DRY-RUN  (--dry-run overrides --commit; drop --dry-run to delete)",
+      );
     });
   });
 

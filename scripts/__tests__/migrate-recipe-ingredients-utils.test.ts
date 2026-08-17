@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
@@ -8,6 +8,48 @@ import {
   splitInstructionsArray,
   parseCleanupFlags,
 } from "../migrate-recipe-ingredients-utils";
+import { main } from "../migrate-recipe-ingredients";
+import { db } from "../../server/db";
+
+// Deliberately generic — this mock proves the COMMIT GATE discriminates, not
+// the split/parse logic (that's covered by splitInstructionsArray's own
+// tests above).
+vi.mock("../../server/db", () => {
+  // One fixture row whose `instructions` blob is a real, splittable Pattern-A
+  // payload — `splitInstructionsArray` must return non-null for the write
+  // gate (inside the per-row loop) to ever be reached at all. Defined
+  // INSIDE the factory: vi.mock factories are hoisted above module-scope
+  // const declarations, so an outer-scope reference here would run before
+  // it is initialized.
+  const FIXTURE_ROW = {
+    id: 1,
+    title: "Fixture Recipe",
+    instructions: [
+      "Ingredients:\n200g rice noodles\nInstructions:\nCook it well",
+    ],
+    ingredients: [],
+  };
+  // A single flat object that is BOTH chainable (every builder method
+  // returns the same object) AND thenable (awaiting it resolves the
+  // fixture) — stands in for a Drizzle query/update builder.
+  const chain: Record<string, unknown> = {};
+  Object.assign(chain, {
+    select: vi.fn(() => chain),
+    from: vi.fn(() => chain),
+    where: vi.fn(() => chain),
+    set: vi.fn(() => chain),
+    then: (resolve: (v: unknown) => void) => resolve([FIXTURE_ROW]),
+  });
+  return {
+    db: {
+      select: vi.fn(() => chain),
+      // The real write gate: `main()` only reaches this on --commit.
+      update: vi.fn(() => chain),
+    },
+  };
+});
+
+const mockDb = db as unknown as { update: ReturnType<typeof vi.fn> };
 
 describe("migrate-recipe-ingredients-utils", () => {
   describe("parseIngredientLine", () => {
@@ -231,6 +273,86 @@ describe("migrate-recipe-ingredients-utils", () => {
       );
       expect(parseCleanupFlags(["node", "s", "--dry-run", "--commit"])).toEqual(
         { commit: false, vetoed: true },
+      );
+    });
+  });
+
+  describe("migrate-recipe-ingredients main() — the real commit gate (mocked db)", () => {
+    // The banner text (asserted below via spawnSync against an unreachable
+    // DB) sits BEFORE an unconditional `communityRecipes` select; the actual
+    // `if (COMMIT) { await db.update(...) }` gate sits inside the per-row
+    // loop AFTER it. No no-DB spawnSync test can ever reach that gate — this
+    // suite mocks `db` so `main()` runs the real script logic in-process,
+    // with one splittable fixture row, and asserts on the ONE thing that
+    // gate actually controls: whether `db.update` is invoked at all.
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("a bare invocation does NOT reach db.update (must never write)", async () => {
+      await main([]);
+      expect(mockDb.update).not.toHaveBeenCalled();
+    });
+
+    it("--commit DOES reach db.update (arms the write)", async () => {
+      await main(["--commit"]);
+      expect(mockDb.update).toHaveBeenCalled();
+    });
+
+    it("--commit --dry-run does NOT reach db.update (--dry-run vetoes)", async () => {
+      await main(["--commit", "--dry-run"]);
+      expect(mockDb.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("migrate-recipe-ingredients banner — wiring seam (spawnSync, no DB)", () => {
+    // What this DOES prove: the real script correctly wires argv ->
+    // parseCleanupFlags -> the printed banner. What it does NOT prove: that
+    // the `if (COMMIT)` write gate itself is correct — see the mocked-db
+    // suite above, which owns that guarantee.
+    //
+    // DATABASE_URL is set to a syntactically-valid but UNREACHABLE address
+    // (never deleted, unlike the db-free import-pin below) — `server/db.ts`
+    // throws synchronously at import if DATABASE_URL is unset, which would
+    // crash before the banner ever prints. `pg`'s Pool connects lazily, so
+    // the banner (printed before any query) is unaffected by the connection
+    // failing a moment later.
+    const ROOT = join(__dirname, "..", "..");
+    const scriptPath = join(ROOT, "scripts", "migrate-recipe-ingredients.ts");
+    const env = {
+      ...process.env,
+      DATABASE_URL: "postgresql://t:t@127.0.0.1:1/nope",
+    };
+
+    function run(...flags: string[]) {
+      return spawnSync(
+        process.execPath,
+        ["--import=tsx", scriptPath, ...flags],
+        {
+          encoding: "utf8",
+          timeout: 10_000,
+          cwd: ROOT,
+          env,
+        },
+      );
+    }
+
+    it("bare invocation prints === DRY RUN ===", () => {
+      const r = run();
+      expect(r.stdout).toContain(
+        "=== DRY RUN ===  (pass --commit to write changes)",
+      );
+    });
+
+    it("--commit prints === LIVE RUN ===", () => {
+      const r = run("--commit");
+      expect(r.stdout).toContain("=== LIVE RUN ===");
+    });
+
+    it("--commit --dry-run prints === DRY RUN === and NAMES --dry-run as the veto", () => {
+      const r = run("--commit", "--dry-run");
+      expect(r.stdout).toContain(
+        "=== DRY RUN ===  (--dry-run overrides --commit; drop --dry-run to write changes)",
       );
     });
   });

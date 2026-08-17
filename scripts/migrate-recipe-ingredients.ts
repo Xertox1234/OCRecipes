@@ -31,10 +31,6 @@ import {
   parseCleanupFlags,
 } from "./migrate-recipe-ingredients-utils";
 
-// Dry-run by DEFAULT — pass --commit (without --dry-run, which vetoes it)
-// to actually write changes.
-const { commit: COMMIT, vetoed: VETOED } = parseCleanupFlags(process.argv);
-
 /**
  * Best-effort, redacted description of the connection target, logged in the
  * banner so the operator can confirm which DB they are about to rewrite before
@@ -58,7 +54,16 @@ function describeTarget(): string {
 // Main
 // ---------------------------------------------------------------------------
 
-async function main() {
+// Exported (rather than a module-private function) so a test can invoke it
+// directly with a controlled argv and a mocked `db`, bypassing the auto-run
+// below. The real write gate (`if (COMMIT)` further down) sits behind an
+// unconditional DB read (the `communityRecipes` select just below), so no
+// no-DB spawnSync test can ever reach it — an in-process test with a mocked
+// db is the only route that reaches this gate at all.
+export async function main(argv: readonly string[] = process.argv) {
+  // Dry-run by DEFAULT — pass --commit (without --dry-run, which vetoes it)
+  // to actually write changes.
+  const { commit: COMMIT, vetoed: VETOED } = parseCleanupFlags(argv);
   console.log(
     COMMIT
       ? "=== LIVE RUN ==="
@@ -166,7 +171,18 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("Migration failed:", err);
-  process.exit(1);
-});
+// Guard the auto-run so importing `main` (e.g. from a test with a mocked db)
+// doesn't also trigger the real CLI entrypoint.
+const isMain = (() => {
+  try {
+    return Boolean(process.argv[1]?.includes("migrate-recipe-ingredients"));
+  } catch {
+    return false;
+  }
+})();
+if (isMain) {
+  main().catch((err) => {
+    console.error("Migration failed:", err);
+    process.exit(1);
+  });
+}
