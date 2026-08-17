@@ -541,7 +541,7 @@ assert_deny "gh \"release\" create denies" \
 # BLANKED text (or a quoted `--auto` would GRANT it). When the two renderings
 # disagree the carve-out is unverifiable, so the safe direction is to deny —
 # the same reasoning the multi-occurrence branch already uses.
-assert_deny "gh pr \"merge\" denies (quoted verb ⇒ --auto carve-out unverifiable)" \
+assert_deny "gh pr \"merge\" 42 denies (quoted verb, and no --auto at all)" \
   "$(jsonc 'gh pr "merge" 42')" \
   "gh pr merge"
 # The carve-out is EVALUATED on $WORDS, where a quoted span is one word, so a
@@ -748,6 +748,32 @@ assert_allow "RESIDUAL: a leading backslash (alias-bypass idiom) is still missed
   "$(jsonc '\gh pr merge 42')"
 assert_allow "RESIDUAL: --ad\\min is a real --admin to gh but is not seen" \
   "$(jsonc 'gh pr merge 42 --auto --ad\min')"
+
+# $BARE survives for exactly ONE job: distinguishing a wholly-quoted command
+# (which blanks to nothing) from a working rendering. Nothing else reads it, so
+# without this pin a maintainer can delete BARE= and its half of the blank
+# detector and still get a fully green suite — silently dropping the residual.
+assert_deny "a wholly-quoted command routes to the crude smell test" \
+  "$(jsonc "'eas update'")" \
+  "the quote-aware rendering came back empty"
+assert_allow "a wholly-quoted benign command still allows (control)" \
+  "$(jsonc "'ls -la'")"
+
+# The two deny-only flag scans read raw \$CMD *and* \$WORDS. Only the raw half
+# catches a MENTION inside a quoted span, because \$WORDS collapses that span to
+# one token with no flag boundary. Without this, dropping the raw half as
+# "redundant now that \$WORDS deletes quotes" leaves the suite green.
+assert_deny "a quoted --admin MENTION still denies (raw half of the dual scan)" \
+  "$(jsonc 'gh pr merge 42 --auto --squash -b "we could use --admin someday"')" \
+  "--admin"
+assert_allow "the same command without the mention allows (control)" \
+  "$(jsonc 'gh pr merge 42 --auto --squash -b "we could ship this someday"')"
+
+# A backtick inside a span must be neutralised: it OPENS a command position in
+# this hook's wider local anchor. The obvious probe does not discriminate (the
+# intra-span space is already neutralised), so the span has to end mid-command.
+assert_allow "a backtick inside a span cannot open a command position" \
+  "$(jsonc 'git commit -m "wip`eas" update --branch preview')"
 # (The quoted flag-NAME residual that used to be pinned here — `eas build
 # --auto-"submit"` — is CLOSED: the deny-only flag checks read $CMD and $WORDS
 # now, so a quoted split is visible. Its deny is asserted above.)

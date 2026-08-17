@@ -7,10 +7,17 @@
 # WHY THIS FILE EXISTS (2026-08-16): the lib had exactly one rendering,
 # `cmd_bare`, which BLANKS quoted spans. A real shell word-splits `git "commit"`
 # and concatenates `git com"mit"` into the same argv as the bare form, so
-# blanking erased the verb before any matcher ran and EVERY command-position
-# detector in this lib — and therefore commit-verify, drift-detect,
-# pr-preflight-guard, branch-preflight and core-bare-guard — went blind to a
-# quoted command word. `cmd_words` is the second rendering that fixes it.
+# blanking erased the verb before any matcher ran, so EVERY command-position
+# detector in this lib went blind to a quoted command word.
+#
+# Closing it took TWO changes, and the second is easy to forget: the detectors
+# now read `cmd_words`, AND every hook whose necessary-substring fast path globbed
+# raw $CMD had to re-test a quote-stripped copy — otherwise the hook exits before
+# its (now-fixed) matcher is ever asked. That affected commit-verify,
+# drift-detect, drift-detect-update, pr-preflight-guard, branch-preflight and
+# core-bare-guard; branch-preflight and pr-preflight-guard are blocking gates.
+# The final block in this file enumerates the fast paths rather than naming them,
+# so a NEW hook with a raw single-stage filter fails here instead of in prod.
 #
 # The two renderings are NOT interchangeable and this file pins both directions:
 # merging them re-breaks either flag-presence checks (a quoted `--auto` must not
@@ -133,11 +140,12 @@ det cmd_is_git_head_mover 'echo "git reset --hard is bad"'     no "mention of a 
 det cmd_is_git_commit   'git commit -m "a" && echo done'       yes "real commit with a quoted arg still detected"
 
 echo "--- residuals pinned AT THE LAYER THAT OWNS THEM ---"
-# The guard suite also pins `e\as update` as an ALLOW, but that pin is
-# over-determined: two independent mechanisms produce the allow there (this
-# rendering, and the necessary-substring fast path). Closing the residual in
-# cmd_words alone would leave the guard-level pin green. Pin it here instead,
-# where exactly one mechanism decides.
+# Pinned HERE, at the rendering that OWNS the residual, so it fails if cmd_words
+# ever starts unescaping. When this pin was added the guard-level twin was
+# over-determined — the fast path globbed raw text, so it produced the same ALLOW
+# for a second, unrelated reason — but that mechanism died when the fast path
+# moved to a quote-stripped rendering later in this branch. Both discriminate
+# now; keeping this one is still right, because one deciding mechanism beats two.
 render cmd_words 'e\as update' absent 'eas update' \
   "RESIDUAL: an unquoted backslash hides the escaped char (e\\as stays split)"
 # An escaped char must never render as WHITESPACE. `\ ` is an escaped space: the
@@ -209,6 +217,44 @@ if [ "$DRIFT" -eq 0 ]; then
   echo "PASS: cmd_bare and cmd_words agree byte-for-byte on quote-free input"; PASS=$((PASS+1))
 else
   echo "FAIL: $DRIFT quote-free inputs render differently — the two scans have drifted"; FAIL=$((FAIL+1))
+fi
+
+echo "--- EVERY hook's necessary-substring fast path must be quote-tolerant ---"
+# A hook whose matcher reads cmd_words but whose fast path globs RAW $CMD exits
+# before the matcher is ever asked: `git com"mit"` holds no literal `commit`.
+# That silently disabled five gates, one of them blocking, while the lib itself
+# detected the form. This enumerates the fast paths instead of naming them, so a
+# NEW hook that adds a raw single-stage filter fails here rather than in prod.
+HOOKDIR="$(cd "$(dirname "$0")" && pwd)"
+FASTPATH_BAD=0
+for f in "$HOOKDIR"/*.sh; do
+  case "$(basename "$f")" in test-*) continue ;; esac
+  # The invariant is NOT "every filter strips quotes" — it is "a filter must be a
+  # SUPERSET of what its matcher reads". cmd_bare only ever BLANKS characters, so
+  # a raw glob is already a superset for a cmd_bare-backed matcher (pr-verify's
+  # cmd_gh_pr_write_subcommand / cmd_gh_pr_ref). cmd_words DELETES quote
+  # characters and so synthesises needles absent from raw text, so any hook
+  # calling a cmd_words-backed `cmd_is_*` matcher needs the stripped second stage.
+  if grep -q 'case "\$CMD" in \*' "$f" && grep -q 'cmd_is_[a-z_]' "$f"; then
+    if ! grep -q '_T=\${CMD//' "$f" && ! grep -q '\${CMD//\[' "$f"; then
+      echo "  BAD: $(basename "$f") globs raw \$CMD but its matcher reads cmd_words"
+      FASTPATH_BAD=$((FASTPATH_BAD+1))
+    fi
+  fi
+done
+if [ "$FASTPATH_BAD" -eq 0 ]; then
+  echo "PASS: every raw-\$CMD fast path has a quote-stripped second stage"; PASS=$((PASS+1))
+else
+  echo "FAIL: $FASTPATH_BAD hook(s) can be bypassed by quoting before their matcher runs"
+  FAIL=$((FAIL+1))
+fi
+# Control: the scan must actually find fast paths, or it passes vacuously.
+FASTPATH_SEEN=$(grep -l 'case "\$CMD" in \*' "$HOOKDIR"/*.sh 2>/dev/null | grep -vc '/test-')
+if [ "${FASTPATH_SEEN:-0}" -ge 5 ]; then
+  echo "PASS: control — found $FASTPATH_SEEN hooks with a fast path to check"; PASS=$((PASS+1))
+else
+  echo "FAIL: control — only $FASTPATH_SEEN fast paths found; the scan is not looking at anything"
+  FAIL=$((FAIL+1))
 fi
 
 echo ""

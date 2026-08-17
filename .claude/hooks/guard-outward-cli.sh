@@ -157,17 +157,21 @@
 #     matches `$WORDS` (lib/cmd-detect.sh's `cmd_words`), which reproduces argv:
 #     quote characters deleted, separators inside a span neutralised so
 #     `git commit -m "chore; eas update"` still ALLOWS. The two carve-out blocks
-#     (`gh pr merge`'s --auto, `gh api`'s method) still COUNT on `$WORDS` but
-#     VERIFY on `$BARE`, and deny when the two disagree — a quoted command word
-#     makes the carve-out unverifiable, and unverifiable must not mean granted.
+#     (`gh pr merge`'s --auto, `gh api`'s method) both DETECT and VERIFY on
+#     `$WORDS`: a quoted span is exactly one word there, so a quoted `--auto`
+#     decoy (`-b "use --auto next time"`) becomes part of a larger token and
+#     still cannot grant the carve-out. An earlier revision counted on both
+#     renderings and denied when they disagreed; that was strictly worse, because
+#     equal counts never proved the two had found the SAME occurrence.
 #     Residual, BACKSLASH forms only: a verb split by a backslash (`e\as
 #     update`) or prefixed by one (`\gh pr merge` — the alias-bypass idiom) is
 #     still missed, because the renderings hide an escaped character rather than
 #     unescaping it. The QUOTED flag forms are covered: quoted flag VALUES
 #     (`gh api -X "PUT"`) via the $WORDS clause, and quoted flag NAMES
 #     (`--ad"min"`, `--auto-"submit"`) because the two deny-only flag checks scan
-#     `$CMD$WORDS` — they can only ADD a deny, never grant a carve-out, so
-#     reading both renderings is free. Pinned in test-guard-outward-cli.sh under
+#     raw `$CMD` AND `$WORDS`, fed to grep separated by a NEWLINE (never
+#     concatenated — the seam would spell flags present in neither). They can only
+#     ADD a deny, never grant a carve-out, so reading both renderings is free. Pinned in test-guard-outward-cli.sh under
 #     "QUOTED COMMAND WORDS".
 #   * SCOPE, stated so it is not inferred: `update:preview`/`update:production`
 #     are the only package.json scripts covered. `migrate:images-r2` and
@@ -233,7 +237,7 @@ _OUT_REPO_FLAG_RE='(^|[^-A-Za-z0-9])(--repo([^-A-Za-z0-9]|$)|-R)'
 # token boundary and so cannot false-match.
 gh_pr_clause_has_repo() {
   local clause
-  clause=$(printf '%s' "${WORDS:-$CMD}" | grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*" | head -1)
+  clause=$(printf '%s' "$WORDS" | grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*" | head -1)
   [ -n "$clause" ] && grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$clause"
 }
 
@@ -335,15 +339,40 @@ fi
 # for SKIP_WORKTREE_CONTRACT=1).
 case "$CMD" in "ALLOW_OUTWARD_CLI=1 "*) exit 0 ;; esac
 
-# The necessary-substring fast path used to live HERE, matching raw $CMD. It has
-# moved below the renderings, and must stay there. Its old justification —
-# "cmd_bare only BLANKS characters, never inserts/moves them, so this is a strict
-# superset" — was true of cmd_bare and is FALSE of cmd_words, which DELETES the
-# quote character and so synthesises a needle that is absent from raw text:
-# `e"a"s update` contains no `eas`, so a raw fast path exited 0 before any
-# predicate ran, and the verb published an OTA (found in review, 2026-08-16 —
-# the matchers had been repointed at $WORDS while this gatekeeper was left
-# reasoning under the superseded premise).
+# Necessary-substring fast path (project_per_bash_hook_overhead). This hook runs
+# on EVERY Bash tool call, so it must reject the common case before doing any
+# real work — before sourcing the lib and before either awk pass.
+#
+# TWO STAGES, and the second one is why this is correct. The single-stage raw
+# `case "$CMD"` this replaces was justified as "cmd_bare only BLANKS characters,
+# never inserts/moves them, so this is a strict superset". That was true of
+# cmd_bare and FALSE of cmd_words, which DELETES quote characters and therefore
+# synthesises needles absent from raw text: `e"a"s update` contains no `eas`, so
+# the filter exited 0 and the verb published an OTA (review, 2026-08-16).
+#
+# Stage 1 is the zero-copy glob on raw $CMD and catches every normal command.
+# Stage 2 runs ONLY on a stage-1 miss and re-tests with the characters cmd_words
+# can delete — quotes, backslashes, newlines — removed. Soundness: cmd_words only
+# ever DELETES those, or INSERTS the letter `x`, and none of the needles below
+# contains an `x`; so every needle $WORDS can synthesise is already a substring
+# of stage 2's text. That makes this a superset by construction, which is exactly
+# what the old comment claimed without it being true.
+#
+# Four literal substitutions, NOT one bracket class: on a 3 KB command bash 3.2
+# takes ~1450 ms for `${CMD//[\'\"\\$NL]/}` and ~5.5 ms for these four, same
+# result. Do not "simplify" this.
+# Matched under `nocasematch` because the predicates below are case-insensitive:
+# a case-SENSITIVE fast path would exit 0 on `EAS update` before any of them ran.
+# (`pnpm` needs no entry of its own — it contains `npm`.)
+shopt -s nocasematch
+_OUT_FASTPATH=0
+case "$CMD" in *eas*|*railway*|*npm*|*yarn*|*gh*) _OUT_FASTPATH=1 ;; esac
+if [ "$_OUT_FASTPATH" = 0 ]; then
+  _OUT_T=${CMD//\'/}; _OUT_T=${_OUT_T//\"/}; _OUT_T=${_OUT_T//\\/}; _OUT_T=${_OUT_T//$'\n'/}
+  case "$_OUT_T" in *eas*|*railway*|*npm*|*yarn*|*gh*) _OUT_FASTPATH=1 ;; esac
+fi
+shopt -u nocasematch
+[ "$_OUT_FASTPATH" = 1 ] || exit 0
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # If the shared lib is unsourceable (broken install), jq IS available here
@@ -365,9 +394,14 @@ BARE=$(printf '%s' "$CMD" | cmd_bare)
 # deleted so `eas "update"` / `eas up"date"` read as the `eas update` the shell
 # actually builds, with separators INSIDE a span neutralised so a `;` in a commit
 # message still cannot open a command position. Every INVOCATION pattern below
-# matches $WORDS. $BARE is retained for the two carve-out clauses that must NOT
-# see quoted text (`gh pr merge`'s --auto, `gh api`'s method) — a quoted `--auto`
-# must never GRANT a carve-out. See the header's QUOTED COMMAND WORDS note.
+# matches $WORDS, and so do both carve-out blocks. $BARE survives for exactly ONE
+# job, in the blank-rendering detector just below: a wholly-quoted command
+# (`'eas update'`) BLANKS to nothing under cmd_bare while cmd_words renders it as
+# a single word, and that difference is what routes it to the crude smell test
+# instead of the precise matchers. Nothing else reads $BARE — do not delete it
+# without deleting that detector's $BARE half too, and see the
+# "wholly-quoted command" assertions in test-guard-outward-cli.sh, which exist
+# precisely so that deletion goes red.
 WORDS=$(printf '%s' "$CMD" | cmd_words)
 
 # `declare -F cmd_bare` above proves the function is DEFINED, not that it
@@ -393,22 +427,6 @@ fi
 
 # Necessary-substring fast path (project_per_bash_hook_overhead): a command
 # without ANY of these literal substrings cannot match any predicate below.
-# Matched against $WORDS, NOT raw $CMD — see the note where this check used to
-# live. $WORDS is what every predicate below actually reads, so filtering on it
-# is a true superset by construction rather than by an assumption about how the
-# rendering transforms text.
-# Placement is load-bearing: it must come AFTER the blank-rendering detector
-# above, because on the no-awk path $WORDS is empty and an earlier fast path
-# would exit 0 on every command — turning all six fail-closed no-awk cases into
-# silent ALLOWs (measured, not assumed).
-# Matched under `nocasematch` because the predicates below are case-insensitive:
-# a case-SENSITIVE fast path would exit 0 on `EAS update` before any of them ran.
-# (`pnpm` needs no entry of its own — it contains `npm`.)
-shopt -s nocasematch
-_OUT_FASTPATH=0
-case "$WORDS" in *eas*|*railway*|*npm*|*yarn*|*gh*) _OUT_FASTPATH=1 ;; esac
-shopt -u nocasematch
-[ "$_OUT_FASTPATH" = 1 ] || exit 0
 
 # --- eas -------------------------------------------------------------------
 # eas update/publish/submit (space-separated subcommand).
@@ -632,12 +650,13 @@ fi
 # ALLOWED). Deny on >1, mirroring the identical multi-occurrence safe
 # direction the `gh pr merge` check above already takes.
 GH_API_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"
-# Same WORDS-detects / BARE-verifies split as the `gh pr merge` block above, for
-# the same reason: this check ALLOWS by default (a read-only `gh api` is fine)
-# and only denies once it can read a mutating method out of the clause. So a
-# quoted command word (`gh "api" -X PUT …`) that $BARE cannot see would leave the
-# clause empty and fall through to ALLOW. Deny instead when the two renderings
-# disagree — an unverifiable read-only claim is not a read-only claim.
+# Counted AND clause-scoped on $WORDS, like the `gh pr merge` block above. This
+# check ALLOWS by default (a read-only `gh api` is fine) and only denies once it
+# reads a mutating method out of the clause, so a quoted command word
+# (`gh "api" -X PUT …`) invisible to the rendering would fall through to ALLOW.
+# Reading $WORDS makes the quoted spellings visible without resorting to raw
+# $CMD, which would lose the command-position anchor and the separator
+# neutralisation with it.
 GH_API_OCCURRENCES=$(printf '%s' "$WORDS" | grep -oiE "$GH_API_RE" | wc -l | tr -d '[:space:]')
 if [ "${GH_API_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."

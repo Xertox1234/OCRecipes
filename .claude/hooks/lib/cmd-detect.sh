@@ -41,11 +41,19 @@
 #     keeping: "errs toward the deny side" is a claim about behaviour and needs a
 #     test, not a comment.
 #   * A keyword character split by a BACKSLASH — `g\h pr create`, and the leading
-#     `\gh pr create` alias-bypass idiom — still defeats detection: both renderings
-#     HIDE an escaped character rather than unescaping it, so the matcher sees the
-#     keyword broken. Out of scope (that is the SKIP_* bypass's job). Note this
-#     also means a deny-only flag scan can MISS a spelling (`--ad\min` is a real
-#     `--admin` to gh); such a scan can only fail to add a deny, never grant.
+#     `\gh pr create` alias-bypass idiom — still defeats detection: neither
+#     rendering UNESCAPES, they only hide. The mechanism differs between the two,
+#     which matters when reasoning about a specific case: cmd_bare blanks to
+#     SPACES (`e\as update` -> `e  s update`) while cmd_words substitutes the
+#     placeholder (`exxs update`). Either way the keyword is broken, and it is out
+#     of scope — that is the SKIP_* bypass's job. Note this also means a deny-only
+#     flag scan can MISS a spelling (`--ad\min` is a real `--admin` to gh); such a
+#     scan can only fail to ADD a deny, never grant one.
+#   * A whitespace-bearing QUOTED FLAG VALUE is unmatchable, because the space
+#     inside the span becomes the placeholder: `gh api -X" PUT"` renders as
+#     `-XxPUT`. Not a working bypass (Go's HTTP client rejects a method token
+#     containing a space, so the call fails rather than mutating), but it belongs
+#     in this list beside the quoted flag forms that ARE covered.
 #   * A keyword split by a QUOTE — `g"h" pr create`, `gh pr "create"` — USED to defeat
 #     detection for the same reason, and no longer does: `cmd_words` below reproduces
 #     the argv the shell actually builds, and every command-position-anchored matcher

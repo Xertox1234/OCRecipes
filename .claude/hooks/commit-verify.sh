@@ -14,7 +14,23 @@ CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 # Cheap pre-guard: `commit` is a NECESSARY substring of any match (quote-blanking only removes
 # characters, never inserts them), so a command lacking it cannot be a git commit — skip the
 # scan. Safe because this hook is NON-blocking: a wrongly-skipped command just stays silent.
-case "$CMD" in *commit*) : ;; *) exit 0 ;; esac
+# Two-stage necessary-substring filter. Stage 1 is the zero-copy glob on raw $CMD.
+# Stage 2 runs ONLY on a stage-1 miss, retesting with the characters cmd_words can
+# DELETE removed (quotes, backslashes, newlines) — because the cmd_is_* matcher below
+# reads `cmd_words`, which deletes quote characters and so sees a verb this filter's
+# raw text does not contain: `git com"mit"` holds no literal `commit`, so a
+# single-stage filter exited 0 and the matcher was never asked (review, 2026-08-16).
+# cmd_words only deletes those characters or inserts the letter `x`, and the needle
+# below contains no `x`, so stage 2 is a superset by construction. Four literal
+# substitutions, not a bracket class: the class form costs ~1450ms on a 3KB command
+# under bash 3.2 versus ~5.5ms for these.
+_PRE=0
+case "$CMD" in *commit*) _PRE=1 ;; esac
+if [ "$_PRE" = 0 ]; then
+  _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}
+  case "$_T" in *commit*) _PRE=1 ;; esac
+fi
+[ "$_PRE" = 1 ] || exit 0
 
 # Detect `git [-c k=v]* commit` in command position via the shared, quote-AWARE scanner
 # (.claude/hooks/lib/cmd-detect.sh) — the single source of the strip + command-position matcher

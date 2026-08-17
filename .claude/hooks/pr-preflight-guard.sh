@@ -27,8 +27,21 @@ case "$TOOL" in
     # synthesises literals absent from the raw text: `g"h" pr create --fill` contains no `gh`, so
     # the raw filter exited 0 and this DENY gate never ran — a PR openable with no preflight stamp.
     # Filtering the SAME text the matcher reads is a superset by construction, not by assumption.
-    # The lib is sourced first now so $words exists; a broken/unsourceable lib skips the fast path
-    # entirely and falls through to the stamp gate, preserving the fail-toward-DENY behaviour.
+    # STAGE 1 — zero-copy glob on raw $CMD, before the lib is sourced or any awk runs.
+    # STAGE 2 — only on a stage-1 miss, retest with the characters cmd_words can DELETE
+    # (quotes, backslashes, newlines) removed. cmd_words only deletes those or inserts the
+    # letter `x`, and none of `gh`/`pr`/`create` contains an `x`, so any needle the rendering
+    # could synthesise is already a substring here: a superset by construction. Four literal
+    # substitutions, not one bracket class — the class form costs ~1450ms on a 3KB command
+    # under bash 3.2 versus ~5.5ms for these (measured; do not "simplify").
+    _PRE=0
+    case "$CMD" in *gh*pr*create*) _PRE=1 ;; esac
+    if [ "$_PRE" = 0 ]; then
+      _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}
+      case "$_T" in *gh*pr*create*) _PRE=1 ;; esac
+    fi
+    [ "$_PRE" = 1 ] || exit 0
+
     HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_words >/dev/null; then
       words=$(printf '%s' "$CMD" | cmd_words)
@@ -59,13 +72,16 @@ case "$TOOL" in
     # apostrophe-glue / env-runner bypasses of the 2026-07-18 audit /code-review). It rejects a
     # `gh pr create` merely MENTIONED inside a quoted argument. If the lib is UNSOURCEABLE (broken
     # install), FAIL TOWARD DENY: skip the precise check and fall through to the stamp gate.
-    # ($HERE and the lib are already resolved by the fast path above; re-sourcing is idempotent
-    # and keeps this branch correct even if the fast-path block is ever moved or removed.)
+    # ($HERE and the lib are normally already resolved above; the source here is conditional on
+    # the function being absent, so it costs nothing on the common path but keeps this branch
+    # correct if the block above is ever moved or removed.)
     # Skipped when the renderer is broken (WORDS_BROKEN): cmd_is_gh_pr_create reads the same
     # empty rendering, so it would return "no match" for a REAL `gh pr create` and exit 0,
     # silently skipping the stamp gate. Falling through to that gate is the fail-closed direction.
     if [ "${WORDS_BROKEN:-0}" != 1 ] \
-       && . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_gh_pr_create >/dev/null; then
+       && { declare -F cmd_is_gh_pr_create >/dev/null \
+            || . "$HERE/lib/cmd-detect.sh" 2>/dev/null; } \
+       && declare -F cmd_is_gh_pr_create >/dev/null; then
       cmd_is_gh_pr_create "$CMD" || exit 0
     fi
     ;;
