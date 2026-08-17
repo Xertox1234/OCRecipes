@@ -1,6 +1,6 @@
 ---
 title: "Three prose docs still describe the harness tag alternation as `worktree`-only after the `worktrees?` widen"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-08-16
@@ -28,12 +28,12 @@ doesn't, only the reverse (undersold capability) — but worth a cleanup pass si
 
 ## Acceptance Criteria
 
-- [ ] `.claude/skills/codify/SKILL.md` — update the harness-alternation description to include the
+- [x] `.claude/skills/codify/SKILL.md` — update the harness-alternation description to include the
       plural form
-- [ ] `docs/solutions/README.md` — same
-- [ ] `docs/solutions/conventions/merging-corpus-docs-must-union-routing-metadata-2026-08-10.md` —
+- [x] `docs/solutions/README.md` — same
+- [x] `docs/solutions/conventions/merging-corpus-docs-must-union-routing-metadata-2026-08-10.md` —
       same
-- [ ] Wording matches what `scripts/check-solution-frontmatter.js`'s own error message now says:
+- [x] Wording matches what `scripts/check-solution-frontmatter.js`'s own error message now says:
       `worktree(s)`
 
 ## Implementation Notes

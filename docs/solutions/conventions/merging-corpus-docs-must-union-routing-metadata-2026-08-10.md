@@ -27,7 +27,7 @@ A merge that is content-complete can still be retrieval-incomplete. The PR #795 
 ## Checklist for a corpus-doc merge
 
 1. Fold the loser's unique prose into the survivor.
-2. **Diff the two `tags:` lines** — union them, dropping a loser tag only when it is wrong for the merged content. Do NOT filter by "is this a domain name": `domain_tag_pattern` matches alternations, not just literal domain names (`tooling`/`pg-lab`/`worktree`/`agents` all select the `harness` pool; any `ai-*` tag selects `ai-prompting`).
+2. **Diff the two `tags:` lines** — union them, dropping a loser tag only when it is wrong for the merged content. Do NOT filter by "is this a domain name": `domain_tag_pattern` matches alternations, not just literal domain names (`tooling`/`pg-lab`/`worktree(s)`/`agents` all select the `harness` pool; any `ai-*` tag selects `ai-prompting`).
 3. **Diff the two `applies_to:` lines** — carry over any glob that widens the survivor's reach to files the loser covered.
 4. Repoint inbound See-Also links, delete the loser.
 5. Keep the frontmatter arrays single-line inline-flow (`scripts/check-solution-frontmatter.js` enforces this).
