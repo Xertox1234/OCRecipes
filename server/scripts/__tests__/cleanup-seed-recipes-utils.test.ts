@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { and, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
+import { communityRecipes } from "@shared/schema";
 import {
   buildJunkRecipeWhere,
   parseCleanupFlags,
@@ -29,19 +31,102 @@ function render(where: SQL | undefined) {
 const stringParams = (q: { params: unknown[] }): string[] =>
   q.params.filter((p): p is string => typeof p === "string");
 
+const DEMO_ID = "demo-user-42";
+
+/**
+ * The EXACT rendered SQL of the demo-user branch — inline literal, on
+ * purpose, for a statement that permanently deletes rows. Mirrors the
+ * null-branch pin below and
+ * docs/solutions/conventions/seed-cleanup-scripts-scope-by-authorid-2026-05-13.md
+ * measure 5: a structural regex (`/\(.*author_id.*\)\s+and\s+\(/`) is
+ * satisfied by a PARTIAL escape — a junk criterion hoisted OUT of the
+ * author-scoped and() — and that mutant's param list is byte-identical too,
+ * so a param-only pin can't catch it either. The REGRESSION GUARD test below
+ * proves both. Trade-off, accepted knowingly: an exact pin also goes red on
+ * a semantically-equivalent conjunct reorder — re-render and update the
+ * literal deliberately (and, separately, if `LEGACY_TEST_PRODUCT_NAMES`
+ * ever gains or loses an entry — the `($4, $5, $6)` param placeholders are
+ * hardcoded to its current length).
+ */
+const EXPECTED_SQL_WITH_DEMO =
+  '(("community_recipes"."author_id" is null or "community_recipes"."author_id" = $1) and ' +
+  '("community_recipes"."normalized_product_name" ilike $2 or ' +
+  '"community_recipes"."normalized_product_name" ilike $3 or ' +
+  '"community_recipes"."normalized_product_name" in ($4, $5, $6)))';
+
+/**
+ * The three junk criteria, faithful to the source (`buildJunkRecipeWhere`'s
+ * `or()` group) — the single source BOTH mutant fixtures below build from,
+ * so a future criterion can't be added to one fixture and forgotten in the
+ * other. Mirrors the sibling's `junkCriteria()`
+ * (scripts/__tests__/cleanup-junk-recipes-utils.test.ts:65-73).
+ */
+const junkCriteria = () =>
+  [
+    ilike(communityRecipes.normalizedProductName, `${SEED_PREFIX}%`),
+    ilike(communityRecipes.normalizedProductName, `${TEST_PREFIX}%`),
+    inArray(communityRecipes.normalizedProductName, LEGACY_TEST_PRODUCT_NAMES),
+  ] as const;
+
+/**
+ * `or(and(authorCondition, or(seedIlike, testIlike)), legacyInArray)` — the
+ * legacy-name `inArray` criterion hoisted OUTSIDE the author scope. Mirrors
+ * the sibling's committed helper
+ * (scripts/__tests__/cleanup-junk-recipes-utils.test.ts:80-85).
+ */
+function partialEscape(authorCondition: SQL | undefined) {
+  const [seedIlike, testIlike, legacyInArray] = junkCriteria();
+  return render(
+    or(and(authorCondition, or(seedIlike, testIlike)), legacyInArray),
+  );
+}
+
 describe("cleanup-seed-recipes-utils", () => {
   describe("buildJunkRecipeWhere — the deletion perimeter", () => {
-    it("with a demo user: scopes to orphan OR demo-authored, ANDed with the name match", () => {
-      const q = render(buildJunkRecipeWhere("demo-user-42"));
-      const sql = q.sql.toLowerCase();
-      expect(sql).toContain('"author_id" is null');
-      expect(sql).toContain("or");
-      expect(sql).toContain('"normalized_product_name"');
-      expect(sql).toContain("ilike");
-      expect(q.params).toContain("demo-user-42");
-      // The author scope must be a conjunct of the whole clause, not one arm
-      // of the name OR — the and() wrapper renders as (author...) and (names...).
-      expect(sql).toMatch(/\(.*author_id.*\)\s+and\s+\(/);
+    it("with a demo user: renders EXACTLY the orphan-OR-demo scope ANDed with the name match", () => {
+      const q = render(buildJunkRecipeWhere(DEMO_ID));
+      expect(q.sql).toBe(EXPECTED_SQL_WITH_DEMO);
+      expect(q.params).toEqual([
+        DEMO_ID,
+        SEED_PREFIX + "%",
+        TEST_PREFIX + "%",
+        ...LEGACY_TEST_PRODUCT_NAMES,
+      ]);
+    });
+
+    it("REGRESSION GUARD: neither a flattened NOR a partial author-scope escape satisfies the exact pin", () => {
+      // Two-sided negative control (docs/rules/harness.md: "a gate test needs
+      // a two-sided negative control"), mirroring
+      // scripts/__tests__/cleanup-junk-recipes-utils.test.ts:105-148.
+      const demoAuthorCondition = or(
+        isNull(communityRecipes.authorId),
+        eq(communityRecipes.authorId, DEMO_ID),
+      );
+
+      // (a) Fully flattened: or(authorCond, ...criteria) — deletion re-opened
+      // to every user. The loose regex this pin replaced DID catch this one.
+      const flattened = render(or(demoAuthorCondition, ...junkCriteria()));
+      expect(flattened.sql).not.toBe(EXPECTED_SQL_WITH_DEMO);
+      expect(flattened.sql.toLowerCase()).not.toMatch(
+        /\(.*author_id.*\)\s+and\s+\(/,
+      );
+
+      // (b) PARTIAL escape: the mutant hoists inArray(LEGACY_TEST_PRODUCT_NAMES)
+      // OUT of the author-scoped and() — it would delete any user's matching
+      // recipe regardless of authorId (the 2026-04-17 audit H1 incident this
+      // scoping exists to prevent). This is why the pin is an exact string:
+      // the fixture still SATISFIES the old loose regex (asserted below) and
+      // its param list is byte-identical, so every structural/param assertion
+      // the old test had would have passed it unchanged.
+      const partial = partialEscape(demoAuthorCondition);
+      expect(partial.sql).not.toBe(EXPECTED_SQL_WITH_DEMO);
+      expect(partial.sql.toLowerCase()).toMatch(/\(.*author_id.*\)\s+and\s+\(/);
+      expect(partial.params).toEqual([
+        DEMO_ID,
+        SEED_PREFIX + "%",
+        TEST_PREFIX + "%",
+        ...LEGACY_TEST_PRODUCT_NAMES,
+      ]);
     });
 
     it("without a demo user: bare orphan scope, demo id absent from params", () => {

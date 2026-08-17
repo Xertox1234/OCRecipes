@@ -1,6 +1,6 @@
 ---
 title: "cleanup-seed-recipes test: the demo-branch pin is the loose regex a partial escape defeats"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-08-16
@@ -53,20 +53,20 @@ worth folding into the exact pin rather than leaving beside it.
 
 ## Acceptance Criteria
 
-- [ ] `:44`'s regex replaced with an inline exact-string `expect(q.sql).toBe("<rendered>")`
+- [x] `:44`'s regex replaced with an inline exact-string `expect(q.sql).toBe("<rendered>")`
       for the demo-user branch, matching the null branch's existing shape at `:61`
-- [ ] Verified RED first with an **in-test** mutant fixture — do NOT hand-edit the
+- [x] Verified RED first with an **in-test** mutant fixture — do NOT hand-edit the
       predicate source (it is out of scope below, and a throwaway mutation leaves no
       permanent guard). Mirror the sibling's committed helper at
       `scripts/__tests__/cleanup-junk-recipes-utils.test.ts:80-85`, which builds
       `or(and(authorScope, or(...)), hoistedCriterion)` from imported `drizzle-orm`
       operators inside the test file and asserts the pin rejects it
-- [ ] An inline literal, **not** `toMatchSnapshot()` — a snapshot gets blessed with `-u`
+- [x] An inline literal, **not** `toMatchSnapshot()` — a snapshot gets blessed with `-u`
       without anyone reading the diff, which is the quiet-disarm mode a permanent-delete
       perimeter can least afford (#836's reasoning, recorded beside its pins)
-- [ ] The `toContain` checks at `:37-41` are folded into the exact pin or removed as
+- [x] The `toContain` checks at `:37-41` are folded into the exact pin or removed as
       redundant
-- [ ] Closes with zero follow-ups
+- [x] Closes with zero follow-ups
 
 ## Implementation Notes
 
@@ -103,3 +103,19 @@ worth folding into the exact pin rather than leaving beside it.
 
 - Filed during the review round for PRs #833–#845. Both #836 reviewers flagged this sibling
   file; assertion shapes at `:37-41`, `:44` and `:61` verified on `main` before filing.
+
+### 2026-08-16 (implementation)
+
+- Rendered `buildJunkRecipeWhere("demo-user-42")` with `new PgDialect().sqlToQuery()` via a
+  throwaway script (not hand-transcribed) and replaced `:44`'s loose regex with an exact
+  `expect(q.sql).toBe(EXPECTED_SQL_WITH_DEMO)` pin, matching the null branch's shape.
+  Folded the `:37-41` `toContain` checks into the same exact pin.
+- Added a two-sided REGRESSION GUARD test (mirroring
+  `scripts/__tests__/cleanup-junk-recipes-utils.test.ts:105-148`) covering both the fully
+  flattened escape and the partial escape (`or(and(authorCond, or(seed, test)),
+inArray(legacy))`) described in the Background — empirically confirmed the partial
+  escape still matches the old loose regex and has a byte-identical param list, proving
+  the exact pin was necessary. Both mutant fixtures build from one shared `junkCriteria()`
+  helper (code review WARNING fix) so they can't drift from each other.
+- Updated `docs/solutions/conventions/seed-cleanup-scripts-scope-by-authorid-2026-05-13.md`
+  measure 5's stale "not yet fixed there" parenthetical to reflect this fix (Step 9).
