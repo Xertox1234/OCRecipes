@@ -10,6 +10,7 @@ import {
   buildProductSummary,
   buildNutritionDetailParams,
   getCapturePlan,
+  getShutterBlockedReason,
 } from "../scan-screen-utils";
 import type { CapturePlan } from "../scan-screen-utils";
 import { logger } from "@/lib/logger";
@@ -689,6 +690,60 @@ describe("scan-screen-utils", () => {
 
     it.each(CASES)("plans %o", (phase, expected) => {
       expect(getCapturePlan(phase)).toEqual(expected);
+    });
+
+    // Lives here, driven by the SAME CASES table, because it is an assertion
+    // about the RELATIONSHIP between the two functions rather than about
+    // either one alone. `getShutterBlockedReason` supplies the screen-reader
+    // copy for a shutter press that does nothing; if it ever disagrees with
+    // the gate that actually drops the press, a VoiceOver user is told the
+    // opposite of what happened. That is the same drift class that shipped
+    // LABEL_PROMPTED as a dead end, so it is pinned rather than trusted.
+    describe("getShutterBlockedReason agrees with the capture gate", () => {
+      it.each(CASES)(
+        "explains %o iff the gate drops the press",
+        (phase, plan) => {
+          const reason = getShutterBlockedReason(phase);
+          if (plan.capture) {
+            expect(reason).toBeNull();
+          } else {
+            expect(reason).not.toBeNull();
+            // Non-empty: an empty string announces as silence, which is the
+            // exact defect this replaces.
+            expect(reason?.trim().length).toBeGreaterThan(0);
+          }
+        },
+      );
+
+      // EVERY blocked phase's copy pinned verbatim, not just spot-checked:
+      // this is user-facing spoken copy, and the non-empty check above cannot
+      // catch two phases' strings being swapped (e.g. SMART_ERROR's text
+      // landing on CLASSIFYING) — a review finding on the earlier
+      // BARCODE_TRACKING-only pin. Keyed by phase type so a wrong-phase swap
+      // fails on the exact entry that moved.
+      it("pins every blocked phase's spoken copy verbatim", () => {
+        const spoken = Object.fromEntries(
+          CASES.filter(([, plan]) => !plan.capture).map(([phase]) => [
+            phase.type,
+            getShutterBlockedReason(phase),
+          ]),
+        );
+        expect(spoken).toEqual({
+          // The phase the original device report was taken in: a barcode is
+          // in frame, the scan is running itself, and the shutter is dead BY
+          // DESIGN.
+          BARCODE_TRACKING:
+            "Scanning the barcode automatically. No photo needed.",
+          IDLE: "Camera is still starting.",
+          STEP2_REVIEWING: "Reviewing your photo. Confirm or edit it first.",
+          STEP3_REVIEWING: "Reviewing your photo. Confirm or edit it first.",
+          CLASSIFYING: "Still working on the photo you just took.",
+          SMART_CONFIRMED: "Confirm or retake the photo you just took.",
+          SMART_ERROR:
+            "That photo could not be read. Find the retake button to try again.",
+          SESSION_COMPLETE: "Scan complete.",
+        });
+      });
     });
 
     // The whole-branch-review Critical, pinned at the helper: a shutter press in

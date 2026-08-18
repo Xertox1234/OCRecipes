@@ -120,6 +120,76 @@ describe("check-accessibility.js", () => {
       expect(out).toContain("No accessibility issues found in 1 files");
     });
 
+    // The both-platforms-hidden exemption (2026-08-17): a pressable removed
+    // from the a11y tree on BOTH platforms is a sighted-only target and must
+    // not carry a label — a labelled full-screen backdrop is the defect behind
+    // todos/P1-2026-08-07-scan-flow-unreachable-with-voiceover.md. The
+    // fail-closed cases below are PoC'd bypasses from that change's review.
+    describe("hidden-from-a11y-tree exemption", () => {
+      it("passes an unlabeled pressable hidden on BOTH platforms", () => {
+        const dir = makeTmpDir();
+        const file = writeFixture(
+          dir,
+          "Hidden.tsx",
+          'export const D = () => (\n  <Pressable\n    onPress={close}\n    accessibilityElementsHidden\n    importantForAccessibility="no-hide-descendants"\n  />\n);\n',
+        );
+        const { status, out } = run(realScript, [file]);
+        expect(status, out).toBe(0);
+        expect(out).toContain("No accessibility issues found in 1 files");
+      });
+
+      it("still fires when only ONE hiding prop is present (single-platform hide)", () => {
+        const dir = makeTmpDir();
+        const file = writeFixture(
+          dir,
+          "HalfHidden.tsx",
+          "export const E = () => <Pressable onPress={go} accessibilityElementsHidden />;\n",
+        );
+        const { status, out } = run(realScript, [file]);
+        expect(status).toBe(1);
+        expect(out).toContain("Pressable with onPress should have");
+      });
+
+      it("still fires when accessibilityElementsHidden is a conditional value", () => {
+        // {isHidden} is sometimes false — the element is then visible and
+        // unlabeled. .includes() matching would exempt it; the value-form
+        // check must not.
+        const dir = makeTmpDir();
+        const file = writeFixture(
+          dir,
+          "Conditional.tsx",
+          'export const F = () => (\n  <Pressable\n    onPress={go}\n    accessibilityElementsHidden={isHidden}\n    importantForAccessibility="no-hide-descendants"\n  />\n);\n',
+        );
+        const { status, out } = run(realScript, [file]);
+        expect(status).toBe(1);
+        expect(out).toContain("Pressable with onPress should have");
+      });
+
+      it("still fires when the marker props appear only inside a comment", () => {
+        const dir = makeTmpDir();
+        const file = writeFixture(
+          dir,
+          "Comment.tsx",
+          'export const G = () => (\n  <Pressable\n    onPress={go}\n    // TODO: accessibilityElementsHidden importantForAccessibility="no-hide-descendants"\n  />\n);\n',
+        );
+        const { status, out } = run(realScript, [file]);
+        expect(status).toBe(1);
+        expect(out).toContain("Pressable with onPress should have");
+      });
+
+      it("exempts the explicit ={true} form like the bare prop", () => {
+        const dir = makeTmpDir();
+        const file = writeFixture(
+          dir,
+          "ExplicitTrue.tsx",
+          "export const H = () => (\n  <Pressable\n    onPress={close}\n    accessibilityElementsHidden={true}\n    importantForAccessibility={'no-hide-descendants'}\n  />\n);\n",
+        );
+        const { status, out } = run(realScript, [file]);
+        expect(status, out).toBe(0);
+        expect(out).toContain("No accessibility issues found in 1 files");
+      });
+    });
+
     it("does not require a label on a non-interactive Pressable (no onPress)", () => {
       const dir = makeTmpDir();
       const file = writeFixture(

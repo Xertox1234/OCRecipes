@@ -1,17 +1,28 @@
 ---
 title: "VoiceOver cannot start a scan — the scan-menu item and the camera capture button both fail to activate on double-tap"
-status: backlog
+status: in-progress
 priority: high
 created: 2026-08-07
-updated: 2026-08-09
+updated: 2026-08-17
 assignee:
 labels: [accessibility, camera, navigation, ios]
 github_issue:
 human_led: true
-blocked_reason: "VERIFICATION is device-gated; diagnosis is DONE (2026-08-09, see Source-level diagnosis section). What needs a physical device with a screen reader is confirming the diagnosis discriminators and the eventual fix: VoiceOver does not run on the iOS Simulator, `adb input` does not drive TalkBack, and jsdom drops accessibility attributes entirely — activation delivery is native gesture-recognition behaviour with no test surface."
+blocked_reason:
 ---
 
 # VoiceOver cannot start a scan
+
+> **RESOLVED IN CODE 2026-08-17 — PR pending.** Fixed on branch
+> `fix/voiceover-scan-menu-unreachable` (commit `a458379d`) and verified end-to-end on the
+> original physical iPhone with VoiceOver: menu → "Scan Barcode, button" → camera →
+> auto-scan → "Product found". Full device-pass evidence, per-test results (T1–T7), Android
+> emulator verification, and two corrections to this todo's diagnosis (defect D: the FAB — not
+> only the backdrop — was focusable and dismissing; the "jsdom drops accessibility attributes"
+> claim was false) live in `todos/deployment/voiceover-scan-device-pass.md`. Residual
+> pre-existing finding surfaced there, out of this todo's scope: the scan menu is not modal
+> for TalkBack (background stays swipeable on Android; needs a navigator-level
+> `importantForAccessibility` mirror, precedent `getScanOverlayA11y`).
 
 > **Priority note:** `high` reflects the **merge gate**, not the blast radius — the fix is
 > device-verifiable only, so this todo must never arm auto-merge

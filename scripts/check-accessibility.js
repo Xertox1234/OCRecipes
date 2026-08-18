@@ -137,11 +137,44 @@ function checkFile(filePath) {
 
   const issues = [];
 
+  // An element deliberately removed from the a11y tree on BOTH platforms is a
+  // sighted-only target and must NOT carry a label — a labelled full-screen
+  // dismissal backdrop is exactly the defect behind
+  // todos/P1-2026-08-07-scan-flow-unreachable-with-voiceover.md (VoiceOver
+  // focus landed on it and activating it dismissed instead of navigating).
+  // One hiding prop alone does NOT exempt: that hides a single platform and
+  // leaves the other needing the label this check demands.
+  // The exemption FAILS CLOSED (review finding 2026-08-17):
+  //  - comments are stripped first, so a comment inside the opening tag that
+  //    merely mentions the marker props cannot exempt a visible element
+  //    (over-stripping can only re-require a label, never skip one);
+  //  - accessibilityElementsHidden must be the bare prop or ={true} — a
+  //    conditional value ({isHidden}) is sometimes visible and keeps its
+  //    label requirement;
+  //  - the importantForAccessibility value matches any quote form so a
+  //    formatter change cannot silently un-exempt a legitimate element.
+  const isHiddenFromA11yTree = (rawText) => {
+    const text = rawText
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/[^\n]*/g, "");
+    return (
+      /\baccessibilityElementsHidden(?![\w-])(?!\s*=(?!\s*\{\s*true\s*\}))/.test(
+        text,
+      ) &&
+      /importantForAccessibility\s*=\s*(?:(["'])no-hide-descendants\1|\{\s*(["'])no-hide-descendants\2\s*\})/.test(
+        text,
+      )
+    );
+  };
+
   // Check Pressable elements
   const pressables = extractJsxElements(content, "Pressable");
   for (const element of pressables) {
     // Only check if it has onPress (interactive)
-    if (element.text.includes("onPress")) {
+    if (
+      element.text.includes("onPress") &&
+      !isHiddenFromA11yTree(element.text)
+    ) {
       // Check for accessibilityLabel
       if (!hasProps(element.text, ["accessibilityLabel"])) {
         issues.push({
@@ -163,7 +196,13 @@ function checkFile(filePath) {
   // Check TouchableOpacity elements
   const touchables = extractJsxElements(content, "TouchableOpacity");
   for (const element of touchables) {
-    if (element.text.includes("onPress")) {
+    // Same exemption as Pressable above — applied to both interactive checks
+    // so the guard can't be dodged by switching component (see
+    // docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md).
+    if (
+      element.text.includes("onPress") &&
+      !isHiddenFromA11yTree(element.text)
+    ) {
       if (!hasProps(element.text, ["accessibilityLabel"])) {
         issues.push({
           file: filePath,

@@ -6,7 +6,7 @@ module: client
 tags: [testing, accessibility, jsdom, render-tests, mocks]
 applies_to: [client/components/**/__tests__/*.test.tsx, client/screens/**/__tests__/*.test.tsx, test/mocks/react-native.ts]
 created: '2026-07-03'
-last_updated: '2026-07-25'
+last_updated: '2026-08-17'
 ---
 
 # jsdom RN render tests cannot assert a11y-tree hiding OR grouping — assert label absence/uniqueness and exact full-label composition instead
@@ -48,7 +48,19 @@ The exact-match rule exists because a prefix regex like `/^Remixed recipe\. Past
 ## Exceptions
 
 - A partial/regex match is fine for labels containing genuinely dynamic data the test does not control (timestamps, ids) — pin everything static around it.
-- If a11y-tree-hiding or -grouping assertions become a recurring need, the durable fix is teaching `mockComponent` to map `accessible === false` → `aria-hidden="true"` and `accessible === true` (with descendant labels) → collapse to a single labelled node; until then the mock's pass-through is pre-existing, accepted behavior.
+- **Partially executed 2026-08-17 (SpeedDial VoiceOver fix):** the mocks now map the
+  EXPLICIT platform-hiding pair — `accessibilityElementsHidden` /
+  `importantForAccessibility="no-hide-descendants"` (either one) — to `aria-hidden` on the
+  DOM node (`ariaHiddenProps` in `test/mocks/react-native.ts`, mirrored in the reanimated
+  mock). So hiding via THAT pair **is** now assertable: `*ByRole` queries exclude the
+  hidden node (use a role **count**, not a name filter — a name the fix itself removed can
+  never match and the assertion is vacuous; mutation-proven in review), and non-role
+  elements assert via `testID` + `getAttribute("aria-hidden") === "true"`. Exemplar:
+  `client/components/__tests__/SpeedDial.test.tsx` ("accessibility tree membership").
+  Everything this doc says about **`accessible={true/false}`** (and
+  `accessibilityActions`/`onAccessibilityAction`) is UNCHANGED — those props still
+  pass through untranslated, and the label-absence/composed-label patterns remain the
+  only honest assertions for them.
 
 ## Related Files
 
