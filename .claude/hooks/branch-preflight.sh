@@ -77,43 +77,58 @@ if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD"; the
   if [ -n "$BRANCH" ]; then
     # Does the command give an explicit start-point beyond the new branch's own name
     # (`git checkout -b foo origin/main`)? If so it isn't relying on local's possibly-stale
-    # HEAD — skip. Best-effort word count, not a full arg parser (documented scope gap,
-    # matching this lib's existing convention elsewhere): any token after the name that
-    # doesn't look like a flag counts as an explicit start-point.
-    # Matched text is "checkout -b feature/two ..." (or switch -c ...): token 1 is the
-    # subcommand, token 2 the create flag, token 3 the new branch's own required name —
-    # skip all three via bash's own word-splitting (collapses whitespace runs correctly,
-    # unlike `cut -d' '` on a fixed field number).
-    MATCH=$(printf '%s' "$CMD" | cmd_words \
-      | grep -oE '(checkout[[:space:]]+-[bB]|switch[[:space:]]+-[cC])[[:space:]]+[^;&|)]*' \
-      | head -1)
+    # HEAD — skip. Best-effort, not a full arg parser (documented scope gap, matching this
+    # lib's existing convention elsewhere): locate the create flag by CONTENT, not by a fixed
+    # token position — counting a fixed number of tokens to skip silently mis-scanned once
+    # another flag (e.g. `-q`) shifted where the branch name actually sits, causing a false
+    # "explicit start-point" detection that skipped this check on a command that WAS relying
+    # on local's stale HEAD (review, 2026-08-28). Consume the create flag (plus a separate
+    # name token, unless the value was attached: `-bfoo`), then anything non-flag remaining
+    # counts as an explicit start-point.
+    SEGMENT=$(printf '%s' "$CMD" | cmd_words \
+      | grep -oE '(checkout|switch)[[:space:]]+[^;&|)]*' | head -1)
     HAS_START_POINT=0
-    _i=0
-    set -f  # MATCH holds ref/branch names verbatim; a literal *,?,[ must not glob against cwd
-    for _w in $MATCH; do
-      _i=$((_i+1))
-      [ "$_i" -le 3 ] && continue  # subcommand, create flag, new branch's own required name
-      case "$_w" in
-        -*) ;;  # a flag (--track, --quiet, ...) — doesn't itself count as a start-point
+    FLAG_FOUND=0
+    set -f  # SEGMENT holds ref/branch names verbatim; a literal *,?,[ must not glob against cwd
+    set -- $SEGMENT
+    set +f
+    while [ "$#" -gt 0 ]; do
+      if [ "$FLAG_FOUND" = 0 ]; then
+        case "$1" in
+          -b|-B|-c|-C) FLAG_FOUND=1; shift; shift 2>/dev/null || true; continue ;;
+          -b*|-B*|-c*|-C*) FLAG_FOUND=1; shift; continue ;;  # attached value: -bfoo
+          *) shift; continue ;;  # the subcommand word, or an unrelated preceding flag
+        esac
+      fi
+      case "$1" in
+        -*) ;;  # a flag (--track, --quiet, ...) after the name — doesn't count as a start-point
         *) HAS_START_POINT=1; break ;;
       esac
+      shift
     done
-    set +f
 
     if [ "$HAS_START_POINT" = 0 ]; then
       REMOTE=$(git config "branch.${BRANCH}.remote" 2>/dev/null || echo "")
-      if [ -n "$REMOTE" ]; then
+      # branch.<name>.merge (e.g. "refs/heads/main") names the ACTUAL remote branch this one
+      # tracks — do not assume it shares the local branch's own name (review, 2026-08-28: a
+      # branch created via `checkout -b wip origin/main` tracks origin/main, not origin/wip,
+      # and fetching the wrong-named ref is a silent no-op that misses real drift).
+      MERGE_REF=$(git config "branch.${BRANCH}.merge" 2>/dev/null || echo "")
+      REMOTE_BRANCH="${MERGE_REF#refs/heads/}"
+      if [ -n "$REMOTE" ] && [ -n "$REMOTE_BRANCH" ] && [ "$REMOTE_BRANCH" != "$MERGE_REF" ]; then
         # Fetch into the explicit remote-tracking ref — never read FETCH_HEAD (shared across
         # worktrees/processes in this repo; see reference_fetch_head... memory). Bounded
-        # against a STALLED transfer (http.lowSpeedLimit/Time); NOT bounded against a dead
-        # DNS/TCP handshake — no other hook in this repo bounds a subprocess that way either,
-        # and the failure mode (a slow hook on a dead network) is already handled by fail-open.
+        # against a STALLED transfer (http.lowSpeedLimit/Time), not a dead DNS/TCP handshake —
+        # no other hook in this repo bounds a subprocess that way either. If the surrounding
+        # hook-timeout (.claude/settings.json, currently 10s) treats a killed process as deny
+        # rather than allow, a dead network could turn this hygiene-only check into an
+        # unintended block — unverified either way; accepted for now, worth revisiting if seen.
         git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
-          "$REMOTE" "refs/heads/${BRANCH}:refs/remotes/${REMOTE}/${BRANCH}" 2>/dev/null
+          "$REMOTE" "${MERGE_REF}:refs/remotes/${REMOTE}/${REMOTE_BRANCH}" 2>/dev/null
         BEHIND=$(git rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo "")
         if [ -n "$BEHIND" ] && [ "$BEHIND" -gt 0 ] 2>/dev/null; then
-          UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo "${REMOTE}/${BRANCH}")
-          REASON="Local branch '${BRANCH}' is ${BEHIND} commit(s) behind its upstream (${UPSTREAM}) — branching now risks redoing or duplicating work that already merged there. Run: git fetch ${REMOTE} ${BRANCH} && git merge --ff-only ${UPSTREAM} — then retry. Emergency bypass: SKIP_BRANCH_PREFLIGHT=1."
+          UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo "${REMOTE}/${REMOTE_BRANCH}")
+          REASON="Local branch '${BRANCH}' is ${BEHIND} commit(s) behind its upstream (${UPSTREAM}) — branching now risks redoing or duplicating work that already merged there. Run: git fetch ${REMOTE} ${REMOTE_BRANCH} && git merge --ff-only ${UPSTREAM} — then retry. Emergency bypass: SKIP_BRANCH_PREFLIGHT=1."
         fi
       fi
     fi

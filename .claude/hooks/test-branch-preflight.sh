@@ -190,6 +190,30 @@ advance_remote "b.txt" "landed again"
 OUT=$(run_hook "git checkout -b feature/six origin/$INITIAL_BRANCH")
 assert_silent "explicit start-point (origin/<branch>) skips the behind-check" "$OUT"
 
+# Test 16b: same, but with an unrelated flag BEFORE the create flag (review, 2026-08-28) — the
+# original position-counted extraction ("skip exactly 3 tokens") silently broke when a flag
+# shifted the branch-name's position, wrongly denying a command that names an explicit
+# start-point and isn't relying on local's stale state at all.
+OUT=$(run_hook "git checkout -q -b feature/six-b origin/$INITIAL_BRANCH")
+assert_silent "explicit start-point with a PRECEDING flag still skips the behind-check" "$OUT"
+
+# Test 16c: attached-value create flag (-bfoo, no space) is still caught by the matcher AND
+# still denies when appropriate (closes the other half of the same review finding).
+OUT=$(run_hook "git checkout -bfeature/six-c")
+assert_deny "attached-value create form (-bfoo) still denies when base is stale" "$OUT"
+
+# Test 16d: a branch tracking a DIFFERENTLY-NAMED remote branch (review, 2026-08-28) — the
+# fetch refspec must be derived from branch.<name>.merge, not assumed equal to the local
+# branch's own name, or this silently misses drift for any non-default tracking setup.
+git -C "$REPO" branch --track wip "origin/$INITIAL_BRANCH" -q
+git -C "$REPO" switch wip -q
+advance_remote "e.txt" "landed while tracked under a different local name"
+OUT=$(run_hook "git checkout -b feature/nine")
+assert_deny "branch tracking a differently-named remote branch still detects drift" "$OUT"
+git -C "$REPO" switch "$INITIAL_BRANCH" -q
+git -C "$REPO" merge --ff-only "origin/$INITIAL_BRANCH" -q
+git -C "$REPO" branch -D wip -q
+
 # Test 17: a branch with no upstream configured → silent (nothing to compare against).
 git -C "$REPO" switch -c topic/no-upstream -q
 OUT=$(run_hook "git checkout -b feature/seven")

@@ -304,13 +304,32 @@ cmd_is_git_head_mover() {
 }
 
 # cmd_is_git_branch_create <command>  → exit 0 if it invokes `git checkout -b/-B` or
-# `git switch -c/-C` (branch-creation forms) in command position. Deliberate scope gap:
-# plain `git branch <name>` (create-without-switching) is NOT matched — rarer, and
-# ambiguous to distinguish from `-d`/`-D`/`-m`/`-a`/`--list` without a fuller parse.
+# `git switch -c/-C` (branch-creation forms) in command position. Two-stage: stage 1 (strict,
+# command-position anchored) confirms `checkout`/`switch` is really invoked — this is what
+# suppresses a quoted MENTION; stage 2 (loose, but only reached after stage 1 confirms a real
+# invocation) scans that invocation's own argument segment for the create flag, tolerating (a)
+# an attached value (`-bfoo`, no space — genuinely common, not exotic) and (b) other flags
+# appearing before it (`-q -b foo`, `--track -c foo`) — a fixed "flag immediately follows the
+# subcommand" anchor missed both of these real, ordinary spellings (review, 2026-08-28).
+# Deliberate scope gaps, both documented rather than silently incomplete:
+#   - plain `git branch <name>` (create-without-switching) is NOT matched — rarer, and
+#     ambiguous to distinguish from `-d`/`-D`/`-m`/`-a`/`--list` without a fuller parse.
+#   - a BUNDLED short flag where the create letter isn't the bundle's own leading character
+#     (`-qb foo`, meaning `-q -b foo` bundled) is NOT matched — the attached-value case above
+#     only covers `-b<name>` where `-b` itself leads the token.
 # Used by branch-preflight.sh's stale-base-branch check.
 cmd_is_git_branch_create() {
-  printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(checkout[[:space:]]+-[bB]|switch[[:space:]]+-[cC])([[:space:]]|$)"
+  local words segment
+  words=$(printf '%s' "$1" | cmd_words)
+  printf '%s' "$words" \
+    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(checkout|switch)${_CMD_POS_SUFFIX}" \
+    || return 1
+  segment=$(printf '%s' "$words" | grep -oE '(checkout|switch)[[:space:]]+[^;&|)]*' | head -1)
+  case "$segment" in
+    checkout*) printf '%s' "$segment" | grep -Eq '(^|[[:space:]])-[bB]' ;;
+    switch*)   printf '%s' "$segment" | grep -Eq '(^|[[:space:]])-[cC]' ;;
+    *) return 1 ;;
+  esac
 }
 
 # cmd_gh_pr_write_subcommand <command>  → echo the gh pr WRITE subcommand

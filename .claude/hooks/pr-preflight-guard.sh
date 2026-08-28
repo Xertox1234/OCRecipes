@@ -160,9 +160,11 @@ if [ -z "${SKIP_PR_DRIFT_CHECK:-}" ]; then
   BASE="main"
   # Fetch into the explicit remote-tracking ref — never read FETCH_HEAD (shared across
   # worktrees/processes; racy — see reference_fetch_head memory). Bounded against a
-  # STALLED transfer, not a dead DNS/TCP handshake — same accepted asymmetry as
-  # branch-preflight.sh's twin of this fetch; a slow hook on a dead network still
-  # fails open below.
+  # STALLED transfer (http.lowSpeedLimit/Time), not a dead DNS/TCP handshake — same as
+  # branch-preflight.sh's twin of this fetch. If the surrounding hook-timeout
+  # (.claude/settings.json, currently 10s) treats a killed process as deny rather than
+  # allow, a dead network could turn this hygiene-only check into an unintended block —
+  # unverified either way (review, 2026-08-28); accepted for now, worth revisiting if seen.
   git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
     origin "refs/heads/${BASE}:refs/remotes/origin/${BASE}" 2>/dev/null
   if git rev-parse -q --verify "origin/${BASE}" >/dev/null 2>&1; then

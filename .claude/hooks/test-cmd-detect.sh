@@ -127,6 +127,21 @@ det cmd_is_git_head_mover   'git re"set" --hard HEAD~1'    yes "cmd_is_git_head_
 det cmd_is_git_branch_create 'git checkout -b "new-feature"' yes \
   "cmd_is_git_branch_create: quoted branch name still detects the create flag"
 det cmd_is_git_branch_create 'git check"out" -b foo'       yes "cmd_is_git_branch_create: mid-word verb"
+# CRITICAL bypass class (found by review, 2026-08-28): the original regex required the create
+# flag IMMEDIATELY adjacent to the subcommand with nothing attached and nothing intervening —
+# both forms below are ordinary, common ways to type these commands, not exotic quoting tricks.
+det cmd_is_git_branch_create 'git checkout -bfeature'       yes \
+  "cmd_is_git_branch_create: attached-value form (-bfeature, no space) still detected"
+det cmd_is_git_branch_create 'git checkout -Bfeature'       yes \
+  "cmd_is_git_branch_create: attached-value force-create (-Bfeature) still detected"
+det cmd_is_git_branch_create 'git switch -cfeature'         yes \
+  "cmd_is_git_branch_create: attached-value switch form (-cfeature) still detected"
+det cmd_is_git_branch_create 'git checkout -q -b feature'   yes \
+  "cmd_is_git_branch_create: another flag BEFORE the create flag still detected"
+det cmd_is_git_branch_create 'git checkout --track -b feature' yes \
+  "cmd_is_git_branch_create: a long flag before the create flag still detected"
+det cmd_is_git_branch_create 'git switch -q -c feature'     yes \
+  "cmd_is_git_branch_create: switch with a preceding flag still detected"
 
 echo "--- negative controls: bare forms still detected (probe can see anything) ---"
 det cmd_is_git_commit   'git commit -m x'      yes "bare git commit still detected"

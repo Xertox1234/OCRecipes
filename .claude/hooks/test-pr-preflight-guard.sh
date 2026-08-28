@@ -342,18 +342,28 @@ OUT=$(SKIP_PR_DRIFT_CHECK=1 run_hook_hermetic "gh pr create --title x --body y")
 assert_empty "SKIP_PR_DRIFT_CHECK=1 bypasses the drift check" "" "$OUT"
 
 # 15e. A stale-stamp deny still wins over drift (stamp check runs first; unchanged priority).
-# Note: SKIP_PR_DRIFT_CHECK is still globally =1 here (only the run_hook_hermetic tests above
-# unset it, scoped to their own function call) — irrelevant to this test either way, since the
-# stamp check denies and returns before the drift check would ever run.
+# Review, 2026-08-28: the original version of this test left SKIP_PR_DRIFT_CHECK=1 globally
+# set, which structurally disables the drift check regardless of ordering — it could not have
+# distinguished "stamp check wins by priority" from "drift check never engaged at all." Fix:
+# explicitly ENABLE the drift check (empty value) with a real overlap still present (shared.txt,
+# from 15c), so a priority regression would surface the DRIFT reason instead. A ref-position
+# check proves the drift fetch genuinely never ran (silence/wrong-reason alone wouldn't).
+REF_BEFORE=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" rev-parse "refs/remotes/origin/$DBASE")
 echo "0000000000000000000000000000000000000000" > "$STAMP_FILE"
-OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x --body y"}}' \
-  | GIT_DIR="$DREPO/.git" GIT_WORK_TREE="$DREPO" bash "$HOOK")
-assert_contains "stale stamp denies even with drift present (stamp check runs first)" \
+OUT=$(SKIP_PR_DRIFT_CHECK= printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x --body y"}}' \
+  | SKIP_PR_DRIFT_CHECK= GIT_DIR="$DREPO/.git" GIT_WORK_TREE="$DREPO" bash "$HOOK")
+assert_contains "stale stamp denies even with drift enabled+present (stamp check runs first)" \
   '"permissionDecision": "deny"' "$OUT"
 if grep -qi "pass-stamp" <<<"$OUT"; then
   echo "ok: the stale-stamp reason, not the drift reason, is what's reported"
 else
   echo "FAIL: expected the stamp reason to win"; FAIL=1
+fi
+REF_AFTER=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" rev-parse "refs/remotes/origin/$DBASE")
+if [ "$REF_BEFORE" = "$REF_AFTER" ]; then
+  echo "ok: the drift check's fetch never ran (remote-tracking ref unchanged) — proves priority, not just silence"
+else
+  echo "FAIL: the drift fetch ran despite the stamp check already denying"; FAIL=1
 fi
 rm -f "$STAMP_FILE"
 
