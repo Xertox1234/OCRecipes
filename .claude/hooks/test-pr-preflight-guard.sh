@@ -348,9 +348,20 @@ assert_empty "SKIP_PR_DRIFT_CHECK=1 bypasses the drift check" "" "$OUT"
 # explicitly ENABLE the drift check (empty value) with a real overlap still present (shared.txt,
 # from 15c), so a priority regression would surface the DRIFT reason instead. A ref-position
 # check proves the drift fetch genuinely never ran (silence/wrong-reason alone wouldn't).
+#
+# SECOND review pass, 2026-08-28: that ref-position check was itself inadequate as first
+# written — by this point 15c's own (correctly-enabled) drift check had already fetched
+# refs/remotes/origin/$DBASE up to origin's CURRENT tip, so a wrongly-reintroduced fetch here
+# would be a no-op against an already-synced ref, and the assertion passed even against a hook
+# with the priority bug deliberately reintroduced (verified via mutation testing: removing the
+# stamp-deny's `exit 0` left this test green). Advancing the remote ONE MORE TIME immediately
+# before capturing REF_BEFORE gives a wrongful fetch something NEW to move the ref to,
+# restoring the assertion's power to actually distinguish "never fetched" from "fetched but
+# coincidentally no-op'd."
+advance_origin "another.txt"
 REF_BEFORE=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" rev-parse "refs/remotes/origin/$DBASE")
 echo "0000000000000000000000000000000000000000" > "$STAMP_FILE"
-OUT=$(SKIP_PR_DRIFT_CHECK= printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x --body y"}}' \
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x --body y"}}' \
   | SKIP_PR_DRIFT_CHECK= GIT_DIR="$DREPO/.git" GIT_WORK_TREE="$DREPO" bash "$HOOK")
 assert_contains "stale stamp denies even with drift enabled+present (stamp check runs first)" \
   '"permissionDecision": "deny"' "$OUT"
@@ -358,6 +369,15 @@ if grep -qi "pass-stamp" <<<"$OUT"; then
   echo "ok: the stale-stamp reason, not the drift reason, is what's reported"
 else
   echo "FAIL: expected the stamp reason to win"; FAIL=1
+fi
+# grep -qi "pass-stamp" alone can't rule out a SECOND, concatenated drift-deny JSON following
+# the stamp-deny one (both would contain "deny", and the stamp JSON's own text still contains
+# "pass-stamp" even with a second JSON appended after it) — count decisions explicitly.
+DECISIONS=$(printf '%s' "$OUT" | grep -c '"permissionDecision"')
+if [ "$DECISIONS" = 1 ]; then
+  echo "ok: exactly one decision object emitted (not the stamp-deny plus a second drift-deny)"
+else
+  echo "FAIL: expected exactly 1 permissionDecision, got $DECISIONS"; FAIL=1
 fi
 REF_AFTER=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" rev-parse "refs/remotes/origin/$DBASE")
 if [ "$REF_BEFORE" = "$REF_AFTER" ]; then

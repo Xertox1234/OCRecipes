@@ -85,8 +85,11 @@ if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD"; the
     # on local's stale HEAD (review, 2026-08-28). Consume the create flag (plus a separate
     # name token, unless the value was attached: `-bfoo`), then anything non-flag remaining
     # counts as an explicit start-point.
-    SEGMENT=$(printf '%s' "$CMD" | cmd_words \
-      | grep -oE '(checkout|switch)[[:space:]]+[^;&|)]*' | head -1)
+    # cmd_git_branch_create_segment (shared with cmd_is_git_branch_create above) — NOT an
+    # independent re-scan here: two call sites independently picking "the" segment is exactly
+    # how the original bug this comment describes happened, and a second review pass found a
+    # second instance of it (an earlier unrelated checkout/switch winning a naive `head -1`).
+    SEGMENT=$(cmd_git_branch_create_segment "$CMD")
     HAS_START_POINT=0
     FLAG_FOUND=0
     set -f  # SEGMENT holds ref/branch names verbatim; a literal *,?,[ must not glob against cwd

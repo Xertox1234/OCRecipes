@@ -202,6 +202,21 @@ assert_silent "explicit start-point with a PRECEDING flag still skips the behind
 OUT=$(run_hook "git checkout -bfeature/six-c")
 assert_deny "attached-value create form (-bfoo) still denies when base is stale" "$OUT"
 
+# Test 16e: attached-value create flag TOGETHER WITH an explicit start-point
+# (`checkout -bfoo origin/main` — collapses to exactly 3 words, the shape most likely to
+# fool a naive fixed-token-count extraction into treating origin/main as if it were the
+# branch's own name). Second review pass, 2026-08-28.
+OUT=$(run_hook "git checkout -bfeature/six-e origin/$INITIAL_BRANCH")
+assert_silent "attached-value create WITH an explicit start-point still skips the behind-check" "$OUT"
+
+# Test 16f: an EARLIER, unrelated checkout/switch must not hide a REAL create later in a
+# compound command (second review pass, 2026-08-28) — exactly this todo's own incident shape
+# (`git checkout main && git checkout -b feature/x`). The shared segment-finder
+# (cmd_git_branch_create_segment) must pick the segment that actually carries the create
+# flag, not simply the first "checkout|switch" occurrence.
+OUT=$(run_hook "git checkout $INITIAL_BRANCH && git checkout -b feature/six-f")
+assert_deny "an earlier unrelated checkout does not hide a later real create" "$OUT"
+
 # Test 16d: a branch tracking a DIFFERENTLY-NAMED remote branch (review, 2026-08-28) — the
 # fetch refspec must be derived from branch.<name>.merge, not assumed equal to the local
 # branch's own name, or this silently misses drift for any non-default tracking setup.

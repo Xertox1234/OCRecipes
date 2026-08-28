@@ -33,7 +33,8 @@ PASS=0; FAIL=0
 # shellcheck source=/dev/null
 . "$LIB" || { echo "FAIL: lib/cmd-detect.sh is not sourceable"; exit 1; }
 for f in cmd_bare cmd_words cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
-         cmd_is_git_commit_or_push cmd_is_git_head_mover cmd_is_git_branch_create; do
+         cmd_is_git_commit_or_push cmd_is_git_head_mover cmd_is_git_branch_create \
+         cmd_git_branch_create_segment; do
   declare -F "$f" >/dev/null || { echo "FAIL: $f is not defined by the lib"; exit 1; }
 done
 
@@ -142,6 +143,18 @@ det cmd_is_git_branch_create 'git checkout --track -b feature' yes \
   "cmd_is_git_branch_create: a long flag before the create flag still detected"
 det cmd_is_git_branch_create 'git switch -q -c feature'     yes \
   "cmd_is_git_branch_create: switch with a preceding flag still detected"
+# Regression from the FIX above (found by a second review pass, 2026-08-28): the loose
+# segment-scan took only the FIRST "checkout|switch"-shaped occurrence (`head -1`), so a
+# command containing an EARLIER, unrelated checkout/switch missed the REAL create later in
+# the same line — exactly the 2026-08-28 incident's own shape (`checkout main && checkout -b`).
+det cmd_is_git_branch_create 'git checkout main && git checkout -b foo' yes \
+  "cmd_is_git_branch_create: an earlier unrelated checkout must not hide a later real create"
+det cmd_is_git_branch_create 'git switch main2 && git checkout -b foo' yes \
+  "cmd_is_git_branch_create: mixed keywords (switch then checkout) still finds the real create"
+det cmd_is_git_branch_create 'grep checkout somefile && git checkout -b foo' yes \
+  "cmd_is_git_branch_create: an unrelated command's own argument doesn't win over the real create"
+det cmd_is_git_branch_create 'git checkout -b foo origin/main' yes \
+  "cmd_is_git_branch_create: create with an explicit start-point still detected (sanity)"
 
 echo "--- negative controls: bare forms still detected (probe can see anything) ---"
 det cmd_is_git_commit   'git commit -m x'      yes "bare git commit still detected"
