@@ -65,9 +65,36 @@ run env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u
 - Add a caller-untouched assertion (email + HEAD + porcelain) so a leak can never pass silently.
 - Don't trust "it passes in CI" for isolation claims — CI runs with a clean env; this corruption only manifests where an absolute `GIT_DIR` is injected (VS Code terminal, worktrees).
 
+## Extension (2026-08-28): the leak doesn't need an EXTERNAL source — a test's OWN export can leak into its OWN helpers
+
+The original incident's trigger was an environment-inherited absolute `GIT_DIR` (VS Code, a
+worktree) leaking into a test that never expected it. A second, distinct trigger surfaced
+while extending `test-branch-preflight.sh` and `test-pr-preflight-guard.sh` with a fake
+`origin` remote: the test **itself** deliberately `export`s `GIT_DIR`/`GIT_WORK_TREE`
+pointing at its own primary fixture repo (`$REPO`), for the large majority of the file where
+every git call should target that fixture — then, later in the SAME script, a helper function
+(`advance_remote`/`advance_origin`) needs to create and mutate DIFFERENT repos (a bare
+`origin`, a throwaway clone) to simulate work landing upstream. Every `git -C "$clone" ...`
+call inside that helper silently ran against the fixture repo pointed to by the still-exported
+`GIT_DIR`/`GIT_WORK_TREE`, not the clone — `git clone -q "$BAREORIGIN" "$clone"` failed with
+"repository does not exist", and downstream commands failed in increasingly confusing ways,
+because `-C` was being overridden exactly as this doc already describes, just by the test's
+**own earlier line**, not by anything inherited from outside the process.
+
+The "unset once at the top" solution in this doc's own Solution section does not cover this
+case — the test *needs* `GIT_DIR`/`GIT_WORK_TREE` set for most of its duration, so unsetting
+once at the top would break the tests those vars exist to enable. **The rule generalizes**:
+`GIT_DIR`/`GIT_WORK_TREE`, however they got set — inherited from the launching environment OR
+deliberately exported earlier in the same script — override `-C` for every subsequent `git`
+call in that process, with no exception for "but I meant this one for a different repo."
+Any git call inside a test-owned helper function that targets a DIFFERENT repo than the one
+those vars currently point at needs its OWN `env -u GIT_DIR -u GIT_WORK_TREE` prefix, every
+time, including calls that already use `-C` (which does nothing to protect against this).
+
 ## Related Files
 
-- `.claude/hooks/test-branch-preflight.sh` — the fixed self-test (unset + caller-untouched guard).
+- `.claude/hooks/test-branch-preflight.sh` — the fixed self-test (unset + caller-untouched guard); its `advance_remote` helper now prefixes every git call with `env -u GIT_DIR -u GIT_WORK_TREE`.
+- `.claude/hooks/test-pr-preflight-guard.sh` — `advance_origin`, the same helper pattern for a second hook's hermetic fixture.
 - `.claude/hooks/test-core-bare-guard.sh` — sibling test written hermetic from the start.
 - `scripts/run-hook-tests.sh` — owns the five-var env-strip around the `.claude/hooks/test-*.sh` loop; called by both `scripts/preflight.sh` (full mode) and `.github/workflows/ci.yml`.
 - `.claude/hooks/core-bare-guard.sh` — companion PreToolUse guard for the related `core.bare` flip symptom.

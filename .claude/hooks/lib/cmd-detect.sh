@@ -303,6 +303,54 @@ cmd_is_git_head_mover() {
     | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push|rebase|reset|pull|merge|cherry-pick)${_CMD_POS_SUFFIX}"
 }
 
+# cmd_git_branch_create_segment <command>  → echoes the "checkout ..."/"switch ..." argument
+# segment (that subcommand through the next control-operator boundary) that carries a real
+# create flag, tolerating (a) an attached value (`-bfoo`, no space — genuinely common, not
+# exotic) and (b) other flags appearing before it (`-q -b foo`, `--track -c foo`). If the
+# command contains MORE THAN ONE checkout/switch invocation, returns the FIRST one that
+# actually carries a create flag — not simply the first occurring segment: `git checkout main
+# && git checkout -b foo` must resolve to the SECOND segment (a regression found by a second
+# review pass, 2026-08-28, in this function's first version, which `head -1`'d the first
+# occurrence unconditionally and so missed a real create hiding behind an earlier unrelated
+# checkout — exactly the 2026-08-28 incident's own shape). Echoes nothing and returns 1 if no
+# segment carries a create flag. Deliberate scope gaps, both documented rather than silently
+# incomplete:
+#   - plain `git branch <name>` (create-without-switching) is NOT matched — rarer, and
+#     ambiguous to distinguish from `-d`/`-D`/`-m`/`-a`/`--list` without a fuller parse.
+#   - a BUNDLED short flag where the create letter isn't the bundle's own leading character
+#     (`-qb foo`, meaning `-q -b foo` bundled) is NOT matched — the attached-value case above
+#     only covers `-b<name>` where `-b` itself leads the token.
+# Shared by cmd_is_git_branch_create (below) AND branch-preflight.sh's own start-point
+# extraction — ONE definition of "which segment is the real create" for both, since the
+# original bug this fixes was exactly two call sites silently disagreeing about that.
+cmd_git_branch_create_segment() {
+  local segment
+  while IFS= read -r segment; do
+    case "$segment" in
+      checkout*) printf '%s' "$segment" | grep -Eq '(^|[[:space:]])-[bB]' \
+                   && { printf '%s\n' "$segment"; return 0; } ;;
+      switch*)   printf '%s' "$segment" | grep -Eq '(^|[[:space:]])-[cC]' \
+                   && { printf '%s\n' "$segment"; return 0; } ;;
+    esac
+  done <<EOF
+$(printf '%s' "$1" | cmd_words | grep -oE '(checkout|switch)[[:space:]]+[^;&|)]*')
+EOF
+  return 1
+}
+
+# cmd_is_git_branch_create <command>  → exit 0 if it invokes `git checkout -b/-B` or
+# `git switch -c/-C` (branch-creation forms) in command position. Two-stage: stage 1 (strict,
+# command-position anchored) confirms `checkout`/`switch` is really invoked — this is what
+# suppresses a quoted MENTION; stage 2 delegates to cmd_git_branch_create_segment (see above)
+# to find the create flag itself, tolerant of an attached value or preceding flags.
+# Used by branch-preflight.sh's stale-base-branch check.
+cmd_is_git_branch_create() {
+  printf '%s' "$1" | cmd_words \
+    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(checkout|switch)${_CMD_POS_SUFFIX}" \
+    || return 1
+  cmd_git_branch_create_segment "$1" >/dev/null
+}
+
 # cmd_gh_pr_write_subcommand <command>  → echo the gh pr WRITE subcommand
 # (create|merge|close|edit) if present, else nothing. Deliberately LOOSER than the strict
 # matchers (matches after any whitespace, no command-position anchor): this feeds a

@@ -7,7 +7,7 @@ module: shared
 applies_to: [".claude/hooks/**/*.sh", "scripts/**/*.sh"]
 symptoms: ["A command-safety gate ALLOWS a command whose EFFECTIVE target is dangerous because a repeated/chained option (git -C a -C b) is modeled as 0-or-1", "The gate's regex forces a fixed option order the real tool does not require (-C before -c), so a legal reordering slips the gate", "An option that belongs to the SUBCOMMAND (git commit -C HEAD) is mined as if it were the global option of the same name", "Relaxing the matcher regex alone makes the gate WORSE because the extractor still resolves only the first occurrence", "A tool resolves two related targets independently (git-dir vs work-tree) and the gate validates only one, so redirecting the checked target to a safe place masks a mutation of the unchecked one", "A safety gate is declared safe on the strength of an old-vs-new differential, which is blind to a new bug that is ALLOW-then-ALLOW"]
 created: 2026-07-20
-last_updated: 2026-07-20
+last_updated: 2026-08-28
 severity: medium
 ---
 
@@ -138,11 +138,67 @@ DENY→ALLOW over 600+ differential cases). On a safety gate, prefer the total c
 Also verify what is NOT a vector: `-c core.worktree=<path>` / `-c core.bare` on the command line are
 IGNORED by git (confirmed by scratch probe), so the gate correctly skipping `-c` values is safe.
 
+## Extension (2026-08-28): share ONE segment-picker between the matcher and the extractor, don't just keep two in sync
+
+A new hook (`branch-preflight.sh`'s stale-base-branch check, plus its matcher
+`cmd_is_git_branch_create` in `.claude/hooks/lib/cmd-detect.sh`) reproduced the exact
+matcher/extractor-disagreement shape this file already documents — twice in the same PR,
+because the first fix repeated the mistake it was fixing.
+
+**Round 1.** `cmd_is_git_branch_create` required the branch-create flag (`-b`/`-B`/`-c`/`-C`)
+immediately adjacent to `checkout`/`switch`, so `git checkout -bfoo` (attached value) and
+`git checkout -q -b foo` (a preceding flag) bypassed detection — ordinary spellings, not
+exotic tricks. Fixed the matcher to scan loosely for the create flag anywhere in the
+invocation's own segment. But `branch-preflight.sh` had its **own, separate** extraction for
+a different question ("does this command name an explicit start-point?") using the SAME
+"flag immediately follows the subcommand" assumption the matcher had just abandoned — so
+fixing the matcher's `cmd_is_git_branch_create` boolean left the paired extractor computing
+`HAS_START_POINT` from a position-counted skip ("skip exactly 3 tokens: subcommand, flag,
+name") that silently mis-scanned the moment a flag shifted where the branch name actually
+sat, producing a **false start-point detection** that skipped the safety check on a command
+that WAS relying on stale local state. Exactly this doc's Prevention line: "a more-permissive
+matcher that feeds a still-narrow extractor is a false sense of coverage" — except here the
+extractor wasn't even narrower, it was an **entirely independent implementation** that nobody
+updated when the matcher changed.
+
+**Round 2, one review pass later.** Fixed round 1's specific bug in the extractor
+(locate the flag by content, not position) — but the SAME two independent implementations
+still each did their own segment-selection, and a SECOND instance of the class surfaced
+immediately: both the matcher's loose scan and the extractor's `head -1` picked only the
+FIRST "checkout|switch"-shaped occurrence in the command, so a compound command with an
+EARLIER unrelated checkout hid a REAL create later in the same line
+(`git checkout main && git checkout -b foo` went undetected) — the exact incident shape this
+whole feature exists to prevent.
+
+**The lesson this doc's Prevention section understates**: "ask what the paired extractor now
+gets wrong" assumes you'll remember to ask, every time, forever. Two independently-maintained
+implementations of "which segment/token is the real one" will diverge again — that's not a
+discipline failure, it's what happens when the same decision is written down twice. The
+robust fix is **structural, not procedural**: extract ONE shared function
+(`cmd_git_branch_create_segment`) that answers "which segment carries the create flag" and
+have BOTH the boolean matcher and the extractor call it. After that fix, the two call sites
+cannot disagree — there's only one implementation left to be wrong, and fixing it fixes both
+consumers atomically. Verified via mutation: reverting only ONE call site back to its own
+independent scan reintroduces exactly the bug the shared function closes, even though the
+OTHER call site is untouched — proving the two were never really independent, just
+duplicated.
+
+**Related, smaller trap in the same session**: `git fetch -q -c http.lowSpeedLimit=1000 …`
+is a **git usage error** (`-c key=value` must precede the subcommand: `git -c k=v fetch`, not
+`git fetch -c k=v`) — and because the hook's own `2>/dev/null` swallows the error, a broken
+config-override ordering doesn't fail loudly, it fails OPEN (silently does nothing, the
+default/safe direction for this class of hook, which is exactly why it went unnoticed until
+traced with `bash -x`). When a git subprocess inside a hook silently produces no effect,
+suspect option ordering before suspecting the surrounding shell logic.
+
 ## Related Files
 
 - `.claude/hooks/git-safety.sh` — `MUTATING_GIT_SEG_RE` (the broadened `(-C…|-c…|--git-dir…|--work-tree…|-…)*` grammar), `git_c_target` (emits `g`/`c`/`w` redirect components), and the caller loop that reconstructs the two independent git-dir/work-tree targets and validates both.
 - `.claude/hooks/test-git-safety.sh` — the chained/interleaved `-C` truth table, the stop-at-verb invariant guards, and the glued/empty-`-C` residual pins.
 - `todos/archive/P3-2026-07-20-git-safety-unmodeled-global-options-repo-redirect.md` — the (now closed) todo this extension resolved: `--git-dir`/`--work-tree`/`GIT_DIR`/`GIT_WORK_TREE` redirects + the unmodeled-global-before-`-C` gap.
+- `.claude/hooks/lib/cmd-detect.sh` — `cmd_git_branch_create_segment`, the shared segment-picker both `cmd_is_git_branch_create` and `branch-preflight.sh` now call.
+- `.claude/hooks/branch-preflight.sh` — the stale-base-branch check; its start-point extraction now delegates to the shared segment-picker instead of re-scanning independently.
+- `.claude/hooks/test-cmd-detect.sh`, `.claude/hooks/test-branch-preflight.sh` — the compound-command regression tests (`checkout main && checkout -b foo`) and the crossed-axes test proving the fix over the original independent-scan version, via mutation.
 
 ## See Also
 

@@ -24,6 +24,12 @@ HEAD=$(git rev-parse HEAD 2>/dev/null || echo deadbeef)
 STAMP_FILE="$(mktemp "${TMPDIR:-/tmp}/ocrecipes-preflight-test.XXXXXX")"
 rm -f "$STAMP_FILE"   # start with NO stamp present
 export PREFLIGHT_STAMP_FILE="$STAMP_FILE"
+# This file's 26 pre-existing tests run against THIS real checkout (no GIT_DIR override —
+# unlike test-branch-preflight.sh's hermetic temp repo). Once the new base-branch-drift
+# check below can fetch `origin`, every test that reaches "stamp fresh -> allow" would
+# ALSO fire a REAL network fetch against the real GitHub remote. Blanket-skip it here;
+# the new hermetic section near the end unsets this for its own scope.
+export SKIP_PR_DRIFT_CHECK=1
 # Covers the two mktemp -d fixtures too: their inline `rm -rf`s only run on the happy path,
 # so an interrupted run (Ctrl-C / SIGTERM — bash runs the EXIT trap for both) leaked them.
 trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}"' EXIT
@@ -264,5 +270,138 @@ OUT=$(jq -Rn --arg c "g\$'h' pr create --fill" '{tool_name:"Bash",tool_input:{co
 assert_contains "lib-missing + \$-sigil-split gh still demands a stamp (fails CLOSED)" \
   '"permissionDecision": "deny"' "$OUT"
 rm -rf "$NOLIB"
+
+# 15. Base-branch drift/overlap check (2026-08-28) — hermetic: a fake bare "origin" so this
+# never touches the network. GIT_DIR/GIT_WORK_TREE override, unset again right after (the same
+# hazard as test-branch-preflight.sh's header comment: these vars OVERRIDE `-C` for any other
+# repo touched in this shell, so every git call on $CLONE below must strip them via `env -u`).
+DREPO=$(mktemp -d); DORIGIN=$(mktemp -d); DCLONE=""
+trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}" "${AWKSTUB:-}" "$DREPO" "$DORIGIN" "${DCLONE:-}"' EXIT
+
+# --initial-branch=main is REQUIRED, not cosmetic: pr-preflight-guard.sh hardcodes BASE="main"
+# (a deliberate scope decision — this repo's PRs always target main), so this fixture's base
+# branch must literally be named "main" regardless of the runner's own git-init default.
+# git's own built-in default (absent any init.defaultBranch config) is "master" on some
+# versions/platforms and "main" on others — this passed locally (macOS git defaults to "main"
+# here) but FAILED in CI (ubuntu-latest's git defaulted to something else), because a
+# mismatched branch name makes `git rev-parse -q --verify origin/main` fail inside the hook,
+# which silently no-ops the whole drift check (allow) instead of the deny these tests expect.
+# Reproduced locally by forcing --initial-branch=master and confirming the identical CI
+# failure, before landing this fix (2026-08-28).
+env -u GIT_DIR -u GIT_WORK_TREE git init -q --initial-branch=main "$DREPO"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" config user.email t@t
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" config user.name T
+echo base > "$DREPO/base.txt"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" add base.txt
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" commit -q -m init
+DBASE="main"
+# The BARE origin needs --initial-branch=main too, not just $DREPO: `git init --bare` sets the
+# new repo's HEAD symref from the ambient default at CREATION time, before anything is ever
+# pushed to it. Pushing "main" afterward does not retarget that symref — if it was created
+# pointing at "refs/heads/master" (this repo's actual default under the CI runner's config),
+# it now points at a branch that was never pushed and doesn't exist, and `git clone` (which
+# checks out whatever HEAD points to) fails or produces an unrelated/orphan checkout. That
+# broken clone is what later reproduced as "failed to push some refs" from advance_origin below.
+env -u GIT_DIR -u GIT_WORK_TREE git init --bare -q --initial-branch=main "$DORIGIN"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" remote add origin "$DORIGIN"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" push -q origin "$DBASE"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" switch -c feature/x -q
+
+# advance_origin <file> — commits+pushes a change to <file> on $DBASE from a throwaway
+# clone, so $DORIGIN moves ahead of $DREPO without $DREPO's own branch changing.
+advance_origin() {
+  DCLONE=$(mktemp -d)
+  env -u GIT_DIR -u GIT_WORK_TREE git clone -q "$DORIGIN" "$DCLONE"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" config user.email t@t
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" config user.name T
+  echo changed >> "$DCLONE/$1"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" add "$1"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" commit -q -m "landed on $DBASE: $1"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" push -q origin "$DBASE"
+  rm -rf "$DCLONE"; DCLONE=""
+}
+
+run_hook_hermetic() { # $1=command  → stdout of hook, against $DREPO with a fresh stamp
+  local head; head=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" rev-parse HEAD)
+  echo "$head" > "$STAMP_FILE"
+  printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$1" '$c')" \
+    | GIT_DIR="$DREPO/.git" GIT_WORK_TREE="$DREPO" bash "$HOOK"
+}
+
+# 15a. No drift at all → allow.
+OUT=$(SKIP_PR_DRIFT_CHECK= run_hook_hermetic "gh pr create --title x --body y")
+assert_empty "no base drift: allow" "" "$OUT"
+
+# 15b. Base advances on an UNRELATED file → still allow (no overlap with this PR's own diff).
+echo mine > "$DREPO/pr-file.txt"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" add pr-file.txt
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" commit -q -m "add pr-file.txt"
+advance_origin "unrelated.txt"
+OUT=$(SKIP_PR_DRIFT_CHECK= run_hook_hermetic "gh pr create --title x --body y")
+assert_empty "base drift on an unrelated file: still allow" "" "$OUT"
+
+# 15c. Base advances on a file THIS PR ALSO changed (this session's own incident, replayed) →
+# deny, message names the file.
+echo mine2 > "$DREPO/shared.txt"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" add shared.txt
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" commit -q -m "add shared.txt"
+advance_origin "shared.txt"
+OUT=$(SKIP_PR_DRIFT_CHECK= run_hook_hermetic "gh pr create --title x --body y")
+assert_contains "overlapping base drift: deny" '"permissionDecision": "deny"' "$OUT"
+if grep -q "shared.txt" <<<"$OUT"; then
+  echo "ok: deny message names the overlapping file"
+else
+  echo "FAIL: deny message should name shared.txt"; FAIL=1
+fi
+
+# 15d. SKIP_PR_DRIFT_CHECK=1 bypasses just this check, even with a real overlap present.
+OUT=$(SKIP_PR_DRIFT_CHECK=1 run_hook_hermetic "gh pr create --title x --body y")
+assert_empty "SKIP_PR_DRIFT_CHECK=1 bypasses the drift check" "" "$OUT"
+
+# 15e. A stale-stamp deny still wins over drift (stamp check runs first; unchanged priority).
+# Review, 2026-08-28: the original version of this test left SKIP_PR_DRIFT_CHECK=1 globally
+# set, which structurally disables the drift check regardless of ordering — it could not have
+# distinguished "stamp check wins by priority" from "drift check never engaged at all." Fix:
+# explicitly ENABLE the drift check (empty value) with a real overlap still present (shared.txt,
+# from 15c), so a priority regression would surface the DRIFT reason instead. A ref-position
+# check proves the drift fetch genuinely never ran (silence/wrong-reason alone wouldn't).
+#
+# SECOND review pass, 2026-08-28: that ref-position check was itself inadequate as first
+# written — by this point 15c's own (correctly-enabled) drift check had already fetched
+# refs/remotes/origin/$DBASE up to origin's CURRENT tip, so a wrongly-reintroduced fetch here
+# would be a no-op against an already-synced ref, and the assertion passed even against a hook
+# with the priority bug deliberately reintroduced (verified via mutation testing: removing the
+# stamp-deny's `exit 0` left this test green). Advancing the remote ONE MORE TIME immediately
+# before capturing REF_BEFORE gives a wrongful fetch something NEW to move the ref to,
+# restoring the assertion's power to actually distinguish "never fetched" from "fetched but
+# coincidentally no-op'd."
+advance_origin "another.txt"
+REF_BEFORE=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" rev-parse "refs/remotes/origin/$DBASE")
+echo "0000000000000000000000000000000000000000" > "$STAMP_FILE"
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x --body y"}}' \
+  | SKIP_PR_DRIFT_CHECK= GIT_DIR="$DREPO/.git" GIT_WORK_TREE="$DREPO" bash "$HOOK")
+assert_contains "stale stamp denies even with drift enabled+present (stamp check runs first)" \
+  '"permissionDecision": "deny"' "$OUT"
+if grep -qi "pass-stamp" <<<"$OUT"; then
+  echo "ok: the stale-stamp reason, not the drift reason, is what's reported"
+else
+  echo "FAIL: expected the stamp reason to win"; FAIL=1
+fi
+# grep -qi "pass-stamp" alone can't rule out a SECOND, concatenated drift-deny JSON following
+# the stamp-deny one (both would contain "deny", and the stamp JSON's own text still contains
+# "pass-stamp" even with a second JSON appended after it) — count decisions explicitly.
+DECISIONS=$(printf '%s' "$OUT" | grep -c '"permissionDecision"')
+if [ "$DECISIONS" = 1 ]; then
+  echo "ok: exactly one decision object emitted (not the stamp-deny plus a second drift-deny)"
+else
+  echo "FAIL: expected exactly 1 permissionDecision, got $DECISIONS"; FAIL=1
+fi
+REF_AFTER=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" rev-parse "refs/remotes/origin/$DBASE")
+if [ "$REF_BEFORE" = "$REF_AFTER" ]; then
+  echo "ok: the drift check's fetch never ran (remote-tracking ref unchanged) — proves priority, not just silence"
+else
+  echo "FAIL: the drift fetch ran despite the stamp check already denying"; FAIL=1
+fi
+rm -f "$STAMP_FILE"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }
