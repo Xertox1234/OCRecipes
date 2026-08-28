@@ -33,7 +33,7 @@ PASS=0; FAIL=0
 # shellcheck source=/dev/null
 . "$LIB" || { echo "FAIL: lib/cmd-detect.sh is not sourceable"; exit 1; }
 for f in cmd_bare cmd_words cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
-         cmd_is_git_commit_or_push cmd_is_git_head_mover; do
+         cmd_is_git_commit_or_push cmd_is_git_head_mover cmd_is_git_branch_create; do
   declare -F "$f" >/dev/null || { echo "FAIL: $f is not defined by the lib"; exit 1; }
 done
 
@@ -124,10 +124,19 @@ det cmd_is_git              '"git" status'                 yes "cmd_is_git: full
 det cmd_is_git_commit_or_push 'git "push" origin main'     yes "cmd_is_git_commit_or_push: git \"push\""
 det cmd_is_git_head_mover   'git "reset" --hard HEAD~1'    yes "cmd_is_git_head_mover: git \"reset\""
 det cmd_is_git_head_mover   'git re"set" --hard HEAD~1'    yes "cmd_is_git_head_mover: mid-word"
+det cmd_is_git_branch_create 'git checkout -b "new-feature"' yes \
+  "cmd_is_git_branch_create: quoted branch name still detects the create flag"
+det cmd_is_git_branch_create 'git check"out" -b foo'       yes "cmd_is_git_branch_create: mid-word verb"
 
 echo "--- negative controls: bare forms still detected (probe can see anything) ---"
 det cmd_is_git_commit   'git commit -m x'      yes "bare git commit still detected"
 det cmd_is_gh_pr_create 'gh pr create --fill'  yes "bare gh pr create still detected"
+det cmd_is_git_branch_create 'git checkout -b foo'   yes "bare 'checkout -b' still detected"
+det cmd_is_git_branch_create 'git checkout -B foo'   yes "bare 'checkout -B' (force-create) still detected"
+det cmd_is_git_branch_create 'git switch -c foo'     yes "bare 'switch -c' still detected"
+det cmd_is_git_branch_create 'git switch -C foo'     yes "bare 'switch -C' (force-create) still detected"
+det cmd_is_git_branch_create 'git checkout -b foo && git commit -m x' yes \
+  "compound: a real branch-create earlier in the line is still detected"
 
 echo "--- negative controls: MENTIONS must stay undetected (no new false denies) ---"
 # These are the cases blanking was introduced to protect. cmd_words keeps the
@@ -138,6 +147,11 @@ det cmd_is_gh_pr_create 'git commit -m "then gh pr create"'    no "mention in a 
 det cmd_is_gh_pr_create 'git commit -m "chore; gh pr create"'  no "SEPARATOR in a commit message does not open a command position"
 det cmd_is_git_head_mover 'echo "git reset --hard is bad"'     no "mention of a head-mover stays undetected"
 det cmd_is_git_commit   'git commit -m "a" && echo done'       yes "real commit with a quoted arg still detected"
+det cmd_is_git_branch_create 'echo "git checkout -b foo later"'      no "mention inside echo stays undetected"
+det cmd_is_git_branch_create 'git commit -m "git checkout -b foo"'   no "mention in a commit message stays undetected"
+det cmd_is_git_branch_create 'git checkout foo'                      no "checking out an EXISTING branch (no -b/-B) is not a create"
+det cmd_is_git_branch_create 'git branch foo'                        no \
+  "scope gap, deliberate: plain 'git branch <name>' (create-without-switching) is NOT matched — rarer form, ambiguous vs. -d/-D/-m/--list"
 
 echo "--- residuals pinned AT THE LAYER THAT OWNS THEM ---"
 # Pinned HERE, at the rendering that OWNS the residual, so it fails if cmd_words

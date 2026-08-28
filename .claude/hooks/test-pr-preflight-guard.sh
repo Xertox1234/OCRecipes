@@ -24,6 +24,12 @@ HEAD=$(git rev-parse HEAD 2>/dev/null || echo deadbeef)
 STAMP_FILE="$(mktemp "${TMPDIR:-/tmp}/ocrecipes-preflight-test.XXXXXX")"
 rm -f "$STAMP_FILE"   # start with NO stamp present
 export PREFLIGHT_STAMP_FILE="$STAMP_FILE"
+# This file's 26 pre-existing tests run against THIS real checkout (no GIT_DIR override —
+# unlike test-branch-preflight.sh's hermetic temp repo). Once the new base-branch-drift
+# check below can fetch `origin`, every test that reaches "stamp fresh -> allow" would
+# ALSO fire a REAL network fetch against the real GitHub remote. Blanket-skip it here;
+# the new hermetic section near the end unsets this for its own scope.
+export SKIP_PR_DRIFT_CHECK=1
 # Covers the two mktemp -d fixtures too: their inline `rm -rf`s only run on the happy path,
 # so an interrupted run (Ctrl-C / SIGTERM — bash runs the EXIT trap for both) leaked them.
 trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}"' EXIT
@@ -264,5 +270,91 @@ OUT=$(jq -Rn --arg c "g\$'h' pr create --fill" '{tool_name:"Bash",tool_input:{co
 assert_contains "lib-missing + \$-sigil-split gh still demands a stamp (fails CLOSED)" \
   '"permissionDecision": "deny"' "$OUT"
 rm -rf "$NOLIB"
+
+# 15. Base-branch drift/overlap check (2026-08-28) — hermetic: a fake bare "origin" so this
+# never touches the network. GIT_DIR/GIT_WORK_TREE override, unset again right after (the same
+# hazard as test-branch-preflight.sh's header comment: these vars OVERRIDE `-C` for any other
+# repo touched in this shell, so every git call on $CLONE below must strip them via `env -u`).
+DREPO=$(mktemp -d); DORIGIN=$(mktemp -d); DCLONE=""
+trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}" "${AWKSTUB:-}" "$DREPO" "$DORIGIN" "${DCLONE:-}"' EXIT
+
+env -u GIT_DIR -u GIT_WORK_TREE git init -q "$DREPO"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" config user.email t@t
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" config user.name T
+echo base > "$DREPO/base.txt"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" add base.txt
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" commit -q -m init
+DBASE=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" symbolic-ref --short HEAD)
+env -u GIT_DIR -u GIT_WORK_TREE git init --bare -q "$DORIGIN"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" remote add origin "$DORIGIN"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" push -q origin "$DBASE"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" switch -c feature/x -q
+
+# advance_origin <file> — commits+pushes a change to <file> on $DBASE from a throwaway
+# clone, so $DORIGIN moves ahead of $DREPO without $DREPO's own branch changing.
+advance_origin() {
+  DCLONE=$(mktemp -d)
+  env -u GIT_DIR -u GIT_WORK_TREE git clone -q "$DORIGIN" "$DCLONE"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" config user.email t@t
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" config user.name T
+  echo changed >> "$DCLONE/$1"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" add "$1"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" commit -q -m "landed on $DBASE: $1"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$DCLONE" push -q origin "$DBASE"
+  rm -rf "$DCLONE"; DCLONE=""
+}
+
+run_hook_hermetic() { # $1=command  → stdout of hook, against $DREPO with a fresh stamp
+  local head; head=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" rev-parse HEAD)
+  echo "$head" > "$STAMP_FILE"
+  printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$1" '$c')" \
+    | GIT_DIR="$DREPO/.git" GIT_WORK_TREE="$DREPO" bash "$HOOK"
+}
+
+# 15a. No drift at all → allow.
+OUT=$(SKIP_PR_DRIFT_CHECK= run_hook_hermetic "gh pr create --title x --body y")
+assert_empty "no base drift: allow" "" "$OUT"
+
+# 15b. Base advances on an UNRELATED file → still allow (no overlap with this PR's own diff).
+echo mine > "$DREPO/pr-file.txt"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" add pr-file.txt
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" commit -q -m "add pr-file.txt"
+advance_origin "unrelated.txt"
+OUT=$(SKIP_PR_DRIFT_CHECK= run_hook_hermetic "gh pr create --title x --body y")
+assert_empty "base drift on an unrelated file: still allow" "" "$OUT"
+
+# 15c. Base advances on a file THIS PR ALSO changed (this session's own incident, replayed) →
+# deny, message names the file.
+echo mine2 > "$DREPO/shared.txt"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" add shared.txt
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" commit -q -m "add shared.txt"
+advance_origin "shared.txt"
+OUT=$(SKIP_PR_DRIFT_CHECK= run_hook_hermetic "gh pr create --title x --body y")
+assert_contains "overlapping base drift: deny" '"permissionDecision": "deny"' "$OUT"
+if grep -q "shared.txt" <<<"$OUT"; then
+  echo "ok: deny message names the overlapping file"
+else
+  echo "FAIL: deny message should name shared.txt"; FAIL=1
+fi
+
+# 15d. SKIP_PR_DRIFT_CHECK=1 bypasses just this check, even with a real overlap present.
+OUT=$(SKIP_PR_DRIFT_CHECK=1 run_hook_hermetic "gh pr create --title x --body y")
+assert_empty "SKIP_PR_DRIFT_CHECK=1 bypasses the drift check" "" "$OUT"
+
+# 15e. A stale-stamp deny still wins over drift (stamp check runs first; unchanged priority).
+# Note: SKIP_PR_DRIFT_CHECK is still globally =1 here (only the run_hook_hermetic tests above
+# unset it, scoped to their own function call) — irrelevant to this test either way, since the
+# stamp check denies and returns before the drift check would ever run.
+echo "0000000000000000000000000000000000000000" > "$STAMP_FILE"
+OUT=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr create --title x --body y"}}' \
+  | GIT_DIR="$DREPO/.git" GIT_WORK_TREE="$DREPO" bash "$HOOK")
+assert_contains "stale stamp denies even with drift present (stamp check runs first)" \
+  '"permissionDecision": "deny"' "$OUT"
+if grep -qi "pass-stamp" <<<"$OUT"; then
+  echo "ok: the stale-stamp reason, not the drift reason, is what's reported"
+else
+  echo "FAIL: expected the stamp reason to win"; FAIL=1
+fi
+rm -f "$STAMP_FILE"
 
 [ "$FAIL" -eq 0 ] && echo "ALL PASS" || { echo "FAILURES"; exit 1; }

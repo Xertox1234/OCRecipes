@@ -51,7 +51,8 @@ assert_silent() {
 
 # Set up a temp git repo
 REPO=$(mktemp -d)
-trap 'rm -rf "$REPO"' EXIT
+BAREORIGIN=""  # pre-initialized so the EXIT trap is set -u safe before it's created
+trap 'rm -rf "$REPO" "${BAREORIGIN:-}"' EXIT
 git -C "$REPO" init -q
 git -C "$REPO" config user.email "t@t"
 git -C "$REPO" config user.name "T"
@@ -127,6 +128,107 @@ NOLIB_INPUT=$(jq -n --arg c "git commit -m 'oops'" '{"tool_name":"Bash","tool_in
 OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
 assert_deny "lib-missing: real detached-HEAD commit still denied (fail-closed)" "$OUT"
 rm -rf "$NOLIB"
+
+# --- Stale-base branch-create check: fetch-then-deny (2026-08-28) --------------
+# A bare "origin" gives the check something real to fetch, entirely off-network.
+# GIT_DIR/GIT_WORK_TREE are exported (for $REPO) at this point and OVERRIDE `-C` for
+# any OTHER repo touched in this same shell (the exact hazard this file's own header
+# comment warns about) — every git call below that isn't `git -C "$REPO"` must strip
+# them via `env -u`, including inside advance_remote's clone.
+BAREORIGIN=$(mktemp -d)
+env -u GIT_DIR -u GIT_WORK_TREE git init --bare -q "$BAREORIGIN"
+git -C "$REPO" switch "$INITIAL_BRANCH" -q 2>/dev/null
+git -C "$REPO" remote add origin "$BAREORIGIN"
+git -C "$REPO" push -u -q origin "$INITIAL_BRANCH" 2>/dev/null
+
+# advance_remote <file> <msg> — commits+pushes from a throwaway clone, so the bare
+# origin moves AHEAD of $REPO without $REPO's local branch or working tree changing
+# (mirrors "someone else's PR merged upstream while you were working").
+advance_remote() {
+  local clone; clone=$(mktemp -d)
+  env -u GIT_DIR -u GIT_WORK_TREE git clone -q "$BAREORIGIN" "$clone"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$clone" config user.email "t@t"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$clone" config user.name "T"
+  echo "x" > "$clone/$1"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$clone" add "$1"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$clone" commit -q -m "$2"
+  env -u GIT_DIR -u GIT_WORK_TREE git -C "$clone" push -q origin "$INITIAL_BRANCH"
+  rm -rf "$clone"
+}
+
+# Test 11: no drift → branch-create is silent.
+OUT=$(run_hook "git checkout -b feature/one")
+assert_silent "branch-create with fresh base is silent" "$OUT"
+
+# Test 12: remote advances without $REPO knowing → branch-create DENIES (hook fetches
+# internally and finds local behind).
+advance_remote "a.txt" "landed elsewhere"
+OUT=$(run_hook "git checkout -b feature/two")
+assert_deny "branch-create denied when base is behind its fetched upstream" "$OUT"
+if grep -qi "behind" <<<"$OUT"; then
+  echo "PASS: deny message explains the branch is behind"; PASS=$((PASS+1))
+else
+  echo "FAIL: deny message should mention being behind"; FAIL=$((FAIL+1))
+fi
+
+# Test 13: the internal fetch does not self-heal — still denies until an actual merge.
+OUT=$(run_hook "git switch -c feature/three")
+assert_deny "still denies on a second attempt (fetch alone never fast-forwards local)" "$OUT"
+
+# Test 14: SKIP_BRANCH_PREFLIGHT bypasses the stale-base deny too, not just detached-HEAD.
+OUT=$(SKIP_BRANCH_PREFLIGHT=1 run_hook "git checkout -b feature/four")
+assert_silent "SKIP_BRANCH_PREFLIGHT bypasses the stale-base deny" "$OUT"
+
+# Test 15: fast-forwarding local resolves it — silent again.
+git -C "$REPO" merge --ff-only "origin/$INITIAL_BRANCH" -q
+OUT=$(run_hook "git checkout -b feature/five")
+assert_silent "branch-create silent again once local is fast-forwarded" "$OUT"
+
+# Test 16: an EXPLICIT start-point (git checkout -b <name> origin/<branch>) is not
+# blocked even while local is stale — the command isn't relying on local's stale state.
+advance_remote "b.txt" "landed again"
+OUT=$(run_hook "git checkout -b feature/six origin/$INITIAL_BRANCH")
+assert_silent "explicit start-point (origin/<branch>) skips the behind-check" "$OUT"
+
+# Test 17: a branch with no upstream configured → silent (nothing to compare against).
+git -C "$REPO" switch -c topic/no-upstream -q
+OUT=$(run_hook "git checkout -b feature/seven")
+assert_silent "branching off a branch with no upstream is silent" "$OUT"
+git -C "$REPO" switch "$INITIAL_BRANCH" -q 2>/dev/null
+
+# Test 18: negative control — non-matching commands must NEVER fetch. Advance the remote
+# once more, then prove the local remote-tracking ref is UNCHANGED after each command: if a
+# fetch had run, this ref would have moved to the new commit. Silence alone doesn't prove
+# this (a wrongly-attempted fetch could still fail open) — the ref position is the real proof.
+advance_remote "c.txt" "sentinel commit"
+REF_BEFORE=$(git -C "$REPO" rev-parse "refs/remotes/origin/$INITIAL_BRANCH")
+run_hook "git branch -d somebranch" >/dev/null
+run_hook "git status" >/dev/null
+run_hook 'git commit -m "run git checkout -b later"' >/dev/null
+run_hook "git checkout $INITIAL_BRANCH" >/dev/null
+REF_AFTER=$(git -C "$REPO" rev-parse "refs/remotes/origin/$INITIAL_BRANCH")
+if [ "$REF_BEFORE" = "$REF_AFTER" ]; then
+  echo "PASS: non-matching commands never fetch (remote-tracking ref unchanged)"; PASS=$((PASS+1))
+else
+  echo "FAIL: a non-matching command fetched anyway (ref moved $REF_BEFORE -> $REF_AFTER)"
+  FAIL=$((FAIL+1))
+fi
+
+# Test 19: a COMPOUND command matching BOTH check shapes (detached-HEAD commit AND a
+# stale-base branch-create) must emit exactly ONE deny (check 1, detached-HEAD, wins —
+# it's the data-loss check). Advance the remote again so check 2 would also fire alone.
+advance_remote "d.txt" "landed a third time"
+git -C "$REPO" checkout --detach HEAD -q 2>/dev/null
+OUT=$(run_hook "git checkout -b feature/eight && git commit -m oops")
+assert_deny "compound command matching BOTH checks still emits exactly one deny" "$OUT"
+LINES=$(printf '%s' "$OUT" | grep -c '"permissionDecision"')
+if [ "$LINES" = 1 ]; then
+  echo "PASS: exactly one decision object emitted (not two concatenated)"; PASS=$((PASS+1))
+else
+  echo "FAIL: expected exactly 1 permissionDecision, got $LINES"; FAIL=$((FAIL+1))
+fi
+git -C "$REPO" switch "$INITIAL_BRANCH" -q 2>/dev/null
+git -C "$REPO" merge --ff-only "origin/$INITIAL_BRANCH" -q 2>/dev/null
 
 unset GIT_DIR GIT_WORK_TREE
 

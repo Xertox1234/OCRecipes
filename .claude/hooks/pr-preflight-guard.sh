@@ -130,18 +130,60 @@ if [ -n "$ROOT" ] && [ -f "$ROOT/scripts/lib/preflight-stamp-path.sh" ]; then
   STAMP=$(cat "$(preflight_stamp_path)" 2>/dev/null || echo "")
 fi
 
-if [ -n "$HEAD" ] && [ "$STAMP" = "$HEAD" ]; then
-  exit 0   # fresh pass-stamp for this commit (fast or full) — allow.
+if [ -z "$HEAD" ] || [ "$STAMP" != "$HEAD" ]; then
+  FOUND="${STAMP:0:7}"; [ -z "$FOUND" ] && FOUND="none"
+  REASON="Blocked: no fresh preflight pass-stamp for HEAD ${HEAD:0:7} (found: ${FOUND}). Push the branch first — the pre-push fast gate stamps a verified HEAD — or run \`npm run preflight\` for full local parity. Coverage is enforced by CI's required checks, not here. Emergency bypass: SKIP_PR_PREFLIGHT=1."
+
+  jq -n --arg r "$REASON" '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": $r
+    }
+  }'
+  exit 0
 fi
 
-FOUND="${STAMP:0:7}"; [ -z "$FOUND" ] && FOUND="none"
-REASON="Blocked: no fresh preflight pass-stamp for HEAD ${HEAD:0:7} (found: ${FOUND}). Push the branch first — the pre-push fast gate stamps a verified HEAD — or run \`npm run preflight\` for full local parity. Coverage is enforced by CI's required checks, not here. Emergency bypass: SKIP_PR_PREFLIGHT=1."
+# --- Base-branch drift/overlap check (2026-08-28) ------------------------------
+# Stamp is fresh for HEAD. Separately: has the base branch advanced, on a file this PR
+# ALSO changed, since this branch forked? That's the 2026-08-28 incident replayed —
+# branched off a stale local main, re-did an already-merged todo archive, opened a
+# duplicate PR (#862, closed unmerged). A bare "is main behind" check would fire on
+# nearly every PR in this repo's cadence and this project deliberately runs branch
+# protection with strict:false (a stale-but-non-overlapping PR is fine to merge) — so
+# this checks file-path OVERLAP specifically, not mere staleness.
+# Scope, deliberately narrow: always compares against origin/main (no --base /
+# tool_input.base parsing) — every PR in this repo targets main.
+# Escape: SKIP_PR_DRIFT_CHECK=1 skips just this check (SKIP_PR_PREFLIGHT=1 above already
+# skips the whole hook, stamp check included).
+if [ -z "${SKIP_PR_DRIFT_CHECK:-}" ]; then
+  BASE="main"
+  # Fetch into the explicit remote-tracking ref — never read FETCH_HEAD (shared across
+  # worktrees/processes; racy — see reference_fetch_head memory). Bounded against a
+  # STALLED transfer, not a dead DNS/TCP handshake — same accepted asymmetry as
+  # branch-preflight.sh's twin of this fetch; a slow hook on a dead network still
+  # fails open below.
+  git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
+    origin "refs/heads/${BASE}:refs/remotes/origin/${BASE}" 2>/dev/null
+  if git rev-parse -q --verify "origin/${BASE}" >/dev/null 2>&1; then
+    MISSED=$(git diff --name-only "HEAD...origin/${BASE}" 2>/dev/null || echo "")
+    if [ -n "$MISSED" ]; then
+      MINE=$(git diff --name-only "origin/${BASE}...HEAD" 2>/dev/null || echo "")
+      OVERLAP=$(comm -12 <(printf '%s\n' "$MISSED" | sort) <(printf '%s\n' "$MINE" | sort))
+      if [ -n "$OVERLAP" ]; then
+        FIRST=$(printf '%s\n' "$OVERLAP" | head -1)
+        REASON="Blocked: '${FIRST}' changed on origin/${BASE} since this branch forked, and this PR also changes it — the same work may already be merged there. Check \`git log origin/${BASE} -- '${FIRST}'\` before opening. Reconcile with \`git fetch origin ${BASE} && git merge --ff-only origin/${BASE}\`, then retry. Emergency bypass: SKIP_PR_PREFLIGHT=1 (or SKIP_PR_DRIFT_CHECK=1 for just this check)."
+        jq -n --arg r "$REASON" '{
+          "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": $r
+          }
+        }'
+        exit 0
+      fi
+    fi
+  fi
+fi
 
-jq -n --arg r "$REASON" '{
-  "hookSpecificOutput": {
-    "hookEventName": "PreToolUse",
-    "permissionDecision": "deny",
-    "permissionDecisionReason": $r
-  }
-}'
-exit 0
+exit 0   # stamp fresh, no overlapping base drift (or fetch/lookup unavailable) — allow.

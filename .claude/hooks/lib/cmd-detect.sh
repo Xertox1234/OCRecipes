@@ -303,6 +303,16 @@ cmd_is_git_head_mover() {
     | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push|rebase|reset|pull|merge|cherry-pick)${_CMD_POS_SUFFIX}"
 }
 
+# cmd_is_git_branch_create <command>  → exit 0 if it invokes `git checkout -b/-B` or
+# `git switch -c/-C` (branch-creation forms) in command position. Deliberate scope gap:
+# plain `git branch <name>` (create-without-switching) is NOT matched — rarer, and
+# ambiguous to distinguish from `-d`/`-D`/`-m`/`-a`/`--list` without a fuller parse.
+# Used by branch-preflight.sh's stale-base-branch check.
+cmd_is_git_branch_create() {
+  printf '%s' "$1" | cmd_words \
+    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(checkout[[:space:]]+-[bB]|switch[[:space:]]+-[cC])([[:space:]]|$)"
+}
+
 # cmd_gh_pr_write_subcommand <command>  → echo the gh pr WRITE subcommand
 # (create|merge|close|edit) if present, else nothing. Deliberately LOOSER than the strict
 # matchers (matches after any whitespace, no command-position anchor): this feeds a
