@@ -278,14 +278,31 @@ rm -rf "$NOLIB"
 DREPO=$(mktemp -d); DORIGIN=$(mktemp -d); DCLONE=""
 trap 'rm -f "$STAMP_FILE"; rm -rf "${HELPER_T:-}" "${NOLIB:-}" "${AWKSTUB:-}" "$DREPO" "$DORIGIN" "${DCLONE:-}"' EXIT
 
-env -u GIT_DIR -u GIT_WORK_TREE git init -q "$DREPO"
+# --initial-branch=main is REQUIRED, not cosmetic: pr-preflight-guard.sh hardcodes BASE="main"
+# (a deliberate scope decision — this repo's PRs always target main), so this fixture's base
+# branch must literally be named "main" regardless of the runner's own git-init default.
+# git's own built-in default (absent any init.defaultBranch config) is "master" on some
+# versions/platforms and "main" on others — this passed locally (macOS git defaults to "main"
+# here) but FAILED in CI (ubuntu-latest's git defaulted to something else), because a
+# mismatched branch name makes `git rev-parse -q --verify origin/main` fail inside the hook,
+# which silently no-ops the whole drift check (allow) instead of the deny these tests expect.
+# Reproduced locally by forcing --initial-branch=master and confirming the identical CI
+# failure, before landing this fix (2026-08-28).
+env -u GIT_DIR -u GIT_WORK_TREE git init -q --initial-branch=main "$DREPO"
 env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" config user.email t@t
 env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" config user.name T
 echo base > "$DREPO/base.txt"
 env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" add base.txt
 env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" commit -q -m init
-DBASE=$(env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" symbolic-ref --short HEAD)
-env -u GIT_DIR -u GIT_WORK_TREE git init --bare -q "$DORIGIN"
+DBASE="main"
+# The BARE origin needs --initial-branch=main too, not just $DREPO: `git init --bare` sets the
+# new repo's HEAD symref from the ambient default at CREATION time, before anything is ever
+# pushed to it. Pushing "main" afterward does not retarget that symref — if it was created
+# pointing at "refs/heads/master" (this repo's actual default under the CI runner's config),
+# it now points at a branch that was never pushed and doesn't exist, and `git clone` (which
+# checks out whatever HEAD points to) fails or produces an unrelated/orphan checkout. That
+# broken clone is what later reproduced as "failed to push some refs" from advance_origin below.
+env -u GIT_DIR -u GIT_WORK_TREE git init --bare -q --initial-branch=main "$DORIGIN"
 env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" remote add origin "$DORIGIN"
 env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" push -q origin "$DBASE"
 env -u GIT_DIR -u GIT_WORK_TREE git -C "$DREPO" switch -c feature/x -q
