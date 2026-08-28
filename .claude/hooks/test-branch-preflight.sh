@@ -217,6 +217,17 @@ assert_silent "attached-value create WITH an explicit start-point still skips th
 OUT=$(run_hook "git checkout $INITIAL_BRANCH && git checkout -b feature/six-f")
 assert_deny "an earlier unrelated checkout does not hide a later real create" "$OUT"
 
+# Test 16g: CROSS 16f's axis (compound command hides the real create) with 16/16b/16e's axis
+# (explicit start-point on the real create) — third review pass, 2026-08-28. Tested and passing
+# independently is not sufficient here: with no start-point in EITHER segment, HAS_START_POINT
+# computes to 0 regardless of which segment gets picked, so 16f alone cannot tell the new
+# shared-segment extraction apart from the old buggy `head -1` one (mutation-verified: reverting
+# branch-preflight.sh's extraction back to `head -1` still passes 16f, but wrongly DENIES this
+# crossed case — the old code picks the wrong ("checkout main") segment, finds no start-point
+# in IT, and denies even though the REAL create explicitly names one).
+OUT=$(run_hook "git checkout $INITIAL_BRANCH && git checkout -b feature/six-g origin/$INITIAL_BRANCH")
+assert_silent "an earlier unrelated checkout + explicit start-point on the real create still skips the behind-check" "$OUT"
+
 # Test 16d: a branch tracking a DIFFERENTLY-NAMED remote branch (review, 2026-08-28) — the
 # fetch refspec must be derived from branch.<name>.merge, not assumed equal to the local
 # branch's own name, or this silently misses drift for any non-default tracking setup.
