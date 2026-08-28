@@ -1,9 +1,9 @@
 ---
 title: "VoiceOver cannot start a scan — the scan-menu item and the camera capture button both fail to activate on double-tap"
-status: in-progress
+status: done
 priority: high
 created: 2026-08-07
-updated: 2026-08-17
+updated: 2026-08-28
 assignee:
 labels: [accessibility, camera, navigation, ios]
 github_issue:
@@ -13,7 +13,8 @@ blocked_reason:
 
 # VoiceOver cannot start a scan
 
-> **RESOLVED IN CODE 2026-08-17 — PR pending.** Fixed on branch
+> **SHIPPED 2026-08-17 — merged to `main` as PR #860** (`cfa90cd1`, "fix(a11y): make the
+> scan flow reachable and operable with VoiceOver/TalkBack"). Fixed on branch
 > `fix/voiceover-scan-menu-unreachable` (commit `a458379d`) and verified end-to-end on the
 > original physical iPhone with VoiceOver: menu → "Scan Barcode, button" → camera →
 > auto-scan → "Product found". Full device-pass evidence, per-test results (T1–T7), Android
