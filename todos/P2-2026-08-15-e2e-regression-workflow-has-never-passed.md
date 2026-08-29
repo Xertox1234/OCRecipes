@@ -300,3 +300,111 @@ because it's the same _class_ of defect ("looks like it verifies something, actu
 that this whole todo exists to eliminate, just one level down from workflow-granularity to
 flow-granularity. Follow-up (not done this session, out of the immediate CI-attempt budget):
 audit each touched flow for at least one assertion that mandatorily pins its stated purpose.
+
+### 2026-08-29 — Two corrections to the 2026-08-16 diagnosis, two new root causes found and fixed, dispatch in flight
+
+**Correction 1: the fixes described above were never left "unvalidated on a branch."** `32fa60b`
+plus two further commits (`f8764715` docs, `3e28a835` code-review fixes) were squash-merged to
+`main` via **PR #838** on 2026-08-16, closing the loop this entry's "Next session should"
+note assumed was still open. Since then, **13 unattended nightly `schedule` runs** (2026-08-17
+→ 2026-08-29) ran on `main` and failed identically every time — the notify-on-failure → Issue
+#832 mechanism worked correctly throughout (16 comments by today), but nobody was watching it,
+so this drifted for 12 more days exactly the way the original 34 failures did. The
+`wip-e2e-regression-commission` branch itself no longer exists (renamed pre-merge, deleted
+post-merge) — its dangling commit `32fa60b` is not on `main`, but its _content_ is (confirmed
+by diffing `main`'s current workflow/flow files against it).
+
+**Correction 2: both of last session's fixes ARE confirmed working.** The iOS diagnostic step
+(gated on `steps.build-ios.outcome == 'failure'`, UDID-resolved `-destination`) fired on
+run 33243164397 and — for the first time in this todo's history — surfaced a real `xcodebuild`
+error instead of nothing. The Android dev-menu-overlay dismiss is confirmed present and running
+(verified directly against a screenshot from that same run's retry attempt: the Sign In screen
+renders cleanly, no overlay). Neither fix was wrong; each just uncovered the next layer.
+
+**New root cause — iOS:** `error: compiling for iOS 15.1, but module 'CxxStdlib' has a minimum
+deployment target of iOS 16.0`. Xcode 16.2 (already mandatory for RN 0.81) refuses to compile
+because VisionCamera v5/NitroModules' Swift↔C++ interop pulls in `CxxStdlib`, which itself
+requires ≥iOS 16.0 (see `docs/solutions/code-quality/vision-camera-ocr-plus-v5-cpp-interop-2026-06-02.md`
+for the independent corroboration). **This is not a CI-only quirk** — `ios/Podfile` and
+`ios/OCRecipes.xcodeproj/project.pbxproj` are the same committed native files used for local
+dev and EAS builds, so any clean build with Xcode ≥16.1 (already required) would hit this.
+**Fix (this session, user-approved deviation from the original Scope Contract, which named
+only workflow/e2e files):** bumped `IPHONEOS_DEPLOYMENT_TARGET` 15.1→16.0 in
+`ios/OCRecipes.xcodeproj/project.pbxproj` (4 occurrences — the value actually driving the
+failing compile) and `ios/Podfile.properties.json`'s `ios.deploymentTarget` (was a stale
+`"15.5"`, silently overriding the Podfile's own `'15.1'` fallback — that fallback was dead code
+and was bumped too, defensively). Regenerated `ios/Podfile.lock` via `pod install`. **This
+drops iOS 15.x support for the whole app**, recorded here explicitly as a product decision, not
+silent scope creep.
+
+**New root cause — Android:** downloaded the `logs-android` artifact already sitting on run
+33243164397 (no new CI spend needed) and read the actual Maestro screenshots. The retry
+attempt's login screen showed the username field containing the literal text **"undefined"**,
+not `testuser` — `helpers/login.yaml`'s `${USERNAME}`/`${PASSWORD}` were never wired into
+Maestro's own variable substitution. The GitHub Actions job-level `env:` block (`USERNAME:
+testuser`) only populates the OS environment for the shell running `maestro test`; Maestro's
+`${VAR}` flow-template substitution requires explicit `-e KEY=value` CLI flags (confirmed via
+`maestro test --help`: `-e, --env=<String=String>`), which none of the `e2e:*` npm scripts ever
+passed. Every flow's login therefore typed "undefined" as username, the server correctly
+rejected it, and every downstream assertion (`visible`/`notVisible: "Sign In"`, depending on
+which side of the login attempt a given flow checks) failed — explaining **both** of the
+previously-reported failure directions as one bug, not two. Separately, even with correct
+credentials, no CI step ever created the `testuser`/`testpass123` account in the job's fresh
+Postgres instance. **Fix:** added `-e USERNAME=${USERNAME:-testuser} -e
+PASSWORD=${PASSWORD:-testpass123}` to all three `e2e:*` scripts in `package.json`, and a "Seed
+E2E test user" step (`curl -X POST /api/auth/register`, `|| true` for idempotency) to both jobs
+right after the backend becomes healthy.
+
+**Not a bug, confirmed via the same screenshot evidence:** the dev-menu-overlay dismiss fix
+from last session is not blocking anything in the retry — it correctly no-ops (nothing to
+dismiss) and the Sign In screen renders cleanly. The one cold-start case where the very first
+flow of a job's first attempt is still connecting is exactly what the existing one-retry
+mechanism is designed to absorb, and evidence shows it does.
+
+**Status:** committed as `8ce512b4` on branch
+`todo/P2-2026-08-15-e2e-regression-workflow-has-never-passed`, pushed, `workflow_dispatch`
+triggered (run 33274867089) — outcome pending as of this entry. See the next entry (or this
+one's edit, if landed before another session) for the result.
+
+### 2026-08-29 (continued) — two more layers found via live dispatch, third cycle in flight
+
+**Dispatch 1 (run 33274867089): caught and fixed before completion, no CI cost.** The seed-user
+step's payload was missing a 4th required field — `registerSchema` (`server/routes/_schemas.ts`)
+requires `ageConfirmed: z.literal(true)` (COPPA attestation) alongside username/password/email.
+Without it the seed `curl` would 400, silently swallowed by its own `|| true`, leaving the
+account never created. Found by reading the schema before waiting on CI, verified the corrected
+payload against a running local dev server (`201`, real user+token), cancelled the run rather
+than let it finish against the broken payload. Fixed in `2298729f`.
+
+**Dispatch 2 (run 33274989658): both new hypotheses partially confirmed, two more real
+findings.**
+
+- **iOS still failed with the identical `compiling for iOS 15.1` error** despite the
+  pbxproj/properties.json bump. Root cause: `react_native_post_install`'s own
+  `ReactNativePodsUtils.updateOSDeploymentTarget` (in
+  `node_modules/react-native/scripts/cocoapods/utils.rb`) floors **every individual pod
+  target** at RN 0.81's hardcoded `min_ios_version_supported` (15.1) via
+  `max(RN's constant, the pod's own existing setting)` — it reads neither this Podfile's
+  `platform :ios` line nor the app target's own setting. Confirmed empirically: 308 of 354
+  `IPHONEOS_DEPLOYMENT_TARGET` entries in the freshly-`pod install`ed `Pods.xcodeproj` were
+  still `15.1`. Fixed with a second `post_install` sweep (same max-with-existing pattern,
+  floored at 16.0 instead of RN's 15.1) — verified locally, all 354 now read `16.0`. Fixed in
+  `aa748cca`.
+- **Android: the credential/seed-user fix is confirmed working** — one flow
+  (`Home - Navigate between tabs`) got past login for the first time in this todo's entire
+  history, reaching a later `"Hello"` assertion. But most flows still failed on `"Sign In"`
+  never becoming visible — worse than before on some flows. `metro.log` showed the first bundle
+  took **50.5s**, already past the existing 45s wait, and every flow pays a full app relaunch +
+  dev-client deep-link reconnect (not just bundling, which is cached/fast after flow 1), so
+  under this run's CI resource contention the combined cost regularly exceeded 45s even for
+  later flows. Also found, auditing every `"Sign In"` wait for the same gap:
+  `auth/login.yaml` and `onboarding/complete-onboarding.yaml` never called
+  `helpers/login.yaml` at all — they used a bare `assertVisible: "Sign In"` (Maestro's short
+  stock default timeout, no tuned margin whatsoever). Bumped the helper's wait 45s→90s and gave
+  both flows the same explicit `extendedWaitUntil`/90000 treatment (one of them twice, at its
+  `clearState` register/login toggle). Fixed in `74feb546`.
+
+**Dispatch 3 (run 33276571201): in flight as of this entry.** Hypothesis: iOS now compiles
+clean (pod-wide sweep verified locally to floor every target at 16.0); Android reaches and
+passes login reliably within the 90s margin. Will update this entry (or add the next one) with
+the outcome rather than assume.
