@@ -21,10 +21,25 @@ appId: com.ocrecipes.app
 #
 # `optional: true` below means this step does NOT fail the flow if the
 # overlay doesn't appear (e.g. once Expo stops showing it after a device
-# has "seen" it before) — this is NOT yet verified fixed on CI; the
-# session that added this ran out of its bounded CI-attempt budget before
-# a fresh dispatch could confirm it. Verify with a workflow_dispatch run
-# before trusting this as done.
+# has "seen" it before). CONFIRMED FIXED on CI (2026-08-29, run
+# 33276571201): screenshot evidence shows this "Continue" dismiss
+# correctly no-ops when the overlay isn't there.
+#
+# SECOND, DIFFERENT overlay found the same day (2026-08-29, same run):
+# the Expo dev MENU (not the welcome banner above) — "Connected to:
+# http://localhost:8081", Reload/Go home, a Tools list — renders as a
+# bottom-sheet-style modal on top of the already-loaded Sign In screen
+# (its blurred background photo is visible behind the sheet in the
+# screenshot, confirming the real screen is rendered underneath, not
+# still loading). Unlike the welcome banner it has no dismiss button
+# with a stable text/id Maestro can target reliably, so this uses
+# Android's own back gesture — the standard way to close a bottom-sheet
+# modal — gated behind detecting "Go home" so it never fires (and can't
+# navigate the app itself backward) when the menu isn't showing.
+# **NOT YET VERIFIED on CI** — the syntax was checked locally
+# (`maestro test` against the local emulator: parsed and ran with no
+# schema errors) but the fix itself needs a live dispatch to confirm it
+# actually closes the modal. Verify before trusting this as done.
 #
 # `localhost:8081` resolves correctly on both CI jobs: the Android job's
 # `adb reverse tcp:8081 tcp:8081` step tunnels the emulator's localhost to
@@ -39,3 +54,12 @@ appId: com.ocrecipes.app
 - tapOn:
     text: "Continue"
     optional: true
+- extendedWaitUntil:
+    visible: "Go home"
+    timeout: 5000
+    optional: true
+- runFlow:
+    when:
+      visible: "Go home"
+    commands:
+      - back
