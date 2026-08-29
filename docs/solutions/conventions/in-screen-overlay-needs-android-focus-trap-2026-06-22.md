@@ -7,6 +7,7 @@ tags: [accessibility, talkback, voiceover, react-native, modal, overlay, focus-t
 symptoms: [Focus trap works in VoiceOver but a TalkBack user can swipe past the overlay to the controls behind it on Android, An overlay carries accessibilityViewIsModal but nothing hides the behind-content on Android]
 applies_to: [client/**/*.tsx]
 created: '2026-06-22'
+last_updated: '2026-08-28'
 ---
 
 # In-screen modal overlays need an Android focus trap, not just iOS accessibilityViewIsModal
@@ -34,6 +35,18 @@ The Android equivalent is `importantForAccessibility="no-hide-descendants"` appl
 Two implementation rules that are easy to get wrong:
 
 - **Apply per-element, not via a wrapper.** Wrapping the behind-content in one container to tag it re-scopes the stacking context of any absolutely-positioned `zIndex` children and can flip their paint order relative to the overlay. Tagging each behind-content `View` with `importantForAccessibility` changes only the a11y tree — zero layout/z-order/touch impact.
+  **Justified exception:** when the behind-content is a single third-party component with no prop
+  that reaches `importantForAccessibility` (e.g. React Navigation's `Tab.Navigator` — verify
+  against the installed package's `.d.ts`, not by assumption; `Tab.Navigator` does expose
+  `screenOptions.sceneStyle?: StyleProp<ViewStyle>`, but it's scene-scoped — it styles only the
+  individual screen, not the tab bar, which this pattern also needs hidden — and `ViewStyle`
+  doesn't include `importantForAccessibility` in the first place, an accessibility prop, not a
+  style property), per-element application isn't available. A **single-purpose** wrapper `View` around only that one component
+  (not merged with any sibling) stays paint-safe as long as it (1) carries no `position`/`zIndex`
+  of its own and (2) does not reparent the overlay/trigger — both are cheap to verify by reading
+  the wrapper's own `StyleSheet` entry and confirming the overlay stays a same-level sibling below
+  it. Precedent: `client/navigation/MainTabNavigator.tsx`'s `<View testID="tab-content-a11y-wrapper">`
+  around `<Tab.Navigator>`, with `<ScanFAB />` left as an un-reparented sibling.
 - **Nested/superseding overlays need per-surface values, not one boolean.** When overlay B can appear over overlay A (and A is itself an overlay), the *static* behind-content hides when **either** is active, but A must stay **reachable** when it is the active, un-superseded overlay. Put that decision in one **pure function over the overlays' visibility booleans** and unit-test the truth table — otherwise the supersession logic lives untested inline in JSX and a later "simplify to one value" silently regresses it.
 
 Decorative/animation surfaces (SVG reticles, flash overlays, confetti) and a camera preview marked `accessible={false}` expose no focusable node, so they don't need tagging — but **verify** that per element rather than assuming.

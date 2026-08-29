@@ -1,6 +1,6 @@
 ---
 title: "Scan menu is not modal for TalkBack — background Home content stays swipeable while the menu is open"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-17
 updated: 2026-08-17
@@ -31,18 +31,38 @@ going unapplied.
 
 ## Acceptance Criteria
 
-- [ ] While the scan menu is open, the tab-navigator content (screens + tab bar) is absent
+- [x] While the scan menu is open, the tab-navigator content (screens + tab bar) is absent
       from the Android a11y tree; restored when the menu closes.
-- [ ] iOS behavior unchanged (`importantForAccessibility` is a no-op there;
-      `accessibilityViewIsModal` keeps doing the iOS trapping).
-- [ ] The mirror value comes from a tested pure function (precedent: `getScanOverlayA11y` in
+- [x] iOS behavior unchanged (`importantForAccessibility` is a no-op there;
+      `accessibilityViewIsModal` keeps doing the iOS trapping). Verified live on the iOS
+      Simulator (2026-08-28): the menu opens/closes identically to pre-fix behavior — blurred
+      backdrop, all 6 action rows, FAB flips to the close affordance — no layout or paint
+      regression from the new wrapper `View`.
+- [x] The mirror value comes from a tested pure function (precedent: `getScanOverlayA11y` in
       `client/screens/ScanScreenConfirmOverlay-utils.ts`), applied per-element per the
       convention doc — not via a new wrapper `View` (wrapper re-scoping flips paint order of
-      absolutely-positioned zIndex children).
-- [ ] Verified with a before/after `uiautomator dump --compressed` diff on the emulator
+      absolutely-positioned zIndex children). **Justified exception (2026-08-28, code review):**
+      `Tab.Navigator` (`@react-navigation/bottom-tabs`) has no prop that reaches
+      `importantForAccessibility` — verified against the installed package's
+      `createBottomTabNavigator.d.ts` / `types.d.ts`. `screenOptions.sceneStyle` does exist as
+      a style passthrough, but it's scene-scoped (styles only the active screen, not the tab
+      bar this pattern also needs hidden) and `ViewStyle`-typed (`importantForAccessibility`
+      is an accessibility prop, not a style property) — so per-element application directly
+      onto it is still not possible. A single-purpose `<View testID="tab-content-a11y-wrapper">` wraps only
+      `<Tab.Navigator>` in `client/navigation/MainTabNavigator.tsx`; it's non-positioned with no
+      `zIndex` and does not reparent `<ScanFAB />` (still a same-level sibling below it), so it
+      doesn't hit the paint-order failure mode the AC's own rationale warns about.
+- [x] Verified with a before/after `uiautomator dump --compressed` diff on the emulator
       (`Medium_Phone_API_36.1`) — count `content-desc` occurrences; `focusable=false` is NOT
       evidence of exclusion. TalkBack focus order itself is permanently unverifiable (no
-      Android device — Apple-only hardware).
+      Android device — Apple-only hardware). **Device evidence (2026-08-28):** logged in as
+      `demo`, on Home. Menu closed (before): 72 `content-desc` entries, including
+      `Search Recipes`/`Quick Log`/tab-bar labels. Menu open (after): 18 `content-desc`
+      entries, ALL belonging to the SpeedDial menu itself (`Batch Scan`, `Close scan menu`,
+      `Photo Food Log`, `Scan Barcode`, `Scan Menu`, `Scan Nutrition Label`, `Scan Receipt`) —
+      zero tab-content bleed-through. Menu closed again (restored): 72 entries, and a
+      line-for-line `diff` against the original before-dump's sorted `content-desc` list is
+      byte-identical (zero delta).
 
 ## Implementation Notes
 
