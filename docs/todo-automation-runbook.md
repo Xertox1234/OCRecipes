@@ -6,7 +6,7 @@ open for your morning review.
 
 > **Model note (2026-07-06, restored):** guard-eligible PRs auto-merge. The `/todo`
 > executor opens a PR for **every** priority, runs `scripts/todo-automerge-guard.sh`,
-> and on a `low`/`medium`, non-`security` PR that clears the guard (both the TODO gate
+> and on a `low`, non-`security` PR that clears the guard (both the TODO gate
 > and the PATH gate), it immediately runs `gh pr merge --auto --squash --delete-branch` —
 > GitHub's native auto-merge, which arms the PR to land itself the instant required CI
 > checks pass. No human or orchestrator step is needed for those. `held` / `unknown` /
@@ -29,9 +29,12 @@ No sleeping human is in the loop, so code CAN reach `main` while you sleep now �
 only through the guard, never unconditionally. The filters:
 
 1. **Merges are guard-gated, not human-gated** — a PR only auto-merges if it is
-   `low`/`medium` priority, non-`security`, and every changed file is on the guard's
-   safe-path allowlist. Anything else — `high`/`critical`, `security`-labelled, guard
-   HOLD, or guard-unknown — is structurally incapable of auto-merging and sits open for
+   `low` priority, non-`security`, and every changed file is on the guard's
+   safe-path allowlist. `medium` was carved out of auto-merge because CLAUDE.md's
+   Deferred Item Todos auto-file tier now includes medium-severity findings —
+   unattended merge access should track scrutiny at file-time, not at
+   discovery-time. Anything else — `medium`/`high`/`critical`, `security`-labelled,
+   guard HOLD, or guard-unknown — is structurally incapable of auto-merging and sits open for
    you. The worst overnight outcome for a guard-eligible PR is a bad-but-CI-passing
    change landing on `main`; the worst outcome for everything else is unchanged — a
    stack of bad open PRs you decline in the morning.
@@ -42,15 +45,15 @@ only through the guard, never unconditionally. The filters:
    is the repo's hard merge bar, and it's the ONLY thing standing between an armed
    auto-merge and landing on `main` — there is no human checkpoint after the guard
    passes.
-3. **`scripts/todo-automerge-guard.sh`** — the executor runs this on every `low`/`medium`
+3. **`scripts/todo-automerge-guard.sh`** — the executor runs this on every `low`
    PR to classify it. It is a **fail-CLOSED allowlist** with two gates: a TODO gate
-   (the archived todo's frontmatter must say priority low/medium, with no `security`
+   (the archived todo's frontmatter must say priority low, with no `security`
    mention and no sensitive-domain keyword — auth/admin/premium/subscription/IAP/api-key/
    credential/etc.; session/verification/receipt/secret/health are deliberately excluded
    from THIS free-text keyword list because they collide with this app's own
    recipe/nutrition vocabulary, though the path gate below still catches them by file
    name — enforced by the script itself, so even a fresh session with no overnight report
-   can't batch-merge a high/security/sensitive-intent PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
+   can't batch-merge a medium/high/security/sensitive-intent PR) and a PATH gate: `MERGE_ELIGIBLE: yes`
    only when **every** changed file is a known-safe surface (all of `client/` and
    `server/storage/` minus their sensitive files, business services, shared pure modules,
    tests, docs/todos); it HOLDs for **anything sensitive or unrecognized** — the whole
@@ -138,7 +141,7 @@ in todos/ to an open-PR state (ignore the filename prefix; read the priority fie
 /todo skill; its worktree-isolated executors do ALL the PR work themselves — implement
 the todo, archive it inside the same commit, open a PR, run
 scripts/todo-automerge-guard.sh to classify it (MERGE_ELIGIBLE), and — ONLY when the
-guard passes (low/medium, non-security, safe-path-only) — arm
+guard passes (low, non-security, safe-path-only) — arm
 `gh pr merge --auto --squash --delete-branch` themselves so it lands on its own once CI
 is green. You (the orchestrator) never call `gh pr merge` yourself; that call belongs to
 the executor and only fires on a guard pass. Your job: dispatch /todo, watch the

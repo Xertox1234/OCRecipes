@@ -6,7 +6,7 @@
 # lands on its own once CI is green. This script only CLASSIFIES eligibility — it never
 # merges anything itself. A /todo PR is eligible ONLY if BOTH gates pass:
 #   1. TODO GATE — the archived todo riding the PR (todos/archive/<slug>.md) has
-#      priority low|medium, no `security` mention, and no sensitive-intent keyword
+#      priority low, no `security` mention, and no sensitive-intent keyword
 #      (auth/session/admin/etc. — see SENSITIVE_INTENT_KEYWORDS) in its frontmatter.
 #      This lives here, not only in the executor, because a fresh morning session
 #      re-running this guard has no overnight MERGE_ELIGIBLE report — the guard is the
@@ -48,7 +48,7 @@
 #          GitHub auto-merge (gh pr merge --auto) for eligible PRs after PR creation
 # Exit 1 = HOLD: needs individual review — a changed file is sensitive / not on the
 #          allowlist, or the TODO gate failed (no archived todo in the diff, an archive
-#          file absent from the PR head, priority not low/medium, 'security' in its
+#          file absent from the PR head, priority not low, 'security' in its
 #          frontmatter, or a sensitive-intent keyword in its frontmatter)
 # Exit 2 = ERROR: could not evaluate (gh failure / empty diff) — fail-closed, treat as HOLD
 # The caller distinguishes a real HOLD (1) from a tooling error (2): a HOLD means the PR
@@ -192,7 +192,7 @@ fi
 # The todo's priority and labels ride the PR as todos/archive/<slug>.md frontmatter —
 # the PR itself carries no GitHub label. Parse it from the PR head. Fail-closed at
 # every step: no archived todo in the diff, unreadable content, or a priority other
-# than low/medium ⇒ HOLD. Any mention of "security" ANYWHERE in the frontmatter
+# than low ⇒ HOLD. Any mention of "security" ANYWHERE in the frontmatter
 # (labels, title, …) HOLDs — deliberately broad; a false-positive HOLD only costs a
 # manual review, never the other way around.
 todo_files="$(printf '%s\n' "$files" | grep -E '^todos/archive/.+\.md$' || true)"
@@ -227,9 +227,9 @@ while IFS= read -r tf; do
   # closes the pipe early. Same SIGPIPE family as the here-string note above.
   prio="$(awk '/^priority:/{sub(/^priority:[[:space:]]*/,""); print; exit}' <<< "$fm" | tr -d "[:space:]\"'" | tr '[:upper:]' '[:lower:]')"
   case "$prio" in
-    low|medium) : ;;
+    low) : ;;
     *)
-      echo "guard: HOLD PR #$PR — ${tf} has priority '${prio:-<missing>}'; only low/medium todos are batch-merge-eligible"
+      echo "guard: HOLD PR #$PR — ${tf} has priority '${prio:-<missing>}'; only low todos are batch-merge-eligible"
       echo "Needs individual review; exclude from the batch-merge."
       exit 1 ;;
   esac

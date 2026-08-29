@@ -466,8 +466,8 @@ This step runs after Step 8 (Commit & Archive) and Step 9 (Codify) are both comp
 
 **Every todo creates a PR** (the one exception is a legacy `github_issue` todo per the Step 2 gate — that path produces no executor PR at all). A no-PR branch cannot land under `main`'s branch protection (`enforce_admins` ON; "merge the branch directly" no longer exists). The merge-eligibility check (step 5 below) decides what happens next — it runs after the Copilot review request (step 4) so the review is always requested before auto-merge is armed, even though the request itself is non-blocking and does not gate the merge on the review completing:
 
-- `low` or `medium` without a `security` label — run the eligibility guard (step 5). Guard OK → enable GitHub's native auto-merge on the PR immediately; it lands on its own once CI goes green, no human step. Guard HOLD/unknown → the PR stays open for the user's individual review.
-- `high`, `critical`, or any `security`-labelled todo — skip the guard; the PR always needs individual human review (`MERGE_ELIGIBLE: review-required`) and is never auto-merged.
+- `low` without a `security` label — run the eligibility guard (step 5). Guard OK → enable GitHub's native auto-merge on the PR immediately; it lands on its own once CI goes green, no human step. Guard HOLD/unknown → the PR stays open for the user's individual review.
+- `medium`, `high`, `critical`, or any `security`-labelled todo — skip the guard; the PR always needs individual human review (`MERGE_ELIGIBLE: review-required`) and is never auto-merged.
 
 Rename the worktree branch to the todo slug, push it, and open a GitHub PR targeting the base branch passed in your spawn prompt.
 
@@ -552,21 +552,21 @@ Todo: `todos/<filename>.md` (archived in this commit)
 
 4. **Request Copilot review.** Once a valid `PR_URL` is in hand (i.e., step 3 succeeded or a matching open PR was found in step 6), call `mcp__github__request_copilot_review` with `owner: xertox1234`, `repo: OCRecipes`, and the PR number extracted from `PR_URL`. This is non-blocking — if the call fails for any reason (auth, network, Copilot unavailable), log the error and continue to step 5 without treating it as a failure. Requesting review before the merge-eligibility check (step 5) guarantees the review is always requested before auto-merge can be armed — it does not guarantee the review completes before CI does, since the request itself does not block.
 
-5. **Merge-eligibility check (low/medium, non-`security`).** For a `low`- or `medium`-priority todo whose `labels` do **not** include `security`, run the **fail-closed** guard to classify the PR. Use the PR number from the `PR_URL` **in hand** — from step 3 on the normal path, or from step 6 on the already-exists path:
+5. **Merge-eligibility check (low, non-`security`).** For a `low`-priority todo whose `labels` do **not** include `security`, run the **fail-closed** guard to classify the PR. Use the PR number from the `PR_URL` **in hand** — from step 3 on the normal path, or from step 6 on the already-exists path:
 
    ```bash
    scripts/todo-automerge-guard.sh <pr-number>; rc=$?
    ```
 
    Map the guard's exit code — it deliberately distinguishes a real HOLD from a tooling error:
-   - **`rc` 0 — guard OK** (both gates passed: every changed file is on the safe allowlist, and the archived todo's frontmatter is priority low/medium with no `security` mention) → enable auto-merge immediately:
+   - **`rc` 0 — guard OK** (both gates passed: every changed file is on the safe allowlist, and the archived todo's frontmatter is priority low with no `security` mention) → enable auto-merge immediately:
      ```bash
      gh pr merge <pr-number> --auto --squash --delete-branch
      ```
      This is GitHub's native auto-merge: it does not merge now, it arms the PR to merge itself the instant required CI checks pass — no further action from anyone. If the `gh pr merge --auto` call itself fails (network/auth/auto-merge disabled on the repo), do not retry silently — report `MERGE_ELIGIBLE: yes (auto-merge enable FAILED — needs manual gh pr merge --auto --squash --delete-branch <n>, or individual review)`. Otherwise report `MERGE_ELIGIBLE: yes (auto-merge enabled)`.
-   - **`rc` 1 — guard HOLD**, via either gate: the PATH gate (a changed file is sensitive or not on the allowlist — e.g. `server/routes` (held wholesale, the request/authz boundary), `server/middleware`, `.github/`, `scripts/`, `migrations`, `shared/schema.ts`, secrets, or a named-sensitive file inside the otherwise-open `client/`, `server/storage/` roots such as `users.ts`, `sessions.ts`, or an auth/admin/premium/login surface) or the TODO gate (no `todos/archive/*.md` in the diff, an archive file absent from the PR head, priority not low/medium, `security` in the frontmatter, or a sensitive-domain keyword — auth/admin/premium/etc. — in the frontmatter, so the `low`/`medium` label may be a mislabel or the work may simply be sensitive by intent). **Never call `gh pr merge` for a held PR.** Report `MERGE_ELIGIBLE: held (guard: <the guard's HOLD reason line — the first line of its output>)` so the report says WHICH gate held. **Do not add this to `DEFERRED_WARNINGS`** — `MERGE_ELIGIBLE: held` is the channel the orchestrator surfaces it on.
+   - **`rc` 1 — guard HOLD**, via either gate: the PATH gate (a changed file is sensitive or not on the allowlist — e.g. `server/routes` (held wholesale, the request/authz boundary), `server/middleware`, `.github/`, `scripts/`, `migrations`, `shared/schema.ts`, secrets, or a named-sensitive file inside the otherwise-open `client/`, `server/storage/` roots such as `users.ts`, `sessions.ts`, or an auth/admin/premium/login surface) or the TODO gate (no `todos/archive/*.md` in the diff, an archive file absent from the PR head, priority not low, `security` in the frontmatter, or a sensitive-domain keyword — auth/admin/premium/etc. — in the frontmatter, so the `low` label may be a mislabel or the work may simply be sensitive by intent). **Never call `gh pr merge` for a held PR.** Report `MERGE_ELIGIBLE: held (guard: <the guard's HOLD reason line — the first line of its output>)` so the report says WHICH gate held. **Do not add this to `DEFERRED_WARNINGS`** — `MERGE_ELIGIBLE: held` is the channel the orchestrator surfaces it on.
    - **`rc` ≥ 2 — guard could not evaluate** (gh failure, empty diff, or a non-404 read error on the archived todo) → fail-closed: report `MERGE_ELIGIBLE: unknown` and continue. **Never call `gh pr merge`** — the PR is open and gets individual review.
-   - **`high`/`critical`/`security` todos** — skip this step entirely (do not run the guard, **never call `gh pr merge`**); report `MERGE_ELIGIBLE: review-required`.
+   - **`medium`/`high`/`critical`/`security` todos** — skip this step entirely (do not run the guard, **never call `gh pr merge`**); report `MERGE_ELIGIBLE: review-required`.
 
 6. **If PR creation fails** because a PR already exists for `todo/<todo-slug>`, call `mcp__github__list_pull_requests` (`state: open`) and match the PR whose head branch is `todo/<todo-slug>`. If a PR is found, use its URL as `PR_URL`, request Copilot review (step 4), then run step 5's eligibility check against it. If no open PR is found or the lookup fails for any other reason (network error, auth error, missing tool, etc.): log `PR_URL: null`, do not retry, and continue to Step 11. The code is already committed and the PR can be opened manually.
 
@@ -585,7 +585,7 @@ STATUS: success
 COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "null" if PR creation failed>
-MERGE_ELIGIBLE: <yes (auto-merge enabled — GitHub squash-merges automatically once CI is green, nothing further needed) | yes (auto-merge enable FAILED — needs manual gh pr merge --auto or individual review) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | review-required (high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
+MERGE_ELIGIBLE: <yes (auto-merge enabled — GitHub squash-merges automatically once CI is green, nothing further needed) | yes (auto-merge enable FAILED — needs manual gh pr merge --auto or individual review) | held (guard: <the guard's HOLD reason line — path or todo-frontmatter gate; needs individual review>) | review-required (medium/high/critical/security todo) | unknown (guard could not evaluate) | n/a (no PR created)>
 CODIFICATION_COMMIT: <commit hash> | none | rejected — <one-line reason from Step 9 step 6b>
 SOLUTION_FILE: <worktree-relative "docs/solutions/<...>.md" path whenever a solution file was written, passed the 6b sanity-check, and was committed in step 7, or "none" if no solution was codified>
 

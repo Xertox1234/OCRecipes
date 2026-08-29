@@ -326,7 +326,7 @@ For findings the user wants deferred:
 
 1. **Summarize from the manifest — do not run the full suite here.** Each user-selected fix already passed its **targeted** tests and per-fix review in Phase 3; the single authoritative full-suite gate runs once at the end of Phase 6. Confirm every fixed finding is marked `verified` with its per-fix evidence.
 2. Update the manifest summary table with the findings counts per severity (Found / Verified / Deferred / False-positive / Open). The summary table tracks findings only — the suite is a pass/fail gate run in Phase 6, not a number recorded here.
-3. **Draft** the CHANGELOG entry from the manifest, but do **not** append it yet: the append-only CHANGELOG must record a confirmed-green audit, so it is written only after Phase 6's authoritative suite gate (Phase 6 step 6).
+3. **Draft** the CHANGELOG entry from the manifest, but do **not** append it yet: the append-only CHANGELOG must record a confirmed-green audit, so it is written only after Phase 6's authoritative suite gate (Phase 6 step 5).
 4. **Report the final summary to the user:**
    - Findings: X total (C/H/M/L breakdown)
    - Verified: N fixed with evidence
@@ -357,10 +357,9 @@ This phase reviews the **whole multi-file diff** — a deeper pass than Phase 3'
      > A fix that resolves the original finding but introduces a structural regression is **not** "verified" — flag it CRITICAL and propose the simpler design.
 
 2. For each CRITICAL or HIGH finding: fix immediately (follow Phase 3 rules — read, fix, verify, update manifest)
-3. For MEDIUM findings: use judgment — fix if quick, otherwise record in the manifest's Deferred Items table (do not auto-create a todo)
-4. For LOW findings: fix if a trivial one-liner, otherwise record in the manifest's Deferred Items table
-5. **Run the single authoritative full-suite gate** — `npm run test:run` (all pass), `npm run check:types` (zero errors), `npm run lint` (zero errors). Run it **even if the review produced no fixes** (Phase 5 no longer runs the suite); this is the audit's one post-fix full-suite confirmation. If the gate is **red**, fix per Phase 3 rules (read → fix → re-verify → update manifest) and re-run until green **before** step 6 — never append the CHANGELOG or proceed to commit on a red suite.
-6. **Append the CHANGELOG entry** to the main checkout's CHANGELOG (`"$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"`) — build it from the **final** manifest (the Phase 5 draft as a starting point, refreshed for any counts Phase 6's fixes or deferrals changed). Now that the gate (step 5) is green, the append-only log records a confirmed-green audit with final counts. (The worktree's copy would vanish at Phase 9, so it must be written to the main checkout.)
+3. For each MEDIUM or LOW finding: fix inline if it's a quick, clearly in-scope change; otherwise invoke Phase 4's Defer steps directly (create a todo, set the finding's manifest Status to `deferred`, record the todo path and rationale in the Deferred Items table) — do not park it in the Deferred Items table without a todo
+4. **Run the single authoritative full-suite gate** — `npm run test:run` (all pass), `npm run check:types` (zero errors), `npm run lint` (zero errors). Run it **even if the review produced no fixes** (Phase 5 no longer runs the suite); this is the audit's one post-fix full-suite confirmation. If the gate is **red**, fix per Phase 3 rules (read → fix → re-verify → update manifest) and re-run until green **before** step 5 — never append the CHANGELOG or proceed to commit on a red suite.
+5. **Append the CHANGELOG entry** to the main checkout's CHANGELOG (`"$MAIN_CHECKOUT/docs/audits/CHANGELOG.md"`) — build it from the **final** manifest (the Phase 5 draft as a starting point, refreshed for any counts Phase 6's fixes or deferrals changed). Now that the gate (step 4) is green, the append-only log records a confirmed-green audit with final counts. (The worktree's copy would vanish at Phase 9, so it must be written to the main checkout.)
 
 ## Phase 7: Commit Fixes
 
@@ -462,6 +461,6 @@ After the fix commit (Phase 7) and the codification commit (Phase 8) both exist 
 - **No documentation during the fix phase.** Fix code first (Phases 3-6). Codify patterns only after the fix commit in Phase 8.
 - **The full test/type/lint suite runs once, as the authoritative post-fix gate at the end of Phase 6** — after all fix and review corrections. Phase 3 runs only targeted tests; Phase 5 summarizes from the manifest and does not re-run the suite (the Phase 1 baseline run is separate — it establishes the starting green state).
 - **Per-fix review is not optional.** Every fix in Phase 3 must pass its selected reviewer(s) (the finding's domain reviewer, per the Review Policy roster) before being marked `verified`. It catches what test-based verification misses and gives Phase 8 the full context needed for codification and agent updates.
-- **Deferred is not dropped.** Findings the user explicitly chose to defer at Phase 2.5 triage get a todo (Phase 4) with priority and rationale. Surfaced WARNING/MEDIUM/LOW findings from Phases 3 and 6 stay in the manifest's Deferred Items table — they are NOT auto-filed as todos. The manifest is their record; the user decides at close whether any warrant a todo. "We'll get to it" is not a rationale.
+- **Deferred is not dropped.** Findings the user explicitly chose to defer at Phase 2.5 triage get a todo (Phase 4) with priority and rationale. A surfaced Phase 3 WARNING that isn't fixed inline stays in the manifest's Deferred Items table without a todo — the user decides at close whether it warrants one. A Phase 6 MEDIUM or LOW finding that isn't fixed inline auto-files as a todo via Phase 4's mechanism instead. "We'll get to it" is not a rationale.
 - **The changelog is append-only.** Never edit previous entries.
 - **Codification is not optional.** Every audit must run Phase 8 to extract knowledge. Codify directly from the manifest after fixes are committed — no codifier subagent.
