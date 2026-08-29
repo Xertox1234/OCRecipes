@@ -94,10 +94,8 @@ export function ScanFAB({ menuOpen, onOpen, onClose }: ScanFABProps) {
   // Force-close the menu whenever `isOnRootScreen` flips to false while the
   // menu is still open — i.e. any navigation this hook's selector reads as
   // "no longer at the tab's own root" (bypassing SpeedDial's own
-  // close-then-navigate action handlers). NOTE: the exact selector semantics
-  // (which navigation transitions this actually fires on) are pre-existing
-  // and unverified by this change — see code review notes on PR #873.
-  // `isOnRootScreen` going false does NOT unmount ScanFAB — it only makes it
+  // close-then-navigate action handlers). `isOnRootScreen` going false does
+  // NOT unmount ScanFAB — it only makes it
   // `return null` below, so a plain unmount-cleanup effect never fires here.
   // `menuOpen` lives in MainTabNavigator (which does not unmount with the
   // FAB), so without this effect an orphaned `menuOpen: true` would leave
