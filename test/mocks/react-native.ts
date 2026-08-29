@@ -43,6 +43,16 @@ export const Share = {
 // "Open Settings" action button (e.g. `vi.spyOn(RN.Linking, "openSettings")`).
 export const Linking = { openURL: async () => {}, openSettings: vi.fn() };
 export const NativeModules = {};
+// vi.fn() so tests can assert calls via `vi.spyOn(RN.I18nManager, "allowRTL")`,
+// matching every other stateful mock in this file (Alert, AppState, etc.).
+export const I18nManager = {
+  isRTL: false,
+  doLeftAndRightSwapInRTL: true,
+  allowRTL: vi.fn(),
+  forceRTL: vi.fn(),
+  swapLeftAndRightInRTL: vi.fn(),
+  getConstants: () => ({ isRTL: false, doLeftAndRightSwapInRTL: true }),
+};
 
 // ---------------------------------------------------------------------------
 // React-component mocks for jsdom component rendering tests

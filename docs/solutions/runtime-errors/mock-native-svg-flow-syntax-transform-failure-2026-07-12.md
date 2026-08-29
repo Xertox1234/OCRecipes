@@ -128,13 +128,52 @@ export default Svg;
   from trying to parse it. A package that ships Flow-syntax internals (or
   otherwise unparseable source) reachable from ANY statically-imported file
   in the graph needs a `vitest.config.ts` alias, full stop.
-- `react-native-screens` has the same transitive-Flow-import shape as
-  `react-native-svg` (both eventually import `react-native/Libraries/
-  Utilities/codegenNativeComponent`) and is not yet aliased. The next test
-  that renders anything pulling in `@react-navigation/bottom-tabs` (or
-  otherwise reaching `react-native-screens`) will very likely hit this same
-  failure mode — apply the same alias-a-mock fix rather than re-deriving
-  root cause from scratch.
+- **Confirmed 2026-08-29**: the predicted `react-native-screens` occurrence
+  materialized (surfaced while investigating a code-review SUGGESTION for
+  PR #873 that wanted a real, unmocked `@react-navigation/native` +
+  `@react-navigation/bottom-tabs` integration test). `test/mocks/
+  react-native-screens.ts` + a matching `vitest.config.ts` alias were added,
+  following this doc's own instructions — verified via the same raw
+  `esbuild` CLI bundle technique (Prevention section below) against
+  `require.resolve('react-native-screens')`, reproducing the identical
+  `Unexpected "typeof"` at `react-native/index.js:27`.
+  **This alias alone is necessary but NOT sufficient** to import
+  `@react-navigation/native` in this test environment — see the next bullet.
+- **New, still-open gap found in the same investigation**: even with the
+  `react-native-screens` alias in place, `import { NavigationContainer }
+  from "@react-navigation/native"` still fails the same way inside real
+  Vitest runs. Bisected one layer with an `esbuild` CLI bundle that applies
+  this project's actual `vitest.config.ts` aliases via an `onResolve` plugin
+  (more accurate than a bare `esbuild` CLI call, which doesn't see any
+  alias): that reproduction surfaced a SEPARATE, unrelated gap — `test/
+  mocks/react-native.ts` was missing an `I18nManager` export that
+  `NavigationContainer.js` imports directly. Added a minimal `I18nManager`
+  mock (`isRTL: false` + the usual constants/methods) — full test suite
+  stays green (8170/8170, unchanged). **Even after both fixes, a live
+  `npx vitest run` of a file importing `@react-navigation/native` still
+  throws the identical `Unexpected token 'typeof'`, while the
+  alias-aware `esbuild` CLI bundle of the same import reports `BUILD OK`.**
+  This means Vitest's actual dependency-scan/pre-bundle phase (not a plain
+  `esbuild` bundle, even one replaying the same aliases) is hitting a THIRD,
+  still-unidentified import somewhere in `@react-navigation/native`'s or
+  `@react-navigation/core`'s graph — `vitest --clearCache` and manually
+  removing `node_modules/.vite` both ruled out a stale-cache explanation.
+  **Not resolved.** A follow-up review pass (2026-08-29) ran the
+  `DEBUG="vite:transform"` diagnostic named below and got one real datum:
+  the log's last entry before the crash is the test file itself — nothing
+  transforms after it. The crash therefore never reaches Vite's normal
+  transform pipeline at all; whatever the third gap is, it happens earlier,
+  somewhere in Vitest's module-loading/dependency-scan step. (A plausible-
+  looking SSR-externalization hypothesis was checked and ruled out in the
+  same pass — `@react-navigation/native`'s `package.json` `main` points at
+  `import`/`export`-syntax source with no `"type": "module"`, so a plain
+  CJS `require()` load would fail with `Unexpected token 'export'`, not
+  `'typeof'`.) The next person to pick this up should start from "before
+  the transform pipeline, in module resolution/scanning" rather than
+  re-deriving that narrowing — reach for `DEBUG="vite:deps"` or instrument
+  Vitest's optimizer directly, rather than continuing to rely on the
+  `esbuild`-CLI-plus-aliases technique, which has now been shown to
+  under-report what Vitest's real pipeline hits.
 
 ## Related Files
 
@@ -147,6 +186,12 @@ export default Svg;
   `useAnimatedProps` export in the same change (a separate, unrelated gap:
   `CalorieRing.tsx` uses it for its animated stroke offset — mirrors the
   existing `useAnimatedStyle` mock shape).
+- `test/mocks/react-native-screens.ts` — added 2026-08-29, confirming the
+  predicted occurrence (see Prevention). Covers the exports consumed by
+  `@react-navigation/native-stack` and `@react-navigation/bottom-tabs`.
+- `test/mocks/react-native.ts` — gained a missing `I18nManager` export in the
+  same 2026-08-29 change, a separate gap found one layer deeper in
+  `@react-navigation/native`'s own `NavigationContainer.js`.
 - `client/components/CalorieRing.tsx` — the first-ever consumer to surface
   this, via its `import Svg, { Circle, Defs, LinearGradient, Stop } from
   "react-native-svg"`.
