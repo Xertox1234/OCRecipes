@@ -35,10 +35,13 @@ The Android equivalent is `importantForAccessibility="no-hide-descendants"` appl
 Two implementation rules that are easy to get wrong:
 
 - **Apply per-element, not via a wrapper.** Wrapping the behind-content in one container to tag it re-scopes the stacking context of any absolutely-positioned `zIndex` children and can flip their paint order relative to the overlay. Tagging each behind-content `View` with `importantForAccessibility` changes only the a11y tree — zero layout/z-order/touch impact.
-  **Justified exception:** when the behind-content is a single third-party component with no
-  `ViewProps`/`style`/`importantForAccessibility` passthrough (e.g. React Navigation's
-  `Tab.Navigator` — verify against the installed package's `.d.ts`, not by assumption), per-element
-  application isn't available. A **single-purpose** wrapper `View` around only that one component
+  **Justified exception:** when the behind-content is a single third-party component with no prop
+  that reaches `importantForAccessibility` (e.g. React Navigation's `Tab.Navigator` — verify
+  against the installed package's `.d.ts`, not by assumption; `Tab.Navigator` does expose
+  `screenOptions.sceneStyle?: StyleProp<ViewStyle>`, but it's scene-scoped — it styles only the
+  individual screen, not the tab bar, which this pattern also needs hidden — and `ViewStyle`
+  doesn't include `importantForAccessibility` in the first place, an accessibility prop, not a
+  style property), per-element application isn't available. A **single-purpose** wrapper `View` around only that one component
   (not merged with any sibling) stays paint-safe as long as it (1) carries no `position`/`zIndex`
   of its own and (2) does not reparent the overlay/trigger — both are cheap to verify by reading
   the wrapper's own `StyleSheet` entry and confirming the overlay stays a same-level sibling below

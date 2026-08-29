@@ -42,10 +42,13 @@ going unapplied.
       `client/screens/ScanScreenConfirmOverlay-utils.ts`), applied per-element per the
       convention doc — not via a new wrapper `View` (wrapper re-scoping flips paint order of
       absolutely-positioned zIndex children). **Justified exception (2026-08-28, code review):**
-      `Tab.Navigator` (`@react-navigation/bottom-tabs`) has no `ViewProps`/`style`/
-      `importantForAccessibility` passthrough — verified against the installed package's
-      `createBottomTabNavigator.d.ts` / `types.d.ts` — so per-element application directly onto
-      it is not possible. A single-purpose `<View testID="tab-content-a11y-wrapper">` wraps only
+      `Tab.Navigator` (`@react-navigation/bottom-tabs`) has no prop that reaches
+      `importantForAccessibility` — verified against the installed package's
+      `createBottomTabNavigator.d.ts` / `types.d.ts`. `screenOptions.sceneStyle` does exist as
+      a style passthrough, but it's scene-scoped (styles only the active screen, not the tab
+      bar this pattern also needs hidden) and `ViewStyle`-typed (`importantForAccessibility`
+      is an accessibility prop, not a style property) — so per-element application directly
+      onto it is still not possible. A single-purpose `<View testID="tab-content-a11y-wrapper">` wraps only
       `<Tab.Navigator>` in `client/navigation/MainTabNavigator.tsx`; it's non-positioned with no
       `zIndex` and does not reparent `<ScanFAB />` (still a same-level sibling below it), so it
       doesn't hit the paint-order failure mode the AC's own rationale warns about.

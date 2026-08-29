@@ -88,11 +88,12 @@ export default function MainTabNavigator() {
 
   return (
     <View style={styles.container}>
-      {/* `Tab.Navigator` has no `ViewProps` passthrough (verified against
-          @react-navigation/bottom-tabs' createBottomTabNavigator.d.ts), so
-          some View must carry `importantForAccessibility` to mirror
-          ScanFAB/SpeedDial's iOS `accessibilityViewIsModal` trap on Android
-          (SpeedDial mounts as a SIBLING of this whole Tab.Navigator, not
+      {/* `Tab.Navigator` has no prop that reaches `importantForAccessibility` (verified
+          against @react-navigation/bottom-tabs' createBottomTabNavigator.d.ts —
+          `screenOptions.sceneStyle` exists but is scene-scoped, ViewStyle-typed, and
+          doesn't cover the tab bar this pattern also needs hidden), so some View must
+          carry it to mirror ScanFAB/SpeedDial's iOS `accessibilityViewIsModal` trap on
+          Android (SpeedDial mounts as a SIBLING of this whole Tab.Navigator, not
           inside it). This wrapper is paint-safe: it's non-positioned with no
           zIndex and doesn't reparent ScanFAB (still a same-level sibling
           below), so it can't flip paint order the way merging multiple

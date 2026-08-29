@@ -42,12 +42,14 @@ correct by inspection — the comment reads plausibly — but is dead code for i
 
 Concretely in `client/components/ScanFAB.tsx`: `menuOpen` was lifted into `MainTabNavigator`
 (which never unmounts) so it could also drive an Android accessibility trap on the tab content
-behind the scan menu. `ScanFAB` has `if (!isOnRootScreen) return null` — navigating into a nested
-screen (e.g. a deep link into `CoachTab > Chat`) makes `isOnRootScreen` false, but does **not**
-unmount `ScanFAB`. An `unmount`-only cleanup effect written to reset an orphaned `menuOpen: true`
-therefore never fired for this reachable case, leaving every tab + the tab bar permanently hidden
-from the Android accessibility tree with no FAB/SpeedDial left to close the menu — a worse,
-unrecoverable state than the pre-fix bug.
+behind the scan menu. `ScanFAB` has `if (!isOnRootScreen) return null` — a navigation transition
+that makes `isOnRootScreen` false does **not** unmount `ScanFAB`. (`isOnRootScreen`'s own exact
+selector semantics — precisely which transitions flip it — are pre-existing and were not
+independently re-derived by this fix; a `code-reviewer` pass on PR #873 flagged this as unverified
+and it is out of that PR's scope to resolve.) An `unmount`-only cleanup effect written to reset an
+orphaned `menuOpen: true` therefore never fired for whatever case DOES flip `isOnRootScreen`,
+leaving every tab + the tab bar permanently hidden from the Android accessibility tree with no
+FAB/SpeedDial left to close the menu — a worse, unrecoverable state than the pre-fix bug.
 
 ## Solution
 
