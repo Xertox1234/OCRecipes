@@ -328,7 +328,7 @@ Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition
 
    ```bash
    npx tsx scripts/todo-scheduler.ts <<'EOF'
-   {"cap": 4, "running": [], "queue": [{"id": "<todo slug>", "files": ["<path>", "..."], "tag": "independent | must-run-alone"}, "..."]}
+   {"cap": 4, "running": [], "queue": [{"id": "<todo slug>", "files": ["<path>", "..."], "tag": "<independent-or-must-run-alone>"}, "..."]}
    EOF
    ```
 
@@ -343,7 +343,7 @@ Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition
    ```
    Do this for every outcome — success, failed, blocked, and skipped all get their worktree torn down the same way, immediately, rather than waiting for Phase 5.
    c. Drop it from the running set.
-   d. Call the scheduler again with the updated running set and remaining queue (same shape as step 1); dispatch whatever it returns.
+   d. Call the scheduler again with the updated running set and remaining queue (same shape as step 1); dispatch whatever it returns and move each newly-dispatched item from the queue into the running set, exactly as in step 1.
 3. **Repeat step 2** until the queue is empty and the running set is empty, then proceed to Phase 5.
 
 ### Recording results

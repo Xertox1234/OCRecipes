@@ -54,6 +54,88 @@ function overlaps(a: string[], b: string[]): boolean {
   return a.some((f) => bSet.has(f));
 }
 
+type ValidationResult =
+  | { ok: true; input: SchedulerInput }
+  | { ok: false; reason: string };
+
+type ItemsValidationResult =
+  | { ok: true; items: QueueItem[] }
+  | { ok: false; reason: string };
+
+/**
+ * Type guard for data crossing the stdin JSON boundary. JSON.parse returns
+ * `any`, so nothing here is guaranteed by the compiler — in particular, an
+ * unrecognized `tag` (a typo, a wrong separator) must be REJECTED, not
+ * silently treated as the less-restrictive "independent" branch. That would
+ * defeat the must-run-alone invariant for exactly the DB-serial case it
+ * exists to protect.
+ */
+export function validateSchedulerInput(value: unknown): ValidationResult {
+  if (typeof value !== "object" || value === null) {
+    return { ok: false, reason: "expected a JSON object" };
+  }
+  const obj = value as Record<string, unknown>;
+
+  if (typeof obj.cap !== "number") {
+    return {
+      ok: false,
+      reason: `"cap" must be a number, got ${typeof obj.cap}`,
+    };
+  }
+
+  const running = validateItems(obj.running, "running");
+  if (!running.ok) return running;
+
+  const queue = validateItems(obj.queue, "queue");
+  if (!queue.ok) return queue;
+
+  return {
+    ok: true,
+    input: { cap: obj.cap, running: running.items, queue: queue.items },
+  };
+}
+
+function validateItems(
+  value: unknown,
+  fieldName: string,
+): ItemsValidationResult {
+  if (!Array.isArray(value)) {
+    return {
+      ok: false,
+      reason: `"${fieldName}" must be an array, got ${typeof value}`,
+    };
+  }
+
+  for (const [index, entry] of value.entries()) {
+    const label = `"${fieldName}[${index}]"`;
+    if (typeof entry !== "object" || entry === null) {
+      return { ok: false, reason: `${label} must be an object` };
+    }
+    const item = entry as Record<string, unknown>;
+
+    if (typeof item.id !== "string") {
+      return { ok: false, reason: `${label}.id must be a string` };
+    }
+    if (
+      !Array.isArray(item.files) ||
+      !item.files.every((f) => typeof f === "string")
+    ) {
+      return {
+        ok: false,
+        reason: `${label}.files must be an array of strings`,
+      };
+    }
+    if (item.tag !== "independent" && item.tag !== "must-run-alone") {
+      return {
+        ok: false,
+        reason: `${label}.tag must be "independent" or "must-run-alone", got ${JSON.stringify(item.tag)}`,
+      };
+    }
+  }
+
+  return { ok: true, items: value as QueueItem[] };
+}
+
 /**
  * CLI entry point: reads a {@link SchedulerInput} as JSON from stdin, writes
  * the dispatchable set as a JSON array to stdout. Returns a process exit
@@ -66,22 +148,30 @@ export function main(): number {
     raw = readFileSync(0, "utf-8");
   } catch (err) {
     console.error(
-      `todo-scheduler: failed to read stdin: ${(err as Error).message}`,
+      `todo-scheduler: failed to read stdin: ${err instanceof Error ? err.message : String(err)}`,
     );
     return 2;
   }
 
-  let input: SchedulerInput;
+  let parsed: unknown;
   try {
-    input = JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch (err) {
     console.error(
-      `todo-scheduler: invalid JSON on stdin: ${(err as Error).message}`,
+      `todo-scheduler: invalid JSON on stdin: ${err instanceof Error ? err.message : String(err)}`,
     );
     return 2;
   }
 
-  console.log(JSON.stringify(selectDispatchable(input)));
+  const validated = validateSchedulerInput(parsed);
+  if (!validated.ok) {
+    console.error(
+      `todo-scheduler: invalid scheduler input — ${validated.reason}`,
+    );
+    return 2;
+  }
+
+  console.log(JSON.stringify(selectDispatchable(validated.input)));
   return 0;
 }
 

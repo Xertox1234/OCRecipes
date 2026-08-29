@@ -3,6 +3,7 @@ import { spawnSync } from "child_process";
 import * as path from "path";
 import {
   selectDispatchable,
+  validateSchedulerInput,
   type QueueItem,
   type RunningItem,
 } from "../todo-scheduler";
@@ -154,5 +155,105 @@ describe("CLI", () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(/invalid JSON/i);
+  });
+
+  it("rejects an unrecognized tag instead of silently treating it as independent", () => {
+    // Regression test: a typo'd tag (e.g. an underscore instead of a hyphen)
+    // must never be dispatched — that would defeat the must-run-alone
+    // invariant for exactly the DB-serial case it exists to protect.
+    const input = JSON.stringify({
+      cap: 4,
+      running: [],
+      queue: [
+        {
+          id: "db-migration",
+          files: ["shared/schema.ts"],
+          tag: "must_run_alone",
+        },
+      ],
+    });
+
+    const result = runCli(input);
+
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toMatch(/tag/i);
+  });
+
+  it("rejects a shape-invalid payload with a clean message instead of crashing", () => {
+    const result = runCli("{}");
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).not.toMatch(/TypeError/);
+    expect(result.stderr).toMatch(/todo-scheduler:/);
+  });
+});
+
+describe("validateSchedulerInput", () => {
+  it("accepts a well-formed input", () => {
+    const result = validateSchedulerInput({
+      cap: 4,
+      running: [],
+      queue: [item("A", ["a.ts"])],
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a non-object payload", () => {
+    const result = validateSchedulerInput("not an object");
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a non-numeric cap", () => {
+    const result = validateSchedulerInput({ cap: "4", running: [], queue: [] });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/cap/);
+  });
+
+  it("rejects a queue that isn't an array", () => {
+    const result = validateSchedulerInput({
+      cap: 4,
+      running: [],
+      queue: "nope",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/queue/);
+  });
+
+  it("rejects a queue item with a non-string id", () => {
+    const result = validateSchedulerInput({
+      cap: 4,
+      running: [],
+      queue: [{ id: 1, files: [], tag: "independent" }],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/id/);
+  });
+
+  it("rejects a queue item whose files is not an array of strings", () => {
+    const result = validateSchedulerInput({
+      cap: 4,
+      running: [],
+      queue: [{ id: "A", files: [1, 2], tag: "independent" }],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/files/);
+  });
+
+  it("rejects a queue item with an unrecognized tag", () => {
+    const result = validateSchedulerInput({
+      cap: 4,
+      running: [],
+      queue: [{ id: "A", files: [], tag: "sometimes" }],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/tag/);
   });
 });
