@@ -1,0 +1,77 @@
+---
+title: "A parity/symmetry test's excluded edge case, documented only in a comment, is unenforced and traps the next contributor"
+track: bug
+category: code-quality
+module: shared
+severity: low
+tags: [harness, testing, parity, regex, bash, config-file, path-domains]
+applies_to: [scripts/lib/__tests__/path-domains.test.ts]
+symptoms: [a corpus/table-driven test has a comment saying "do NOT add path X here" instead of a code branch that recognizes X as a known exception, adding the excluded path anyway is an easy accidental next edit since an identical string may already exist a few lines away in a sibling assertion table, the failure when someone does add it gives no indication it is a KNOWN accepted asymmetry — it just looks like a regression]
+created: '2026-08-28'
+---
+
+# A parity/symmetry test's excluded edge case, documented only in a comment, is unenforced and traps the next contributor
+
+## Problem
+
+`scripts/lib/__tests__/path-domains.test.ts`'s `regex<->bash-glob parity` test asserts that every
+`Matcher`'s compiled TS regex and generated bash glob agree on every path in `PARITY_CORPUS`, with
+exactly one code-enforced exception (`isTestExcludingServerDir`, for the documented
+`server/routes`/`server/storage` `__tests__`-descendant asymmetry). When a second, genuinely
+different asymmetry was found in the `config-file` `Matcher` kind (its TS regex is root-anchored,
+`^...$`, but the generated bash form's `*/${b}.*` variant matches at any depth), it was excluded
+from `PARITY_CORPUS` with a comment — "Do NOT add a nested package.json/app.json path here" —
+instead of a second code-enforced allowance clause.
+
+## Root Cause
+
+A comment is advisory; nothing in the test file stops the next contributor from adding the
+excluded path anyway — and the identical string was already sitting twelve lines away in the
+`cases` table's own decline-side pin for the same new rule, making it an unusually easy accident.
+Had it been added to `PARITY_CORPUS`, the parity test would have failed with
+`expect(false).toBe(true)` and given no indication that this was a known, accepted divergence
+rather than a real regression — exactly the ambiguity the existing `isTestExcludingServerDir`
+clause was written to avoid for its own case.
+
+## Solution
+
+Give every known, accepted asymmetry its own boolean predicate in the parity test, exactly like
+the existing one:
+
+```ts
+const isConfigFileDepthMismatch = rule.match.kind === "config-file";
+// ...
+expect(
+  (isTestExcludingServerDir && p.includes("/__tests__/") && shMatch && !tsMatch) ||
+    (isConfigFileDepthMismatch && shMatch && !tsMatch),
+).toBe(true);
+```
+
+Then ADD the previously-excluded paths to the corpus (`client/lib/package.json`,
+`assets/app.json`) — a corpus entry that isn't exercised by anything doesn't guard against a
+regression in the allowance predicate itself, so leaving the exclusion comment-only AND the paths
+absent from the corpus means the asymmetry is documented nowhere the test suite can check.
+
+A `code-reviewer` pass caught this before merge in
+`todos/archive/P3-2026-08-11-unrouted-surfaces-domain-map-decision.md`'s implementation
+(PR #865) — not by trusting the comment's claim, but by exercising
+`compileToRegExp`/`compileToBashConditions` directly against the excluded path from a throwaway
+script and confirming the mismatch was real.
+
+## Prevention
+
+When a symmetry/invariant test needs to exclude a known edge case, ask: "if someone adds this case
+to the corpus anyway, does the test tell them it's a KNOWN exception, or does it just fail?" If the
+latter, the exclusion isn't actually documented in the place that matters — the assertion logic
+itself, not a comment next to it.
+
+## Related Files
+
+- `scripts/lib/__tests__/path-domains.test.ts` — `isTestExcludingServerDir` /
+  `isConfigFileDepthMismatch` predicates
+- `scripts/lib/path-domains.ts` — `compileToRegExp` / `compileToBashConditions`, the source of the
+  asymmetry
+
+## See Also
+
+- [documented-mirror-invariant-desyncs-when-only-one-side-is-edited](../logic-errors/documented-mirror-invariant-desyncs-when-only-one-side-is-edited-2026-08-16.md) — same shape: a comment states an invariant that nothing in the code actually enforces
