@@ -59,6 +59,23 @@ target 'OCRecipes' do
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
 
+    # react_native_post_install's own updateOSDeploymentTarget floors every
+    # pod target at RN 0.81's hardcoded min_ios_version_supported (15.1) --
+    # it takes max(RN's constant, the pod's own existing setting) and does
+    # NOT consult this Podfile's `platform :ios` line above. So raising the
+    # app's deployment target to 16.0 (Xcode 16.x's CxxStdlib C++-interop
+    # minimum, see ios/OCRecipes.xcodeproj/project.pbxproj and
+    # Podfile.properties.json) leaves every pod still compiling at 15.1
+    # unless swept again here. Same max-with-existing pattern, applied to
+    # OUR floor instead of RN's.
+    installer.pods_project.targets.each do |target|
+      target.build_configurations.each do |config|
+        if config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_f < 16.0
+          config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '16.0'
+        end
+      end
+    end
+
     # fmt 11.0.2 (pinned by React Native via third-party-podspecs/fmt.podspec)
     # does not compile under Xcode 26 / Apple clang 21. clang tightened its
     # consteval rules, and fmt's FMT_STRING compile-time validation now trips
