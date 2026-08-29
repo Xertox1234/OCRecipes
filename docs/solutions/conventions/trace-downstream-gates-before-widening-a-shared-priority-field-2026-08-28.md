@@ -4,7 +4,7 @@ track: knowledge
 category: conventions
 module: shared
 tags: [harness, workflow, automation, todo, priority, policy]
-applies_to: ["CLAUDE.md", ".claude/skills/**", ".claude/agents/**", "scripts/todo-automerge-guard.sh"]
+applies_to: [".claude/skills/**", ".claude/agents/**", "scripts/todo-automerge-guard.sh"]
 created: '2026-08-28'
 ---
 
@@ -25,9 +25,10 @@ decision with a different consequence.
 human-prompt gate to High/Critical). That reads like a pure documentation change — it
 governs what an agent writes to `todos/`, nothing else.
 
-But `scripts/todo-automerge-guard.sh` and `.claude/agents/todo-executor.md` already read the
-SAME `priority:` frontmatter field to decide something else entirely: whether a todo's PR is
-allowed to auto-merge unattended. Both treated `low` and `medium` identically
+But `scripts/todo-automerge-guard.sh`, `.claude/agents/todo-executor.md`, and
+`.claude/skills/todo/SKILL.md` (its `MERGE_ELIGIBLE` reporting enum) already read the SAME
+`priority:` frontmatter field to decide something else entirely: whether a todo's PR is
+allowed to auto-merge unattended. All three treated `low` and `medium` identically
 (`case "$prio" in low|medium) : ;;`) — a historical accident of how the auto-merge lane was
 originally scoped, unrelated to the auto-file policy being edited. Widening the auto-file
 tier to include Medium, with zero code changes anywhere, would have proportionally grown the
@@ -68,7 +69,9 @@ criteria did flag the auto-merge guard as worth checking, which is what prompted
 - `CLAUDE.md` → "Deferred Item Todos"
 - `scripts/todo-automerge-guard.sh` (the `case "$prio" in low) : ;;` gate)
 - `.claude/agents/todo-executor.md` (Step 10's routing bullets)
+- `.claude/skills/todo/SKILL.md` (the `MERGE_ELIGIBLE` reporting enum)
 
 ## See Also
 
 - [documented mirror invariant desyncs when only one side is edited](../logic-errors/documented-mirror-invariant-desyncs-when-only-one-side-is-edited-2026-08-16.md) — sibling rule: a rule that must hold across two sites doesn't hold itself just because it's written down
+- [relaxing a shared contract requires auditing its dependents](relaxing-a-shared-contract-requires-auditing-its-dependents-2026-07-30.md) — same principle in a different domain: enumerate consumers of a shared precondition before loosening it, whether the "contract" is a TS union or a YAML frontmatter field

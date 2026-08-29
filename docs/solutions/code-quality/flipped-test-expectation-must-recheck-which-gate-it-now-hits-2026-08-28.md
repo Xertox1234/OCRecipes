@@ -78,3 +78,4 @@ the old one.
 ## See Also
 
 - [lookalike test of a reimplemented predicate guards nothing](lookalike-test-of-a-reimplemented-predicate-guards-nothing-2026-08-16.md) — sibling rule: a test can stay green while silently no longer exercising the real logic it claims to cover
+- [gate test needs a two-sided negative control](../conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md) — companion rule behind Solution step 3: asserting on the reason string, not just pass/fail, is what lets a test tell "held for the right reason" apart from "held for any reason"
