@@ -29,7 +29,7 @@ Before anything else, clear leftovers from previous `/todo` runs. This phase **a
    # (gh failure / limit cap) would otherwise leave stale lists for later steps to trust.
    rm -f /tmp/todo-open-prs.txt /tmp/todo-delete-branches.txt /tmp/todo-closed-unmerged-branches.txt \
      /tmp/todo-local-branches.txt /tmp/todo-delete-local-branches.txt /tmp/todo-local-closed-unmerged-branches.txt \
-     /tmp/todo-local-no-pr-branches.txt /tmp/todo-delete-skipped.txt
+     /tmp/todo-local-no-pr-branches.txt /tmp/todo-delete-skipped.txt /tmp/todo-scheduler-state.json
    # ONE fetch of every PR; the open/merged/closed views below derive from it. gh returns
    # newest-first, so a truncated fetch silently drops the OLDEST PRs — exactly the ones
    # the sweep needs. If the returned count EQUALS the limit, treat the sweep as
@@ -322,9 +322,15 @@ Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition
 > Never run release after exit 2 or exit 3: you do not hold the lock, and release
 > force-frees whoever does.
 
+### How dispatch actually resumes — read this before the loop below
+
+Dispatched agents run in the **background**. Launching them does not block your current turn, and there is no in-turn way to wait for one to finish — do not poll, sleep, or reach for a scheduling tool to "wait." Instead: after dispatching, your turn simply ends (respond to the user, or just stop). Later, when ONE dispatched agent completes, the harness re-invokes you as a **new turn** carrying that agent's result — never when the whole running set finishes, only ever one at a time. The loop below is written around that: each numbered pass through step 2 is a separate turn, not a step inside one long turn.
+
+**Because the run now spans many turns instead of one barrier per batch, don't rely on conversational memory for the queue/running/results state — a long run can have its earlier context summarized away.** Persist it instead: write `/tmp/todo-scheduler-state.json` (`{"queue": [...], "running": [...], "results": [...]}`) every time any of the three changes, and re-read it at the start of each turn below rather than trusting what you remember — this applies as much to each completed todo's recorded outcome (needed for Phase 5's summary table) as it does to the queue and running set. This is the same pattern Phase 0 already uses for cross-step state (`/tmp/todo-*.txt`), just as JSON.
+
 ### The rolling loop
 
-1. **Seed dispatch.** Call the scheduler with the full queue and an empty running set:
+1. **Seed dispatch.** Write the full queue (from Phase 3) and an empty running set to `/tmp/todo-scheduler-state.json`, then call the scheduler with that same state:
 
    ```bash
    npx tsx scripts/todo-scheduler.ts <<'EOF'
@@ -332,27 +338,29 @@ Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition
    EOF
    ```
 
-   The script prints the JSON array of queue items eligible to dispatch now. Launch one `Agent()` call per item — all in the same message — using the dispatch block above, and move each dispatched item from the queue into the running set.
+   The script prints the JSON array of queue items eligible to dispatch now. Launch one `Agent()` call per item — all in the same message — using the dispatch block above, move each dispatched item from `queue` into `running` in `/tmp/todo-scheduler-state.json`, and save it. Then end your turn.
 
-2. **Wait for the next single agent-completion notification — not for every executor currently in flight.** When one arrives:
-   a. **Record its result** exactly as described under "Recording results" below.
+2. **On each wake-up** (a task-notification carrying one completed executor's result — see "How dispatch actually resumes" above): re-read `/tmp/todo-scheduler-state.json` first, don't assume your own memory of it is still accurate. Then:
+   a. **Record its result** exactly as described under "Recording results" below, appending it to `results` in the state file.
    b. **Remove that todo's worktree immediately**, using the `WORKTREE` path from its report (every report shape carries one — see `todo-executor.md` Step 11):
    ```bash
    git worktree unlock "<WORKTREE>" 2>/dev/null
    git worktree remove --force "<WORKTREE>" 2>/dev/null
    ```
    Do this for every outcome — success, failed, blocked, and skipped all get their worktree torn down the same way, immediately, rather than waiting for Phase 5.
-   c. Drop it from the running set.
-   d. Call the scheduler again with the updated running set and remaining queue (same shape as step 1); dispatch whatever it returns and move each newly-dispatched item from the queue into the running set, exactly as in step 1.
-3. **Repeat step 2** until the queue is empty and the running set is empty, then proceed to Phase 5.
+   c. Drop it from `running` in the state file.
+   d. Call the scheduler again with the updated `running` and remaining `queue` from the state file (same shape as step 1); dispatch whatever it returns, move each newly-dispatched item from `queue` into `running`, save the state file, then end your turn again.
+3. **Repeat step 2** — each occurrence is a separate turn — until the state file shows both `queue` and `running` empty, then proceed to Phase 5. **Do not delete `/tmp/todo-scheduler-state.json` yet** — Phase 5 reads `results` from it first and deletes it as part of its own cleanup.
 
 ### Recording results
 
-Each executor reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it. Each successful executor additionally reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them. Accumulate these across the whole run as results arrive, rather than per batch.
+Each executor reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it. Each successful executor additionally reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them. These accumulate in `/tmp/todo-scheduler-state.json`'s `results` array as they arrive, rather than per batch — Phase 5 reads that array rather than relying on memory of the whole run.
 
 ## Phase 5 — Session Summary
 
 **First, release all worktree contracts:** run `bash scripts/declare-worktree.sh --clear`. Executors declare their worktrees at Step 0 and remove them at Step 11, but a crashed executor leaves a stale registry entry — and while ANY entry exists, the PreToolUse guards deny YOUR main-checkout git operations (reconciliation, archiving, branch cleanup). `--clear` is idempotent and safe here: all executors have returned by Phase 5.
+
+**Then load the accumulated run results:** read `results` from `/tmp/todo-scheduler-state.json` (Phase 4) rather than relying on memory of the whole run — this is the authoritative per-todo outcome list for the summary table below. Once read, delete the file: `rm -f /tmp/todo-scheduler-state.json`.
 
 After the queue is fully drained (or after early termination):
 

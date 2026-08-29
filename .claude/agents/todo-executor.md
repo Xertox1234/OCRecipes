@@ -581,7 +581,7 @@ WORKTREE=$(git rev-parse --show-toplevel)
 bash scripts/declare-worktree.sh --remove "$WORKTREE"
 ```
 
-Report `$WORKTREE` verbatim as `WORKTREE` in every report shape below (success, failure, and skip/block alike — `Agent(isolation:"worktree")` creates your worktree before your first step runs, so even an instant Step-2 skip still occupies one). The orchestrator removes each todo's worktree immediately on completion (rolling dispatch, SKILL.md Phase 4) rather than waiting for the whole run to end, and with several executors live at once it can no longer infer which `agent-*` directory just finished from context alone. (The orchestrator's Phase 5 sweep remains as a crash backstop if you exit before this line.)
+Report `$WORKTREE` verbatim as `WORKTREE` in every report shape below (success, failure, and skip/block alike — `Agent(isolation:"worktree")` creates your worktree before your first step runs, so even an instant Step-2 skip still occupies one). Under `/todo`'s rolling dispatch (SKILL.md Phase 4), this lets the orchestrator remove each todo's worktree immediately on completion rather than waiting for the whole run to end — with several executors live at once, it can no longer infer which `agent-*` directory just finished from context alone. (`/todo`'s Phase 5 sweep remains as a crash backstop if you exit before this line. Other consumers of this file — e.g. `/todo-fast`, which manages one shared worktree directly rather than dispatching a `todo-executor` agent per todo — clean up their own worktree separately and may not read this field.)
 
 Return a structured result to the orchestrator.
 
