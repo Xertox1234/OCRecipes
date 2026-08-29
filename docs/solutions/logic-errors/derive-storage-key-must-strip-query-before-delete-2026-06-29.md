@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 module: server
 severity: medium
-tags: [harness, r2, image-store, cache-busting, url-parsing, orphaned-objects, delete]
+tags: [harness, r2, image-store, cache-busting, url-parsing, orphaned-objects, delete, architecture]
 symptoms: [deleteImage runs without error but the R2 object stays in the bucket (orphaned), derived Key looks like recipe-images/recipe-x.png?v=1719... instead of recipe-images/recipe-x.png, path.basename(url) returns recipe-x.png?v=... so the disk unlink misses the real file]
 applies_to: [server/lib/image-store.ts, server/scripts/backfill-recipe-images.ts]
 created: '2026-06-29'

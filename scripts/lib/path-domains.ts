@@ -130,6 +130,29 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     domains: ["database", "security", "architecture"],
     description: "`shared/schema.ts`",
   },
+  // --- shared/** non-schema subsurfaces (human decision — see
+  // todos/archive/P3-2026-08-11-unrouted-surfaces-domain-map-decision.md). Two-segment dir is
+  // REQUIRED, not stylistic: a bare `shared` rule would also swallow shared/schema.ts (already
+  // routed above) and shared/schemas/** (deliberately out of scope). typescript is included
+  // alongside architecture because these rules are non-empty/non-harness, which suppresses the
+  // hook's .ts fallback (inject-patterns.sh) — dropping typescript would silently orphan docs
+  // whose only routable tag is typescript, e.g. type-only-import-breaks-schema-cycle-2026-05-17.md
+  // and jwt-types-shared-pulls-jsonwebtoken-bundle-2026-05-13.md — same rationale as client/lib/**.
+  {
+    match: { kind: "recursive-dir", dir: "shared/constants" },
+    domains: ["architecture", "typescript"],
+    description: "`shared/constants/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "shared/types" },
+    domains: ["architecture", "typescript"],
+    description: "`shared/types/**`",
+  },
+  {
+    match: { kind: "recursive-dir", dir: "shared/lib" },
+    domains: ["architecture", "typescript"],
+    description: "`shared/lib/**`",
+  },
   {
     match: { kind: "recursive-dir", dir: "migrations" },
     domains: ["database", "security", "architecture"],
@@ -144,6 +167,18 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     match: { kind: "recursive-dir", dir: "server/services" },
     domains: ["architecture"],
     description: "`server/services/**` (base — architecture only)",
+  },
+  // server/lib/** (human decision — mirrors server/routes/**'s domain set above: security is
+  // the single most-repeated tag across the corpus anchored here — CORS, upload MIME
+  // validation, PII redaction, prompt-injection sanitization). typescript is appended for the
+  // same fallback-suppression reason as the shared/** rules above — without it,
+  // jwt-types-shared-pulls-jsonwebtoken-bundle-2026-05-13.md (tags: typescript only; both its
+  // anchors, shared/types/** and server/lib/**, are routed in this same change) would be
+  // reachable from NO path at all.
+  {
+    match: { kind: "recursive-dir", dir: "server/lib" },
+    domains: ["api", "security", "architecture", "typescript"],
+    description: "`server/lib/**`",
   },
   {
     match: { kind: "recursive-dir", dir: "client/screens" },
@@ -241,6 +276,21 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     domains: ["testing", "typescript"],
     description: "`vitest.config.*`, `eslint.config.*`",
   },
+  {
+    // Package manifests (human decision — matches PR #801's existing "architecture for
+    // dependency/deployment docs" tag choice). config-file is root-anchored (`^...$`) —
+    // deliberately chosen over exact-file, whose `(^|/)` form would also match every nested
+    // package.json under node_modules/**. Like every config-file rule, this matches ANY
+    // extension on the basename (e.g. a hypothetical root `package.lock` or `app.config.js`
+    // would also match) — see todos/P3-2026-08-28-config-file-matcher-depth-parity-gap.md.
+    match: {
+      kind: "config-file",
+      basenames: ["package", "package-lock", "app"],
+    },
+    domains: ["architecture"],
+    description:
+      "`package.*`, `package-lock.*`, `app.*` at repo root (any extension)",
+  },
   // --- harness: the repo's own tooling ---------------------------------------
   // NEVER collapse these into one `{ kind: "recursive-dir", dir: ".claude" }` rule. Worktrees
   // live at .claude/worktrees/<name>/, and routing matches FILE PATHS, not tracked files — so a
@@ -277,6 +327,13 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     domains: ["harness"],
     description:
       "`scripts/**` (any directory named `scripts`, incl. `server/scripts/**`)",
+  },
+  {
+    // Repo's own ESLint tooling — same reasoning as the scripts/** rule above (folded in from
+    // the todo's 2026-08-15 addendum; a default carried forward, not separately re-confirmed).
+    match: { kind: "recursive-dir", dir: "eslint-plugin-ocrecipes" },
+    domains: ["harness"],
+    description: "`eslint-plugin-ocrecipes/**`",
   },
   {
     // .husky/** holds the real commit/push gate (pre-commit, pre-push, post-checkout — ~100
@@ -322,6 +379,19 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     domains: ["react-native"],
     description:
       "`ios/**` (any directory named `ios`, incl. `node_modules/**/ios/**`)",
+  },
+  // --- android native build ---
+  // Decision recorded (human call): android/** routes to react-native, same pattern/tradeoff as
+  // the ios/** rule above — recursive-dir is the only Matcher kind available, so `(^|/)android/`
+  // matches ANY directory literally named `android`, including `node_modules/**/android/**`.
+  // Unlike ios/**, no .ts/.tsx file is realistically anchored here (android-anchored docs'
+  // applies_to are gradle/xml/glob), so there is no typescript-fallback-suppression risk to
+  // offset — domains stay react-native only, mirroring ios/**.
+  {
+    match: { kind: "recursive-dir", dir: "android" },
+    domains: ["react-native"],
+    description:
+      "`android/**` (any directory named `android`, incl. `node_modules/**/android/**`)",
   },
 ];
 

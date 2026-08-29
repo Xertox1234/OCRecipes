@@ -15,9 +15,13 @@ When editing a file, identify its domain(s) using the table below. The correspon
 | `server/routes/**` (non-auth blocked separately) | api, security, architecture |
 | `server/storage/**` (non-auth blocked separately) | database, security, architecture |
 | `shared/schema.ts` | database, security, architecture |
+| `shared/constants/**` | architecture, typescript |
+| `shared/types/**` | architecture, typescript |
+| `shared/lib/**` | architecture, typescript |
 | `migrations/**` | database, security, architecture |
 | `server/middleware/**` | security, api |
 | `server/services/**` (base — architecture only) | architecture |
+| `server/lib/**` | api, security, architecture, typescript |
 | `client/screens/**` | react-native, design-system, accessibility |
 | `client/components/**` | react-native, design-system, accessibility, performance |
 | `client/camera/**` | react-native |
@@ -34,15 +38,18 @@ When editing a file, identify its domain(s) using the table below. The correspon
 | `__tests__/**`, `*.test.ts(x)`, `*.spec.ts(x)` | testing |
 | `.github/workflows/**` | architecture, testing |
 | `vitest.config.*`, `eslint.config.*` | testing, typescript |
+| `package.*`, `package-lock.*`, `app.*` at repo root (any extension) | architecture |
 | `.claude/hooks/**` | harness |
 | `.claude/skills/**` | harness |
 | `.claude/agents/**` | harness |
 | `.claude/settings.json` | harness |
 | `scripts/**` (any directory named `scripts`, incl. `server/scripts/**`) | harness |
+| `eslint-plugin-ocrecipes/**` | harness |
 | `.husky/**` | harness |
 | `docs/solutions/**` | harness |
 | `docs/rules/**` | harness |
 | `ios/**` (any directory named `ios`, incl. `node_modules/**/ios/**`) | react-native |
+| `android/**` (any directory named `android`, incl. `node_modules/**/android/**`) | react-native |
 | `server/services/<llm-touching>.ts` (see LLM_TOUCHING_SERVICES) | architecture, ai-prompting |
 
 In addition, `typescript` rules apply to every `.ts` or `.tsx` file regardless of other domain matches.

@@ -3,7 +3,7 @@ title: Overwrite-in-place at the same URL doesn't bust URL-keyed client caches
 track: knowledge
 category: conventions
 module: server
-tags: [harness, cache-busting, expo-image, r2, image-store, overwrite-in-place, client-cache]
+tags: [harness, cache-busting, expo-image, r2, image-store, overwrite-in-place, client-cache, architecture]
 applies_to: [server/scripts/backfill-recipe-images.ts, server/lib/image-store.ts]
 created: '2026-06-29'
 ---

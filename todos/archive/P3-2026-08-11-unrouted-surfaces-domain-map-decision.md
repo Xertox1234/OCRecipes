@@ -1,9 +1,9 @@
 ---
 title: "Decide routing for unrouted file surfaces: ios/android, package manifests, shared non-schema"
-status: backlog
+status: done
 priority: low
 created: 2026-08-11
-updated: 2026-08-11
+updated: 2026-08-28
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -23,9 +23,9 @@ Same defect class as `docs/**` (fixed in PR #799), but each surface needs a real
 
 ## Acceptance Criteria
 
-- [ ] Per surface, decide: add a `path-domains.ts` rule (which domain?) or accept general-tier-only reach (document the decision in the rule-table comment either way)
-- [ ] Candidate mapping to evaluate: `ios/**` + `android/**` → react-native; `package.json`/`package-lock.json`/`app.json` → architecture; weigh injection noise (how often are these files edited by Claude?) against the anchored docs' value
-- [ ] If any rule is added: TDD in `path-domains.test.ts` (positive + decline-side cases), regenerate `domain-map.sh` + copilot-instructions, and re-check whether the affected docs' `applies_to` now activates (no tag changes should be needed — tags were chosen to match the candidate domains)
+- [x] Per surface, decide: add a `path-domains.ts` rule (which domain?) or accept general-tier-only reach (document the decision in the rule-table comment either way)
+- [x] Candidate mapping to evaluate: `ios/**` + `android/**` → react-native; `package.json`/`package-lock.json`/`app.json` → architecture; weigh injection noise (how often are these files edited by Claude?) against the anchored docs' value
+- [x] If any rule is added: TDD in `path-domains.test.ts` (positive + decline-side cases), regenerate `domain-map.sh` + copilot-instructions, and re-check whether the affected docs' `applies_to` now activates (no tag changes should be needed — tags were chosen to match the candidate domains)
 
 ## Implementation Notes
 
@@ -47,6 +47,45 @@ Precedent and mechanics: PR #799 (docs/\*\* → harness) is the template — rul
 - react-native rules file injecting on Podfile edits is partially off-topic; acceptable only if the harness-side native-build docs carry the real value.
 
 ## Updates
+
+### 2026-08-28
+
+- **All remaining surfaces decided and shipped, closing this todo.** Human decisions (this
+  session, via direct confirmation):
+  - `android/**` → `react-native` (mirrors the `ios/**` rule exactly, same over-match tradeoff)
+  - `package.json`/`package-lock.json`/`app.json` → `architecture`, via a new `config-file` rule
+    (chosen over `exact-file` specifically to stay root-anchored and not also match the ~1900
+    `package.json` files under `node_modules/**`)
+  - `shared/constants/**`, `shared/types/**`, `shared/lib/**` → `architecture` (single consistent
+    domain across all three, per the human's choice — tag-frequency analysis on the anchored docs
+    had shown a plurality for `api`/`architecture`/`architecture` respectively, but the user opted
+    for one domain across the three subsurfaces for simplicity)
+  - `server/lib/**` → `[api, security, architecture]`, mirroring `server/routes/**`'s existing
+    domain set (`security` is the single most-repeated tag across the 32 docs anchored here)
+  - `eslint-plugin-ocrecipes/**` → `harness`, carrying forward the todo's own 2026-08-15 note
+    (same reasoning as the existing `scripts/**` rule)
+  - **`typescript` was appended to the `shared/*` and `server/lib/**`rules** (not just the chosen
+domain above) — a non-empty, non-harness rule suppresses`inject-patterns.sh`'s `.ts`fallback,
+and at least one doc anchored to each of these four surfaces has`typescript`as its *only*
+routable tag (e.g.`type-only-import-breaks-schema-cycle-2026-05-17.md`,
+`jwt-types-shared-pulls-jsonwebtoken-bundle-2026-05-13.md`) — dropping it would have silently
+orphaned those docs. Same rationale the existing `client/lib/\*\*` rule already uses
+(`domains: ["typescript", "client-state"]`).
+  - The two motivating `image-store.ts` docs (`derive-storage-key-must-strip-query-before-delete-2026-06-29.md`,
+    `overwrite-in-place-bump-version-to-bust-client-cache-2026-06-29.md`) got `architecture` added
+    to their existing tags, so they activate under the new `server/lib/**` rule without widening
+    that rule's domain set for the other 30 docs anchored there.
+  - Verified empirically (per the 2026-08-13 lesson below — ran the hook, didn't just read the
+    table): editing `server/lib/image-store.ts` now surfaces both motivating docs in the
+    `[SOLUTIONS — architecture]` block (spilled to the overflow file on this 4-domain payload,
+    same as any `domain_rank`-130 domain would); editing `shared/constants/allergens.ts` now
+    surfaces `presence-matcher-false-flags-negated-free-from-form-2026-07-22.md` (architecture-
+    tagged) alongside the typescript-tagged docs it already reached via the fallback.
+  - Filed one low-severity follow-up: `todos/P3-2026-08-28-config-file-matcher-depth-parity-gap.md`
+    — the new `config-file` rule for package manifests surfaced a pre-existing (not new) TS/bash
+    depth-anchoring asymmetry in that `Matcher` kind, out of this todo's scope to fix.
+  - All corpus/generated checks green: `npm run build:generated:check`, 157/157 tests in
+    `path-domains.test.ts`, 798/798 files clean in `check-solution-frontmatter.js`.
 
 ### 2026-08-13
 
