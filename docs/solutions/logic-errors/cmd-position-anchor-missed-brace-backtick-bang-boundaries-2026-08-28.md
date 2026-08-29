@@ -166,6 +166,32 @@ Updates for the full account — that todo's own AC had mischaracterized this ga
 "deliberate" divergence needing only a comment, which this fix and the todo's correction
 both supersede.
 
+**A second, independent review round (`code-reviewer` + `security-auditor`, 2026-08-29)
+found the fallback still short of parity with the primary path**, beyond the
+brace/backtick/bang shapes already closed above: a bare `(` subshell, a newline-separated
+compound (`[[ =~ ]]` has no per-line `^` the way the primary path's `grep -E` does), a
+runner-word wrapper (`env`/`command`/`exec`/etc.), and, on `COMPOUND_COMMIT_RE`
+specifically, a missing `-c key=value` group. All four confirmed pre-existing (identical
+against the merge-base copy of the file) and live-reproduced under the `NOLIB` harness —
+same risk class and same "lib unsourceable" precondition as the already-accepted `|` gap.
+Unlike the brace/backtick/bang fix, these were left as a documented residual rather than
+closed in-PR (out of `#874`'s Scope Contract) — the fallback's comment now names all five
+gaps explicitly rather than implying `|` is the only one. Tracked as a Medium-severity
+follow-up todo (see `todos/`) rather than fixed here.
+
+**`cmd_bare`/`cmd_words`'s quote-state scanner misses a live nested command
+substitution inside double quotes** — a double-quoted string containing a backtick span
+(e.g. an `echo` whose argument reads `note` followed by a backtick-wrapped
+`git commit -m pwned`) actually executes that backtick span (bash evaluates a
+backtick command substitution regardless of the enclosing double quotes), but the
+scanner blanks the whole double-quote span, so every anchored matcher
+(`cmd_is_git_commit`, `cmd_is_gh_pr_create`, `cmd_is_git_head_mover`, `cmd_is_git`)
+misses it. Found by `code-reviewer` during this same second review round;
+confirmed pre-existing (identical false negative against the merge-base copy) and outside
+this fix's scope — `cmd_bare`/`cmd_words`'s awk engine is untouched by this PR. Already
+tracked: `todos/P1-2026-08-17-quoted-command-substitution-inert.md` (backlog, high
+priority) documents this exact mechanism with near-identical repro shapes.
+
 ## Related Files
 
 - `.claude/hooks/lib/cmd-detect.sh` — `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`, both widened.
