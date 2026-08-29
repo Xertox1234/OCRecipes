@@ -182,13 +182,22 @@ describe("todo-automerge-guard.sh (regression — behavior unchanged by this wid
     );
     expect(status).toBe(1);
   });
+
+  it("HOLDs a medium-priority todo (carved out of auto-merge — review-required like high/critical)", () => {
+    const { status, stdout } = runGuard(
+      ["client/screens/HomeScreen.tsx"],
+      GENERIC_MEDIUM_TODO,
+    );
+    expect(status).toBe(1);
+    expect(stdout).toContain("only low todos are batch-merge-eligible");
+  });
 });
 
 describe("todo-automerge-guard.sh (new: widened path allowlist)", () => {
-  it("allows server/storage/meal-plans.ts for a medium-priority todo", () => {
+  it("allows server/storage/meal-plans.ts", () => {
     const { status } = runGuard(
       ["server/storage/meal-plans.ts"],
-      GENERIC_MEDIUM_TODO,
+      GENERIC_LOW_TODO,
     );
     expect(status).toBe(0);
   });

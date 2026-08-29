@@ -1,9 +1,9 @@
 ---
 title: "Raise the Deferred Item Todos auto-file bar from Medium+ to High+ — medium findings should file themselves, not wait on a prompt"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-10
-updated: 2026-08-10
+updated: 2026-08-28
 assignee:
 labels: [deferred, harness, workflow, docs]
 github_issue:
@@ -48,22 +48,22 @@ _auto_/_silently_ qualifiers impossible to drop.
 
 ## Acceptance Criteria
 
-- [ ] `CLAUDE.md` → "Deferred Item Todos" gates the human-prompt path on **High and
+- [x] `CLAUDE.md` → "Deferred Item Todos" gates the human-prompt path on **High and
       Critical only**; Medium joins Low in the auto-file tier
-- [ ] The auto-file flow's filename/frontmatter guidance covers a medium item — today
+- [x] The auto-file flow's filename/frontmatter guidance covers a medium item — today
       step 1 hardcodes `todos/P3-…` with `priority: low`, which cannot express a
       medium finding. It needs the priority and `P{n}` prefix to follow the assessed
       severity, not a constant
-- [ ] The rewritten bullet keeps the _auto_/_silently_ qualifiers unmissable, so the
+- [x] The rewritten bullet keeps the _auto_/_silently_ qualifiers unmissable, so the
       high/critical branch is not re-read as "never file a high-severity todo"
-- [ ] The in-scope-vs-out-of-scope split is preserved for every tier — "if it is in
+- [x] The in-scope-vs-out-of-scope split is preserved for every tier — "if it is in
       scope of the current task, fix it now" must not be lost in the rewrite
-- [ ] Check whether `scripts/todo-automerge-guard.sh` / the `/todo` executor's
+- [x] Check whether `scripts/todo-automerge-guard.sh` / the `/todo` executor's
       eligibility logic keys off `priority` in a way that a larger medium population
       changes. Per the current rule a `low`- or `medium`-priority non-`security` todo
       is auto-merge-eligible, so more auto-filed mediums means more auto-merge-eligible
       PRs — decide deliberately whether that is wanted
-- [ ] `.claude/skills/*/SKILL.md` and `docs/AI_WORKFLOW.md` grepped for restatements of
+- [x] `.claude/skills/*/SKILL.md` and `docs/AI_WORKFLOW.md` grepped for restatements of
       the Medium+ bar and updated together, so the threshold is not defined twice
 
 ## Implementation Notes
@@ -106,3 +106,23 @@ _auto_/_silently_ qualifiers impossible to drop.
   asked for one, and a second surfaced "medium" (`coerceNumber`) turned out on
   verification to be documented free-tier handling, not a defect at all — so the
   current gate produced one near-miss and one false alarm in a single session.
+
+### 2026-08-28
+
+- Implemented directly in an interactive session (appropriate for `human_led: true`,
+  not a `/todo`/`/goal` batch dispatch). Research surfaced a load-bearing fact beyond the
+  todo's original scope: `priority: medium` already rides the exact same auto-merge lane
+  as `priority: low` in `scripts/todo-automerge-guard.sh` and `todo-executor.md` — so
+  widening the auto-file bar to include Medium would, with zero code changes, grow the
+  population of PRs that merge unattended. Per the user's explicit decision, Medium was
+  carved out of auto-merge (joins `high`/`critical`/`security` as `review-required`),
+  expanding the Scope Contract to also cover `scripts/todo-automerge-guard.sh` + its
+  test, `.claude/agents/todo-executor.md`, `.claude/skills/todo/SKILL.md`, and
+  `docs/todo-automation-runbook.md`. Also per the user's decision,
+  `.claude/skills/audit/SKILL.md` Phase 6's Medium/Low handling was reconciled to
+  auto-file directly via Phase 4 instead of parking in the manifest for a close-time
+  decision — this also fixed a latent inconsistency where that Phase 6 path violated
+  the audit skill's own "Zero open findings at close... deferred (with todo)" rule.
+  `docs/AI_WORKFLOW.md` was grepped and confirmed to have no restatement needing an
+  edit. The `CLAUDE.md` rewrite itself is local-only (gitignored) and not part of the
+  implementation PR.
