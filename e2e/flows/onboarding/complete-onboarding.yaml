@@ -12,8 +12,13 @@ tags:
     clearState: true
 - runFlow: ../../helpers/launch-app.yaml
 
-# Switch to register mode
-- assertVisible: "Sign In"
+# Switch to register mode. A bare assertVisible uses Maestro's short stock
+# default timeout, not e2e/helpers/login.yaml's tuned margin -- this flow
+# doesn't call that helper, so it needs the same explicit wait itself
+# (see that file's header for why 90s).
+- extendedWaitUntil:
+    visible: "Sign In"
+    timeout: 90000
 - tapOn: "Switch to sign up"
 - assertVisible: "Create Account"
 

@@ -8,18 +8,25 @@ appId: com.ocrecipes.app
 # Maestro's own screenshot artifact on live CI (run 31938889879) — see
 # todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md Updates.
 # (1) The FIRST flow in a run can still be showing "Bundling 96.0%..." when
-#     the wait times out — a real cold-start race against Metro, which is
-#     why this timeout has margin above the default. (2) Every flow after
-#     that hits the Expo dev-client's own "developer menu" welcome overlay
-#     popping up on top of an already-rendered Sign In screen — see
-#     e2e/helpers/launch-app.yaml, which dismisses it before this wait
-#     runs. Two earlier single-cause theories (bundle-speed only; bare
-#     launchApp never connecting at all) were each tested and were each
-#     only PART of the picture — this is the first evidence from an actual
-#     screenshot rather than inferred from timing.
+#     the wait times out — a real cold-start race against Metro. (2) Every
+#     flow after that hits the Expo dev-client's own "developer menu"
+#     welcome overlay popping up on top of an already-rendered Sign In
+#     screen — see e2e/helpers/launch-app.yaml, which dismisses it before
+#     this wait runs.
+#
+# NOTE (2026-08-29): with (2) confirmed fixed and NOT blocking (screenshot
+# evidence: the Sign In screen renders cleanly, no overlay), a run under
+# CI resource contention still showed every flow — not just the first —
+# taking 23-59s to reach "Sign In", because each flow pays a full app
+# relaunch + dev-client deep-link reconnect, not just a Metro re-bundle
+# (Metro itself only bundles once per job — ~50s cold, ~300ms cached for
+# every flow after). The 45000 the 2026-08-16 fix landed at wasn't margin
+# enough against that combined cost under load. Bumped to give real
+# headroom above the worst time actually observed (59s) rather than
+# guessing a smaller number and re-discovering the same gap next run.
 - extendedWaitUntil:
     visible: "Sign In"
-    timeout: 45000
+    timeout: 90000
 - tapOn:
     id: "input-username"
 - inputText: ${USERNAME}

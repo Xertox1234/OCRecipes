@@ -10,8 +10,14 @@ tags:
 # the confirmed root cause)
 - runFlow: ../../helpers/launch-app.yaml
 
-# Verify login screen loads
-- assertVisible: "Sign In"
+# Verify login screen loads. A bare assertVisible uses Maestro's short stock
+# default timeout, not e2e/helpers/login.yaml's tuned margin -- this flow
+# doesn't call that helper, so it needs the same explicit wait itself (see
+# that file's header for why 90s: each flow pays a full app relaunch + Metro
+# cold-bundle cost under CI load, not just a quick screen transition).
+- extendedWaitUntil:
+    visible: "Sign In"
+    timeout: 90000
 
 # Verify input fields are visible
 - assertVisible:
@@ -42,7 +48,9 @@ tags:
 - launchApp:
     clearState: true
 - runFlow: ../../helpers/launch-app.yaml
-- assertVisible: "Sign In"
+- extendedWaitUntil:
+    visible: "Sign In"
+    timeout: 90000
 - tapOn: "Switch to sign up"
 - assertVisible: "Create Account"
 
