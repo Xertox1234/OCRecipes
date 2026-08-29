@@ -574,7 +574,14 @@ Todo: `todos/<filename>.md` (archived in this commit)
 
 ## Step 11 — Report
 
-Before composing the report, release your worktree contract: `bash scripts/declare-worktree.sh --remove "$(git rev-parse --show-toplevel)"`. (The orchestrator's Phase 5 `--clear` is the backstop if you crash before this line.)
+Before composing the report, capture your worktree path and release your worktree contract:
+
+```
+WORKTREE=$(git rev-parse --show-toplevel)
+bash scripts/declare-worktree.sh --remove "$WORKTREE"
+```
+
+Report `$WORKTREE` verbatim as `WORKTREE` in every report shape below (success, failure, and skip/block alike — `Agent(isolation:"worktree")` creates your worktree before your first step runs, so even an instant Step-2 skip still occupies one). The orchestrator removes each todo's worktree immediately on completion (rolling dispatch, SKILL.md Phase 4) rather than waiting for the whole run to end, and with several executors live at once it can no longer infer which `agent-*` directory just finished from context alone. (The orchestrator's Phase 5 sweep remains as a crash backstop if you exit before this line.)
 
 Return a structured result to the orchestrator.
 
@@ -582,6 +589,7 @@ Return a structured result to the orchestrator.
 
 ```
 STATUS: success
+WORKTREE: <absolute path captured above>
 COMMIT: <commit hash>
 BRANCH: <todo/<todo-slug> branch name>
 PR_URL: <GitHub PR URL | "null" if PR creation failed>
@@ -600,6 +608,7 @@ DEFERRED_WARNINGS: <one line per unaddressed code review WARNING or YELLOW advis
 
 ```
 STATUS: failed
+WORKTREE: <absolute path captured above>
 REASON_CODE: NONE
 REASON: <why it failed — test failure, type error, unresolvable CRITICAL review issue, etc. WARNING-only review output never counts as failure.>
 ```
@@ -610,6 +619,7 @@ REASON: <why it failed — test failure, type error, unresolvable CRITICAL revie
 
 ```
 STATUS: skipped | blocked
+WORKTREE: <absolute path captured above>
 REASON_CODE: <one of the enum below — Phase 5 routes on this field first; the REASON text is display prose>
 REASON: <the canonical reason text for the code, per the mapping below>
 ```

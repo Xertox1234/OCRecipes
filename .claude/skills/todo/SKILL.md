@@ -250,48 +250,47 @@ Determine which todos can safely run in parallel and which must run sequentially
    - Paths with line ranges: `path/to/file.ts:123-145`
    - Backtick-quoted paths: `` `path/to/file.ts` ``
 2. **Build a file-overlap map**: two todos are "dependent" if they share any mentioned file path (ignoring line ranges — file-level granularity).
-3. **Check inter-todo dependencies.** Also parse each todo's Dependencies section. If a todo lists another todo filename as a dependency and that file still exists in `todos/` (not yet archived on `main`), do **not** schedule the dependent in this run at all — even if the dependency completes in an earlier batch, its archive lands on `main` only when its PR merges (auto-merge or the user's review — either way, not yet), so a same-run dispatch of the dependent is guaranteed to report `blocked` (wasted worktree + researcher + executor). The skip reason depends on the dependency's actual state — never claim a PR merge will unblock it unless that PR exists:
+3. **Check inter-todo dependencies.** Also parse each todo's Dependencies section. If a todo lists another todo filename as a dependency and that file still exists in `todos/` (not yet archived on `main`), do **not** schedule the dependent in this run at all — even if the dependency is dispatched and completes earlier in this run's queue, its archive lands on `main` only when its PR merges (auto-merge or the user's review — either way, not yet), so a same-run dispatch of the dependent is guaranteed to report `blocked` (wasted worktree + researcher + executor). The skip reason depends on the dependency's actual state — never claim a PR merge will unblock it unless that PR exists:
    - Dependency has an **open `todo/*` PR** (check the Phase 0/2 open-PR list): skip with reason `gated on <dependency>'s PR (<branch>) landing` → Phase 5 "Gated on a pending PR".
    - Dependency has **no PR** (quality-dropped, previously failed, or never attempted): skip with reason `gated on <dependency> — not implemented yet` → Phase 5 "Gated on a dependency (not yet implemented)". The unblock is re-authoring or a future run of the dependency, not a merge.
    - Dependency is **scheduled in THIS run**: defer the wording — at Phase 5 time use the dependency's actual outcome (PR opened → first bullet; failed/blocked → second bullet).
 4. **Todos that mention NO specific files must run sequentially.** Unknown scope means they could potentially conflict with anything.
-5. **DB-serial todos get their own sequential batch.** A todo whose body mentions
+5. **DB-serial todos must run alone.** A todo whose body mentions
    `shared/schema.ts`, `migrations/`, `drizzle`, or `db:push` performs DDL against the
-   shared dev database — mark it `[db-serial]` in the plan display and schedule it alone
-   in a sequential batch (feedback_todo_parallel_shared_dev_db). The executor-side
-   advisory lock (`scripts/pg-lab/db-serial-lock.sh`, dispatched below) is the enforcement
-   backstop for the runs this planning rule cannot see (a second orchestrator, a manual
-   session); it does not replace this rule.
-6. **Independent todos** (disjoint file sets, and each mentions at least one file) can run in parallel.
-7. **Max 4 parallel agents per batch.** If more than 4 independent todos exist, split them into multiple batches.
-8. **Group into execution batches** ordered by the highest-priority todo in each batch. Within a batch, maintain the priority/date sort from Phase 2.
-9. Display the execution plan:
+   shared dev database — mark it `[db-serial]` in the plan display in addition to its
+   `must-run-alone` tag (step 6), so Phase 4 knows to add the lock-acquisition dispatch
+   block to it specifically (scope-unknown `must-run-alone` todos don't need that block).
+   The executor-side advisory lock (`scripts/pg-lab/db-serial-lock.sh`, dispatched below)
+   is the enforcement backstop for the runs this planning rule cannot see (a second
+   orchestrator, a manual session); it does not replace this rule
+   (feedback_todo_parallel_shared_dev_db).
+6. **Tag each remaining todo `independent` or `must-run-alone`.** DB-serial todos (step 5) and scope-unknown todos (step 4) are `must-run-alone` — each may only run by itself, with nothing else in flight at the same time. Every other todo (disjoint file sets, each mentioning at least one file) is `independent` and can run alongside other `independent` todos.
+7. **Order the tagged set into a single priority queue**, keeping the priority/date sort from Phase 2. This queue has no execution-boundary structure — it's the fill order Phase 4's rolling scheduler draws from, not a set of batches. The concurrency cap is **4**, enforced by the scheduler per completion (Phase 4), not by chunking here.
+8. Display the execution plan as the ordered queue:
 
    ```
-   Batch 1 (parallel — 3 todos):
-     - [high] Extract suggestion generation service
-     - [high] Storage facade re-exports
-     - [medium] Extract round-to-one-decimal utility
-
-   Batch 2 (sequential — scope unknown):
-     - [medium] Remix screen reader announcements
-
-   Batch 3 (parallel — 2 todos):
-     - [low] Fix useCollapsible height test type error
-     - [low] Extract toDateString utility
+   Queue (priority order):
+     1. [high, independent]                 Extract suggestion generation service
+     2. [high, independent]                 Storage facade re-exports
+     3. [medium, must-run-alone]            Remix screen reader announcements — scope unknown
+     4. [medium, must-run-alone, db-serial] Add recipe_tags junction table
+     5. [low, independent]                  Fix useCollapsible height test type error
+     6. [low, independent]                  Extract toDateString utility
    ```
 
-10. **Advisor review of the parallelization plan (gated).** Call the `advisor` tool before dispatching Phase 4 **only when the plan contains at least one parallel batch of 2+ todos**. Skip it for an all-sequential or single-todo plan — those run one executor at a time and cannot hit the parallel-collision failure this gate exists to catch, so the round-trip is not worth it. (If the advisor tool is not available in the session, skip this step.)
+   `independent` items fill free slots as they open, in this order; a `must-run-alone` item only starts once nothing else is running, and blocks every other item — including another `must-run-alone` item — from starting while it runs (Phase 4). In the queue above: items 1 and 2 start immediately, filling 2 of 4 slots. Item 3 can't start alongside them, so items 5 and 6 fill the remaining 2 slots instead of sitting idle — the exact idle-slot waste this design exists to remove. Item 4 waits behind item 3 even after slots free up, since two `must-run-alone` items can't run concurrently with each other either.
 
-    The advisor sees this orchestrator's full transcript — the todo bodies, the file-overlap map from steps 1–2, and the batch plan — and reviews exactly one question: **is any parallel batch unsafe?** Could two todos in the same parallel batch touch the same file (a shared import, a barrel file, or a type the overlap analysis missed), and is anything marked parallel that should be sequential? Two executors editing one file in separate worktrees produce conflicting branches and stacked PRs — expensive and hard to unwind once agents are live.
+9. **Advisor review of the schedule (gated).** Call the `advisor` tool before dispatching Phase 4 **only when the queue contains 2 or more `independent` items** — those are the only ones the scheduler can ever run at the same time. Skip it when fewer than 2 independent items exist; nothing in that queue can overlap in time. (If the advisor tool is not available in the session, skip this step.)
 
-    Nothing has executed yet, so revising is cheap. If the advisor flags a risky pairing, split the conflicting todos into separate batches (or make the batch sequential), re-display the revised plan, then proceed. Weigh the advice seriously, but it is advisory: if a flag is clearly wrong (the files genuinely do not overlap), note why and continue.
+   The advisor sees this orchestrator's full transcript — the todo bodies, the file-overlap map from steps 1–2, and the queue — and reviews exactly one question: **could any two `independent` items the scheduler might run concurrently actually conflict?** Could two of them touch the same file (a shared import, a barrel file, or a type the overlap analysis missed) — the rolling scheduler may co-run _any_ pair of `independent` items, not just ones that happen to sit near each other in the display, so a missed overlap between any two is live risk. And separately: is anything tagged `independent` that should be `must-run-alone`? Two executors editing one file in separate worktrees produce conflicting branches and stacked PRs — expensive and hard to unwind once agents are live.
+
+   Nothing has executed yet, so revising is cheap. If the advisor flags a risky pairing, retag one of the conflicting todos `must-run-alone` (or drop it from this run), re-display the revised queue, then proceed. Weigh the advice seriously, but it is advisory: if a flag is clearly wrong (the files genuinely do not overlap), note why and continue.
 
 ## Phase 4 — Execute
 
-Work through the execution plan batch by batch.
+Run the queue with a **rolling dispatcher**: keep up to 4 executors in flight, refilling a slot the instant it frees rather than waiting for every currently-running executor to finish. `scripts/todo-scheduler.ts` makes the "what's eligible right now" decision — see its header comment for the two invariants it enforces (a `must-run-alone` item excludes everything else while it runs; an `independent` item needs a free slot and no file overlap with anything active).
 
-### Executor dispatch (shared by both batch types)
+### Executor dispatch
 
 Every executor is a `todo-executor` agent spawned in an **isolated worktree** via the Agent tool with these parameters:
 
@@ -307,7 +306,7 @@ Agent({
 
 Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition-inline-drawers`) for `<BASE_BRANCH>` and the actual main checkout path (e.g., `/Users/williamtower/projects/OCRecipes`) for `<MAIN_CHECKOUT>`. Never pass the literal text `<BASE_BRANCH>` or `<MAIN_CHECKOUT>`.
 
-**DB-serial todos only** (marked `[db-serial]` in Phase 3): add this block to the dispatch prompt —
+**DB-serial todos only** (the subset of `must-run-alone` items marked so in Phase 3 step 5 — not the scope-unknown ones): add this block to the dispatch prompt —
 
 > Before your first `db:push`/DDL step: resolve the session pid with
 > `WATCH_PID=$(bash -c '. scripts/pg-lab/lib/ps-walk.sh && resolve_claude_pid')`, then run
@@ -323,26 +322,39 @@ Substitute the actual branch name you recorded in Phase 1 (e.g., `feat/nutrition
 > Never run release after exit 2 or exit 3: you do not hold the lock, and release
 > force-frees whoever does.
 
-### Parallel Batches
+### The rolling loop
 
-For each batch marked parallel, spawn one executor per todo using the dispatch call above — launch all agents in the batch simultaneously (up to 4), then wait for all to complete before proceeding.
+1. **Seed dispatch.** Call the scheduler with the full queue and an empty running set:
 
-### Sequential Batches
+   ```bash
+   npx tsx scripts/todo-scheduler.ts <<'EOF'
+   {"cap": 4, "running": [], "queue": [{"id": "<todo slug>", "files": ["<path>", "..."], "tag": "independent | must-run-alone"}, "..."]}
+   EOF
+   ```
 
-For each batch marked sequential, spawn a **single** executor using the dispatch call above. Run one at a time, waiting for each to complete before starting the next.
+   The script prints the JSON array of queue items eligible to dispatch now. Launch one `Agent()` call per item — all in the same message — using the dispatch block above, and move each dispatched item from the queue into the running set.
 
-### After Each Batch
+2. **Wait for the next single agent-completion notification — not for every executor currently in flight.** When one arrives:
+   a. **Record its result** exactly as described under "Recording results" below.
+   b. **Remove that todo's worktree immediately**, using the `WORKTREE` path from its report (every report shape carries one — see `todo-executor.md` Step 11):
+   ```bash
+   git worktree unlock "<WORKTREE>" 2>/dev/null
+   git worktree remove --force "<WORKTREE>" 2>/dev/null
+   ```
+   Do this for every outcome — success, failed, blocked, and skipped all get their worktree torn down the same way, immediately, rather than waiting for Phase 5.
+   c. Drop it from the running set.
+   d. Call the scheduler again with the updated running set and remaining queue (same shape as step 1); dispatch whatever it returns.
+3. **Repeat step 2** until the queue is empty and the running set is empty, then proceed to Phase 5.
 
-1. **Collect results** from all agents in the batch. Each reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it.
-2. **Record results** from successful executions. Each successful executor reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them.
+### Recording results
 
-Proceed to the next batch in the execution plan.
+Each executor reports one of: `success`, `failed`, `blocked`, `skipped`. Every `skipped`/`blocked` report carries a `REASON_CODE` (enum in the executor's Step 11) — keep it verbatim; Phase 5 routes on it. Each successful executor additionally reports `COMMIT`, `BRANCH`, `PR_URL` (a URL, or `null` if PR creation failed), `MERGE_ELIGIBLE` (`yes (auto-merge enabled)` = guard OK, executor already armed `gh pr merge --auto` — nothing further needed; `yes (auto-merge enable FAILED ...)` = guard OK but the `gh pr merge --auto` call itself errored — needs manual merge or review; `held` = guard HOLD via the path or todo-frontmatter gate, with the guard's reason line in parentheses; `review-required` = medium/high/critical/security; `unknown` = guard couldn't evaluate; `n/a` = no PR), `SHORT_CIRCUIT` (a `docs/solutions` path if a verified solution was reused and the researcher skipped, else `none`), `ADVISOR` (`green`, `yellow`, `red`, or `skipped`), and `DEFERRED_WARNINGS`. Keep the `DEFERRED_WARNINGS` lines — Phase 5 surfaces them for triage. Keep the `ADVISOR` values — Phase 5 tallies them. Accumulate these across the whole run as results arrive, rather than per batch.
 
 ## Phase 5 — Session Summary
 
 **First, release all worktree contracts:** run `bash scripts/declare-worktree.sh --clear`. Executors declare their worktrees at Step 0 and remove them at Step 11, but a crashed executor leaves a stale registry entry — and while ANY entry exists, the PreToolUse guards deny YOUR main-checkout git operations (reconciliation, archiving, branch cleanup). `--clear` is idempotent and safe here: all executors have returned by Phase 5.
 
-After all batches have been executed (or after early termination):
+After the queue is fully drained (or after early termination):
 
 1. **Post-session verification** — run the full suite one final time:
 
@@ -408,7 +420,7 @@ After all batches have been executed (or after early termination):
    Lint:  PASS | FAIL (N errors)
    ```
 
-6. **Remove this run's executor worktrees.** Force-remove them — a bare `git worktree prune` cannot, because they are created _locked_. Use the non-`--porcelain` form and expand a leading `~` manually (see the Phase 0 note on why: a `git` proxy in this environment can rewrite `--porcelain` output into a condensed, `~`-shorthand format that silently breaks a `^worktree ` anchor):
+6. **Sweep any executor worktrees still left over — crash backstop only.** Phase 4 already removes each todo's worktree immediately when that todo's executor reports (rolling dispatch), so this step should normally find nothing. It exists for the case where an executor crashed before reaching that cleanup, or the run itself was interrupted mid-batch. Force-remove them — a bare `git worktree prune` cannot, because they are created _locked_. Use the non-`--porcelain` form and expand a leading `~` manually (see the Phase 0 note on why: a `git` proxy in this environment can rewrite `--porcelain` output into a condensed, `~`-shorthand format that silently breaks a `^worktree ` anchor):
 
    ```bash
    git worktree list | awk '/\.claude\/worktrees\/agent-/ {sub(/ +[0-9a-f]{4,40} +\[[^]]*\].*$/, ""); print}' | while read -r wt; do
@@ -439,14 +451,14 @@ After all batches have been executed (or after early termination):
 
 ## Rules
 
-- **Baseline must be green.** Never start batch processing on a broken codebase.
-- **Max 4 parallel agents.** Respect the limit to avoid overwhelming system resources and context.
-- **Sequential when scope is unknown.** If a todo mentions no files, it runs alone — never assume it is safe to parallelize.
-- **Advisor-gate parallel batches.** Before dispatching any plan with a parallel batch of 2+ todos, run the Phase 3 advisor review — catching an unsafe pairing before agents spin up is far cheaper than untangling stacked PRs after.
-- **Top-level batch verification happens in Phase 5 only.** Do not run an extra orchestrator-level `npm run test:run` / `check:types` / `lint` pass between batches. Each executor still performs its own scoped verification inside the worktree before reporting success, and the orchestrator runs one final repo-level verification pass at the end.
+- **Baseline must be green.** Never start the run on a broken codebase.
+- **Max 4 parallel agents.** The rolling scheduler enforces this cap per completion, not by chunking into batches — respect the limit to avoid overwhelming system resources and context.
+- **Sequential when scope is unknown.** If a todo mentions no files, it's tagged `must-run-alone` — never assume it is safe to run alongside anything else.
+- **Advisor-gate the queue.** Before dispatching a queue with 2+ `independent` items, run the Phase 3 advisor review — catching an unsafe pairing before agents spin up is far cheaper than untangling stacked PRs after.
+- **Top-level verification happens in Phase 5 only.** Do not run an extra orchestrator-level `npm run test:run` / `check:types` / `lint` pass while executors are in flight. Each executor still performs its own scoped verification inside the worktree before reporting success, and the orchestrator runs one final repo-level verification pass at the end.
 - **The executor agent does the work.** This orchestrator only triages, dispatches, and summarizes. Never implement todo changes directly.
 - **Archive happens in the executor.** Completed todos are moved to `todos/archive/` by the executor agent, not by this orchestrator.
 - **Report everything.** Every todo in the queue must appear in the final summary table, even if skipped or blocked.
-- **Self-cleaning.** Phase 0 force-removes leftover worktrees and deletes both remote AND local `todo/*` branches whose PRs are **all merged** (a branch whose PR was closed WITHOUT merging is a rejection signal — surfaced in Phase 5, never auto-swept, for both remote and local); Phase 5 removes this run's worktrees. The user must never have to clean up `todo/*` branches — local or remote — or `agent-*` worktrees by hand.
+- **Self-cleaning.** Phase 0 force-removes leftover worktrees and deletes both remote AND local `todo/*` branches whose PRs are **all merged** (a branch whose PR was closed WITHOUT merging is a rejection signal — surfaced in Phase 5, never auto-swept, for both remote and local); Phase 4 removes each todo's worktree immediately on completion, and Phase 5 sweeps any stragglers as a crash backstop. The user must never have to clean up `todo/*` branches — local or remote — or `agent-*` worktrees by hand.
 - **Auto-merge only through the guard.** Executors enable GitHub's native `gh pr merge --auto --squash --delete-branch` ONLY when `todo-automerge-guard.sh` returns exit 0 (low priority, non-`security`, safe-path-only) — it then merges itself once CI is green, no orchestrator or user step. Every other PR (`held`, `unknown`, `review-required`) stays open and is never auto-merged; the user reviews and merges those individually.
 - **Auto-sync local `main`.** Phase 0 fast-forwards local `main` at the start (catching merges from prior sessions, which also stops the backlog from re-picking an already-archived todo) and Phase 5 fast-forwards again at the end (catching this run's merges). Always **ff-only** so parallel work is never disturbed — the user must never have to `git pull` by hand to see a completed todo archived locally.
