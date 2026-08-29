@@ -210,6 +210,13 @@ OUT=$(run_hook_noawk "g\$'h' pr create --fill")
 assert_contains "broken awk + \$-sigil-split gh still demands a stamp (fails CLOSED)" \
   '"permissionDecision": "deny"' "$OUT"
 
+# 12l. Brace-grouped invocation must still deny (todos/P1-2026-08-17-cmd-position-anchor-boundary-gaps.md):
+# `{ ...; }` executes its body in the CURRENT shell (no subshell), so this genuinely invokes
+# `gh pr create` — the shared _CMD_POS_PREFIX previously omitted `{` as a valid opener.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook '{ gh pr create --title x; }')
+assert_contains "brace-grouped create still denies" '"permissionDecision": "deny"' "$OUT"
+
 # 13. Helper UN-SOURCEABLE → DENY. Locks the fail-safe: if the shared stamp-path helper
 # can't be found, the guard must block (never silently allow a PR with no stamp).
 #

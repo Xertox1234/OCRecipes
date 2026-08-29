@@ -113,6 +113,13 @@ assert_deny "subshell '(git commit)' on detached HEAD is denied" "$OUT"
 OUT=$(run_hook 'true | git commit -m oops')
 assert_deny "piped 'true | git commit' on detached HEAD is denied" "$OUT"
 
+# Test 8c: brace-grouped form (todos/P1-2026-08-17-cmd-position-anchor-boundary-gaps.md) —
+# `{ ...; }` executes its body in the CURRENT shell (no subshell), so this genuinely
+# commits; the shared _CMD_POS_PREFIX previously omitted `{` as a valid opener. Still
+# detached from Test 8/8b.
+OUT=$(run_hook '{ git commit -m oops; }')
+assert_deny "brace-grouped '{ git commit; }' on detached HEAD is denied" "$OUT"
+
 # Test 9: a quoted MENTION of "; git commit" inside a -m message must NOT be read as a real
 # commit — silent even on detached HEAD (quote-aware port; the raw COMPOUND_COMMIT_RE matched
 # the ';' inside the quotes and false-DENYd). Still detached from Test 8.

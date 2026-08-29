@@ -66,12 +66,46 @@
 
 # Command-position building blocks, shared by the STRICT matchers (guard + commit).
 # Separator class opens a command: start-of-line (grep's ^ is per-line, so newline-
-# separated compounds are covered), or after ; & | ( . The prefix then skips any run of
-# env-assignments (NAME=value) and bare command-position runner words that take no
-# intervening args. Assignment value class is `*` (not `+`): a quote-blanked value can
-# leave `NAME= `. Trailing class closes the token: whitespace, a subshell `)`, or EOL.
-_CMD_POS_PREFIX='(^|[;&|(])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*'
-_CMD_POS_SUFFIX='([[:space:]]|[)]|$)'
+# separated compounds are covered), or after ; & | ( ` { ! — a brace-group `{ ... }`
+# executes its body in the CURRENT shell (no subshell), a backtick span runs its
+# contents as a command substitution, and `!` negates a pipeline's exit status without
+# preventing it from running: all three are real command positions, not just the four
+# operators this class originally covered (found by /code-review of PR #850, 2026-08-17,
+# and empirically reproduced — see
+# docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md).
+# The prefix then skips any run of env-assignments (NAME=value) and bare command-position
+# runner words that take no intervening args. Assignment value class is `*` (not `+`): a
+# quote-blanked value can leave `NAME= `. Trailing class closes the token: whitespace, a
+# subshell `)`, one of the same ; & | ` operators (a verb with no trailing space before a
+# separator, e.g. `git commit;date`, was previously invisible), `{`/`}` (AC-required
+# defense-in-depth for this todo, wider than guard-outward-cli.sh's own `_OUT_POS_SUFFIX`,
+# which omits them — `}` cannot follow a verb as a REAL brace-group close since bash
+# requires a preceding `;`/newline there, so this is belt-and-suspenders, not a live gap),
+# or EOL. Mirrors guard-outward-cli.sh's `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX` opener
+# treatment (already correct) MINUS its shell-keyword absorber (then/do/else/elif/time) —
+# out of scope for this todo's character-class-only fix.
+#
+# KNOWN RESIDUAL (harmless): widening `{`+`}` together also makes a bash parameter
+# expansion whose variable name equals a matched verb, e.g. `${git}` or `${git commit}`,
+# satisfy the anchor (`{` opens, `}` closes) even though the expansion merely reads a
+# variable — it does not invoke anything by itself. This is NOT limited to `cmd_is_git`:
+# every anchored matcher can fire this way (`cmd_is_git_commit`, `cmd_is_git_head_mover`,
+# `cmd_is_gh_pr_create`, etc. all confirmed — the anchor matches rendered TEXT, not valid
+# bash syntax, and `${verb subcommand}` is not valid parameter-expansion syntax to begin
+# with, so this never corresponds to a real invocation). It stays harmless for every
+# DENY-shaped consumer (pr-preflight-guard.sh, branch-preflight.sh check 1 —
+# over-triggering on non-executing text is the safe direction for a deny gate) and every
+# advisory-only consumer (core-bare-guard.sh's `cmd_is_git` — always exits 0, never
+# denies, so a spurious match costs at most a redundant, idempotent
+# `git config core.bare false`). One consumer is neither: `drift-detect-update.sh`'s
+# `cmd_is_git_head_mover` call WRITES a HEAD baseline on a match rather than denying —
+# a spurious `${git commit}`-shaped match there is SUPPRESSIVE, not safe-direction (it
+# can refresh the baseline to the current SHA without a real HEAD-moving op, narrowing
+# the window in which a genuinely external drift would be noticed). Exploiting it
+# requires literal `${verb subcommand}`-shaped text with no real invocation, unlikely by
+# accident — noted rather than treated as blocking.
+_CMD_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*'
+_CMD_POS_SUFFIX='([[:space:]]|[);&|`{}]|$)'
 
 # cmd_bare: read a shell command string on STDIN, emit a "bare" copy with the CONTENTS
 # of every quoted span (and every backslash-escaped character) replaced by spaces, via a
@@ -169,8 +203,9 @@ cmd_words() {
   awk '
     # Everything a quoted span must NOT be able to emit: whitespace (which would
     # split one argv word into two) and every character that can OPEN or CLOSE a
-    # command position in either anchor — the lib`s `; & | ( )` plus the wider
-    # guard-local set (backtick, `{`, `}`, `!`) and a newline (grep is
+    # command position in either anchor — `; & | ( )` plus backtick, `{`, `}`, `!`
+    # (now part of THIS lib`s own `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`, not exclusively
+    # guard-local -- see the anchor definition above) -- and a newline (grep is
     # line-oriented, so a surviving newline is a start-of-line command position).
     function neutral(ch) {
       return (ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" \
@@ -323,6 +358,35 @@ cmd_is_git_head_mover() {
 # Shared by cmd_is_git_branch_create (below) AND branch-preflight.sh's own start-point
 # extraction — ONE definition of "which segment is the real create" for both, since the
 # original bug this fixes was exactly two call sites silently disagreeing about that.
+# The terminator class `[^;&|)`]` does NOT simply mirror `_CMD_POS_SUFFIX`'s closer set —
+# the two classes answer different questions and must be derived independently. Found by
+# two /code-review passes, 2026-08-28:
+#   (1) `_CMD_POS_SUFFIX` closes a span immediately after a FIXED verb token (`git commit`,
+#       `checkout`/`switch` itself) — a backtick belongs there because an unquoted backtick
+#       is ALWAYS command-substitution syntax in real bash, never literal payload, so when
+#       stage 1 (cmd_is_git_branch_create, which anchors on _CMD_POS_SUFFIX) widened to
+#       treat a bare backtick as a boundary, this stage-2 extraction's own terminator had to
+#       gain backtick too, or a backtick-wrapped `` `git checkout -b foo` `` would leak the
+#       trailing text AFTER the closing backtick into the extracted segment as if it were
+#       part of the invocation — manufacturing a spurious start-point token.
+#   (2) This terminator instead closes a MULTI-TOKEN ARGUMENT span (the branch/ref name and
+#       everything after the create flag) — a real, unquoted git ref name CAN legitimately
+#       contain `{`/`}` (`git check-ref-format --branch 'foo{bar}'` exits 0, and bash passes
+#       an unquoted `foo{bar}` through to argv literally with no comma/range to expand), so
+#       adding `{`/`}` here — done in a first attempt at fix (1), reasoning "stay in sync
+#       with _CMD_POS_SUFFIX" — silently TRUNCATED a real explicit start-point
+#       (`git checkout -b feature/six{seven} origin/main` lost `origin/main` entirely),
+#       flipping branch-preflight.sh's HAS_START_POINT 1→0 and spuriously re-running the
+#       stale-upstream check on a command that correctly named one. `{`/`}` must NOT be in
+#       this class; only backtick, which can never be real unquoted ref-name content.
+# KNOWN PRE-EXISTING GAP (not introduced or widened by either fix above, unrelated to this
+# todo's brace/backtick/bang scope): this terminator also does not exclude `<`, `>`, or `#`,
+# so an ordinary `git checkout -b foo 2>/dev/null` leaks the redirection into the segment,
+# manufacturing a spurious start-point the same way. A shallow char-class fix is NOT safe
+# here — excluding `<`/`>` alone still leaves the fd-prefix digit (`2` in `2>`) as a
+# spurious non-flag token, and digits cannot be blanket-excluded (`release/2.0` is a real
+# branch name) — correct handling needs `[0-9]*[<>]` treated as one unit, a new mechanism
+# out of this todo's Scope Contract. Surfaced for human triage rather than patched here.
 cmd_git_branch_create_segment() {
   local segment
   while IFS= read -r segment; do
@@ -333,7 +397,7 @@ cmd_git_branch_create_segment() {
                    && { printf '%s\n' "$segment"; return 0; } ;;
     esac
   done <<EOF
-$(printf '%s' "$1" | cmd_words | grep -oE '(checkout|switch)[[:space:]]+[^;&|)]*')
+$(printf '%s' "$1" | cmd_words | grep -oE '(checkout|switch)[[:space:]]+[^;&|)`]*')
 EOF
   return 1
 }

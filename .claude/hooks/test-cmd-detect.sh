@@ -155,6 +155,79 @@ det cmd_is_git_branch_create 'grep checkout somefile && git checkout -b foo' yes
   "cmd_is_git_branch_create: an unrelated command's own argument doesn't win over the real create"
 det cmd_is_git_branch_create 'git checkout -b foo origin/main' yes \
   "cmd_is_git_branch_create: create with an explicit start-point still detected (sanity)"
+# cmd_git_branch_create_segment's OWN terminator class does NOT simply mirror
+# _CMD_POS_SUFFIX's closer set — see the two /code-review passes documented at the
+# function definition, 2026-08-28. Two-sided: a backtick-wrapped create must be CLIPPED
+# (trailing text after the closing backtick must not leak in), but a brace in a REAL
+# branch name must NOT be clipped (a real git ref can contain `{`/`}` unquoted).
+SEG_OUT=$(cmd_git_branch_create_segment '`git checkout -b foo` bar')
+if [ "$SEG_OUT" = "checkout -b foo" ]; then
+  echo "PASS: cmd_git_branch_create_segment: backtick closer does not leak trailing text into the segment"; PASS=$((PASS+1))
+else
+  echo "FAIL: cmd_git_branch_create_segment: expected 'checkout -b foo', got '$SEG_OUT'"; FAIL=$((FAIL+1))
+fi
+SEG_OUT=$(cmd_git_branch_create_segment 'git checkout -b feature/six{seven} origin/main')
+if [ "$SEG_OUT" = "checkout -b feature/six{seven} origin/main" ]; then
+  echo "PASS: cmd_git_branch_create_segment: a brace in a REAL branch name is not truncated (explicit start-point preserved)"; PASS=$((PASS+1))
+else
+  echo "FAIL: cmd_git_branch_create_segment: expected the full segment with origin/main preserved, got '$SEG_OUT'"; FAIL=$((FAIL+1))
+fi
+
+echo "--- _CMD_POS_PREFIX/_CMD_POS_SUFFIX: brace/backtick/bang/separator boundaries ---"
+# The shared anchor omitted `{`, backtick, and `!` as openers, and `;`/`&`/`|`/backtick/
+# `{`/`}` as closers — so a brace-grouped, backtick-substituted, `!`-prefixed, or
+# no-space-before-separator REAL invocation was invisible to every cmd_is_*
+# matcher (found by /code-review of PR #850, 2026-08-17). `{ ...; }` executes its body
+# in the CURRENT shell (no subshell) and a backtick span runs its contents as a command
+# substitution — both genuinely invoke git/gh, so these are real ALLOW-when-should-DENY
+# gaps. Mirrors the identical widening test-guard-outward-cli.sh already pins for the
+# sibling _OUT_POS_PREFIX/_OUT_POS_SUFFIX (test-guard-outward-cli.sh:428-435).
+det cmd_is_git_commit   '{ git commit -m x; }'         yes "cmd_is_git_commit: brace-grouped opener"
+det cmd_is_git_commit   '`git commit -m x`'            yes "cmd_is_git_commit: backtick-substituted opener"
+det cmd_is_git_commit   '! git commit -m x'             yes "cmd_is_git_commit: bang-prefixed opener"
+det cmd_is_git_commit   'git commit;date'               yes "cmd_is_git_commit: no-space-before-';' closer"
+det cmd_is_git_commit   'git commit&'                    yes "cmd_is_git_commit: no-space '&' closer"
+det cmd_is_gh_pr_create 'gh pr create|cat'                yes "cmd_is_gh_pr_create: no-space '|' closer"
+det cmd_is_gh_pr_create '{ gh pr create --fill; }'      yes "cmd_is_gh_pr_create: brace-grouped opener"
+det cmd_is_gh_pr_create '`gh pr create --fill`'         yes "cmd_is_gh_pr_create: backtick-substituted opener"
+det cmd_is_gh_pr_create '! gh pr create --fill'          yes "cmd_is_gh_pr_create: bang-prefixed opener"
+det cmd_is_gh_pr_create 'gh pr create;date'              yes "cmd_is_gh_pr_create: no-space-before-';' closer"
+# AC-required closer widening (`{`/`}`) is wider than guard-outward-cli.sh's own
+# _OUT_POS_SUFFIX, which omits them — pin the newly-accepted shape per
+# docs/solutions/best-practices/broadened-matcher-needs-new-input-regression-tests-2026-07-20.md
+# ("regression-test the newly-matched inputs, not just the false-positives removed").
+det cmd_is_git_commit   '{git commit}'                   yes "cmd_is_git_commit: no-space brace open+close (AC-required, not a real bash form)"
+# Two-sided negative controls: the SAME characters, fully inside a quoted span, must
+# stay undetected — the widened anchor only opens/closes on REAL (unquoted) syntax.
+det cmd_is_gh_pr_create 'git commit -m "deny { gh pr create; } form"'  no \
+  "brace-wrapped mention fully inside quotes stays undetected"
+det cmd_is_gh_pr_create 'git commit -m "it works! gh pr create now"'   no \
+  "bang-prefixed mention fully inside quotes stays undetected"
+det cmd_is_gh_pr_create 'git commit -m "see \`gh pr create\` in backticks"' no \
+  "backtick-wrapped mention fully inside quotes stays undetected"
+# KNOWN RESIDUAL (harmless, documented at the anchor definition): combining `{` as an
+# opener with `}` as a closer also satisfies a bash parameter expansion whose variable
+# name equals a matched verb — NOT limited to cmd_is_git (every anchored matcher can
+# fire this way; the anchor matches rendered TEXT, not valid bash syntax, and
+# `${verb subcommand}` is not valid parameter-expansion syntax to begin with, so this
+# never corresponds to a real invocation). Stays harmless because every current
+# consumer is either DENY-shaped (over-triggering is the safe direction) or
+# advisory-only (core-bare-guard.sh's cmd_is_git — always exits 0, never denies).
+# Pinned here as a KNOWN accepted gap, not a silent one.
+det cmd_is_git '${git} status' yes \
+  "KNOWN RESIDUAL: \${git} parameter expansion spuriously satisfies cmd_is_git (harmless — core-bare-guard.sh never denies)"
+det cmd_is_git_commit '${git commit}' yes \
+  "KNOWN RESIDUAL: not cmd_is_git-only — \${git commit} spuriously satisfies cmd_is_git_commit too (harmless — DENY-shaped consumer, safe direction)"
+# cmd_is_git had zero negative controls before this todo despite taking the LARGEST
+# behavioral delta of any matcher in the file (no verb-specific tail to anchor
+# against) — found by the todo-researcher. Pin one now.
+det cmd_is_git 'echo "git status later"' no \
+  "cmd_is_git: quoted mention stays undetected (first negative control for this matcher)"
+# Backtick as a CLOSER, not just an opener: the no-trailing-args form `` `git commit` ``
+# has the closing backtick immediately after the verb with nothing to give a whitespace
+# suffix — found by the todo-researcher as unexercised by the six required repro cases.
+det cmd_is_git_commit '`git commit`' yes \
+  "cmd_is_git_commit: backtick as CLOSER (no-args form, closing backtick immediately after verb)"
 
 echo "--- negative controls: bare forms still detected (probe can see anything) ---"
 det cmd_is_git_commit   'git commit -m x'      yes "bare git commit still detected"
