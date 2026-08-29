@@ -54,8 +54,14 @@ else
   # Lib unsourceable → this half of the gate is BLOCKING, so fail CLOSED: keep the raw
   # (quote-unaware) match so a real detached-HEAD commit is still caught. A quoted mention
   # may false-DENY — the accepted cost of never fail-OPENing a data-loss gate.
-  GIT_COMMIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
-  COMPOUND_COMMIT_RE='(&&|\|\||;)[[:space:]]*git[[:space:]]+commit([[:space:]]|$)'
+  # Widened 2026-08-29 alongside lib/cmd-detect.sh's _CMD_POS_PREFIX/_CMD_POS_SUFFIX to also
+  # catch a brace-grouped, backtick-substituted, or `!`-prefixed real commit (`{ git commit
+  # -m x; }`, `` `git commit -m x` ``, `! git commit -m x`) — this fallback previously only
+  # recognized start-of-string or &&/||/; before `git commit`, so it silently allowed exactly
+  # the shapes the primary-path widening was fixing. NOTE: deliberately does NOT also add `|`
+  # (single pipe) — that's a separate, pre-existing gap, unrelated to this widening's scope.
+  GIT_COMMIT_RE='^[[:space:]]*[`{!]?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
+  COMPOUND_COMMIT_RE='(&&|\|\||;|[`{!])[[:space:]]*git[[:space:]]+commit([[:space:]]|$)'
   if [[ "$CMD" =~ $GIT_COMMIT_RE ]] || printf '%s' "$CMD" | grep -qE "$COMPOUND_COMMIT_RE"; then
     IS_COMMIT=1
   fi

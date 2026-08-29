@@ -134,6 +134,15 @@ cp "$HOOK" "$NOLIB/branch-preflight.sh"
 NOLIB_INPUT=$(jq -n --arg c "git commit -m 'oops'" '{"tool_name":"Bash","tool_input":{"command":$c}}')
 OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
 assert_deny "lib-missing: real detached-HEAD commit still denied (fail-closed)" "$OUT"
+
+# Test 10b: lib/cmd-detect.sh unsourceable + brace-grouped commit (`{ git commit -m x; }`) must
+# STILL deny — the raw GIT_COMMIT_RE/COMPOUND_COMMIT_RE fallback previously only recognized
+# start-of-string or &&/||/; before `git commit`, silently allowing exactly the shapes the
+# 2026-08-29 primary-path widening was fixing (same NOLIB harness as Test 10; sibling case for
+# the fallback path, not just the lib-sourced path Test 8c already covers).
+NOLIB_INPUT=$(jq -n --arg c '{ git commit -m oops; }' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: brace-grouped '{ git commit; }' still denied (fail-closed)" "$OUT"
 rm -rf "$NOLIB"
 
 # --- Stale-base branch-create check: fetch-then-deny (2026-08-28) --------------

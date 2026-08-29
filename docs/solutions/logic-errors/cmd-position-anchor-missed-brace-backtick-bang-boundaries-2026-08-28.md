@@ -137,6 +137,35 @@ blanket-excluded from the terminator (`release/2.0` is a real branch name) — c
 handling needs `[0-9]*[<>]` recognized as one unit, which is a new mechanism beyond a
 character-class widening. Left for a human decision on scope rather than patched.
 
+**`_CMD_POS_PREFIX` still omits shell-keyword command positions** (`if`/`then`,
+`for`/`do`, `while`/`do`, `case`, etc.) — found by `security-auditor` during PR #874's
+own review round (2026-08-29), verified live against the actual hook: the bare
+`gh pr create --fill` correctly denies via `pr-preflight-guard.sh`, but
+`if true; then gh pr create --fill; fi` emits no decision object at all (silent allow,
+no fresh-stamp demand) — the same bypass CLASS this fix set out to close, just a
+different opener shape. Explicitly disclosed in the anchor's own header comment
+(`_CMD_POS_PREFIX`'s definition, `.claude/hooks/lib/cmd-detect.sh:84-86`) and out of this
+PR's Scope Contract, so it did not block the PR's verdict. `guard-outward-cli.sh`'s
+sibling `_OUT_POS_PREFIX` already absorbs `then|do|else|elif|time` as runner words — the
+lib's shared anchor does not. Not filed as a todo (High-severity Deferred Item Todos
+policy: surface for a human decision, don't auto-file) — flag for the user to decide
+whether this warrants its own dedicated fix, folding into a future widening pass, or
+accepting as a known residual.
+
+**`branch-preflight.sh`'s lib-unsourceable fallback (`GIT_COMMIT_RE`/`COMPOUND_COMMIT_RE`)
+was found narrower than the primary path for these same brace/backtick/bang shapes** —
+found by `code-reviewer` on the same PR #874 review round, reproduced live under the
+`NOLIB` harness (`test-branch-preflight.sh` Test 10's pattern): a brace-grouped,
+backtick-substituted, or `!`-prefixed detached-HEAD commit was silently allowed through
+`branch-preflight.sh`'s Check 1 — a BLOCKING gate — when the lib was unsourceable. Unlike
+the two gaps above, this one **was fixed** as part of the same review-repair cycle rather
+than left unresolved: both fallback regexes now recognize `` ` ``/`{`/`!` as valid
+openers, with a two-sided regression test (Test 10b, confirmed RED against the pre-fix
+regex and GREEN after). See `todos/P3-2026-08-28-cmd-pos-anchor-widening-stale-comments.md`'s
+Updates for the full account — that todo's own AC had mischaracterized this gap as a
+"deliberate" divergence needing only a comment, which this fix and the todo's correction
+both supersede.
+
 ## Related Files
 
 - `.claude/hooks/lib/cmd-detect.sh` — `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`, both widened.
