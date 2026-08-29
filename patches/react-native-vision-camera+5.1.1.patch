@@ -1,29 +1,3 @@
-diff --git a/node_modules/react-native-vision-camera/ios/Extensions/Converters/AV+PixelFormat.swift b/node_modules/react-native-vision-camera/ios/Extensions/Converters/AV+PixelFormat.swift
-index 140bf37..fdb2790 100644
---- a/node_modules/react-native-vision-camera/ios/Extensions/Converters/AV+PixelFormat.swift
-+++ b/node_modules/react-native-vision-camera/ios/Extensions/Converters/AV+PixelFormat.swift
-@@ -50,8 +50,6 @@ extension PixelFormat {
-       self = .rgbRgba8Bit
-     case .rgbRgb8Bit:
-       self = .rgbRgb8Bit
--    case .rawBayerPacked9612Bit:
--      self = .rawBayerPacked9612Bit
-     case .rawBayerUnpacked16Bit:
-       self = .rawBayerUnpacked16Bit
-     default:
-diff --git a/node_modules/react-native-vision-camera/ios/Extensions/CoreMedia/CMFormatDescription.MediaSubType+hidden.swift b/node_modules/react-native-vision-camera/ios/Extensions/CoreMedia/CMFormatDescription.MediaSubType+hidden.swift
-index 4219fcc..544f29c 100644
---- a/node_modules/react-native-vision-camera/ios/Extensions/CoreMedia/CMFormatDescription.MediaSubType+hidden.swift
-+++ b/node_modules/react-native-vision-camera/ios/Extensions/CoreMedia/CMFormatDescription.MediaSubType+hidden.swift
-@@ -54,8 +54,6 @@ extension CMFormatDescription.MediaSubType {
-   static let rgbRgb8Bit = CMFormatDescription.MediaSubType(rawValue: kCVPixelFormatType_24RGB)
- 
-   // Bayer/RAW
--  static let rawBayerPacked9612Bit = CMFormatDescription.MediaSubType(
--    rawValue: kCVPixelFormatType_96VersatileBayerPacked12)
-   static let rawBayerUnpacked16Bit = CMFormatDescription.MediaSubType(
-     rawValue: kCVPixelFormatType_16VersatileBayer)
- }
 diff --git a/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridFrameRendererViewComponent.cpp b/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridFrameRendererViewComponent.cpp
 index fc67410..082f8e3 100644
 --- a/node_modules/react-native-vision-camera/nitrogen/generated/shared/c++/views/HybridFrameRendererViewComponent.cpp

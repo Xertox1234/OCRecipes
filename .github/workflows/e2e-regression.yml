@@ -58,7 +58,7 @@ permissions:
 jobs:
   e2e-ios:
     name: Maestro regression (iOS simulator)
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 60
 
     env:
@@ -87,11 +87,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # macos-14 defaults to Xcode 15.4, but React Native 0.81 requires >= 16.1
-      # (`pod install` fails with "Please upgrade XCode" otherwise). 16.1/16.2
-      # are already installed on the image side-by-side — just not selected.
-      - name: Select Xcode 16.2
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+      # macos-14 (Xcode 15.4 default, 16.1/16.2 available) was the previous
+      # pin, chosen only to clear RN 0.81's own >=16.1 floor -- but this
+      # repo's native config (the fmt/consteval Podfile patch, the
+      # nitrogen-C++-interop-ICE SWIFT_COMPILATION_MODE workaround) is
+      # written for and already assumes Xcode 26, not 16.x. Building against
+      # 16.2 anyway surfaced a cascade of SDK-ceiling errors with no natural
+      # end (CxxStdlib's iOS-16 minimum, expo-notifications' iOS-26-gated
+      # isRepeatedDay, vision-camera's kCVPixelFormatType_96VersatileBayerPacked12,
+      # a swift-frontend ICE in NitroImage's codegen script) -- each one a
+      # real, permanent repo patch bought to accommodate a runner choice, not
+      # an actual product need. macos-15 ships Xcode 26.3 alongside 16.x,
+      # matching what the rest of this repo already targets -- select that
+      # instead of continuing to patch around 16.2's gap.
+      - name: Select Xcode 26.3
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
 
       # macOS runners do NOT ship a startable Postgres — install it explicitly
       # (matches the Postgres 16 used by the Android job's service container and
@@ -121,7 +131,7 @@ jobs:
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
-      # Boot an iOS simulator for Maestro to drive. macos-14 ships Xcode with
+      # Boot an iOS simulator for Maestro to drive. macos-15 ships Xcode with
       # iPhone simulators preinstalled. Export the resolved UDID so the
       # failure-diagnostic step below can target the exact same device by id
       # (a name-based -destination lookup is ambiguous across the multiple
