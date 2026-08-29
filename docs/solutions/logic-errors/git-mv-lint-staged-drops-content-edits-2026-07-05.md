@@ -7,7 +7,7 @@ module: shared
 symptoms: [A file edited then moved with `git mv` shows the pre-edit content in the commit that just ran, `git status --porcelain` after the commit shows the moved file as modified again with exactly the edits that were supposed to be committed, An archived `/todo` file reads `status: backlog` with unchecked acceptance criteria even though it was set to `status: done` and checked off right before archiving, No error or warning was printed by git or the pre-commit hook — the commit "succeeded" with wrong content]
 severity: medium
 created: '2026-07-05'
-last_updated: '2026-07-24'
+last_updated: '2026-08-28'
 ---
 
 # git mv of an edited file can have its content silently reverted by lint-staged
@@ -46,6 +46,29 @@ If the mistake already happened (discovered via a post-commit `git status --porc
 - After any `git mv` + commit sequence, run `git status --porcelain` **once more after the commit completes** (not just right after the `mv`) — a clean tree confirms the commit actually captured the intended content. This is the single cheapest verification step and would have caught this immediately.
 - Prefer explicit `git add <moved-path>` over relying on `git mv`'s implicit staging whenever the moved file was edited beforehand and the repo has a lint-staged/husky pre-commit hook that touches the same file's glob.
 - **2026-07-24 reproduction**: recurred verbatim on a `/todo` executor run archiving `todos/P3-2026-07-24-carousel-card-double-period-empty-reason.md` — same shape (frontmatter `status: done` edit, `git mv` to `todos/archive/`, commit without an explicit `git add` on the new path), same `.md` glob path through lint-staged, same silent 100%-similarity revert to the pre-edit blob. Confirms this is not a one-off and the file still matches `*.{js,md}`. The differential that pinned it down fastest: compare the lint-staged log of the bad commit against a corrected one — the bad commit's log shows a `Hiding unstaged changes to partially staged files...` line (proof the file was partially staged when the hook ran); a commit where the moved file was `git add`ed explicitly beforehand has no such line and lands correctly. Because Step 3a's verified-solution search is keyed off the *todo's affected source files* (a UI component here), this solution — tagged by tooling/process (`git`, `lint-staged`, `todo-executor`), not by any content-file glob — will not surface via that search for a todo whose Implementation Notes don't mention git/commit mechanics. Anyone hitting Step 8 of `.claude/agents/todo-executor.md` should treat this file's Solution section as a standing checklist item for that step, independent of what the todo itself touches.
+
+**2026-08-28 reproduction (3rd occurrence, via `git mv` directly rather than plain `mv`):** hit
+again archiving `todos/P3-2026-08-28-config-file-matcher-depth-parity-gap.md`, this time via a
+path that todo-executor.md's current Step 8 text does NOT literally describe — `git mv <old>
+<new>` was run directly (not the documented plain `mv` + `git add <old> <new> <other files>`
+pattern). Trying to follow Step 8's literal `git add <old> <new> <other files>` command after a
+`git mv` fails outright with `fatal: pathspec '<old>' did not match any files` (git mv already
+removes the old path from the index entirely, unlike a plain `mv` which leaves a tracked-but-
+missing index entry that `git add <old>` can still resolve into a staged deletion) — this is a
+second, syntactically distinct trap from the "atomic-failure" one above, not just a rename of it.
+The instinctive recovery — drop the old path from the `git add` list and add only the other
+changed files, trusting `git mv`'s implicit staging for the new path — is exactly the mistake
+this solution's own `## Solution` section already warns against, and it reproduced the corruption
+identically (`git show HEAD:<new-path>` showed the **fully pre-session original** content,
+`status: backlog`, no edits at all — not even the Step 4.0 in-progress flip). Recovery this time
+used `git add <new-path> && git commit --amend --no-edit` rather than the `## Solution` section's
+prescribed new-commit approach, and — verified via `git diff HEAD` (empty) and `git show
+HEAD:<path> | grep status` (correct) immediately after — amend worked cleanly with no repeat
+corruption. This is one data point, not a reversal of the "prefer a new commit" guidance: an
+amend re-runs the same pre-commit hook against a now-fully-staged (non-partial) diff, which may
+be why it didn't reproduce here, but the new-commit path remains untested-safer default. Takeaway
+for `git mv` specifically: the required follow-up is `git add <new-path>` alone (not `<old> <new>`
+together) — attempting to `git add` the pre-mv path is not just redundant, it errors.
 
 ## Related Files
 
