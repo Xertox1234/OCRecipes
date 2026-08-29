@@ -326,7 +326,7 @@ For findings the user wants deferred:
 
 1. **Summarize from the manifest — do not run the full suite here.** Each user-selected fix already passed its **targeted** tests and per-fix review in Phase 3; the single authoritative full-suite gate runs once at the end of Phase 6. Confirm every fixed finding is marked `verified` with its per-fix evidence.
 2. Update the manifest summary table with the findings counts per severity (Found / Verified / Deferred / False-positive / Open). The summary table tracks findings only — the suite is a pass/fail gate run in Phase 6, not a number recorded here.
-3. **Draft** the CHANGELOG entry from the manifest, but do **not** append it yet: the append-only CHANGELOG must record a confirmed-green audit, so it is written only after Phase 6's authoritative suite gate (Phase 6 step 5).
+3. **Draft** the CHANGELOG entry from the manifest, but do **not** append it yet: the append-only CHANGELOG must record a confirmed-green audit, so it is written only after Phase 6's authoritative suite gate (Phase 6 step 4); the CHANGELOG append itself is Phase 6 step 5.
 4. **Report the final summary to the user:**
    - Findings: X total (C/H/M/L breakdown)
    - Verified: N fixed with evidence

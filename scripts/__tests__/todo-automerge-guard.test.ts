@@ -184,11 +184,12 @@ describe("todo-automerge-guard.sh (regression — behavior unchanged by this wid
   });
 
   it("HOLDs a medium-priority todo (carved out of auto-merge — review-required like high/critical)", () => {
-    const { status } = runGuard(
+    const { status, stdout } = runGuard(
       ["client/screens/HomeScreen.tsx"],
       GENERIC_MEDIUM_TODO,
     );
     expect(status).toBe(1);
+    expect(stdout).toContain("only low todos are batch-merge-eligible");
   });
 });
 
