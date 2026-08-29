@@ -158,12 +158,22 @@ export default Svg;
   still-unidentified import somewhere in `@react-navigation/native`'s or
   `@react-navigation/core`'s graph — `vitest --clearCache` and manually
   removing `node_modules/.vite` both ruled out a stale-cache explanation.
-  **Not resolved.** The next person to pick this up should reach for
-  `DEBUG="vite:transform"` combined with Vite's own dependency-optimizer
-  debug output (`DEBUG="vite:deps"`), or instrument Vitest's optimizer
-  directly, rather than continuing to rely on the `esbuild`-CLI-plus-aliases
-  technique — it has now been shown to under-report what Vitest's real
-  pipeline hits.
+  **Not resolved.** A follow-up review pass (2026-08-29) ran the
+  `DEBUG="vite:transform"` diagnostic named below and got one real datum:
+  the log's last entry before the crash is the test file itself — nothing
+  transforms after it. The crash therefore never reaches Vite's normal
+  transform pipeline at all; whatever the third gap is, it happens earlier,
+  somewhere in Vitest's module-loading/dependency-scan step. (A plausible-
+  looking SSR-externalization hypothesis was checked and ruled out in the
+  same pass — `@react-navigation/native`'s `package.json` `main` points at
+  `import`/`export`-syntax source with no `"type": "module"`, so a plain
+  CJS `require()` load would fail with `Unexpected token 'export'`, not
+  `'typeof'`.) The next person to pick this up should start from "before
+  the transform pipeline, in module resolution/scanning" rather than
+  re-deriving that narrowing — reach for `DEBUG="vite:deps"` or instrument
+  Vitest's optimizer directly, rather than continuing to rely on the
+  `esbuild`-CLI-plus-aliases technique, which has now been shown to
+  under-report what Vitest's real pipeline hits.
 
 ## Related Files
 

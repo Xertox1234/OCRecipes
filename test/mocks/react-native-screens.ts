@@ -21,6 +21,14 @@
 // ScreenContainer / screensEnabled (ScreenFallback, used defensively behind a
 // try/catch + optional-chaining check — screensEnabled() returning false here
 // makes bottom-tabs fall back to plain Views, which is fine for jsdom tests).
+//
+// NOT covered: BottomTabs / BottomTabsScreen, imported by
+// @react-navigation/bottom-tabs' `./unstable` subpath entry point (a separate
+// export from its default `.` entry). Confirmed unreachable today — no file
+// in this repo imports `@react-navigation/bottom-tabs/unstable`. If that ever
+// changes, this mock will need those two exports added; it will otherwise fail
+// at a different, silent render-time site rather than the transform-time
+// crash this mock exists to fix.
 import React from "react";
 
 function screenEl(tag: string, displayName: string) {
