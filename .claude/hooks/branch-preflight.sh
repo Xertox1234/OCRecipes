@@ -54,8 +54,20 @@ else
   # Lib unsourceable → this half of the gate is BLOCKING, so fail CLOSED: keep the raw
   # (quote-unaware) match so a real detached-HEAD commit is still caught. A quoted mention
   # may false-DENY — the accepted cost of never fail-OPENing a data-loss gate.
-  GIT_COMMIT_RE='^([[:space:]]*[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
-  COMPOUND_COMMIT_RE='(&&|\|\||;)[[:space:]]*git[[:space:]]+commit([[:space:]]|$)'
+  # Widened 2026-08-29 alongside lib/cmd-detect.sh's _CMD_POS_PREFIX/_CMD_POS_SUFFIX to also
+  # catch a brace-grouped, backtick-substituted, or `!`-prefixed real commit (`{ git commit
+  # -m x; }`, `` `git commit -m x` ``, `! git commit -m x`) — this fallback previously only
+  # recognized start-of-string or &&/||/; before `git commit`, so it silently allowed exactly
+  # the shapes the primary-path widening was fixing. NOTE: this fallback is still NOT at
+  # parity with the primary (lib-sourced) path — confirmed pre-existing, unrelated to this
+  # widening's scope, still silently ALLOWS: a bare `|` operator; a subshell `(git commit
+  # -m x)`; a newline-separated compound (`[[ =~ ]]` has no per-line `^`, unlike the primary
+  # path's grep -E); a runner-word wrapper (`env`/`command`/`exec`/etc.); and, on
+  # COMPOUND_COMMIT_RE specifically (not GIT_COMMIT_RE), a `-c key=value` group before
+  # `commit`. All five require the rare precondition of the shared lib being unsourceable —
+  # see todos/ for tracked hardening work.
+  GIT_COMMIT_RE='^[[:space:]]*[`{!]?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
+  COMPOUND_COMMIT_RE='(&&|\|\||;|[`{!])[[:space:]]*git[[:space:]]+commit([[:space:]]|$)'
   if [[ "$CMD" =~ $GIT_COMMIT_RE ]] || printf '%s' "$CMD" | grep -qE "$COMPOUND_COMMIT_RE"; then
     IS_COMMIT=1
   fi
