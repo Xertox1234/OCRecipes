@@ -43,6 +43,14 @@ export const Share = {
 // "Open Settings" action button (e.g. `vi.spyOn(RN.Linking, "openSettings")`).
 export const Linking = { openURL: async () => {}, openSettings: vi.fn() };
 export const NativeModules = {};
+export const I18nManager = {
+  isRTL: false,
+  doLeftAndRightSwapInRTL: true,
+  allowRTL: () => {},
+  forceRTL: () => {},
+  swapLeftAndRightInRTL: () => {},
+  getConstants: () => ({ isRTL: false, doLeftAndRightSwapInRTL: true }),
+};
 
 // ---------------------------------------------------------------------------
 // React-component mocks for jsdom component rendering tests

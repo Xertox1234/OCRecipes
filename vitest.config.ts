@@ -122,6 +122,10 @@ export default defineConfig({
         __dirname,
         "./test/mocks/react-native-safe-area-context.ts",
       ),
+      "react-native-screens": path.resolve(
+        __dirname,
+        "./test/mocks/react-native-screens.ts",
+      ),
       "react-native-gesture-handler/ReanimatedSwipeable": path.resolve(
         __dirname,
         "./test/mocks/react-native-gesture-handler-reanimated-swipeable.ts",
