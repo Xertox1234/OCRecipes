@@ -404,7 +404,39 @@ findings.**
   both flows the same explicit `extendedWaitUntil`/90000 treatment (one of them twice, at its
   `clearState` register/login toggle). Fixed in `74feb546`.
 
-**Dispatch 3 (run 33276571201): in flight as of this entry.** Hypothesis: iOS now compiles
-clean (pod-wide sweep verified locally to floor every target at 16.0); Android reaches and
-passes login reliably within the 90s margin. Will update this entry (or add the next one) with
-the outcome rather than assume.
+**Dispatch 3 (run 33276571201): both hypotheses partially confirmed, two more findings.**
+
+- **iOS: deployment target fully resolved** — the `CxxStdlib` error is completely gone,
+  confirming the pod-wide sweep worked. A **new, unrelated** error took its place:
+  `DateComponentsSerializer.swift:9:62: error: value of type 'DateComponents' has no member
+'isRepeatedDay'`. The reference is gated `if #available(iOS 26.0, *)`, but `#available` only
+  gates _runtime_ execution — Swift still resolves every identifier inside the block against
+  the _compiling_ SDK, and Xcode 16.2 (pinned for RN 0.81) doesn't define this Foundation
+  property yet. Speculative, forward-looking code in `expo-notifications` 55.0.14 for an OS
+  version this toolchain doesn't know about — exactly the "next layer" this todo's own
+  Implementation Notes predicted, unrelated to deployment target. Patched via `patch-package`
+  (precedent: `patches/react-native-vision-camera+5.1.1.patch`), removing the 3 dead lines
+  rather than pinning an older `expo-notifications` (which risks Expo-SDK-54
+  autolinking/peer-dependency mismatches for a larger blast radius). Fixed in `5b26f696`.
+- **Android: 90s margin didn't help** — most flows now hit the **full** 90s timeout (not a
+  partial delay), while `Home - Navigate between tabs` succeeded fast (33-36s, past login, on
+  its own separate `"Hello"` assertion) on both this run and the prior one. Ruled out
+  bundling as the cause: `metro.log` showed the first bundle completing in 41.7s, and the
+  specific flow examined ran minutes into the retry phase with Metro long since warm
+  (~250ms cached). Pulled a screenshot at the exact timeout moment: it shows the Expo dev
+  **MENU** (`"Connected to: http://localhost:8081"`, Reload/Go home, a Tools list) rendered as
+  a bottom-sheet modal, with the Sign In screen's own blurred background photo visible behind
+  it — the real screen is loaded underneath, not still loading. **A second, different overlay**
+  from the "developer menu... Continue" welcome banner already fixed and confirmed working —
+  same category, different trigger, never caught before because earlier screenshots only ever
+  captured the welcome-banner case. No stable text/id identifies a dismiss button for this one;
+  used Android's own back gesture, gated behind detecting `"Go home"` so it can't fire (or
+  navigate the app backward) when the menu isn't showing. Verified the
+  `runFlow: {when, commands}` conditional syntax locally against the installed Maestro CLI
+  before spending CI on it. Fixed in `e1fb20ce`, **NOT YET VERIFIED on live CI**.
+
+**Dispatch 4 (run 33278558247): in flight as of this entry.** Hypothesis: iOS builds clean
+(the CxxStdlib layer and the expo-notifications layer are both now resolved — no further layers
+identified via static reading, but none were visible before dispatching either, so treat this
+as genuinely uncertain); Android's back-gesture dismiss closes the dev menu and every flow
+reaches Sign In within the 90s margin. Will update with the outcome rather than assume.
