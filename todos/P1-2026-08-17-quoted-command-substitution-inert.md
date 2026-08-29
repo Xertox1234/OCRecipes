@@ -3,7 +3,7 @@ title: "cmd_bare/cmd_words treat quoted \$(...) and backtick command substitutio
 status: backlog
 priority: high
 created: 2026-08-17
-updated: 2026-08-17
+updated: 2026-08-29
 assignee:
 labels: [security, harness]
 github_issue:
@@ -57,12 +57,13 @@ pre-existing, structural gap in the whole quote-scanning approach, not a regress
 
 ## Acceptance Criteria
 
-- [ ] Design decision made and documented: either (a) special-case `$(...)`/backtick
-      spans in `cmd_bare`/`cmd_words` so their CONTENTS are still scanned by the
-      per-hook matchers/patterns even when the span itself is quoted, or (b) treat any
-      command containing `$(...)`/backtick as automatically "smells outward" / demands
-      the crude fail-closed path regardless of what's inside, or (c) adopt a different
-      detection mechanism entirely for this class (see Implementation Notes).
+- [x] Design decision made and documented: **(c) adopt a different detection
+      mechanism entirely** — decided by the user 2026-08-29 (see Updates). Decided:
+      delegate to a real shell tokenizer (e.g. bash's own parser in a restricted
+      subshell) instead of extending `cmd_bare`/`cmd_words`'s hand-rolled awk
+      quote-scanner with a 7th special case. This top-level choice is settled; the
+      specific tokenizer implementation approach is a design/spike that belongs to
+      implementation, not a re-opening of this decision (see Scope Contract).
 - [ ] All four reproduction cases above (`eas update`, `gh pr merge --admin`,
       `gh api -X POST`, `gh pr create`) correctly deny/gate after the fix.
 - [ ] Regression tests added to `test-cmd-detect.sh` and the relevant end-to-end
@@ -80,18 +81,22 @@ bypass #7 in that same pattern, or it may be the signal to step back: a real she
 tokenizer (e.g. `bash -c 'read -a words <<<"$CMD"'` under careful sandboxing, or
 delegating to bash's own parser in a restricted subshell) would get quoting, escaping,
 ANSI-C quoting, AND command-substitution-always-executes semantics for free, closing
-this entire CLASS of bug rather than one variant per review round. Worth evaluating
-that architectural option explicitly before adding a 7th special case to the awk model
-— this todo's scope intentionally leaves that evaluation open rather than presupposing
-another awk patch is the right fix.
+this entire CLASS of bug rather than one variant per review round.
+
+**Decided 2026-08-29 (see Updates and Acceptance Criteria): the tokenizer option, not
+a 7th awk special case.** The evaluation this paragraph originally left open is closed —
+the remaining work is a design/spike on the specific tokenizer implementation approach
+(see Scope Contract), not a re-litigation of tokenizer-vs-awk-patch.
 
 ## Scope Contract
 
-<!-- Deliberately left open-ended — see Implementation Notes. The first step of this
-     todo may be a design/spike session, not a direct code change. -->
+<!-- Decision made 2026-08-29 (see Updates): option (c), a real shell tokenizer. The
+     first step of implementation should still be a design/spike evaluating the
+     specific tokenizer approach before committing to line-by-line hook changes. -->
 
-- **Mechanisms to use:** undetermined — requires a design decision (see Acceptance
-  Criteria) before implementation.
+- **Mechanisms to use:** a real shell tokenizer (e.g. bash's own parser invoked in a
+  restricted subshell) to replace `cmd_bare`/`cmd_words`'s awk-based quote-scanning,
+  rather than adding another special case to the existing state machine.
 - **Files in scope:** `.claude/hooks/lib/cmd-detect.sh` and every hook that consumes
   `cmd_bare`/`cmd_words` (`.claude/hooks/{guard-outward-cli,pr-preflight-guard,
 branch-preflight,commit-verify,core-bare-guard,drift-detect,drift-detect-update,
@@ -115,3 +120,16 @@ pr-verify}.sh`), plus their test files.
 
 - Filed from the PR #850 `/code-review` follow-up pass, per user decision to file
   pre-existing repo-wide gaps for a dedicated session rather than expand this PR's scope.
+
+### 2026-08-29
+
+- A `/todo` orchestrator run flagged this todo as structurally undecided-architecture-
+  on-a-security-deny-gate (the same shape as the already-`human_led`-gated sibling
+  `P3-2026-08-16-command-guards-fire-on-heredoc-prose.md`) and, rather than dispatching
+  it unattended, surfaced the choice to the user directly. **Decision: (c) — replace
+  the detection mechanism.** Delegate to a real shell tokenizer instead of extending
+  the awk quote-scanner with a 7th special case. This top-level choice is settled; not
+  implemented in this session — the specific tokenizer implementation approach is a
+  genuinely open-ended first step (a design/spike, per the todo's own Risks section),
+  and deserves a dedicated, full-context session (recommended: `/todo-fast` given its
+  priority) rather than being squeezed into a batch run's tail end.
