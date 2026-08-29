@@ -377,11 +377,13 @@ describe("regex<->bash-glob parity", () => {
         rule.match.kind === "recursive-dir" &&
         (rule.match.dir === "server/routes" ||
           rule.match.dir === "server/storage");
-      // Documented asymmetry (todos/P3-2026-08-28-config-file-matcher-depth-parity-gap.md):
-      // config-file's TS regex is root-anchored (`^...$`) but its generated bash form's
-      // `*/${b}.*` variant matches at any depth. Only one direction is possible — the bash
-      // form's OTHER variant (`${b}.*`, no leading `*/`) is root-anchored the same as TS, so
-      // tsMatch=true always implies shMatch=true too; only shMatch=true/tsMatch=false can occur.
+      // Documented asymmetry, permanently accepted: config-file's TS regex is root-anchored
+      // (`^...$`) but its generated bash form's `*/${b}.*` variant matches at any depth. Only
+      // one direction is possible — the bash form's OTHER variant (`${b}.*`, no leading `*/`) is
+      // root-anchored the same as TS, so tsMatch=true always implies shMatch=true too; only
+      // shMatch=true/tsMatch=false can occur. Root-anchoring the bash form and relaxing the TS
+      // regex were both considered and declined — see
+      // docs/solutions/code-quality/parity-test-comment-only-exclusion-is-unenforced-2026-08-28.md.
       const isConfigFileDepthMismatch = rule.match.kind === "config-file";
       if (shMatch === tsMatch) {
         expect(shMatch).toBe(tsMatch); // symmetric (the common case)

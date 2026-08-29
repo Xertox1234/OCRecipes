@@ -8,6 +8,7 @@ tags: [harness, testing, parity, regex, bash, config-file, path-domains]
 applies_to: [scripts/lib/__tests__/path-domains.test.ts]
 symptoms: [a corpus/table-driven test has a comment saying "do NOT add path X here" instead of a code branch that recognizes X as a known exception, adding the excluded path anyway is an easy accidental next edit since an identical string may already exist a few lines away in a sibling assertion table, the failure when someone does add it gives no indication it is a KNOWN accepted asymmetry — it just looks like a regression]
 created: '2026-08-28'
+last_updated: '2026-08-28'
 ---
 
 # A parity/symmetry test's excluded edge case, documented only in a comment, is unenforced and traps the next contributor
@@ -64,6 +65,29 @@ When a symmetry/invariant test needs to exclude a known edge case, ask: "if some
 to the corpus anyway, does the test tell them it's a KNOWN exception, or does it just fail?" If the
 latter, the exclusion isn't actually documented in the place that matters — the assertion logic
 itself, not a comment next to it.
+
+## Decision record (2026-08-28 follow-up)
+
+The underlying `config-file` depth asymmetry itself — not just the parity test's handling of it —
+was later evaluated for a permanent resolution (`todos/archive/P3-2026-08-28-config-file-matcher-
+depth-parity-gap.md`). Two behavior-changing fixes were considered and declined in favor of
+accepting and documenting the divergence:
+
+- **Root-anchor the bash form** (`compileToBashConditions`'s `config-file` case, dropping the
+  `*/${b}.*` leading-wildcard variant) — would make the shell form match TS exactly, but is a
+  behavior change to a generated artifact (`domain-map.sh`) for a gap whose only practical effect
+  is a benign shell-side over-match (extra pattern-injection noise on a nested config file), never
+  a missed injection in the `rulesDomainsForPath` (TS) direction that actually matters.
+- **Relax the TS regex to match at depth** (`(^|/)^...`) — would make `rulesDomainsForPath` start
+  matching nested `package.json`/`app.json` occurrences (e.g. under `node_modules/**`), which is
+  the wrong direction entirely; the root anchor on the TS side is deliberate (see the rule's own
+  comment in `path-domains.ts`), not an oversight.
+
+Accepted instead: the asymmetry is permanent, by design, and enforced by the
+`isConfigFileDepthMismatch` predicate this solution already documents — same resolution shape as
+`TS_TEST_EXCLUDING_DIRS`/`isTestExcludingServerDir`. No further action is expected; a future
+change to `compileToRegExp`/`compileToBashConditions`'s `config-file` case should re-open this
+decision rather than assume it's still open.
 
 ## Related Files
 

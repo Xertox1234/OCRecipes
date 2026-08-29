@@ -282,7 +282,13 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     // deliberately chosen over exact-file, whose `(^|/)` form would also match every nested
     // package.json under node_modules/**. Like every config-file rule, this matches ANY
     // extension on the basename (e.g. a hypothetical root `package.lock` or `app.config.js`
-    // would also match) — see todos/P3-2026-08-28-config-file-matcher-depth-parity-gap.md.
+    // would also match). Accepted asymmetry, permanently decided: config-file's generated bash
+    // form is NOT root-anchored the same way (its `*/${b}.*` variant matches at any depth), so a
+    // nested `some/dir/package.json` routes via the shell/hook path but not via
+    // rulesDomainsForPath — benign over-match noise in the shell direction only, not a
+    // missed-injection bug. Root-anchoring the bash form and relaxing the TS regex were both
+    // considered and declined in favor of documenting the divergence (see
+    // docs/solutions/code-quality/parity-test-comment-only-exclusion-is-unenforced-2026-08-28.md).
     match: {
       kind: "config-file",
       basenames: ["package", "package-lock", "app"],
