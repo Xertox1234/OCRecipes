@@ -78,16 +78,23 @@ accepting and documenting the divergence:
   behavior change to a generated artifact (`domain-map.sh`) for a gap whose only practical effect
   is a benign shell-side over-match (extra pattern-injection noise on a nested config file), never
   a missed injection in the `rulesDomainsForPath` (TS) direction that actually matters.
-- **Relax the TS regex to match at depth** (`(^|/)^...`) — would make `rulesDomainsForPath` start
-  matching nested `package.json`/`app.json` occurrences (e.g. under `node_modules/**`), which is
-  the wrong direction entirely; the root anchor on the TS side is deliberate (see the rule's own
-  comment in `path-domains.ts`), not an oversight.
+- **Relax the TS regex to match at depth** (e.g. `` `(^|/)${basename}\.[^/]+$` ``) — would make
+  `rulesDomainsForPath` start matching nested `package.json`/`app.json` occurrences (e.g. under
+  `node_modules/**`), which is the wrong direction entirely; the root anchor on the TS side is
+  deliberate (see the rule's own comment in `path-domains.ts`), not an oversight.
 
-Accepted instead: the asymmetry is permanent, by design, and enforced by the
-`isConfigFileDepthMismatch` predicate this solution already documents — same resolution shape as
-`TS_TEST_EXCLUDING_DIRS`/`isTestExcludingServerDir`. No further action is expected; a future
-change to `compileToRegExp`/`compileToBashConditions`'s `config-file` case should re-open this
-decision rather than assume it's still open.
+Accepted instead: the asymmetry is permanent, by design. **Precision note (2026-08-29):** the
+`isConfigFileDepthMismatch` predicate *permits* this specific mismatch to pass without failing the
+parity test — it does not *enforce* the asymmetry's continued existence, and nothing in the test
+suite structurally re-opens this decision if a future edit to `compileToRegExp`/
+`compileToBashConditions`'s `config-file` case removes the mismatch (that edit would simply make
+`isConfigFileDepthMismatch` never trigger, and the test would pass via the ordinary symmetric
+branch with no signal either way). Same resolution shape as `TS_TEST_EXCLUDING_DIRS`/
+`isTestExcludingServerDir`. A future editor of that `config-file` case is the trigger for
+re-reading this doc — there is no automated one. See `path-domains.test.ts`'s
+`"config-file's bash form deliberately over-matches at depth vs the root-anchored TS regex"`
+test for a positive pin of the current over-match, which WOULD go red if this asymmetry were
+ever closed.
 
 ## Related Files
 

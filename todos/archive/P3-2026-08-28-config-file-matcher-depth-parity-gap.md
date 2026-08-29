@@ -43,7 +43,8 @@ commonly-used direction.
       risk.
 - [x] Decide: root-anchor the bash form too (`compileToBashConditions`'s `config-file` case,
       dropping the `*/${b}.*` leading-wildcard variant), OR relax the TS regex to also match at
-      depth (`(^|/)^...`), OR **accept and document the asymmetry permanently** — chosen. Both
+      depth (e.g. `` `(^|/)${basename}\.[^/]+$` ``), OR **accept and document the asymmetry
+      permanently** — chosen. Both
       behavior-changing fixes were considered and declined: root-anchoring the bash form is a
       generated-artifact change for a gap whose only practical effect is benign shell-side
       over-match noise (never a missed injection in the `rulesDomainsForPath`/TS direction that

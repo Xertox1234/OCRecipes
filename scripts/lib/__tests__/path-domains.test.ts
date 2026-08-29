@@ -384,7 +384,18 @@ describe("regex<->bash-glob parity", () => {
       // shMatch=true/tsMatch=false can occur. Root-anchoring the bash form and relaxing the TS
       // regex were both considered and declined — see
       // docs/solutions/code-quality/parity-test-comment-only-exclusion-is-unenforced-2026-08-28.md.
-      const isConfigFileDepthMismatch = rule.match.kind === "config-file";
+      // Narrower than "any config-file rule mismatch": also require the path to actually BE
+      // a nested occurrence of one of the rule's own basenames (dir/ prefix + basename.ext),
+      // not merely any shMatch/tsMatch disagreement that happens to land on a config-file
+      // rule. Otherwise an unrelated future bug in compileToBashConditions's config-file case
+      // (e.g. a typo dropping the extension-dot anchor) would silently pass through this
+      // branch as "the known, accepted depth asymmetry" instead of failing the test.
+      const isConfigFileDepthMismatch =
+        rule.match.kind === "config-file" &&
+        p.includes("/") &&
+        rule.match.basenames.some((b) =>
+          new RegExp(`^${b}\\.[^/]+$`).test(p.slice(p.lastIndexOf("/") + 1)),
+        );
       if (shMatch === tsMatch) {
         expect(shMatch).toBe(tsMatch); // symmetric (the common case)
       } else {
@@ -400,6 +411,30 @@ describe("regex<->bash-glob parity", () => {
         ).toBe(true);
       }
     });
+  });
+
+  // Positive pin for the accepted-permanently config-file depth asymmetry (see
+  // docs/solutions/code-quality/parity-test-comment-only-exclusion-is-unenforced-2026-08-28.md).
+  // The `isConfigFileDepthMismatch` branch above only PERMITS this mismatch to pass without
+  // failing the test — it does not itself assert the mismatch still exists. This test is the
+  // thing that WOULD go red if a future edit to `compileToBashConditions`'s `config-file` case
+  // (e.g. root-anchoring it, closing the asymmetry) removed the over-match, giving the doc's
+  // "re-open this decision" instruction an actual trigger instead of silent drift.
+  it("config-file's bash form deliberately over-matches at depth vs the root-anchored TS regex", () => {
+    const rule = PATH_TO_DOMAINS.find(
+      (r) =>
+        r.match.kind === "config-file" && r.match.basenames.includes("package"),
+    );
+    if (!rule || rule.match.kind !== "config-file") {
+      throw new Error("expected a config-file rule with basename 'package'");
+    }
+    const nested = "some/nested/dir/package.json";
+    expect(compileToRegExp(rule.match).test(nested)).toBe(false); // TS: root-anchored, no match
+    expect(
+      compileToBashConditions(rule.match).some((g) =>
+        bashGlobToRegExp(g).test(nested),
+      ),
+    ).toBe(true); // bash: the accepted over-match
   });
 });
 
