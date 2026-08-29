@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { Pressable, StyleSheet } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -31,14 +31,22 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const scanningActions = getActionsByGroup("scanning");
 
-export function ScanFAB() {
+interface ScanFABProps {
+  /** Owned by MainTabNavigator — it also drives the Android a11y trap on the
+   *  tab content behind the menu (see MainTabNavigator-utils.ts), so ScanFAB
+   *  no longer owns this state itself. */
+  menuOpen: boolean;
+  onOpen: () => void;
+  onClose: () => void;
+}
+
+export function ScanFAB({ menuOpen, onOpen, onClose }: ScanFABProps) {
   const { theme } = useTheme();
   const haptics = useHaptics();
   const { reducedMotion } = useAccessibility();
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const scale = useSharedValue(1);
   const rotation = useSharedValue(0);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   // Hide FAB when navigated into a child screen (e.g. GroceryLists has its own FAB)
   const isOnRootScreen = useNavigationState((state) => {
@@ -69,7 +77,7 @@ export function ScanFAB() {
       closeMenu();
     } else {
       haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
-      setMenuOpen(true);
+      onOpen();
       if (!reducedMotion) {
         rotation.value = withSpring(45, pressSpringConfig);
       }
@@ -77,11 +85,27 @@ export function ScanFAB() {
   };
 
   const closeMenu = useCallback(() => {
-    setMenuOpen(false);
+    onClose();
     if (!reducedMotion) {
       rotation.value = withSpring(0, pressSpringConfig);
     }
-  }, [reducedMotion, rotation]);
+  }, [onClose, reducedMotion, rotation]);
+
+  // Force-close the menu when navigation moves off the root screen while
+  // it's still open (e.g. a deep link into a nested screen — `CoachTab` >
+  // `Chat`, `MealPlanTab` > `GroceryLists` — bypassing SpeedDial's own
+  // close-then-navigate action handlers). `isOnRootScreen` going false does
+  // NOT unmount ScanFAB — it only makes it `return null` below, so a plain
+  // unmount-cleanup effect never fires here. `menuOpen` lives in
+  // MainTabNavigator (which does not unmount with the FAB), so without this
+  // effect an orphaned `menuOpen: true` would leave every tab + the tab bar
+  // permanently hidden from the Android a11y tree with no FAB/SpeedDial left
+  // to close it.
+  useEffect(() => {
+    if (!isOnRootScreen && menuOpen) {
+      closeMenu();
+    }
+  }, [isOnRootScreen, menuOpen, closeMenu]);
 
   const speedDialActions = useMemo(
     () =>
