@@ -150,6 +150,17 @@ jobs:
           done
           curl -sf http://localhost:3000/api/health >/dev/null 2>&1 || { echo "::error::backend did not become ready within 60s"; cat server.log; exit 1; }
 
+      # helpers/login.yaml's ${USERNAME}/${PASSWORD} need this account to
+      # actually exist — nothing else in this job creates it. `|| true` only
+      # covers an idempotent re-run within the same job (the retry below);
+      # each workflow run gets a fresh Postgres instance.
+      - name: Seed E2E test user
+        run: |
+          curl -sf -X POST http://localhost:3000/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\"}" \
+            || true
+
       # The debug build is a dev client that loads its JS bundle from Metro, so
       # Metro must be running for the app to render anything Maestro can drive.
       # EXPO_PUBLIC_DOMAIN is deliberately unset: the client falls back to
@@ -287,6 +298,14 @@ jobs:
             sleep 2
           done
           curl -sf http://localhost:3000/api/health >/dev/null 2>&1 || { echo "::error::backend did not become ready within 60s"; cat server.log; exit 1; }
+
+      # See the iOS job's "Seed E2E test user" note — same reason, same account.
+      - name: Seed E2E test user
+        run: |
+          curl -sf -X POST http://localhost:3000/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\"}" \
+            || true
 
       # See the iOS job's Metro note. On Android the emulator's localhost is the
       # emulator itself, so `adb reverse` (below) tunnels the app's

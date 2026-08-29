@@ -3,5 +3,5 @@
   "EX_DEV_CLIENT_NETWORK_INSPECTOR": "true",
   "newArchEnabled": "true",
   "ios.buildReactNativeFromSource": "true",
-  "ios.deploymentTarget": "15.5"
+  "ios.deploymentTarget": "16.0"
 }

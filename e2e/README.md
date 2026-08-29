@@ -80,7 +80,12 @@ e2e/
                           # deliberately excludes helpers/ (runFlow deps, not
                           # standalone Flows)
   helpers/
-    login.yaml          # Reusable login helper
+    launch-app.yaml     # Connect to the dev client + dismiss its "developer
+                        # menu" welcome overlay — every flow's first step is
+                        # `runFlow` into this, never a bare `launchApp`
+    login.yaml          # Reusable login helper — call with `runFlow` and
+                        # env vars USERNAME/PASSWORD (see e2e-regression.yml's
+                        # "Seed E2E test user" step for what account exists in CI)
   flows/
     auth/               # Authentication flows
     onboarding/         # Registration + onboarding
