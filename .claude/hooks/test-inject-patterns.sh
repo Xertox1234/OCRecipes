@@ -138,17 +138,30 @@ check_empty "missing file_path → no output" \
 # File with no domain match → discipline preamble only (no RULES/PATTERNS blocks).
 # The hook emits the preamble unconditionally for Edit/Write on a valid file_path so the
 # agent always sees the workflow reminders, even when no domain mapping triggers.
-check "package.json → discipline preamble emitted" \
-  '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}' \
+# (package.json used to be this suite's "no domain match" fixture; it now intentionally
+# routes to architecture — see todos/archive/P3-2026-08-11-unrouted-surfaces-domain-map-decision.md
+# — so README.md, which matches zero path-domains.ts rules, replaces it here. package.json's
+# NEW routed behavior is asserted separately below.)
+check "README.md → discipline preamble emitted" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"README.md"}}' \
   "DISCIPLINE"
 
-check_no_match "package.json → no domain RULES blocks" \
-  '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}' \
+check_no_match "README.md → no domain RULES blocks" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"README.md"}}' \
   "RULES — "
 
-check_no_match "package.json → no PATTERNS blocks" \
-  '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}' \
+check_no_match "README.md → no PATTERNS blocks" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"README.md"}}' \
   "PATTERNS — "
+
+# package.json/package-lock.json/app.json → architecture (human decision, see the todo above).
+check "package.json → architecture rules" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}' \
+  "RULES — architecture"
+
+check "package.json → architecture solution references" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}' \
+  "SOLUTIONS — architecture"
 
 # AI service file must get architecture domain (case exclusivity regression)
 check "AI service → architecture rules (additive match)" \
@@ -421,11 +434,13 @@ fi
 rm -f /tmp/ocrecipes-pattern-inject-itest-agentid-A /tmp/ocrecipes-pattern-inject-itest-agentid-A-agent-itest-sub-1
 
 # Same coverage for the DISCIPLINE preamble — M1 named the preamble alongside domain rules,
-# and it dedups via the same `__preamble__` marker in DEDUP_STATE. package.json maps to no
-# domain, isolating the preamble from domain payloads. "Surgical changes" is the preamble
-# sentinel used by the preamble dedup tests below.
-AGENTID_PRE_TOP='{"session_id":"itest-agentid-pre","tool_name":"Edit","tool_input":{"file_path":"package.json"}}'
-AGENTID_PRE_SUB='{"session_id":"itest-agentid-pre","agent_id":"itest-sub-pre","tool_name":"Edit","tool_input":{"file_path":"package.json"}}'
+# and it dedups via the same `__preamble__` marker in DEDUP_STATE. README.md maps to no
+# domain (package.json used to be this suite's example but now intentionally routes to
+# architecture — see todos/archive/P3-2026-08-11-unrouted-surfaces-domain-map-decision.md),
+# isolating the preamble from domain payloads. "Surgical changes" is the preamble sentinel
+# used by the preamble dedup tests below.
+AGENTID_PRE_TOP='{"session_id":"itest-agentid-pre","tool_name":"Edit","tool_input":{"file_path":"README.md"}}'
+AGENTID_PRE_SUB='{"session_id":"itest-agentid-pre","agent_id":"itest-sub-pre","tool_name":"Edit","tool_input":{"file_path":"README.md"}}'
 rm -f /tmp/ocrecipes-pattern-inject-itest-agentid-pre /tmp/ocrecipes-pattern-inject-itest-agentid-pre-agent-itest-sub-pre
 
 pretop=$(inline_ctx "$AGENTID_PRE_TOP")
@@ -441,9 +456,9 @@ rm -f /tmp/ocrecipes-pattern-inject-itest-agentid-pre /tmp/ocrecipes-pattern-inj
 # --- Preamble session dedup ---
 # The ~1.1KB DISCIPLINE preamble is injected in full at most once per session (marker
 # `__preamble__` in the dedup state file); later edits get a one-line pointer. A wiped
-# state file fails OPEN to the full preamble. package.json maps to no domain, isolating
+# state file fails OPEN to the full preamble. README.md maps to no domain, isolating
 # the preamble from domain payloads. "Surgical changes" is a preamble-body sentinel.
-PRE_SESS='{"session_id":"itest-preamble","tool_name":"Edit","tool_input":{"file_path":"package.json"}}'
+PRE_SESS='{"session_id":"itest-preamble","tool_name":"Edit","tool_input":{"file_path":"README.md"}}'
 PRE_STATE=/tmp/ocrecipes-pattern-inject-itest-preamble
 rm -f "$PRE_STATE"
 
@@ -470,8 +485,8 @@ else
 fi
 rm -f "$PRE_STATE"
 
-pns1=$(inline_ctx '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}')
-pns2=$(inline_ctx '{"tool_name":"Edit","tool_input":{"file_path":"package.json"}}')
+pns1=$(inline_ctx '{"tool_name":"Edit","tool_input":{"file_path":"README.md"}}')
+pns2=$(inline_ctx '{"tool_name":"Edit","tool_input":{"file_path":"README.md"}}')
 if echo "$pns1" | grep -qF "Surgical changes" && echo "$pns2" | grep -qF "Surgical changes"; then
   echo "PASS: preamble dedup → session-less edits always get the full preamble"; PASS=$((PASS + 1))
 else

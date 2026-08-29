@@ -81,6 +81,22 @@ describe("rulesDomainsForPath", () => {
     ["server/routes/recipe-catalog.ts", ["api", "architecture", "security"]],
     ["server/storage/recipes.ts", ["architecture", "database", "security"]],
     ["shared/schema.ts", ["architecture", "database", "security"]],
+    // --- shared/** non-schema subsurfaces (human decision — see
+    // todos/archive/P3-2026-08-11-unrouted-surfaces-domain-map-decision.md). typescript is
+    // included alongside architecture because these rules are non-empty/non-harness, which
+    // suppresses the hook's .ts fallback — dropping typescript would silently orphan docs
+    // whose only routable tag is typescript (same rationale as client/lib/** below).
+    ["shared/constants/allergens.ts", ["architecture", "typescript"]],
+    ["shared/types/auth.ts", ["architecture", "typescript"]],
+    ["shared/lib/units.ts", ["architecture", "typescript"]],
+    // Decline pins: two-segment dir is REQUIRED so these rules don't swallow shared/schema.ts
+    // (handled above) or the out-of-scope shared/schemas/**.
+    ["shared/schemas/nutrition.ts", []],
+    // Decline pins: a directory name that merely STARTS WITH the target segment (not IS it)
+    // must not match — same anchoring class as the ios/audios pin further below.
+    ["shared/constants-legacy/allergens.ts", []],
+    ["shared/types-legacy/auth.ts", []],
+    ["shared/library/units.ts", []],
     ["migrations/0002_add_table.sql", ["architecture", "database", "security"]],
     ["server/middleware/auth.ts", ["api", "security"]],
     ["server/services/goal-calculator.ts", ["architecture"]],
@@ -90,6 +106,14 @@ describe("rulesDomainsForPath", () => {
       "server/services/voice-transcription.ts",
       ["ai-prompting", "architecture"],
     ],
+    // --- server/lib/** (human decision — mirrors server/routes/**'s domain set, plus
+    // typescript for the same fallback-suppression reason as the shared/** rules above) ---
+    [
+      "server/lib/image-store.ts",
+      ["api", "architecture", "security", "typescript"],
+    ],
+    // Decline pin: a directory name that merely STARTS WITH "lib" (not IS it).
+    ["server/library/foo.ts", []],
     [
       "client/screens/HomeScreen.tsx",
       ["accessibility", "design-system", "react-native"],
@@ -134,6 +158,14 @@ describe("rulesDomainsForPath", () => {
     [".github/workflows/ci.yml", ["architecture", "testing"]],
     ["vitest.config.ts", ["testing", "typescript"]],
     ["eslint.config.js", ["testing", "typescript"]],
+    // --- package manifests (human decision) ---
+    ["package.json", ["architecture"]],
+    ["package-lock.json", ["architecture"]],
+    ["app.json", ["architecture"]],
+    // Decline pin: config-file is root-anchored (`^...$`) — a same-named file at ANY depth
+    // must not match (unlike exact-file's `(^|/)` form used elsewhere in this table).
+    ["client/lib/package.json", ["client-state", "typescript"]],
+    ["assets/app.json", []],
     // Anchored test-exclusion preserved for server/routes + server/storage.
     ["server/routes/__tests__/recipe-catalog.test.ts", ["testing"]],
     ["server/storage/__tests__/recipes.test.ts", ["testing"]],
@@ -150,6 +182,14 @@ describe("rulesDomainsForPath", () => {
     // absolute), so ANY directory named `scripts` matches. Pinned so a future change is a
     // conscious one rather than a surprise.
     ["server/scripts/backfill-recipe-images.ts", ["harness"]],
+    // eslint-plugin-ocrecipes/** — repo's own ESLint tooling, same reasoning as the scripts/**
+    // rule above (folded in from the todo's 2026-08-15 addendum).
+    ["eslint-plugin-ocrecipes/index.js", ["harness"]],
+    // Decline pin: substring in a FILENAME, not a directory segment.
+    [
+      "client/lib/eslint-plugin-ocrecipes-helper.ts",
+      ["client-state", "typescript"],
+    ],
     // .husky/** is the real commit/push gate; five corpus solutions already declare
     // `.husky/**` in applies_to, so this routing has to exist for those globs to fire.
     [".husky/pre-push", ["harness"]],
@@ -187,6 +227,16 @@ describe("rulesDomainsForPath", () => {
     // "ios/" (a-u-d-[i-o-s-/]), so this pins the `(^|/)` left-anchor specifically — without
     // it, this path would wrongly gain react-native with no other test catching it.
     ["client/lib/audios/track.ts", ["client-state", "typescript"]],
+    // --- android native build ---
+    // Decision recorded (human call): android/** routes to react-native, same pattern/tradeoff
+    // as the ios/** rule above. No .ts/.tsx file is realistically anchored here, so unlike the
+    // shared/*/server/lib rules above there's no typescript-fallback-suppression risk to
+    // offset — domains stay react-native only.
+    ["android/app/build.gradle", ["react-native"]],
+    // Decline pin: substring in a filename, not a directory segment (mirrors ios-format.ts).
+    ["client/lib/android-utils.ts", ["client-state", "typescript"]],
+    // Decline pin: a directory whose name merely ENDS in "android" (mirrors ios/audios).
+    ["client/lib/wandroid/config.ts", ["client-state", "typescript"]],
   ];
   it.each(cases)("%s", (input, expected) => {
     expect(rulesDomainsForPath(input).sort()).toEqual(expected);
@@ -291,6 +341,27 @@ const PARITY_CORPUS = [
   "ios/__tests__/Podfile.test.ts",
   "client/lib/ios-format.ts",
   "client/lib/audios/track.ts",
+  "android/app/build.gradle",
+  "x/android/app/build.gradle",
+  "client/lib/android-utils.ts",
+  "client/lib/wandroid/config.ts",
+  "package.json",
+  "package-lock.json",
+  "app.json",
+  // Nested config-file basenames — see the `isConfigFileDepthMismatch` allowance below.
+  "client/lib/package.json",
+  "assets/app.json",
+  "shared/constants/allergens.ts",
+  "shared/constants-legacy/allergens.ts",
+  "shared/types/auth.ts",
+  "shared/types-legacy/auth.ts",
+  "shared/lib/units.ts",
+  "shared/library/units.ts",
+  "shared/schemas/nutrition.ts",
+  "server/lib/image-store.ts",
+  "server/library/foo.ts",
+  "eslint-plugin-ocrecipes/index.js",
+  "client/lib/eslint-plugin-ocrecipes-helper.ts",
 ];
 
 describe("regex<->bash-glob parity", () => {
@@ -306,16 +377,24 @@ describe("regex<->bash-glob parity", () => {
         rule.match.kind === "recursive-dir" &&
         (rule.match.dir === "server/routes" ||
           rule.match.dir === "server/storage");
+      // Documented asymmetry (todos/P3-2026-08-28-config-file-matcher-depth-parity-gap.md):
+      // config-file's TS regex is root-anchored (`^...$`) but its generated bash form's
+      // `*/${b}.*` variant matches at any depth. Only one direction is possible — the bash
+      // form's OTHER variant (`${b}.*`, no leading `*/`) is root-anchored the same as TS, so
+      // tsMatch=true always implies shMatch=true too; only shMatch=true/tsMatch=false can occur.
+      const isConfigFileDepthMismatch = rule.match.kind === "config-file";
       if (shMatch === tsMatch) {
         expect(shMatch).toBe(tsMatch); // symmetric (the common case)
       } else {
-        // The ONLY permitted mismatch: TS excludes a __tests__ descendant under
-        // the two anchored server dirs, while the generated shell includes it.
+        // The ONLY permitted mismatches: (1) TS excludes a __tests__ descendant under the two
+        // anchored server dirs, while the generated shell includes it; (2) a config-file rule
+        // matches a nested occurrence of its basename in the shell form only.
         expect(
-          isTestExcludingServerDir &&
+          (isTestExcludingServerDir &&
             p.includes("/__tests__/") &&
             shMatch &&
-            !tsMatch,
+            !tsMatch) ||
+            (isConfigFileDepthMismatch && shMatch && !tsMatch),
         ).toBe(true);
       }
     });

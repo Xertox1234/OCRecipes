@@ -27,9 +27,13 @@ apply_domain_map() {
   [[ "$f" == */server/routes/* || "$f" == server/routes/* ]] && { _add api; _add security; _add architecture; }
   [[ "$f" == */server/storage/* || "$f" == server/storage/* ]] && { _add database; _add security; _add architecture; }
   [[ "$f" == */shared/schema.ts || "$f" == shared/schema.ts ]] && { _add database; _add security; _add architecture; }
+  [[ "$f" == */shared/constants/* || "$f" == shared/constants/* ]] && { _add architecture; _add typescript; }
+  [[ "$f" == */shared/types/* || "$f" == shared/types/* ]] && { _add architecture; _add typescript; }
+  [[ "$f" == */shared/lib/* || "$f" == shared/lib/* ]] && { _add architecture; _add typescript; }
   [[ "$f" == */migrations/* || "$f" == migrations/* ]] && { _add database; _add security; _add architecture; }
   [[ "$f" == */server/middleware/* || "$f" == server/middleware/* ]] && { _add security; _add api; }
   [[ "$f" == */server/services/* || "$f" == server/services/* ]] && { _add architecture; }
+  [[ "$f" == */server/lib/* || "$f" == server/lib/* ]] && { _add api; _add security; _add architecture; _add typescript; }
   [[ "$f" == */client/screens/* || "$f" == client/screens/* ]] && { _add react-native; _add design-system; _add accessibility; }
   [[ "$f" == */client/components/* || "$f" == client/components/* ]] && { _add react-native; _add design-system; _add accessibility; _add performance; }
   [[ "$f" == */client/camera/* || "$f" == client/camera/* ]] && { _add react-native; }
@@ -46,14 +50,17 @@ apply_domain_map() {
   [[ "$f" == */__tests__/* || "$f" == __tests__/* || "$f" == *.test.ts || "$f" == *.test.tsx || "$f" == *.spec.ts || "$f" == *.spec.tsx ]] && { _add testing; }
   [[ "$f" == */.github/workflows/* || "$f" == .github/workflows/* ]] && { _add architecture; _add testing; }
   [[ "$f" == */vitest.config.* || "$f" == vitest.config.* || "$f" == */eslint.config.* || "$f" == eslint.config.* ]] && { _add testing; _add typescript; }
+  [[ "$f" == */package.* || "$f" == package.* || "$f" == */package-lock.* || "$f" == package-lock.* || "$f" == */app.* || "$f" == app.* ]] && { _add architecture; }
   [[ "$f" == */.claude/hooks/* || "$f" == .claude/hooks/* ]] && { _add harness; }
   [[ "$f" == */.claude/skills/* || "$f" == .claude/skills/* ]] && { _add harness; }
   [[ "$f" == */.claude/agents/* || "$f" == .claude/agents/* ]] && { _add harness; }
   [[ "$f" == */.claude/settings.json || "$f" == .claude/settings.json ]] && { _add harness; }
   [[ "$f" == */scripts/* || "$f" == scripts/* ]] && { _add harness; }
+  [[ "$f" == */eslint-plugin-ocrecipes/* || "$f" == eslint-plugin-ocrecipes/* ]] && { _add harness; }
   [[ "$f" == */.husky/* || "$f" == .husky/* ]] && { _add harness; }
   [[ "$f" == */docs/solutions/* || "$f" == docs/solutions/* ]] && { _add harness; }
   [[ "$f" == */docs/rules/* || "$f" == docs/rules/* ]] && { _add harness; }
   [[ "$f" == */ios/* || "$f" == ios/* ]] && { _add react-native; }
+  [[ "$f" == */android/* || "$f" == android/* ]] && { _add react-native; }
   [[ "$f" == */server/services/canonical-enrichment.ts || "$f" == server/services/canonical-enrichment.ts || "$f" == */server/services/coach-pro-chat.ts || "$f" == server/services/coach-pro-chat.ts || "$f" == */server/services/coach-tools.ts || "$f" == server/services/coach-tools.ts || "$f" == */server/services/cookbook-cover.ts || "$f" == server/services/cookbook-cover.ts || "$f" == */server/services/cooking-session.ts || "$f" == server/services/cooking-session.ts || "$f" == */server/services/food-nlp.ts || "$f" == server/services/food-nlp.ts || "$f" == */server/services/front-label-analysis.ts || "$f" == server/services/front-label-analysis.ts || "$f" == */server/services/image-art-direction.ts || "$f" == server/services/image-art-direction.ts || "$f" == */server/services/ingredient-substitution.ts || "$f" == server/services/ingredient-substitution.ts || "$f" == */server/services/meal-suggestions.ts || "$f" == server/services/meal-suggestions.ts || "$f" == */server/services/menu-analysis.ts || "$f" == server/services/menu-analysis.ts || "$f" == */server/services/notebook-extraction.ts || "$f" == server/services/notebook-extraction.ts || "$f" == */server/services/nutrition-coach.ts || "$f" == server/services/nutrition-coach.ts || "$f" == */server/services/pantry-meal-plan.ts || "$f" == server/services/pantry-meal-plan.ts || "$f" == */server/services/photo-analysis.ts || "$f" == server/services/photo-analysis.ts || "$f" == */server/services/receipt-analysis.ts || "$f" == server/services/receipt-analysis.ts || "$f" == */server/services/recipe-chat.ts || "$f" == server/services/recipe-chat.ts || "$f" == */server/services/recipe-generation.ts || "$f" == server/services/recipe-generation.ts || "$f" == */server/services/suggestion-generation.ts || "$f" == server/services/suggestion-generation.ts || "$f" == */server/services/voice-transcription.ts || "$f" == server/services/voice-transcription.ts ]] && { _add ai-prompting; }
 }
