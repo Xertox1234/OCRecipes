@@ -1,6 +1,6 @@
 ---
 title: "guard-outward-cli.sh: fix 3 stale comments left behind by the cmd_words migration"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-08-16
@@ -35,12 +35,12 @@ newer paragraph explaining the real (`$WORDS`) behavior was appended below, but 
 
 ## Acceptance Criteria
 
-- [ ] The `gh_pr_clause_has_repo` docstring's stale `$CMD`/`$BARE`/"RAW command"
+- [x] The `gh_pr_clause_has_repo` docstring's stale `$CMD`/`$BARE`/"RAW command"
       paragraph is removed or corrected to match the actual `$WORDS`-only behavior;
       keep only the accurate newer paragraph.
-- [ ] The `--auto-submit` check's comment is corrected to describe the actual
+- [x] The `--auto-submit` check's comment is corrected to describe the actual
       `$CMD`+`$WORDS` dual-scan, matching the `--admin` check's comment style.
-- [ ] No code changes — this is a comment-only fix; `test-guard-outward-cli.sh` stays
+- [x] No code changes — this is a comment-only fix; `test-guard-outward-cli.sh` stays
       green with zero behavioral diff.
 
 ## Implementation Notes
@@ -69,3 +69,17 @@ same file).
 ### 2026-08-16
 
 - Filed from the PR #850 `/code-review` "Angle B removed-behavior auditor" findings.
+
+### 2026-08-28
+
+- Implemented both listed comment corrections (`gh_pr_clause_has_repo` docstring,
+  `--auto-submit` check). `code-reviewer` found the title's implied 3rd stale
+  comment — the Background section only enumerated 2 — at the `--admin` check
+  (line ~596): "DELIBERATELY scans the RAW $CMD (not $BARE/$CLAUSE)" directly
+  contradicted the accurate "Scans BOTH renderings" paragraph a few lines below
+  it and the code's actual `$CMD`+`$WORDS` dual scan — the same defect class,
+  in the same file, now more misleading because this todo's own new comments
+  cite that block as "the accurate reference." Fixed inline (same file, few
+  lines, no new mechanism). Verified comment-only via
+  `git diff -U0 | grep -vE '^[+-][[:space:]]*#'` (empty) and
+  `test-guard-outward-cli.sh` (248/248 pass, unchanged before/after).
