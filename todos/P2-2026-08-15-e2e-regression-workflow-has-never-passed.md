@@ -435,8 +435,46 @@ findings.**
   `runFlow: {when, commands}` conditional syntax locally against the installed Maestro CLI
   before spending CI on it. Fixed in `e1fb20ce`, **NOT YET VERIFIED on live CI**.
 
-**Dispatch 4 (run 33278558247): in flight as of this entry.** Hypothesis: iOS builds clean
-(the CxxStdlib layer and the expo-notifications layer are both now resolved — no further layers
-identified via static reading, but none were visible before dispatching either, so treat this
-as genuinely uncertain); Android's back-gesture dismiss closes the dev menu and every flow
-reaches Sign In within the 90s margin. Will update with the outcome rather than assume.
+**Dispatch 4 (run 33278558247): iOS one more layer (patched); Android back-dismiss didn't fire,
+but the real bug was found underneath it.**
+
+- **iOS**: `expo-notifications` fix worked cleanly — immediately hit the identical _category_ of
+  bug in a different vendored package: `react-native-vision-camera`'s
+  `CMFormatDescription.MediaSubType+hidden.swift` references
+  `kCVPixelFormatType_96VersatileBayerPacked12`, a CoreVideo constant Xcode 16.2's SDK doesn't
+  define (unconditional this time, not gated by `#available`). Removing it broke a second file
+  (`AV+PixelFormat.swift`'s `case .rawBayerPacked9612Bit:` switch arm) that referenced it —
+  removed both; the switch's existing `default:` branch already logs-and-falls-back to
+  `.unknown`, a safe degradation since RAW Bayer 12-bit capture isn't part of this app's
+  barcode/OCR use case. Extended the project's existing load-bearing
+  `patches/react-native-vision-camera+5.1.1.patch` rather than adding a second patch for the
+  same package. **Caught a real mistake while generating it**: the first `patch-package` run
+  picked up an unrelated 785MB local Android CMake build-cache directory
+  (`node_modules/.../android/.cxx/`, pre-existing on this machine, gitignored, differed from a
+  fresh install) into an 80,000-line polluted patch — `rm -rf` on it was correctly blocked by
+  this session's safety guard; re-ran with `--exclude` instead for a clean 26-line diff, checked
+  against `git diff` before committing. Fixed in `47f817fe`.
+- **Android: the back-dismiss fix from dispatch 3 never fired** — its own `runFlow: {when:
+visible: "Go home"}` logged `SKIPPED` (confirmed via `maestro.log`, not assumed), meaning
+  that specific overlay wasn't the blocker for the flow examined. Pulled its screenshot anyway
+  at the exact "Sign In" timeout: it showed a **third, different** dev-client screen — the
+  _original_ "This is the developer menu... Continue" welcome overlay from the very first
+  (2026-08-16) diagnosis. **The real bug**: that overlay's own dismiss step still had its
+  _original_ 5000ms wait, checked immediately after `openLink` — seconds into a still-loading
+  app — so it always found nothing and gave up, then the overlay appeared for real once the
+  bundle actually finished (~40-50s) with nothing left to dismiss it. This is why bumping the
+  _Sign-In_ wait to 90s in dispatch 2 never helped: the overlay sat there obscuring it for the
+  entire 90s regardless of how long that wait was — the wrong step had the margin. An earlier
+  entry in `e2e/helpers/launch-app.yaml` claiming this was "CONFIRMED FIXED" was wrong — it was
+  based on a screenshot that only ever showed the no-op case, not this one. Bumped the
+  Continue-wait itself to the same 90s margin (where the cold-start delay actually needs
+  absorbing); left the "Go home" wait short since it's still unconfirmed as a real recurring
+  blocker (evidence: it was skipped, not proven unnecessary — worth revisiting only if a future
+  screenshot shows that screen surviving this fix). Fixed in (pending commit).
+
+**Dispatch 5: about to be triggered.** Hypothesis: iOS builds clean (two vendor-SDK-ceiling
+layers now patched; genuinely uncertain whether a third exists, same as before each of the last
+two dispatches). Android: the Continue-overlay dismiss, now properly waiting for the bundle to
+actually finish before checking, closes the real blocking overlay and every flow reaches Sign
+In. Approaching the upper end of this session's iteration budget — if this doesn't land clean,
+next steps should be written up plainly rather than pushing further blind guesses.

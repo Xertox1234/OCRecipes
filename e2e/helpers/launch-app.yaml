@@ -20,12 +20,22 @@ appId: com.ocrecipes.app
 # screen, rather than inferring it from timing.
 #
 # `optional: true` below means this step does NOT fail the flow if the
-# overlay doesn't appear (e.g. once Expo stops showing it after a device
-# has "seen" it before). CONFIRMED FIXED on CI (2026-08-29, run
-# 33276571201): screenshot evidence shows this "Continue" dismiss
-# correctly no-ops when the overlay isn't there.
+# overlay doesn't appear. CORRECTION (2026-08-29, run 33278558247): the
+# ORIGINAL 5000ms wait was itself the bug, not just "confirmed fine" as an
+# earlier entry here claimed from a screenshot that only showed the no-op
+# case. The overlay is JS-rendered app content -- it can only appear once
+# the bundle has actually loaded and first-painted (~40-50s cold, per
+# metro.log), but this wait fired right after `openLink`, seconds into a
+# still-loading app, so it ALWAYS found nothing and gave up -- then the
+# overlay appeared for real, minutes later, with nothing left to dismiss
+# it. Screenshot evidence at a "Sign In" timeout (run 33278558247) caught
+# this exact overlay still sitting there at the 90s mark. Bumped to the
+# same cold-start margin as the Sign-In wait it was defeating — this is
+# where that bundle-load delay actually needs to be absorbed, not in the
+# wait for Sign In itself (once Continue is dismissed, the already-loaded
+# screen underneath should appear near-instantly).
 #
-# SECOND, DIFFERENT overlay found the same day (2026-08-29, same run):
+# SECOND, DIFFERENT overlay found 2026-08-29 (same day, run 33276571201):
 # the Expo dev MENU (not the welcome banner above) — "Connected to:
 # http://localhost:8081", Reload/Go home, a Tools list — renders as a
 # bottom-sheet-style modal on top of the already-loaded Sign In screen
@@ -36,10 +46,15 @@ appId: com.ocrecipes.app
 # Android's own back gesture — the standard way to close a bottom-sheet
 # modal — gated behind detecting "Go home" so it never fires (and can't
 # navigate the app itself backward) when the menu isn't showing.
-# **NOT YET VERIFIED on CI** — the syntax was checked locally
-# (`maestro test` against the local emulator: parsed and ran with no
-# schema errors) but the fix itself needs a live dispatch to confirm it
-# actually closes the modal. Verify before trusting this as done.
+# **STILL UNCONFIRMED as a real, recurring blocker** — on run 33278558247
+# this check itself was SKIPPED (its own `extendedWaitUntil` found "Go
+# home" not visible) for the flow examined, so the back-press never fired
+# and can't have caused that run's failures. Left in place (harmless when
+# skipped, confirmed via the SKIPPED log line, not the syntax alone this
+# time) — kept at a short wait since the Continue-overlay fix above should
+# now absorb the real cold-start delay before this check ever runs; only
+# worth lengthening if a future run's screenshot shows this exact "Connected
+# to" screen AFTER that fix lands and this still doesn't dismiss it.
 #
 # `localhost:8081` resolves correctly on both CI jobs: the Android job's
 # `adb reverse tcp:8081 tcp:8081` step tunnels the emulator's localhost to
@@ -49,7 +64,7 @@ appId: com.ocrecipes.app
 - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
 - extendedWaitUntil:
     visible: "Continue"
-    timeout: 5000
+    timeout: 90000
     optional: true
 - tapOn:
     text: "Continue"
