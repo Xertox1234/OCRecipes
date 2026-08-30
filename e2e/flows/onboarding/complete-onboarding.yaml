@@ -90,10 +90,51 @@ tags:
 - tapOn: "Create Account"
 
 # Registration submits a password — iOS can raise the system "Save Password?"
-# dialog here, which hides the entire app hierarchy until dismissed
+# dialog here, which hides the entire app hierarchy until dismissed.
+#
+# SELF-HEALING RETRY: on the FIRST-ever focus of the secure fields, iOS's
+# invisible "Use Strong Password?" sheet can swallow keystrokes AND pasted
+# text (observed on CI: one character left in each field, submit rejected).
+# A second entry into the same fields reliably lands (the sheet only appears
+# once per field-focus session), so instead of fighting the sheet's timing,
+# use the app's own outcome as the oracle: wait briefly for the Welcome
+# screen, and while it hasn't appeared, re-enter both passwords and resubmit
+# (bounded at 3 rounds). Every command inside the loop is optional/no-op
+# when the register already succeeded.
 - extendedWaitUntil:
     visible: "(Get Started|Not Now)"
-    timeout: 30000
+    timeout: 20000
+    optional: true
+- repeat:
+    times: 3
+    while:
+      notVisible: "(Get Started|Not Now)"
+    commands:
+      - setClipboard: "TestPass123!"
+      - tapOn:
+          id: "input-password"
+          optional: true
+      - eraseText: 50
+      - pasteText
+      - tapOn:
+          id: "input-confirm-password"
+          optional: true
+      - eraseText: 50
+      - pasteText
+      - tapOn:
+          text: "Create an account to get started"
+          optional: true
+          retryTapIfNoChange: false
+      - tapOn:
+          text: "Create Account"
+          optional: true
+      - extendedWaitUntil:
+          visible: "(Get Started|Not Now)"
+          timeout: 15000
+          optional: true
+- extendedWaitUntil:
+    visible: "(Get Started|Not Now)"
+    timeout: 15000
 - runFlow:
     when:
       visible: "Not Now"
