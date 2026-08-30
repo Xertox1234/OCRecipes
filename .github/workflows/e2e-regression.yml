@@ -30,22 +30,32 @@
 # single transient flake doesn't produce a red night. A flow that fails twice
 # in a row is a real signal.
 #
-# Status (2026-08-16): NOT YET VERIFIED GREEN. This workflow's two jobs went
-# from "never executed a single flow" to "genuinely builds, boots a
-# simulator/emulator, and runs all 8 regression flows" this session, but no
-# `workflow_dispatch` run has gone fully green yet — see
-# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md for the
-# full diagnostic trail and what's still open on each platform.
+# Status (2026-08-30): NIGHTLY SCHEDULE PAUSED. `main` is still on the
+# never-passed state (34/34, then N more nights after that) while the actual
+# fix iterates on branches — see
+# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md (structural
+# session/clearState bug: fixed and cross-platform confirmed on its branch,
+# not yet merged) and
+# todos/P2-2026-08-30-e2e-flow-assertions-dont-match-app-ui.md (remaining
+# flow-content failures, split off once the above landed). Every nightly
+# `schedule` run against unfixed `main` was failing 100% of the time and
+# firing both a workflow-failure notification and a new comment on GitHub
+# Issue #832 EVERY NIGHT with zero new information each time — pure noise,
+# not a monitoring signal. Paused the `schedule` trigger below rather than
+# let that continue during active iteration; `workflow_dispatch` is
+# unaffected, so CI iteration on fix branches continues normally.
+# RE-ENABLE the `schedule:` block below once either todo above lands a
+# genuinely green `workflow_dispatch` run on `main`.
 
 name: E2E Regression
 
 on:
-  schedule:
-    # Nightly at 08:17 UTC (~00:17 PT). Off-hour minute avoids GitHub's
-    # top-of-the-hour scheduler congestion. Scheduled runs execute against the
-    # default branch (main) — this catches regressions after merge; it does not
-    # block them (see trigger decision above).
-    - cron: "17 8 * * *"
+  # schedule:
+  #   # Nightly at 08:17 UTC (~00:17 PT). Off-hour minute avoids GitHub's
+  #   # top-of-the-hour scheduler congestion. Scheduled runs execute against
+  #   # the default branch (main) — this catches regressions after merge; it
+  #   # does not block them (see trigger decision above).
+  #   - cron: "17 8 * * *"
   workflow_dispatch:
 
 concurrency:
