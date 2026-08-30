@@ -7,6 +7,7 @@ tags: [inject-patterns, applies_to, tags, path-domains, routing, harness, toolin
 applies_to: [docs/solutions/**/*.md, scripts/lib/path-domains.ts, .claude/hooks/inject-patterns.sh, .claude/skills/**]
 symptoms: [An applies_to glob names exactly the right files and the solution still never appears, A solution is added to the corpus and the injected set for its own domain does not change, A glob points at a directory that maps to no domain at all]
 created: '2026-08-06'
+last_updated: '2026-08-30'
 ---
 
 # `tags` and `applies_to` are a two-part precondition — a precise glob over an unrouted path is inert
@@ -52,6 +53,14 @@ codebase on the same day:
   `applies_to`, but no `PATH_TO_DOMAINS` rule matched `.husky/**`, so editing the repo's actual
   commit/push gate injected nothing at all. The corpus was expressing an expectation the routing
   table did not implement.
+- **Third occurrence (2026-08-30), caught only in external review:** three Maestro solutions
+  shipped with `applies_to: ["e2e/**"]` while `e2e/**` routed to no domain — inert exactly where
+  they were written to fire. The structural reason it recurred: the lint
+  (`scripts/check-solution-frontmatter.js`) validates the **tags** half of this precondition
+  (at least one routed domain tag) but nothing validates the **applies_to** half (that each glob
+  targets a routed path). `e2e/**` now routes to `testing`; if a fourth unrouted-glob instance
+  appears, extend the lint to resolve `applies_to` globs through `path-domains.ts` — the same
+  escalation that produced the tags lint.
 
 ## Examples
 
