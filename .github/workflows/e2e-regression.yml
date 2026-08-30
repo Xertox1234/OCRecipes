@@ -59,7 +59,12 @@ jobs:
   e2e-ios:
     name: Maestro regression (iOS simulator)
     runs-on: macos-15
-    timeout-minutes: 60
+    # 60min was insufficient once Maestro flows finally started executing
+    # (dispatch 8, run 33287752221): ~24min in, still mid-retry, cut off by
+    # this timeout before printing a real Flows-Passed/Failed summary for
+    # the retry pass. Matches the same fix already applied to e2e-android
+    # for the identical reason (see todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md).
+    timeout-minutes: 90
 
     env:
       # Backend env — mirrors .github/workflows/ci.yml so the server behaves the

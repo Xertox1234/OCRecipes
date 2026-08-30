@@ -710,15 +710,27 @@ cross-flow session bug as Android, confirming it is not Android-specific.**
   itself valuable**: the session/`clearState` bug lives in the shared `e2e/flows/**` YAML and/or
   the client's own auth-persistence behavior, not in anything Android-specific — whichever of the
   three candidate fixes above is chosen will very likely need to (and should) fix both platforms
-  at once, not just Android. iOS's own 60-minute job timeout is a secondary, cosmetic gap (would
-  only produce a cleaner failure printout, not a pass) — not worth fixing in isolation before the
-  real bug is addressed.
+  at once, not just Android. **Fixed, not left for later:** bumped `e2e-ios`'s
+  `timeout-minutes: 60 → 90` to match Android's own already-applied fix for the identical
+  problem — not to chase a green run (it won't produce one on its own), but so the next
+  session's dispatch of the real fix produces a readable pass/fail verdict instead of another
+  cancellation. **Two loose ends, not investigated, flagged for the next session:**
+  - `Onboarding - Register and complete onboarding` fails in **4 seconds** on attempt 1 — an
+    order of magnitude faster than every other flow's ~1-2 minute failure. Different signature,
+    never examined. Do not assume the session/`clearState` fix automatically covers this one.
+  - `Home - NutriCoach chat interaction` failed attempt 1 on a _different_ assertion
+    (`"NutriCoach" is visible`, 27s — meaning it got **past** Sign In that time) but attempt 2 on
+    the usual `"Sign In"` (same as everything else). This is the closest direct evidence yet of
+    _progressive_ contamination across the job — worth keeping in mind when validating whichever
+    fix is chosen (a fix should make earlier-vs-later flow position stop mattering at all).
 - **Android: failed identically again** (`failure`, "Build app and run Maestro regression
   flows") — expected, not re-diagnosed.
 
-**Session status, final for this session:** iOS's own commissioning is now genuinely complete —
-build, install, and Maestro execution all work; the only remaining iOS-specific gap was its job
-timeout, now known to be secondary. **Both platforms are blocked on the same single root cause**:
+**Session status, final for this session:** iOS's build, install, and Maestro flow execution all
+now demonstrably work — real progress, not inferred. It has never yet run flows to completion
+within its own timeout, though (cut off mid-retry at the old 60-minute limit); the `90`-minute
+bump above addresses that but is itself unvalidated by a dispatch. **Both platforms are blocked
+on the same single root cause**:
 the cross-flow session/`clearState` bug documented in detail above. Deliberately **not**
 attempting a fix this session — it's a real flow-semantics design decision among three candidates
 with different tradeoffs (see above), not a quick patch, and this session already ran 8 real CI
