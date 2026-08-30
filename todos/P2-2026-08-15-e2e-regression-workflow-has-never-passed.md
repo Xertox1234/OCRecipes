@@ -598,6 +598,25 @@ other client-side persistence this session hasn't found. That would need one mor
 (a hierarchy/logcat dump from the same step, if the workflow ever captures one) or a targeted
 local repro — not attempted here, out of session scope.
 
+**Second zero-cost check, run to discriminate two competing readings of the screenshot alone
+(per advisor review) — CONFIRMED, at the code level, not just correlation.** The screenshot by
+itself was consistent with two different explanations: (a) a token survived `clearState` and
+re-authenticated the app, or (b) `clearState` worked correctly and the onboarding wizard is
+simply reachable _pre_-authentication as a first-launch screen, making the flow's own
+`"Sign In"` assertion the bug, not `clearState`. These predict the same pixels, so the
+screenshot alone couldn't tell them apart. Read the actual routing source of truth instead:
+`client/navigation/RootStackNavigator.tsx:223` — `needsOnboarding = isAuthenticated &&
+!user?.onboardingCompleted` — onboarding is reachable **only** behind `isAuthenticated`; there
+is no pre-auth path to it at all. `client/hooks/useAuth.ts`'s `checkAuth()` (lines ~124-185)
+sets `isAuthenticated: true` **only** after reading a token from `tokenStorage` (AsyncStorage)
+_and_ that token being accepted by a live `GET /api/auth/me` call to the CI job's own backend.
+So the onboarding screen in the artifact is proof, not inference, that: a token was present in
+AsyncStorage after `clearState: true` + relaunch, **and** the server accepted it as a still-valid
+session. Reading (a) is confirmed; reading (b) is ruled out by the code. **Still open:** _why_
+`clearState` doesn't purge that AsyncStorage entry (or purges it too late relative to the
+relaunch's read) — a Maestro Android `clearState` reliability question, not an app-code one;
+not investigated further this session.
+
 This also reframes why 6 of the other 7 flows fail identically: none of them call `clearState`
 at all (a plain `openLink` reconnect, same as this flow's _first_ connection) — so if this
 flow's login (or any flow's) leaves a working token in the same still-installed app on the same
