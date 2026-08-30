@@ -107,3 +107,30 @@ diagnosed at all yet.
 
 - Filed after dispatch 9 of the parent todo confirmed the session-contamination bug fixed and
   exposed these as the actual remaining blockers to a green E2E run.
+
+### 2026-08-30 (later) — all 6 investigated and fixed at zero CI cost; NOT six independent causes
+
+Evidence: dispatch-9's own artifacts (per-flow Maestro screen-hierarchy dumps, both platforms)
+plus a local simulator/emulator loop. The risk note above was half right: it was not six
+independent causes, but it was also not the two guessed leads — **both "unverified leads" are
+falsified** (the greeting renders "Hello testuser" via the username fallback, never a bare
+"Hello"; free tier is NOT paywalled on Coach — it lands on ChatList whose header IS
+"NutriCoach").
+
+The dominant shared cause: **Maestro text matching is full-string regex**, and the app's tab
+buttons exposed aggregated ", Plan"-style accessibility labels (custom tabBarLabel render fn
+suppresses bottom-tabs' derived label) with no testIDs, while the Scan FAB's label is
+"Open scan menu" and chat.yaml asserted "NutriCoach" on a screen that never renders it.
+Fixes: explicit `tabBarAccessibilityLabel` + `tabBarButtonTestID` on the four tabs (commit
+`0766754a` — also fixes the real TalkBack announcement defect), flows tap tabs by id and
+assert strings the app actually renders (`Hello.*`, "Browse Recipes", "Scan History.\*",
+Coach-tab → "NutriCoach"), and the scan flows gained a mandatory SpeedDial assertion so they
+are no longer vacuous (commit `ca3216b7`). Two in-scope app defects surfaced by this work were
+fixed at source per the scope contract's "app is the thing that's wrong" clause: the
+expo-notifications bogus custom sound (its LogBox toast covered the login screen's bottom
+controls — `fa669060`) and the tab a11y labels above.
+
+All 6 flows pass locally (Android 8/8; iOS green for all six of THESE flows). Verification on
+CI rides the parent todo's dispatch 10 (run 33322868083). This todo closes when the parent's
+green run lands — the full mechanism-by-mechanism record lives in the parent todo's
+2026-08-30 investigation entry.

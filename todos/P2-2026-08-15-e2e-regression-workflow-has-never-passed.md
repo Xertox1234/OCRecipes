@@ -872,4 +872,86 @@ tied to either this todo or its split-off landing a genuinely green `workflow_di
 this branch (`todo/P2-2026-08-15-e2e-regression-workflow-has-never-passed`), unmerged, since
 merging the actual code fix here would be premature given the unmet acceptance criterion.
 Anyone looking at `todos/` on `main` right now sees stale, pre-session state and won't see the
-split-off todo at all.
+split-off todo at all. (Superseded later the same day: PR #879 synced both files to `main`.)
+
+### 2026-08-30 — Full-session investigation closed EVERY open failure at zero CI cost; local-first loop replaced dispatch-guessing; dispatch 10 in flight
+
+**Method change that made this session different:** instead of reading CI logs and dispatching,
+this session (1) mined dispatch 9's own artifacts — the per-flow Maestro `screen-hierarchy/*.json`
+
+- `commands.json` for BOTH platforms were already downloadable — and (2) stood up a local
+  iterate loop (iOS simulator + Android emulator + local server/Metro/seeded DB mirroring the CI
+  env) so every hypothesis was verified against a live app in minutes. Two review passes (Plan
+  agent + adversarial `kimi-challenge`) pressure-tested the design before implementation; both
+  caught real holes (the wizard map, registration session leak).
+
+**Every dispatch-9 failure now has a confirmed mechanism — none was what the split todo
+guessed** (both its "unverified leads" — null displayName, Coach premium gating — are falsified;
+the greeting renders "Hello testuser" via username fallback, and free tier lands on ChatList
+with a "NutriCoach" header, no paywall):
+
+1. **Maestro text matching is FULL-STRING regex** — proven twice from artifacts (`"Hello"`
+   failed while the node `Hello testuser` was in the hierarchy). The six "feature-assertion"
+   failures were all this: tab buttons exposed aggregated `", Plan"`-style a11y labels with no
+   testID (the custom `tabBarLabel` render fn suppresses bottom-tabs' derived label —
+   `BottomTabBar.tsx:429`), the Scan FAB is a11y `"Open scan menu"` (icon-only), and
+   `chat.yaml` asserted "NutriCoach" on Home, where no such text has ever existed.
+   **Fix:** `tabBarAccessibilityLabel` + `tabBarButtonTestID` on the four tabs (also fixes the
+   real screen-reader defect: TalkBack announced ", Plan"); flows tap tabs by id (`tap-home`…)
+   — text-tapping "Home" would multi-match Android's system-nav "Home" node; assertions use
+   real strings (`Hello.*`, `Browse Recipes`, `Scan History.*`, Coach-tab → `NutriCoach`).
+2. **The 2s/23s iOS `launchApp {clearState}` "driver error" was a wrong bundle id** — the app's
+   identifiers are SPLIT per platform (iOS `com.williamtower.ocrecipes`, Android
+   `com.ocrecipes.app`) and flows can declare only one appId. On Android (right id) `pm clear`
+   genuinely strands the dev client on its launcher. **Fix:** no flow uses `launchApp` at all —
+   launches are openLink-only (appId-agnostic), and logged-out state comes from a NEW
+   `ensure-logged-out.yaml` that drives the real Profile → Settings → Sign Out control
+   (in-process `tokenStorage.clear()`, plus genuine logout coverage the suite never had).
+3. **iOS "Save Password?" system dialog** (already diagnosed) — plus its cousin
+   **"Use Strong Password?"**, which is INVISIBLE to Maestro's hierarchy and silently swallows
+   secure-field keystrokes (observed: 1 of 12 chars landed → client-side validation rejected the
+   register). **Fix:** gated "Not Now" dismissals; secure fields enter text via
+   `setClipboard`+`pasteText` (keystroke-free, verified on both platforms).
+4. **The Sign-Out confirmation alert's own title is also "Sign Out"** and precedes the button —
+   a bare text tap hits the title; a `below:`-anchored tap also failed on iOS 26. `index: 1`
+   is the empirically verified confirm on BOTH platforms (2 live Android executions).
+5. **`complete-onboarding.yaml` could never have completed**: the real wizard is 8 screens
+   (Welcome → HealthDataConsent → Allergies → HealthConditions → DietType → Goals →
+   Preferences → TastePicks — completion happens on TastePicks; the old flow's "Complete
+   setup" button exists NOWHERE in the codebase), `${TIMESTAMP}` was defined nowhere, and the
+   register form's Email field + COPPA checkbox were never filled. All fixed; the flow ends
+   with a logout so later flows keep a deterministic user (advisor catch: the fresh `e2etest_*`
+   session otherwise leaks into every later flow in path order).
+6. **Rate limiting would have blocked any full run**: login + subscription ceilings are
+   10/15min per IP, and the suite's reload-per-flow + relogin pattern legitimately exceeds
+   both (observed live: 429 on `/api/subscription/status` flipping the Coach tab to its error
+   state). **Fix:** `E2E_RELAXED_RATE_LIMITS=true` (workflow env only) multiplies
+   factory-created limits ×1000 — still bounded, refused outright under NODE_ENV=production,
+   TDD-covered.
+7. **Android's expo-notifications console error** (`sound: "default"` names a nonexistent
+   custom sound file) put a LogBox toast exactly over the login screen's bottom toggle in dev
+   builds — CI-relevant, fixed at the source (omit `sound` → system default; TDD-covered).
+8. **Assorted tool-behavior traps, each locally evidenced:** Maestro's default
+   `retryTapIfNoChange` un-toggles toggles (disabled on mode-switch + checkbox taps);
+   `hideKeyboard` on iOS can background the app (replaced with a neutral blur tap); Android's
+   `back` command fails iOS flows (removed); Gboard's "Try out your stylus" promo steals focus
+   on the secure→plain keyboard switch on Google-APIs emulator images (gated dismiss+refocus);
+   a `?` in an asserted string is a regex metachar (→ `.*`).
+9. **Structural rewrite of the helpers**: launch-app is now a single 120s readiness gate over
+   every known post-launch state — including the two states a killed attempt strands
+   (mid-logout confirmation alert; mid-onboarding wizard) — replacing the optional 90s
+   "Sign In" wait that burned ~24 dead minutes per job. A deliberate kill-drill (killed the
+   register flow mid-run, then ran `auth/login`) verified the wizard-escape recovers exactly
+   the state a CI timeout leaves for attempt 2.
+
+**Local verification before any CI spend:** Android emulator 8/8 flows green + kill-drill
+recovery green; iOS simulator 7/8 green (the register flow's remaining local failures are
+machine artifacts — saved keychain credentials autofilling the dev "demo" account, and iOS
+26.5-sim `XCTAutomationSupport` segfaults, neither present on CI images — its iOS-specific
+mechanisms were each verified individually). Client changes (tab a11y, notification sound)
+and the rate-limit knob were TDD'd red→green.
+
+**Status:** commits `0766754a` (tabs), `fa669060` (notification sound), `b06e8620` (rate-limit
+knob + workflow env), `ca3216b7` (flow/helper rewrite) pushed; **dispatch 10 (run 33322868083)
+in flight** — the first dispatch in this todo's history where every flow has already passed
+locally on at least one platform. See next entry for the verdict.
