@@ -35,8 +35,8 @@ export function ipKeyGenerator(req: Request): string {
  * flow and logs in after each UI logout, so a single CI job legitimately
  * exceeds the production ceilings (e.g. login/subscription at 10/15min).
  * `E2E_RELAXED_RATE_LIMITS=true` multiplies factory-created limits by 1000 —
- * still bounded, not disabled — and is REFUSED outright in production
- * regardless of the env value (fail closed). Set only by the E2E workflow's
+ * still bounded, not disabled — and only when NODE_ENV is EXPLICITLY
+ * "development" or "test" (allowlist). Set only by the E2E workflow's
  * job env and the local E2E loop; never in any deploy config.
  */
 export function resolveRateLimitMax(
@@ -44,7 +44,15 @@ export function resolveRateLimitMax(
   env: Record<string, string | undefined>,
 ): number {
   if (env.E2E_RELAXED_RATE_LIMITS !== "true") return configuredMax;
-  if (env.NODE_ENV === "production") return configuredMax;
+  // Allowlist, not denylist: relax ONLY in explicitly non-prod envs. An
+  // unset or unrecognized NODE_ENV (a dashboard-overridden startCommand or
+  // `railway run`, neither of which sets NODE_ENV) stays at production
+  // limits. A `NODE_ENV === "production"` denylist would miss exactly those
+  // paths — the failure shape docs/rules/database.md codifies for
+  // NODE_ENV-keyed guards on Railway.
+  if (env.NODE_ENV !== "development" && env.NODE_ENV !== "test") {
+    return configuredMax;
+  }
   return configuredMax * 1000;
 }
 

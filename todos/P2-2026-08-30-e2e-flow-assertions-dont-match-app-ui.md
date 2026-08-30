@@ -66,6 +66,10 @@ diagnosed at all yet.
 - [ ] At least one `workflow_dispatch` run shows these flows passing (not merely "further along"
       — this repo's own prior E2E-commissioning history is proof that a partial fix reported as
       done gets re-litigated later).
+- [ ] The nightly `schedule:` trigger in `.github/workflows/e2e-regression.yml` is re-enabled
+      after a genuinely green `workflow_dispatch` run on `main` (the pause note in the workflow
+      file spells out the condition — this checkbox exists because prose-only re-enable
+      instructions are exactly how the original 34-failure drift happened: nothing tracked it).
 
 ## Implementation Notes
 

@@ -198,30 +198,38 @@ jobs:
       # each workflow run gets a fresh Postgres instance.
       - name: Seed E2E test user
         run: |
-          curl -sf -X POST http://localhost:3000/api/auth/register \
+          # Fail LOUD: bare `curl -sf` under this shell's `-eo pipefail`
+          # aborts with an opaque exit code and no body. Register may 409 on
+          # an already-seeded rerun — only a failed login is fatal.
+          REG_BODY=$(curl -s -X POST http://localhost:3000/api/auth/register \
             -H "Content-Type: application/json" \
-            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}" \
-            || true
-          # Mark onboarding complete so a session that persists across a Maestro
-          # flow's app relaunch (nothing between flows calls clearState except
-          # the two flows that explicitly toggle it for their own purposes --
-          # see todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md)
-          # lands on the known, testable Main app instead of the onboarding
-          # wizard -- which has no Settings/back/skip affordance at all, so a
-          # flow stuck there could never recover on its own. login.yaml's own
-          # idempotency (see e2e/helpers/login.yaml) handles the "already
-          # authenticated, Sign In never appears" case this produces.
-          TOKEN=$(curl -sf -X POST http://localhost:3000/api/auth/login \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}") \
+            || REG_BODY="(register curl itself failed)"
+          # Mark onboarding complete so a session that persists across a
+          # Maestro flow's app relaunch lands on the known, testable Main app
+          # instead of the onboarding wizard (flows reach a logged-out state
+          # via the UI Sign Out in e2e/helpers/ensure-logged-out.yaml —
+          # launchApp/clearState is banned in this suite, see e2e/README.md).
+          # login.yaml's idempotency handles the "already authenticated,
+          # Sign In never appears" case this produces.
+          TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
             -H "Content-Type: application/json" \
             -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
             | jq -r '.token // empty')
-          if [ -n "$TOKEN" ]; then
-            curl -sf -X PUT http://localhost:3000/api/auth/profile \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $TOKEN" \
-              -d '{"onboardingCompleted":true}' \
-              || true
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Seed login for $USERNAME failed — the suite cannot run without this account. Register response (token stripped):"
+            echo "$REG_BODY" | jq -c 'del(.token)' 2>/dev/null || echo "$REG_BODY"
+            exit 1
           fi
+          PROF_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT http://localhost:3000/api/auth/profile \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $TOKEN" \
+            -d '{"onboardingCompleted":true}')
+          if [ "$PROF_CODE" != "200" ]; then
+            echo "::error::Seed profile update returned HTTP $PROF_CODE — $USERNAME would land in the onboarding wizard"
+            exit 1
+          fi
+          echo "seeded $USERNAME (onboardingCompleted=true)"
 
       # The debug build is a dev client that loads its JS bundle from Metro, so
       # Metro must be running for the app to render anything Maestro can drive.
@@ -377,30 +385,38 @@ jobs:
       # See the iOS job's "Seed E2E test user" note — same reason, same account.
       - name: Seed E2E test user
         run: |
-          curl -sf -X POST http://localhost:3000/api/auth/register \
+          # Fail LOUD: bare `curl -sf` under this shell's `-eo pipefail`
+          # aborts with an opaque exit code and no body. Register may 409 on
+          # an already-seeded rerun — only a failed login is fatal.
+          REG_BODY=$(curl -s -X POST http://localhost:3000/api/auth/register \
             -H "Content-Type: application/json" \
-            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}" \
-            || true
-          # Mark onboarding complete so a session that persists across a Maestro
-          # flow's app relaunch (nothing between flows calls clearState except
-          # the two flows that explicitly toggle it for their own purposes --
-          # see todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md)
-          # lands on the known, testable Main app instead of the onboarding
-          # wizard -- which has no Settings/back/skip affordance at all, so a
-          # flow stuck there could never recover on its own. login.yaml's own
-          # idempotency (see e2e/helpers/login.yaml) handles the "already
-          # authenticated, Sign In never appears" case this produces.
-          TOKEN=$(curl -sf -X POST http://localhost:3000/api/auth/login \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}") \
+            || REG_BODY="(register curl itself failed)"
+          # Mark onboarding complete so a session that persists across a
+          # Maestro flow's app relaunch lands on the known, testable Main app
+          # instead of the onboarding wizard (flows reach a logged-out state
+          # via the UI Sign Out in e2e/helpers/ensure-logged-out.yaml —
+          # launchApp/clearState is banned in this suite, see e2e/README.md).
+          # login.yaml's idempotency handles the "already authenticated,
+          # Sign In never appears" case this produces.
+          TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
             -H "Content-Type: application/json" \
             -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
             | jq -r '.token // empty')
-          if [ -n "$TOKEN" ]; then
-            curl -sf -X PUT http://localhost:3000/api/auth/profile \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer $TOKEN" \
-              -d '{"onboardingCompleted":true}' \
-              || true
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Seed login for $USERNAME failed — the suite cannot run without this account. Register response (token stripped):"
+            echo "$REG_BODY" | jq -c 'del(.token)' 2>/dev/null || echo "$REG_BODY"
+            exit 1
           fi
+          PROF_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT http://localhost:3000/api/auth/profile \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $TOKEN" \
+            -d '{"onboardingCompleted":true}')
+          if [ "$PROF_CODE" != "200" ]; then
+            echo "::error::Seed profile update returned HTTP $PROF_CODE — $USERNAME would land in the onboarding wizard"
+            exit 1
+          fi
+          echo "seeded $USERNAME (onboardingCompleted=true)"
 
       # See the iOS job's Metro note. On Android the emulator's localhost is the
       # emulator itself, so `adb reverse` (below) tunnels the app's

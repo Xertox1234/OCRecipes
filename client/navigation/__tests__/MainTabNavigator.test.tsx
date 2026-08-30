@@ -119,11 +119,15 @@ describe("MainTabNavigator — Android accessibility trap for the tab content be
 });
 
 describe("MainTabNavigator — tab button accessibility labels and testIDs", () => {
-  // The custom tabBarLabel render function means bottom-tabs derives NO
-  // accessibilityLabel for the tab buttons (BottomTabBar only synthesizes one
-  // from string labels), so Android exposed aggregated ", Plan"-style labels
-  // and Maestro/testing had no stable handle. Each screen must pin both
-  // options explicitly; the E2E flows tap tabs by these testIDs.
+  // This harness proves one thing: MainTabNavigator wires explicit
+  // tabBarAccessibilityLabel/tabBarButtonTestID values into each Tab.Screen's
+  // options (bottom-tabs itself is mocked out above). WHY they must be
+  // explicit is source-reasoned, not observed here: the custom tabBarLabel
+  // render FUNCTION makes bottom-tabs' derived label undefined
+  // (BottomTabBar.tsx only synthesizes one from string labels), which on
+  // Android surfaced as aggregated ", Plan"-style contentDescriptions with
+  // no automation handle — see the E2E todo's evidence chain. The E2E flows
+  // tap tabs by these testIDs.
   it.each([
     ["HomeTab", "Home", "tab-home"],
     ["MealPlanTab", "Plan", "tab-plan"],

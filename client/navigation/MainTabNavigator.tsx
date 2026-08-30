@@ -157,7 +157,9 @@ export default function MainTabNavigator() {
               // The custom tabBarLabel render fn suppresses bottom-tabs' derived
               // accessibilityLabel, leaving Android to expose an aggregated
               // ", Home"-style label — set both handles explicitly (E2E flows
-              // tap tabs by these testIDs).
+              // tap tabs by these testIDs). Keep tabBarAccessibilityLabel in
+              // lockstep with title on every tab: voice-control users speak
+              // the visible label (WCAG 2.5.3 Label in Name).
               tabBarAccessibilityLabel: "Home",
               tabBarButtonTestID: "tab-home",
               tabBarIcon: ({ color, size, focused }) => (
