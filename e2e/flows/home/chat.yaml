@@ -27,25 +27,24 @@ env:
     timeout: 15000
 
 # The chat list's new-chat affordance is always present (a11y label
-# "Start new chat" on the + button)
+# "Start new chat" on the + button) — unlike the empty-state "New Chat"
+# button, which disappears once the account has any chat history, so it is
+# the only deterministic way into a ChatScreen.
 - assertVisible: "Start new chat"
+- tapOn: "Start new chat"
 
-# Start a new chat if the list shows the empty-state button
-- tapOn:
-    text: "New Chat"
-    optional: true
-
-# Verify suggested prompts are visible
+# Verify suggested prompts in the fresh (empty) chat. The chips' a11y
+# labels are "Suggested prompt: <text>" (ChatScreen.tsx), and the literal
+# "?" is a regex metacharacter under Maestro's full-string matching — the
+# ".*" tail covers it (a bare "…today?" selector can never match anything).
 - extendedWaitUntil:
-    visible: "What should I eat today?"
-    timeout: 3000
-    optional: true
+    visible: "Suggested prompt: What should I eat today.*"
+    timeout: 10000
 - assertVisible:
-    text: "How can I hit my protein goal?"
-    optional: true
+    text: "Suggested prompt: How can I hit my protein goal.*"
 
 # Tap a suggested prompt (AI responses are not asserted — CI stubs the
 # OpenAI key)
 - tapOn:
-    text: "What should I eat today?"
+    text: "Suggested prompt: What should I eat today.*"
     optional: true

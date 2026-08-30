@@ -26,7 +26,10 @@ env:
 - extendedWaitUntil:
     visible: "Browse Recipes"
     timeout: 15000
-- assertVisible: "Pantry"
+# The Pantry row's a11y label grows a suffix when items are near expiry
+# ("Pantry, 2 expiring" — MealPlanHomeScreen), which a bare full-string
+# "Pantry" can never match.
+- assertVisible: 'Pantry(, \d+ expiring)?'
 - assertVisible: "Grocery Lists"
 
 # Verify meal slot sections (at least one should be visible)
@@ -51,11 +54,11 @@ env:
     direction: DOWN
     optional: true
 
-# Navigate to Pantry
+# Navigate to Pantry (same expiring-suffix tolerance as the assert above)
 - scrollUntilVisible:
-    element: "Pantry"
+    element: 'Pantry(, \d+ expiring)?'
     direction: UP
-- tapOn: "Pantry"
+- tapOn: 'Pantry(, \d+ expiring)?'
 
 # Verify pantry screen
 - extendedWaitUntil:

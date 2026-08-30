@@ -26,11 +26,16 @@ appId: com.ocrecipes.app
 #               bar and no logout. Without the escape below, one onboarding
 #               flake would turn the whole retry attempt into a guaranteed
 #               red job. The escape is one linear pass of optional taps in
-#               wizard screen order — from whatever screen the app is
-#               stranded on, each later tap matches the next screen once the
-#               earlier one advances, ending on TastePicks' "Skip for now"
-#               (which is what sets onboardingCompleted:true). Zero cost when
-#               not stranded: the `when:` gate skips the whole block.
+#               wizard screen order. Primary path: the per-flow relaunch
+#               resets the unpersisted wizard stack to Welcome, whose
+#               "Skip.*for now" (first tap) skips the whole wizard. The rest
+#               of the pass is best-effort traversal for partial strands —
+#               NOTE a screen with a selection already made relabels its
+#               advance button to "Continue" (Allergies/HealthConditions/
+#               DietType), hence the interleaved optional "Continue" taps.
+#               The terminal TastePicks tap is what sets
+#               onboardingCompleted:true. Zero cost when not stranded: the
+#               `when:` gate skips the whole block.
 ---
 - extendedWaitUntil:
     visible: "(Sign In|Hello.*|Get Started|Go back)"
@@ -50,11 +55,23 @@ appId: com.ocrecipes.app
       - tapOn:
           text: "No Allergies"
           optional: true
+      # Selection-flipped Allergies screen reads "Continue" instead
+      - tapOn:
+          text: "Continue"
+          optional: true
       - tapOn:
           text: "None of These"
           optional: true
+      # Selection-flipped HealthConditions screen reads "Continue" instead
+      - tapOn:
+          text: "Continue"
+          optional: true
       - tapOn:
           text: "Skip"
+          optional: true
+      # DietType (selection-flipped) then Goals both advance via "Continue"
+      - tapOn:
+          text: "Continue"
           optional: true
       - tapOn:
           text: "Continue"

@@ -130,7 +130,11 @@ export const LOGIN_ACCOUNT_KEY_PREFIX = "login-account:";
  */
 export const loginAccountLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  // Resolved through the same E2E knob as the factory limiters — the E2E
+  // suite's failed-login flakes all key to the single shared CI account, so
+  // an unrelaxed 10/15min here would lock out every later flow's login while
+  // looking exactly like the (relaxed) loginLimiter refusing to relax.
+  max: resolveRateLimitMax(10, process.env),
   skipSuccessfulRequests: true,
   message: {
     error: "Too many login attempts, please try again later",

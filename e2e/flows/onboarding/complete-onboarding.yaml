@@ -113,8 +113,10 @@ tags:
 # once per field-focus session), so instead of fighting the sheet's timing,
 # use the app's own outcome as the oracle: wait briefly for the Welcome
 # screen, and while it hasn't appeared, re-enter both passwords and resubmit
-# (bounded at 3 rounds). Every command inside the loop is optional/no-op
-# when the register already succeeded.
+# (bounded at 3 rounds). Every command inside the loop is optional — the
+# erase/type steps included, so a silently-failed optional focus tap (the
+# keyboard-covered-field mode above) degrades to a skipped round instead of
+# hard-failing the recovery loop on an unfocused field.
 - extendedWaitUntil:
     visible: "(Get Started|Not Now)"
     timeout: 20000
@@ -133,8 +135,22 @@ tags:
       - tapOn:
           id: "input-password"
           optional: true
-      - eraseText: 50
-      - inputText: "TestPass123!"
+      # Gboard stylus-sheet guard, mirroring the main block: a retry round
+      # re-raises the keyboard, which can surface the promo sheet again.
+      - runFlow:
+          when:
+            visible: "Try out your stylus"
+          commands:
+            - tapOn: "Cancel"
+            - tapOn:
+                id: "input-password"
+                optional: true
+      - eraseText:
+          charactersToErase: 50
+          optional: true
+      - inputText:
+          text: "TestPass123!"
+          optional: true
       # Blur to drop the keyboard before the confirm tap (see main block)
       - tapOn:
           text: "Create an account to get started"
@@ -143,8 +159,12 @@ tags:
       - tapOn:
           id: "input-confirm-password"
           optional: true
-      - eraseText: 50
-      - inputText: "TestPass123!"
+      - eraseText:
+          charactersToErase: 50
+          optional: true
+      - inputText:
+          text: "TestPass123!"
+          optional: true
       - tapOn:
           text: "Create an account to get started"
           optional: true

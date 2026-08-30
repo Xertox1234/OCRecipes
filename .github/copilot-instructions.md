@@ -35,6 +35,7 @@ When editing a file, identify its domain(s) using the table below. The correspon
 | `client/constants/theme.ts` | design-system |
 | `design_guidelines.md` | design-system |
 | `evals/**` | ai-prompting, testing |
+| `e2e/**` | testing |
 | `__tests__/**`, `*.test.ts(x)`, `*.spec.ts(x)` | testing |
 | `.github/workflows/**` | architecture, testing |
 | `vitest.config.*`, `eslint.config.*` | testing, typescript |

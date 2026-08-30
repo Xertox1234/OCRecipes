@@ -259,6 +259,14 @@ export const PATH_TO_DOMAINS: readonly PathDomainRule[] = [
     description: "`evals/**`",
   },
   {
+    // Maestro E2E flows/helpers. Without this route, e2e/** matched NO domain,
+    // so solutions with `applies_to: ["e2e/**"]` (the 2026-08-30 Maestro set)
+    // were unreachable exactly where they apply.
+    match: { kind: "recursive-dir", dir: "e2e" },
+    domains: ["testing"],
+    description: "`e2e/**`",
+  },
+  {
     match: { kind: "test-file" },
     domains: ["testing"],
     description: "`__tests__/**`, `*.test.ts(x)`, `*.spec.ts(x)`",
