@@ -782,3 +782,70 @@ just landing on the Main app instead of Onboarding after its own `clearState`. T
 will show directly whether this is still a problem.
 
 **Status:** committed, pushed, `workflow_dispatch` triggered — see next entry for the result.
+
+### 2026-08-30 — Dispatch 9 (run 33292071278): the structural fix is CONFIRMED working, cross-platform — the commissioning goal of this todo is met, even though no run went fully green
+
+**The session/`clearState` bug is gone.** Both jobs still finished `8/8 Flows Failed`, on both
+attempts — but the _reason_ changed completely. Zero flows on either platform failed on the
+`"Sign In" is visible`-after-onboarding-or-Main-app pattern diagnosed across dispatches 3-8 —
+except the two flows deliberately left untouched, which failed **exactly as flagged as a known
+gap**, nothing new:
+
+- `Auth - Login flow` — still `Assertion is false: "Sign In" is visible` on both platforms
+  (Android both attempts; iOS attempt 2 — attempt 1 failed with no message in 23s, worth a
+  look but not chased this session). Confirms the flagged gap: its own internal `clearState` +
+  wait sequence is unaffected by this fix, exactly as predicted.
+- `Onboarding - Register and complete onboarding` — Android: `"Sign In" is visible` (same
+  known gap). iOS: fails in ~2s with **no error message** on both attempts — a different,
+  unexplained signature, not investigated.
+
+**Every one of the other 6 flows now gets past login and fails on its own feature-specific
+assertion instead** — this is the actual proof the fix works, not an assumption:
+
+| Flow                                     | Failure (both platforms, both attempts, consistent)                                                                                      |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `Home - View item detail from history`   | `Element not found: Text matching regex: Profile`                                                                                        |
+| `Home - NutriCoach chat interaction`     | `Assertion is false: "NutriCoach" is visible`                                                                                            |
+| `Home - Navigate between tabs`           | `Assertion is false: "Hello" is visible` (mostly — see caveat below)                                                                     |
+| `Plan - Meal plan home and pantry`       | `Element not found: Text matching regex: Plan` (same signature as every dispatch since 2026-08-16 — pre-existing, never session-related) |
+| `Scan - Barcode scanning flow`           | `Element not found: Text matching regex: Scan`                                                                                           |
+| `Scan - Photo analysis intent selection` | `Element not found: Text matching regex: Scan`                                                                                           |
+
+**Two unverified leads, not diagnoses — name the check, don't skip to the conclusion:**
+
+- `NutriCoach` not being visible may be premium gating (project memory: Coach is
+  premium-gated on 2 surfaces) meeting a fresh `testuser` seeded at `subscriptionTier: "free"`
+  (confirmed via this session's own local `curl` test) — **not verified**; would need a
+  screenshot/hierarchy dump from the actual failure to confirm what's shown instead.
+- `"Hello"` not being visible may be because the greeting renders a `displayName` and the
+  seeded account has `displayName: null` (also confirmed via the same local `curl` response) —
+  **not verified** for the same reason.
+
+**One result worth flagging as a possible flaw in this session's own fix, not a feature bug:**
+iOS `Home - Navigate between tabs` attempt 1 failed in 24s on `Assertion is false: "Sign In" is
+not visible"` — the _inverse_ assertion, meaning Sign In was still showing 5 seconds after
+tapping submit. That's `helpers/login.yaml`'s own final `extendedWaitUntil: notVisible: text:
+"Sign In", timeout: 5000` — inherited unchanged from before this session's edit, never
+re-examined for whether 5s is still enough margin now that the helper runs conditionally.
+Attempt 2 of the same flow got past it fine and failed on `"Hello"` instead. Could be ordinary
+CI-load variance; could be a real race in the new conditional block. Worth watching on the next
+dispatch of whatever picks this up, not chased further here.
+
+**This todo's own premise is resolved.** The premise was "the workflow has never run" — it now
+runs, end to end, on both platforms, produces a real per-flow pass/fail verdict, and the specific
+bug that made every flow fail identically for 9 dispatches running is fixed and cross-platform
+confirmed. What remains — 6 flows asserting things that don't match what the app actually shows
+a fresh, free-tier, no-display-name account — is a **different class of problem**: a flow-content
+accuracy audit, not a CI-commissioning fix. It's the same family as the already-flagged
+`optional: true` audit item at the bottom of the 2026-08-16 entry, not new scope creep.
+**Recommendation: split this into its own todo** rather than extending this one further — the
+scope has visibly changed, and a fresh todo with a clean premise (flow assertions vs. actual
+app UI, for a free/unonboarded-defaults test account) will get better treatment than continuing
+to stack entries on a todo whose original question is now answered.
+
+**Acceptance criteria still NOT met** — no run went fully green — so `status` stays `blocked`,
+not `done`. No PR from this session; nothing here is closeable while the criterion is unmet.
+Stopping at 9 real CI dispatches. The next action is a human decision: split off the
+flow-accuracy work as its own todo (recommended) and decide whether this todo's own acceptance
+criterion should be relaxed given the premise it was written against no longer holds as stated,
+or left as-is pending the split todo's own resolution.
