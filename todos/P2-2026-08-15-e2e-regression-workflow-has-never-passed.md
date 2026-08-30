@@ -545,18 +545,25 @@ actual screenshot at the exact `"Sign In"` failure moment (`step-010-assertCondi
 settled it: the app was showing neither Sign In nor either overlay — it was on the **onboarding
 wizard's first screen** ("Let's Personalize Your Experience… 6 quick steps… Get Started").
 
-**Root cause: cross-flow session bleed, not a rendering/timing bug.** Every flow in a job
-reconnects via `helpers/launch-app.yaml`'s plain `openLink` (no `clearState`) except the two
-flows that explicitly clear state for their own register/login toggle — so once _any_ flow in
-the job successfully authenticates as the seeded `testuser`, the JWT persists in the app's
-storage across every later flow's relaunch. `testuser` is a freshly seeded account with
-`onboardingCompleted: false` (confirmed via this session's own local `curl` registration
-response). So the first flow to actually log in successfully routes correctly past Sign In —
-and every flow after it, on relaunch, finds an already-authenticated session and gets routed
-straight to onboarding instead of Sign In, since the app correctly treats an authenticated,
-onboarding-incomplete user that way. This is a single, structural explanation that fits every
-piece of evidence collected across dispatches 3-6, not another instance of the same overlay
-bug:
+**Working hypothesis, STRONGLY INDICATED but NOT YET CONFIRMED: cross-flow session bleed, not
+a rendering/timing bug.** Every flow in a job reconnects via `helpers/launch-app.yaml`'s plain
+`openLink` (no `clearState`) except the two flows that explicitly clear state for their own
+register/login toggle — the working theory is that once _any_ flow in the job successfully
+authenticates as the seeded `testuser`, the JWT persists in the app's storage across every
+later flow's relaunch. `testuser` is a freshly seeded account whose registration response, in
+this session's own local `curl` test earlier, showed `onboardingCompleted: false` — but that
+was a local test, not a check against the actual CI-seeded account at the actual moment these
+flows ran. So the theory is: the first flow to actually log in successfully routes correctly
+past Sign In, and every flow after it, on relaunch, finds an already-authenticated session and
+gets routed straight to onboarding instead of Sign In. This is a single, structural explanation
+that would fit every piece of evidence collected across dispatches 3-6, not another instance of
+the same overlay bug — but two links in the chain are inferred, not observed: whether the JWT
+actually survives an `openLink` reconnect on the Android dev client (vs. some other path landing
+on onboarding), and whether an _earlier_ flow in the job actually authenticated successfully at
+all. **Two unverified claims below are marked as such; treat the whole hypothesis as unconfirmed
+until they're checked.**
+
+If this hypothesis holds, the evidence would explain:
 
 - Why _every_ flow but one fails the same `"Sign In"` assertion, regardless of wait length —
   waiting longer never helps a screen that was never going to appear.
@@ -569,6 +576,36 @@ bug:
   (theory 3 in dispatch 3, and the true dispatch-4 cold-start race) that happened to coincide
   with screenshots taken while those other bugs were still active.
 
+**Confirming check, zero CI cost — DONE, and it revises the mechanism.** Pulled the
+already-downloaded run-33283020295 Android artifact and checked `Auth - Login flow` (attempt 1,
+no `-2` suffix) — the very first flow of the entire job, so nothing could have run before it.
+**It shows the identical onboarding screen at the identical step.** This _disconfirms_ the
+original framing (bleed from some unrelated earlier flow) but _confirms_ a more precise
+mechanism, visible directly in the flow file (`e2e/flows/auth/login.yaml`): this single flow
+logs in as `testuser` successfully partway through (landing on onboarding is correct app
+behavior for a fresh `onboardingCompleted: false` account — not a failure, the flow's own check
+here is only `notVisible: "Sign In"`, which onboarding satisfies), then explicitly calls
+`launchApp: { clearState: true }` specifically to force a clean Sign-In screen back, so it can
+test the sign-up toggle. **Step 10 — the one that fails, in both attempt 1 and the `-2`
+retry — is the `extendedWaitUntil: visible: "Sign In"` right after that `clearState`.** The
+client stores its JWT in plain `AsyncStorage` (`client/lib/token-storage.ts`, key
+`@ocrecipes_token`), not Keystore/SecureStore-backed, so there's no obvious reason `clearState`
+should fail to wipe it — but empirically, whatever survives (or races) `clearState` here is
+enough to auto-re-authenticate the app on relaunch and route it straight back to onboarding.
+**Not yet confirmed:** whether Maestro's Android `clearState` itself is unreliable (a race
+between the OS-level data wipe and the relaunch's read, or a known tool limitation), versus some
+other client-side persistence this session hasn't found. That would need one more artifact check
+(a hierarchy/logcat dump from the same step, if the workflow ever captures one) or a targeted
+local repro — not attempted here, out of session scope.
+
+This also reframes why 6 of the other 7 flows fail identically: none of them call `clearState`
+at all (a plain `openLink` reconnect, same as this flow's _first_ connection) — so if this
+flow's login (or any flow's) leaves a working token in the same still-installed app on the same
+emulator for the rest of the job, every later flow's ordinary reconnect inherits it the same
+way. The original cross-flow-bleed framing was directionally right about the _symptom_
+(persisted auth) but wrong about the _source_ (not "nobody happens to clear state", but "the one
+step that explicitly tries to clear state doesn't reliably do so").
+
 **Reverted, not carried forward:** the Continue-wait's 5000ms→90000ms bump (`26689be0`) and the
 Go-home back-dismiss (`e1fb20ce`) — both built on a diagnosis this screenshot overturns. Left in
 place they'd cost every stuck flow ~185s of dead waiting for overlays that are never there, and
@@ -579,25 +616,36 @@ comment recording why and pointing here. The Sign-In-wait bump itself (45s→90s
 regardless of the session-bleed bug.
 
 **Not attempted this session — a genuine flow-semantics decision, not a quick fix:** three
-candidate fixes exist and none has been evaluated against CI yet:
+candidate fixes exist and none has been evaluated against CI yet. **Candidate 1's priority
+drops** given the confirming check above — `auth/login.yaml` already calls `clearState: true`
+before the exact step that fails, so "add clearState everywhere" may not fix anything if
+Maestro's Android `clearState` is the unreliable part, rather than merely being absent.
 
-1. Add `clearState: true` to every flow's initial launch, not just the two that already do it —
-   guarantees isolation but may resurrect the very first (2026-08-16) welcome-banner overlay,
-   which some evidence suggests only appears on a truly first-ever launch.
+1. ~~Add `clearState: true` to every flow's initial launch~~ — **weakened by the confirming
+   check**: the one flow that already does this still fails at the identical step, right after
+   its own `clearState`. Worth retrying only alongside a fix for _why_ `clearState` doesn't
+   clear the token here (see "Not yet confirmed" above) — adding it blind is unlikely to help
+   and still risks resurrecting the 2026-08-16 welcome-banner overlay on every flow.
 2. Seed `testuser` with `onboardingCompleted: true` (or seed a distinct pre-onboarded account
-   for flows that assume a logged-in, fully-onboarded state) — narrower blast radius, but
-   doesn't fix flows that specifically want to exercise a _fresh_ logged-out or mid-onboarding
-   state.
+   for flows that assume a logged-in, fully-onboarded state) — narrower blast radius, doesn't
+   depend on `clearState` working at all, but doesn't fix flows (like this one) that
+   specifically need a _fresh, logged-out_ Sign-In screen mid-flow.
 3. Explicit logout at the start (or end) of each flow that expects a logged-out `"Sign In"`
-   screen — most surgical, but needs a reliable deep-link or storage-clear mechanism that
-   doesn't currently exist in the flow helpers.
+   screen, tapping a real in-app logout control so it goes through the app's own
+   `tokenStorage.clear()` (`client/lib/token-storage.ts`) rather than depending on Maestro's
+   Android `clearState` — **strengthened by the confirming check**: if `clearState` really is
+   the unreliable link, going through the app's own code path sidesteps that dependency
+   entirely rather than fixing or working around it. Most surgical of the three, but needs
+   locating (or adding, if it doesn't exist as an accessible element) a stable logout control
+   in the Profile screen.
    Each has a real tradeoff and needs its own CI validation; none is a two-line fix, so none was
    guessed at blind this session.
 
 **iOS status, precise claim:** the `iPhone 15`→`iPhone 16` device-name fix (committed
-`e2f5da26`) is **pushed but not yet dispatched**. Getting past "Boot iOS simulator" on the next
-run would confirm the device name is valid — it would **not** by itself confirm the app
-actually compiles under Xcode 26.3, since no dispatch has reached the build step yet (dispatch
+`e2f5da26`) is pushed, and a dispatch to validate it (run 33285727372) is in flight as of this
+entry — see the next entry for its outcome. Getting past "Boot iOS simulator" would confirm the
+device name is valid — it would **not** by itself confirm the app actually compiles under
+Xcode 26.3, since no dispatch has reached the build step yet (dispatch
 6 failed at simulator boot, before `xcodebuild` ran). The four previously-fixed compile-time
 errors are inferred gone because the runner image changed under them, not because a build has
 succeeded. Say so plainly rather than treating "cleared simulator boot" as "iOS is green."
