@@ -16,43 +16,36 @@ env:
       USERNAME: ${USERNAME}
       PASSWORD: ${PASSWORD}
 
-# Navigate to chat from home — NutriCoach entry point must be reachable
-- extendedWaitUntil:
-    visible:
-      text: "NutriCoach"
-    timeout: 5000
+# The Home screen has no NutriCoach entry point — the chat lives behind the
+# Coach tab. The CI account is always free tier, which lands on the chat
+# list: header "NutriCoach" (a text-free spinner shows until the premium
+# status resolves, hence the margin).
 - tapOn:
-    text: "NutriCoach"
-
-# Verify we reached a chat-related screen (mandatory)
+    id: "tab-coach"
 - extendedWaitUntil:
-    visible:
-      text: "NutriCoach"
-    timeout: 5000
+    visible: "NutriCoach"
+    timeout: 15000
 
-# Start a new chat if on chat list
+# The chat list's new-chat affordance is always present (a11y label
+# "Start new chat" on the + button)
+- assertVisible: "Start new chat"
+
+# Start a new chat if the list shows the empty-state button
 - tapOn:
     text: "New Chat"
     optional: true
 
 # Verify suggested prompts are visible
 - extendedWaitUntil:
-    visible:
-      text: "What should I eat today?"
+    visible: "What should I eat today?"
     timeout: 3000
     optional: true
 - assertVisible:
     text: "How can I hit my protein goal?"
     optional: true
 
-# Tap a suggested prompt
+# Tap a suggested prompt (AI responses are not asserted — CI stubs the
+# OpenAI key)
 - tapOn:
     text: "What should I eat today?"
-    optional: true
-
-# Wait for response
-- extendedWaitUntil:
-    visible:
-      text: ".*"
-    timeout: 10000
     optional: true

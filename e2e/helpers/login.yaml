@@ -3,53 +3,52 @@ appId: com.ocrecipes.app
 # Reusable login helper — call with `runFlow` and provide env vars:
 #   USERNAME (default: testuser)
 #   PASSWORD (default: testpass123)
+#
+# State-aware since 2026-08-30 (evidence: dispatch-9 artifacts — see
+# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
+#
+# - Flows don't clear app state between each other, so the app may already be
+#   authenticated from an earlier flow in the same job. The entry gate waits
+#   for EITHER known state (Maestro text matching is full-string regex; the
+#   Home greeting renders "Hello <name>", never bare "Hello"). The old shape —
+#   an optional 90s wait for "Sign In" alone — burned its entire timeout
+#   staring at the Home screen in every already-authenticated flow.
+#   e2e/helpers/launch-app.yaml's 120s readiness gate now owns the cold-start
+#   budget, so 30s here is margin, not the first line of defense.
+#
+# - Credential entry runs only `when: visible: "Sign In"`. The CI workflow's
+#   "Seed E2E test user" step marks the account `onboardingCompleted: true`
+#   specifically so an inherited session lands on the Main app (a known,
+#   testable state) rather than the onboarding wizard.
+#
+# - After submit, iOS can raise the system "Save Password?" dialog. While a
+#   system alert is up the app hierarchy is entirely absent from Maestro's
+#   view, so the dialog must be dismissed ("Not Now") before asserting Home.
+#   The wait targets "(Hello.*|Not Now)" — whichever appears first — and the
+#   gated tap only fires when the dialog is actually there.
+#
+# - The final wait is this helper's contract: it exits on the Home screen,
+#   whichever path ran.
 ---
-# NOTE (2026-08-16): two DIFFERENT failure modes were confirmed via
-# Maestro's own screenshot artifact on live CI (run 31938889879) — see
-# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md Updates.
-# (1) The FIRST flow in a run can still be showing "Bundling 96.0%..." when
-#     the wait times out — a real cold-start race against Metro. (2) Every
-#     flow after that hits the Expo dev-client's own "developer menu"
-#     welcome overlay popping up on top of an already-rendered Sign In
-#     screen — see e2e/helpers/launch-app.yaml, which dismisses it before
-#     this wait runs.
-#
-# NOTE (2026-08-29): with (2) confirmed fixed and NOT blocking (screenshot
-# evidence: the Sign In screen renders cleanly, no overlay), a run under
-# CI resource contention still showed every flow — not just the first —
-# taking 23-59s to reach "Sign In", because each flow pays a full app
-# relaunch + dev-client deep-link reconnect, not just a Metro re-bundle
-# (Metro itself only bundles once per job — ~50s cold, ~300ms cached for
-# every flow after). The 45000 the 2026-08-16 fix landed at wasn't margin
-# enough against that combined cost under load. Bumped to give real
-# headroom above the worst time actually observed (59s) rather than
-# guessing a smaller number and re-discovering the same gap next run.
-#
-# IDEMPOTENT since 2026-08-29 (see
-# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md): a
-# session from an earlier flow in the same job can persist across this
-# flow's own relaunch — nothing clears app state between most flows — so
-# "Sign In" is no longer a safe hard precondition; the app may already be
-# authenticated and showing the Main app instead. The wait below is
-# `optional`, and the actual login steps only run `when: visible: "Sign
-# In"` — if Sign In never appears, this helper does nothing and falls
-# through, trusting the caller's own subsequent assertions to catch a
-# genuinely broken app (crash, network failure, etc.) rather than
-# hard-failing here on a screen state that no longer implies something is
-# wrong. The CI workflow's "Seed E2E test user" step marks the test
-# account `onboardingCompleted: true` specifically so an inherited session
-# lands on the Main app (a known, testable state) rather than the
-# onboarding wizard, which has no way back to Sign In at all.
 - extendedWaitUntil:
-    visible: "Sign In"
-    timeout: 90000
-    optional: true
+    visible: "(Sign In|Hello.*)"
+    timeout: 30000
 - runFlow:
     when:
       visible: "Sign In"
     commands:
       - tapOn:
           id: "input-username"
+      # Gboard's "Try out your stylus" promo sheet (Google-APIs emulator
+      # images) can appear on a keyboard switch, STEAL focus into its own
+      # "Write here" field, and swallow lower-screen taps. Dismiss + refocus.
+      - runFlow:
+          when:
+            visible: "Try out your stylus"
+          commands:
+            - tapOn: "Cancel"
+            - tapOn:
+                id: "input-username"
       - inputText: ${USERNAME}
       - tapOn:
           id: "input-password"
@@ -58,4 +57,15 @@ appId: com.ocrecipes.app
       - extendedWaitUntil:
           notVisible:
             text: "Sign In"
-          timeout: 5000
+          timeout: 30000
+      - extendedWaitUntil:
+          visible: "(Hello.*|Not Now)"
+          timeout: 30000
+      - runFlow:
+          when:
+            visible: "Not Now"
+          commands:
+            - tapOn: "Not Now"
+- extendedWaitUntil:
+    visible: "Hello.*"
+    timeout: 15000

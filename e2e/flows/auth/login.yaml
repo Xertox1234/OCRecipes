@@ -4,62 +4,55 @@ tags:
   - smoke
   - regression
   - auth
+env:
+  USERNAME: ${USERNAME}
+  PASSWORD: ${PASSWORD}
 ---
-# Launch the app, connect to Metro, and dismiss the dev-client's developer
-# menu welcome overlay if it appears (see e2e/helpers/launch-app.yaml for
-# the confirmed root cause)
+# Launch, connect to Metro, and clear any dev-client overlays / lingering
+# system dialogs (see e2e/helpers/launch-app.yaml)
 - runFlow: ../../helpers/launch-app.yaml
 
-# Verify login screen loads. A bare assertVisible uses Maestro's short stock
-# default timeout, not e2e/helpers/login.yaml's tuned margin -- this flow
-# doesn't call that helper, so it needs the same explicit wait itself (see
-# that file's header for why 90s: each flow pays a full app relaunch + Metro
-# cold-bundle cost under CI load, not just a quick screen transition).
+# Force a genuinely logged-out Sign In screen via the app's own Sign Out
+# control — NOT `launchApp: { clearState: true }`, which is broken against
+# the dev client on both platforms (see e2e/helpers/ensure-logged-out.yaml)
+- runFlow: ../../helpers/ensure-logged-out.yaml
+
+# Verify the login screen's own furniture (strings confirmed against the
+# dispatch-9 hierarchy dump of this screen)
+- assertVisible: "Welcome!"
+- assertVisible:
+    id: "input-username"
+- assertVisible:
+    id: "input-password"
+
+# Toggle to register mode and back — the sign-up form must swap in a
+# confirm-password field and swap it back out. The mode switch can briefly
+# re-flash the splash overlay (observed locally), so wait for the settled
+# form rather than snap-asserting. retryTapIfNoChange is DISABLED on these:
+# Maestro's default auto-retap turns a toggle back off when its change
+# detection misses the first tap (observed locally as an intermittent
+# "toggle didn't happen").
+- tapOn:
+    text: "Switch to sign up"
+    retryTapIfNoChange: false
 - extendedWaitUntil:
-    visible: "Sign In"
-    timeout: 90000
-
-# Verify input fields are visible
-- assertVisible:
-    id: "input-username"
-- assertVisible:
-    id: "input-password"
-
-# Enter credentials
+    visible:
+      id: "input-confirm-password"
+    timeout: 15000
+- assertVisible: "Create Account"
 - tapOn:
-    id: "input-username"
-- inputText: ${USERNAME}
-- tapOn:
-    id: "input-password"
-- inputText: ${PASSWORD}
-
-# Submit login
-- tapOn: "Sign In"
-
-# Verify we navigate away from login
+    text: "Switch to sign in"
+    retryTapIfNoChange: false
 - extendedWaitUntil:
     notVisible:
-      text: "Sign In"
-    timeout: 10000
-
-# Toggle to register mode — clearState wipes the dev-launcher's remembered
-# server too, so reconnect explicitly afterward (see e2e/helpers/launch-app.yaml,
-# whose own header documents this exact two-step pattern)
-- launchApp:
-    clearState: true
-- runFlow: ../../helpers/launch-app.yaml
-- extendedWaitUntil:
-    visible: "Sign In"
-    timeout: 90000
-- tapOn: "Switch to sign up"
-- assertVisible: "Create Account"
-
-# Verify confirm password field appears
-- assertVisible:
-    id: "input-confirm-password"
-
-# Toggle back to login
-- tapOn: "Switch to sign in"
+      id: "input-confirm-password"
+    timeout: 15000
 - assertVisible: "Sign In"
-- assertNotVisible:
-    id: "input-confirm-password"
+
+# Real login as the seeded test user; the helper exits on the Home screen
+# (its own "Hello.*" contract), which is this flow's success condition
+- runFlow:
+    file: ../../helpers/login.yaml
+    env:
+      USERNAME: ${USERNAME}
+      PASSWORD: ${PASSWORD}

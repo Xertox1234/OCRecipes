@@ -16,14 +16,16 @@ env:
       USERNAME: ${USERNAME}
       PASSWORD: ${PASSWORD}
 
-# Navigate to Plan tab
-- tapOn: "Plan"
+# Navigate to Plan tab (tabBarButtonTestID handle from MainTabNavigator.tsx)
+- tapOn:
+    id: "tab-plan"
 
-# Verify meal plan home elements
+# Verify meal plan home elements. The action row's buttons expose a11y
+# labels, not their visible text ("Browse Recipes", not "Recipes"), and tab
+# switches can briefly re-flash the splash overlay — wait with margin.
 - extendedWaitUntil:
-    visible:
-      text: "Recipes"
-    timeout: 5000
+    visible: "Browse Recipes"
+    timeout: 15000
 - assertVisible: "Pantry"
 - assertVisible: "Grocery Lists"
 
@@ -74,5 +76,5 @@ env:
     text: "Add pantry item..."
     optional: true
 
-# Go back to plan home
-- back
+# (No trailing `back` — that command is Android-only and fails the flow on
+# iOS; every flow relaunches via openLink anyway, so no cleanup is needed.)

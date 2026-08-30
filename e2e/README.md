@@ -80,12 +80,27 @@ e2e/
                           # deliberately excludes helpers/ (runFlow deps, not
                           # standalone Flows)
   helpers/
-    launch-app.yaml     # Connect to the dev client + dismiss its "developer
-                        # menu" welcome overlay — every flow's first step is
+    launch-app.yaml     # Connect to the dev client, then clear whatever is in
+                        # the way: a lingering iOS "Save Password?" dialog, the
+                        # dev-client welcome banner, and the dev menu sheet the
+                        # banner sits on top of. Every flow's first step is
                         # `runFlow` into this, never a bare `launchApp`
-    login.yaml          # Reusable login helper — call with `runFlow` and
-                        # env vars USERNAME/PASSWORD (see e2e-regression.yml's
-                        # "Seed E2E test user" step for what account exists in CI)
+    ensure-logged-out.yaml  # Force a logged-out Sign In screen via the app's
+                        # real Sign Out control (Profile → Settings), with a
+                        # wizard-escape for a stranded onboarding state.
+                        # `launchApp: { clearState: true }` is BANNED in this
+                        # suite: Android's pm clear wipes the dev client's own
+                        # storage (stranding the relaunch on its launcher), and
+                        # the split per-platform app ids (iOS
+                        # com.williamtower.ocrecipes vs Android
+                        # com.ocrecipes.app) make appId-based commands a trap
+    login.yaml          # State-aware login helper — logs in only when the
+                        # Sign In screen is actually showing (an inherited
+                        # session short-circuits), dismisses the iOS
+                        # Save-Password dialog, and exits on the Home screen.
+                        # Call with `runFlow` + env USERNAME/PASSWORD (see
+                        # e2e-regression.yml's "Seed E2E test user" step for
+                        # what account exists in CI)
   flows/
     auth/               # Authentication flows
     onboarding/         # Registration + onboarding

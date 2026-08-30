@@ -15,18 +15,26 @@ env:
       USERNAME: ${USERNAME}
       PASSWORD: ${PASSWORD}
 
-# History is not a tab — it lives at Profile → Library → Scan History
-- tapOn: "Profile"
+# History is not a tab — it lives at Profile → Library → Scan History.
+# The tab tap uses the tabBarButtonTestID handle; the library row's a11y
+# label is "Scan History: N items", so the selector needs the regex suffix
+# (Maestro text matching is full-string).
+- tapOn:
+    id: "tab-profile"
+# Tab switches can briefly re-flash the splash overlay and the library grid
+# loads its counts async — wait for the row before touching it
+- extendedWaitUntil:
+    visible: "Scan History.*"
+    timeout: 15000
 - scrollUntilVisible:
-    element: "Scan History"
+    element: "Scan History.*"
     direction: DOWN
     optional: true
-- tapOn: "Scan History"
+- tapOn: "Scan History.*"
 
 # Verify the history screen loads (header title)
 - extendedWaitUntil:
-    visible:
-      text: "Scan History"
+    visible: "Scan History.*"
     timeout: 5000
 
 # Verify the scan CTA is visible (shown when no items today)

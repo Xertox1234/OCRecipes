@@ -1,42 +1,46 @@
 appId: com.ocrecipes.app
 
-# Reusable "launch and connect to Metro" helper — call with `runFlow` in place
-# of a bare `launchApp` (see e2e/flows/**). If the app is being cleared first
-# via `launchApp: { clearState: true }`, call that separately and follow it
-# with this file rather than using it directly (see auth/login.yaml and
-# onboarding/complete-onboarding.yaml for that two-step pattern).
+# Reusable "launch and connect to Metro" helper — every flow's first step.
 #
-# REVERTED 2026-08-29 (run 33283020295): this session tried two overlay-
-# dismiss theories in turn — bumping this wait to 90000ms, then adding a
-# second wait+back-press for the Expo dev menu's "Go home" sheet — chasing
-# screenshots that seemed to show each overlay blocking "Sign In". Both
-# were wrong. `maestro.log` timing on the run that finally nailed it down
-# showed BOTH waits ending fast with nothing found (Continue: WARNED at
-# the full ~90s only because nothing ever appeared, not because it was
-# slow to find something; Go home: WARNED in 0.67s) — neither overlay was
-# ever on screen. The actual blocker, confirmed via the failing screenshot
-# itself, was the app already being authenticated and routed to the
-# ONBOARDING wizard instead: Maestro flows don't clear app state between
-# each other (only two flows use `clearState: true`), so once any flow in
-# a job successfully logs in as the seeded `testuser` — who has
-# `onboardingCompleted: false` — every later flow's reconnect inherits
-# that session and lands on onboarding, never on Sign In. See
-# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md Updates
-# for the full evidence chain and candidate fixes (session isolation is a
-# flow-semantics decision, not made here). Reverted this file to its
-# pre-session baseline (5000ms wait, no dev-menu handling) since neither
-# change was fixing a real problem and the 90s wait was adding ~90s of
-# dead time to every stuck flow.
+# Design (2026-08-30, evidence: dispatch-9 artifacts, run 33292071278 — see
+# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
 #
-# ORIGINAL ROOT CAUSE this wait targets, confirmed via Maestro's own
-# screenshot artifact on live CI (2026-08-16, run 31938889879 — see the
-# todo's Updates): the app DOES connect to Metro and DOES render the real
-# "Sign In" screen underneath — the Expo dev-client's own "developer menu"
-# welcome overlay ("This is the developer menu... Continue") can pop up on
-# top of it on a fresh launch, dimming/blocking the login screen so
-# Maestro's assertVisible never sees it as interactable. `optional: true`
-# means this step does NOT fail the flow if the overlay doesn't appear
-# (e.g. once Expo stops showing it after a device has "seen" it before).
+# 1. The readiness gate below waits for ANY known post-launch state instead of
+#    racing a fixed-timeout check against Metro's cold bundle (41-58s measured
+#    on CI). Maestro text matching is FULL-STRING regex, so the alternation
+#    lists complete node texts:
+#      Continue        — dev-client "This is the developer menu" welcome banner
+#      Sign In         — logged-out app
+#      Hello.*         — logged-in app (Home greeting is "Hello <name>")
+#      Not Now         — iOS "Save Password?" system dialog lingering from a
+#                        previous flow's login/registration submit; while it is
+#                        up the app hierarchy is entirely absent, so it MUST be
+#                        part of this gate or the gate itself times out
+#      Connected to:   — dev menu sheet left open (see 3)
+#    The gate is NOT optional: if none of these appears in 120s the app is
+#    genuinely broken and the flow should fail loudly right here.
+#
+# 2. The welcome banner sits ON TOP of the auto-opened dev menu on the first
+#    cold connect after install. Tapping "Continue" dismisses only the banner
+#    — the dev menu sheet ("Connected to: http://localhost:8081", Reload,
+#    Go home, …) stays covering the app. That two-layer state, confirmed in
+#    the run-33292071278 hierarchy dumps, is why earlier single-overlay fixes
+#    kept half-working. The gated block closes the menu; its inner tap is
+#    itself optional in case the dismiss control differs per platform.
+#
+# 3. No flow uses `launchApp` (with or without clearState) any more — every
+#    launch goes through the openLink below, which needs no appId. That
+#    matters because the app's identifiers are SPLIT per platform (iOS
+#    bundleIdentifier `com.williamtower.ocrecipes`, Android applicationId
+#    `com.ocrecipes.app` — see app.json), while flows can declare only one
+#    `appId:`. The declared Android id made iOS `launchApp {clearState}`
+#    error outright ("Failed to get app binary directory for bundle
+#    com.ocrecipes.app" — no such bundle on the sim); and on Android, where
+#    the id IS right, `pm clear` wipes the dev client's OWN storage and
+#    strands the relaunch on the dev-client launcher screen. Logged-out
+#    state comes from e2e/helpers/ensure-logged-out.yaml instead; the
+#    `appId:` headers are load-bearing only for Maestro's schema, not for
+#    any launch.
 #
 # `localhost:8081` resolves correctly on both CI jobs: the Android job's
 # `adb reverse tcp:8081 tcp:8081` step tunnels the emulator's localhost to
@@ -44,10 +48,51 @@ appId: com.ocrecipes.app
 # natively, no tunnel needed.
 ---
 - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
+
+# Readiness gate — see header (1). Also matches two stranded states a
+# previous attempt's kill can leave behind: the Sign-Out confirmation alert
+# (killed mid-logout; while a native alert is up nothing else is in the
+# hierarchy) and the onboarding wizard ("Get Started"/"Go back" — killed
+# mid-registration; ensure-logged-out's wizard-escape recovers from it, and
+# auth/login, which calls it, is always the first flow in path order).
 - extendedWaitUntil:
-    visible: "Continue"
-    timeout: 5000
+    visible: "(Continue|Sign In|Hello.*|Not Now|Connected to:|Are you sure you want to sign out.*|Get Started|Go back)"
+    timeout: 120000
+
+# Finish an interrupted logout: [0] is the alert's title, [1] the confirm
+# button (see ensure-logged-out.yaml for the evidence)
+- runFlow:
+    when:
+      visible: "Are you sure you want to sign out.*"
+    commands:
+      - tapOn:
+          text: "Sign Out"
+          index: 1
+          optional: true
+
+# Lingering iOS Save-Password dialog from a previous flow — dismiss first so
+# the real app hierarchy becomes visible for the checks below
+- tapOn:
+    text: "Not Now"
     optional: true
+
+# Dev-client welcome banner (first cold connect only)
 - tapOn:
     text: "Continue"
     optional: true
+
+# Dev menu sheet — either left open under the banner just dismissed, or open
+# from an earlier flow. Give it a beat to settle after the banner tap, then
+# close it. The inner tap stays optional: the `when:` gate only guards entry,
+# it does not soften a failing command inside.
+- extendedWaitUntil:
+    visible: "Connected to:"
+    timeout: 3000
+    optional: true
+- runFlow:
+    when:
+      visible: "Connected to:"
+    commands:
+      - tapOn:
+          text: "Close"
+          optional: true
