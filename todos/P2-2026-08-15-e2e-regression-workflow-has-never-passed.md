@@ -849,3 +849,27 @@ Stopping at 9 real CI dispatches. The next action is a human decision: split off
 flow-accuracy work as its own todo (recommended) and decide whether this todo's own acceptance
 criterion should be relaxed given the premise it was written against no longer holds as stated,
 or left as-is pending the split todo's own resolution.
+
+### 2026-08-30 (later) — nightly schedule paused on `main`, unrelated to this todo's own status
+
+User reported their email flooded with failure notifications: every nightly `schedule` run
+(08:17 UTC) against unfixed `main` was failing 100% of the time, each firing both a
+workflow-failure notification and a new comment on GitHub Issue #832 — pure repeat noise, since
+`main` doesn't have any of the fixes from this todo (they're still only on this unmerged
+branch). Rather than let that continue while this todo and its split-off
+(`todos/P2-2026-08-30-e2e-flow-assertions-dont-match-app-ui.md`) are still open, paused the
+`schedule:` trigger on `main` directly (kept commented-out, with a note on exactly when to
+re-enable it) via a small, separate, low-risk PR — **#878, merged as `8b460858`**.
+`workflow_dispatch` is untouched, so manual CI iteration on this branch is unaffected.
+
+**This does not change this todo's status.** It's a symptom fix for the notification noise, not
+progress toward a green run — `status` stays `blocked`. Re-enabling the schedule is explicitly
+tied to either this todo or its split-off landing a genuinely green `workflow_dispatch` run on
+`main`, per the note left in the workflow file itself.
+
+**Also worth naming plainly:** as of this entry, `main` does not yet have ANY of this session's
+9-dispatch worth of updates to this very file, nor the split-off todo file — both exist only on
+this branch (`todo/P2-2026-08-15-e2e-regression-workflow-has-never-passed`), unmerged, since
+merging the actual code fix here would be premature given the unmet acceptance criterion.
+Anyone looking at `todos/` on `main` right now sees stale, pre-session state and won't see the
+split-off todo at all.
