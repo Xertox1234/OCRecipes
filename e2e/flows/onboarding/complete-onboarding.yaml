@@ -55,9 +55,20 @@ tags:
 - tapOn:
     id: "input-password"
 - inputText: "TestPass123!"
+# Drop the keyboard before focusing the confirm field: with the keyboard up
+# it covers that field on CI's screen layout, the tap never moves focus, and
+# the confirm text lands in the password field instead (run-33329846839
+# hierarchy: password full, confirm empty). The header tap is the proven
+# blur that dismisses the keyboard without touching form state.
+- tapOn:
+    text: "Create an account to get started"
+    retryTapIfNoChange: false
 - tapOn:
     id: "input-confirm-password"
 - inputText: "TestPass123!"
+- tapOn:
+    text: "Create an account to get started"
+    retryTapIfNoChange: false
 - tapOn:
     id: "input-username"
 # Gboard's "Try out your stylus" promo sheet (Google-APIs emulator images)
@@ -124,6 +135,11 @@ tags:
           optional: true
       - eraseText: 50
       - inputText: "TestPass123!"
+      # Blur to drop the keyboard before the confirm tap (see main block)
+      - tapOn:
+          text: "Create an account to get started"
+          optional: true
+          retryTapIfNoChange: false
       - tapOn:
           id: "input-confirm-password"
           optional: true
