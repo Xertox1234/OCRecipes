@@ -1,6 +1,6 @@
 ---
 title: "E2E Regression has never passed — 34/34 nightly runs failed, so the suite has produced zero signal since it landed"
-status: blocked
+status: done
 priority: medium
 created: 2026-08-15
 updated: 2026-08-29
@@ -107,9 +107,10 @@ Verify against run `31874413569` before changing anything: `gh run view 31874413
       `script:` one line per shell, so re-quoting the existing block cannot work (see the
       corrected diagnosis above; the emulator is NOT the problem). The run then reaches and
       executes Maestro flows on both platforms.
-- [ ] **At least one fully green run exists, triggered via `workflow_dispatch`, before
-      this todo is closed. NOT MET — still open, see 2026-08-16 Update.** A run that merely
-      gets _further_ is not done — that is precisely how this reached 34 failures.
+- [x] **At least one fully green run exists, triggered via `workflow_dispatch` — MET
+      2026-08-30: run 33332969400 (commit `561b98d1`), both jobs `success`,
+      notify-on-failure correctly `skipped`.** The first fully green run in the workflow's
+      entire history (13 dispatches across three sessions to get here).
 - [x] The false comment at `.github/workflows/e2e-regression.yml:84-85` is corrected or
       removed.
 - [x] Failures reach a human. A scheduled job nobody watches is the root cause of the
@@ -955,3 +956,28 @@ and the rate-limit knob were TDD'd red→green.
 knob + workflow env), `ca3216b7` (flow/helper rewrite) pushed; **dispatch 10 (run 33322868083)
 in flight** — the first dispatch in this todo's history where every flow has already passed
 locally on at least one platform. See next entry for the verdict.
+
+### 2026-08-30 — GREEN. Run 33332969400: both jobs success. The acceptance criterion is met.
+
+Dispatches 10-13 (runs 33322868083, 33326267830, 33329846839, 33332969400), all on this
+branch, all diagnosed from artifacts before any fix:
+
+- **Dispatch 10**: Android job SUCCESS — first in workflow history. iOS 7/8; register failed
+  with ONE character in each secure field (hierarchy-proven): iOS-26-sim secure fields swallow
+  synthetic input.
+- **Dispatch 11**: Android SUCCESS again. iOS register still failing after a clipboard-paste
+  approach AND a bounded resubmit loop — fields still at one char after three erase+paste
+  rounds, proving paste falls back to the same broken typing path. The oracle-retry loop and
+  two flow-level flakes self-healing on the built-in retry both validated, though.
+- **Dispatch 12**: Android SUCCESS. iOS register: password field now FULLY correct via the
+  app's own Show-password toggle (plain fields type fine — and never attract the AutoFill
+  sheets at all), but confirm-password EMPTY: the raised keyboard covers it on the CI screen
+  layout, so the focus tap never lands and the text goes back into the password field.
+- **Dispatch 13** (user-approved 4th attempt past the 3-dispatch budget): blur (the proven
+  neutral header tap) before each confirm-field focus → **fully green, both platforms**.
+  notify-on-failure correctly skipped for the first time ever.
+
+`status: done` — archive to `todos/archive/` when the branch's PR merges. Remaining
+non-blocking follow-ups live in `todos/P2-2026-08-30-e2e-flow-assertions-dont-match-app-ui.md`
+(schedule re-enable after a green dispatch on `main`) — that todo's flow-content premise is
+already resolved on this branch.

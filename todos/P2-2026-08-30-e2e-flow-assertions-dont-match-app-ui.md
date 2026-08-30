@@ -138,3 +138,12 @@ All 6 flows pass locally (Android 8/8; iOS green for all six of THESE flows). Ve
 CI rides the parent todo's dispatch 10 (run 33322868083). This todo closes when the parent's
 green run lands — the full mechanism-by-mechanism record lives in the parent todo's
 2026-08-30 investigation entry.
+
+### 2026-08-30 (final) — all six flows green on CI, both platforms
+
+Run 33332969400 (parent todo's dispatch 13): fully green on iOS and Android — every one of
+the six flows this todo tracks passed on CI, plus the register/auth pair. First three
+acceptance criteria met (assertions corrected against hierarchy evidence; both leads
+falsified; the iOS 2s failure diagnosed as a wrong-bundle-id `launchApp` clearState error,
+eliminated with clearState itself). Remaining open item: the schedule re-enable checkbox —
+gated on a green `workflow_dispatch` on `main` after the parent branch merges.
