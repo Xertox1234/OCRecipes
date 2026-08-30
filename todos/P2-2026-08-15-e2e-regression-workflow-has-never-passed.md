@@ -691,3 +691,38 @@ and named by the error itself, not a guess. Android needs a deliberate fix choic
 this session) before its next dispatch is worth spending. This session has run 7 real CI
 dispatches, well past the original 4-5 budget, justified throughout by genuine converging
 evidence each round. Still `blocked`, not `done`.
+
+**Dispatch 8 (run 33287752221): the `sentry-cli` fix is CONFIRMED — iOS compiled, installed,
+and ran Maestro flows for the first time in this todo's entire history — and hit the exact same
+cross-flow session bug as Android, confirming it is not Android-specific.**
+
+- **iOS: `Build and install iOS app` — `success`.** First time ever. `SENTRY_ALLOW_FAILURE`
+  worked exactly as intended. The job then moved into `Run Maestro regression flows` — a step
+  that has never once been reached before in this workflow's history — which ran for ~24
+  minutes, printed a genuine `8/8 Flows Failed` for attempt 1, got most of the way through the
+  built-in retry, and was then cut off by the **job's own `timeout-minutes: 60`** (GitHub reports
+  a mid-run timeout as the current step's conclusion, `cancelled` — not a real failure, same
+  mechanism as Android's dispatch-5 timeout). **Read the actual flow log before assuming a
+  timeout bump alone would fix it — it wouldn't.** Every failure is the identical
+  `Assertion is false: "Sign In" is visible` signature already diagnosed for Android above (7 of
+  8 flows both attempts; the 8th, `Onboarding - Register and complete onboarding`, fails in 4s on
+  attempt 1 — different signature, not yet looked at). **This cross-platform confirmation is
+  itself valuable**: the session/`clearState` bug lives in the shared `e2e/flows/**` YAML and/or
+  the client's own auth-persistence behavior, not in anything Android-specific — whichever of the
+  three candidate fixes above is chosen will very likely need to (and should) fix both platforms
+  at once, not just Android. iOS's own 60-minute job timeout is a secondary, cosmetic gap (would
+  only produce a cleaner failure printout, not a pass) — not worth fixing in isolation before the
+  real bug is addressed.
+- **Android: failed identically again** (`failure`, "Build app and run Maestro regression
+  flows") — expected, not re-diagnosed.
+
+**Session status, final for this session:** iOS's own commissioning is now genuinely complete —
+build, install, and Maestro execution all work; the only remaining iOS-specific gap was its job
+timeout, now known to be secondary. **Both platforms are blocked on the same single root cause**:
+the cross-flow session/`clearState` bug documented in detail above. Deliberately **not**
+attempting a fix this session — it's a real flow-semantics design decision among three candidates
+with different tradeoffs (see above), not a quick patch, and this session already ran 8 real CI
+dispatches (double the original 4-5 budget) chasing genuine, converging evidence each round
+rather than guesses. The next session should pick one of the three candidates, apply it to the
+shared `e2e/` flows (fixing both platforms at once), and dispatch to validate — that is very
+plausibly the **last** remaining step before this todo can close. Still `blocked`, not `done`.
