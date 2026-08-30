@@ -660,20 +660,34 @@ Maestro's Android `clearState` is the unreliable part, rather than merely being 
    Each has a real tradeoff and needs its own CI validation; none is a two-line fix, so none was
    guessed at blind this session.
 
-**iOS status, precise claim:** the `iPhone 15`→`iPhone 16` device-name fix (committed
-`e2f5da26`) is pushed, and a dispatch to validate it (run 33285727372) is in flight as of this
-entry — see the next entry for its outcome. Getting past "Boot iOS simulator" would confirm the
-device name is valid — it would **not** by itself confirm the app actually compiles under
-Xcode 26.3, since no dispatch has reached the build step yet (dispatch
-6 failed at simulator boot, before `xcodebuild` ran). The four previously-fixed compile-time
-errors are inferred gone because the runner image changed under them, not because a build has
-succeeded. Say so plainly rather than treating "cleared simulator boot" as "iOS is green."
+**Dispatch 7 (run 33285727372): `iPhone 16` fix confirmed; iOS reached `xcodebuild` for the
+first time in this todo's history and compiled clean — new failure is CI config, not app code;
+Android failed identically as expected, not re-investigated.**
 
-**Session status:** stopping here rather than dispatching further blind. This session ran 6 real
-CI dispatches (well past the original 4-5 budget) and converged on a precise, evidence-backed
-root cause for Android that changes the fix from "overlay dismiss" to "session isolation" — a
-real, structural finding, not a dead end, but one that needs a deliberate choice among the three
-candidates above before the next dispatch, not another guess. iOS has one small, well-isolated,
-unvalidated fix ready to go. Both are pushed to
-`todo/P2-2026-08-15-e2e-regression-workflow-has-never-passed` as of this entry. Still `blocked`,
-not `done` — no dispatch this session reached a green run on either job.
+- **iOS: simulator boot fix confirmed working** — the job got past "Boot iOS simulator" (the
+  `iPhone 16` device name resolved) and, for the first time ever in this todo, actually reached
+  and ran `xcodebuild` under Xcode 26.3. **This is the strongest iOS result this todo has ever
+  produced, independent of what happens next**: the full ~48,000-line build log has zero
+  compiler `error:` lines — none of the four previously-fixed issues (CxxStdlib deployment
+  target, `isRepeatedDay`, the CoreVideo pixel-format constant, the NitroImage swift-frontend
+  ICE) recurred. The earlier caveat ("inferred gone because the runner image changed, not
+  because a build succeeded") is retired — this is now a demonstrated clean compile under the
+  new toolchain, not an inference. The actual failure is unrelated to compilation:
+  `sentry-cli`'s source-map upload build phase fails hard — `An organization ID or slug is
+required (provide with --org)` — because no Sentry org/auth token is configured for this
+  throwaway CI build. The error message names its own fix. Added `SENTRY_ALLOW_FAILURE: "true"`
+  to the `e2e-ios` job's existing `env:` block (job-level, so it reaches both the `expo
+run:ios` step and the failure-only `xcodebuild` diagnostic step) — chosen over
+  `SENTRY_DISABLE_AUTO_UPLOAD` so the phase still runs and fails soft rather than being skipped
+  outright, surfacing any other problem in the same phase on this run instead of the next one.
+  Workflow-only change, in scope. **Not yet validated — dispatch 8 in flight, see next entry.**
+- **Android: failed identically** (`"Sign In" is visible`, same mechanism as dispatch 6) —
+  expected, not a new finding, not re-diagnosed. No fix was chosen or attempted this dispatch
+  (per the deliberate deferral above); `notify-on-failure` correctly updated Issue #832.
+
+**Session status:** iOS is now one config line away from potentially reaching the Maestro flows
+themselves for the first time ever — worth the 8th dispatch given the fix is precise, in-scope,
+and named by the error itself, not a guess. Android needs a deliberate fix choice (not made
+this session) before its next dispatch is worth spending. This session has run 7 real CI
+dispatches, well past the original 4-5 budget, justified throughout by genuine converging
+evidence each round. Still `blocked`, not `done`.

@@ -75,6 +75,13 @@ jobs:
       # Credentials consumed by the Maestro flows (see e2e/README.md).
       USERNAME: testuser
       PASSWORD: testpass123
+      # sentry-cli's source-map upload build phase fails hard in CI with "An
+      # organization ID or slug is required" — no Sentry org/auth token is
+      # configured here (this is a throwaway E2E build, not a release).
+      # ALLOW_FAILURE (not DISABLE_AUTO_UPLOAD) so the phase still runs and
+      # fails soft, surfacing any *other* problem in it instead of masking
+      # the phase entirely.
+      SENTRY_ALLOW_FAILURE: "true"
 
     steps:
       - uses: actions/checkout@v5
