@@ -472,9 +472,52 @@ visible: "Go home"}` logged `SKIPPED` (confirmed via `maestro.log`, not assumed)
   blocker (evidence: it was skipped, not proven unnecessary — worth revisiting only if a future
   screenshot shows that screen surviving this fix). Fixed in (pending commit).
 
-**Dispatch 5: about to be triggered.** Hypothesis: iOS builds clean (two vendor-SDK-ceiling
-layers now patched; genuinely uncertain whether a third exists, same as before each of the last
-two dispatches). Android: the Continue-overlay dismiss, now properly waiting for the bundle to
-actually finish before checking, closes the real blocking overlay and every flow reaches Sign
-In. Approaching the upper end of this session's iteration budget — if this doesn't land clean,
-next steps should be written up plainly rather than pushing further blind guesses.
+**Dispatch 5 (run 33280577594): iOS hit a fourth, different-shaped failure that reframed the
+whole iOS track; Android's real result is unknown — it hit the job timeout, not a verdict.**
+
+- **iOS**: NOT another missing symbol this time — a **swift-frontend internal compiler crash
+  (ICE)** during IR generation, inside the `NitroImage` pod's "Copy generated compatibility
+  header" script phase (`swift::performIRGeneration` in the crash backtrace). Before writing a
+  fourth patch, stepped back (advisor review) and named the pattern across all four iOS
+  failures: `expo-notifications` gates `isRepeatedDay` behind `#available(iOS 26.0, *)`;
+  `vision-camera` references a CoreVideo constant that doesn't exist yet; and **this repo's own
+  Podfile already documents the real baseline** — the fmt/consteval patch exists because fmt
+  "does not compile under Xcode 26 / Apple clang 21", and the existing VisionCamera
+  `SWIFT_COMPILATION_MODE = singlefile` workaround cites "Swift 6.2 (Xcode 26) ICE with
+  nitrogen-generated C++/Swift interop (swiftlang/swift#76143)" — the _exact_ crash class hit
+  here, just in a target (`NitroImage`) the existing fix's `start_with?('VisionCamera')` filter
+  doesn't cover. **This repo's native config is written for and already assumes Xcode 26** — CI
+  was pinned to 16.2 only because RN 0.81 needs ≥16.1 and that's what the `macos-14` image
+  offered, a floor misread as a target. Verified via GitHub's own runner-images docs (zero CI
+  spend): `macos-14` tops out at Xcode 16.2 (no newer option existed there at all); `macos-15`
+  ships **Xcode 26.3** (build 17C529) alongside 16.x — an exact match, without jumping to
+  `macos-26`'s bleeding-edge Xcode 27. Switched `runs-on: macos-14` → `macos-15` and the
+  Xcode-select step to 26.3. **Reverted both vendor-code deletions** from dispatches 3-4
+  (`expo-notifications`' `isRepeatedDay` removal, `vision-camera`'s `rawBayerPacked9612Bit`
+  removal) — they were workarounds for 16.2's SDK ceiling, not real bugs, and 26.3's SDK should
+  define both symbols natively; restored `patches/react-native-vision-camera+5.1.1.patch` to
+  its pre-session content (diffed against `main`, byte-identical except the reverted hunks) and
+  deleted `patches/expo-notifications+55.0.14.patch` entirely. Net scope versus this session's
+  iOS changes so far: **less** permanent repo modification, not more. Kept the deployment-target
+  bump (still a real, independent fix regardless of Xcode version). Fixed in `36a40055`,
+  **NOT YET VERIFIED**.
+- **Android: inconclusive, not failed.** The job was killed by its own `timeout-minutes: 60` at
+  exactly 60m03s, mid-retry — a timeout, not a verdict on the Continue-overlay fix. What did run
+  before the cut: every flow now consistently takes **either** ~46s-1m22s (`Plan - Meal plan
+home and pantry`, both attempts — past login fast, but failing on a _different_, unexplored
+  `"Plan"` element-not-found) **or** the full 3m5s / 185s (every other flow, both attempts —
+  matching Continue-wait-90s + Sign-In-wait-90s + overhead maxing out _both_ waits, still ending
+  on the same `"Sign In" is visible` failure). The fix's own timing structure is confirmed
+  taking effect (flows that used to fail at ~100s now consistently take ~185s), but whether it
+  actually _resolves_ anything for most flows is still unknown — the job never got far enough to
+  print a real Flows-Passed/Failed summary for the retry. Bumped `timeout-minutes: 60 → 90` on
+  the Android job so the _next_ dispatch can reach an actual verdict instead of another
+  ambiguous timeout, rather than guessing at a fifth Android theory on top of an already-unclear
+  result.
+
+**Dispatch 6: about to be triggered.** This is past the session's original ~4-5 dispatch budget
+— justified because the iOS runner-image change is a structurally different, higher-confidence
+fix than another narrow vendor patch (advisor-reviewed), and the Android timeout bump exists
+purely to get a real verdict rather than push a new guess blind. Whatever this dispatch shows,
+next steps should be written up plainly for the user rather than continuing to iterate past it
+without a checkpoint.

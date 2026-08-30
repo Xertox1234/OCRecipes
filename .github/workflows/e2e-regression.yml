@@ -237,7 +237,17 @@ jobs:
   e2e-android:
     name: Maestro regression (Android emulator)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Bumped from 60 (2026-08-29, run 33280577594): the job was killed by
+    # this exact timeout at 60m03s with Android still mid-retry -- a
+    # *timeout*, not a real result, so it couldn't say whether the
+    # Continue-overlay wait fix (e2e/helpers/launch-app.yaml) actually
+    # works. Worst case if every flow maxes both its waits: ~17m native
+    # build + 16 flow-invocations x ~185s (90s Continue + 90s Sign-In +
+    # overhead) = ~66m, plus setup/checkout/deps overhead -- 90 gives real
+    # headroom to reach an actual Pass/Fail summary instead of another
+    # ambiguous timeout. Revisit downward once the fix's real behavior is
+    # known either way.
+    timeout-minutes: 90
 
     services:
       postgres:
