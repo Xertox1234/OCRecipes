@@ -3,7 +3,7 @@ title: "E2E Regression has never passed — 34/34 nightly runs failed, so the su
 status: blocked
 priority: medium
 created: 2026-08-15
-updated: 2026-08-16
+updated: 2026-08-29
 assignee:
 labels: [ci, e2e, maestro, harness, android, ios]
 github_issue:
@@ -533,9 +533,80 @@ well-understood last blocker; Android still in flight as of this entry.**
 - **Android: still running as of this entry**, now with real room (90 min) to reach an actual
   verdict on the Continue-overlay-wait fix instead of another timeout.
 
-**Dispatch 7: about to be triggered (iOS only needs the device-name fix; Android's dispatch-6
-result — once in — determines whether Android needs anything further).** This todo is now
-significantly past its original iteration budget, justified by genuine, evidence-backed
-progress each round (never re-guessing the same failure twice) rather than stalling. If this
-doesn't land both jobs green, next steps get written up plainly rather than continuing further
-blind.
+**Dispatch 6, Android result (same run, 33283020295): the Continue-overlay fix and the
+Go-home back-dismiss were BOTH exonerated — and both reverted — because the real bug is one
+level further up the stack than either theory.** With the 90-minute job timeout finally giving
+the retry room to finish, 7 of 8 flows failed identically on `"Sign In" is visible`, same as
+every prior dispatch — but this time `maestro.log` timing on `Auth - Login flow-2` showed
+**neither overlay wait ever found anything**: the Continue-wait logged `WARNED` only after
+burning the full ~90.6s with nothing to dismiss (not the "found it late" pattern that indicated
+a real overlay in dispatch 4), and the Go-home wait logged `WARNED` in 0.67s flat. Pulling the
+actual screenshot at the exact `"Sign In"` failure moment (`step-010-assertCondition-Sign_In.png`)
+settled it: the app was showing neither Sign In nor either overlay — it was on the **onboarding
+wizard's first screen** ("Let's Personalize Your Experience… 6 quick steps… Get Started").
+
+**Root cause: cross-flow session bleed, not a rendering/timing bug.** Every flow in a job
+reconnects via `helpers/launch-app.yaml`'s plain `openLink` (no `clearState`) except the two
+flows that explicitly clear state for their own register/login toggle — so once _any_ flow in
+the job successfully authenticates as the seeded `testuser`, the JWT persists in the app's
+storage across every later flow's relaunch. `testuser` is a freshly seeded account with
+`onboardingCompleted: false` (confirmed via this session's own local `curl` registration
+response). So the first flow to actually log in successfully routes correctly past Sign In —
+and every flow after it, on relaunch, finds an already-authenticated session and gets routed
+straight to onboarding instead of Sign In, since the app correctly treats an authenticated,
+onboarding-incomplete user that way. This is a single, structural explanation that fits every
+piece of evidence collected across dispatches 3-6, not another instance of the same overlay
+bug:
+
+- Why _every_ flow but one fails the same `"Sign In"` assertion, regardless of wait length —
+  waiting longer never helps a screen that was never going to appear.
+- Why `Plan - Meal plan home and pantry` is the one consistent outlier, getting past login
+  fast every run — it isn't beating an overlay, it's just not blocked by one; it fails later on
+  its own unrelated `Element not found: Text matching regex: Plan` (not yet investigated).
+- Why both overlay fixes stopped finding anything to dismiss once the credential/seed-user bug
+  (dispatch 2) was fixed and a real account started actually authenticating — the overlays were
+  never the steady-state blocker; they were transient artifacts of earlier, different bugs
+  (theory 3 in dispatch 3, and the true dispatch-4 cold-start race) that happened to coincide
+  with screenshots taken while those other bugs were still active.
+
+**Reverted, not carried forward:** the Continue-wait's 5000ms→90000ms bump (`26689be0`) and the
+Go-home back-dismiss (`e1fb20ce`) — both built on a diagnosis this screenshot overturns. Left in
+place they'd cost every stuck flow ~185s of dead waiting for overlays that are never there, and
+would mislead the next reader into re-investigating an already-closed line. `e2e/helpers/launch-app.yaml`
+is back to its pre-session baseline (5000ms Continue-wait, no dev-menu handling), with a header
+comment recording why and pointing here. The Sign-In-wait bump itself (45s→90s, `74feb546`) is
+**kept** — it has independent justification (measured bundle-load timing) and is harmless
+regardless of the session-bleed bug.
+
+**Not attempted this session — a genuine flow-semantics decision, not a quick fix:** three
+candidate fixes exist and none has been evaluated against CI yet:
+
+1. Add `clearState: true` to every flow's initial launch, not just the two that already do it —
+   guarantees isolation but may resurrect the very first (2026-08-16) welcome-banner overlay,
+   which some evidence suggests only appears on a truly first-ever launch.
+2. Seed `testuser` with `onboardingCompleted: true` (or seed a distinct pre-onboarded account
+   for flows that assume a logged-in, fully-onboarded state) — narrower blast radius, but
+   doesn't fix flows that specifically want to exercise a _fresh_ logged-out or mid-onboarding
+   state.
+3. Explicit logout at the start (or end) of each flow that expects a logged-out `"Sign In"`
+   screen — most surgical, but needs a reliable deep-link or storage-clear mechanism that
+   doesn't currently exist in the flow helpers.
+   Each has a real tradeoff and needs its own CI validation; none is a two-line fix, so none was
+   guessed at blind this session.
+
+**iOS status, precise claim:** the `iPhone 15`→`iPhone 16` device-name fix (committed
+`e2f5da26`) is **pushed but not yet dispatched**. Getting past "Boot iOS simulator" on the next
+run would confirm the device name is valid — it would **not** by itself confirm the app
+actually compiles under Xcode 26.3, since no dispatch has reached the build step yet (dispatch
+6 failed at simulator boot, before `xcodebuild` ran). The four previously-fixed compile-time
+errors are inferred gone because the runner image changed under them, not because a build has
+succeeded. Say so plainly rather than treating "cleared simulator boot" as "iOS is green."
+
+**Session status:** stopping here rather than dispatching further blind. This session ran 6 real
+CI dispatches (well past the original 4-5 budget) and converged on a precise, evidence-backed
+root cause for Android that changes the fix from "overlay dismiss" to "session isolation" — a
+real, structural finding, not a dead end, but one that needs a deliberate choice among the three
+candidates above before the next dispatch, not another guess. iOS has one small, well-isolated,
+unvalidated fix ready to go. Both are pushed to
+`todo/P2-2026-08-15-e2e-regression-workflow-has-never-passed` as of this entry. Still `blocked`,
+not `done` — no dispatch this session reached a green run on either job.
