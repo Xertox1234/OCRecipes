@@ -30,6 +30,25 @@ export function ipKeyGenerator(req: Request): string {
 }
 
 /**
+ * Resolve the effective request ceiling for a limiter, honoring the
+ * E2E-only relaxation knob. The Maestro E2E suite reloads the app once per
+ * flow and logs in after each UI logout, so a single CI job legitimately
+ * exceeds the production ceilings (e.g. login/subscription at 10/15min).
+ * `E2E_RELAXED_RATE_LIMITS=true` multiplies factory-created limits by 1000 —
+ * still bounded, not disabled — and is REFUSED outright in production
+ * regardless of the env value (fail closed). Set only by the E2E workflow's
+ * job env and the local E2E loop; never in any deploy config.
+ */
+export function resolveRateLimitMax(
+  configuredMax: number,
+  env: Record<string, string | undefined>,
+): number {
+  if (env.E2E_RELAXED_RATE_LIMITS !== "true") return configuredMax;
+  if (env.NODE_ENV === "production") return configuredMax;
+  return configuredMax * 1000;
+}
+
+/**
  * Factory for creating express-rate-limit middleware with consistent defaults.
  * Uses userId (falling back to IP) as the key for authenticated routes,
  * or default IP-based keying for unauthenticated routes.
@@ -42,7 +61,7 @@ export function createRateLimiter(options: {
 }) {
   return rateLimit({
     windowMs: options.windowMs,
-    max: options.max,
+    max: resolveRateLimitMax(options.max, process.env),
     message: { error: options.message, code: "RATE_LIMITED" },
     standardHeaders: true,
     legacyHeaders: false,

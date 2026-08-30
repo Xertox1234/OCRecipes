@@ -87,6 +87,11 @@ jobs:
       USDA_API_KEY: stub
       API_NINJAS_KEY: stub
       RECEIPT_VALIDATION_STUB: "true"
+      # The suite reloads the app once per flow and logs in after each UI
+      # logout — that legitimately exceeds the production rate-limit ceilings
+      # (login/subscription at 10/15min). Relaxes factory-created limiters
+      # ×1000 (still bounded); the knob is refused when NODE_ENV=production.
+      E2E_RELAXED_RATE_LIMITS: "true"
       # Credentials consumed by the Maestro flows (see e2e/README.md).
       USERNAME: testuser
       PASSWORD: testpass123
@@ -319,6 +324,9 @@ jobs:
       USDA_API_KEY: stub
       API_NINJAS_KEY: stub
       RECEIPT_VALIDATION_STUB: "true"
+      # See the iOS job's note — the suite's per-flow reload + relogin
+      # pattern exceeds production rate-limit ceilings.
+      E2E_RELAXED_RATE_LIMITS: "true"
       USERNAME: testuser
       PASSWORD: testpass123
 
