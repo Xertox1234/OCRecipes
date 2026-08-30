@@ -132,18 +132,23 @@ jobs:
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       # Boot an iOS simulator for Maestro to drive. macos-15 ships Xcode with
-      # iPhone simulators preinstalled. Export the resolved UDID so the
-      # failure-diagnostic step below can target the exact same device by id
-      # (a name-based -destination lookup is ambiguous across the multiple
-      # "iPhone 15" runtimes the image ships and can itself fail to resolve).
+      # iPhone simulators preinstalled -- "iPhone 15" (used under the prior
+      # macos-14/Xcode 16.2 pin) doesn't exist in Xcode 26.x's default
+      # simulator lineup, which starts at "iPhone 16" (confirmed empirically:
+      # run 33283020295 failed here with "Invalid device: iPhone 15" once
+      # every earlier layer was already cleared by the runner-image switch).
+      # Export the resolved UDID so the failure-diagnostic step below can
+      # target the exact same device by id (a name-based -destination lookup
+      # is ambiguous across the multiple "iPhone 16" runtimes the image ships
+      # and can itself fail to resolve).
       - name: Boot iOS simulator
         run: |
-          xcrun simctl boot "iPhone 15" || true
-          xcrun simctl bootstatus "iPhone 15" -b
+          xcrun simctl boot "iPhone 16" || true
+          xcrun simctl bootstatus "iPhone 16" -b
           UDID="$(xcrun simctl list devices booted -j | node -e '
             const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
             for (const devices of Object.values(data.devices)) {
-              const match = devices.find((d) => d.name === "iPhone 15" && d.state === "Booted");
+              const match = devices.find((d) => d.name === "iPhone 16" && d.state === "Booted");
               if (match) { console.log(match.udid); process.exit(0); }
             }
             process.exit(1);

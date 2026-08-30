@@ -515,9 +515,27 @@ home and pantry`, both attempts — past login fast, but failing on a _different
   ambiguous timeout, rather than guessing at a fifth Android theory on top of an already-unclear
   result.
 
-**Dispatch 6: about to be triggered.** This is past the session's original ~4-5 dispatch budget
-— justified because the iOS runner-image change is a structurally different, higher-confidence
-fix than another narrow vendor patch (advisor-reviewed), and the Android timeout bump exists
-purely to get a real verdict rather than push a new guess blind. Whatever this dispatch shows,
-next steps should be written up plainly for the user rather than continuing to iterate past it
-without a checkpoint.
+**Dispatch 6 (run 33283020295): the runner-image pivot worked — iOS is down to a trivial,
+well-understood last blocker; Android still in flight as of this entry.**
+
+- **iOS: every compile/toolchain layer from dispatches 2-5 is gone.** `xcode-select -s
+/Applications/Xcode_26.3.app` succeeded (confirming that path is real on `macos-15`), and the
+  job got past the point where all four previous failures (CxxStdlib, `isRepeatedDay`,
+  `kCVPixelFormatType_96VersatileBayerPacked12`, the NitroImage swift-frontend ICE) would have
+  fired — none of them did. It failed at the **"Boot iOS simulator" step**, before the app build
+  even starts: `Invalid device or device pair: iPhone 15`. Confirmed via GitHub's runner-images
+  docs (zero CI spend): Xcode 26.x's default simulator lineup starts at **"iPhone 16"** —
+  `"iPhone 15"` (carried over unchanged from the `macos-14`/Xcode 16.2 pin) simply isn't in it.
+  Swapped all 3 occurrences (`simctl boot`, `simctl bootstatus`, the UDID-resolution match) to
+  `"iPhone 16"`. Fixed in (pending commit) — high confidence this is the last iOS blocker, since
+  everything downstream of simulator boot (backend, Metro, the actual build, Maestro) was never
+  reached yet to say otherwise.
+- **Android: still running as of this entry**, now with real room (90 min) to reach an actual
+  verdict on the Continue-overlay-wait fix instead of another timeout.
+
+**Dispatch 7: about to be triggered (iOS only needs the device-name fix; Android's dispatch-6
+result — once in — determines whether Android needs anything further).** This todo is now
+significantly past its original iteration budget, justified by genuine, evidence-backed
+progress each round (never re-guessing the same failure twice) rather than stalling. If this
+doesn't land both jobs green, next steps get written up plainly rather than continuing further
+blind.
