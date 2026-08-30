@@ -1,0 +1,120 @@
+appId: com.ocrecipes.app
+
+# Reusable "get me to a logged-out Sign In screen" helper — the replacement
+# for `launchApp: { clearState: true }`, which is unusable here (2026-08-30,
+# evidence: dispatch-9 artifacts — see
+# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
+# on Android (where the declared appId matches the installed package)
+# `pm clear` wipes the dev client's OWN storage, stranding the relaunch on
+# the dev-client launcher screen; on iOS it errored outright because the
+# app's identifiers are split per platform (iOS builds as
+# com.williamtower.ocrecipes, flows declare the Android com.ocrecipes.app —
+# "Failed to get app binary directory" = no such bundle). Driving the app's
+# real Sign Out control instead goes through tokenStorage.clear() in-process
+# — no relaunch, no dev-client hazards, no appId dependence — and gives the
+# suite genuine logout coverage as a bonus.
+#
+# Call AFTER e2e/helpers/launch-app.yaml. Exits on the Sign In screen.
+#
+# Three entry states are possible:
+#   Sign In   — already logged out: both gated blocks skip, contract holds.
+#   Hello.*   — Main app: the logout block walks Profile tab → Settings →
+#               Sign Out → confirms the native alert.
+#   wizard    — a PREVIOUS attempt died mid-onboarding, leaving an account
+#               with onboardingCompleted:false; relaunch routes straight into
+#               the wizard (Get Started / Go back screens), which has no tab
+#               bar and no logout. Without the escape below, one onboarding
+#               flake would turn the whole retry attempt into a guaranteed
+#               red job. The escape is one linear pass of optional taps in
+#               wizard screen order. Primary path: the per-flow relaunch
+#               resets the unpersisted wizard stack to Welcome, whose
+#               "Skip.*for now" (first tap) skips the whole wizard. The rest
+#               of the pass is best-effort traversal for partial strands —
+#               NOTE a screen with a selection already made relabels its
+#               advance button to "Continue" (Allergies/HealthConditions/
+#               DietType), hence the interleaved optional "Continue" taps.
+#               The terminal TastePicks tap is what sets
+#               onboardingCompleted:true. Zero cost when not stranded: the
+#               `when:` gate skips the whole block.
+---
+- extendedWaitUntil:
+    visible: "(Sign In|Hello.*|Get Started|Go back)"
+    timeout: 30000
+
+# Wizard-escape — only when neither Sign In nor Home is showing (see header)
+- runFlow:
+    when:
+      notVisible: "(Sign In|Hello.*)"
+    commands:
+      - tapOn:
+          text: "Skip.*for now"
+          optional: true
+      - tapOn:
+          text: "Not now.*"
+          optional: true
+      - tapOn:
+          text: "No Allergies"
+          optional: true
+      # Selection-flipped Allergies screen reads "Continue" instead
+      - tapOn:
+          text: "Continue"
+          optional: true
+      - tapOn:
+          text: "None of These"
+          optional: true
+      # Selection-flipped HealthConditions screen reads "Continue" instead
+      - tapOn:
+          text: "Continue"
+          optional: true
+      - tapOn:
+          text: "Skip"
+          optional: true
+      # DietType (selection-flipped) then Goals both advance via "Continue"
+      - tapOn:
+          text: "Continue"
+          optional: true
+      - tapOn:
+          text: "Continue"
+          optional: true
+      - tapOn:
+          text: "Next step"
+          optional: true
+      - tapOn:
+          text: "Skip.*for now"
+          optional: true
+      - extendedWaitUntil:
+          visible: "Hello.*"
+          timeout: 30000
+
+# UI logout — only when authenticated (Main app showing)
+- runFlow:
+    when:
+      notVisible: "Sign In"
+    commands:
+      - tapOn:
+          id: "tab-profile"
+      # Gear button on ProfileCard (a11y label "Settings"); Settings is a
+      # ProfileStack screen
+      - tapOn: "Settings"
+      - tapOn: "Sign Out"
+      # Native confirmation alert. The alert's own TITLE is also "Sign Out"
+      # and it precedes the confirm button in the hierarchy, so a bare text
+      # tap hits the non-interactive title (observed locally: the alert
+      # stayed open; a below:-anchored tap ALSO failed on iOS 26, where the
+      # alert window suppresses the app tree in nonobvious ways). index: 1
+      # — [0]=title, [1]=confirm button — is the empirically verified tap
+      # on iOS 26; validate on Android in the emulator pass.
+      - extendedWaitUntil:
+          visible: "Are you sure you want to sign out.*"
+          timeout: 10000
+      - tapOn:
+          text: "Sign Out"
+          index: 1
+      - extendedWaitUntil:
+          visible: "Sign In"
+          timeout: 30000
+
+# Contract: this helper exits on the Sign In screen
+- extendedWaitUntil:
+    visible: "Sign In"
+    timeout: 10000

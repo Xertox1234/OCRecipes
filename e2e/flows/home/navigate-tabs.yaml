@@ -16,47 +16,52 @@ env:
       USERNAME: ${USERNAME}
       PASSWORD: ${PASSWORD}
 
-# Verify Home tab (default after login)
+# Verify Home tab (default after login). The greeting renders
+# "Hello <name>" — Maestro text matching is full-string regex, so a bare
+# "Hello" can never match it.
 - extendedWaitUntil:
-    visible:
-      text: "Hello"
+    visible: "Hello.*"
     timeout: 10000
 
-# Navigate to Plan tab
-- tapOn: "Plan"
+# Scan is a floating action button, not a tab — and it only renders on root
+# screens (it is absent on the Coach tab, where this check used to live).
+# Assert it here on Home, where it is deterministic.
 - extendedWaitUntil:
-    visible:
-      text: "Recipes"
-    timeout: 5000
+    visible: "Open scan menu"
+    timeout: 10000
 
-# Navigate to Coach tab. Free tier lands on the chat list ("NutriCoach"
-# header); Pro lands on the Coach Pro surface — so the assertion is optional.
-- tapOn: "Coach"
-- extendedWaitUntil:
-    visible:
-      text: "NutriCoach"
-    timeout: 5000
-    optional: true
+# Tab taps use the tabBarButtonTestID handles from MainTabNavigator.tsx —
+# text taps are unreliable here (Android's system nav bar exposes its own
+# "Home" a11y node, and the tab buttons' aggregated labels vary).
 
-# Scan is a floating action button, not a tab — confirm it is present without
-# opening it (the scan menu is covered by the scan flows).
+# Navigate to Plan tab. The action row's buttons expose a11y labels, not
+# their visible text ("Browse Recipes", not "Recipes"), and tab switches can
+# briefly re-flash the splash overlay — wait with margin.
+- tapOn:
+    id: "tab-plan"
 - extendedWaitUntil:
-    visible:
-      text: "Open scan menu"
-    timeout: 3000
-    optional: true
+    visible: "Browse Recipes"
+    timeout: 15000
+
+# Navigate to Coach tab. The CI account is always free tier, which lands on
+# the chat list — its header is "NutriCoach" (a text-free spinner shows
+# until the premium status resolves, hence the margin).
+- tapOn:
+    id: "tab-coach"
+- extendedWaitUntil:
+    visible: "NutriCoach"
+    timeout: 15000
 
 # Navigate to Profile tab
-- tapOn: "Profile"
+- tapOn:
+    id: "tab-profile"
 - extendedWaitUntil:
-    visible:
-      text: "Tap to change profile picture"
-    timeout: 5000
-    optional: true
+    visible: "Profile photo. Tap to change"
+    timeout: 10000
 
 # Navigate back to Home
-- tapOn: "Home"
+- tapOn:
+    id: "tab-home"
 - extendedWaitUntil:
-    visible:
-      text: "Hello"
+    visible: "Hello.*"
     timeout: 5000

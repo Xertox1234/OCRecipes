@@ -68,8 +68,13 @@ permissions:
 jobs:
   e2e-ios:
     name: Maestro regression (iOS simulator)
-    runs-on: macos-14
-    timeout-minutes: 60
+    runs-on: macos-15
+    # 60min was insufficient once Maestro flows finally started executing
+    # (dispatch 8, run 33287752221): ~24min in, still mid-retry, cut off by
+    # this timeout before printing a real Flows-Passed/Failed summary for
+    # the retry pass. Matches the same fix already applied to e2e-android
+    # for the identical reason (see todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md).
+    timeout-minutes: 90
 
     env:
       # Backend env — mirrors .github/workflows/ci.yml so the server behaves the
@@ -82,9 +87,21 @@ jobs:
       USDA_API_KEY: stub
       API_NINJAS_KEY: stub
       RECEIPT_VALIDATION_STUB: "true"
+      # The suite reloads the app once per flow and logs in after each UI
+      # logout — that legitimately exceeds the production rate-limit ceilings
+      # (login/subscription at 10/15min). Relaxes factory-created limiters
+      # ×1000 (still bounded); the knob is refused when NODE_ENV=production.
+      E2E_RELAXED_RATE_LIMITS: "true"
       # Credentials consumed by the Maestro flows (see e2e/README.md).
       USERNAME: testuser
       PASSWORD: testpass123
+      # sentry-cli's source-map upload build phase fails hard in CI with "An
+      # organization ID or slug is required" — no Sentry org/auth token is
+      # configured here (this is a throwaway E2E build, not a release).
+      # ALLOW_FAILURE (not DISABLE_AUTO_UPLOAD) so the phase still runs and
+      # fails soft, surfacing any *other* problem in it instead of masking
+      # the phase entirely.
+      SENTRY_ALLOW_FAILURE: "true"
 
     steps:
       - uses: actions/checkout@v5
@@ -97,11 +114,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # macos-14 defaults to Xcode 15.4, but React Native 0.81 requires >= 16.1
-      # (`pod install` fails with "Please upgrade XCode" otherwise). 16.1/16.2
-      # are already installed on the image side-by-side — just not selected.
-      - name: Select Xcode 16.2
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+      # macos-14 (Xcode 15.4 default, 16.1/16.2 available) was the previous
+      # pin, chosen only to clear RN 0.81's own >=16.1 floor -- but this
+      # repo's native config (the fmt/consteval Podfile patch, the
+      # nitrogen-C++-interop-ICE SWIFT_COMPILATION_MODE workaround) is
+      # written for and already assumes Xcode 26, not 16.x. Building against
+      # 16.2 anyway surfaced a cascade of SDK-ceiling errors with no natural
+      # end (CxxStdlib's iOS-16 minimum, expo-notifications' iOS-26-gated
+      # isRepeatedDay, vision-camera's kCVPixelFormatType_96VersatileBayerPacked12,
+      # a swift-frontend ICE in NitroImage's codegen script) -- each one a
+      # real, permanent repo patch bought to accommodate a runner choice, not
+      # an actual product need. macos-15 ships Xcode 26.3 alongside 16.x,
+      # matching what the rest of this repo already targets -- select that
+      # instead of continuing to patch around 16.2's gap.
+      - name: Select Xcode 26.3
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
 
       # macOS runners do NOT ship a startable Postgres — install it explicitly
       # (matches the Postgres 16 used by the Android job's service container and
@@ -131,19 +158,24 @@ jobs:
           curl -fsSL "https://get.maestro.mobile.dev" | bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
-      # Boot an iOS simulator for Maestro to drive. macos-14 ships Xcode with
-      # iPhone simulators preinstalled. Export the resolved UDID so the
-      # failure-diagnostic step below can target the exact same device by id
-      # (a name-based -destination lookup is ambiguous across the multiple
-      # "iPhone 15" runtimes the image ships and can itself fail to resolve).
+      # Boot an iOS simulator for Maestro to drive. macos-15 ships Xcode with
+      # iPhone simulators preinstalled -- "iPhone 15" (used under the prior
+      # macos-14/Xcode 16.2 pin) doesn't exist in Xcode 26.x's default
+      # simulator lineup, which starts at "iPhone 16" (confirmed empirically:
+      # run 33283020295 failed here with "Invalid device: iPhone 15" once
+      # every earlier layer was already cleared by the runner-image switch).
+      # Export the resolved UDID so the failure-diagnostic step below can
+      # target the exact same device by id (a name-based -destination lookup
+      # is ambiguous across the multiple "iPhone 16" runtimes the image ships
+      # and can itself fail to resolve).
       - name: Boot iOS simulator
         run: |
-          xcrun simctl boot "iPhone 15" || true
-          xcrun simctl bootstatus "iPhone 15" -b
+          xcrun simctl boot "iPhone 16" || true
+          xcrun simctl bootstatus "iPhone 16" -b
           UDID="$(xcrun simctl list devices booted -j | node -e '
             const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
             for (const devices of Object.values(data.devices)) {
-              const match = devices.find((d) => d.name === "iPhone 15" && d.state === "Booted");
+              const match = devices.find((d) => d.name === "iPhone 16" && d.state === "Booted");
               if (match) { console.log(match.udid); process.exit(0); }
             }
             process.exit(1);
@@ -159,6 +191,45 @@ jobs:
             sleep 2
           done
           curl -sf http://localhost:3000/api/health >/dev/null 2>&1 || { echo "::error::backend did not become ready within 60s"; cat server.log; exit 1; }
+
+      # helpers/login.yaml's ${USERNAME}/${PASSWORD} need this account to
+      # actually exist — nothing else in this job creates it. `|| true` only
+      # covers an idempotent re-run within the same job (the retry below);
+      # each workflow run gets a fresh Postgres instance.
+      - name: Seed E2E test user
+        run: |
+          # Fail LOUD: bare `curl -sf` under this shell's `-eo pipefail`
+          # aborts with an opaque exit code and no body. Register may 409 on
+          # an already-seeded rerun — only a failed login is fatal.
+          REG_BODY=$(curl -s -X POST http://localhost:3000/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}") \
+            || REG_BODY="(register curl itself failed)"
+          # Mark onboarding complete so a session that persists across a
+          # Maestro flow's app relaunch lands on the known, testable Main app
+          # instead of the onboarding wizard (flows reach a logged-out state
+          # via the UI Sign Out in e2e/helpers/ensure-logged-out.yaml —
+          # launchApp/clearState is banned in this suite, see e2e/README.md).
+          # login.yaml's idempotency handles the "already authenticated,
+          # Sign In never appears" case this produces.
+          TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
+            | jq -r '.token // empty')
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Seed login for $USERNAME failed — the suite cannot run without this account. Register response (token stripped):"
+            echo "$REG_BODY" | jq -c 'del(.token)' 2>/dev/null || echo "$REG_BODY"
+            exit 1
+          fi
+          PROF_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT http://localhost:3000/api/auth/profile \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $TOKEN" \
+            -d '{"onboardingCompleted":true}')
+          if [ "$PROF_CODE" != "200" ]; then
+            echo "::error::Seed profile update returned HTTP $PROF_CODE — $USERNAME would land in the onboarding wizard"
+            exit 1
+          fi
+          echo "seeded $USERNAME (onboardingCompleted=true)"
 
       # The debug build is a dev client that loads its JS bundle from Metro, so
       # Metro must be running for the app to render anything Maestro can drive.
@@ -226,7 +297,17 @@ jobs:
   e2e-android:
     name: Maestro regression (Android emulator)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Bumped from 60 (2026-08-29, run 33280577594): the job was killed by
+    # this exact timeout at 60m03s with Android still mid-retry -- a
+    # *timeout*, not a real result, so it couldn't say whether the
+    # Continue-overlay wait fix (e2e/helpers/launch-app.yaml) actually
+    # works. Worst case if every flow maxes both its waits: ~17m native
+    # build + 16 flow-invocations x ~185s (90s Continue + 90s Sign-In +
+    # overhead) = ~66m, plus setup/checkout/deps overhead -- 90 gives real
+    # headroom to reach an actual Pass/Fail summary instead of another
+    # ambiguous timeout. Revisit downward once the fix's real behavior is
+    # known either way.
+    timeout-minutes: 90
 
     services:
       postgres:
@@ -251,6 +332,9 @@ jobs:
       USDA_API_KEY: stub
       API_NINJAS_KEY: stub
       RECEIPT_VALIDATION_STUB: "true"
+      # See the iOS job's note — the suite's per-flow reload + relogin
+      # pattern exceeds production rate-limit ceilings.
+      E2E_RELAXED_RATE_LIMITS: "true"
       USERNAME: testuser
       PASSWORD: testpass123
 
@@ -297,6 +381,42 @@ jobs:
             sleep 2
           done
           curl -sf http://localhost:3000/api/health >/dev/null 2>&1 || { echo "::error::backend did not become ready within 60s"; cat server.log; exit 1; }
+
+      # See the iOS job's "Seed E2E test user" note — same reason, same account.
+      - name: Seed E2E test user
+        run: |
+          # Fail LOUD: bare `curl -sf` under this shell's `-eo pipefail`
+          # aborts with an opaque exit code and no body. Register may 409 on
+          # an already-seeded rerun — only a failed login is fatal.
+          REG_BODY=$(curl -s -X POST http://localhost:3000/api/auth/register \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}") \
+            || REG_BODY="(register curl itself failed)"
+          # Mark onboarding complete so a session that persists across a
+          # Maestro flow's app relaunch lands on the known, testable Main app
+          # instead of the onboarding wizard (flows reach a logged-out state
+          # via the UI Sign Out in e2e/helpers/ensure-logged-out.yaml —
+          # launchApp/clearState is banned in this suite, see e2e/README.md).
+          # login.yaml's idempotency handles the "already authenticated,
+          # Sign In never appears" case this produces.
+          TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
+            | jq -r '.token // empty')
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Seed login for $USERNAME failed — the suite cannot run without this account. Register response (token stripped):"
+            echo "$REG_BODY" | jq -c 'del(.token)' 2>/dev/null || echo "$REG_BODY"
+            exit 1
+          fi
+          PROF_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT http://localhost:3000/api/auth/profile \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $TOKEN" \
+            -d '{"onboardingCompleted":true}')
+          if [ "$PROF_CODE" != "200" ]; then
+            echo "::error::Seed profile update returned HTTP $PROF_CODE — $USERNAME would land in the onboarding wizard"
+            exit 1
+          fi
+          echo "seeded $USERNAME (onboardingCompleted=true)"
 
       # See the iOS job's Metro note. On Android the emulator's localhost is the
       # emulator itself, so `adb reverse` (below) tunnels the app's

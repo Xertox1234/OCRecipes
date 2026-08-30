@@ -15,8 +15,16 @@ env:
       USERNAME: ${USERNAME}
       PASSWORD: ${PASSWORD}
 
-# Navigate to Scan screen (mandatory)
-- tapOn: "Scan"
+# Scan is not a tab — the FAB's a11y label is "Open scan menu" (icon-only
+# button, ScanFAB.tsx) and it opens the SpeedDial action menu, not a screen
+- tapOn: "Open scan menu"
+
+# The menu must actually open and offer the barcode action (a11y label on
+# the mini-FAB) — this is the flow's mandatory subject
+- extendedWaitUntil:
+    visible: "Scan Barcode"
+    timeout: 10000
+- tapOn: "Scan Barcode"
 
 # Camera permission flow — in simulator camera may not work but the
 # screen must load with either a permission prompt or camera controls.

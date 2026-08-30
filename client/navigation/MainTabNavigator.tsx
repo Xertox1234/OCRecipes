@@ -154,6 +154,14 @@ export default function MainTabNavigator() {
             component={HomeStackNavigator}
             options={{
               title: "Home",
+              // The custom tabBarLabel render fn suppresses bottom-tabs' derived
+              // accessibilityLabel, leaving Android to expose an aggregated
+              // ", Home"-style label — set both handles explicitly (E2E flows
+              // tap tabs by these testIDs). Keep tabBarAccessibilityLabel in
+              // lockstep with title on every tab: voice-control users speak
+              // the visible label (WCAG 2.5.3 Label in Name).
+              tabBarAccessibilityLabel: "Home",
+              tabBarButtonTestID: "tab-home",
               tabBarIcon: ({ color, size, focused }) => (
                 <AnimatedTabIcon
                   name="home"
@@ -169,6 +177,8 @@ export default function MainTabNavigator() {
             component={MealPlanStackNavigator}
             options={{
               title: "Plan",
+              tabBarAccessibilityLabel: "Plan",
+              tabBarButtonTestID: "tab-plan",
               tabBarIcon: ({ color, size, focused }) => (
                 <AnimatedTabIcon
                   name="calendar"
@@ -184,6 +194,8 @@ export default function MainTabNavigator() {
             component={ChatStackNavigator}
             options={{
               title: "Coach",
+              tabBarAccessibilityLabel: "Coach",
+              tabBarButtonTestID: "tab-coach",
               tabBarIcon: ({ color, size, focused }) => (
                 <View style={styles.iconWrapper}>
                   <AnimatedTabIcon
@@ -209,6 +221,8 @@ export default function MainTabNavigator() {
             component={ProfileStackNavigator}
             options={{
               title: "Profile",
+              tabBarAccessibilityLabel: "Profile",
+              tabBarButtonTestID: "tab-profile",
               tabBarIcon: ({ color, size, focused }) => (
                 <AnimatedTabIcon
                   name="user"

@@ -5,83 +5,257 @@ tags:
   - regression
   - onboarding
 ---
-# Launch fresh app — clearState wipes the dev-launcher's remembered server
-# too, so reconnect explicitly afterward (see e2e/helpers/launch-app.yaml,
-# whose own header documents this exact two-step pattern)
-- launchApp:
-    clearState: true
+# Launch + overlay handling (see e2e/helpers/launch-app.yaml), then force a
+# logged-out Sign In screen via UI logout — clearState is broken against the
+# dev client on both platforms (see e2e/helpers/ensure-logged-out.yaml)
 - runFlow: ../../helpers/launch-app.yaml
+- runFlow: ../../helpers/ensure-logged-out.yaml
 
-# Switch to register mode
-- assertVisible: "Sign In"
-- tapOn: "Switch to sign up"
-- assertVisible: "Create Account"
-
-# Fill registration form
+# Switch to register mode (the mode switch can briefly re-flash the splash
+# overlay — wait for the settled form). retryTapIfNoChange disabled: the
+# default auto-retap can toggle the mode straight back (see auth/login.yaml).
 - tapOn:
-    id: "input-username"
-- inputText: "e2etest_${TIMESTAMP}"
+    text: "Switch to sign up"
+    retryTapIfNoChange: false
+- extendedWaitUntil:
+    visible:
+      id: "input-confirm-password"
+    timeout: 15000
+
+# Unique username per invocation — the old "${TIMESTAMP}" env var was never
+# defined anywhere (workflow env or -e flags), and a fixed name collides with
+# the account the previous attempt registered. String() keeps the number out
+# of exponent notation.
+- evalScript: ${output.ts = String(Date.now())}
+
+# COPPA attestation FIRST, while no keyboard is up — with the keyboard open
+# the checkbox sits under it and a coordinate tap lands on the keyboard
+# instead (observed locally: tap "completed", box stayed unchecked).
+# retryTapIfNoChange disabled: an auto-retap on a checkbox unchecks it.
+- tapOn:
+    id: "checkbox-age-confirm"
+    retryTapIfNoChange: false
+
+# Fill registration form — all four fields; the Email field and the age
+# checkbox were missing from the original flow, and the submit button stays
+# disabled until every one of them is satisfied.
+#
+# SHOW PASSWORDS FIRST, THEN TYPE PLAIN: synthetic input into iOS-26-sim
+# secureTextEntry fields delivers exactly one character whether typed or
+# pasted (run-33326267830 hierarchy: fields still at "•" after THREE
+# erase+paste rounds, while the plain username/email fields typed
+# perfectly). The form's own Show-password toggle flips BOTH password
+# fields to plain text (one shared showPassword state in LoginScreen),
+# where synthetic typing works — and a non-secure field never attracts the
+# AutoFill sheets either. A visible test credential on a CI screenshot is
+# harmless.
+- tapOn:
+    text: "Show password"
+    retryTapIfNoChange: false
 - tapOn:
     id: "input-password"
 - inputText: "TestPass123!"
+# Drop the keyboard before focusing the confirm field: with the keyboard up
+# it covers that field on CI's screen layout, the tap never moves focus, and
+# the confirm text lands in the password field instead (run-33329846839
+# hierarchy: password full, confirm empty). The header tap is the proven
+# blur that dismisses the keyboard without touching form state.
+- tapOn:
+    text: "Create an account to get started"
+    retryTapIfNoChange: false
 - tapOn:
     id: "input-confirm-password"
 - inputText: "TestPass123!"
+- tapOn:
+    text: "Create an account to get started"
+    retryTapIfNoChange: false
+- tapOn:
+    id: "input-username"
+# Gboard's "Try out your stylus" promo sheet (Google-APIs emulator images)
+# appears on the secure→plain keyboard switch, STEALS focus into its own
+# "Write here" field, and swallows lower-screen taps. Dismiss and refocus.
+- runFlow:
+    when:
+      visible: "Try out your stylus"
+    commands:
+      - tapOn: "Cancel"
+      - tapOn:
+          id: "input-username"
+- inputText: "e2etest_${output.ts}"
+- tapOn:
+    id: "input-email"
+- runFlow:
+    when:
+      visible: "Try out your stylus"
+    commands:
+      - tapOn: "Cancel"
+      - tapOn:
+          id: "input-email"
+- inputText: "e2etest_${output.ts}@example.com"
+
+# Drop the keyboard so the submit button's coordinates are actually
+# tappable. NOT via hideKeyboard — its iOS implementation is flaky and was
+# observed backgrounding the app entirely (home-gesture-like); a tap on the
+# static header text blurs the input instead, which dismisses the keyboard.
+- tapOn:
+    text: "Create an account to get started"
+    retryTapIfNoChange: false
+
 - tapOn: "Create Account"
 
-# Wait for Welcome screen
+# Registration submits a password — iOS can raise the system "Save Password?"
+# dialog here, which hides the entire app hierarchy until dismissed.
+#
+# SELF-HEALING RETRY: on the FIRST-ever focus of the secure fields, iOS's
+# invisible "Use Strong Password?" sheet can swallow keystrokes AND pasted
+# text (observed on CI: one character left in each field, submit rejected).
+# A second entry into the same fields reliably lands (the sheet only appears
+# once per field-focus session), so instead of fighting the sheet's timing,
+# use the app's own outcome as the oracle: wait briefly for the Welcome
+# screen, and while it hasn't appeared, re-enter both passwords and resubmit
+# (bounded at 3 rounds). Every command inside the loop is optional — the
+# erase/type steps included, so a silently-failed optional focus tap (the
+# keyboard-covered-field mode above) degrades to a skipped round instead of
+# hard-failing the recovery loop on an unfocused field.
 - extendedWaitUntil:
-    visible:
-      text: "Get Started"
-    timeout: 10000
+    visible: "(Get Started|Not Now)"
+    timeout: 20000
+    optional: true
+- repeat:
+    times: 3
+    while:
+      notVisible: "(Get Started|Not Now)"
+    commands:
+      # "Show password" only when the fields are still masked (its label
+      # becomes "Hide password" once toggled)
+      - tapOn:
+          text: "Show password"
+          optional: true
+          retryTapIfNoChange: false
+      - tapOn:
+          id: "input-password"
+          optional: true
+      # Gboard stylus-sheet guard, mirroring the main block: a retry round
+      # re-raises the keyboard, which can surface the promo sheet again.
+      - runFlow:
+          when:
+            visible: "Try out your stylus"
+          commands:
+            - tapOn: "Cancel"
+            - tapOn:
+                id: "input-password"
+                optional: true
+      - eraseText:
+          charactersToErase: 50
+          optional: true
+      - inputText:
+          text: "TestPass123!"
+          optional: true
+      # Blur to drop the keyboard before the confirm tap (see main block)
+      - tapOn:
+          text: "Create an account to get started"
+          optional: true
+          retryTapIfNoChange: false
+      - tapOn:
+          id: "input-confirm-password"
+          optional: true
+      - eraseText:
+          charactersToErase: 50
+          optional: true
+      - inputText:
+          text: "TestPass123!"
+          optional: true
+      - tapOn:
+          text: "Create an account to get started"
+          optional: true
+          retryTapIfNoChange: false
+      - tapOn:
+          text: "Create Account"
+          optional: true
+      - extendedWaitUntil:
+          visible: "(Get Started|Not Now)"
+          timeout: 15000
+          optional: true
+- extendedWaitUntil:
+    visible: "(Get Started|Not Now)"
+    timeout: 15000
+- runFlow:
+    when:
+      visible: "Not Now"
+    commands:
+      - tapOn: "Not Now"
 
-# Screen 1: Welcome
+# Onboarding wizard — real screen order from OnboardingNavigator.tsx:
+# Welcome → HealthDataConsent → Allergies → HealthConditions → DietType →
+# Goals → Preferences → TastePicks. (The previous version of this flow
+# tapped a "Complete setup" button that does not exist anywhere in the
+# codebase; completion actually happens on TastePicks.)
+
+# 1. Welcome
+- extendedWaitUntil:
+    visible: "Get Started"
+    timeout: 15000
 - tapOn: "Get Started"
 
-# Screen 2: Diet Type
-- assertVisible: "Go back"
-- tapOn: "Omnivore"
-
-# Screen 3: Allergies — skip without selecting
+# 2. Health data consent — decline sharing ("Not now, skip health data
+#    sharing" a11y label)
 - extendedWaitUntil:
-    visible:
-      text: "Go back"
-    timeout: 3000
-- tapOn:
-    text: "No Allergies"
-    optional: true
+    visible: "Not now.*"
+    timeout: 15000
+- tapOn: "Not now.*"
+
+# 3. Allergies — none, then advance (Continue kept optional in case the
+#    selection auto-advances)
+- extendedWaitUntil:
+    visible: "No Allergies"
+    timeout: 15000
+- tapOn: "No Allergies"
 - tapOn:
     text: "Continue"
     optional: true
 
-# Screen 4: Health Conditions — skip without selecting
+# 4. Health conditions — none, then advance
 - extendedWaitUntil:
-    visible:
-      text: "Go back"
-    timeout: 3000
-- tapOn:
-    text: "None of These"
-    optional: true
+    visible: "None of These"
+    timeout: 15000
+- tapOn: "None of These"
 - tapOn:
     text: "Continue"
     optional: true
 
-# Screen 5: Goals — continue
+# 5. Diet type — cards carry a11y "{name}: {description}"
 - extendedWaitUntil:
-    visible:
-      text: "Go back"
-    timeout: 3000
+    visible: "Omnivore.*"
+    timeout: 15000
+- tapOn: "Omnivore.*"
 - tapOn: "Continue"
 
-# Screen 6: Preferences
+# 6. Goals — defaults are fine
 - extendedWaitUntil:
-    visible:
-      text: "Complete setup"
-    timeout: 5000
-- tapOn: "Complete setup"
+    visible: "Continue"
+    timeout: 15000
+- tapOn: "Continue"
 
-# Should land on home screen after onboarding
+# 7. Preferences — forward button is visible "Next" with a11y "Next step"
 - extendedWaitUntil:
-    visible:
-      text: "Hello"
-    timeout: 10000
+    visible: "Next step"
+    timeout: 15000
+- tapOn: "Next step"
+
+# 8. Taste picks — "Skip for now" is a real completion path: it sets
+#    onboardingCompleted:true (TastePicksScreen skip handler)
+- extendedWaitUntil:
+    visible: "Skip for now"
+    timeout: 15000
+- tapOn: "Skip for now"
+
+# Landed on Home as the new user (greeting renders "Hello <username>")
+- extendedWaitUntil:
+    visible: "Hello.*"
+    timeout: 30000
+
+# Leave the suite logged out: without this, the fresh e2etest_* session leaks
+# into every later flow in path order (plan/, scan/) and they run as the
+# wrong user. Ending logged out makes each flow's user deterministic — the
+# login helper logs the rest in as the seeded testuser.
+- runFlow: ../../helpers/ensure-logged-out.yaml

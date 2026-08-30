@@ -16,15 +16,20 @@ env:
       USERNAME: ${USERNAME}
       PASSWORD: ${PASSWORD}
 
-# Navigate to Plan tab
-- tapOn: "Plan"
+# Navigate to Plan tab (tabBarButtonTestID handle from MainTabNavigator.tsx)
+- tapOn:
+    id: "tab-plan"
 
-# Verify meal plan home elements
+# Verify meal plan home elements. The action row's buttons expose a11y
+# labels, not their visible text ("Browse Recipes", not "Recipes"), and tab
+# switches can briefly re-flash the splash overlay — wait with margin.
 - extendedWaitUntil:
-    visible:
-      text: "Recipes"
-    timeout: 5000
-- assertVisible: "Pantry"
+    visible: "Browse Recipes"
+    timeout: 15000
+# The Pantry row's a11y label grows a suffix when items are near expiry
+# ("Pantry, 2 expiring" — MealPlanHomeScreen), which a bare full-string
+# "Pantry" can never match.
+- assertVisible: 'Pantry(, \d+ expiring)?'
 - assertVisible: "Grocery Lists"
 
 # Verify meal slot sections (at least one should be visible)
@@ -49,11 +54,11 @@ env:
     direction: DOWN
     optional: true
 
-# Navigate to Pantry
+# Navigate to Pantry (same expiring-suffix tolerance as the assert above)
 - scrollUntilVisible:
-    element: "Pantry"
+    element: 'Pantry(, \d+ expiring)?'
     direction: UP
-- tapOn: "Pantry"
+- tapOn: 'Pantry(, \d+ expiring)?'
 
 # Verify pantry screen
 - extendedWaitUntil:
@@ -74,5 +79,5 @@ env:
     text: "Add pantry item..."
     optional: true
 
-# Go back to plan home
-- back
+# (No trailing `back` — that command is Android-only and fails the flow on
+# iOS; every flow relaunches via openLink anyway, so no cleanup is needed.)

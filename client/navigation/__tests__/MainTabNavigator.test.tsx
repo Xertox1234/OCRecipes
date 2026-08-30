@@ -23,7 +23,23 @@ vi.mock("@react-navigation/bottom-tabs", () => ({
     Navigator: ({ children }: { children?: React.ReactNode }) => (
       <div data-testid="tab-navigator">{children}</div>
     ),
-    Screen: () => null,
+    // Marker double that exposes the per-screen options this suite pins.
+    Screen: ({
+      name,
+      options,
+    }: {
+      name: string;
+      options?: {
+        tabBarAccessibilityLabel?: string;
+        tabBarButtonTestID?: string;
+      };
+    }) => (
+      <div
+        data-testid={`tab-screen-${name}`}
+        data-a11y-label={options?.tabBarAccessibilityLabel}
+        data-button-testid={options?.tabBarButtonTestID}
+      />
+    ),
   }),
 }));
 
@@ -100,4 +116,31 @@ describe("MainTabNavigator — Android accessibility trap for the tab content be
     const scanFab = screen.getByTestId("scan-fab-mock");
     expect(tabContent.contains(scanFab)).toBe(false);
   });
+});
+
+describe("MainTabNavigator — tab button accessibility labels and testIDs", () => {
+  // This harness proves one thing: MainTabNavigator wires explicit
+  // tabBarAccessibilityLabel/tabBarButtonTestID values into each Tab.Screen's
+  // options (bottom-tabs itself is mocked out above). WHY they must be
+  // explicit is source-reasoned, not observed here: the custom tabBarLabel
+  // render FUNCTION makes bottom-tabs' derived label undefined
+  // (BottomTabBar.tsx only synthesizes one from string labels), which on
+  // Android surfaced as aggregated ", Plan"-style contentDescriptions with
+  // no automation handle — see the E2E todo's evidence chain. The E2E flows
+  // tap tabs by these testIDs.
+  it.each([
+    ["HomeTab", "Home", "tab-home"],
+    ["MealPlanTab", "Plan", "tab-plan"],
+    ["CoachTab", "Coach", "tab-coach"],
+    ["ProfileTab", "Profile", "tab-profile"],
+  ])(
+    "%s exposes accessibilityLabel %j and testID %j",
+    (name, label, testID) => {
+      renderComponent(<MainTabNavigator />);
+
+      const marker = screen.getByTestId(`tab-screen-${name}`);
+      expect(marker.getAttribute("data-a11y-label")).toBe(label);
+      expect(marker.getAttribute("data-button-testid")).toBe(testID);
+    },
+  );
 });

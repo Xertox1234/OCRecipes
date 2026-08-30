@@ -47,6 +47,7 @@ apply_domain_map() {
   [[ "$f" == */client/constants/theme.ts || "$f" == client/constants/theme.ts ]] && { _add design-system; }
   [[ "$f" == */design_guidelines.md || "$f" == design_guidelines.md ]] && { _add design-system; }
   [[ "$f" == */evals/* || "$f" == evals/* ]] && { _add ai-prompting; _add testing; }
+  [[ "$f" == */e2e/* || "$f" == e2e/* ]] && { _add testing; }
   [[ "$f" == */__tests__/* || "$f" == __tests__/* || "$f" == *.test.ts || "$f" == *.test.tsx || "$f" == *.spec.ts || "$f" == *.spec.tsx ]] && { _add testing; }
   [[ "$f" == */.github/workflows/* || "$f" == .github/workflows/* ]] && { _add architecture; _add testing; }
   [[ "$f" == */vitest.config.* || "$f" == vitest.config.* || "$f" == */eslint.config.* || "$f" == eslint.config.* ]] && { _add testing; _add typescript; }
