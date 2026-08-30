@@ -187,6 +187,26 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}" \
             || true
+          # Mark onboarding complete so a session that persists across a Maestro
+          # flow's app relaunch (nothing between flows calls clearState except
+          # the two flows that explicitly toggle it for their own purposes --
+          # see todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md)
+          # lands on the known, testable Main app instead of the onboarding
+          # wizard -- which has no Settings/back/skip affordance at all, so a
+          # flow stuck there could never recover on its own. login.yaml's own
+          # idempotency (see e2e/helpers/login.yaml) handles the "already
+          # authenticated, Sign In never appears" case this produces.
+          TOKEN=$(curl -sf -X POST http://localhost:3000/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
+            | jq -r '.token // empty')
+          if [ -n "$TOKEN" ]; then
+            curl -sf -X PUT http://localhost:3000/api/auth/profile \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $TOKEN" \
+              -d '{"onboardingCompleted":true}' \
+              || true
+          fi
 
       # The debug build is a dev client that loads its JS bundle from Metro, so
       # Metro must be running for the app to render anything Maestro can drive.
@@ -343,6 +363,26 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}" \
             || true
+          # Mark onboarding complete so a session that persists across a Maestro
+          # flow's app relaunch (nothing between flows calls clearState except
+          # the two flows that explicitly toggle it for their own purposes --
+          # see todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md)
+          # lands on the known, testable Main app instead of the onboarding
+          # wizard -- which has no Settings/back/skip affordance at all, so a
+          # flow stuck there could never recover on its own. login.yaml's own
+          # idempotency (see e2e/helpers/login.yaml) handles the "already
+          # authenticated, Sign In never appears" case this produces.
+          TOKEN=$(curl -sf -X POST http://localhost:3000/api/auth/login \
+            -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
+            | jq -r '.token // empty')
+          if [ -n "$TOKEN" ]; then
+            curl -sf -X PUT http://localhost:3000/api/auth/profile \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $TOKEN" \
+              -d '{"onboardingCompleted":true}' \
+              || true
+          fi
 
       # See the iOS job's Metro note. On Android the emulator's localhost is the
       # emulator itself, so `adb reverse` (below) tunnels the app's

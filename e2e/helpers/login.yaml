@@ -24,17 +24,38 @@ appId: com.ocrecipes.app
 # enough against that combined cost under load. Bumped to give real
 # headroom above the worst time actually observed (59s) rather than
 # guessing a smaller number and re-discovering the same gap next run.
+#
+# IDEMPOTENT since 2026-08-29 (see
+# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md): a
+# session from an earlier flow in the same job can persist across this
+# flow's own relaunch — nothing clears app state between most flows — so
+# "Sign In" is no longer a safe hard precondition; the app may already be
+# authenticated and showing the Main app instead. The wait below is
+# `optional`, and the actual login steps only run `when: visible: "Sign
+# In"` — if Sign In never appears, this helper does nothing and falls
+# through, trusting the caller's own subsequent assertions to catch a
+# genuinely broken app (crash, network failure, etc.) rather than
+# hard-failing here on a screen state that no longer implies something is
+# wrong. The CI workflow's "Seed E2E test user" step marks the test
+# account `onboardingCompleted: true` specifically so an inherited session
+# lands on the Main app (a known, testable state) rather than the
+# onboarding wizard, which has no way back to Sign In at all.
 - extendedWaitUntil:
     visible: "Sign In"
     timeout: 90000
-- tapOn:
-    id: "input-username"
-- inputText: ${USERNAME}
-- tapOn:
-    id: "input-password"
-- inputText: ${PASSWORD}
-- tapOn: "Sign In"
-- extendedWaitUntil:
-    notVisible:
-      text: "Sign In"
-    timeout: 5000
+    optional: true
+- runFlow:
+    when:
+      visible: "Sign In"
+    commands:
+      - tapOn:
+          id: "input-username"
+      - inputText: ${USERNAME}
+      - tapOn:
+          id: "input-password"
+      - inputText: ${PASSWORD}
+      - tapOn: "Sign In"
+      - extendedWaitUntil:
+          notVisible:
+            text: "Sign In"
+          timeout: 5000

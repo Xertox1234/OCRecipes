@@ -738,3 +738,47 @@ dispatches (double the original 4-5 budget) chasing genuine, converging evidence
 rather than guesses. The next session should pick one of the three candidates, apply it to the
 shared `e2e/` flows (fixing both platforms at once), and dispatch to validate — that is very
 plausibly the **last** remaining step before this todo can close. Still `blocked`, not `done`.
+
+### 2026-08-29 (continued) — user approved a fix, dispatch 9 in flight
+
+**Fix chosen: candidate 3 (explicit logout), revised during implementation into a hybrid with
+candidate 2, approved by the user before writing code.** Tracing the actual navigator
+(`client/navigation/OnboardingNavigator.tsx`) found candidate 3 as originally scoped
+impractical: onboarding is a strict linear 8-step stack (`gestureEnabled: false`, no header),
+with no back button, skip link, or Settings access anywhere in it — the exact contaminated state
+diagnosed (landing on onboarding) has no path to the real in-app "Sign Out" control at all, which
+only lives in Settings behind the Profile tab. Surfaced this to the user rather than silently
+picking a different candidate; they approved the alternative found while investigating:
+
+1. **Seed `testuser` with `onboardingCompleted: true`** — extended the existing "Seed E2E test
+   user" step (both jobs) to log in immediately after registering (`POST /api/auth/login`,
+   grabbing the returned token) and `PUT /api/auth/profile` with `{"onboardingCompleted":
+true}`. Verified end-to-end against a local dev server before writing the CI version — a
+   fresh register → login → profile-update → `/api/auth/me` chain confirmed the flag persists.
+   This means any session that survives into a later flow's relaunch lands on the **Main app**
+   (a known, testable state, reachable from Settings), never on the unrecoverable onboarding
+   wizard.
+2. **Made `e2e/helpers/login.yaml` idempotent** — the shared helper used by 11 of 15 flows. Its
+   `extendedWaitUntil: visible: "Sign In"` is now `optional: true`, and the actual
+   credential-entry steps only run inside `runFlow: { when: { visible: "Sign In" }, commands:
+[...] }`. If Sign In is showing, it logs in as before; if not (already authenticated from an
+   inherited session), it does nothing and falls through, trusting the caller's own subsequent
+   assertions to catch a genuinely broken app rather than hard-failing on a screen state that no
+   longer implies something is wrong.
+
+Both changes verified with `maestro check-syntax` against every flow/helper file (all pass) and
+`python3 -c "import yaml; ..."` against the workflow YAML before committing. `jq` (used to parse
+the login token) confirmed preinstalled on both `ubuntu-latest` and `macos-15` runner images via
+GitHub's own runner-images docs — zero CI cost.
+
+**Known gap, not addressed, flagged for the dispatch to confirm or falsify:** `auth/login.yaml`
+and `onboarding/complete-onboarding.yaml` deliberately were left untouched (per the approved
+plan) — they want a genuinely fresh/logged-out state, not an idempotent shortcut. `auth/login.yaml`
+specifically has its own internal `launchApp: { clearState: true }` + `extendedWaitUntil: visible:
+"Sign In"` sequence (the exact step diagnosed as failing in dispatches 6-8) that this fix does
+**not** guarantee resolves — if Maestro's `clearState` on Android/iOS genuinely doesn't clear the
+persisted token (still unconfirmed), this flow could still fail even with everything else fixed,
+just landing on the Main app instead of Onboarding after its own `clearState`. The dispatch below
+will show directly whether this is still a problem.
+
+**Status:** committed, pushed, `workflow_dispatch` triggered — see next entry for the result.
