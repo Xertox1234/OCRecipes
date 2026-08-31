@@ -121,11 +121,16 @@ export function describePlanSaveFailure(error: unknown): PlanSaveFailure {
  *
  * Takes `dayLabel` as a plain string (the tapped chip's own `weekday`, e.g.
  * "Wednesday") rather than the `plannedDate` ISO string — do NOT change this
- * to re-derive the day by parsing `plannedDate`. `plannedDate` is a
- * UTC-string conversion of a local-midnight instant (see `PlanSlotDay.iso`'s
- * doc-comment in `plan-slot-picker-utils.ts`); re-parsing it back into a
- * weekday lands on the wrong day for any UTC-positive offset, which would
- * make this toast contradict the very chip the user just tapped.
+ * to re-derive the day by parsing `plannedDate`. `plannedDate` is the device's
+ * LOCAL calendar day, but `new Date(plannedDate)` parses a bare date as UTC
+ * midnight, so re-parsing it back into a weekday renders the *previous* day at
+ * any UTC-NEGATIVE offset, which would make this toast contradict the very
+ * chip the user just tapped. See `PlanSlotDay.iso`'s doc-comment in
+ * `plan-slot-picker-utils.ts`.
+ *
+ * The sign is a trap: the original write-side bug was UTC-POSITIVE-only, so
+ * this guard looks unnecessary when tested from Europe or Oceania. Dropping it
+ * breaks the Americas instead.
  */
 export function formatPlanSaveSuccess(
   dayLabel: string,

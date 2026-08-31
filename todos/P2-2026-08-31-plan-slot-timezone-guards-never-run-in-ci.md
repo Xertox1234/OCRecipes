@@ -134,3 +134,38 @@ test is timezone-independent and pins the toast-weekday regression class in CI.
   ever" — was wrong on all three counts. A review of the codification commit caught it and the
   claim was re-measured; the table above is the verified result. The CI-blindness conclusion
   survives unchanged, but for a different reason than originally written.
+
+### 2026-08-31 (later) — partially addressed, deliberately left open
+
+The P1 local-date-basis work
+(`todos/archive/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md`)
+adopted option 1 from the Implementation Notes, in its safer hook-based form, and applied it to
+`client/components/coach/__tests__/plan-slot-picker-utils.test.ts`:
+
+- `process.env.TZ` is set in `beforeAll` rather than at module scope. This sidesteps the ESM
+  hoisting caveat this todo raised — hooks run after the whole import graph is evaluated — and it
+  is verified to take effect inside the Vitest worker (Node 24) by a `getTimezoneOffset()`
+  assertion in each block, satisfying the "assert the mechanism itself" note.
+- The file now loops over `UTC`, `Europe/Berlin`, `Pacific/Auckland`, `America/Los_Angeles`.
+- The mutation check was run. Failure counts per zone: reverting only `iso` to `toDateString`
+  gives `UTC 0 / Berlin 4 / Auckland 4 / LA 0`; reverting to a full UTC basis gives
+  `UTC 0 / Berlin 1 / Auckland 2 / LA 1`.
+
+**That second row refines this todo's central claim.** "Any nonzero offset discriminates, the sign
+is irrelevant" holds for a full-UTC-basis revert, but NOT for the narrower revert of just the `iso`
+derivation, which only a **positive** offset catches. Both signs are therefore kept in the loop
+deliberately, and the reason is recorded in the test file — do not prune one as redundant.
+
+**A new trap, found the hard way during that work and worth recording here:** `describe.each` /
+`it.each` tables are evaluated at **collection** time, before any hook runs. A `Date` fixture
+placed in the table is constructed in the host zone and then read back under the pinned zone,
+silently testing neither basis. Fixtures must be built inside the test body. This is the same
+hazard as the module-scope caveat above, in a form that is much harder to spot.
+
+Still open, and the reason this todo is not archived:
+
+- `client/components/coach/__tests__/PlanSlotPickerSheet.test.tsx` is untouched.
+- AC 5 — empirically re-deriving whether `PlanSlotPickerSheet.test.tsx` and
+  `CoachChat.branches.test.tsx` are silent under UTC — has not been done.
+- AC 2 — confirming the mechanism does not perturb unrelated date-sensitive tests — was checked
+  only across the 25 files related to that change (401 tests, all green), not the full suite.

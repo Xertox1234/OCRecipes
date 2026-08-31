@@ -7,14 +7,25 @@ module: client
 applies_to: [client/components/coach/**/*.ts, client/screens/meal-plan/**/*.tsx, shared/lib/date.ts]
 symptoms: ["An item saved from one screen appears under a different day on another screen", "A date bug that reproduces for users east of UTC and never for users west of it (or the reverse)", "Two features call the same date-formatting helper and still produce different keys", "A picker's first chip is tomorrow for part of the day", "Tests pass in CI and the bug is reported from a real device"]
 created: '2026-08-31'
+last_updated: '2026-08-31'
 severity: high
 ---
 
 # Two surfaces writing the same date column agreed on the helper and disagreed on its input
 
+> **Updated 2026-08-31 — the basis this document originally prescribed has since been
+> replaced, and `formatDateISO` no longer exists.** The column's contract is now a **device-local**
+> calendar day via `toLocalDateString` (`shared/lib/date.ts`), not the UTC day of a local-midnight
+> instant. The Problem, Symptoms and Root Cause below are kept verbatim as the history of how the
+> two writers diverged — that lesson is unchanged and is the reason this file exists. **The
+> Solution section has been rewritten to the current basis**; do not copy any `formatDateISO`
+> snippet from an older revision of this file. See
+> `todos/archive/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md`.
+
 ## Problem
 
-`formatDateISO` (`shared/lib/date.ts` → `toDateString`) is `date.toISOString().split("T")[0]` —
+`formatDateISO` (`shared/lib/date.ts` → `toDateString`; **the alias was removed 2026-08-31**)
+was `date.toISOString().split("T")[0]` —
 it returns the **UTC** calendar day of whatever `Date` it is handed. That makes it a pure
 function of its input, and it makes the *input's normalisation* the real contract.
 
@@ -82,10 +93,10 @@ export function buildPlanSlotDays(from: Date, count = 7): PlanSlotDay[] {
   const days: PlanSlotDay[] = [];
   for (let i = 0; i < count; i++) {
     const d = new Date(from);
-    d.setHours(0, 0, 0, 0);      // the basis, matching MealPlanHomeScreen
-    d.setDate(d.getDate() + i);  // local accessors throughout — never setUTCDate
+    d.setHours(0, 0, 0, 0);         // local midnight, matching MealPlanHomeScreen
+    d.setDate(d.getDate() + i);     // local accessors throughout — never setUTCDate
     days.push({
-      iso: formatDateISO(d),     // correct ONCE d is a local midnight
+      iso: toLocalDateString(d),    // LOCAL calendar day — never toDateString here
       dayOfMonth: d.getDate(),
       weekday: d.toLocaleDateString("en-US", { weekday: "long" }), // no timeZone override
     });
@@ -93,6 +104,11 @@ export function buildPlanSlotDays(from: Date, count = 7): PlanSlotDay[] {
   return days;
 }
 ```
+
+`toLocalDateString` reads `getFullYear`/`getMonth`/`getDate`; `toDateString` is
+`toISOString().split("T")[0]` and answers a different question. Both live in `shared/lib/date.ts`,
+one identifier apart — which is exactly why the basis now appears in the name at every call site
+rather than behind an alias.
 
 Re-derive `d` from `from` every iteration rather than mutating one `Date` across the loop, so
 nothing accumulates.
@@ -108,6 +124,13 @@ export const formatPlanSaveSuccess = (dayLabel: string, mealType: MealType) =>
 ```
 
 That version is testable without a timezone, which matters — see Prevention.
+
+**The re-parse hazard survived the basis change and INVERTED its sign.** Under the old UTC basis
+re-parsing `iso` broke at positive offsets; under the local basis `new Date(iso)` still parses a
+bare date as UTC midnight, so it now renders the previous day at **negative** offsets (measured:
+`"2026-09-01"` reads back as Monday in `America/Los_Angeles` and `America/Sao_Paulo`, Tuesday in
+UTC/+2/+12). The guard is unchanged; only the population it protects moved. A developer who
+re-tests it from Europe will find it "works" and may delete it.
 
 ## Prevention
 
@@ -146,12 +169,13 @@ than assuming when the basis is load-bearing.
 
 - `client/components/coach/plan-slot-picker-utils.ts` — `buildPlanSlotDays`, with a docblock that
   states the basis and forbids reverting to UTC accessors
-- `client/screens/meal-plan/MealPlanHomeScreen.tsx:538-542` — the `setHours(0,0,0,0)` normalisation
-  that defines the column's de-facto contract; `:572` and `:613-614` are the reads and writes
-- `shared/lib/date.ts` — `toDateString`, the UTC-returning helper both callers share
+- `client/screens/meal-plan/MealPlanHomeScreen.tsx` — the `setHours(0,0,0,0)` normalisation that
+  defines the column's de-facto contract; `:576` and `:617-618` are the reads and writes
+- `shared/lib/date.ts` — `toDateString` (UTC) and `toLocalDateString` (device-local), one
+  identifier apart; the doc comments state which is for which side
 - `client/components/coach/coach-chat-utils.ts` — `formatPlanSaveSuccess`, kept free of date logic
-- `todos/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md` — the open
-  product decision about what the column *should* store
+- `todos/archive/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md` —
+  the product decision, now made: a true device-local basis
 - `todos/P2-2026-08-31-plan-slot-timezone-guards-never-run-in-ci.md` — the guard-durability gap
 
 ## See Also
