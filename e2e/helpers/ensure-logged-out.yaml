@@ -26,16 +26,19 @@ appId: com.ocrecipes.app
 #               bar and no logout. Without the escape below, one onboarding
 #               flake would turn the whole retry attempt into a guaranteed
 #               red job. The escape is one linear pass of optional taps in
-#               wizard screen order. Primary path: the per-flow relaunch
-#               resets the unpersisted wizard stack to Welcome, whose
-#               "Skip.*for now" (first tap) skips the whole wizard. The rest
-#               of the pass is best-effort traversal for partial strands —
-#               NOTE a screen with a selection already made relabels its
-#               advance button to "Continue" (Allergies/HealthConditions/
-#               DietType), hence the interleaved optional "Continue" taps.
-#               The terminal TastePicks tap is what sets
-#               onboardingCompleted:true. Zero cost when not stranded: the
-#               `when:` gate skips the whole block.
+#               wizard screen order. The wizard RESUMES AT ITS STRANDED
+#               SCREEN after relaunch (drill-verified 2026-08-30: killed at
+#               screen 4/8, relaunch came back mid-wizard — position
+#               persists; an earlier assumption that relaunch resets to
+#               Welcome is FALSE), so the mid-wizard traversal is the
+#               actually-exercised path, not belt-and-braces: each screen's
+#               skip/none tap advances, and a screen with a selection
+#               already made relabels its advance button to "Continue"
+#               (Allergies/HealthConditions/DietType), hence the interleaved
+#               optional "Continue" taps — do not remove them. The terminal
+#               TastePicks tap is what sets onboardingCompleted:true. Zero
+#               cost when not stranded: the `when:` gate skips the whole
+#               block.
 ---
 - extendedWaitUntil:
     visible: "(Sign In|Hello.*|Get Started|Go back)"

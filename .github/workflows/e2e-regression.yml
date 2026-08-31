@@ -72,9 +72,12 @@ jobs:
     # 60min was insufficient once Maestro flows finally started executing
     # (dispatch 8, run 33287752221): ~24min in, still mid-retry, cut off by
     # this timeout before printing a real Flows-Passed/Failed summary for
-    # the retry pass. Matches the same fix already applied to e2e-android
-    # for the identical reason (see todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md).
-    timeout-minutes: 90
+    # the retry pass. Re-bumped 90 -> 110 when the launch readiness gate grew
+    # 120s -> 240s (run 33341123446's 177.7s cold bundle): degenerate worst
+    # case is 16 flow-invocations x ~240s gate = ~64m + ~25m build/setup,
+    # which 90 no longer covers with margin. The point of the headroom is a
+    # real Pass/Fail summary instead of an ambiguous timeout.
+    timeout-minutes: 110
 
     env:
       # Backend env — mirrors .github/workflows/ci.yml so the server behaves the
@@ -301,13 +304,12 @@ jobs:
     # this exact timeout at 60m03s with Android still mid-retry -- a
     # *timeout*, not a real result, so it couldn't say whether the
     # Continue-overlay wait fix (e2e/helpers/launch-app.yaml) actually
-    # works. Worst case if every flow maxes both its waits: ~17m native
-    # build + 16 flow-invocations x ~185s (90s Continue + 90s Sign-In +
-    # overhead) = ~66m, plus setup/checkout/deps overhead -- 90 gives real
-    # headroom to reach an actual Pass/Fail summary instead of another
-    # ambiguous timeout. Revisit downward once the fix's real behavior is
-    # known either way.
-    timeout-minutes: 90
+    # works. Re-bumped 90 -> 110 when the launch readiness gate grew
+    # 120s -> 240s: degenerate worst case is ~17m native build + 16
+    # flow-invocations x ~240s gate + overhead = ~85m+, leaving 90 without
+    # margin. 110 keeps the property the original bump bought: reach an
+    # actual Pass/Fail summary instead of another ambiguous timeout.
+    timeout-minutes: 110
 
     services:
       postgres:

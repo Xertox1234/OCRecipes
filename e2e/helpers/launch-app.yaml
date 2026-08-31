@@ -20,7 +20,7 @@ appId: com.ocrecipes.app
 #                        up the app hierarchy is entirely absent, so it MUST be
 #                        part of this gate or the gate itself times out
 #      Connected to:   — dev menu sheet left open (see 3)
-#    The gate is NOT optional: if none of these appears in 120s the app is
+#    The gate is NOT optional: if none of these appears in 240s the app is
 #    genuinely broken and the flow should fail loudly right here.
 #
 # 2. The welcome banner sits ON TOP of the auto-opened dev menu on the first
