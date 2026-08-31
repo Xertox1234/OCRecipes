@@ -1,7 +1,8 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
-import { civilDateString, civilDateToInstant } from "../storage/helpers";
+import { civilDateString, civilDateToInstant } from "../lib/civil-date";
+
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { isUniqueViolation } from "../lib/db-errors";
@@ -719,6 +720,21 @@ export function register(app: Express): void {
         // `new Date(dateStr)` would be UTC midnight, which is the previous civil
         // day for every UTC-negative user and silently returned yesterday's
         // totals to the whole of the Americas.
+        // A present-but-malformed `date` is rejected rather than silently
+        // treated as today: neither this response nor /api/daily-budget echoes
+        // the resolved date, so a client could not detect the substitution.
+        if (
+          req.query.date !== undefined &&
+          parseQueryDateString(req.query.date) === undefined
+        ) {
+          sendError(
+            res,
+            400,
+            "date must be a valid yyyy-mm-dd calendar date",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
         const dateStr =
           parseQueryDateString(req.query.date) ??
           civilDateString(new Date(), tz);

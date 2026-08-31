@@ -262,7 +262,7 @@ export async function getFrequentItems(
 export async function getDailyLogs(
   userId: string,
   date: Date,
-  tz: string = "UTC",
+  tz: string,
 ): Promise<DailyLog[]> {
   const { startOfDay, endOfDay } = getDayBounds(date, tz);
 
@@ -428,7 +428,7 @@ export async function getScannedItemByIdempotencyKey(
 export async function getDailySummary(
   userId: string,
   date: Date,
-  tz: string = "UTC",
+  tz: string,
 ): Promise<{
   totalCalories: number;
   totalProtein: number;

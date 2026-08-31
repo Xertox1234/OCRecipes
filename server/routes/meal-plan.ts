@@ -1,6 +1,7 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
+import { civilDateToInstant } from "../lib/civil-date";
 import { generateRecipeImage } from "../services/recipe-generation";
 import { fireAndForget } from "../lib/fire-and-forget";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
@@ -23,7 +24,7 @@ import {
   parseQueryString,
   parseTimezone,
 } from "./_helpers";
-import { civilDateToInstant } from "../storage/helpers";
+
 import { logger, toError } from "../lib/logger";
 import { isUniqueViolation } from "../lib/db-errors";
 import {
@@ -559,12 +560,20 @@ export function register(app: Express): void {
         //
         // `plannedDate` is a `yyyy-mm-dd` date column, so it must be converted
         // to an instant inside that civil day IN THE USER'S ZONE. The previous
-        // `new Date(plannedDate)` produced UTC midnight, so the duplicate check
-        // searched the UTC day — which overlaps the user's actual day only
-        // partially, and not at all at the edges. That let a genuine duplicate
-        // slip past this pre-check and fail later on the
-        // `daily_logs_unique_meal_plan_confirm` constraint instead, surfacing to
-        // the user as a meal that could be neither confirmed nor un-confirmed.
+        // `new Date(plannedDate)` produced UTC midnight, so this searched the
+        // UTC day, which overlaps the user's actual day only partially.
+        //
+        // This pre-check is an optimisation, not the guarantee: correctness
+        // comes from `daily_logs_unique_meal_plan_confirm`, and the catch below
+        // maps a unique violation to the same 409. Note that index is on
+        // `(user_id, meal_plan_item_id)` with NO date component, so a duplicate
+        // that slips past here still returns the identical response — the cost
+        // of the old behaviour was a wasted round-trip, not a wrong answer.
+        // (A pre-check that actually matched the constraint would be an
+        // existence query on those two columns; this one bounds
+        // `daily_logs.logged_at` by `plannedDate`'s day, and those two columns
+        // have no enforced relationship — confirming a Sept 2 meal on Sept 4
+        // misses in every timezone. Left as-is: out of scope here.)
         const tz = parseTimezone(req.headers["x-timezone"]);
         const confirmedIds = await storage.getConfirmedMealPlanItemIds(
           req.userId,

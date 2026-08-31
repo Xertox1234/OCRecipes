@@ -20,6 +20,7 @@ import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { z } from "zod";
 import { createHash } from "crypto";
 import { storage } from "../storage";
+import { civilDateString, civilDateToInstant } from "../lib/civil-date";
 import { lookupNutrition } from "./nutrition-lookup";
 import { searchCatalogRecipes } from "./recipe-catalog";
 import { logger } from "../lib/logger";
@@ -540,9 +541,15 @@ export async function executeToolCall(
       if (!parsed.success) {
         return invalidArgs("get_daily_log_details", parsed.error.message);
       }
-      const date = parsed.data.date
-        ? parseIsoDate(parsed.data.date)
-        : new Date();
+      // Keep the requested day as a STRING and convert once, explicitly.
+      // `parseIsoDate` anchors to UTC midnight, which is right for the pure
+      // calendar arithmetic in `addDaysIso`/`getInclusiveDayCount` but wrong as
+      // an input to a tz-bucketed read: its civil day in a negative-offset zone
+      // is the previous one. That mattered more here than elsewhere, because
+      // the echoed `date` below is handed to the model, which would then assert
+      // the previous day's logs to the user under the requested date's label.
+      const dateStr = parsed.data.date ?? civilDateString(new Date(), tz);
+      const date = civilDateToInstant(dateStr, tz);
 
       const [logs, totals] = await Promise.all([
         storage.getDailyLogs(userId, date, tz),
@@ -550,7 +557,7 @@ export async function executeToolCall(
       ]);
 
       return {
-        date: date.toISOString().split("T")[0],
+        date: dateStr,
         items: logs,
         totals,
       };

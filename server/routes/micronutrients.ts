@@ -4,12 +4,12 @@ import {
   handleRouteError,
   parsePositiveIntParam,
   parseQueryString,
+  parseQueryDateString,
   parseTimezone,
 } from "./_helpers";
 import { micronutrientRateLimit } from "./_rate-limiters";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { toDateString } from "@shared/lib/date";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import {
   lookupMicronutrientsWithCache,
@@ -18,6 +18,7 @@ import {
   getDailyValueReference,
 } from "../services/micronutrient-lookup";
 import { storage } from "../storage";
+import { civilDateString, civilDateToInstant } from "../lib/civil-date";
 
 export function register(app: Express): void {
   // GET /api/micronutrients/item/:id — Get micronutrients for a specific scanned item
@@ -73,16 +74,33 @@ export function register(app: Express): void {
         );
         if (!features) return;
 
-        const dateStr = parseQueryString(req.query.date);
-        const date = dateStr ? new Date(dateStr) : new Date();
+        const tz = parseTimezone(req.headers["x-timezone"]);
+        if (
+          req.query.date !== undefined &&
+          parseQueryDateString(req.query.date) === undefined
+        ) {
+          sendError(
+            res,
+            400,
+            "date must be a valid yyyy-mm-dd calendar date",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        // Day-bucketed in the client's timezone so micros cover the same window
+        // as the macro summary endpoints. That parity is only real if the
+        // calendar date is converted to an instant IN THAT ZONE — the previous
+        // `new Date(dateStr)` gave UTC midnight, whose civil day is the previous
+        // one at any negative offset, so this endpoint answered for the wrong
+        // day for the whole of the Americas. It also 500'd on an unparseable
+        // date, since an Invalid Date reaches Intl.format; the guard above ends
+        // that too.
+        const dateStr =
+          parseQueryDateString(req.query.date) ??
+          civilDateString(new Date(), tz);
+        const date = civilDateToInstant(dateStr, tz);
 
-        // Get daily logs for the date, day-bucketed in the client's timezone
-        // so micros cover the same day window as the macro summary endpoints.
-        const logs = await storage.getDailyLogs(
-          req.userId,
-          date,
-          parseTimezone(req.headers["x-timezone"]),
-        );
+        const logs = await storage.getDailyLogs(req.userId, date, tz);
 
         // Batch-fetch all scanned items in a single query (fixes N+1)
         const scannedItemIds = [
@@ -103,7 +121,7 @@ export function register(app: Express): void {
 
         const aggregated = aggregateMicronutrients(micronutrientArrays);
         res.json({
-          date: toDateString(date),
+          date: dateStr,
           micronutrients: aggregated,
         });
       } catch (error) {

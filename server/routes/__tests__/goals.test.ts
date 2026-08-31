@@ -326,19 +326,21 @@ describe("/api/daily-budget — the requested date is resolved in the USER's zon
     expect(civilDateIn(dateArg as Date, tz)).toBe("2026-09-02");
   });
 
-  it("ignores a date param whose format would be parsed in the process zone", async () => {
-    // `new Date("2026/09/02")` is a LOCAL-time parse, so its round-trip depends
-    // on where the server runs. Rejecting the format means falling back to
-    // today rather than silently answering for a neighbouring day.
-    await request(app)
-      .get("/api/daily-budget?date=2026/09/02")
-      .set("X-Timezone", "America/Los_Angeles")
-      .expect(200);
+  it.each(["2026/09/02", "Sep 2, 2026", "2026-09-02T00:00:00Z", "2026-02-30"])(
+    "rejects a malformed date param (%s) rather than silently using today",
+    async (bad) => {
+      // `new Date("2026/09/02")` is a LOCAL-time parse, so its round-trip
+      // depends on where the server runs. 400 rather than a silent fallback,
+      // because this response does not echo the resolved date — a client could
+      // not tell that a substitution happened.
+      await request(app)
+        .get(`/api/daily-budget?date=${encodeURIComponent(bad)}`)
+        .set("X-Timezone", "America/Los_Angeles")
+        .expect(400);
 
-    const [, dateArg] = vi.mocked(storage.getDailySummary).mock.calls[0];
-    const today = civilDateIn(new Date(), "America/Los_Angeles");
-    expect(civilDateIn(dateArg as Date, "America/Los_Angeles")).toBe(today);
-  });
+      expect(vi.mocked(storage.getDailySummary)).not.toHaveBeenCalled();
+    },
+  );
 
   it("falls back to TODAY IN THE USER'S ZONE when no date is given", async () => {
     await request(app)
