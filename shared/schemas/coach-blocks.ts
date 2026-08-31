@@ -96,7 +96,11 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   // while the screen read `plannedDate`, so a stray `date` silently opened the
   // browser in browse-only mode. Rejecting surfaces that at the boundary;
   // filterValidBlocks (client/components/coach/coach-chat-utils.ts:47-54)
-  // drops only the offending block, never the whole message.
+  // drops the containing block. For an action_card that costs exactly one
+  // card. For a suggestion_list it costs the WHOLE list: items is a
+  // z.array, and z.array fails wholesale if any one element fails, so one
+  // suggestion with a bad RecipeBrowserModal param takes every sibling
+  // suggestion in that list down with it — not just the offending item.
   // All four fields are optional, so a param-less navigate still validates.
   RecipeBrowserModal: z
     .object({
