@@ -252,14 +252,20 @@ jobs:
       # Retried once: run 33345540597 died here AFTER a successful build+
       # install when the final `xcrun simctl openurl` launch timed out
       # (NSPOSIXErrorDomain code 60) — a one-off simulator stall that cost a
-      # whole dispatch. The retry reuses warm DerivedData (~2-3 min); a
-      # genuine build failure still fails both attempts, so the raw-xcodebuild
-      # diagnostic step below keeps its trigger semantics.
+      # whole dispatch. In that failure mode the retry reuses warm
+      # DerivedData (~2-3 min; an earlier-stage failure retries whatever it
+      # actually costs — pod resolution reruns either way); a genuine build
+      # failure still fails both attempts, so the raw-xcodebuild diagnostic
+      # step below keeps its trigger semantics. The step-level bound covers
+      # BOTH attempts (cold build ~17-20m + a retry) so a wedged retry fails
+      # cleanly into the diagnostic step instead of silently consuming the
+      # job's 110m budget (which cancels the run with no Pass/Fail summary).
       - name: Build and install iOS app
         id: build-ios
+        timeout-minutes: 35
         run: |
           npx expo run:ios --no-bundler || {
-            echo "::warning::expo run:ios failed once - retrying (warm DerivedData; see run 33345540597 simctl-openurl timeout)"
+            echo "::warning::expo run:ios failed once - retrying (see run 33345540597 simctl-openurl timeout)"
             sleep 20
             npx expo run:ios --no-bundler
           }
