@@ -489,10 +489,17 @@ export default function CoachChat({
     [handleSend, navigation, canSaveCatalog],
   );
 
-  // A fresh planTarget (a new "Add to Plan" tap) always starts a clean guard —
-  // otherwise a ref that only ever flips true in handleConfirmPlanSlot could
-  // stay stuck true forever if some future caller cleared planTarget through
-  // a path other than handleConfirmPlanSlot's own success branch.
+  // Reachable today, not hypothetical: PlanSlotPickerSheet's dismissal paths
+  // (backdrop tap, Close button, onRequestClose) are all unconditional — none
+  // of them check isSubmitting — so a user can dismiss the sheet while
+  // saveCatalogRecipe (a slow server-side Spoonacular fetch) is still
+  // in-flight for a prior confirm. Without this reset, reopening the sheet
+  // and tapping Confirm again would silently no-op: isSavingPlanRef is still
+  // true from the still-running earlier call, handleConfirmPlanSlot's guard
+  // returns immediately, and the sheet has already fired its "Add to Plan"
+  // haptic — tactile feedback for a tap that did nothing. Resetting on every
+  // null->non-null planTarget transition (a fresh "Add to Plan" tap) closes
+  // that gap.
   useEffect(() => {
     if (planTarget) {
       isSavingPlanRef.current = false;

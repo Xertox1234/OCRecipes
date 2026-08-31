@@ -20,6 +20,7 @@ import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
 import type { ChatMessage } from "@/hooks/useChat";
+import * as Haptics from "expo-haptics";
 
 // ── Mutable test state, hoisted above vi.mock factories ──────────────────────
 const state = vi.hoisted(() => ({
@@ -971,13 +972,66 @@ describe("add_recipe_to_plan", () => {
     await waitFor(() => {
       expect(state.saveCatalog).toHaveBeenCalledWith(715538);
       expect(state.addItem).toHaveBeenCalledWith(
-        expect.objectContaining({ recipeId: 99, mealType: "dinner" }),
+        expect.objectContaining({
+          recipeId: 99,
+          mealType: "dinner",
+          // plan-slot-picker-utils.ts carries a load-bearing UTC comment on
+          // this shape — pin it here (not recompute the expected ISO date,
+          // which would duplicate that production logic) so an absent or
+          // malformed plannedDate reaching the mutation fails this test.
+          plannedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
       );
     });
     // save must resolve BEFORE the add — the add needs the user-owned recipe id
     expect(state.saveCatalog.mock.invocationCallOrder[0]).toBeLessThan(
       state.addItem.mock.invocationCallOrder[0],
     );
+  });
+
+  it("keeps the sheet open and lets the user retry after a rejected save", async () => {
+    // Only overrides the FIRST call — the retry below falls through to the
+    // default mockResolvedValue({ id: 99 }) set in beforeEach.
+    state.saveCatalog.mockRejectedValueOnce(new Error("network down"));
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+
+    await waitFor(() => {
+      expect(state.toastError).toHaveBeenCalledWith(
+        "Couldn't add the recipe to your plan. Please try again.",
+      );
+    });
+    expect(state.hapticsNotification).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(state.addItem).not.toHaveBeenCalled();
+    expect(state.toastSuccess).not.toHaveBeenCalled();
+
+    // The mocked Modal unmounts its children outright once `visible` goes
+    // false (test/mocks/react-native.ts), so this also proves the sheet
+    // never closed on failure: a regression that moves setPlanTarget(null)
+    // from the try into the catch removes this button from the DOM and
+    // getByRole below throws.
+    const confirmButton = screen.getByRole("button", { name: /add to plan/i });
+    fireEvent.click(confirmButton);
+
+    // Pins the finally-based release (not next-open) of isSavingPlanRef —
+    // the second confirm must reach saveCatalog rather than silently
+    // no-op against a guard still stuck true from the failed first attempt.
+    await waitFor(() => {
+      expect(state.saveCatalog).toHaveBeenCalledTimes(2);
+      expect(state.addItem).toHaveBeenCalledWith(
+        expect.objectContaining({ recipeId: 99, mealType: "dinner" }),
+      );
+    });
   });
 
   it("shows the upgrade modal and calls neither mutation for a free user", () => {
