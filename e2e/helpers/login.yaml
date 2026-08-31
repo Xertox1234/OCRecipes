@@ -13,7 +13,7 @@ appId: com.ocrecipes.app
 #   Home greeting renders "Hello <name>", never bare "Hello"). The old shape —
 #   an optional 90s wait for "Sign In" alone — burned its entire timeout
 #   staring at the Home screen in every already-authenticated flow.
-#   e2e/helpers/launch-app.yaml's 120s readiness gate now owns the cold-start
+#   e2e/helpers/launch-app.yaml's 240s readiness gate now owns the cold-start
 #   budget, so 30s here is margin, not the first line of defense.
 #
 # - Credential entry runs only `when: visible: "Sign In"`. The CI workflow's
@@ -29,7 +29,29 @@ appId: com.ocrecipes.app
 #
 # - The final wait is this helper's contract: it exits on the Home screen,
 #   whichever path ran.
+#
+# - Wizard-strand recovery (added after main-dispatch 33341123446): if a
+#   PREVIOUS flow's registration died mid-onboarding (there: an XCUITest
+#   driver transport crash right after Create Account), the app relaunches
+#   into the wizard — a state with neither "Sign In" nor "Hello". Only
+#   auth/login and complete-onboarding used to route through
+#   ensure-logged-out's escape, so the strand turned every OTHER flow in the
+#   attempt red until one of those two ran. The gated runFlow below makes
+#   every login-helper flow self-healing: it fires only when a wizard marker
+#   is on screen, escapes + logs out via ensure-logged-out, and the normal
+#   credential block then signs in as the intended user.
+#   PRECONDITION: call this helper only as the FIRST step after
+#   launch-app.yaml (every current caller does). The wizard markers are
+#   unambiguous only immediately post-launch — "Go back" is also the header
+#   back-button a11y label on several non-wizard capture/review screens
+#   (CookSessionCapture, ReceiptCapture/Review, NotebookEntry, BatchScan),
+#   so a mid-flow call from one of those would trigger a destructive
+#   escape + logout.
 ---
+- runFlow:
+    when:
+      visible: "(Get Started|Go back)"
+    file: ensure-logged-out.yaml
 - extendedWaitUntil:
     visible: "(Sign In|Hello.*)"
     timeout: 30000

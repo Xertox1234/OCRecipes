@@ -147,3 +147,27 @@ acceptance criteria met (assertions corrected against hierarchy evidence; both l
 falsified; the iOS 2s failure diagnosed as a wrong-bundle-id `launchApp` clearState error,
 eliminated with clearState itself). Remaining open item: the schedule re-enable checkbox —
 gated on a green `workflow_dispatch` on `main` after the parent branch merges.
+
+### 2026-08-30 (post-merge) — main dispatch 14 red (infra x2 + strand amplifier); amplifier fixed
+
+PR #880 merged (squash 3f8dcf27). The confirming dispatch on main (run 33341123446) went
+Android GREEN / iOS RED. Artifact diagnosis (all three causes evidence-anchored):
+
+1. Cold Metro bundle took 177.7s on a contended runner (metro.log: "iOS Bundled 177681ms")
+   — blew the 120s launch readiness gate on the attempt's first flow. Infra timing.
+2. The XCUITest driver's transport crashed 4s after the register submit ("Transport
+   unreachable" / "Device unreachable", 00:03:15; fresh xctest_runner log at 00:03:43)
+   — killed the onboarding flow mid-wait with no command-level failure. Infra crash, but it
+   left a wizard-stranded e2etest account.
+3. THE REAL DEFECT: only auth/login + complete-onboarding routed through ensure-logged-out,
+   so the strand turned attempt 2's first three login-helper flows red (hierarchy dumps show
+   them staring at the wizard Welcome screen) until Auth-Login's escape ran.
+
+Fix (branch fix/e2e-strand-recovery-and-cold-start-budget): launch gate 120s→240s (observed
+worst case + margin), and login.yaml now runs ensure-logged-out gated on wizard markers
+"(Get Started|Go back)" — every flow self-heals. Locally drill-verified on the iOS sim:
+killed onboarding mid-wizard (screen 4/8), then view-item-detail recovered end-to-end
+(escape → logout → testuser login → green); happy path shows the gate SKIPPED. Notable:
+the wizard resumed MID-FLOW after relaunch (position persists), vindicating the escape's
+interleaved-Continue traversal. Schedule re-enable stays gated on the next green main
+dispatch.
