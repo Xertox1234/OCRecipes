@@ -1,20 +1,56 @@
-import { describe, it, expect } from "vitest";
-import { formatDateISO } from "@/lib/format";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
   buildPlanSlotDays,
   toPlannedDateSet,
   PLAN_SLOT_MEAL_TYPES,
 } from "../plan-slot-picker-utils";
 
-// Local-time constructor (`new Date(y, m, d, h)`), NOT `Date.UTC` — these
-// fixtures must represent a fixed LOCAL calendar day/time regardless of the
-// host TZ the suite runs under, since that's the whole basis under test.
-describe("buildPlanSlotDays", () => {
+// `plannedDate` is on a DEVICE-LOCAL basis, so these are asserted against
+// literal date strings rather than against the helper that produced them (an
+// assertion routed back through `toLocalDateString` would pass under any basis).
+//
+// The zone loop is the regression guard, and it is NOT redundant: CI runs UTC,
+// which is the unique zone where a local basis and a UTC basis agree, so a
+// guard that only ran there would be silent. Because every fixture is built
+// with the local-time constructor `new Date(y, m, d, h)`, a true local basis
+// yields the SAME literal in every zone.
+//
+// Both signs are kept deliberately. Measured failure counts for the two ways
+// this can regress:
+//
+//   mutation                                   UTC  Berlin(+2)  Auckland(+12)  LA(-7)
+//   `iso` -> toDateString (keep local midnight)   0       4            4          0
+//   full UTC basis on the raw instant             0       1            2          1
+//
+// So the first shape is caught only by a UTC-POSITIVE zone, while the second is
+// caught at either sign. Dropping `America/Los_Angeles` would lose coverage of
+// the second shape at negative offsets; dropping Berlin/Auckland would lose the
+// first shape entirely. `UTC` is included as the control that must stay green.
+// Neither Berlin nor Los_Angeles transitions DST at 00:00 local, so
+// `setHours(0,0,0,0)` always lands on a real midnight.
+const ZONES = [
+  "UTC",
+  "Europe/Berlin", // +2 in September
+  "Pacific/Auckland", // +12
+  "America/Los_Angeles", // -7
+] as const;
+
+const originalTz = process.env.TZ;
+afterAll(() => {
+  if (originalTz === undefined) delete process.env.TZ;
+  else process.env.TZ = originalTz;
+});
+
+describe.each(ZONES)("buildPlanSlotDays (TZ=%s)", (tz) => {
+  beforeAll(() => {
+    process.env.TZ = tz;
+  });
+
   it("returns 7 consecutive days starting from the given date", () => {
     const days = buildPlanSlotDays(new Date(2026, 8, 1, 12));
     expect(days).toHaveLength(7);
-    expect(days[0].iso).toBe(formatDateISO(new Date(2026, 8, 1)));
-    expect(days[6].iso).toBe(formatDateISO(new Date(2026, 8, 7)));
+    expect(days[0].iso).toBe("2026-09-01");
+    expect(days[6].iso).toBe("2026-09-07");
   });
 
   it("carries a spoken label and a day-of-month for each day", () => {
@@ -34,37 +70,30 @@ describe("buildPlanSlotDays", () => {
 
   it("crosses a month boundary correctly", () => {
     const days = buildPlanSlotDays(new Date(2026, 8, 28, 12));
-    expect(days[6].iso).toBe(formatDateISO(new Date(2026, 9, 4)));
+    expect(days[6].iso).toBe("2026-10-04");
   });
 
-  it("derives iso, dayOfMonth, and the spoken label from the same LOCAL calendar day", () => {
-    // Anchored at 23:00 local so a UTC-based implementation (setUTCDate/
-    // getUTCDate, timeZone: "UTC") would disagree with the local dayOfMonth/
-    // a11yLabel for any TZ where 23:00 local is already past UTC midnight —
-    // this pins the local basis at the boundary hour most likely to expose a
-    // UTC leak.
-    const days = buildPlanSlotDays(new Date(2026, 8, 1, 23));
-    expect(days[0].iso).toBe(formatDateISO(new Date(2026, 8, 1)));
-    expect(days[0].dayOfMonth).toBe(1);
-    expect(days[0].a11yLabel).toContain("September 1");
-  });
-
-  // This is the discriminator for the finding: buildPlanSlotDays' `iso` must
-  // equal the value MealPlanHomeScreen computes for "today" — i.e.
-  // formatDateISO applied to a LOCAL-midnight Date — not `formatDateISO(from)`
-  // applied to the raw, unnormalised instant. Mutating this back to
-  // `formatDateISO(from)` (dropping the local-midnight normalisation) must
-  // fail this test under any UTC-positive TZ (e.g. TZ=Europe/Berlin) at an
-  // instant where local time has already crossed into the next UTC day —
-  // covered by the 23:00 fixture above; both fixtures pass under
-  // TZ=Europe/Berlin, TZ=Pacific/Auckland, and TZ=America/Los_Angeles alike.
-  it("[0].iso matches the planner's own 'today' key for the same instant", () => {
-    const now = new Date(2026, 8, 1, 23);
-    const plannerToday = new Date(now);
-    plannerToday.setHours(0, 0, 0, 0);
-    const days = buildPlanSlotDays(now);
-    expect(days[0].iso).toBe(formatDateISO(plannerToday));
-  });
+  // The core discriminator. Anchored at 23:00 and 00:30 local — the two hours
+  // where a UTC conversion of the local calendar day is most likely to land on
+  // a different date (past UTC midnight in a negative-offset zone, still on the
+  // previous UTC day in a positive-offset one).
+  //
+  // The hour is passed as a NUMBER and the Date built inside the test body:
+  // `it.each` tables are evaluated at collection time, before `beforeAll` runs,
+  // so a Date in the table would be constructed in the host zone and then read
+  // back in the pinned one — silently testing neither.
+  it.each([
+    ["23:00 local", 23, 0],
+    ["00:30 local", 0, 30],
+  ])(
+    "keys iso to the local calendar day, and agrees with dayOfMonth and the spoken label (%s)",
+    (_label, hour, minute) => {
+      const days = buildPlanSlotDays(new Date(2026, 8, 1, hour, minute));
+      expect(days[0].iso).toBe("2026-09-01");
+      expect(days[0].dayOfMonth).toBe(1);
+      expect(days[0].a11yLabel).toContain("September 1");
+    },
+  );
 });
 
 describe("toPlannedDateSet", () => {

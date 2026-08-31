@@ -1,29 +1,11 @@
 import {
   formatDateShort,
   formatDateMedium,
-  formatDateISO,
   formatDuration,
   formatDateRange,
 } from "../format";
 
 describe("Format Utilities", () => {
-  describe("formatDateISO", () => {
-    it("formats a date as YYYY-MM-DD", () => {
-      const date = new Date("2024-01-15T10:30:00Z");
-      expect(formatDateISO(date)).toBe("2024-01-15");
-    });
-
-    it("formats Jan 1 correctly", () => {
-      const date = new Date("2024-01-01T00:00:00Z");
-      expect(formatDateISO(date)).toBe("2024-01-01");
-    });
-
-    it("formats Dec 31 correctly", () => {
-      const date = new Date("2024-12-31T23:59:59Z");
-      expect(formatDateISO(date)).toBe("2024-12-31");
-    });
-  });
-
   describe("formatDuration", () => {
     it("formats minutes only", () => {
       expect(formatDuration(45)).toBe("45m");

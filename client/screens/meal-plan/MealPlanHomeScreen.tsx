@@ -97,7 +97,11 @@ import type { MealPlanHomeScreenNavigationProp } from "@/types/navigation";
 import type { DailySummaryResponse } from "@/types/api";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 import type { MealSuggestion } from "@shared/types/meal-suggestions";
-import { formatDateISO as formatDate } from "@/lib/format";
+// Device-LOCAL basis: `planned_date` must be the day the user tapped on the
+// date strip, which is derived from local component getters below
+// (`setHours(0,0,0,0)`, `getDate()`). `toDateString` (UTC) would key a
+// UTC-positive device one calendar day earlier than its own chip label.
+import { toLocalDateString } from "@shared/lib/date";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
 type MealType = (typeof MEAL_TYPES)[number];
@@ -569,7 +573,7 @@ export default function MealPlanHomeScreen() {
   const [importRecipeMealType, setImportRecipeMealType] =
     useState<MealType | null>(null);
 
-  const selectedDateStr = formatDate(selectedDate);
+  const selectedDateStr = toLocalDateString(selectedDate);
 
   const createRecipeMutation = useCreateMealPlanRecipe();
   const addItemMutation = useAddMealPlanItem();
@@ -610,8 +614,8 @@ export default function MealPlanHomeScreen() {
     return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   }, [selectedDate]);
 
-  const startDate = formatDate(weekDates[0]);
-  const endDate = formatDate(weekDates[6]);
+  const startDate = toLocalDateString(weekDates[0]);
+  const endDate = toLocalDateString(weekDates[6]);
 
   const {
     data: mealPlanItems,
@@ -1357,7 +1361,7 @@ export default function MealPlanHomeScreen() {
         <GestureDetector gesture={dateStripPanGesture}>
           <Animated.View style={[styles.dateStrip, dateStripAnimatedStyle]}>
             {weekDates.map((date) => {
-              const dateStr = formatDate(date);
+              const dateStr = toLocalDateString(date);
               return (
                 <DateStripItem
                   key={dateStr}

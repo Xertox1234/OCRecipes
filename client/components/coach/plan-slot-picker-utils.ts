@@ -1,6 +1,6 @@
 // Pure date/slot helpers for PlanSlotPickerSheet. Extracted so the date math is
 // testable without rendering (the client/components/*-utils.ts convention).
-import { formatDateISO } from "@/lib/format";
+import { toLocalDateString } from "@shared/lib/date";
 import type { MealType } from "@/screens/meal-plan/meal-plan-utils";
 
 export const PLAN_SLOT_DAY_COUNT = 7;
@@ -14,15 +14,14 @@ export const PLAN_SLOT_MEAL_TYPES: readonly MealType[] = [
 
 export interface PlanSlotDay {
   /**
-   * ISO `yyyy-mm-dd` — the value sent as `plannedDate`. Because this is
-   * `formatDateISO` (UTC-string conversion) applied to a local-midnight
-   * instant, it is NOT safe to re-parse back into a weekday for display —
-   * for a UTC-positive offset that reparse lands on the wrong day (one
-   * earlier than `weekday`/`a11yLabel` below, which come from local
-   * component getters on the same instant). Callers that need the chosen
-   * day's name for display (e.g. a confirmation toast) must carry `weekday`
-   * forward from the chip the user actually picked, not recompute it from
-   * `iso`.
+   * ISO `yyyy-mm-dd` — the value sent as `plannedDate`, in the device's LOCAL
+   * calendar (see `buildPlanSlotDays`).
+   *
+   * Still NOT safe to re-parse back into a weekday for display: `new Date(iso)`
+   * parses a bare date as UTC midnight, which renders as the *previous* day in
+   * any UTC-negative zone. Callers that need the chosen day's name (e.g. a
+   * confirmation toast) must carry `weekday` forward from the chip the user
+   * actually picked, not recompute it from `iso`.
    */
   iso: string;
   /** Single-letter weekday initial for the compact chip, e.g. "M". */
@@ -36,24 +35,18 @@ export interface PlanSlotDay {
 }
 
 /**
- * `count` consecutive days starting at `from`. Every field is derived from
- * the same **local-midnight** calendar day (`setHours(0,0,0,0)`, then
- * `setDate`/`getDate`, `toLocaleDateString` with no `timeZone` override) so
- * `iso` — which still comes from `formatDateISO`, i.e.
- * `toISOString().split("T")[0]` — is computed from that same local-midnight
- * instant. This matches `MealPlanHomeScreen`, the other reader/writer of the
- * `planned_date` column: its `today`/`selectedDate` are normalised to local
- * midnight first (`MealPlanHomeScreen.tsx:538-542`) and only then passed
- * through `formatDateISO` (`:572`, `:613-614`). Using a raw `new Date()` or a
- * UTC basis here instead would make this picker key `planned_date` on a
- * different calendar day than the planner's own "today" for the same
- * instant — for any UTC-positive offset (Berlin, Auckland) that mis-files
- * every add under the *next* planner day, 100% of the time; do not swap this
- * back to UTC accessors. (A separate, pre-existing skew between the
- * planner's displayed local day and its UTC-derived `planned_date` key is
- * tracked in `todos/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md`
- * — not this file's concern; this file only has to agree with the planner's
- * existing basis, not correct it.)
+ * `count` consecutive days starting at `from`. Every field — the chip label,
+ * the spoken a11y label, AND the `plannedDate` key — is derived from local
+ * component getters on the same local-midnight calendar day, so the key a chip
+ * writes is always the day that chip is labelled with.
+ *
+ * `iso` comes from `toLocalDateString`, NOT `toDateString`: a UTC conversion of
+ * a local-midnight instant lands one calendar day early for every UTC-positive
+ * offset (Berlin, Auckland, Tokyo), which would file every add under a day the
+ * user never picked. `MealPlanHomeScreen` — the other reader/writer of the
+ * `planned_date` column — uses the same helper on the same basis
+ * (`MealPlanHomeScreen.tsx:576`, `:617-618`); the two must move together or the
+ * picker silently drifts out of agreement with the planner it feeds.
  */
 export function buildPlanSlotDays(
   from: Date,
@@ -66,7 +59,7 @@ export function buildPlanSlotDays(
     d.setDate(d.getDate() + i);
     const weekday = d.toLocaleDateString("en-US", { weekday: "long" });
     days.push({
-      iso: formatDateISO(d),
+      iso: toLocalDateString(d),
       initial: weekday.charAt(0),
       weekday,
       dayOfMonth: d.getDate(),
