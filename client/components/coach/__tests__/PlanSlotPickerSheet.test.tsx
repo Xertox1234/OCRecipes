@@ -4,9 +4,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, fireEvent, cleanup } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { PlanSlotPickerSheet } from "../PlanSlotPickerSheet";
+import { buildPlanSlotDays } from "../plan-slot-picker-utils";
 
 const onConfirm = vi.fn();
 const onDismiss = vi.fn();
+
+// vi.hoisted so the same fn instance backs both the mock factory (which
+// vi.mock hoists above these imports) and the assertions below — mirrors
+// client/components/recipe-chat/__tests__/RecipeCard.test.tsx.
+const { mockImpact } = vi.hoisted(() => ({
+  mockImpact: vi.fn(),
+}));
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: mockImpact,
+    notification: vi.fn(),
+    selection: vi.fn(),
+  }),
+}));
 
 const baseProps = {
   visible: true,
@@ -81,5 +97,80 @@ describe("PlanSlotPickerSheet", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it("hides the has-items dot on the selected day but shows it on an unselected day with items — regression for the accentSolid/link color collision", () => {
+    // Review finding: theme.link and theme.accentSolid are the identical hex
+    // in light mode, so a dot rendered unconditionally on `hasItems` (with no
+    // `!selected` guard) visually vanishes into the selected chip's own fill
+    // — exactly on today (days[0], the default selection), the day most
+    // likely to already have plan items.
+    const days = buildPlanSlotDays(new Date());
+    const datesWithItems = new Set([days[0].iso, days[2].iso]);
+    renderComponent(
+      <PlanSlotPickerSheet {...baseProps} datesWithItems={datesWithItems} />,
+    );
+
+    // days[0] is selected by default AND has items — dot must be hidden.
+    expect(screen.queryByTestId(`plan-slot-dot-${days[0].iso}`)).toBeNull();
+    // days[2] is unselected and has items — dot must be visible.
+    expect(screen.queryByTestId(`plan-slot-dot-${days[2].iso}`)).not.toBeNull();
+
+    // Selecting days[2] flips which of the two dots is suppressed.
+    fireEvent.click(screen.getAllByRole("button", { name: /day-slot/i })[2]);
+    expect(screen.queryByTestId(`plan-slot-dot-${days[2].iso}`)).toBeNull();
+    expect(screen.queryByTestId(`plan-slot-dot-${days[0].iso}`)).not.toBeNull();
+  });
+
+  it("fires haptic feedback via useHaptics on day-chip select, meal-chip select, and confirm", () => {
+    renderComponent(<PlanSlotPickerSheet {...baseProps} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /day-slot/i })[2]);
+    expect(mockImpact).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText("Dinner"));
+    expect(mockImpact).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+    expect(mockImpact).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not fire confirm's haptic when the button is disabled (no meal chosen)", () => {
+    renderComponent(<PlanSlotPickerSheet {...baseProps} />);
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+    expect(mockImpact).not.toHaveBeenCalled();
+  });
+
+  it("gives the disabled confirm button an accessibilityHint naming the missing meal type", () => {
+    renderComponent(<PlanSlotPickerSheet {...baseProps} />);
+    const confirmButton = screen.getByRole("button", {
+      name: /add to plan/i,
+    });
+    expect(confirmButton.getAttribute("aria-hint")).toMatch(/meal type/i);
+  });
+
+  it("does not claim a meal type is missing once one is chosen, even while submitting", () => {
+    const { rerender } = renderComponent(
+      <PlanSlotPickerSheet {...baseProps} />,
+    );
+    fireEvent.click(screen.getByText("Dinner"));
+    const confirmButton = screen.getByRole("button", {
+      name: /add to plan/i,
+    });
+    // Enabled and idle — no hint needed, and definitely not "missing" language.
+    expect(confirmButton.getAttribute("aria-hint") ?? "").not.toMatch(
+      /meal type/i,
+    );
+
+    // `selectedMeal` is component-internal state and survives this rerender
+    // (visible stays true throughout — no false->true reset edge fires), so
+    // Dinner is still selected here without re-clicking it.
+    rerender(<PlanSlotPickerSheet {...baseProps} isSubmitting={true} />);
+    const confirmButtonSubmitting = screen.getByRole("button", {
+      name: /add to plan/i,
+    });
+    expect(confirmButtonSubmitting.getAttribute("aria-hint") ?? "").not.toMatch(
+      /meal type/i,
+    );
   });
 });
