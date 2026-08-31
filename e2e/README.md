@@ -45,8 +45,11 @@ without blocking anyone. PR-gating is a deliberate later step, to be revisited
 once the nightly flake rate is proven low — and if adopted it must stay a
 separate check, never folded into the fast lint/type/test preflight path. This
 workflow is intentionally **not** in the branch-protection required-check list;
-a red run never blocks a merge. Flake tolerance: the Maestro step retries once
-before failing the job.
+a red run never blocks a merge. Flake tolerance: the suite runs once, then
+`scripts/ci/e2e-with-flow-retry.sh` re-runs only the flows that failed,
+individually — a flow must fail twice in a row to fail the job (the earlier
+whole-suite retry needed one attempt to be 8/8, which one flake per attempt
+defeats).
 
 **Failure notification (2026-08).** The workflow does not rely on the Actions
 tab or GitHub's scheduled-workflow email — a failed run files or updates a

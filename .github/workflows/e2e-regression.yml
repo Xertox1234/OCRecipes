@@ -348,14 +348,13 @@ jobs:
             || echo "::warning::Metro pre-warm did not complete within 600s — continuing (launch gate still owns cold start)"
 
       # Runs `maestro test --include-tags regression e2e/` (see e2e/README.md for
-      # the tagged flow inventory). One retry absorbs a transient flake; two
-      # consecutive failures fail the job.
+      # the tagged flow inventory) via the per-flow retry wrapper: failed
+      # flows are re-run INDIVIDUALLY; only a flow failing twice fails the
+      # job. The previous whole-suite retry needed one attempt to be 8/8 —
+      # run 33397038006 went 7/8 on both attempts with a different single
+      # flow each time, which that scheme can never absorb.
       - name: Run Maestro regression flows
-        run: |
-          npm run e2e:regression || {
-            echo "::warning::Maestro regression flows failed once — retrying"
-            npm run e2e:regression
-          }
+        run: bash scripts/ci/e2e-with-flow-retry.sh
 
       - name: Upload logs on failure
         if: failure()
@@ -528,7 +527,7 @@ jobs:
             adb reverse tcp:3000 tcp:3000
             adb reverse tcp:8081 tcp:8081
             npx expo run:android --no-bundler
-            npm run e2e:regression || { echo "::warning::Maestro regression flows failed once — retrying"; npm run e2e:regression; }
+            bash scripts/ci/e2e-with-flow-retry.sh
 
       - name: Upload logs on failure
         if: failure()
