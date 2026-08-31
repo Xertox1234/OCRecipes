@@ -310,6 +310,35 @@ describe("Coach Tools Service", () => {
     });
   });
 
+  // The narrowing to `isoDateSchema` + a mealType enum ships a behaviour change:
+  // values that used to reach the client and fail at the route now fail here.
+  // That matters because a route-level 400 surfaces through
+  // `describePlanSaveFailure` as the generic "Please try again" copy — a
+  // permanent failure worded as transient — whereas rejecting here returns
+  // INVALID_ARGS to the MODEL, which can correct itself and retry.
+  describe("add_to_meal_plan rejects values the model cannot have derived", () => {
+    it.each([
+      ["a relative phrase", { plannedDate: "next Friday" }],
+      ["a non-ISO format", { plannedDate: "07/10/2026" }],
+      ["a well-formed but unreal day", { plannedDate: "2026-02-30" }],
+      ["an empty string", { plannedDate: "" }],
+      ["a mealType outside the enum", { mealType: "brunch" }],
+      ["a mealType differing only in case", { mealType: "Dinner" }],
+    ])("rejects %s", async (_label, args) => {
+      const result = await executeToolCall("add_to_meal_plan", args, "user-1");
+      expect(result).toMatchObject({ error: true, code: "INVALID_ARGS" });
+    });
+
+    it("still accepts a well-formed date and an in-enum mealType", async () => {
+      const result = await executeToolCall(
+        "add_to_meal_plan",
+        { plannedDate: "2026-12-25", mealType: "dinner" },
+        "user-1",
+      );
+      expect(result).not.toMatchObject({ error: true });
+    });
+  });
+
   it("returns schema-aligned navigation proposal actions", async () => {
     const mealPlanResult = await executeToolCall(
       "add_to_meal_plan",

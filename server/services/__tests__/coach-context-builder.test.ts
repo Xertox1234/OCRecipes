@@ -15,22 +15,31 @@ vi.mock("../../storage", () => ({
 
 const mockStorage = vi.mocked(storage);
 
-// The HOST timezone is an uncontrolled input for this whole file, not just the
-// time-of-day block: fixtures built with the local-time `Date` constructor mean
-// "8am wherever this runs". Pinned at FILE scope so every test — including the
-// ones that predate the tz-aware hour — is deterministic on any machine, and so
-// mutation counts are one number rather than one per developer.
+// The HOST timezone is an uncontrolled input for this whole file: under a
+// mutation that restores `new Date().getHours()`, the host zone becomes an
+// input again, and the kill count would differ per developer. Pinned so that
+// count is one number.
+//
+// The zone is `Europe/Berlin`, NOT "UTC", and that is the whole point of the
+// guard below. A guard asserting an offset of 0 cannot fail on a UTC host —
+// which is what CI runs — so it passes identically whether the pin worked, was
+// a typo, or never ran (measured: `TZ="Amerca/Denver"` and `TZ=""` both yield
+// offset 0). Asserting a NONZERO offset makes the mechanism check able to fail
+// everywhere. Berlin also does not transition DST at 00:00, so a local-midnight
+// fixture stays on a real midnight.
 const ORIGINAL_TZ = process.env.TZ;
 beforeAll(() => {
-  process.env.TZ = "UTC";
+  process.env.TZ = "Europe/Berlin";
 });
 afterAll(() => {
+  // `delete`, never `= undefined` — the latter stringifies to "undefined",
+  // which resolves to offset 0, i.e. silently back to the hiding zone.
   if (ORIGINAL_TZ === undefined) delete process.env.TZ;
   else process.env.TZ = ORIGINAL_TZ;
 });
 
 it("pins the process timezone this file claims (guards the mechanism)", () => {
-  expect(new Date(2026, 6, 10).getTimezoneOffset()).toBe(0);
+  expect(-new Date(2026, 6, 10).getTimezoneOffset()).toBe(120);
 });
 
 function makeDailySummary(
@@ -140,7 +149,9 @@ describe("buildCoachContext", () => {
     // in the evening branch on a UTC-negative host and would have made the next
     // exact-suggestions assertion added here pass in CI and fail elsewhere.
     vi.useFakeTimers();
-    // 13:00 UTC — afternoon (neither breakfast < 11 nor evening >= 17).
+    // 13:00 UTC. Every test here passes `tz` explicitly, so the file-scope
+    // Berlin pin does not reach this value — it only constrains the buggy
+    // host-zone read that a mutation would restore.
     vi.setSystemTime(new Date(Date.UTC(2026, 4, 15, 13, 0, 0)));
   });
 
@@ -502,8 +513,13 @@ describe("buildCoachContext — time-of-day chips use the USER's hour", () => {
       TIER_FEATURES.free,
       "America/Los_Angeles",
     );
-    // 0 < 11, so the morning chip applies; an `hour12:false` formatter that
-    // renders midnight as "24" would silently fall through to neither branch.
+    // 0 < 11, so the morning chip applies. The formatter that would break this
+    // is `hourCycle: "h24"`, which renders midnight as "24" — and 24 >= 17, so
+    // the EVENING chip would be served, not none. This assertion is what
+    // catches that, so do not "repair" a future failure here by asserting that
+    // neither chip appears: that passes under h24 and deletes the guard.
+    // (Measured on Node 24.9.0 / ICU 77.1: `hour12: false` and `h23` both give
+    // "00"; only `h24` gives "24".)
     expect(ctx.suggestions).toContain("Quick breakfast ideas");
   });
 });

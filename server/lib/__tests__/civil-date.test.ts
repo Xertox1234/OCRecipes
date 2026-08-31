@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { civilDateString, civilDateToInstant } from "../civil-date";
+import {
+  civilDateString,
+  civilDateToInstant,
+  civilHourInTz,
+} from "../civil-date";
 import { getDayBounds } from "../../storage/helpers";
 
 // `getDayBounds` answers "which civil day is this INSTANT in tz". A calendar
@@ -134,5 +138,48 @@ describe("civilDateToInstant", () => {
         26 * 60 * 60 * 1000 - 1,
       );
     }
+  });
+});
+
+describe("civilHourInTz", () => {
+  it("reports the hour in the target zone, not the host's", () => {
+    const at = new Date("2026-07-10T15:00:00Z");
+    expect(civilHourInTz(at, "UTC")).toBe(15);
+    expect(civilHourInTz(at, "America/Los_Angeles")).toBe(8);
+    expect(civilHourInTz(at, "Europe/Berlin")).toBe(17);
+  });
+
+  it("returns 0 at local midnight, never 24", () => {
+    // `hourCycle: "h24"` would render "24" here; 24 >= 17 would then be true,
+    // which is how a midnight hour silently becomes an evening one.
+    expect(
+      civilHourInTz(new Date("2026-07-10T07:00:00Z"), "America/Los_Angeles"),
+    ).toBe(0);
+    expect(civilHourInTz(new Date("2026-07-10T00:00:00Z"), "UTC")).toBe(0);
+  });
+
+  it("parses cleanly in zones with a fractional offset", () => {
+    const at = new Date("2026-07-10T00:00:00Z");
+    for (const tz of [
+      "Asia/Kolkata",
+      "Pacific/Chatham",
+      "Australia/Eucla",
+      "America/St_Johns",
+    ]) {
+      const h = civilHourInTz(at, tz);
+      expect(Number.isInteger(h)).toBe(true);
+      expect(h).toBeGreaterThanOrEqual(0);
+      expect(h).toBeLessThanOrEqual(23);
+    }
+  });
+
+  it("defaults to UTC", () => {
+    expect(civilHourInTz(new Date("2026-07-10T15:00:00Z"))).toBe(15);
+  });
+
+  it("throws RangeError on an invalid timezone rather than returning NaN", () => {
+    // Documented in the JSDoc; callers taking a tz from a request must route it
+    // through `parseTimezone` first.
+    expect(() => civilHourInTz(new Date(), "Not/AZone")).toThrow(RangeError);
   });
 });

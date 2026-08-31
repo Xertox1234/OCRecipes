@@ -1,5 +1,5 @@
 ---
-title: "The notebook extractor is required to emit followUpDate but its prompt contains no date at all, and the guessed value is anchored at UTC midnight"
+title: "The notebook extractor has no date anchor, so a user-stated check-in day is guessed — and the guess is written at UTC midnight"
 status: backlog
 priority: medium
 created: 2026-08-31
@@ -9,18 +9,19 @@ labels: [deferred, ai-prompting, coach, timezone, notifications]
 github_issue:
 ---
 
-# The same defect the coach prompt just had, one layer down and out of sight
+# A relative check-in day with nothing to resolve it against
 
 ## Summary
 
-`EXTRACTION_PROMPT` (`server/services/notebook-extraction.ts`) asks the model for
-`followUpDate: ISO date string`, and `shared/schemas/coach-notebook.ts:31-33` enforces
-`^\d{4}-\d{2}-\d{2}$`. **That prompt contains no calendar date and no time** — so the model must
-invent an absolute date, exactly as `add_to_meal_plan` had to before PR #892.
+`EXTRACTION_PROMPT` (`server/services/notebook-extraction.ts:26`) asks for
+`followUpDate: ISO date string if this is a commitment with a check-in date, otherwise null`, and
+`shared/schemas/coach-notebook.ts:31-35` accepts `^\d{4}-\d{2}-\d{2}$` **or null**. That prompt
+contains no calendar date and no time.
 
-Two defects then stack: the guessed day, and the fact that the guess is written as UTC midnight
-and later compared with `lte(followUpDate, new Date())`, which fires the evening _before_ the
-user's local date for every UTC-negative user.
+So the model is not _forced_ to invent a date — it can, and does, return null. The defect is
+narrower: when the user actually says "check in with me next week", the model has **nothing to
+resolve that against**, and whatever it produces is written as UTC midnight and later compared
+with `lte(followUpDate, new Date())`.
 
 ## Background
 
@@ -28,30 +29,37 @@ Found 2026-08-31 by the AI review of PR #892, which fixed the visible half of th
 coach's own prompt now states the user's civil date). This is the sibling it does not reach —
 and unlike the meal-plan case, the user never sees the value before it acts.
 
-Verified against `383375ac`:
+Verified against `133e29ad` — **re-verified after review found three of the original five rows
+wrong**; see the 2026-08-31 correction note at the end:
 
-| Where                                          | What                                                                                                          |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `server/services/notebook-extraction.ts`       | `EXTRACTION_PROMPT` names `followUpDate` but contains no current date or time — grepped the whole prompt body |
-| `shared/schemas/coach-notebook.ts:31-33`       | `.regex(/^\d{4}-\d{2}-\d{2}$/)` — an absolute date is mandatory                                               |
-| `server/services/coach-pro-chat.ts:897`        | `followUpDate: e.followUpDate ? new Date(e.followUpDate) : null` — bare parse, i.e. **UTC midnight**          |
-| `server/storage/coach-notebook.ts:125`, `:149` | `lte(coachNotebook.followUpDate, new Date())` — the due check                                                 |
+| Where                                       | What                                                                                                                                                                    |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/services/notebook-extraction.ts:26` | `followUpDate: ISO date string … otherwise null` — the field is genuinely optional, and the prompt states no current date or time anywhere                              |
+| `shared/schemas/coach-notebook.ts:31-35`    | `.regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()`                                                                                                                   |
+| `server/services/coach-pro-chat.ts:897`     | `followUpDate: e.followUpDate ? new Date(e.followUpDate) : null` — bare parse, i.e. **UTC midnight**                                                                    |
+| `server/storage/coach-notebook.ts:252`      | `lte(followUpDate, new Date())` inside **`getDueCommitmentsAllUsers`** — this is the one the push notification runs on (`server/services/notification-scheduler.ts:64`) |
+| `server/storage/coach-notebook.ts:125`      | `lte(...)` inside `getCommitmentsWithDueFollowUp` — the _coach-context_ path (`coach-context-builder.ts:58`, `coach-pro-chat.ts:559`), NOT the notification path        |
+| `server/storage/coach-notebook.ts:149`      | `lte(...)` inside `archiveOldEntries` — a different correctness bar; listed so a sweep does not miss or over-fix it                                                     |
 
-The reviewer also notes that system messages are filtered out of the transcript before this
-extraction runs, so the model cannot recover the date from surrounding context either.
+System messages are filtered out of the transcript before this extraction runs, so the model
+cannot recover the date from surrounding context either.
 
-**Why this one is worse than the meal-plan case it mirrors.** A wrong `plannedDate` shows up on
-the Plan tab, where a user can see and fix it. A wrong `followUpDate` drives
-`getCommitmentsWithDueFollowUp`, which is re-injected into the coach's context as "the follow-up
-date has arrived" and feeds `server/services/notification-scheduler.ts` — a **push notification**.
-The user's only signal is being asked about a commitment on the wrong day.
+**Why it still matters even though the field is optional.** A wrong `plannedDate` shows up on the
+Plan tab, where the user can see and fix it. A wrong `followUpDate` is invisible until it fires:
+`getDueCommitmentsAllUsers` (`coach-notebook.ts:252`) drives a **push notification**
+(`notification-scheduler.ts:64`), and `getCommitmentsWithDueFollowUp` (`:125`) re-injects "the
+follow-up date has arrived" into the coach's context. The user's only signal is being asked about
+a commitment on the wrong day.
 
 ## Acceptance Criteria
 
 - [ ] `EXTRACTION_PROMPT` states the user's civil date (and the model is told to resolve relative
       phrases like "next week" against it), so `followUpDate` is derived rather than guessed.
 - [ ] `followUpDate` is anchored with `civilDateToInstant(dateStr, tz)` rather than
-      `new Date(dateStr)`, so the due comparison lands on the user's day.
+      `new Date(dateStr)`, so the due comparison lands on the user's day — **and the fix covers
+      `coach-notebook.ts:252` (`getDueCommitmentsAllUsers`, the notification path), not only
+      `:125`.** Fixing `:125` alone satisfies the letter of this criterion and leaves the push
+      firing early, which is the consequence that motivates the todo.
 - [ ] A test pins a **UTC-negative** timezone and an instant where the UTC day and the user's day
       differ, asserting a commitment does not come due early. CI runs UTC, where it cannot fail.
 - [ ] The prompt-hash cache implications are checked — `coach-pro-chat.ts` derives a template
@@ -94,5 +102,14 @@ possible in the first place. That is a migration, so weigh it separately.
 
 ### 2026-08-31
 
-- Filed from the AI review of PR #892. Every table row above was verified against the source
-  before filing rather than carried over from the review.
+- Filed from the AI review of PR #892.
+- **Corrected the same day, before merge.** The first draft claimed the extractor was "required to
+  emit `followUpDate`" (it is `.nullable().optional()`, and the prompt says "otherwise null", so
+  the stated parallel to `add_to_meal_plan`'s genuine `required: [...]` does not hold); named
+  `getCommitmentsWithDueFollowUp` as the notification path (it is not — the scheduler calls
+  `getDueCommitmentsAllUsers`); omitted the `lte` at `:252` that actually drives the push; and
+  mislabelled `:149` as a due check when it is `archiveOldEntries`. It also asserted "every table
+  row above was verified against the source", which was not true of three of the five. The rows
+  above have now each been checked individually. Recording this because a wrong premise in a
+  dispatchable todo becomes a decision record: `scripts/todo-gate-check.sh` returns CLEAR, so an
+  unattended `/todo` run can pick this up and would have written the false framing forward.

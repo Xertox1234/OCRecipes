@@ -123,6 +123,13 @@ const getMealPlanSchema = z.object({
 // at the call site could never run: they looked like the default and were dead,
 // so fixing only those changes nothing. The default now lives at the call site,
 // where `tz` is in scope.
+// One source for the meal types. The NOTE above asserts the Zod schema and the
+// JSON tool definition stay aligned; stating the list once is what enforces it,
+// rather than two literals ~270 lines apart. (Further copies live in
+// server/routes/meal-plan.ts and client/screens/meal-plan/meal-plan-utils.ts —
+// out of scope here, and the reason a shared const beats a drift test.)
+const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
+
 const addToMealPlanSchema = z.object({
   // `isoDateSchema`, not a bare string: this is the one date the model is
   // forced to produce, and it is the one that WRITES. A bare `z.string()` let
@@ -132,7 +139,7 @@ const addToMealPlanSchema = z.object({
   // again.", a permanent failure worded as a transient one. Rejecting here
   // routes it back to the model through `invalidArgs`, which can correct it.
   plannedDate: isoDateSchema.optional(),
-  mealType: z.enum(["breakfast", "lunch", "dinner", "snack"]).default("lunch"),
+  mealType: z.enum(MEAL_TYPES).default("lunch"),
   notes: z.string().optional(),
 });
 
@@ -399,7 +406,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
             },
             mealType: {
               type: "string",
-              enum: ["breakfast", "lunch", "dinner", "snack"],
+              enum: [...MEAL_TYPES],
               description: "Which meal of the day.",
             },
             notes: {

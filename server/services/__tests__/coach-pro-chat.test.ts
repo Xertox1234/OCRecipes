@@ -1138,7 +1138,7 @@ describe("hashCoachCacheKey", () => {
     expect(pro).not.toBe(free);
   });
 
-  it("buckets by UTC day so next-day intake/goals don't hit stale cache (H5 — 2026-04-18)", () => {
+  it("buckets by the caller-supplied civil day so next-day intake/goals don't hit stale cache (H5 — 2026-04-18)", () => {
     const today = hashCoachCacheKey("user-1", "hello", false, "2026-04-18");
     const tomorrow = hashCoachCacheKey("user-1", "hello", false, "2026-04-19");
     expect(today).not.toBe(tomorrow);

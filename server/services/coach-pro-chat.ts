@@ -219,10 +219,14 @@ export interface CoachChatParams {
 /**
  * Day bucket string — e.g. `"2026-04-18"` — in the given IANA timezone.
  * Used to expire cached coach answers whose prompt includes today's numeric
- * context (goals, intake). Defaults to UTC so callers that don't
- * have a user timezone remain backward-compatible.
+ * context (goals, intake).
+ *
+ * Both parameters are required. The previous UTC/now defaults had no remaining
+ * callers, and a plausible UTC default on a timezone-dependent value is the
+ * trap `hashCoachCacheKey` documents below — this bucket must agree with the
+ * user's civil date, which is also what the system prompt now states.
  */
-function getDayBucketInTz(d: Date = new Date(), tz: string = "UTC"): string {
+function getDayBucketInTz(d: Date, tz: string): string {
   // Delegates rather than re-implementing: this was a verbatim third copy of
   // the same `en-CA` formatter, and civil-date logic living in several places
   // is how the bases drift apart in the first place.
@@ -237,7 +241,8 @@ function getDayBucketInTz(d: Date = new Date(), tz: string = "UTC"): string {
  *  - userId  — different users must not share answers
  *  - isCoachPro — Pro and non-Pro prompts diverge (tools, notebook); a cached
  *    non-Pro answer must never be replayed to a Pro user (H4 — 2026-04-18)
- *  - dayBucket — keeps universal first-turn answers from crossing UTC days
+ *  - dayBucket — keeps universal first-turn answers from crossing the USER's
+ *    civil day (not the server's — see getDayBucketInTz)
  *  - contextHash — captures goals, intake, dietary profile, and
  *    hour bucket so same-day context changes invalidate cached answers
  *  - intent — the deterministic intent classification; different intents pick
