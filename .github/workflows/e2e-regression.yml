@@ -75,9 +75,12 @@ jobs:
     # the retry pass. Re-bumped 90 -> 110 when the launch readiness gate grew
     # 120s -> 240s (run 33341123446's 177.7s cold bundle): degenerate worst
     # case is 16 flow-invocations x ~240s gate = ~64m + ~25m build/setup,
-    # which 90 no longer covers with margin. The point of the headroom is a
-    # real Pass/Fail summary instead of an ambiguous timeout.
-    timeout-minutes: 110
+    # which 90 no longer covers with margin. Re-bumped 110 -> 120 with the
+    # Metro pre-warm step (best-effort, capped at 10m) and the driver
+    # readiness budget 120s -> 300s (x2 attempts = up to +6m): ~16m of new
+    # worst-case consumers against what had been a ~21m margin. The point of
+    # the headroom is a real Pass/Fail summary instead of an ambiguous timeout.
+    timeout-minutes: 120
 
     env:
       # Backend env — mirrors .github/workflows/ci.yml so the server behaves the
@@ -95,6 +98,12 @@ jobs:
       # (login/subscription at 10/15min). Relaxes factory-created limiters
       # ×1000 (still bounded); the knob is refused when NODE_ENV=production.
       E2E_RELAXED_RATE_LIMITS: "true"
+      # Maestro's XCUITest driver readiness budget (default 120000 = 120s,
+      # polling the runner's /status every 500ms). Run 33348888795 blew the
+      # default — "IOSDriverTimeoutException: iOS driver not ready in time" —
+      # on a contended runner where driver bring-up also competed with the
+      # cold Metro bundle; the exception text itself recommends raising this.
+      MAESTRO_DRIVER_STARTUP_TIMEOUT: "300000"
       # Credentials consumed by the Maestro flows (see e2e/README.md).
       USERNAME: testuser
       PASSWORD: testpass123
@@ -156,9 +165,13 @@ jobs:
         run: npm run db:push
 
       # curl installer is faster and avoids brew rate limits on a cold runner.
+      # Pinned: the installer otherwise resolves "latest" per run, so the
+      # driver/CLI under test could silently change between dispatches
+      # (2.9.0 is what every 2026-08-30/31 run, green and red, used).
+      # Bump deliberately, with a dispatch, not by drift.
       - name: Install Maestro
         run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          curl -fsSL "https://get.maestro.mobile.dev" | MAESTRO_VERSION=2.9.0 bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       # Boot an iOS simulator for Maestro to drive. macos-15 ships Xcode with
@@ -293,6 +306,21 @@ jobs:
           xcodebuild -workspace OCRecipes.xcworkspace -configuration Debug -scheme OCRecipes \
             -destination "id=$IOS_SIMULATOR_UDID" build 2>&1
 
+      # Pre-warm Metro's dev-client bundle BEFORE the first flow. The cold
+      # bundle (177.7s in run 33341123446 under runner contention) otherwise
+      # runs concurrently with Maestro's XCUITest driver bring-up AND the first
+      # flow's launch gate — two budgets racing one CPU-starved bundler. The
+      # URL is exactly what the dev client's manifest advertises as
+      # launchAsset.url (Metro's transform cache is per-file, so even a param
+      # mismatch would still warm the expensive part). Best-effort by design:
+      # the launch gate keeps owning the cold-start budget if this times out.
+      - name: Pre-warm Metro bundle
+        run: |
+          curl -sSf -o /dev/null --max-time 600 \
+            "http://localhost:8081/client/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&transform.reactCompiler=true&unstable_transformProfile=hermes-stable" \
+            && echo "Metro bundle is warm" \
+            || echo "::warning::Metro pre-warm did not complete within 600s — continuing (launch gate still owns cold start)"
+
       # Runs `maestro test --include-tags regression e2e/` (see e2e/README.md for
       # the tagged flow inventory). One retry absorbs a transient flake; two
       # consecutive failures fail the job.
@@ -379,9 +407,13 @@ jobs:
       - name: Push database schema
         run: npm run db:push
 
+      # Pinned: the installer otherwise resolves "latest" per run, so the
+      # driver/CLI under test could silently change between dispatches
+      # (2.9.0 is what every 2026-08-30/31 run, green and red, used).
+      # Bump deliberately, with a dispatch, not by drift.
       - name: Install Maestro
         run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          curl -fsSL "https://get.maestro.mobile.dev" | MAESTRO_VERSION=2.9.0 bash
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       # ubuntu-latest runners support hardware acceleration for the Android

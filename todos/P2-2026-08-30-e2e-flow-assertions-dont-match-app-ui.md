@@ -3,7 +3,7 @@ title: "E2E flow assertions don't match what the app actually shows for a fresh/
 status: backlog
 priority: medium
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-08-31
 assignee:
 labels: [e2e, maestro, testing]
 github_issue:
@@ -182,3 +182,28 @@ that step now retries once on failure (warm DerivedData, ~2-3 min; a genuine bui
 still fails both attempts so the raw-xcodebuild diagnostic keeps its trigger). iOS infra
 flake tally across the two post-merge dispatches: XCUITest transport crash (14), simctl
 openurl stall (15) — each a different one-off, none an app or flow defect.
+
+### 2026-08-31 — main dispatch 16 red (driver never ready); stopped patching, found the shared cause
+
+Run 33348888795 (strand fix + launch retry aboard): Android GREEN (7th consecutive), iOS RED
+at the driver layer — `IOSDriverTimeoutException: iOS driver not ready in time` in attempt 1
+(no flow ran), then 8/8 flows failing in attempt 2 — seven in 4-6s, the first in 33s — against
+the same dead driver. Third
+consecutive main dispatch lost in the simulator/XCTest layer (14: transport crash mid-run;
+15: simctl openurl stall; 16: driver never ready) — the plan's 3-dispatch stopping rule.
+
+Reassessment (evidence): Maestro's driver readiness default is 120s (polls the runner's
+/status every 500ms; source verified), and on a contended runner it races the cold Metro
+bundle (177.7s in run 14) and the first flow's launch gate for one starved CPU. Maestro is
+installed UNPINNED (`get.maestro.mobile.dev` = latest; 2.9.0 released 2026-08-26, so every
+2026-08-30/31 run used it — version drift is NOT the cause, but the hole is real). Xcode 26.3
+is a deliberate, documented choice (four toolchain breaks under 16.2), so "use the image's
+default Xcode 16.4" is not a cheap alternative. The boot step's bare `simctl boot "iPhone 16"`
+is ambiguous across the image's five same-named devices (iOS 18.5/18.6/26.0/26.1/26.2) —
+Maestro does not log the runtime, so the exact runtime used is unverified; left as-is
+(changing it would add an unknown), flagged here.
+
+Fix (branch fix/e2e-ios-driver-startup-and-metro-prewarm): MAESTRO_DRIVER_STARTUP_TIMEOUT=300000
+on the iOS job; Maestro pinned to 2.9.0 on both jobs; a best-effort "Pre-warm Metro bundle"
+step before the flows hitting the dev client's exact launchAsset URL (verified HTTP 200,
+19.8 MB against a live Metro) so the bundle no longer races driver bring-up.
