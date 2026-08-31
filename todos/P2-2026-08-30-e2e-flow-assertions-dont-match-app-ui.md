@@ -171,3 +171,14 @@ killed onboarding mid-wizard (screen 4/8), then view-item-detail recovered end-t
 the wizard resumed MID-FLOW after relaunch (position persists), vindicating the escape's
 interleaved-Continue traversal. Schedule re-enable stays gated on the next green main
 dispatch.
+
+### 2026-08-31 — main dispatch 15 red (third distinct iOS infra mode); launch step hardened
+
+Run 33345540597 (with the strand fix aboard): Android GREEN (6th consecutive), iOS RED —
+but this time BEFORE any flow ran: `expo run:ios`'s final launch (`xcrun simctl openurl`)
+timed out (NSPOSIXErrorDomain code 60) right after a successful build+install, killing the
+"Build and install iOS app" step. The strand-recovery fix was never exercised. Hardened:
+that step now retries once on failure (warm DerivedData, ~2-3 min; a genuine build failure
+still fails both attempts so the raw-xcodebuild diagnostic keeps its trigger). iOS infra
+flake tally across the two post-merge dispatches: XCUITest transport crash (14), simctl
+openurl stall (15) — each a different one-off, none an app or flow defect.
