@@ -7,6 +7,7 @@ module: shared
 applies_to: [.claude/agents/**/*.md, .claude/skills/**/*.md, docs/solutions/**/*.md]
 symptoms: ["A review or research report bounds a defect with a negative — \"no caller does X\", \"only these N sites\", \"not currently reachable\"", A finding is filed at lower severity because the report said nothing triggers it, A todo written from a report turns out to understate the defect once someone opens the files, Two agents reviewing the same code disagree about which call sites exist]
 created: '2026-08-15'
+last_updated: '2026-08-31'
 ---
 
 # Re-verify an agent report's BOUNDING claims — the negative is what hides the live instance
@@ -74,6 +75,44 @@ invisible precisely because the bounding sentence said not to look.
 The correct positive findings in the same report were all accurate. Only the negative was
 wrong, and only the negative changed what got written down.
 
+### The follow-on: a bound backed by a command is only as good as the command's SCOPE
+
+The todo written from that case did the right thing — it replaced the report's bare assertion
+with an enumeration and showed the command that produced it:
+
+```md
+Callers, enumerated 2026-08-15 against `50bed11d` with
+`git grep -n 'RecipeBrowserModal\|"RecipeBrowser"' -- client/` — **22 lines across 14 files**.
+...
+**No caller in `client/` passes `date`.** Scoped deliberately: ...
+```
+
+Every word of that is true. The command is real, the scope is stated, the reasoning for the
+scope is given. And the conclusion drawn from it was still wrong:
+
+> This half is a trap rather than a live break.
+
+The producer was `server/services/coach-tools.ts`, which built the navigate action with
+`params: { date: parsed.data.plannedDate ?? … }` — holding the right value and writing it to the
+wrong field name. The coach's "add to meal plan" proposal had been opening the browser in
+browse-only mode the whole time. The `-- client/` pathspec proved a **client-scoped** negative;
+the severity call it fed was **tree-wide**.
+
+The lesson is not "the enumeration was sloppy" — it was careful. It is that **turning a bound
+into a command moves the risk from the claim into the command's scope, where it is easier to
+miss** precisely because the visible rigour is reassuring. A navigation param, an event name, a
+feature flag, a column: producers routinely live on the other side of an API boundary from the
+consumer you are reading.
+
+Third habit, alongside the two below:
+
+3. **Match the command's scope to the claim's scope.** If the sentence you are about to write
+   says "nothing does X", the search must cover everywhere something *could* do X — `client/`
+   **and** `server/` **and** `shared/`, plus any generated or config surface. If you deliberately
+   narrow the search, narrow the claim in the same sentence: "no caller **in `client/`** passes
+   `date`" is honest; "this is a trap rather than a live break" is a tree-wide conclusion the
+   narrowed command cannot support.
+
 ## Examples
 
 ```md
@@ -107,8 +146,9 @@ Two habits:
 
 ## Related Files
 
-- `todos/P2-2026-08-15-recipe-browser-modal-param-contract-unenforced.md` — the todo this
-  produced; its Updates section records the corrected bound and why it mattered
+- `todos/archive/P2-2026-08-15-recipe-browser-modal-param-contract-unenforced.md` — the todo
+  this produced (archived 2026-08-30); its Updates section records the corrected bound and
+  why it mattered
 - `client/components/coach/blocks/RecipeCard.tsx` — the caller the bound said did not exist
 - `docs/AI_WORKFLOW.md` → Review Policy — the roster whose reports this applies to
 

@@ -384,3 +384,112 @@ describe("validateNavigateParams stripping", () => {
     });
   });
 });
+
+describe("RecipeBrowserModal navigate params", () => {
+  const card = (params?: Record<string, unknown>) => ({
+    type: "action_card",
+    title: "Browse recipes",
+    subtitle: "Find something to cook",
+    actionLabel: "Browse",
+    action: {
+      type: "navigate",
+      screen: "RecipeBrowserModal",
+      ...(params ? { params } : {}),
+    },
+  });
+
+  it("accepts a navigate action with no params at all", () => {
+    expect(actionCardSchema.safeParse(card()).success).toBe(true);
+  });
+
+  it("accepts the four declared fields", () => {
+    const result = actionCardSchema.safeParse(
+      card({
+        mealType: "dinner",
+        plannedDate: "2026-09-01",
+        searchQuery: "pasta",
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("REJECTS the misspelled `date` field instead of silently dropping it", () => {
+    const result = actionCardSchema.safeParse(card({ date: "2026-09-01" }));
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    // Pin the rejection MECHANISM, not just failure — otherwise this test
+    // would stay green if it started failing for an unrelated reason.
+    expect(
+      result.error.issues.some((issue) => issue.code === "unrecognized_keys"),
+    ).toBe(true);
+  });
+
+  it("still requires barcode for NutritionDetail when params are absent", () => {
+    const result = actionCardSchema.safeParse({
+      type: "action_card",
+      title: "Details",
+      subtitle: "See it",
+      actionLabel: "Open",
+      action: { type: "navigate", screen: "NutritionDetail" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // suggestionListSchema's `items` is a z.array, which fails WHOLESALE if any
+  // one element fails — so a single suggestion carrying a bad
+  // RecipeBrowserModal param doesn't just lose that suggestion, it takes
+  // every sibling suggestion in the same list down with it. This is
+  // LLM-reachable: server/services/coach-blocks.ts describes suggestion_list
+  // items as carrying navigate actions with params.
+  it("REJECTS the whole suggestion list when one item navigates to RecipeBrowserModal with an unknown param", () => {
+    const list = {
+      type: "suggestion_list",
+      items: [
+        {
+          title: "Greek Chicken Bowl",
+          subtitle: "480 cal - 42g P",
+          action: {
+            type: "navigate",
+            screen: "FeaturedRecipeDetail",
+            params: { recipeId: 123 },
+          },
+        },
+        {
+          title: "Browse for dinner",
+          subtitle: "Find something to cook",
+          action: {
+            type: "navigate",
+            screen: "RecipeBrowserModal",
+            params: { date: "2026-09-01" },
+          },
+        },
+      ],
+    };
+    const result = suggestionListSchema.safeParse(list);
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a suggestion list where every item has valid RecipeBrowserModal params (including none)", () => {
+    const list = {
+      type: "suggestion_list",
+      items: [
+        {
+          title: "Add to today's plan",
+          subtitle: "Confirm below",
+          action: {
+            type: "navigate",
+            screen: "RecipeBrowserModal",
+            params: { plannedDate: "2026-09-01", mealType: "dinner" },
+          },
+        },
+        {
+          title: "Browse recipes",
+          subtitle: "Find something to cook",
+          action: { type: "navigate", screen: "RecipeBrowserModal" },
+        },
+      ],
+    };
+    const result = suggestionListSchema.safeParse(list);
+    expect(result.success).toBe(true);
+  });
+});

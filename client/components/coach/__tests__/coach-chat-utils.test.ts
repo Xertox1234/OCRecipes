@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
+import { ApiError } from "@/lib/api-error";
 import {
   parsePlanDays,
   planBannerA11yLabel,
   stripCoachBlocksFence,
   filterValidBlocks,
+  describePlanSaveFailure,
+  formatPlanSaveSuccess,
 } from "../coach-chat-utils";
 
 const validDays = [
@@ -169,6 +172,102 @@ describe("filterValidBlocks", () => {
   it("returns empty array when nothing passes validation", () => {
     expect(filterValidBlocks([null, undefined, {}, { type: "bad" }])).toEqual(
       [],
+    );
+  });
+});
+
+describe("describePlanSaveFailure", () => {
+  it("treats a 402 (catalog quota exceeded) as terminal with its own message", () => {
+    const result = describePlanSaveFailure(
+      new ApiError("402: quota", "CATALOG_QUOTA_EXCEEDED", 402),
+    );
+    expect(result.terminal).toBe(true);
+    expect(result.message).not.toBe(
+      "Couldn't add the recipe to your plan. Please try again.",
+    );
+  });
+
+  it("treats a 422 (recipe missing content) as terminal with its own message", () => {
+    const result = describePlanSaveFailure(
+      new ApiError("422: no instructions", "VALIDATION_ERROR", 422),
+    );
+    expect(result.terminal).toBe(true);
+    expect(result.message).not.toBe(
+      "Couldn't add the recipe to your plan. Please try again.",
+    );
+  });
+
+  it("treats a 404 (catalog miss) as terminal with its own message", () => {
+    const result = describePlanSaveFailure(
+      new ApiError("404: not found", "NOT_FOUND", 404),
+    );
+    expect(result.terminal).toBe(true);
+    expect(result.message).not.toBe(
+      "Couldn't add the recipe to your plan. Please try again.",
+    );
+  });
+
+  it("keeps the three terminal messages distinct from each other", () => {
+    const quota = describePlanSaveFailure(
+      new ApiError("402", "CATALOG_QUOTA_EXCEEDED", 402),
+    );
+    const unusable = describePlanSaveFailure(
+      new ApiError("422", "VALIDATION_ERROR", 422),
+    );
+    const missing = describePlanSaveFailure(
+      new ApiError("404", "NOT_FOUND", 404),
+    );
+    expect(
+      new Set([quota.message, unusable.message, missing.message]).size,
+    ).toBe(3);
+  });
+
+  it("falls back to the generic retryable message for a non-terminal status (e.g. 500)", () => {
+    const result = describePlanSaveFailure(
+      new ApiError("500: server error", undefined, 500),
+    );
+    expect(result.terminal).toBe(false);
+    expect(result.message).toBe(
+      "Couldn't add the recipe to your plan. Please try again.",
+    );
+  });
+
+  it("falls back to the generic retryable message for a non-ApiError (e.g. network failure)", () => {
+    const result = describePlanSaveFailure(new Error("network down"));
+    expect(result.terminal).toBe(false);
+    expect(result.message).toBe(
+      "Couldn't add the recipe to your plan. Please try again.",
+    );
+  });
+});
+
+describe("formatPlanSaveSuccess", () => {
+  it("names the chosen day and meal, not a generic message", () => {
+    expect(formatPlanSaveSuccess("Wednesday", "dinner")).toBe(
+      "Added to Wednesday Dinner",
+    );
+  });
+
+  it("uses MEAL_LABELS' display name for each meal type", () => {
+    expect(formatPlanSaveSuccess("Wednesday", "breakfast")).toBe(
+      "Added to Wednesday Breakfast",
+    );
+    expect(formatPlanSaveSuccess("Wednesday", "snack")).toBe(
+      "Added to Wednesday Snack",
+    );
+  });
+
+  // Deliberately takes a plain `dayLabel` string, NOT the `plannedDate` ISO
+  // string — plannedDate is a UTC-string conversion of a local-midnight
+  // instant (see PlanSlotDay.iso's doc-comment in plan-slot-picker-utils.ts),
+  // so re-parsing it back into a weekday would disagree with the chip the
+  // user actually tapped for any UTC-positive offset. This function must
+  // stay a pure string join with no date parsing of its own — pin that here
+  // so a future "helpful" refactor back to `(plannedDate, mealType)` fails
+  // this test rather than silently reintroducing that bug.
+  it("does no date parsing of its own — passes an arbitrary label through verbatim", () => {
+    expect(formatPlanSaveSuccess("2026-09-02", "lunch")).toBe(
+      "Added to 2026-09-02 Lunch",
     );
   });
 });

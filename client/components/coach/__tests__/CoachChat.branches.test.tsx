@@ -16,10 +16,12 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, screen, fireEvent } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
 import type { ChatMessage } from "@/hooks/useChat";
+import * as Haptics from "expo-haptics";
+import { ApiError } from "@/lib/api-error";
 
 // ── Mutable test state, hoisted above vi.mock factories ──────────────────────
 const state = vi.hoisted(() => ({
@@ -45,13 +47,40 @@ const state = vi.hoisted(() => ({
     startListening: vi.fn(),
     stopListening: vi.fn(),
   },
-  // premium
+  // premium — "coachPro" (mic) stays on the pre-existing `hasVoice` flag;
+  // "catalogSave" (add_recipe_to_plan gate) is independent so existing
+  // hasVoice-driven tests are unaffected.
   hasVoice: false,
+  canSaveCatalog: true,
   // navigation
   navigate: vi.fn(),
   // apiRequest (commitment accept)
   apiRequest: vi.fn().mockResolvedValue(undefined),
+  // add_recipe_to_plan: captured from the mocked BlockRenderer's onAction prop
+  // so tests can fire an arbitrary action without a canned block.action.
+  onAction: null as ((action: Record<string, unknown>) => void) | null,
+  // useMealPlanRecipes / useMealPlan
+  saveCatalog: vi.fn().mockResolvedValue({ id: 99 }),
+  addItem: vi.fn().mockResolvedValue({}),
+  mealPlanItems: [] as { plannedDate: string }[],
+  // ToastContext / useHaptics
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+  hapticsNotification: vi.fn(),
 }));
+
+/** Adjust a single premium feature flag for the next render. */
+function setPremiumFeatures(overrides: {
+  catalogSave?: boolean;
+  coachPro?: boolean;
+}) {
+  if (overrides.catalogSave !== undefined) {
+    state.canSaveCatalog = overrides.catalogSave;
+  }
+  if (overrides.coachPro !== undefined) {
+    state.hasVoice = overrides.coachPro;
+  }
+}
 
 vi.mock("@/hooks/useCoachStream", () => ({
   useCoachStream: (opts: {
@@ -93,7 +122,8 @@ vi.mock("@/hooks/useTTS", () => ({
 }));
 
 vi.mock("@/hooks/usePremiumFeatures", () => ({
-  usePremiumFeature: () => state.hasVoice,
+  usePremiumFeature: (feature: string) =>
+    feature === "catalogSave" ? state.canSaveCatalog : state.hasVoice,
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -102,6 +132,38 @@ vi.mock("@react-navigation/native", () => ({
 
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => state.apiRequest(...args),
+}));
+
+vi.mock("@/hooks/useMealPlanRecipes", () => ({
+  useSaveCatalogRecipe: () => ({
+    mutateAsync: state.saveCatalog,
+    isPending: false,
+  }),
+}));
+
+vi.mock("@/hooks/useMealPlan", () => ({
+  useMealPlanItems: () => ({ data: state.mealPlanItems }),
+  useAddMealPlanItem: () => ({
+    mutateAsync: state.addItem,
+    isPending: false,
+  }),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    success: state.toastSuccess,
+    error: state.toastError,
+    info: vi.fn(),
+    dismiss: vi.fn(),
+  }),
+}));
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: vi.fn(),
+    notification: state.hapticsNotification,
+    selection: vi.fn(),
+  }),
 }));
 
 // Thin CoachChatBase double: renders children + a Send button wired to onSend,
@@ -157,34 +219,39 @@ vi.mock("@/components/coach/blocks", () => ({
       title: string,
       date: string,
     ) => void;
-  }) => (
-    <div data-testid={`block-${block.type}`}>
-      <button
-        data-testid="block-action"
-        onClick={() => onAction?.(block.action as Record<string, unknown>)}
-      >
-        action
-      </button>
-      <button
-        data-testid="block-quick-reply"
-        onClick={() => onQuickReply?.("a quick reply", "qk-1")}
-      >
-        quick-reply
-      </button>
-      <button
-        data-testid="block-commit"
-        onClick={() =>
-          onCommitmentAccept?.(
-            block.notebookEntryId as number | undefined,
-            (block.title as string) ?? "",
-            (block.followUpDate as string) ?? "",
-          )
-        }
-      >
-        commit
-      </button>
-    </div>
-  ),
+  }) => {
+    // Captured so tests can fire an arbitrary action (not just the one fixed
+    // block.action a given render was mounted with) via `state.onAction?.(...)`.
+    state.onAction = onAction ?? null;
+    return (
+      <div data-testid={`block-${block.type}`}>
+        <button
+          data-testid="block-action"
+          onClick={() => onAction?.(block.action as Record<string, unknown>)}
+        >
+          action
+        </button>
+        <button
+          data-testid="block-quick-reply"
+          onClick={() => onQuickReply?.("a quick reply", "qk-1")}
+        >
+          quick-reply
+        </button>
+        <button
+          data-testid="block-commit"
+          onClick={() =>
+            onCommitmentAccept?.(
+              block.notebookEntryId as number | undefined,
+              (block.title as string) ?? "",
+              (block.followUpDate as string) ?? "",
+            )
+          }
+        >
+          commit
+        </button>
+      </div>
+    );
+  },
 }));
 
 // Thin StreamingBubble double — presence proves the streamingFooter branch.
@@ -211,7 +278,8 @@ vi.mock("@/components/ChatBubble", () => ({
 }));
 
 vi.mock("@/components/UpgradeModal", () => ({
-  UpgradeModal: () => null,
+  UpgradeModal: ({ visible }: { visible: boolean }) =>
+    visible ? <div data-testid="upgrade-modal" /> : null,
 }));
 
 vi.mock("@/components/coach/CoachMicButton", () => ({
@@ -273,8 +341,16 @@ function resetState() {
     stopListening: vi.fn(),
   };
   state.hasVoice = false;
+  state.canSaveCatalog = true;
   state.navigate = vi.fn();
   state.apiRequest = vi.fn().mockResolvedValue(undefined);
+  state.onAction = null;
+  state.saveCatalog = vi.fn().mockResolvedValue({ id: 99 });
+  state.addItem = vi.fn().mockResolvedValue({});
+  state.mealPlanItems = [];
+  state.toastSuccess = vi.fn();
+  state.toastError = vi.fn();
+  state.hapticsNotification = vi.fn();
   warmUpHook.sendWarmUp.mockClear();
   warmUpHook.sendTextWarmUp.mockClear();
   warmUpHook.reset.mockClear();
@@ -834,5 +910,247 @@ describe("CoachChat — cleanup", () => {
     const { unmount } = renderCoachChat();
     unmount();
     expect(state.abortStream).toHaveBeenCalled();
+  });
+});
+
+// ── add_recipe_to_plan (client-local action; never enters blockActionSchema) ─
+describe("add_recipe_to_plan", () => {
+  // Mounts a real recipe_card block so the mocked BlockRenderer renders and
+  // captures its onAction prop onto state.onAction — tests then fire an
+  // arbitrary action through it rather than a canned block.action.
+  function renderWithRecipeCardBlock() {
+    state.messages = [
+      makeMessage({
+        id: 20,
+        role: "assistant",
+        content: "here's a recipe",
+        metadata: {
+          blocks: [
+            {
+              type: "recipe_card",
+              recipe: {
+                title: "Lemon Chicken",
+                calories: 520,
+                protein: 42,
+                prepTime: "25 min",
+                imageUrl: null,
+                recipeId: 715538,
+                source: "spoonacular",
+              },
+            },
+          ],
+        } as unknown as ChatMessage["metadata"],
+      }),
+    ];
+    renderCoachChat({ conversationId: 7 });
+  }
+
+  it("opens the slot picker instead of navigating away", () => {
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    expect(state.navigate).not.toHaveBeenCalled();
+    expect(screen.getByText("Lemon Chicken")).toBeTruthy();
+  });
+
+  it("saves the catalog recipe then adds the item for the chosen slot", async () => {
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    // Capture the default-selected chip's (today's) own accessible label
+    // BEFORE confirming — used below to cross-check the toast's day word
+    // without recomputing a weekday from any date math of this test's own.
+    const chipLabel =
+      screen
+        .getAllByRole("button", { name: /day-slot/i })[0]
+        .getAttribute("aria-label") ?? "";
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+
+    await waitFor(() => {
+      expect(state.saveCatalog).toHaveBeenCalledWith(715538);
+      expect(state.addItem).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipeId: 99,
+          mealType: "dinner",
+          // plan-slot-picker-utils.ts carries a load-bearing UTC comment on
+          // this shape — pin it here (not recompute the expected ISO date,
+          // which would duplicate that production logic) so an absent or
+          // malformed plannedDate reaching the mutation fails this test.
+          plannedDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      );
+    });
+    // save must resolve BEFORE the add — the add needs the user-owned recipe id
+    expect(state.saveCatalog.mock.invocationCallOrder[0]).toBeLessThan(
+      state.addItem.mock.invocationCallOrder[0],
+    );
+
+    await waitFor(() => {
+      expect(state.toastSuccess).toHaveBeenCalledTimes(1);
+    });
+    const toastMessage = state.toastSuccess.mock.calls[0][0] as string;
+    expect(toastMessage).toMatch(/^Added to [A-Za-z]+ Dinner$/);
+    // The discriminator: the toast's day word must be the TAPPED chip's own
+    // weekday (sourced from PlanSlotPickerSheet's onConfirm third arg), not
+    // a weekday re-derived from `plannedDate` — plannedDate is a UTC-shifted
+    // key (see PlanSlotDay.iso's doc-comment) and re-parsing it disagrees
+    // with the chip's own label for any UTC-positive host TZ. A shape-only
+    // match above would not catch that regression; this cross-check does.
+    const dayWord = toastMessage
+      .replace(/^Added to /, "")
+      .replace(/ Dinner$/, "");
+    expect(chipLabel).toContain(dayWord);
+  });
+
+  it.each([
+    [402, "CATALOG_QUOTA_EXCEEDED"],
+    [422, "VALIDATION_ERROR"],
+    [404, "NOT_FOUND"],
+  ])(
+    "closes the sheet with an accurate message on a terminal %i save failure",
+    async (status, code) => {
+      state.saveCatalog.mockRejectedValueOnce(
+        new ApiError(`${status}: failed`, code, status),
+      );
+      renderWithRecipeCardBlock();
+      act(() => {
+        state.onAction?.({
+          type: "add_recipe_to_plan",
+          recipeId: 715538,
+          recipeTitle: "Lemon Chicken",
+        });
+      });
+      fireEvent.click(screen.getByText("Dinner"));
+      fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+
+      await waitFor(() => {
+        expect(state.toastError).toHaveBeenCalledTimes(1);
+      });
+      // Never the generic "please try again" — retrying a 402/422/404 can
+      // only reproduce the same failure.
+      expect(state.toastError).not.toHaveBeenCalledWith(
+        "Couldn't add the recipe to your plan. Please try again.",
+      );
+      expect(state.hapticsNotification).toHaveBeenCalledWith(
+        Haptics.NotificationFeedbackType.Error,
+      );
+      expect(state.addItem).not.toHaveBeenCalled();
+      expect(state.toastSuccess).not.toHaveBeenCalled();
+
+      // The mocked Modal unmounts its children once `visible` goes false
+      // (test/mocks/react-native.ts) — a terminal failure must close the
+      // sheet, so its contents (including this button) are gone. A
+      // regression that keeps the sheet open on a terminal failure leaves
+      // this button in the DOM and the query below finds it.
+      expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
+    },
+  );
+
+  it("keeps the sheet open and lets the user retry after a rejected save", async () => {
+    // Only overrides the FIRST call — the retry below falls through to the
+    // default mockResolvedValue({ id: 99 }) set in beforeEach.
+    state.saveCatalog.mockRejectedValueOnce(new Error("network down"));
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+
+    await waitFor(() => {
+      expect(state.toastError).toHaveBeenCalledWith(
+        "Couldn't add the recipe to your plan. Please try again.",
+      );
+    });
+    expect(state.hapticsNotification).toHaveBeenCalledWith(
+      Haptics.NotificationFeedbackType.Error,
+    );
+    expect(state.addItem).not.toHaveBeenCalled();
+    expect(state.toastSuccess).not.toHaveBeenCalled();
+
+    // The mocked Modal unmounts its children outright once `visible` goes
+    // false (test/mocks/react-native.ts), so this also proves the sheet
+    // never closed on failure: a regression that moves setPlanTarget(null)
+    // from the try into the catch removes this button from the DOM and
+    // getByRole below throws.
+    const confirmButton = screen.getByRole("button", { name: /add to plan/i });
+    fireEvent.click(confirmButton);
+
+    // Pins the finally-based release (not next-open) of isSavingPlanRef —
+    // the second confirm must reach saveCatalog rather than silently
+    // no-op against a guard still stuck true from the failed first attempt.
+    await waitFor(() => {
+      expect(state.saveCatalog).toHaveBeenCalledTimes(2);
+      expect(state.addItem).toHaveBeenCalledWith(
+        expect.objectContaining({ recipeId: 99, mealType: "dinner" }),
+      );
+    });
+  });
+
+  it("shows the upgrade modal and calls neither mutation for a free user", () => {
+    setPremiumFeatures({ catalogSave: false });
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    expect(state.saveCatalog).not.toHaveBeenCalled();
+    expect(state.addItem).not.toHaveBeenCalled();
+    expect(screen.getByTestId("upgrade-modal")).toBeTruthy();
+  });
+
+  it("guards against a rapid double-tap firing the save mutation twice", async () => {
+    // The sheet's own isSubmitting-based guard reads THIS render's prop, which
+    // is still false here (the mocked useSaveCatalogRecipe/useAddMealPlanItem
+    // hooks return a static isPending: false — it never flips true) — so if
+    // CoachChat relied only on that prop, a second synchronous tap before the
+    // mutation settles would double-fire. Hold the save pending to force two
+    // taps to land while it's still in flight.
+    let resolveSave: ((value: { id: number }) => void) | undefined;
+    state.saveCatalog.mockImplementation(
+      () =>
+        new Promise<{ id: number }>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    const confirmButton = screen.getByRole("button", { name: /add to plan/i });
+
+    fireEvent.click(confirmButton);
+    fireEvent.click(confirmButton);
+
+    expect(state.saveCatalog).toHaveBeenCalledTimes(1);
+
+    // Let the in-flight save resolve so the effect cleanup doesn't warn about
+    // a state update outside act().
+    await act(async () => {
+      resolveSave?.({ id: 99 });
+    });
   });
 });

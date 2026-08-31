@@ -53,23 +53,29 @@ const RecipeCard = React.memo(function RecipeCard({ block, onAction }: Props) {
         >
           <Text style={styles.primaryBtnText}>View</Text>
         </Pressable>
-        <Pressable
-          style={styles.secondaryBtn}
-          onPress={() =>
-            onAction?.({
-              type: "navigate",
-              screen: "RecipeBrowserModal",
-              params: { recipeId: recipe.recipeId },
-            })
-          }
-          accessibilityRole="button"
-          accessibilityLabel="Add to meal plan"
-          hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
-        >
-          <Text style={[styles.secondaryText, { color: theme.link }]}>
-            Add to Plan
-          </Text>
-        </Pressable>
+        {/* Only a `spoonacular` card carries a Spoonacular catalog id — the add
+            flow goes through POST /api/meal-plan/catalog/:id/save, which
+            requires that id. `community`/`generated` recipes have no catalog
+            id to save, so they keep "View" alone. */}
+        {recipe.source === "spoonacular" && (
+          <Pressable
+            style={styles.secondaryBtn}
+            onPress={() =>
+              onAction?.({
+                type: "add_recipe_to_plan",
+                recipeId: recipe.recipeId,
+                recipeTitle: recipe.title,
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Add to Plan"
+            hitSlop={{ top: 14, bottom: 14, left: 8, right: 8 }}
+          >
+            <Text style={[styles.secondaryText, { color: theme.link }]}>
+              Add to Plan
+            </Text>
+          </Pressable>
+        )}
       </View>
     </View>
   );
