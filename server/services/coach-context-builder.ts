@@ -67,7 +67,21 @@ export async function buildCoachContext(
       suggestions.push(`I need ${Math.round(proteinLeft)}g more protein today`);
     }
   }
-  const hour = new Date().getHours();
+  // The USER's hour, not the server's. `new Date().getHours()` reads the host
+  // zone — UTC on Railway — so an LA user at 8am PDT (15:00 UTC) matched
+  // neither branch and got no chip, while at 6pm PDT (01:00 UTC the next day)
+  // they were offered breakfast ideas. `tz` has been a parameter of this
+  // function all along.
+  //
+  // `hourCycle: "h23"` rather than `hour12: false`: the latter renders midnight
+  // as "24" under some ICU versions, which would fall through both branches.
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "numeric",
+      hourCycle: "h23",
+    }).format(new Date()),
+  );
   if (hour < 11) {
     suggestions.push("Quick breakfast ideas");
   } else if (hour >= 17) {

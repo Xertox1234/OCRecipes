@@ -1,6 +1,6 @@
 ---
 title: "The coach prompt tells the model the weekday and clock time but never the calendar date, while requiring it to emit plannedDate"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-31
 updated: 2026-08-31
@@ -48,15 +48,15 @@ picker and concluding the server's value is inert would be a mistake.
 
 ## Acceptance Criteria
 
-- [ ] The system prompt states the user's **calendar date** alongside the weekday and time, in
+- [x] The system prompt states the user's **calendar date** alongside the weekday and time, in
       their own timezone. The values are already in scope at `server/services/nutrition-coach.ts:290`.
-- [ ] A test asserts the rendered prompt contains the civil date for a **non-UTC** timezone at an
+- [x] A test asserts the rendered prompt contains the civil date for a **non-UTC** timezone at an
       instant where the user's date and the server's UTC date differ. A UTC-only test does not
       close this.
-- [ ] `plannedDate` staying `required` in the tool definition is either confirmed as correct once
+- [x] `plannedDate` staying `required` in the tool definition is either confirmed as correct once
       the model has the date, or changed — with the NOTE at `coach-tools.ts:104` kept honest either
       way.
-- [ ] `server/services/coach-context-builder.ts:70` uses the user's hour, not the server's.
+- [x] `server/services/coach-context-builder.ts:70` uses the user's hour, not the server's.
 
 ## Implementation Notes
 
@@ -100,3 +100,39 @@ the same change.
 - Filed from the final server review of PR #890, which fixed the omit-path fallback and identified
   this as the remaining, more common path. Both findings verified by that review against the live
   prompt body and the tool definitions.
+
+### 2026-08-31 — RESOLVED
+
+The prompt's "Current time for this user" line now carries the user's calendar
+date in `yyyy-mm-dd`, rendered with `civilDateString(now, tz)` — the exact format
+`add_to_meal_plan` asks for, so the model copies rather than derives it. Kept on
+the one existing line rather than added as a second sentence, so the prompt
+cannot state two different "now"s.
+
+`plannedDate` stays **required**, which is now defensible rather than merely
+inherited: the model has the date it is being asked for. That is a real coupling,
+so it is recorded at `coach-tools.ts` — if the date is ever removed from the
+prompt, the field must stop being required or the guessing returns.
+
+`coach-context-builder.ts` now resolves the suggestion-chip hour in the user's
+zone. `hourCycle: "h23"` rather than `hour12: false`, because the latter renders
+midnight as "24" under some ICU versions and would fall through both branches;
+there is a midnight test for exactly that.
+
+**A test of mine passed when it should have failed, and that is the finding worth
+keeping.** The first version of the chip tests asserted the right things and went
+green _before_ the fix, because the buggy code read `new Date().getHours()` — the
+HOST zone — and this machine happens to sit near the zone under test. The host
+timezone was an uncontrolled input. Pinning `process.env.TZ = "UTC"` in the block
+(which is also what CI runs) made the two discriminating cases genuinely red, and
+a `getTimezoneOffset()` assertion now guards the pin itself. Writing the test
+first is what surfaced it: green-when-expecting-red is a signal, not luck.
+
+Fixing the implementation then broke three **pre-existing** tests that set a
+local-time instant (`new Date(2026, 4, 15, 8, ...)` = 8am on the host) and relied
+on the implementation reading that same host zone. They now state the zone
+explicitly — `Date.UTC(...)` plus an explicit `"UTC"` argument — so the intent is
+in the test rather than in the machine.
+
+Mutation-checked both: removing the date from the prompt fails 6 tests; reverting
+the chip hour to the server's fails 3.

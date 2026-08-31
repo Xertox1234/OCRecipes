@@ -1209,7 +1209,7 @@ describe("current time rendering", () => {
     );
 
     expect(capturedSystemPrompt()).toContain(
-      "Current time for this user: Friday 6:12 PM",
+      "Current time for this user: Friday 2026-07-10 6:12 PM",
     );
   });
 
@@ -1218,7 +1218,7 @@ describe("current time rendering", () => {
     await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
 
     expect(capturedSystemPrompt()).toContain(
-      "Current time for this user: Saturday 1:12 AM",
+      "Current time for this user: Saturday 2026-07-11 1:12 AM",
     );
   });
 
@@ -1238,7 +1238,55 @@ describe("current time rendering", () => {
     );
 
     expect(capturedSystemPrompt()).toContain(
-      "Current time for this user: Friday 6:12 PM",
+      "Current time for this user: Friday 2026-07-10 6:12 PM",
     );
+  });
+
+  // The model is REQUIRED to emit `plannedDate` (coach-tools.ts tool schema),
+  // and until this landed the prompt gave it a weekday and a clock time but no
+  // calendar date — so it had to guess, and the guess wrote a real
+  // meal_plan_items row. The fixture instant is deliberately one where the
+  // user's date and the server's UTC date differ (Fri Jul 10 in LA, Sat Jul 11
+  // in UTC), which is the only way this can fail.
+  it("gives the model the user's CIVIL DATE, not the server's", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(
+      generateCoachResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        undefined,
+        undefined,
+        "America/Los_Angeles",
+      ),
+    );
+
+    const prompt = capturedSystemPrompt();
+    expect(prompt).toContain("2026-07-10");
+    // The server's own day must not appear, or the model can pick either.
+    expect(prompt).not.toContain("2026-07-11");
+  });
+
+  it("gives the Pro path the same civil date", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(
+      generateCoachProResponse(
+        messages,
+        DEFAULT_CONTEXT,
+        "user-1",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "America/Los_Angeles",
+      ),
+    );
+    expect(capturedSystemPrompt()).toContain("2026-07-10");
+    expect(capturedSystemPrompt()).not.toContain("2026-07-11");
+  });
+
+  it("uses the server's day only when the caller genuinely has no timezone", async () => {
+    const messages = [{ role: "user" as const, content: "Hi" }];
+    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
+    expect(capturedSystemPrompt()).toContain("2026-07-11");
   });
 });

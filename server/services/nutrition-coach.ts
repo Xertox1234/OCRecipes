@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { civilDateString } from "../lib/civil-date";
 import { openai, OPENAI_TIMEOUT_STREAM_MS, MODEL_FAST } from "../lib/openai";
 import {
   sanitizeUserInput,
@@ -394,6 +395,15 @@ function buildSystemPrompt(
   // server-local time would suppress dinner ideas for most users. Built from
   // formatToParts (not format()) to avoid the U+202F narrow no-break space
   // ICU emits before AM/PM. Weekday is free signal (weeknight vs weekend).
+  //
+  // The ISO calendar date is load-bearing, not decoration. `add_to_meal_plan`
+  // marks `plannedDate` REQUIRED and wants `YYYY-MM-DD` (coach-tools.ts), so
+  // without a date here the model had to invent one — and since PR #885 that
+  // proposal writes a real `meal_plan_items` row, so a guess became a meal
+  // filed on the wrong day. It is rendered in the exact format the tool
+  // expects so the model can copy rather than derive it, and it is on this one
+  // line rather than a second sentence so the prompt cannot state two
+  // different "now"s.
   const timeParts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
     weekday: "long",
@@ -404,7 +414,7 @@ function buildSystemPrompt(
   const timePart = (type: Intl.DateTimeFormatPartTypes): string =>
     timeParts.find((p) => p.type === type)?.value ?? "";
   parts.push(
-    `Current time for this user: ${timePart("weekday")} ${timePart("hour")}:${timePart("minute")} ${timePart("dayPeriod")}`,
+    `Current time for this user: ${timePart("weekday")} ${civilDateString(now, tz)} ${timePart("hour")}:${timePart("minute")} ${timePart("dayPeriod")}`,
   );
 
   if (context.screenContext) {

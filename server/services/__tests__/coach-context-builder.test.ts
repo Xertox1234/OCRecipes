@@ -353,27 +353,27 @@ describe("buildCoachContext", () => {
   });
 
   it("includes a breakfast suggestion before 11 AM", async () => {
-    vi.setSystemTime(new Date(2026, 4, 15, 8, 0, 0));
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 15, 8, 0, 0)));
     mockStorage.getUserProfile.mockResolvedValue(undefined);
     mockStorage.getDailySummary.mockResolvedValue(makeDailySummary());
     mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
     mockStorage.getCommitmentsWithDueFollowUp.mockResolvedValue([]);
     mockStorage.getUser.mockResolvedValue(makeUser());
 
-    const result = await buildCoachContext("user-1", TIER_FEATURES.free);
+    const result = await buildCoachContext("user-1", TIER_FEATURES.free, "UTC");
 
     expect(result.suggestions).toContain("Quick breakfast ideas");
   });
 
   it("includes a recap suggestion at or after 5 PM", async () => {
-    vi.setSystemTime(new Date(2026, 4, 15, 18, 0, 0));
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 15, 18, 0, 0)));
     mockStorage.getUserProfile.mockResolvedValue(undefined);
     mockStorage.getDailySummary.mockResolvedValue(makeDailySummary());
     mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
     mockStorage.getCommitmentsWithDueFollowUp.mockResolvedValue([]);
     mockStorage.getUser.mockResolvedValue(makeUser());
 
-    const result = await buildCoachContext("user-1", TIER_FEATURES.free);
+    const result = await buildCoachContext("user-1", TIER_FEATURES.free, "UTC");
 
     expect(result.suggestions).toContain("How was my day?");
   });
@@ -381,7 +381,7 @@ describe("buildCoachContext", () => {
   it("skips the fallback suggestion when 3+ contextual suggestions already exist", async () => {
     // commitment + protein-deficit + breakfast = 3 candidates, so the
     // `suggestions.length < 3` gate must NOT append the fallback.
-    vi.setSystemTime(new Date(2026, 4, 15, 8, 0, 0));
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 15, 8, 0, 0)));
     mockStorage.getUserProfile.mockResolvedValue(undefined);
     mockStorage.getDailySummary.mockResolvedValue(
       makeDailySummary({ totalProtein: 50 }),
@@ -392,7 +392,7 @@ describe("buildCoachContext", () => {
     ]);
     mockStorage.getUser.mockResolvedValue(makeUser({ dailyProteinGoal: 150 }));
 
-    const result = await buildCoachContext("user-1", TIER_FEATURES.free);
+    const result = await buildCoachContext("user-1", TIER_FEATURES.free, "UTC");
 
     expect(result.suggestions).toEqual([
       'How did "drink water" go?',
@@ -419,5 +419,89 @@ describe("buildCoachContext", () => {
     // if a future change adds tier-aware logic, this assertion will fail
     // and force an explicit decision on what should differ.
     expect(free).toEqual(pro);
+  });
+});
+
+// The time-of-day suggestion chips were gated on `new Date().getHours()` — the
+// SERVER's hour, which is UTC on Railway — while `tz` was already a parameter
+// of the same function. An LA user at 8am PDT (15:00 UTC) got no breakfast
+// chip, and at 6pm PDT (01:00 UTC the next day) was offered breakfast ideas.
+//
+// The clock is pinned so "morning in LA" is a fact rather than a function of
+// when CI runs, and the zone is passed as an argument, so nothing here depends
+// on the host timezone.
+describe("buildCoachContext — time-of-day chips use the USER's hour", () => {
+  beforeEach(() => {
+    mockStorage.getUserProfile.mockResolvedValue(undefined);
+    mockStorage.getDailySummary.mockResolvedValue(makeDailySummary({}));
+    mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
+    mockStorage.getCommitmentsWithDueFollowUp.mockResolvedValue([]);
+    mockStorage.getUser.mockResolvedValue(undefined);
+  });
+
+  // The HOST timezone is an uncontrolled input here: the buggy implementation
+  // reads `new Date().getHours()`, so on a developer machine that happens to sit
+  // near the zone under test these assertions pass without the fix. Pinning the
+  // process to UTC (which is also what CI runs) makes the buggy path read UTC
+  // hours deterministically, so the instants below land in a DIFFERENT branch
+  // under the bug than under the fix — on any machine.
+  const originalTz = process.env.TZ;
+  beforeAll(() => {
+    process.env.TZ = "UTC";
+  });
+  afterAll(() => {
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  const at = (iso: string) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(iso));
+  };
+
+  it("pins the process timezone it claims to (guards the mechanism)", () => {
+    expect(new Date(2026, 6, 10).getTimezoneOffset()).toBe(0);
+  });
+
+  it("offers breakfast at 8am local, even though it is mid-afternoon UTC", async () => {
+    at("2026-07-10T15:00:00Z"); // 08:00 in Los Angeles
+    const ctx = await buildCoachContext(
+      "u1",
+      TIER_FEATURES.free,
+      "America/Los_Angeles",
+    );
+    expect(ctx.suggestions).toContain("Quick breakfast ideas");
+    expect(ctx.suggestions).not.toContain("How was my day?");
+  });
+
+  it("offers the evening chip at 6pm local, though UTC has rolled to the next day", async () => {
+    at("2026-07-11T01:00:00Z"); // 18:00 on Jul 10 in Los Angeles
+    const ctx = await buildCoachContext(
+      "u1",
+      TIER_FEATURES.free,
+      "America/Los_Angeles",
+    );
+    expect(ctx.suggestions).toContain("How was my day?");
+    expect(ctx.suggestions).not.toContain("Quick breakfast ideas");
+  });
+
+  it("still reads the server hour correctly when the caller has no timezone", async () => {
+    at("2026-07-10T08:00:00Z"); // 08:00 UTC
+    const ctx = await buildCoachContext("u1", TIER_FEATURES.free);
+    expect(ctx.suggestions).toContain("Quick breakfast ideas");
+  });
+
+  it("handles midnight without emitting hour 24", async () => {
+    at("2026-07-10T07:00:00Z"); // 00:00 in Los Angeles
+    const ctx = await buildCoachContext(
+      "u1",
+      TIER_FEATURES.free,
+      "America/Los_Angeles",
+    );
+    // 0 < 11, so the morning chip applies; an `hour12:false` formatter that
+    // renders midnight as "24" would silently fall through to neither branch.
+    expect(ctx.suggestions).toContain("Quick breakfast ideas");
   });
 });
