@@ -46,8 +46,9 @@ coincide.
 
 > Two symptoms, two populations, and they need separate measurement. A sweep asking "does the
 > tapped chip's label land on the planner chip with that label" scores every UTC-negative zone at
-> **zero** — for any offset under 24h, local midnight of day X always falls on UTC day X, so
-> whatever key the picker writes the planner labels correctly. A sweep asking "does the written
+> **zero** — for a *negative* offset, local midnight of day X still falls on UTC day X (it is only
+> a UTC-**positive** offset that pushes local midnight back onto UTC day X−1, which is the whole
+> Root Cause above), so whatever key the picker writes the planner labels correctly. A sweep asking "does the written
 > key match the planner's key for *today*" scores the same zones at 25-29% (Edmonton 6/24,
 > Los Angeles 7/24), which is the separate "today is briefly unselectable" defect. Both are real;
 > neither alone describes the bug, and quoting one number for both is how "100%" got written.
