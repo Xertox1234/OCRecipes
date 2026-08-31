@@ -78,9 +78,15 @@ jobs:
     # which 90 no longer covers with margin. Re-bumped 110 -> 120 with the
     # Metro pre-warm step (best-effort, capped at 10m) and the driver
     # readiness budget 120s -> 300s (x2 attempts = up to +6m): ~16m of new
-    # worst-case consumers against what had been a ~21m margin. The point of
-    # the headroom is a real Pass/Fail summary instead of an ambiguous timeout.
-    timeout-minutes: 120
+    # worst-case consumers against what had been a ~21m margin. Re-bumped
+    # 120 -> 160 once the build step's bound was sized from measured builds
+    # (~34m normal, 70m bound): setup ~6m + build <=70m + pre-warm <=10m +
+    # flows (observed ~13m when green; 64m if every launch gate maxes) — the
+    # realistic path is ~60m, the sum of maxima ~150m, and 160 keeps a 10m
+    # margin so the job timeout can never fire in the same instant the flows
+    # step would be printing its summary. The point of the headroom is a real
+    # Pass/Fail summary instead of an ambiguous timeout.
+    timeout-minutes: 160
 
     env:
       # Backend env — mirrors .github/workflows/ci.yml so the server behaves the
@@ -269,13 +275,18 @@ jobs:
       # DerivedData (~2-3 min; an earlier-stage failure retries whatever it
       # actually costs — pod resolution reruns either way); a genuine build
       # failure still fails both attempts, so the raw-xcodebuild diagnostic
-      # step below keeps its trigger semantics. The step-level bound covers
-      # BOTH attempts (cold build ~17-20m + a retry) so a wedged retry fails
-      # cleanly into the diagnostic step instead of silently consuming the
-      # job's 110m budget (which cancels the run with no Pass/Fail summary).
+      # step below keeps its trigger semantics. The step-level bound exists so
+      # a wedged retry fails cleanly into the diagnostic step instead of
+      # silently consuming the job budget (which cancels the run with no
+      # Pass/Fail summary) — but it must be sized from MEASURED builds: a
+      # normal successful cold build here takes ~34m (run 33352527232:
+      # 33m33s; run 33348888795: 34m16s). The first nightly after re-enable
+      # (run 33373712907) was killed by a 35m bound one minute past a normal
+      # build, mid-compile, with no code change since the green run. 70m =
+      # 2x the measured build (slow-runner headroom) plus a warm retry.
       - name: Build and install iOS app
         id: build-ios
-        timeout-minutes: 35
+        timeout-minutes: 70
         run: |
           npx expo run:ios --no-bundler || {
             echo "::warning::expo run:ios failed once - retrying (see run 33345540597 simctl-openurl timeout)"
@@ -303,6 +314,21 @@ jobs:
         working-directory: ios
         timeout-minutes: 15
         run: |
+          # A step timeout kills the shell but can orphan the build step's
+          # xcodebuild — and XCBBuildService, the long-lived build-system
+          # process xcodebuild is only a client of, which is what actually
+          # holds the DerivedData build.db lock and can outlive the CLI. Either
+          # makes this diagnostic fail with "database is locked ... two
+          # concurrent builds" instead of the real error (run 33373712907).
+          # Log what was still alive first so the next occurrence is evidence.
+          pgrep -l xcodebuild || true
+          pgrep -l XCBBuildService || true
+          pkill -x xcodebuild || true
+          pkill -x XCBBuildService || true
+          for i in $(seq 1 10); do
+            if ! pgrep -qx xcodebuild && ! pgrep -qx XCBBuildService; then break; fi
+            sleep 2
+          done
           xcodebuild -workspace OCRecipes.xcworkspace -configuration Debug -scheme OCRecipes \
             -destination "id=$IOS_SIMULATOR_UDID" build 2>&1
 
