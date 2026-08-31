@@ -128,8 +128,8 @@ See `docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2026-0
 - Filed after the user authorised follow-up todos. Accepted as a known residual during the
   coach "Add to Plan" branch (Ruling 10 in that branch's ledger) rather than fixed, because the
   clean fix trades a rare race for a modal that can trap the user.
-- **Corrected the same day**, during that branch's final-review fix wave: verified `shared/
-schema.ts`'s `mealPlanItems` table has no unique constraint over
+- **Corrected the same day**, during that branch's final-review fix wave: verified
+  `shared/schema.ts`'s `mealPlanItems` table has no unique constraint over
   `(userId, plannedDate, mealType, recipeId)`. The residual is not a race that "self-heals" — it
   writes a duplicate plan row that nothing in the schema catches. "Why the obvious fix was
   rejected" and Risks updated accordingly; priority (`medium`) was already appropriately set for
