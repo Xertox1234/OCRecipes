@@ -2,9 +2,9 @@
 title: "Before tightening one entry of a validation map, check what container the failure propagates through — and don't soften it into a dead affordance"
 track: knowledge
 category: conventions
-tags: [ai-prompting, api, typescript, testing, zod, validation, coach]
+tags: [react-native, ai-prompting, api, typescript, testing, zod, validation, coach]
 module: shared
-applies_to: [shared/schemas/**/*.ts, client/components/coach/**/*.ts]
+applies_to: [client/components/coach/**/*.ts, client/components/coach/**/*.tsx]
 symptoms: ["A per-screen or per-type schema is made strict while its siblings strip unknown keys", "A single invalid element removes a whole list from the UI", "Reaching for .catch() to stop one bad element from failing a z.array", "A validation tightening whose real-world failure rate cannot be observed in production"]
 created: '2026-08-31'
 ---
@@ -108,7 +108,10 @@ expect(result.error.issues.some((i) => i.code === "unrecognized_keys")).toBe(tru
 ## Related Files
 
 - `shared/schemas/coach-blocks.ts` — `screenParamSchemas`, the strict entry, and
-  `validateNavigateParams`; the header comment documents the by-hand sync with the ParamList
+  `validateNavigateParams`; the header comment documents the by-hand sync with the ParamList.
+  **Note:** `shared/schemas/**` is deliberately out of scope in `scripts/lib/path-domains.ts`, so
+  it routes to no domain and cannot appear in this doc's `applies_to` — editing that file will
+  never inject this doc. The `client/components/coach/**` entry is the live half.
 - `client/components/coach/coach-chat-utils.ts` — `filterValidBlocks`, which decides the unit
   dropped
 - `shared/schemas/__tests__/coach-blocks.test.ts` — the `suggestion_list` amplification test

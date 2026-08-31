@@ -36,10 +36,18 @@ coincide.
 - For a **UTC-positive** offset (Berlin, Auckland) local midnight maps to the *previous* UTC
   date. The planner keys `local_day - 1` while the picker wrote `local_day`, so an item added
   from the chip labelled "Wednesday, September 2" appeared in the planner under **Thursday
-  September 3** — 100% of the time, not an edge case.
-- Separately, deriving the label from a raw `new Date()` rather than local midnight meant
-  `getUTCDate() !== getDate()` for roughly 31% of hours in `America/Los_Angeles`: during that
-  window the picker's first chip was *tomorrow* and today could not be selected at all.
+  September 3**. Measured by sweeping all 24 local hours: **22/24 hours in `Europe/Berlin`,
+  12/24 in `Pacific/Auckland`** — a large fraction of every day for a whole user population,
+  not an edge case.
+- For a **UTC-negative** offset the label and the key shifted *together*, so an item did land
+  under the chip it was tapped from — but that chip was ahead of the user's actual today for
+  7/24 hours in `America/Los_Angeles`, during which the picker's first chip was *tomorrow* and
+  today could not be selected at all.
+
+> Two symptoms, two populations, and they need separate measurement — a sweep that asks "does
+> the tapped chip's label land on the planner chip with that label" scores the Americas at zero
+> while a sweep that asks "does the written key match the planner's key for that day" scores
+> them at 29%. Both are real; neither alone describes the bug.
 
 ## Root Cause
 
@@ -108,15 +116,19 @@ original defect survive, and it caught the *fix's own regression guard* too:
 
 - The natural assertion — "the picker's `iso` equals what the planner computes for this instant"
   — is satisfied by **both** bases under UTC, because local midnight and the raw instant fall on
-  the same UTC day there.
+  the same UTC day there. **UTC is the unique zone with that property.**
 - CI runs UTC (no `TZ` in `vitest.config.ts`, `test/setup.ts`, or the workflows; GitHub-hosted
-  runners default to UTC). A `UTC-6` dev machine is equally silent.
-- So a guard written the obvious way fires in neither environment that runs automatically.
+  runners default to UTC), so the guard is silent in the one environment that runs unattended.
 
-Either pin a **UTC-positive** zone for that test file, or assert something that can only hold on
-the intended basis — and verify the guard by mutation: revert the basis, watch the test fail in
-the configuration CI actually uses, restore. A guard that has only ever failed under a hand-set
-`TZ` is not a guard.
+Pin **any non-UTC zone** for that test file — the offset's *sign* is irrelevant, despite how
+naturally "the bug is a UTC-positive bug, so the test needs a UTC-positive zone" reads. Against
+the real fixture (23:00 local), `America/Edmonton`, `America/Los_Angeles`, `Europe/Berlin` and
+`Pacific/Auckland` all discriminate; only UTC does not. Getting this backwards costs a future
+reviewer a rejected-but-correct `America/Denver` pin, which is why it is spelled out here.
+
+Then verify the guard by mutation: revert the basis, watch the test fail **in the configuration
+CI actually uses**, restore. A guard that has only ever failed under a hand-set `TZ` is not a
+guard.
 
 Anchor fixtures at an instant where the bases *differ* (e.g. 23:00 UTC in a UTC-positive zone).
 A fixture at 12:00 UTC exercises nothing no matter which `TZ` you run it under.
