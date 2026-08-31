@@ -14,7 +14,7 @@ github_issue:
 ## Summary
 
 While commissioning `.github/workflows/e2e-regression.yml` (see
-`todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md`), a real Maestro schema bug
+`todos/archive/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md`), a real Maestro schema bug
 was fixed: `optional: true` as a sibling list-item (rather than nested inside the command's
 own map) is silently ignored by Maestro, making ~59 steps across the flow suite accidentally
 _mandatory_ when they were clearly authored to be optional. Fixing the nesting was correct and
@@ -54,7 +54,13 @@ only matters once the suite is passing.
 
 - Do this only after `P2-2026-08-15-e2e-regression-workflow-has-never-passed.md` reaches a
   genuinely green run — auditing assertion strength in a suite that doesn't run yet has no
-  payoff.
+  payoff. **SATISFIED 2026-08-31**: green on `main` (run 33352527232); that todo now lives at
+  `todos/archive/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md`. Partial progress
+  already landed in PR #880: the two scan flows gained a mandatory SpeedDial assert and
+  `home/chat.yaml`'s suggested-prompt block went from all-optional (provably dead) to
+  mandatory — the rule is codified in
+  `docs/solutions/logic-errors/optional-e2e-steps-cannot-fail-dead-selectors-stay-green-2026-08-30.md`.
+  Re-audit the remaining flows against that doc.
 - Re-verify the affected-file list against the current state of `e2e/flows/**` rather than
   trusting this list — it may drift as the parent todo's follow-up work lands.
 
@@ -67,7 +73,8 @@ only matters once the suite is passing.
 ## Dependencies
 
 - Soft dependency on `P2-2026-08-15-e2e-regression-workflow-has-never-passed.md` reaching a
-  green run first (see Implementation Notes).
+  green run first (see Implementation Notes) — satisfied 2026-08-31 (archived at
+  `todos/archive/`); this todo is unblocked.
 
 ## Risks
 

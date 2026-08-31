@@ -98,6 +98,10 @@ e2e/
                         # Sign In screen is actually showing (an inherited
                         # session short-circuits), dismisses the iOS
                         # Save-Password dialog, and exits on the Home screen.
+                        # Self-heals a wizard-stranded app (a prior flow died
+                        # mid-registration) by front-running ensure-logged-out
+                        # when a wizard marker is visible — so must stay the
+                        # FIRST step after launch-app.yaml.
                         # Call with `runFlow` + env USERNAME/PASSWORD (see
                         # e2e-regression.yml's "Seed E2E test user" step for
                         # what account exists in CI)

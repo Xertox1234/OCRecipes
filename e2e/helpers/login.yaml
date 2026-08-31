@@ -5,7 +5,7 @@ appId: com.ocrecipes.app
 #   PASSWORD (default: testpass123)
 #
 # State-aware since 2026-08-30 (evidence: dispatch-9 artifacts — see
-# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
+# todos/archive/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
 #
 # - Flows don't clear app state between each other, so the app may already be
 #   authenticated from an earlier flow in the same job. The entry gate waits

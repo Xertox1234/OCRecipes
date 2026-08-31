@@ -3,7 +3,7 @@ appId: com.ocrecipes.app
 # Reusable "launch and connect to Metro" helper — every flow's first step.
 #
 # Design (2026-08-30, evidence: dispatch-9 artifacts, run 33292071278 — see
-# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
+# todos/archive/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
 #
 # 1. The readiness gate below waits for ANY known post-launch state instead of
 #    racing a fixed-timeout check against Metro's cold bundle (41-58s typical
