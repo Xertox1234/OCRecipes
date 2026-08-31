@@ -14,7 +14,8 @@ appId: com.ocrecipes.app
 #   an optional 90s wait for "Sign In" alone — burned its entire timeout
 #   staring at the Home screen in every already-authenticated flow.
 #   e2e/helpers/launch-app.yaml's 240s readiness gate now owns the cold-start
-#   budget, so 30s here is margin, not the first line of defense.
+#   budget, so the entry wait here (60s — see the inline note at the wait)
+#   is margin, not the first line of defense.
 #
 # - Credential entry runs only `when: visible: "Sign In"`. The CI workflow's
 #   "Seed E2E test user" step marks the account `onboardingCompleted: true`
@@ -99,6 +100,15 @@ appId: com.ocrecipes.app
       # typing never landed (fields tapped mid-transition). Instead of
       # fighting the timing, use the validation message as the oracle and
       # retype + resubmit, bounded. No-op when the first submit worked.
+      # Settle first with the happy-path polarity: this returns the moment
+      # Sign In disappears (a working submit), and only spends its 5s when
+      # the form is still up — by which time the validation text is rendered
+      # for the loop's `while` to observe on its first evaluation.
+      - extendedWaitUntil:
+          notVisible:
+            text: "Sign In"
+          timeout: 5000
+          optional: true
       - repeat:
           times: 2
           while:

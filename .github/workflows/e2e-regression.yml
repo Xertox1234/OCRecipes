@@ -26,9 +26,11 @@
 #   macOS — are free; the previous "manual-only to save paid macOS minutes"
 #   rationale no longer applies.
 #
-# Flake tolerance: the Maestro step retries once before failing the job, so a
-# single transient flake doesn't produce a red night. A flow that fails twice
-# in a row is a real signal.
+# Flake tolerance: the suite runs once, then scripts/ci/e2e-with-flow-retry.sh
+# re-runs only the flows that failed, individually — a single transient flake
+# doesn't produce a red night. A flow that fails twice in a row is a real
+# signal. (The earlier whole-suite retry needed one attempt to be 8/8, which
+# one flake per attempt defeats — run 33397038006.)
 #
 # Status (2026-08-31): NIGHTLY SCHEDULE RE-ENABLED. The pause condition
 # ("a genuinely green workflow_dispatch run on main") was met by run

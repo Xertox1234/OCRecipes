@@ -34,7 +34,10 @@ parse_failed_flows() {
 
 # Map a flow display name to its YAML file via the `name:` frontmatter.
 flow_file_for() {
-  grep -l -E "^name: \"?$(printf '%s' "$1" | sed 's/[.[\*^$]/\\&/g')\"?\s*$" "$FLOWS_DIR"/flows/*/*.yaml 2>/dev/null | head -1
+  # Escape every ERE metacharacter so a future name with parens/pipes/etc.
+  # still maps (today's 15 names contain only spaces and hyphens).
+  # shellcheck disable=SC2016  # the $ inside the sed class is a literal, not an expansion
+  grep -l -E "^name: \"?$(printf '%s' "$1" | sed 's/[][\.*^$()+?{}|]/\\&/g')\"?\s*$" "$FLOWS_DIR"/flows/*/*.yaml 2>/dev/null | head -1
 }
 
 if [ "${1:-}" = "--parse-only" ]; then
@@ -55,7 +58,12 @@ if [ "$suite_status" -eq 0 ]; then
   exit 0
 fi
 
-mapfile -t failed < <(parse_failed_flows "$LOG")
+# NOTE: no `mapfile` — the iOS job runs this under macOS's default bash 3.2,
+# which lacks it (same constraint as scripts/preflight.sh). Read loop instead.
+failed=()
+while IFS= read -r name; do
+  [ -n "$name" ] && failed+=("$name")
+done < <(parse_failed_flows "$LOG")
 if [ "${#failed[@]}" -eq 0 ]; then
   echo "::error::suite exited $suite_status but no [Failed] flow lines were found — infrastructure failure (driver/device), not a flow flake; nothing to retry"
   exit "$suite_status"
