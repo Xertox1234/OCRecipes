@@ -16,7 +16,7 @@
  */
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, screen, fireEvent } from "@testing-library/react";
+import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
 import type { ChatMessage } from "@/hooks/useChat";
@@ -45,13 +45,40 @@ const state = vi.hoisted(() => ({
     startListening: vi.fn(),
     stopListening: vi.fn(),
   },
-  // premium
+  // premium — "coachPro" (mic) stays on the pre-existing `hasVoice` flag;
+  // "catalogSave" (add_recipe_to_plan gate) is independent so existing
+  // hasVoice-driven tests are unaffected.
   hasVoice: false,
+  canSaveCatalog: true,
   // navigation
   navigate: vi.fn(),
   // apiRequest (commitment accept)
   apiRequest: vi.fn().mockResolvedValue(undefined),
+  // add_recipe_to_plan: captured from the mocked BlockRenderer's onAction prop
+  // so tests can fire an arbitrary action without a canned block.action.
+  onAction: null as ((action: Record<string, unknown>) => void) | null,
+  // useMealPlanRecipes / useMealPlan
+  saveCatalog: vi.fn().mockResolvedValue({ id: 99 }),
+  addItem: vi.fn().mockResolvedValue({}),
+  mealPlanItems: [] as { plannedDate: string }[],
+  // ToastContext / useHaptics
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
+  hapticsNotification: vi.fn(),
 }));
+
+/** Adjust a single premium feature flag for the next render. */
+function setPremiumFeatures(overrides: {
+  catalogSave?: boolean;
+  coachPro?: boolean;
+}) {
+  if (overrides.catalogSave !== undefined) {
+    state.canSaveCatalog = overrides.catalogSave;
+  }
+  if (overrides.coachPro !== undefined) {
+    state.hasVoice = overrides.coachPro;
+  }
+}
 
 vi.mock("@/hooks/useCoachStream", () => ({
   useCoachStream: (opts: {
@@ -93,7 +120,8 @@ vi.mock("@/hooks/useTTS", () => ({
 }));
 
 vi.mock("@/hooks/usePremiumFeatures", () => ({
-  usePremiumFeature: () => state.hasVoice,
+  usePremiumFeature: (feature: string) =>
+    feature === "catalogSave" ? state.canSaveCatalog : state.hasVoice,
 }));
 
 vi.mock("@react-navigation/native", () => ({
@@ -102,6 +130,38 @@ vi.mock("@react-navigation/native", () => ({
 
 vi.mock("@/lib/query-client", () => ({
   apiRequest: (...args: unknown[]) => state.apiRequest(...args),
+}));
+
+vi.mock("@/hooks/useMealPlanRecipes", () => ({
+  useSaveCatalogRecipe: () => ({
+    mutateAsync: state.saveCatalog,
+    isPending: false,
+  }),
+}));
+
+vi.mock("@/hooks/useMealPlan", () => ({
+  useMealPlanItems: () => ({ data: state.mealPlanItems }),
+  useAddMealPlanItem: () => ({
+    mutateAsync: state.addItem,
+    isPending: false,
+  }),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({
+    success: state.toastSuccess,
+    error: state.toastError,
+    info: vi.fn(),
+    dismiss: vi.fn(),
+  }),
+}));
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: vi.fn(),
+    notification: state.hapticsNotification,
+    selection: vi.fn(),
+  }),
 }));
 
 // Thin CoachChatBase double: renders children + a Send button wired to onSend,
@@ -157,34 +217,39 @@ vi.mock("@/components/coach/blocks", () => ({
       title: string,
       date: string,
     ) => void;
-  }) => (
-    <div data-testid={`block-${block.type}`}>
-      <button
-        data-testid="block-action"
-        onClick={() => onAction?.(block.action as Record<string, unknown>)}
-      >
-        action
-      </button>
-      <button
-        data-testid="block-quick-reply"
-        onClick={() => onQuickReply?.("a quick reply", "qk-1")}
-      >
-        quick-reply
-      </button>
-      <button
-        data-testid="block-commit"
-        onClick={() =>
-          onCommitmentAccept?.(
-            block.notebookEntryId as number | undefined,
-            (block.title as string) ?? "",
-            (block.followUpDate as string) ?? "",
-          )
-        }
-      >
-        commit
-      </button>
-    </div>
-  ),
+  }) => {
+    // Captured so tests can fire an arbitrary action (not just the one fixed
+    // block.action a given render was mounted with) via `state.onAction?.(...)`.
+    state.onAction = onAction ?? null;
+    return (
+      <div data-testid={`block-${block.type}`}>
+        <button
+          data-testid="block-action"
+          onClick={() => onAction?.(block.action as Record<string, unknown>)}
+        >
+          action
+        </button>
+        <button
+          data-testid="block-quick-reply"
+          onClick={() => onQuickReply?.("a quick reply", "qk-1")}
+        >
+          quick-reply
+        </button>
+        <button
+          data-testid="block-commit"
+          onClick={() =>
+            onCommitmentAccept?.(
+              block.notebookEntryId as number | undefined,
+              (block.title as string) ?? "",
+              (block.followUpDate as string) ?? "",
+            )
+          }
+        >
+          commit
+        </button>
+      </div>
+    );
+  },
 }));
 
 // Thin StreamingBubble double — presence proves the streamingFooter branch.
@@ -211,7 +276,8 @@ vi.mock("@/components/ChatBubble", () => ({
 }));
 
 vi.mock("@/components/UpgradeModal", () => ({
-  UpgradeModal: () => null,
+  UpgradeModal: ({ visible }: { visible: boolean }) =>
+    visible ? <div data-testid="upgrade-modal" /> : null,
 }));
 
 vi.mock("@/components/coach/CoachMicButton", () => ({
@@ -273,8 +339,16 @@ function resetState() {
     stopListening: vi.fn(),
   };
   state.hasVoice = false;
+  state.canSaveCatalog = true;
   state.navigate = vi.fn();
   state.apiRequest = vi.fn().mockResolvedValue(undefined);
+  state.onAction = null;
+  state.saveCatalog = vi.fn().mockResolvedValue({ id: 99 });
+  state.addItem = vi.fn().mockResolvedValue({});
+  state.mealPlanItems = [];
+  state.toastSuccess = vi.fn();
+  state.toastError = vi.fn();
+  state.hapticsNotification = vi.fn();
   warmUpHook.sendWarmUp.mockClear();
   warmUpHook.sendTextWarmUp.mockClear();
   warmUpHook.reset.mockClear();
@@ -834,5 +908,127 @@ describe("CoachChat — cleanup", () => {
     const { unmount } = renderCoachChat();
     unmount();
     expect(state.abortStream).toHaveBeenCalled();
+  });
+});
+
+// ── add_recipe_to_plan (client-local action; never enters blockActionSchema) ─
+describe("add_recipe_to_plan", () => {
+  // Mounts a real recipe_card block so the mocked BlockRenderer renders and
+  // captures its onAction prop onto state.onAction — tests then fire an
+  // arbitrary action through it rather than a canned block.action.
+  function renderWithRecipeCardBlock() {
+    state.messages = [
+      makeMessage({
+        id: 20,
+        role: "assistant",
+        content: "here's a recipe",
+        metadata: {
+          blocks: [
+            {
+              type: "recipe_card",
+              recipe: {
+                title: "Lemon Chicken",
+                calories: 520,
+                protein: 42,
+                prepTime: "25 min",
+                imageUrl: null,
+                recipeId: 715538,
+                source: "spoonacular",
+              },
+            },
+          ],
+        } as unknown as ChatMessage["metadata"],
+      }),
+    ];
+    renderCoachChat({ conversationId: 7 });
+  }
+
+  it("opens the slot picker instead of navigating away", () => {
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    expect(state.navigate).not.toHaveBeenCalled();
+    expect(screen.getByText("Lemon Chicken")).toBeTruthy();
+  });
+
+  it("saves the catalog recipe then adds the item for the chosen slot", async () => {
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+
+    await waitFor(() => {
+      expect(state.saveCatalog).toHaveBeenCalledWith(715538);
+      expect(state.addItem).toHaveBeenCalledWith(
+        expect.objectContaining({ recipeId: 99, mealType: "dinner" }),
+      );
+    });
+    // save must resolve BEFORE the add — the add needs the user-owned recipe id
+    expect(state.saveCatalog.mock.invocationCallOrder[0]).toBeLessThan(
+      state.addItem.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("shows the upgrade modal and calls neither mutation for a free user", () => {
+    setPremiumFeatures({ catalogSave: false });
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    expect(state.saveCatalog).not.toHaveBeenCalled();
+    expect(state.addItem).not.toHaveBeenCalled();
+    expect(screen.getByTestId("upgrade-modal")).toBeTruthy();
+  });
+
+  it("guards against a rapid double-tap firing the save mutation twice", async () => {
+    // The sheet's own isSubmitting-based guard reads THIS render's prop, which
+    // is still false here (the mocked useSaveCatalogRecipe/useAddMealPlanItem
+    // hooks return a static isPending: false — it never flips true) — so if
+    // CoachChat relied only on that prop, a second synchronous tap before the
+    // mutation settles would double-fire. Hold the save pending to force two
+    // taps to land while it's still in flight.
+    let resolveSave: ((value: { id: number }) => void) | undefined;
+    state.saveCatalog.mockImplementation(
+      () =>
+        new Promise<{ id: number }>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    renderWithRecipeCardBlock();
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    const confirmButton = screen.getByRole("button", { name: /add to plan/i });
+
+    fireEvent.click(confirmButton);
+    fireEvent.click(confirmButton);
+
+    expect(state.saveCatalog).toHaveBeenCalledTimes(1);
+
+    // Let the in-flight save resolve so the effect cleanup doesn't warn about
+    // a state update outside act().
+    await act(async () => {
+      resolveSave?.({ id: 99 });
+    });
   });
 });

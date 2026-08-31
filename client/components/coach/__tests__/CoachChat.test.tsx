@@ -93,6 +93,30 @@ vi.mock("@react-navigation/native", () => ({
   useNavigation: () => ({ navigate: vi.fn() }),
 }));
 
+// New CoachChat dependencies (add_recipe_to_plan wiring) — this file only
+// exercises the pre-existing daily-limit/upgrade branches, so these are thin
+// stubs to satisfy render, not behavior under test here.
+vi.mock("@/hooks/useMealPlanRecipes", () => ({
+  useSaveCatalogRecipe: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock("@/hooks/useMealPlan", () => ({
+  useMealPlanItems: () => ({ data: [] }),
+  useAddMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
+vi.mock("@/context/ToastContext", () => ({
+  useToast: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+}));
+
+vi.mock("@/hooks/useHaptics", () => ({
+  useHaptics: () => ({
+    impact: vi.fn(),
+    notification: vi.fn(),
+    selection: vi.fn(),
+  }),
+}));
+
 const warmUpHook = {
   sendWarmUp: vi.fn(),
   sendTextWarmUp: vi.fn(),

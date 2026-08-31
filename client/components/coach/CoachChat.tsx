@@ -18,6 +18,8 @@ import {
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
+import * as Haptics from "expo-haptics";
+
 import { ChatBubble } from "@/components/ChatBubble";
 import { InlineError } from "@/components/InlineError";
 import { useTTS } from "@/hooks/useTTS";
@@ -25,6 +27,11 @@ import BlockRenderer from "@/components/coach/blocks";
 import CoachMicButton from "@/components/coach/CoachMicButton";
 import { CoachChatBase } from "@/components/coach/CoachChatBase";
 import { UpgradeModal } from "@/components/UpgradeModal";
+import { PlanSlotPickerSheet } from "@/components/coach/PlanSlotPickerSheet";
+import {
+  buildPlanSlotDays,
+  toPlannedDateSet,
+} from "@/components/coach/plan-slot-picker-utils";
 import { useTheme } from "@/hooks/useTheme";
 import {
   useChatMessages,
@@ -33,6 +40,11 @@ import {
 } from "@/hooks/useChat";
 import { useSpeechToText } from "@/hooks/useSpeechToText";
 import { usePremiumFeature } from "@/hooks/usePremiumFeatures";
+import { useSaveCatalogRecipe } from "@/hooks/useMealPlanRecipes";
+import { useAddMealPlanItem, useMealPlanItems } from "@/hooks/useMealPlan";
+import { useToast } from "@/context/ToastContext";
+import { useHaptics } from "@/hooks/useHaptics";
+import type { MealType } from "@/screens/meal-plan/meal-plan-utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { Spacing } from "@/constants/theme";
 import type { CoachBlock } from "@shared/schemas/coach-blocks";
@@ -80,8 +92,21 @@ export default function CoachChat({
   const { theme } = useTheme();
   const navigation = useNavigation<CoachChatNavigationProp>();
   const hasVoice = usePremiumFeature("coachPro");
+  // Catalog save is premium-gated server-side (checkPremiumFeature
+  // "catalogSave" on POST /api/meal-plan/catalog/:id/save) — gate here too so
+  // a free user gets the upgrade path instead of a failed request.
+  const canSaveCatalog = usePremiumFeature("catalogSave");
   const deleteChatMessage = useDeleteChatMessageForRetry();
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const haptics = useHaptics();
+  // Destructure rather than depend on the mutation objects themselves —
+  // useMutation returns a new object identity every render, which would
+  // make every useCallback below that depends on it re-create every render.
+  const { mutateAsync: saveCatalogRecipe, isPending: isSavingCatalog } =
+    useSaveCatalogRecipe();
+  const { mutateAsync: addMealPlanItem, isPending: isAddingPlanItem } =
+    useAddMealPlanItem();
 
   const [inputText, setInputText] = useState("");
   const [streamBlocks, setStreamBlocks] = useState<CoachBlock[]>([]);
@@ -91,6 +116,10 @@ export default function CoachChat({
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(
     null,
   );
+  const [planTarget, setPlanTarget] = useState<{
+    recipeId: number;
+    recipeTitle: string;
+  } | null>(null);
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
   const prevStreamingRef = useRef(false);
@@ -100,6 +129,26 @@ export default function CoachChat({
   const [quickReplyVersion, setQuickReplyVersion] = useState(0);
   const acceptedCommitmentsRef = useRef<Set<number | string>>(new Set());
   const [commitmentVersion, setCommitmentVersion] = useState(0);
+  // Ref-based (not prop-based) double-submit guard: PlanSlotPickerSheet's own
+  // `isSubmitting`-prop guard reads the CURRENT render's props, which lags a
+  // rapid double-tap on Confirm — two synchronous taps can both fire
+  // onConfirm before React re-renders with the mutation's in-flight state.
+  // This ref is set synchronously at the top of handleConfirmPlanSlot (before
+  // any await), so a second synchronous call sees it immediately and bails —
+  // a prop can never do that. Mirrors the isActioning.current pattern in
+  // AddItemMenuSheet.tsx, adapted to release in `finally` (not on next open)
+  // so a retry after a failed save is never permanently blocked.
+  const isSavingPlanRef = useRef(false);
+
+  const planWeek = useMemo(() => buildPlanSlotDays(new Date()), []);
+  const { data: planItems } = useMealPlanItems(
+    planWeek[0].iso,
+    planWeek[planWeek.length - 1].iso,
+  );
+  const datesWithItems = useMemo(
+    () => toPlannedDateSet(planItems),
+    [planItems],
+  );
   // extraData must be treated immutably (FlatList is a PureComponent and
   // React Compiler does not protect its internal class-component compare) —
   // an inline array literal would re-render every visible cell per keystroke.
@@ -352,6 +401,18 @@ export default function CoachChat({
     (action: Record<string, unknown>) => {
       if (action.type === "log_food") {
         void handleSend(`Please log: ${action.description as string}`);
+      } else if (action.type === "add_recipe_to_plan") {
+        // Client-local action — never enters blockActionSchema, so the AI
+        // gains no new capability. Only RecipeCard's "spoonacular" branch
+        // emits this.
+        if (!canSaveCatalog) {
+          setShowUpgrade(true);
+          return;
+        }
+        setPlanTarget({
+          recipeId: action.recipeId as number,
+          recipeTitle: action.recipeTitle as string,
+        });
       } else if (action.type === "navigate") {
         const screen = action.screen as string;
         const params = action.params as Record<string, unknown> | undefined;
@@ -425,7 +486,46 @@ export default function CoachChat({
         navigation.navigate("GoalSetup");
       }
     },
-    [handleSend, navigation],
+    [handleSend, navigation, canSaveCatalog],
+  );
+
+  // A fresh planTarget (a new "Add to Plan" tap) always starts a clean guard —
+  // otherwise a ref that only ever flips true in handleConfirmPlanSlot could
+  // stay stuck true forever if some future caller cleared planTarget through
+  // a path other than handleConfirmPlanSlot's own success branch.
+  useEffect(() => {
+    if (planTarget) {
+      isSavingPlanRef.current = false;
+    }
+  }, [planTarget]);
+
+  const handleConfirmPlanSlot = useCallback(
+    async (plannedDate: string, mealType: MealType) => {
+      if (!planTarget || isSavingPlanRef.current) return;
+      isSavingPlanRef.current = true;
+      try {
+        // Two steps are required: /api/meal-plan/items enforces IDOR ownership
+        // and takes only a user-owned recipe id, while a coach card carries a
+        // Spoonacular catalog id. The save is idempotent — it returns the
+        // existing row when the recipe was saved before.
+        const saved = await saveCatalogRecipe(planTarget.recipeId);
+        await addMealPlanItem({
+          recipeId: saved.id,
+          plannedDate,
+          mealType,
+        });
+        haptics.notification(Haptics.NotificationFeedbackType.Success);
+        toast.success(`Added to your plan`);
+        setPlanTarget(null);
+      } catch {
+        haptics.notification(Haptics.NotificationFeedbackType.Error);
+        toast.error("Couldn't add the recipe to your plan. Please try again.");
+        // Keep the sheet open on failure so the user can retry.
+      } finally {
+        isSavingPlanRef.current = false;
+      }
+    },
+    [planTarget, saveCatalogRecipe, addMealPlanItem, haptics, toast],
   );
 
   const handleCommitmentAccept = useCallback(
@@ -706,6 +806,14 @@ export default function CoachChat({
         visible={showUpgrade}
         onClose={() => setShowUpgrade(false)}
         onUpgrade={() => setIsAtDailyLimit(false)}
+      />
+      <PlanSlotPickerSheet
+        visible={planTarget !== null}
+        recipeTitle={planTarget?.recipeTitle ?? ""}
+        datesWithItems={datesWithItems}
+        isSubmitting={isSavingCatalog || isAddingPlanItem}
+        onConfirm={handleConfirmPlanSlot}
+        onDismiss={() => setPlanTarget(null)}
       />
     </CoachChatBase>
   );
