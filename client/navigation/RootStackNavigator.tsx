@@ -195,7 +195,8 @@ export type RootStackParamList = {
   RecipeBrowserModal:
     | {
         mealType?: string;
-        date?: string;
+        plannedDate?: string;
+        searchQuery?: string;
         planDays?: MealPlanDay[];
       }
     | undefined;
