@@ -6,9 +6,12 @@ appId: com.ocrecipes.app
 # todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
 #
 # 1. The readiness gate below waits for ANY known post-launch state instead of
-#    racing a fixed-timeout check against Metro's cold bundle (41-58s measured
-#    on CI). Maestro text matching is FULL-STRING regex, so the alternation
-#    lists complete node texts:
+#    racing a fixed-timeout check against Metro's cold bundle (41-58s typical
+#    on CI, but 177.7s observed under runner contention in main-dispatch
+#    33341123446 — hence the 240s budget; the gate is non-optional, so a
+#    genuinely broken launch still fails loud, just later). Maestro text
+#    matching is FULL-STRING regex, so the alternation lists complete node
+#    texts:
 #      Continue        — dev-client "This is the developer menu" welcome banner
 #      Sign In         — logged-out app
 #      Hello.*         — logged-in app (Home greeting is "Hello <name>")
@@ -57,7 +60,7 @@ appId: com.ocrecipes.app
 # auth/login, which calls it, is always the first flow in path order).
 - extendedWaitUntil:
     visible: "(Continue|Sign In|Hello.*|Not Now|Connected to:|Are you sure you want to sign out.*|Get Started|Go back)"
-    timeout: 120000
+    timeout: 240000
 
 # Finish an interrupted logout: [0] is the alert's title, [1] the confirm
 # button (see ensure-logged-out.yaml for the evidence)

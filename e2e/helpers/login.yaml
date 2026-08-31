@@ -29,7 +29,22 @@ appId: com.ocrecipes.app
 #
 # - The final wait is this helper's contract: it exits on the Home screen,
 #   whichever path ran.
+#
+# - Wizard-strand recovery (added after main-dispatch 33341123446): if a
+#   PREVIOUS flow's registration died mid-onboarding (there: an XCUITest
+#   driver transport crash right after Create Account), the app relaunches
+#   into the wizard — a state with neither "Sign In" nor "Hello". Only
+#   auth/login and complete-onboarding used to route through
+#   ensure-logged-out's escape, so the strand turned every OTHER flow in the
+#   attempt red until one of those two ran. The gated runFlow below makes
+#   every login-helper flow self-healing: it fires only when a wizard marker
+#   is on screen, escapes + logs out via ensure-logged-out, and the normal
+#   credential block then signs in as the intended user.
 ---
+- runFlow:
+    when:
+      visible: "(Get Started|Go back)"
+    file: ensure-logged-out.yaml
 - extendedWaitUntil:
     visible: "(Sign In|Hello.*)"
     timeout: 30000
