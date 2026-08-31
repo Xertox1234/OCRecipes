@@ -268,4 +268,27 @@ describe("civilDateToInstant", () => {
       "2026-09-02T00:00:00.000Z",
     );
   });
+
+  // `Antarctica/Troll` shifts by TWO hours (UTC+0 <-> UTC+2), so its fall-back
+  // day is 26 hours long. `getDayBounds` used to find "tomorrow" by adding 25h
+  // and reading the civil date, which landed back inside the SAME day: the
+  // bounds came out inverted (endOfDay one millisecond before startOfDay) and
+  // every query for that day silently returned nothing. Tomorrow is now derived
+  // from the calendar, which is exact for any transition magnitude.
+  it("produces forward bounds on a 26-hour local day (2h DST shift)", () => {
+    const tz = "Antarctica/Troll";
+    for (const dateStr of ["2026-10-25", "2025-10-26", "2024-10-27"]) {
+      const { startOfDay, endOfDay } = getDayBounds(
+        civilDateToInstant(dateStr, tz),
+        tz,
+      );
+      expect(endOfDay.getTime()).toBeGreaterThan(startOfDay.getTime());
+      expect(civilDateString(startOfDay, tz)).toBe(dateStr);
+      expect(civilDateString(endOfDay, tz)).toBe(dateStr);
+      // The day really is 26h long, which is what broke the old heuristic.
+      expect(endOfDay.getTime() - startOfDay.getTime()).toBe(
+        26 * 60 * 60 * 1000 - 1,
+      );
+    }
+  });
 });

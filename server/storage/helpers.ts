@@ -140,14 +140,22 @@ export function getDayBounds(
 
   const startUtcMs = civilMidnightUtcMs(localYear, localMonth, localDay, tz);
 
-  // "Tomorrow" in the local tz: add 25h to the start so we always land in the
-  // next calendar day regardless of DST (shortest local day is 23h).
-  const tomorrowRef = new Date(startUtcMs + 25 * 60 * 60 * 1000);
-  const [nextYear, nextMonth, nextDay] = civilDateString(tomorrowRef, tz)
-    .split("-")
-    .map(Number) as [number, number, number];
-
-  const endUtcMs = civilMidnightUtcMs(nextYear, nextMonth, nextDay, tz) - 1;
+  // "Tomorrow" is derived from the CALENDAR, not by adding hours. The previous
+  // "+25h then read the civil date" heuristic assumed no local day exceeds 25
+  // hours. `Antarctica/Troll` shifts by TWO hours (UTC+0 <-> UTC+2), so its
+  // fall-back day is 26 hours long: +25h landed back inside the same day,
+  // "tomorrow" resolved to today, and endOfDay came out one millisecond BEFORE
+  // startOfDay — inverted bounds, so every query for that day returned nothing.
+  // `Date.UTC` normalises day overflow (day 32 -> the 1st of the next month),
+  // so this is exact for any transition magnitude.
+  const tomorrow = new Date(Date.UTC(localYear, localMonth - 1, localDay + 1));
+  const endUtcMs =
+    civilMidnightUtcMs(
+      tomorrow.getUTCFullYear(),
+      tomorrow.getUTCMonth() + 1,
+      tomorrow.getUTCDate(),
+      tz,
+    ) - 1;
 
   return { startOfDay: new Date(startUtcMs), endOfDay: new Date(endUtcMs) };
 }
