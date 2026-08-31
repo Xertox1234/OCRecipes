@@ -107,8 +107,9 @@ Two habits:
 
 ## Related Files
 
-- `todos/P2-2026-08-15-recipe-browser-modal-param-contract-unenforced.md` — the todo this
-  produced; its Updates section records the corrected bound and why it mattered
+- `todos/archive/P2-2026-08-15-recipe-browser-modal-param-contract-unenforced.md` — the todo
+  this produced (archived 2026-08-30); its Updates section records the corrected bound and
+  why it mattered
 - `client/components/coach/blocks/RecipeCard.tsx` — the caller the bound said did not exist
 - `docs/AI_WORKFLOW.md` → Review Policy — the roster whose reports this applies to
 
