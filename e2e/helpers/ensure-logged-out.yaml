@@ -3,7 +3,7 @@ appId: com.ocrecipes.app
 # Reusable "get me to a logged-out Sign In screen" helper — the replacement
 # for `launchApp: { clearState: true }`, which is unusable here (2026-08-30,
 # evidence: dispatch-9 artifacts — see
-# todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
+# todos/archive/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md):
 # on Android (where the declared appId matches the installed package)
 # `pm clear` wipes the dev client's OWN storage, stranding the relaunch on
 # the dev-client launcher screen; on iOS it errored outright because the

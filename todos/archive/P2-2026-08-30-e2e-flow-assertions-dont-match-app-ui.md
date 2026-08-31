@@ -214,7 +214,7 @@ step before the flows hitting the dev client's exact launchAsset URL (verified H
 
 Run 33352527232 (dispatch 17, main at d8a15a8b): both jobs green, notify job skipped — the
 first green `workflow_dispatch` on `main` in the workflow's history, and the pause note's
-condition. It took four hardening PRs after the commission (#881 strand recovery + 240s gate,
+condition. It took three hardening PRs after the commission (#881 strand recovery + 240s gate,
 #882 build-and-install retry, #883 300s driver budget + Metro pre-warm + pinned Maestro) to
 get past three consecutive iOS simulator-layer contention failures on the shared macOS runner.
 All five acceptance criteria met; schedule re-enabled in the archiving PR. Deferred refactors

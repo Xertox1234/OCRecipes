@@ -160,7 +160,7 @@ everyone to ignore the Actions tab.
 
 - `.github/workflows/e2e-regression.yml` — the workflow; the false premise is in the
   `Start Postgres` step comment
-- `todos/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md` — the full diagnosis of
+- `todos/archive/P2-2026-08-15-e2e-regression-workflow-has-never-passed.md` — the full diagnosis of
   both jobs and the commission-or-delete decision
 - `todos/archive/P3-2026-07-09-e2e-regression-gating-maestro.md` — where the (defensible)
   not-a-required-check decision was made

@@ -3,7 +3,7 @@ title: "E2E Regression has never passed — 34/34 nightly runs failed, so the su
 status: done
 priority: medium
 created: 2026-08-15
-updated: 2026-08-29
+updated: 2026-08-31
 assignee:
 labels: [ci, e2e, maestro, harness, android, ios]
 github_issue:
