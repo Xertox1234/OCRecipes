@@ -1097,29 +1097,44 @@ describe("handleCoachChat", () => {
 
 // ── Pure helpers extracted from handleCoachChat (L19) ───────
 
+// The day bucket is now a required argument: it is timezone-dependent, and a
+// default that answers in UTC is a different day from the user's for part of
+// every day. These cases are bucket-independent, so a fixed value states that.
+const DAY_BUCKET = "2026-07-10";
+
 describe("hashCoachCacheKey", () => {
   it("produces deterministic 32-char hex for the same input", () => {
-    const a = hashCoachCacheKey("user-1", "what should I eat?", false);
-    const b = hashCoachCacheKey("user-1", "what should I eat?", false);
+    const a = hashCoachCacheKey(
+      "user-1",
+      "what should I eat?",
+      false,
+      DAY_BUCKET,
+    );
+    const b = hashCoachCacheKey(
+      "user-1",
+      "what should I eat?",
+      false,
+      DAY_BUCKET,
+    );
     expect(a).toBe(b);
     expect(a).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it("produces different keys for different users with the same content", () => {
-    const a = hashCoachCacheKey("user-1", "hello", false);
-    const b = hashCoachCacheKey("user-2", "hello", false);
+    const a = hashCoachCacheKey("user-1", "hello", false, DAY_BUCKET);
+    const b = hashCoachCacheKey("user-2", "hello", false, DAY_BUCKET);
     expect(a).not.toBe(b);
   });
 
   it("normalizes whitespace and case", () => {
-    const a = hashCoachCacheKey("user-1", "Hello World", false);
-    const b = hashCoachCacheKey("user-1", "  hello world  ", false);
+    const a = hashCoachCacheKey("user-1", "Hello World", false, DAY_BUCKET);
+    const b = hashCoachCacheKey("user-1", "  hello world  ", false, DAY_BUCKET);
     expect(a).toBe(b);
   });
 
   it("scopes Pro and non-Pro under separate keys (H4 — 2026-04-18)", () => {
-    const pro = hashCoachCacheKey("user-1", "hello", true);
-    const free = hashCoachCacheKey("user-1", "hello", false);
+    const pro = hashCoachCacheKey("user-1", "hello", true, DAY_BUCKET);
+    const free = hashCoachCacheKey("user-1", "hello", false, DAY_BUCKET);
     expect(pro).not.toBe(free);
   });
 

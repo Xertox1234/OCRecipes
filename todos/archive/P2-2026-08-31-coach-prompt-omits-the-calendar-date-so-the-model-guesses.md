@@ -115,9 +115,18 @@ so it is recorded at `coach-tools.ts` — if the date is ever removed from the
 prompt, the field must stop being required or the guessing returns.
 
 `coach-context-builder.ts` now resolves the suggestion-chip hour in the user's
-zone. `hourCycle: "h23"` rather than `hour12: false`, because the latter renders
-midnight as "24" under some ICU versions and would fall through both branches;
-there is a midnight test for exactly that.
+zone, via a new `civilHourInTz` in `server/lib/civil-date.ts` rather than a third
+inline `Intl` formatter.
+
+**Correction — the original version of this note was wrong on both clauses, and
+both reviewers caught it independently.** It said `hour12: false` renders midnight
+as "24" and that hour 24 would "fall through both branches". Measured on Node
+24.9.0 / ICU 77.1 across nine zones: `hour12: false` and `hourCycle: "h23"` both
+render midnight `"00"`; only `hourCycle: "h24"` renders `"24"`. And `24 >= 17` is
+true, so an hour of 24 would serve the **evening** chip, not none. `h23` is still
+the right choice — it is explicit rather than relying on which `hour12` → hourCycle
+mapping the runtime implements — and the midnight test does guard the hazard, just
+via `h24` rather than `hour12: false`.
 
 **A test of mine passed when it should have failed, and that is the finding worth
 keeping.** The first version of the chip tests asserted the right things and went
@@ -135,4 +144,34 @@ explicitly — `Date.UTC(...)` plus an explicit `"UTC"` argument — so the inte
 in the test rather than in the machine.
 
 Mutation-checked both: removing the date from the prompt fails 6 tests; reverting
-the chip hour to the server's fails 3.
+the chip hour to the server's fails **2**.
+
+**That second number was originally recorded as 3, and the 3 was this machine's.**
+Both reviewers measured it host-dependent — 3 on `America/Denver`, 2 on UTC (what
+CI runs), 5 on `Pacific/Auckland` — because the three pre-existing tests had been
+pinned by _argument_ but not by `process.env.TZ`, leaving them host-coupled as
+mutation detectors. The `TZ` pin has since been moved to **file** scope, so the
+count is now 2 under every host zone tested (UTC, Denver, Berlin, Auckland) and
+green under all of them. A mutation count that varies by developer is not
+evidence; this one now is.
+
+That is the same lesson as the one above, landing twice in one change: the host
+timezone was an uncontrolled input in the _evidence_ as well as in the test.
+
+Also fixed here, from the review of this change:
+
+- `addToMealPlanSchema.plannedDate` was a bare `z.string()` — the weakest
+  validation in a file where every other date uses `isoDateSchema` (regex plus
+  `isValidCalendarDate`). `"next Friday"`, `"07/10/2026"` and `"2026-02-30"` all
+  passed, reaching the client's `isBrowseOnly` check and failing only at the
+  route, which surfaces as "Couldn't add the recipe to your plan. Please try
+  again." — a permanent failure worded as a transient one. Now `isoDateSchema`,
+  with `mealType` an enum rather than a free string, so `invalidArgs` routes the
+  problem back to the model instead.
+- The tool parameter descriptions now tell the model to resolve relative days
+  against the date in USER CONTEXT. Stating the date is necessary but not
+  sufficient — "add this for Sunday" still needs arithmetic, and nothing told it
+  where to anchor.
+- `hashCoachCacheKey`'s `dayBucket` is required rather than defaulting to UTC —
+  the same plausible-default trap, on a parameter that now has to agree with the
+  prompt's date.

@@ -252,7 +252,12 @@ export function hashCoachCacheKey(
   userId: string,
   content: string,
   isCoachPro: boolean,
-  dayBucket: string = getDayBucketInTz(),
+  // Required, not defaulted: `getDayBucketInTz()` with no arguments answers in
+  // UTC, which is a different day from the user's for part of every day. A
+  // plausible default on a timezone-dependent parameter is exactly what let the
+  // planned_date bases diverge unnoticed (PRs #889/#890) — the cache key and the
+  // prompt's date must agree, so the caller states the bucket.
+  dayBucket: string,
   contextHash = "no-context",
   intent: CoachIntent = "personalized_advice",
 ): string {

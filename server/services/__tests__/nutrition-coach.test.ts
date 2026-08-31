@@ -1261,8 +1261,10 @@ describe("current time rendering", () => {
     );
 
     const prompt = capturedSystemPrompt();
+    // The date itself is already pinned by the exact-sentence assertions above;
+    // what only this test adds is that the SERVER's day appears nowhere, so the
+    // prompt cannot state two different "now"s for the model to choose between.
     expect(prompt).toContain("2026-07-10");
-    // The server's own day must not appear, or the model can pick either.
     expect(prompt).not.toContain("2026-07-11");
   });
 
@@ -1282,11 +1284,5 @@ describe("current time rendering", () => {
     );
     expect(capturedSystemPrompt()).toContain("2026-07-10");
     expect(capturedSystemPrompt()).not.toContain("2026-07-11");
-  });
-
-  it("uses the server's day only when the caller genuinely has no timezone", async () => {
-    const messages = [{ role: "user" as const, content: "Hi" }];
-    await collectStream(generateCoachResponse(messages, DEFAULT_CONTEXT));
-    expect(capturedSystemPrompt()).toContain("2026-07-11");
   });
 });

@@ -1,4 +1,5 @@
 import { storage } from "../storage";
+import { civilHourInTz } from "../lib/civil-date";
 import type { PremiumFeatures } from "@shared/types/premium";
 import type { CoachNotebookEntry } from "@shared/schema";
 
@@ -45,10 +46,14 @@ export async function buildCoachContext(
   _features: PremiumFeatures,
   tz: string = "UTC",
 ): Promise<CoachContextData> {
+  // One `now` for the whole function: the day-summary fetch and the
+  // time-of-day chip below could otherwise straddle an hour or day boundary
+  // and describe two different moments.
+  const now = new Date();
   const [profile, todayIntake, notebookEntries, dueCommitments, user] =
     await Promise.all([
       storage.getUserProfile(userId),
-      storage.getDailySummary(userId, new Date(), tz),
+      storage.getDailySummary(userId, now, tz),
       storage.getActiveNotebookEntries(userId),
       storage.getCommitmentsWithDueFollowUp(userId),
       storage.getUser(userId),
@@ -73,15 +78,17 @@ export async function buildCoachContext(
   // they were offered breakfast ideas. `tz` has been a parameter of this
   // function all along.
   //
-  // `hourCycle: "h23"` rather than `hour12: false`: the latter renders midnight
-  // as "24" under some ICU versions, which would fall through both branches.
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      hour: "numeric",
-      hourCycle: "h23",
-    }).format(new Date()),
-  );
+  // `hourCycle: "h23"` is stated explicitly rather than left to the `hour12`
+  // shorthand. Measured on Node 24.9.0 / ICU 77.1, `hour12: false` and
+  // `hourCycle: "h23"` both render midnight as "00"; the variant that renders
+  // it "24" is `hourCycle: "h24"`, which older ECMA-402 mapped `hour12: false`
+  // onto. Being explicit removes the dependence on which mapping the runtime
+  // implements.
+  //
+  // The consequence if an hour of 24 ever did leak through is NOT "no chip":
+  // `24 >= 17` is true, so midnight would serve the EVENING chip. The midnight
+  // test pins that.
+  const hour = civilHourInTz(now, tz);
   if (hour < 11) {
     suggestions.push("Quick breakfast ideas");
   } else if (hour >= 17) {

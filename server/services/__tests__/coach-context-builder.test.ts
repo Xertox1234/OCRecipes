@@ -15,6 +15,24 @@ vi.mock("../../storage", () => ({
 
 const mockStorage = vi.mocked(storage);
 
+// The HOST timezone is an uncontrolled input for this whole file, not just the
+// time-of-day block: fixtures built with the local-time `Date` constructor mean
+// "8am wherever this runs". Pinned at FILE scope so every test — including the
+// ones that predate the tz-aware hour — is deterministic on any machine, and so
+// mutation counts are one number rather than one per developer.
+const ORIGINAL_TZ = process.env.TZ;
+beforeAll(() => {
+  process.env.TZ = "UTC";
+});
+afterAll(() => {
+  if (ORIGINAL_TZ === undefined) delete process.env.TZ;
+  else process.env.TZ = ORIGINAL_TZ;
+});
+
+it("pins the process timezone this file claims (guards the mechanism)", () => {
+  expect(new Date(2026, 6, 10).getTimezoneOffset()).toBe(0);
+});
+
 function makeDailySummary(
   overrides: Partial<{
     totalCalories: number;
@@ -115,12 +133,15 @@ function makeProfile(
 describe("buildCoachContext", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Fix time so hour-based suggestion logic is deterministic. The builder
-    // calls `new Date().getHours()` which is local-time, so build the fixed
-    // date from local-time components instead of a UTC string.
+    // Fix time so the hour-based suggestion logic is deterministic. The builder
+    // resolves the hour in the caller's `tz` (defaulting to UTC), so the
+    // fixture is a UTC instant rather than local-time components — the older
+    // local-time form meant "13:00 wherever this happens to run", which landed
+    // in the evening branch on a UTC-negative host and would have made the next
+    // exact-suggestions assertion added here pass in CI and fail elsewhere.
     vi.useFakeTimers();
-    // 13:00 local — afternoon (neither breakfast < 11 nor evening >= 17).
-    vi.setSystemTime(new Date(2026, 4, 15, 13, 0, 0));
+    // 13:00 UTC — afternoon (neither breakfast < 11 nor evening >= 17).
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 15, 13, 0, 0)));
   });
 
   afterEach(() => {
@@ -439,31 +460,12 @@ describe("buildCoachContext — time-of-day chips use the USER's hour", () => {
     mockStorage.getUser.mockResolvedValue(undefined);
   });
 
-  // The HOST timezone is an uncontrolled input here: the buggy implementation
-  // reads `new Date().getHours()`, so on a developer machine that happens to sit
-  // near the zone under test these assertions pass without the fix. Pinning the
-  // process to UTC (which is also what CI runs) makes the buggy path read UTC
-  // hours deterministically, so the instants below land in a DIFFERENT branch
-  // under the bug than under the fix — on any machine.
-  const originalTz = process.env.TZ;
-  beforeAll(() => {
-    process.env.TZ = "UTC";
-  });
-  afterAll(() => {
-    if (originalTz === undefined) delete process.env.TZ;
-    else process.env.TZ = originalTz;
-  });
-
   afterEach(() => vi.useRealTimers());
 
   const at = (iso: string) => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date(iso));
   };
-
-  it("pins the process timezone it claims to (guards the mechanism)", () => {
-    expect(new Date(2026, 6, 10).getTimezoneOffset()).toBe(0);
-  });
 
   it("offers breakfast at 8am local, even though it is mid-afternoon UTC", async () => {
     at("2026-07-10T15:00:00Z"); // 08:00 in Los Angeles
