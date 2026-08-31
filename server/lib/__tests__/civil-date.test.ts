@@ -41,6 +41,11 @@ describe("civilDateToInstant", () => {
   // The round-trip is the contract: for EVERY zone, an instant produced for
   // civil day D must read back as civil day D. This is precisely what
   // `new Date("YYYY-MM-DD")` fails to guarantee.
+  // The last three are the zones that CAN reach the DST clamp in
+  // `civilMidnightUtcMs`, but note these particular dates do not — none is a
+  // transition day, so they add zone diversity, not clamp coverage. The clamp
+  // is covered by the dedicated fixtures below, each verified non-vacuous by
+  // deleting the loop (all four then fail).
   it.each([
     "UTC",
     "Europe/Berlin",
@@ -49,6 +54,9 @@ describe("civilDateToInstant", () => {
     "America/Los_Angeles",
     "America/New_York",
     "Asia/Kolkata",
+    "America/Santiago",
+    "America/Havana",
+    "Atlantic/Azores",
   ])("round-trips a civil date through %s", (tz) => {
     for (const dateStr of ["2026-09-02", "2026-01-01", "2026-12-31"]) {
       expect(civilDateString(civilDateToInstant(dateStr, tz), tz)).toBe(
@@ -85,13 +93,18 @@ describe("civilDateToInstant", () => {
     );
   });
 
-  it("handles a zone whose DST transition is AT midnight (no 00:00 that day)", () => {
-    // America/Santiago springs forward at 00:00 local, so local midnight does
-    // not exist on the transition day. The civil date must still round-trip.
-    const tz = "America/Santiago";
-    expect(civilDateString(civilDateToInstant("2026-09-06", tz), tz)).toBe(
-      "2026-09-06",
-    );
+  // Every zone/day that actually reaches the clamp, 2024-2027. Verified
+  // non-vacuous: deleting the clamp makes each of these return the PREVIOUS
+  // day. `Asia/Beirut` also transitions at 00:00 but is UTC-positive
+  // beforehand, so it lands on the right day unaided — it belongs in neither
+  // this list nor a regression fixture.
+  it.each([
+    ["America/Santiago", "2026-09-06"],
+    ["America/Havana", "2026-03-08"],
+    ["Atlantic/Azores", "2026-03-29"],
+    ["America/Asuncion", "2024-10-06"],
+  ])("handles %s %s, where local midnight does not exist", (tz, dateStr) => {
+    expect(civilDateString(civilDateToInstant(dateStr, tz), tz)).toBe(dateStr);
   });
 
   it("defaults to UTC", () => {

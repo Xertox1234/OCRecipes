@@ -307,11 +307,11 @@ describe("/api/daily-budget — the requested date is resolved in the USER's zon
   });
 
   it.each([
-    ["America/Los_Angeles", -7],
-    ["America/New_York", -4],
-    ["Europe/Berlin", 2],
-    ["Pacific/Auckland", 12],
-    ["UTC", 0],
+    "America/Los_Angeles",
+    "America/New_York",
+    "Europe/Berlin",
+    "Pacific/Auckland",
+    "UTC",
   ])("resolves ?date=2026-09-02 to civil day 2026-09-02 in %s", async (tz) => {
     await request(app)
       .get("/api/daily-budget?date=2026-09-02")

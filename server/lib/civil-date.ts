@@ -55,14 +55,34 @@ export function civilMidnightUtcMs(
   const off2 = getOffsetMinutesAt(candidateMs, tz);
   let ms = off2 !== off1 ? guessMs - off2 * 60_000 : candidateMs;
 
-  // Zones that spring forward AT 00:00 local (America/Santiago, Asia/Beirut,
-  // America/Havana) have no midnight on the transition day — the clock jumps
+  // Some zones have no midnight on a transition day — the clock jumps
   // 23:59:59 -> 01:00:00 — and the offset correction above then lands on 23:00
   // of the PREVIOUS civil day. Step forward to the first instant that really is
-  // on the requested day. Capped: a transition is at most a few hours, and an
-  // unbounded loop here would be reachable from request input.
+  // on the requested day.
+  //
+  // The condition is a spring-forward at 00:00 local AND a NEGATIVE
+  // pre-transition offset; a positive one lands at 01:00 on the correct day and
+  // never needs this. Swept over every zone `Intl.supportedValuesOf` reports
+  // (417) across 2024-2027, exactly four zones ever reach this loop:
+  // America/Santiago (4 days), America/Havana (4), Atlantic/Azores (4),
+  // America/Asuncion (1). `Asia/Beirut` transitions at 00:00 but is UTC-POSITIVE
+  // beforehand, so it does NOT fire — a fixture built from it would be vacuous.
+  //
+  // Max iterations actually used across those 609,237 zone-days: 1. The cap of 4
+  // is margin, not a tuned value.
   const wanted = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  for (let i = 0; i < 4 && civilDateString(new Date(ms), tz) < wanted; i++) {
+  let i = 0;
+  while (civilDateString(new Date(ms), tz) < wanted) {
+    // Loud rather than silent: exhausting the cap would return an instant on
+    // the wrong civil day, which is exactly the class of bug this function
+    // exists to prevent. Measured unreachable (max 1 iteration over every
+    // zone x 2024-2027), so the throw costs nothing and stops a future tz
+    // database change from reintroducing a silent wrong day.
+    if (++i > 4) {
+      throw new RangeError(
+        `civilMidnightUtcMs: could not reach ${wanted} in ${tz} within 4h of the computed midnight`,
+      );
+    }
     ms += 60 * 60_000;
   }
   return ms;

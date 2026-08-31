@@ -15,6 +15,7 @@
  */
 
 import { createHash } from "crypto";
+import { civilDateString } from "../lib/civil-date";
 import { storage } from "../storage";
 import {
   generateCoachResponse,
@@ -222,12 +223,10 @@ export interface CoachChatParams {
  * have a user timezone remain backward-compatible.
  */
 function getDayBucketInTz(d: Date = new Date(), tz: string = "UTC"): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d); // en-CA produces "YYYY-MM-DD"
+  // Delegates rather than re-implementing: this was a verbatim third copy of
+  // the same `en-CA` formatter, and civil-date logic living in several places
+  // is how the bases drift apart in the first place.
+  return civilDateString(d, tz);
 }
 
 /**

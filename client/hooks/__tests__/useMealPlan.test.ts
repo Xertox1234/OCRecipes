@@ -180,7 +180,9 @@ describe("useMealPlan", () => {
         undefined,
         expect.objectContaining({
           headers: expect.objectContaining({
-            "X-Timezone": expect.any(String),
+            // Not expect.any(String): that passes on "", which would not
+            // distinguish "sends the device zone" from "sends garbage".
+            "X-Timezone": expect.stringMatching(/^\S+$/),
           }),
         }),
       );

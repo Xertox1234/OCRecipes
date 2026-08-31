@@ -135,4 +135,3 @@ add it automatically means every call site is its own decision.
 - [Two writers of one date column must share a normalisation basis](two-writers-of-one-date-column-must-share-a-normalisation-basis-2026-08-31.md) — the client-side half of the same story; that one is UTC-positive-only, this one UTC-negative-only
 - [A rolling instant window spans N+1 calendar days](rolling-instant-window-spans-n-plus-1-calendar-days-2026-07-12.md) — the same instant-vs-calendar-day confusion expressed as window arithmetic
 - [Timezone-aware day boundaries using Intl.DateTimeFormat](../conventions/timezone-aware-day-boundaries-intl-2026-05-31.md) — the underlying technique
-- [describe.each tables evaluate before hooks](each-tables-evaluate-before-hooks-so-pinned-env-misses-fixtures-2026-08-31.md) — the harness trap that hides guards like these

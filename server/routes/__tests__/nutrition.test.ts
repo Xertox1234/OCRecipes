@@ -220,7 +220,6 @@ describe("Nutrition Routes", () => {
   }
 
   beforeEach(() => {
-    vi.clearAllMocks();
     app = createApp();
   });
 
