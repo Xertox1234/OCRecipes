@@ -1,6 +1,6 @@
 ---
 title: "E2E flow assertions don't match what the app actually shows for a fresh/free/unonboarded-default test account"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-30
 updated: 2026-08-31
@@ -56,20 +56,22 @@ diagnosed at all yet.
 
 ## Acceptance Criteria
 
-- [ ] Each of the 6 failing flows above either passes, or its assertion is corrected to match
+- [x] Each of the 6 failing flows above either passes, or its assertion is corrected to match
       real, intended app behavior for the test account it's given (verified against actual
-      screenshots/hierarchy dumps, not guessed).
-- [ ] The two unverified leads above are confirmed or falsified with real evidence before any
-      fix is written against them.
-- [ ] iOS's ~2s blank-message failure on `Onboarding - Register and complete onboarding` is
-      diagnosed (currently completely unexplored).
-- [ ] At least one `workflow_dispatch` run shows these flows passing (not merely "further along"
+      screenshots/hierarchy dumps, not guessed). — MET (2026-08-30 entries below; PR #880)
+- [x] The two unverified leads above are confirmed or falsified with real evidence before any
+      fix is written against them. — MET: both falsified from hierarchy dumps + source
+- [x] iOS's ~2s blank-message failure on `Onboarding - Register and complete onboarding` is
+      diagnosed (currently completely unexplored). — MET: wrong-bundle-id `launchApp clearState`
+      error (app ids are split per platform); eliminated with clearState itself
+- [x] At least one `workflow_dispatch` run shows these flows passing (not merely "further along"
       — this repo's own prior E2E-commissioning history is proof that a partial fix reported as
-      done gets re-litigated later).
-- [ ] The nightly `schedule:` trigger in `.github/workflows/e2e-regression.yml` is re-enabled
+      done gets re-litigated later). — MET: run 33332969400 (branch), run 33352527232 (main)
+- [x] The nightly `schedule:` trigger in `.github/workflows/e2e-regression.yml` is re-enabled
       after a genuinely green `workflow_dispatch` run on `main` (the pause note in the workflow
       file spells out the condition — this checkbox exists because prose-only re-enable
       instructions are exactly how the original 34-failure drift happened: nothing tracked it).
+      — MET: green main run 33352527232 (2026-08-31); re-enabled in the same PR that archives this todo
 
 ## Implementation Notes
 
@@ -207,3 +209,13 @@ Fix (branch fix/e2e-ios-driver-startup-and-metro-prewarm): MAESTRO_DRIVER_STARTU
 on the iOS job; Maestro pinned to 2.9.0 on both jobs; a best-effort "Pre-warm Metro bundle"
 step before the flows hitting the dev client's exact launchAsset URL (verified HTTP 200,
 19.8 MB against a live Metro) so the bundle no longer races driver bring-up.
+
+### 2026-08-31 (final) — GREEN ON MAIN; nightly schedule re-enabled; archived
+
+Run 33352527232 (dispatch 17, main at d8a15a8b): both jobs green, notify job skipped — the
+first green `workflow_dispatch` on `main` in the workflow's history, and the pause note's
+condition. It took four hardening PRs after the commission (#881 strand recovery + 240s gate,
+#882 build-and-install retry, #883 300s driver budget + Metro pre-warm + pinned Maestro) to
+get past three consecutive iOS simulator-layer contention failures on the shared macOS runner.
+All five acceptance criteria met; schedule re-enabled in the archiving PR. Deferred refactors
+live in todos/P3-2026-08-30-e2e-suite-dedup-and-maintainability-followups.md.

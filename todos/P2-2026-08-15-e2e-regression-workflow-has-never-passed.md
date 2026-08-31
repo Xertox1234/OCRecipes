@@ -981,3 +981,11 @@ branch, all diagnosed from artifacts before any fix:
 non-blocking follow-ups live in `todos/P2-2026-08-30-e2e-flow-assertions-dont-match-app-ui.md`
 (schedule re-enable after a green dispatch on `main`) — that todo's flow-content premise is
 already resolved on this branch.
+
+### 2026-08-31 (final) — green on main too; archived
+
+Binding criterion met twice over: run 33332969400 (branch, 2026-08-30) and run 33352527232
+(`main`, 2026-08-31, after PRs #880-#883). Nightly `schedule:` re-enabled in the PR that
+archives this file. The three red main dispatches in between (XCUITest transport crash,
+simctl openurl stall, driver-never-ready) were all shared-runner contention, each hardened
+against — see the split todo's 2026-08-31 entries for the evidence chain.
