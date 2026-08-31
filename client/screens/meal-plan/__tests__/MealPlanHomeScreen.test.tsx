@@ -48,18 +48,24 @@ type CapturedSheet = {
   dismiss: ReturnType<typeof vi.fn>;
 };
 
-const { mockApiRequest, capturedSheets } = vi.hoisted(() => ({
+const { mockApiRequest, capturedSheets, hookCalls } = vi.hoisted(() => ({
   mockApiRequest: vi.fn(),
   capturedSheets: new Map<string, CapturedSheet>(),
+  // Recorded so the date-basis tests below can assert the ACTUAL query window
+  // the screen requested, rather than re-deriving it (which would just restate
+  // the implementation).
+  hookCalls: {
+    mealPlanItems: [] as unknown[][],
+    dailyBudget: [] as unknown[][],
+  },
 }));
 
 // ── Data hooks — collaborators of the screen, not the SUT ──────────────────
 vi.mock("@/hooks/useMealPlan", () => ({
-  useMealPlanItems: () => ({
-    data: [],
-    isLoading: false,
-    isRefetching: false,
-  }),
+  useMealPlanItems: (...args: unknown[]) => {
+    hookCalls.mealPlanItems.push(args);
+    return { data: [], isLoading: false, isRefetching: false };
+  },
   useAddMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRemoveMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useConfirmMealPlanItem: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -68,11 +74,14 @@ vi.mock("@/hooks/useMealPlan", () => ({
 }));
 
 vi.mock("@/hooks/useDailyBudget", () => ({
-  useDailyBudget: () => ({
-    data: { calorieGoal: 2000, foodCalories: 0, remaining: 2000 },
-    isError: false,
-    refetch: vi.fn(),
-  }),
+  useDailyBudget: (...args: unknown[]) => {
+    hookCalls.dailyBudget.push(args);
+    return {
+      data: { calorieGoal: 2000, foodCalories: 0, remaining: 2000 },
+      isError: false,
+      refetch: vi.fn(),
+    };
+  },
 }));
 
 vi.mock("@/hooks/useMealPlanRecipes", () => ({
@@ -316,5 +325,120 @@ describe("MealPlanHomeScreen — 4-sheet BottomSheetModal wiring integrity", () 
     for (const { key } of SHEETS) {
       expect(capturedSheets.get(key)!.dismiss).not.toHaveBeenCalled();
     }
+  });
+});
+
+// ── Date-basis regression guard ────────────────────────────────────────────
+//
+// `planned_date` is keyed on the DEVICE-LOCAL calendar day, so the key a date
+// chip reads/writes must be the same day that chip is labelled with. This was
+// wrong for every UTC-positive device until
+// todos/archive/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md:
+// `today` is normalised to LOCAL midnight (`setHours(0,0,0,0)`) and every
+// display field reads local component getters, but the key was derived with
+// `toDateString` (`toISOString()`), which reinterprets that local-midnight
+// instant in UTC and lands one calendar day early whenever the offset is
+// positive.
+//
+// CI runs UTC — the unique zone where the two bases agree — so the timezone is
+// pinned explicitly here. `Europe/Berlin` does not transition DST at 00:00
+// local, so `setHours(0,0,0,0)` always lands on a real midnight.
+describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day", () => {
+  const originalTz = process.env.TZ;
+  // 00:30 on Sep 2 in Berlin is still Sep 1 in UTC — the discriminating window.
+  const INSTANT = new Date("2026-09-01T22:30:00Z");
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/Berlin";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(INSTANT);
+  });
+
+  afterAll(() => {
+    vi.useRealTimers();
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  beforeEach(() => {
+    hookCalls.mealPlanItems.length = 0;
+    hookCalls.dailyBudget.length = 0;
+    mockApiRequest.mockReset();
+    mockApiRequest.mockResolvedValue({ json: async () => ({}) });
+  });
+
+  afterEach(() => cleanup());
+
+  it("pins the timezone and clock it claims to (guards the mechanism)", () => {
+    expect(-new Date(2026, 8, 2).getTimezoneOffset()).toBe(120);
+    expect(new Date().toISOString()).toBe("2026-09-01T22:30:00.000Z");
+  });
+
+  it("keys the selected day to the local date, not the UTC date of local midnight", () => {
+    renderComponent(<MealPlanHomeScreen />);
+    // Local calendar day is Sep 2; the UTC day of that same instant is Sep 1.
+    expect(hookCalls.dailyBudget.at(-1)?.[0]).toBe("2026-09-02");
+  });
+
+  it("requests a 7-day window covering exactly the days the strip renders", () => {
+    const { container } = renderComponent(<MealPlanHomeScreen />);
+    // Sep 2 2026 is a Wednesday, so the strip's week runs Sun Aug 30 → Sat Sep 5.
+    expect(hookCalls.mealPlanItems.at(-1)).toEqual([
+      "2026-08-30",
+      "2026-09-05",
+    ]);
+    // Cross-surface pin: the window's bounds must be the SAME days the strip
+    // labels. The labels come from `toLocaleDateString` on local components and
+    // never touch the date helper, so they are basis-invariant — which is
+    // exactly what makes them a usable independent reference for the window.
+    // (Do not assert the ABSENCE of an "August 29" label here: no basis has
+    // ever produced one, so such an assertion can never fail.)
+    const labels = Array.from(
+      container.querySelectorAll("[aria-label]"),
+      (el) => el.getAttribute("aria-label") ?? "",
+    );
+    const stripDays = labels
+      .map((l) => /^\w+day, (\w+ \d+)/.exec(l)?.[1])
+      .filter((d): d is string => Boolean(d));
+    expect(stripDays).toEqual([
+      "August 30",
+      "August 31",
+      "September 1",
+      "September 2",
+      "September 3",
+      "September 4",
+      "September 5",
+    ]);
+  });
+
+  it("sends the same local date to /api/daily-summary that it keys everything else on", () => {
+    renderComponent(<MealPlanHomeScreen />);
+    // The one other date-carrying call; it goes through apiRequest rather than a
+    // hook, so it needs its own pin or it can drift off the shared basis.
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/daily-summary?date=2026-09-02",
+      undefined,
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-Timezone": expect.any(String) }),
+      }),
+    );
+  });
+
+  // NOTE: basis-invariant by construction — `dateStr` (:1364) and
+  // `selectedDateStr` (:576) both go through the SAME helper, so swapping the
+  // helper shifts both operands together and the same chip stays selected. It
+  // is kept because it does guard the narrower property named below: a
+  // single-site edit to either line breaks it. It is NOT a basis guard — the
+  // literal pins above are. (Confirmed by mutation: reverting the import to
+  // `toDateString` fails those three — the daily-budget, window, and
+  // daily-summary pins — and leaves this one green.)
+  it("keeps the per-chip key and the selected key on one shared helper", () => {
+    const { container } = renderComponent(<MealPlanHomeScreen />);
+    const selected = Array.from(
+      container.querySelectorAll("[aria-label]"),
+      (el) => el.getAttribute("aria-label") ?? "",
+    ).filter((l) => l.includes(", selected"));
+    expect(selected).toEqual(["Wednesday, September 2, selected"]);
   });
 });

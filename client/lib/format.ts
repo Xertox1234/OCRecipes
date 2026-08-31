@@ -37,9 +37,6 @@ export function formatDateLong(dateStr: string): string {
   });
 }
 
-/** @deprecated Use `toDateString` from `@shared/lib/date` instead. */
-export { toDateString as formatDateISO } from "@shared/lib/date";
-
 /** Human-readable duration from minutes: "1h 30m", "45m", "2h" */
 export function formatDuration(minutes: number): string {
   const h = Math.floor(minutes / 60);
