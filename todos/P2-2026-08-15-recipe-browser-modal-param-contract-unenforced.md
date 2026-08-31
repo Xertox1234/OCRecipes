@@ -1,6 +1,6 @@
 ---
 title: "RecipeBrowserModal's param contract is unenforced end to end — a declared `date` nothing reads, and a `recipeId` the UI sends that nothing declares"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-15
 updated: 2026-08-15
@@ -111,20 +111,24 @@ this screen with no validation, and so can the UI.
 
 ## Acceptance Criteria
 
-- [ ] `RecipeBrowserModal` and `RecipeBrowser` agree on the planned-date field name, OR the
+- [x] `RecipeBrowserModal` and `RecipeBrowser` agree on the planned-date field name, OR the
       screen reads both. Do not leave a declared field with no consumer.
-- [ ] `recipeId` is either honoured (declared + read) or removed from `RecipeCard`'s action.
+- [x] `recipeId` is either honoured (declared + read) or removed from `RecipeCard`'s action.
       Decide deliberately and record which.
-- [ ] `screenParamSchemas` has a `RecipeBrowserModal` entry constraining what the AI may emit
+- [x] `screenParamSchemas` has a `RecipeBrowserModal` entry constraining what the AI may emit
       for it, so an unknown or misspelled field is rejected at the boundary instead of
       silently dropped.
-- [ ] A test pins the dispatch path end to end: a navigate action carrying a planned date
+- [x] A test pins the dispatch path end to end: a navigate action carrying a planned date
       (and a recipe, if honoured) arrives as a value the screen actually reads. Asserting the
       navigate call's arguments does not prove the screen reads them — the existing test at
       `client/components/coach/__tests__/CoachChat.branches.test.tsx:670-673` does assert a
       precise shape (`toHaveBeenCalledWith("RecipeBrowserModal", { planDays: [] })`), and is
-      still satisfied by a screen that ignores the param entirely.
-- [ ] `docs/solutions/conventions/align-route-params-dual-navigator-screens-2026-05-13.md` is
+      still satisfied by a screen that ignores the param entirely. Satisfied two-sided: a
+      screen-level test drives `RecipeBrowserScreen`'s `isBrowseOnly` fork off `plannedDate`
+      directly, and `server/services/__tests__/coach-tools.test.ts`'s
+      "returns schema-aligned navigation proposal actions" now asserts the producer emits
+      `plannedDate` and validates the resulting proposal through `actionCardSchema`.
+- [x] `docs/solutions/conventions/align-route-params-dual-navigator-screens-2026-05-13.md` is
       updated. It already codifies this class and names `planDays` as the aligned field, but
       misses the `date`/`plannedDate` divergence sitting in its own subject matter — a
       convention doc that walks past an instance in front of it is the gap worth closing.
@@ -180,3 +184,64 @@ this screen with no validation, and so can the UI.
   That was wrong: `RecipeCard.tsx:61` passes `{ recipeId }`. Every fact in this todo was
   re-verified against the files at `50bed11d` rather than taken from the report — which is
   how instance 2, the half that actually fires, was found.
+
+### 2026-08-30
+
+- **`human_led` gate.** Overridden once, in-session, by the user on 2026-08-30 after being
+  shown the gate reason above. The override applied to that run, not to the file —
+  `human_led: true` and `blocked_reason` are left exactly as filed. Only `status` was changed,
+  to `done`.
+
+- **AC #2 resolution — recorded verbatim.** Asked what the "Add to meal plan" button on a
+  coach recipe card should do, the user answered: _"That button should add the recipe to an
+  existing meal plan or kick off the creation of a new meal plan..."_. So `recipeId` is
+  **honoured**, not deleted. The reasoning that follows from that answer: a meal plan is not
+  an entity in this schema — there is no `meal_plans` table to attach a recipe to or create.
+  `meal_plan_items` rows are keyed by `(userId, plannedDate, mealType)`. So "add to an
+  existing plan" and "start a new one" collapse to the **same operation**: pick a day and a
+  meal-type slot, then write the row. There is no branch between the two halves of the user's
+  answer at the data layer — the UI does not need to ask "existing or new."
+
+- **This todo's own Background was wrong — the most important thing to record.** Section 1
+  called the `date` half "a trap rather than a live break" and stated "No caller in `client/`
+  passes `date`." The second sentence was true and stayed true; the conclusion drawn from it
+  did not follow. The caller enumeration was run as `git grep ... -- client/`, path-scoped to
+  the client tree. The real producer was on the other side of the API boundary:
+  `server/services/coach-tools.ts`'s `add_to_meal_plan` tool handler built its navigate
+  proposal with `params: { date: parsed.data.plannedDate ?? ... }` — reading a variable named
+  `plannedDate` and writing it out under the key `date`. So the coach's "add to meal plan"
+  proposal had been opening `RecipeBrowserScreen` in browse-only mode all along: tapping the
+  recipe in the browser opened its detail screen instead of adding it to the plan. This was
+  live, user-facing breakage, not a dormant trap — the todo's own severity read on it was
+  wrong. Worse, `server/services/__tests__/coach-tools.test.ts` carried a test named
+  "returns schema-aligned navigation proposal actions" that asserted
+  `params: { date: "2026-04-29", ... }` — a test that pinned the bug while its name claimed to
+  verify the opposite. Both are fixed in commit `04ebb015` (producer now emits `plannedDate`;
+  test now asserts `plannedDate` and additionally validates the proposal through
+  `actionCardSchema`). This is the durable lesson: a caller enumeration scoped to one side of
+  an API boundary proves nothing about producers on the other side, however precisely the
+  command and its bound are written down.
+
+- **Scope widening.** Two files landed beyond this todo's Scope Contract ("No new mechanisms,
+  files, or abstractions beyond those listed"): `client/components/coach/
+plan-slot-picker-utils.ts` and `client/components/coach/PlanSlotPickerSheet.tsx`. Reason:
+  AC #2's resolution requires picking a day and a meal-type slot, and no reusable picker for
+  that existed — `MealPlanHomeScreen`'s `DateStripItem` is screen-local to that screen, not an
+  extractable component.
+
+- **Secondary decisions.**
+  - "Add to Plan" renders on a coach recipe card only when `recipe.source === "spoonacular"`
+    — the add flow needs a Spoonacular catalog id to call
+    `POST /api/meal-plan/catalog/:id/save`, which a community-sourced card cannot supply.
+  - A free user tapping "Add to Plan" gets the existing `UpgradeModal`, because the underlying
+    capability (`catalogSave`) is premium-gated the same way elsewhere in the app.
+  - The new `add_recipe_to_plan` action is **client-local** — it is not added to
+    `blockActionSchema` and the coach system prompt was not changed, so the AI model gains no
+    new capability from this work; the picker is reached only through the existing recipe
+    card UI.
+
+- **Verification note on AC #4.** "Pins the dispatch path end to end" is satisfied two-sided
+  rather than by one single test: a screen-level test drives `RecipeBrowserScreen`'s
+  `isBrowseOnly` fork directly off `plannedDate` (proving the screen reads what the producer
+  now sends), and the corrected `coach-tools.test.ts` case proves the producer sends it and
+  that the resulting proposal still validates against `actionCardSchema`.
