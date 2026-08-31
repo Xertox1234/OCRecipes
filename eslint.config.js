@@ -45,6 +45,12 @@ module.exports = defineConfig([
       // but the bug class it was introduced to fix (2026-08-31) is precisely a
       // date helper whose basis is invisible at the call site, so the
       // constraint is enforced here rather than merely stated.
+      //
+      // The glob assumes server code imports via the `@shared/` alias in `.ts`
+      // files. Verified as of 2026-08-31 that nothing evades it: `server/` has
+      // no `.tsx` files, no relative `../shared/` imports, and nothing in
+      // `shared/` re-exports `toLocalDateString`. Widen this if any of those
+      // three stop being true.
       "no-restricted-imports": [
         "error",
         {

@@ -431,7 +431,8 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
   // is kept because it does guard the narrower property named below: a
   // single-site edit to either line breaks it. It is NOT a basis guard — the
   // literal pins above are. (Confirmed by mutation: reverting the import to
-  // `toDateString` fails those two and leaves this one green.)
+  // `toDateString` fails those three — the daily-budget, window, and
+  // daily-summary pins — and leaves this one green.)
   it("keeps the per-chip key and the selected key on one shared helper", () => {
     const { container } = renderComponent(<MealPlanHomeScreen />);
     const selected = Array.from(

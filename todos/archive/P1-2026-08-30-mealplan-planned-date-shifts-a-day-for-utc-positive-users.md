@@ -220,9 +220,28 @@ is now the user's real local day:
 
 - `/api/daily-summary` and `/api/daily-budget` bucket daily logs via `getDailySummary(userId, date,
 tz)`. A UTC-positive user's calorie ring was summarising the **previous** day's logged food for
-  the day they were looking at. Measured on the no-`?date=` path (`DailyNutritionDetailScreen`,
-  `useHistoryData`): `Europe/Berlin` goes from matching 2/24 local hours to 22/24. For
-  `Pacific/Auckland` it is a swap rather than a gain — 12/24 either way, a different twelve hours.
+  the day they were looking at. Measured on the planner's own `?date=` path
+  (`useDailyBudget(selectedDateStr)` and the `/api/daily-summary?date=` fetch), as hours out of 24
+  where the bucketed day equals the user's real local day:
+
+  | TZ                    | before | after     |
+  | --------------------- | ------ | --------- |
+  | `UTC`                 | 24/24  | 24/24     |
+  | `Europe/Berlin`       | 0/24   | **24/24** |
+  | `Pacific/Auckland`    | 0/24   | **24/24** |
+  | `America/Los_Angeles` | 0/24   | 0/24      |
+  | `America/New_York`    | 0/24   | 0/24      |
+
+  A complete fix for positive offsets, not a partial one — the key is derived from local midnight,
+  so it is constant across the day rather than time-of-day dependent. **Do not confuse these with
+  the `2/24 → 22/24` figures in
+  `todos/P2-2026-08-31-daily-summary-day-bucketing-loses-the-users-tz.md`** — those belong to
+  `getConfirmedMealPlanItemIds`, which is the UTC-bucketed sibling on the same response and is
+  where Auckland is a 12/24 swap. An earlier draft of this bullet attached that function's numbers
+  to this one, and additionally cited `DailyNutritionDetailScreen` / `useHistoryData`; both were
+  wrong. Those screens send no `?date=` at all, so the server falls back to
+  `getDayBounds(new Date(), tz)` — the user's true civil day, 24/24 in every zone, before and
+  after.
 
   **This claim is UTC-POSITIVE ONLY, and the mirrored half stays live.** `parseQueryDate` turns
   `"2026-09-02"` into UTC midnight and `getDayBounds` then reads _that instant's_ civil date in
