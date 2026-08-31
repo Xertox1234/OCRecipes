@@ -384,3 +384,48 @@ describe("validateNavigateParams stripping", () => {
     });
   });
 });
+
+describe("RecipeBrowserModal navigate params", () => {
+  const card = (params?: Record<string, unknown>) => ({
+    type: "action_card",
+    title: "Browse recipes",
+    subtitle: "Find something to cook",
+    actionLabel: "Browse",
+    action: {
+      type: "navigate",
+      screen: "RecipeBrowserModal",
+      ...(params ? { params } : {}),
+    },
+  });
+
+  it("accepts a navigate action with no params at all", () => {
+    expect(actionCardSchema.safeParse(card()).success).toBe(true);
+  });
+
+  it("accepts the four declared fields", () => {
+    const result = actionCardSchema.safeParse(
+      card({
+        mealType: "dinner",
+        plannedDate: "2026-09-01",
+        searchQuery: "pasta",
+      }),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it("REJECTS the misspelled `date` field instead of silently dropping it", () => {
+    const result = actionCardSchema.safeParse(card({ date: "2026-09-01" }));
+    expect(result.success).toBe(false);
+  });
+
+  it("still requires barcode for NutritionDetail when params are absent", () => {
+    const result = actionCardSchema.safeParse({
+      type: "action_card",
+      title: "Details",
+      subtitle: "See it",
+      actionLabel: "Open",
+      action: { type: "navigate", screen: "NutritionDetail" },
+    });
+    expect(result.success).toBe(false);
+  });
+});

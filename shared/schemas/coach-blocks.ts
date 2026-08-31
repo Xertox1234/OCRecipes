@@ -59,6 +59,10 @@ const navigateActionSchema = z.object({
 // now silently strip them — an accepted low-risk gap, unlike
 // FeaturedRecipeDetail/RecipeChat below, where the equivalent fields are
 // instead widened in (kept, not stripped) because real callers rely on them.
+// RecipeBrowserModal below is `.strict()` (unknown keys REJECTED, not
+// stripped) and must stay field-identical to
+// RootStackParamList["RecipeBrowserModal"] — a hand-sync miss there fails
+// closed (block dropped) instead of silently degrading.
 const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
   NutritionDetail: z.object({ barcode: z.string() }),
   // recipeType/type: real, tolerated fields on
@@ -86,6 +90,22 @@ const screenParamSchemas: Record<string, z.ZodType<Record<string, unknown>>> = {
     remixSourceRecipeId: z.number().optional().catch(undefined),
     remixSourceRecipeTitle: z.string().optional().catch(undefined),
   }),
+  // `.strict()` — unlike the entries above (which STRIP unknown keys), an
+  // unknown or misspelled field here is REJECTED. This screen's whole defect
+  // class was a param nothing read: `date` was declared on RootStackParamList
+  // while the screen read `plannedDate`, so a stray `date` silently opened the
+  // browser in browse-only mode. Rejecting surfaces that at the boundary;
+  // filterValidBlocks (client/components/coach/coach-chat-utils.ts:47-54)
+  // drops only the offending block, never the whole message.
+  // All four fields are optional, so a param-less navigate still validates.
+  RecipeBrowserModal: z
+    .object({
+      mealType: z.string().optional(),
+      plannedDate: z.string().optional(),
+      searchQuery: z.string().optional(),
+      planDays: z.array(mealPlanDaySchema).optional(),
+    })
+    .strict(),
 } satisfies Partial<Record<(typeof NAVIGABLE_SCREENS)[number], z.ZodType>>;
 
 const GOAL_TYPES = ["calories", "protein", "carbs", "fat", "weight"] as const;
@@ -144,15 +164,11 @@ function validateNavigateParams(
 ): void {
   const schema = screenParamSchemas[val.screen];
   if (schema) {
-    if (!val.params) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: `Screen "${val.screen}" requires params`,
-        path: ["params"],
-      });
-      return;
-    }
-    const result = schema.safeParse(val.params);
+    // Validate `{}` when params are absent rather than erroring up front:
+    // screens whose fields are ALL optional (RecipeBrowserModal) legitimately
+    // take no params, while screens with a required field (NutritionDetail's
+    // `barcode`) still fail here — via their own field-level issue.
+    const result = schema.safeParse(val.params ?? {});
     if (!result.success) {
       for (const issue of result.error.issues) {
         ctx.addIssue({
@@ -167,7 +183,17 @@ function validateNavigateParams(
     // not present in the per-screen schema (e.g. an illegal `itemId`
     // alongside `barcode` for NutritionDetail) survives validation and
     // reaches navigation.navigate unstripped.
-    val.params = result.data;
+    //
+    // Skip the reassignment when params were absent to begin with: turning
+    // an omitted `params` into an empty object `{}` is a value the caller
+    // never produced, and would flip navigation.navigate("Screen", undefined)
+    // (paramless — legal per RootStackParamList's `| undefined` arm) into
+    // navigation.navigate("Screen", {}) for every all-optional schema, e.g.
+    // RecipeBrowserModal — breaking CoachChat.branches.test.tsx's pinned
+    // paramless-navigate assertion.
+    if (val.params !== undefined) {
+      val.params = result.data;
+    }
   }
 }
 

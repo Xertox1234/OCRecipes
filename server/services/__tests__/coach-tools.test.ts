@@ -5,6 +5,7 @@ import {
   MAX_TOOL_CALLS_PER_RESPONSE,
 } from "../coach-tools";
 import { storage } from "../../storage";
+import { actionCardSchema } from "@shared/schemas/coach-blocks";
 
 vi.mock("../../storage", () => ({
   storage: {
@@ -262,13 +263,26 @@ describe("Coach Tools Service", () => {
       action: {
         type: "navigate",
         screen: "RecipeBrowserModal",
-        params: { date: "2026-04-29", mealType: "dinner" },
+        params: { plannedDate: "2026-04-29", mealType: "dinner" },
       },
     });
     expect(groceryResult).toMatchObject({
       proposal: true,
       action: { type: "navigate", screen: "GroceryListsModal" },
     });
+
+    // Make this test's name ("schema-aligned") load-bearing: the proposal the
+    // server emits must survive the SAME boundary validation the client applies
+    // via filterValidBlocks. With RecipeBrowserModal's entry now `.strict()`,
+    // a reintroduced `date` fails here instead of silently opening browse-only.
+    const asCard = {
+      type: "action_card",
+      title: "Add to plan",
+      subtitle: "Confirm below",
+      actionLabel: "Open",
+      action: (mealPlanResult as { action: unknown }).action,
+    };
+    expect(actionCardSchema.safeParse(asCard).success).toBe(true);
   });
 
   it("preserves category field in add_to_grocery_list items", async () => {

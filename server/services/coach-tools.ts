@@ -640,7 +640,7 @@ export async function executeToolCall(
           type: "navigate",
           screen: "RecipeBrowserModal",
           params: {
-            date: parsed.data.plannedDate ?? toIsoDate(new Date()),
+            plannedDate: parsed.data.plannedDate ?? toIsoDate(new Date()),
             mealType: parsed.data.mealType ?? "lunch",
           },
         },
