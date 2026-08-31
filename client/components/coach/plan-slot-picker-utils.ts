@@ -18,10 +18,18 @@ export interface PlanSlotDay {
    * calendar (see `buildPlanSlotDays`).
    *
    * Still NOT safe to re-parse back into a weekday for display: `new Date(iso)`
-   * parses a bare date as UTC midnight, which renders as the *previous* day in
-   * any UTC-negative zone. Callers that need the chosen day's name (e.g. a
-   * confirmation toast) must carry `weekday` forward from the chip the user
-   * actually picked, not recompute it from `iso`.
+   * parses a bare date as UTC **midnight**, which renders as the *previous* day
+   * in any UTC-negative zone. Measured for `iso = "2026-09-01"` (a Tuesday):
+   * correct in UTC/+2/+12, but `America/Los_Angeles` and `America/Sao_Paulo`
+   * both re-parse it as Monday.
+   *
+   * Note the inversion — the write-side basis bug this file was fixed for was
+   * UTC-POSITIVE-only, while this re-parse hazard is UTC-NEGATIVE-only. Knowing
+   * one does not warn you about the other.
+   *
+   * Callers that need the chosen day's name (e.g. a confirmation toast) must
+   * carry `weekday` forward from the chip the user actually picked, not
+   * recompute it from `iso`.
    */
   iso: string;
   /** Single-letter weekday initial for the compact chip, e.g. "M". */
