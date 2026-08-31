@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [testing, harness, timezone, silent-failure, test-isolation, probes, evidence]
 module: shared
-applies_to: [server/services/__tests__/*.test.ts, server/routes/__tests__/*.test.ts, server/storage/__tests__/*.test.ts, server/lib/__tests__/*.test.ts, client/hooks/__tests__/*.test.ts, client/screens/**/__tests__/*.test.tsx, client/components/**/__tests__/*.test.tsx, shared/lib/__tests__/*.test.ts]
+applies_to: [server/services/__tests__/*.test.ts, server/routes/__tests__/*.test.ts, server/storage/__tests__/*.test.ts, server/lib/__tests__/*.test.ts, client/hooks/__tests__/*.test.ts, client/screens/**/__tests__/*.test.ts, client/screens/**/__tests__/*.test.tsx, client/components/**/__tests__/*.test.ts, client/components/**/__tests__/*.test.tsx, shared/lib/__tests__/*.test.ts]
 symptoms: ["A newly written test passes BEFORE the fix it was written for", "A probe reports 'no difference' across several configurations that should differ", "A mutation check fails N tests locally and a different N in CI", "A guard is green on CI and red on a developer machine, or the reverse, with no code change", "Two independent things agree suspiciously well and nothing explains why", "The control row of a parameterised table fails, when by definition it should be a no-op"]
 created: '2026-08-31'
 severity: medium
@@ -19,7 +19,9 @@ same **ambient** input — the host timezone, `process.env`, the wall clock, the
 directory, a locale — they move together, and the check becomes a mirror. It reports agreement
 because it cannot report anything else.
 
-This has three faces, and they are the same bug:
+This has three faces, and they are the same bug. The first two are narrated from the work that
+produced this file (PRs #889/#890/#892) rather than from a committed artifact — the *mechanisms*
+are checkable in the repo, the episodes are not:
 
 1. **A test that passes before the fix.** The buggy code read `new Date().getHours()` (the host
    zone); the test asserted an hour "in Los Angeles". On a machine near that zone the two agreed,
@@ -27,9 +29,13 @@ This has three faces, and they are the same bug:
 2. **A probe that measures nothing.** A script sweeping four timezones set `process.env.TZ` in a
    loop at the top, clobbering the `TZ=…` the shell had supplied. All four "different" runs
    measured the same zone and printed a tidy table showing no difference anywhere.
-3. **Evidence that is one machine's.** A mutation check reported "3 tests fail". Re-run under
-   other host zones: 3 on `America/Denver`, **2 on UTC — which is what CI runs** — and 5 on
-   `Pacific/Auckland`. The number quoted as proof was a property of the author's laptop.
+3. **Evidence that is one machine's.** A mutation kill-count quoted as proof of a guard turned
+   out to vary by host zone, so the number in the write-up was a property of the author's laptop
+   rather than of the guard. The in-repo example is the table in
+   `todos/P2-2026-08-31-plan-slot-timezone-guards-never-run-in-ci.md` (Updates → 2026-08-31): the
+   same mutation kills `UTC 0 / Berlin 4 / Auckland 4 / LA 0` for one revert shape and
+   `UTC 0 / Berlin 1 / Auckland 2 / LA 1` for another. **Note the UTC column is 0 in both** —
+   quote a count taken on a developer machine and you claim a guard that CI does not have.
 
 ## Symptoms
 
@@ -58,25 +64,40 @@ reading ambient state inherits it, including the tools you reach for to check th
 **Name the variable, pin it, and assert the pin.**
 
 ```ts
-// Pin at FILE scope, not per-describe: fixtures elsewhere in the file are built
-// with local-time constructors and mean "8am wherever this runs".
 const ORIGINAL_TZ = process.env.TZ;
 beforeAll(() => {
-  process.env.TZ = "UTC";
+  // A NONZERO offset, deliberately — see below.
+  process.env.TZ = "Europe/Berlin";
 });
 afterAll(() => {
-  // `delete`, never `= undefined` — that stringifies to the literal "undefined".
+  // `delete`, never `= undefined` — that stringifies to the literal "undefined",
+  // which resolves to offset 0: silently back to the zone that hides the bug.
   if (ORIGINAL_TZ === undefined) delete process.env.TZ;
   else process.env.TZ = ORIGINAL_TZ;
 });
 
 it("pins the process timezone this file claims (guards the mechanism)", () => {
-  expect(new Date(2026, 6, 10).getTimezoneOffset()).toBe(0);
+  expect(-new Date(2026, 6, 10).getTimezoneOffset()).toBe(120);
 });
 ```
 
-That last test is the load-bearing one. Without it, a pin that silently no-ops leaves every
-assertion in the file passing for the wrong reason — green, and meaningless.
+**Pin a zone with a nonzero offset, and assert that offset.** This is the part that is easy to get
+backwards, and getting it backwards reproduces the very failure this file describes: a guard that
+pins `"UTC"` and asserts an offset of `0` **cannot fail on a UTC host**, which is what CI runs.
+Measured on Node 24.9.0 — with the host at UTC, `process.env.TZ = "Amerca/Denver"` (a typo),
+`process.env.TZ = ""`, and no pin at all all yield offset `0`, so the check passes in every broken
+case. Against a `Europe/Berlin` pin the same typo yields `0` against an expected `120` and fails
+immediately.
+
+That guard test is load-bearing. Without it, a pin that silently no-ops leaves every assertion in
+the file passing for the wrong reason — green, and meaningless. With it asserting zero, the guard
+is itself the thing it was supposed to prevent.
+
+**Where to put the pin depends on what builds the fixtures.** A `beforeAll` runs after module
+evaluation, so it does not reach anything constructed at collection time — `describe.each` /
+`it.each` tables most of all (see the See Also entry below). Per-`describe` pins are the right
+shape when a file sweeps several zones; a file-scope pin is right when one zone must hold for
+every test. What matters is that the pin precedes fixture *construction*, not where it sits.
 
 **Better still, pass the variable as data rather than pinning the process.** Where the code takes
 the input as an argument or a header, supply it there:
@@ -113,15 +134,22 @@ the dependence so there is one number.
 disagreement was possible. A shared helper, a shared default, a shared ambient read — each makes
 "they match" uninformative.
 
-**CI's environment is part of the design.** Here CI runs UTC, which is the one zone where every
-date basis in the system coincides — so an unpinned timezone guard is not weak, it is inert. Know
-which value your CI supplies for any ambient input a guard depends on, and assume it is the one
-that hides the bug.
+**CI's environment is part of the design.** Here CI runs UTC, and UTC is the unique *host* zone in
+which the UTC basis (`toDateString`) and the *host-local* basis (`toLocalDateString`) coincide — so
+a guard that depends on the host zone is not weak there, it is inert. Know which value your CI
+supplies for any ambient input a guard depends on, and assume it is the one that hides the bug.
+
+Note the limit of that statement: a guard driven by a *user* zone — an `X-Timezone` header resolved
+through `server/lib/civil-date.ts` — never reads the host zone at all, so it is unaffected by what
+CI runs. That is precisely why passing the value as data is the stronger fix.
 
 ## Related Files
 
-- `server/services/__tests__/coach-context-builder.test.ts` — file-scope `TZ` pin with the
-  `getTimezoneOffset()` mechanism guard
+- `shared/lib/__tests__/date.test.ts` — the reference implementation: module-scope capture,
+  `afterAll` restore with `delete`, and per-`describe` pins each asserting a NONZERO offset
+  (`Europe/Berlin` → `120`, `America/Los_Angeles` → `-420`)
+- `client/components/coach/__tests__/plan-slot-picker-utils.test.ts` — the same pattern sweeping
+  several zones, which is why its pins are per-`describe` rather than file-scope
 - `server/routes/__tests__/goals.test.ts`, `server/routes/__tests__/nutrition.test.ts` — the
   better pattern: the zone travels as an `X-Timezone` header, so nothing is ambient
 - `server/lib/civil-date.ts` — the helpers that let a timezone be passed rather than assumed
