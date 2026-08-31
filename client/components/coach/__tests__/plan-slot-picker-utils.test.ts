@@ -96,6 +96,11 @@ describe.each(ZONES)("buildPlanSlotDays (TZ=%s)", (tz) => {
   );
 });
 
+// NOTE: `describe.each` above leaves process.env.TZ at its last entry
+// (America/Los_Angeles) for this block; only the file-level afterAll restores
+// it. Harmless — toPlannedDateSet maps strings into a Set with no Date involved,
+// so it is timezone-independent — but the inheritance is implicit, so do not add
+// a date-sensitive assertion here without pinning a zone of your own.
 describe("toPlannedDateSet", () => {
   it("collects the distinct planned dates", () => {
     const set = toPlannedDateSet([

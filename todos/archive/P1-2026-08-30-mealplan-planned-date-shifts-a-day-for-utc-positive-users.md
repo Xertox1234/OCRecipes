@@ -121,8 +121,16 @@ same UTC calendar day, so their key already matches their label).
    "forward"; measured, it is BACKWARD.** A row stored as `2026-09-02` rendered under the chip
    labelled Sep 3 before the fix and under Sep 2 after it, identically in `Europe/Berlin` (+2),
    `Pacific/Auckland` (+12) and `Pacific/Kiritimati` (+14); `America/Los_Angeles` and `UTC` are
-   unchanged. Equivalently: an item now appears on the day the user actually tapped, which is one
-   day earlier than where the old key filed it.
+   unchanged.
+
+   **Do not read that as "items now appear on the day the user tapped" — that holds only for NEW
+   writes.** A pre-upgrade Berlin user who tapped the chip labelled _Wednesday, September 2_
+   stored `2026-09-01`; after the change that row renders under _Tuesday, September 1_. Historical
+   rows move one chip **earlier than the chip they were created from**, and they do not
+   self-correct. The 7-day fetch window moves with them (`2026-08-29..09-04` →
+   `2026-08-30..09-05`), so a legacy item filed on a week's first chip now falls outside that
+   week's window and is reachable only from the previous week's strip. That is the accepted cost
+   of shipping without a backfill.
 
 Note what the coach branch's fix was, precisely, so it is not mistaken for either option above:
 it made `buildPlanSlotDays` normalise to local midnight (matching this planner's _input_) and
@@ -212,7 +220,18 @@ is now the user's real local day:
 
 - `/api/daily-summary` and `/api/daily-budget` bucket daily logs via `getDailySummary(userId, date,
 tz)`. A UTC-positive user's calorie ring was summarising the **previous** day's logged food for
-  the day they were looking at.
+  the day they were looking at. Measured on the no-`?date=` path (`DailyNutritionDetailScreen`,
+  `useHistoryData`): `Europe/Berlin` goes from matching 2/24 local hours to 22/24. For
+  `Pacific/Auckland` it is a swap rather than a gain — 12/24 either way, a different twelve hours.
+
+  **This claim is UTC-POSITIVE ONLY, and the mirrored half stays live.** `parseQueryDate` turns
+  `"2026-09-02"` into UTC midnight and `getDayBounds` then reads _that instant's_ civil date in
+  the user's zone — for any negative offset that is the previous local day. Verified directly:
+  `America/Los_Angeles` and `America/New_York` both resolve a requested `2026-09-02` to
+  `2026-09-01` bounds, all 24 hours. Untouched by this change (the client string is byte-identical
+  at negative offsets before and after) and deliberately **not** filed as a todo — it is High
+  severity, so it was surfaced to the user for a decision per CLAUDE.md.
+
 - Meal-plan confirm (`meal-plan.ts:559`) derives UTC day bounds from the item's stored
   `plannedDate` to find matching logs; those bounds now overlap the user's actual local day for
   most of it.

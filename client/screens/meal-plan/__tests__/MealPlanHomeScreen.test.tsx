@@ -333,7 +333,7 @@ describe("MealPlanHomeScreen — 4-sheet BottomSheetModal wiring integrity", () 
 // `planned_date` is keyed on the DEVICE-LOCAL calendar day, so the key a date
 // chip reads/writes must be the same day that chip is labelled with. This was
 // wrong for every UTC-positive device until
-// todos/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md:
+// todos/archive/P1-2026-08-30-mealplan-planned-date-shifts-a-day-for-utc-positive-users.md:
 // `today` is normalised to LOCAL midnight (`setHours(0,0,0,0)`) and every
 // display field reads local component getters, but the key was derived with
 // `toDateString` (`toISOString()`), which reinterprets that local-midnight
@@ -387,23 +387,52 @@ describe("MealPlanHomeScreen — planned_date is keyed to the local calendar day
       "2026-08-30",
       "2026-09-05",
     ]);
-    // Cross-surface check: the window's own end day is the last day the strip
-    // labels. A UTC basis would request Aug 29 → Sep 4 while still labelling
-    // the chips Aug 30 → Sep 5.
+    // Cross-surface pin: the window's bounds must be the SAME days the strip
+    // labels. The labels come from `toLocaleDateString` on local components and
+    // never touch the date helper, so they are basis-invariant — which is
+    // exactly what makes them a usable independent reference for the window.
+    // (Do not assert the ABSENCE of an "August 29" label here: no basis has
+    // ever produced one, so such an assertion can never fail.)
     const labels = Array.from(
       container.querySelectorAll("[aria-label]"),
       (el) => el.getAttribute("aria-label") ?? "",
     );
-    expect(labels).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("September 5"),
-        expect.stringContaining("September 2"),
-      ]),
-    );
-    expect(labels.some((l) => l.includes("August 29"))).toBe(false);
+    const stripDays = labels
+      .map((l) => /^\w+day, (\w+ \d+)/.exec(l)?.[1])
+      .filter((d): d is string => Boolean(d));
+    expect(stripDays).toEqual([
+      "August 30",
+      "August 31",
+      "September 1",
+      "September 2",
+      "September 3",
+      "September 4",
+      "September 5",
+    ]);
   });
 
-  it("marks the chip labelled with the local day as the selected one", () => {
+  it("sends the same local date to /api/daily-summary that it keys everything else on", () => {
+    renderComponent(<MealPlanHomeScreen />);
+    // The one other date-carrying call; it goes through apiRequest rather than a
+    // hook, so it needs its own pin or it can drift off the shared basis.
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/daily-summary?date=2026-09-02",
+      undefined,
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-Timezone": expect.any(String) }),
+      }),
+    );
+  });
+
+  // NOTE: basis-invariant by construction — `dateStr` (:1364) and
+  // `selectedDateStr` (:576) both go through the SAME helper, so swapping the
+  // helper shifts both operands together and the same chip stays selected. It
+  // is kept because it does guard the narrower property named below: a
+  // single-site edit to either line breaks it. It is NOT a basis guard — the
+  // literal pins above are. (Confirmed by mutation: reverting the import to
+  // `toDateString` fails those two and leaves this one green.)
+  it("keeps the per-chip key and the selected key on one shared helper", () => {
     const { container } = renderComponent(<MealPlanHomeScreen />);
     const selected = Array.from(
       container.querySelectorAll("[aria-label]"),

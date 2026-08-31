@@ -31,10 +31,17 @@ export interface PlanSlotPickerSheetProps {
   /**
    * `dayLabel` is the tapped chip's own weekday (e.g. "Wednesday") — pass it
    * straight through for display (a confirmation toast, etc.) rather than
-   * re-deriving a weekday from `plannedDate`. `plannedDate` is a UTC-string
-   * conversion of a local-midnight instant (see `PlanSlotDay.iso`'s
-   * doc-comment in `plan-slot-picker-utils.ts`); re-parsing it lands on the
-   * wrong day for any UTC-positive offset.
+   * re-deriving a weekday from `plannedDate`. `plannedDate` is the device's
+   * LOCAL calendar day, but `new Date(plannedDate)` parses a bare date as UTC
+   * midnight, so re-parsing renders the *previous* day at any UTC-NEGATIVE
+   * offset (measured: Los Angeles and Sao Paulo both read "2026-09-01" back as
+   * Monday, not Tuesday). See `PlanSlotDay.iso`'s doc-comment in
+   * `plan-slot-picker-utils.ts`.
+   *
+   * Note the sign: the write-side basis bug this component was built around was
+   * UTC-POSITIVE-only, so a developer in Berlin or Auckland will find the
+   * re-parse works fine and may conclude this guard is obsolete. It is not —
+   * it protects the Americas.
    */
   onConfirm: (
     plannedDate: string,

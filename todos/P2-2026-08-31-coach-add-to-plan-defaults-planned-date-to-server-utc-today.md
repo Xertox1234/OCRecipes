@@ -1,5 +1,5 @@
 ---
-title: "The coach's add_to_meal_plan tool defaults plannedDate to the SERVER's UTC today, which is the user's yesterday for part of every day at a positive offset"
+title: "Two coach tools default their planned_date window to the SERVER's UTC today, which is the user's yesterday for part of every day at a positive offset"
 status: backlog
 priority: medium
 created: 2026-08-31
@@ -37,6 +37,21 @@ Verified against `2f2acd2c`:
 | `server/services/coach-tools.ts:647`     | same                                                                            |
 | `server/services/coach-tools.ts:143-145` | `toIsoDate` = `date.toISOString().split("T")[0]`                                |
 
+**A second site, on the READ path** — found during the branch's own review sweep, after this todo
+was first written:
+
+| Where                                | Code                                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------------------- |
+| `server/services/coach-tools.ts:609` | `const today = toIsoDate(new Date())`                                                 |
+| `:610`                               | `const startDate = parsed.data.startDate ?? today`                                    |
+| `:612`                               | `const endDate = parsed.data.endDate ?? defaultEnd`                                   |
+| `:627`                               | `storage.getMealPlanItems(userId, startDate, endDate)` → `gte`/`lte` on `plannedDate` |
+
+`getMealPlanSchema` (`:98-101`) marks **both** dates optional, so this default is far more
+reachable than the write-side one — "what's on my plan this week" with no explicit dates is the
+common phrasing. For a UTC-positive user during their local morning the window starts a day early
+and ends a day short, so the coach reports the wrong days back to them.
+
 Two separate things are wrong here:
 
 1. **The basis.** All three produce the server's UTC day, not the user's civil day.
@@ -56,8 +71,9 @@ nothing enforces that it doesn't.
 
 ## Acceptance Criteria
 
-- [ ] When the model omits `plannedDate`, the value used is the requesting user's civil date in
-      their own IANA timezone, not the server's UTC date.
+- [ ] When the model omits `plannedDate` (write path, `:106`) **or** `startDate`/`endDate` (read
+      path, `:609-612`), the value used is the requesting user's civil date in their own IANA
+      timezone, not the server's UTC date. Both sites, not just the write one.
 - [ ] A test pins a **non-UTC** timezone and a fixed clock at an instant where the server's UTC
       day and the user's local day differ, and asserts the resulting `plannedDate`. A test that
       only passes under UTC does not close this — CI runs UTC, where the two agree.
@@ -85,7 +101,7 @@ tool definition, an omission is a model error, and failing loudly may beat silen
 
 - **Mechanisms to use:** the existing `parseTimezone` helper and the existing timezone-aware
   helpers in `server/storage/helpers.ts` — no new date library, no schema migration.
-- **Files in scope:** `server/services/coach-tools.ts`,
+- **Files in scope:** `server/services/coach-tools.ts` (both `:106` and `:609-612`),
   `server/services/__tests__/coach-tools.test.ts`, and `server/routes/chat.ts` only as far as
   passing the already-computed `tz` through.
 - No new mechanisms, files, or abstractions beyond those listed.
@@ -110,3 +126,9 @@ tool definition, an omission is a model error, and failing loudly may beat silen
 
 - Filed from the server-impact sweep performed during the P1 local-date-basis work. Deliberately
   out of that todo's scope: it changed client writers only, and this is a server-side default.
+
+### 2026-08-31 (later)
+
+- Second site found on the READ path (`:609-612`, `get_meal_plan`) during the review sweep of the
+  P1 local-date-basis branch. Scope and title widened from one site to two. The read-path default
+  is the more reachable of the two, because its schema marks both dates optional.

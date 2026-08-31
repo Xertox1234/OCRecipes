@@ -39,6 +39,25 @@ module.exports = defineConfig([
     files: ["server/**/*.ts"],
     rules: {
       "no-console": "error",
+      // `toLocalDateString` reads the HOST's timezone. On Railway that is UTC,
+      // never the requesting user's — so on the server it silently answers a
+      // different question than it does on a device. Its doc comment says so,
+      // but the bug class it was introduced to fix (2026-08-31) is precisely a
+      // date helper whose basis is invisible at the call site, so the
+      // constraint is enforced here rather than merely stated.
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@shared/lib/date",
+              importNames: ["toLocalDateString"],
+              message:
+                "toLocalDateString is device-local; on the server that is the host's zone, not the user's. Derive the user's civil date from parseTimezone(req.headers['x-timezone']) with the helpers in server/storage/helpers.ts.",
+            },
+          ],
+        },
+      ],
     },
   },
   {
