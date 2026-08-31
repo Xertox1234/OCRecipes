@@ -246,7 +246,7 @@ Guards, with the mutation checks actually run (failure counts per pinned zone):
 | --------------------------------- | --- | ----------- | -------------- | ------- |
 | picker `iso` → `toDateString`     | 0   | 4           | 4              | 0       |
 | picker reverted to full UTC basis | 0   | 1           | 2              | 1       |
-| planner import → `toDateString`   | —   | 2           | —              | —       |
+| planner import → `toDateString`   | —   | 3           | —              | —       |
 
 So the first shape is caught only at a positive offset while the second is caught at either sign —
 which is why both signs stay in the picker's zone loop.
