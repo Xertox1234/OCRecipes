@@ -50,8 +50,12 @@ Its comment now names this mechanism.
 
 Gating the sheet's dismissal on `isSubmitting` closes this cleanly, and was deliberately not
 done: it can trap the user inside a non-dismissable modal behind a hung request. That failure
-mode was judged worse than a narrow, low-frequency race that self-heals when the request
-settles. Any fix here must not reintroduce that trap.
+mode was judged worse than this race — but the race's own cost is a **duplicate
+`meal_plan_items` row that nothing catches**, not a race that "self-heals": `shared/schema.ts`'s
+`mealPlanItems` table (`~:897-931`) has no unique constraint over
+`(userId, plannedDate, mealType, recipeId)`, only two indexes and two CHECKs (verified directly
+against the table definition), so a second write from B's reopened double-tap succeeds and
+persists as a second row. Any fix here must not reintroduce the dismissal trap.
 
 ## Acceptance Criteria
 
@@ -110,9 +114,12 @@ See `docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2026-0
 
 - **Do not gate dismissal on `isSubmitting`** to close this — see "Why the obvious fix was
   rejected". A reviewer independently agreed with that call.
-- The window is genuinely narrow (it needs a dismissal mid-save, a prompt reopen, and a
-  double-tap inside the remainder of the first request). Weigh the fix's complexity against
-  that; a token guard is cheap, an `AbortController` refactor is not.
+- The window is narrow to enter (it needs a dismissal mid-save, a prompt reopen, and a
+  double-tap inside the remainder of the first request) but its outcome, once entered, is not
+  narrow: it writes a duplicate `meal_plan_items` row that nothing in the schema catches (no
+  unique constraint over `(userId, plannedDate, mealType, recipeId)` — verified, see "Why the
+  obvious fix was rejected"). Weigh the fix's complexity against that; a token guard is cheap, an
+  `AbortController` refactor is not.
 
 ## Updates
 
@@ -121,3 +128,9 @@ See `docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2026-0
 - Filed after the user authorised follow-up todos. Accepted as a known residual during the
   coach "Add to Plan" branch (Ruling 10 in that branch's ledger) rather than fixed, because the
   clean fix trades a rare race for a modal that can trap the user.
+- **Corrected the same day**, during that branch's final-review fix wave: verified `shared/
+schema.ts`'s `mealPlanItems` table has no unique constraint over
+  `(userId, plannedDate, mealType, recipeId)`. The residual is not a race that "self-heals" — it
+  writes a duplicate plan row that nothing in the schema catches. "Why the obvious fix was
+  rejected" and Risks updated accordingly; priority (`medium`) was already appropriately set for
+  a narrow-entry, real-write defect and is unchanged.

@@ -49,16 +49,31 @@ describe("PlanSlotPickerSheet", () => {
     }
   });
 
-  it("confirms with the selected date and meal type", () => {
+  it("confirms with the selected date, meal type, and the tapped chip's own weekday", () => {
     renderComponent(<PlanSlotPickerSheet {...baseProps} />);
-    fireEvent.click(screen.getAllByRole("button", { name: /day-slot/i })[2]);
+    const dayChip = screen.getAllByRole("button", { name: /day-slot/i })[2];
+    // Read the chip's own accessible label BEFORE tapping — it's
+    // `day-slot <Weekday>, <Month> <Day>...` — so this doesn't recompute a
+    // weekday via any date math of its own; it just captures what the chip
+    // itself displayed.
+    const chipLabel = dayChip.getAttribute("aria-label") ?? "";
+    fireEvent.click(dayChip);
     fireEvent.click(screen.getByText("Dinner"));
     fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
-    const [plannedDate, mealType] = onConfirm.mock.calls[0];
+    const [plannedDate, mealType, dayLabel] = onConfirm.mock.calls[0];
     expect(plannedDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(mealType).toBe("dinner");
+    // The third onConfirm arg must be the TAPPED chip's own weekday, not a
+    // weekday re-derived from `plannedDate` (which is a UTC-shifted key and
+    // would disagree with the chip's label for a UTC-positive offset — see
+    // PlanSlotDay.iso's doc-comment). Cross-checking against the chip's own
+    // accessible label — captured pre-tap above — is the discriminator: a
+    // regression that derives dayLabel from plannedDate instead would still
+    // produce a plausible-looking weekday string, just the wrong one.
+    expect(dayLabel).toBeTruthy();
+    expect(chipLabel).toContain(dayLabel);
   });
 
   it("does not confirm until a meal type is chosen", () => {

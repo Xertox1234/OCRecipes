@@ -21,6 +21,7 @@ import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
 import type { ChatMessage } from "@/hooks/useChat";
 import * as Haptics from "expo-haptics";
+import { ApiError } from "@/lib/api-error";
 
 // ── Mutable test state, hoisted above vi.mock factories ──────────────────────
 const state = vi.hoisted(() => ({
@@ -966,6 +967,13 @@ describe("add_recipe_to_plan", () => {
         recipeTitle: "Lemon Chicken",
       });
     });
+    // Capture the default-selected chip's (today's) own accessible label
+    // BEFORE confirming — used below to cross-check the toast's day word
+    // without recomputing a weekday from any date math of this test's own.
+    const chipLabel =
+      screen
+        .getAllByRole("button", { name: /day-slot/i })[0]
+        .getAttribute("aria-label") ?? "";
     fireEvent.click(screen.getByText("Dinner"));
     fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
 
@@ -987,7 +995,67 @@ describe("add_recipe_to_plan", () => {
     expect(state.saveCatalog.mock.invocationCallOrder[0]).toBeLessThan(
       state.addItem.mock.invocationCallOrder[0],
     );
+
+    await waitFor(() => {
+      expect(state.toastSuccess).toHaveBeenCalledTimes(1);
+    });
+    const toastMessage = state.toastSuccess.mock.calls[0][0] as string;
+    expect(toastMessage).toMatch(/^Added to [A-Za-z]+ Dinner$/);
+    // The discriminator: the toast's day word must be the TAPPED chip's own
+    // weekday (sourced from PlanSlotPickerSheet's onConfirm third arg), not
+    // a weekday re-derived from `plannedDate` — plannedDate is a UTC-shifted
+    // key (see PlanSlotDay.iso's doc-comment) and re-parsing it disagrees
+    // with the chip's own label for any UTC-positive host TZ. A shape-only
+    // match above would not catch that regression; this cross-check does.
+    const dayWord = toastMessage
+      .replace(/^Added to /, "")
+      .replace(/ Dinner$/, "");
+    expect(chipLabel).toContain(dayWord);
   });
+
+  it.each([
+    [402, "CATALOG_QUOTA_EXCEEDED"],
+    [422, "VALIDATION_ERROR"],
+    [404, "NOT_FOUND"],
+  ])(
+    "closes the sheet with an accurate message on a terminal %i save failure",
+    async (status, code) => {
+      state.saveCatalog.mockRejectedValueOnce(
+        new ApiError(`${status}: failed`, code, status),
+      );
+      renderWithRecipeCardBlock();
+      act(() => {
+        state.onAction?.({
+          type: "add_recipe_to_plan",
+          recipeId: 715538,
+          recipeTitle: "Lemon Chicken",
+        });
+      });
+      fireEvent.click(screen.getByText("Dinner"));
+      fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+
+      await waitFor(() => {
+        expect(state.toastError).toHaveBeenCalledTimes(1);
+      });
+      // Never the generic "please try again" — retrying a 402/422/404 can
+      // only reproduce the same failure.
+      expect(state.toastError).not.toHaveBeenCalledWith(
+        "Couldn't add the recipe to your plan. Please try again.",
+      );
+      expect(state.hapticsNotification).toHaveBeenCalledWith(
+        Haptics.NotificationFeedbackType.Error,
+      );
+      expect(state.addItem).not.toHaveBeenCalled();
+      expect(state.toastSuccess).not.toHaveBeenCalled();
+
+      // The mocked Modal unmounts its children once `visible` goes false
+      // (test/mocks/react-native.ts) — a terminal failure must close the
+      // sheet, so its contents (including this button) are gone. A
+      // regression that keeps the sheet open on a terminal failure leaves
+      // this button in the DOM and the query below finds it.
+      expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
+    },
+  );
 
   it("keeps the sheet open and lets the user retry after a rejected save", async () => {
     // Only overrides the FIRST call — the retry below falls through to the

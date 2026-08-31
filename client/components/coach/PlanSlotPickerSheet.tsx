@@ -28,7 +28,19 @@ export interface PlanSlotPickerSheetProps {
   recipeTitle: string;
   datesWithItems: Set<string>;
   isSubmitting: boolean;
-  onConfirm: (plannedDate: string, mealType: MealType) => void;
+  /**
+   * `dayLabel` is the tapped chip's own weekday (e.g. "Wednesday") — pass it
+   * straight through for display (a confirmation toast, etc.) rather than
+   * re-deriving a weekday from `plannedDate`. `plannedDate` is a UTC-string
+   * conversion of a local-midnight instant (see `PlanSlotDay.iso`'s
+   * doc-comment in `plan-slot-picker-utils.ts`); re-parsing it lands on the
+   * wrong day for any UTC-positive offset.
+   */
+  onConfirm: (
+    plannedDate: string,
+    mealType: MealType,
+    dayLabel: string,
+  ) => void;
   onDismiss: () => void;
 }
 
@@ -92,7 +104,11 @@ export function PlanSlotPickerSheet({
       return;
     }
     haptics.impact(ImpactFeedbackStyle.Light);
-    onConfirm(selectedDate, selectedMeal);
+    // `selectedDate` is always one of `days[].iso` (seeded from days[0] and
+    // only ever reassigned to a chip's own iso above) — the `?? days[0]`
+    // fallback only guards the type, it isn't expected to actually trigger.
+    const selectedDay = days.find((day) => day.iso === selectedDate) ?? days[0];
+    onConfirm(selectedDate, selectedMeal, selectedDay.weekday);
   };
 
   return (

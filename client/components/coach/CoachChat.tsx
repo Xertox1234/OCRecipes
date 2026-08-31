@@ -51,6 +51,8 @@ import type { CoachBlock } from "@shared/schemas/coach-blocks";
 import {
   parsePlanDays,
   filterValidBlocks,
+  describePlanSaveFailure,
+  formatPlanSaveSuccess,
 } from "@/components/coach/coach-chat-utils";
 import { useCoachStream } from "@/hooks/useCoachStream";
 import { FLATLIST_DEFAULTS } from "@/constants/performance";
@@ -507,7 +509,7 @@ export default function CoachChat({
   }, [planTarget]);
 
   const handleConfirmPlanSlot = useCallback(
-    async (plannedDate: string, mealType: MealType) => {
+    async (plannedDate: string, mealType: MealType, dayLabel: string) => {
       if (!planTarget || isSavingPlanRef.current) return;
       isSavingPlanRef.current = true;
       try {
@@ -522,12 +524,20 @@ export default function CoachChat({
           mealType,
         });
         haptics.notification(Haptics.NotificationFeedbackType.Success);
-        toast.success(`Added to your plan`);
+        toast.success(formatPlanSaveSuccess(dayLabel, mealType));
         setPlanTarget(null);
-      } catch {
+      } catch (error) {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
-        toast.error("Couldn't add the recipe to your plan. Please try again.");
-        // Keep the sheet open on failure so the user can retry.
+        const failure = describePlanSaveFailure(error);
+        toast.error(failure.message);
+        // Terminal failures (402 quota, 422 unusable recipe, 404 catalog
+        // miss) reproduce identically on every retry — close the sheet
+        // instead of leaving it open for a retry that can only fail again.
+        // Anything else is presumed transient: keep the sheet open so the
+        // user can retry.
+        if (failure.terminal) {
+          setPlanTarget(null);
+        }
       } finally {
         isSavingPlanRef.current = false;
       }
