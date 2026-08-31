@@ -861,7 +861,8 @@ describe("meal-plans storage", () => {
 
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2025-06-15"),
+        "2025-06-15",
+        [],
       );
 
       expect(Number(summary.plannedCalories)).toBeCloseTo(600, 0);
@@ -896,7 +897,7 @@ describe("meal-plans storage", () => {
       // Exclude item1 via confirmedIds
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2025-06-15"),
+        "2025-06-15",
         [item1.id],
       );
 
@@ -908,7 +909,8 @@ describe("meal-plans storage", () => {
     it("returns zeros when no items are planned", async () => {
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2025-06-15"),
+        "2025-06-15",
+        [],
       );
 
       expect(Number(summary.plannedCalories)).toBe(0);
@@ -932,7 +934,7 @@ describe("meal-plans storage", () => {
 
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2025-06-15"),
+        "2025-06-15",
         [item.id],
       );
 
@@ -952,7 +954,8 @@ describe("meal-plans storage", () => {
 
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2025-06-15"),
+        "2025-06-15",
+        [],
       );
 
       // createTestScannedItem uses: calories=250, protein=10, carbs=30, fat=8
@@ -977,7 +980,8 @@ describe("meal-plans storage", () => {
 
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2025-06-15"),
+        "2025-06-15",
+        [],
       );
 
       // Item still counted but contributes 0 nutrition

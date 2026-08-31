@@ -169,9 +169,20 @@ describe("useMealPlan", () => {
         expect(result.current.isSuccess).toBe(true);
       });
 
+      // The X-Timezone header is load-bearing, not decorative: the server
+      // buckets this item's duplicate-confirmation check by the civil day of
+      // its `plannedDate` in the DEVICE's zone. `apiRequest` does not add the
+      // header on its own, so dropping it here silently sends the server back
+      // to UTC day bounds — asserted rather than left implicit.
       expect(mockApiRequest).toHaveBeenCalledWith(
         "POST",
         "/api/meal-plan/items/7/confirm",
+        undefined,
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            "X-Timezone": expect.any(String),
+          }),
+        }),
       );
       expect(invalidateSpy).toHaveBeenCalledWith({
         queryKey: ["/api/daily-summary"],

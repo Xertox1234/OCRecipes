@@ -73,7 +73,8 @@ describe("meal-plan-analytics storage", () => {
     it("returns zeros when no items are planned for the date", async () => {
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2026-05-15T12:00:00Z"),
+        "2026-05-15",
+        [],
       );
       expect(Number(summary.plannedCalories)).toBe(0);
       expect(Number(summary.plannedProtein)).toBe(0);
@@ -98,7 +99,8 @@ describe("meal-plan-analytics storage", () => {
       });
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2026-05-15T12:00:00Z"),
+        "2026-05-15",
+        [],
       );
       expect(Number(summary.plannedCalories)).toBe(800);
       expect(Number(summary.plannedProtein)).toBe(60);
@@ -121,7 +123,7 @@ describe("meal-plan-analytics storage", () => {
         .returning();
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2026-05-15T12:00:00Z"),
+        "2026-05-15",
         [item.id],
       );
       expect(Number(summary.plannedCalories)).toBe(0);
@@ -147,7 +149,7 @@ describe("meal-plan-analytics storage", () => {
       });
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2026-05-15T12:00:00Z"),
+        "2026-05-15",
         [],
       );
       // Item count still 1 (row exists), but calories should be 0 because
@@ -187,7 +189,7 @@ describe("meal-plan-analytics storage", () => {
 
       const summary = await getPlannedNutritionSummary(
         testUser.id,
-        new Date("2026-05-15T12:00:00Z"),
+        "2026-05-15",
         [],
       );
       expect(Number(summary.plannedCalories)).toBe(400);

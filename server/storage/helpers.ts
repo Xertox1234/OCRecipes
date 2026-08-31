@@ -49,7 +49,62 @@ function civilMidnightUtcMs(
   const off1 = getOffsetMinutesAt(guessMs, tz);
   const candidateMs = guessMs - off1 * 60_000;
   const off2 = getOffsetMinutesAt(candidateMs, tz);
-  return off2 !== off1 ? guessMs - off2 * 60_000 : candidateMs;
+  let ms = off2 !== off1 ? guessMs - off2 * 60_000 : candidateMs;
+
+  // Zones that spring forward AT 00:00 local (America/Santiago, Asia/Beirut,
+  // America/Havana) have no midnight on the transition day — the clock jumps
+  // 23:59:59 -> 01:00:00 — and the offset correction above then lands on 23:00
+  // of the PREVIOUS civil day. Step forward to the first instant that really is
+  // on the requested day. Capped: a transition is at most a few hours, and an
+  // unbounded loop here would be reachable from request input.
+  const wanted = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  for (let i = 0; i < 4 && civilDateString(new Date(ms), tz) < wanted; i++) {
+    ms += 60 * 60_000;
+  }
+  return ms;
+}
+
+/**
+ * The civil (calendar) date of an INSTANT, as seen in `tz`: "what day is it
+ * there, right now". Returns `yyyy-mm-dd`.
+ *
+ * Pairs with `civilDateToInstant`, its inverse. Keep the two straight — a
+ * `Date` cannot tell you which of the two things it represents, and conflating
+ * them is a real defect this codebase has shipped: `new Date("2026-09-02")` is
+ * UTC midnight, so reading its civil date back in any UTC-NEGATIVE zone yields
+ * `2026-09-01`.
+ */
+export function civilDateString(date: Date, tz: string = "UTC"): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+/**
+ * An instant that falls inside civil (calendar) date `dateStr` in `tz` —
+ * specifically that day's local midnight. The inverse of `civilDateString`:
+ * `civilDateString(civilDateToInstant(d, tz), tz) === d` for every zone.
+ *
+ * **Use this whenever a `yyyy-mm-dd` from a client or from a `date` column has
+ * to be handed to something that takes an instant** (`getDayBounds`,
+ * `getMonthBounds`). `new Date(dateStr)` is NOT a substitute: it produces UTC
+ * midnight, which belongs to the previous civil day everywhere west of
+ * Greenwich, so the caller silently gets the wrong day for the entire Americas.
+ *
+ * DST-safe via `civilMidnightUtcMs`, including zones such as
+ * `America/Santiago` that transition at 00:00 local (where "local midnight"
+ * does not exist and the returned instant lands on the first moment that does).
+ */
+export function civilDateToInstant(dateStr: string, tz: string = "UTC"): Date {
+  const [year, month, day] = dateStr.split("-").map(Number) as [
+    number,
+    number,
+    number,
+  ];
+  return new Date(civilMidnightUtcMs(year, month, day, tz));
 }
 
 /**
@@ -74,15 +129,12 @@ export function getDayBounds(
   startOfDay: Date;
   endOfDay: Date;
 } {
-  // Civil date in the target timezone
-  const civilFmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const [localYear, localMonth, localDay] = civilFmt
-    .format(date)
+  // NOTE: `date` is treated as an INSTANT — this returns the bounds of whatever
+  // civil day that instant falls in. If you hold a `yyyy-mm-dd` calendar date
+  // rather than an instant, convert it with `civilDateToInstant(dateStr, tz)`
+  // first; `new Date(dateStr)` will silently pick the previous day west of
+  // Greenwich.
+  const [localYear, localMonth, localDay] = civilDateString(date, tz)
     .split("-")
     .map(Number) as [number, number, number];
 
@@ -91,8 +143,7 @@ export function getDayBounds(
   // "Tomorrow" in the local tz: add 25h to the start so we always land in the
   // next calendar day regardless of DST (shortest local day is 23h).
   const tomorrowRef = new Date(startUtcMs + 25 * 60 * 60 * 1000);
-  const [nextYear, nextMonth, nextDay] = civilFmt
-    .format(tomorrowRef)
+  const [nextYear, nextMonth, nextDay] = civilDateString(tomorrowRef, tz)
     .split("-")
     .map(Number) as [number, number, number];
 
@@ -113,13 +164,7 @@ export function getMonthBounds(
   startOfMonth: Date;
   endOfMonth: Date;
 } {
-  const [localYear, localMonth] = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .format(date)
+  const [localYear, localMonth] = civilDateString(date, tz)
     .split("-")
     .map(Number) as [number, number, number];
 

@@ -21,7 +21,9 @@ import {
   handleRouteError,
   parsePositiveIntParam,
   parseQueryString,
+  parseTimezone,
 } from "./_helpers";
+import { civilDateToInstant } from "../storage/helpers";
 import { logger, toError } from "../lib/logger";
 import { isUniqueViolation } from "../lib/db-errors";
 import {
@@ -553,10 +555,21 @@ export function register(app: Express): void {
           return;
         }
 
-        // Check for duplicate confirmation
+        // Check for duplicate confirmation.
+        //
+        // `plannedDate` is a `yyyy-mm-dd` date column, so it must be converted
+        // to an instant inside that civil day IN THE USER'S ZONE. The previous
+        // `new Date(plannedDate)` produced UTC midnight, so the duplicate check
+        // searched the UTC day — which overlaps the user's actual day only
+        // partially, and not at all at the edges. That let a genuine duplicate
+        // slip past this pre-check and fail later on the
+        // `daily_logs_unique_meal_plan_confirm` constraint instead, surfacing to
+        // the user as a meal that could be neither confirmed nor un-confirmed.
+        const tz = parseTimezone(req.headers["x-timezone"]);
         const confirmedIds = await storage.getConfirmedMealPlanItemIds(
           req.userId,
-          new Date(mealPlanItem.plannedDate),
+          civilDateToInstant(mealPlanItem.plannedDate, tz),
+          tz,
         );
         if (confirmedIds.includes(id)) {
           sendError(

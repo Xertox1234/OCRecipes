@@ -11,7 +11,6 @@ import { ipKeyGenerator } from "../_rate-limiters";
 import {
   parsePositiveIntParam,
   parseQueryInt,
-  parseQueryDate,
   parseQueryString,
   parseStringParam,
   formatZodError,
@@ -1773,28 +1772,6 @@ describe("_helpers utility functions", () => {
 
     it("parses '0' as a valid integer", () => {
       expect(parseQueryInt("0", { default: 5 })).toBe(0);
-    });
-  });
-
-  describe("parseQueryDate", () => {
-    it("parses a valid date string", () => {
-      const result = parseQueryDate("2024-01-15");
-      expect(result).toBeInstanceOf(Date);
-      expect(result!.getFullYear()).toBe(2024);
-    });
-
-    it("returns undefined for non-string values", () => {
-      expect(parseQueryDate(undefined)).toBeUndefined();
-      expect(parseQueryDate(null)).toBeUndefined();
-      expect(parseQueryDate(123)).toBeUndefined();
-    });
-
-    it("returns undefined for empty string", () => {
-      expect(parseQueryDate("")).toBeUndefined();
-    });
-
-    it("returns undefined for invalid date strings", () => {
-      expect(parseQueryDate("not-a-date")).toBeUndefined();
     });
   });
 

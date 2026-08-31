@@ -1039,7 +1039,19 @@ describe("Nutrition Routes", () => {
       expect(res.status).toBe(200);
       const passedDate = vi.mocked(storage.getDailySummary).mock
         .calls[0][1] as Date;
-      expect(passedDate.toISOString()).toContain("2024-01-15");
+      // Asserted as a CIVIL day in the request's zone, not as a substring of
+      // toISOString(). The substring form is satisfied by both a correct and an
+      // incorrect basis whenever the zone is UTC (which it is when no
+      // X-Timezone header is sent), so it could not fail for the defect its
+      // name describes. The non-UTC cases live in the describe block below.
+      expect(
+        new Intl.DateTimeFormat("en-CA", {
+          timeZone: "UTC",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(passedDate),
+      ).toBe("2024-01-15");
     });
 
     it("returns 500 when storage throws", async () => {
@@ -1413,5 +1425,91 @@ describe("Nutrition Routes", () => {
       expect(res.status).toBe(500);
       expect(res.body.error).toBe("Failed to fetch frequent items");
     });
+  });
+});
+
+// The `/api/daily-summary` response is assembled from THREE storage calls that
+// all describe the same day, and they do not want the day in the same shape:
+//
+//   getDailySummary(userId, instant, tz)            -> civil day of `instant` in tz
+//   getConfirmedMealPlanItemIds(userId, instant, tz) -> same
+//   getPlannedNutritionSummary(userId, "yyyy-mm-dd") -> the date COLUMN, verbatim
+//
+// Two defects lived in that gap. The instant was built with `new Date(dateStr)`
+// (UTC midnight), so its civil day is the PREVIOUS day west of Greenwich; and
+// the confirmed-set call was not given `tz` at all, so it bucketed by the UTC
+// day while the totals beside it bucketed by the user's day.
+describe("GET /api/daily-summary — one day, three consumers, three shapes", () => {
+  const civilDateIn = (d: Date, tz: string) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+
+  let app: express.Express;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    app = createApp();
+    vi.mocked(storage.getDailySummary).mockResolvedValue({
+      totalCalories: 0,
+      totalProtein: 0,
+      totalCarbs: 0,
+      totalFat: 0,
+      itemCount: 0,
+    });
+    vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([]);
+    vi.mocked(storage.getPlannedNutritionSummary).mockResolvedValue({
+      plannedCalories: 0,
+      plannedProtein: 0,
+      plannedCarbs: 0,
+      plannedFat: 0,
+      plannedItemCount: 0,
+    });
+  });
+
+  it.each(["America/Los_Angeles", "America/New_York", "Europe/Berlin", "UTC"])(
+    "resolves the requested day in %s and gives every consumer that same day",
+    async (tz) => {
+      const res = await request(app)
+        .get("/api/daily-summary?date=2026-09-02")
+        .set("Authorization", "Bearer token")
+        .set("X-Timezone", tz);
+      expect(res.status).toBe(200);
+
+      const summaryCall = vi.mocked(storage.getDailySummary).mock.calls[0];
+      const confirmedCall = vi.mocked(storage.getConfirmedMealPlanItemIds).mock
+        .calls[0];
+      const plannedCall = vi.mocked(storage.getPlannedNutritionSummary).mock
+        .calls[0];
+
+      // Both instant-taking consumers get the requested CIVIL day in this zone.
+      expect(civilDateIn(summaryCall[1] as Date, tz)).toBe("2026-09-02");
+      expect(civilDateIn(confirmedCall[1] as Date, tz)).toBe("2026-09-02");
+
+      // And both are told which zone to bucket in — the confirmed-set call used
+      // to be given none, silently defaulting to UTC.
+      expect(summaryCall[2]).toBe(tz);
+      expect(confirmedCall[2]).toBe(tz);
+
+      // The column-matching consumer gets the date string itself, never a Date.
+      expect(plannedCall[1]).toBe("2026-09-02");
+      expect(typeof plannedCall[1]).toBe("string");
+    },
+  );
+
+  it("defaults to today in the USER's zone, not the server's", async () => {
+    const tz = "Pacific/Auckland";
+    await request(app)
+      .get("/api/daily-summary")
+      .set("Authorization", "Bearer token")
+      .set("X-Timezone", tz)
+      .expect(200);
+
+    const plannedCall = vi.mocked(storage.getPlannedNutritionSummary).mock
+      .calls[0];
+    expect(plannedCall[1]).toBe(civilDateIn(new Date(), tz));
   });
 });

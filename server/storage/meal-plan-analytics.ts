@@ -6,7 +6,6 @@ import {
   recipeIngredients,
   mealPlanItems,
 } from "@shared/schema";
-import { toDateString } from "@shared/lib/date";
 import { db } from "../db";
 import {
   eq,
@@ -19,16 +18,30 @@ import {
   notInArray,
   isNull,
 } from "drizzle-orm";
-import { getConfirmedMealPlanItemIds } from "./meal-plan-items";
 
 // ============================================================================
 // AGGREGATION
 // ============================================================================
 
+/**
+ * Planned (not yet logged) nutrition for one calendar day.
+ *
+ * `plannedDate` is the `yyyy-mm-dd` string itself, NOT a `Date`. It is compared
+ * directly against the `planned_date` column, which is also a date string — so
+ * there is no conversion, and therefore no timezone in this function at all.
+ * The previous signature took a `Date` and called `toDateString` on it, which
+ * meant the caller had to hand over an instant whose UTC day happened to be the
+ * intended calendar day. That is a different requirement from the one
+ * `getDailySummary` places on the same argument (whose CIVIL day in the user's
+ * tz must match), and the route could not satisfy both with one `Date`.
+ *
+ * `confirmedIds` is required rather than optional: the day's confirmed set has
+ * to be bucketed in the user's timezone, which this function does not know.
+ */
 export async function getPlannedNutritionSummary(
   userId: string,
-  date: Date,
-  confirmedIds?: number[],
+  plannedDate: string,
+  confirmedIds: number[],
 ): Promise<{
   plannedCalories: number;
   plannedProtein: number;
@@ -36,19 +49,12 @@ export async function getPlannedNutritionSummary(
   plannedFat: number;
   plannedItemCount: number;
 }> {
-  const dateStr = toDateString(date);
-
-  // Exclude items already confirmed (logged) for this date
-  // Use provided confirmedIds if available to avoid redundant DB query
-  const excludeIds =
-    confirmedIds ?? (await getConfirmedMealPlanItemIds(userId, date));
-
   const conditions = [
     eq(mealPlanItems.userId, userId),
-    eq(mealPlanItems.plannedDate, dateStr),
+    eq(mealPlanItems.plannedDate, plannedDate),
   ];
-  if (excludeIds.length > 0) {
-    conditions.push(notInArray(mealPlanItems.id, excludeIds));
+  if (confirmedIds.length > 0) {
+    conditions.push(notInArray(mealPlanItems.id, confirmedIds));
   }
 
   // LEFT JOIN both recipes and scanned items so nutrition from either source

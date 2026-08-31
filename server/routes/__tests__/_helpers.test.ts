@@ -8,6 +8,7 @@ import {
   parseQueryInt,
   formatZodError,
   parseTimezone,
+  parseQueryDateString,
   requireValidImage,
   handleRouteError,
 } from "../_helpers";
@@ -441,5 +442,42 @@ describe("parseTimezone", () => {
 
   it("returns UTC for a non-string value", () => {
     expect(parseTimezone(42)).toBe("UTC");
+  });
+});
+
+// `parseQueryDate` used to return a `Date` built with `new Date(value)`. Two
+// things were wrong with that: a `Date` cannot express "calendar day" (UTC
+// midnight belongs to the previous civil day west of Greenwich), and the parse
+// accepted any format `new Date` understands — including forms V8 reads as
+// LOCAL time, whose round-trip back to yyyy-mm-dd is off by a day. Returning
+// the validated string removes both.
+describe("parseQueryDateString", () => {
+  it("accepts a well-formed ISO calendar date", () => {
+    expect(parseQueryDateString("2026-09-02")).toBe("2026-09-02");
+    expect(parseQueryDateString("2026-01-01")).toBe("2026-01-01");
+    expect(parseQueryDateString("2024-02-29")).toBe("2024-02-29");
+  });
+
+  it("rejects formats new Date() would happily parse as LOCAL time", () => {
+    // These are the round-trip hazards: V8 parses them in the process zone, so
+    // the derived day depends on where the server happens to run.
+    expect(parseQueryDateString("2026/09/02")).toBeUndefined();
+    expect(parseQueryDateString("Sep 2, 2026")).toBeUndefined();
+    expect(parseQueryDateString("2026-09-02T12:00:00")).toBeUndefined();
+    expect(parseQueryDateString("2026-09-02T00:00:00Z")).toBeUndefined();
+  });
+
+  it("rejects dates that match the shape but are not real days", () => {
+    expect(parseQueryDateString("2026-02-30")).toBeUndefined();
+    expect(parseQueryDateString("2026-13-01")).toBeUndefined();
+    expect(parseQueryDateString("2025-02-29")).toBeUndefined();
+  });
+
+  it("rejects non-strings and empty input", () => {
+    expect(parseQueryDateString(undefined)).toBeUndefined();
+    expect(parseQueryDateString("")).toBeUndefined();
+    expect(parseQueryDateString(20260902)).toBeUndefined();
+    expect(parseQueryDateString(["2026-09-02"])).toBeUndefined();
+    expect(parseQueryDateString(null)).toBeUndefined();
   });
 });

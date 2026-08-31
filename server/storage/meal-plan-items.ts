@@ -174,11 +174,27 @@ export async function reorderMealPlanItems(
 // MEAL CONFIRMATION HELPERS
 // ============================================================================
 
+/**
+ * IDs of meal-plan items already confirmed (logged) on a given day.
+ *
+ * `tz` is REQUIRED, deliberately. `getDayBounds` defaults it to UTC, and this
+ * function is called on the same response as `getDailySummary`, which is
+ * tz-aware — so a UTC default here silently bucketed the two halves of one
+ * answer on different days, and a meal logged near a day edge could be counted
+ * as both consumed and still-planned while rendering as unconfirmed. An
+ * optional parameter with a plausible default is what allowed that; making the
+ * caller state the timezone is the fix.
+ *
+ * `date` is an INSTANT — the bounds are those of whatever civil day it falls in
+ * for `tz`. Callers holding a `yyyy-mm-dd` must convert with
+ * `civilDateToInstant(dateStr, tz)`, never `new Date(dateStr)`.
+ */
 export async function getConfirmedMealPlanItemIds(
   userId: string,
   date: Date,
+  tz: string,
 ): Promise<number[]> {
-  const { startOfDay, endOfDay } = getDayBounds(date);
+  const { startOfDay, endOfDay } = getDayBounds(date, tz);
 
   const rows = await db
     .select({ mealPlanItemId: dailyLogs.mealPlanItemId })
