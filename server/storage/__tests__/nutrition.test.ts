@@ -524,7 +524,7 @@ describe("nutrition storage", () => {
       const item = await insertScannedItem(testUser.id);
       await insertDailyLog(testUser.id, { scannedItemId: item.id });
 
-      const logs = await getDailyLogs(testUser.id, today);
+      const logs = await getDailyLogs(testUser.id, today, "UTC");
       expect(logs).toHaveLength(1);
       expect(logs[0].userId).toBe(testUser.id);
       expect(logs[0].scannedItemId).toBe(item.id);
@@ -536,7 +536,7 @@ describe("nutrition storage", () => {
 
       const yesterday = new Date();
       yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-      const logs = await getDailyLogs(testUser.id, yesterday);
+      const logs = await getDailyLogs(testUser.id, yesterday, "UTC");
       expect(logs).toHaveLength(0);
     });
 
@@ -547,7 +547,7 @@ describe("nutrition storage", () => {
       const item = await insertScannedItem(otherUser.id);
       await insertDailyLog(otherUser.id, { scannedItemId: item.id });
 
-      const logs = await getDailyLogs(testUser.id, new Date());
+      const logs = await getDailyLogs(testUser.id, new Date(), "UTC");
       expect(logs).toHaveLength(0);
     });
 
@@ -562,7 +562,7 @@ describe("nutrition storage", () => {
       await insertDailyLog(testUser.id, { scannedItemId: activeItem.id });
       await insertDailyLog(testUser.id, { scannedItemId: discardedItem.id });
 
-      const logs = await getDailyLogs(testUser.id, new Date());
+      const logs = await getDailyLogs(testUser.id, new Date(), "UTC");
       expect(logs).toHaveLength(1);
       expect(logs[0].scannedItemId).toBe(activeItem.id);
     });
@@ -570,7 +570,7 @@ describe("nutrition storage", () => {
 
   describe("getDailySummary", () => {
     it("returns zeroes when no logs exist", async () => {
-      const summary = await getDailySummary(testUser.id, new Date());
+      const summary = await getDailySummary(testUser.id, new Date(), "UTC");
       expect(Number(summary.totalCalories)).toBe(0);
       expect(Number(summary.totalProtein)).toBe(0);
       expect(Number(summary.totalCarbs)).toBe(0);
@@ -590,7 +590,7 @@ describe("nutrition storage", () => {
         servings: "1",
       });
 
-      const summary = await getDailySummary(testUser.id, new Date());
+      const summary = await getDailySummary(testUser.id, new Date(), "UTC");
       expect(Number(summary.totalCalories)).toBeCloseTo(200, 0);
       expect(Number(summary.totalProtein)).toBeCloseTo(10, 0);
       expect(Number(summary.totalCarbs)).toBeCloseTo(25, 0);
@@ -610,7 +610,7 @@ describe("nutrition storage", () => {
         servings: "2.5",
       });
 
-      const summary = await getDailySummary(testUser.id, new Date());
+      const summary = await getDailySummary(testUser.id, new Date(), "UTC");
       expect(Number(summary.totalCalories)).toBeCloseTo(250, 0);
       expect(Number(summary.totalProtein)).toBeCloseTo(12.5, 0);
       expect(Number(summary.totalCarbs)).toBeCloseTo(25, 0);
@@ -622,7 +622,7 @@ describe("nutrition storage", () => {
       await insertDailyLog(testUser.id, { scannedItemId: item.id });
       await softDeleteScannedItem(item.id, testUser.id);
 
-      const summary = await getDailySummary(testUser.id, new Date());
+      const summary = await getDailySummary(testUser.id, new Date(), "UTC");
       expect(Number(summary.totalCalories)).toBe(0);
     });
 
@@ -639,7 +639,7 @@ describe("nutrition storage", () => {
         servings: "1",
       });
 
-      const summary = await getDailySummary(testUser.id, new Date());
+      const summary = await getDailySummary(testUser.id, new Date(), "UTC");
       expect(Number(summary.totalCalories)).toBeCloseTo(400, 0);
       expect(Number(summary.totalProtein)).toBeCloseTo(30, 0);
       expect(Number(summary.itemCount)).toBe(1);
@@ -669,7 +669,7 @@ describe("nutrition storage", () => {
       // without the COALESCE and prove nothing.
       expect(log.servings).toBeNull();
 
-      const summary = await getDailySummary(testUser.id, new Date());
+      const summary = await getDailySummary(testUser.id, new Date(), "UTC");
       expect(Number(summary.totalCalories)).toBeCloseTo(200, 0);
       expect(Number(summary.totalProtein)).toBeCloseTo(10, 0);
       expect(Number(summary.totalCarbs)).toBeCloseTo(25, 0);
@@ -1052,7 +1052,7 @@ describe("nutrition storage", () => {
       // dailyLogs.servings to "1" — would have produced for the same
       // servingsConsumed = 3. Old: 200 * 3 = 600. New: unscaled 200 * servings
       // 3 = 600, via getDailySummary's read-time multiplication.
-      const summary = await getDailySummary(testUser.id, new Date());
+      const summary = await getDailySummary(testUser.id, new Date(), "UTC");
       expect(Number(summary.totalCalories)).toBeCloseTo(600, 0);
       expect(Number(summary.totalProtein)).toBeCloseTo(18, 0);
       expect(Number(summary.totalCarbs)).toBeCloseTo(120, 0);

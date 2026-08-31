@@ -18,6 +18,7 @@ import { isAiConfigured } from "../lib/openai";
 import { detectImageMimeType } from "../lib/image-mime";
 import { logger, toError } from "../lib/logger";
 import { reportError } from "../lib/error-reporter";
+import { isValidCalendarDate } from "../utils/date-validation";
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -138,14 +139,26 @@ export function parseQueryInt(
 }
 
 /**
- * Parse a query string parameter as a Date. Returns undefined if the value
- * is missing or not a valid date string.
+ * Parse a strict `yyyy-mm-dd` calendar date from a query param, returning the
+ * validated STRING rather than a `Date`.
+ *
+ * Returning a string is deliberate. A `Date` cannot express "calendar day": the
+ * obvious `new Date("2026-09-02")` is UTC midnight, whose civil date in any
+ * UTC-negative zone is 2026-09-01, so every downstream consumer that asks "what
+ * day is this" gets the previous one for the whole of the Americas. Callers that
+ * genuinely need an instant should convert explicitly with
+ * `civilDateToInstant(dateStr, tz)` from `server/lib/civil-date`.
+ *
+ * The format is also validated rather than delegated to `new Date`, which
+ * accepts forms V8 parses in the PROCESS timezone (`2026/09/02`,
+ * `Sep 2, 2026`). Those round-trip to a different day depending on where the
+ * server runs, and the Node process timezone is not pinned anywhere in this
+ * repo — Railway merely happens to default to UTC.
  */
-export function parseQueryDate(value: unknown): Date | undefined {
-  if (typeof value !== "string" || !value) return undefined;
-  const date = new Date(value);
-  if (isNaN(date.getTime())) return undefined;
-  return date;
+export function parseQueryDateString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  return isValidCalendarDate(value) ? value : undefined;
 }
 
 /**

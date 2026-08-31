@@ -346,7 +346,11 @@ describe("meal-plan-items storage", () => {
 
   describe("getConfirmedMealPlanItemIds", () => {
     it("returns empty array when no confirmed logs exist for the day", async () => {
-      const ids = await getConfirmedMealPlanItemIds(testUser.id, new Date());
+      const ids = await getConfirmedMealPlanItemIds(
+        testUser.id,
+        new Date(),
+        "UTC",
+      );
       expect(ids).toEqual([]);
     });
 
@@ -367,7 +371,11 @@ describe("meal-plan-items storage", () => {
         loggedAt: new Date(),
       });
 
-      const ids = await getConfirmedMealPlanItemIds(testUser.id, new Date());
+      const ids = await getConfirmedMealPlanItemIds(
+        testUser.id,
+        new Date(),
+        "UTC",
+      );
       expect(ids).toContain(item.id);
     });
 
@@ -386,7 +394,11 @@ describe("meal-plan-items storage", () => {
         mealPlanItemId: item.id,
         loggedAt: new Date(),
       });
-      const ids = await getConfirmedMealPlanItemIds(testUser.id, new Date());
+      const ids = await getConfirmedMealPlanItemIds(
+        testUser.id,
+        new Date(),
+        "UTC",
+      );
       expect(ids).not.toContain(item.id);
     });
   });

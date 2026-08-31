@@ -1,7 +1,7 @@
 ---
 title: "The confirmed-meal set is UTC-bucketed while the totals beside it are tz-bucketed, and parseQueryDate accepts formats whose round-trip breaks by a day"
-status: backlog
-priority: medium
+status: done
+priority: high
 created: 2026-08-31
 updated: 2026-08-31
 assignee:
@@ -90,16 +90,16 @@ live the moment the process runs anywhere else.
 
 ## Acceptance Criteria
 
-- [ ] `getConfirmedMealPlanItemIds` accepts a `tz` and passes it to `getDayBounds`; the callers at
+- [x] `getConfirmedMealPlanItemIds` accepts a `tz` and passes it to `getDayBounds`; the callers at
       `server/routes/nutrition.ts:718` and `server/routes/meal-plan.ts:557` pass the request's
       parsed timezone.
-- [ ] A test asserts that, for one **UTC-positive** and one **UTC-negative** zone, the confirmed
+- [x] A test asserts that, for one **UTC-positive** and one **UTC-negative** zone, the confirmed
       set and `getDailySummary`'s totals bucket the _same_ local day. CI runs UTC, where the two
       bases agree, so a UTC-only test does not close this.
-- [ ] `parseQueryDate` rejects anything that is not `/^\d{4}-\d{2}-\d{2}$/` (returning `undefined`,
+- [x] `parseQueryDate` rejects anything that is not `/^\d{4}-\d{2}-\d{2}$/` (returning `undefined`,
       preserving the existing `?? new Date()` fallback shape), **or** `process.env.TZ = "UTC"` is
       set at the top of `server/index.ts` — state which was chosen and why.
-- [ ] No behaviour change for well-formed ISO input in UTC, so existing tests stay green
+- [x] No behaviour change for well-formed ISO input in UTC, so existing tests stay green
       unmodified.
 
 ## Implementation Notes
@@ -137,3 +137,36 @@ process TZ only hides it on hosts that happen to run UTC. Doing both is fine.
 - Filed from the review sweep of the P1 local-date-basis branch, with the per-zone match rates
   measured against the real `getDayBounds` rather than a reimplementation. Two reviewers
   independently reported the first item; the second came from the adversarial server-side check.
+
+### 2026-08-31 — RESOLVED (all three defects, one PR: #890)
+
+Root cause of every one of them: **a `Date` cannot express a calendar day**, and the code used one
+for both meanings. `new Date("2026-09-02")` is UTC midnight; ask which civil day that instant falls
+in for the user — which is what `getDayBounds` does — and west of Greenwich the answer is 09-01.
+Meanwhile `getPlannedNutritionSummary` wanted the opposite: an instant whose _UTC_ day was the
+requested day. One `Date` could not satisfy both, so the route satisfied neither.
+
+The fix names the two directions rather than overloading one type, in `server/lib/civil-date.ts`:
+`civilDateString(instant, tz)` and `civilDateToInstant("yyyy-mm-dd", tz)`, exact inverses whose
+round-trip is the contract. Consumers now take the day in the shape each needs — instant + `tz`
+for the log-bucketing queries, the raw string for the one that compares the `planned_date` column.
+`tz` is **required** across that family, because an optional `tz = "UTC"` is exactly what let two
+halves of one response bucket different days unnoticed.
+
+Full detail, measurements and mutation tables are in the PR and in
+`docs/solutions/logic-errors/a-date-cannot-express-a-calendar-day-2026-08-31.md`. Three things
+worth keeping here because they are not obvious from the diff:
+
+- **Three more sites of the same defect** were found during review and fixed in the same PR:
+  `micronutrients.ts` (which also 500'd on an unparseable date), `meal-suggestions.ts` (gates a
+  paid AI call's calorie budget), and `coach-tools.ts` `get_daily_log_details` — the worst, because
+  it echoes the resolved date back to the model, which would then assert the previous day's logs
+  under the requested date's label.
+- **`getDayBounds` had a second, unrelated bug**: it found "tomorrow" by adding 25h, which fails on
+  `Antarctica/Troll`'s 26-hour fall-back day (a 2-hour DST shift) and produced _inverted_ bounds —
+  every query for that day silently returned nothing. Tomorrow is now derived from the calendar.
+- **The midnight clamp fires in exactly four zones**, all with a negative pre-transition offset:
+  `America/Santiago`, `America/Havana`, `Atlantic/Azores`, `America/Asuncion`. Measured over all
+  417 IANA zones for 2024-2027. `Asia/Beirut` transitions at 00:00 but is UTC-positive beforehand,
+  so it never fires — a fixture built from it is vacuous. Those four zone/day pairs are the
+  clamp's regression fixtures, each verified non-vacuous by deleting the loop.

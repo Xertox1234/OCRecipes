@@ -273,3 +273,84 @@ describe("Goals Routes", () => {
     });
   });
 });
+
+// Regression guard for the civil-day defect: `/api/daily-budget?date=` used to
+// build its Date with `new Date("2026-09-02")` — UTC midnight — and then ask
+// `getDayBounds` which civil day that instant fell in for the user's zone. West
+// of Greenwich that is the PREVIOUS day, so every user in the Americas got
+// yesterday's calorie totals for whatever day they selected. All 24 hours, not
+// a day-edge window.
+//
+// No TZ pinning needed: the zone under test is sent as a header, so the host
+// zone is not an input. That is exactly what makes this guard run in CI.
+describe("/api/daily-budget — the requested date is resolved in the USER's zone", () => {
+  let app: express.Express;
+
+  const civilDateIn = (d: Date, tz: string) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+
+  beforeEach(() => {
+    app = createApp();
+    vi.mocked(storage.getUser).mockResolvedValue(mockUser);
+    vi.mocked(storage.getDailySummary).mockResolvedValue({
+      totalCalories: 0,
+      totalProtein: 0,
+      totalCarbs: 0,
+      totalFat: 0,
+      itemCount: 0,
+    });
+  });
+
+  it.each([
+    "America/Los_Angeles",
+    "America/New_York",
+    "Europe/Berlin",
+    "Pacific/Auckland",
+    "UTC",
+  ])("resolves ?date=2026-09-02 to civil day 2026-09-02 in %s", async (tz) => {
+    await request(app)
+      .get("/api/daily-budget?date=2026-09-02")
+      .set("X-Timezone", tz)
+      .expect(200);
+
+    const [, dateArg, tzArg] = vi.mocked(storage.getDailySummary).mock.calls[0];
+    expect(tzArg).toBe(tz);
+    // The instant handed to storage must fall inside the requested civil day
+    // AS SEEN IN THAT ZONE. `new Date("2026-09-02")` fails this for any
+    // negative offset.
+    expect(civilDateIn(dateArg as Date, tz)).toBe("2026-09-02");
+  });
+
+  it.each(["2026/09/02", "Sep 2, 2026", "2026-09-02T00:00:00Z", "2026-02-30"])(
+    "rejects a malformed date param (%s) rather than silently using today",
+    async (bad) => {
+      // `new Date("2026/09/02")` is a LOCAL-time parse, so its round-trip
+      // depends on where the server runs. 400 rather than a silent fallback,
+      // because this response does not echo the resolved date — a client could
+      // not tell that a substitution happened.
+      await request(app)
+        .get(`/api/daily-budget?date=${encodeURIComponent(bad)}`)
+        .set("X-Timezone", "America/Los_Angeles")
+        .expect(400);
+
+      expect(vi.mocked(storage.getDailySummary)).not.toHaveBeenCalled();
+    },
+  );
+
+  it("falls back to TODAY IN THE USER'S ZONE when no date is given", async () => {
+    await request(app)
+      .get("/api/daily-budget")
+      .set("X-Timezone", "Pacific/Auckland")
+      .expect(200);
+
+    const [, dateArg] = vi.mocked(storage.getDailySummary).mock.calls[0];
+    expect(civilDateIn(dateArg as Date, "Pacific/Auckland")).toBe(
+      civilDateIn(new Date(), "Pacific/Auckland"),
+    );
+  });
+});

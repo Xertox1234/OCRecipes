@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/query-client";
+import { getDeviceTimezone } from "@/lib/timezone";
 import type { MealPlanItem } from "@shared/schema";
 import type { MealPlanItemWithRelations } from "@shared/types/meal-plan";
 
@@ -74,9 +75,16 @@ export function useConfirmMealPlanItem() {
 
   return useMutation({
     mutationFn: async (id: number) => {
+      // X-Timezone is required here, not decorative: the server buckets the
+      // duplicate-confirmation check by the civil day of the item's
+      // `plannedDate` in THIS zone. `apiRequest` does not add the header
+      // automatically — every caller passes it explicitly — so omitting it
+      // silently falls back to UTC day bounds on the server.
       const res = await apiRequest(
         "POST",
         `/api/meal-plan/items/${id}/confirm`,
+        undefined,
+        { headers: { "X-Timezone": getDeviceTimezone() } },
       );
       return res.json();
     },

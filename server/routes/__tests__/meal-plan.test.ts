@@ -679,6 +679,79 @@ describe("Meal Plan Routes", () => {
       expect(res.status).toBe(201);
     });
 
+    // The duplicate pre-check bounds `daily_logs.logged_at` by the civil day of
+    // the item's `plannedDate`. That day only means anything once it is resolved
+    // IN THE USER'S ZONE: `new Date("2025-01-01")` is UTC midnight, whose civil
+    // day at any negative offset is 2024-12-31.
+    it.each([
+      "America/Los_Angeles",
+      "Pacific/Auckland",
+      "Europe/Berlin",
+      "UTC",
+    ])(
+      "resolves the item's plannedDate in the request's zone (%s)",
+      async (tz) => {
+        mockPremium();
+        vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
+          ...createMockMealPlanItem({
+            plannedDate: "2025-01-01",
+            mealType: "dinner",
+          }),
+          recipe: null,
+          scannedItem: null,
+        });
+        vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([]);
+        vi.mocked(storage.createDailyLog).mockResolvedValue(
+          createMockDailyLog(),
+        );
+
+        await request(app)
+          .post("/api/meal-plan/items/1/confirm")
+          .set("Authorization", "Bearer token")
+          .set("X-Timezone", tz)
+          .expect(201);
+
+        const [, dateArg, tzArg] = vi.mocked(
+          storage.getConfirmedMealPlanItemIds,
+        ).mock.calls[0];
+        expect(tzArg).toBe(tz);
+        expect(
+          new Intl.DateTimeFormat("en-CA", {
+            timeZone: tz,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(dateArg as Date),
+        ).toBe("2025-01-01");
+      },
+    );
+
+    // The no-regression guarantee for clients that predate the header.
+    it("falls back to UTC bounds when no X-Timezone is sent", async () => {
+      mockPremium();
+      vi.mocked(storage.getMealPlanItemById).mockResolvedValue({
+        ...createMockMealPlanItem({
+          plannedDate: "2025-01-01",
+          mealType: "dinner",
+        }),
+        recipe: null,
+        scannedItem: null,
+      });
+      vi.mocked(storage.getConfirmedMealPlanItemIds).mockResolvedValue([]);
+      vi.mocked(storage.createDailyLog).mockResolvedValue(createMockDailyLog());
+
+      await request(app)
+        .post("/api/meal-plan/items/1/confirm")
+        .set("Authorization", "Bearer token")
+        .expect(201);
+
+      const [, dateArg, tzArg] = vi.mocked(storage.getConfirmedMealPlanItemIds)
+        .mock.calls[0];
+      expect(tzArg).toBe("UTC");
+      // Byte-identical to the pre-change `new Date(plannedDate)` window.
+      expect((dateArg as Date).toISOString()).toBe("2025-01-01T00:00:00.000Z");
+    });
+
     it("returns 409 for already confirmed", async () => {
       mockPremium();
       vi.mocked(storage.getMealPlanItemById).mockResolvedValue({

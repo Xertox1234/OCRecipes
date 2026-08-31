@@ -1,6 +1,7 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
+import { civilDateToInstant } from "../lib/civil-date";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { ErrorCode } from "@shared/constants/error-codes";
@@ -177,9 +178,12 @@ export function register(app: Express): void {
 
         // Use actual confirmed intake from daily summary (includes scans + confirmed meals)
         const tz = parseTimezone(req.headers["x-timezone"]);
+        // `new Date(dateStr)` is UTC midnight, whose civil day in the user's
+        // zone is the PREVIOUS one at any negative offset — see
+        // docs/solutions/logic-errors/a-date-cannot-express-a-calendar-day-2026-08-31.md
         const actualIntake = await storage.getDailySummary(
           req.userId,
-          new Date(parsed.data.date),
+          civilDateToInstant(parsed.data.date, tz),
           tz,
         );
 

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { escapeLike, getDayBounds, getMonthBounds } from "../helpers";
+import { civilDateString, civilDateToInstant } from "../../lib/civil-date";
 
 describe("escapeLike", () => {
   it("escapes percent sign", () => {

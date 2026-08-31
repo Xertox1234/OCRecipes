@@ -1,6 +1,8 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
+import { civilDateString, civilDateToInstant } from "../lib/civil-date";
+
 import { requireAuth, type AuthenticatedRequest } from "../middleware/auth";
 import { sendError } from "../lib/api-errors";
 import { logger, toError } from "../lib/logger";
@@ -9,7 +11,11 @@ import {
   userPhysicalProfileSchema,
 } from "../services/goal-calculator";
 import { ErrorCode } from "@shared/constants/error-codes";
-import { handleRouteError, parseQueryDate, parseTimezone } from "./_helpers";
+import {
+  handleRouteError,
+  parseQueryDateString,
+  parseTimezone,
+} from "./_helpers";
 import { crudRateLimit } from "./_rate-limiters";
 import { DEFAULT_NUTRITION_GOALS } from "@shared/constants/nutrition";
 
@@ -140,8 +146,30 @@ export function register(app: Express): void {
     crudRateLimit,
     async (req: AuthenticatedRequest, res: Response) => {
       try {
-        const date = parseQueryDate(req.query.date) ?? new Date();
         const tz = parseTimezone(req.headers["x-timezone"]);
+        // See the note in /api/daily-summary: a `yyyy-mm-dd` must be turned into
+        // an instant inside that civil day IN THE USER'S ZONE, never with
+        // `new Date(dateStr)`.
+        // A present-but-malformed `date` is rejected rather than silently
+        // treated as today: neither this response nor /api/daily-budget echoes
+        // the resolved date, so a client could not detect the substitution.
+        if (
+          req.query.date !== undefined &&
+          parseQueryDateString(req.query.date) === undefined
+        ) {
+          sendError(
+            res,
+            400,
+            "date must be a valid yyyy-mm-dd calendar date",
+            ErrorCode.VALIDATION_ERROR,
+          );
+          return;
+        }
+        const date = civilDateToInstant(
+          parseQueryDateString(req.query.date) ??
+            civilDateString(new Date(), tz),
+          tz,
+        );
         const [user, dailySummary] = await Promise.all([
           storage.getUser(req.userId),
           storage.getDailySummary(req.userId, date, tz),
