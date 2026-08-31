@@ -79,12 +79,14 @@ jobs:
     # Metro pre-warm step (best-effort, capped at 10m) and the driver
     # readiness budget 120s -> 300s (x2 attempts = up to +6m): ~16m of new
     # worst-case consumers against what had been a ~21m margin. Re-bumped
-    # 120 -> 150 once the build step's bound was sized from measured builds
+    # 120 -> 160 once the build step's bound was sized from measured builds
     # (~34m normal, 70m bound): setup ~6m + build <=70m + pre-warm <=10m +
     # flows (observed ~13m when green; 64m if every launch gate maxes) — the
-    # realistic path is ~60m, the sum of maxima ~150m. The point of the
-    # headroom is a real Pass/Fail summary instead of an ambiguous timeout.
-    timeout-minutes: 150
+    # realistic path is ~60m, the sum of maxima ~150m, and 160 keeps a 10m
+    # margin so the job timeout can never fire in the same instant the flows
+    # step would be printing its summary. The point of the headroom is a real
+    # Pass/Fail summary instead of an ambiguous timeout.
+    timeout-minutes: 160
 
     env:
       # Backend env — mirrors .github/workflows/ci.yml so the server behaves the
@@ -313,11 +315,20 @@ jobs:
         timeout-minutes: 15
         run: |
           # A step timeout kills the shell but can orphan the build step's
-          # xcodebuild, which then holds the DerivedData build.db lock and
+          # xcodebuild — and XCBBuildService, the long-lived build-system
+          # process xcodebuild is only a client of, which is what actually
+          # holds the DerivedData build.db lock and can outlive the CLI. Either
           # makes this diagnostic fail with "database is locked ... two
           # concurrent builds" instead of the real error (run 33373712907).
+          # Log what was still alive first so the next occurrence is evidence.
+          pgrep -l xcodebuild || true
+          pgrep -l XCBBuildService || true
           pkill -x xcodebuild || true
-          sleep 5
+          pkill -x XCBBuildService || true
+          for i in $(seq 1 10); do
+            if ! pgrep -qx xcodebuild && ! pgrep -qx XCBBuildService; then break; fi
+            sleep 2
+          done
           xcodebuild -workspace OCRecipes.xcworkspace -configuration Debug -scheme OCRecipes \
             -destination "id=$IOS_SIMULATOR_UDID" build 2>&1
 
