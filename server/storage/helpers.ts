@@ -1,9 +1,5 @@
 import { civilDateString, civilMidnightUtcMs } from "../lib/civil-date";
 
-// Re-exported so existing importers of these two names keep working; the
-// definitions live in server/lib/civil-date.ts.
-export { civilDateString, civilDateToInstant } from "../lib/civil-date";
-
 /** Escape ILIKE metacharacters so user input is treated as literal text. */
 export function escapeLike(str: string): string {
   return str.replace(/[%_\\]/g, "\\$&");
@@ -26,11 +22,14 @@ export function escapeLike(str: string): string {
  *
  * DST correctness: uses a two-step offset correction via `civilMidnightUtcMs`
  * so that spring-forward / fall-back days are bounded correctly (not off by 1h).
- * The "end of day" is the start of the *next* calendar day minus 1ms, which
- * correctly handles 23h (spring-forward) and 25h (fall-back) days.
+ * The "end of day" is the start of the *next* calendar day minus 1ms.
  *
- * To find "tomorrow", this adds 25 hours to the start (enough to always land
- * in the next local day even on DST-transition days) and reads its civil date.
+ * "Tomorrow" is derived from the CALENDAR (`Date.UTC(y, m - 1, d + 1)`), not by
+ * adding a fixed number of hours. An earlier version added 25h on the premise
+ * that no local day is longer than that; `Antarctica/Troll` shifts by two hours
+ * and so has 22h and 26h days, on which the heuristic landed back inside the
+ * SAME day and produced bounds whose end preceded their start. See the comment
+ * at the derivation itself.
  */
 export function getDayBounds(
   date: Date,

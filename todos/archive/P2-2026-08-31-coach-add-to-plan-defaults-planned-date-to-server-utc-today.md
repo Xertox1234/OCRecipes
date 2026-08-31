@@ -1,6 +1,6 @@
 ---
 title: "Two coach tools default their planned_date window to the SERVER's UTC today, which is the user's yesterday for part of every day at a positive offset"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-31
 updated: 2026-08-31
@@ -71,15 +71,15 @@ nothing enforces that it doesn't.
 
 ## Acceptance Criteria
 
-- [ ] When the model omits `plannedDate` (write path, `:106`) **or** `startDate`/`endDate` (read
+- [x] When the model omits `plannedDate` (write path, `:106`) **or** `startDate`/`endDate` (read
       path, `:609-612`), the value used is the requesting user's civil date in their own IANA
       timezone, not the server's UTC date. Both sites, not just the write one.
-- [ ] A test pins a **non-UTC** timezone and a fixed clock at an instant where the server's UTC
+- [x] A test pins a **non-UTC** timezone and a fixed clock at an instant where the server's UTC
       day and the user's local day differ, and asserts the resulting `plannedDate`. A test that
       only passes under UTC does not close this — CI runs UTC, where the two agree.
-- [ ] The dead `?? toIsoDate(new Date())` arms at `:643`/`:647` are either removed or made
+- [x] The dead `?? toIsoDate(new Date())` arms at `:643`/`:647` are either removed or made
       reachable, so the code cannot mislead the next reader about where the default comes from.
-- [ ] No change to the client contract: the emitted `plannedDate` stays `yyyy-mm-dd`, matching
+- [x] No change to the client contract: the emitted `plannedDate` stays `yyyy-mm-dd`, matching
       `shared/schemas/coach-blocks.ts`'s `RecipeBrowserModal` params and the
       `/^\d{4}-\d{2}-\d{2}$/` validation at `server/routes/meal-plan.ts:80`.
 
@@ -132,3 +132,38 @@ tool definition, an omission is a model error, and failing loudly may beat silen
 - Second site found on the READ path (`:609-612`, `get_meal_plan`) during the review sweep of the
   P1 local-date-basis branch. Scope and title widened from one site to two. The read-path default
   is the more reachable of the two, because its schema marks both dates optional.
+
+### 2026-08-31 — RESOLVED in PR #890
+
+Fixed alongside the civil-day work, because the review found these sites three
+lines from an edit that PR was already making, with `tz` in scope and
+`civilDateString` already imported.
+
+**The decoy this file warned about caught me anyway.** I first "fixed" the
+`?? toIsoDate(new Date())` arms at `:650`/`:654` — which are dead, exactly as the
+Background section said, because the Zod `.default()` at `:106` always populated
+the field. Verified by running the schema: `safeParse({})` yields
+`plannedDate: "2026-08-31"`, never `undefined`. Writing the warning down was not
+enough to stop me walking into it; the reviewer's re-read was.
+
+The real fix: drop the `.default()` so the field is `.optional()`, and apply the
+default at the call site where `tz` exists. Both AC items are covered —
+
+- **Write path** (`add_to_meal_plan`): pinned at 18:30 Sep 2 in Los Angeles, the
+  old code filed `2026-09-03` (tomorrow) and now files `2026-09-02`. This one
+  writes a real `meal_plan_items` row since PR #885, so it was filing meals on
+  the wrong day, not merely proposing one.
+- **Read path** (`get_meal_plan`, `:616`): `startDate` defaulted to the server's
+  UTC today, so "what's on my plan this week" omitted the day the user was
+  standing in. Measured wrong-hour window per day: LA 7/24, Auckland 12/24,
+  New York 4/24, Berlin 2/24, UTC 0/24.
+
+Guard: `coach-tools.test.ts` now pins the default path across four zones with a
+fixed clock, asserting a civil date computed independently in the test rather
+than through the helper the code uses. Mutation-checked — restoring the Zod
+default fails the Los Angeles and New York cases, and only those, which is the
+right population.
+
+Left as-is deliberately: the tool definition still marks `plannedDate` required,
+so the `.optional()` Zod field is the defensive fallback rather than a contract
+change. The NOTE at `:103` records that.

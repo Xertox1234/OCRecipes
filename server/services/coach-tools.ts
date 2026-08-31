@@ -103,8 +103,17 @@ const getMealPlanSchema = z.object({
 
 // NOTE: plannedDate and mealType are marked required in the OpenAI JSON tool definition.
 // Keep this Zod schema aligned — if you change required/optional here, update getToolDefinitions() too.
+//
+// `plannedDate` is `.optional()` rather than carrying a `.default()` on purpose.
+// A default here cannot see the request's timezone, so the previous
+// `.default(() => new Date().toISOString().split("T")[0])` filed a UTC day —
+// the user's TOMORROW for a negative offset in the evening. Worse, because the
+// default always populated the field, the `?? toIsoDate(new Date())` fallbacks
+// at the call site could never run: they looked like the default and were dead,
+// so fixing only those changes nothing. The default now lives at the call site,
+// where `tz` is in scope.
 const addToMealPlanSchema = z.object({
-  plannedDate: z.string().default(() => new Date().toISOString().split("T")[0]),
+  plannedDate: z.string().optional(),
   mealType: z.string().default("lunch"),
   notes: z.string().optional(),
 });
@@ -613,7 +622,12 @@ export async function executeToolCall(
       if (!parsed.success) {
         return invalidArgs("get_meal_plan", parsed.error.message);
       }
-      const today = toIsoDate(new Date());
+      // The user's civil today, not the server's. `toIsoDate(new Date())` is a
+      // UTC basis, which for an LA user in the evening is TOMORROW — so
+      // "what's on my plan this week" silently omitted the day they were
+      // standing in. Measured wrong-hour window per day: LA 7/24, Auckland
+      // 12/24, New York 4/24, Berlin 2/24, UTC 0/24.
+      const today = civilDateString(new Date(), tz);
       const startDate = parsed.data.startDate ?? today;
       const defaultEnd = addDaysIso(startDate, 6);
       const endDate = parsed.data.endDate ?? defaultEnd;
@@ -647,11 +661,15 @@ export async function executeToolCall(
           type: "navigate",
           screen: "RecipeBrowserModal",
           params: {
-            plannedDate: parsed.data.plannedDate ?? toIsoDate(new Date()),
+            plannedDate:
+              parsed.data.plannedDate ?? civilDateString(new Date(), tz),
             mealType: parsed.data.mealType ?? "lunch",
           },
         },
-        plannedDate: parsed.data.plannedDate ?? toIsoDate(new Date()),
+        // Same UTC-basis defect, and this one WRITES: since PR #885 this
+        // proposal creates a real `meal_plan_items` row, so "add chicken for
+        // today" at 6pm PDT filed it under tomorrow.
+        plannedDate: parsed.data.plannedDate ?? civilDateString(new Date(), tz),
         mealType: parsed.data.mealType ?? "lunch",
         notes: parsed.data.notes,
         message: "I've prepared this meal plan addition. Please confirm below.",

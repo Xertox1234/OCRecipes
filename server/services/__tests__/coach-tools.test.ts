@@ -246,6 +246,70 @@ describe("Coach Tools Service", () => {
     });
   });
 
+  // When the model omits plannedDate, the day it lands on must be the USER's
+  // civil day. It used to come from a Zod `.default()` that could not see the
+  // request timezone, so it filed a UTC day — the user's TOMORROW for any
+  // negative offset in the evening. Since PR #885 this proposal writes a real
+  // meal_plan_items row, so "add chicken for today" at 6pm PDT filed it under
+  // tomorrow.
+  //
+  // Asserted against a civil date computed independently in the test, not
+  // against the helper the route uses, and with the clock pinned so "evening in
+  // LA" is a fact rather than a function of when CI runs.
+  describe("add_to_meal_plan defaults plannedDate to the user's civil day", () => {
+    const AT = new Date("2026-09-03T01:30:00Z"); // 18:30 Sep 2 in Los Angeles
+
+    beforeAll(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(AT);
+    });
+    afterAll(() => vi.useRealTimers());
+
+    const civilDateIn = (d: Date, tz: string) =>
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(d);
+
+    it.each([
+      ["America/Los_Angeles", "2026-09-02"],
+      ["America/New_York", "2026-09-02"],
+      ["Europe/Berlin", "2026-09-03"],
+      ["UTC", "2026-09-03"],
+    ])("uses the caller's civil day in %s", async (tz, expected) => {
+      // Sanity: the fixture really is a day where LA and UTC disagree.
+      expect(civilDateIn(AT, tz)).toBe(expected);
+
+      const result = (await executeToolCall(
+        "add_to_meal_plan",
+        { mealType: "dinner" }, // plannedDate deliberately omitted
+        "user-1",
+        undefined,
+        tz,
+      )) as {
+        plannedDate: string;
+        action: { params: { plannedDate: string } };
+      };
+
+      expect(result.plannedDate).toBe(expected);
+      // The navigate params carry the same day, or the browser opens on another.
+      expect(result.action.params.plannedDate).toBe(expected);
+    });
+
+    it("still honours an explicit plannedDate", async () => {
+      const result = (await executeToolCall(
+        "add_to_meal_plan",
+        { plannedDate: "2026-12-25", mealType: "dinner" },
+        "user-1",
+        undefined,
+        "America/Los_Angeles",
+      )) as { plannedDate: string };
+      expect(result.plannedDate).toBe("2026-12-25");
+    });
+  });
+
   it("returns schema-aligned navigation proposal actions", async () => {
     const mealPlanResult = await executeToolCall(
       "add_to_meal_plan",

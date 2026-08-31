@@ -147,7 +147,7 @@ export function parseQueryInt(
  * UTC-negative zone is 2026-09-01, so every downstream consumer that asks "what
  * day is this" gets the previous one for the whole of the Americas. Callers that
  * genuinely need an instant should convert explicitly with
- * `civilDateToInstant(dateStr, tz)` from `server/storage/helpers`.
+ * `civilDateToInstant(dateStr, tz)` from `server/lib/civil-date`.
  *
  * The format is also validated rather than delegated to `new Date`, which
  * accepts forms V8 parses in the PROCESS timezone (`2026/09/02`,

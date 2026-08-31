@@ -129,6 +129,83 @@ describe("Micronutrients Routes", () => {
       expect(res.status).toBe(403);
       expect(res.body.code).toBe("PREMIUM_REQUIRED");
     });
+
+    // This endpoint's `date` handling changed three ways at once and none of it
+    // was asserted: the calendar date is now resolved in the request's zone, a
+    // malformed value 400s instead of reaching Intl.format as an Invalid Date
+    // (a 500), and the echoed `date` field is the resolved string rather than
+    // `toDateString(date)`.
+    describe("date handling", () => {
+      const civilDateIn = (d: Date, tz: string) =>
+        new Intl.DateTimeFormat("en-CA", {
+          timeZone: tz,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(d);
+
+      beforeEach(() => {
+        // The outer beforeEach pins the tier to "free"; clearAllMocks resets
+        // call history but not implementations, so premium must be re-granted
+        // here or every request 403s before reaching the date logic.
+        mockPremium();
+        vi.mocked(storage.getDailyLogs).mockResolvedValue([]);
+        vi.mocked(storage.getScannedItemsByIds).mockResolvedValue([]);
+        vi.mocked(batchLookupMicronutrients).mockResolvedValue([]);
+        vi.mocked(aggregateMicronutrients).mockReturnValue([]);
+      });
+
+      it.each([
+        "America/Los_Angeles",
+        "America/New_York",
+        "Europe/Berlin",
+        "UTC",
+      ])(
+        "resolves ?date= in the request's zone and echoes it back (%s)",
+        async (tz) => {
+          const res = await request(app)
+            .get("/api/micronutrients/daily?date=2026-09-02")
+            .set("Authorization", "Bearer token")
+            .set("X-Timezone", tz)
+            .expect(200);
+
+          const [, dateArg, tzArg] = vi.mocked(storage.getDailyLogs).mock
+            .calls[0];
+          expect(tzArg).toBe(tz);
+          // `new Date("2026-09-02")` is UTC midnight, whose civil day at a
+          // negative offset is 2026-09-01 — this is the discriminator.
+          expect(civilDateIn(dateArg as Date, tz)).toBe("2026-09-02");
+          expect(res.body.date).toBe("2026-09-02");
+        },
+      );
+
+      it("echoes today IN THE USER'S ZONE when no date is given", async () => {
+        const tz = "Pacific/Auckland";
+        const res = await request(app)
+          .get("/api/micronutrients/daily")
+          .set("Authorization", "Bearer token")
+          .set("X-Timezone", tz)
+          .expect(200);
+
+        // Previously this field was today-in-UTC even though the logs were
+        // bucketed in tz, so the response could label itself with a different
+        // day than it summarised.
+        expect(res.body.date).toBe(civilDateIn(new Date(), tz));
+      });
+
+      it.each(["2026/09/02", "not-a-date", "2026-02-30", ""])(
+        "rejects a malformed date (%s) with 400 instead of 500",
+        async (bad) => {
+          await request(app)
+            .get(`/api/micronutrients/daily?date=${encodeURIComponent(bad)}`)
+            .set("Authorization", "Bearer token")
+            .set("X-Timezone", "America/Los_Angeles")
+            .expect(400);
+
+          expect(vi.mocked(storage.getDailyLogs)).not.toHaveBeenCalled();
+        },
+      );
+    });
   });
 
   describe("GET /api/micronutrients/daily", () => {

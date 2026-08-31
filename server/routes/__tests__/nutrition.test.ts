@@ -1499,6 +1499,19 @@ describe("GET /api/daily-summary — one day, three consumers, three shapes", ()
     },
   );
 
+  it.each(["2026/09/02", "Sep 2, 2026", "2026-02-30", ""])(
+    "rejects a malformed date (%s) with 400 rather than silently using today",
+    async (bad) => {
+      await request(app)
+        .get(`/api/daily-summary?date=${encodeURIComponent(bad)}`)
+        .set("Authorization", "Bearer token")
+        .set("X-Timezone", "America/Los_Angeles")
+        .expect(400);
+
+      expect(vi.mocked(storage.getDailySummary)).not.toHaveBeenCalled();
+    },
+  );
+
   it("defaults to today in the USER's zone, not the server's", async () => {
     const tz = "Pacific/Auckland";
     await request(app)
