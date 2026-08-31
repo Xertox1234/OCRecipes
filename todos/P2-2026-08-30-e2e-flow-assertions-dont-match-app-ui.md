@@ -3,7 +3,7 @@ title: "E2E flow assertions don't match what the app actually shows for a fresh/
 status: backlog
 priority: medium
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-08-31
 assignee:
 labels: [e2e, maestro, testing]
 github_issue:
@@ -187,7 +187,8 @@ openurl stall (15) — each a different one-off, none an app or flow defect.
 
 Run 33348888795 (strand fix + launch retry aboard): Android GREEN (7th consecutive), iOS RED
 at the driver layer — `IOSDriverTimeoutException: iOS driver not ready in time` in attempt 1
-(no flow ran), then 8/8 flows failing in 4-6s each in attempt 2 (same dead driver). Third
+(no flow ran), then 8/8 flows failing in attempt 2 — seven in 4-6s, the first in 33s — against
+the same dead driver. Third
 consecutive main dispatch lost in the simulator/XCTest layer (14: transport crash mid-run;
 15: simctl openurl stall; 16: driver never ready) — the plan's 3-dispatch stopping rule.
 

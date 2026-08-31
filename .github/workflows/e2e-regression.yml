@@ -75,9 +75,12 @@ jobs:
     # the retry pass. Re-bumped 90 -> 110 when the launch readiness gate grew
     # 120s -> 240s (run 33341123446's 177.7s cold bundle): degenerate worst
     # case is 16 flow-invocations x ~240s gate = ~64m + ~25m build/setup,
-    # which 90 no longer covers with margin. The point of the headroom is a
-    # real Pass/Fail summary instead of an ambiguous timeout.
-    timeout-minutes: 110
+    # which 90 no longer covers with margin. Re-bumped 110 -> 120 with the
+    # Metro pre-warm step (best-effort, capped at 10m) and the driver
+    # readiness budget 120s -> 300s (x2 attempts = up to +6m): ~16m of new
+    # worst-case consumers against what had been a ~21m margin. The point of
+    # the headroom is a real Pass/Fail summary instead of an ambiguous timeout.
+    timeout-minutes: 120
 
     env:
       # Backend env — mirrors .github/workflows/ci.yml so the server behaves the
@@ -313,7 +316,7 @@ jobs:
       # the launch gate keeps owning the cold-start budget if this times out.
       - name: Pre-warm Metro bundle
         run: |
-          curl -sf -o /dev/null --max-time 600 \
+          curl -sSf -o /dev/null --max-time 600 \
             "http://localhost:8081/client/index.bundle?platform=ios&dev=true&hot=false&lazy=true&transform.engine=hermes&transform.bytecode=1&transform.routerRoot=app&transform.reactCompiler=true&unstable_transformProfile=hermes-stable" \
             && echo "Metro bundle is warm" \
             || echo "::warning::Metro pre-warm did not complete within 600s — continuing (launch gate still owns cold start)"
