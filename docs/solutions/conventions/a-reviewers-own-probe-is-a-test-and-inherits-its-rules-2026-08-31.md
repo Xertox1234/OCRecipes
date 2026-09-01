@@ -13,8 +13,9 @@ last_updated: '2026-09-01'
 
 ## Rule
 
-Two separate claims. Both are about how a **review is conducted**, not about how the code
-under review is written.
+Four separate claims. All are about how a **review is conducted**, not about how the code
+under review is written. Clauses 3 and 4 were added on 2026-09-01 after each was violated —
+in the same session, by the author of clauses 1 and 2.
 
 1. **Verify a behavioural claim against the artifact — prefer execution wherever execution
    is possible.** For a guard, parser, or predicate, "this input is rejected" / "this form
@@ -32,6 +33,12 @@ under review is written.
    trusting a probe, name the interpreter/runtime it actually ran under and assert it in the
    probe's own output. A probe that silently runs somewhere other than production does not
    fail — it answers confidently about the wrong system.
+
+4. **A probe's verdict is bounded by its INPUTS, and a hand-listed corpus is a copy of your
+   own blind spot.** Generate the corpus combinatorially from its dimensions rather than
+   listing the cases you already suspect, and report any count together with the corpus that
+   produced it — "9 regressions" reads as a property of the change when it is a property of
+   the inputs.
 
 ## When this applies
 
@@ -157,6 +164,42 @@ condition and confirming it goes red. Caught by review, not by the author.
 Generalised: if the subject runs under a specific interpreter, container, node version, shell,
 or database, the probe must **assert** it rather than assume it — and the assertion belongs in
 the probe's visible output, so a wrong environment is impossible to read as a clean result.
+
+## Clause 4: a differential's number is a property of its CORPUS, not of the change (2026-09-01)
+
+The strongest instrument in this document is the differential — replay one corpus through the
+pre- and post-change implementation and assert no verdict regressed. It found 9 real
+deny→allow regressions where a 833-assertion suite found none, and it is the right first
+artefact whenever a matcher's grammar changes.
+
+It then reported **0 regressions** on the repair — and was wrong. A reviewer's combinatorial
+corpus found **240**. The harness was sound: two-sided, self-tested, correctly comparing.
+Every command in *my* corpus kept the redirect inside a single clause, because I wrote the
+corpus by listing the cases I had already thought of — so it was a faithful copy of my own
+blind spot, and it returned the reassuring answer with full machinery behind it.
+
+**A differential inherits the coverage of its inputs and nothing more.** A hand-listed corpus
+tests the hypotheses the author already holds; that is the one thing a regression check must
+not do. So:
+
+- **Generate the corpus combinatorially** — enumerate the dimensions (here: redirect form ×
+  separator × verb pair) and take the product. The product contains the cases you would not
+  have listed, which is the entire point.
+- **Name the dimension that can mask the bug.** Here it was the *verb pair*: a
+  `checkout`-then-`checkout` pair still finds a create flag by accident and passes, so only
+  the mismatched pairs (`checkout` then `switch`) expose the clause merge. A corpus that
+  varies only the interesting-looking axis will miss it.
+- **Quote the number with its corpus.** "The differential found 9 regressions" reads as a
+  property of the change; it is a property of the inputs. Report it as "9 over N inputs
+  spanning X and Y" so the next reader can see what was not spanned.
+
+A related failure from the same round, worth stating plainly because it is easy to do while
+feeling rigorous: the commit that introduced a reviewer rule *requiring* a differential
+shipped the differential as **prose describing itself**, not as a runnable artefact. A
+verification that exists only in a commit message cannot be re-run by the next change. Land
+the corpus as a test. Where the natural form is "replay against the previous version", note
+that after merge the previous version becomes the current one and such a test passes forever
+— pin the invariant it was measuring instead.
 
 ## Exceptions
 

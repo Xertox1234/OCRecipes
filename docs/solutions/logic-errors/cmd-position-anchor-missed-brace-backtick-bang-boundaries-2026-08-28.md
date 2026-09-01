@@ -255,6 +255,37 @@ matcher's grammar changes, because the invariant being protected is a superset r
 a set of examples. Its durable form is a block of detection pins asserting that every
 create-shaped command in the corpus is still detected.
 
+### 4. A deletion's stop-set is COUPLED to the downstream terminator class — the opposite of lesson 2 above, ten lines away
+
+Repairing lesson 1 (delete the redirect rather than terminate on it) produced a bigger
+regression than the one it fixed: **240 deny→allow transitions**, against 9 for the original.
+
+The deletion's target word was written `[^[:space:]]*` — excluding only whitespace. So it also
+consumed `;`, `&`, `|`, `)` and backtick: exactly the characters the extractor immediately
+below uses as its segment boundary. When a redirect ended a clause with **no space** before
+the separator, the separator was deleted and the two clauses fused into one segment. The
+`case` dispatch then keyed on the merged segment's first verb and never searched for the
+second:
+
+```
+git checkout main 2>/dev/null;git switch -c foo
+  → checkout main  switch -c foo      # one segment; greps for -[bB], finds none
+  → NOT a create — though it really creates a branch
+```
+
+**The rule: a pass that DELETES text must not consume any character its downstream matcher
+needs as a boundary. Its stop-set is the downstream terminator class ∪ whitespace — coupled
+by construction, not derived independently.**
+
+And here is the trap worth the entry: that is the **exact opposite** of the coupling in the
+Solution section above, which says `_CMD_POS_SUFFIX` and this extractor's terminator "must be
+derived independently, not mirrored". Both rules are correct; they govern different pairs.
+They sit about ten lines apart in the same function, and the terminator class has already
+changed twice (backtick added; `{`/`}` tried and rejected). A maintainer who over-applies the
+independence lesson to the deletion pair will desync them and revive the merge silently.
+**When one file carries two couplings that run in opposite directions, each must name the
+other**, or the more memorable one gets applied to both.
+
 ## Related Files
 
 - `.claude/hooks/lib/cmd-detect.sh` — `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`, both widened.
