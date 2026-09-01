@@ -1,11 +1,12 @@
 ---
-title: Grep-verify single-ownership after a source-of-truth consolidation — prose merges leave copies that have already diverged
+title: Grep-verify single-ownership after a source-of-truth consolidation — prose merges leave diverged copies, and the surviving copy can be thinner than what it replaced
 track: knowledge
 category: best-practices
 module: shared
 tags: [consolidation, deduplication, single-source-of-truth, refactor, review-checklist, drift, agents, skills]
 applies_to: [.claude/agents/**/*.md, .claude/skills/**/*.md, docs/**/*.md]
 created: '2026-07-02'
+last_updated: '2026-08-31'
 ---
 
 # Grep-verify single-ownership after a source-of-truth consolidation — prose merges leave copies that have already diverged
@@ -29,6 +30,10 @@ copy still compiles. Verify it mechanically before you believe it.
   (a newer audit-date citation, an added edge-case paragraph) and the other has not.
 - A routing/lookup table restated inline in a second file "for convenience" instead of
   a pointer to the one canonical table.
+- A rule moved onto a **shared** surface "so it reaches everyone" — and an enumeration
+  in it that reads as representative (`(a, b, c)`) rather than exhaustive. Ask what each
+  new consumer carried *before*; for the ones that carried nothing, this copy is now
+  their only copy.
 
 ## Why
 
@@ -58,6 +63,29 @@ legitimately shared concept that should live in one owner with the other file po
 it. When the unit is a table or routing map, the fix is a **pointer, not a paraphrase** —
 a restated table is the very duplication the consolidation claimed to remove.
 
+### The other direction: one home, but lossier than what it replaced
+
+The count check above catches *too many* homes. The same unenforced claim fails the other
+way too: the surviving copy can be **thinner** than the copies it replaced, and that is
+harder to see because the grep returns exactly one file — the healthy-looking answer.
+
+Reach and completeness are coupled, and the coupling runs opposite to instinct. The more
+consumers a shared text reaches, the *less* licence it has to abbreviate: for a consumer
+that already held the full rule, an abbreviated shared copy is a redundant summary; for a
+consumer that held **nothing**, it is the entire rule they will ever see. Choosing a
+surface *because* it has the widest reach is therefore the moment abbreviation becomes
+most expensive — the same property that motivated the move.
+
+So add a second check alongside the count: for each enumeration in the consolidated text,
+**diff it against every copy it replaces**, and against whatever the new consumers had.
+A parenthetical list is the usual casualty — it reads as illustrative, so it survives
+review as "close enough" while being one item short.
+
+```bash
+# Who actually carried this rule before? Silence for a consumer is the finding.
+grep -l "outward-facing" .claude/agents/*.md
+```
+
 ## Examples
 
 - **#490 roster consolidation** — after the merge, single-ownership spot-checks
@@ -71,6 +99,14 @@ a restated table is the very duplication the consolidation claimed to remove.
 - **Routing tables done right** — the domain→reviewer map lives once in
   `.claude/skills/codify/SKILL.md` Step 2/Step 5; `audit/SKILL.md` and
   `todo-executor.md` carry pointers, not copies.
+- **#894 review-methodology consolidation (the lossy direction)** — a construct-and-run
+  rule was placed in the `docs/AI_WORKFLOW.md` dispatch prompt precisely because that is
+  the only text reaching all five reviewers in one write. Its outward-facing-CLI
+  carve-out listed four CLIs; both canonical enumerations list five (`remote psql` was
+  dropped). `grep -l "outward-facing" .claude/agents/*.md` returned **only**
+  `code-reviewer.md` — the other four roster reviewers carry no such prohibition at all,
+  so the four-item list was their sole copy, and the omission would have licensed exactly
+  the execution the rule exists to forbid. Caught by review, not by the author.
 
 ## Exceptions
 
