@@ -64,3 +64,45 @@ more than the detection logic.
 ### 2026-08-16
 
 - Filed from the PR #850 `/code-review` reuse/efficiency findings.
+
+### 2026-09-01 — read both implementations; recommend CLOSE
+
+Read the two fallbacks side by side to execute this. They share less than the summary
+suggests, and the part they share is too small to carry an abstraction.
+
+**What is genuinely common is one predicate:** "the rendering came back blank from a
+non-blank `$CMD`, so the awk backend is missing or broken." In `guard-outward-cli.sh` that
+is one `if` condition; in `pr-preflight-guard.sh` it is the `elif [ -n "${CMD//[[:space:]]/}" ]`
+arm. Roughly one line each.
+
+**Everything downstream of that predicate diverges, and the divergence is deliberate:**
+
+|                   | `guard-outward-cli.sh`          | `pr-preflight-guard.sh`                |
+| ----------------- | ------------------------------- | -------------------------------------- |
+| Degrades to       | `crude_smells_outward` → `deny` | 5-char strip + glob → the stamp gate   |
+| Fail-closed means | block the command outright      | demand a preflight stamp               |
+| Checks            | both `$BARE` and `$WORDS`       | `$WORDS` only (never computes `$BARE`) |
+
+Those are not two styles of the same thing; they are two different fail-closed
+destinations, because each hook's downstream matcher and its notion of "safe direction"
+differ. The todo's own Implementation Notes anticipated exactly this ("confirm whether
+these two fallback behaviors are meant to converge, or are legitimately hook-specific")
+and the answer is: hook-specific.
+
+A shared helper would therefore hold one line of predicate while both call sites kept
+their own bespoke degrade path immediately after it. That is the shape
+`docs/solutions/best-practices/grep-verify-single-ownership-after-dedup-consolidation-2026-07-02.md`
+warns about from the other side: a consolidation that gives one home to the trivial half
+while the load-bearing half stays duplicated, leaving the file _looking_ unified. Worse,
+the stated risk — "a maintainer fixes one and not the other" — is not actually reduced,
+because the thing a maintainer would change (how this hook degrades) is precisely the part
+that cannot be shared.
+
+The real coupling is already handled better than a helper would: both hooks carry dated
+comments citing each other and the review round that produced them, and both behaviours are
+pinned by tests (`test-guard-outward-cli.sh`'s blank-rendering and no-awk assertions,
+`test-pr-preflight-guard.sh`'s "awk PRESENT BUT BROKEN" cases, including a working-awk
+control).
+
+**Recommendation: close as won't-fix.** Left `status: backlog` pending the owner's call
+rather than self-closed, per the consult-before-won't-fix rule.
