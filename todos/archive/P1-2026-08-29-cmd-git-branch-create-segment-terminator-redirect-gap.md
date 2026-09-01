@@ -74,11 +74,11 @@ existing header comment already documents for the backtick/`{`/`}` distinction.
       `git checkout -b issue#42 origin/main` keeps its start point.
 - [x] `test-cmd-detect.sh` gains two-sided regression pins (RED before, GREEN after) for
       all three repro cases above, following this file's existing pattern for the
-      brace/backtick/bang fixes. 24 pins added (8 clip, 7 preserve, 9 detection-superset).
+      brace/backtick/bang fixes. 75 pins added (11 clip, 8 preserve, 9 detection-superset, 48 combinatorial-corpus).
 - [x] `test-branch-preflight.sh` gains an end-to-end reproduction: confirm the redirect
       leak previously caused (or would have caused) `HAS_START_POINT` to spuriously flip,
       and that the fix restores correct behavior. 5 pins added, driving the real hook.
-- [x] Full `scripts/run-hook-tests.sh` suite still passes — 846 assertions across 34 test
+- [x] Full `scripts/run-hook-tests.sh` suite still passes — 898 assertions across 34 test
       files, 0 failures.
 
 ## Implementation Notes
