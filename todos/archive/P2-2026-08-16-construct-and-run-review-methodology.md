@@ -1,9 +1,9 @@
 ---
 title: "Codify 'construct the failing input and run it' as review methodology — and require controls on the reviewer's own probe harness"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-16
-updated: 2026-08-16
+updated: 2026-08-31
 assignee:
 labels: [harness, agents, testing, workflow, docs]
 github_issue:
@@ -84,18 +84,18 @@ increasing cost — pick, do not do all:
 
 ## Acceptance Criteria
 
-- [ ] A human decides which of the surfaces above (if any) carry the rule, and records the
+- [x] A human decides which of the surfaces above (if any) carry the rule, and records the
       reasoning — including an explicit "not these, because" for the ones left out
-- [ ] Wherever it lands, the wording distinguishes the two halves: (a) construct-and-run as
+- [x] Wherever it lands, the wording distinguishes the two halves: (a) construct-and-run as
       the review method, (b) controls on the reviewer's own probe harness. They are separate
       claims and (b) is the one nothing currently covers
-- [ ] The chosen wording does NOT duplicate
+- [x] The chosen wording does NOT duplicate
       `gate-test-needs-two-sided-negative-control-2026-07-25.md`, which governs how gate
       TESTS are authored; this is about how REVIEWS are conducted and how scratch tooling is
       validated. Cross-reference rather than restate
-- [ ] If a solution doc is written, it cites the evidence table above rather than asserting
+- [x] If a solution doc is written, it cites the evidence table above rather than asserting
       the pattern abstractly
-- [ ] Closes with zero follow-ups
+- [x] Closes with zero follow-ups
 
 ## Implementation Notes
 
@@ -143,3 +143,61 @@ increasing cost — pick, do not do all:
 
 - Filed at the user's request after the #833–#847 review round, to hold the idea for a
   human-led expansion. The evidence table is the deliverable; the decision is not made.
+
+### 2026-08-31 — decision made, todo closed
+
+**The human decision (AC1).** The rule lands on **exactly one** reviewer-facing surface:
+the `#### Dispatch prompt (per selected reviewer)` block in `docs/AI_WORKFLOW.md`. The
+rationale is preserved in one new solution doc,
+`docs/solutions/conventions/a-reviewers-own-probe-is-a-test-and-inherits-its-rules-2026-08-31.md`.
+Nothing else changes.
+
+Why the dispatch prompt and nothing else: it is the only text that reaches all five
+standalone reviewers in a single write (there is no shared or included agent file), and the
+Review Policy's own opening paragraph routes **generic-skill** review steps — superpowers'
+`subagent-driven-development` task-reviewer and `requesting-code-review` — through the same
+policy, so the rule reaches those dispatches too.
+
+**Not these, because:**
+
+- **`.claude/agents/code-reviewer.md` + `security-auditor.md`** (the todo's own guessed
+  "minimal viable version") — writing one rule into two files is exactly the dual-write
+  drift banned by this file's `#### Self-improving` paragraph and restated at
+  `.claude/skills/codify/SKILL.md:164` ("a review rule lands in exactly ONE owning reviewer
+  file"). Both already carry narrower versions — `code-reviewer.md:204` requires the command
+  behind an _enumeration_ claim, `security-auditor.md:357` says "run it — do not guess" for
+  command-safety gates — and a line appended to an 88 KB / 42 KB checklist has far less
+  reach than three sentences every reviewer reads on every dispatch.
+- **`docs/rules/harness.md`** — `:25` already occupies the two-sided-control slot, and the
+  file is injected WHOLE before every in-domain edit, so ~1.9 KB of a shared 6500 B budget
+  is an ongoing per-edit cost rather than a one-off. The reachability nuance is worth
+  recording accurately: rules files are not _auto-injected_ into read-only reviewers
+  (`inject-patterns.sh` fires on Edit/Write/MultiEdit only), but that alone is not
+  disqualifying — the established workaround is an explicit pointer in the agent
+  definition, and all five reviewers already carry one for `docs/rules/lsp.md`. That
+  workaround is what makes this option _worse_: reaching the reviewers from `harness.md`
+  means adding the same pointer line to five agent files, which is the dual-write drift
+  above.
+- **`/codify`** — no step verifies a finding against the code at all, so there is nothing to
+  hang a repro requirement on; and making it a required frontmatter key would fail CI for
+  all 823 existing docs, since `scripts/check-solution-frontmatter.js` runs whole-corpus.
+- **`/audit`** — already requires per-fix verification and forbids marking `verified`
+  without running tests. Its gap is discovery-time evidence, which is not worth an edit to a
+  52 KB skill on this todo's budget.
+- **`todos/TEMPLATE.md`** — mechanically cheap (nothing parses it), but a provenance field
+  that nothing enforces is precisely the shape
+  `conventions/a-stated-invariant-is-not-an-enforced-one-2026-08-06.md` warns about.
+
+**AC2 correction.** The AC asserted that half (b) — controls on the reviewer's own probe —
+"is the one nothing currently covers." That was true when filed and is no longer:
+`code-quality/harness-that-never-bound-its-config-reads-as-a-verdict-2026-08-15.md` covers a
+probe that never bound its config and still emitted verdicts, and
+`logic-errors/an-uncontrolled-ambient-input-makes-the-check-agree-with-what-it-checks-2026-08-31.md`
+covers the ambient-input face. Half (a) had prior art too —
+`logic-errors/section-header-regex-must-be-whole-line-anchored-2026-08-16.md:120` states
+"Construct the failing input and run it" almost verbatim, but inside a single regex
+write-up whose `applies_to` makes it unroutable for general review work. The new doc is
+therefore written as the **synthesis** with a `## See Also` that cross-references all four
+rather than restating them, satisfying AC3.
+
+**AC5.** Closed with zero follow-up todos.
