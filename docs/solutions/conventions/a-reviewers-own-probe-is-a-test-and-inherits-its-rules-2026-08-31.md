@@ -6,6 +6,7 @@ tags: [harness, testing, agents, code-review, probes, evidence, negative-control
 module: shared
 applies_to: [.claude/agents/*.md, .claude/hooks/*.sh, .claude/skills/*/SKILL.md]
 created: '2026-08-31'
+last_updated: '2026-09-01'
 ---
 
 # A reviewer's own probe is a test and inherits every rule tests have
@@ -26,6 +27,11 @@ under review is written.
    can see anything at all — and a **negative control** — an input that MUST NOT, proving
    it is not simply failing everything. Without both, a probe that answers "fine" to every
    input is indistinguishable from a clean bill of health.
+
+3. **A probe runs in an environment, and inherits that environment's rules too.** Before
+   trusting a probe, name the interpreter/runtime it actually ran under and assert it in the
+   probe's own output. A probe that silently runs somewhere other than production does not
+   fail — it answers confidently about the wrong system.
 
 ## When this applies
 
@@ -93,6 +99,45 @@ subject; handing that same string to a shell is not.
 
 Uncontrolled, and worthless: only the third line. It cannot distinguish "the subject is
 safe" from "this harness denies nothing."
+
+## Clause 3 in practice: the probe ran in a different shell than the code (2026-09-01)
+
+While fixing a bash PreToolUse hook, a harness replicating the hook's argument loop reported
+**every** case as correct — including cases that were, in fact, broken. The negative controls
+were the only thing that exposed it: three cases that *must* have returned 1 also returned 0,
+and "everything returns 0" is not a result, it is a broken instrument.
+
+Cause: the interactive Bash tool in this environment executes **zsh**, while the hooks run
+under **bash**. zsh does not word-split unquoted parameter expansions, so
+
+```bash
+SEGMENT="checkout -b foo origin/main"
+set -- $SEGMENT     # bash: 4 args.  zsh: 1 arg.
+```
+
+collapsed the loop to a single iteration and every path fell through to the default. The
+subject was fine; the instrument was measuring a different language.
+
+What makes this worth its own clause rather than a footnote: **the rule already existed and
+had already been delivered.** `docs/rules/harness.md` states "Scripts run under `bash`, not
+the interactive zsh you paste into: zsh does not word-split unquoted expansions", and the
+pattern-injection hook had put that file in context earlier in the same session. It did not
+fire, because it reads as a rule about *shipped scripts* — and a throwaway verification
+snippet does not feel like a script. That is exactly the gap this document exists to close:
+the probe is a test, and it inherits the environment constraints as well as the control
+requirements.
+
+The fix is one line, and it belongs in every probe rather than in anyone's memory — an
+assertion that fails loudly when the assumption is wrong:
+
+```bash
+set -f; set -- $(printf 'a b c'); set +f
+printf 'self-test: argc=%s (MUST be 3) shell=%s\n' "$#" "${BASH_VERSION:+bash}"
+```
+
+Generalised: if the subject runs under a specific interpreter, container, node version, shell,
+or database, the probe must **assert** it rather than assume it — and the assertion belongs in
+the probe's visible output, so a wrong environment is impossible to read as a clean result.
 
 ## Exceptions
 
