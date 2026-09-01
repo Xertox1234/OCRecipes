@@ -9,7 +9,7 @@ created: '2026-07-02'
 last_updated: '2026-08-31'
 ---
 
-# Grep-verify single-ownership after a source-of-truth consolidation — prose merges leave copies that have already diverged
+# Grep-verify single-ownership after a source-of-truth consolidation — prose merges leave diverged copies, and the surviving copy can be thinner than what it replaced
 
 ## When this applies
 
