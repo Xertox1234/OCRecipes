@@ -25,39 +25,60 @@ env:
 # Open grocery lists
 - tapOn: "Grocery Lists"
 
-# May see empty state or existing lists
+# MANDATORY — the flow's own subject. Everything below this block is
+# seeded-data-dependent and therefore optional, so without these two the flow
+# could complete green having asserted nothing about grocery lists: the only
+# other mandatory step is the "Grocery Lists" row on the PREVIOUS screen.
+#
+# The FAB is the anchor because it is data-independent: it renders in both the
+# empty and populated states (it is a sibling of the FlatList, not part of
+# ListEmptyComponent) and is gated only on `!showDatePicker`, which is false on
+# arrival. It is matched on its own accessibilityLabel — its only child is an
+# icon, so there is no aggregated-label ambiguity — and NOT on a testID:
+# GroceryListsScreen.tsx contains no testID at all, which is why the previous
+# `id: "create-grocery-list"` step could never fire.
+- extendedWaitUntil:
+    visible:
+      text: "Generate new grocery list"
+    timeout: 15000
+- assertVisible: "Generate new grocery list"
+
+# Also mandatory: the list query resolved rather than erroring. NOTE this is a
+# supplement to the positive assert above, never a substitute — a negative
+# assert passes vacuously if the string ever drifts, since a selector that
+# matches nothing is "not visible" too. String is GroceryListsScreen.tsx's
+# error-state title.
+- assertNotVisible: "Couldn't load your lists"
+
+# Genuinely optional from here: a seeded account may legitimately have zero
+# lists, so neither branch below can be required.
+
+# Empty-state branch.
 - extendedWaitUntil:
     visible:
       text: "No Grocery Lists"
     timeout: 3000
     optional: true
 
-# Tap FAB to create a new list (if FAB exists)
+# Open the create-list date picker. Tapping the FAB hides it (`showDatePicker`
+# flips true), which is why both asserts above run first.
 - tapOn:
-    id: "create-grocery-list"
+    text: "Generate new grocery list"
     optional: true
 
-# If date picker appears, fill in dates and generate
+# The modal's confirm control. Matched on the Pressable's own
+# accessibilityLabel: Maestro text selectors are FULL-STRING regexes, so the
+# previous bare "Generate" could not match this label, and the visible child
+# Text ("Generate"/"Generating...") is aggregated under the label rather than
+# exposed separately.
 - extendedWaitUntil:
     visible:
-      text: "Generate"
+      text: "Generate grocery list"
     timeout: 3000
     optional: true
 
+# Leave the app on a clean screen for whatever runs next rather than stranding
+# the modal open.
 - tapOn:
-    text: "Generate"
-    optional: true
-
-# If we have a list, verify items structure
-- extendedWaitUntil:
-    visible:
-      text: "items"
-    timeout: 3000
-    optional: true
-
-# Check add item input
-- extendedWaitUntil:
-    visible:
-      text: "Add item..."
-    timeout: 3000
+    text: "Cancel"
     optional: true
