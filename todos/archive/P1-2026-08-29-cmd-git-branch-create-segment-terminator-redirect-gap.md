@@ -55,8 +55,10 @@ existing header comment already documents for the backtick/`{`/`}` distinction.
       (and everything after it) from the extracted segment — verified against
       `git checkout -b foo 2>/dev/null`, `git checkout -b foo >log.txt`,
       `git checkout -b foo 2>&1`.
-      **Mechanism deviation:** implemented by rewriting the redirect to `;` (a terminator
-      the class already has) rather than by adding characters to the class — see Updates.
+      **Mechanism deviation:** implemented by DELETING the redirect (operator, fd digits and
+      target word) rather than by adding characters to the terminator class. An earlier
+      attempt rewrote it to `;`; that caused a deny→allow regression — see the second
+      2026-09-01 Updates entry.
 - [x] A real branch name containing a digit followed by a non-redirect character is NOT
       truncated — verify `git checkout -b release/2.0 origin/main` still extracts the full
       segment including `origin/main` (two-sided: this is the exact regression class the
@@ -72,11 +74,11 @@ existing header comment already documents for the backtick/`{`/`}` distinction.
       `git checkout -b issue#42 origin/main` keeps its start point.
 - [x] `test-cmd-detect.sh` gains two-sided regression pins (RED before, GREEN after) for
       all three repro cases above, following this file's existing pattern for the
-      brace/backtick/bang fixes. 11 pins added (6 clip, 5 preserve).
+      brace/backtick/bang fixes. 24 pins added (8 clip, 7 preserve, 9 detection-superset).
 - [x] `test-branch-preflight.sh` gains an end-to-end reproduction: confirm the redirect
       leak previously caused (or would have caused) `HAS_START_POINT` to spuriously flip,
       and that the fix restores correct behavior. 5 pins added, driving the real hook.
-- [x] Full `scripts/run-hook-tests.sh` suite still passes — 833 assertions across 34 test
+- [x] Full `scripts/run-hook-tests.sh` suite still passes — 846 assertions across 34 test
       files, 0 failures.
 
 ## Implementation Notes
@@ -144,8 +146,16 @@ run would corrupt a real command.
 **Mechanism chosen instead of widening the class:** rewrite both forms to `;`, a terminator
 the class already carries. `[0-9]*[<>]+&?` consumes the fd digits and the operator as one
 unit (covering `2>`, `>>`, `<<<`, `2>&1`), and `(^|[[:space:]])#.*$` clips only a word-start
-comment. The extraction regex itself is unchanged, so the brace/backtick reasoning above it
-keeps holding.
+comment. ~~The extraction regex itself is unchanged, so the brace/backtick reasoning above it
+keeps holding.~~
+
+> **This paragraph was WRONG and is superseded by the 2026-09-01 review entry below.**
+> The struck sentence is the load-bearing error: rewriting a redirect to `;` injects a
+> terminator at a _computed offset_, which IS a positional widening of the terminator class
+> and inherits every hazard the brace/backtick lesson describes. It produced two deny→allow
+> regressions. The shipped mechanism DELETES the redirect instead. Kept visible rather than
+> silently rewritten, because "the regex is unchanged so the reasoning still holds" is a
+> plausible-sounding claim worth recognising again.
 
 **Consequence verified end-to-end, not just at the unit.** The start-point loop lives inline
 in `branch-preflight.sh`, so an extractor unit test cannot show the effect. The five new
@@ -161,3 +171,45 @@ as correct, including cases that should have failed. Cause: the Bash tool here e
 so `set -- $SEGMENT` produced one argument instead of four and every path returned 0. Only
 the negative controls exposed it. Any future probe of hook internals written directly in the
 Bash tool needs an explicit shell self-test; the committed harness has one.
+
+### 2026-09-01 (later) — review round found TWO deny-allow regressions in the first fix; both repaired
+
+A `/codify` review round (code-reviewer + security-auditor) over the committed fix found
+that it made this gate **net weaker**. Both findings reproduced independently with a
+differential harness (main's extractor vs the branch's, one corpus, asserting no
+DETECTED to NOT-DETECTED transition): **9 regressions**, 0 improvements.
+
+**Regression 1 — a redirect BEFORE the create flag hid a real create entirely.** Bash
+permits a redirection anywhere in a simple command, so `git checkout 2>/dev/null -b foo`
+is a genuine create (`printf '[%s]' checkout 2>/dev/null -b foo` gives
+`[checkout][-b][foo]`). Rewriting the redirect to `;` produced
+`checkout ;/dev/null -b foo`; extraction stopped at the injected `;` before `-b`, found no
+create flag, and `cmd_is_git_branch_create` returned "not a create". Check 2 never ran at
+all — strictly worse than the leak this todo set out to fix. **Repair:** delete the
+redirect, its fd digits and its target word instead of terminating on it.
+
+**Regression 2 — a QUOTED word-start `#` ate the rest of the command.**
+`cmd_words` deletes quote characters, and its `neutral()` set did not cover `#`, `<`, `>`.
+So a quoted `#` was indistinguishable from a real comment by the time the rewrite ran, and
+the greedy `#.*$` discarded everything after it — including a later real create.
+`git commit -m "#123 fix the thing" && git checkout -b feature/x` went undetected. This is
+ordinary usage, not adversarial. **Repair:** add `<`, `>`, `#` to `neutral()`, which is the
+only place quote state still exists. That also fixed a third, milder finding (a quoted
+legal ref name like `">bar"` was being clipped and losing its start point).
+
+**Why the original verification missed both.** Every clip pin put the redirect AFTER the
+create flag, and every `#` case was trailing-unquoted or mid-word. Neither failure mode was
+representable in the matrix, so **833 assertions stayed green over two live bypasses** — the
+count was accurate and told me nothing. The lesson is not "test more"; it is that a
+same-direction suite cannot answer "did this change REMOVE a detection". Only the
+differential could, and it is the artefact that should have been built first.
+
+**Now pinned:** 13 new assertions, including 9 detection-superset pins that go red without
+the repairs, plus the two preserve-direction quoted-ref pins. Verified two-sided: reverting
+both repairs turns exactly those 11 red and reinstates all 9 differential regressions;
+restore is byte-identical. Full suite 846 assertions across 34 files, 0 failures.
+
+**Process note.** The false claim in the entry above is struck rather than deleted. A wrong
+sentence that reads naturally ("the regex is unchanged, so the reasoning still holds") is
+the tell, and this is the second time this session that a claim which "reads naturally"
+turned out to be the thing that was wrong.

@@ -207,9 +207,22 @@ cmd_words() {
     # (now part of THIS lib`s own `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`, not exclusively
     # guard-local -- see the anchor definition above) -- and a newline (grep is
     # line-oriented, so a surviving newline is a start-of-line command position).
+    # `<`, `>`, `#` joined this set on 2026-09-01, when
+    # cmd_git_branch_create_segment started treating an unquoted redirect and an
+    # unquoted word-start comment as segment boundaries. That made them
+    # boundary-significant downstream, and this set`s contract is "everything a
+    # quoted span must NOT be able to emit" — so leaving them out let a QUOTED
+    # occurrence render identically to real syntax once the quotes were deleted.
+    # Both directions were live, and both were caught by review, not by 833
+    # green assertions: `git commit -m "#123 fix" && git checkout -b x` had the
+    # rest of the line eaten as a comment (a real create went UNDETECTED —
+    # deny→allow), and `git checkout -b foo ">bar"` lost a legitimate quoted
+    # start-point (`>bar` is a legal ref name). Quote state does not survive to
+    # the consumer, so this MUST be fixed here rather than there.
     function neutral(ch) {
       return (ch == ";" || ch == "&" || ch == "|" || ch == "(" || ch == ")" \
               || ch == "{" || ch == "}" || ch == "!" || ch == BT \
+              || ch == "<" || ch == ">" || ch == "#" \
               || ch == "\n" || ch == "\r" || ch == " " || ch == "\t")
     }
     # An EMPTY quoted span (open immediately followed by its own close) needs a
@@ -402,10 +415,26 @@ cmd_is_git_head_mover() {
 #     pure-digit trailing token is a REAL start point (`git checkout -b foo 1234567` names
 #     an abbreviated SHA). The digits are only an fd when ATTACHED to the redirect operator.
 #
-# So instead of widening the class, both forms are rewritten to `;` — a terminator this
-# class ALREADY has — which consumes the fd digits and the redirect as one unit and leaves
-# the existing extraction untouched. `(^|[[:space:]])` on both is what keeps `issue#42` and
-# `release/2.0` intact; `[0-9]*[<>]+&?` is what makes `2>`, `>>`, `<<<` and `2>&1` one unit.
+# So instead of widening the class, both forms are neutralised before extraction.
+# `(^|[[:space:]])` on both is what keeps `issue#42` and `release/2.0` intact.
+#
+# A REDIRECT IS DELETED, NOT TURNED INTO A TERMINATOR — this distinction is load-bearing
+# and the first version of this fix got it wrong. Bash permits a redirection ANYWHERE in a
+# simple command, including BETWEEN the subcommand and the create flag
+# (`git checkout 2>/dev/null -b foo` really does create a branch — verified with
+# `printf '[%s]' checkout 2>/dev/null -b foo` → `[checkout][-b][foo]`). Rewriting it to `;`
+# ended the segment BEFORE `-b`, so the extractor found no create flag, returned 1, and
+# `cmd_is_git_branch_create` reported "not a create" for a real one — a deny→allow
+# regression in the very gate this fix hardens (security review, 2026-09-01). Injecting a
+# terminator at a computed offset IS a positional widening of the terminator class, and it
+# inherits every hazard the class-widening lesson above describes. Deleting the operator,
+# its fd digits and its target word instead leaves the surrounding command intact.
+# A COMMENT is still a terminator, because an unquoted `#` genuinely does end the line in
+# bash — `git commit -m x # c && git checkout -b foo` never runs the create.
+#
+# Both rewrites rely on quoted occurrences never reaching them: that is `neutral()`'s job
+# (see cmd_words), which is why `<`, `>` and `#` were added to it in the same change. Quote
+# state is already gone by the time these run, so it cannot be recovered here.
 cmd_git_branch_create_segment() {
   local segment
   while IFS= read -r segment; do
@@ -417,7 +446,8 @@ cmd_git_branch_create_segment() {
     esac
   done <<EOF
 $(printf '%s' "$1" | cmd_words \
-  | sed -E -e 's/(^|[[:space:]])[0-9]*[<>]+&?/\1;/g' -e 's/(^|[[:space:]])#.*$/\1;/' \
+  | sed -E -e 's/(^|[[:space:]])[0-9]*[<>]+&?[[:space:]]*[^[:space:]]*/\1/g' \
+           -e 's/(^|[[:space:]])#.*$/\1;/' \
   | grep -oE '(checkout|switch)[[:space:]]+[^;&|)`]*')
 EOF
   return 1

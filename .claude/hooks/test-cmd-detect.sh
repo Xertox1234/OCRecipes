@@ -208,6 +208,54 @@ seg_clip 'git checkout -b foo2 origin/main'  'checkout -b foo2 origin/main' \
   'a branch name ending in a digit is preserved'
 seg_clip 'git checkout -b foo origin/main 2>/dev/null' 'checkout -b foo origin/main' \
   'a redirect AFTER a real start-point clips only the redirect'
+seg_clip 'git checkout -b foo </dev/null'    'checkout -b foo' 'input redirect (<) is clipped too'
+seg_clip 'git checkout -b foo > log.txt'     'checkout -b foo' 'space-separated redirect target is clipped'
+
+# DETECTION-SUPERSET PINS (2026-09-01, added after a security review found the first version
+# of the redirect fix REMOVED detections). The rule these enforce: a change to this matcher
+# may ADD a detection, never remove one — every command below really does create a branch,
+# so cmd_is_git_branch_create MUST say yes for all of them.
+#
+# The first fix rewrote a redirect to `;`. Bash allows a redirection ANYWHERE in a simple
+# command, so `git checkout 2>/dev/null -b foo` became `checkout ;/dev/null -b foo`, the
+# extractor stopped at the injected `;` BEFORE `-b`, found no create flag, and reported "not
+# a create" for a real one — a deny→allow hole in the gate the change was hardening.
+# Injecting a terminator at a computed offset IS a positional widening of the terminator
+# class. These pins exist so that shape can never return silently.
+#
+# Note why the earlier suite could not catch it: every clip pin above puts the redirect
+# AFTER the create flag. 833 assertions stayed green over two live bypasses.
+det cmd_is_git_branch_create 'git checkout 2>/dev/null -b foo'    yes \
+  "redirect BEFORE the create flag is still a real create"
+det cmd_is_git_branch_create 'git checkout >/dev/null -b foo'     yes \
+  "bare redirect before the create flag is still a real create"
+det cmd_is_git_branch_create 'git switch 2>/dev/null -c foo'      yes \
+  "redirect before the create flag, switch -c form"
+det cmd_is_git_branch_create 'git checkout -q 2>/dev/null -b foo' yes \
+  "flag, then redirect, then create flag"
+
+# A QUOTED word-start '#' must not read as a comment. cmd_words deletes the quote
+# characters, so before `#` was added to its neutral() set a quoted '#' was indistinguishable
+# from a real comment and the greedy `#.*$` rewrite ate the rest of the line — including a
+# real create later in the command. All three quote flavours, because neutral() is applied in
+# all three quoted states. A commit message starting with an issue number is ordinary usage.
+det cmd_is_git_branch_create 'git commit -m "#123 fix the thing" && git checkout -b feature/x' yes \
+  "double-quoted leading # is not a comment — the later create is still detected"
+det cmd_is_git_branch_create "git commit -m '#123 fix the thing' && git checkout -b feature/x" yes \
+  "single-quoted leading # is not a comment — the later create is still detected"
+det cmd_is_git_branch_create 'git commit -m $'"'"'#123 fix'"'"' && git checkout -b foo' yes \
+  "ANSI-C quoted leading # is not a comment — the later create is still detected"
+# Same root cause, redirect side: a quoted < or > is literal argv, not redirection.
+det cmd_is_git_branch_create 'git checkout 2">"/dev/null -b foo' yes \
+  "a quoted > is literal argv, not a redirect — the create is still detected"
+det cmd_is_git_branch_create 'git checkout ">x" -b foo'          yes \
+  "a quoted > as a whole word is literal argv — the create is still detected"
+# And the PRESERVE direction for the same characters: a legal ref name starting with > or #
+# keeps its start-point rather than being clipped as syntax.
+seg_clip 'git checkout -b foo ">bar"'   'checkout -b foo xbar' \
+  'a quoted >bar is a legal ref name and survives as a start-point (neutralised, not clipped)'
+seg_clip 'git checkout -b foo "#weird"' 'checkout -b foo xweird' \
+  'a quoted #weird is a legal ref name and survives as a start-point'
 
 echo "--- _CMD_POS_PREFIX/_CMD_POS_SUFFIX: brace/backtick/bang/separator boundaries ---"
 # The shared anchor omitted `{`, backtick, and `!` as openers, and `;`/`&`/`|`/backtick/
