@@ -1,6 +1,6 @@
 ---
 title: "Unify the two divergent broken-awk-backend fallback implementations"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-09-01
@@ -106,3 +106,10 @@ control).
 
 **Recommendation: close as won't-fix.** Left `status: backlog` pending the owner's call
 rather than self-closed, per the consult-before-won't-fix rule.
+
+### 2026-09-01 — CLOSED (won't fix)
+
+Owner accepted the recommendation above. Closed as won't-fix, not as implemented: the
+analysis and measurements in the preceding entry are the deliverable, so the cost is not
+re-derived if this is ever reconsidered. (`todos/README.md` has no `wontfix` status; `done`
+is the only terminal value.)

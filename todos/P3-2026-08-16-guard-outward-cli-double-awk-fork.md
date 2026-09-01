@@ -1,6 +1,6 @@
 ---
 title: "guard-outward-cli.sh: avoid forking awk twice on every fast-path hit"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
 updated: 2026-09-01
@@ -111,3 +111,10 @@ re-derived. Reopen only if hook overhead becomes a real complaint, in which case
 is the one to cost out — and the ~1.9 ms `$(cd …)` subshell documented in
 `P3-2026-08-16-extract-shared-fastpath-filter-helper.md` is a cheaper, lower-risk saving to
 take first. Left `status: backlog` pending the owner's call rather than self-closed.
+
+### 2026-09-01 — CLOSED (won't fix)
+
+Owner accepted the recommendation above. Closed as won't-fix, not as implemented: the
+analysis and measurements in the preceding entry are the deliverable, so the cost is not
+re-derived if this is ever reconsidered. (`todos/README.md` has no `wontfix` status; `done`
+is the only terminal value.)
