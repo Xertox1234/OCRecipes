@@ -131,9 +131,28 @@ The fix is one line, and it belongs in every probe rather than in anyone's memor
 assertion that fails loudly when the assumption is wrong:
 
 ```bash
-set -f; set -- $(printf 'a b c'); set +f
-printf 'self-test: argc=%s (MUST be 3) shell=%s\n' "$#" "${BASH_VERSION:+bash}"
+_probe_seg="a b c"                       # PARAMETER EXPANSION, not $( ) — see below
+set -f; set -- $_probe_seg; set +f
+[ "$#" = 3 ] || { echo "FATAL: probe is not running under bash ($# != 3)"; exit 2; }
 ```
+
+**The first version of this snippet was itself non-discriminating, which is worth keeping as
+the sharpest example in this document.** It read `set -- $(printf 'a b c')` — command
+substitution. zsh word-splits unquoted **command substitution**; what it does *not* split is
+unquoted **parameter expansion**, and parameter expansion is what the real harness used
+(`set -- $SEGMENT`). Measured, one file run under both shells:
+
+| form                       | bash | zsh |
+| -------------------------- | ---- | --- |
+| `set -- $(printf 'a b c')` | 3    | 3   |
+| `set -- $SEG`              | 4    | 1   |
+
+So the published assertion returned 3 everywhere and could never fail — a self-test with no
+failure mode, guarding against a bug it could not see, inside the document that warns about
+exactly that. It survived because it *looked* like a control. Two rules fall out: a
+self-test must exercise **the same construct the probe depends on**, not a near neighbour;
+and it must be checked the only way any control can be — by running it in the failing
+condition and confirming it goes red. Caught by review, not by the author.
 
 Generalised: if the subject runs under a specific interpreter, container, node version, shell,
 or database, the probe must **assert** it rather than assume it — and the assertion belongs in

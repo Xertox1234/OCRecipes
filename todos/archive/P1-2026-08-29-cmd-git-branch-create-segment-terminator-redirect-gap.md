@@ -179,6 +179,11 @@ that it made this gate **net weaker**. Both findings reproduced independently wi
 differential harness (main's extractor vs the branch's, one corpus, asserting no
 DETECTED to NOT-DETECTED transition): **9 regressions**, 0 improvements.
 
+> **Superseded — see the round-2 entry below.** That 9 is the count over MY corpus, and the
+> corpus was the thing at fault: a combinatorial one found **240**. A differential's number
+> is a property of the inputs, not of the change. Quoting it as though it characterised the
+> change is the same overclaim this file keeps recording.
+
 **Regression 1 — a redirect BEFORE the create flag hid a real create entirely.** Bash
 permits a redirection anywhere in a simple command, so `git checkout 2>/dev/null -b foo`
 is a genuine create (`printf '[%s]' checkout 2>/dev/null -b foo` gives
@@ -213,3 +218,64 @@ restore is byte-identical. Full suite 846 assertions across 34 files, 0 failures
 sentence that reads naturally ("the regex is unchanged, so the reasoning still holds") is
 the tell, and this is the second time this session that a claim which "reads naturally"
 turned out to be the thing that was wrong.
+
+### 2026-09-01 (round 2) — the REPAIR had its own deny-allow regression, 240 of them
+
+Re-reviewed the repair commits (a prior verdict does not cover later pushes). The repair
+introduced a fresh, larger regression, plus three test-quality findings.
+
+**Regression 3 — the deleting sed over-consumed past control operators.** Its target word
+was written `[^[:space:]]*`, excluding only whitespace, so it also ate `;`, `&`, `|`, `)`
+and backtick — exactly the characters the extractor uses as its segment boundary. A redirect
+ending a clause with no space before the separator deleted the separator, fusing two clauses
+into one segment; the `case` then dispatched on the merged segment's first verb and never
+looked for the second:
+
+```
+git checkout main 2>/dev/null;git switch -c foo
+  -> checkout main  switch -c foo     (one segment; greps for -[bB], finds none)
+  -> NOT a create — though it really creates a branch
+```
+
+240 deny→allow transitions over a combinatorial corpus, an order of magnitude worse than
+the regression being repaired. **Fix:** the target-word stop-set must be the extractor's
+terminator class ∪ whitespace. Note this coupling is the OPPOSITE of the lesson at the top
+of the function (`_CMD_POS_SUFFIX` and the terminator "must be derived independently") —
+here they are coupled by construction, and a reader over-applying the independence lesson
+will desync them and revive the merge. Recorded in the header for that reason.
+
+**Why my own differential missed it.** It ran, it was two-sided, it reported 0 regressions —
+and it was wrong, because every command in my corpus kept the redirect inside a single
+clause. The instrument was sound; the _inputs_ were a copy of my own blind spot. The
+reviewer's corpus was combinatorial (redirect form × separator × verb pair) and found the
+family immediately. **A differential's number is a property of its corpus, not of the
+change** — so generate the corpus combinatorially rather than by listing the cases you
+already thought of, and make the mismatched-verb pairs explicit, since a same-verb pair
+still finds its create flag by accident and hides the bug.
+
+**Now committed as a test, not as prose.** The previous round added a `code-reviewer` rule
+requiring a differential and then shipped the differential as a paragraph — the commit
+codified the rule and violated it. The corpus is now a generated block in
+`test-cmd-detect.sh` (48 detection pins + 3 clip pins). It is deliberately NOT written as
+"replay against main": after merge main == HEAD and such a test passes forever, fail-open.
+It pins the invariant instead. Control: restoring the over-consuming class turns 39
+assertions red.
+
+**Test-quality findings, all fixed.** (1) The two quoted-`>` detection pins did not
+independently guard the `neutral()` addition — they only failed when both repairs were
+reverted; the real guard is the `seg_clip` PRESERVE block, and the pins are now labelled to
+say so. (2) `<` had no pin at all and could be dropped from `neutral()` with zero failures;
+added, and each of `<`/`>`/`#` is now individually mutation-verified to turn a pin red.
+(3) The `seg_clip` expectations couple to `cmd_words`' placeholder byte — deliberate, now
+documented as such.
+
+**And one in the docs.** The self-test snippet published in the probe convention doc used
+`set -- $(printf 'a b c')` — command substitution, which zsh _does_ word-split. The real
+failure mode was bare parameter expansion, which it does not. So the published "MUST be 3"
+assertion returned 3 under both shells and could never fail: a self-test with no failure
+mode, inside the document warning about exactly that, written in the same session as the
+incident. Corrected to parameter expansion and verified to fire under zsh and pass under
+bash.
+
+Final state: differential 0 regressions, suite 34 files / 0 failures, every repair
+mutation-controlled.

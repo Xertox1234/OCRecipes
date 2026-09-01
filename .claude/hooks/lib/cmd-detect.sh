@@ -429,6 +429,25 @@ cmd_is_git_head_mover() {
 # terminator at a computed offset IS a positional widening of the terminator class, and it
 # inherits every hazard the class-widening lesson above describes. Deleting the operator,
 # its fd digits and its target word instead leaves the surrounding command intact.
+# THE TARGET-WORD CLASS MUST BE THE EXTRACTOR`S TERMINATOR CLASS UNION WHITESPACE. The first
+# deleting version wrote the target word as `[^[:space:]]*`, excluding only whitespace — so it
+# also ate `;`, `&`, `|`, `)` and backtick, the very characters the `grep -oE` below uses as
+# its segment boundary. When a redirect ended a clause with NO space before the separator, the
+# separator was deleted and two clauses FUSED into one segment; the `case` then dispatched on
+# the merged segment`s first word and never looked for the second verb:
+#     git checkout main 2>/dev/null;git switch -c foo
+#       -> checkout main  switch -c foo      (one segment, greps for -[bB], finds none)
+#       -> NOT a create, though it really creates a branch.
+# 240 deny→allow transitions across a combinatorial corpus (security review, 2026-09-01) —
+# an order of magnitude worse than the regression it was repairing.
+# NOTE the direction of the coupling here, because it is the OPPOSITE of the lesson above:
+# `_CMD_POS_SUFFIX` and this extractor`s terminator must be derived INDEPENDENTLY, but this
+# deletion`s stop-set and that same terminator class are coupled BY CONSTRUCTION — the
+# deletion must never consume a character the extractor needs to see. That terminator class
+# has already changed twice (backtick added 2026-08-28; `{`/`}` tried and rejected), so a
+# reader who over-applies the independence lesson here will desync them and revive the merge.
+# `[&|]?` rather than `&?` so the noclobber `>|` form is consumed as one unit too.
+#
 # A COMMENT is still a terminator, because an unquoted `#` genuinely does end the line in
 # bash — `git commit -m x # c && git checkout -b foo` never runs the create.
 #
@@ -446,7 +465,7 @@ cmd_git_branch_create_segment() {
     esac
   done <<EOF
 $(printf '%s' "$1" | cmd_words \
-  | sed -E -e 's/(^|[[:space:]])[0-9]*[<>]+&?[[:space:]]*[^[:space:]]*/\1/g' \
+  | sed -E -e 's/(^|[[:space:]])[0-9]*[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]*/\1/g' \
            -e 's/(^|[[:space:]])#.*$/\1;/' \
   | grep -oE '(checkout|switch)[[:space:]]+[^;&|)`]*')
 EOF
