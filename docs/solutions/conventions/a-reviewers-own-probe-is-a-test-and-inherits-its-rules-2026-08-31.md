@@ -78,8 +78,9 @@ Controlled, in the shape this rule asks for — the deny is read from the hook's
 `permissionDecision`, not from an exit code, because the hook exits 0 in every case:
 
 ```bash
-run() { jq -nc --arg c "$2" '{tool_name:"Bash", tool_input:{command:$c}}' \
-        | bash .claude/hooks/guard-outward-cli.sh; }
+run() { printf '%s: ' "$1"                                    # label, or the rows are
+        jq -nc --arg c "$2" '{tool_name:"Bash", tool_input:{command:$c}}' \
+        | bash .claude/hooks/guard-outward-cli.sh; echo; }     # indistinguishable
 run CTRL-benign 'git commit -m "harmless message"'  # MUST allow (negative control)
 run CTRL-real   'npm publish'                       # MUST deny  (positive control)
 run SUBJECT     "$THE_INPUT_UNDER_TEST"             # the actual question
