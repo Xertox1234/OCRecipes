@@ -258,7 +258,10 @@ create-shaped command in the corpus is still detected.
 ### 4. A deletion's stop-set is COUPLED to the downstream terminator class — the opposite of lesson 2 above, ten lines away
 
 Repairing lesson 1 (delete the redirect rather than terminate on it) produced a bigger
-regression than the one it fixed: **240 deny→allow transitions**, against 9 for the original.
+regression than the one it fixed: **240 deny→allow transitions over a 2189-input corpus**
+(10 redirect forms × 4 unspaced separators × 6 verb-mismatched pairs), against 9 over the
+25-input hand-listed corpus used on the original. Both numbers are properties of their
+corpora — see clause 4 of the probe convention doc, which this pairing is the evidence for.
 
 The deletion's target word was written `[^[:space:]]*` — excluding only whitespace. So it also
 consumed `;`, `&`, `|`, `)` and backtick: exactly the characters the extractor immediately

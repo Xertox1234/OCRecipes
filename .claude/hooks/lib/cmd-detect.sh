@@ -438,7 +438,9 @@ cmd_is_git_head_mover() {
 #     git checkout main 2>/dev/null;git switch -c foo
 #       -> checkout main  switch -c foo      (one segment, greps for -[bB], finds none)
 #       -> NOT a create, though it really creates a branch.
-# 240 deny→allow transitions across a combinatorial corpus (security review, 2026-09-01) —
+# 240 deny→allow transitions over a 2189-input combinatorial corpus (security review,
+# 2026-09-01); the 240 is 10 matched redirect forms × 4 unspaced separators × 6
+# verb-mismatched pairs —
 # an order of magnitude worse than the regression it was repairing.
 # NOTE the direction of the coupling here, because it is the OPPOSITE of the lesson above:
 # `_CMD_POS_SUFFIX` and this extractor`s terminator must be derived INDEPENDENTLY, but this

@@ -281,20 +281,31 @@ seg_clip 'git checkout -b foo "#weird"' 'checkout -b foo xweird' \
 # This block is the committed form of the differential that review demanded. It is NOT
 # written as "replay against main" on purpose: once this branch merges, main == HEAD and such
 # a test silently passes forever — a fail-open gate. Instead it pins the INVARIANT the
-# differential was measuring: every command below really does create a branch, so
-# cmd_is_git_branch_create must say yes for all of them, whatever the extraction internals
-# become.
+# differential was measuring: every command below is a create-SHAPED command that a
+# pre-execution gate must flag, so cmd_is_git_branch_create must say yes for all of them,
+# whatever the extraction internals become. ("Every one of them creates a branch" would be
+# an overclaim — in the `||` quarter, `git checkout main ... || git switch -c foo` runs the
+# create only if the first clause fails. That is the correct thing to flag anyway: a gate
+# that must decide BEFORE execution cannot know which side of a `||` will run, and the
+# fail-closed direction is to treat the create as reachable.)
 #
 # The family exists because the first DELETING sed wrote its target word as `[^[:space:]]*`,
 # excluding only whitespace — so it also consumed `;`, `&`, `|`, `)` and backtick, which are
 # the extractor's own segment boundaries. A redirect ending a clause with NO space before the
 # separator deleted the separator, fusing two clauses into one segment; the `case` then
 # dispatched on the merged segment's first verb and never searched for the second.
-# 240 deny→allow transitions. The verb-MISMATCHED pairs (checkout-then-switch and the
+# 240 deny→allow transitions over a 2189-input corpus (10 redirect forms × 4 unspaced
+# separators × 6 verb-mismatched pairs) — a larger corpus than the 48 generated below, which
+# pin the family rather than re-measure it. The verb-MISMATCHED pairs (checkout-then-switch and the
 # reverse) are the load-bearing ones — a same-verb pair still finds its create flag by
 # accident and would have hidden the bug.
 for _redir in '2>/dev/null' '>log' '1>>out' '2>&1' '>|log' '</dev/null'; do
-  for _sep in ';' '&&' '||' '|tee x;'; do
+  # `|cat;` NOT `|tee x;` — verified, not assumed. The buggy class this corpus guards against
+  # (`[^[:space:]]*`) stops at the FIRST whitespace, so a separator containing an internal
+  # space (`|tee x;`) halts the over-consumption before it ever reaches the `;` boundary the
+  # bug is about: all 12 such pins passed under both the correct and the buggy lib. A
+  # separator whose text has no internal space before the boundary is what discriminates.
+  for _sep in ';' '&&' '||' '|cat;'; do
     for _pair in 'checkout main|switch -c foo' 'switch main|checkout -b foo'; do
       _first=${_pair%%|*}; _second=${_pair##*|}
       det cmd_is_git_branch_create "git ${_first} ${_redir}${_sep}git ${_second}" yes \
@@ -312,6 +323,14 @@ seg_clip 'git checkout -b foo >/dev/null&&npm test'    'checkout -b foo' \
   'same, with && and no spaces'
 seg_clip 'git checkout -b foo 2>/dev/null|tee log'     'checkout -b foo' \
   'same, with a pipe'
+# The `[&|]?` half of the redirect pattern had NO pin until review round 3 — reverting it to
+# `&?` alone left the whole 898-assertion suite green. `>|` is bash's noclobber-override
+# redirect: with `&?` the `|` is not consumed as part of the operator, the target-word class
+# then stops dead at it, and the REAL start-point after it is dropped — the exact
+# HAS_START_POINT flip this entire todo exists to prevent. Two spaces in the expectation are
+# real: the deletion leaves the separator space plus the space before the start-point.
+seg_clip 'git checkout -b foo >|log origin/main' 'checkout -b foo  origin/main' \
+  'the noclobber >| operator is consumed as one unit and a real start-point after it survives'
 
 echo "--- _CMD_POS_PREFIX/_CMD_POS_SUFFIX: brace/backtick/bang/separator boundaries ---"
 # The shared anchor omitted `{`, backtick, and `!` as openers, and `;`/`&`/`|`/backtick/

@@ -214,7 +214,7 @@ applied to the stub itself.
 
 ## Related Files
 
-- `docs/AI_WORKFLOW.md` — the Review Policy dispatch prompt carries both clauses; it is the
+- `docs/AI_WORKFLOW.md` — the Review Policy dispatch prompt carries clauses 1, 2 and 4; it is the
   single shared surface every dispatched reviewer reads, roster and generic-skill alike.
 - `.claude/agents/code-reviewer.md` — its Read-Only Contract carries the outward-CLI
   prohibition above; its `## Remember` already requires the command behind a *bounding*

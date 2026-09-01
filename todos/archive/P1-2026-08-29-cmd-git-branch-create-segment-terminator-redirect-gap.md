@@ -74,12 +74,16 @@ existing header comment already documents for the backtick/`{`/`}` distinction.
       `git checkout -b issue#42 origin/main` keeps its start point.
 - [x] `test-cmd-detect.sh` gains two-sided regression pins (RED before, GREEN after) for
       all three repro cases above, following this file's existing pattern for the
-      brace/backtick/bang fixes. 75 pins added (11 clip, 8 preserve, 9 detection-superset, 48 combinatorial-corpus).
+      brace/backtick/bang fixes. Pins added across the three rounds: clip, preserve, detection-superset, and a generated
+      combinatorial corpus. Deliberately NOT itemised here — this line's count went stale three
+      times in one session as each review round added pins, which is its own small lesson: a
+      hand-maintained tally in prose is a claim with a shelf life. The checkable figures are the
+      suite totals below, which a single command reproduces.
 - [x] `test-branch-preflight.sh` gains an end-to-end reproduction: confirm the redirect
       leak previously caused (or would have caused) `HAS_START_POINT` to spuriously flip,
       and that the fix restores correct behavior. 5 pins added, driving the real hook.
-- [x] Full `scripts/run-hook-tests.sh` suite still passes — 898 assertions across 34 test
-      files, 0 failures.
+- [x] Full `scripts/run-hook-tests.sh` suite still passes — 899 assertions across 34 test
+      files, 0 failures (`bash scripts/run-hook-tests.sh`); test-cmd-detect 174, test-branch-preflight 37.
 
 ## Implementation Notes
 
@@ -180,7 +184,7 @@ differential harness (main's extractor vs the branch's, one corpus, asserting no
 DETECTED to NOT-DETECTED transition): **9 regressions**, 0 improvements.
 
 > **Superseded — see the round-2 entry below.** That 9 is the count over MY corpus, and the
-> corpus was the thing at fault: a combinatorial one found **240**. A differential's number
+> corpus was the thing at fault: a 2189-input combinatorial one found **240**. A differential's number
 > is a property of the inputs, not of the change. Quoting it as though it characterised the
 > change is the same overclaim this file keeps recording.
 
@@ -237,7 +241,8 @@ git checkout main 2>/dev/null;git switch -c foo
   -> NOT a create — though it really creates a branch
 ```
 
-240 deny→allow transitions over a combinatorial corpus, an order of magnitude worse than
+240 deny→allow transitions over a 2189-input combinatorial corpus (10 redirect forms × 4
+unspaced separators × 6 verb-mismatched pairs), an order of magnitude worse than
 the regression being repaired. **Fix:** the target-word stop-set must be the extractor's
 terminator class ∪ whitespace. Note this coupling is the OPPOSITE of the lesson at the top
 of the function (`_CMD_POS_SUFFIX` and the terminator "must be derived independently") —
@@ -258,8 +263,9 @@ requiring a differential and then shipped the differential as a paragraph — th
 codified the rule and violated it. The corpus is now a generated block in
 `test-cmd-detect.sh` (48 detection pins + 3 clip pins). It is deliberately NOT written as
 "replay against main": after merge main == HEAD and such a test passes forever, fail-open.
-It pins the invariant instead. Control: restoring the over-consuming class turns 39
-assertions red.
+It pins the invariant instead. Control: restoring the over-consuming class turns 51
+assertions red (measured, not predicted — it was 39 until review round 3 found that 12 of the
+48 generated pins were decorative, see the round-3 entry).
 
 **Test-quality findings, all fixed.** (1) The two quoted-`>` detection pins did not
 independently guard the `neutral()` addition — they only failed when both repairs were
@@ -279,3 +285,44 @@ bash.
 
 Final state: differential 0 regressions, suite 34 files / 0 failures, every repair
 mutation-controlled.
+
+### 2026-09-01 (round 3) — production fix CLEARED; the coverage claims were not
+
+Third review round, on the round-2 repairs. **No CRITICAL, and the production fix was
+independently confirmed to generalise past its pinned corpus** — a reviewer tested a novel
+input present in neither the repo nor any corpus (`(git checkout main 2>/dev/null)&&git
+switch -c foo`) and it behaves correctly on the current lib and incorrectly on the round-2
+one. After two rounds where the repair was worse than the bug, that is the first evidence
+the mechanism itself is right.
+
+Everything found was in the **coverage claims**, and one was the same defect a third time:
+
+- **12 of the 48 generated corpus pins were decorative.** The separator `|tee x;` contains a
+  space, and the round-2 buggy class stopped at the first whitespace — so the over-consumption
+  never reached the `;` boundary the corpus exists to catch, and all 12 passed under both the
+  correct and the buggy lib. Swapped to `|cat;` (verified discriminating). This is the third
+  instance of "a change with no test that can fail", after `<` in `neutral()` and the
+  self-test snippet — and this time it was _inside the corpus written to prevent it_.
+- **`[&|]?` had no pin at all.** Reverting only that half left all 898 assertions green. The
+  discriminating input is `git checkout -b foo >|log origin/main`: with `&?` the noclobber
+  `|` is not consumed with the operator, the target class stops at it, and a real start-point
+  is dropped — the exact HAS_START_POINT flip this todo exists to prevent. Pinned.
+- **The bare "240" was quoted in four places with no corpus size** — in the same change that
+  added clause 4 ("quote the number with its corpus"). Now stated as 240 over a 2189-input
+  corpus (10 redirect forms × 4 unspaced separators × 6 verb-mismatched pairs), alongside the
+  9-over-25 figure it is contrasted with.
+- **The pin breakdown was self-inconsistent** (11+8+9+48 = 76, written as 75) — the third
+  stale count in this file. Replaced with a description plus the suite totals, which one
+  command reproduces. Counting by hand in prose is what kept failing; the fix is to stop.
+- Two doc claims corrected: "the dispatch prompt carries both clauses" (there are four now,
+  and it carried two), and "every command below really does create a branch" (in the `||`
+  quarter it does not — the correct statement is that a pre-execution gate must flag it
+  regardless, since it cannot know which side will run).
+
+Clause 4 was also propagated to the `docs/AI_WORKFLOW.md` dispatch prompt rather than to a
+second agent file, which the round-3 reviewer suggested — a second agent file would violate
+the roster's single-write rule, and the dispatch prompt is the one surface reaching all five
+reviewers. The boundary between the two homes is now recorded in `code-reviewer.md` itself.
+
+Measured after all of the above: suite **899 assertions / 34 files / 0 failures**; reverting
+`[&|]?` alone turns 1 pin red; reverting to the round-2 class turns 51 red (was 39).
