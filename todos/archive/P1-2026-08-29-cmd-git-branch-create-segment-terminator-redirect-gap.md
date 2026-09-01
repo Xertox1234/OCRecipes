@@ -82,7 +82,7 @@ existing header comment already documents for the backtick/`{`/`}` distinction.
 - [x] `test-branch-preflight.sh` gains an end-to-end reproduction: confirm the redirect
       leak previously caused (or would have caused) `HAS_START_POINT` to spuriously flip,
       and that the fix restores correct behavior. 5 pins added, driving the real hook.
-- [x] Full `scripts/run-hook-tests.sh` suite still passes — 899 assertions across 34 test
+- [x] Full `scripts/run-hook-tests.sh` suite still passes — 931 assertions across 34 test
       files, 0 failures (`bash scripts/run-hook-tests.sh`); test-cmd-detect 174, test-branch-preflight 37.
 
 ## Implementation Notes
@@ -326,3 +326,50 @@ reviewers. The boundary between the two homes is now recorded in `code-reviewer.
 
 Measured after all of the above: suite **899 assertions / 34 files / 0 failures**; reverting
 `[&|]?` alone turns 1 pin red; reverting to the round-2 class turns 51 red (was 39).
+
+### 2026-09-01 (round 3, security) — CLEARED against main, with two pre-existing gaps surfaced
+
+A 3811-command corpus, generated combinatorially and ground-truthed by **executing** each
+command under bash 3.2 with `git` shadowed by a recording function (so "does this create a
+branch" was read off real argv, not modelled). Result:
+
+| metric                                           | main | round-2 | HEAD    |
+| ------------------------------------------------ | ---- | ------- | ------- |
+| missed a real create                             | 286  | 363     | **190** |
+| spurious HAS_START_POINT (skips the stale check) | 1154 | 384     | **0**   |
+| `main` detected & HEAD missed                    | —    | —       | **0**   |
+
+No regression against main on any input, and HEAD is strictly better than main on both
+metrics — the spurious-start-point count, which is what this todo was filed about, goes to
+zero. That is the first independent confirmation that the mechanism is right rather than
+merely passing its own tests.
+
+Fixed from this round: the `&>` / `&>>` family (operator has no fd digit and a LEADING `&`,
+so the class `[0-9]*[<>]+` could not match it — `git checkout &>/dev/null -b foo`, a real
+create, reported not-a-create). Now `([0-9]*|&)[<>]+`; differential shows 0 regressions and
+2 improvements. The corpus gained the two dimensions whose absence let it survive green: the
+`&>` forms, and **slot position** (every earlier pin put the redirect at end-of-clause-1
+with the create in the _other_ clause, so the corpus structurally could not exercise the
+target-word skip, which only damages tokens in the clause the redirect is in).
+
+Also corrected: the header comment claimed the fix covers a redirect "anywhere in a simple
+command". True of bash, not of the fix — it covers the subcommand rightward.
+
+**Two pre-existing gaps surfaced, NOT fixed here** (identical on main, and both require
+changing the shared `_CMD_POS_PREFIX`, which this todo's Scope Contract forbids):
+
+1. **`git -C <path> …` blinds every `cmd_is_git_*` predicate** — `cmd_is_git_commit`,
+   `cmd_is_git_commit_or_push`, `cmd_is_git_head_mover`, `cmd_is_git_branch_create` all
+   return no. Blinded consumers include `branch-preflight.sh` (BOTH the detached-HEAD deny
+   and the stale-base deny), `commit-verify.sh`, `drift-detect.sh`,
+   `drift-detect-update.sh`. `--no-pager` and `--git-dir=` behave the same. This is the
+   exact spelling `CLAUDE.md` prescribes for worktree sessions, so it is a common form.
+   The fix is two-part: widening the anchor alone is a regression generator, because
+   `branch-preflight.sh` resolves `BRANCH` and `@{upstream}` from the process cwd, not from
+   the `-C` target. High severity; surfaced for a scope decision rather than auto-filed.
+2. **A redirect BEFORE the subcommand** (`git 2>/dev/null checkout -b foo`) is missed — the
+   segment extractor handles it, but stage 1's anchored grep never sees this sed. Same
+   anchor, same fix.
+
+Deliberately not pinned to their current wrong values: a test asserting today's wrong answer
+goes red when someone fixes it, which is pinning the bug.

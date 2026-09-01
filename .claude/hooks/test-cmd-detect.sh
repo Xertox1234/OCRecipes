@@ -299,7 +299,7 @@ seg_clip 'git checkout -b foo "#weird"' 'checkout -b foo xweird' \
 # pin the family rather than re-measure it. The verb-MISMATCHED pairs (checkout-then-switch and the
 # reverse) are the load-bearing ones — a same-verb pair still finds its create flag by
 # accident and would have hidden the bug.
-for _redir in '2>/dev/null' '>log' '1>>out' '2>&1' '>|log' '</dev/null'; do
+for _redir in '2>/dev/null' '>log' '1>>out' '2>&1' '>|log' '</dev/null' '&>/dev/null' '&>>log'; do
   # `|cat;` NOT `|tee x;` — verified, not assumed. The buggy class this corpus guards against
   # (`[^[:space:]]*`) stops at the FIRST whitespace, so a separator containing an internal
   # space (`|tee x;`) halts the over-consumption before it ever reaches the `;` boundary the
@@ -313,6 +313,30 @@ for _redir in '2>/dev/null' '>log' '1>>out' '2>&1' '>|log' '</dev/null'; do
     done
   done
 done
+# SLOT-POSITION dimension (review round 3). Everything above pins the redirect at the END of
+# clause 1, with the create in the OTHER clause — so the corpus was structurally unable to
+# exercise the one remaining code risk, the `[[:space:]]*<word>` target skip, which can only
+# damage tokens in the clause the redirect is IN. This block puts the redirect at each slot
+# inside the create clause itself. It is also what the `&>` family needed: `&>` was invisible
+# to the old operator class `[0-9]*[<>]+` (no leading `&`), so `git checkout &>/dev/null -b
+# foo` — a real create — reported not-a-create, and the suite stayed green because no pin put
+# a redirect there.
+for _r in '2>/dev/null' '&>/dev/null' '>|log' '2>&1'; do
+  # NOT pinned: `git 2>/dev/null checkout -b foo` (redirect BEFORE the subcommand) is a real
+  # create and is NOT detected. The segment extractor gets it right; the miss is in stage 1,
+  # `cmd_is_git_branch_create`'s anchored grep, which never sees the redirect-deleting sed.
+  # Pre-existing and identical on main. Fixing it means widening the SHARED
+  # _CMD_POS_PREFIX (which would also pick up the `git -C <path>` blindness), and this
+  # todo's Scope Contract explicitly forbids touching that anchor. Deliberately left as a
+  # documented residual rather than pinned to its wrong value -- a test asserting the
+  # current wrong answer would go red when someone fixes it, which is pinning the bug.
+  det cmd_is_git_branch_create "git checkout ${_r} -b foo"      yes "slot: redirect before the create FLAG (${_r})"
+  det cmd_is_git_branch_create "git checkout -b ${_r} foo"      yes "slot: redirect between flag and name (${_r})"
+  det cmd_is_git_branch_create "git checkout -b foo ${_r}"      yes "slot: redirect after the name (${_r})"
+  seg_clip "git checkout -b foo ${_r} origin/main" 'checkout -b foo  origin/main' \
+    "slot: a real start-point after ${_r} survives"
+done
+
 # The clip direction of the same defect: an eaten separator also glued the NEXT clause's first
 # token in as a spurious start-point, so the stale-base check was skipped on a command that
 # named no start point at all — the exact bug this whole todo exists to close, surviving in

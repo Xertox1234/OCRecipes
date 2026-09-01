@@ -448,7 +448,18 @@ cmd_is_git_head_mover() {
 # deletion must never consume a character the extractor needs to see. That terminator class
 # has already changed twice (backtick added 2026-08-28; `{`/`}` tried and rejected), so a
 # reader who over-applies the independence lesson here will desync them and revive the merge.
-# `[&|]?` rather than `&?` so the noclobber `>|` form is consumed as one unit too.
+# `[&|]?` rather than `&?` so the noclobber `>|` form is consumed as one unit too, and
+# `([0-9]*|&)` rather than `[0-9]*` so the `&>` / `&>>` family (whose operator has no fd
+# digit and a LEADING `&`) is matched — without it `git checkout &>/dev/null -b foo`, a real
+# create, reported not-a-create (review round 3, 2026-09-01).
+#
+# DOCUMENTED RESIDUAL — the 'anywhere' above is true of BASH, but this fix only covers the
+# positions from the SUBCOMMAND rightward. A redirect BEFORE the subcommand
+# (`git 2>/dev/null checkout -b foo`) is still missed: this extractor handles it correctly,
+# but stage 1 (`cmd_is_git_branch_create`'s anchored grep) never sees this sed, and its
+# anchor `_CMD_POS_PREFIX` does not absorb a redirect. Pre-existing and identical on main.
+# The same anchor gap makes `git -C <path> …` invisible to EVERY cmd_is_git_* predicate.
+# Both are out of this todo's Scope Contract, which forbids changing that shared anchor.
 #
 # A COMMENT is still a terminator, because an unquoted `#` genuinely does end the line in
 # bash — `git commit -m x # c && git checkout -b foo` never runs the create.
@@ -467,7 +478,7 @@ cmd_git_branch_create_segment() {
     esac
   done <<EOF
 $(printf '%s' "$1" | cmd_words \
-  | sed -E -e 's/(^|[[:space:]])[0-9]*[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]*/\1/g' \
+  | sed -E -e 's/(^|[[:space:]])([0-9]*|&)[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]*/\1/g' \
            -e 's/(^|[[:space:]])#.*$/\1;/' \
   | grep -oE '(checkout|switch)[[:space:]]+[^;&|)`]*')
 EOF
