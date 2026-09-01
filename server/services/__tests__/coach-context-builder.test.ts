@@ -15,6 +15,33 @@ vi.mock("../../storage", () => ({
 
 const mockStorage = vi.mocked(storage);
 
+// The HOST timezone is an uncontrolled input for this whole file: under a
+// mutation that restores `new Date().getHours()`, the host zone becomes an
+// input again, and the kill count would differ per developer. Pinned so that
+// count is one number.
+//
+// The zone is `Europe/Berlin`, NOT "UTC", and that is the whole point of the
+// guard below. A guard asserting an offset of 0 cannot fail on a UTC host —
+// which is what CI runs — so it passes identically whether the pin worked, was
+// a typo, or never ran (measured: `TZ="Amerca/Denver"` and `TZ=""` both yield
+// offset 0). Asserting a NONZERO offset makes the mechanism check able to fail
+// everywhere. Berlin also does not transition DST at 00:00, so a local-midnight
+// fixture stays on a real midnight.
+const ORIGINAL_TZ = process.env.TZ;
+beforeAll(() => {
+  process.env.TZ = "Europe/Berlin";
+});
+afterAll(() => {
+  // `delete`, never `= undefined` — the latter stringifies to "undefined",
+  // which resolves to offset 0, i.e. silently back to the hiding zone.
+  if (ORIGINAL_TZ === undefined) delete process.env.TZ;
+  else process.env.TZ = ORIGINAL_TZ;
+});
+
+it("pins the process timezone this file claims (guards the mechanism)", () => {
+  expect(-new Date(2026, 6, 10).getTimezoneOffset()).toBe(120);
+});
+
 function makeDailySummary(
   overrides: Partial<{
     totalCalories: number;
@@ -115,12 +142,17 @@ function makeProfile(
 describe("buildCoachContext", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Fix time so hour-based suggestion logic is deterministic. The builder
-    // calls `new Date().getHours()` which is local-time, so build the fixed
-    // date from local-time components instead of a UTC string.
+    // Fix time so the hour-based suggestion logic is deterministic. The builder
+    // resolves the hour in the caller's `tz` (defaulting to UTC), so the
+    // fixture is a UTC instant rather than local-time components — the older
+    // local-time form meant "13:00 wherever this happens to run", which landed
+    // in the evening branch on a UTC-negative host and would have made the next
+    // exact-suggestions assertion added here pass in CI and fail elsewhere.
     vi.useFakeTimers();
-    // 13:00 local — afternoon (neither breakfast < 11 nor evening >= 17).
-    vi.setSystemTime(new Date(2026, 4, 15, 13, 0, 0));
+    // 13:00 UTC. Every test here passes `tz` explicitly, so the file-scope
+    // Berlin pin does not reach this value — it only constrains the buggy
+    // host-zone read that a mutation would restore.
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 15, 13, 0, 0)));
   });
 
   afterEach(() => {
@@ -353,27 +385,27 @@ describe("buildCoachContext", () => {
   });
 
   it("includes a breakfast suggestion before 11 AM", async () => {
-    vi.setSystemTime(new Date(2026, 4, 15, 8, 0, 0));
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 15, 8, 0, 0)));
     mockStorage.getUserProfile.mockResolvedValue(undefined);
     mockStorage.getDailySummary.mockResolvedValue(makeDailySummary());
     mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
     mockStorage.getCommitmentsWithDueFollowUp.mockResolvedValue([]);
     mockStorage.getUser.mockResolvedValue(makeUser());
 
-    const result = await buildCoachContext("user-1", TIER_FEATURES.free);
+    const result = await buildCoachContext("user-1", TIER_FEATURES.free, "UTC");
 
     expect(result.suggestions).toContain("Quick breakfast ideas");
   });
 
   it("includes a recap suggestion at or after 5 PM", async () => {
-    vi.setSystemTime(new Date(2026, 4, 15, 18, 0, 0));
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 15, 18, 0, 0)));
     mockStorage.getUserProfile.mockResolvedValue(undefined);
     mockStorage.getDailySummary.mockResolvedValue(makeDailySummary());
     mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
     mockStorage.getCommitmentsWithDueFollowUp.mockResolvedValue([]);
     mockStorage.getUser.mockResolvedValue(makeUser());
 
-    const result = await buildCoachContext("user-1", TIER_FEATURES.free);
+    const result = await buildCoachContext("user-1", TIER_FEATURES.free, "UTC");
 
     expect(result.suggestions).toContain("How was my day?");
   });
@@ -381,7 +413,7 @@ describe("buildCoachContext", () => {
   it("skips the fallback suggestion when 3+ contextual suggestions already exist", async () => {
     // commitment + protein-deficit + breakfast = 3 candidates, so the
     // `suggestions.length < 3` gate must NOT append the fallback.
-    vi.setSystemTime(new Date(2026, 4, 15, 8, 0, 0));
+    vi.setSystemTime(new Date(Date.UTC(2026, 4, 15, 8, 0, 0)));
     mockStorage.getUserProfile.mockResolvedValue(undefined);
     mockStorage.getDailySummary.mockResolvedValue(
       makeDailySummary({ totalProtein: 50 }),
@@ -392,7 +424,7 @@ describe("buildCoachContext", () => {
     ]);
     mockStorage.getUser.mockResolvedValue(makeUser({ dailyProteinGoal: 150 }));
 
-    const result = await buildCoachContext("user-1", TIER_FEATURES.free);
+    const result = await buildCoachContext("user-1", TIER_FEATURES.free, "UTC");
 
     expect(result.suggestions).toEqual([
       'How did "drink water" go?',
@@ -419,5 +451,75 @@ describe("buildCoachContext", () => {
     // if a future change adds tier-aware logic, this assertion will fail
     // and force an explicit decision on what should differ.
     expect(free).toEqual(pro);
+  });
+});
+
+// The time-of-day suggestion chips were gated on `new Date().getHours()` — the
+// SERVER's hour, which is UTC on Railway — while `tz` was already a parameter
+// of the same function. An LA user at 8am PDT (15:00 UTC) got no breakfast
+// chip, and at 6pm PDT (01:00 UTC the next day) was offered breakfast ideas.
+//
+// The clock is pinned so "morning in LA" is a fact rather than a function of
+// when CI runs, and the zone is passed as an argument, so nothing here depends
+// on the host timezone.
+describe("buildCoachContext — time-of-day chips use the USER's hour", () => {
+  beforeEach(() => {
+    mockStorage.getUserProfile.mockResolvedValue(undefined);
+    mockStorage.getDailySummary.mockResolvedValue(makeDailySummary({}));
+    mockStorage.getActiveNotebookEntries.mockResolvedValue([]);
+    mockStorage.getCommitmentsWithDueFollowUp.mockResolvedValue([]);
+    mockStorage.getUser.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  const at = (iso: string) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(iso));
+  };
+
+  it("offers breakfast at 8am local, even though it is mid-afternoon UTC", async () => {
+    at("2026-07-10T15:00:00Z"); // 08:00 in Los Angeles
+    const ctx = await buildCoachContext(
+      "u1",
+      TIER_FEATURES.free,
+      "America/Los_Angeles",
+    );
+    expect(ctx.suggestions).toContain("Quick breakfast ideas");
+    expect(ctx.suggestions).not.toContain("How was my day?");
+  });
+
+  it("offers the evening chip at 6pm local, though UTC has rolled to the next day", async () => {
+    at("2026-07-11T01:00:00Z"); // 18:00 on Jul 10 in Los Angeles
+    const ctx = await buildCoachContext(
+      "u1",
+      TIER_FEATURES.free,
+      "America/Los_Angeles",
+    );
+    expect(ctx.suggestions).toContain("How was my day?");
+    expect(ctx.suggestions).not.toContain("Quick breakfast ideas");
+  });
+
+  it("still reads the server hour correctly when the caller has no timezone", async () => {
+    at("2026-07-10T08:00:00Z"); // 08:00 UTC
+    const ctx = await buildCoachContext("u1", TIER_FEATURES.free);
+    expect(ctx.suggestions).toContain("Quick breakfast ideas");
+  });
+
+  it("handles midnight without emitting hour 24", async () => {
+    at("2026-07-10T07:00:00Z"); // 00:00 in Los Angeles
+    const ctx = await buildCoachContext(
+      "u1",
+      TIER_FEATURES.free,
+      "America/Los_Angeles",
+    );
+    // 0 < 11, so the morning chip applies. The formatter that would break this
+    // is `hourCycle: "h24"`, which renders midnight as "24" — and 24 >= 17, so
+    // the EVENING chip would be served, not none. This assertion is what
+    // catches that, so do not "repair" a future failure here by asserting that
+    // neither chip appears: that passes under h24 and deletes the guard.
+    // (Measured on Node 24.9.0 / ICU 77.1: `hour12: false` and `h23` both give
+    // "00"; only `h24` gives "24".)
+    expect(ctx.suggestions).toContain("Quick breakfast ideas");
   });
 });

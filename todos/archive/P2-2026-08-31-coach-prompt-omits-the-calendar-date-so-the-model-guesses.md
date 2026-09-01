@@ -1,6 +1,6 @@
 ---
 title: "The coach prompt tells the model the weekday and clock time but never the calendar date, while requiring it to emit plannedDate"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-31
 updated: 2026-08-31
@@ -48,15 +48,15 @@ picker and concluding the server's value is inert would be a mistake.
 
 ## Acceptance Criteria
 
-- [ ] The system prompt states the user's **calendar date** alongside the weekday and time, in
+- [x] The system prompt states the user's **calendar date** alongside the weekday and time, in
       their own timezone. The values are already in scope at `server/services/nutrition-coach.ts:290`.
-- [ ] A test asserts the rendered prompt contains the civil date for a **non-UTC** timezone at an
+- [x] A test asserts the rendered prompt contains the civil date for a **non-UTC** timezone at an
       instant where the user's date and the server's UTC date differ. A UTC-only test does not
       close this.
-- [ ] `plannedDate` staying `required` in the tool definition is either confirmed as correct once
+- [x] `plannedDate` staying `required` in the tool definition is either confirmed as correct once
       the model has the date, or changed — with the NOTE at `coach-tools.ts:104` kept honest either
       way.
-- [ ] `server/services/coach-context-builder.ts:70` uses the user's hour, not the server's.
+- [x] `server/services/coach-context-builder.ts:70` uses the user's hour, not the server's.
 
 ## Implementation Notes
 
@@ -100,3 +100,78 @@ the same change.
 - Filed from the final server review of PR #890, which fixed the omit-path fallback and identified
   this as the remaining, more common path. Both findings verified by that review against the live
   prompt body and the tool definitions.
+
+### 2026-08-31 — RESOLVED
+
+The prompt's "Current time for this user" line now carries the user's calendar
+date in `yyyy-mm-dd`, rendered with `civilDateString(now, tz)` — the exact format
+`add_to_meal_plan` asks for, so the model copies rather than derives it. Kept on
+the one existing line rather than added as a second sentence, so the prompt
+cannot state two different "now"s.
+
+`plannedDate` stays **required**, which is now defensible rather than merely
+inherited: the model has the date it is being asked for. That is a real coupling,
+so it is recorded at `coach-tools.ts` — if the date is ever removed from the
+prompt, the field must stop being required or the guessing returns.
+
+`coach-context-builder.ts` now resolves the suggestion-chip hour in the user's
+zone, via a new `civilHourInTz` in `server/lib/civil-date.ts` rather than a third
+inline `Intl` formatter.
+
+**Correction — the original version of this note was wrong on both clauses, and
+both reviewers caught it independently.** It said `hour12: false` renders midnight
+as "24" and that hour 24 would "fall through both branches". Measured on Node
+24.9.0 / ICU 77.1 across nine zones: `hour12: false` and `hourCycle: "h23"` both
+render midnight `"00"`; only `hourCycle: "h24"` renders `"24"`. And `24 >= 17` is
+true, so an hour of 24 would serve the **evening** chip, not none. `h23` is still
+the right choice — it is explicit rather than relying on which `hour12` → hourCycle
+mapping the runtime implements — and the midnight test does guard the hazard, just
+via `h24` rather than `hour12: false`.
+
+**A test of mine passed when it should have failed, and that is the finding worth
+keeping.** The first version of the chip tests asserted the right things and went
+green _before_ the fix, because the buggy code read `new Date().getHours()` — the
+HOST zone — and this machine happens to sit near the zone under test. The host
+timezone was an uncontrolled input. Pinning `process.env.TZ = "UTC"` in the block
+(which is also what CI runs) made the two discriminating cases genuinely red, and
+a `getTimezoneOffset()` assertion now guards the pin itself. Writing the test
+first is what surfaced it: green-when-expecting-red is a signal, not luck.
+
+Fixing the implementation then broke three **pre-existing** tests that set a
+local-time instant (`new Date(2026, 4, 15, 8, ...)` = 8am on the host) and relied
+on the implementation reading that same host zone. They now state the zone
+explicitly — `Date.UTC(...)` plus an explicit `"UTC"` argument — so the intent is
+in the test rather than in the machine.
+
+Mutation-checked both: removing the date from the prompt fails 6 tests; reverting
+the chip hour to the server's fails **2**.
+
+**That second number was originally recorded as 3, and the 3 was this machine's.**
+Both reviewers measured it host-dependent — 3 on `America/Denver`, 2 on UTC (what
+CI runs), 5 on `Pacific/Auckland` — because the three pre-existing tests had been
+pinned by _argument_ but not by `process.env.TZ`, leaving them host-coupled as
+mutation detectors. The `TZ` pin has since been moved to **file** scope, so the
+count is now 2 under every host zone tested (UTC, Denver, Berlin, Auckland) and
+green under all of them. A mutation count that varies by developer is not
+evidence; this one now is.
+
+That is the same lesson as the one above, landing twice in one change: the host
+timezone was an uncontrolled input in the _evidence_ as well as in the test.
+
+Also fixed here, from the review of this change:
+
+- `addToMealPlanSchema.plannedDate` was a bare `z.string()` — the weakest
+  validation in a file where every other date uses `isoDateSchema` (regex plus
+  `isValidCalendarDate`). `"next Friday"`, `"07/10/2026"` and `"2026-02-30"` all
+  passed, reaching the client's `isBrowseOnly` check and failing only at the
+  route, which surfaces as "Couldn't add the recipe to your plan. Please try
+  again." — a permanent failure worded as a transient one. Now `isoDateSchema`,
+  with `mealType` an enum rather than a free string, so `invalidArgs` routes the
+  problem back to the model instead.
+- The tool parameter descriptions now tell the model to resolve relative days
+  against the date in USER CONTEXT. Stating the date is necessary but not
+  sufficient — "add this for Sunday" still needs arithmetic, and nothing told it
+  where to anchor.
+- `hashCoachCacheKey`'s `dayBucket` is required rather than defaulting to UTC —
+  the same plausible-default trap, on a parameter that now has to agree with the
+  prompt's date.

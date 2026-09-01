@@ -104,6 +104,17 @@ const getMealPlanSchema = z.object({
 // NOTE: plannedDate and mealType are marked required in the OpenAI JSON tool definition.
 // Keep this Zod schema aligned — if you change required/optional here, update getToolDefinitions() too.
 //
+// `plannedDate` staying REQUIRED **in the OpenAI JSON tool definition** (the
+// `required: [...]` array in `getToolDefinitions`) — as distinct from the Zod
+// field below, which is `.optional()` — is only defensible because the prompt
+// now states the user's calendar date (`nutrition-coach.ts`, the "Current time
+// for this user" line, rendered as yyyy-mm-dd in their timezone). Before that
+// the model was required to emit a date it had never been told, so it guessed —
+// and this proposal writes a real row. **If that date is ever removed from the
+// prompt, this field must stop being required**, or the guessing returns.
+// That is not merely asserted: removing the date from the prompt turns the
+// `current time rendering` block in `nutrition-coach.test.ts` red.
+//
 // `plannedDate` is `.optional()` rather than carrying a `.default()` on purpose.
 // A default here cannot see the request's timezone, so the previous
 // `.default(() => new Date().toISOString().split("T")[0])` filed a UTC day —
@@ -112,9 +123,23 @@ const getMealPlanSchema = z.object({
 // at the call site could never run: they looked like the default and were dead,
 // so fixing only those changes nothing. The default now lives at the call site,
 // where `tz` is in scope.
+// One source for the meal types. The NOTE above asserts the Zod schema and the
+// JSON tool definition stay aligned; stating the list once is what enforces it,
+// rather than two literals ~270 lines apart. (Further copies live in
+// server/routes/meal-plan.ts and client/screens/meal-plan/meal-plan-utils.ts —
+// out of scope here, and the reason a shared const beats a drift test.)
+const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"] as const;
+
 const addToMealPlanSchema = z.object({
-  plannedDate: z.string().optional(),
-  mealType: z.string().default("lunch"),
+  // `isoDateSchema`, not a bare string: this is the one date the model is
+  // forced to produce, and it is the one that WRITES. A bare `z.string()` let
+  // "next Friday", "07/10/2026" and "2026-02-30" through safeParse, past the
+  // client's `isBrowseOnly` check, and on to the route's own validation —
+  // surfacing to the user as "Couldn't add the recipe to your plan. Please try
+  // again.", a permanent failure worded as a transient one. Rejecting here
+  // routes it back to the model through `invalidArgs`, which can correct it.
+  plannedDate: isoDateSchema.optional(),
+  mealType: z.enum(MEAL_TYPES).default("lunch"),
   notes: z.string().optional(),
 });
 
@@ -276,7 +301,7 @@ export function getToolDefinitions(): ChatCompletionTool[] {
             date: {
               type: "string",
               description:
-                "ISO date string (YYYY-MM-DD). Defaults to today if omitted.",
+                "ISO date string (YYYY-MM-DD). Omit it for today — the server resolves that in the user's timezone. For any other day, resolve it against the current date given in USER CONTEXT rather than guessing.",
             },
           },
           required: [],
@@ -353,12 +378,12 @@ export function getToolDefinitions(): ChatCompletionTool[] {
             startDate: {
               type: "string",
               description:
-                "Start date in YYYY-MM-DD format. Defaults to today.",
+                "Start date in YYYY-MM-DD format. Omit it for today — the server resolves that in the user's timezone. For any other day, resolve it against the current date given in USER CONTEXT rather than guessing.",
             },
             endDate: {
               type: "string",
               description:
-                "End date in YYYY-MM-DD format. Defaults to 7 days from start.",
+                "End date in YYYY-MM-DD format. Defaults to 7 days from start. Resolve any explicit day against the current date given in USER CONTEXT.",
             },
           },
           required: [],
@@ -376,11 +401,12 @@ export function getToolDefinitions(): ChatCompletionTool[] {
           properties: {
             plannedDate: {
               type: "string",
-              description: "Date in YYYY-MM-DD format.",
+              description:
+                'Date in YYYY-MM-DD format. Resolve relative days ("today", "tomorrow", "Sunday") against the current date given in USER CONTEXT; never guess.',
             },
             mealType: {
               type: "string",
-              enum: ["breakfast", "lunch", "dinner", "snack"],
+              enum: [...MEAL_TYPES],
               description: "Which meal of the day.",
             },
             notes: {

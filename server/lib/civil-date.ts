@@ -130,3 +130,26 @@ export function civilDateToInstant(dateStr: string, tz: string = "UTC"): Date {
   ];
   return new Date(civilMidnightUtcMs(year, month, day, tz));
 }
+
+/**
+ * The hour (0-23) of an INSTANT as seen in `tz`.
+ *
+ * `hourCycle: "h23"` is explicit rather than relying on the `hour12: false`
+ * shorthand: both render midnight as "00" on current runtimes, but older
+ * ECMA-402 mapped `hour12: false` onto `h24`, which renders it "24". Locale is
+ * pinned to `en-US` so the digits are always ASCII and `Number` cannot see a
+ * localised numeral.
+ *
+ * Throws `RangeError` on an invalid `tz`, like every `Intl` constructor —
+ * callers taking a timezone from a request should route it through
+ * `parseTimezone` first.
+ */
+export function civilHourInTz(date: Date, tz: string = "UTC"): number {
+  return Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "numeric",
+      hourCycle: "h23",
+    }).format(date),
+  );
+}
