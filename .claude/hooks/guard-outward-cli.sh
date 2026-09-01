@@ -434,6 +434,28 @@ if { [[ ! "$BARE" =~ [^[:space:]] ]] || [[ ! "$WORDS" =~ [^[:space:]] ]]; } \
   exit 0
 fi
 
+# Dual-rendering flag scan, for DENY-ONLY checks. One pattern, both renderings,
+# because each hides a spelling the other shows: a quoted VALUE (`--auto
+# "--admin"`) survives only in raw $CMD, while a quoted-split NAME (`--ad"min"`)
+# is reconstructed only in $WORDS. Reading both is free HERE and only here — a
+# deny-only check can ADD a deny but can never grant a carve-out, so its false
+# positives fall on the safe side. Do NOT reuse this for a check that GRANTS a
+# carve-out: there, reading two renderings widens what gets waved through.
+#
+# The renderings are joined by a NEWLINE and MUST stay that way. Concatenated,
+# the seam spells flags present in NEITHER string — end-of-$CMD `--ad` plus
+# start-of-$WORDS `min` reads as `--admin` — and grep being line-oriented is the
+# only thing making a boundary-spanning match impossible. The two
+# "the $CMD/$WORDS seam cannot forge ..." assertions in
+# test-guard-outward-cli.sh go RED if this is ever "simplified" to "$CMD$WORDS".
+#
+# Case-SENSITIVE by design — no `-i`, unlike the invocation matchers below.
+# These patterns match flag NAMES, which the target CLIs themselves treat
+# case-sensitively: `--ADMIN` is not a real flag, and a case-insensitive `-R`
+# would false-match ordinary text. See the header's FLAG-detection note.
+scan_both() { grep -Eq "$1" <<< "$CMD
+$WORDS"; }
+
 # Necessary-substring fast path (project_per_bash_hook_overhead): a command
 # without ANY of these literal substrings cannot match any predicate below.
 
@@ -459,15 +481,11 @@ fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
 # resulting binary to the store as soon as the build finishes — a store
 # mutation wearing a build command's name. Plain `eas build` stays allowed.
-# Scans BOTH renderings: raw $CMD (a quoted `"--auto-submit"` is still a real
-# argv token) and $WORDS (a quoted-split NAME is only visible there) — the
-# same dual-scan the `--admin` check below uses, and for the same reason: a
-# deny-only check can read both for free, since it can only ever ADD a deny,
-# never grant a carve-out. No trailing boundary, so `--auto-submit-with-profile`
-# is caught by the same pattern.
+# Flag scan via scan_both (see its definition for why both renderings are read
+# and why they must stay newline-joined). No trailing boundary, so
+# `--auto-submit-with-profile` is caught by the same pattern.
 if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS" \
-   && grep -Eq '(^|[^-A-Za-z0-9])--auto-submit' <<< "$CMD
-$WORDS"; then   # NEWLINE, not concatenation — see the --admin check for why
+   && scan_both '(^|[^-A-Za-z0-9])--auto-submit'; then
   deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -607,15 +625,9 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # whitespace-only check). The boundary class is "not a word/dash character"
   # rather than strictly whitespace, so it also catches `--admin=true`,
   # `--admin=1`, and a trailing quote/comma/etc.
-  # Scans BOTH renderings: raw $CMD (a quoted VALUE like `--auto "--admin"` must
-  # still be seen) and $WORDS (a quoted-split NAME like `--ad"min"` is only
-  # visible there). A deny-only check can read both for free — it can add a deny,
-  # never grant a carve-out. They are fed to grep separated by a NEWLINE and must
-  # stay that way: concatenated, the seam spells flags present in NEITHER string
-  # (end-of-$CMD `--ad` + start-of-$WORDS `min` = `--admin`), and grep is
-  # line-oriented so a newline makes a boundary-spanning match impossible.
-  if grep -Eq '(^|[^-A-Za-z0-9])--admin([^-A-Za-z0-9]|$)' <<< "$CMD
-$WORDS"; then
+  # Flag scan via scan_both — see its definition for why both renderings are read
+  # and why they must stay newline-joined (this check is the seam example there).
+  if scan_both '(^|[^-A-Za-z0-9])--admin([^-A-Za-z0-9]|$)'; then
     deny "guard-outward-cli: command-position 'gh pr merge --admin' uses administrator privileges to merge a PR that may not meet requirements — this contradicts the --auto carve-out's premise (branch protection gating). Denying regardless of --auto. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
 fi
