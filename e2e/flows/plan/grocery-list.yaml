@@ -1,6 +1,7 @@
 appId: com.ocrecipes.app
 name: "Plan - View and manage grocery lists"
 tags:
+  - regression
   - plan
   - grocery
 env:
@@ -15,14 +16,22 @@ env:
       USERNAME: ${USERNAME}
       PASSWORD: ${PASSWORD}
 
-# Navigate to Plan tab
+# Navigate to Plan tab. Wait on "Browse Recipes" with margin, exactly as
+# meal-plan-home.yaml does: a tab switch can briefly re-flash the splash
+# overlay, and the previous 5000ms gate on "Grocery Lists" expired while that
+# overlay was still up (local run 2026-08-31_205105 — the failure screenshot is
+# the splash logo, not the Plan screen). 15000 matches the sibling flow that
+# has been green in CI against the same hazard.
 - tapOn: "Plan"
+- extendedWaitUntil:
+    visible: "Browse Recipes"
+    timeout: 15000
+
+# Open grocery lists
 - extendedWaitUntil:
     visible:
       text: "Grocery Lists"
-    timeout: 5000
-
-# Open grocery lists
+    timeout: 15000
 - tapOn: "Grocery Lists"
 
 # MANDATORY — the flow's own subject. Everything below this block is
