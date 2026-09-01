@@ -3,7 +3,7 @@ title: "Extract the 7x copy-pasted two-stage fast-path filter into a shared lib 
 status: backlog
 priority: low
 created: 2026-08-16
-updated: 2026-08-16
+updated: 2026-09-01
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -15,7 +15,12 @@ github_issue:
 
 An 18-line, byte-identical (modulo one needle word) two-stage necessary-substring
 fast-path filter is hand-copied into 7 separate `.claude/hooks/*.sh` files instead of
-factored into one `lib/cmd-detect.sh` helper (e.g. `cmd_fastpath_has <needle> "$CMD"`).
+factored into one shared helper (e.g. `cmd_fastpath_has <needle> "$CMD"`).
+
+> **2026-09-01:** this Summary originally named `lib/cmd-detect.sh` as the destination.
+> Measurement ruled that out — the fast path runs _before_ that lib is sourced, by design.
+> The shared helper needs its own small file plus a fork-free `HERE`. See Acceptance
+> Criteria and Updates.
 
 ## Background
 

@@ -3,7 +3,7 @@ title: "guard-outward-cli.sh: avoid forking awk twice on every fast-path hit"
 status: backlog
 priority: low
 created: 2026-08-16
-updated: 2026-08-16
+updated: 2026-09-01
 assignee:
 labels: [deferred, harness]
 github_issue:
