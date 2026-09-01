@@ -173,6 +173,42 @@ else
   echo "FAIL: cmd_git_branch_create_segment: expected the full segment with origin/main preserved, got '$SEG_OUT'"; FAIL=$((FAIL+1))
 fi
 
+# REDIRECTS AND WORD-START COMMENTS (2026-09-01). Same two-sided shape as the brace/backtick
+# pair above, for the three characters the function's header used to list as a known gap.
+# The CLIP direction: an ordinary redirect or trailing comment must not leak a spurious
+# start-point token into the segment (that flipped branch-preflight's HAS_START_POINT 0→1
+# and SKIPPED the stale-upstream check). The PRESERVE direction matters just as much and is
+# why a plain character-class widening was wrong: `git check-ref-format --branch` accepts
+# `foo#bar`, `foo<bar` and `foo>bar`, `issue#42` is a legal branch name that bash keeps
+# literal mid-word, and a pure-digit trailing token is a real abbreviated-SHA start point.
+seg_clip() {  # <command> <expected-segment-after-trimming> <label>
+  local got; got=$(cmd_git_branch_create_segment "$1")
+  got="${got%"${got##*[![:space:]]}"}"   # rtrim: the rewrite leaves the separator's space
+  if [ "$got" = "$2" ]; then
+    echo "PASS: cmd_git_branch_create_segment: $3"; PASS=$((PASS+1))
+  else
+    echo "FAIL: cmd_git_branch_create_segment: $3 — expected '$2', got '$got'"; FAIL=$((FAIL+1))
+  fi
+}
+# CLIP: the redirect (with its fd prefix) and the comment must not reach the segment.
+seg_clip 'git checkout -b foo 2>/dev/null'   'checkout -b foo' 'fd-prefixed redirect (2>) is clipped, fd digit included'
+seg_clip 'git checkout -b foo >log.txt'      'checkout -b foo' 'bare > redirect is clipped'
+seg_clip 'git checkout -b foo 1>>out.log'    'checkout -b foo' 'append redirect (1>>) is clipped'
+seg_clip 'git checkout -b foo 2>&1'          'checkout -b foo' 'fd-dup redirect (2>&1) is clipped'
+seg_clip 'git checkout -b foo # from prod'   'checkout -b foo' 'word-start # begins a comment and is clipped'
+seg_clip 'git switch -c foo 2>/dev/null'     'switch -c foo'   'switch -c form is clipped the same way'
+# PRESERVE: none of these may be truncated — each would be a repeat of the `{`/`}` regression.
+seg_clip 'git checkout -b issue#42 origin/main'  'checkout -b issue#42 origin/main' \
+  'a MID-WORD # is legal ref content and is NOT a boundary (start-point preserved)'
+seg_clip 'git checkout -b release/2.0 origin/main' 'checkout -b release/2.0 origin/main' \
+  'a digit in a real branch name is not mistaken for an fd prefix'
+seg_clip 'git checkout -b foo 1234567'       'checkout -b foo 1234567' \
+  'a pure-digit start-point (abbreviated SHA) is not stripped as an fd prefix'
+seg_clip 'git checkout -b foo2 origin/main'  'checkout -b foo2 origin/main' \
+  'a branch name ending in a digit is preserved'
+seg_clip 'git checkout -b foo origin/main 2>/dev/null' 'checkout -b foo origin/main' \
+  'a redirect AFTER a real start-point clips only the redirect'
+
 echo "--- _CMD_POS_PREFIX/_CMD_POS_SUFFIX: brace/backtick/bang/separator boundaries ---"
 # The shared anchor omitted `{`, backtick, and `!` as openers, and `;`/`&`/`|`/backtick/
 # `{`/`}` as closers — so a brace-grouped, backtick-substituted, `!`-prefixed, or

@@ -379,14 +379,33 @@ cmd_is_git_head_mover() {
 #       flipping branch-preflight.sh's HAS_START_POINT 1→0 and spuriously re-running the
 #       stale-upstream check on a command that correctly named one. `{`/`}` must NOT be in
 #       this class; only backtick, which can never be real unquoted ref-name content.
-# KNOWN PRE-EXISTING GAP (not introduced or widened by either fix above, unrelated to this
-# todo's brace/backtick/bang scope): this terminator also does not exclude `<`, `>`, or `#`,
-# so an ordinary `git checkout -b foo 2>/dev/null` leaks the redirection into the segment,
-# manufacturing a spurious start-point the same way. A shallow char-class fix is NOT safe
-# here — excluding `<`/`>` alone still leaves the fd-prefix digit (`2` in `2>`) as a
-# spurious non-flag token, and digits cannot be blanket-excluded (`release/2.0` is a real
-# branch name) — correct handling needs `[0-9]*[<>]` treated as one unit, a new mechanism
-# out of this todo's Scope Contract. Surfaced for human triage rather than patched here.
+# REDIRECTS AND COMMENTS (fixed 2026-09-01, previously the "KNOWN PRE-EXISTING GAP" here).
+# An ordinary `git checkout -b foo 2>/dev/null` used to leak the redirection into the
+# segment, manufacturing a spurious start-point token and flipping branch-preflight.sh's
+# HAS_START_POINT 0→1 — which SKIPS the stale-upstream check on a command that never named
+# a start point. Same for `>log.txt` and for a trailing ` # comment`.
+#
+# These are NOT fixed by widening the terminator character class, and the reason is the
+# lesson in (2) above restated for three more characters. `git check-ref-format --branch`
+# accepts ALL of `foo#bar`, `foo<bar`, `foo>bar`, so none of them can be excluded on the
+# grounds of being illegal in a ref name. What actually separates them is what BASH does
+# with them unquoted, which is not the same answer for all three (all verified by running
+# them, not by reading):
+#   * `<` / `>` — ALWAYS redirection, never literal argv content. `printf x foo>bar`
+#     creates a FILE named `bar`; the text never reaches argv. So, like backtick, they can
+#     never be real unquoted ref-name content and are always a boundary.
+#   * `#` — a comment ONLY at the start of a word. Mid-word it is ordinary literal text:
+#     `echo issue#42` prints `issue#42`, and `issue#42` is a legal branch name. Putting a
+#     bare `#` in the terminator class would truncate it — exactly the `{`/`}` regression
+#     in (2). It is a boundary only when preceded by whitespace or start-of-string.
+#   * the fd-prefix DIGITS (`2` in `2>`) cannot be stripped positionally either: a
+#     pure-digit trailing token is a REAL start point (`git checkout -b foo 1234567` names
+#     an abbreviated SHA). The digits are only an fd when ATTACHED to the redirect operator.
+#
+# So instead of widening the class, both forms are rewritten to `;` — a terminator this
+# class ALREADY has — which consumes the fd digits and the redirect as one unit and leaves
+# the existing extraction untouched. `(^|[[:space:]])` on both is what keeps `issue#42` and
+# `release/2.0` intact; `[0-9]*[<>]+&?` is what makes `2>`, `>>`, `<<<` and `2>&1` one unit.
 cmd_git_branch_create_segment() {
   local segment
   while IFS= read -r segment; do
@@ -397,7 +416,9 @@ cmd_git_branch_create_segment() {
                    && { printf '%s\n' "$segment"; return 0; } ;;
     esac
   done <<EOF
-$(printf '%s' "$1" | cmd_words | grep -oE '(checkout|switch)[[:space:]]+[^;&|)`]*')
+$(printf '%s' "$1" | cmd_words \
+  | sed -E -e 's/(^|[[:space:]])[0-9]*[<>]+&?/\1;/g' -e 's/(^|[[:space:]])#.*$/\1;/' \
+  | grep -oE '(checkout|switch)[[:space:]]+[^;&|)`]*')
 EOF
   return 1
 }
