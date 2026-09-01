@@ -1,9 +1,9 @@
 ---
 title: "E2E regression flows: fixing optional: true nesting made several flows' own subject matter entirely optional"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
-updated: 2026-08-16
+updated: 2026-08-31
 assignee:
 labels: [deferred, e2e, maestro]
 github_issue:
@@ -41,11 +41,11 @@ only matters once the suite is passing.
 
 ## Acceptance Criteria
 
-- [ ] Each of the affected flows (`home/chat.yaml`, `plan/browse-recipes.yaml`,
+- [x] Each of the affected flows (`home/chat.yaml`, `plan/browse-recipes.yaml`,
       `plan/grocery-list.yaml`, `plan/meal-plan-home.yaml`, `profile/goal-setup.yaml` — verify
       this list is current, don't assume it's exhaustive) has at least one assertion that
       mandatorily (not `optional: true`) pins the behavior the flow's name/tag claims to cover.
-- [ ] Steps that are genuinely optional for good reason (e.g. content that may or may not be
+- [x] Steps that are genuinely optional for good reason (e.g. content that may or may not be
       present depending on seeded data) stay optional — this is not "remove all
       `optional: true`," it's "each flow must have at least one non-optional assertion of its
       own subject."
@@ -79,3 +79,48 @@ only matters once the suite is passing.
 ## Risks
 
 - None significant — this is test-file-only work with no production impact.
+
+## Updates
+
+### 2026-08-31 — closed
+
+All five listed flows now mandatorily assert their own subject, and the list was
+re-verified against the current `e2e/flows/**` rather than trusted, as the
+Implementation Notes required. Four landed in PR #880; `plan/grocery-list.yaml`
+was the remainder and is fixed here.
+
+Sweep result — every flow in the suite now carries at least one mandatory
+(non-`optional`) assertion, and for the two thinnest it pins the flow's own
+subject rather than a nav label (`scan-barcode.yaml` → "Scan Barcode",
+`photo-analysis.yaml` → "Photo Food Log"). No flow was left below the bar, so
+the affected-file list needed no expansion.
+
+`grocery-list.yaml` had **three** defects, only the first of which this todo
+named — worth recording, because two were invisible to code review:
+
+1. **Asserted nothing** — every step past the Plan tab was `optional: true`, and
+   three of those selectors could never have matched anyway: `id:
+"create-grocery-list"` (the screen has no testID at all), and `text: "items"`
+   / `text: "Add item..."` (both live on the GroceryList DETAIL screen, which
+   this flow never opens). Found by reading source.
+2. **Navigation gate too tight** — waited 5000ms on "Grocery Lists" and expired
+   while the splash overlay was still up. Found only by RUNNING it; the failure
+   screenshot is the splash logo. Now waits on "Browse Recipes" with a 15000ms
+   margin, matching `meal-plan-home.yaml`.
+3. **Local env, not the flow** — `.env` pinned a stale `EXPO_PUBLIC_DOMAIN`, so
+   the app could not reach the backend and wedged. Only distinguishable from (2)
+   by re-running after the timeout fix and seeing the same splash at 15s.
+
+The flow is now tagged `regression`. It previously was not, so the nightly
+(`--include-tags regression`) never executed it — a mandatory assertion in an
+unrun flow protects nothing. `e2e/README.md`'s critical-flow table gained the
+matching row; it is a second enumeration of the regression set.
+
+Verified green twice on iPhone 17 Pro / iOS 26.5, with every OPTIONAL step
+reporting COMPLETED rather than WARNED — i.e. the replacement selectors match,
+where the originals were silently skipped.
+
+**Residual, deliberately not filed as a follow-up:** the verification is
+iOS-only; the nightly also runs Android, where a11y-label exposure and splash
+timing can differ. Surfaced in the PR body for a human call rather than parked
+as a todo.

@@ -1,6 +1,7 @@
 appId: com.ocrecipes.app
 name: "Plan - View and manage grocery lists"
 tags:
+  - regression
   - plan
   - grocery
 env:
@@ -15,49 +16,83 @@ env:
       USERNAME: ${USERNAME}
       PASSWORD: ${PASSWORD}
 
-# Navigate to Plan tab
-- tapOn: "Plan"
+# Navigate to Plan tab BY TESTID, not by text. MainTabNavigator's custom
+# tabBarLabel render fn suppresses bottom-tabs' derived accessibilityLabel,
+# which leaves Android exposing an aggregated ", Plan"-style label that a
+# full-string text selector cannot match — the navigator sets
+# tabBarButtonTestID for exactly this reason ("E2E flows tap tabs by these
+# testIDs"), and every other regression-tagged flow that touches a tab uses it.
+- tapOn:
+    id: "tab-plan"
+
+# Wait on "Browse Recipes" with margin, as meal-plan-home.yaml does: a tab
+# switch can briefly re-flash the splash overlay, and the previous 5000ms gate
+# on "Grocery Lists" expired while that overlay was still up (local run
+# 2026-08-31_205105 — the failure screenshot is the splash logo, not the Plan
+# screen).
+- extendedWaitUntil:
+    visible: "Browse Recipes"
+    timeout: 15000
+
+# Open grocery lists
 - extendedWaitUntil:
     visible:
       text: "Grocery Lists"
-    timeout: 5000
-
-# Open grocery lists
+    timeout: 15000
 - tapOn: "Grocery Lists"
 
-# May see empty state or existing lists
+# MANDATORY — the flow's own subject. The FAB is the anchor because it is
+# data-independent: it renders in both the empty and populated states (a
+# sibling of the FlatList, not part of ListEmptyComponent) and is gated only on
+# `!showDatePicker`, which is false on arrival. Matched on its own
+# accessibilityLabel — its only child is an icon, so there is no
+# aggregated-label ambiguity — and NOT on a testID: GroceryListsScreen.tsx
+# contains no testID at all, which is why the previous `id:
+# "create-grocery-list"` step could never fire.
+- extendedWaitUntil:
+    visible:
+      text: "Generate new grocery list"
+    timeout: 15000
+
+# Screen-state check, NOT a query-health check — be precise about what this
+# buys. The error title lives inside ListEmptyComponent, which mounts only when
+# the list is empty, so a run with cached/persisted rows cannot surface it even
+# if a refetch failed. It pins "the empty state is the empty state, not the
+# error state"; it does not prove the query succeeded. Like any negative
+# assert, it also passes vacuously if the string drifts.
+- assertNotVisible: "Couldn't load your lists"
+
+# Optional ONLY here: a seeded account may legitimately have zero lists, so
+# neither the empty state nor a list row can be required.
 - extendedWaitUntil:
     visible:
       text: "No Grocery Lists"
     timeout: 3000
     optional: true
 
-# Tap FAB to create a new list (if FAB exists)
+# MANDATORY — the create-list picker. These steps are NOT data-dependent and
+# must not be optional: tapping the FAB only flips local `showDatePicker`
+# state, which swaps in a ListHeaderComponent that renders regardless of how
+# many lists exist. Left optional, a picker that stopped opening would WARN and
+# the flow would still report green — the exact defect this flow was repaired
+# to eliminate. Matched on the Pressable's own accessibilityLabel: Maestro text
+# selectors are FULL-STRING regexes, so the previous bare "Generate" could not
+# match, and the visible child Text ("Generate"/"Generating...") is aggregated
+# under the label rather than exposed separately.
 - tapOn:
-    id: "create-grocery-list"
-    optional: true
-
-# If date picker appears, fill in dates and generate
+    text: "Generate new grocery list"
 - extendedWaitUntil:
     visible:
-      text: "Generate"
-    timeout: 3000
-    optional: true
+      text: "Generate grocery list"
+    timeout: 5000
 
+# Dismiss the picker rather than generating a list (generation depends on an
+# existing meal plan, which IS seeded-data-dependent) and leave the app on a
+# clean screen for whatever runs next. Mandatory for the same reason as the
+# open: Cancel is part of the picker's own chrome, not data.
 - tapOn:
-    text: "Generate"
-    optional: true
-
-# If we have a list, verify items structure
+    text: "Cancel"
 - extendedWaitUntil:
     visible:
-      text: "items"
-    timeout: 3000
-    optional: true
-
-# Check add item input
-- extendedWaitUntil:
-    visible:
-      text: "Add item..."
-    timeout: 3000
-    optional: true
+      text: "Generate new grocery list"
+    timeout: 5000
