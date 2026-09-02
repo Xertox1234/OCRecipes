@@ -7,7 +7,7 @@ module: server
 applies_to: [".claude/hooks/**"]
 symptoms: ["A quote-aware command-position matcher (`${_PREFIX}verb${_SUFFIX}` shaped) fails to detect a real, executing invocation of the gated verb", "The SAME verb, unwrapped, is correctly detected — isolating the gap to the anchor's boundary character classes, not the verb pattern itself", "A brace-grouped ({ verb; }), backtick-substituted (`verb`), or !-prefixed (! verb) form of the command is silently ALLOWED by a blocking deny gate", "A verb with no whitespace before the next separator (verb;date) is silently ALLOWED even though a spaced form (verb ;date) is correctly DENIED", "A sibling anchor in the same codebase (e.g. a guard-local one) already covers the missing boundary characters, proving the gap is an under-scoped port, not a fundamental limitation"]
 created: 2026-08-28
-last_updated: '2026-09-01'
+last_updated: '2026-09-02'
 severity: high
 ---
 
@@ -289,6 +289,67 @@ independence lesson to the deletion pair will desync them and revive the merge s
 **When one file carries two couplings that run in opposite directions, each must name the
 other**, or the more memorable one gets applied to both.
 
+## A "verified inert" claim about `{`/`}` was itself wrong — comma-form brace is EXPANSION, not grouping (2026-09-02)
+
+A comment-accuracy-only todo against `guard-outward-cli.sh`'s OWN `_OUT_POS_SUFFIX`
+(the guard-local sibling of `_CMD_POS_SUFFIX` documented above) produced a THIRD instance
+of this document's central rule, in a shape sharp enough to record on its own: the fix
+under review was itself re-broken by its own corrective comment, twice, before landing.
+
+**Round 1** (executor draft): a comment lumped all four of the lib's extra suffix closers
+(`{`, `}`, `<`, `>`) under one "don't sync any of these" verdict. Review found `<`/`>` are
+REAL bash redirect operators — a verb glued to a trailing redirect (`update>log`) word-splits
+exactly like the spaced form, a live bypass — while `{`/`}` were (at that point) genuinely
+believed inert. Split the framing accordingly: `<`/`>` disclosed as a live gap, `{`/`}` kept
+as "don't sync, harmless."
+
+**Round 2** (a second review pass, same PR): the "`{`/`}` are inert" half of round 1's split
+was ITSELF false. The verification behind it tested exactly one shape — a lone brace span
+with no comma or range (`update{42}`) — and confirmed, correctly, that it stays glued as one
+bash word. It generalized "inert" from that one case to the whole `{`/`}` character pair. But
+`{`/`}` is not one property; it is two, gated by a single distinguishing feature bash actually
+checks for — a comma or range inside the braces:
+
+```bash
+$ for w in gh pr merge{,x} 42; do printf '[%s]\n' "$w"; done
+[gh] [pr] [merge] [mergex] [42]
+```
+
+`merge{,x}` is brace **expansion**, not a literal glued suffix — bash expands it to the two
+separate words `merge` and `mergex` before the command ever runs, placing a real, standalone
+`merge` token in command position. Reproduced live against `guard-outward-cli.sh`:
+`gh pr merge{,x} 42`, `npm publish{,x}`, `eas update{,x} ...`, `railway up{,x}` and
+`eas build{,x} --auto-submit` were all SILENTLY ALLOWED where the bare/spaced form correctly
+denied — the exact same class of bypass this document's `<`/`>`/`#` section above already
+describes, found by the SAME mechanism (construct the input, run it, don't reason about the
+regex text) that this document's Prevention section already prescribes and that round 1 of
+this very review had just failed to apply to its own "inert" claim.
+
+**The generalization**: a character class is not one property just because it is written as
+one bracket expression. `{`/`}` alone means three different things to bash depending on
+what's inside — a literal character (`foo{bar}`, inert), a compound-command GROUP
+(`{ foo; }`, spaced, unrelated construct), and EXPANSION (`foo{a,b}` / `foo{1..3}`, real,
+pre-execution word-splitting). A probe that varies "brace present vs. absent" but never
+varies "comma present vs. absent" tests only the first meaning and silently assumes the
+answer generalizes to the third. The fix that closed this (mirroring the lib's own already-
+verified widening): `_OUT_POS_SUFFIX` gained `{`/`}` as closers
+(`([[:space:]]|[);&|`]|$)` → `([[:space:]]|[);&|`{}]|$)`), with a two-sided regression test
+— RED against the pre-fix regex, GREEN after, confirmed at five separate `_OUT_POS_SUFFIX`
+call sites, plus a negative control pinning that the genuinely-inert no-comma case still
+allows a different, unrelated read-only verb glued the same way. Per this document's own
+Prevention section, widening a DENY-only anchor's closer class can only ever ADD matches, so
+this direction is safe by the same argument already established above.
+
+**Where this differs from every other lesson in this document**: the earlier sections are
+about a widening that was never attempted, or a widening whose collateral damage went
+unmeasured. This one is about a CORRECTIVE COMMENT — written specifically to stop a future
+reader from mis-syncing an anchor — that asserted a safety property the author had not
+actually established, using confident language ("INERT here," "verified") that made the
+claim harder to doubt on a second read, not easier. The fix for that failure mode is not
+"write more careful prose" — it is the same fix this document already prescribes for the
+regex itself: construct the input that would falsify the claim, and run it, before writing
+the sentence.
+
 ## Related Files
 
 - `.claude/hooks/lib/cmd-detect.sh` — `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`, both widened.
@@ -302,7 +363,13 @@ other**, or the more memorable one gets applied to both.
   `cmd_is_git_head_mover`; a spurious match here is suppressive, not safe-direction.
 - `.claude/hooks/guard-outward-cli.sh` — the reference implementation whose
   `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX` already had the wider opener treatment this fix
-  ports into the shared lib.
+  ports into the shared lib; as of 2026-09-02 also carries the `_OUT_POS_SUFFIX`
+  comma-brace-expansion fix described above (its own suffix's `{`/`}` closers), and two
+  disclosed-but-unfixed live gaps (`_OUT_POS_SUFFIX` still lacks `<`/`>`;
+  `_OUT_POS_PREFIX` still lacks the lib's `_CMD_REDIR` absorption).
+- `.claude/hooks/test-guard-outward-cli.sh` — the two-sided regression test for the
+  2026-09-02 `{`/`}` fix (search "2026-09-02 FIX"), plus the disclosure comments for the
+  two remaining unfixed gaps (search "STALE AS OF 2026-09-02").
 
 ## See Also
 
