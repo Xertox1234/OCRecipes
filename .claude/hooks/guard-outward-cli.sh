@@ -453,6 +453,15 @@ fi
 # These patterns match flag NAMES, which the target CLIs themselves treat
 # case-sensitively: `--ADMIN` is not a real flag, and a case-insensitive `-R`
 # would false-match ordinary text. See the header's FLAG-detection note.
+#
+# PRECONDITION: call only AFTER `$CMD` (from the jq extraction) and `$WORDS` (line 414) are
+# assigned, and only from a DENY-shaped check — never to GRANT a carve-out. Extracting this
+# helper removed the last per-call-site reminder of both, so they are stated here, on the
+# code that depends on them. An early call does NOT abort: `set -uo pipefail` has no `-e`, so
+# the unbound-variable message goes to stderr and `grep`'s failure is swallowed by the `if`
+# — the check silently reports "no match" and the guard FAILS OPEN. That is the shape the
+# four degraded exit-early paths above (no-jq, jq-extraction failure, lib unsourceable,
+# blank rendering) would create if one ever grew a flag scan.
 scan_both() { grep -Eq "$1" <<< "$CMD
 $WORDS"; }
 

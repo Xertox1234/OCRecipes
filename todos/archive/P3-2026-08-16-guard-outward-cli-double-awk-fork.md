@@ -77,6 +77,13 @@ Investigated to execute. The performance claim is **real** — measured, 200 ite
 | + `cmd_bare` only               | 4.36    | +2.11     |
 | + `cmd_words` as well (current) | 7.29    | **+2.93** |
 
+Measured on this machine (Apple silicon, macOS `awk` = BWK awk / onetrue awk, bash 3.2.57),
+200 iterations per row, wall-clock divided by iteration count. Absolute numbers are
+machine-specific and will not reproduce elsewhere — an independent re-measurement during
+review found 16.7 / 20.5 ms for the same two rows, ~4x higher, with the same DELTA
+direction and rough magnitude. It is the delta, not the absolute, that the decision rests
+on; record both the count and the machine next time so the row is self-checking.
+
 So the second fork costs ~2.9 ms on every fast-path hit, and the fast path matches the
 bare substrings `npm`/`gh`/`eas`/`railway`/`yarn` — i.e. `npm test`, `npm install`,
 `npm run …`, a large share of ordinary dev commands. Against the ~60–75 ms/9-hook budget
@@ -85,7 +92,7 @@ in `project_per_bash_hook_overhead` that is roughly 4%. The todo was right about
 It is the **remedies** that do not survive contact with the file.
 
 **AC option A — "compute `$BARE` lazily" — is impossible.** `$BARE` is consumed
-unconditionally 15 lines after it is assigned, by the blank-rendering fail-closed detector
+unconditionally 28 lines (3 non-comment lines) after it is assigned, by the blank-rendering fail-closed detector
 (`guard-outward-cli.sh`, the `[[ ! "$BARE" =~ [^[:space:]] ]]` branch). There is no later,
 conditional consumer to defer to. The code says so in a comment written specifically to
 stop this edit: _"Nothing else reads `$BARE` — do not delete it without deleting that
