@@ -7,6 +7,7 @@ module: server
 applies_to: [".claude/hooks/**"]
 symptoms: ["A quote-aware command-position matcher (`${_PREFIX}verb${_SUFFIX}` shaped) fails to detect a real, executing invocation of the gated verb", "The SAME verb, unwrapped, is correctly detected — isolating the gap to the anchor's boundary character classes, not the verb pattern itself", "A brace-grouped ({ verb; }), backtick-substituted (`verb`), or !-prefixed (! verb) form of the command is silently ALLOWED by a blocking deny gate", "A verb with no whitespace before the next separator (verb;date) is silently ALLOWED even though a spaced form (verb ;date) is correctly DENIED", "A sibling anchor in the same codebase (e.g. a guard-local one) already covers the missing boundary characters, proving the gap is an under-scoped port, not a fundamental limitation"]
 created: 2026-08-28
+last_updated: '2026-09-01'
 severity: high
 ---
 
@@ -125,17 +126,9 @@ together are not automatically the same regex.
 
 ## Unresolved (surfaced, not fixed — out of scope)
 
-The SAME review round found `cmd_git_branch_create_segment`'s terminator class also
-omits `<`, `>`, and `#` — pre-existing, confirmed present before this todo's changes
-(reproduced against `git show HEAD:.claude/hooks/lib/cmd-detect.sh` at the commit prior
-to this fix). An ordinary `git checkout -b foo 2>/dev/null` (ordinary redirection, not
-adversarial) leaks the redirection into the extracted segment, manufacturing a spurious
-start-point token in `branch-preflight.sh`'s stale-base check. A shallow character-class
-fix is NOT safe here: excluding `<`/`>` alone still leaves the fd-prefix digit (the `2`
-in `2>`) as a spurious non-flag token in the consuming loop, and digits cannot be
-blanket-excluded from the terminator (`release/2.0` is a real branch name) — correct
-handling needs `[0-9]*[<>]` recognized as one unit, which is a new mechanism beyond a
-character-class widening. Left for a human decision on scope rather than patched.
+~~The SAME review round found `cmd_git_branch_create_segment`'s terminator class also
+omits `<`, `>`, and `#`~~ — **RESOLVED 2026-09-01**, and the fix earned two new lessons of
+its own. See "Fixing the `<`/`>`/`#` gap taught the rule twice more" below.
 
 **`_CMD_POS_PREFIX` still omits shell-keyword command positions** (`if`/`then`,
 `for`/`do`, `while`/`do`, `case`, etc.) — found by `security-auditor` during PR #874's
@@ -191,6 +184,110 @@ confirmed pre-existing (identical false negative against the merge-base copy) an
 this fix's scope — `cmd_bare`/`cmd_words`'s awk engine is untouched by this PR. Already
 tracked: `todos/P1-2026-08-17-quoted-command-substitution-inert.md` (backlog, high
 priority) documents this exact mechanism with near-identical repro shapes.
+
+## Fixing the `<`/`>`/`#` gap taught the rule twice more (2026-09-01)
+
+The gap in Unresolved above was closed on 2026-09-01. Closing it produced **two deny→allow
+regressions in the very gate being hardened**, both caught by review rather than by tests,
+and both are the same rule this document already states — arriving in shapes that did not
+look like a character class at all.
+
+### 1. Injecting a terminator at a computed offset IS a class widening
+
+The first fix avoided widening the terminator class (having read the `{`/`}` lesson above)
+and instead rewrote a redirect to `;`, reasoning: *"the extraction regex itself is unchanged,
+so the brace/backtick reasoning above it keeps holding."* That sentence is false, and it
+reads perfectly reasonable, which is why it survived authoring and a self-review.
+
+Bash permits a redirection **anywhere** in a simple command, including between the
+subcommand and the create flag:
+
+```bash
+$ printf '[%s]' checkout 2>/dev/null -b foo
+[checkout][-b][foo]          # a real branch create
+```
+
+Rewriting the redirect to `;` produced `checkout ;/dev/null -b foo`. Extraction stopped at
+the injected `;` — **before** `-b` — so no create flag was found, `cmd_is_git_branch_create`
+returned "not a create", and the check never ran at all. Strictly worse than the leak being
+fixed.
+
+**The generalisation:** a terminator does not have to be a literal character in a class to
+be a terminator. Anything that *introduces* one — a rewrite, a substitution, a normalisation
+pass — widens the class at a computed offset and inherits every hazard above. The correct
+mechanism for a token that is not a boundary but noise is to **delete** it, not to terminate
+on it.
+
+### 2. A rewrite that depends on quote state must run where quote state still exists
+
+The second fix rewrote a word-start `#` to a terminator, having verified that bash only
+treats `#` as a comment at word start. True — but the rewrite ran on `cmd_words` output,
+where **quote characters have already been deleted**, and `cmd_words`' `neutral()` set did
+not cover `#`, `<`, `>`. So a *quoted* `#` was byte-identical to a real comment by the time
+the rewrite saw it, and the greedy `#.*$` discarded the rest of the line — including a later
+real create:
+
+```
+git commit -m "#123 fix the thing" && git checkout -b feature/x   → NOT DETECTED
+```
+
+That is ordinary usage — a commit message beginning with an issue reference. The mirrored
+harm also existed: a legal quoted ref name (`git checkout -b foo ">bar"`, and `>bar` passes
+`git check-ref-format --branch`) was clipped and lost its start point.
+
+**The generalisation:** before treating a character as syntax, ask *where in the pipeline is
+quoting still knowable?* Quote state is destroyed early here by design. Any character that
+becomes boundary-significant downstream must be added to `neutral()` **in the same change** —
+that set's contract is "everything a quoted span must not be able to emit", so widening what
+counts as a boundary without widening `neutral()` breaks its invariant by construction.
+
+### 3. A same-direction suite cannot detect a REMOVED detection
+
+The suite was **833 assertions green over both live bypasses**. The count was accurate and
+carried no information, because every new pin placed the redirect *after* the create flag and
+every `#` case was trailing-unquoted or mid-word — neither failure mode was representable in
+the matrix.
+
+The artefact that finds this class is a **differential**: replay one corpus through the
+pre-change and post-change matcher and assert no `DETECTED → NOT-DETECTED` transition. It
+found 9 regressions in seconds, and it is the thing that should be built *first* whenever a
+matcher's grammar changes, because the invariant being protected is a superset relation, not
+a set of examples. Its durable form is a block of detection pins asserting that every
+create-shaped command in the corpus is still detected.
+
+### 4. A deletion's stop-set is COUPLED to the downstream terminator class — the opposite of lesson 2 above, ten lines away
+
+Repairing lesson 1 (delete the redirect rather than terminate on it) produced a bigger
+regression than the one it fixed: **240 deny→allow transitions over a 2189-input corpus**
+(10 redirect forms × 4 unspaced separators × 6 verb-mismatched pairs), against 9 over the
+25-input hand-listed corpus used on the original. Both numbers are properties of their
+corpora — see clause 4 of the probe convention doc, which this pairing is the evidence for.
+
+The deletion's target word was written `[^[:space:]]*` — excluding only whitespace. So it also
+consumed `;`, `&`, `|`, `)` and backtick: exactly the characters the extractor immediately
+below uses as its segment boundary. When a redirect ended a clause with **no space** before
+the separator, the separator was deleted and the two clauses fused into one segment. The
+`case` dispatch then keyed on the merged segment's first verb and never searched for the
+second:
+
+```
+git checkout main 2>/dev/null;git switch -c foo
+  → checkout main  switch -c foo      # one segment; greps for -[bB], finds none
+  → NOT a create — though it really creates a branch
+```
+
+**The rule: a pass that DELETES text must not consume any character its downstream matcher
+needs as a boundary. Its stop-set is the downstream terminator class ∪ whitespace — coupled
+by construction, not derived independently.**
+
+And here is the trap worth the entry: that is the **exact opposite** of the coupling in the
+Solution section above, which says `_CMD_POS_SUFFIX` and this extractor's terminator "must be
+derived independently, not mirrored". Both rules are correct; they govern different pairs.
+They sit about ten lines apart in the same function, and the terminator class has already
+changed twice (backtick added; `{`/`}` tried and rejected). A maintainer who over-applies the
+independence lesson to the deletion pair will desync them and revive the merge silently.
+**When one file carries two couplings that run in opposite directions, each must name the
+other**, or the more memorable one gets applied to both.
 
 ## Related Files
 

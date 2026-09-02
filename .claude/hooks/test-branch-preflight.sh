@@ -218,6 +218,34 @@ assert_silent "explicit start-point with a PRECEDING flag still skips the behind
 OUT=$(run_hook "git checkout -bfeature/six-c")
 assert_deny "attached-value create form (-bfoo) still denies when base is stale" "$OUT"
 
+# Tests 16d-16h (2026-09-01): END-TO-END proof for the redirect/comment terminator fix.
+# These drive the real hook, not a copy of its start-point loop — the loop lives inline in
+# this hook, so a unit test of cmd_git_branch_create_segment alone cannot show the
+# consequence. Base is still stale here (advance_remote above), so the correct verdict for a
+# command with NO explicit start-point is DENY.
+#
+# BEFORE the fix all three of these were SILENT: the leaked redirect/comment token was read
+# by the consuming loop as a start-point, HAS_START_POINT flipped 0→1, and the whole
+# stale-upstream block was skipped. `2>/dev/null` on a checkout is entirely ordinary, so
+# this was a routine, non-adversarial way to lose the check.
+OUT=$(run_hook "git checkout -b feature/six-d 2>/dev/null")
+assert_deny "redirect (2>/dev/null) does not fake a start-point — stale-base deny still fires" "$OUT"
+
+OUT=$(run_hook "git checkout -b feature/six-e >log.txt")
+assert_deny "bare > redirect does not fake a start-point" "$OUT"
+
+OUT=$(run_hook "git checkout -b feature/six-f # start from prod")
+assert_deny "trailing # comment does not fake a start-point" "$OUT"
+
+# The other side, and the one that would break if the terminator had merely been widened:
+# a REAL explicit start-point must still suppress the check, including when a redirect
+# follows it, and including a branch name containing a legal mid-word '#'.
+OUT=$(run_hook "git checkout -b feature/six-g origin/$INITIAL_BRANCH 2>/dev/null")
+assert_silent "explicit start-point followed by a redirect still skips the behind-check" "$OUT"
+
+OUT=$(run_hook "git checkout -b issue#42 origin/$INITIAL_BRANCH")
+assert_silent "a mid-word # in a real branch name does not truncate the start-point" "$OUT"
+
 # Test 16e: attached-value create flag TOGETHER WITH an explicit start-point
 # (`checkout -bfoo origin/main` — collapses to exactly 3 words, the shape most likely to
 # fool a naive fixed-token-count extraction into treating origin/main as if it were the

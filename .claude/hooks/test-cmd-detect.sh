@@ -173,6 +173,224 @@ else
   echo "FAIL: cmd_git_branch_create_segment: expected the full segment with origin/main preserved, got '$SEG_OUT'"; FAIL=$((FAIL+1))
 fi
 
+# REDIRECTS AND WORD-START COMMENTS (2026-09-01). Same two-sided shape as the brace/backtick
+# pair above, for the three characters the function's header used to list as a known gap.
+# The CLIP direction: an ordinary redirect or trailing comment must not leak a spurious
+# start-point token into the segment (that flipped branch-preflight's HAS_START_POINT 0→1
+# and SKIPPED the stale-upstream check). The PRESERVE direction matters just as much and is
+# why a plain character-class widening was wrong: `git check-ref-format --branch` accepts
+# `foo#bar`, `foo<bar` and `foo>bar`, `issue#42` is a legal branch name that bash keeps
+# literal mid-word, and a pure-digit trailing token is a real abbreviated-SHA start point.
+seg_clip() {  # <command> <expected-segment-after-trimming> <label>
+  local got; got=$(cmd_git_branch_create_segment "$1")
+  got="${got%"${got##*[![:space:]]}"}"   # rtrim: the rewrite leaves the separator's space
+  if [ "$got" = "$2" ]; then
+    echo "PASS: cmd_git_branch_create_segment: $3"; PASS=$((PASS+1))
+  else
+    echo "FAIL: cmd_git_branch_create_segment: $3 — expected '$2', got '$got'"; FAIL=$((FAIL+1))
+  fi
+}
+# CLIP: the redirect (with its fd prefix) and the comment must not reach the segment.
+seg_clip 'git checkout -b foo 2>/dev/null'   'checkout -b foo' 'fd-prefixed redirect (2>) is clipped, fd digit included'
+seg_clip 'git checkout -b foo >log.txt'      'checkout -b foo' 'bare > redirect is clipped'
+seg_clip 'git checkout -b foo 1>>out.log'    'checkout -b foo' 'append redirect (1>>) is clipped'
+seg_clip 'git checkout -b foo 2>&1'          'checkout -b foo' 'fd-dup redirect (2>&1) is clipped'
+seg_clip 'git checkout -b foo # from prod'   'checkout -b foo' 'word-start # begins a comment and is clipped'
+seg_clip 'git switch -c foo 2>/dev/null'     'switch -c foo'   'switch -c form is clipped the same way'
+# PRESERVE: none of these may be truncated — each would be a repeat of the `{`/`}` regression.
+seg_clip 'git checkout -b issue#42 origin/main'  'checkout -b issue#42 origin/main' \
+  'a MID-WORD # is legal ref content and is NOT a boundary (start-point preserved)'
+seg_clip 'git checkout -b release/2.0 origin/main' 'checkout -b release/2.0 origin/main' \
+  'a digit in a real branch name is not mistaken for an fd prefix'
+seg_clip 'git checkout -b foo 1234567'       'checkout -b foo 1234567' \
+  'a pure-digit start-point (abbreviated SHA) is not stripped as an fd prefix'
+seg_clip 'git checkout -b foo2 origin/main'  'checkout -b foo2 origin/main' \
+  'a branch name ending in a digit is preserved'
+seg_clip 'git checkout -b foo origin/main 2>/dev/null' 'checkout -b foo origin/main' \
+  'a redirect AFTER a real start-point clips only the redirect'
+seg_clip 'git checkout -b foo </dev/null'    'checkout -b foo' 'input redirect (<) is clipped too'
+seg_clip 'git checkout -b foo > log.txt'     'checkout -b foo' 'space-separated redirect target is clipped'
+
+# DETECTION-SUPERSET PINS (2026-09-01, added after a security review found the first version
+# of the redirect fix REMOVED detections). The rule these enforce: a change to this matcher
+# may ADD a detection, never remove one — every command below really does create a branch,
+# so cmd_is_git_branch_create MUST say yes for all of them.
+#
+# The first fix rewrote a redirect to `;`. Bash allows a redirection ANYWHERE in a simple
+# command, so `git checkout 2>/dev/null -b foo` became `checkout ;/dev/null -b foo`, the
+# extractor stopped at the injected `;` BEFORE `-b`, found no create flag, and reported "not
+# a create" for a real one — a deny→allow hole in the gate the change was hardening.
+# Injecting a terminator at a computed offset IS a positional widening of the terminator
+# class. These pins exist so that shape can never return silently.
+#
+# Note why the earlier suite could not catch it: every clip pin above puts the redirect
+# AFTER the create flag. 833 assertions stayed green over two live bypasses.
+det cmd_is_git_branch_create 'git checkout 2>/dev/null -b foo'    yes \
+  "redirect BEFORE the create flag is still a real create"
+det cmd_is_git_branch_create 'git checkout >/dev/null -b foo'     yes \
+  "bare redirect before the create flag is still a real create"
+det cmd_is_git_branch_create 'git switch 2>/dev/null -c foo'      yes \
+  "redirect before the create flag, switch -c form"
+det cmd_is_git_branch_create 'git checkout -q 2>/dev/null -b foo' yes \
+  "flag, then redirect, then create flag"
+
+# A QUOTED word-start '#' must not read as a comment. cmd_words deletes the quote
+# characters, so before `#` was added to its neutral() set a quoted '#' was indistinguishable
+# from a real comment and the greedy `#.*$` rewrite ate the rest of the line — including a
+# real create later in the command. All three quote flavours, because neutral() is applied in
+# all three quoted states. A commit message starting with an issue number is ordinary usage.
+det cmd_is_git_branch_create 'git commit -m "#123 fix the thing" && git checkout -b feature/x' yes \
+  "double-quoted leading # is not a comment — the later create is still detected"
+det cmd_is_git_branch_create "git commit -m '#123 fix the thing' && git checkout -b feature/x" yes \
+  "single-quoted leading # is not a comment — the later create is still detected"
+det cmd_is_git_branch_create 'git commit -m $'"'"'#123 fix'"'"' && git checkout -b foo' yes \
+  "ANSI-C quoted leading # is not a comment — the later create is still detected"
+# Same root cause, redirect side: a quoted < or > is literal argv, not redirection.
+# SCOPE NOTE (review, 2026-09-01): these two are DETECTION pins only. They were mutation-
+# checked and they do NOT independently guard the neutral() addition — with the delete-based
+# redirect sed in place, `-b foo` survives whether or not the quoted `>` was neutralised, and
+# cmd_is_git_branch_create only asks "is there a create flag", not "is the segment faithful".
+# They go red only when BOTH repairs are reverted. What actually guards neutral() for these
+# characters is the seg_clip PRESERVE block below, which asserts segment CONTENT. Kept because
+# they pin the end-user-visible property; do not read them as covering neutral() on their own.
+det cmd_is_git_branch_create 'git checkout 2">"/dev/null -b foo' yes \
+  "a quoted > is literal argv, not a redirect — the create is still detected"
+det cmd_is_git_branch_create 'git checkout ">x" -b foo'          yes \
+  "a quoted > as a whole word is literal argv — the create is still detected"
+
+# PRESERVE direction — this block is the real guard for the neutral() addition. A legal ref
+# name starting with <, > or # keeps its start-point instead of being clipped as syntax.
+# All THREE added characters are covered: dropping any one of them from neutral() must turn
+# a pin here red (verified by mutation — `<` previously had no pin at all and could be
+# dropped with zero failures anywhere in the suite).
+#
+# These assert on cmd_words' placeholder byte (`x`, its PH constant). That is a deliberate
+# two-hop coupling: the property under test is "the token survived, unclipped", and the exact
+# byte is an implementation detail of a DIFFERENT function. If PH is ever changed, update
+# these expectations — the pins are not wrong, they are downstream.
+seg_clip 'git checkout -b foo ">bar"'   'checkout -b foo xbar' \
+  'a quoted >bar is a legal ref name and survives as a start-point (neutralised, not clipped)'
+seg_clip 'git checkout -b foo "<bar"'   'checkout -b foo xbar' \
+  'a quoted <bar is a legal ref name and survives as a start-point (the < half of neutral())'
+seg_clip 'git checkout -b foo "#weird"' 'checkout -b foo xweird' \
+  'a quoted #weird is a legal ref name and survives as a start-point'
+
+# ---------------------------------------------------------------------------
+# COMBINATORIAL DETECTION-SUPERSET CORPUS (2026-09-01, review round 2)
+#
+# This block is the committed form of the differential that review demanded. It is NOT
+# written as "replay against main" on purpose: once this branch merges, main == HEAD and such
+# a test silently passes forever — a fail-open gate. Instead it pins the INVARIANT the
+# differential was measuring: every command below is a create-SHAPED command that a
+# pre-execution gate must flag, so cmd_is_git_branch_create must say yes for all of them,
+# whatever the extraction internals become. ("Every one of them creates a branch" would be
+# an overclaim — in the `||` quarter, `git checkout main ... || git switch -c foo` runs the
+# create only if the first clause fails. That is the correct thing to flag anyway: a gate
+# that must decide BEFORE execution cannot know which side of a `||` will run, and the
+# fail-closed direction is to treat the create as reachable.)
+#
+# The family exists because the first DELETING sed wrote its target word as `[^[:space:]]*`,
+# excluding only whitespace — so it also consumed `;`, `&`, `|`, `)` and backtick, which are
+# the extractor's own segment boundaries. A redirect ending a clause with NO space before the
+# separator deleted the separator, fusing two clauses into one segment; the `case` then
+# dispatched on the merged segment's first verb and never searched for the second.
+# 240 deny→allow transitions over a 2189-input corpus (10 redirect forms × 4 unspaced
+# separators × 6 verb-mismatched pairs) — a larger corpus than the 48 generated below, which
+# pin the family rather than re-measure it. The verb-MISMATCHED pairs (checkout-then-switch and the
+# reverse) are the load-bearing ones — a same-verb pair still finds its create flag by
+# accident and would have hidden the bug.
+for _redir in '2>/dev/null' '>log' '1>>out' '2>&1' '>|log' '</dev/null' '&>/dev/null' '&>>log'; do
+  # `|cat;` NOT `|tee x;` — verified, not assumed. The buggy class this corpus guards against
+  # (`[^[:space:]]*`) stops at the FIRST whitespace, so a separator containing an internal
+  # space (`|tee x;`) halts the over-consumption before it ever reaches the `;` boundary the
+  # bug is about: all 12 such pins passed under both the correct and the buggy lib. A
+  # separator whose text has no internal space before the boundary is what discriminates.
+  for _sep in ';' '&&' '||' '|cat;'; do
+    for _pair in 'checkout main|switch -c foo' 'switch main|checkout -b foo'; do
+      _first=${_pair%%|*}; _second=${_pair##*|}
+      det cmd_is_git_branch_create "git ${_first} ${_redir}${_sep}git ${_second}" yes \
+        "corpus: 'git ${_first} ${_redir}${_sep}git ${_second}' still detected (unspaced separator after a redirect must not fuse clauses)"
+    done
+  done
+done
+# SLOT-POSITION dimension (review round 3). Everything above pins the redirect at the END of
+# clause 1, with the create in the OTHER clause — so the corpus was structurally unable to
+# exercise the one remaining code risk, the `[[:space:]]*<word>` target skip, which can only
+# damage tokens in the clause the redirect is IN. This block puts the redirect at each slot
+# inside the create clause itself. It is also what the `&>` family needed: `&>` was invisible
+# to the old operator class `[0-9]*[<>]+` (no leading `&`), so `git checkout &>/dev/null -b
+# foo` — a real create — reported not-a-create, and the suite stayed green because no pin put
+# a redirect there.
+for _r in '2>/dev/null' '&>/dev/null' '>|log' '2>&1'; do
+  # NOT pinned: `git 2>/dev/null checkout -b foo` (redirect BEFORE the subcommand) is a real
+  # create and is NOT detected. The segment extractor gets it right; the miss is in stage 1,
+  # `cmd_is_git_branch_create`'s anchored grep, which never sees the redirect-deleting sed.
+  # Pre-existing and identical on main. Fixing it means widening the SHARED
+  # _CMD_POS_PREFIX (which would also pick up the `git -C <path>` blindness), and this
+  # todo's Scope Contract explicitly forbids touching that anchor. Deliberately left as a
+  # documented residual rather than pinned to its wrong value -- a test asserting the
+  # current wrong answer would go red when someone fixes it, which is pinning the bug.
+  det cmd_is_git_branch_create "git checkout ${_r} -b foo"      yes "slot: redirect before the create FLAG (${_r})"
+  det cmd_is_git_branch_create "git checkout -b ${_r} foo"      yes "slot: redirect between flag and name (${_r})"
+  det cmd_is_git_branch_create "git checkout -b foo ${_r}"      yes "slot: redirect after the name (${_r})"
+  seg_clip "git checkout -b foo ${_r} origin/main" 'checkout -b foo  origin/main' \
+    "slot: a real start-point after ${_r} survives"
+done
+
+# SPACING dimension (review round 4, 2026-09-01 — a CRITICAL). Every ${_r} above has
+# whitespace baked into its template, so the corpus could not see a redirect GLUED to the
+# preceding word. That is not a cosmetic variant: `&` and `|` are in this extractor's own
+# terminator class, so a glued `&>`/`>&`/`>|` TRUNCATES the segment before the create flag and
+# a real create reports not-a-create. Verified by running git in a scratch repo —
+# `git checkout main&>/dev/null -b foo` and `git checkout -b foo&>/dev/null` both create the
+# branch. The round-3 fix required `(^|[[:space:]])` before the whole redirect, which is right
+# for the fd DIGITS and wrong for everything else; hence two sed expressions.
+#
+# The SUBCOMMAND slot (`git checkout>&2 -b foo`) is NOT pinned here. It fails one step
+# earlier, in stage 1's `_CMD_POS_SUFFIX` anchor, which this todo's Scope Contract forbids
+# touching — a separate defect with a separate fix, not something this sed can reach.
+for _r in '&>/dev/null' '&>>log' '>&2' '>|log' '>/dev/null' '2>/dev/null' '&>|log'; do
+  det cmd_is_git_branch_create "git checkout main${_r} -b foo"  yes "glued to the start-point word (${_r})"
+  det cmd_is_git_branch_create "git switch main${_r} -c foo"    yes "glued, switch form (${_r})"
+  det cmd_is_git_branch_create "git checkout -b foo${_r}"       yes "glued to the new branch NAME (${_r})"
+done
+# The other direction: deleting a glued redirect must not eat a REAL start-point.
+for _r in '&>/dev/null' '&>>log' '>&2' '>|log' '>/dev/null' '&>|log'; do
+  seg_clip "git checkout -b foo${_r} origin/main" 'checkout -b foo origin/main' \
+    "a real start-point after a GLUED ${_r} survives"
+done
+# The fd-DIGIT form is pinned SEPARATELY and deliberately, because bash attaches the digit to
+# the PRECEDING word rather than to the operator, and that flips the answer by slot:
+#   name slot      — `git checkout -b foo2>/dev/null` creates a branch called `foo2` (ran it).
+#   subcommand slot — `git checkout2>/dev/null -b foo` invokes `git checkout2`, which git
+#                     rejects: "'checkout2' is not a git command", exit 1, nothing created.
+# Folding either into the loops above would have pinned a wrong answer as if it were the fix.
+seg_clip 'git checkout -b foo2>/dev/null origin/main' 'checkout -b foo2 origin/main' \
+  'a glued fd DIGIT stays part of the branch NAME (bash creates foo2), start-point intact'
+det cmd_is_git_branch_create 'git checkout2>/dev/null -b foo' no \
+  'a glued fd digit makes it `git checkout2`, which is not a git command at all'
+det cmd_is_git_branch_create 'git switch2>>log -c foo'        no \
+  '...same for the switch form'
+
+# The clip direction of the same defect: an eaten separator also glued the NEXT clause's first
+# token in as a spurious start-point, so the stale-base check was skipped on a command that
+# named no start point at all — the exact bug this whole todo exists to close, surviving in
+# the unspaced form.
+seg_clip 'git checkout -b foo 2>/dev/null;git push'    'checkout -b foo' \
+  'an unspaced separator after a redirect does not glue the next clause in as a start-point'
+seg_clip 'git checkout -b foo >/dev/null&&npm test'    'checkout -b foo' \
+  'same, with && and no spaces'
+seg_clip 'git checkout -b foo 2>/dev/null|tee log'     'checkout -b foo' \
+  'same, with a pipe'
+# The `[&|]?` half of the redirect pattern had NO pin until review round 3 — reverting it to
+# `&?` alone left the whole 898-assertion suite green. `>|` is bash's noclobber-override
+# redirect: with `&?` the `|` is not consumed as part of the operator, the target-word class
+# then stops dead at it, and the REAL start-point after it is dropped — the exact
+# HAS_START_POINT flip this entire todo exists to prevent. Two spaces in the expectation are
+# real: the deletion leaves the separator space plus the space before the start-point.
+seg_clip 'git checkout -b foo >|log origin/main' 'checkout -b foo  origin/main' \
+  'the noclobber >| operator is consumed as one unit and a real start-point after it survives'
+
 echo "--- _CMD_POS_PREFIX/_CMD_POS_SUFFIX: brace/backtick/bang/separator boundaries ---"
 # The shared anchor omitted `{`, backtick, and `!` as openers, and `;`/`&`/`|`/backtick/
 # `{`/`}` as closers — so a brace-grouped, backtick-substituted, `!`-prefixed, or

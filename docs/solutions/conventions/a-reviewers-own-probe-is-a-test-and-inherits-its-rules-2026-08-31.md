@@ -6,14 +6,16 @@ tags: [harness, testing, agents, code-review, probes, evidence, negative-control
 module: shared
 applies_to: [.claude/agents/*.md, .claude/hooks/*.sh, .claude/skills/*/SKILL.md]
 created: '2026-08-31'
+last_updated: '2026-09-01'
 ---
 
 # A reviewer's own probe is a test and inherits every rule tests have
 
 ## Rule
 
-Two separate claims. Both are about how a **review is conducted**, not about how the code
-under review is written.
+Four separate claims. All are about how a **review is conducted**, not about how the code
+under review is written. Clauses 3 and 4 were added on 2026-09-01 after each was violated —
+in the same session, by the author of clauses 1 and 2.
 
 1. **Verify a behavioural claim against the artifact — prefer execution wherever execution
    is possible.** For a guard, parser, or predicate, "this input is rejected" / "this form
@@ -26,6 +28,17 @@ under review is written.
    can see anything at all — and a **negative control** — an input that MUST NOT, proving
    it is not simply failing everything. Without both, a probe that answers "fine" to every
    input is indistinguishable from a clean bill of health.
+
+3. **A probe runs in an environment, and inherits that environment's rules too.** Before
+   trusting a probe, name the interpreter/runtime it actually ran under and assert it in the
+   probe's own output. A probe that silently runs somewhere other than production does not
+   fail — it answers confidently about the wrong system.
+
+4. **A probe's verdict is bounded by its INPUTS, and a hand-listed corpus is a copy of your
+   own blind spot.** Generate the corpus combinatorially from its dimensions rather than
+   listing the cases you already suspect, and report any count together with the corpus that
+   produced it — "9 regressions" reads as a property of the change when it is a property of
+   the inputs.
 
 ## When this applies
 
@@ -94,6 +107,100 @@ subject; handing that same string to a shell is not.
 Uncontrolled, and worthless: only the third line. It cannot distinguish "the subject is
 safe" from "this harness denies nothing."
 
+## Clause 3 in practice: the probe ran in a different shell than the code (2026-09-01)
+
+While fixing a bash PreToolUse hook, a harness replicating the hook's argument loop reported
+**every** case as correct — including cases that were, in fact, broken. The negative controls
+were the only thing that exposed it: three cases that *must* have returned 1 also returned 0,
+and "everything returns 0" is not a result, it is a broken instrument.
+
+Cause: the interactive Bash tool in this environment executes **zsh**, while the hooks run
+under **bash**. zsh does not word-split unquoted parameter expansions, so
+
+```bash
+SEGMENT="checkout -b foo origin/main"
+set -- $SEGMENT     # bash: 4 args.  zsh: 1 arg.
+```
+
+collapsed the loop to a single iteration and every path fell through to the default. The
+subject was fine; the instrument was measuring a different language.
+
+What makes this worth its own clause rather than a footnote: **the rule already existed and
+had already been delivered.** `docs/rules/harness.md` states "Scripts run under `bash`, not
+the interactive zsh you paste into: zsh does not word-split unquoted expansions", and the
+pattern-injection hook had put that file in context earlier in the same session. It did not
+fire, because it reads as a rule about *shipped scripts* — and a throwaway verification
+snippet does not feel like a script. That is exactly the gap this document exists to close:
+the probe is a test, and it inherits the environment constraints as well as the control
+requirements.
+
+The fix is one line, and it belongs in every probe rather than in anyone's memory — an
+assertion that fails loudly when the assumption is wrong:
+
+```bash
+_probe_seg="a b c"                       # PARAMETER EXPANSION, not $( ) — see below
+set -f; set -- $_probe_seg; set +f
+[ "$#" = 3 ] || { echo "FATAL: probe is not running under bash ($# != 3)"; exit 2; }
+```
+
+**The first version of this snippet was itself non-discriminating, which is worth keeping as
+the sharpest example in this document.** It read `set -- $(printf 'a b c')` — command
+substitution. zsh word-splits unquoted **command substitution**; what it does *not* split is
+unquoted **parameter expansion**, and parameter expansion is what the real harness used
+(`set -- $SEGMENT`). Measured, one file run under both shells:
+
+| form                       | bash | zsh |
+| -------------------------- | ---- | --- |
+| `set -- $(printf 'a b c')` | 3    | 3   |
+| `set -- $SEG`              | 4    | 1   |
+
+So the published assertion returned 3 everywhere and could never fail — a self-test with no
+failure mode, guarding against a bug it could not see, inside the document that warns about
+exactly that. It survived because it *looked* like a control. Two rules fall out: a
+self-test must exercise **the same construct the probe depends on**, not a near neighbour;
+and it must be checked the only way any control can be — by running it in the failing
+condition and confirming it goes red. Caught by review, not by the author.
+
+Generalised: if the subject runs under a specific interpreter, container, node version, shell,
+or database, the probe must **assert** it rather than assume it — and the assertion belongs in
+the probe's visible output, so a wrong environment is impossible to read as a clean result.
+
+## Clause 4: a differential's number is a property of its CORPUS, not of the change (2026-09-01)
+
+The strongest instrument in this document is the differential — replay one corpus through the
+pre- and post-change implementation and assert no verdict regressed. It found 9 real
+deny→allow regressions where a 833-assertion suite found none, and it is the right first
+artefact whenever a matcher's grammar changes.
+
+It then reported **0 regressions** on the repair — and was wrong. A reviewer's combinatorial
+corpus found **240**. The harness was sound: two-sided, self-tested, correctly comparing.
+Every command in *my* corpus kept the redirect inside a single clause, because I wrote the
+corpus by listing the cases I had already thought of — so it was a faithful copy of my own
+blind spot, and it returned the reassuring answer with full machinery behind it.
+
+**A differential inherits the coverage of its inputs and nothing more.** A hand-listed corpus
+tests the hypotheses the author already holds; that is the one thing a regression check must
+not do. So:
+
+- **Generate the corpus combinatorially** — enumerate the dimensions (here: redirect form ×
+  separator × verb pair) and take the product. The product contains the cases you would not
+  have listed, which is the entire point.
+- **Name the dimension that can mask the bug.** Here it was the *verb pair*: a
+  `checkout`-then-`checkout` pair still finds a create flag by accident and passes, so only
+  the mismatched pairs (`checkout` then `switch`) expose the clause merge. A corpus that
+  varies only the interesting-looking axis will miss it.
+- **Quote the number with its corpus.** "The differential found 9 regressions" reads as a
+  property of the change; it is a property of the inputs. Report it as "9 over N inputs
+  spanning X and Y" so the next reader can see what was not spanned.
+
+A related failure from the same round, worth stating plainly because it is easy to do while
+feeling rigorous: the commit that introduced a reviewer rule *requiring* a differential
+shipped the differential as **prose describing itself**, not as a runnable artefact. A
+verification that exists only in a commit message cannot be re-run by the next change. Land
+the corpus as a test. Where the natural form is "replay against the previous version", note
+that after merge the previous version becomes the current one and such a test passes forever
+— pin the invariant it was measuring instead.
+
 ## Exceptions
 
 **Never construct-and-run a fragment whose exec target is an outward-facing, PATH-resolved
@@ -107,7 +214,7 @@ applied to the stub itself.
 
 ## Related Files
 
-- `docs/AI_WORKFLOW.md` — the Review Policy dispatch prompt carries both clauses; it is the
+- `docs/AI_WORKFLOW.md` — the Review Policy dispatch prompt carries clauses 1, 2 and 4; it is the
   single shared surface every dispatched reviewer reads, roster and generic-skill alike.
 - `.claude/agents/code-reviewer.md` — its Read-Only Contract carries the outward-CLI
   prohibition above; its `## Remember` already requires the command behind a *bounding*

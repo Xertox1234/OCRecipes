@@ -361,7 +361,11 @@ case "$CMD" in "ALLOW_OUTWARD_CLI=1 "*) exit 0 ;; esac
 #
 # Stage 1 is the zero-copy glob on raw $CMD and catches every normal command.
 # Stage 2 runs ONLY on a stage-1 miss and re-tests with the characters cmd_words
-# can delete — quotes, backslashes, newlines — removed. Soundness: cmd_words only
+# can delete — quotes, backslashes, newlines — removed. (2026-09-01: cmd_words' neutral()
+# gained `<`, `>`, `#`. That does NOT extend this list — neutral() REPLACES those with the
+# placeholder inside a quoted span, it does not delete them, so the "can delete" set is
+# unchanged and the soundness argument below carries the widening on the INSERTS half.)
+# Soundness: cmd_words only
 # ever DELETES those, or INSERTS the letter `x`, and none of the needles below
 # contains an `x`; so every needle $WORDS can synthesise is already a substring
 # of stage 2's text. That makes this a superset by construction, which is exactly
