@@ -326,6 +326,88 @@ git -C "$REPO" merge --ff-only "origin/$INITIAL_BRANCH" -q 2>/dev/null
 
 unset GIT_DIR GIT_WORK_TREE
 
+# --- Tests 20a-20k (2026-09-01): the hook must judge the RIGHT REPOSITORY --------------
+# `git -C <path>` was invisible to every cmd_is_git_* matcher until now, so both checks above
+# only ever ran against this hook's own cwd and were silently right by accident. Making the
+# matcher see `-C` without also resolving the repo would have been a REGRESSION, not a fix:
+# a correct command in another repo would be judged against this one. These pin the pairing
+# end-to-end, against the real hook, because the resolution is consumed inline here — the
+# lib-level pins in test-cmd-detect.sh cannot show the consequence.
+#
+# These run with cwd-based discovery and GIT_DIR/GIT_WORK_TREE UNSET, unlike the tests above.
+# That is required, not stylistic: an exported GIT_DIR OVERRIDES `git -C`, so under this
+# file's usual `export GIT_DIR=...` harness every `-C` here would be silently ignored and all
+# eleven assertions would pass while testing nothing. (That override is also a real residual
+# of the fix itself — an ambient GIT_DIR in the hook's own environment is unseeable at the
+# command-string layer, the same residual git-safety.sh documents for its own -C handling.)
+REPO_DETACHED=$(mktemp -d)
+trap 'rm -rf "$REPO" "${BAREORIGIN:-}" "${REPO_DETACHED:-}"' EXIT
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$REPO_DETACHED" init -q
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$REPO_DETACHED" config user.email "t@t"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$REPO_DETACHED" config user.name "T"
+echo y > "$REPO_DETACHED/y.txt"
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$REPO_DETACHED" add y.txt
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$REPO_DETACHED" commit -q -m init
+env -u GIT_DIR -u GIT_WORK_TREE git -C "$REPO_DETACHED" checkout -q --detach HEAD
+
+# run_hook_in <cwd> <command>
+run_hook_in() {
+  local dir="$1" cmd="$2" input
+  input=$(jq -n --arg c "$cmd" '{"tool_name":"Bash","tool_input":{"command":$c}}')
+  printf '%s' "$input" | env -u GIT_DIR -u GIT_WORK_TREE bash -c 'cd "$1" && bash "$2" 2>/dev/null' _ "$dir" "$HOOK"
+}
+
+# Harness control FIRST: if cwd-based discovery does not work here, every assertion below
+# passes vacuously. Prove both verdicts are reachable through run_hook_in before using it.
+OUT=$(run_hook_in "$REPO_DETACHED" "git commit -m x")
+assert_deny "control: run_hook_in reaches a DENY via cwd discovery" "$OUT"
+OUT=$(run_hook_in "$REPO" "git commit -m x")
+assert_silent "control: run_hook_in reaches a SILENT via cwd discovery" "$OUT"
+
+# THE FIX. A commit into a detached repo elsewhere was invisible; now it is judged there.
+OUT=$(run_hook_in "$REPO" "git -C $REPO_DETACHED commit -m x")
+assert_deny "a commit redirected by -C into a DETACHED repo is denied from a healthy cwd" "$OUT"
+
+# The mirror, and the reason resolution is not optional: a commit into a HEALTHY repo must
+# NOT inherit this cwd's detached verdict. Widening the matcher without resolving the repo
+# would fail exactly here.
+OUT=$(run_hook_in "$REPO_DETACHED" "git -C $REPO commit -m x")
+assert_silent "a commit redirected by -C into a HEALTHY repo is silent from a detached cwd" "$OUT"
+
+# DENY PRESERVATION. The second invocation really does commit in the detached cwd, and the
+# gate denied on it before this change. Resolving the whole command to the -C target would
+# turn that into an ALLOW — a deny→allow transition in a data-loss gate.
+OUT=$(run_hook_in "$REPO_DETACHED" "git -C $REPO commit -m x && git commit -m y")
+assert_deny "an unredirected commit alongside a redirected one still denies for THIS repo" "$OUT"
+
+# Unresolvable redirects fall back to SKIP — the pre-2026-09-01 behaviour, never a guess.
+OUT=$(run_hook_in "$REPO_DETACHED" 'git -C "$WORKTREE" commit -m x')
+assert_silent "an unexpanded \$VAR -C path is skipped, not judged against cwd" "$OUT"
+OUT=$(run_hook_in "$REPO_DETACHED" "git -C ../elsewhere commit -m x")
+assert_silent "a relative -C path is skipped, not judged against cwd" "$OUT"
+# A path that does not exist must not read as "detached" — every query returns empty there,
+# which is indistinguishable from a detached HEAD without the per-check rev-parse probe.
+OUT=$(run_hook_in "$REPO_DETACHED" "git -C /nonexistent/definitely commit -m x")
+assert_silent "a -C path that is not a repo is skipped, not read as a detached HEAD" "$OUT"
+
+# `-C` AFTER the verb is `git commit -C <commit>` (reuse that message) — a different flag.
+# Mining it would route this gate away from cwd and silently drop a real data-loss deny.
+OUT=$(run_hook_in "$REPO_DETACHED" "git commit -C HEAD")
+assert_deny "a POST-verb -C (message reuse) still denies on a detached cwd" "$OUT"
+
+# The other half of the anchor fix, end-to-end: a redirect before the command word, and a
+# git global before the subcommand, were both invisible to the matcher.
+OUT=$(run_hook_in "$REPO_DETACHED" "2>/dev/null git commit -m x")
+assert_deny "a redirect BEFORE the command word no longer hides a detached-HEAD commit" "$OUT"
+OUT=$(run_hook_in "$REPO_DETACHED" "git --no-pager commit -m x")
+assert_deny "a git global before the subcommand no longer hides a detached-HEAD commit" "$OUT"
+
+# CHECK 2 through the same path: the stale-base gate must follow -C too. $REPO is current
+# here, so advance the remote first to make it stale again, then judge it from ELSEWHERE.
+advance_remote "z.txt" "landed while we were looking at another repo"
+OUT=$(run_hook_in "$REPO_DETACHED" "git -C $REPO checkout -b feature/ten")
+assert_deny "the stale-base check follows -C into another repo" "$OUT"
+
 # --- Hermeticity guard: prove the caller's real repo is byte-for-byte untouched. ---
 # If an inherited GIT_DIR ever defeats the temp-repo isolation again, this fails loudly in
 # CI/preflight instead of silently corrupting the working repo (the todos P2 git-churn bug).

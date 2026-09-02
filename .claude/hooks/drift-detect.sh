@@ -50,8 +50,20 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit_or_push >/dev/null || exit 0
 cmd_is_git_commit_or_push "$CMD" || exit 0
 
+# The drift baseline is keyed by SESSION and holds THIS cwd's HEAD — there is no per-repo
+# baseline. A `git -C /elsewhere` op therefore says nothing about it: warning about cwd drift here would be off-topic. Both
+# were invisible to the matcher before 2026-09-01, so skipping keeps the behaviour that was
+# already correct here instead of inventing a cross-repo one. An unresolvable redirect skips
+# for the same reason. `git -C <this repo>` spelled out in full still proceeds — the identity
+# test compares resolved git dirs, not path strings.
+REPO=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT_PUSH") || exit 0
+
 # Ensure we're inside a git repo.
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+if [ "$REPO" != "." ] && \
+   [ "$(git -C "$REPO" rev-parse --absolute-git-dir 2>/dev/null)" != "$(git rev-parse --absolute-git-dir 2>/dev/null)" ]; then
+  exit 0
+fi
 
 SESSION=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null || echo "")
 if [ -z "$SESSION" ]; then

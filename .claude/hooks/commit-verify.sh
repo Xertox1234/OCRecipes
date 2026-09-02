@@ -43,10 +43,18 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit >/dev/null || exit 0
 cmd_is_git_commit "$CMD" || exit 0
 
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+# WHICH repo did it commit in? `git -C <path> commit` became visible to the matcher above on
+# 2026-09-01; before that this hook simply never fired on it. Reporting cwd's staged set for
+# a commit made somewhere else would be actively misleading — the whole message is "these
+# files are STILL staged", and they would be a different repo's files. `.` for the ordinary
+# case; an unresolvable redirect exits silently, which is this hook's pre-2026-09-01
+# behaviour on such a command and the safe direction for a non-blocking advisory.
+REPO=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT") || exit 0
 
-STAGED=$(git diff --cached --name-only 2>/dev/null || true)
-HEAD_LINE=$(git log --oneline -1 2>/dev/null || echo "(no commits yet)")
+git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+
+STAGED=$(git -C "$REPO" diff --cached --name-only 2>/dev/null || true)
+HEAD_LINE=$(git -C "$REPO" log --oneline -1 2>/dev/null || echo "(no commits yet)")
 
 # Clean success (no staged changes remain) is the common case — stay silent to
 # avoid a per-commit context message. Only speak on the anomaly worth flagging.

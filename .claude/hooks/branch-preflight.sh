@@ -42,14 +42,26 @@ if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit >/dev
   LIB_OK=1
 fi
 
-git rev-parse --git-dir >/dev/null 2>&1 || exit 0
-
 REASON=""
+
+# WHICH REPOSITORY does the command act on? (2026-09-01.) Both checks below read HEAD, the
+# branch, and the upstream — until now always from this hook's own cwd, which was correct
+# only because `git -C <path>` was invisible to the matchers. Now that it is visible, each
+# check must resolve its own repo, and it must do so with ITS OWN verb set: for
+# `git -C /wt checkout -b foo && git commit`, check 1 is about cwd and check 2 is about /wt,
+# and a single shared answer would be wrong for one of them. `.` means cwd. A resolution
+# FAILURE means the command redirects somewhere unresolvable (a `$VAR` path, a relative -C,
+# --git-dir) — that check is then SKIPPED, which is exactly its pre-2026-09-01 behaviour on
+# such a command, never a new judgement against the wrong repo.
+REPO_COMMIT="."
+REPO_BRANCH="."
 
 # --- Check 1: detached-HEAD commit (unchanged behavior) ------------------------
 IS_COMMIT=0
 if [ "$LIB_OK" = 1 ]; then
-  cmd_is_git_commit "$CMD" && IS_COMMIT=1
+  if cmd_is_git_commit "$CMD"; then
+    REPO_COMMIT=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT") && IS_COMMIT=1 || REPO_COMMIT="."
+  fi
 else
   # Lib unsourceable → this half of the gate is BLOCKING, so fail CLOSED: keep the raw
   # (quote-unaware) match so a real detached-HEAD commit is still caught. A quoted mention
@@ -66,6 +78,13 @@ else
   # COMPOUND_COMMIT_RE specifically (not GIT_COMMIT_RE), a `-c key=value` group before
   # `commit`. All five require the rare precondition of the shared lib being unsourceable —
   # see todos/ for tracked hardening work.
+  # A SIXTH divergence, in the opposite direction, opened on 2026-09-01: this fallback is
+  # repo-UNAWARE, so on `git -C /elsewhere commit` it can DENY (judging cwd's HEAD) where the
+  # primary path now SKIPS. That is the safe direction for a data-loss gate under a broken
+  # install — a spurious deny is recoverable, an unreachable commit is not — but it is a real
+  # divergence and is recorded here rather than left for the next reader to rediscover. It is
+  # also unreachable in the normal case: the fallback runs only when lib/cmd-detect.sh cannot
+  # be sourced at all.
   GIT_COMMIT_RE='^[[:space:]]*[`{!]?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
   COMPOUND_COMMIT_RE='(&&|\|\||;|[`{!])[[:space:]]*git[[:space:]]+commit([[:space:]]|$)'
   if [[ "$CMD" =~ $GIT_COMMIT_RE ]] || printf '%s' "$CMD" | grep -qE "$COMPOUND_COMMIT_RE"; then
@@ -73,19 +92,27 @@ else
   fi
 fi
 
-if [ "$IS_COMMIT" = 1 ]; then
-  HEAD_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-  BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+# The `rev-parse --git-dir` probe is per-CHECK, not one global pre-guard as before: with a
+# resolved `-C` target the question "is this a repo" is about THAT directory, and it also
+# subsumes the existence check cmd_git_repo_dir deliberately does not perform. Without it a
+# non-existent path would make every query below return empty and read as a detached HEAD.
+if [ "$IS_COMMIT" = 1 ] && git -C "$REPO_COMMIT" rev-parse --git-dir >/dev/null 2>&1; then
+  HEAD_SHA=$(git -C "$REPO_COMMIT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  BRANCH=$(git -C "$REPO_COMMIT" symbolic-ref --short HEAD 2>/dev/null || echo "")
   if [ -z "$BRANCH" ]; then
-    REASON="HEAD is detached (at ${HEAD_SHA}) — committing here creates an unreachable commit. Create a named branch first: git switch -c <branch-name>"
+    WHERE=""
+    [ "$REPO_COMMIT" = "." ] || WHERE=" in ${REPO_COMMIT}"
+    REASON="HEAD is detached${WHERE} (at ${HEAD_SHA}) — committing here creates an unreachable commit. Create a named branch first: git switch -c <branch-name>"
   fi
 fi
 
 # --- Check 2: branch-create off a stale base (new, 2026-08-28) -----------------
 # Only evaluated when check 1 found nothing to deny — see the module comment: exactly one
 # decision is emitted per invocation, never two.
-if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD"; then
-  BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD" \
+   && REPO_BRANCH=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_BRANCH") \
+   && git -C "$REPO_BRANCH" rev-parse --git-dir >/dev/null 2>&1; then
+  BRANCH=$(git -C "$REPO_BRANCH" symbolic-ref --short HEAD 2>/dev/null || echo "")
   if [ -n "$BRANCH" ]; then
     # Does the command give an explicit start-point beyond the new branch's own name
     # (`git checkout -b foo origin/main`)? If so it isn't relying on local's possibly-stale
@@ -123,12 +150,12 @@ if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD"; the
     done
 
     if [ "$HAS_START_POINT" = 0 ]; then
-      REMOTE=$(git config "branch.${BRANCH}.remote" 2>/dev/null || echo "")
+      REMOTE=$(git -C "$REPO_BRANCH" config "branch.${BRANCH}.remote" 2>/dev/null || echo "")
       # branch.<name>.merge (e.g. "refs/heads/main") names the ACTUAL remote branch this one
       # tracks — do not assume it shares the local branch's own name (review, 2026-08-28: a
       # branch created via `checkout -b wip origin/main` tracks origin/main, not origin/wip,
       # and fetching the wrong-named ref is a silent no-op that misses real drift).
-      MERGE_REF=$(git config "branch.${BRANCH}.merge" 2>/dev/null || echo "")
+      MERGE_REF=$(git -C "$REPO_BRANCH" config "branch.${BRANCH}.merge" 2>/dev/null || echo "")
       REMOTE_BRANCH="${MERGE_REF#refs/heads/}"
       if [ -n "$REMOTE" ] && [ -n "$REMOTE_BRANCH" ] && [ "$REMOTE_BRANCH" != "$MERGE_REF" ]; then
         # Fetch into the explicit remote-tracking ref — never read FETCH_HEAD (shared across
@@ -138,11 +165,11 @@ if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD"; the
         # hook-timeout (.claude/settings.json, currently 10s) treats a killed process as deny
         # rather than allow, a dead network could turn this hygiene-only check into an
         # unintended block — unverified either way; accepted for now, worth revisiting if seen.
-        git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
+        git -C "$REPO_BRANCH" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
           "$REMOTE" "${MERGE_REF}:refs/remotes/${REMOTE}/${REMOTE_BRANCH}" 2>/dev/null
-        BEHIND=$(git rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo "")
+        BEHIND=$(git -C "$REPO_BRANCH" rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo "")
         if [ -n "$BEHIND" ] && [ "$BEHIND" -gt 0 ] 2>/dev/null; then
-          UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo "${REMOTE}/${REMOTE_BRANCH}")
+          UPSTREAM=$(git -C "$REPO_BRANCH" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo "${REMOTE}/${REMOTE_BRANCH}")
           REASON="Local branch '${BRANCH}' is ${BEHIND} commit(s) behind its upstream (${UPSTREAM}) — branching now risks redoing or duplicating work that already merged there. Run: git fetch ${REMOTE} ${REMOTE_BRANCH} && git merge --ff-only ${UPSTREAM} — then retry. Emergency bypass: SKIP_BRANCH_PREFLIGHT=1."
         fi
       fi

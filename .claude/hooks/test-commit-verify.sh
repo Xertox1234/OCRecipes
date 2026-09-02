@@ -139,6 +139,38 @@ git -C "$TMPDIR_REPO" commit -q -m "clean8" 2>/dev/null || true
 
 unset GIT_DIR GIT_WORK_TREE
 
+# --- Repo-redirected commits (2026-09-01) ---------------------------------------------
+# `git -C <path> commit` became visible to cmd_is_git_commit on 2026-09-01, so this hook now
+# fires on it for the first time. Its whole message is "these files are STILL staged after
+# the command" — read from cwd, those would be a DIFFERENT repo's files, which is worse than
+# staying silent. The queries follow the resolved repo instead.
+# cwd-based with GIT_DIR/GIT_WORK_TREE unset: an exported GIT_DIR overrides `git -C`, so
+# under this file's usual harness every assertion below would pass while testing nothing.
+OTHER_REPO=$(mktemp -d)
+git -C "$OTHER_REPO" init -q
+git -C "$OTHER_REPO" config user.email "test@test"
+git -C "$OTHER_REPO" config user.name "Test"
+echo o > "$OTHER_REPO/o.txt"; git -C "$OTHER_REPO" add o.txt; git -C "$OTHER_REPO" commit -q -m init
+echo leftover > "$OTHER_REPO/still-staged.txt"; git -C "$OTHER_REPO" add still-staged.txt
+
+run_hook_in() {
+  local dir="$1" cmd="$2" input
+  input=$(jq -n --arg c "$cmd" '{"tool_name":"Bash","tool_input":{"command":$c}}')
+  printf '%s' "$input" | env -u GIT_DIR -u GIT_WORK_TREE \
+    bash -c 'cd "$1" && bash "$2" 2>/dev/null' _ "$dir" "$HOOK"
+}
+# $TMPDIR_REPO is clean here (the preceding case committed), $OTHER_REPO has a staged file.
+# So each assertion below can only pass by reading the repo it names.
+OUT=$(run_hook_in "$TMPDIR_REPO" "git commit -m x")
+assert_silent "control: a clean cwd repo is silent through run_hook_in" "$OUT"
+OUT=$(run_hook_in "$TMPDIR_REPO" "git -C $OTHER_REPO commit -m x")
+assert_contains "a -C commit reports the TARGET repo's leftover staged file" "still-staged.txt" "$OUT"
+OUT=$(run_hook_in "$OTHER_REPO" "git -C $TMPDIR_REPO commit -m x")
+assert_silent "...and reports nothing when the TARGET is clean, though cwd is not" "$OUT"
+OUT=$(run_hook_in "$OTHER_REPO" 'git -C "$WORKTREE" commit -m x')
+assert_silent "an unresolvable -C is skipped rather than reported against cwd" "$OUT"
+rm -rf "$OTHER_REPO"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
