@@ -18,8 +18,17 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 case "$TOOL" in
   Bash)
     CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
-    # Necessary-substring fast path. This hook runs on EVERY Bash tool call, so keep the hot path
-    # cheap (per project_per_bash_hook_overhead).
+    # Fork-free: a $(cd ...) subshell here would be the ENTIRE added cost of reaching the
+    # shared fast-path helper below (measured ~1.9ms/call; sourcing itself is free) — this
+    # HERE now runs on every Bash tool call, not just ones that already matched the old
+    # inline filter. The */*) arm is load-bearing: a bare "${BASH_SOURCE[0]%/*}" returns the
+    # filename unchanged when invoked with no slash, the source below then fails, and (absent
+    # the fall-through design below) could silently skip this DENY gate.
+    case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
+
+    # Necessary-substring fast path via the shared helper (lib/fastpath-filter.sh). This hook
+    # runs on EVERY Bash tool call, so keep the hot path cheap (per
+    # project_per_bash_hook_overhead).
     #
     # It matched RAW $CMD until 2026-08-16, justified as "cmd_bare only BLANKS characters (never
     # inserts or moves them), so this is a strict superset of the matcher". That premise died when
@@ -27,22 +36,16 @@ case "$TOOL" in
     # synthesises literals absent from the raw text: `g"h" pr create --fill` contains no `gh`, so
     # the raw filter exited 0 and this DENY gate never ran — a PR openable with no preflight stamp.
     # Filtering the SAME text the matcher reads is a superset by construction, not by assumption.
-    # STAGE 1 — zero-copy glob on raw $CMD, before the lib is sourced or any awk runs.
-    # STAGE 2 — only on a stage-1 miss, retest with the characters cmd_words can DELETE
-    # (quotes, backslashes, newlines) removed. cmd_words only deletes those or inserts the
-    # letter `x`, and none of `gh`/`pr`/`create` contains an `x`, so any needle the rendering
-    # could synthesise is already a substring here: a superset by construction. Four literal
-    # substitutions, not one bracket class — the class form costs ~1450ms on a 3KB command
-    # under bash 3.2 versus ~5.5ms for these (measured; do not "simplify").
-    _PRE=0
-    case "$CMD" in *gh*pr*create*) _PRE=1 ;; esac
-    if [ "$_PRE" = 0 ]; then
-      _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}; _T=${_T//\$/}
-      case "$_T" in *gh*pr*create*) _PRE=1 ;; esac
+    # '*gh*pr*create*' is ONE ordered pattern (gh, then pr, then create, in that order) — not
+    # three alternatives — and must stay a single argument to the helper, never split into
+    # three (that would change the semantics to "any of gh/pr/create present").
+    #
+    # If the helper is unsourceable, do NOT exit here — fall through to the primary/fallback
+    # split below, which already has its own tested fail-toward-deny handling; losing the
+    # cheap pre-filter only costs performance in that (broken-install) case, never a decision.
+    if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
+      cmd_fastpath_has "$CMD" '*gh*pr*create*' || exit 0
     fi
-    [ "$_PRE" = 1 ] || exit 0
-
-    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_words >/dev/null; then
       words=$(printf '%s' "$CMD" | cmd_words)
       # An empty rendering from a NON-empty command means the awk backend is missing or broken

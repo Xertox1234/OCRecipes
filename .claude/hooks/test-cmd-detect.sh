@@ -16,8 +16,13 @@
 # its (now-fixed) matcher is ever asked. That affected commit-verify,
 # drift-detect, drift-detect-update, pr-preflight-guard, branch-preflight and
 # core-bare-guard; branch-preflight and pr-preflight-guard are blocking gates.
-# The final block in this file enumerates the fast paths rather than naming them,
-# so a NEW hook with a raw single-stage filter fails here instead of in prod.
+# (2026-09-02: that two-stage filter moved out of the 6 hooks above and
+# guard-outward-cli.sh into the shared lib/fastpath-filter.sh — see
+# todos/archive/P3-2026-08-16-extract-shared-fastpath-filter-helper.md. The final
+# blocks in this file replace the old textual "grep for the inline block" scan
+# with an EXECUTED probe per hook plus a mutation check, and retain a generic
+# directory scan so a NEW hook that hand-rolls a raw single-stage filter still
+# fails here instead of in prod.)
 #
 # The two renderings are NOT interchangeable and this file pins both directions:
 # merging them re-breaks either flag-presence checks (a quoted `--auto` must not
@@ -27,7 +32,19 @@ set -uo pipefail
 
 HOOKDIR="$(cd "$(dirname "$0")" && pwd)"
 LIB="$HOOKDIR/lib/cmd-detect.sh"
+FPLIB="$HOOKDIR/lib/fastpath-filter.sh"
 PASS=0; FAIL=0
+
+# PID-scoped session id for the "HERE resolution" block's drift-detect.sh/drift-detect-update.sh
+# probes below (mirrors test-drift-detect.sh's own TEST_SESSION convention) — a fixed literal
+# session id would collide across concurrent runs of this file and leak an uncleaned baseline
+# file into /tmp (code review, 2026-09-02).
+TEST_SESSION="test-cmd-detect-bare-here-probe-$$"
+BARE_HERE_BASELINE="/tmp/claude-drift-detect-${TEST_SESSION}"
+cleanup() {
+  rm -f "$BARE_HERE_BASELINE"
+}
+trap cleanup EXIT
 
 # Harness control: a probe that cannot see the thing it tests reports a clean
 # bill of health. Prove the lib sourced and the functions exist before asserting.
@@ -764,40 +781,220 @@ det cmd_is_git_head_mover     'git status'  no  "constant check: status is NOT a
 det cmd_is_git_commit_or_push 'git rebase main' no "constant check: rebase is NOT in _CMD_GIT_VERBS_COMMIT_PUSH"
 det cmd_is_git_commit         'git push'    no  "constant check: push is NOT in _CMD_GIT_VERBS_COMMIT"
 
-echo "--- EVERY hook's necessary-substring fast path must be quote-tolerant ---"
-# A hook whose matcher reads cmd_words but whose fast path globs RAW $CMD exits
-# before the matcher is ever asked: `git com"mit"` holds no literal `commit`.
-# That silently disabled five gates, one of them blocking, while the lib itself
-# detected the form. This enumerates the fast paths instead of naming them, so a
-# NEW hook that adds a raw single-stage filter fails here rather than in prod.
+echo "--- lib/fastpath-filter.sh: cmd_fastpath_has is genuinely two-stage (executed, not textual) ---"
+# shellcheck source=/dev/null
+. "$FPLIB" || { echo "FAIL: lib/fastpath-filter.sh is not sourceable"; FAIL=$((FAIL+1)); }
+declare -F cmd_fastpath_has >/dev/null || { echo "FAIL: cmd_fastpath_has is not defined by lib/fastpath-filter.sh"; FAIL=$((FAIL+1)); }
+
+# fp_probe <label> <cmd> <want:yes|no> <pattern...> — calls the REAL cmd_fastpath_has (never a
+# re-implementation) with the SAME pattern arguments the named hook's own source passes it. Each
+# "yes" case is a quote/backslash/newline/$-DISGUISED command that a raw single-stage filter
+# would MISS (no literal needle substring present) — this is the executed replacement for the
+# old textual "grep for _T=${CMD//" scan: it runs the real two-stage logic on a real bypass
+# attempt instead of pattern-matching the source text that implements it.
+fp_probe() {
+  local label="$1" cmd="$2" want="$3"; shift 3
+  local got=no
+  cmd_fastpath_has "$cmd" "$@" && got=yes
+  if [ "$got" = "$want" ]; then
+    echo "PASS: $label"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $label (got=$got want=$want cmd=[$cmd])"; FAIL=$((FAIL+1))
+  fi
+}
+
+fp_probe "branch-preflight: quoted commit bypasses raw glob"   'git com"mit" -m x'     yes '*commit*' '*checkout*' '*switch*'
+fp_probe "branch-preflight: quoted checkout bypasses raw glob" 'git check"out" -b x'   yes '*commit*' '*checkout*' '*switch*'
+fp_probe "branch-preflight: quoted switch bypasses raw glob"   'git swit"ch" main'     yes '*commit*' '*checkout*' '*switch*'
+fp_probe "branch-preflight: unrelated command stays out"       'ls -la'                no  '*commit*' '*checkout*' '*switch*'
+fp_probe "commit-verify: quoted commit bypasses raw glob"      'git com"mit" -m x'     yes '*commit*'
+fp_probe "commit-verify: unrelated command stays out"          'git status'            no  '*commit*'
+fp_probe "core-bare-guard: quoted git bypasses raw glob"       'g"i"t status'          yes '*git*'
+fp_probe "core-bare-guard: unrelated command stays out"        'npm test'              no  '*git*'
+fp_probe "drift-detect: quoted git bypasses raw glob"          'g"i"t push'            yes '*git*'
+fp_probe "drift-detect-update: quoted git bypasses raw glob"   'g"i"t commit -m x'     yes '*git*'
+fp_probe "guard-outward-cli: quoted eas bypasses raw glob"     'e"a"s update'          yes '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*'
+fp_probe "guard-outward-cli: quoted gh bypasses raw glob"      'g"h" pr merge 1'       yes '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*'
+fp_probe "guard-outward-cli: unrelated command stays out"      'git status'            no  '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*'
+fp_probe "pr-preflight-guard: quoted gh-pr-create (ordered)"   'g"h" pr create --fill' yes '*gh*pr*create*'
+fp_probe "pr-preflight-guard: gh present, not pr-create"       'gh issue create'       no  '*gh*pr*create*'
+fp_probe "pr-preflight-guard: unrelated command stays out"     'ls -la'                no  '*gh*pr*create*'
+
+echo "--- mutation check: stage 2 is load-bearing, not passing for free ---"
+# A reimplementation kept INSIDE a subshell — never sourced into this process — so the
+# mutant's definition of cmd_fastpath_has cannot leak into any assertion after this block (a
+# mutation probe that redefines the function under test in the test's own shell would silently
+# poison everything that runs afterward).
+(
+  cmd_fastpath_has() {
+    local _m_cmd="$1"; shift
+    local _m_pat
+    for _m_pat in "$@"; do
+      case "$_m_cmd" in $_m_pat) return 0 ;; esac
+    done
+    return 1   # stage 2 (quote/backslash/newline/$ strip + retest) removed on purpose
+  }
+  cmd_fastpath_has 'git com"mit" -m x' '*commit*' '*checkout*' '*switch*' && exit 1
+  cmd_fastpath_has 'git check"out" -b x' '*commit*' '*checkout*' '*switch*' && exit 1
+  cmd_fastpath_has 'g"i"t status' '*git*' && exit 1
+  cmd_fastpath_has 'e"a"s update' '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*' && exit 1
+  cmd_fastpath_has 'g"h" pr create --fill' '*gh*pr*create*' && exit 1
+  exit 0
+)
+if [ "$?" -eq 0 ]; then
+  echo "PASS: mutation check — every quoted-bypass probe goes RED without stage 2"; PASS=$((PASS+1))
+else
+  echo "FAIL: mutation check — a quoted-bypass probe still passes with stage 2 removed (the corpus above does not reach it)"
+  FAIL=$((FAIL+1))
+fi
+# Restore sanity: the REAL cmd_fastpath_has (sourced into THIS shell, untouched by the
+# subshell mutant above, which cannot affect its parent's function table) must still pass.
+if cmd_fastpath_has 'git com"mit" -m x' '*commit*'; then
+  echo "PASS: mutation check — real cmd_fastpath_has still passes after the subshell mutant"; PASS=$((PASS+1))
+else
+  echo "FAIL: mutation check — real cmd_fastpath_has broken (or leaked-into) after the mutation check"
+  FAIL=$((FAIL+1))
+fi
+
+echo "--- wiring: each target hook's cmd_fastpath_has call site matches what was just probed ---"
+# The probes above call the shared function directly with a HARDCODED pattern set — this
+# closes the loop by confirming that pattern set is what the hook's own source ACTUALLY
+# passes, not a hand-copied duplicate that could drift from it (the class of bug this whole
+# extraction exists to prevent, now one level up: a drifted TEST is as bad as a drifted hook).
+assert_wired() {
+  local hook="$1" expect="$2" line
+  line=$(grep -o 'cmd_fastpath_has "\$CMD"[^|;&]*' "$HOOKDIR/$hook" | head -1)
+  if [ -z "$line" ]; then
+    echo "FAIL: $hook does not call cmd_fastpath_has"; FAIL=$((FAIL+1)); return
+  fi
+  case "$line" in
+    *"$expect"*) echo "PASS: $hook wired with the probed pattern set"; PASS=$((PASS+1)) ;;
+    *) echo "FAIL: $hook's cmd_fastpath_has call ($line) diverged from the probed pattern set ($expect) — update this test's fp_probe/assert_wired calls to match"; FAIL=$((FAIL+1)) ;;
+  esac
+}
+assert_wired branch-preflight.sh    "'*commit*' '*checkout*' '*switch*'"
+assert_wired commit-verify.sh       "'*commit*'"
+assert_wired core-bare-guard.sh     "'*git*'"
+assert_wired drift-detect.sh        "'*git*'"
+assert_wired drift-detect-update.sh "'*git*'"
+assert_wired guard-outward-cli.sh   "'*eas*' '*railway*' '*npm*' '*yarn*' '*gh*'"
+assert_wired pr-preflight-guard.sh  "'*gh*pr*create*'"
+
+# Non-vacuity control: exactly the 7 target hooks must call cmd_fastpath_has — neither fewer
+# (a hook silently reverted to an inline copy) nor more (a wiring assertion above is now
+# missing for a new caller).
+WIRED_COUNT=$(grep -l 'cmd_fastpath_has "\$CMD"' "$HOOKDIR"/*.sh 2>/dev/null | grep -vc '/test-')
+if [ "${WIRED_COUNT:-0}" -eq 7 ]; then
+  echo "PASS: control — exactly 7 hooks call cmd_fastpath_has"; PASS=$((PASS+1))
+else
+  echo "FAIL: control — $WIRED_COUNT hook(s) call cmd_fastpath_has, expected 7"
+  FAIL=$((FAIL+1))
+fi
+
+echo "--- HERE resolution: every target hook resolves to '.' for a bare-filename (no-slash) invocation (executed via a real subprocess, not textual) ---"
+# Security review (2026-09-02) finding: every check above varies the COMMAND fed to a hook,
+# never the INVOCATION SHAPE — so a future revert of any hook's fork-free HERE line to the
+# naive, unguarded form (`HERE="${BASH_SOURCE[0]%/*}"`, dropping the `case "${BASH_SOURCE[0]}"
+# in */*) … *) HERE=. ;; esac` guard) would pass every check above unchanged, while silently
+# breaking the one invocation shape that guard exists for: a bare filename with no slash
+# (`cd .claude/hooks && bash <hook>.sh`) makes the naive form return the filename UNCHANGED
+# (not "."), so `. "$HERE/lib/…"` then fails to find a directory that doesn't exist.
+#
+# This runs each REAL hook as a real `bash -x` subprocess — cwd = its own directory, invoked
+# by bare filename — and asserts the xtrace shows the hook's OWN HERE assignment resolving to
+# ".", the correct answer for this invocation shape. `2>&1 >/dev/null` captures xtrace (fd2)
+# into the command substitution while discarding the hook's normal JSON output (fd1) — order
+# matters: fd2 is duplicated onto fd1's CURRENT target (the substitution) before fd1 is then
+# redirected away.
+#
+# Mutation-verified (manually, during implementation): reverting a hook's HERE line to the
+# naive form makes this exact trace read `HERE=<hookname>.sh` instead of `HERE=.`, which the
+# grep below does not match — this check goes RED for that mutation.
+assert_bare_here() {
+  local hook="$1" payload="$2" trace
+  # -u the hooks' own documented escape hatches (SKIP_BRANCH_PREFLIGHT, SKIP_PR_PREFLIGHT,
+  # ALLOW_OUTWARD_CLI): branch-preflight.sh/pr-preflight-guard.sh exit 0 BEFORE reaching HERE=
+  # when theirs is set, so a developer with either exported in their shell profile would get a
+  # spurious FAIL from this check, unrelated to any real defect (security review, 2026-09-02) —
+  # matching the hermeticity the sibling test-branch-preflight.sh/test-pr-preflight-guard.sh
+  # suites already advertise for themselves.
+  trace=$(cd "$HOOKDIR" && printf '%s' "$payload" | env -u SKIP_BRANCH_PREFLIGHT -u SKIP_PR_PREFLIGHT -u ALLOW_OUTWARD_CLI bash -x "$hook" 2>&1 >/dev/null)
+  # <<< (here-string), not `printf | grep -q` — grep -q is an early-exiting reader (it stops
+  # at the first match) and $trace here is a full multi-line -x trace; piped through printf,
+  # grep's early exit can SIGPIPE the still-writing printf, and pipefail then reports the
+  # WRITER's non-zero status even though the READ already found its match (docs/rules/
+  # harness.md: "Early-exiting readers fail OPEN under pipefail" — reproduced here for real on
+  # branch-preflight.sh, whose trace is long enough to exceed one pipe write).
+  if grep -qE '^\+ HERE=\.$' <<< "$trace"; then
+    echo "PASS: $hook resolves HERE=. for a bare-filename (no-slash) invocation"; PASS=$((PASS+1))
+  else
+    local got all_matches
+    all_matches=$(grep -E '^\+ HERE=' <<< "$trace")   # diagnostic only — no pipe, no early-exit reader
+    got=${all_matches%%$'\n'*}
+    echo "FAIL: $hook did NOT resolve HERE=. for a bare-filename invocation (got: ${got:-<none>})"
+    FAIL=$((FAIL+1))
+  fi
+}
+assert_bare_here branch-preflight.sh    '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"}}'
+assert_bare_here commit-verify.sh       '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"}}'
+assert_bare_here core-bare-guard.sh     '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
+assert_bare_here drift-detect.sh        '{"tool_name":"Bash","tool_input":{"command":"git push"},"session_id":"'"$TEST_SESSION"'"}'
+assert_bare_here drift-detect-update.sh '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"session_id":"'"$TEST_SESSION"'"}'
+assert_bare_here guard-outward-cli.sh   '{"tool_name":"Bash","tool_input":{"command":"eas update"}}'
+assert_bare_here pr-preflight-guard.sh  '{"tool_name":"Bash","tool_input":{"command":"gh pr create --fill"}}'
+
+echo "--- generic scan: no hook may hand-roll a raw single-stage fast path when its matcher reads cmd_words ---"
+# The property the pre-extraction version of this file's final block carried for free ("a NEW
+# hook that adds a raw single-stage filter fails here rather than in prod") — restated for a
+# world where the correct answer is normally "call cmd_fastpath_has", not "carry your own
+# stage 2". A hook is IN SCOPE if it calls a `cmd_is_*` matcher (the predicates that read
+# cmd_words and so need quote-tolerant treatment — NOT cmd_bare-backed matchers like
+# pr-verify.sh's cmd_gh_pr_write_subcommand/cmd_gh_pr_ref, where a raw glob is already a
+# superset because cmd_bare only ever BLANKS characters; that is why pr-verify.sh is correctly
+# exempt here, same as before this file's extraction). guard-outward-cli.sh's own matching is
+# NOT cmd_is_*-based (it reads $WORDS inline), so it was never in this scan's scope either
+# before or after the extraction — it is instead covered by the dedicated fp_probe/assert_wired
+# checks above and by its own test-guard-outward-cli.sh (248 assertions).
+#
+# KNOWN, NAMED EXEMPTION (code review, 2026-09-02): this scan is per-FILE, not per-occurrence —
+# `grep -q 'cmd_fastpath_has' "$f"` exempts a whole file the instant it finds ONE call, even if
+# that file ALSO hand-rolls the strip independently elsewhere. pr-preflight-guard.sh does
+# exactly this: it calls cmd_fastpath_has once for its fast path, but its WORDS_BROKEN and
+# lib-unsourceable DEGRADED-PATH branches each carry their own independent `_FB=${CMD//…}`
+# quote-strip (pre-existing code, out of this todo's Scope Contract — not touched here). Both
+# sites ARE regression-locked, just not by this scan: see test-pr-preflight-guard.sh's "12k.
+# $-SIGIL bypass in the broken-awk fallback" assertions. Recorded here, rather than silently
+# assumed covered, so a future editor doesn't read "calls the helper" as "no more duplication
+# in this file."
 FASTPATH_BAD=0
+FASTPATH_SEEN=0
 for f in "$HOOKDIR"/*.sh; do
   case "$(basename "$f")" in test-*) continue ;; esac
-  # The invariant is NOT "every filter strips quotes" — it is "a filter must be a
-  # SUPERSET of what its matcher reads". cmd_bare only ever BLANKS characters, so
-  # a raw glob is already a superset for a cmd_bare-backed matcher (pr-verify's
-  # cmd_gh_pr_write_subcommand / cmd_gh_pr_ref). cmd_words DELETES quote
-  # characters and so synthesises needles absent from raw text, so any hook
-  # calling a cmd_words-backed `cmd_is_*` matcher needs the stripped second stage.
-  if grep -q 'case "\$CMD" in \*' "$f" && grep -q 'cmd_is_[a-z_]' "$f"; then
+  grep -q 'cmd_is_[a-z_]' "$f" || continue
+  FASTPATH_SEEN=$((FASTPATH_SEEN+1))
+  if grep -q 'cmd_fastpath_has' "$f"; then
+    continue   # reaches the shared, unit-tested-above two-stage helper
+  fi
+  if grep -q 'case "\$CMD" in \*' "$f"; then
     if ! grep -q '_T=\${CMD//' "$f" && ! grep -q '\${CMD//\[' "$f"; then
-      echo "  BAD: $(basename "$f") globs raw \$CMD but its matcher reads cmd_words"
+      echo "  BAD: $(basename "$f") has an inline raw single-stage filter but its matcher reads cmd_words"
       FASTPATH_BAD=$((FASTPATH_BAD+1))
     fi
+  else
+    echo "  BAD: $(basename "$f") calls a cmd_is_* matcher with NEITHER cmd_fastpath_has NOR any inline fast path"
+    FASTPATH_BAD=$((FASTPATH_BAD+1))
   fi
 done
 if [ "$FASTPATH_BAD" -eq 0 ]; then
-  echo "PASS: every raw-\$CMD fast path has a quote-stripped second stage"; PASS=$((PASS+1))
+  echo "PASS: every cmd_is_*-matcher hook reaches it through a quote-tolerant fast path"; PASS=$((PASS+1))
 else
   echo "FAIL: $FASTPATH_BAD hook(s) can be bypassed by quoting before their matcher runs"
   FAIL=$((FAIL+1))
 fi
-# Control: the scan must actually find fast paths, or it passes vacuously.
-FASTPATH_SEEN=$(grep -l 'case "\$CMD" in \*' "$HOOKDIR"/*.sh 2>/dev/null | grep -vc '/test-')
 if [ "${FASTPATH_SEEN:-0}" -ge 5 ]; then
-  echo "PASS: control — found $FASTPATH_SEEN hooks with a fast path to check"; PASS=$((PASS+1))
+  echo "PASS: control — found $FASTPATH_SEEN hooks with a cmd_is_* matcher to check"; PASS=$((PASS+1))
 else
-  echo "FAIL: control — only $FASTPATH_SEEN fast paths found; the scan is not looking at anything"
+  echo "FAIL: control — only $FASTPATH_SEEN cmd_is_*-matcher hooks found; the scan is not looking at anything"
   FAIL=$((FAIL+1))
 fi
 

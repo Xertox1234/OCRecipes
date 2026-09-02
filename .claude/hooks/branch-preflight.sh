@@ -23,20 +23,26 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 [ "$TOOL" = "Bash" ] || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 
-# Necessary-substring fast path for EITHER shape this hook checks. Two-stage: stage 1 is the
-# zero-copy glob on raw $CMD; stage 2 (only on a stage-1 miss) retests with the characters
-# cmd_words can DELETE removed (quotes, backslashes, newlines, $) — required for any hook whose
-# matcher reads cmd_words (see test-cmd-detect.sh's cross-hook fast-path invariant check, and the
-# comment on the original commit-only version of this filter for why a single stage is unsound).
-_PRE=0
-case "$CMD" in *commit*|*checkout*|*switch*) _PRE=1 ;; esac
-if [ "$_PRE" = 0 ]; then
-  _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}; _T=${_T//\$/}
-  case "$_T" in *commit*|*checkout*|*switch*) _PRE=1 ;; esac
-fi
-[ "$_PRE" = 1 ] || exit 0
+# Fork-free: a $(cd ...) subshell here is the ENTIRE added cost of reaching the shared
+# fast-path helper below (measured ~1.9ms/call; sourcing itself is free) — this HERE now
+# runs on every Bash tool call, not just ones that already matched the old inline filter.
+# The */*) arm is load-bearing: a bare "${BASH_SOURCE[0]%/*}" returns the filename unchanged
+# when invoked with no slash (e.g. `cd .claude/hooks && bash branch-preflight.sh`), the source
+# below then fails, and this hook silently exits before either check ever runs.
+case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Necessary-substring fast path for EITHER shape this hook checks, via the shared helper
+# (lib/fastpath-filter.sh) — two-stage: stage 1 is the zero-copy glob on raw $CMD; stage 2
+# (only on a stage-1 miss) retests with the characters cmd_words can DELETE removed (quotes,
+# backslashes, newlines, $) — required for any hook whose matcher reads cmd_words (see
+# test-cmd-detect.sh's cross-hook fast-path invariant check). If the helper is unsourceable,
+# do NOT exit here — fall through to the LIB_OK determination below, which already has its
+# own tested fail-closed/fail-open handling per check; losing the cheap pre-filter only costs
+# performance in that (broken-install) case, never a decision.
+if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
+  cmd_fastpath_has "$CMD" '*commit*' '*checkout*' '*switch*' || exit 0
+fi
+
 LIB_OK=0
 # Probe EVERY function the primary path calls, not just the first one. Check 1 now depends on
 # cmd_git_repo_dir too, and a lib defining `cmd_is_git_commit` without it set LIB_OK=1, took

@@ -348,9 +348,18 @@ fi
 # for SKIP_WORKTREE_CONTRACT=1).
 case "$CMD" in "ALLOW_OUTWARD_CLI=1 "*) exit 0 ;; esac
 
-# Necessary-substring fast path (project_per_bash_hook_overhead). This hook runs
-# on EVERY Bash tool call, so it must reject the common case before doing any
-# real work — before sourcing the lib and before either awk pass.
+# Fork-free: a $(cd ...) subshell here would be the ENTIRE added cost of reaching the shared
+# fast-path helper below (measured ~1.9ms/call; sourcing itself is free) — this HERE now runs
+# on every Bash tool call, not just ones that already matched the old inline filter. The
+# */*) arm is load-bearing: a bare "${BASH_SOURCE[0]%/*}" returns the filename unchanged when
+# invoked with no slash, the source below then fails, and (absent the fall-through design
+# below) could silently skip this DENY gate.
+case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
+
+# Necessary-substring fast path via the shared helper (lib/fastpath-filter.sh)
+# (project_per_bash_hook_overhead). This hook runs on EVERY Bash tool call, so it must reject
+# the common case before doing any real work — before sourcing cmd-detect.sh and before
+# either awk pass.
 #
 # TWO STAGES, and the second one is why this is correct. The single-stage raw
 # `case "$CMD"` this replaces was justified as "cmd_bare only BLANKS characters,
@@ -358,36 +367,30 @@ case "$CMD" in "ALLOW_OUTWARD_CLI=1 "*) exit 0 ;; esac
 # cmd_bare and FALSE of cmd_words, which DELETES quote characters and therefore
 # synthesises needles absent from raw text: `e"a"s update` contains no `eas`, so
 # the filter exited 0 and the verb published an OTA (review, 2026-08-16).
+# See lib/fastpath-filter.sh for the full two-stage soundness argument.
 #
-# Stage 1 is the zero-copy glob on raw $CMD and catches every normal command.
-# Stage 2 runs ONLY on a stage-1 miss and re-tests with the characters cmd_words
-# can delete — quotes, backslashes, newlines — removed. (2026-09-01: cmd_words' neutral()
-# gained `<`, `>`, `#`. That does NOT extend this list — neutral() REPLACES those with the
-# placeholder inside a quoted span, it does not delete them, so the "can delete" set is
-# unchanged and the soundness argument below carries the widening on the INSERTS half.)
-# Soundness: cmd_words only
-# ever DELETES those, or INSERTS the letter `x`, and none of the needles below
-# contains an `x`; so every needle $WORDS can synthesise is already a substring
-# of stage 2's text. That makes this a superset by construction, which is exactly
-# what the old comment claimed without it being true.
+# Matched under `nocasematch` because the predicates below are case-insensitive: a
+# case-SENSITIVE fast path would exit 0 on `EAS update` before any of them ran. The shopt
+# bracketing stays tightly scoped to just this call — lib/fastpath-filter.sh's
+# cmd_fastpath_has does not (and, in bash 3.2, cannot) toggle it itself. (`pnpm` needs no
+# entry of its own — it contains `npm`.)
 #
-# Four literal substitutions, NOT one bracket class: on a 3 KB command bash 3.2
-# takes ~1450 ms for `${CMD//[\'\"\\$NL]/}` and ~5.5 ms for these four, same
-# result. Do not "simplify" this.
-# Matched under `nocasematch` because the predicates below are case-insensitive:
-# a case-SENSITIVE fast path would exit 0 on `EAS update` before any of them ran.
-# (`pnpm` needs no entry of its own — it contains `npm`.)
-shopt -s nocasematch
-_OUT_FASTPATH=0
-case "$CMD" in *eas*|*railway*|*npm*|*yarn*|*gh*) _OUT_FASTPATH=1 ;; esac
-if [ "$_OUT_FASTPATH" = 0 ]; then
-  _OUT_T=${CMD//\'/}; _OUT_T=${_OUT_T//\"/}; _OUT_T=${_OUT_T//\\/}; _OUT_T=${_OUT_T//$'\n'/}; _OUT_T=${_OUT_T//\$/}
-  case "$_OUT_T" in *eas*|*railway*|*npm*|*yarn*|*gh*) _OUT_FASTPATH=1 ;; esac
+# If the helper is unsourceable, do NOT exit here — fall through to the lib/cmd-detect.sh
+# check below, which already has its own tested fail-closed handling (crude_smells_outward);
+# losing the cheap pre-filter only costs performance in that (broken-install) case, never a
+# decision.
+if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
+  shopt -s nocasematch
+  cmd_fastpath_has "$CMD" '*eas*' '*railway*' '*npm*' '*yarn*' '*gh*'
+  # _OUT_FP_RC is an EXIT-STATUS capture (0 = matched), not a boolean "found" flag — code
+  # review, 2026-09-02: the old inline filter's `_OUT_FASTPATH=1` meant "matched"; this is
+  # `$?` from cmd_fastpath_has, where 0 means "matched" — same polarity as the check below,
+  # but the inverted-from-before meaning is a misreading trap for the next editor if the name
+  # still reads as a boolean.
+  _OUT_FP_RC=$?
+  shopt -u nocasematch
+  [ "$_OUT_FP_RC" = 0 ] || exit 0
 fi
-shopt -u nocasematch
-[ "$_OUT_FASTPATH" = 1 ] || exit 0
-
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # If the shared lib is unsourceable (broken install), jq IS available here
 # (the no-jq branch above already returned) and deny() is already defined —
 # fall back to the SAME crude smell test used by the no-jq path, applied to
