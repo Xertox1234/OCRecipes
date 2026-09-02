@@ -1,6 +1,6 @@
 ---
 title: "Dismissing the coach plan-slot sheet mid-save leaves the mutation in flight, so one flow's `finally` can clear a later flow's double-submit guard"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-30
 updated: 2026-08-30
@@ -134,3 +134,29 @@ See `docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2026-0
   writes a duplicate plan row that nothing in the schema catches. "Why the obvious fix was
   rejected" and Risks updated accordingly; priority (`medium`) was already appropriately set for
   a narrow-entry, real-write defect and is unchanged.
+
+### 2026-09-01
+
+- Implemented Option 1 (token/generation guard) from Implementation Notes: a new
+  `planSaveTokenRef` counter in `CoachChat.tsx` is bumped on every confirm and on every
+  reopen (the existing reset `useEffect`); the guard's release (`finally`) and both
+  `setPlanTarget(null)` completions (success and terminal-failure) now act only when their
+  captured token still matches the current one.
+- **AC #4 answer: the reset `useEffect` (dismissal-vs-reopen reset of `isSavingPlanRef`) is
+  still needed, not redundant with the new token, and was NOT deleted.** The two mechanisms
+  guard opposite sides of the same problem: the effect is what lets a LATER flow ACQUIRE the
+  guard despite an abandoned earlier flow still holding it (without it, a second confirm would
+  bail at the `isSavingPlanRef.current` check before ever assigning a token); the token governs
+  only whether a flow's own RELEASE and completion still apply once acquired. This is a
+  mechanically-checkable answer (deleting the effect measurably changes the ACQUIRE path), not a
+  reachability argument — see `docs/solutions/conventions/a-stated-invariant-is-not-an-enforced-one-2026-08-06.md`.
+  Recorded in the `CoachChat.tsx` comment beside the effect, and here.
+- **Review caught a gap in the first draft of the token guard**, found via construct-and-run
+  reasoning (not just re-reading the diff): the reset effect cleared `isSavingPlanRef` on reopen
+  but left `planSaveTokenRef` untouched, so an abandoned flow's still-matching token could settle
+  and close a sheet that had been reopened but not yet re-confirmed — a narrower, arguably more
+  likely window than the originally-tested "confirm B immediately" case. Fixed by also bumping
+  `planSaveTokenRef` in the reset effect. Two regression tests pin this: one for the
+  reopened-but-unconfirmed window, one for the parallel terminal-failure close path (402/422/404)
+  that the original interleaving test didn't exercise. Both fixes were mutation-tested (each
+  guard temporarily removed, confirmed its own test goes red, then restored).
