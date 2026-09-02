@@ -7,6 +7,7 @@ tags: [bash, claude-hooks, parser-widening, consumer-contract, gh-cli, architect
 applies_to: [.claude/hooks/**/*.sh, server/services/**/*.ts]
 symptoms: [A hook or handler reports a confident well-formed result about the WRONG entity, The same input previously produced an empty result and an honest "could not verify", The regression appears only for inputs the widening newly accepts — every pre-existing input still behaves correctly, A parser change is described as "now handles more cases" with no consumer named]
 created: '2026-08-06'
+last_updated: '2026-09-01'
 severity: high
 ---
 
@@ -113,6 +114,47 @@ when the consumer cannot honour it.
 - **A regression suite over the old inputs cannot see this.** By construction the broken cases are the ones the widening newly admits, so every pre-existing test passes. New acceptance requires new tests naming the newly-accepted inputs *and asserting what the consumer does with them* — not just what the extractor returns.
 - **Grep for the consumer's call, not the extractor's name.** `gh pr view "$PR_REF"` is where the contract is actually narrow; `cmd_gh_pr_ref`'s definition looks fine in isolation.
 - **A docstring advertising a case is not evidence the case works end to end** — the same session produced three more instances of that, written up in [../conventions/a-stated-invariant-is-not-an-enforced-one-2026-08-06.md](../conventions/a-stated-invariant-is-not-an-enforced-one-2026-08-06.md).
+
+## Second instance, 2026-09-01: the consumer read the wrong REPOSITORY
+
+Same file, same class, and worth recording because the correct ending here was neither of
+the two above on its own. `_CMD_GIT_GLOBALS` widened the `cmd_is_git_*` predicates to see
+`git -C <path> commit`, `git --no-pager commit` and a redirect before the subcommand — all
+previously invisible, so all previously ALLOWED by `branch-preflight.sh`'s detached-HEAD
+data-loss gate.
+
+Widening the predicate alone would have been strictly worse than the blindness it fixed.
+All four consumers (`branch-preflight.sh`, `commit-verify.sh`, `drift-detect.sh`,
+`drift-detect-update.sh`) read HEAD, the upstream, or the staged set **from their own cwd**
+— correct only for as long as the matcher could not see a repo redirect. Newly matching
+`git -C /elsewhere commit` would have made each of them judge this repository for a command
+that never touches it: a false DENY on a correct command, and a silent pass on a broken one.
+
+What made it tractable was noticing the consumers do not all want the same ending:
+
+- `drift-detect.sh` / `drift-detect-update.sh` keep a **session-keyed** baseline holding
+  *this* cwd's HEAD. Stamping it after an op that moved another repo's HEAD would ABSORB a
+  real external drift here. Rejecting at the boundary — skip when the op is not about this
+  repo — is not a fallback for them, it is the correct semantics.
+- `commit-verify.sh` reports "these files are still staged"; against a redirected commit
+  those are a different repo's files. It follows the resolved repo.
+- `branch-preflight.sh` is the only one that genuinely needed resolution, and it needs it
+  **twice** — once per check, with each check's own verb set, because
+  `git -C /wt checkout -b foo && git commit` is about /wt for check 2 and about cwd for
+  check 1.
+
+The generalisation: *"widen the consumers too"* is under-specified when the consumers read
+**state** rather than transform the value. Ask which state each one owns first; for some the
+right answer is to decline the newly-accepted input, and shipping that as if it were a
+shortfall would be the actual bug.
+
+The resolution primitive (`cmd_git_repo_dir`) carries one rule that exists purely to
+preserve the old behaviour: if *any* matched invocation in the command is unredirected, the
+answer is cwd. Without it `git -C /wt commit && git commit` resolves to /wt, and the second
+invocation's real, currently-denied cwd commit becomes an ALLOW. A hook-level differential
+over a generated 660-command corpus (1320 paired runs) is what proves that: zero
+DENY→ALLOW, 408 ALLOW→DENY. A lib-level differential would have been green either way,
+because the *predicate* did not change its answer — the consumer did.
 
 ## Related Files
 
