@@ -318,6 +318,87 @@ fi
 
 unset GIT_DIR GIT_WORK_TREE
 
+# --- Repo-redirected git ops (2026-09-01) ---------------------------------------------
+# `git -C <path>` became visible to cmd_is_git_commit_or_push / cmd_is_git_head_mover on
+# 2026-09-01. That matters MORE here than in a deny gate, and in the opposite direction: the
+# baseline is keyed by SESSION and holds THIS cwd's HEAD, so stamping it after an op that
+# moved a DIFFERENT repo's HEAD would ABSORB a real external drift in this one — the exact
+# suppressive failure lib/cmd-detect.sh's header flags for this consumer. Both hooks
+# therefore compare resolved git dirs and skip when the op is not about this repo.
+#
+# cwd-based, GIT_DIR/GIT_WORK_TREE UNSET: an exported GIT_DIR overrides `git -C`, so under
+# this file's usual harness every assertion below would pass while testing nothing.
+OTHER_REPO=$(mktemp -d)
+git -C "$OTHER_REPO" init -q
+git -C "$OTHER_REPO" config user.email "test@test"
+git -C "$OTHER_REPO" config user.name "Test"
+echo o > "$OTHER_REPO/o.txt"; git -C "$OTHER_REPO" add o.txt; git -C "$OTHER_REPO" commit -q -m other
+
+run_update_in() {
+  local dir="$1" cmd="$2" input
+  input=$(jq -n --arg c "$cmd" --arg s "$TEST_SESSION" \
+    '{"tool_name":"Bash","session_id":$s,"tool_input":{"command":$c}}')
+  printf '%s' "$input" | env -u GIT_DIR -u GIT_WORK_TREE \
+    bash -c 'cd "$1" && bash "$2" 2>/dev/null' _ "$dir" "$UPDATE_HOOK"
+}
+run_detect_in() {
+  local dir="$1" cmd="$2" input
+  input=$(jq -n --arg c "$cmd" --arg s "$TEST_SESSION" \
+    '{"tool_name":"Bash","session_id":$s,"tool_input":{"command":$c}}')
+  printf '%s' "$input" | env -u GIT_DIR -u GIT_WORK_TREE \
+    bash -c 'cd "$1" && bash "$2" 2>/dev/null' _ "$dir" "$DETECT_HOOK"
+}
+
+# Harness control first: prove a stamp is reachable through run_update_in, or every
+# "did not stamp" assertion below passes for the wrong reason.
+printf 'SENTINEL' > "$BASELINE_FILE"
+run_update_in "$TMPDIR_REPO" "git commit -m x" >/dev/null
+if [ "$(cat "$BASELINE_FILE")" != "SENTINEL" ]; then
+  echo "PASS: control — run_update_in can stamp the baseline via cwd discovery"; PASS=$((PASS+1))
+else
+  echo "FAIL: control — run_update_in never stamps; the assertions below are vacuous"; FAIL=$((FAIL+1))
+fi
+
+# THE SUPPRESSIVE-DIRECTION PIN: an op in ANOTHER repo must leave this repo's baseline alone.
+printf 'SENTINEL' > "$BASELINE_FILE"
+run_update_in "$TMPDIR_REPO" "git -C $OTHER_REPO commit -m x" >/dev/null
+if [ "$(cat "$BASELINE_FILE")" = "SENTINEL" ]; then
+  echo "PASS: a commit redirected into ANOTHER repo does not stamp this repo's baseline"; PASS=$((PASS+1))
+else
+  echo "FAIL: a -C commit into another repo absorbed this repo's drift baseline"; FAIL=$((FAIL+1))
+fi
+
+# ...and an UNRESOLVABLE redirect is skipped too, rather than guessed as cwd.
+printf 'SENTINEL' > "$BASELINE_FILE"
+run_update_in "$TMPDIR_REPO" 'git -C "$WORKTREE" commit -m x' >/dev/null
+if [ "$(cat "$BASELINE_FILE")" = "SENTINEL" ]; then
+  echo "PASS: an unresolvable -C commit does not stamp the baseline either"; PASS=$((PASS+1))
+else
+  echo "FAIL: an unresolvable -C commit stamped the baseline"; FAIL=$((FAIL+1))
+fi
+
+# The widening's positive half: a global before the subcommand, and a redirect before the
+# command word, were both invisible to the matcher and so never stamped a real HEAD move.
+for _c in 'git --no-pager commit -m x' '2>/dev/null git commit -m x' 'git 2>/dev/null rebase main'; do
+  printf 'SENTINEL' > "$BASELINE_FILE"
+  run_update_in "$TMPDIR_REPO" "$_c" >/dev/null
+  if [ "$(cat "$BASELINE_FILE")" != "SENTINEL" ]; then
+    echo "PASS: '$_c' is recognised as a HEAD mover and stamps"; PASS=$((PASS+1))
+  else
+    echo "FAIL: '$_c' was not recognised as a HEAD mover"; FAIL=$((FAIL+1))
+  fi
+done
+
+# drift-detect (the reader) applies the same rule: a push into another repo says nothing
+# about drift in this one, so it must not warn about this repo's HEAD.
+printf 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef' > "$BASELINE_FILE"
+OUT=$(run_detect_in "$TMPDIR_REPO" "git -C $OTHER_REPO push")
+assert_silent "a push redirected into another repo does not warn about THIS repo's drift" "$OUT"
+# Control for that pin: the same stale baseline DOES warn on an op about this repo.
+OUT=$(run_detect_in "$TMPDIR_REPO" "git push")
+assert_contains "control — the same stale baseline still warns on a cwd-repo push" "Drift detected" "$OUT"
+rm -rf "$OTHER_REPO"
+
 # --- Hermeticity guard: prove the caller's real repo is byte-for-byte untouched. ---
 # If an inherited GIT_DIR ever defeats the temp-repo isolation, this fails loudly in
 # CI/preflight instead of silently corrupting the working repo (the todos P2 git-churn bug).

@@ -104,8 +104,84 @@
 # the window in which a genuinely external drift would be noticed). Exploiting it
 # requires literal `${verb subcommand}`-shaped text with no real invocation, unlikely by
 # accident — noted rather than treated as blocking.
-_CMD_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*'
-_CMD_POS_SUFFIX='([[:space:]]|[);&|`{}]|$)'
+#
+# A REDIRECTION joined the prefix's absorber run on 2026-09-01. Bash permits a redirect
+# ANYWHERE in a simple command, including BEFORE the command word — `2>/dev/null git
+# commit -m x` really does run git (verified by execution: a function printing its argv,
+# invoked with a leading redirect, still receives them). The prefix previously absorbed
+# only env-assignments and zero-arg runner words, so every matcher in this file silently
+# ALLOWED that shape. The operator pattern is `_CMD_REDIR` below — deliberately the SAME
+# text cmd_git_branch_create_segment deletes with, because `&>` and `>|` were each a
+# separate CRITICAL there and a second, subtly-different redirect pattern in this file is
+# a fresh instance of the same bug surface.
+_CMD_REDIR='([0-9]*|&)[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]+'
+_CMD_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|'"$_CMD_REDIR"')[[:space:]]+)*'
+# `<` and `>` joined the closer set on 2026-09-01: a verb GLUED to a redirect
+# (`git checkout>&2 -b foo`, `git commit>log`) is a real invocation — bash always splits at
+# the operator, no space required — but stage 1's anchor rejected it, so the command was
+# invisible before the redirect-deleting sed downstream ever ran. `&>` slipped through only
+# because `&` was already a closer, which is exactly why this gap survived the `&>` fix in
+# the branch below this one. Neither character can be part of a real unquoted verb word, and
+# cmd_words neutralises a QUOTED one to the placeholder, so this can only add REAL matches.
+_CMD_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
+
+# _CMD_GIT_GLOBALS — the option run BETWEEN `git` and its subcommand. Every matcher below
+# used to model exactly one global, `-c key=value`, so ALL of these reported "not a git
+# commit" for a real one (measured 2026-09-01, all four cmd_is_git_* predicates):
+#
+#     git -C /path commit      git --no-pager commit      git --git-dir=/x commit
+#     git --literal-pathspecs commit                      git 2>/dev/null checkout -b foo
+#
+# The blindness mattered most for `-C`, which is the spelling CLAUDE.md itself prescribes
+# for worktree sessions, so the common form was the invisible one. Grammar deliberately
+# mirrors git-safety.sh's MUTATING_GIT_SEG_RE: the arg-taking globals named explicitly,
+# then a generic single-token `-…` catch-all, so an unmodeled no-arg global still reaches
+# the verb. Widening a matcher can only ADD matches, which is the safe direction for every
+# DENY consumer here; the one consumer where over-matching is suppressive rather than safe
+# (drift-detect-update.sh's baseline write) is discussed in the residual note above.
+#
+# INHERITED RESIDUAL, same as git-safety.sh's: an unmodeled SEPARATE-arg global
+# (`git --namespace foo commit`) has its argument mis-read as the verb, so the match is
+# lost — a false NEGATIVE, never a false positive. The explicitly-named list is what keeps
+# the two globals that actually appear in this repo (`-c`, `-C`) out of that residual.
+#
+# The redirect alternative takes `[[:space:]]*`, not `+`: `git>log commit` is a real
+# invocation (bash splits at the operator with no space required), so requiring a space
+# would leave a hole the `-`-flag alternatives do not have.
+_CMD_GIT_GLOBALS='(([[:space:]]+(-C[[:space:]]+[^[:space:]]+|-c[[:space:]]+[^[:space:]]+|--git-dir[[:space:]]+[^[:space:]]+|--work-tree[[:space:]]+[^[:space:]]+|-[^[:space:]]+))|([[:space:]]*'"$_CMD_REDIR"'))*'
+
+# Verb alternations, named ONCE. cmd_git_repo_dir (below) must be called with the SAME verb
+# set as the predicate whose match it is qualifying — passing a wider set re-opens the
+# false-DENY described in that function's header — so the sets are constants rather than
+# literals repeated at each call site. test-cmd-detect.sh pins the pairing.
+_CMD_GIT_VERBS_COMMIT='commit'
+_CMD_GIT_VERBS_COMMIT_PUSH='(commit|push)'
+_CMD_GIT_VERBS_HEAD_MOVER='(commit|push|rebase|reset|pull|merge|cherry-pick)'
+_CMD_GIT_VERBS_BRANCH='(checkout|switch)'
+
+# Repo-redirecting tokens, in TWO classes, because they differ in what the gate did BEFORE
+# this change — and "skip when unresolvable" is only safe for the class the old predicate
+# could not see.
+#
+#   GLOBAL form (`-C`, `--git-dir`, `--work-tree`) — sits between `git` and the verb, where
+#   the old predicate modelled nothing but `-c key=value`. `git -C /x commit` therefore did
+#   NOT match on main (measured), so declining to judge it is exactly the old behaviour.
+#
+#   ENV form (`GIT_DIR=`, `GIT_WORK_TREE=`) — an inline assignment BEFORE `git`, which
+#   `_CMD_POS_PREFIX`'s env-assignment absorber has swallowed since long before this change.
+#   `GIT_DIR=.git git commit` DID match on main and DID deny on a detached HEAD (measured).
+#   Skipping it would be a deny->allow in a data-loss gate, so it must keep resolving to cwd.
+#
+# Collapsing the two into one "unresolvable" bucket was a CRITICAL (review, 2026-09-01):
+# it silently dropped the deny for `GIT_DIR=.git git commit`, `GIT_WORK_TREE=. git commit`
+# and `git -c GIT_DIR=x commit` — the last not even a redirect, just the text `GIT_DIR=`
+# appearing as a `-c` VALUE.
+#
+# `-C` is matched as a PREFIX so the glued `-C/path` form counts too (real git rejects it
+# with exit 129, but it must still not be mistaken for a cwd-local invocation). `-c`
+# (lowercase, config) is in NEITHER class — it changes settings, never the repository.
+_CMD_GIT_REDIRECTS_REPO='(^|[[:space:]])(-C|--git-dir|--work-tree)'
+_CMD_GIT_REDIRECT_ENV='(^|[[:space:]])(GIT_DIR|GIT_WORK_TREE)='
 
 # cmd_bare: read a shell command string on STDIN, emit a "bare" copy with the CONTENTS
 # of every quoted span (and every backslash-escaped character) replaced by spaces, via a
@@ -326,7 +402,7 @@ cmd_is_gh_pr_create() {
 # cmd_is_git_commit <command>  → exit 0 if it invokes `git [-c k=v]* commit` in command position.
 cmd_is_git_commit() {
   printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit${_CMD_POS_SUFFIX}"
+    | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_COMMIT}${_CMD_POS_SUFFIX}"
 }
 
 # cmd_is_git <command>  → exit 0 if it invokes `git` in command position (ANY subcommand, or
@@ -340,7 +416,7 @@ cmd_is_git() {
 # in command position. Used by drift-detect.sh (the two HEAD-movers it warns on).
 cmd_is_git_commit_or_push() {
   printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push)${_CMD_POS_SUFFIX}"
+    | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_COMMIT_PUSH}${_CMD_POS_SUFFIX}"
 }
 
 # cmd_is_git_head_mover <command>  → exit 0 if it invokes a HEAD-moving
@@ -348,7 +424,137 @@ cmd_is_git_commit_or_push() {
 # Used by drift-detect-update.sh (the PostToolUse baseline writer).
 cmd_is_git_head_mover() {
   printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(commit|push|rebase|reset|pull|merge|cherry-pick)${_CMD_POS_SUFFIX}"
+    | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_HEAD_MOVER}${_CMD_POS_SUFFIX}"
+}
+
+# cmd_git_repo_dir <command> <verb-ere>  → echo WHICH REPOSITORY the matching git
+# invocations act on, so a consumer that reads repo state does not read the wrong repo:
+#
+#   `.`   (exit 0) — they act on the hook's own cwd; behave exactly as before.
+#   <abs> (exit 0) — EVERY one of them is redirected there by `-C <absolute path>`.
+#   (exit 1, no output) — a repo redirect is present but unresolvable at the command-string
+#                         layer. The caller MUST SKIP its check. Falling back to cwd here
+#                         would evaluate a repository the command never touches.
+#
+# WHY THIS EXISTS. Widening _CMD_GIT_GLOBALS made `git -C /elsewhere commit` visible to the
+# predicates above for the first time. On its own that is a REGRESSION, not a fix: every
+# consumer of those predicates then reads HEAD, the upstream, or the staged set from its own
+# cwd — so a correct command in another repo is judged against this one. The parse and the
+# repo resolution are one change or neither.
+#
+# THE VERB SET IS A PARAMETER, AND MUST MATCH THE CALLER'S PREDICATE. Pass a wider set and
+# an unrelated invocation votes on the answer: for `git -C /wt commit && git status`, a
+# verb set that accepted `status` would find an unredirected git and return `.`, sending a
+# commit-shaped DENY gate to inspect a repo where nothing is committed — a false DENY that
+# does not exist today. Use the _CMD_GIT_VERBS_* constant the predicate itself uses.
+#
+# THE `.`-ON-ANY-UNREDIRECTED-INVOCATION RULE IS WHAT PRESERVES TODAY'S DENIES. In
+# `git -C /wt commit && git commit` the second invocation really does commit in cwd, and
+# today's gate denies on it. Resolving the command to `/wt` would turn that into an ALLOW —
+# a deny→allow transition in a data-loss gate, which is the exact regression class that
+# consumed two review rounds of the redirect fix below. One unredirected invocation of a
+# verb we care about therefore settles the answer as cwd, immediately.
+#
+# Segments are split with `tr` rather than a quote-aware scanner because cmd_words has
+# ALREADY neutralised quoting: a separator inside a quoted span became the placeholder, so
+# every `;`/`&`/`|`/backtick still standing is a real control operator.
+#
+# ONLY those four, and the omissions are load-bearing. `(`, `)`, `{`, `}` were in this set in
+# the first version and it was a CRITICAL: they are not operators, they are ordinary content
+# inside an unquoted global's value. `git -c core.hooksPath=$(pwd)/hooks commit -m x` is ONE
+# real commit — an argv shim confirms `[-c][core.hooksPath=/…/hooks][commit][-m][x]` — but the
+# split severed `git` from its verb, no segment matched, and every consumer skipped: 144
+# base-DENY -> new-ALLOW rows over a 6400-input corpus, in the detached-HEAD data-loss gate,
+# plus 216/9600 in check 2 (security review, 2026-09-01). This file had already litigated the
+# same class once, when adding `{`/`}` to the extractor's terminator class truncated a real
+# ref name and was rejected. Nothing is lost by dropping them: `_CMD_POS_PREFIX`'s opener
+# class already contains `(`, `{` and backtick, so `( git commit )` and `{ git commit; }` are
+# still found without a split. `!` is likewise NOT split on — an opener, not a separator.
+#
+# RESOLUTION IS DELIBERATELY NARROW — everything it cannot prove falls to exit 1, which is
+# today's behaviour (blind), never a new judgement. Unresolvable: a relative `-C` (it
+# resolves against the SHELL's cwd, which a `cd` earlier in the same command can have moved
+# away from the hook's); an unexpanded `$VAR` (the common `git -C "$WORKTREE"` spelling —
+# genuinely unknowable here); the glued `-C/path` form (real git rejects it, exit 129);
+# `--git-dir`/`--work-tree`/`GIT_DIR=`/`GIT_WORK_TREE=` (git resolves the git-dir and the
+# work-tree INDEPENDENTLY — see git-safety.sh's git_c_target — so one path is not an
+# answer); and two invocations naming DIFFERENT directories. Two naming the SAME directory
+# resolve fine. Existence is NOT checked here: the function stays pure and string-only, and
+# every caller already gates on `git -C "$REPO" rev-parse`, which subsumes it.
+#
+# NO NECESSARY-SUBSTRING FAST PATH, deliberately. ~8 ms, and only on a command that already
+# matched a git-verb predicate — i.e. a real commit/push/checkout, not every Bash call. The
+# obvious optimisation, globbing raw "$1" for `-C` and returning `.` on a miss, is unsound
+# for the reason every hook in this directory carries a two-stage filter: `git -"C" /tmp
+# commit` holds no literal `-C` until cmd_words deletes the quotes. If this ever does need a
+# fast path, it needs the stripped second stage too.
+cmd_git_repo_dir() {
+  local seg span targets="" unresolved=0 saw=0 ntok nval vals uniq
+
+  while IFS= read -r seg; do
+    span=$(printf '%s' "$seg" \
+      | grep -oE "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+$2${_CMD_POS_SUFFIX}" \
+      | head -1) || true
+    [ -n "$span" ] || continue
+    saw=1
+
+    # No GLOBAL-form redirect ⇒ this invocation is judged against cwd, and that settles the
+    # whole command (see the rule above). An ENV-form redirect alone lands here deliberately:
+    # the old gate judged those against cwd, and keeping that is what stops this from
+    # becoming a deny->allow. See the two-class note on _CMD_GIT_REDIRECTS_REPO.
+    printf '%s' "$span" | grep -qE "$_CMD_GIT_REDIRECTS_REPO" || { printf '.\n'; return 0; }
+
+    # A GLOBAL redirect AND an env one together: git resolves the git-dir and the work-tree
+    # independently, so neither path is the answer on its own. Unresolvable — and safely so,
+    # since a global redirect means the old predicate did not match this command at all.
+    if printf '%s' "$span" | grep -qE "$_CMD_GIT_REDIRECT_ENV"; then unresolved=1; continue; fi
+
+    # Every redirecting token must be a clean separate-arg `-C <value>`, or we cannot say
+    # where this invocation points. Counting both sides is what rejects the glued and
+    # --git-dir forms without enumerating them a second time.
+    ntok=$(printf '%s' "$span" | grep -oE "$_CMD_GIT_REDIRECTS_REPO" | grep -c . || true)
+    vals=$(printf '%s' "$span" | grep -oE '(^|[[:space:]])-C[[:space:]]+[^[:space:]]+' \
+           | sed -E 's/.*-C[[:space:]]+//' || true)
+    nval=$(printf '%s' "$vals" | grep -c . || true)
+    if [ "$ntok" != "$nval" ]; then unresolved=1; continue; fi
+    targets="${targets}${vals}
+"
+  done <<EOF
+$(printf '%s' "$1" | cmd_words | tr ';&|`' '\n\n\n\n')
+EOF
+
+  # The predicate matched but this segment scan found no invocation — the two disagree, so we
+  # do not know which repo. `git -C /tmp/`pwd` commit` is the shape: the predicate's `-C`
+  # value class tolerates the backtick, the split above treats it as the command-position
+  # boundary it is. SKIP, do not guess cwd. Answering `.` here was the first version and it
+  # is a false-DENY generator — a command that commits somewhere else would be judged against
+  # this repo's HEAD.
+  #
+  # Skipping here CAN lose a deny the old predicate had, but only a SPURIOUS one. The old `-c`
+  # value class is `[^[:space:]]+`, which swallows an unquoted separator, so main reads
+  # `git -c foo=a;b commit` as a commit. Bash does not — it runs `git -c foo=a`, then a
+  # command named `b` — so nothing commits and that deny was never real. A REAL invocation
+  # always survives into some segment: `git -c foo=a;git commit` resolves to `.` and keeps
+  # its deny. Both are pinned, because only the PAIR discriminates the two readings.
+  #
+  # This sentence has been wrong twice and both times in the confident direction, so it is
+  # worth saying what makes the current version safe rather than plausible: the split is now
+  # over unconditional control operators ONLY. When `(`/`)`/`{`/`}` were in that set, a
+  # `-c` value containing `$(...)` — a single real invocation — was severed here and the deny
+  # was genuinely lost, 144 times over a 6400-input corpus.
+  [ "$saw" = 1 ] || return 1
+  [ "$unresolved" = 0 ] || return 1
+
+  uniq=$(printf '%s' "$targets" | grep -v '^[[:space:]]*$' | sort -u || true)
+  [ "$(printf '%s' "$uniq" | grep -c . || true)" = 1 ] || return 1
+  case "$uniq" in
+    /*) ;;                  # a relative -C resolves against the shell's cwd, not the hook's
+    *) return 1 ;;
+  esac
+  case "$uniq" in
+    *'$'* | *'`'*) return 1 ;;   # an unexpanded substitution is unknowable here
+  esac
+  printf '%s\n' "$uniq"
 }
 
 # cmd_git_branch_create_segment <command>  → echoes the "checkout ..."/"switch ..." argument
@@ -466,30 +672,25 @@ cmd_is_git_head_mover() {
 #     the digit positionally would rename the ref.
 #   * expression 2 — everything else, boundary-FREE, because an unquoted `<`/`>` can never
 #     be argv content wherever it appears.
-# The target class stays `*`, not `+`, DELIBERATELY and only for now. A redirect's target is
-# mandatory in bash, so `+` is the truthful model — but on this branch no VALID command can
-# tell the two apart (an empty target only arises from input bash itself rejects), and stage
-# 1's anchor rejects those before this sed runs. An unpinnable change is how a wrong model
-# gets in unnoticed, so it is deferred to the change that makes it observable: once
-# `_CMD_POS_PREFIX` absorbs a redirect, `true && > git commit` becomes reachable and `+` is
-# both required and pinned there.
+# The target class is `+`, not `*` — the change deferred from the branch that split this sed,
+# because only now is it observable. A redirect's target is MANDATORY in bash; modelling it as
+# optional lets the pattern match a bare `> ` and hand the FOLLOWING word back to be read as
+# the command. Once `_CMD_POS_PREFIX` absorbs a redirect (below), `true && > git commit` —
+# which creates a FILE named `git` and then runs `commit`, verified with an argv shim — was
+# read as a real `git commit`: a false DENY in branch-preflight and, worse, a baseline STAMP
+# in drift-detect-update, which absorbs a genuine external drift (security review, 2026-09-01).
+# `_CMD_REDIR` carries the same `+` and the same reasoning; the two are a literal copy of one
+# another, so any edit to one must be made to both.
 #
-# DOCUMENTED RESIDUALS. Read this list as "the ones we know about", NOT as "everything else
-# is covered" — an earlier version of this note said the fix covered every position "from the
-# SUBCOMMAND rightward" and enumerated two gaps, and a fourth review round then found a third
-# one living inside the region that sentence called covered (the GLUED redirect, above). The
-# corpus that cleared round 3 still reported 190 residual missed-creates out of 3811; those
-# are not all accounted for by the entries below, and nobody should read this block as if
-# they were.
-#   * A redirect BEFORE the subcommand (`git 2>/dev/null checkout -b foo`): this extractor
-#     handles it correctly, but stage 1 (`cmd_is_git_branch_create`'s anchored grep) never
-#     sees this sed, and `_CMD_POS_PREFIX` does not absorb a redirect.
-#   * A redirect GLUED to the SUBCOMMAND (`git checkout>&2 -b foo`): the sed below now
-#     deletes it, but stage 1 rejects the command first — `_CMD_POS_SUFFIX` does not close a
-#     verb on `<`/`>`. (`&>` is the exception that hid this, since `&` was already a closer.)
-#   * `git -C <path> …` is invisible to EVERY cmd_is_git_* predicate.
-# All three are pre-existing and identical on main, and all three live in the SHARED anchor,
-# which this todo's Scope Contract forbids changing.
+# THE THREE ANCHOR RESIDUALS THIS BLOCK USED TO LIST ARE NOW CLOSED, all in the anchor where
+# they belonged: a redirect BEFORE the subcommand and one glued to the SUBCOMMAND
+# (`_CMD_REDIR` in `_CMD_POS_PREFIX`, plus `<`/`>` in `_CMD_POS_SUFFIX`), and the
+# `git -C <path>` blindness (`_CMD_GIT_GLOBALS`, with cmd_git_repo_dir for the repo half).
+# Still read the list as "what we knew about", never as "everything else is covered": a
+# previous version of this note claimed the fix covered every position "from the SUBCOMMAND
+# rightward", and the very next review round found a defect living inside the region that
+# sentence called covered. The corpus that cleared round 3 reported 190 residual
+# missed-creates out of 3811 and they are not all accounted for here.
 #
 # A COMMENT is still a terminator, because an unquoted `#` genuinely does end the line in
 # bash — `git commit -m x # c && git checkout -b foo` never runs the create.
@@ -508,8 +709,8 @@ cmd_git_branch_create_segment() {
     esac
   done <<EOF
 $(printf '%s' "$1" | cmd_words \
-  | sed -E -e 's/(^|[[:space:]])[0-9]+[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]*/\1/g' \
-           -e 's/&?[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]*//g' \
+  | sed -E -e 's/(^|[[:space:]])[0-9]+[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]+/\1/g' \
+           -e 's/&?[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]+//g' \
            -e 's/(^|[[:space:]])#.*$/\1;/' \
   | grep -oE '(checkout|switch)[[:space:]]+[^;&|)`]*')
 EOF
@@ -524,7 +725,7 @@ EOF
 # Used by branch-preflight.sh's stale-base-branch check.
 cmd_is_git_branch_create() {
   printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+(checkout|switch)${_CMD_POS_SUFFIX}" \
+    | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_BRANCH}${_CMD_POS_SUFFIX}" \
     || return 1
   cmd_git_branch_create_segment "$1" >/dev/null
 }

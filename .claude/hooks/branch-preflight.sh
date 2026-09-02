@@ -38,18 +38,38 @@ fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_OK=0
-if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit >/dev/null; then
+# Probe EVERY function the primary path calls, not just the first one. Check 1 now depends on
+# cmd_git_repo_dir too, and a lib defining `cmd_is_git_commit` without it set LIB_OK=1, took
+# the primary path, got 127 from the `$(…)`, left IS_COMMIT=0 and ALLOWED a plain
+# `git commit -m x` on a detached HEAD — the fail-CLOSED promise in this file's header
+# quietly bypassed (security review, 2026-09-01; verified against a lib with that one
+# function renamed away). Add to this list whenever the primary path grows a dependency.
+if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
+   && declare -F cmd_is_git_commit >/dev/null \
+   && declare -F cmd_git_repo_dir >/dev/null; then
   LIB_OK=1
 fi
 
-git rev-parse --git-dir >/dev/null 2>&1 || exit 0
-
 REASON=""
+
+# WHICH REPOSITORY does the command act on? (2026-09-01.) Both checks below read HEAD, the
+# branch, and the upstream — until now always from this hook's own cwd, which was correct
+# only because `git -C <path>` was invisible to the matchers. Now that it is visible, each
+# check must decide its own answer, and they differ: check 1 RESOLVES the repo (read-only,
+# and it is the data-loss gate, so it must follow the command), while check 2 is cwd-ONLY and
+# simply declines when a global redirect is present — see its own note below. `.` means cwd.
+# A resolution
+# FAILURE means the command redirects somewhere unresolvable (a `$VAR` path, a relative -C,
+# --git-dir) — that check is then SKIPPED, which is exactly its pre-2026-09-01 behaviour on
+# such a command, never a new judgement against the wrong repo.
+REPO_COMMIT="."
 
 # --- Check 1: detached-HEAD commit (unchanged behavior) ------------------------
 IS_COMMIT=0
 if [ "$LIB_OK" = 1 ]; then
-  cmd_is_git_commit "$CMD" && IS_COMMIT=1
+  if cmd_is_git_commit "$CMD"; then
+    REPO_COMMIT=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT") && IS_COMMIT=1 || REPO_COMMIT="."
+  fi
 else
   # Lib unsourceable → this half of the gate is BLOCKING, so fail CLOSED: keep the raw
   # (quote-unaware) match so a real detached-HEAD commit is still caught. A quoted mention
@@ -66,6 +86,13 @@ else
   # COMPOUND_COMMIT_RE specifically (not GIT_COMMIT_RE), a `-c key=value` group before
   # `commit`. All five require the rare precondition of the shared lib being unsourceable —
   # see todos/ for tracked hardening work.
+  # A SIXTH divergence, in the opposite direction, opened on 2026-09-01: this fallback is
+  # repo-UNAWARE, so on `git -C /elsewhere commit` it can DENY (judging cwd's HEAD) where the
+  # primary path now SKIPS. That is the safe direction for a data-loss gate under a broken
+  # install — a spurious deny is recoverable, an unreachable commit is not — but it is a real
+  # divergence and is recorded here rather than left for the next reader to rediscover. It is
+  # also unreachable in the normal case: the fallback runs only when lib/cmd-detect.sh cannot
+  # be sourced at all.
   GIT_COMMIT_RE='^[[:space:]]*[`{!]?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
   COMPOUND_COMMIT_RE='(&&|\|\||;|[`{!])[[:space:]]*git[[:space:]]+commit([[:space:]]|$)'
   if [[ "$CMD" =~ $GIT_COMMIT_RE ]] || printf '%s' "$CMD" | grep -qE "$COMPOUND_COMMIT_RE"; then
@@ -73,18 +100,47 @@ else
   fi
 fi
 
-if [ "$IS_COMMIT" = 1 ]; then
-  HEAD_SHA=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-  BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+# The `rev-parse --git-dir` probe is per-CHECK, not one global pre-guard as before: with a
+# resolved `-C` target the question "is this a repo" is about THAT directory, and it also
+# subsumes the existence check cmd_git_repo_dir deliberately does not perform. Without it a
+# non-existent path would make every query below return empty and read as a detached HEAD.
+if [ "$IS_COMMIT" = 1 ] && git -C "$REPO_COMMIT" rev-parse --git-dir >/dev/null 2>&1; then
+  HEAD_SHA=$(git -C "$REPO_COMMIT" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  BRANCH=$(git -C "$REPO_COMMIT" symbolic-ref --short HEAD 2>/dev/null || echo "")
   if [ -z "$BRANCH" ]; then
-    REASON="HEAD is detached (at ${HEAD_SHA}) — committing here creates an unreachable commit. Create a named branch first: git switch -c <branch-name>"
+    WHERE=""
+    [ "$REPO_COMMIT" = "." ] || WHERE=" in ${REPO_COMMIT}"
+    REASON="HEAD is detached${WHERE} (at ${HEAD_SHA}) — committing here creates an unreachable commit. Create a named branch first: git switch -c <branch-name>"
   fi
 fi
 
 # --- Check 2: branch-create off a stale base (new, 2026-08-28) -----------------
 # Only evaluated when check 1 found nothing to deny — see the module comment: exactly one
 # decision is emitted per invocation, never two.
-if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD"; then
+# CHECK 2 IS CWD-ONLY, BY DECISION (2026-09-01). It briefly followed a resolved `-C` into
+# another repository and that was wrong twice over, both found by security review:
+#
+#   1. WRONG INVOCATION. cmd_git_repo_dir answers for the whole command over
+#      `(checkout|switch)`, voting `.` on ANY unredirected checkout — but the start-point
+#      extraction below picks the segment carrying a CREATE flag. Those can be different
+#      invocations, so `git --no-pager checkout main && git -C /other checkout -b foo` judged
+#      cwd's staleness for a create that happens in /other: base ALLOW, new DENY, 96/800 in a
+#      co-occurrence corpus. The mirror (`git -C /wt checkout -b foo && git checkout main`)
+#      resolved to `.` and left a create off a stale /wt unchecked.
+#   2. SIDE EFFECT FROM UNAPPROVED TEXT. This check FETCHES and writes remote-tracking refs.
+#      Following `-C` meant a PreToolUse hook mutating a repository named only by a command
+#      string that was never approved and may never run — demonstrated by watching
+#      `origin/main` move in a repo the command only mentioned.
+#
+# So: if the command carries a GLOBAL-form repo redirect anywhere, skip. That is exactly the
+# pre-2026-09-01 behaviour (the old predicate could not see those globals at all), so nothing
+# is lost, and every git call below is cwd's again. The ENV form is deliberately NOT a skip
+# trigger — `_CMD_POS_PREFIX` has always absorbed it, so `GIT_DIR=/x git checkout -b foo` was
+# judged against cwd before and still is. Check 1 keeps full `-C` resolution: it is read-only
+# and it is the gate that prevents data loss.
+if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD" \
+   && ! printf '%s' "$CMD" | cmd_words | grep -qE "$_CMD_GIT_REDIRECTS_REPO" \
+   && git rev-parse --git-dir >/dev/null 2>&1; then
   BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
   if [ -n "$BRANCH" ]; then
     # Does the command give an explicit start-point beyond the new branch's own name

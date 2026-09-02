@@ -25,7 +25,8 @@
 # command-position anchor to suppress a mention with).
 set -uo pipefail
 
-LIB="$(cd "$(dirname "$0")" && pwd)/lib/cmd-detect.sh"
+HOOKDIR="$(cd "$(dirname "$0")" && pwd)"
+LIB="$HOOKDIR/lib/cmd-detect.sh"
 PASS=0; FAIL=0
 
 # Harness control: a probe that cannot see the thing it tests reports a clean
@@ -34,7 +35,7 @@ PASS=0; FAIL=0
 . "$LIB" || { echo "FAIL: lib/cmd-detect.sh is not sourceable"; exit 1; }
 for f in cmd_bare cmd_words cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
          cmd_is_git_commit_or_push cmd_is_git_head_mover cmd_is_git_branch_create \
-         cmd_git_branch_create_segment; do
+         cmd_git_branch_create_segment cmd_git_repo_dir; do
   declare -F "$f" >/dev/null || { echo "FAIL: $f is not defined by the lib"; exit 1; }
 done
 
@@ -322,14 +323,12 @@ done
 # foo` — a real create — reported not-a-create, and the suite stayed green because no pin put
 # a redirect there.
 for _r in '2>/dev/null' '&>/dev/null' '>|log' '2>&1'; do
-  # NOT pinned: `git 2>/dev/null checkout -b foo` (redirect BEFORE the subcommand) is a real
-  # create and is NOT detected. The segment extractor gets it right; the miss is in stage 1,
-  # `cmd_is_git_branch_create`'s anchored grep, which never sees the redirect-deleting sed.
-  # Pre-existing and identical on main. Fixing it means widening the SHARED
-  # _CMD_POS_PREFIX (which would also pick up the `git -C <path>` blindness), and this
-  # todo's Scope Contract explicitly forbids touching that anchor. Deliberately left as a
-  # documented residual rather than pinned to its wrong value -- a test asserting the
-  # current wrong answer would go red when someone fixes it, which is pinning the bug.
+  # The two slots this loop used to skip are now covered (2026-09-01). The old note here
+  # said `git 2>/dev/null checkout -b foo` was a real create reported as not-a-create, left
+  # unpinned because fixing it meant widening the SHARED _CMD_POS_PREFIX and the then-current
+  # Scope Contract forbade that. The anchor has since been widened, so the residual is a pin.
+  det cmd_is_git_branch_create "git ${_r} checkout -b foo"      yes "slot: redirect BEFORE the subcommand (${_r})"
+  det cmd_is_git_branch_create "${_r} git checkout -b foo"      yes "slot: redirect BEFORE the command word (${_r})"
   det cmd_is_git_branch_create "git checkout ${_r} -b foo"      yes "slot: redirect before the create FLAG (${_r})"
   det cmd_is_git_branch_create "git checkout -b ${_r} foo"      yes "slot: redirect between flag and name (${_r})"
   det cmd_is_git_branch_create "git checkout -b foo ${_r}"      yes "slot: redirect after the name (${_r})"
@@ -574,13 +573,203 @@ else
   echo "FAIL: $DRIFT quote-free inputs render differently — the two scans have drifted"; FAIL=$((FAIL+1))
 fi
 
+echo "--- git GLOBAL options between \`git\` and its subcommand (_CMD_GIT_GLOBALS) ---"
+# Until 2026-09-01 the matchers modelled exactly ONE global, `-c key=value`. Every other
+# spelling reported "not a git commit" for a real one — measured, all four predicates. The
+# `-C` case mattered most: it is what CLAUDE.md prescribes for worktree sessions, so the
+# COMMON form was the invisible one. Generated from dimensions rather than listed, because a
+# hand-listed corpus reproduces the author's blind spot (that is how the `&>` family was
+# missed for three review rounds).
+for _g in '-c user.name=x' '-C /tmp' '--no-pager' '-p' '--literal-pathspecs' \
+          '--git-dir=/tmp/x' '--work-tree /tmp' '-C /tmp -C /var' '-C/tmp' '-c a=b -C /tmp'; do
+  det cmd_is_git_commit        "git ${_g} commit -m x"      yes "globals: 'git ${_g} commit' is a commit"
+  det cmd_is_git_commit_or_push "git ${_g} push"            yes "globals: 'git ${_g} push' is a push"
+  det cmd_is_git_head_mover    "git ${_g} rebase main"      yes "globals: 'git ${_g} rebase' moves HEAD"
+  det cmd_is_git_branch_create "git ${_g} checkout -b foo"  yes "globals: 'git ${_g} checkout -b' creates"
+  det cmd_is_git_branch_create "git ${_g} switch -c foo"    yes "globals: 'git ${_g} switch -c' creates"
+done
+# ...and a redirect in either pre-command slot, the other half of the same anchor fix.
+for _r in '2>/dev/null' '&>/dev/null' '>|log' '2>&1' '</dev/null'; do
+  det cmd_is_git_commit        "${_r} git commit -m x"      yes "redirect before the command word (${_r})"
+  det cmd_is_git_commit        "git ${_r} commit -m x"      yes "redirect before the subcommand (${_r})"
+  det cmd_is_git_head_mover    "${_r} git reset --hard"     yes "redirect before the command word, HEAD mover (${_r})"
+done
+det cmd_is_git_commit 'git>log commit -m x' yes "an ATTACHED redirect (no space after \`git\`) is still a commit"
+# A redirect's TARGET is mandatory in bash. Modelling it as optional let `>` match nothing and
+# hand the NEXT word back as the command word: `true && > git commit` creates a FILE named
+# `git` and runs `commit` (argv shim), yet was read as a real commit — a false DENY here and,
+# worse, a baseline STAMP in drift-detect-update, which absorbs a genuine external drift.
+det cmd_is_git_commit 'true && > git commit'  no  "an empty redirect target is not a redirect"
+det cmd_is_git_commit 'git > commit'          no  "...nor when it would swallow the subcommand"
+det cmd_is_git_commit '2>/dev/null git commit -m x' yes "control: a REAL redirect before the command word still matches"
+# A verb GLUED to a redirect needs `<`/`>` in _CMD_POS_SUFFIX; `&>` passed only because `&`
+# was already a closer, which is why this slot survived the &> fix one branch down.
+for _r in '>&2' '>|log' '>/dev/null' '&>/dev/null' '&>>log'; do
+  det cmd_is_git_branch_create "git checkout${_r} -b foo" yes "glued to the SUBCOMMAND (${_r})"
+done
+det cmd_is_git_commit 'git commit>log'        yes "a verb glued to a redirect is still an invocation"
+# _CMD_POS_PREFIX is SHARED with cmd_is_gh_pr_create, so widening it for redirects widens
+# that gate too and pr-preflight-guard.sh newly denies this. Correct hardening and the safe
+# direction, but a real behaviour change outside the git matchers — pinned so it is a
+# decision on the record rather than a side effect nobody wrote down.
+det cmd_is_gh_pr_create '2>/dev/null gh pr create --fill' yes "a redirect before the command word no longer hides gh pr create"
+det cmd_is_gh_pr_create 'echo "2>/dev/null gh pr create"' no  "...and a quoted mention of that form still does not match"
+
+# NEGATIVE side. Widening a matcher can only ADD matches, so these are the pins that keep
+# the widening from becoming a mention-matcher.
+det cmd_is_git_commit 'echo "git -C /tmp commit -m x"' no  "a QUOTED mention with globals still does not match"
+det cmd_is_git_commit 'echo git -C /tmp commit'        no  "git as an ARGUMENT to echo still does not match"
+det cmd_is_git_commit 'echo 2>/dev/null git commit'    no  "...nor when the redirect belongs to the other command"
+det cmd_is_git_commit 'git log --grep commit'          no  "a post-verb flag VALUE named commit is not a commit"
+det cmd_is_git_commit 'git diff -- commit'             no  "a pathspec named commit is not a commit"
+det cmd_is_git_commit 'git config commit.gpgsign false' no "config on a commit.* key is not a commit"
+# DOCUMENTED RESIDUAL, inherited from git-safety.sh's identical grammar: an unmodeled
+# SEPARATE-arg global has its argument mis-read as the verb. A false NEGATIVE, never a false
+# positive. Pinned so the direction is visible, not so the behaviour is blessed.
+det cmd_is_git_commit 'git --namespace foo commit'     no  "residual: an unmodeled separate-arg global loses the match"
+
+echo "--- cmd_git_repo_dir: WHICH repository the matched invocations act on ---"
+# repo <command> <verbs-constant-value> <expected|SKIP> <label>
+repo() {
+  local cmd="$1" verbs="$2" want="$3" label="$4" got
+  got=$(cmd_git_repo_dir "$cmd" "$verbs") || got=SKIP
+  if [ "$got" = "$want" ]; then echo "PASS: $label"; PASS=$((PASS+1))
+  else echo "FAIL: $label (got [$got], want [$want])"; FAIL=$((FAIL+1)); fi
+}
+repo 'git commit -m x'                 "$_CMD_GIT_VERBS_COMMIT" '.'     "no globals at all -> cwd"
+repo "git -C /tmp commit -m x"         "$_CMD_GIT_VERBS_COMMIT" '/tmp'  "a single absolute -C resolves"
+repo "git -C /tmp commit; git -C /tmp commit -m z" "$_CMD_GIT_VERBS_COMMIT" '/tmp' \
+  "two invocations naming the SAME directory resolve"
+repo "git -C /tmp commit; git -C /var commit" "$_CMD_GIT_VERBS_COMMIT" SKIP \
+  "two invocations naming DIFFERENT directories cannot be resolved"
+# THE deny-preserving rule. `git -C /wt commit && git commit` really does commit in cwd, and
+# today's gate denies on it; resolving the command to /wt would turn that into an ALLOW — a
+# deny->allow transition in a data-loss gate. One unredirected invocation settles it as cwd.
+repo "git -C /tmp commit && git commit -m y" "$_CMD_GIT_VERBS_COMMIT" '.' \
+  "an UNREDIRECTED invocation in the same command wins -> cwd (preserves today's denies)"
+repo "git commit -m y && git -C /tmp commit" "$_CMD_GIT_VERBS_COMMIT" '.' \
+  "...in either order"
+# THE false-deny rule, the mirror of the one above: the verb set is scoped to the CALLER's
+# predicate, so an unrelated `git status` must not vote cwd for a commit-shaped gate.
+repo "git -C /tmp commit && git status" "$_CMD_GIT_VERBS_COMMIT" '/tmp' \
+  "an unredirected invocation of an UNRELATED verb does not vote"
+repo "git -C /tmp status && git commit -m x" "$_CMD_GIT_VERBS_COMMIT" '.' \
+  "...and a redirected unrelated verb does not resolve the answer either"
+# `-C` AFTER the verb is `git commit -C <commit>` (reuse that commit's message) — a totally
+# different flag. Mining it would send the gate to a directory named `HEAD` and, worse, make
+# a plain cwd commit unresolvable -> skipped -> a deny->allow regression.
+repo 'git commit -C HEAD'              "$_CMD_GIT_VERBS_COMMIT" '.'  "a POST-verb -C (message reuse) is not a repo redirect"
+repo 'git commit --reuse-message=HEAD' "$_CMD_GIT_VERBS_COMMIT" '.'  "...nor its long form"
+# Unresolvable forms: each falls back to SKIP, which is the pre-2026-09-01 behaviour (blind),
+# never a new judgement against the wrong repo.
+repo 'git -C ../rel commit'            "$_CMD_GIT_VERBS_COMMIT" SKIP "a RELATIVE -C resolves against the shell's cwd, not the hook's"
+repo 'git -C "$WORKTREE" commit'       "$_CMD_GIT_VERBS_COMMIT" SKIP "an unexpanded \$VAR path is unknowable here"
+repo 'git -C /tmp/`pwd` commit'        "$_CMD_GIT_VERBS_COMMIT" SKIP "...as is a command substitution"
+repo 'git -C/tmp commit'               "$_CMD_GIT_VERBS_COMMIT" SKIP "the glued -C/path form (real git exits 129) does not resolve"
+repo 'git --git-dir=/x commit'         "$_CMD_GIT_VERBS_COMMIT" SKIP "--git-dir moves only the git-dir, not the work-tree"
+repo 'git --work-tree /x commit'       "$_CMD_GIT_VERBS_COMMIT" SKIP "--work-tree likewise"
+# ...but an ENV-form redirect ALONE resolves to cwd, and that is not a shortcut: the inline
+# assignment is swallowed by _CMD_POS_PREFIX's env absorber, which predates all of this, so
+# `GIT_DIR=.git git commit` DID match and DID deny on main. Answering SKIP here dropped that
+# deny — a CRITICAL, measured base=DENY head=ALLOW on a detached HEAD (review 2026-09-01).
+repo 'GIT_DIR=/x git commit'           "$_CMD_GIT_VERBS_COMMIT" '.'  "an inline GIT_DIR= alone keeps judging cwd (the old gate's deny)"
+repo 'GIT_WORK_TREE=/x git commit'     "$_CMD_GIT_VERBS_COMMIT" '.'  "...same for GIT_WORK_TREE="
+# The text `GIT_DIR=` as a `-c` VALUE is not a redirect at all — scanning for it there cost
+# the same CRITICAL a second instance, on a command with no repo redirect whatsoever.
+repo 'git -c GIT_DIR=x commit'         "$_CMD_GIT_VERBS_COMMIT" '.'  "GIT_DIR= as a -c VALUE is not a repo redirect"
+repo 'git -c GIT_WORK_TREE=x commit'   "$_CMD_GIT_VERBS_COMMIT" '.'  "...nor GIT_WORK_TREE= as a -c value"
+# ( ) { } ARE NOT CONTROL OPERATORS — they are ordinary content in an unquoted global's
+# value, and splitting on them severed `git` from its verb. One real commit, no segment
+# matched, every consumer skipped: 144 base-DENY -> new-ALLOW rows over a 6400-input corpus,
+# in the data-loss gate (CRITICAL, security review 2026-09-01). An argv shim confirmed the
+# first is a single invocation: [-c][core.hooksPath=/…/hooks][commit][-m][x].
+repo 'git -c core.hooksPath=$(pwd)/hooks commit -m x' "$_CMD_GIT_VERBS_COMMIT" '.' \
+  'a $(...) inside a -c value does not split the invocation'
+repo 'git -c foo.bar={a} commit -m x'  "$_CMD_GIT_VERBS_COMMIT" '.'  'nor do braces inside a -c value'
+repo 'git -c foo.bar=(a) commit -m x'  "$_CMD_GIT_VERBS_COMMIT" '.'  'nor bare parens'
+# ...while the four REAL control operators must still split, or the deny-preserving rule
+# above cannot see the second invocation at all.
+repo 'git -C /tmp commit; git commit'  "$_CMD_GIT_VERBS_COMMIT" '.'  'a real ; still splits (unredirected clause wins)'
+repo 'git -C /tmp commit && git commit' "$_CMD_GIT_VERBS_COMMIT" '.' 'a real && still splits'
+repo 'git -C /tmp commit | git commit' "$_CMD_GIT_VERBS_COMMIT" '.'  'a real | still splits'
+# MIXED spans: a resolvable -C sitting NEXT TO an unresolvable redirect. Found by mutation
+# testing — replacing the count-both-sides check with `true` left the whole suite green,
+# because every single-redirect case above lands on SKIP for a second reason (no value was
+# extracted at all). Only a span that yields a GOOD value AND an unhandled one discriminates,
+# and without the check it would resolve to the -C while git actually reads its refs from the
+# --git-dir. The generated corpus could not produce these: it varied one global at a time.
+# The saw=0 branch: no segment carries a real invocation, so the repo is unknown. The PAIR is
+# the point — the first is a deny main only had because its `-c` value class `[^[:space:]]+`
+# swallowed the `;` (bash runs `git -c foo=a`, then a command named `b`; nothing commits), the
+# second is a real commit whose deny must survive. One without the other proves nothing.
+repo 'git -c foo=a;b commit'           "$_CMD_GIT_VERBS_COMMIT" SKIP "a separator inside a -c VALUE leaves no real invocation -> unknown"
+repo 'git -c foo=a;git commit'         "$_CMD_GIT_VERBS_COMMIT" '.'  "...but a real commit in the next clause still resolves to cwd"
+repo 'git -C /tmp --git-dir=/x commit'   "$_CMD_GIT_VERBS_COMMIT" SKIP "a resolvable -C beside a --git-dir does not resolve"
+repo 'git -C /tmp --work-tree /x commit' "$_CMD_GIT_VERBS_COMMIT" SKIP "...nor beside a --work-tree"
+repo 'git -C /tmp -C/var commit'         "$_CMD_GIT_VERBS_COMMIT" SKIP "...nor beside a glued -C"
+repo 'GIT_DIR=/x git -C /tmp commit'     "$_CMD_GIT_VERBS_COMMIT" SKIP "...nor beside an inline GIT_DIR="
+# An unresolvable invocation must POISON the whole answer, not just drop out of the tally.
+# Second mutation-testing find: with the `unresolved` flag ignored, every case above still
+# returned SKIP anyway — because a single unresolvable span leaves NO value, and zero values
+# is already SKIP. The flag only changes the answer when one span is unresolvable and ANOTHER
+# yields exactly one clean value, which needs two invocations in one command. Neither the
+# single-invocation pins above nor the generated hook corpus varied that.
+repo 'git -C /tmp --git-dir=/x commit; git -C /tmp commit' "$_CMD_GIT_VERBS_COMMIT" SKIP \
+  "an unresolvable invocation is not silently dropped when a later one does resolve"
+# Per-verb-set answers for one command: this is why branch-preflight resolves TWICE.
+repo "git -C /tmp checkout -b foo && git commit -m x" "$_CMD_GIT_VERBS_BRANCH"  '/tmp' \
+  "one command, branch verbs -> /tmp"
+repo "git -C /tmp checkout -b foo && git commit -m x" "$_CMD_GIT_VERBS_COMMIT" '.' \
+  "...the SAME command, commit verbs -> cwd"
+
+echo "--- the verb constant passed to cmd_git_repo_dir must match the caller's predicate ---"
+# Passing a WIDER set than the predicate uses re-opens the false-DENY pinned above, and the
+# two live in different files, so nothing but this check couples them.
+PAIR_BAD=0; PAIR_SEEN=0
+while IFS='|' read -r _pred _verbs; do
+  [ -n "$_pred" ] || continue
+  for _h in "$HOOKDIR"/*.sh; do
+    case "$(basename "$_h")" in test-*) continue ;; esac
+    # The closing quote is part of the needle: without it `$_CMD_GIT_VERBS_COMMIT` is a
+    # PREFIX of `$_CMD_GIT_VERBS_COMMIT_PUSH` and drift-detect.sh matched both rows.
+    grep -q -- "cmd_git_repo_dir .*\\\$${_verbs}\"" "$_h" || continue
+    PAIR_SEEN=$((PAIR_SEEN+1))
+    if ! grep -q -- "$_pred " "$_h"; then
+      echo "  BAD: $(basename "$_h") passes \$${_verbs} but never calls ${_pred}"
+      PAIR_BAD=$((PAIR_BAD+1))
+    fi
+  done
+done <<'PAIRS'
+cmd_is_git_commit|_CMD_GIT_VERBS_COMMIT
+cmd_is_git_commit_or_push|_CMD_GIT_VERBS_COMMIT_PUSH
+cmd_is_git_head_mover|_CMD_GIT_VERBS_HEAD_MOVER
+cmd_is_git_branch_create|_CMD_GIT_VERBS_BRANCH
+PAIRS
+if [ "$PAIR_BAD" -eq 0 ]; then
+  echo "PASS: every cmd_git_repo_dir call site uses its own predicate's verb set"; PASS=$((PASS+1))
+else
+  echo "FAIL: $PAIR_BAD call site(s) resolve the repo with the wrong verb set"; FAIL=$((FAIL+1))
+fi
+if [ "$PAIR_SEEN" -ge 4 ]; then
+  echo "PASS: control — found $PAIR_SEEN paired call sites to check"; PASS=$((PASS+1))
+else
+  echo "FAIL: control — only $PAIR_SEEN paired call sites found; the scan is vacuous"; FAIL=$((FAIL+1))
+fi
+# ...and the constants must still describe what their predicates actually match, or the
+# pairing above couples two things that have drifted apart.
+for _v in commit push rebase reset pull merge cherry-pick; do
+  det cmd_is_git_head_mover "git ${_v} x" yes "constant check: ${_v} is in _CMD_GIT_VERBS_HEAD_MOVER"
+done
+det cmd_is_git_head_mover     'git status'  no  "constant check: status is NOT a HEAD mover"
+det cmd_is_git_commit_or_push 'git rebase main' no "constant check: rebase is NOT in _CMD_GIT_VERBS_COMMIT_PUSH"
+det cmd_is_git_commit         'git push'    no  "constant check: push is NOT in _CMD_GIT_VERBS_COMMIT"
+
 echo "--- EVERY hook's necessary-substring fast path must be quote-tolerant ---"
 # A hook whose matcher reads cmd_words but whose fast path globs RAW $CMD exits
 # before the matcher is ever asked: `git com"mit"` holds no literal `commit`.
 # That silently disabled five gates, one of them blocking, while the lib itself
 # detected the form. This enumerates the fast paths instead of naming them, so a
 # NEW hook that adds a raw single-stage filter fails here rather than in prod.
-HOOKDIR="$(cd "$(dirname "$0")" && pwd)"
 FASTPATH_BAD=0
 for f in "$HOOKDIR"/*.sh; do
   case "$(basename "$f")" in test-*) continue ;; esac
