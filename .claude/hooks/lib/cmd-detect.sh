@@ -698,6 +698,194 @@ EOF
 # Both rewrites rely on quoted occurrences never reaching them: that is `neutral()`'s job
 # (see cmd_words), which is why `<`, `>` and `#` were added to it in the same change. Quote
 # state is already gone by the time these run, so it cannot be recovered here.
+#
+# THE EXTRACTION MUST REQUIRE A REAL WORD BOUNDARY BEFORE `checkout`/`switch`, not just the
+# literal text (fixed 2026-09-02, todos/P3-2026-08-28-branch-create-segment-decoy-substring-
+# false-negative.md). Before this fix `grep -oE '(checkout|switch)[[:space:]]+…'` matched the
+# literal substring ANYWHERE it occurred, including glued to a preceding word: `gcheckout -b
+# decoy origin/main` contains `checkout` starting one byte after the `g`, immediately followed
+# by whitespace, so it satisfied the pattern exactly like a real `git checkout` would. In a
+# compound command carrying BOTH a decoy word shaped like this AND a real, later create with no
+# start-point (`gcheckout -b decoy origin/main && git checkout -b real`), the `while` loop below
+# hit the decoy segment FIRST, found its `-b` flag, and returned early — never reaching the real
+# create at all. Confirmed by running the unfixed function directly (not by reasoning about the
+# regex): `cmd_git_branch_create_segment` returned `checkout -b decoy origin/main` for that
+# input, discarding the real segment entirely.
+#
+# The strict stage-1 check (`cmd_is_git_branch_create`'s own `grep`, anchored via
+# `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`) already rejects a bare decoy as the sole basis for
+# detection, because it requires the LITERAL word `git` in command position first. This gap was
+# specific to this LOOSE stage-2 extraction, which has no equivalent anchor of its own — it
+# searches for `checkout`/`switch` directly, not `git checkout`/`git switch`, precisely so it
+# still finds the segment when options sit between `git` and the subcommand (`git -C /tmp
+# checkout -b foo`). That is also why this can't reuse `_CMD_POS_PREFIX` verbatim: that anchor's
+# openers answer "is `git` in command position", a different question from "is `checkout` a
+# standalone word", and the Scope Contract for this fix is this function only.
+#
+# The boundary added is a WHITELIST of characters that can genuinely precede a standalone bash
+# word, GLUED (no space) or not — start-of-string, whitespace, or one of the operators that
+# ALWAYS end the PREVIOUS token with no separator required: `;`, `&`, `|`, `(`, `)`, and backtick
+# (a command substitution boundary) — not a blacklist of "non-alphanumeric". A blacklist would
+# wrongly treat `-`, `/`, `.` and similar identifier-continuing punctuation as valid boundaries
+# too, which would still admit a decoy like `x-checkout -b decoy` (one bash word, `x-checkout`,
+# with no real separator inside it). The grep's boundary alternative is captured as part of the
+# match (POSIX ERE has no lookbehind), so a trailing `sed` strips exactly one leading non-letter
+# byte before the `case` dispatch below sees it — `checkout`/`switch` always start with a letter,
+# so the start-of-string alternative (which leaves nothing to strip) is untouched by the same sed.
+#
+# `!`, `{`, `}`, `<`, `>` are DELIBERATELY EXCLUDED from the boundary WHITELIST itself, even
+# though the first version of this fix included them (copied from `_CMD_POS_PREFIX`/
+# `_CMD_POS_SUFFIX` above, which use a wider class for a different, whitespace-gated purpose).
+# `!` and bare `{`/`}` are RESERVED-WORD boundaries, not metacharacters: `! command` and
+# `{ command; }` require a SPACE after the opener to be recognized as the negation/brace-group
+# reserved word. GLUED with no space, they do not separate anything — `x!checkout`, `x{checkout`,
+# `x}checkout` each tokenize as ONE literal command word and never invoke `checkout`/`switch` at
+# all (confirmed by running each: `bash -c 'checkout(){ :; }; x!checkout -b x'` -> `bash:
+# x!checkout: command not found`; identical for `x{checkout`/`x}checkout`). `_CMD_POS_PREFIX`'s
+# own `[[:space:]]*` (zero-or-more) after these openers is a KNOWN, ACCEPTED over-inclusion there
+# (see the KNOWN RESIDUAL note above it) -- safe ONLY because that anchor feeds a boolean,
+# DENY-shaped check where over-triggering is the safe direction. Copying that same tolerance into
+# THIS extraction reopened the exact decoy-shadows-a-later-real-create bug this fix exists to
+# close, just via `x!checkout`/`x{checkout`/`x}checkout` instead of `gcheckout` -- found and
+# reproduced live by `security-auditor` review, 2026-09-02, on the first version of this fix.
+# `<`/`>` are excluded for an unrelated reason: the redirect-stripping `sed` passes above ALWAYS
+# delete them together with their whole target -- including `checkout` itself when glued
+# (`x>checkout` matches the target-word class `[^[:space:];&|)`]+` whole) -- before this `grep`
+# ever runs, so they can never reach it as live boundary text; including them would be inert, not
+# wrong, but naming only what this stage can actually observe keeps the class honest.
+#
+# EXCLUDING BARE `}` HAS A KNOWN, DELIBERATELY ACCEPTED COST: `}` also closes a `${...}`
+# PARAMETER EXPANSION, and `${x}checkout` (with `x` unset or empty) really runs `checkout` --
+# confirmed (`bash -c 'checkout(){ echo REAL "$@"; }; x=; ${x}checkout -b real'` -> `REAL -b
+# real`). Excluding bare `}` from the whitelist means this extraction MISSES that real,
+# start-point-less create -- found by `code-reviewer`, 2026-09-02 round 2. A follow-up attempt to
+# recover it by NEUTRALIZING (deleting) `${...}` spans in their own `sed` pass before the boundary
+# check -- mirroring how a redirect is deleted -- was tried and REVERTED the same day: a single
+# non-recursive ERE substitution cannot balance nested braces, so `${a:-${b}}checkout` (confirmed
+# LIVE: `bash -c 'checkout(){ :; }; a=; b=; ${a:-${b}}checkout -b real'` really invokes it) left a
+# dangling `}` the pass never reached, an undetected miss at BOTH stages of this file, not just
+# this function. Worse, the pass could not distinguish an expansion that CAN be empty from one
+# that NEVER can: `${#x}` (length) always yields a non-empty digit string, so `${#x}checkout`
+# NEVER runs `checkout` in real bash (confirmed: `bash: 0checkout: command not found`), yet the
+# pass deleted it unconditionally, MANUFACTURING a clean, falsely-boundary-anchored fake
+# `checkout` segment that shadowed a REAL later create end-to-end through `branch-preflight.sh`'s
+# own `HAS_START_POINT` computation -- found by `security-auditor`, 2026-09-02 round 3, and
+# reproducing the EXACT class of bug this whole todo exists to close, via the very mechanism meant
+# to close a different instance of it. Given the choice between (a) MISSING a real create that
+# uses an exotic, unlikely-by-accident glue mechanism -- the safe-fail direction this check's own
+# severity note already accepts elsewhere ("fails open by design... only ever prevents redundant
+# work, never data loss") -- and (b) a neutralization pass sophisticated enough to be provably
+# correct (balanced-brace matching, an allow-list of which expansion forms can truly be empty),
+# which is a materially larger change than this todo's character-class scope, (a) was kept and
+# (b) was abandoned rather than iterated a fourth time. `${...}`/nested-`${...}`/`${#...}`-glued
+# creates are a KNOWN RESIDUAL (see below), not silently unhandled.
+#
+# `$(...)` command substitution needs no such pass and carries none of this risk: unlike `}`, a
+# bare `)` is never a live glued boundary on its own (`(true)checkout` is always a syntax error,
+# confirmed with `bash -n`), so `)` in the whitelist is unconditionally safe -- correct for
+# `$(true)checkout` (confirmed live) and inert for the bare-subshell form at the same time, with
+# no ambiguity for a plain character check to resolve, and no balanced-parsing problem the way
+# `${...}` has one (a stray, unbalanced `)` from a malformed `$(...)` is exactly as safe as a
+# balanced one, since either way it is never itself live glued text). `{` (the OPENER) has no
+# analogous live-glued form either -- a brace GROUP `{ ...; }` requires a space after `{` to be
+# recognized at all, so a glued `{word` is always just one literal token, never a real command
+# position.
+#
+# THE BOUNDARY WHITESPACE MUST BE `[[:blank:]]` (space + tab), NOT `[[:space:]]` (which POSIX also
+# defines to include vertical tab 0x0B, form feed 0x0C, and carriage return 0x0D). Bash's
+# tokenizer does not treat those three bytes as word-separating at all -- glued between an
+# arbitrary prefix and `checkout`/`switch` they fuse into ONE non-existent command word, the same
+# shape as `gcheckout` -- confirmed by running each (`bash: xcheckout: command not found` for a
+# literal VT byte between `x` and `checkout`, the VT itself invisible in the error text but the
+# fused word is not). Found by `security-auditor`, 2026-09-02 round 2, and confirmed by mutation
+# (reverting this one occurrence to `[[:space:]]` reproduces the decoy-wins bug for all three
+# bytes). The three OTHER `[[:space:]]` occurrences in this function -- the post-verb separator,
+# and the two flag-presence greps (`'(^|[[:space:]])-[bB]'`/`-[cC]'`) -- were left unchanged.
+# CORRECTION (round 3, 2026-09-02): an earlier version of this note claimed this was because a
+# stray VT/FF/CR there "can only fuse checkout with what follows into a token real git would
+# reject, which is fail-safe" -- `security-auditor` confirmed the CONCLUSION (no live decoy-wins
+# bypass found through those three occurrences, by construction) but showed the STATED REASON
+# does not establish it: a VT-glued flag (`checkout<VT>-b fake`) DOES make this function return
+# the wrong (fake) segment, `rc=0 seg=[checkout<VT>-b fake ...]` -- it is safe ONLY because
+# `branch-preflight.sh`'s OWN consumer code (`set -- $SEGMENT`, unquoted) is independently
+# VT-blind in the same direction, so the corrupted flag token never matches `-b`/`-B`/`-c`/`-C`
+# downstream either. That is a property of the CALLER, not of this function, and is not something
+# a future edit to either side is obligated to preserve -- flagged here so a change to
+# `branch-preflight.sh`'s own token-walk (e.g. quoting `"$SEGMENT"`) does not silently reopen it.
+#
+# This narrows what the extraction accepts, which is the opposite direction from most of this function's
+# other fixes (deliberately, per the note above: this stage feeds `branch-preflight.sh`'s
+# START-POINT extraction, so picking the WRONG segment produces wrong DATA, not just an
+# over-triggered boolean -- unlike the boolean-only stage-1 anchor, over-inclusion here is not the
+# safe side). It cannot narrow away a real create the suite already covers: every existing test
+# for this function precedes `checkout`/`switch` with plain whitespace (after `git`, after a
+# global, after a separator), which is in the whitelist; verified by re-running the full existing
+# corpus after this change (see test-cmd-detect.sh) with zero regressions.
+#
+# THE BOUNDARY WHITELIST IS COUPLED TO THE ARGUMENT TERMINATOR CLASS UNION WHITESPACE, BY
+# CONSTRUCTION -- this is the OPPOSITE direction from the independence coupling documented ~10
+# lines up (`_CMD_POS_SUFFIX` vs. this extractor's own terminator: those must be derived
+# independently, not mirrored). Here the two ARE required to agree: the grep match CONSUMES its
+# boundary byte (there is no lookbehind to leave it unconsumed), so whatever character ends one
+# segment's argument span is exactly the character the NEXT segment's boundary alternative must
+# be able to match as an opener -- `;`, `&`, `|`, `)`, and backtick all appear on both sides for
+# this reason, and MUST stay in this whitelist even though `)` does not appear in
+# `_CMD_POS_PREFIX`'s own opener-only class (`[;&|(`{!]`). The two classes actually SHARE five
+# characters (`;`, `&`, `|`, `(`, backtick) -- `)` is the only one unique to THIS whitelist, and
+# `{`/`!` are the only ones unique to `_CMD_POS_PREFIX`'s. `)`'s justification differs from the
+# other four: it is not merely inert-but-present for symmetry, it is load-bearing for the
+# `$(...)checkout` case documented above, the same way `(` is load-bearing for `(checkout -b x)`
+# (confirmed live). A maintainer narrowing this whitelist to mirror `_CMD_POS_PREFIX`'s
+# opener-only class would silently drop `)` and backtick and desync it from the terminator class
+# it must consume after, reintroducing a "next segment invisible" gap for whichever closer got
+# dropped, AND independently break the `$(...)` case above -- ten lines from where the OPPOSITE
+# lesson (derive independently, don't mirror) is stated correctly for `_CMD_POS_SUFFIX` vs. this
+# same terminator.
+#
+# KNOWN RESIDUALS, pre-existing and NOT closed by this fix:
+#   1. (found by `code-reviewer`, 2026-09-02) This whitelist only rules out a decoy word GLUED to
+#      `checkout`/`switch` -- it does not require the matched word to be a `git` subcommand at
+#      all, by design (see the note above on why this can't reuse `_CMD_POS_PREFIX` verbatim). A
+#      properly word-BOUNDED but non-`git` "checkout"/"switch" -- e.g. an argument to an unrelated
+#      command -- can still be picked ahead of a later real create: `echo checkout -b decoy
+#      origin/main && git checkout -b real` resolves to the `echo` argument's segment, confirmed
+#      by running it. Stage 1 (`cmd_is_git_branch_create`'s own anchor) does not save this,
+#      because it only proves SOME real `git <branch-verb>` invocation exists somewhere in the
+#      command, not that it is the segment stage 2 picked. Closing this needs Implementation
+#      Notes option (b) -- re-validate each candidate segment against the strict command-position
+#      pattern before accepting it, which this todo's own Scope Contract permits (it stays inside
+#      this one function, reusing the existing `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX` anchor rather
+#      than adding a new mechanism) -- deferred here only because it is a materially larger change
+#      than a character-class fix, not because the contract forbids it.
+#   2. (found by `security-auditor`, 2026-09-02 round 2) This extraction has no concept of
+#      control-flow reachability: it returns the first segment carrying a create flag regardless
+#      of whether that segment can ever actually execute. `true || git checkout -b decoy
+#      origin/main; git checkout -b real` -- the decoy sits on the unreached side of a `||`
+#      (`true` already succeeded) yet its segment is still returned ahead of the real,
+#      start-point-less create that follows, confirmed by running both sides with side-channel
+#      markers. Also a materially larger change (would need to track `&&`/`||`/`;` semantics, not
+#      just split on them), also left as a residual rather than folded into this fix.
+#   3. (found by `security-auditor`, 2026-09-02 round 3) A real create GLUED via `${...}`
+#      parameter expansion -- bare (`${x}checkout`), nested (`${a:-${b}}checkout`), or any other
+#      form closing on `}` -- is MISSED by this extraction, a deliberate trade-off explained in
+#      full at the boundary-whitelist paragraph above (a neutralization attempt was tried,
+#      reverted the same day for creating a WORSE bug: see item 4 below).
+#   4. (found by `security-auditor`, 2026-09-02 round 3, closed the same day) The reverted
+#      neutralization pass for item 3 deleted `${...}` unconditionally, so `${#x}checkout` --
+#      which can NEVER be a live invocation, since `${#x}` always yields a non-empty digit string
+#      -- was wrongly treated as a clean boundary and could shadow a real later create. Recorded
+#      here as a worked example of the failure mode any future attempt at item 3 must avoid: an
+#      expansion form must be proven capable of evaluating to EMPTY before it may be neutralized,
+#      not merely opened with `${`.
+#   5. (found by `security-auditor`, 2026-09-02 round 3) Bare brace EXPANSION (no `$`, requiring
+#      >=2 comma-separated alternatives -- `{,}checkout`) glues a live word onto `checkout` the
+#      same way `${x}checkout` does and is equally missed. Unlike items 3-4, no successful
+#      exploitation was found: brace expansion's >=2-alternative grammar always leaves a second,
+#      non-empty word glued into argv where git's own checkout/switch parser reads a ref, and
+#      every attempt tried collided there (`git checkout checkout -b probe` -> `fatal: 'checkout'
+#      is not a commit...`, no branch created) -- noted as a detection gap, not a confirmed bypass.
+# All five are read as "what we knew about", never as "everything else is covered" -- the same
+# convention this file uses elsewhere (~20 lines up, and at the top-level `_CMD_POS_PREFIX` note).
 cmd_git_branch_create_segment() {
   local segment
   while IFS= read -r segment; do
@@ -712,7 +900,8 @@ $(printf '%s' "$1" | cmd_words \
   | sed -E -e 's/(^|[[:space:]])[0-9]+[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]+/\1/g' \
            -e 's/&?[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]+//g' \
            -e 's/(^|[[:space:]])#.*$/\1;/' \
-  | grep -oE '(checkout|switch)[[:space:]]+[^;&|)`]*')
+  | grep -oE '(^|[[:blank:]]|[;&|()`])(checkout|switch)[[:space:]]+[^;&|)`]*' \
+  | sed -E 's/^[^A-Za-z]//')
 EOF
   return 1
 }
