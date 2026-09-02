@@ -19,7 +19,17 @@ export function invalidateMealPlanItems(
   });
 }
 
-export function useMealPlanItems(startDate: string, endDate: string) {
+/**
+ * `enabled` lets a caller gate the request on something beyond having a
+ * date range (e.g. a premium-feature check) without overloading `startDate`/
+ * `endDate` to mean "off" via empty strings — see
+ * P3-2026-08-30-coach-datesWithItems-fetches-eagerly-and-window-goes-stale.md.
+ */
+export function useMealPlanItems(
+  startDate: string,
+  endDate: string,
+  enabled = true,
+) {
   return useQuery<MealPlanItemWithRelations[]>({
     queryKey: ["/api/meal-plan", startDate, endDate],
     queryFn: async () => {
@@ -29,7 +39,7 @@ export function useMealPlanItems(startDate: string, endDate: string) {
       );
       return res.json();
     },
-    enabled: !!startDate && !!endDate,
+    enabled: enabled && !!startDate && !!endDate,
   });
 }
 
