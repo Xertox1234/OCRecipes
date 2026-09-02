@@ -399,10 +399,37 @@ assert_deny "two gh api occurrences denies (ambiguous — a read-only first call
   "more than one command-position 'gh api'"
 
 # ---------- ROUND-3 CRITICAL C1: command-position ANCHOR gaps ----------
-# The lib's shared _CMD_POS_SUFFIX is `([[:space:]]|[)]|$)` — it omits `;`,
-# `&` and `|`, so a mutating verb that is the TERMINAL token of its clause
-# never matched. Every one of these was ALLOWED before the guard-local
-# widened anchors landed.
+# HISTORICAL CONTEXT for why these tests exist: at review round 3
+# (2026-08-16) the lib's shared _CMD_POS_SUFFIX was `([[:space:]]|[)]|$)` —
+# it omitted `;`, `&` and `|`, so a mutating verb that is the TERMINAL token
+# of its clause never matched. Every one of these was ALLOWED before the
+# guard-local widened anchors (_OUT_POS_PREFIX/_OUT_POS_SUFFIX) landed.
+#
+# STALE AS OF 2026-09-02 (partially): the lib's own _CMD_POS_SUFFIX had grown
+# PAST this guard's copy — it is `([[:space:]]|[);&|`{}<>]|$)`
+# (.claude/hooks/lib/cmd-detect.sh) — by four closers. Two are fixed here as
+# of the same date, so this guard's `_OUT_POS_SUFFIX` is now
+# `([[:space:]]|[);&|`{}]|$)`, a two-closer (not four-closer) gap remaining:
+#   - `{`/`}` WERE a LIVE bypass, not the cosmetic gap an earlier version of
+#     this comment claimed: a COMMA-form brace span glued to a verb
+#     (`merge{,x}`) is real bash brace EXPANSION, placing a standalone
+#     `merge` token in command position (verified — a lone brace span with
+#     NO comma/range, e.g. `merge{x}`, genuinely stays one word and was never
+#     the issue; an earlier version of this comment tested only that case
+#     and wrongly generalized "inert" to both). FIXED 2026-09-02 — see the
+#     "2026-09-02 FIX" regression test block below and the comment at
+#     guard-outward-cli.sh's `gh pr merge` CLAUSE= assignment for the full
+#     account.
+#   - `<`/`>` are REAL bash redirect operators and DO split a glued verb into
+#     its own word (verified: a verb glued to a redirect word-splits exactly
+#     like the spaced form does). Their absence from `_OUT_POS_SUFFIX` is a
+#     LIVE bypass, not a cosmetic gap — confirmed directly against this hook
+#     with a redirect glued onto 'eas update' and onto 'gh pr merge', both
+#     SILENTLY ALLOWED where the spaced/bare forms correctly DENY. Flagged
+#     for a human decision (fix vs. accept), same as the `_OUT_POS_PREFIX`
+#     redirect gap below — NOT fixed here: unlike `{`/`}` above, a `<`/`>`
+#     regex change is out of scope for the review round that found and fixed
+#     the `{`/`}` gap.
 assert_deny "npm publish; denies (terminal ';')" \
   "$(json 'npm publish;')" "npm publish"
 assert_deny "eas update; denies (terminal ';')" \
@@ -425,8 +452,23 @@ assert_deny "gh pr close; denies (terminal ';', other-mutating family)" \
   "$(json 'gh pr close 42;')" "mutating 'gh pr/release/repo'"
 assert_deny "gh api -X PUT ...; denies (terminal ';', gh api family)" \
   "$(json 'gh api -X PUT repos/x/y/pulls/42/merge;')" "mutating HTTP method"
-# _CMD_POS_PREFIX's separator class omitted the backtick, `{`, and the shell
-# KEYWORD positions (then/do/else/elif/time) and `!`. All ALLOWED before.
+# HISTORICAL CONTEXT: at review round 3 the lib's shared _CMD_POS_PREFIX's
+# separator class omitted the backtick, `{`, and the shell KEYWORD positions
+# (then/do/else/elif/time) and `!`. All were ALLOWED before the guard-local
+# widened anchors below closed them for this hook.
+#
+# STALE AS OF 2026-09-02: the lib's _CMD_POS_PREFIX now opens on backtick/`{`/
+# `!` too (closed by the parent anchor-widening todo — see
+# docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md).
+# Those three are no longer guard-exclusive. What DOES remain guard-local is
+# prefix KEYWORD absorption (then|do|else|elif|time — _OUT_POS_PREFIX below);
+# the lib has no equivalent. The reverse also now holds and is UNFIXED: the
+# lib separately gained prefix REDIRECT absorption (a `2>/dev/null`-shaped
+# prefix before the verb, 2026-09-01) that this guard's own _OUT_POS_PREFIX
+# does not have — a live gap in this hook, confirmed by running it directly
+# against a redirect-prefixed outward-CLI command; flagged for a human
+# decision rather than fixed here (comment/prose only is this todo's Scope
+# Contract for this file).
 assert_deny 'backtick command substitution denies' \
   "$(json '`eas update`')" "eas update/publish/submit"
 assert_deny "brace group denies" \
@@ -445,6 +487,35 @@ assert_deny "time keyword denies" \
   "$(json 'time eas update')" "eas update/publish/submit"
 assert_deny "\$( ) command substitution denies (already covered by '(', pinned)" \
   "$(json 'echo $(eas update)')" "eas update/publish/submit"
+# ---------- 2026-09-02 FIX: _OUT_POS_SUFFIX comma-brace expansion gap ----------
+# A verb glued to a COMMA-form brace span (`merge{,x}`) is REAL bash brace
+# EXPANSION, not inert text — `merge{,x}` expands to the two separate words
+# `merge` and `mergex`, placing a standalone, real `merge` token in command
+# position (verified: `for w in gh pr merge{,x} 42; do printf '[%s]\n' "$w";
+# done` prints `[gh] [pr] [merge] [mergex] [42]`). `_OUT_POS_SUFFIX` did not
+# recognize `{` as a boundary character, so this shape was silently ALLOWED
+# through every `_OUT_POS_SUFFIX`-gated check (confirmed RED against the
+# pre-fix suffix `([[:space:]]|[);&|`]|$)`, GREEN after adding `{`/`}`). This
+# is a DIFFERENT property than a NO-comma/NO-range glued span (e.g.
+# `update{x}`, pinned by the negative control right below) — that case
+# genuinely stays glued as one bash word and is correctly left alone; a lone
+# brace span with no comma/range never expands. (Do not confuse either of
+# these with the unrelated "brace group" tests above, e.g. `{ eas update; }`
+# — a spaced compound-command GROUP, a different construct entirely.) An
+# earlier version of this comment block conflated the glued comma and
+# no-comma cases and wrongly called `{`/`}` inert — corrected the same review
+# round this test was added.
+assert_deny "gh pr merge comma-brace expansion denies (glued, no space)" \
+  "$(jsonc 'gh pr merge{,x} 42')" "without a REAL --auto flag"
+assert_deny "npm publish comma-brace expansion denies (glued, no space)" \
+  "$(jsonc 'npm publish{,x}')" "npm publish"
+assert_deny "eas update comma-brace expansion denies (glued, no space)" \
+  "$(jsonc 'eas update{,x} --branch preview --platform all')" "eas update/publish/submit"
+# Negative control: a verb glued to a NO-COMMA/NO-RANGE brace span never
+# expands, so a DIFFERENT, read-only verb glued the same way must stay
+# allowed — this is the case that stays genuinely inert.
+assert_allow "eas whoami glued to a no-comma brace span stays allowed (read-only verb)" \
+  "$(jsonc 'eas whoami{x}')"
 # Negative controls for the widened anchors: read-only forms in the SAME
 # terminal/keyword positions must stay allowed.
 assert_allow "railway status; allows (terminal ';', read-only verb)" \

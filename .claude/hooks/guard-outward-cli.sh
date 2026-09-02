@@ -21,17 +21,33 @@
 # cite it as covering the MCP surface.
 #
 # COMMAND-POSITION ANCHORS ARE GUARD-LOCAL. This hook uses its OWN
-# `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX`, deliberately WIDER than
-# lib/cmd-detect.sh's `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`:
-#   * suffix also closes on `;`, `&`, `|` and a backtick — the lib's
-#     `([[:space:]]|[)]|$)` never matched a verb that is the TERMINAL token of
-#     its clause, so `npm publish;`, `eas update;`, `railway up&`,
-#     `eas update|cat` and `gh pr merge;` were all ALLOWED (review round 3);
-#   * prefix also opens after a backtick, a `{` group, and a `!` negation, and
-#     skips the zero-arg shell KEYWORDS `then|do|else|elif|time` — so
-#     `` `eas update` ``, `{ eas update; }`, `if true; then eas update; fi`,
-#     `for b in preview; do eas update --branch $b; done`, `! eas update` and
-#     `time eas update` are no longer ALLOWED.
+# `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX`, which STARTED (review round 3,
+# 2026-08-16) as a deliberately widened fork of lib/cmd-detect.sh's
+# `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`. Both sides have since evolved
+# independently, so "deliberately WIDER" no longer holds across the board:
+#   * suffix — the lib's `_CMD_POS_SUFFIX` was narrower at review round 3
+#     (`([[:space:]]|[)]|$)`, missing `;`/`&`/`|`, never matching a verb that
+#     is the TERMINAL token of its clause — `npm publish;`, `eas update;`,
+#     `railway up&`, `eas update|cat` and `gh pr merge;` were all ALLOWED,
+#     which is why this hook forked its own widened `_OUT_POS_SUFFIX`), but
+#     the lib has since grown PAST it in four closers: `{`, `}`, `<`, `>`.
+#     Two are now fixed here too: `{`/`}` are a LIVE bypass, not the cosmetic
+#     gap an earlier version of this comment claimed — a COMMA-form brace
+#     span glued to a verb (`merge{,x}`) is real bash brace EXPANSION and
+#     places a standalone `merge` token in command position; a NO-comma/
+#     NO-range span (`merge{x}`) genuinely stays one word and was never the
+#     issue. `_OUT_POS_SUFFIX` now includes `{`/`}` (fixed 2026-09-02, see
+#     the "2026-09-02 FIX" regression test in test-guard-outward-cli.sh). The
+#     remaining two, `<`/`>`, are REAL redirect operators whose absence here
+#     is ALSO a live, confirmed bypass — NOT fixed in this pass, flagged for
+#     a human decision (see the full breakdown at this file's `gh pr merge`
+#     CLAUSE= assignment below, search `_OUT_POS_SUFFIX` past the
+#     occurrence-count check);
+#   * prefix — opener class (backtick, `{`, `!`) is now IDENTICAL between the
+#     two; what remains guard-local vs. lib-local (in BOTH directions, one of
+#     them an unfixed live gap in this hook) is detailed in
+#     test-guard-outward-cli.sh's comment above the backtick/brace/keyword
+#     assertion block (search "STALE AS OF" there).
 # The widening lives HERE, not in lib/cmd-detect.sh, because that lib feeds
 # seven hooks (git-safety.sh, core-bare-guard.sh, pr-preflight-guard.sh,
 # commit-verify.sh, pr-verify.sh, drift-detect*.sh) whose gates are outside
@@ -178,6 +194,28 @@
 #     `backfill:recipe-images` also mutate production Cloudflare R2 in place
 #     (CLAUDE.md notes a real backfill run needs a CDN purge afterwards) and are
 #     deliberately NOT covered here.
+#   * A verb GLUED TO A REDIRECT, no space required, on EITHER side — two
+#     DIFFERENT mechanisms, both LIVE bypasses of this hook, both closed in
+#     the shared lib in one commit (33baffea, 2026-09-01) but not here:
+#       - trailing: a redirect right after the verb (`eas update` + a `<`/
+#         `>`) is invisible because `_OUT_POS_SUFFIX`'s closer alternation
+#         does not include `<`/`>` as characters — the lib's `_CMD_POS_SUFFIX`
+#         does.
+#       - leading: a redirect right before the verb (a leading `2>/dev/null`
+#         + the verb) is invisible for a DIFFERENT reason — it is not about
+#         boundary characters at all: `_OUT_POS_PREFIX`'s absorber run (the
+#         part that skips env-assignments and zero-arg runner words before
+#         the verb) has no redirect-token alternative, so it cannot skip PAST
+#         a leading redirect to reach the verb. The lib's `_CMD_POS_PREFIX`
+#         gained exactly that alternative (`_CMD_REDIR`, in
+#         lib/cmd-detect.sh) — this hook's own copy was never given one.
+#     See the COMMAND-POSITION ANCHORS header above and
+#     test-guard-outward-cli.sh's "STALE AS OF 2026-09-02" comment for the
+#     confirmed repro and the full anchor-by-anchor comparison. NOT fixed
+#     here — flagged 2026-09-02 for a human decision. (A THIRD, related
+#     `_OUT_POS_SUFFIX` gap — `{`/`}`, real bash brace expansion, not a
+#     redirect — WAS fixed the same review round: see the "2026-09-02 FIX"
+#     comment at this file's `gh pr merge` CLAUSE= assignment.)
 #
 # Escape: `ALLOW_OUTWARD_CLI=1 <command>` as an INLINE prefix on the one Bash
 # command (recognized from the command string itself — see the case
@@ -196,7 +234,7 @@ set -uo pipefail
 # some bracket-expression implementations); a backtick inside a single-quoted
 # shell string is literal, so no escaping is needed for either constant.
 _OUT_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|then|do|else|elif|time)[[:space:]]+)*'
-_OUT_POS_SUFFIX='([[:space:]]|[);&|`]|$)'
+_OUT_POS_SUFFIX='([[:space:]]|[);&|`{}]|$)'
 
 # `--repo`/`-R` in any spelling gh's flag parser accepts (`--repo v`,
 # `--repo=v`, `"--repo" v`, `-R v`, `-Rv`). Case-SENSITIVE on purpose — see
@@ -593,6 +631,54 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   if gh_pr_clause_has_repo 'merge'; then
     deny "guard-outward-cli: 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with the user's PAT — outside the --auto carve-out, which exists only for this repo's own /todo automerge pipeline (it never passes --repo). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
+  # `_OUT_POS_SUFFIX` closes the 'merge' match here. It gained `{`/`}` as
+  # closers on 2026-09-02 (previously it did not) — the same two closers the
+  # lib's `_CMD_POS_SUFFIX` already had (see the COMMAND-POSITION ANCHORS
+  # header near the top of this file). `{`/`}` are a REAL bypass here, not
+  # the cosmetic gap an earlier version of this comment claimed: a COMMA-form
+  # brace span glued to a verb (`merge{,x}`) is real bash brace EXPANSION —
+  # `merge{,x}` expands to the two separate words `merge` and `mergex`,
+  # placing a standalone, real `merge` token in command position — while a
+  # NO-comma/NO-range span (`merge{x}`) genuinely stays one word and was
+  # never the issue; the earlier version of this comment tested only the
+  # latter and wrongly generalized "inert" to both. Confirmed live before the
+  # fix: `gh pr merge{,x} 42` was SILENTLY ALLOWED where the bare/spaced form
+  # correctly denies (same bypass reproduced at the `eas update`, `npm
+  # publish`, `railway up` and `eas build --auto-submit` call sites — every
+  # `_OUT_POS_SUFFIX`-gated check, not just this one). Two-sided regression
+  # test: test-guard-outward-cli.sh's "2026-09-02 FIX" block (RED against the
+  # pre-fix suffix, GREEN after; a negative control confirms the NO-comma
+  # case still allows a different, read-only verb glued the same way).
+  #
+  # Widening a single-character suffix alternation cannot shorten this
+  # CLAUSE: the trailing `[^;&|]*` capture below is a SEPARATE class,
+  # untouched by what `_OUT_POS_SUFFIX` itself matches, so this fix can only
+  # ever ADD matches (extend which 'gh pr merge' SHAPES this pattern
+  # recognizes at all), never truncate an already-matched clause —
+  # differentially tested 2026-09-02 across 9 constructed shapes, no
+  # truncation in any of them. This directly answers a PR #874
+  # security-auditor finding, carried forward unverified by a prior version
+  # of this comment (per the todo that corrected it:
+  # todos/archive/P3-2026-08-28-cmd-pos-anchor-widening-stale-comments.md),
+  # that widening this suffix would TRUNCATE the CLAUSE before a real --auto
+  # is reached — that specific mechanism could not be reproduced and is
+  # understood to be structurally impossible for this pattern shape, which is
+  # exactly what makes this fix safe. See
+  # docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
+  # Prevention section for the broader "two anchors that widened together are
+  # not automatically the same anchor" rule this residual disagreement is one
+  # instance of.
+  #
+  #   `<`/`>` are REAL bash redirect operators and DO split a glued verb into
+  #   its own word (verified: a verb glued to a redirect word-splits exactly
+  #   like the spaced form). Their absence from `_OUT_POS_SUFFIX` is a LIVE
+  #   bypass of this hook, not a cosmetic gap — confirmed directly: a
+  #   redirect glued onto 'gh pr merge' is SILENTLY ALLOWED here where the
+  #   spaced/bare form correctly denies. Flagged for a human decision (fix
+  #   vs. accept), same as the `_OUT_POS_PREFIX` redirect gap noted in the
+  #   COMMAND-POSITION ANCHORS header above — NOT fixed here: unlike `{`/`}`
+  #   above, a `<`/`>` regex change is out of scope for the review round that
+  #   found and fixed the `{`/`}` gap.
   CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
   # A naive "--auto present" substring check is bypassable: several of `gh pr
   # merge`'s own flags (and the cross-subcommand --repo/-R every gh command

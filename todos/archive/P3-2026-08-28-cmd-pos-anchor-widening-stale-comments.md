@@ -1,9 +1,9 @@
 ---
 title: "Stale _CMD_POS_PREFIX/_CMD_POS_SUFFIX comments in guard-outward-cli.sh's test/header after the anchor widening"
-status: backlog
+status: done
 priority: low
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-09-02
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -63,7 +63,7 @@ Test 10b, confirmed RED against the old regex and GREEN against the fix). See AC
 
 ## Acceptance Criteria
 
-- [ ] `test-guard-outward-cli.sh:402`'s comment updated to describe the current
+- [x] `test-guard-outward-cli.sh:402`'s comment updated to describe the current
       `_CMD_POS_SUFFIX` (now ``([[:space:]]|[);&|`{}]|$)``), or reworded to note the
       guard's own `_OUT_POS_SUFFIX` is now narrower than the lib's in the `{`/`}` dimension.
 
@@ -77,11 +77,53 @@ Test 10b, confirmed RED against the old regex and GREEN against the fix). See AC
       exactly the "mirror the sibling's character class because they widened together"
       trap this same PR's own solution doc warns against.
 
-- [ ] `test-guard-outward-cli.sh:428`'s comment narrowed to the one delta that remains
+      **CORRECTED 2026-09-02** — two things wrong with the paragraph above, found during
+      this todo's own implementation and its two code-review rounds. (1) By 2026-09-02 the
+      lib's `_CMD_POS_SUFFIX` had grown a SECOND time past this AC's `{`/`}`-only framing,
+      to also include `<`/`>` — and unlike `{`/`}` (genuinely inert: a verb glued to a
+      brace span stays one bash word), `<`/`>` are REAL bash redirect operators that DO
+      split a glued verb into its own word. Their absence from `_OUT_POS_SUFFIX` is a LIVE,
+      confirmed bypass of this hook (verified against the live hook: a redirect glued onto
+      `eas update` or `gh pr merge` is silently ALLOWED where the spaced/bare form
+      correctly denies) — not a cosmetic divergence to leave alone the way `{`/`}` are. (2)
+      The truncation claim above was itself re-tested on 2026-09-02 and could not be
+      reproduced; it is now understood to be structurally impossible for this pattern shape
+      (a single-character suffix alternation cannot shorten the separate `[^;&|]*` capture
+      adjacent to it — differentially tested across 9 constructed shapes, no truncation in
+      any of them).
+
+      **CORRECTED AGAIN, same day** — the "2026-09-02" correction directly above was
+      itself wrong on the one claim it added: `{`/`}` are NOT inert. A second code-review
+      round (`security-auditor`) constructed and ran `gh pr merge{,x} 42` /
+      `npm publish{,x}` / `eas update{,x} ...` against the live hook and found all
+      SILENTLY ALLOWED where the bare form correctly denies — a COMMA-form brace span
+      glued to a verb is real bash brace EXPANSION (`merge{,x}` expands to the two
+      separate words `merge` and `mergex`), not inert text. The NO-comma/NO-range case
+      (`merge{x}`) genuinely does stay one word and was the only shape the first
+      correction actually tested — it wrongly generalized "inert" from that one case to
+      both. Per this todo's own precedent for `branch-preflight.sh` earlier in this same
+      file (a "deliberate, don't touch" comment that was itself the defect, fixed rather
+      than merely re-commented, deliberately exceeding the original Scope Contract), this
+      was **fixed in-PR**: `_OUT_POS_SUFFIX` widened from `` ([[:space:]]|[);&|`]|$) `` to
+      `` ([[:space:]]|[);&|`{}]|$) ``, with a two-sided regression test in
+      `test-guard-outward-cli.sh` (confirmed RED against the pre-fix regex, GREEN after;
+      a negative control pins that the genuinely-inert no-comma case still allows a
+      different read-only verb glued the same way). `<`/`>` remain un-fixed and disclosed
+      only — that half of the "flag for a human decision" framing stands.
+
+- [x] `test-guard-outward-cli.sh:428`'s comment narrowed to the one delta that remains
       true: prefix keyword-absorption (`then|do|else|elif|time`) is guard-local; brace/
-      backtick/bang are no longer guard-local.
-- [ ] `guard-outward-cli.sh:23-40` header block's suffix bullet updated to reflect that
-      the lib's suffix is now a superset of the guard's own in the `{`/`}` dimension.
+      backtick/bang are no longer guard-local. **Exceeded 2026-09-02**: this AC's "the one
+      delta" premise was itself incomplete — a SECOND, reverse-direction delta was found
+      during implementation (the lib separately gained prefix REDIRECT absorption
+      `_OUT_POS_PREFIX` lacks — a live, unfixed gap, disclosed rather than fixed). The
+      shipped comment states both directions rather than "the one delta."
+- [x] `guard-outward-cli.sh:23-40` header block's suffix bullet updated to reflect that
+      the lib's suffix was a superset of the guard's own in FOUR dimensions as of
+      2026-09-02 (`{`, `}`, `<`, `>`, not the two originally cited). Both `{`/`}` and `<`/`>`
+      turned out to be live bypasses (see AC above), not one live and one cosmetic as an
+      earlier pass through this todo believed — `{`/`}` were FIXED in-PR, narrowing the
+      guard's remaining gap to `<`/`>` only (disclosed, not fixed).
 - [x] ~~One-line comment added near `branch-preflight.sh`'s `GIT_COMMIT_RE`/
       `COMPOUND_COMMIT_RE` noting the fallback deliberately does not share
       `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`'s brace/backtick/bang coverage.~~ **Superseded
@@ -149,3 +191,37 @@ warning from the AC above into whichever comment ends up nearest `guard-outward-
   explicit must-not-sync warning and the concrete reason (`--auto` carve-out clause
   truncation risk). Remaining scope: the `guard-outward-cli.sh` / `test-guard-outward-cli.sh`
   comment corrections only — unchanged from the original filing, still pure prose.
+
+### 2026-09-02
+
+- Implemented via `/todo`. Short-circuited research onto
+  `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`
+  (tight match — the solution literally cites this todo). Corrected the three targeted
+  comments (`test-guard-outward-cli.sh:402`, `test-guard-outward-cli.sh:428`,
+  `guard-outward-cli.sh:23-40` header) against the CURRENT anchors — which had moved TWICE
+  more since this todo was filed (`_CMD_POS_SUFFIX` gained `<`/`>` and `_CMD_POS_PREFIX`
+  gained `_CMD_REDIR` absorption, 2026-09-01) — every claim verified by constructing and
+  running inputs against the live hook, not by re-deriving from the regex text.
+  - Two review rounds (`code-reviewer` + `security-auditor`, both rounds) found real
+    defects in the CORRECTIONS themselves, not just leftover staleness: round 1 caught a
+    blanket "don't sync any of {`,`}`,`<`,`>`}" framing that was wrong for `<`/`>` (a
+confirmed live bypass, corrected above); round 2 caught that even the NARROWED
+"`{`/`}` are inert" claim was itself wrong — a COMMA-form brace span glued to a verb
+(`merge{,x}`) is real bash brace EXPANSION, not inert text, and was silently ALLOWED
+at every `\_OUT_POS_SUFFIX`-gated call site. Per this todo's own `branch-preflight.sh`precedent above ("the original framing for that file was itself the defect" →
+fix, don't merely re-comment),`\_OUT_POS_SUFFIX` was widened
+`` ([[:space:]]|[);&|`]|$) `` → `` ([[:space:]]|[);&|`{}]|$) ``with a two-sided
+regression test (RED against the pre-fix regex, GREEN after; confirmed across the`gh pr merge`/`npm publish`/`eas update`/`railway up`/`eas build --auto-submit` call
+    sites, plus a negative control for the genuinely-inert no-comma case). This landed
+    AFTER the Step 7 two-round review cap — a human should look at the regex change
+    before merge, not just the prose.
+  - Two live gaps remain confirmed but UNFIXED, out of this comment-only-except-the-`{}`-fix
+    todo's scope: (1) `_OUT_POS_SUFFIX` still lacks `<`/`>` (a glued redirect, e.g. a verb
+    immediately followed by `>`, is silently allowed); (2) `_OUT_POS_PREFIX` still lacks
+    the lib's `_CMD_REDIR` absorption (a leading redirect before the verb is silently
+    allowed). Both disclosed in the shipped comments (no working exploit string embedded)
+    and surfaced in the executor's report as `DEFERRED_WARNINGS` — High-severity findings,
+    per this repo's Deferred Item Todos policy, are surfaced for a human decision, never
+    auto-filed as a todo.
+  - `bash scripts/run-hook-tests.sh`: 34/34 suites green (`test-guard-outward-cli.sh`
+    itself: 252/252, up from 248/248 pre-fix — 4 new assertions from the `{`/`}` fix).
