@@ -3,10 +3,10 @@
 ---
 
 title: "branch-preflight.sh's lib-unsourceable fallback still misses subshell/newline/runner-word/-c-group bypasses"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-29
-updated: 2026-08-29
+updated: 2026-09-02
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -108,3 +108,36 @@ all directly relevant here.
 ### 2026-08-29
 
 Filed during PR #874's review-repair cycle. `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`'s Unresolved section has the full finding writeup and the exact constructed repro cases.
+
+### 2026-09-02
+
+Implemented. `GIT_COMMIT_RE`/`COMPOUND_COMMIT_RE` widened to recognize a subshell opener
+`(`, runner-word wrappers (`env`/`command`/`builtin`/`exec`/`nohup`/`setsid`), and a
+`-c key=value` group on `COMPOUND_COMMIT_RE` (matching `GIT_COMMIT_RE`, which already had
+it). Newline-separated compounds fixed by switching both checks from `[[ =~ ]]` (whole-string
+anchoring) to `grep -qE ... <<<"$CMD"` (herestring, per-line anchoring) — a herestring rather
+than a piped `printf | grep -qE` to avoid a documented pipefail/SIGPIPE false-negative hazard.
+The originally-deferred bare `|` gap closed in the same pass, plus a twin bare `&` gap found
+by diffing the fallback's separator class against the primary path's `_CMD_POS_PREFIX`
+character-for-character. 8 new regression tests added (10c-10l) to `test-branch-preflight.sh`,
+each RED-before/GREEN-after verified individually via targeted mutation testing (reverting one
+character-class edit at a time), plus a 72-case generated cross-product corpus and a
+differential harness comparing pre-fix/post-fix behavior — all construct-and-run against a real
+detached-HEAD temp repo, never modeled.
+
+Two review rounds (`code-reviewer` + `security-auditor`). Round 1 found a real CRITICAL both
+reviewers independently constructed and ran: `COMPOUND_COMMIT_RE`'s separator class was widened
+but never received the absorber group `GIT_COMMIT_RE` got, so a separator followed by an
+absorbed prefix (`true && env FOO=1 git commit -m x`) still silently ALLOWED. Fixed by adding
+the identical absorber group to `COMPOUND_COMMIT_RE`. Round 2 found two WARNINGs, both fixed:
+(1) a stale/inaccurate comment claiming `git -C /elsewhere commit` "can DENY" under this
+fallback, when construct-and-run showed it is actually silently ALLOWED (pre-existing, out of
+this todo's Scope Contract to fix functionally — corrected the comment and left the gap
+tracked); (2) the new NOLIB test block had no negative control (all `assert_deny`) — added one,
+and had to correct my own first attempt after mutation-testing revealed it passed vacuously via
+an earlier, unrelated fast-path filter rather than exercising the widened regex.
+
+No textual conflict with the parked `blocked/P1-2026-08-17-quoted-command-substitution-inert`
+branch — confirmed via `git diff main...origin/blocked/...` — it touches
+`lib/cmd-detect.sh`/`guard-outward-cli.sh`/`test-cmd-detect.sh`/`test-guard-outward-cli.sh`/
+`test-pr-preflight-guard.sh` only, never `branch-preflight.sh` or `test-branch-preflight.sh`.

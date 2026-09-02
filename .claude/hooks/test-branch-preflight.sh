@@ -143,6 +143,87 @@ assert_deny "lib-missing: real detached-HEAD commit still denied (fail-closed)" 
 NOLIB_INPUT=$(jq -n --arg c '{ git commit -m oops; }' '{"tool_name":"Bash","tool_input":{"command":$c}}')
 OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
 assert_deny "lib-missing: brace-grouped '{ git commit; }' still denied (fail-closed)" "$OUT"
+
+# Test 10c-10h: todos/P2-2026-08-29-branch-preflight-fallback-parity-gaps.md — the fallback was
+# STILL not at parity with the primary path after Test 10b's brace/backtick/bang fix: a bare
+# subshell, a newline-separated compound, a runner-word wrapper, and (COMPOUND_COMMIT_RE only) a
+# `-c key=value` group were all still silently ALLOWED. Diffing the fallback's separator class
+# against the primary path's `_CMD_POS_PREFIX` (rather than stopping at the four enumerated
+# cases) found bare `|`/`&` were also missing. Same NOLIB harness as Test 10/10b.
+
+# Test 10c: subshell-wrapped commit.
+NOLIB_INPUT=$(jq -n --arg c '(git commit -m oops)' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: subshell '(git commit -m oops)' still denied (fail-closed)" "$OUT"
+
+# Test 10d: newline-separated compound (real \n, no compound operator at all) — the OLD
+# GIT_COMMIT_RE check used `[[ =~ ]]`, which anchors `^`/`$` to the WHOLE string, not per line.
+NOLIB_INPUT=$(jq -n --arg c "$(printf 'git status\ngit commit -m oops')" '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: newline-separated 'git status<NL>git commit' still denied (fail-closed)" "$OUT"
+
+# Test 10e: runner-word wrapper before the env assignment and verb.
+NOLIB_INPUT=$(jq -n --arg c 'env FOO=1 git commit -m oops' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: runner-word 'env FOO=1 git commit' still denied (fail-closed)" "$OUT"
+
+# Test 10f: compound form with a `-c key=value` group before `commit` — GIT_COMMIT_RE already
+# had this group; COMPOUND_COMMIT_RE did not.
+NOLIB_INPUT=$(jq -n --arg c 'true && git -c user.email=x commit -m oops' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: compound '-c' group 'git -c user.email=x commit' still denied (fail-closed)" "$OUT"
+
+# Test 10g: bare pipe (the originally-deferred 5th gap from the Test 10b comment) — closed in
+# the same pass as 10c-10f since it's the identical one-character separator-class widening.
+NOLIB_INPUT=$(jq -n --arg c 'true | git commit -m oops' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: piped 'true | git commit' still denied (fail-closed)" "$OUT"
+
+# Test 10h: bare & (backgrounded invocation) — found by diffing the fallback's separator class
+# against the primary path's _CMD_POS_PREFIX; not one of the todo's four enumerated cases but
+# the same defect shape, so closed alongside them.
+NOLIB_INPUT=$(jq -n --arg c 'git status & git commit -m oops' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: backgrounded 'git status & git commit' still denied (fail-closed)" "$OUT"
+
+# Test 10i-10k: the CROSS PRODUCT of [separator: &&/;/|] x [absorbed prefix: env-assignment /
+# runner-word] before `git commit` — found live by two independent review passes on this same
+# diff: 10c/10g/10h cover separator forms with NO absorbed prefix, and 10e covers an absorbed
+# prefix at start-of-string (no separator), but the cell where BOTH combine had no fixture, and
+# that is exactly where COMPOUND_COMMIT_RE was still missing the absorber group GIT_COMMIT_RE
+# had (a first fix pass widened only GIT_COMMIT_RE's copy). A same-direction, one-axis-at-a-time
+# corpus cannot exercise a co-occurrence bug — see
+# docs/solutions/conventions/one-axis-at-a-time-corpus-misses-co-occurrence-checks-2026-09-01.md.
+
+# Test 10i: && separator + env-assignment absorbed by a runner word.
+NOLIB_INPUT=$(jq -n --arg c 'true && env FOO=1 git commit -m oops' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: compound 'true && env FOO=1 git commit' still denied (fail-closed)" "$OUT"
+
+# Test 10j: ; separator + a bare env-assignment (no runner word) before the verb.
+NOLIB_INPUT=$(jq -n --arg c 'git status; FOO=1 git commit -m oops' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: compound 'git status; FOO=1 git commit' still denied (fail-closed)" "$OUT"
+
+# Test 10k: | separator + a runner word (no env-assignment) before the verb.
+NOLIB_INPUT=$(jq -n --arg c 'true | nohup git commit -m oops' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_deny "lib-missing: piped 'true | nohup git commit' still denied (fail-closed)" "$OUT"
+
+# Test 10l: negative control for the whole NOLIB block (10, 10b-10k are all assert_deny — a
+# mutation that made the fallback unconditionally DENY, e.g. IS_COMMIT=1 hoisted outside the
+# if, would pass every one of them; nothing before this proved the fallback can also stay
+# SILENT on a real non-commit command built from the SAME new separator+absorber widening).
+# code-reviewer, round-2 review of this same widening. The command deliberately contains the
+# literal substring "commit" (inside the -m message) so it still clears this hook's own
+# necessary-substring fast path (line 32's `case "$CMD" in *commit*...`) and genuinely reaches
+# the widened regex, rather than allowing vacuously via that earlier, unrelated filter — an
+# initial version of this test used a command with no "commit"/"checkout"/"switch" substring
+# at all and passed for the wrong reason (verified: it still passed even after `IS_COMMIT=1`
+# was hoisted unconditionally, because the fast path exits long before that line runs).
+NOLIB_INPUT=$(jq -n --arg c 'true && env FOO=1 git status -m "will commit later"' '{"tool_name":"Bash","tool_input":{"command":$c}}')
+OUT=$(echo "$NOLIB_INPUT" | bash "$NOLIB/branch-preflight.sh" 2>/dev/null)
+assert_silent "lib-missing: non-commit 'true && env FOO=1 git status -m ...commit...' is NOT denied" "$OUT"
 rm -rf "$NOLIB"
 
 # --- Stale-base branch-create check: fetch-then-deny (2026-08-28) --------------
