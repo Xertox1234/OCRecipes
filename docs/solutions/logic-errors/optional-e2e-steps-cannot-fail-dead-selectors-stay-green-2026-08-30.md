@@ -8,6 +8,7 @@ applies_to: ["e2e/**"]
 symptoms: ["a flow passes while the feature it names is visibly broken or unreachable", "every step in an interaction block carries optional: true and several always log WARNED", "a selector fix changes nothing because the step was WARNED-skipping before AND after"]
 created: 2026-08-30
 severity: medium
+last_updated: 2026-09-02
 ---
 
 # An optional Maestro step can never fail — dead selectors stay green, so environmental optionals need a mandatory sibling anchor
@@ -63,11 +64,50 @@ block should be deleted as vacuous. Optionality is for environments, not for
 uncertainty about what is on screen — settle the latter with a hierarchy
 dump.
 
+**Dedup-extraction variant (2026-09-02):** the same failure mode arrives a
+second way when you extract a shared `runFlow` helper from two call sites
+that had *different* strictness before the extraction — e.g. one call site's
+sequence was mandatory-by-default (a first-attempt flow) and the other's was
+already `optional: true` throughout (a self-healing retry loop). Naively
+adopting the more-permissive call site's shape for the shared helper — the
+easy move, since it's usually the one that "already works everywhere" —
+silently drops the stricter call site's fail-fast guarantee, with no diff
+line calling that out (nothing looks removed; the mandatory steps just moved
+into a file where they're now optional). The fix has two parts, and doing
+only the first one re-triggers this same rule on the helper itself:
+
+1. **Add the missing anchor(s) inside the shared helper**, not just back at
+   the one call site that used to be strict — every caller of the helper
+   needs to inherit the fail-fast guarantee, not only the one you remembered
+   to patch (`e2e/helpers/enter-registration-passwords.yaml`: mandatory
+   `assertVisible` on both password-field testIDs, so a stale selector fails
+   fast whether the helper is called from a first attempt or a retry round).
+2. **Don't make every step mandatory indiscriminately while you're in
+   there.** Before hardening a given optional step, check whether it's
+   optional for a *legitimate, state-dependent* reason — not just because
+   the more-permissive caller happened to mark it that way. A step that taps
+   a **stateful toggle with no reset** (not a text field, which is safely
+   idempotent via erase-before-type) can be optional by necessity: in this
+   case a "Show password" tap is only ever needed once per session, because
+   the underlying `useState` flips to "Hide password" and stays there —
+   making that tap mandatory would hard-fail every retry round after the
+   first. Verify against the actual state management source before treating
+   an optional step as a lost anchor; a second reviewer independently
+   confirming the toggle's reset behavior (rather than pattern-matching
+   "optional == suspect") is what caught this distinction in practice.
+
 ## Related Files
 
 - `e2e/flows/home/chat.yaml` — the fixed flow (mandatory prompt asserts)
 - `e2e/flows/scan/scan-barcode.yaml` — the same rule applied earlier: one
   mandatory SpeedDial assert so camera-optional flows stay non-vacuous
+- `e2e/helpers/enter-registration-passwords.yaml` — the dedup-extraction
+  variant: a shared helper built by merging a mandatory call site with an
+  already-optional one, with mandatory anchors added back inside the helper
+  and one deliberately-optional toggle-tap step left as-is
+- `e2e/flows/onboarding/complete-onboarding.yaml` — the two call sites
+  (main block, self-healing retry loop) that were unified into the helper
+  above
 
 ## See Also
 
