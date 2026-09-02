@@ -337,6 +337,41 @@ for _r in '2>/dev/null' '&>/dev/null' '>|log' '2>&1'; do
     "slot: a real start-point after ${_r} survives"
 done
 
+# SPACING dimension (review round 4, 2026-09-01 — a CRITICAL). Every ${_r} above has
+# whitespace baked into its template, so the corpus could not see a redirect GLUED to the
+# preceding word. That is not a cosmetic variant: `&` and `|` are in this extractor's own
+# terminator class, so a glued `&>`/`>&`/`>|` TRUNCATES the segment before the create flag and
+# a real create reports not-a-create. Verified by running git in a scratch repo —
+# `git checkout main&>/dev/null -b foo` and `git checkout -b foo&>/dev/null` both create the
+# branch. The round-3 fix required `(^|[[:space:]])` before the whole redirect, which is right
+# for the fd DIGITS and wrong for everything else; hence two sed expressions.
+#
+# The SUBCOMMAND slot (`git checkout>&2 -b foo`) is NOT pinned here. It fails one step
+# earlier, in stage 1's `_CMD_POS_SUFFIX` anchor, which this todo's Scope Contract forbids
+# touching — a separate defect with a separate fix, not something this sed can reach.
+for _r in '&>/dev/null' '&>>log' '>&2' '>|log' '>/dev/null' '2>/dev/null' '&>|log'; do
+  det cmd_is_git_branch_create "git checkout main${_r} -b foo"  yes "glued to the start-point word (${_r})"
+  det cmd_is_git_branch_create "git switch main${_r} -c foo"    yes "glued, switch form (${_r})"
+  det cmd_is_git_branch_create "git checkout -b foo${_r}"       yes "glued to the new branch NAME (${_r})"
+done
+# The other direction: deleting a glued redirect must not eat a REAL start-point.
+for _r in '&>/dev/null' '&>>log' '>&2' '>|log' '>/dev/null' '&>|log'; do
+  seg_clip "git checkout -b foo${_r} origin/main" 'checkout -b foo origin/main' \
+    "a real start-point after a GLUED ${_r} survives"
+done
+# The fd-DIGIT form is pinned SEPARATELY and deliberately, because bash attaches the digit to
+# the PRECEDING word rather than to the operator, and that flips the answer by slot:
+#   name slot      — `git checkout -b foo2>/dev/null` creates a branch called `foo2` (ran it).
+#   subcommand slot — `git checkout2>/dev/null -b foo` invokes `git checkout2`, which git
+#                     rejects: "'checkout2' is not a git command", exit 1, nothing created.
+# Folding either into the loops above would have pinned a wrong answer as if it were the fix.
+seg_clip 'git checkout -b foo2>/dev/null origin/main' 'checkout -b foo2 origin/main' \
+  'a glued fd DIGIT stays part of the branch NAME (bash creates foo2), start-point intact'
+det cmd_is_git_branch_create 'git checkout2>/dev/null -b foo' no \
+  'a glued fd digit makes it `git checkout2`, which is not a git command at all'
+det cmd_is_git_branch_create 'git switch2>>log -c foo'        no \
+  '...same for the switch form'
+
 # The clip direction of the same defect: an eaten separator also glued the NEXT clause's first
 # token in as a spurious start-point, so the stale-base check was skipped on a command that
 # named no start point at all — the exact bug this whole todo exists to close, surviving in

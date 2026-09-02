@@ -448,18 +448,48 @@ cmd_is_git_head_mover() {
 # deletion must never consume a character the extractor needs to see. That terminator class
 # has already changed twice (backtick added 2026-08-28; `{`/`}` tried and rejected), so a
 # reader who over-applies the independence lesson here will desync them and revive the merge.
-# `[&|]?` rather than `&?` so the noclobber `>|` form is consumed as one unit too, and
-# `([0-9]*|&)` rather than `[0-9]*` so the `&>` / `&>>` family (whose operator has no fd
-# digit and a LEADING `&`) is matched — without it `git checkout &>/dev/null -b foo`, a real
-# create, reported not-a-create (review round 3, 2026-09-01).
+# `[&|]?` rather than `&?` so the noclobber `>|` form is consumed as one unit too.
 #
-# DOCUMENTED RESIDUAL — the 'anywhere' above is true of BASH, but this fix only covers the
-# positions from the SUBCOMMAND rightward. A redirect BEFORE the subcommand
-# (`git 2>/dev/null checkout -b foo`) is still missed: this extractor handles it correctly,
-# but stage 1 (`cmd_is_git_branch_create`'s anchored grep) never sees this sed, and its
-# anchor `_CMD_POS_PREFIX` does not absorb a redirect. Pre-existing and identical on main.
-# The same anchor gap makes `git -C <path> …` invisible to EVERY cmd_is_git_* predicate.
-# Both are out of this todo's Scope Contract, which forbids changing that shared anchor.
+# TWO EXPRESSIONS, NOT ONE, AND THE SPLIT IS THE WHOLE POINT (review round 4, 2026-09-01 —
+# a CRITICAL). Round 3 matched the `&>`/`&>>` family by widening the operator to
+# `([0-9]*|&)`, but left it sharing the digit form's `(^|[[:space:]])` boundary. Real bash
+# needs no such boundary: it always splits at `<`/`>`, so a redirect GLUED to the preceding
+# word is an ordinary invocation. `git checkout main&>/dev/null -b foo` really creates the
+# branch (run, not reasoned: the branch exists afterwards), yet the glued `&` survived the
+# deletion, and `&` is in the `grep -oE` terminator class below — so the segment was
+# TRUNCATED before the create flag and the command reported not-a-create, skipping the very
+# stale-base check this todo exists to protect. `>&` and `>|` glued fail identically; only
+# the reviewer's `&>` case had been noticed.
+#   * expression 1 — the fd-DIGIT form, which KEEPS the boundary, because bash only reads
+#     digits as an fd at a word start: `main2>` is the word `main2` plus `>`, verified by
+#     running `git checkout main2>/dev/null -b sp` (it creates `sp` off `main2`). Stripping
+#     the digit positionally would rename the ref.
+#   * expression 2 — everything else, boundary-FREE, because an unquoted `<`/`>` can never
+#     be argv content wherever it appears.
+# The target class stays `*`, not `+`, DELIBERATELY and only for now. A redirect's target is
+# mandatory in bash, so `+` is the truthful model — but on this branch no VALID command can
+# tell the two apart (an empty target only arises from input bash itself rejects), and stage
+# 1's anchor rejects those before this sed runs. An unpinnable change is how a wrong model
+# gets in unnoticed, so it is deferred to the change that makes it observable: once
+# `_CMD_POS_PREFIX` absorbs a redirect, `true && > git commit` becomes reachable and `+` is
+# both required and pinned there.
+#
+# DOCUMENTED RESIDUALS. Read this list as "the ones we know about", NOT as "everything else
+# is covered" — an earlier version of this note said the fix covered every position "from the
+# SUBCOMMAND rightward" and enumerated two gaps, and a fourth review round then found a third
+# one living inside the region that sentence called covered (the GLUED redirect, above). The
+# corpus that cleared round 3 still reported 190 residual missed-creates out of 3811; those
+# are not all accounted for by the entries below, and nobody should read this block as if
+# they were.
+#   * A redirect BEFORE the subcommand (`git 2>/dev/null checkout -b foo`): this extractor
+#     handles it correctly, but stage 1 (`cmd_is_git_branch_create`'s anchored grep) never
+#     sees this sed, and `_CMD_POS_PREFIX` does not absorb a redirect.
+#   * A redirect GLUED to the SUBCOMMAND (`git checkout>&2 -b foo`): the sed below now
+#     deletes it, but stage 1 rejects the command first — `_CMD_POS_SUFFIX` does not close a
+#     verb on `<`/`>`. (`&>` is the exception that hid this, since `&` was already a closer.)
+#   * `git -C <path> …` is invisible to EVERY cmd_is_git_* predicate.
+# All three are pre-existing and identical on main, and all three live in the SHARED anchor,
+# which this todo's Scope Contract forbids changing.
 #
 # A COMMENT is still a terminator, because an unquoted `#` genuinely does end the line in
 # bash — `git commit -m x # c && git checkout -b foo` never runs the create.
@@ -478,7 +508,8 @@ cmd_git_branch_create_segment() {
     esac
   done <<EOF
 $(printf '%s' "$1" | cmd_words \
-  | sed -E -e 's/(^|[[:space:]])([0-9]*|&)[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]*/\1/g' \
+  | sed -E -e 's/(^|[[:space:]])[0-9]+[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]*/\1/g' \
+           -e 's/&?[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]*//g' \
            -e 's/(^|[[:space:]])#.*$/\1;/' \
   | grep -oE '(checkout|switch)[[:space:]]+[^;&|)`]*')
 EOF
