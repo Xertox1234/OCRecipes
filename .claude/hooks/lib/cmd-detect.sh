@@ -393,38 +393,311 @@ cmd_words() {
     }'
 }
 
+# cmd_extract_substitutions <command>  → echo the RAW body text of every
+# $(...)/backtick command-substitution found in a LIVE quote context (state 0
+# unquoted, or state 2 double-quoted), one body per line, recursing into
+# nested substitutions (both `$(a $(b))` nesting and a substitution appearing
+# inside a nested double-quoted span within an outer one). A substitution
+# found inside a SINGLE-quoted or ANSI-C `$'...'` span is genuinely inert in
+# bash (those quote forms disable substitution entirely) and is correctly
+# skipped — see docs/solutions/logic-errors/quoted-command-substitution-always-executes-2026-08-17.md.
+#
+# THE MECHANISM cmd_bare/cmd_words fundamentally cannot express: both are a
+# FLAT, single-pass state machine (states 0/1/2/3, no stack), so neither can
+# represent "resume the outer quote after this nested construct closes" —
+# which is exactly what finding a substitution's own matching closer, through
+# arbitrary further nesting, requires. This function is a genuinely different
+# class of mechanism (an explicit array-based STACK, one quote-state per
+# nesting level) rather than a state added to that same machine — the
+# Scope Contract of todos/P1-2026-08-17-quoted-command-substitution-inert.md
+# (archived) rules out the latter specifically.
+#
+# WHY NOT DELEGATE TO AN EXISTING PARSER (the design/spike this todo
+# required): bash's own DEBUG-trap + extdebug "skip the next command" trick
+# (the todo's own parenthetical example) requires a bash feature this
+# project's runtime does not have — verified empirically, not assumed: on
+# this project's actual `#!/usr/bin/env bash` runtime (macOS system bash
+# 3.2.57, confirmed via `bash --version`), neither `command_not_found_handle`
+# nor a non-zero DEBUG-trap return skipping the pending command has any
+# effect (both probed directly: a `touch` inside a "vetoed" `$(...)` still
+# ran). Even where that trick DOES work, it requires literally letting bash
+# begin evaluating the untrusted string — an execution-during-detection
+# surface this file has never had, and bare redirection (`: > ~/.bashrc`)
+# still causes real file damage with PATH emptied, since redirection and
+# builtins need no external program. A real parser LIBRARY was evaluated too:
+# npm's `shell-quote` (already a project dependency) does not interpret
+# `$(...)`/backtick substitution at all (verified: it renders identically for
+# single- and double-quoted `$(...)`, losing exactly the live/inert
+# distinction this fix depends on); `bash-parser` does build a real AST but is
+# 4+ years unmaintained (last publish 2022-06-13) on top of the deprecated
+# `babylon` parser, 21 transitive deps — an unacceptable supply-chain
+# addition for a security-critical local guard. A hand-written, but properly
+# RECURSIVE (stack-based) extractor, reusing this file's own proven
+# character-by-character quote-state conventions, was the remaining option.
+#
+# OUTPUT IS DELIBERATELY NOT A FAITHFUL RECONSTRUCTION of the outer body: when
+# a nested substitution is found, its delimiters and contents are NOT
+# additionally copied into the enclosing level's own accumulated text (the
+# enclosing level gets a "hole" where the nested one was) — the nested body is
+# independently emitted as its OWN line instead. Detection does not need the
+# enclosing level's text to be complete, only that every substitution's own
+# content is captured somewhere in the output; each line is independently
+# re-scanned by the caller (cmd_words_deep, below).
+#
+# UNBALANCED INPUT (a syntax error in real bash, so it would never actually
+# run): whatever is accumulated at every still-open level is emitted at EOF
+# rather than discarded. Best-effort over-matching is the safe direction for
+# every DENY-shaped consumer this function feeds (see cmd_words_deep).
+#
+# DELIBERATE SIMPLIFICATION, documented rather than silently incomplete: a
+# backtick encountered while already inside a nested double-quote (state 2 at
+# some depth) always OPENS a new level, never treated as closing an
+# enclosing backtick span — real bash's own rules for an unescaped backtick
+# nested this way are themselves inconsistent/rarely-used (POSIX recommends
+# `$(...)` specifically because backtick nesting requires escaping); this
+# matches the common case (a plain, non-nested backtick substitution) and is
+# not tuned for a nested-unescaped-backtick corner case no caller writes.
+cmd_extract_substitutions() {
+  awk '
+    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96) }
+    { buf = buf $0 "\n" }
+    END {
+      n = length(buf)
+      depth = 0
+      state[0] = 0
+      for (i = 1; i <= n; i++) {
+        c = substr(buf, i, 1)
+        d = depth
+        s = state[d]
+        if (s == 0) {
+          if (c == BS) {
+            if (d >= 1) accbuf[d] = accbuf[d] c
+            i++
+            if (i <= n) { if (d >= 1) accbuf[d] = accbuf[d] substr(buf, i, 1) }
+          }
+          else if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
+            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""
+            i++
+          }
+          else if (c == BT) {
+            if (d >= 1 && kind[d] == "B") { print accbuf[d]; depth-- }
+            else { depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = "" }
+          }
+          else if (c == "$" && i < n && substr(buf, i+1, 1) == SQ) {
+            state[d] = 3
+            if (d >= 1) accbuf[d] = accbuf[d] c
+            i++
+            if (d >= 1) accbuf[d] = accbuf[d] SQ
+          }
+          else if (c == "$" && i < n && substr(buf, i+1, 1) == DQ) {
+            state[d] = 2
+            if (d >= 1) accbuf[d] = accbuf[d] c
+            i++
+            if (d >= 1) accbuf[d] = accbuf[d] DQ
+          }
+          else if (c == SQ) { state[d] = 1; if (d >= 1) accbuf[d] = accbuf[d] c }
+          else if (c == DQ) { state[d] = 2; if (d >= 1) accbuf[d] = accbuf[d] c }
+          else if (c == ")" && d >= 1 && kind[d] == "P") { print accbuf[d]; depth-- }
+          else { if (d >= 1) accbuf[d] = accbuf[d] c }
+        }
+        else if (s == 1) {
+          if (d >= 1) accbuf[d] = accbuf[d] c
+          if (c == SQ) state[d] = 0
+        }
+        else if (s == 3) {
+          if (c == BS) {
+            if (d >= 1) accbuf[d] = accbuf[d] c
+            i++
+            if (i <= n) { if (d >= 1) accbuf[d] = accbuf[d] substr(buf, i, 1) }
+          }
+          else if (c == SQ) { state[d] = 0; if (d >= 1) accbuf[d] = accbuf[d] c }
+          else { if (d >= 1) accbuf[d] = accbuf[d] c }
+        }
+        else {
+          # s == 2: double-quote at this level -- the LIVE context this whole
+          # function exists for. A substitution opener here starts a NEW
+          # nested level exactly like the unquoted case; that recursion is
+          # the fix.
+          #
+          # NO DOLLAR-SIGN QUOTE-SIGIL HANDLING HERE, deliberately unlike
+          # state 0 above -- NO apostrophe or double-quote character appears
+          # ANYWHERE in this comment block; this whole function body is
+          # itself inside a bash single-quoted awk program, so a literal
+          # apostrophe here would close that outer bash string early and
+          # break the file (exactly the mistake a first version of this
+          # comment made, see below). cmd_bare and cmd_words -- the two
+          # PROVEN, already-shipped renderings this function sits beside --
+          # have NO such sigil handling in their own double-quote branches
+          # either (grep them for st == 2). The ANSI-C and locale-string
+          # sigils are WORD-START constructs in real bash, meaningful only
+          # where a NEW word is beginning; inside an ALREADY-OPEN double
+          # quote there is no new word starting, so a dollar sign immediately
+          # followed by a quote character there is just two ordinary literal
+          # bytes, and that quote character is evaluated FRESH on the next
+          # loop iteration -- a double-quote closes the span via the DQ
+          # branch below (matching real bash exactly), and the ANSI-C form
+          # has no special state-2 handler of its own at all, so it falls
+          # through to accumulate as literal text like any other character.
+          #
+          # A first version of this branch copied state ZERO sigil handling
+          # in here too, on the assumption the two branches should mirror
+          # each other -- that assumption was wrong and cost a CRITICAL
+          # (security review, 2026-09-02): a live command substitution
+          # immediately preceded by the ANSI-C dollar-quote sigil, while
+          # already inside an open double-quoted span, genuinely executes in
+          # real bash (the sigil bytes print literally, proving bash never
+          # treated them as quote delimiters there) -- but the erroneous
+          # branch put THIS function into ANSI-C state at that sigil, which
+          # never recognizes a paren-opener as starting a substitution, so
+          # the live substitution was silently skipped. Ground-truthed by
+          # running the exact string through a real bash and comparing
+          # against the output this function itself produces; see
+          # test-cmd-detect.sh for the pinned regression case.
+          if (c == BS) {
+            if (d >= 1) accbuf[d] = accbuf[d] c
+            i++
+            if (i <= n) { if (d >= 1) accbuf[d] = accbuf[d] substr(buf, i, 1) }
+          }
+          else if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
+            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""
+            i++
+          }
+          else if (c == BT) {
+            depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""
+          }
+          else if (c == DQ) { state[d] = 0; if (d >= 1) accbuf[d] = accbuf[d] c }
+          else { if (d >= 1) accbuf[d] = accbuf[d] c }
+        }
+      }
+      while (depth >= 1) { print accbuf[depth]; depth-- }
+    }'
+}
+
+# cmd_words_deep <command>  → cmd_words(command), joined by NEWLINE with
+# cmd_words(body) for every command-substitution body cmd_extract_substitutions
+# finds (recursively, so a substitution nested inside another still gets its
+# own line).
+#
+# CALLING CONVENTION DIFFERS from cmd_bare/cmd_words/cmd_extract_substitutions,
+# deliberately: those three read the command from STDIN (`printf '%s' "$1" |
+# cmd_words`); this one takes it as `$1` directly, like the cmd_is_* wrapper
+# functions below, because its body needs the same command text more than
+# once (once for cmd_words, once for cmd_extract_substitutions) and re-reading
+# stdin a second time is not possible in a plain pipeline. Call it as
+# `cmd_words_deep "$CMD"` — piping into it (`... | cmd_words_deep`) leaves its
+# own `$1` unset under this file's callers' `set -u` and aborts with an
+# "unbound variable" error (caught empirically integrating this into
+# guard-outward-cli.sh — the first version of that call site got this wrong).
+#
+# NEWLINE-joined, never concatenated: grep's `^`/`$` and this file's
+# own separator classes are per-line (verified: `grep -oE 'a[^;]*'` over
+# multi-line input never spans a match across the newline), so each extracted
+# body starts a fresh command position and cannot graft its own tokens onto an
+# adjacent line's — the exact "seam spells tokens present in neither string"
+# hazard this file's `scan_both` already documents for its own two-source join.
+#
+# DENY-SHAPED CONSUMERS ONLY — never call this from a check that GRANTS
+# something (a carve-out, an allow) rather than only adding a deny. Widening
+# can only ADD a match, which is safe for every deny/warn consumer in this
+# file, but is UNSAFE for a check keyed on a flag's ABSENCE-grants-nothing /
+# PRESENCE-grants-something shape (guard-outward-cli.sh's `gh pr merge --auto`
+# carve-out is the one such check in this codebase) — a decoy substitution
+# manufacturing that flag as its own, unrelated invocation must never be read
+# as satisfying a DIFFERENT command's carve-out. Plain `cmd_words` stays
+# byte-identical (this function does not modify it) specifically so that
+# check can keep reading it unchanged. See lib/cmd-detect.sh's own header and
+# guard-outward-cli.sh's carve-out comments for the fuller reasoning.
+#
+# EMPTY-OUTPUT INVARIANT PRESERVED: this always calls plain `cmd_words` FIRST,
+# unconditionally, so a broken/absent awk still produces the same "empty from
+# a non-empty command" signature the existing blocking-gate detectors already
+# check for — a bug or pathological input inside cmd_extract_substitutions can
+# only cost the ADDED matches, never corrupt or blank the base rendering.
+cmd_words_deep() {
+  local cmd="$1" body
+  printf '%s' "$cmd" | cmd_words
+  while IFS= read -r body; do
+    [ -n "$body" ] || continue
+    printf '\n'
+    printf '%s' "$body" | cmd_words
+  done < <(printf '%s' "$cmd" | cmd_extract_substitutions)
+}
+
 # cmd_is_gh_pr_create <command>  → exit 0 if it invokes `gh pr create` in command position.
+# Reads cmd_words_deep, not plain cmd_words: this is a pure boolean DENY-shaped
+# predicate (never grants anything), so also matching a verb hidden inside a
+# LIVE command substitution can only add a true positive — see cmd_words_deep.
+#
+# CAPTURE FIRST, THEN GREP — `cmd_words_deep "$1" | grep -Eq ...` looks
+# equivalent but is NOT: cmd_words_deep runs as the LEFT side of a pipe, so
+# bash executes its whole body (multiple sequential printf/awk calls, unlike
+# plain cmd_words's single END-block printf) in a subshell; `grep -Eq` exits
+# the instant it finds a match, closing the read end, and cmd_words_deep's
+# NEXT write then dies of SIGPIPE (exit 141) — which `pipefail` (every caller
+# of this library sets it) turns into a NON-ZERO exit for this whole function,
+# even though grep's `-q` short-circuit means it DID find the match. A real
+# positive silently read as "not detected" is a fail-OPEN, exactly the
+# "early-exiting reader under pipefail" class this repo has hit before (see
+# docs/legacy-patterns or grep the codebase for "fails open under pipefail").
+# Caught empirically: `cmd_is_git_commit '\`git commit -m x\`'` under `set -o
+# pipefail` returned 141, not 0, despite grep genuinely matching line 1.
+# `$(...)` command substitution waits for the whole subshell to finish before
+# the pipe closes, so there is no live pipe for an early exit to break.
 cmd_is_gh_pr_create() {
-  printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+create${_CMD_POS_SUFFIX}"
+  local words
+  words=$(cmd_words_deep "$1")
+  grep -Eq "${_CMD_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+create${_CMD_POS_SUFFIX}" <<< "$words"
 }
 
 # cmd_is_git_commit <command>  → exit 0 if it invokes `git [-c k=v]* commit` in command position.
+# Deep (see cmd_is_gh_pr_create's note): DENY-shaped, feeds commit-verify.sh only.
+# Capture-first (see cmd_is_gh_pr_create's note on the pipefail/SIGPIPE hazard).
 cmd_is_git_commit() {
-  printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_COMMIT}${_CMD_POS_SUFFIX}"
+  local words
+  words=$(cmd_words_deep "$1")
+  grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_COMMIT}${_CMD_POS_SUFFIX}" <<< "$words"
 }
 
 # cmd_is_git <command>  → exit 0 if it invokes `git` in command position (ANY subcommand, or
 # bare git). Used by core-bare-guard.sh, which heals core.bare before ANY git op.
+# Deep (see cmd_is_gh_pr_create's note): advisory-only consumer, always exits 0 itself.
+# Capture-first (see cmd_is_gh_pr_create's note on the pipefail/SIGPIPE hazard).
 cmd_is_git() {
-  printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_POS_SUFFIX}"
+  local words
+  words=$(cmd_words_deep "$1")
+  grep -Eq "${_CMD_POS_PREFIX}git${_CMD_POS_SUFFIX}" <<< "$words"
 }
 
 # cmd_is_git_commit_or_push <command>  → exit 0 if it invokes `git [-c k=v]* (commit|push)`
 # in command position. Used by drift-detect.sh (the two HEAD-movers it warns on).
+# Deep (see cmd_is_gh_pr_create's note): warn-only consumer, never denies.
+# Capture-first (see cmd_is_gh_pr_create's note on the pipefail/SIGPIPE hazard).
 cmd_is_git_commit_or_push() {
-  printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_COMMIT_PUSH}${_CMD_POS_SUFFIX}"
+  local words
+  words=$(cmd_words_deep "$1")
+  grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_COMMIT_PUSH}${_CMD_POS_SUFFIX}" <<< "$words"
 }
 
 # cmd_is_git_head_mover <command>  → exit 0 if it invokes a HEAD-moving
 # `git [-c k=v]* (commit|push|rebase|reset|pull|merge|cherry-pick)` in command position.
 # Used by drift-detect-update.sh (the PostToolUse baseline writer).
+# Deep (see cmd_is_gh_pr_create's note) — deliberately, even though this is this
+# file's ONE consumer where over-matching is SUPPRESSIVE rather than safe (a
+# spurious match here refreshes the baseline without a real HEAD move,
+# narrowing the drift-detection window; see the residual note near
+# _CMD_GIT_GLOBALS above). The reasoning still holds: cmd_extract_substitutions
+# only surfaces content from a LIVE quote context, so any match this adds
+# corresponds to a substitution that genuinely executes and genuinely moves
+# HEAD — refreshing the baseline for it is correct, not spurious. A
+# SINGLE-quoted or `$'...'`-quoted head-mover mention (inert, never executes)
+# must NOT be matched — pinned in test-cmd-detect.sh specifically for this
+# consumer, since it is the one place the distinction is load-bearing rather
+# than merely safe-direction.
+# Capture-first (see cmd_is_gh_pr_create's note on the pipefail/SIGPIPE hazard).
 cmd_is_git_head_mover() {
-  printf '%s' "$1" | cmd_words \
-    | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_HEAD_MOVER}${_CMD_POS_SUFFIX}"
+  local words
+  words=$(cmd_words_deep "$1")
+  grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_HEAD_MOVER}${_CMD_POS_SUFFIX}" <<< "$words"
 }
 
 # cmd_git_repo_dir <command> <verb-ere>  → echo WHICH REPOSITORY the matching git
@@ -723,6 +996,20 @@ EOF
 # suppresses a quoted MENTION; stage 2 delegates to cmd_git_branch_create_segment (see above)
 # to find the create flag itself, tolerant of an attached value or preceding flags.
 # Used by branch-preflight.sh's stale-base-branch check.
+#
+# DELIBERATELY STAYS ON PLAIN cmd_words, not cmd_words_deep, for BOTH stages —
+# unlike every other cmd_is_* predicate in this file. Stage 2
+# (cmd_git_branch_create_segment) always reads plain cmd_words on the
+# ORIGINAL "$1", and its own `tr`-based clause split is exactly the fragile,
+# previously-144-lost-denies-over-6400-inputs logic documented on that
+# function above — extending it to see substitution content is out of this
+# fix's scope. Making JUST stage 1 deep was tried and measured to have NO
+# observable effect (stage 2 remains the bottleneck: it can never find a
+# create-flag segment hidden inside a substitution either way), so stage 1
+# stays shallow too rather than adding an unused, misleading widening.
+# Documented residual: a `checkout`/`switch` create invocation hidden inside a
+# live command substitution is not detected by this predicate. None of this
+# todo's four reproduction cases are this shape.
 cmd_is_git_branch_create() {
   printf '%s' "$1" | cmd_words \
     | grep -Eq "${_CMD_POS_PREFIX}git${_CMD_GIT_GLOBALS}[[:space:]]+${_CMD_GIT_VERBS_BRANCH}${_CMD_POS_SUFFIX}" \

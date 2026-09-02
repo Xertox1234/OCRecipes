@@ -69,6 +69,23 @@ rm -f "$STAMP_FILE"
 OUT=$(run_hook 'cd /tmp && gh pr create --title x --body y')
 assert_contains "chained gh pr create still denies" '"permissionDecision": "deny"' "$OUT"
 
+# 6b. todos/P1-2026-08-17-quoted-command-substitution-inert.md — the
+# exact reproduction string from that todo's Background section: `gh pr create
+# --fill` hidden inside a quoted $(...) command substitution. bash executes
+# $(...)  regardless of the surrounding double quotes, so this genuinely
+# invokes gh pr create — verified (before that fix) to return NO stamp-gate
+# JSON at all by piping this identical command into this live hook, versus the
+# bare form (test 2 above) which correctly triggered the gate.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook 'echo "$(gh pr create --fill)"')
+assert_contains "gh pr create hidden in a quoted \$(...) substitution still denies" \
+  '"permissionDecision": "deny"' "$OUT"
+# Two-sided control: the SAME text, single-quoted, is genuinely inert in bash
+# (single quotes disable command substitution entirely) and must pass through.
+rm -f "$STAMP_FILE"
+OUT=$(run_hook "echo '\$(gh pr create --fill)'")
+assert_empty "the SAME text, single-quoted (genuinely inert), passes through" "" "$OUT"
+
 # 7. MCP create_pull_request with NO stamp → deny (the default /todo PR-create path).
 rm -f "$STAMP_FILE"
 OUT=$(run_hook_tool "mcp__github__create_pull_request")
