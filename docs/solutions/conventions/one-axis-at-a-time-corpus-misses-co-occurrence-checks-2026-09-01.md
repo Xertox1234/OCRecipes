@@ -71,6 +71,22 @@ Note the asymmetry that makes this hard to notice by reading: an under-covered g
 not fail, it **agrees**. Every pin around it is green, so the suite's own report is
 evidence of coverage it does not have.
 
+### Three more axes the same corpus was missing, found the same way
+
+The generator above was rerun against four review rounds on one file. Each round found a
+defect the corpus could not express, and every one was a *value* the corpus held fixed
+rather than a dimension it lacked entirely:
+
+| Axis held fixed | What it hid |
+| --- | --- |
+| redirects always **spaced** (whitespace baked into the template) | a redirect GLUED to the preceding word truncates the segment — a real `git checkout main&>/dev/null -b foo` reported not-a-create |
+| `-c` values always **inert** (`user.name=x`) | `(`, `)`, `{`, `}`, `;` inside a value are content, not operators; splitting on them severed one real invocation into none |
+| command **prefix** always empty | an inline `GIT_DIR=` assignment is a repo redirect the old anchor already matched, so "decline when unresolvable" silently dropped its deny |
+
+The pattern across all three: the corpus varied the *token* and fixed its *context*. Vary
+the spacing around a token, the content inside a token's value, and what may sit before the
+command word — not just which token appears.
+
 ## Examples
 
 The two axes to cross are the values, not the positions:

@@ -47,8 +47,11 @@ cmd_is_git_commit "$CMD" || exit 0
 # 2026-09-01; before that this hook simply never fired on it. Reporting cwd's staged set for
 # a commit made somewhere else would be actively misleading — the whole message is "these
 # files are STILL staged", and they would be a different repo's files. `.` for the ordinary
-# case; an unresolvable redirect exits silently, which is this hook's pre-2026-09-01
-# behaviour on such a command and the safe direction for a non-blocking advisory.
+# case; an unresolvable GLOBAL-form redirect (`-C`, `--git-dir`, `--work-tree`) exits
+# silently, which is this hook's pre-2026-09-01 behaviour on such a command — the old matcher
+# could not see one — and the safe direction for a non-blocking advisory. An inline `GIT_DIR=`
+# assignment is NOT in that class: the env absorber has always matched it, so it resolves to
+# cwd and nothing about this hook's behaviour there changes.
 REPO=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT") || exit 0
 
 git -C "$REPO" rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0

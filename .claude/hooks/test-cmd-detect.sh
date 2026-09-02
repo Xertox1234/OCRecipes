@@ -336,6 +336,41 @@ for _r in '2>/dev/null' '&>/dev/null' '>|log' '2>&1'; do
     "slot: a real start-point after ${_r} survives"
 done
 
+# SPACING dimension (review round 4, 2026-09-01 — a CRITICAL). Every ${_r} above has
+# whitespace baked into its template, so the corpus could not see a redirect GLUED to the
+# preceding word. That is not a cosmetic variant: `&` and `|` are in this extractor's own
+# terminator class, so a glued `&>`/`>&`/`>|` TRUNCATES the segment before the create flag and
+# a real create reports not-a-create. Verified by running git in a scratch repo —
+# `git checkout main&>/dev/null -b foo` and `git checkout -b foo&>/dev/null` both create the
+# branch. The round-3 fix required `(^|[[:space:]])` before the whole redirect, which is right
+# for the fd DIGITS and wrong for everything else; hence two sed expressions.
+#
+# The SUBCOMMAND slot (`git checkout>&2 -b foo`) is NOT pinned here. It fails one step
+# earlier, in stage 1's `_CMD_POS_SUFFIX` anchor, which this todo's Scope Contract forbids
+# touching — a separate defect with a separate fix, not something this sed can reach.
+for _r in '&>/dev/null' '&>>log' '>&2' '>|log' '>/dev/null' '2>/dev/null' '&>|log'; do
+  det cmd_is_git_branch_create "git checkout main${_r} -b foo"  yes "glued to the start-point word (${_r})"
+  det cmd_is_git_branch_create "git switch main${_r} -c foo"    yes "glued, switch form (${_r})"
+  det cmd_is_git_branch_create "git checkout -b foo${_r}"       yes "glued to the new branch NAME (${_r})"
+done
+# The other direction: deleting a glued redirect must not eat a REAL start-point.
+for _r in '&>/dev/null' '&>>log' '>&2' '>|log' '>/dev/null' '&>|log'; do
+  seg_clip "git checkout -b foo${_r} origin/main" 'checkout -b foo origin/main' \
+    "a real start-point after a GLUED ${_r} survives"
+done
+# The fd-DIGIT form is pinned SEPARATELY and deliberately, because bash attaches the digit to
+# the PRECEDING word rather than to the operator, and that flips the answer by slot:
+#   name slot      — `git checkout -b foo2>/dev/null` creates a branch called `foo2` (ran it).
+#   subcommand slot — `git checkout2>/dev/null -b foo` invokes `git checkout2`, which git
+#                     rejects: "'checkout2' is not a git command", exit 1, nothing created.
+# Folding either into the loops above would have pinned a wrong answer as if it were the fix.
+seg_clip 'git checkout -b foo2>/dev/null origin/main' 'checkout -b foo2 origin/main' \
+  'a glued fd DIGIT stays part of the branch NAME (bash creates foo2), start-point intact'
+det cmd_is_git_branch_create 'git checkout2>/dev/null -b foo' no \
+  'a glued fd digit makes it `git checkout2`, which is not a git command at all'
+det cmd_is_git_branch_create 'git switch2>>log -c foo'        no \
+  '...same for the switch form'
+
 # The clip direction of the same defect: an eaten separator also glued the NEXT clause's first
 # token in as a spurious start-point, so the stale-base check was skipped on a command that
 # named no start point at all — the exact bug this whole todo exists to close, surviving in
@@ -560,6 +595,25 @@ for _r in '2>/dev/null' '&>/dev/null' '>|log' '2>&1' '</dev/null'; do
   det cmd_is_git_head_mover    "${_r} git reset --hard"     yes "redirect before the command word, HEAD mover (${_r})"
 done
 det cmd_is_git_commit 'git>log commit -m x' yes "an ATTACHED redirect (no space after \`git\`) is still a commit"
+# A redirect's TARGET is mandatory in bash. Modelling it as optional let `>` match nothing and
+# hand the NEXT word back as the command word: `true && > git commit` creates a FILE named
+# `git` and runs `commit` (argv shim), yet was read as a real commit — a false DENY here and,
+# worse, a baseline STAMP in drift-detect-update, which absorbs a genuine external drift.
+det cmd_is_git_commit 'true && > git commit'  no  "an empty redirect target is not a redirect"
+det cmd_is_git_commit 'git > commit'          no  "...nor when it would swallow the subcommand"
+det cmd_is_git_commit '2>/dev/null git commit -m x' yes "control: a REAL redirect before the command word still matches"
+# A verb GLUED to a redirect needs `<`/`>` in _CMD_POS_SUFFIX; `&>` passed only because `&`
+# was already a closer, which is why this slot survived the &> fix one branch down.
+for _r in '>&2' '>|log' '>/dev/null' '&>/dev/null' '&>>log'; do
+  det cmd_is_git_branch_create "git checkout${_r} -b foo" yes "glued to the SUBCOMMAND (${_r})"
+done
+det cmd_is_git_commit 'git commit>log'        yes "a verb glued to a redirect is still an invocation"
+# _CMD_POS_PREFIX is SHARED with cmd_is_gh_pr_create, so widening it for redirects widens
+# that gate too and pr-preflight-guard.sh newly denies this. Correct hardening and the safe
+# direction, but a real behaviour change outside the git matchers — pinned so it is a
+# decision on the record rather than a side effect nobody wrote down.
+det cmd_is_gh_pr_create '2>/dev/null gh pr create --fill' yes "a redirect before the command word no longer hides gh pr create"
+det cmd_is_gh_pr_create 'echo "2>/dev/null gh pr create"' no  "...and a quoted mention of that form still does not match"
 
 # NEGATIVE side. Widening a matcher can only ADD matches, so these are the pins that keep
 # the widening from becoming a mention-matcher.
@@ -614,13 +668,42 @@ repo 'git -C /tmp/`pwd` commit'        "$_CMD_GIT_VERBS_COMMIT" SKIP "...as is a
 repo 'git -C/tmp commit'               "$_CMD_GIT_VERBS_COMMIT" SKIP "the glued -C/path form (real git exits 129) does not resolve"
 repo 'git --git-dir=/x commit'         "$_CMD_GIT_VERBS_COMMIT" SKIP "--git-dir moves only the git-dir, not the work-tree"
 repo 'git --work-tree /x commit'       "$_CMD_GIT_VERBS_COMMIT" SKIP "--work-tree likewise"
-repo 'GIT_DIR=/x git commit'           "$_CMD_GIT_VERBS_COMMIT" SKIP "an inline GIT_DIR= assignment likewise"
+# ...but an ENV-form redirect ALONE resolves to cwd, and that is not a shortcut: the inline
+# assignment is swallowed by _CMD_POS_PREFIX's env absorber, which predates all of this, so
+# `GIT_DIR=.git git commit` DID match and DID deny on main. Answering SKIP here dropped that
+# deny — a CRITICAL, measured base=DENY head=ALLOW on a detached HEAD (review 2026-09-01).
+repo 'GIT_DIR=/x git commit'           "$_CMD_GIT_VERBS_COMMIT" '.'  "an inline GIT_DIR= alone keeps judging cwd (the old gate's deny)"
+repo 'GIT_WORK_TREE=/x git commit'     "$_CMD_GIT_VERBS_COMMIT" '.'  "...same for GIT_WORK_TREE="
+# The text `GIT_DIR=` as a `-c` VALUE is not a redirect at all — scanning for it there cost
+# the same CRITICAL a second instance, on a command with no repo redirect whatsoever.
+repo 'git -c GIT_DIR=x commit'         "$_CMD_GIT_VERBS_COMMIT" '.'  "GIT_DIR= as a -c VALUE is not a repo redirect"
+repo 'git -c GIT_WORK_TREE=x commit'   "$_CMD_GIT_VERBS_COMMIT" '.'  "...nor GIT_WORK_TREE= as a -c value"
+# ( ) { } ARE NOT CONTROL OPERATORS — they are ordinary content in an unquoted global's
+# value, and splitting on them severed `git` from its verb. One real commit, no segment
+# matched, every consumer skipped: 144 base-DENY -> new-ALLOW rows over a 6400-input corpus,
+# in the data-loss gate (CRITICAL, security review 2026-09-01). An argv shim confirmed the
+# first is a single invocation: [-c][core.hooksPath=/…/hooks][commit][-m][x].
+repo 'git -c core.hooksPath=$(pwd)/hooks commit -m x' "$_CMD_GIT_VERBS_COMMIT" '.' \
+  'a $(...) inside a -c value does not split the invocation'
+repo 'git -c foo.bar={a} commit -m x'  "$_CMD_GIT_VERBS_COMMIT" '.'  'nor do braces inside a -c value'
+repo 'git -c foo.bar=(a) commit -m x'  "$_CMD_GIT_VERBS_COMMIT" '.'  'nor bare parens'
+# ...while the four REAL control operators must still split, or the deny-preserving rule
+# above cannot see the second invocation at all.
+repo 'git -C /tmp commit; git commit'  "$_CMD_GIT_VERBS_COMMIT" '.'  'a real ; still splits (unredirected clause wins)'
+repo 'git -C /tmp commit && git commit' "$_CMD_GIT_VERBS_COMMIT" '.' 'a real && still splits'
+repo 'git -C /tmp commit | git commit' "$_CMD_GIT_VERBS_COMMIT" '.'  'a real | still splits'
 # MIXED spans: a resolvable -C sitting NEXT TO an unresolvable redirect. Found by mutation
 # testing — replacing the count-both-sides check with `true` left the whole suite green,
 # because every single-redirect case above lands on SKIP for a second reason (no value was
 # extracted at all). Only a span that yields a GOOD value AND an unhandled one discriminates,
 # and without the check it would resolve to the -C while git actually reads its refs from the
 # --git-dir. The generated corpus could not produce these: it varied one global at a time.
+# The saw=0 branch: no segment carries a real invocation, so the repo is unknown. The PAIR is
+# the point — the first is a deny main only had because its `-c` value class `[^[:space:]]+`
+# swallowed the `;` (bash runs `git -c foo=a`, then a command named `b`; nothing commits), the
+# second is a real commit whose deny must survive. One without the other proves nothing.
+repo 'git -c foo=a;b commit'           "$_CMD_GIT_VERBS_COMMIT" SKIP "a separator inside a -c VALUE leaves no real invocation -> unknown"
+repo 'git -c foo=a;git commit'         "$_CMD_GIT_VERBS_COMMIT" '.'  "...but a real commit in the next clause still resolves to cwd"
 repo 'git -C /tmp --git-dir=/x commit'   "$_CMD_GIT_VERBS_COMMIT" SKIP "a resolvable -C beside a --git-dir does not resolve"
 repo 'git -C /tmp --work-tree /x commit' "$_CMD_GIT_VERBS_COMMIT" SKIP "...nor beside a --work-tree"
 repo 'git -C /tmp -C/var commit'         "$_CMD_GIT_VERBS_COMMIT" SKIP "...nor beside a glued -C"

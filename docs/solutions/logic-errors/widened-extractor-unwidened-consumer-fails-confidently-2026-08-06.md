@@ -156,6 +156,36 @@ over a generated 660-command corpus (1320 paired runs) is what proves that: zero
 DENY→ALLOW, 408 ALLOW→DENY. A lib-level differential would have been green either way,
 because the *predicate* did not change its answer — the consumer did.
 
+### The corollary that took two CRITICALs to state: *"skip when unsure"* is only safe for the class the old code could not see
+
+The design above leans on one rule — when the repo cannot be resolved, decline to judge,
+because that is what the gate did before. Review falsified it twice, in the same direction
+both times, and the reason is worth more than the fix.
+
+"Before" is not one thing. The predicate was blind to `git -C /x commit` — a global the old
+pattern never modelled — so declining really is the old behaviour there. But it was **not**
+blind to `GIT_DIR=.git git commit`: the command-position anchor's env-assignment absorber had
+swallowed inline assignments for months. Filing both under one "unresolvable" bucket dropped
+a deny the gate already had, on a detached HEAD, measured `base=DENY head=ALLOW`. A second
+instance needed no redirect at all — the *text* `GIT_DIR=` appearing as a `-c` **value**.
+
+State the rule with its precondition attached:
+
+> A new "decline to act" branch is only behaviour-preserving for inputs the OLD code did not
+> act on. Enumerate which inputs those actually are — by running the old code — before
+> claiming the branch changes nothing.
+
+The same sentence was wrong a third time for a different reason: a *segment splitter* added
+alongside the parse treated `(`, `)`, `{`, `}` as control operators. They are not — they are
+ordinary content inside an unquoted `-c` value, and `git -c core.hooksPath=$(pwd)/hooks
+commit -m x` is **one** invocation (an argv shim settles it). The split severed `git` from
+its verb and the same "decline" branch swallowed 144 real denies across a 6400-input corpus.
+
+Three falsifications of one comment, each found by a reviewer executing the claim rather than
+reading it. The durable habit: **a sentence asserting "this cannot lose a deny" is a test
+obligation, not a rationale.** Write the pair — one input that must keep the deny, one that
+must lose it — and let the pair, not the prose, carry the argument.
+
 ## Related Files
 
 - `.claude/hooks/lib/cmd-detect.sh` — `cmd_gh_pr_ref` (value-flag skip, `--repo`/`-R` disqualify), `cmd_gh_pr_write_subcommand`

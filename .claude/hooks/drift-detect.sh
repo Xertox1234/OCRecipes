@@ -51,11 +51,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cmd_is_git_commit_or_push "$CMD" || exit 0
 
 # The drift baseline is keyed by SESSION and holds THIS cwd's HEAD — there is no per-repo
-# baseline. A `git -C /elsewhere` op therefore says nothing about it: warning about cwd drift here would be off-topic. Both
-# were invisible to the matcher before 2026-09-01, so skipping keeps the behaviour that was
-# already correct here instead of inventing a cross-repo one. An unresolvable redirect skips
-# for the same reason. `git -C <this repo>` spelled out in full still proceeds — the identity
-# test compares resolved git dirs, not path strings.
+# baseline. A `git -C /elsewhere` op therefore says nothing about it, so warning about cwd
+# drift on the strength of it would be off-topic.
+# Skipping is the CORRECT semantics for a cwd-keyed store, not a fallback. An unresolvable
+# GLOBAL-form redirect (`-C`, `--git-dir`, `--work-tree`) skips too, and that is also this
+# hook's previous behaviour, because the old matcher could not see one. An inline `GIT_DIR=`
+# assignment is deliberately NOT in that class — `_CMD_POS_PREFIX`'s env absorber has always
+# matched it, so it resolves to cwd and this hook behaves exactly as it did before (treating
+# the two classes alike dropped a real deny in the sibling gate; CRITICAL, review 2026-09-01).
+# `git -C <this repo>` spelled out in full still proceeds — the identity test compares
+# resolved git dirs, not path strings.
 REPO=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_COMMIT_PUSH") || exit 0
 
 # Ensure we're inside a git repo.

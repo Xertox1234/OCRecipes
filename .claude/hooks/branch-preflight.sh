@@ -38,7 +38,15 @@ fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_OK=0
-if . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit >/dev/null; then
+# Probe EVERY function the primary path calls, not just the first one. Check 1 now depends on
+# cmd_git_repo_dir too, and a lib defining `cmd_is_git_commit` without it set LIB_OK=1, took
+# the primary path, got 127 from the `$(…)`, left IS_COMMIT=0 and ALLOWED a plain
+# `git commit -m x` on a detached HEAD — the fail-CLOSED promise in this file's header
+# quietly bypassed (security review, 2026-09-01; verified against a lib with that one
+# function renamed away). Add to this list whenever the primary path grows a dependency.
+if . "$HERE/lib/cmd-detect.sh" 2>/dev/null \
+   && declare -F cmd_is_git_commit >/dev/null \
+   && declare -F cmd_git_repo_dir >/dev/null; then
   LIB_OK=1
 fi
 
@@ -47,14 +55,14 @@ REASON=""
 # WHICH REPOSITORY does the command act on? (2026-09-01.) Both checks below read HEAD, the
 # branch, and the upstream — until now always from this hook's own cwd, which was correct
 # only because `git -C <path>` was invisible to the matchers. Now that it is visible, each
-# check must resolve its own repo, and it must do so with ITS OWN verb set: for
-# `git -C /wt checkout -b foo && git commit`, check 1 is about cwd and check 2 is about /wt,
-# and a single shared answer would be wrong for one of them. `.` means cwd. A resolution
+# check must decide its own answer, and they differ: check 1 RESOLVES the repo (read-only,
+# and it is the data-loss gate, so it must follow the command), while check 2 is cwd-ONLY and
+# simply declines when a global redirect is present — see its own note below. `.` means cwd.
+# A resolution
 # FAILURE means the command redirects somewhere unresolvable (a `$VAR` path, a relative -C,
 # --git-dir) — that check is then SKIPPED, which is exactly its pre-2026-09-01 behaviour on
 # such a command, never a new judgement against the wrong repo.
 REPO_COMMIT="."
-REPO_BRANCH="."
 
 # --- Check 1: detached-HEAD commit (unchanged behavior) ------------------------
 IS_COMMIT=0
@@ -109,10 +117,31 @@ fi
 # --- Check 2: branch-create off a stale base (new, 2026-08-28) -----------------
 # Only evaluated when check 1 found nothing to deny — see the module comment: exactly one
 # decision is emitted per invocation, never two.
+# CHECK 2 IS CWD-ONLY, BY DECISION (2026-09-01). It briefly followed a resolved `-C` into
+# another repository and that was wrong twice over, both found by security review:
+#
+#   1. WRONG INVOCATION. cmd_git_repo_dir answers for the whole command over
+#      `(checkout|switch)`, voting `.` on ANY unredirected checkout — but the start-point
+#      extraction below picks the segment carrying a CREATE flag. Those can be different
+#      invocations, so `git --no-pager checkout main && git -C /other checkout -b foo` judged
+#      cwd's staleness for a create that happens in /other: base ALLOW, new DENY, 96/800 in a
+#      co-occurrence corpus. The mirror (`git -C /wt checkout -b foo && git checkout main`)
+#      resolved to `.` and left a create off a stale /wt unchecked.
+#   2. SIDE EFFECT FROM UNAPPROVED TEXT. This check FETCHES and writes remote-tracking refs.
+#      Following `-C` meant a PreToolUse hook mutating a repository named only by a command
+#      string that was never approved and may never run — demonstrated by watching
+#      `origin/main` move in a repo the command only mentioned.
+#
+# So: if the command carries a GLOBAL-form repo redirect anywhere, skip. That is exactly the
+# pre-2026-09-01 behaviour (the old predicate could not see those globals at all), so nothing
+# is lost, and every git call below is cwd's again. The ENV form is deliberately NOT a skip
+# trigger — `_CMD_POS_PREFIX` has always absorbed it, so `GIT_DIR=/x git checkout -b foo` was
+# judged against cwd before and still is. Check 1 keeps full `-C` resolution: it is read-only
+# and it is the gate that prevents data loss.
 if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD" \
-   && REPO_BRANCH=$(cmd_git_repo_dir "$CMD" "$_CMD_GIT_VERBS_BRANCH") \
-   && git -C "$REPO_BRANCH" rev-parse --git-dir >/dev/null 2>&1; then
-  BRANCH=$(git -C "$REPO_BRANCH" symbolic-ref --short HEAD 2>/dev/null || echo "")
+   && ! printf '%s' "$CMD" | cmd_words | grep -qE "$_CMD_GIT_REDIRECTS_REPO" \
+   && git rev-parse --git-dir >/dev/null 2>&1; then
+  BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
   if [ -n "$BRANCH" ]; then
     # Does the command give an explicit start-point beyond the new branch's own name
     # (`git checkout -b foo origin/main`)? If so it isn't relying on local's possibly-stale
@@ -150,12 +179,12 @@ if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD" \
     done
 
     if [ "$HAS_START_POINT" = 0 ]; then
-      REMOTE=$(git -C "$REPO_BRANCH" config "branch.${BRANCH}.remote" 2>/dev/null || echo "")
+      REMOTE=$(git config "branch.${BRANCH}.remote" 2>/dev/null || echo "")
       # branch.<name>.merge (e.g. "refs/heads/main") names the ACTUAL remote branch this one
       # tracks — do not assume it shares the local branch's own name (review, 2026-08-28: a
       # branch created via `checkout -b wip origin/main` tracks origin/main, not origin/wip,
       # and fetching the wrong-named ref is a silent no-op that misses real drift).
-      MERGE_REF=$(git -C "$REPO_BRANCH" config "branch.${BRANCH}.merge" 2>/dev/null || echo "")
+      MERGE_REF=$(git config "branch.${BRANCH}.merge" 2>/dev/null || echo "")
       REMOTE_BRANCH="${MERGE_REF#refs/heads/}"
       if [ -n "$REMOTE" ] && [ -n "$REMOTE_BRANCH" ] && [ "$REMOTE_BRANCH" != "$MERGE_REF" ]; then
         # Fetch into the explicit remote-tracking ref — never read FETCH_HEAD (shared across
@@ -165,11 +194,11 @@ if [ -z "$REASON" ] && [ "$LIB_OK" = 1 ] && cmd_is_git_branch_create "$CMD" \
         # hook-timeout (.claude/settings.json, currently 10s) treats a killed process as deny
         # rather than allow, a dead network could turn this hygiene-only check into an
         # unintended block — unverified either way; accepted for now, worth revisiting if seen.
-        git -C "$REPO_BRANCH" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
+        git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=5 fetch -q \
           "$REMOTE" "${MERGE_REF}:refs/remotes/${REMOTE}/${REMOTE_BRANCH}" 2>/dev/null
-        BEHIND=$(git -C "$REPO_BRANCH" rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo "")
+        BEHIND=$(git rev-list --count "HEAD..@{upstream}" 2>/dev/null || echo "")
         if [ -n "$BEHIND" ] && [ "$BEHIND" -gt 0 ] 2>/dev/null; then
-          UPSTREAM=$(git -C "$REPO_BRANCH" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo "${REMOTE}/${REMOTE_BRANCH}")
+          UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || echo "${REMOTE}/${REMOTE_BRANCH}")
           REASON="Local branch '${BRANCH}' is ${BEHIND} commit(s) behind its upstream (${UPSTREAM}) — branching now risks redoing or duplicating work that already merged there. Run: git fetch ${REMOTE} ${REMOTE_BRANCH} && git merge --ff-only ${UPSTREAM} — then retry. Emergency bypass: SKIP_BRANCH_PREFLIGHT=1."
         fi
       fi

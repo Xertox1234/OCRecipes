@@ -402,11 +402,86 @@ assert_deny "a redirect BEFORE the command word no longer hides a detached-HEAD 
 OUT=$(run_hook_in "$REPO_DETACHED" "git --no-pager commit -m x")
 assert_deny "a git global before the subcommand no longer hides a detached-HEAD commit" "$OUT"
 
-# CHECK 2 through the same path: the stale-base gate must follow -C too. $REPO is current
-# here, so advance the remote first to make it stale again, then judge it from ELSEWHERE.
+# THE REGRESSION THIS PAIRING ALMOST SHIPPED (CRITICAL, review 2026-09-01). An inline
+# `GIT_DIR=`/`GIT_WORK_TREE=` assignment is swallowed by _CMD_POS_PREFIX's env absorber,
+# which predates all of this — so unlike `-C`, these commands ALREADY matched and ALREADY
+# denied. Filing them under "unresolvable, therefore skip, therefore no worse than before"
+# was measurably false: base=DENY, head=ALLOW on a genuinely detached HEAD. The unit pin in
+# test-cmd-detect.sh cannot catch it; only the consequence through the real hook can.
+OUT=$(run_hook_in "$REPO_DETACHED" "GIT_DIR=.git git commit -m x")
+assert_deny "an inline GIT_DIR= prefix still denies on a detached HEAD" "$OUT"
+OUT=$(run_hook_in "$REPO_DETACHED" "GIT_WORK_TREE=. git commit -m x")
+assert_deny "an inline GIT_WORK_TREE= prefix still denies on a detached HEAD" "$OUT"
+OUT=$(run_hook_in "$REPO_DETACHED" "GIT_DIR=/elsewhere git commit -m x")
+assert_deny "...including one naming another path — cwd is still judged, as it was before" "$OUT"
+OUT=$(run_hook_in "$REPO_DETACHED" "git -c GIT_DIR=x commit -m y")
+assert_deny "GIT_DIR= as a -c VALUE is not a redirect and must not drop the deny" "$OUT"
+# The second CRITICAL: `(`/`)`/`{`/`}` are content inside a -c value, not control operators.
+# Splitting on them severed `git` from its verb and skipped the gate on ONE real commit.
+OUT=$(run_hook_in "$REPO_DETACHED" 'git -c core.hooksPath=$(pwd)/hooks commit -m x')
+assert_deny "a \$(...) inside a -c value does not split the invocation away from the gate" "$OUT"
+OUT=$(run_hook_in "$REPO_DETACHED" 'git -c foo.bar={a} commit -m x')
+assert_deny "...nor do braces inside a -c value" "$OUT"
+# The empty-redirect-target false DENY, the opposite direction: bash creates a FILE named
+# `git` here and runs `commit`, so there is no git invocation to gate at all.
+OUT=$(run_hook_in "$REPO_DETACHED" 'true && > git commit')
+assert_silent "an empty redirect target is not a git invocation and must not deny" "$OUT"
+# ...and the reason the fix is NOT a blanket "unresolvable => judge cwd": that would send a
+# commit destined for another repo to be judged here.
+OUT=$(run_hook_in "$REPO_DETACHED" 'git -C "$WORKTREE" commit -m x')
+assert_silent "an unresolvable GLOBAL redirect is still skipped, not judged against cwd" "$OUT"
+
+# LIB_OK must probe EVERY function the primary path calls. A lib defining cmd_is_git_commit
+# but not cmd_git_repo_dir set LIB_OK=1, took the primary path, got 127 from the `$(…)`, left
+# IS_COMMIT=0, and ALLOWED a plain detached-HEAD commit — the file header's fail-CLOSED
+# promise silently bypassed (security review, 2026-09-01). Built by copying the real hook and
+# lib and renaming ONE function away, so the fixture cannot drift from the real dependency.
+PARTIAL=$(mktemp -d); mkdir -p "$PARTIAL/lib"
+cp "$(dirname "$HOOK")/branch-preflight.sh" "$PARTIAL/branch-preflight.sh"
+sed 's/^cmd_git_repo_dir()/cmd_git_repo_dir_RENAMED()/' \
+  "$(dirname "$HOOK")/lib/cmd-detect.sh" > "$PARTIAL/lib/cmd-detect.sh"
+run_partial() {
+  jq -n --arg c "$1" '{"tool_name":"Bash","tool_input":{"command":$c}}' \
+    | env -u GIT_DIR -u GIT_WORK_TREE bash -c 'cd "$1" && bash "$2/branch-preflight.sh" 2>/dev/null' \
+        _ "$REPO_DETACHED" "$PARTIAL"
+}
+# Control first: the fixture must really be missing the function, or this passes vacuously.
+if grep -q 'cmd_git_repo_dir_RENAMED' "$PARTIAL/lib/cmd-detect.sh" \
+   && ! grep -q '^cmd_git_repo_dir()' "$PARTIAL/lib/cmd-detect.sh"; then
+  echo "PASS: control — the partial-lib fixture really lacks cmd_git_repo_dir"; PASS=$((PASS+1))
+else
+  echo "FAIL: control — partial-lib fixture was not built; the pin below is vacuous"; FAIL=$((FAIL+1))
+fi
+OUT=$(run_partial "git commit -m x")
+assert_deny "a lib missing cmd_git_repo_dir falls back to the raw regex and still DENIES" "$OUT"
+rm -rf "$PARTIAL"
+
+# CHECK 2 IS CWD-ONLY and must stay so. Following `-C` judged the wrong invocation's repo
+# (`git --no-pager checkout main && git -C /other checkout -b foo` denied on cwd's staleness
+# for a create that happens elsewhere: base ALLOW, new DENY) and made a PreToolUse hook fetch
+# into, and write refs inside, a repo named only by an unapproved command string. $REPO is
+# current here, so advance the remote first to make it stale again.
 advance_remote "z.txt" "landed while we were looking at another repo"
 OUT=$(run_hook_in "$REPO_DETACHED" "git -C $REPO checkout -b feature/ten")
-assert_deny "the stale-base check follows -C into another repo" "$OUT"
+assert_silent "the stale-base check does NOT follow -C into another repo" "$OUT"
+REF_BEFORE_C=$(git -C "$REPO" rev-parse "refs/remotes/origin/$INITIAL_BRANCH")
+run_hook_in "$REPO_DETACHED" "git -C $REPO checkout -b feature/eleven" >/dev/null
+REF_AFTER_C=$(git -C "$REPO" rev-parse "refs/remotes/origin/$INITIAL_BRANCH")
+if [ "$REF_BEFORE_C" = "$REF_AFTER_C" ]; then
+  echo "PASS: ...and does not FETCH into a repo named only by the command string"; PASS=$((PASS+1))
+else
+  echo "FAIL: a -C command string caused a fetch that moved $REPO's remote-tracking ref"; FAIL=$((FAIL+1))
+fi
+# Control: with no redirect, the stale-base deny still fires from that same repo's own cwd.
+OUT=$(run_hook_in "$REPO" "git checkout -b feature/twelve")
+assert_deny "control — the stale-base deny still fires for a cwd-local create" "$OUT"
+# THE FALSE DENY the cwd-only rule exists to prevent, and the only shape that discriminates
+# it: cwd must be STALE (not detached, or check 2 short-circuits before the guard matters).
+# `cmd_git_repo_dir` votes `.` on the unredirected `checkout main`, but the only CREATE is in
+# the other repo — so judging cwd's staleness here denies a command that never branches here.
+# Base allowed it because `--no-pager` and `-C` were both invisible to its stage 1.
+OUT=$(run_hook_in "$REPO" "git --no-pager checkout $INITIAL_BRANCH && git -C $REPO_DETACHED checkout -b feature/thirteen")
+assert_silent "a create redirected elsewhere is not judged against THIS repo's staleness" "$OUT"
 
 # --- Hermeticity guard: prove the caller's real repo is byte-for-byte untouched. ---
 # If an inherited GIT_DIR ever defeats the temp-repo isolation again, this fails loudly in
