@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { toDateString } from "@shared/lib/date";
+import { toLocalDateString } from "@shared/lib/date";
 import {
   StyleSheet,
   View,
@@ -94,10 +94,11 @@ export function GroceryListPickerModal({
 
   const handleCreateAndAdd = useCallback(() => {
     const title = newListTitle.trim() || "Grocery List";
-    const today = toDateString(new Date());
-    const nextWeek = toDateString(
-      new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    );
+    const now = new Date();
+    const today = toLocalDateString(now);
+    const nextWeekDate = new Date(now);
+    nextWeekDate.setDate(nextWeekDate.getDate() + 7);
+    const nextWeek = toLocalDateString(nextWeekDate);
 
     haptics.impact(Haptics.ImpactFeedbackStyle.Medium);
     createListMutate(
