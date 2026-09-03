@@ -45,7 +45,7 @@ separator class is broken by the letters inside the expansion, so the no-`jq` fa
 which exists precisely to fail closed — does not catch it either. This is not a
 precise-path-only gap: it fails open on every layer of the guard.
 
-Note this is a *different* mechanism from the existing tested case `echo $(eas update)`,
+Note this is a _different_ mechanism from the existing tested case `echo $(eas update)`,
 which keeps the verb as literal text inside the substitution. Here the verb text never
 appears in the source at all, which is why existing coverage does not reach it.
 
@@ -68,7 +68,7 @@ mutation-testable. This one is structural. The two available mechanisms are:
 **Option (a) — deny by default in command position.**
 Fails closed, which is the correct default for a security gate and matches the guard's
 existing behaviour when `jq` is missing or the lib is unsourceable.
-*Cost:* false positives on legitimate commands. Any developer or script writing something
+_Cost:_ false positives on legitimate commands. Any developer or script writing something
 like a variable-driven CLI path, a `$(...)`-computed argument ahead of a gated verb, or a
 wrapper that composes a command from parts would be denied and need `ALLOW_OUTWARD_CLI=1`.
 The size of that population is **unmeasured** — measuring it is part of the work, not an
@@ -78,11 +78,11 @@ assumption to make now.
 Zero false positives; the gap is recorded in `DOCUMENTED RESIDUALS` alongside the others and
 the guard continues to defend against the literal-text cases that make up ordinary agent
 behaviour.
-*Cost:* a confirmed, trivially-constructed bypass stays open in the gate whose failure
+_Cost:_ a confirmed, trivially-constructed bypass stays open in the gate whose failure
 already caused one real incident here. An agent that ever emits an expansion-composed
 outward command — deliberately or not — is not stopped.
 
-**Option (c) — narrow deny.** Deny only when an expansion sits in command position *and* the
+**Option (c) — narrow deny.** Deny only when an expansion sits in command position _and_ the
 surrounding command shape already smells outward-facing (e.g. a gated binary name is present
 but the verb is not literal). Smaller false-positive surface than (a); more complexity, and
 the narrowing itself needs the same construct-and-run scrutiny.

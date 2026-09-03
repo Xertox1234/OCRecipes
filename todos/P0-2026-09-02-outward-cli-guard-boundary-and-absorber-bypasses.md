@@ -24,8 +24,8 @@ expansion) is deliberately **not** here; it needs a scope decision and lives in
 `todos/P0-2026-09-02-outward-cli-guard-command-position-expansion-decision.md`.
 
 > **Working on this todo trips the guard's own heredoc-prose false positive**
-> (`todos/P3-2026-08-16-command-guards-fire-on-heredoc-prose.md`). Merely *writing this
-> file* was denied twice — once by the PR-merge check and once by the cross-repo `--repo`
+> (`todos/P3-2026-08-16-command-guards-fire-on-heredoc-prose.md`). Merely _writing this
+> file_ was denied twice — once by the PR-merge check and once by the cross-repo `--repo`
 > check — because the reproduction strings appear in its text. `ALLOW_OUTWARD_CLI=1`
 > bypasses only the single check that fired, so a body containing several trigger shapes
 > needs a write path that does not route the content through a shell command string at all.
@@ -62,22 +62,22 @@ Verified matrix (all run against the real hook; `PRMERGE` = the command-position
 invocation, `EASBUILD` = the EAS build invocation, written as placeholders here only so this
 file can be handled by tooling that inspects command strings):
 
-| construction | real argv (verified via stub) | hook |
-| --- | --- | --- |
-| `PRMERGE 42 --auto --admin` (baseline, literal) | `--admin` present | DENY |
-| `PRMERGE 42 --auto ${x:---admin}` (x unset) | `--admin` present | **ALLOW** |
-| `PRMERGE 42 --auto ${x---admin}` (no-colon form) | `--admin` present | **ALLOW** |
-| `PRMERGE 42 --auto ${x:+--admin}` (x set) | `--admin` present | DENY |
-| `PRMERGE 42 --auto ${x:=--admin}` | `--admin` present | DENY |
-| `EASBUILD ${x:---auto-submit}` | `--auto-submit` present | **ALLOW** |
-| `PRCOMMENT 5 --body hi ${x:---repo} other/org` | `--repo other/org` present | **ALLOW** |
+| construction                                     | real argv (verified via stub) | hook      |
+| ------------------------------------------------ | ----------------------------- | --------- |
+| `PRMERGE 42 --auto --admin` (baseline, literal)  | `--admin` present             | DENY      |
+| `PRMERGE 42 --auto ${x:---admin}` (x unset)      | `--admin` present             | **ALLOW** |
+| `PRMERGE 42 --auto ${x---admin}` (no-colon form) | `--admin` present             | **ALLOW** |
+| `PRMERGE 42 --auto ${x:+--admin}` (x set)        | `--admin` present             | DENY      |
+| `PRMERGE 42 --auto ${x:=--admin}`                | `--admin` present             | DENY      |
+| `EASBUILD ${x:---auto-submit}`                   | `--auto-submit` present       | **ALLOW** |
+| `PRCOMMENT 5 --body hi ${x:---repo} other/org`   | `--repo other/org` present    | **ALLOW** |
 
 Impact: a real administrator-override merge (bypasses branch-protection required checks —
 the exact thing the carve-out near `guard-outward-cli.sh:82` exists to prevent), a real
 app-store submission, and a real cross-repo `--repo` egress with the PAT all receive a
 silent ALLOW.
 
-Control: the literal three-dash form (no expansion) produces a *different* argv token and is
+Control: the literal three-dash form (no expansion) produces a _different_ argv token and is
 not itself a bypass — confirming this is an expansion-driven defeat, not a misread regex.
 
 ### C2 (CRITICAL) — default-value expansion on a flag's VALUE defeats the method check
@@ -188,7 +188,7 @@ construction at all, independent of the guard.
 - **Over-denial is the real risk here, not under-denial.** Widening a boundary class can
   block legitimate commands. This repo has been burned: one unverified "the old code did not
   act on this" sentence cost 144 real denies. Run the old code to learn its acting set.
-- C1's fix touches the shared boundary construct used by *every* flag check, so its blast
+- C1's fix touches the shared boundary construct used by _every_ flag check, so its blast
   radius is wider than the other three. Give it the largest corpus.
 
 ## Updates
@@ -202,7 +202,6 @@ construction at all, independent of the guard.
   `main` and the PR branch. Reproduction fixtures (guard copies with correct relative `lib/`
   layout, plus argv-printing stubs) lived in a session scratchpad and are NOT durable —
   regenerate them from the constructions described above.
-
 
 ## Additional findings (added 2026-09-02, after this todo was first written)
 

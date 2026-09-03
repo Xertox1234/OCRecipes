@@ -43,13 +43,13 @@ The same shape works with an unset variable in place of the substitution.
 - **Suffix side: one character.** The sigil leaves a byte at the boundary position that can
   be added to the existing closer class, exactly like the `{`/`}` widening PR #910 already
   landed.
-- **Prefix side: not a class widening.** Bash consumes the *whole balanced sigil*, so there
+- **Prefix side: not a class widening.** Bash consumes the _whole balanced sigil_, so there
   is no single boundary byte to match. Closing it needs a **new regex alternative** capable
   of absorbing a balanced construct — a different mechanism from everything else in the
   anchor pair.
 
 The PR #910 repair fixed **neither**, deliberately. Its reasoning, which this todo inherits:
-shipping only the cheap half would leave the guard *reporting* the class closed while the
+shipping only the cheap half would leave the guard _reporting_ the class closed while the
 prefix side stayed open — the overclaiming-by-implication defect that entire repair chain
 existed to correct. That chain had already caught the same shape twice (a two-branch boundary
 check fixed on one branch only, found by a later reviewer), so the concern is empirical, not
@@ -57,19 +57,19 @@ theoretical.
 
 ## The decision
 
-**Option (a) — close both sides.** Widen the suffix closer class *and* add the new regex
+**Option (a) — close both sides.** Widen the suffix closer class _and_ add the new regex
 alternative for the balanced-sigil prefix case.
-*Cost:* the prefix alternative is new machinery in the most security-sensitive regex pair in
+_Cost:_ the prefix alternative is new machinery in the most security-sensitive regex pair in
 the file, with a false-positive surface that must be measured rather than estimated.
 
 **Option (b) — close neither; document as a residual.** Record both sides in the guard's
 `DOCUMENTED RESIDUALS` and close.
-*Cost:* a trivially-constructed bypass stays open in the gate whose failure already caused a
+_Cost:_ a trivially-constructed bypass stays open in the gate whose failure already caused a
 real incident in this repo (`project_ota_accidental_publish_2026_08_16`).
 
 **Option (c) — close the suffix side only, and say so explicitly.** Cheapest real reduction
 in exposure.
-*Cost:* only acceptable if the prefix side is documented as still open **in the same change**,
+_Cost:_ only acceptable if the prefix side is documented as still open **in the same change**,
 in all three places that currently describe this gap. Silent half-fixes are what this todo
 exists to prevent — if (c) is chosen, the explicitness is the deliverable, not an afterthought.
 
@@ -99,7 +99,7 @@ exists to prevent — if (c) is chosen, the explicitness is the deliverable, not
 - **Do not let an agent settle this autonomously.** `human_led: true` is set deliberately.
   The cheap half is genuinely tempting and genuinely wrong on its own; an unattended run
   optimising for a closed checkbox will take it.
-- If (a): the prefix alternative must absorb a *balanced* construct. Note that the sibling
+- If (a): the prefix alternative must absorb a _balanced_ construct. Note that the sibling
   P1 work (`todos/archive/P1-2026-08-17-quoted-command-substitution-inert.md`) already landed
   a stack-based recursive extractor (`cmd_extract_substitutions`) for balanced-substitution
   scanning — check whether it can be reused before writing a second balanced-construct
