@@ -146,6 +146,21 @@ export default function CoachChat({
   // AddItemMenuSheet.tsx, adapted to release in `finally` (not on next open)
   // so a retry after a failed save is never permanently blocked.
   const isSavingPlanRef = useRef(false);
+  // Per-flow token paired with isSavingPlanRef above: the boolean alone
+  // can't tell WHICH confirm's `finally`/completion is running. Dismissing
+  // the sheet mid-save (backdrop tap / Close button / onRequestClose — all
+  // unconditional, see PlanSlotPickerSheet.tsx) does not cancel the
+  // in-flight mutation; if the user then reopens and confirms a different
+  // recipe, the reset effect below lets that second flow acquire
+  // isSavingPlanRef while the first is still running. Without this token,
+  // the first (abandoned) flow's eventual completion would unconditionally
+  // clear isSavingPlanRef AND null out planTarget — reopening the
+  // double-write window for the second flow, and yanking its still-open
+  // sheet out from under it. Each confirm bumps and captures the token; the
+  // guarded release/close calls below only act when their captured token is
+  // still current — a stale flow's completion is a no-op against a later
+  // flow's state. See P2-2026-08-30-coach-plan-slot-guard-survives-sheet-dismissal.
+  const planSaveTokenRef = useRef(0);
 
   // This CANNOT be `useMemo(() => buildPlanSlotDays(new Date()), [isPlanSheetOpen])`:
   // React Compiler (app.json `experiments.reactCompiler`, wired for all
@@ -551,9 +566,31 @@ export default function CoachChat({
   // haptic — tactile feedback for a tap that did nothing. Resetting on every
   // null->non-null planTarget transition (a fresh "Add to Plan" tap) closes
   // that gap.
+  //
+  // AC #4 (P2-2026-08-30): still needed after adding planSaveTokenRef above,
+  // and NOT redundant with it — the two guard opposite sides of the same
+  // problem. This effect is what lets a LATER flow ACQUIRE isSavingPlanRef
+  // despite an abandoned earlier flow still holding it; the token only
+  // governs whether a flow's own RELEASE (finally) and completion
+  // (setPlanTarget(null)) still apply once acquired. Deleting this effect
+  // changes behavior, not just performance: a second confirm would bail at
+  // the isSavingPlanRef.current check above before ever assigning a token,
+  // so the token logic would never run for it. Pinned incidentally by the
+  // three interleaving tests in CoachChat.branches.test.tsx below: deleting
+  // this effect fails their saveCatalog call-count assertions, since the
+  // second flow's confirm would bail before ever reaching saveCatalog.
+  //
+  // Also bump planSaveTokenRef here, not only on the next confirm: without
+  // this, a fresh open (this effect) resets isSavingPlanRef but leaves the
+  // token untouched, so an abandoned flow's still-current token can settle
+  // and close/release AFTER the sheet is reopened but BEFORE the user
+  // re-confirms — yanking a not-yet-confirmed sheet shut mid-selection.
+  // Bumping here closes that window the instant a new flow can be entered,
+  // not only once one actually is.
   useEffect(() => {
     if (planTarget) {
       isSavingPlanRef.current = false;
+      planSaveTokenRef.current++;
     }
   }, [planTarget]);
 
@@ -561,6 +598,7 @@ export default function CoachChat({
     async (plannedDate: string, mealType: MealType, dayLabel: string) => {
       if (!planTarget || isSavingPlanRef.current) return;
       isSavingPlanRef.current = true;
+      const savingToken = ++planSaveTokenRef.current;
       try {
         // Two steps are required: /api/meal-plan/items enforces IDOR ownership
         // and takes only a user-owned recipe id, while a coach card carries a
@@ -574,7 +612,14 @@ export default function CoachChat({
         });
         haptics.notification(Haptics.NotificationFeedbackType.Success);
         toast.success(formatPlanSaveSuccess(dayLabel, mealType));
-        setPlanTarget(null);
+        // Only this flow's own completion may close the sheet — a flow
+        // superseded by a later confirm (dismissed mid-save, then a
+        // different recipe confirmed) must not yank a later flow's
+        // still-open sheet out from under it. See planSaveTokenRef's
+        // comment above.
+        if (planSaveTokenRef.current === savingToken) {
+          setPlanTarget(null);
+        }
       } catch (error) {
         haptics.notification(Haptics.NotificationFeedbackType.Error);
         const failure = describePlanSaveFailure(error);
@@ -583,12 +628,19 @@ export default function CoachChat({
         // miss) reproduce identically on every retry — close the sheet
         // instead of leaving it open for a retry that can only fail again.
         // Anything else is presumed transient: keep the sheet open so the
-        // user can retry.
-        if (failure.terminal) {
+        // user can retry. Same token guard as the success path above.
+        if (failure.terminal && planSaveTokenRef.current === savingToken) {
           setPlanTarget(null);
         }
       } finally {
-        isSavingPlanRef.current = false;
+        // Only release the guard if this flow is still the active one —
+        // see planSaveTokenRef's comment above. A save abandoned by
+        // dismissing the sheet can settle after a LATER flow has already
+        // acquired the guard; its `finally` must not clear that later
+        // flow's guard out from under it.
+        if (planSaveTokenRef.current === savingToken) {
+          isSavingPlanRef.current = false;
+        }
       }
     },
     [planTarget, saveCatalogRecipe, addMealPlanItem, haptics, toast],

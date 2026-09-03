@@ -36,11 +36,13 @@ const {
   createNotebookEntries,
   updateNotebookEntryStatus,
   getCommitmentsWithDueFollowUp,
+  getDueCommitmentsAllUsers,
   archiveOldEntries,
   getNotebookEntryCount,
   getNotebookEntryById,
 } = await import("../coach-notebook");
 const { logger } = await import("../../lib/logger");
+const { civilDateToInstant } = await import("../../lib/civil-date");
 
 let tx: NodePgDatabase<typeof schema>;
 let testUser: schema.User;
@@ -418,6 +420,141 @@ describe("Coach Notebook Storage", () => {
 
       const result = await getCommitmentsWithDueFollowUp(testUser.id);
       expect(result).toEqual([]);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // getDueCommitmentsAllUsers — the notification-scheduler path
+  // (notification-scheduler.ts:64 → sendDueCommitmentReminders). Reads the
+  // SAME `lte(followUpDate, new Date())` comparison as
+  // getCommitmentsWithDueFollowUp above, but must be exercised separately —
+  // a prior draft of the todo that motivated this test mixed the two paths
+  // up and would have left this one (the one that actually drives the push)
+  // unverified.
+  // --------------------------------------------------------------------------
+  describe("getDueCommitmentsAllUsers", () => {
+    // This function has no userId filter by design (it's the cross-user
+    // notification-scheduler sweep) and this harness's transaction runs
+    // against the real local dev DB (READ COMMITTED sees every already
+    // -committed row from ordinary manual Coach usage) — so assertions must
+    // be scoped to the ids THIS test created, never a raw `toEqual([])` /
+    // exact `toHaveLength(N)` on the full result, which pre-existing dev
+    // rows could make spuriously fail (or, less likely, spuriously pass).
+    it("does not return a commitment as due before the user's local midnight (UTC-negative tz, followUpDate anchored via civilDateToInstant)", async () => {
+      const tz = "America/Los_Angeles";
+      const dateStr = "2026-09-05";
+      // Correct anchor: local midnight in LA for 2026-09-05, i.e.
+      // 2026-09-05T07:00:00Z (PDT, UTC-7).
+      const correctAnchor = civilDateToInstant(dateStr, tz);
+
+      const notYetDue = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Check in about meal prepping",
+        status: "active",
+        followUpDate: correctAnchor,
+      });
+      // Positive control in the SAME test/instant: a genuinely past-due
+      // commitment must still be returned, so a query that silently returns
+      // nothing (or the wrong set) can't pass this test by accident.
+      const genuinelyDue = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Genuinely overdue commitment",
+        status: "active",
+        followUpDate: civilDateToInstant("2026-09-01", tz),
+      });
+
+      // Fake ONLY Date — the pg driver under this transaction harness uses
+      // real timers, and faking those too risks hanging the connection.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        // An instant AFTER the old, buggy `new Date(dateStr)` UTC-midnight
+        // anchor (2026-09-05T00:00:00Z) but BEFORE the correct LA-midnight
+        // anchor above — the exact window where the bug fired the push
+        // reminder early. UTC day (Sept 5) and the user's civil day (Sept 4
+        // evening in LA) differ here.
+        vi.setSystemTime(new Date("2026-09-05T03:00:00Z"));
+
+        const ids = (await getDueCommitmentsAllUsers()).map((e) => e.id);
+
+        expect(ids).not.toContain(notYetDue.id);
+        expect(ids).toContain(genuinelyDue.id);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("returns a commitment once the user's local midnight has actually arrived (UTC-negative tz)", async () => {
+      const tz = "America/Los_Angeles";
+      const dateStr = "2026-09-05";
+      const correctAnchor = civilDateToInstant(dateStr, tz);
+
+      const created = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Check in about meal prepping",
+        status: "active",
+        followUpDate: correctAnchor,
+      });
+
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        // One hour AFTER the correct LA-midnight anchor — genuinely due.
+        vi.setSystemTime(new Date(correctAnchor.getTime() + 60 * 60 * 1000));
+
+        const result = await getDueCommitmentsAllUsers();
+        const match = result.find((e) => e.id === created.id);
+
+        expect(match).toBeDefined();
+        expect(match?.content).toBe("Check in about meal prepping");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("returns only active commitment entries, scoped across all users", async () => {
+      const otherUser = await createTestUser(tx);
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 1);
+
+      const mine = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "My due commitment",
+        status: "active",
+        followUpDate: pastDate,
+      });
+      const other = await createNotebookEntry({
+        userId: otherUser.id,
+        type: "commitment",
+        content: "Other user's due commitment",
+        status: "active",
+        followUpDate: pastDate,
+      });
+      // Non-commitment type — must be excluded even though it is "due".
+      const insightEntry = await createNotebookEntry({
+        userId: testUser.id,
+        type: "insight",
+        content: "Due insight, not a commitment",
+        status: "active",
+        followUpDate: pastDate,
+      });
+      // Archived commitment — must be excluded.
+      const archivedEntry = await createNotebookEntry({
+        userId: testUser.id,
+        type: "commitment",
+        content: "Archived due commitment",
+        status: "archived",
+        followUpDate: pastDate,
+      });
+
+      const ids = (await getDueCommitmentsAllUsers()).map((e) => e.id);
+
+      expect(ids).toContain(mine.id);
+      expect(ids).toContain(other.id);
+      expect(ids).not.toContain(insightEntry.id);
+      expect(ids).not.toContain(archivedEntry.id);
     });
   });
 

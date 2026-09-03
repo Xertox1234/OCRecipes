@@ -7,6 +7,7 @@ import {
 } from "../notebook-extraction";
 import { openai } from "../../lib/openai";
 import { SYSTEM_PROMPT_BOUNDARY } from "../../lib/ai-safety";
+import { civilDateString } from "../../lib/civil-date";
 
 function mockCompletion(content: string): ChatCompletion {
   return {
@@ -74,11 +75,131 @@ describe("Notebook Extraction", () => {
       { role: "assistant" as const, content: "Try meal prepping on Sunday!" },
     ];
 
-    const entries = await extractNotebookEntries(messages, "user-1", 1);
+    // Pinned `now` well before the fixture's followUpDate — this test is
+    // about basic extraction mechanics (type mapping, followUpDate
+    // passthrough), not the past-date filter (covered by its own tests
+    // below), so it must not depend on wall-clock "today".
+    const entries = await extractNotebookEntries(messages, "user-1", 1, {
+      now: new Date("2026-01-01T00:00:00Z"),
+      tz: "UTC",
+    });
     expect(entries).toHaveLength(2);
     expect(entries[0].type).toBe("preference");
     expect(entries[1].type).toBe("commitment");
     expect(entries[1].followUpDate).toBe("2026-04-13");
+  });
+
+  it("states the user's civil date and tells the model to resolve relative phrases against it (UTC-negative tz)", async () => {
+    mockCreate.mockResolvedValue(
+      mockCompletion(JSON.stringify({ entries: [] })),
+    );
+
+    // UTC day (Sept 5) and the user's civil day (Sept 4, evening in LA)
+    // differ at this instant — the classic west-of-Greenwich case this whole
+    // todo is about. If the prompt stated the wrong day here, it would state
+    // the UTC day, not the user's.
+    const now = new Date("2026-09-05T03:00:00Z");
+    const tz = "America/Los_Angeles";
+
+    await extractNotebookEntries(
+      [{ role: "user", content: "Check in with me next week" }],
+      "user-1",
+      1,
+      { now, tz },
+    );
+
+    const request = mockCreate.mock.calls[0][0];
+    const systemPrompt = request.messages[0].content as string;
+    expect(systemPrompt).toContain(
+      `Current date for this user: ${civilDateString(now, tz)}`,
+    );
+    expect(civilDateString(now, tz)).toBe("2026-09-04");
+    expect(systemPrompt.toLowerCase()).toContain("resolve relative phrases");
+  });
+
+  it("states the user's civil date and tells the model to resolve relative phrases against it (UTC-positive tz — the opposite-sign companion of the test above)", async () => {
+    mockCreate.mockResolvedValue(
+      mockCompletion(JSON.stringify({ entries: [] })),
+    );
+
+    // UTC day (Sept 4) and the user's civil day (Sept 5, already morning in
+    // Tokyo) differ at this instant, crossing the boundary in the OPPOSITE
+    // direction from the UTC-negative test above — a fix that only handles
+    // one sign would pass that test while still being wrong here.
+    const now = new Date("2026-09-04T20:00:00Z");
+    const tz = "Asia/Tokyo";
+
+    await extractNotebookEntries(
+      [{ role: "user", content: "Check in with me next week" }],
+      "user-1",
+      1,
+      { now, tz },
+    );
+
+    const request = mockCreate.mock.calls[0][0];
+    const systemPrompt = request.messages[0].content as string;
+    expect(systemPrompt).toContain(
+      `Current date for this user: ${civilDateString(now, tz)}`,
+    );
+    expect(civilDateString(now, tz)).toBe("2026-09-05");
+  });
+
+  it("nulls a followUpDate the model resolved into the past, as defense-in-depth against the prompt instruction being ignored", async () => {
+    const now = new Date("2026-09-05T03:00:00Z");
+    const tz = "America/Los_Angeles"; // civil date at `now`: 2026-09-04
+
+    mockCreate.mockResolvedValue(
+      mockCompletion(
+        JSON.stringify({
+          entries: [
+            {
+              type: "commitment",
+              content: "Check in Monday",
+              followUpDate: "2026-09-01", // before the civil date above
+            },
+          ],
+        }),
+      ),
+    );
+
+    const entries = await extractNotebookEntries(
+      [{ role: "user", content: "Check in with me Monday" }],
+      "user-1",
+      1,
+      { now, tz },
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].followUpDate).toBeNull();
+  });
+
+  it("keeps a followUpDate equal to the user's civil date TODAY — the boundary the naive instant comparison would wrongly reject", async () => {
+    const now = new Date("2026-09-05T03:00:00Z");
+    const tz = "America/Los_Angeles"; // civil date at `now`: 2026-09-04
+
+    mockCreate.mockResolvedValue(
+      mockCompletion(
+        JSON.stringify({
+          entries: [
+            {
+              type: "commitment",
+              content: "Check in later today",
+              followUpDate: "2026-09-04", // equals the civil date above
+            },
+          ],
+        }),
+      ),
+    );
+
+    const entries = await extractNotebookEntries(
+      [{ role: "user", content: "Check in with me later today" }],
+      "user-1",
+      1,
+      { now, tz },
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].followUpDate).toBe("2026-09-04");
   });
 
   it("adds the shared system prompt boundary to the extractor prompt", async () => {
@@ -90,6 +211,7 @@ describe("Notebook Extraction", () => {
       [{ role: "user", content: "Remember this preference" }],
       "user-1",
       1,
+      { tz: "UTC" },
     );
 
     const request = mockCreate.mock.calls[0][0];
@@ -120,6 +242,7 @@ describe("Notebook Extraction", () => {
       [{ role: "user", content: "I need quick lunch ideas" }],
       "user-1",
       1,
+      { tz: "UTC" },
     );
 
     expect(entries).toEqual([
@@ -138,6 +261,7 @@ describe("Notebook Extraction", () => {
       [{ role: "user", content: "hello" }],
       "user-1",
       1,
+      { tz: "UTC" },
     );
     expect(entries).toEqual([]);
   });

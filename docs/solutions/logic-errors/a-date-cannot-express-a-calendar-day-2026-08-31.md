@@ -4,10 +4,11 @@ track: bug
 category: logic-errors
 tags: [api, architecture, database, timezone, date, silent-failure, meal-plan]
 module: server
-applies_to: [server/routes/**/*.ts, server/storage/**/*.ts, shared/lib/date.ts]
+applies_to: [server/routes/**/*.ts, server/storage/**/*.ts, shared/lib/date.ts, server/services/notebook-extraction.ts, server/services/coach-pro-chat.ts]
 symptoms: ["An endpoint returns the previous day's data for users in the Americas, all day, every day", "A date bug that reproduces for every user at a negative UTC offset and never at a positive one", "Two values on one API response describe different days", "A duplicate-check passes and the insert then fails on a unique constraint", "Totals and their exclusion set disagree only near midnight", "Everything is correct in CI and on the developer's UTC-ish machine"]
 created: '2026-08-31'
 severity: high
+last_updated: '2026-09-01'
 ---
 
 # A `Date` cannot express a calendar day
@@ -122,6 +123,17 @@ mutation and record the per-zone counts rather than assuming "any nonzero offset
 is inert if the client never sends `X-Timezone` — and a shared `apiRequest` helper that does not
 add it automatically means every call site is its own decision.
 
+**Compare civil-day strings, not instants, for date inequality checks.** When defensively checking
+whether a resolved date string (e.g., from an LLM) falls on or after "today", compare the date
+strings themselves (`"yyyy-mm-dd"` lexicographic order is chronological order) rather than
+converting to instants with `civilDateToInstant`. The instant comparison is wrong because
+`civilDateToInstant` anchors at that day's local midnight, which is before "now" for nearly the
+entire day — so an instant-based `>=` check wrongly rejects today's date. Use
+`todayStr = civilDateString(now, tz); followUpDate >= todayStr` instead. This is the exact same
+instant-vs-calendar-day confusion described in this file, now manifesting in a `>=` comparison.
+A concrete discriminating test is the "keeps a followUpDate equal to the user's civil date TODAY"
+case in `server/services/notebook-extraction.ts` (see the test file for that endpoint).
+
 ## Related Files
 
 - `server/storage/helpers.ts` — `civilDateString`, `civilDateToInstant`, `civilMidnightUtcMs`
@@ -129,6 +141,8 @@ add it automatically means every call site is its own decision.
 - `server/routes/nutrition.ts`, `server/routes/goals.ts` — the two endpoints that composed the bug
 - `server/storage/meal-plan-items.ts` — `getConfirmedMealPlanItemIds`, `tz` now required
 - `server/storage/meal-plan-analytics.ts` — `getPlannedNutritionSummary`, takes the date string
+- `server/services/notebook-extraction.ts` — implements the civil-day-string comparison for follow‑up dates (`followUpDate >= todayStr`)
+- `server/services/coach-pro-chat.ts` — the write site that anchors the validated `followUpDate` string with `civilDateToInstant(dateStr, tz)`, the instant-side counterpart the string comparison above protects
 
 ## See Also
 
