@@ -202,3 +202,60 @@ construction at all, independent of the guard.
   `main` and the PR branch. Reproduction fixtures (guard copies with correct relative `lib/`
   layout, plus argv-printing stubs) lived in a session scratchpad and are NOT durable —
   regenerate them from the constructions described above.
+
+## Additional findings (added 2026-09-02, after this todo was first written)
+
+### C4 (CRITICAL, added 2026-09-02) — a sigil that expands to NOTHING is not treated as a boundary
+
+Found during the `GH_API_CLAUSE` repair on PR #910 (round 4, `security-auditor`), after this
+todo was first written. Independently reproduced and control-verified on both sides.
+
+None of `_OUT_POS_SUFFIX`, `_OUT_POS_PREFIX`, or `_OUT_POS_SUFFIX_MERGE_CLAUSE` treats a bash
+sigil that expands to the empty string — an unset `$VAR`, an empty `$(...)`, an empty
+`${...}` — as a command-position boundary. Both of these are bash-identical to their spaced
+forms and are silently **ALLOWED**:
+
+- suffix side: the EAS update verb immediately followed by `$(true)`, then ` --branch preview`
+- prefix side: an empty `$()` immediately preceding the command-position PR-merge invocation
+
+**This one is NOT a pure class widening, and that asymmetry is the point.** The suffix side is
+a one-character fix. The prefix side is not: bash consumes the whole balanced sigil, so there
+is no single boundary byte to add to a character class — it needs a new regex alternative.
+The PR #910 repair deliberately fixed **neither**, on the reasoning that shipping only the
+cheap half would produce exactly the overclaiming-by-implication defect that repair chain
+existed to correct. Honour that reasoning: fix both sides or neither, and do not let the
+suffix fix land alone.
+
+If the prefix side turns out to need a mechanism this Scope Contract does not permit, that is
+a legitimate `blocked` outcome — escalate it rather than substituting one, exactly as the
+sibling `quoted-command-substitution-inert` todo did.
+
+Disclosed in three places already, so any fix must update all three: PR #910's body (gap #6),
+the `cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28` solution doc's
+"round 4" section, and `guard-outward-cli.sh`'s own header comment.
+
+### Severity note on finding A, strengthened 2026-09-02
+
+Round 3 of the PR #910 repair re-verified finding A (`_OUT_POS_SUFFIX` missing `<`/`>`) and
+found it is worse than first recorded: against the merge clause specifically it is a **total
+detection failure**, not a partial gap. Treat A as CRITICAL rather than HIGH when sequencing
+this work.
+
+### Two more live bypasses were found and ALREADY FIXED on PR #910 — do not re-file them
+
+Recorded here only so a future reader does not mistake them for open items:
+
+1. A swallowing clause-cut in the `gh pr merge --auto` carve-out produced a working FALSE
+   ALLOW in the zero-argument case (found and fixed in round 3 of the repair).
+2. That round-3 fix was itself **incomplete** — the argument-present case reopened the
+   identical swallow for `)` and backtick (live bypasses) and for `{`/`}` (conservative, not
+   live). Fixed in round 5 by widening branch 1 to match branch 2's boundary set exactly,
+   after a full 16-shape `{zero-arg, arg-present} x {;, &, |, ), backtick, {, }, EOS}` sweep
+   before and after. Mutation: 268/268 → 264 passed/4 failed on revert (exactly the 4 new
+   assertions) → restored to 268/268.
+
+The lesson worth carrying into this todo's own work: **a fix to one branch of a two-branch
+boundary check must be applied to both branches in the same change.** Round 3 fixed one and
+left the other, and round 5 had to find it. That is the same
+`occurrence-ambiguity-guard-applied-selectively-not-uniformly` shape already cited in the
+Implementation Notes above — it recurred twice inside a single repair chain.
