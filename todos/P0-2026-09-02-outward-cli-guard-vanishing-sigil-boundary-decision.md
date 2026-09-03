@@ -3,7 +3,7 @@ title: "DECISION: how should guard-outward-cli.sh treat a bash sigil that expand
 status: backlog
 priority: critical
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-09-03
 assignee:
 labels: [security, harness, decision]
 github_issue:
@@ -160,3 +160,60 @@ exists to prevent — if (c) is chosen, the explicitness is the deliverable, not
   reproduced and control-verified both sides and deliberately fixed neither.
 - Reproduction fixtures lived in a session scratchpad and are NOT durable — regenerate from
   the two constructions described above.
+
+### 2026-09-03 — a THIRD position: the sigil can vanish MID-TOKEN, not only at a boundary
+
+Found while integrating the hook-cluster PRs (#906/#907/#909/#910/#912) on a throwaway
+merge branch, checking whether PR #907's shared fast-path filter could bypass PR #912's
+widened detection. It cannot — but the probe surfaced a shape this todo's framing does not
+currently cover.
+
+Both sides described above put the vanishing sigil at a command-position **boundary**
+(before or after the verb). It can also sit **inside the verb token**, splitting it:
+
+```
+gh pr me``rge 42          # empty backtick pair
+gh pr me$()rge 42         # empty command substitution
+gh pr me${UNSET}rge 42    # unset parameter
+```
+
+**Bash collapses all three to the single word `merge`** — verified by execution on
+2026-09-03 with a harmless verb (no outward CLI involved), including argv proof:
+
+```
+$ eval 'set -- me``rge 42; printf "argc=%s argv1=[%s] argv2=[%s]\n" "$#" "$1" "$2"'
+argc=2 argv1=[merge] argv2=[42]
+```
+
+So these are real, executing invocations. Against the hook they are **silently ALLOWED**.
+
+**This is PRE-EXISTING, not introduced by the hook-cluster work** — the novelty was checked
+rather than assumed, per this repo's standard. The same inputs were run against `main`'s
+unmodified `guard-outward-cli.sh` and against the fully-integrated tree:
+
+| input                      | main  | integration (909+912+910+906+907) |
+| -------------------------- | ----- | --------------------------------- |
+| `gh pr me``rge 42`         | ALLOW | ALLOW                             |
+| `gh pr me$()rge 42`        | ALLOW | ALLOW                             |
+| `gh pr merge 42` (control) | DENY  | DENY                              |
+
+It is also **not** the fast-path filter's fault, which matters for whoever takes this on:
+`cmd_words` leaves the sigil characters in place, so the precise matcher misses these too.
+Widening `lib/fastpath-filter.sh`'s stage-2 strip set alone would change nothing.
+
+**Why it belongs in THIS todo rather than a new one.** Same mechanism (a construct that
+expands to nothing is invisible to a static text scanner), same three sigil forms, same
+decision. It does, however, **widen the decision's scope**, and the ruling should say which
+positions it covers:
+
+- Option (a) as written closes the two boundary positions only. Mid-token would remain open
+  and — given this todo exists specifically to prevent a half-fix being reported as a closed
+  class — that must be stated explicitly in the same change, not discovered later.
+- Mid-token is closer in cost to the **prefix** side than the suffix side: there is no
+  boundary byte to add to a character class, so it needs the balanced-construct handling
+  (`cmd_extract_substitutions`) the Implementation Notes already point at. The unset-variable
+  form (`${UNSET}`) is a further case that a substitution-only scanner will not catch.
+
+None of this changes the recommendation to keep the todo `human_led`; it enlarges what the
+human is ruling on. The three reproductions above are durable — they are written out here
+in full precisely because the earlier fixtures were not.
