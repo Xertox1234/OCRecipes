@@ -648,13 +648,25 @@ cmd_words_deep() {
 # SAME newline-join and empty-output-invariant reasoning as cmd_words_deep —
 # see its header; not restated here.
 #
-# WIDENING HERE IS SAFE: both callers only ever ADD a `gh pr view` lookup
-# (never grant a bypass of anything) on a wider match, and cmd_gh_pr_ref's own
-# multi-occurrence guard (more than one `gh pr <merge|close|edit>` mention
-# across the unioned lines) already degrades to "could not verify" rather than
-# risking a cross-clause mispair — the same safe-direction behaviour that
-# guard applied to two clauses on one line now also covers a mention inside a
-# substitution body.
+# WIDENING HERE IS SAFE FOR cmd_gh_pr_write_subcommand specifically: it is a
+# pure BOOLEAN mention-detector, so a wider match only ever ADDS a `gh pr
+# view` lookup (never grants a bypass of anything) — the same shape
+# cmd_words_deep's own header proves safe for its deny/warn-shaped consumers.
+#
+# NOT SAFE BY THE SAME REASONING for cmd_gh_pr_ref, and it must not be
+# assumed to be just because it is the file's other caller (corrected,
+# review round 1, 2026-09-02, after the original wording here claimed
+# otherwise and that claim went unchallenged into a CRITICAL): cmd_gh_pr_ref
+# returns a VALUE — a specific ref string — not a boolean, and a wider match
+# can change WHICH value comes back, not merely whether a lookup happens.
+# The general "more than one gh-pr-<verb> mention → could not verify" multi-
+# occurrence guard (below) catches a cross-clause mispair, but does NOT catch
+# a single substitution body whose OWN internal content (a nested
+# substitution, an embedded quote, or an embedded backslash-escape) corrupts
+# cmd_gh_pr_ref's positional token extraction into a confidently WRONG ref —
+# cmd_gh_pr_ref carries its own SEPARATE, dedicated guard for exactly that
+# failure class; see the comment at the top of cmd_gh_pr_ref itself for the
+# three constructed-and-run mechanisms that motivated it.
 #
 # KNOWN NARROW RESIDUAL, pinned rather than fixed (found by construction while
 # implementing this function, 2026-09-02): a BARE (unquoted, no surrounding
@@ -1207,7 +1219,64 @@ cmd_gh_pr_write_subcommand() {
 # instead.
 cmd_gh_pr_ref() {
   local value_flags='--author-email|--body-file|--body|--match-head-commit|--subject|--comment|--add-assignee|--add-label|--add-project|--add-reviewer|--base|--milestone|--remove-assignee|--remove-label|--remove-project|--remove-reviewer|--title|--repo'
-  local bare occurrences full_match ref prev
+  local bare occurrences full_match ref prev raw_bodies raw_body_count
+  # SAFETY GUARD (CRITICAL fix, code-reviewer, 2026-09-02): cmd_bare_deep's
+  # per-line union of extracted substitution bodies is proven correct for
+  # BOOLEAN mention-detection only (cmd_gh_pr_write_subcommand above,
+  # cmd_words_deep's own documented consumers) — NEVER for POSITIONAL VALUE
+  # extraction, which is exactly what this function does ($NF/$(NF-1) below).
+  # cmd_extract_substitutions's own header states an extracted body is NOT
+  # guaranteed to be a contiguous, order-preserving substring of what bash
+  # actually runs (a NESTED substitution leaves a "hole" — zero characters,
+  # not a placeholder — where the nested part was, and that hole leaves NO
+  # textual trace in the parent's own extracted line to grep for); cmd_bare
+  # additionally BLANKS an embedded quoted span, or an escaped character, to
+  # whitespace inside a body. Either corrupts the trailing-token position
+  # this function's extraction depends on. Confirmed by construction, real
+  # bash vs. this function, three independent mechanisms (2026-09-02):
+  #   - nested substitution: `gh pr merge 4$(echo 9)2` really resolves to
+  #     ref 492 (`bash -c 'echo "$(echo 4$(echo 9)2)"'` → 492); pre-guard
+  #     this function resolved 42 (the nested part's hole swallowed "9)").
+  #   - embedded quote: `gh pr merge 4'x'2` really resolves to ref 4x2;
+  #     pre-guard this function resolved 4 (cmd_bare blanked the quoted `x`
+  #     to a space, and the trailing-token capture stopped there).
+  #   - embedded backslash-escape: `gh pr merge 4\x32` really resolves to
+  #     ref 4x32; pre-guard this function resolved 4 (same blank-to-space
+  #     mechanism as the quote case).
+  # A refuse-to-answer here is always the safe direction for this
+  # advisory-only, NON-blocking hook — "An honest 'could not verify' beats a
+  # confident wrong answer" is pr-verify.sh's own stated design principle.
+  # TWO SEPARATE checks, because the two failure classes leave DIFFERENT
+  # evidence:
+  #   1. Nesting leaves NO trace in any single extracted body's own text (the
+  #      nested opener and everything up to its close is a hole, not
+  #      preserved characters) — so it can only be detected COUNT-wise: MORE
+  #      THAN ONE live substitution anywhere in the whole command (nested or
+  #      sibling) means at least one body is not provably a leaf, so refuse.
+  #      This is coarse — it also refuses a harmless SIBLING pair like
+  #      `X=$(date); echo "$(gh pr merge 42)"` where neither substitution
+  #      nests the other — but over-refusing costs only a missed
+  #      verification message, never a wrong one, and precisely
+  #      distinguishing "nested" from "sibling" would need per-line
+  #      provenance tracking this file does not have.
+  #   2. An embedded quote or backslash DOES survive verbatim in a
+  #      single-substitution body's raw (pre-cmd_bare) text, so a direct
+  #      content check catches it even when there is exactly one
+  #      substitution total.
+  # cmd_gh_pr_write_subcommand is UNAFFECTED by any of this — a boolean "was
+  # gh pr <verb> mentioned at all" answer stays correct even when the exact
+  # ref inside it is corrupted, which is why only this function (not that
+  # one) needs the guard.
+  raw_bodies=$(printf '%s' "$1" | cmd_extract_substitutions)
+  if [ -n "$raw_bodies" ]; then
+    raw_body_count=$(printf '%s\n' "$raw_bodies" | wc -l | tr -d '[:space:]')
+    if [ "${raw_body_count:-0}" -gt 1 ]; then
+      return 1
+    fi
+    if printf '%s' "$raw_bodies" | grep -q "['\"\\]"; then
+      return 1
+    fi
+  fi
   bare=$(cmd_bare_deep "$1")
   # More than one `gh pr <write>` clause: refuse to pair a subcommand from one
   # clause with a ref from another (see comment above). Counted with `wc -l`

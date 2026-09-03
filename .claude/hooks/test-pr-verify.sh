@@ -499,6 +499,44 @@ assert_contains "quoted \$(...) WITH a leading space: unaffected by the residual
 assert_contains "quoted \$(...) WITH a leading space: verified message emitted" "PR state verified" "$OUT"
 rm -f "$ARGV_LOG"
 
+# Tests 38-40 (CRITICAL fix, code-reviewer round 1, 2026-09-02): cmd_gh_pr_ref's
+# cmd_bare_deep-based extraction was proven only for BOOLEAN mention-detection, never for
+# the POSITIONAL VALUE extraction this function does. Three independent mechanisms let a
+# live substitution body corrupt the extracted ref into a CONFIDENTLY WRONG number (not a
+# safe "could not verify") — ground-truthed against real bash before asserting the fix:
+#   - Test 38 (nesting): `gh pr merge 4$(echo 9)2` really resolves to ref 492
+#     (`bash -c 'echo "$(echo 4$(echo 9)2)"'` -> 492) — pre-fix this resolved to the WRONG
+#     ref 42 (the nested substitution's "hole" swallowed "9)"; cmd_extract_substitutions's
+#     own header states an extracted body is not a faithful reconstruction).
+#   - Test 39 (embedded quote): `gh pr merge 4'x'2` really resolves to ref 4x2
+#     (`bash -c "echo \"\$(echo 4'x'2)\""` -> 4x2) — pre-fix this resolved to the WRONG ref 4
+#     (cmd_bare blanked the quoted `x` to a space, truncating the trailing-token match).
+#   - Test 40 (embedded backslash-escape): `gh pr merge 4\x32` really resolves to ref 4x32
+#     (`bash -c 'echo "$(echo 4\x32)"'` -> 4x32) — pre-fix this resolved to the WRONG ref 4
+#     (same blank-to-space mechanism as the quote case).
+# All three must now degrade to "could not verify" (safe direction) rather than reporting
+# any ref at all — asserted via run_hook_record_argv (gh must NEVER be invoked), which is
+# stronger than checking the message text alone: it cannot pass on a wrong-but-truthy
+# rendering the way a bare assert_contains "42" would.
+
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'echo "$(gh pr merge 4$(echo 9)2)"' "$ARGV_LOG")
+assert_silent "nested substitution: gh is never invoked (never the WRONG ref 42)" "$(cat "$ARGV_LOG")"
+assert_contains "nested substitution: could-not-verify" "WARNING: could not verify" "$OUT"
+rm -f "$ARGV_LOG"
+
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv "echo \"\$(gh pr merge 4'x'2)\"" "$ARGV_LOG")
+assert_silent "embedded quote in body: gh is never invoked (never the WRONG ref 4)" "$(cat "$ARGV_LOG")"
+assert_contains "embedded quote in body: could-not-verify" "WARNING: could not verify" "$OUT"
+rm -f "$ARGV_LOG"
+
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'echo "$(gh pr merge 4\x32)"' "$ARGV_LOG")
+assert_silent "embedded backslash in body: gh is never invoked (never the WRONG ref 4)" "$(cat "$ARGV_LOG")"
+assert_contains "embedded backslash in body: could-not-verify" "WARNING: could not verify" "$OUT"
+rm -f "$ARGV_LOG"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
