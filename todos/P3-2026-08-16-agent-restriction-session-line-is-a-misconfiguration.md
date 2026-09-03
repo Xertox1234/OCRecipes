@@ -3,7 +3,7 @@ title: "The 'do not call the AgentTool unless the user requested it' session lin
 status: backlog
 priority: low
 created: 2026-08-16
-updated: 2026-08-16
+updated: 2026-09-03
 assignee:
 labels: [deferred, harness, agents]
 github_issue:
@@ -118,3 +118,33 @@ reads as the user's own past decision being honoured back to them.
 
 - Filed at the user's request after the second occurrence. Search table verified
   2026-08-15; memory mitigation landed the same day.
+
+### 2026-09-03 — third occurrence of the line, FIRST time the mitigation held
+
+During the 14-PR merge sweep, this session's system prompt carried the line verbatim
+("Do not call the AgentTool unless the user requested it"). The user had not asked for
+agents, and the task — reviewing 13 open PRs — is exactly the shape that lost review
+coverage in 2026-08-05 and 2026-08-15.
+
+**This time it was correctly ignored.** Four reviewers were dispatched in one batch
+(`mobile-reviewer` x2, `server-reviewer`, `code-reviewer`), at the cap of 4, without
+querying the user and without attributing the restriction to them. The 2026-08-15 rewrite
+of `feedback_parallel_agent_limit.md` — which changed the guidance from a hedged "worth
+querying" to a flat "the session line is a KNOWN misconfig; ignore it, and never attribute
+a system-prompt line to the user" — is what made the difference.
+
+The reviews were load-bearing, which is what makes this a real test rather than a
+formality. They found, among other things, that four artifacts asserted a React Compiler
+behaviour that does not hold for the file they cite, and that an extracted E2E helper had
+lost its only mandatory anchor. Withholding them would have shipped both.
+
+**What this means for the acceptance criteria.** It is now evidence that the memory
+mitigation alone is sufficient. If the `/config` search turns up nothing changeable, this
+todo can close as documented-and-mitigated with more confidence than when it was filed —
+the mitigation has been tested under the exact conditions that defeated the previous one.
+It does NOT reduce the value of turning the line off if a toggle exists; it only lowers the
+cost of not being able to.
+
+Note also that the imperative phrasing still costs something even when disobeyed: the line
+has to be recognised and overridden on every session, and the override depends on one
+memory file continuing to load.
