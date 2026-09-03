@@ -471,6 +471,134 @@ det cmd_is_git_branch_create 'git checkout foo'                      no "checkin
 det cmd_is_git_branch_create 'git branch foo'                        no \
   "scope gap, deliberate: plain 'git branch <name>' (create-without-switching) is NOT matched — rarer form, ambiguous vs. -d/-D/-m/--list"
 
+echo "--- cmd_git_branch_create_segment: a decoy SUBSTRING must not win over a later REAL create ---"
+# Un-anchored checkout/switch matching (fixed 2026-09-02,
+# todos/P3-2026-08-28-branch-create-segment-decoy-substring-false-negative.md): the extraction
+# regex required only the literal text `checkout`/`switch` immediately followed by whitespace,
+# with no boundary before it — so a decoy TOKEN where that text is a trailing SUBSTRING of a
+# longer word (`gcheckout`, glued, no real separator) satisfied the pattern exactly like a real
+# invocation. A command carrying BOTH a decoy shaped like this (with its OWN create flag, so the
+# loop's flag-presence check also passes on it) AND a real create LATER in the same command is
+# the co-occurrence this bug needed — neither a decoy alone nor a real create alone reproduces
+# it, so a corpus that varies only one of them at a time cannot reach this class. See
+# docs/solutions/conventions/one-axis-at-a-time-corpus-misses-co-occurrence-checks-2026-09-01.md.
+#
+# `cmd_is_git_branch_create`'s own boolean is NOT the right assertion for this bug: the decoy and
+# the real segment both carry a create flag of the SAME class, so the boolean returns "yes"
+# whichever one the loop actually picks — it agrees with the correct answer for an unrelated
+# reason (confirmed by mutation: every `det cmd_is_git_branch_create` pin in this file still
+# passes against the pre-fix regex). The bug is only observable in WHICH STRING
+# `cmd_git_branch_create_segment` returns, because branch-preflight.sh reads that string back out
+# as the start-point token — so every pin below asserts on segment CONTENT via seg_clip, not on
+# the boolean, and was confirmed to go RED against the pre-fix regex before being kept (mutation:
+# stub the anchor back to bare `(checkout|switch)[[:space:]]+…`, rerun — every pin in the loop
+# below reported the decoy's own content instead of the real segment; restore, rerun, all green).
+#
+# Generated from independent dimensions rather than hand-listed (a hand-listed corpus reproduces
+# the author's own blind spot): the decoy's glued PREFIX word, the decoy's VERB shape (which also
+# picks its own flag class, -b vs -c), the REAL create's verb — deliberately allowed to MISMATCH
+# the decoy's, since a same-verb pair can look coincidentally right even with the bug present —
+# and the separator, both unspaced (this file's own established "no space before the boundary"
+# dimension, see the SPACING section above) and spaced (the todo's own literal repro shape).
+for _prefix in 'g' 'my'; do
+  for _decoy_verb in 'checkout:-b' 'switch:-c'; do
+    _dverb=${_decoy_verb%%:*}; _dflag=${_decoy_verb##*:}
+    for _real_verb in 'checkout:-b' 'switch:-c'; do
+      _rverb=${_real_verb%%:*}; _rflag=${_real_verb##*:}
+      _decoy="${_prefix}${_dverb} ${_dflag} decoy origin/main"
+      _real="${_rverb} ${_rflag} real"
+      seg_clip "${_decoy};git ${_real}" "$_real" \
+        "decoy '${_prefix}${_dverb}' (unspaced ;) does not shadow a real '${_rverb}' create (decoy=${_dverb}, real=${_rverb})"
+      seg_clip "${_decoy} && git ${_real}" "$_real" \
+        "decoy '${_prefix}${_dverb}' (spaced &&) does not shadow a real '${_rverb}' create (decoy=${_dverb}, real=${_rverb})"
+    done
+  done
+done
+
+# The todo's own literal repro, pinned directly for traceability back to the filed bug report.
+seg_clip 'gcheckout -b decoy origin/main && git checkout -b real' 'checkout -b real' \
+  "todo repro: a 'gcheckout' decoy does not shadow the real 'git checkout -b' that follows"
+
+# Sanity: reversed order (real create FIRST, decoy second) was never buggy — the loop returns on
+# the first flag-carrying segment either way — but pin it so the boundary anchor doesn't
+# accidentally break the common, unproblematic ordering too.
+seg_clip 'git checkout -b real && gcheckout -b decoy origin/main' 'checkout -b real' \
+  "sanity: a real create before an unrelated decoy is unaffected by the anchor"
+
+# Control: a decoy with NO matching create flag was never buggy either (the loop's own
+# flag-presence check already skips it) — pin it so the anchor doesn't OVER-reject and still
+# finds the real create behind a harmless decoy mention.
+seg_clip 'gcheckout main && git checkout -b real' 'checkout -b real' \
+  "control: a flagless decoy mention was already harmless; the real create is still found"
+
+# GLUE-CHARACTER dimension (review round 2, 2026-09-02 — CRITICAL/WARNING, code-reviewer and
+# security-auditor independently constructed and ran the SAME live bypass on the first version
+# of this fix). The corpus above varies the decoy's PREFIX word but fixes the glue between that
+# prefix and the decoy verb at "none" (an alphanumeric character glued directly, `gcheckout`) —
+# it never generated over the boundary whitelist's OWN new alternation, which is exactly the
+# axis review found broken: `!`, `{`, `}` were in the first version's whitelist (copied from
+# `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`, which use a wider class for a different, whitespace-gated
+# purpose) even though none of them separates a word when GLUED with no space — `x!checkout`,
+# `x{checkout`, `x}checkout` each tokenize as ONE literal command word in real bash (confirmed by
+# running each: `bash -c 'checkout(){ :;}; x!checkout -b x'` -> `bash: x!checkout: command not
+# found`; identical for the other two) and never invoke `checkout`/`switch` at all — so admitting
+# them as boundaries reopened the exact decoy-shadows-a-later-real-create bug this fix exists to
+# close, just via a different glue character than the todo's own `gcheckout` repro. Mutation-
+# tested: reverting the boundary class to include `!{}` (the first version) turns every pin in
+# this loop RED with the decoy's own content, not the real segment; the current class turns them
+# GREEN. `<`/`>` are pinned too, as a CONTROL that they are harmless despite being excluded from
+# the final whitelist: the redirect-stripping `sed` two stages above deletes them together with
+# their whole target — including `checkout` itself when glued — before this `grep` ever runs, so
+# they can never reach it as live boundary text either way.
+for _glue in '!' '{' '}' '<' '>'; do
+  seg_clip "x${_glue}checkout -b decoy origin/main;git checkout -b real" 'checkout -b real' \
+    "glue '${_glue}' does not open a real checkout segment on a glued decoy (checkout -b real still found)"
+  seg_clip "x${_glue}switch -c decoy origin/main;git switch -c real" 'switch -c real' \
+    "...same for the switch form (glue '${_glue}')"
+done
+
+# CONTROL-BYTE GLUE dimension (review round 3, 2026-09-02 — CRITICAL, security-auditor). The
+# boundary alternation's `[[:space:]]` (before this round narrowed to `[[:blank:]]`) is POSIX
+# space+tab+newline+VT(0x0B)+FF(0x0C)+CR(0x0D) — but bash's own tokenizer only treats
+# space/tab/newline as word-separating. A byte from the other three, glued between an arbitrary
+# prefix and `checkout`/`switch`, fuses them into ONE non-existent command word — the same shape
+# as `gcheckout`, just a different glue byte (confirmed by running each: `checkout` is never
+# invoked, the whole fused token errors as "command not found"). Generated over the dimension the
+# vulnerability actually lived on (every byte the class matches that isn't a real bash separator)
+# rather than the three bytes a specific review happened to try, so a future widening of this
+# class is caught the same way. Mutation-tested: reverting the boundary alternation's
+# `[[:blank:]]` back to `[[:space:]]` (its round-2 state) turns every pin in this loop RED with
+# the decoy's own content; the current `[[:blank:]]` turns them GREEN.
+for _byte in $'\x0b' $'\x0c' $'\x0d'; do
+  seg_clip "x${_byte}checkout -b decoy origin/main;git checkout -b real" 'checkout -b real' \
+    "control byte glue does not open a real checkout segment on a glued decoy (checkout -b real still found)"
+  seg_clip "x${_byte}switch -c decoy origin/main;git switch -c real" 'switch -c real' \
+    "...same for the switch form"
+done
+
+# PARAMETER-EXPANSION glue is a DOCUMENTED RESIDUAL, not a detection this suite claims (review
+# round 2 found the miss as CRITICAL; a same-day neutralization attempt to close it was reverted
+# after round 3 found it created a WORSE bug — see the KNOWN RESIDUALS comment at
+# cmd_git_branch_create_segment's definition, items 3-4, for the full account). `${x}checkout` (a
+# real, live invocation when `x` is unset/empty) is MISSED — the safe-fail direction, matching
+# this whole check's own documented fail-open design — rather than risk a repeat of item 4's
+# false-decoy shadowing. These pins lock in the SAFE-MISS behavior itself, and the two exact
+# constructs round 3 found dangerous, so a future re-attempt at closing item 3 can be checked
+# against them before it ships:
+det cmd_is_git_branch_create 'git ${x}checkout -b real' no \
+  "KNOWN RESIDUAL (accepted, safe-fail): a \${x}-glued real checkout is MISSED, not falsely detected"
+seg_clip 'git checkout main; git ${#x}checkout -b fake origin/other ; git checkout -b real' 'checkout -b real' \
+  "round-3 regression guard: \${#x} (NEVER empty — always a digit string) must not be treated as a boundary and shadow the real later create (this exact construct was a live CRITICAL in the reverted neutralization pass)"
+seg_clip 'git checkout main; git ${a:-${b}}checkout -b fake ; git checkout -b real' 'checkout -b real' \
+  "round-3 regression guard: a NESTED \${a:-\${b}}} expansion (confirmed live in real bash) must not shadow the real later create either (a naive single-pass neutralizer cannot balance this and was reverted for it)"
+# $(...) command substitution is the one glue mechanism that IS fully, safely handled (no
+# neutralization pass needed — see the boundary-whitelist comment on why `)` alone suffices).
+# Pinned as a companion so it can't silently regress alongside the \${...} residual above.
+det cmd_is_git_branch_create 'git checkout main; git $(true)checkout -b real' yes \
+  "companion: a \$(...)-glued real checkout IS detected (unlike \${...}, needs no extra pass)"
+seg_clip 'git $(true)checkout -b real origin/main' 'checkout -b real origin/main' \
+  "...segment content is unaffected by the command-substitution glue"
+
 echo "--- residuals pinned AT THE LAYER THAT OWNS THEM ---"
 # Pinned HERE, at the rendering that OWNS the residual, so it fails if cmd_words
 # ever starts unescaping. When this pin was added the guard-level twin was
