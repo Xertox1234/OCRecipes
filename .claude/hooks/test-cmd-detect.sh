@@ -33,7 +33,8 @@ PASS=0; FAIL=0
 # bill of health. Prove the lib sourced and the functions exist before asserting.
 # shellcheck source=/dev/null
 . "$LIB" || { echo "FAIL: lib/cmd-detect.sh is not sourceable"; exit 1; }
-for f in cmd_bare cmd_words cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
+for f in cmd_bare cmd_words cmd_extract_substitutions cmd_words_deep cmd_bare_deep \
+         cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
          cmd_is_git_commit_or_push cmd_is_git_head_mover cmd_is_git_branch_create \
          cmd_git_branch_create_segment cmd_git_repo_dir; do
   declare -F "$f" >/dev/null || { echo "FAIL: $f is not defined by the lib"; exit 1; }
@@ -54,6 +55,25 @@ det() {
 render() {
   local fn="$1" cmd="$2" mode="$3" needle="$4" label="$5" out
   out=$(printf '%s' "$cmd" | "$fn")
+  if [ "$mode" = present ]; then
+    if grep -qF -- "$needle" <<< "$out"; then echo "PASS: $label"; PASS=$((PASS+1))
+    else echo "FAIL: $label (expected '$needle' in: $out)"; FAIL=$((FAIL+1)); fi
+  else
+    if grep -qF -- "$needle" <<< "$out"; then
+      echo "FAIL: $label (unexpected '$needle' in: $out)"; FAIL=$((FAIL+1))
+    else echo "PASS: $label"; PASS=$((PASS+1))
+    fi
+  fi
+}
+
+# render_arg <fn> <command> <expected-substring-present|absent> <needle> <label>
+# Same as render(), but calls "$fn" "$cmd" (an ARGUMENT) rather than piping
+# $cmd into $fn's stdin — cmd_words_deep's calling convention deliberately
+# differs from cmd_bare/cmd_words (see its own header comment: it takes the
+# command as $1, not stdin, because its body needs the text more than once).
+render_arg() {
+  local fn="$1" cmd="$2" mode="$3" needle="$4" label="$5" out
+  out=$("$fn" "$cmd")
   if [ "$mode" = present ]; then
     if grep -qF -- "$needle" <<< "$out"; then echo "PASS: $label"; PASS=$((PASS+1))
     else echo "FAIL: $label (expected '$needle' in: $out)"; FAIL=$((FAIL+1)); fi
@@ -927,6 +947,152 @@ if [ "${FASTPATH_SEEN:-0}" -ge 5 ]; then
 else
   echo "FAIL: control — only $FASTPATH_SEEN fast paths found; the scan is not looking at anything"
   FAIL=$((FAIL+1))
+fi
+
+echo "--- cmd_extract_substitutions: \$(...)/backtick command substitution always executes ---"
+# docs/solutions/logic-errors/quoted-command-substitution-always-executes-2026-08-17.md
+# and todos/P1-2026-08-17-quoted-command-substitution-inert.md — bash
+# always EXECUTES $(...)/backtick regardless of the surrounding quotes, but
+# cmd_bare/cmd_words (a flat state machine, no stack) blanked the whole span
+# uniformly. cmd_extract_substitutions is a separate, genuinely recursive
+# (stack-based) mechanism that finds these bodies without touching cmd_bare or
+# cmd_words at all.
+
+# extract <command> <expected-substring-present|absent> <needle> <label>
+extract() {
+  local cmd="$1" mode="$2" needle="$3" label="$4" out
+  out=$(printf '%s' "$cmd" | cmd_extract_substitutions)
+  if [ "$mode" = present ]; then
+    if grep -qF -- "$needle" <<< "$out"; then echo "PASS: $label"; PASS=$((PASS+1))
+    else echo "FAIL: $label (expected '$needle' in: $out)"; FAIL=$((FAIL+1)); fi
+  else
+    if grep -qF -- "$needle" <<< "$out"; then
+      echo "FAIL: $label (unexpected '$needle' in: $out)"; FAIL=$((FAIL+1))
+    else echo "PASS: $label"; PASS=$((PASS+1)); fi
+  fi
+}
+
+extract 'echo "$(eas update --branch preview --platform all)"' present \
+  'eas update --branch preview --platform all' \
+  "double-quoted \$(...) body is extracted (the exact PR #850 repro)"
+extract 'echo "`gh pr merge --admin 42`"' present 'gh pr merge --admin 42' \
+  "backtick substitution inside double quotes is extracted"
+extract "echo '\$(eas update --branch preview --platform all)'" absent 'eas update' \
+  "SINGLE-quoted \$(...) is genuinely inert in bash - extracts NOTHING"
+extract 'echo $'"'"'$(eas update)'"'"'' absent 'eas update' \
+  "ANSI-C \$'...' is genuinely inert - extracts NOTHING (state 3, not state 2)"
+extract 'echo "text with (parens) and no subst"' absent 'text' \
+  "bare parens in a double-quoted string are NOT mistaken for a substitution opener"
+extract 'echo "$(echo "$(gh pr merge --admin 42)")"' present 'gh pr merge --admin 42' \
+  "nested \$(...) inside \$(...) inside double quotes - innermost body still reachable"
+extract 'gh pr merge 42 -b "$(echo --auto)"' present 'echo --auto' \
+  "a decoy's substitution body is extracted onto its OWN line, never glued to the outer command"
+
+# CRITICAL (security review, 2026-09-02): a first version of the state-2
+# branch copied state 0's $' dollar-quote-sigil handling, which flipped the
+# scanner into ANSI-C state at the sigil EVEN THOUGH a double-quoted span
+# was already open -- ANSI-C quoting is a word-START construct in real
+# bash, meaningful only where a NEW word begins, never meaningful mid-word
+# inside an already-open double quote. That misclassification silently
+# made the extractor treat the very next byte as inert, so a live $(...)
+# immediately following the sigil (which bash genuinely executes --
+# ground-truthed against a real bash below) was never found.
+echo "--- real bash ground-truth: sigil bytes print literally, substitution still executes ---"
+BASH_GT_1=$(bash -c 'echo "prefix $'"'"'$(echo LIVE-EXECUTED)'"'"' suffix"')
+if [ "$BASH_GT_1" = "prefix \$'LIVE-EXECUTED' suffix" ]; then
+  echo "PASS: ground-truth - real bash executes \$(...) after a mid-string \$' and keeps the sigil bytes literal"; PASS=$((PASS+1))
+else
+  echo "FAIL: ground-truth - unexpected real-bash output: [$BASH_GT_1]"; FAIL=$((FAIL+1))
+fi
+
+extract 'echo "prefix $'"'"'$(echo LIVE-EXECUTED)'"'"' suffix"' present 'echo LIVE-EXECUTED' \
+  "CRITICAL fix pin: \$' sigil mid-word inside an ALREADY-OPEN double quote does not mask the live \$(...) that follows it"
+extract 'echo "prefix $'"'"'$(echo LIVE-EXECUTED)'"'"' suffix"' absent "prefix \$'" \
+  "CRITICAL fix pin (two-sided): the sigil bytes are not swallowed into an accumulated substitution body either -- they never opened one"
+
+# WARNING (same review, same branch): a first version also mirrored state
+# 0's $" handling into state 2. Unlike $' this does NOT mask a directly
+# FOLLOWING substitution (state[d]=2 while already at state 2 is a
+# self-transition, mutation-tested below), but it DOES consume the "
+# byte as part of the sigil (i++) instead of running it through the real
+# DQ-closer branch -- desyncing the scanner's open/closed belief from
+# real bash for the remainder of the string. Concretely: a "..."-quoted
+# argument that ends in a bare $" swallows what should have been ITS
+# closing quote, so the scanner stays in state 2 across a segment
+# boundary and reads a SUBSEQUENT, genuinely-single-quoted (inert) body
+# as if it were still inside the live double-quote context. Mutation
+# verified (2026-09-02): a state-2 $" handler mirroring state 0's exactly
+# (state[d]=2 no-op transition + consume the " via i++) makes the FIRST
+# assertion below flip from empty to a false-positive extraction of the
+# genuinely-inert body; reverting to no-$"-handling (current code)
+# restores the correct empty result. This is an over-match (safe
+# direction for a deny-shaped check), not a masking under-match like the
+# $' CRITICAL -- but it is the same "diverges from the proven cmd_bare/
+# cmd_words no-sigil-handling model" defect class, so the fix (deleting
+# the branch, not special-casing it) is identical and is pinned here too.
+extract 'echo "AAA $"'"'"'$(echo SHOULD-BE-INERT)'"'"'"BBB"' absent 'SHOULD-BE-INERT' \
+  "WARNING fix pin: a bare \$\" mid-word does not swallow the real closing quote that follows it -- a genuinely single-quoted (inert) body immediately after is still recognized as inert, not misread as still-open-double-quote-live"
+
+echo "--- cmd_words_deep: the four reproduction cases ---"
+# These four are the exact reproduction cases quoted in the todo's Background
+# section, verified reproducible on main by piping crafted JSON into the live
+# hooks BEFORE this fix (guard-outward-cli.sh / pr-preflight-guard.sh all
+# returned ALLOW). test-guard-outward-cli.sh and test-pr-preflight-guard.sh pin
+# the same four strings through the actual hook scripts; these pin them at the
+# shared-primitive layer. Repros 1-3 (eas update, gh pr merge --admin, gh api
+# -X POST) are guard-outward-cli.sh's OWN pattern matchers, not a cmd_is_*
+# wrapper, so they are pinned as substring-presence checks on cmd_words_deep's
+# own output (what guard-outward-cli.sh's \$WORDS_DEEP actually contains) —
+# repro 4 (gh pr create) has a real cmd_is_* wrapper (cmd_is_gh_pr_create),
+# used directly by pr-preflight-guard.sh, so that one is pinned as a det().
+render_arg cmd_words_deep 'echo "$(eas update --branch preview --platform all)"' present \
+  'eas update --branch preview --platform all' \
+  "repro 1: eas update hidden in a quoted \$(...) reaches cmd_words_deep's output (guard-outward-cli.sh's own eas pattern reads \$WORDS_DEEP against this same text)"
+render_arg cmd_words_deep 'echo "$(gh pr merge --admin 42)"' present \
+  'gh pr merge --admin 42' \
+  "repro 2: gh pr merge --admin hidden in a quoted \$(...) reaches cmd_words_deep's output"
+render_arg cmd_words_deep 'echo "$(gh api -X POST repos/o/r/merges)"' present \
+  'gh api -X POST repos/o/r/merges' \
+  "repro 3: gh api -X POST hidden in a quoted \$(...) reaches cmd_words_deep's output"
+det cmd_is_gh_pr_create 'echo "$(gh pr create --fill)"' yes \
+  "repro 4: gh pr create --fill hidden in a quoted \$(...) is now DETECTED (pr-preflight-guard.sh's stamp gate can no longer be skipped this way)"
+det cmd_is_gh_pr_create "echo '\$(gh pr create --fill)'" no \
+  "control: the SAME text, single-quoted (genuinely inert), stays undetected"
+
+echo "--- cmd_words stays completely UNCHANGED (grant-shaped contract) ---"
+# The single most important invariant of this fix: cmd_words_deep is an
+# ADDITIONAL function, never a modification to cmd_words itself, because
+# guard-outward-cli.sh's \`gh pr merge --auto\` carve-out reads plain \$WORDS to
+# GRANT something, not just to add a deny. If cmd_words itself had grown
+# substitution-awareness, a decoy \`-b "\$(echo --auto)"\` would manufacture a
+# free-standing --auto token INSIDE \$WORDS itself and grant the carve-out to
+# an unrelated, immediate 'gh pr merge' - worse than the bug being fixed.
+render cmd_words 'gh pr merge 42 -b "$(echo --auto)"' absent ' --auto' \
+  "cmd_words (NOT deep) still renders a substitution inside a quoted span as one opaque token - no free-standing --auto"
+
+echo "--- cmd_is_git_head_mover: the ONE consumer where over-matching is unsafe, not just safe-direction ---"
+# drift-detect-update.sh writes a HEAD baseline on a match rather than denying,
+# so a FALSE match here is suppressive (narrows the drift-detection window),
+# not merely over-cautious. The live/inert distinction cmd_extract_substitutions
+# already gets right (see the extract() block above) is what protects this
+# consumer specifically - pin it at the predicate the consumer actually calls.
+det cmd_is_git_head_mover 'echo "$(git reset --hard)"' yes \
+  "a head-mover hidden in a LIVE (double-quoted) substitution genuinely executes - baseline SHOULD refresh"
+det cmd_is_git_head_mover "echo '\$(git reset --hard)'" no \
+  "the SAME text, single-quoted (genuinely inert, never executes) - baseline must NOT spuriously refresh"
+
+echo "--- cmd_words_deep: empty-output invariant survives a broken/absent cmd_extract_substitutions ---"
+# guard-outward-cli.sh's and pr-preflight-guard.sh's broken-awk detectors treat
+# an all-blank rendering from a non-blank command as "the awk backend failed -
+# fail closed via the crude smell test". cmd_words_deep must not defeat that:
+# it always calls plain cmd_words FIRST, unconditionally, so a bug or
+# unavailability in cmd_extract_substitutions can only cost the ADDED matches,
+# never blank the base rendering the existing detector relies on.
+DEEP_BASE=$(cmd_words_deep 'git commit -m x')
+if [ -n "${DEEP_BASE//[[:space:]]/}" ]; then
+  echo "PASS: cmd_words_deep's output is non-blank for a non-blank command (base rendering survives)"; PASS=$((PASS+1))
+else
+  echo "FAIL: cmd_words_deep returned blank for a non-blank command"; FAIL=$((FAIL+1))
 fi
 
 echo ""
