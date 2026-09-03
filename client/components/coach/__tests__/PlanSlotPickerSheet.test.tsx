@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from "vitest";
 import { screen, fireEvent, cleanup } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import { PlanSlotPickerSheet } from "../PlanSlotPickerSheet";
@@ -187,5 +195,78 @@ describe("PlanSlotPickerSheet", () => {
     expect(confirmButtonSubmitting.getAttribute("aria-hint") ?? "").not.toMatch(
       /meal type/i,
     );
+  });
+});
+
+// plannedDate basis regression guard — see
+// todos/P2-2026-08-31-plan-slot-timezone-guards-never-run-in-ci.md (archived
+// as todos/archive/... once that todo lands).
+// CI runs UTC, the unique zone where the UTC and device-local calendar-day
+// bases agree, so a guard that only ran there would be silent. The pin here
+// has to do MORE than plan-slot-picker-utils.test.ts's own zone sweep,
+// though: this component calls `new Date()` itself (PlanSlotPickerSheet.tsx
+// lines ~76 and ~93 — no injectable "from" prop), so there is no seam to
+// pass a fixed instant in; `vi.useFakeTimers({ toFake: ["Date"] })` +
+// `vi.setSystemTime` is the only way to control it, mirroring
+// MealPlanHomeScreen.test.tsx:347-361, the one other rendered-component
+// instance of this pairing in the repo. `{ toFake: ["Date"] }` (not a bare
+// `vi.useFakeTimers()`) deliberately leaves `setTimeout` real — RTL's
+// `fireEvent`/effect flushing needs it, and faking it too would hang this
+// render test.
+//
+// UNLIKE the zone-sweep guard above, this is a SINGLE fixed instant at a
+// SINGLE positive-offset zone — it does NOT claim "any non-UTC zone works"
+// here, and that claim would be false for it: only an offset matching this
+// instant's sign discriminates a fixed-clock render test. The instant
+// (22:30 UTC) is chosen so the device-local calendar day in Berlin (00:30
+// the next day) has already rolled over while the UTC day has not yet —
+// the same discriminating shape plan-slot-picker-utils.test.ts's "00:30
+// local" fixture uses, and the same instant MealPlanHomeScreen.test.tsx
+// pins. It would NOT catch a regression that only breaks at a negative
+// offset (LA, NY); that class is covered by
+// plan-slot-picker-utils.test.ts's own America/Los_Angeles row instead —
+// this guard's job is only to prove AT LEAST ONE test here fails in CI,
+// not to re-run the full zone sweep through a render.
+describe("PlanSlotPickerSheet — plannedDate basis regression guard", () => {
+  const originalTz = process.env.TZ;
+  // Local calendar day is Sep 2 in Berlin; the UTC day of the same instant
+  // is Sep 1 — a UTC-basis regression reads this back as "2026-09-01".
+  const INSTANT = new Date("2026-09-01T22:30:00Z");
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/Berlin";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(INSTANT);
+  });
+
+  afterAll(() => {
+    vi.useRealTimers();
+    // `delete`, never `= undefined` — that stringifies to the literal
+    // "undefined", which resolves to offset 0: silently back to the zone
+    // that hides the bug.
+    if (originalTz === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTz;
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    cleanup();
+  });
+
+  it("pins the timezone and clock it claims (guards the mechanism)", () => {
+    expect(-new Date(2026, 8, 2).getTimezoneOffset()).toBe(120);
+    expect(new Date().toISOString()).toBe("2026-09-01T22:30:00.000Z");
+  });
+
+  it("confirms plannedDate on the device-LOCAL calendar day, not the UTC day of that instant", () => {
+    renderComponent(<PlanSlotPickerSheet {...baseProps} />);
+    // Default selection (days[0]) already covers the discriminating day —
+    // no chip click needed to exercise the basis.
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    const [plannedDate] = onConfirm.mock.calls[0];
+    expect(plannedDate).toBe("2026-09-02");
   });
 });
