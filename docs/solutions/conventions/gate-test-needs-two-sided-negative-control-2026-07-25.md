@@ -7,7 +7,7 @@ module: shared
 applies_to: [".claude/hooks/test-*.sh", "scripts/**/*.sh"]
 symptoms: ["A test asserts only that the fixed form passes, never that the broken form fails", "A guard test would still pass if the guard were deleted", "A config-string assertion greps raw file bytes but the value it expects is the JSON-decoded form (or vice versa)"]
 created: 2026-07-25
-last_updated: 2026-08-16
+last_updated: 2026-09-02
 ---
 
 # A gate test must be two-sided: without a negative control, green cannot be distinguished from "the payload never triggers the gate"
@@ -133,6 +133,47 @@ switched the assertion to `toEqual([])` in the same edit, silently trading the n
 property away. When you change what a gate asserts, ask what property the old assertion was
 carrying for free.
 
+### The upstream-fast-path variant: a negative control can clear the wrong filter (added 2026-09-02)
+
+`.claude/hooks/branch-preflight.sh` starts with a necessary-substring fast path: a `case`
+statement checks the raw command for the literal substrings `commit`/`checkout`/`switch`
+and exits the whole hook silently **before** any of the detached-HEAD detection logic runs,
+for performance. A new negative-control test was added for a just-widened detection regex —
+proving the widening doesn't over-match — using the command `true && env FOO=1 git status`.
+It was chosen because it uses the exact separator+absorbed-prefix shape being tested but with
+a non-commit verb, so it should correctly ALLOW. It passed.
+
+Mutation-testing the fix — forcing the detection variable to unconditionally succeed,
+expecting every existing test including the new negative control to now wrongly deny —
+revealed that the negative control still passed silently. Because `git status` contains none
+of `commit`/`checkout`/`switch`, the command never reached the mutated line at all; it exited
+via the unrelated upstream fast path first. The test was proving nothing about the code it
+claimed to guard.
+
+The fix was to choose a different negative-control command that (a) still is not a real match
+for the thing under test — it must correctly ALLOW — but (b) contains the literal substring
+`commit` so it clears the **same** upstream fast path the positive test cases clear:
+
+```bash
+true && env FOO=1 git status -m "will commit later"
+```
+
+This is a `status` command whose `-m` message happens to mention `commit`. It reaches the
+regex-matching logic, and it correctly does not match `COMPOUND_COMMIT_RE` (it is `git
+status`, not `git commit`) while genuinely exercising the widened absorber+separator regex.
+
+The generalizable lesson: whenever the code under test sits behind an **earlier**
+filter/fast-path/short-circuit stage — a substring check, a feature flag, a route guard, an
+early return — a negative-control input must be chosen to independently clear that earlier
+stage too, not just to avoid tripping the thing being tested. Otherwise it can pass by never
+reaching the code at all, which looks identical to passing by correctly not matching.
+Mutation-testing — already this file's existing rule — is what surfaces the distinction:
+mutate the code under test specifically, not the whole hook, and confirm **only** the tests
+that should discriminate actually flip.
+
+Relevant files: `.claude/hooks/branch-preflight.sh` (the `_PRE` fast-path `case` statement
+near the top of the file) and `.claude/hooks/test-branch-preflight.sh` Test 10l.
+
 ## Exceptions
 
 - A **static** assertion (e.g. "no registration is cwd-relative") needs no negative
@@ -145,6 +186,9 @@ carrying for free.
 - `.claude/hooks/test-settings-hook-paths.sh` — two-sided gate test
 - `.claude/hooks/test-git-safety.sh` — registry fixture + `assert_deny`/`assert_allow` pairs
 - `scripts/run-hook-tests.sh` — glob auto-discovery, fail-on-zero guard
+- `.claude/hooks/branch-preflight.sh` — the `_PRE` necessary-substring fast path this
+  variant's negative control had to independently clear
+- `.claude/hooks/test-branch-preflight.sh` — Test 10l, the corrected negative control
 
 ## See Also
 

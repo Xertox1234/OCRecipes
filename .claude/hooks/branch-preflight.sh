@@ -78,24 +78,64 @@ else
   # catch a brace-grouped, backtick-substituted, or `!`-prefixed real commit (`{ git commit
   # -m x; }`, `` `git commit -m x` ``, `! git commit -m x`) — this fallback previously only
   # recognized start-of-string or &&/||/; before `git commit`, so it silently allowed exactly
-  # the shapes the primary-path widening was fixing. NOTE: this fallback is still NOT at
-  # parity with the primary (lib-sourced) path — confirmed pre-existing, unrelated to this
-  # widening's scope, still silently ALLOWS: a bare `|` operator; a subshell `(git commit
-  # -m x)`; a newline-separated compound (`[[ =~ ]]` has no per-line `^`, unlike the primary
-  # path's grep -E); a runner-word wrapper (`env`/`command`/`exec`/etc.); and, on
-  # COMPOUND_COMMIT_RE specifically (not GIT_COMMIT_RE), a `-c key=value` group before
-  # `commit`. All five require the rare precondition of the shared lib being unsourceable —
-  # see todos/ for tracked hardening work.
-  # A SIXTH divergence, in the opposite direction, opened on 2026-09-01: this fallback is
-  # repo-UNAWARE, so on `git -C /elsewhere commit` it can DENY (judging cwd's HEAD) where the
-  # primary path now SKIPS. That is the safe direction for a data-loss gate under a broken
-  # install — a spurious deny is recoverable, an unreachable commit is not — but it is a real
-  # divergence and is recorded here rather than left for the next reader to rediscover. It is
-  # also unreachable in the normal case: the fallback runs only when lib/cmd-detect.sh cannot
-  # be sourced at all.
-  GIT_COMMIT_RE='^[[:space:]]*[`{!]?[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
-  COMPOUND_COMMIT_RE='(&&|\|\||;|[`{!])[[:space:]]*git[[:space:]]+commit([[:space:]]|$)'
-  if [[ "$CMD" =~ $GIT_COMMIT_RE ]] || printf '%s' "$CMD" | grep -qE "$COMPOUND_COMMIT_RE"; then
+  # the shapes the primary-path widening was fixing.
+  # Widened again 2026-09-02 (todos/P2-2026-08-29-branch-preflight-fallback-parity-gaps.md) to
+  # close the parity gaps that widening's own comment — and
+  # docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
+  # Unresolved section — recorded rather than fixed: a subshell opener `(`; a newline-separated
+  # compound (switched the GIT_COMMIT_RE check from `[[ =~ ]]`, which anchors `^`/`$` to the
+  # WHOLE string, to `grep -qE` via a herestring, which anchors per LINE — matching how
+  # COMPOUND_COMMIT_RE was already checked); a runner-word wrapper
+  # (`env`/`command`/`builtin`/`exec`/`nohup`/`setsid`, mirroring lib/cmd-detect.sh's
+  # `_CMD_POS_PREFIX`) — applied to BOTH regexes' absorber group, not just GIT_COMMIT_RE's: a
+  # first pass only widened GIT_COMMIT_RE's group, missing that a runner word or bare env
+  # assignment AFTER a compound separator (`true && env FOO=1 git commit -m x`) still bypassed
+  # COMPOUND_COMMIT_RE, which had no absorber group at all — found live by two independent
+  # reviewers on this same diff (constructed and denied only after this fix); and a
+  # `-c key=value` group on COMPOUND_COMMIT_RE (GIT_COMMIT_RE already had it). Diffing this
+  # fallback's separator class against the primary path's `_CMD_POS_PREFIX` character-for-
+  # character (this doc's own "Prevention" method), not just the todo's enumerated cases, found
+  # the already-tracked bare `|` gap has a twin: bare `&` (`git status & git commit -m oops` — a
+  # real backgrounded invocation). Both closed in the same pass, since they're the same
+  # one-character widening. Also brought the env-assignment value class in line with the primary
+  # path's `[^[:space:]]*` (zero-or-more — `FOO=` with an empty value) instead of the fallback's
+  # old `[^[:space:]]+` (one-or-more), the same narrower-than-primary defect shape one character
+  # over.
+  # IMPORTANT: the GIT_COMMIT_RE/COMPOUND_COMMIT_RE check below uses a herestring
+  # (`<<<"$CMD"`), never `printf '%s' "$CMD" | grep -qE ...` — under this script's `pipefail`,
+  # an early-matching `grep -q` on the read side of a pipe can make the PIPELINE's reported exit
+  # status reflect the writer's SIGPIPE rather than the successful match, silently flipping a
+  # real match into a false allow (see
+  # docs/solutions/logic-errors/pipefail-echo-grep-condition-fails-open-via-sigpipe-2026-06-27.md).
+  # A herestring has no writer process to race.
+  # Still NOT at parity with the primary (lib-sourced) path, and out of this widening's scope:
+  # shell-keyword command positions (`if`/`then`, `for`/`do`, `while`/`do`, `case`, etc.) — a gap
+  # the primary path's own `_CMD_POS_PREFIX` shares too (see the solution doc's Unresolved
+  # section), so this is not a fallback-vs-primary divergence, just a residual both paths carry.
+  # Also still missing: redirect absorption (the primary path's `_CMD_REDIR` alternative inside
+  # `_CMD_POS_PREFIX` lets a redirect like `2>/dev/null` sit between the anchor and the verb,
+  # e.g. `2>/dev/null git commit -m x`) — pre-existing, not a regression from this widening, and
+  # out of the todo's Scope Contract (widen the existing character classes, no new mechanism).
+  # CORRECTED 2026-09-02 (security-auditor, round-2 review of this same widening —
+  # construct-and-run against both this fallback and the pre-widening committed version, not
+  # just reading the regex): a prior version of this comment claimed `git -C /elsewhere commit`
+  # "can DENY" here, in the safe direction. That was checked and is false in BOTH directions —
+  # neither `GIT_COMMIT_RE` nor `COMPOUND_COMMIT_RE` absorbs an uppercase `-C` (only lowercase
+  # `-c key=value` is in the group, and that is for git-config overrides, not repo redirection),
+  # so the whole match fails and `IS_COMMIT` never becomes 1: `git -C /elsewhere commit -m x` is
+  # SILENTLY ALLOWED by this fallback, full stop — pre-existing (confirmed against
+  # `git show HEAD:.claude/hooks/branch-preflight.sh` from before this todo's widening started),
+  # not a regression from this diff, but the unsafe direction for a fail-closed data-loss gate:
+  # the primary (lib-sourced) path follows `-C` and independently checks the TARGET repo's HEAD
+  # (see `cmd_git_repo_dir` above), so a real detached-HEAD commit in /elsewhere that the primary
+  # path would catch is invisible to this fallback when the lib is unsourceable. `-C`/`-c`-global
+  # absorption is a new detection mechanism (following a redirect, not widening a character
+  # class), so it is out of this todo's Scope Contract; tracked as a residual for
+  # todos/P2-2026-08-29-branch-preflight-fallback-parity-gaps.md's follow-up rather than fixed
+  # here.
+  GIT_COMMIT_RE='^[[:space:]]*[`{(!]?[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
+  COMPOUND_COMMIT_RE='(&&|\|\||\||&|;|[`{(!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*git([[:space:]]+-c[[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)'
+  if grep -qE "$GIT_COMMIT_RE" <<<"$CMD" || grep -qE "$COMPOUND_COMMIT_RE" <<<"$CMD"; then
     IS_COMMIT=1
   fi
 fi

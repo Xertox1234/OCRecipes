@@ -159,7 +159,7 @@ Updates for the full account — that todo's own AC had mischaracterized this ga
 "deliberate" divergence needing only a comment, which this fix and the todo's correction
 both supersede.
 
-**A second, independent review round (`code-reviewer` + `security-auditor`, 2026-08-29)
+~~**A second, independent review round (`code-reviewer` + `security-auditor`, 2026-08-29)
 found the fallback still short of parity with the primary path**, beyond the
 brace/backtick/bang shapes already closed above: a bare `(` subshell, a newline-separated
 compound (`[[ =~ ]]` has no per-line `^` the way the primary path's `grep -E` does), a
@@ -170,7 +170,7 @@ same risk class and same "lib unsourceable" precondition as the already-accepted
 Unlike the brace/backtick/bang fix, these were left as a documented residual rather than
 closed in-PR (out of `#874`'s Scope Contract) — the fallback's comment now names all five
 gaps explicitly rather than implying `|` is the only one. Tracked as a Medium-severity
-follow-up todo (see `todos/`) rather than fixed here.
+follow-up todo (see `todos/`) rather than fixed here.~~ — **RESOLVED 2026-09-02**
 
 **`cmd_bare`/`cmd_words`'s quote-state scanner misses a live nested command
 substitution inside double quotes** — a double-quoted string containing a backtick span
@@ -289,6 +289,71 @@ independence lesson to the deletion pair will desync them and revive the merge s
 **When one file carries two couplings that run in opposite directions, each must name the
 other**, or the more memorable one gets applied to both.
 
+## Widening one sibling regex without its twin reopens the same bug the sibling was supposed to close (2026-09-02)
+
+The Medium-severity follow-up todo tracking the fallback's parity gaps
+(`todos/P2-2026-08-29-branch-preflight-fallback-parity-gaps.md`) was closed on
+2026-09-02. Closing it surfaced a lesson about twin regexes that is the same
+discipline as this file's own Prevention section, but applied one level down:
+not primary-vs-fallback, but fallback-vs-fallback within the same file.
+
+`branch-preflight.sh`'s lib-unsourceable fallback contains **two** regexes doing
+related but distinct jobs: `GIT_COMMIT_RE` (matches a bare / start-of-string
+invocation of `git commit`) and `COMPOUND_COMMIT_RE` (matches `git commit` after
+a compound separator such as `&&`, `||`, `|`, `(`, newline, or `-c`). Both need
+an **absorber group** for environment assignments (`FOO=bar`) and runner words
+(`env`, `command`, `builtin`, `exec`, `nohup`, `setsid`) that may appear before
+the `git` verb. The `_CMD_POS_PREFIX` pattern in `lib/cmd-detect.sh` (the primary,
+lib-sourced path) already has this absorber; the fallback's `GIT_COMMIT_RE` had only
+an env-assignment loop with no runner words at all until this same todo's
+implementation pass widened it to add the runner-word alternatives — a separate,
+later pass from the 2026-08-29 brace/backtick/bang widening, which touched only the
+opener character class, not the absorber group.
+
+The implementation pass that closed the todo correctly widened `GIT_COMMIT_RE`'s
+absorber group but **did not add the identical group to `COMPOUND_COMMIT_RE`**.
+The only change to `COMPOUND_COMMIT_RE` was to its SEPARATOR class — adding the
+subshell/pipe/ampersand/newline/`-c` group — leaving the absorber group entirely
+missing from that regex. Two independent reviewers (`code-reviewer` and
+`security-auditor`), given the same diff, independently constructed and ran the
+same live bypass: `true && env FOO=1 git commit -m oops` silently **ALLOWED**
+through this blocking detached-HEAD data-loss gate, because `COMPOUND_COMMIT_RE`
+required (separator)(whitespace)(`git`)(optional `-c` group)(whitespace)(`commit`)
+with no room for an absorbed `env`-assignment or runner word between the
+separator and `git`. The escape was fixed by copying the identical absorber group
+into `COMPOUND_COMMIT_RE`. The absorber group's form, matching the `_CMD_POS_PREFIX`:
+`(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*`.
+
+**The generalizable lesson:** when two regexes in the same file implement the
+**same semantic concept** ("what can appear before the `git` verb") for two
+**different syntactic positions** (start-of-command vs. after-a-separator), a
+widening to one's shared-concept component must be mirrored to the other's. These
+are not siblings by convention — they are siblings by **contract**, and one must
+`grep` the file for every other regex claiming to detect "the same verb" before
+considering a widening complete. The earlier rule from the Solution section ("two
+regexes that serve related but distinct purposes should not mirror each other's
+character class automatically") governs a different pair: the terminator class of
+`cmd_git_branch_create_segment` vs. `_CMD_POS_SUFFIX`. The rule here governs
+`GIT_COMMIT_RE` vs. `COMPOUND_COMMIT_RE` — two regexes whose entire job is to
+detect the same verb at different command positions. For that pair, mirroring
+the absorber group is **required**, not forbidden.
+
+The gap was caught by **construct-and-run review** (both reviewers independently
+reproduced the bypass by writing a minimal test case and running it against the
+live hook), consistent with this repo's verification standard. Reading the regex
+alone was insufficient — the missing absorber is a structural hole, not a syntax
+error, and only execution exposes the semantic omission.
+
+**Regression coverage:** `.claude/hooks/test-branch-preflight.sh` Tests 10i/10j/10k
+are the cross-product regression pins added for this fix — each exercises a
+different separator (`&&`/`;`/`|`) × absorbed-prefix (bare env-assignment / runner
+word) combination through the fallback's `COMPOUND_COMMIT_RE`, the exact cell that
+was empty before (the fallback runs only when `lib/cmd-detect.sh` is unsourceable;
+the primary, lib-sourced path is untouched by this fix and unaffected by this gap).
+Tests 10c–10k (the fuller new block) cover the subshell, newline, runner-word, and
+`-c`-group cases the original review round identified as residual gaps; Test 10l is
+a negative control proving the widened fallback still stays silent on a genuine
+non-commit command built from the same separator+absorber shapes.
 ## A "verified inert" claim about `{`/`}` was itself wrong — comma-form brace is EXPANSION, not grouping (2026-09-02)
 
 A comment-accuracy-only todo against `guard-outward-cli.sh`'s OWN `_OUT_POS_SUFFIX`
