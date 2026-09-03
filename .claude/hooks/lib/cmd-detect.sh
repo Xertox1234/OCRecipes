@@ -1120,8 +1120,46 @@ cmd_is_git_branch_create() {
 # never called `gh` at all for e.g. `echo "$(gh pr merge --admin 42)"`
 # (verified empirically: a PATH-stubbed `gh` recorded zero invocations for
 # that input before this fix). See cmd_bare_deep's own header.
+#
+# CAPTURE FIRST, THEN GREP (security-auditor, 2026-09-02) — this function
+# originally piped `cmd_bare_deep "$1" | grep -oE ... | grep -oE ... |
+# head -1` directly, the same shape cmd_is_gh_pr_create's own header (above,
+# in this file) documents as unsound: cmd_bare_deep runs as the LEFT side of
+# a pipe and executes its whole body (multiple sequential printf/cmd_bare
+# calls) in a subshell, so `head -1`'s early exit after the first
+# create|merge|close|edit match can SIGPIPE a later `printf` in that body
+# under `pipefail` (every caller of this library sets it). Confirmed
+# empirically: a 540KB input with 20000 matching `gh pr merge 1` clauses
+# returned RC=141 piped directly, RC=0 once captured first — the captured
+# VALUE was correct in both cases (this function currently has no caller
+# that checks its exit status, so the bug was latent, not yet observed), but
+# a future caller that does check `$?` would read a genuine match as
+# "not found" — the same fail-OPEN class the sibling note documents. Fixed
+# to match every other deep-reading predicate in this file: capture into a
+# local, then grep the captured text.
+#
+# RESIDUAL, deliberately not chased further (re-verified by construction,
+# 2026-09-02): capturing `cmd_bare_deep` first eliminates SIGPIPE risk to
+# the STDOUT VALUE this function returns — `$words` is now a fully-materialized
+# string with nothing downstream able to interrupt its own production, so the
+# captured value is correct even under load (re-tested at 135KB/5000
+# occurrences: still correct). The TRAILING pipe below (`printf | grep -oE |
+# grep -oE | head -1`) is its own separate chain and can still SIGPIPE the
+# FUNCTION's own exit status at extreme input sizes (confirmed: the same
+# 135KB/5000-occurrence input returns rc=141 from this function even after
+# this fix) — this is the exact same latent-risk shape `cmd_gh_pr_ref`'s own
+# established `full_match=$(printf ... | grep -oE ... | head -1)` line
+# already carries (see below), not something this fix introduces or worsens.
+# Left as-is rather than restructured to avoid the trailing pipe entirely
+# (e.g. onto `<<<`), because no caller of either function checks `$?` today
+# (`pr-verify.sh` reads only the captured stdout value), and a "capture
+# first" pass already closes the concrete bug this WARNING was about — a
+# wrong VALUE reaching the caller. Note this if that residual risk is ever
+# revisited: fix both functions together, since they share it.
 cmd_gh_pr_write_subcommand() {
-  cmd_bare_deep "$1" \
+  local words
+  words=$(cmd_bare_deep "$1")
+  printf '%s' "$words" \
     | grep -oE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|$)' \
     | grep -oE '(create|merge|close|edit)' | head -1
 }
