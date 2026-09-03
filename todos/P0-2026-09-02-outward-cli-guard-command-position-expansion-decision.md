@@ -3,15 +3,15 @@ title: "DECISION: should guard-outward-cli.sh deny by default when an unquoted e
 status: backlog
 priority: critical
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-09-03
 assignee:
 labels: [security, harness, decision]
 github_issue:
-human_led: true
-blocked_reason: "The only acceptance criterion is a scope decision with a real false-positive cost: whether a static-text guard should deny by default whenever an unquoted ${...} / $(...) / backtick construct sits in command position ahead of a gated verb. There is no cheap-and-correct option — one arm weakens a confirmed-live security gap, the other blocks legitimate developer commands. An unattended run would pick whichever is cheaper to implement and write it up as a settled decision record for a security guard, which is exactly the 2026-07-16 incident class. The bypass itself is CONFIRMED LIVE (constructed and executed, 2026-09-02) and fails open on every layer including the no-jq degraded path, so this is not a hypothetical waiting on a decision — it is an open hole waiting on a ruling."
 ---
 
 # DECISION: deny-by-default for expansions in command position?
+
+**RULED 2026-09-03 — option (c), NARROW DENY.** The `human_led` gate is lifted and this todo is implementable. Full ruling, including what it does NOT settle, at the bottom of this file.
 
 ## Summary
 
@@ -150,3 +150,47 @@ the narrowing itself needs the same construct-and-run scrutiny.
   degraded path.
 - Reproduction fixtures lived in a session scratchpad and are NOT durable — regenerate from
   the mechanism list above.
+
+## RULING (2026-09-03) — option (c), NARROW DENY
+
+The repository owner ruled in favour of **option (c), narrow deny**, selected from the three
+priced options above. The `human_led: true` gate and its `blocked_reason` are lifted; this
+todo is now implementable.
+
+**Recording the rationale honestly:** the ruling was made by selecting option (c) as
+presented, not by writing separate prose. The rationale is therefore option (c)'s own text
+as it stood above — deny only when an expansion sits in command position **and** the
+surrounding command shape already smells outward-facing (a gated binary name is present but
+the verb is not literal) — chosen over blanket deny-by-default and over accepting the gap.
+This note exists so a later reader does not mistake an agent's paraphrase for the owner's
+words. If more detail is wanted on the reasoning, ask the owner rather than inferring it
+from here.
+
+### What the ruling settles, and what it does not
+
+Settled: the guard will NOT accept this as a residual, and it will NOT deny on every
+expansion in command position.
+
+**Explicitly NOT settled by the ruling — these are engineering work, and the todo's
+Acceptance Criteria still bind in full:**
+
+- Where exactly the "already smells outward-facing" line is drawn. The narrowing predicate
+  is the deliverable and needs the same construct-and-run scrutiny as a blanket change would
+  — this option's own cost note says so.
+- **The false-positive population must still be measured by EXECUTION, not estimated.** A
+  narrower rule has a smaller false-positive surface, not a zero one. This repo has already
+  lost 144 real denies to one unverified claim of exactly this shape.
+- The **no-`jq` degraded path** must be closed too. `crude_smells_outward()` was verified to
+  fail OPEN for this mechanism, against its own fail-closed contract. A narrow deny that
+  exists only on the precise path leaves the degraded path exactly as open as option (b)
+  would have.
+
+### Sequencing note
+
+This work and the vanishing-sigil todo
+(`todos/P0-2026-09-02-outward-cli-guard-vanishing-sigil-boundary-decision.md`, also ruled
+2026-09-03) both touch `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX` and both were ruled to CHANGE the
+anchors. They must not be implemented as two independent unattended runs against the same
+regex pair — the second would be reviewing a file the first has already moved. Land one,
+re-run the full hook suite, then start the other; or scope them into one change with a
+single corpus covering both mechanisms.

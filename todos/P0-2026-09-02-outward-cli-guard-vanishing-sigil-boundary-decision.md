@@ -7,11 +7,11 @@ updated: 2026-09-03
 assignee:
 labels: [security, harness, decision]
 github_issue:
-human_led: true
-blocked_reason: "The two sides of this bypass have asymmetric cost, and that asymmetry IS the decision. The suffix side is a one-character class widening; the prefix side needs a NEW regex alternative, because bash consumes the whole balanced sigil and leaves no single boundary byte to match on. An unattended run would ship the cheap half, report the class closed, and produce exactly the overclaiming-by-implication defect the PR #910 repair chain existed to correct — a guard that looks fixed on the side people test. The PR #910 repair deliberately fixed NEITHER side for this reason and escalated instead. The bypass is CONFIRMED LIVE (constructed, executed, and control-verified on both sides, 2026-09-02), so this is an open hole awaiting a ruling, not a hypothetical."
 ---
 
 # DECISION: empty-expansion sigils at a command-position boundary
+
+**RULED 2026-09-03 — option (a), CLOSE ALL THREE POSITIONS** (suffix, prefix, and the mid-token case added the same day). The `human_led` gate is lifted and this todo is implementable. Full ruling at the bottom of this file.
 
 ## Summary
 
@@ -217,3 +217,57 @@ positions it covers:
 None of this changes the recommendation to keep the todo `human_led`; it enlarges what the
 human is ruling on. The three reproductions above are durable — they are written out here
 in full precisely because the earlier fixtures were not.
+
+## RULING (2026-09-03) — option (a), CLOSE ALL THREE POSITIONS
+
+The repository owner ruled in favour of **option (a), close every position** — the suffix
+side, the prefix side, and the mid-token side documented in the 2026-09-03 addendum above.
+The `human_led: true` gate and its `blocked_reason` are lifted; this todo is now
+implementable.
+
+**Recording the rationale honestly:** the ruling was made by selecting option (a) as
+presented (extended to cover the third, mid-token position), not by writing separate prose.
+The rationale is option (a)'s own text as it stood above. This note exists so a later reader
+does not mistake an agent's paraphrase for the owner's words.
+
+This is the strictest of the three arms, and it directly resolves the concern that made this
+todo `human_led` in the first place: there is now no half-fix to drift into, because
+"suffix only" was explicitly not chosen.
+
+### Scope of the ruling — THREE positions, not two
+
+The todo's original framing had two. The addendum above adds the third, and the ruling
+covers all of it:
+
+1. **suffix** — a one-character closer-class widening, same shape as the `{`/`}` fix
+   PR #910 already landed.
+2. **prefix** — bash consumes the whole balanced sigil, so there is no single boundary byte
+   to add; needs a balanced-construct alternative.
+3. **mid-token** — the sigil splits the verb itself (`me` + vanishing sigil + `rge`
+   collapsing to `merge`, argv-proven 2026-09-03). Same mechanism as the prefix side, and
+   it is NOT covered by widening a boundary character class.
+
+### Two things the implementer must not assume
+
+- **Reuse the existing balanced scanner before writing a second one.** The sibling P1 work
+  (merged as PR #912) already landed a stack-based recursive extractor,
+  `cmd_extract_substitutions`, in `.claude/hooks/lib/cmd-detect.sh`. A second hand-rolled
+  balanced matcher diverging from the shared one is precisely how `GH_API_CLAUSE` came to be
+  missed. Check reuse first, and say why if it does not fit.
+- **A substitution-only scanner does NOT close the unset-variable form.** `${UNSET}` is not
+  a command substitution and `cmd_extract_substitutions` will not see it. It vanishes just
+  as completely — confirmed by execution — so the corpus must carry it as its own axis, and
+  a fix that only handles `$(...)`/backticks closes two of the three sigil forms while
+  reporting the class closed. That is the exact defect this todo exists to prevent, one
+  level down.
+
+The Acceptance Criteria above still bind in full: reproduce first against unmodified `main`,
+two-sided mutation tests, false-positive population measured by execution rather than
+estimated, and all three disclosure sites updated to match reality.
+
+### Sequencing note
+
+See the matching note in
+`todos/P0-2026-09-02-outward-cli-guard-command-position-expansion-decision.md` (ruled the
+same day, option (c) narrow deny). Both change `_OUT_POS_PREFIX`/`_OUT_POS_SUFFIX`; do not
+run them as two independent unattended jobs against the same regex pair.
