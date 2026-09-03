@@ -494,17 +494,36 @@ assert_deny "\$( ) command substitution denies (already covered by '(', pinned)"
 # position (verified: `for w in gh pr merge{,x} 42; do printf '[%s]\n' "$w";
 # done` prints `[gh] [pr] [merge] [mergex] [42]`). `_OUT_POS_SUFFIX` did not
 # recognize `{` as a boundary character, so this shape was silently ALLOWED
-# through every `_OUT_POS_SUFFIX`-gated check (confirmed RED against the
-# pre-fix suffix `([[:space:]]|[);&|`]|$)`, GREEN after adding `{`/`}`). This
-# is a DIFFERENT property than a NO-comma/NO-range glued span (e.g.
-# `update{x}`, pinned by the negative control right below) — that case
-# genuinely stays glued as one bash word and is correctly left alone; a lone
-# brace span with no comma/range never expands. (Do not confuse either of
-# these with the unrelated "brace group" tests above, e.g. `{ eas update; }`
-# — a spaced compound-command GROUP, a different construct entirely.) An
-# earlier version of this comment block conflated the glued comma and
-# no-comma cases and wrongly called `{`/`}` inert — corrected the same review
-# round this test was added.
+# at these five call sites: this `gh pr merge` check, `npm publish`, `eas
+# update`, `railway up`, and `eas build --auto-submit` (confirmed RED
+# against the pre-fix suffix `([[:space:]]|[);&|`]|$)`, GREEN after adding
+# `{`/`}`). CORRECTION (2026-09-02, round 2): an earlier version of this
+# comment claimed the fix closed the bypass "through every
+# `_OUT_POS_SUFFIX`-gated check" — false. GH_API_CLAUSE (guard-outward-cli.sh's
+# gh-api clause-cut) was NOT migrated by round 1 and stayed bypassable via
+# this identical comma-brace shape; see the "2026-09-02 FIX (round 2)" block
+# further down in this file for that gap and its fix.
+#
+# `_OUT_POS_SUFFIX` (the closer class) makes NO comma/no-comma distinction —
+# any literal `{` is now an unconditional boundary, so a NO-comma/NO-range
+# glued span on the SAME verb (e.g. `merge{x}`, `merge{1..3}`) ALSO denies
+# under the shipped fix, even though that shape genuinely stays one bash
+# word and never brace-expands (verified: bash leaves `merge{x}` as a
+# single, unsplit token — this is a true fact about bash, not about this
+# regex). That is deliberate conservatism (widening a DENY-only closer class
+# can only ever ADD matches, never grant a carve-out), not a bug — but do
+# NOT read the `eas whoami{x}` negative control right below as pinning that
+# a no-comma glued span stays allowed on the SAME verb: `whoami` is a
+# read-only verb that was NEVER matched by the `eas update|publish|submit`
+# regex in the first place, so that control tests VERB IDENTITY, not the
+# comma/no-comma split — confirmed by mutation: reverting `_OUT_POS_SUFFIX`
+# to its pre-round-1 form (`([[:space:]]|[);&|`]|$)`, no `{`/`}`) leaves
+# this specific assertion GREEN; it is not sensitive to the fix at all. (Do
+# not confuse either brace case with the unrelated "brace group" tests
+# above, e.g. `{ eas update; }` — a spaced compound-command GROUP, a
+# different construct entirely.) An earlier version of this comment block
+# conflated the glued comma and no-comma cases and wrongly called `{`/`}`
+# inert — corrected the same review round this test was added.
 assert_deny "gh pr merge comma-brace expansion denies (glued, no space)" \
   "$(jsonc 'gh pr merge{,x} 42')" "without a REAL --auto flag"
 assert_deny "npm publish comma-brace expansion denies (glued, no space)" \
@@ -526,6 +545,90 @@ assert_allow "if true; then gh pr view 42; fi allows (keyword position, read-onl
   "$(json 'if true; then gh pr view 42; fi')"
 assert_allow "time npm run test allows (keyword position, unrelated script)" \
   "$(json 'time npm run test')"
+
+# ---------- 2026-09-02 FIX (round 2): GH_API_CLAUSE missed the sibling
+#            _OUT_POS_SUFFIX widening its own detector received ----------
+# The round-1 "2026-09-02 FIX" above widened `_OUT_POS_SUFFIX` and updated
+# every REGEX built from it — except one. `guard-outward-cli.sh`'s
+# GH_API_CLAUSE (the gh-api clause-cut used to scan for a mutating
+# -X/--method flag) hardcoded a literal `[[:space:]]` after `api` instead of
+# `${_OUT_POS_SUFFIX}`. Its sibling GH_API_RE (the OCCURRENCE COUNTER a few
+# lines above it, gating the SAME check) WAS migrated, so a comma-brace-glued
+# `gh api{,x} ...` still counted as exactly one occurrence and entered the
+# single-occurrence branch — but the clause-cut then matched nothing, the
+# empty $GH_API_CLAUSE short-circuited the `-X`/`--method` scan, and the
+# mutating-HTTP-method deny never fired (confirmed live: silently ALLOWED
+# before this fix). A round-1 comment above claimed this bypass was closed
+# "at every `_OUT_POS_SUFFIX`-gated check" — that was false; this call site
+# was missed. Same class of bug as
+# docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md:
+# a detector widened without its sibling consumer. Confirmed RED against the
+# pre-fix (literal-space) clause regex, GREEN after switching to
+# `${_OUT_POS_SUFFIX}` (see this round's executor report for the exact
+# before/after PASS counts from the mutation test).
+assert_deny "gh api comma-brace expansion denies (glued, no space — GH_API_CLAUSE gap)" \
+  "$(jsonc 'gh api{,x} -X POST repos/o/r/pulls/1/merge')" "mutating HTTP method"
+assert_deny "gh api backtick-glue denies (pre-existing gap, same root cause)" \
+  "$(jsonc 'gh api`x` -X POST repos/o/r/pulls/1/merge')" "mutating HTTP method"
+# Third distinct code shape: GH_MUTATING_RE (a single-step `grep -Eqi`, no
+# separate clause-cut variable) already used `${_OUT_POS_SUFFIX}` correctly
+# BEFORE this round — pins that it stays denied rather than re-testing the
+# same gap a third time.
+assert_deny "gh release create comma-brace expansion denies (GH_MUTATING_RE family, unaffected by this round's fix)" \
+  "$(jsonc 'gh release create{,x} v1.0.0 --title x')" "mutating 'gh pr/release/repo'"
+# Negative control: read-only 'gh api' (default GET, no -X/--method) must
+# stay allowed even once its clause is correctly extracted.
+assert_allow "gh api -X GET stays allowed (read-only, unaffected by the clause-cut fix)" \
+  "$(jsonc 'gh api -X GET repos/o/r/pulls/1')"
+
+# ---------- 2026-09-02 FIX (round 3, PR #910 review): gh pr merge CLAUSE
+#            decoy --auto via a verb glued directly to a hard separator ----
+# NOTE: "round 3" here is THIS PR's own fix-round numbering (round 1 = the
+# `{`/`}` brace-expansion fix above; round 2 = the GH_API_CLAUSE fix above).
+# Do not confuse it with this file's much older "ROUND-3" section labels
+# below (2026-08-16/17 review rounds, unrelated to this PR).
+#
+# The `gh pr merge` CLAUSE= (guard-outward-cli.sh) used
+# `${_OUT_POS_SUFFIX}[^;&|]*` — a SWALLOWING pattern: it consumes whatever
+# character closed the `merge` match and then keeps capturing PAST it. That
+# is correct when the closing character is whitespace (more of the SAME
+# clause follows, e.g. `merge 42 --auto`) — but when `merge` is glued
+# DIRECTLY to a hard separator with no argument in between (`merge;`,
+# `merge&`, `merge|`, or a close-paren closing a `$(...)` command
+# substitution the verb sits inside), the suffix consumed the separator
+# ITSELF and the capture then continued straight into an
+# UNRELATED, following command, picking up ITS `--auto` as a decoy. Unlike
+# every other `_OUT_POS_SUFFIX`-family clause-cut (GH_API_CLAUSE denies on
+# flag presence; gh_pr_clause_has_repo denies on --repo/-R presence — both
+# fail SAFE under over-capture), this is the ONE clause whose downstream
+# check decides an ALLOW when it finds the flag. Confirmed a working FALSE
+# ALLOW before this fix (construct-and-run, not regex-reading): all four
+# forms below — three glued hard separators plus a `$(...)` close-paren, a
+# structurally different construct sharing only the boundary character
+# class — silently allowed an immediate, non-automerge `gh pr merge` —
+# exactly the action this check exists to block. Fixed with a NEW,
+# non-swallowing suffix variant, `_OUT_POS_SUFFIX_MERGE_CLAUSE` (defined
+# next to `_OUT_POS_SUFFIX`): capture continues ONLY after a whitespace
+# boundary; a hard separator/bracket or end-of-string ends the clause
+# immediately, with nothing captured past it.
+assert_deny "gh pr merge decoy --auto via glued semicolon denies (was a live FALSE ALLOW)" \
+  "$(jsonc 'gh pr merge;curl --auto')" "without a REAL --auto flag"
+assert_deny "gh pr merge decoy --auto via glued ampersand denies (same root cause)" \
+  "$(jsonc 'gh pr merge&curl --auto')" "without a REAL --auto flag"
+assert_deny "gh pr merge decoy --auto via glued pipe denies (same root cause)" \
+  "$(jsonc 'gh pr merge|curl --auto')" "without a REAL --auto flag"
+assert_deny "gh pr merge decoy --auto via glued close-paren denies (same root cause)" \
+  "$(jsonc '$(gh pr merge)curl --auto')" "without a REAL --auto flag"
+# Discriminating positive control: the sanctioned real --auto path (this
+# repo's own /todo automerge mechanism) must stay allowed — this is the one
+# case that breaks if the fix over-tightens instead of merely un-swallowing.
+assert_allow "gh pr merge --auto (sanctioned, no PR number) stays allowed" \
+  "$(jsonc 'gh pr merge --auto')"
+# Regression pin: an arg token BETWEEN the verb and the separator was
+# already correctly bounded before this fix (the trailing [^;&|]* capture
+# already stopped at the semicolon) — confirm this fix did not change that.
+assert_deny "gh pr merge 42;curl --auto (arg-token case, already-correct) stays denied" \
+  "$(jsonc 'gh pr merge 42;curl --auto')" "without a REAL --auto flag"
 
 # ---------- ROUND-3 W3: matching must be case-INSENSITIVE ----------
 # macOS APFS is case-insensitive, so these resolve to the real binaries.

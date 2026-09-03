@@ -225,3 +225,100 @@ regression test (RED against the pre-fix regex, GREEN after; confirmed across th
     auto-filed as a todo.
   - `bash scripts/run-hook-tests.sh`: 34/34 suites green (`test-guard-outward-cli.sh`
     itself: 252/252, up from 248/248 pre-fix — 4 new assertions from the `{`/`}` fix).
+
+### 2026-09-02 (PR #910 review-driven repair)
+
+- **CORRECTION to the entry immediately above.** A post-merge review of PR #910 found the
+  "at every `_OUT_POS_SUFFIX`-gated call site" claim in that entry was FALSE, and the
+  five-call-site list it gives (`gh pr merge`/`npm publish`/`eas update`/`railway up`/
+  `eas build --auto-submit`) — while each individually verified — was incorrectly read as
+  covering every consumer. One call site was missed: `GH_API_CLAUSE`
+  (`guard-outward-cli.sh`'s `gh api` clause-cut, used to scan for a mutating `-X`/`--method`
+  flag) still hardcoded a literal `[[:space:]]` after `api` instead of `${_OUT_POS_SUFFIX}`.
+  Its sibling `GH_API_RE` (the occurrence counter gating the SAME check, a few lines above
+  it) WAS migrated in the original fix, so a comma-brace-glued `gh api{,x} -X POST
+repos/o/r/pulls/1/merge` still counted as exactly one occurrence — but the clause-cut then
+  matched nothing, the empty `$GH_API_CLAUSE` short-circuited the mutating-method scan, and
+  the deny never fired. Confirmed SILENTLY ALLOWED before this repair (both the comma-brace
+  form and the pre-existing backtick-glued form `gh api\`x\` -X POST ...`), by constructing
+the input and running it through the hook — not by re-deriving from the regex text. Same
+bug class as
+`docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md`:
+  a detector widened without its sibling consumer.
+  - Fixed by mirroring the already-correct `gh pr merge` CLAUSE= pattern: `GH_API_CLAUSE`
+    now reads `${_OUT_POS_SUFFIX}` instead of a literal space.
+  - Also corrected a second, narrower prose defect the same review found: the "NO-comma/
+    NO-range span (`merge{x}`) genuinely stays one word and was never the issue" framing in
+    both `guard-outward-cli.sh` and `test-guard-outward-cli.sh` is true of BASH's own
+    word-splitting but was never true of the shipped regex — `_OUT_POS_SUFFIX` makes no
+    comma/no-comma distinction, so `gh pr merge{x} 42` and `gh pr merge{1..3} 42` (both
+    genuinely one bash word, never brace-expanding) ALSO deny under the fix, same as the
+    comma-expansion form. Deliberate conservatism, not a regression — but the comments
+    described behavior the code does not implement, and have been corrected in place.
+  - 4 new regression assertions added to `test-guard-outward-cli.sh` ("2026-09-02 FIX
+    (round 2)" block): the comma-brace `gh api` deny, the backtick-glue `gh api` deny, a
+    third distinct code shape (`GH_MUTATING_RE` family, via `gh release create{,x}` —
+    already correct before this round, pinned to stay that way), and a `gh api -X GET`
+    negative control. Mutation-tested: reverting the `GH_API_CLAUSE` fix alone took the
+    suite from 256/256 to 254 passed/2 failed (exactly the two `gh api`-clause assertions
+    went RED; the `GH_MUTATING_RE`-family assertion and the GET negative control were
+    unaffected, confirming they exercise a different code path); restoring the fix returned
+    256/256.
+  - Full details, reproduction transcript, and updated PR body: PR #910.
+
+### 2026-09-02 (PR #910 review-driven repair, continued — round 3, more severe than round 2)
+
+- **A DIFFERENT and more serious defect, found while verifying the round-2 fix's own
+  false-positive direction as instructed by review.** The `GH_API_CLAUSE` fix above is a
+  DENY-direction check (over-capture can only ADD a deny — safe). Checking whether the SAME
+  swallowing shape (`${_OUT_POS_SUFFIX}[^;&|]*`, which consumes the boundary character and
+  keeps capturing past it) existed anywhere ELSE surfaced that `guard-outward-cli.sh`'s `gh
+pr merge` `CLAUSE=` — untouched by rounds 1 or 2, present since before this PR — is the
+  ONE clause-cut in this file whose downstream check DECIDES AN ALLOW on flag presence
+  (found `--auto` in the clause → allow, subject to `--repo`/`--admin` elsewhere). For that
+  one check, the same swallowing shape is dangerous: a verb glued DIRECTLY to a hard
+  separator with no argument in between (`merge;`, `merge&`, `merge|`, or a close-paren
+  closing a `$(...)` the verb sits inside) let the clause-cut consume the separator and
+  capture straight into an UNRELATED, following command, picking up ITS `--auto` as a
+  decoy. Confirmed a working, SILENT FALSE ALLOW before this fix (construct-and-run
+  against the live hook):
+  ```
+  gh pr merge;curl --auto
+  gh pr merge&curl --auto
+  gh pr merge|curl --auto
+  $(gh pr merge)curl --auto
+  ```
+  All four allowed an immediate, non-automerge `gh pr merge` to execute — three glued hard
+  separators plus a `$(...)` close-paren, a structurally different construct sharing only
+  the boundary character class — exactly the action this specific check exists to block.
+  `gh_pr_clause_has_repo` (the sibling
+  `--repo`/`-R` check) was confirmed NOT vulnerable to the analogous shape
+  (`gh pr create;curl --repo evil/evil`) — its own clause-cut never used the swallowing
+  `${_OUT_POS_SUFFIX}[^;&|]*` pattern to begin with.
+  - **This also means PR #910's own "widening a DENY-only anchor's closer class can only
+    ever ADD matches" argument — repeated in this document, in the archived-todo entries
+    above, and in the PR body — does not extend automatically to every clause-cut built on
+    that anchor.** It holds for the ANCHOR (where a clause starts/ends); it does not hold
+    for what a clause-cut DOES with the captured text once the downstream check inverts
+    from deny-on-presence to allow-on-presence. Codified as a new top-level section in
+    `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`.
+  - Fixed with a NEW, non-swallowing suffix variant scoped to this one consumer,
+    `_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|]*|[);&|`{}]|$)'`(defined next to`\_OUT_POS_SUFFIX`in`guard-outward-cli.sh`): capture continues only after a whitespace
+    boundary; a hard separator/bracket or end-of-string ends the clause immediately with
+    nothing captured past it — matches real bash command-position semantics (a verb glued
+    to a hard separator has no arguments of its own).
+  - 6 new regression assertions in `test-guard-outward-cli.sh` ("2026-09-02 FIX (round 3)"
+    block): the four decoy-`--auto` denies, a sanctioned-`--auto`-stays-allowed positive
+    control, and a regression pin for the already-correctly-bounded arg-token case.
+    Mutation-tested: reverting the merge-clause fix alone took the suite from 262/262 to
+    258 passed/4 failed — exactly the four decoy assertions went RED, the sanctioned-allow
+    control and the arg-token regression pin were unaffected; restoring returned 262/262.
+    `bash scripts/run-hook-tests.sh`: 34/34 suites green, zero `FAIL` lines in the full run.
+  - While fixing this, re-verified the pre-existing, still-disclosed-but-unfixed `<`/`>`
+    gap (round 1) specifically against the merge clause and found its severity was
+    understated: `gh pr merge>log` (no `--auto`, no decoy, nothing to find) is silently
+    ALLOWED because `>` glued to `merge` makes the DETECTOR itself fail to match — a total
+    bypass, not merely a wrong-clause-capture issue, and NOT touched by this fix. Strengthened
+    the disclosure comment in place; still out of this repair's scope, still a human decision.
+  - PR #910's body and the `{`/`}` overclaim row corrected a third time to disclose this
+    finding — see the PR for the final text.

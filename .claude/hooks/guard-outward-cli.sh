@@ -55,6 +55,22 @@
 # for THIS deny-only hook it is a strict superset — but for a lib shared with
 # gates that *permit* on a match it is not, hence the local copy.
 #
+# CAVEAT (2026-09-02, round 3) — the "can only ever ADD matches" argument
+# above is about the ANCHOR deciding WHETHER a verb is in command position at
+# all, and is safe in the DENY-direction: this hook only ever widens toward
+# more denies, never grants a carve-out. It does NOT extend automatically to
+# what a downstream CLAUSE-CUT does with the text it captures once a match is
+# found — the `gh pr merge` CLAUSE= assignment below was a working FALSE
+# ALLOW for exactly this reason (a swallowing clause-cut over-captured into
+# an unrelated glued-on command's decoy `--auto`), even though the anchor
+# widening itself stayed safe. This is a SEPARATE axis from the still-open
+# `<`/`>` detection gap disclosed at that same CLAUSE= assignment below
+# (search "STRENGTHENED 2026-09-02") — that one is a missing boundary
+# character causing total non-detection, not a capture-direction issue. See
+# the CLAUSE= assignment's own comments and
+# docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
+# "clause-cut that DECIDES AN ALLOW" section for the full account of both.
+#
 # MATCHING IS CASE-INSENSITIVE for the command words (`-i` on every verb grep,
 # and on the necessary-substring fast path via `nocasematch`). macOS APFS is
 # case-insensitive, so `EAS update`, `GH pr merge 42` and `RAILWAY down` all
@@ -235,6 +251,21 @@ set -uo pipefail
 # shell string is literal, so no escaping is needed for either constant.
 _OUT_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|then|do|else|elif|time)[[:space:]]+)*'
 _OUT_POS_SUFFIX='([[:space:]]|[);&|`{}]|$)'
+# NON-SWALLOWING variant for a clause-cut whose downstream check DECIDES AN
+# ALLOW on flag presence (currently: the `gh pr merge` --auto clause below —
+# see its CLAUSE= comment for the full account of why this exists). Plain
+# `${_OUT_POS_SUFFIX}[^;&|]*` CONSUMES the boundary character and then keeps
+# capturing past it: when that boundary is whitespace this is correct and
+# intended (more of the SAME clause follows, e.g. `merge 42 --auto`), but
+# when the boundary is a hard separator/bracket (`;`,`&`,`|`,`)`,backtick,
+# `{`,`}`) the verb's own clause has NO more of its own arguments — anything
+# after that character belongs to a DIFFERENT command or construct, and must
+# not be captured into THIS clause. This variant only continues capturing
+# after WHITESPACE; a hard-separator or end-of-string boundary ends the
+# clause immediately, with nothing captured past it — mirroring real bash
+# command-position semantics exactly (verified: `gh pr merge;curl --auto`
+# treats `curl` as a wholly separate command bash-side too).
+_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|]*|[);&|`{}]|$)'
 
 # `--repo`/`-R` in any spelling gh's flag parser accepts (`--repo v`,
 # `--repo=v`, `"--repo" v`, `-R v`, `-Rv`). Case-SENSITIVE on purpose — see
@@ -639,16 +670,37 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # brace span glued to a verb (`merge{,x}`) is real bash brace EXPANSION —
   # `merge{,x}` expands to the two separate words `merge` and `mergex`,
   # placing a standalone, real `merge` token in command position — while a
-  # NO-comma/NO-range span (`merge{x}`) genuinely stays one word and was
-  # never the issue; the earlier version of this comment tested only the
-  # latter and wrongly generalized "inert" to both. Confirmed live before the
-  # fix: `gh pr merge{,x} 42` was SILENTLY ALLOWED where the bare/spaced form
-  # correctly denies (same bypass reproduced at the `eas update`, `npm
-  # publish`, `railway up` and `eas build --auto-submit` call sites — every
-  # `_OUT_POS_SUFFIX`-gated check, not just this one). Two-sided regression
-  # test: test-guard-outward-cli.sh's "2026-09-02 FIX" block (RED against the
-  # pre-fix suffix, GREEN after; a negative control confirms the NO-comma
-  # case still allows a different, read-only verb glued the same way).
+  # NO-comma/NO-range span (`merge{x}`) genuinely stays one bash WORD and was
+  # never the issue FOR BASH'S OWN word-splitting; the earlier version of
+  # this comment tested only that case and wrongly generalized "inert" to
+  # both. CORRECTION (2026-09-02, round 2): that "never the issue" framing is
+  # true of bash, but NOT of the regex shipped here — `_OUT_POS_SUFFIX` makes
+  # no comma/no-comma distinction, so ANY literal `{` glued to `merge` is now
+  # an unconditional boundary and DENIES, comma or not (`gh pr merge{x} 42`
+  # and `gh pr merge{1..3} 42` both deny, verified directly against the
+  # hook). That is deliberate conservatism (a DENY-only anchor can only ever
+  # ADD matches, see below), not a security regression — but the code does
+  # not preserve the bash-level distinction this comment originally implied
+  # it did. Confirmed live before the fix: `gh pr merge{,x} 42` was SILENTLY
+  # ALLOWED where the bare/spaced form correctly denies (same bypass
+  # reproduced at the `eas update`, `npm publish`, `railway up`, `eas build
+  # --auto-submit` call sites, and at GH_API_RE, the gh-api occurrence
+  # counter — six sites, not "every `_OUT_POS_SUFFIX`-gated check" as an
+  # earlier version of this comment claimed). CORRECTION (2026-09-02, round
+  # 2): that completeness claim was also false — GH_API_CLAUSE, the gh-api
+  # CLAUSE-CUT gating the same mutating-HTTP-method check a few lines below
+  # GH_API_RE, kept a hardcoded literal space and was missed by this
+  # widening (a detector widened without its sibling consumer — the same
+  # class
+  # docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md
+  # already documents). Now fixed at that assignment (search this file for
+  # `GH_API_CLAUSE=`); regression tests in test-guard-outward-cli.sh's
+  # "2026-09-02 FIX (round 2)" block.
+  # Two-sided regression test: test-guard-outward-cli.sh's "2026-09-02 FIX"
+  # block (RED against the pre-fix suffix, GREEN after; a negative control
+  # pins that a DIFFERENT, unrelated read-only verb glued the same no-comma
+  # way still allows — that control tests verb identity, not the
+  # comma/no-comma split, which the code does not preserve).
   #
   # Widening a single-character suffix alternation cannot shorten this
   # CLAUSE: the trailing `[^;&|]*` capture below is a SEPARATE class,
@@ -679,7 +731,52 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   #   COMMAND-POSITION ANCHORS header above — NOT fixed here: unlike `{`/`}`
   #   above, a `<`/`>` regex change is out of scope for the review round that
   #   found and fixed the `{`/`}` gap.
-  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
+  #
+  #   STRENGTHENED 2026-09-02 (round 3): re-verified against THIS clause
+  #   specifically, and the severity is worse than "silently allowed where
+  #   the spaced form denies" states — it is a TOTAL detection failure, not
+  #   merely a clause-capture issue. `gh pr merge>log` (no `--auto` at all,
+  #   no decoy, nothing to find) is silently ALLOWED, because `>` right
+  #   after `merge` makes GH_MERGE_RE itself fail to match — the whole `gh
+  #   pr merge` check block never runs, CLAUSE is never even computed. This
+  #   is a DIFFERENT root cause from the round-3 swallowing-clause fix just
+  #   below (that one computed a wrong CLAUSE from a valid match; this one
+  #   never gets a match at all) and is NOT fixed by
+  #   `_OUT_POS_SUFFIX_MERGE_CLAUSE`. Still disclosed-only, still a human
+  #   decision, still genuinely out of this repair's scope — but the human
+  #   deciding should know it is a full bypass of this check, not a partial
+  #   one.
+  #
+  # FIXED 2026-09-02 (round 3, PR #910 post-merge review): this used to read
+  # `${_OUT_POS_SUFFIX}[^;&|]*` — a SWALLOWING pattern that consumes the
+  # boundary character and keeps capturing past it regardless of what that
+  # boundary was. That is correct when the boundary is whitespace (more of
+  # the SAME clause follows), but when `merge` is glued DIRECTLY to a hard
+  # separator with no argument in between — `gh pr merge;curl --auto`,
+  # `gh pr merge&curl --auto`, `gh pr merge|curl --auto`, `$(gh pr
+  # merge)curl --auto` (a close-paren closing the `$(...)` the verb sits
+  # inside) — the suffix consumed the separator itself and
+  # `[^;&|]*` then captured straight into the UNRELATED following command,
+  # picking up its `--auto` as a DECOY. Because this is the ONE
+  # `_OUT_POS_SUFFIX`-family clause-cut whose downstream check decides an
+  # ALLOW on flag presence (every sibling — `GH_API_CLAUSE`,
+  # `gh_pr_clause_has_repo` — DENIES on presence, so their over-capture can
+  # only ever ADD a deny), this was a working FALSE ALLOW of an immediate,
+  # non-automerge `gh pr merge` — exactly what this check exists to block.
+  # Confirmed silently ALLOWED before this fix for all four forms above —
+  # three glued hard separators plus the `$(...)` close-paren, a
+  # structurally different construct sharing only the boundary CHARACTER
+  # class, not the "two commands glued together" mechanism (construct-and-
+  # run, not regex-reading); confirmed a real,
+  # sanctioned `gh pr merge 42 --auto` still allows and `gh pr merge
+  # 42;curl --auto` (an arg token between verb and separator) still
+  # correctly denied both before and after — that shape was never affected.
+  # Fixed with `_OUT_POS_SUFFIX_MERGE_CLAUSE` (defined next to
+  # `_OUT_POS_SUFFIX` above): captures further clause text ONLY after a
+  # whitespace boundary; a hard separator/bracket or end-of-string ends the
+  # clause immediately with nothing captured past it. Two-sided regression
+  # test: test-guard-outward-cli.sh's "2026-09-02 FIX (round 3)" block.
+  CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX_MERGE_CLAUSE}" | head -1)
   # A naive "--auto present" substring check is bypassable: several of `gh pr
   # merge`'s own flags (and the cross-subcommand --repo/-R every gh command
   # accepts) are VALUE-TAKING, so the token immediately after one of them is
@@ -806,7 +903,25 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # production merge. Raw text is the right source for a flag check only when
   # the clause boundary does not also come from it (cf. the --admin check
   # below, which needs no clause).
-  GH_API_CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+api[[:space:]][^;&|]*" | head -1)
+  #
+  # FIXED 2026-09-02 (round 2): this used to hardcode a literal
+  # `[[:space:]]` after `api` instead of `${_OUT_POS_SUFFIX}`, unlike
+  # GH_API_RE just above (the occurrence counter for this SAME check), which
+  # was correctly migrated when `_OUT_POS_SUFFIX` gained `{`/`}` closers
+  # (round 1, see the `gh pr merge` CLAUSE= comment above for the full
+  # `{`/`}` story). Consequence: a comma-brace-glued `gh api{,x} -X POST
+  # ...` counted as exactly one occurrence (GH_API_RE matched, using the
+  # widened suffix) but this clause-cut then matched NOTHING (no literal
+  # space after `api{,x}`), so $GH_API_CLAUSE was empty, the `-X`/`--method`
+  # scan below short-circuited false, and the mutating-HTTP-method deny
+  # never fired — SILENTLY ALLOWED before this fix (confirmed live, as was
+  # the pre-existing backtick-glued form `gh api\`x\` -X POST ...`). Same
+  # class as
+  # docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md:
+  # a detector widened without its sibling consumer. Two-sided regression
+  # test: test-guard-outward-cli.sh's "2026-09-02 FIX (round 2)" block (RED
+  # against the pre-fix literal-space clause regex, GREEN after).
+  GH_API_CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
   # Matches BOTH the spaced/`=` form (-X POST, -X=POST, --method POST,
   # --method=POST) AND the glued short-flag form (-XPOST — the common
   # curl-style spelling; found bypassing a separator-only pattern in review
