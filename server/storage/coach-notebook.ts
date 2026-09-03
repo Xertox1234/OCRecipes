@@ -146,6 +146,17 @@ export async function archiveOldEntries(
         or(
           ne(coachNotebook.type, "commitment"),
           isNull(coachNotebook.followUpDate),
+          // Same plain instant comparison as getCommitmentsWithDueFollowUp
+          // (above) and getDueCommitmentsAllUsers (below) — deliberately
+          // left unchanged. It is correct for rows whose followUpDate was
+          // anchored properly at write time (coach-pro-chat.ts) — but NOT
+          // for rows written through server/routes/notebook.ts's POST/PATCH
+          // handlers, which still anchor at UTC midnight (separate defect,
+          // out of this todo's scope), nor for pre-fix rows, which retain
+          // their original UTC-midnight anchoring. A stricter cutoff here
+          // would only widen which "past" commitments get archived a little
+          // earlier, which is a different (and lower-stakes) bar than the
+          // "does the push fire early" correctness this todo targets.
           lte(coachNotebook.followUpDate, new Date()),
         ),
       ),

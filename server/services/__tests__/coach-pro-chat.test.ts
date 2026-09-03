@@ -28,6 +28,8 @@ import { parseBlocksFromContent } from "../coach-blocks";
 import { consumeWarmUp } from "../coach-warm-up";
 import { fireAndForget } from "../../lib/fire-and-forget";
 import { sanitizeContextField } from "../../lib/ai-safety";
+import { extractNotebookEntries } from "../notebook-extraction";
+import { civilDateToInstant } from "../../lib/civil-date";
 
 // ── Mocks ───────────────────────────────────────────────────
 
@@ -919,6 +921,187 @@ describe("handleCoachChat", () => {
         .mocked(fireAndForget)
         .mock.calls.filter(([label]) => label === "coach-notebook-extraction");
       expect(extractionCalls).toHaveLength(0);
+    });
+
+    /**
+     * Flush the fire-and-forget "coach-notebook-extraction" closure. The
+     * `fireAndForget` mock attaches `.catch(() => {})` but does not await the
+     * promise, so `collectEvents` can return before the closure's own
+     * `await`s (extractNotebookEntries, storage.createNotebookEntries) land.
+     */
+    async function flushNotebookExtraction(): Promise<void> {
+      const call = vi
+        .mocked(fireAndForget)
+        .mock.calls.find(([label]) => label === "coach-notebook-extraction");
+      await call?.[1];
+    }
+
+    it("anchors followUpDate with civilDateToInstant using the request tz, not new Date() (UTC-negative tz)", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        fakeStream(["Let's check in."]),
+      );
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Let's check in.",
+        blocks: [],
+      });
+      vi.mocked(extractNotebookEntries).mockResolvedValue([
+        {
+          type: "commitment",
+          content: "Check in about meal prepping",
+          followUpDate: "2026-09-05",
+        },
+      ]);
+
+      const params = makeParams({
+        isCoachPro: true,
+        tz: "America/Los_Angeles",
+      });
+
+      await collectEvents(handleCoachChat(params));
+      await flushNotebookExtraction();
+
+      const expectedAnchor = civilDateToInstant(
+        "2026-09-05",
+        "America/Los_Angeles",
+      );
+      expect(storage.createNotebookEntries).toHaveBeenCalledWith([
+        expect.objectContaining({ followUpDate: expectedAnchor }),
+      ]);
+
+      // Names the property the bug actually broke, not a snapshot literal:
+      // `new Date("2026-09-05")` (the old, buggy anchor) is UTC midnight — a
+      // DIFFERENT, EARLIER instant than LA midnight for this UTC-negative
+      // zone. Assert the buggy value was not what got written.
+      const naiveUtcMidnight = new Date("2026-09-05");
+      expect(expectedAnchor.getTime()).toBeGreaterThan(
+        naiveUtcMidnight.getTime(),
+      );
+      expect(
+        vi.mocked(storage.createNotebookEntries).mock.calls[0][0][0]
+          .followUpDate,
+      ).not.toEqual(naiveUtcMidnight);
+    });
+
+    it("threads the request's tz (and a captured `now`) into extractNotebookEntries — pins the wiring across the mock boundary", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        fakeStream(["Let's check in."]),
+      );
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Let's check in.",
+        blocks: [],
+      });
+
+      const params = makeParams({
+        isCoachPro: true,
+        tz: "America/Los_Angeles",
+      });
+
+      await collectEvents(handleCoachChat(params));
+      await flushNotebookExtraction();
+
+      // extractNotebookEntries is mocked wholesale in this file, so only its
+      // RETURN value is otherwise exercised. Without this assertion, a call
+      // site regression (e.g. hardcoding `{ now: new Date(), tz: "UTC" }`
+      // instead of forwarding the request's tz) would leave every test in
+      // this file AND in notebook-extraction.test.ts green, even though
+      // threading `tz` through this exact call is the entire point of the
+      // fix.
+      expect(extractNotebookEntries).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.any(String),
+        expect.any(Number),
+        { now: expect.any(Date), tz: "America/Los_Angeles" },
+      );
+    });
+
+    it("anchors followUpDate with civilDateToInstant using the request tz, not new Date() (UTC-positive tz — the opposite-sign companion of the test above)", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        fakeStream(["Let's check in."]),
+      );
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Let's check in.",
+        blocks: [],
+      });
+      vi.mocked(extractNotebookEntries).mockResolvedValue([
+        {
+          type: "commitment",
+          content: "Check in about meal prepping",
+          followUpDate: "2026-09-05",
+        },
+      ]);
+
+      const params = makeParams({
+        isCoachPro: true,
+        tz: "Asia/Tokyo",
+      });
+
+      await collectEvents(handleCoachChat(params));
+      await flushNotebookExtraction();
+
+      const expectedAnchor = civilDateToInstant("2026-09-05", "Asia/Tokyo");
+      expect(storage.createNotebookEntries).toHaveBeenCalledWith([
+        expect.objectContaining({ followUpDate: expectedAnchor }),
+      ]);
+
+      // For a UTC-POSITIVE zone the relationship inverts: local midnight in
+      // Tokyo is BEFORE UTC midnight, so the correct anchor is EARLIER than
+      // the old naive `new Date("2026-09-05")` anchor — the opposite
+      // direction from the UTC-negative (LA) test above. A fix hand-tuned to
+      // only the west-of-Greenwich case (e.g. an inverted offset sign) would
+      // pass that test while failing this one.
+      const naiveUtcMidnight = new Date("2026-09-05");
+      expect(expectedAnchor.getTime()).toBeLessThan(naiveUtcMidnight.getTime());
+      expect(
+        vi.mocked(storage.createNotebookEntries).mock.calls[0][0][0]
+          .followUpDate,
+      ).not.toEqual(naiveUtcMidnight);
+    });
+
+    it("does not anchor a commitment as due before the user's local midnight (UTC-negative tz) — Postgres-independent mirror of the storage-layer 'not due early' test", async () => {
+      vi.mocked(generateCoachProResponse).mockReturnValue(
+        fakeStream(["Let's check in."]),
+      );
+      vi.mocked(parseBlocksFromContent).mockReturnValue({
+        text: "Let's check in.",
+        blocks: [],
+      });
+      const dateStr = "2026-09-05";
+      const tz = "America/Los_Angeles";
+      vi.mocked(extractNotebookEntries).mockResolvedValue([
+        {
+          type: "commitment",
+          content: "Check in next week",
+          followUpDate: dateStr,
+        },
+      ]);
+
+      const params = makeParams({ isCoachPro: true, tz });
+
+      await collectEvents(handleCoachChat(params));
+      await flushNotebookExtraction();
+
+      const writtenFollowUpDate = vi.mocked(storage.createNotebookEntries).mock
+        .calls[0][0][0].followUpDate as Date;
+
+      // What `getDueCommitmentsAllUsers` / `getCommitmentsWithDueFollowUp`
+      // (coach-notebook.ts) actually evaluate is `lte(followUpDate, now)`.
+      // Pick a `now` strictly between the old buggy UTC-midnight anchor and
+      // the correct LA-midnight anchor: the bug would mark the commitment
+      // due there; the fix must not.
+      const naiveUtcMidnight = new Date(dateStr);
+      const oneHourAfterNaiveAnchor = new Date(
+        naiveUtcMidnight.getTime() + 60 * 60 * 1000,
+      );
+
+      // Old (buggy) anchor: already due at that instant.
+      expect(
+        naiveUtcMidnight.getTime() <= oneHourAfterNaiveAnchor.getTime(),
+      ).toBe(true);
+      // Fixed anchor: NOT yet due at that same instant — i.e. does not come
+      // due early.
+      expect(
+        writtenFollowUpDate.getTime() > oneHourAfterNaiveAnchor.getTime(),
+      ).toBe(true);
     });
   });
 

@@ -617,8 +617,20 @@ assert_deny "gh pr merge decoy --auto via glued ampersand denies (same root caus
   "$(jsonc 'gh pr merge&curl --auto')" "without a REAL --auto flag"
 assert_deny "gh pr merge decoy --auto via glued pipe denies (same root cause)" \
   "$(jsonc 'gh pr merge|curl --auto')" "without a REAL --auto flag"
-assert_deny "gh pr merge decoy --auto via glued close-paren denies (same root cause)" \
-  "$(jsonc '$(gh pr merge)curl --auto')" "without a REAL --auto flag"
+# INTEGRATION 2026-09-03 (PR #910 x PR #912): this input still DENIES, but via
+# a DIFFERENT branch than when PR #910 was authored in isolation. PR #912 made
+# the occurrence count read `cmd_words_deep`, which extracts the contents of a
+# balanced `$(...)`/backtick substitution as an additional line — so the verb
+# inside the substitution and the verb on the raw line count as TWO
+# command-position occurrences, and the ambiguity guard denies BEFORE the
+# clause-cut this block was written to exercise is ever reached. Verified by
+# execution, not inference: deep-occurrence count = 2 for this input.
+# The expectation is updated to the reason that actually fires. The round-5
+# clause-cut mechanism itself is NOT left untested — see the single-occurrence
+# `)`/backtick block added below, which still reaches it and is two-sided
+# mutation-tested against reverting branch 1's boundary class.
+assert_deny "gh pr merge decoy --auto via glued close-paren denies (ambiguity branch post-#912)" \
+  "$(jsonc '$(gh pr merge)curl --auto')" "more than one command-position"
 # Discriminating positive control: the sanctioned real --auto path (this
 # repo's own /todo automerge mechanism) must stay allowed — this is the one
 # case that breaks if the fix over-tightens instead of merely un-swallowing.
@@ -649,10 +661,34 @@ assert_deny "gh pr merge 42;curl --auto (arg-token case, ;/&/| only) stays denie
 # docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
 # "round 5" section. Fix: branch 1 widened to
 # `[^;&|)`{}]*`, matching branch 2's boundary set exactly.
-assert_deny "gh pr merge arg-present decoy --auto via close-paren denies (round-5 fix, was a live FALSE ALLOW)" \
-  "$(jsonc '$(gh pr merge 42)curl --auto')" "without a REAL --auto flag"
-assert_deny "gh pr merge arg-present decoy --auto via backtick denies (round-5 fix, same root cause)" \
-  "$(jsonc '`gh pr merge 42`curl --auto')" "without a REAL --auto flag"
+# INTEGRATION 2026-09-03 (PR #910 x PR #912): as with the zero-arg close-paren
+# case above, both BALANCED-substitution forms now deny via the ambiguity
+# branch instead of the clause-cut, because PR #912's deep occurrence count
+# sees the substitution's own contents as a second command-position
+# occurrence (verified by execution: deep-occurrence count = 2 for both).
+# Still denied — strictly stricter than before, and the sanctioned
+# `gh pr merge --auto` positive control above still ALLOWs, so no
+# false-positive was introduced by the interaction.
+assert_deny "gh pr merge arg-present decoy --auto via close-paren denies (ambiguity branch post-#912)" \
+  "$(jsonc '$(gh pr merge 42)curl --auto')" "more than one command-position"
+assert_deny "gh pr merge arg-present decoy --auto via backtick denies (ambiguity branch post-#912)" \
+  "$(jsonc '`gh pr merge 42`curl --auto')" "more than one command-position"
+# Round-5's clause-cut fix, still reached and still pinned. These three are
+# SINGLE-occurrence (an unbalanced `)`/backtick, or a plain subshell, none of
+# which cmd_words_deep extracts as a second line), so they bypass the
+# ambiguity branch and exercise `_OUT_POS_SUFFIX_MERGE_CLAUSE` branch 1
+# directly — the boundary class round 5 widened from the round-3 narrow form
+# (semicolon/ampersand/pipe only) to also exclude close-paren, backtick and
+# both braces. Two-sided mutation-tested 2026-09-03: reverting branch 1 to
+# the round-3 narrow class flips ALL THREE (and the `{`/`}` case below) from
+# DENY to ALLOW; restoring it returns all four to DENY. Without this block the
+# round-5 widening would have become dead-lettered by the edits above.
+assert_deny "gh pr merge + bare unbalanced close-paren denies (round-5 clause-cut, single occurrence)" \
+  "$(jsonc 'gh pr merge 42)curl --auto')" "without a REAL --auto flag"
+assert_deny "gh pr merge + bare unbalanced backtick denies (round-5 clause-cut, single occurrence)" \
+  "$(jsonc 'gh pr merge 42`curl --auto')" "without a REAL --auto flag"
+assert_deny "gh pr merge inside a plain subshell denies (round-5 clause-cut, single occurrence)" \
+  "$(jsonc '(gh pr merge 42)curl --auto')" "without a REAL --auto flag"
 # `{`/`}` in this same arg-present position are NOT live bypasses (verified:
 # real bash brace-expansion / a bare glued `}` both keep --auto as a genuine,
 # separate argument of the SAME `gh pr merge` command — no second command is
@@ -1032,6 +1068,86 @@ assert_allow "a grep for railway up in a file still allows" \
   "$(jsonc 'grep -rn "railway up" docs/')"
 assert_allow "unquoted gh pr merge --auto still allows (carve-out intact)" \
   "$(jsonc 'gh pr merge 42 --auto --squash --delete-branch')"
+
+# ---------- QUOTED COMMAND SUBSTITUTION (todos/P1-2026-08-17-quoted-command-substitution-inert.md) ----------
+# docs/solutions/logic-errors/quoted-command-substitution-always-executes-2026-08-17.md
+# bash ALWAYS executes $(...)/backtick regardless of the surrounding quotes —
+# quoting only affects word-splitting of the substitution's OUTPUT, never
+# whether the substitution itself runs. cmd_bare/cmd_words blanked the whole
+# quoted span uniformly, including a live $(...)/backtick inside it, so a real
+# outward-facing invocation hid from every check in this file by wrapping in
+# ordinary double quotes. These three are the EXACT reproduction strings from
+# the todo's Background section, verified (before this fix) to return exit 0 /
+# ALLOW by piping the identical crafted JSON into this live hook.
+assert_deny "eas update hidden in a quoted \$(...) substitution denies" \
+  "$(jsonc 'echo "$(eas update --branch preview --platform all)"')" \
+  "eas update/publish/submit"
+assert_deny "gh pr merge --admin hidden in a quoted \$(...) substitution denies" \
+  "$(jsonc 'echo "$(gh pr merge --admin 42)"')" \
+  "without a REAL --auto flag"
+assert_deny "gh api -X POST hidden in a quoted \$(...) substitution denies" \
+  "$(jsonc 'echo "$(gh api -X POST repos/o/r/merges)"')" \
+  "mutating HTTP method"
+# Backtick form of the same bug, inside double quotes.
+assert_deny "eas update hidden in a quoted backtick substitution denies" \
+  "$(jsonc 'echo "`eas update --branch preview --platform all`"')" \
+  "eas update/publish/submit"
+# Two-sided control: the IDENTICAL text, SINGLE-quoted instead of double —
+# bash's single quotes genuinely disable ALL expansion including command
+# substitution, so this is authentically inert and must still allow. If this
+# ever starts denying, the fix over-widened past "live quote context only".
+assert_allow "the SAME eas update text, single-quoted (genuinely inert), still allows" \
+  "$(jsonc "echo '\$(eas update --branch preview --platform all)'")"
+# The grant-shaped hazard this fix could have introduced: a decoy substitution
+# must NEVER manufacture a free-standing --auto and grant the carve-out to an
+# unrelated, immediate 'gh pr merge'. NOTE this row does NOT by itself
+# discriminate whether $CLAUSE reads $WORDS or $WORDS_DEEP (mutation-tested,
+# 2026-09-02: flipping that one assignment to $WORDS_DEEP leaves this row, and
+# every other row in this file, still passing) — the decoy text lands on its
+# OWN line (cmd_extract_substitutions never merges a body into the line that
+# contains the outer 'gh pr merge'), so grep's per-line clause cut cannot see
+# it either way. The row below IS the discriminator.
+assert_deny "a decoy --auto inside a substitution does NOT grant the merge carve-out" \
+  "$(jsonc 'gh pr merge 42 -b "$(echo --auto)"')" \
+  "without a REAL --auto flag"
+# THE ACTUAL DISCRIMINATOR for $CLAUSE staying on plain $WORDS (see this hook's
+# own CLAUSE-assignment comment, and lib/cmd-detect.sh's cmd_words_deep
+# header): a genuinely self-contained `gh pr merge 42 --auto` — subcommand AND
+# a real --auto in the SAME body — hidden entirely inside a live substitution.
+# Verified (2026-09-02, mutation test) that flipping $CLAUSE's source from
+# $WORDS to $WORDS_DEEP makes THIS ONE ALLOW instead of DENY, while every
+# other assertion in this file stays green — this is the one input that
+# proves the shallow/deep choice on that single line is live code, not dead
+# weight. Denying here is the documented CONSERVATIVE residual: the
+# substitution does genuinely execute and does carry a real --auto, so this is
+# a deliberately cautious "cannot verify" rather than a bypass — see the
+# CLAUSE comment for why extending verification to substitution content was
+# judged not worth the larger, harder-to-audit surface for a case none of this
+# todo's four reproduction strings exercise.
+assert_deny "a SELF-CONTAINED real 'gh pr merge --auto' fully hidden in a substitution still denies (documented conservative residual, not a bypass)" \
+  "$(jsonc 'echo "$(gh pr merge 42 --auto)"')" \
+  "without a REAL --auto flag"
+# CRITICAL (security review, 2026-09-02) — the exact repro that broke
+# CLAUSE's "one quoted span = one word" invariant: a quoted VALUE
+# (`-b "..."`) containing its OWN internal double-quoted argument flips
+# cmd_words's flat, non-nesting-aware quote toggle mid-span, manufacturing
+# REAL literal spaces around a forged, free-standing --auto token that does
+# not correspond to any actual argv boundary (confirmed via a `gh(){ for a
+# in "$@"; do echo "[$a]"; done; }` shim on the identical string: the whole
+# thing is ONE argv element, with no standalone --auto). Fixed by denying
+# whenever $CLAUSE contains any literal `$` (see guard-outward-cli.sh's own
+# CLAUSE/GH_MERGE_VALUE_FLAGS comment for the full rationale and the
+# safe-direction tradeoff). Mutation-tested (2026-09-02): removing the `$`
+# guard and letting HAS_REAL_AUTO fall straight to the awk scan flips this
+# row from deny to allow, while every other row in this file stays green —
+# this is the row that proves the guard is live code, not dead weight.
+assert_deny "a quoted VALUE with its OWN internal double-quoted argument does not forge a free-standing --auto (CLAUSE \$-guard fix)" \
+  "$(jsonc 'gh pr merge 42 -b "$(printf %s "AAA "--auto" BBB")"')" \
+  "without a REAL --auto flag"
+# A live substitution that is genuinely harmless (no dangerous verb inside)
+# must still allow — this fix must not become "deny anything containing \$(...)".
+assert_allow "a harmless live substitution with no dangerous verb still allows" \
+  "$(jsonc 'echo "today is $(date)"')"
 
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend

