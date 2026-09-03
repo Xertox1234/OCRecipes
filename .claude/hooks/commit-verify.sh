@@ -11,26 +11,24 @@ TOOL=$(printf '%s' "$INPUT" | jq -re '.tool_name' 2>/dev/null) || exit 0
 [ "$TOOL" = "Bash" ] || exit 0
 CMD=$(printf '%s' "$INPUT" | jq -re '.tool_input.command' 2>/dev/null) || exit 0
 
-# Cheap pre-guard: `commit` is a NECESSARY substring of any match (quote-blanking only removes
-# characters, never inserts them), so a command lacking it cannot be a git commit — skip the
-# scan. Safe because this hook is NON-blocking: a wrongly-skipped command just stays silent.
-# Two-stage necessary-substring filter. Stage 1 is the zero-copy glob on raw $CMD.
-# Stage 2 runs ONLY on a stage-1 miss, retesting with the characters cmd_words can
-# DELETE removed (quotes, backslashes, newlines) — because the cmd_is_* matcher below
-# reads `cmd_words`, which deletes quote characters and so sees a verb this filter's
-# raw text does not contain: `git com"mit"` holds no literal `commit`, so a
-# single-stage filter exited 0 and the matcher was never asked (review, 2026-08-16).
-# cmd_words only deletes those characters or inserts the letter `x`, and the needle
-# below contains no `x`, so stage 2 is a superset by construction. Four literal
-# substitutions, not a bracket class: the class form costs ~1450ms on a 3KB command
-# under bash 3.2 versus ~5.5ms for these.
-_PRE=0
-case "$CMD" in *commit*) _PRE=1 ;; esac
-if [ "$_PRE" = 0 ]; then
-  _T=${CMD//\'/}; _T=${_T//\"/}; _T=${_T//\\/}; _T=${_T//$'\n'/}; _T=${_T//\$/}
-  case "$_T" in *commit*) _PRE=1 ;; esac
+# Fork-free: a $(cd ...) subshell here would be the ENTIRE added cost of reaching the shared
+# fast-path helper below (measured ~1.9ms/call; sourcing itself is free) — this HERE now runs
+# on every Bash tool call, not just ones that already matched the old inline filter. The
+# */*) arm is load-bearing: a bare "${BASH_SOURCE[0]%/*}" returns the filename unchanged when
+# invoked with no slash, the source below then fails, and this hook silently exits before the
+# matcher ever runs.
+case "${BASH_SOURCE[0]}" in */*) HERE="${BASH_SOURCE[0]%/*}" ;; *) HERE=. ;; esac
+
+# Cheap pre-guard via the shared fast-path helper (lib/fastpath-filter.sh): `commit` is a
+# NECESSARY substring of any match (quote-blanking only removes characters, never inserts
+# them), so a command lacking it cannot be a git commit — skip the scan. Safe because this
+# hook is NON-blocking: a wrongly-skipped command just stays silent. If the helper is
+# unsourceable, do NOT exit here — fall through to the lib/cmd-detect.sh sourcing below,
+# which already exits 0 (silent) on its own failure; losing the cheap pre-filter only costs
+# performance in that (broken-install) case, never a decision.
+if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >/dev/null; then
+  cmd_fastpath_has "$CMD" '*commit*' || exit 0
 fi
-[ "$_PRE" = 1 ] || exit 0
 
 # Detect `git [-c k=v]* commit` in command position via the shared, quote-AWARE scanner
 # (.claude/hooks/lib/cmd-detect.sh) — the single source of the strip + command-position matcher
@@ -39,7 +37,6 @@ fi
 # scan fixes the apostrophe-glue / env-runner misses (2026-07-18 audit /code-review). Lib
 # UNSOURCEABLE → exit 0 (silent): the safe direction for a non-blocking advisory hook (matching
 # raw would fire false context on quoted mentions).
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/cmd-detect.sh" 2>/dev/null && declare -F cmd_is_git_commit >/dev/null || exit 0
 cmd_is_git_commit "$CMD" || exit 0
 
