@@ -624,11 +624,52 @@ assert_deny "gh pr merge decoy --auto via glued close-paren denies (same root ca
 # case that breaks if the fix over-tightens instead of merely un-swallowing.
 assert_allow "gh pr merge --auto (sanctioned, no PR number) stays allowed" \
   "$(jsonc 'gh pr merge --auto')"
-# Regression pin: an arg token BETWEEN the verb and the separator was
-# already correctly bounded before this fix (the trailing [^;&|]* capture
-# already stopped at the semicolon) — confirm this fix did not change that.
-assert_deny "gh pr merge 42;curl --auto (arg-token case, already-correct) stays denied" \
+# Regression pin: an arg token BETWEEN the verb and `;` was already correctly
+# bounded before this fix (the trailing [^;&|]* capture already stopped at
+# the semicolon). SCOPED to `;`/`&`/`|` only — round 3's original exclusion
+# class — after round 5 below found `)`/backtick/`{`/`}` were NOT covered by
+# this same "arg-token case" in round 3, despite this test's name implying
+# the whole class was already correct.
+assert_deny "gh pr merge 42;curl --auto (arg-token case, ;/&/| only) stays denied" \
   "$(jsonc 'gh pr merge 42;curl --auto')" "without a REAL --auto flag"
+
+# ---------- 2026-09-02 FIX (round 5, independent baseline-reviewer finding
+#            on round 3's OWN fix): the arg-present swallow reopened for
+#            `)`/backtick/`{`/`}` ----------------------------------------
+# Round 3's `_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|]*|[);&|`{}]|$)'`
+# fixed the ZERO-ARGUMENT case (verb glued directly to a hard separator —
+# branch 2 above fires) but branch 1's continuation-stop class `[^;&|]*`
+# only excluded `;`/`&`/`|` — NOT the four characters branch 2 itself treats
+# as terminal (`)`,backtick,`{`,`}`). The moment ANY argument preceded the
+# boundary (branch 1 fires instead of branch 2), the swallow reopened for
+# those four. Two of the four are LIVE bypasses: real bash executes
+# `gh pr merge 42` as the `$(...)`/backtick command-substitution subprocess
+# UNCONDITIONALLY, with no --auto reaching it, before the outer `curl --auto`
+# half ever runs. Root cause and full 16-shape sweep:
+# docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
+# "round 5" section. Fix: branch 1 widened to
+# `[^;&|)`{}]*`, matching branch 2's boundary set exactly.
+assert_deny "gh pr merge arg-present decoy --auto via close-paren denies (round-5 fix, was a live FALSE ALLOW)" \
+  "$(jsonc '$(gh pr merge 42)curl --auto')" "without a REAL --auto flag"
+assert_deny "gh pr merge arg-present decoy --auto via backtick denies (round-5 fix, same root cause)" \
+  "$(jsonc '`gh pr merge 42`curl --auto')" "without a REAL --auto flag"
+# `{`/`}` in this same arg-present position are NOT live bypasses (verified:
+# real bash brace-expansion / a bare glued `}` both keep --auto as a genuine,
+# separate argument of the SAME `gh pr merge` command — no second command is
+# glued on) but are denied anyway for consistency with branch 2's existing
+# `{`/`}` boundary treatment (deliberate conservatism, matching round 1's
+# precedent for `_OUT_POS_SUFFIX` itself — never removes a real ALLOW).
+assert_deny "gh pr merge arg-present + comma-brace denies (round-5 fix, conservative not exploitable)" \
+  "$(jsonc 'gh pr merge 42{,x}curl --auto')" "without a REAL --auto flag"
+assert_deny "gh pr merge arg-present + bare close-brace denies (round-5 fix, conservative not exploitable)" \
+  "$(jsonc 'gh pr merge 42}curl --auto')" "without a REAL --auto flag"
+# False-positive control: a real --body value containing parens/braces
+# (unrelated quoted content) must stay allowed — cmd_words neutralizes
+# quoted spans before this clause ever sees them.
+assert_allow "gh pr merge --auto with quoted parens in --body stays allowed (round-5 false-positive control)" \
+  "$(jsonc 'gh pr merge 42 --body "fix (#123)" --auto')"
+assert_allow "gh pr merge --auto with quoted braces+parens in --body stays allowed (round-5 false-positive control)" \
+  "$(jsonc 'gh pr merge 42 --auto --body "see {issue} (#123) done"')"
 
 # ---------- ROUND-3 W3: matching must be case-INSENSITIVE ----------
 # macOS APFS is case-insensitive, so these resolve to the real binaries.

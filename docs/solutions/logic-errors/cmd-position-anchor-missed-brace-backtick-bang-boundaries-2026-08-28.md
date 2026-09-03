@@ -424,10 +424,23 @@ $(gh pr merge)curl --auto
 
 All four were confirmed SILENTLY ALLOWED before this fix (construct-and-run against the
 live hook, not regex-reading) — `gh_pr_clause_has_repo`, checked with the analogous glued
-shape (`gh pr create;curl --repo evil/evil`), was confirmed NOT vulnerable: its own
-clause-cut never used the swallowing `${_OUT_POS_SUFFIX}[^;&|]*` shape to begin with (it
-appends `[^;&|]*` directly after the subcommand alternation, with no suffix boundary class
-in between), so it was never at risk of this exact defect.
+shape (`gh pr create;curl --repo evil/evil`), was confirmed NOT vulnerable.
+
+**CORRECTED 2026-09-02 (round 5) — the reason given above for why
+`gh_pr_clause_has_repo` is safe was wrong, only its conclusion was right.** An independent
+baseline-reviewer SUGGESTION, verified construct-and-run: `gh_pr_clause_has_repo` DOES
+over-capture through the identical glued boundary — `grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*"`
+is itself an unbounded, swallowing pattern (no `_OUT_POS_SUFFIX`-family boundary class in
+front of `[^;&|]*` at all, so it never stops at `)`/backtick/`{`/`}` either). Verified live:
+`$(gh pr create --title x --body y)curl --repo evil/org` correctly DENIES — the decoy
+`--repo` from the unrelated glued-on `curl` command IS picked up by the over-capture, exactly
+like the merge-clause bug. It is safe not because the capture mechanism differs, but for the
+same reason `GH_API_CLAUSE` is safe: the **downstream decision direction** is deny-on-presence,
+so an over-captured clause can only find MORE to deny on. Restating the reasoning correctly
+matters because a future reader who "fixes" `gh_pr_clause_has_repo`'s pattern shape believing
+it lacks a swallow mechanism would be solving a problem that was never the risk — the check
+that needs the non-swallowing treatment is identified by its decision direction, not by
+which literal pattern shape it happens to use.
 
 **The generalization.** "A DENY-only anchor's widening can only ever add matches" is true
 of the ANCHOR — the character class that decides where a clause STARTS and ENDS. It is not
@@ -502,6 +515,77 @@ honest than closing half of it. Root cause pinned in `.claude/hooks/lib/cmd-dete
 `cmd_words`, which documents (and preserves) a bare `$` sigil unmodified in `$WORDS`/`$BARE`
 — this is a missing character in the anchor classes, not a `$WORDS`-construction defect.
 Still a human decision, still out of this repair's scope.
+
+## Round 5 (2026-09-02) — round 3's OWN fix was incomplete: the arg-present case
+
+An independent baseline-reviewer CRITICAL finding on round 3's fix itself, found by
+construct-and-run testing rather than trusting round 3's own "all four decoy shapes now
+deny" claim — exactly the discipline this whole repair chain exists to enforce, applied to
+this chain's own most recent fix.
+
+**The gap.** `_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|]*|[);&|`{}]|$)'` (round 3) has
+two branches: branch 2 (the zero-argument case — verb glued directly to a hard boundary)
+correctly stops at `;`,`&`,`|`,`)`,backtick,`{`,`}`. Branch 1 (the argument-present case —
+some argument text between the verb and the boundary) only stopped its continuation capture
+at `;`,`&`,`|` — it did NOT match branch 2's own boundary set. The two branches partition
+one boundary concept and had silently diverged. Once ANY argument preceded the boundary,
+branch 1 fired instead of branch 2, and the swallow reopened for `)`,backtick,`{`,`}`.
+
+**Full 16-shape dimensional sweep** ({zero-arg, arg-present} × {`;`,`&`,`|`,`)`,backtick,`{`,`}`,EOS}),
+executed against the live hook, before and after the round-5 fix:
+
+| boundary | zero-arg (before → after) | arg-present (before → after) |
+|---|---|---|
+| `;` | DENY → DENY | DENY → DENY |
+| `&` | DENY → DENY | DENY → DENY |
+| `\|` | DENY → DENY | DENY → DENY |
+| `)` | DENY → DENY | **ALLOW → DENY** |
+| backtick | DENY → DENY | **ALLOW → DENY** |
+| `{` | DENY → DENY | **ALLOW → DENY** |
+| `}` | DENY → DENY | **ALLOW → DENY** |
+| end-of-string | DENY → DENY | DENY → DENY |
+
+Sanctioned `gh pr merge --auto` and `gh pr merge 42 --auto --squash --delete-branch` stayed
+ALLOW throughout (both sweeps).
+
+**Not every ALLOW→DENY cell was a live bypass.** `)` and backtick ARE: real bash executes
+the command-substitution/backtick subprocess (`gh pr merge 42`) UNCONDITIONALLY, with no
+`--auto` reaching it, before the outer glued command runs — confirmed with
+`bash -c 'set -x; ...'` tracing and a paired deny control, same methodology as every other
+finding in this file. `{`/`}` are NOT live bypasses in this position — verified with
+`bash -c 'for w in gh pr merge 42{,x}curl --auto; do printf "[%s]\n" "$w"; done'` →
+`[42curl] [42xcurl] [--auto]`, and the analogous bare-`}` form → `[42}curl] [--auto]`: in
+both cases `--auto` reaches `gh pr merge` as a genuine, separate argument of the SAME
+command; no second command is glued on. They are denied anyway — matching branch 2's
+existing `{`/`}` treatment and round 1's established deliberate-conservatism precedent — but
+this is fail-safe caution, not a closed exploit.
+
+**False-positive check** (the `cmd_words` quote-neutralization claim, verified end-to-end
+through the fixed hook, not assumed from the transform alone):
+`gh pr merge 42 --body "fix (#123)" --auto` and
+`gh pr merge 42 --auto --body "see {issue} (#123) done"` both stay ALLOWED — quoted
+parens/braces inside real argument content never reach this clause-cut as literal boundary
+characters.
+
+**Fix.** Branch 1 widened from `[^;&|]*` to `` [^;&|)`{}]* ``, matching branch 2's boundary
+set exactly — the fix is "the two branches must agree," not a new mechanism.
+
+**Regression tests and mutation evidence.** 6 new assertions in `test-guard-outward-cli.sh`
+("2026-09-02 FIX (round 5)" block): 2 live-bypass denies (close-paren, backtick), 2
+conservative-not-exploitable denies (`{`, `}`), 2 false-positive allow controls (quoted
+parens/braces in `--body`). Also renamed the round-3 regression-pin test that had overclaimed
+its own scope (`"...(arg-token case, already-correct)..."` implied the WHOLE arg-present
+class was already correct; it covered only `;`/`&`/`|`) to state its actual scope explicitly.
+Mutation-tested: reverting only the round-5 branch-1 widening took the suite from 268/268 to
+264 passed/4 failed — exactly the 4 new live/conservative deny assertions went RED (the 2
+false-positive allow controls and everything else stayed green); restoring returned 268/268.
+`bash scripts/run-hook-tests.sh` re-run green after restoring.
+
+**Also corrected in this round**: the doc's own earlier claim that `gh_pr_clause_has_repo`
+"was never at risk of this exact defect... never used the swallowing shape to begin with"
+was reasoning-wrong (see the CORRECTED 2026-09-02 (round 5) note above, inline in the
+"Why this was safe everywhere else" section) — it DOES over-capture through the identical
+glued boundary; it is safe by decision-direction, not by pattern shape.
 
 ## Related Files
 

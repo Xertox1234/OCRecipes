@@ -279,7 +279,40 @@ _OUT_POS_SUFFIX='([[:space:]]|[);&|`{}]|$)'
 # clause immediately, with nothing captured past it — mirroring real bash
 # command-position semantics exactly (verified: `gh pr merge;curl --auto`
 # treats `curl` as a wholly separate command bash-side too).
-_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|]*|[);&|`{}]|$)'
+#
+# ROUND 5 (2026-09-02, independent baseline-reviewer finding on round 3's own
+# fix): branch 1's continuation-stop class `[^;&|]*` only excluded `;`/`&`/`|`
+# — it did NOT match branch 2's own boundary set (`)`,backtick,`{`,`}`), so
+# once ANY argument preceded the boundary (branch 1 fires instead of branch
+# 2), the swallow reopened for those four characters. Live, verified bypass
+# for two of them: `$(gh pr merge 42)curl --auto` and `` `gh pr merge 42`curl
+# --auto `` both silently ALLOWED — real bash executes `gh pr merge 42`
+# UNCONDITIONALLY as the command-substitution subprocess, with no --auto
+# reaching it at all, before ever getting to the `curl --auto` half; verified
+# with a paired deny control and traced to the same CLAUSE=[...] literal the
+# round-3 comment above describes. `{`/`}` in this same arg-present position
+# are DIFFERENT: verified via `bash -c 'for w in ...; do printf "[%s]\n"
+# "$w"; done'` that `gh pr merge 42{,x}curl --auto` real-bash-expands to
+# `--auto` as a genuine SEPARATE argument of the SAME `gh pr merge` command
+# (comma-brace-expansion splits words, it does not glue two commands
+# together), and a bare `}` (no matching `{`, so no expansion at all) simply
+# stays glued into the preceding argument token with `--auto` following as a
+# normal, space-separated, genuine argument — in both cases `--auto`
+# genuinely reaches `gh`, so ALLOW was never actually wrong for `{`/`}` here.
+# Branch 1 is widened to the full `)`,backtick,`{`,`}` set anyway, matching
+# branch 2 exactly on principle (the two branches partition one boundary
+# concept and must not silently diverge again) and erring toward the
+# established deny-conservative precedent for `{`/`}` set by round 1's fix to
+# `_OUT_POS_SUFFIX` itself — this denies two more, harmless-but-bizarre
+# shapes (a literal `}`/comma-brace glued straight onto a merge argument) as
+# a side effect, never removes a real ALLOW: the sanctioned
+# `gh pr merge --auto` / `gh pr merge 42 --auto --squash --delete-branch`
+# paths contain none of `;&|)`{}` before `--auto` and are unaffected. Full
+# 16-shape {zero-arg,arg-present}×{;,&,|,),backtick,{,},EOS} sweep and
+# mutation evidence in
+# docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
+# "round 5" section.
+_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}]|$)'
 
 # `--repo`/`-R` in any spelling gh's flag parser accepts (`--repo v`,
 # `--repo=v`, `"--repo" v`, `-R v`, `-Rv`). Case-SENSITIVE on purpose — see

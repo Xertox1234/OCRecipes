@@ -356,3 +356,40 @@ pr merge` `CLAUSE=` — untouched by rounds 1 or 2, present since before this PR
   `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`,
   a new "ROUND 4" comment block in `guard-outward-cli.sh`'s header, and disclosed in PR
   #910's body as a fourth, separate item alongside the round-1/2/3 corrections.
+
+### 2026-09-02 (PR #910 review-driven repair, continued — round 5: round 3's OWN fix was incomplete)
+
+- An independently dispatched baseline `code-reviewer` review of the round-3/4 repair found
+  a CRITICAL: round 3's own `_OUT_POS_SUFFIX_MERGE_CLAUSE` fix closed only the
+  ZERO-ARGUMENT case (verb glued directly to a hard boundary). Its branch-1 (argument-present)
+  continuation-stop class `[^;&|]*` never matched branch 2's own `)`/backtick/`{`/`}`
+  boundary set, so the swallow reopened the moment any argument preceded the boundary —
+  the exact same overclaiming pattern ("all four decoy shapes now deny") this whole repair
+  chain exists to correct, applied to this chain's own most recent fix.
+- Independently reproduced (not trusted from the reviewer's report): control `gh pr merge 42`
+  denies; `$(gh pr merge 42)curl --auto` and `` `gh pr merge 42`curl --auto `` both silently
+  ALLOWED — bash confirmed each executes `gh pr merge 42` unconditionally, with no `--auto`
+  reaching it, before the outer glued command runs.
+- Ran a full 16-shape dimensional sweep ({zero-arg, arg-present} × {`;`,`&`,`|`,`)`,backtick,
+  `{`,`}`,EOS}) against the live hook rather than accepting "the reviewer found two more and
+  fixed those two" — full before/after table in the solution doc's new "Round 5" section.
+  Found `{`/`}` in arg-present position are NOT live bypasses (verified with `bash -c 'for w
+in ...; do printf "[%s]\n" "$w"; done'`: `--auto` reaches `gh pr merge` as a genuine
+  argument of the same command, no second command glued on) — denied anyway for
+  boundary-set consistency with branch 2, fail-safe not exploit-closing.
+- Verified the false-positive risk end-to-end: `gh pr merge 42 --body "fix (#123)" --auto`
+  and a braces+parens variant both stay ALLOWED.
+- Fix: branch 1 widened from `[^;&|]*` to ``[^;&|)`{}]*``, matching branch 2 exactly.
+- 6 new regression assertions in `test-guard-outward-cli.sh` ("2026-09-02 FIX (round 5)"
+  block). Also renamed the round-3 test whose own name overclaimed its scope
+  (`"arg-token case, already-correct"` implied the whole arg-present class, not just
+  `;`/`&`/`|`). Mutation-tested: reverting only the round-5 widening took the suite from
+  268/268 to 264 passed/4 failed — exactly the 4 new deny assertions, nothing else; restoring
+  returned 268/268. `bash scripts/run-hook-tests.sh` re-run green.
+- Also corrected a reasoning error the solution doc had carried since round 3: it claimed
+  `gh_pr_clause_has_repo` was safe because it "never used the swallowing shape to begin
+  with" — verified (construct-and-run) that it DOES over-capture through the identical
+  glued boundary; it is safe by decision-direction (deny-on-presence), not by pattern shape.
+  A future reader tightening its pattern shape on the old reasoning would have solved the
+  wrong problem.
+- PR #910's body updated a fifth time to add this as a fifth, separate corrected item.
