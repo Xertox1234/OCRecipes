@@ -203,36 +203,27 @@ construction at all, independent of the guard.
   layout, plus argv-printing stubs) lived in a session scratchpad and are NOT durable —
   regenerate them from the constructions described above.
 
+
 ## Additional findings (added 2026-09-02, after this todo was first written)
 
-### C4 (CRITICAL, added 2026-09-02) — a sigil that expands to NOTHING is not treated as a boundary
+### Split out: the vanishing-sigil gap is NOT in this todo
 
-Found during the `GH_API_CLAUSE` repair on PR #910 (round 4, `security-auditor`), after this
-todo was first written. Independently reproduced and control-verified on both sides.
+A sixth bypass — a bash sigil that expands to nothing (unset `$VAR`, empty `$(...)` or
+`${...}`) not being treated as a command-position boundary — was found during the
+`GH_API_CLAUSE` repair on PR #910, after this todo was first written. It looked like a
+sibling of A and B, but it is not: the suffix side is a one-character class widening, while
+the prefix side needs a **new regex alternative** (bash consumes the whole balanced sigil, so
+there is no single boundary byte to add). That asymmetry makes it a scope decision rather
+than a mechanical fix.
 
-None of `_OUT_POS_SUFFIX`, `_OUT_POS_PREFIX`, or `_OUT_POS_SUFFIX_MERGE_CLAUSE` treats a bash
-sigil that expands to the empty string — an unset `$VAR`, an empty `$(...)`, an empty
-`${...}` — as a command-position boundary. Both of these are bash-identical to their spaced
-forms and are silently **ALLOWED**:
+It now lives in
+`todos/P0-2026-09-02-outward-cli-guard-vanishing-sigil-boundary-decision.md` (`human_led`).
 
-- suffix side: the EAS update verb immediately followed by `$(true)`, then ` --branch preview`
-- prefix side: an empty `$()` immediately preceding the command-position PR-merge invocation
-
-**This one is NOT a pure class widening, and that asymmetry is the point.** The suffix side is
-a one-character fix. The prefix side is not: bash consumes the whole balanced sigil, so there
-is no single boundary byte to add to a character class — it needs a new regex alternative.
-The PR #910 repair deliberately fixed **neither**, on the reasoning that shipping only the
-cheap half would produce exactly the overclaiming-by-implication defect that repair chain
-existed to correct. Honour that reasoning: fix both sides or neither, and do not let the
-suffix fix land alone.
-
-If the prefix side turns out to need a mechanism this Scope Contract does not permit, that is
-a legitimate `blocked` outcome — escalate it rather than substituting one, exactly as the
-sibling `quoted-command-substitution-inert` todo did.
-
-Disclosed in three places already, so any fix must update all three: PR #910's body (gap #6),
-the `cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28` solution doc's
-"round 4" section, and `guard-outward-cli.sh`'s own header comment.
+**Do not fix the suffix side as part of this todo.** Shipping the cheap half alone would
+produce exactly the overclaiming-by-implication defect the PR #910 repair chain existed to
+correct — a guard that looks closed on the side people test. If your work here touches
+`_OUT_POS_SUFFIX`, leave the empty-expansion case alone and let the decision todo own both
+sides.
 
 ### Severity note on finding A, strengthened 2026-09-02
 
