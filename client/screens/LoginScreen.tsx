@@ -189,6 +189,7 @@ export default function LoginScreen() {
             Welcome!
           </ThemedText>
           <ThemedText
+            testID="auth-form-subtitle"
             type="body"
             style={[styles.subtitle, { color: theme.textSecondary }]}
           >

@@ -40,35 +40,14 @@ tags:
 # checkbox were missing from the original flow, and the submit button stays
 # disabled until every one of them is satisfied.
 #
-# SHOW PASSWORDS FIRST, THEN TYPE PLAIN: synthetic input into iOS-26-sim
-# secureTextEntry fields delivers exactly one character whether typed or
-# pasted (run-33326267830 hierarchy: fields still at "•" after THREE
-# erase+paste rounds, while the plain username/email fields typed
-# perfectly). The form's own Show-password toggle flips BOTH password
-# fields to plain text (one shared showPassword state in LoginScreen),
-# where synthetic typing works — and a non-secure field never attracts the
-# AutoFill sheets either. A visible test credential on a CI screenshot is
-# harmless.
-- tapOn:
-    text: "Show password"
-    retryTapIfNoChange: false
-- tapOn:
-    id: "input-password"
-- inputText: "TestPass123!"
-# Drop the keyboard before focusing the confirm field: with the keyboard up
-# it covers that field on CI's screen layout, the tap never moves focus, and
-# the confirm text lands in the password field instead (run-33329846839
-# hierarchy: password full, confirm empty). The header tap is the proven
-# blur that dismisses the keyboard without touching form state.
-- tapOn:
-    text: "Create an account to get started"
-    retryTapIfNoChange: false
-- tapOn:
-    id: "input-confirm-password"
-- inputText: "TestPass123!"
-- tapOn:
-    text: "Create an account to get started"
-    retryTapIfNoChange: false
+# Password + confirm-password entry (show-password -> type -> blur -> confirm
+# -> blur) is shared with this flow's own self-healing retry loop below —
+# see e2e/helpers/enter-registration-passwords.yaml for the full rationale
+# (iOS-26-sim secure-field swallow, the stable blur-by-id target, and its own
+# mandatory input-password/input-confirm-password existence anchors, so a
+# renamed/removed field fails fast at either call site instead of degrading
+# silently through its optional steps).
+- runFlow: ../../helpers/enter-registration-passwords.yaml
 - tapOn:
     id: "input-username"
 # Gboard's "Try out your stylus" promo sheet (Google-APIs emulator images)
@@ -96,9 +75,11 @@ tags:
 # Drop the keyboard so the submit button's coordinates are actually
 # tappable. NOT via hideKeyboard — its iOS implementation is flaky and was
 # observed backgrounding the app entirely (home-gesture-like); a tap on the
-# static header text blurs the input instead, which dismisses the keyboard.
+# static header subtitle (by id, not its marketing copy — see
+# e2e/helpers/enter-registration-passwords.yaml) blurs the input instead,
+# which dismisses the keyboard.
 - tapOn:
-    text: "Create an account to get started"
+    id: "auth-form-subtitle"
     retryTapIfNoChange: false
 
 - tapOn: "Create Account"
@@ -126,49 +107,13 @@ tags:
     while:
       notVisible: "(Get Started|Not Now)"
     commands:
-      # "Show password" only when the fields are still masked (its label
-      # becomes "Hide password" once toggled)
-      - tapOn:
-          text: "Show password"
-          optional: true
-          retryTapIfNoChange: false
-      - tapOn:
-          id: "input-password"
-          optional: true
-      # Gboard stylus-sheet guard, mirroring the main block: a retry round
-      # re-raises the keyboard, which can surface the promo sheet again.
-      - runFlow:
-          when:
-            visible: "Try out your stylus"
-          commands:
-            - tapOn: "Cancel"
-            - tapOn:
-                id: "input-password"
-                optional: true
-      - eraseText:
-          charactersToErase: 50
-          optional: true
-      - inputText:
-          text: "TestPass123!"
-          optional: true
-      # Blur to drop the keyboard before the confirm tap (see main block)
-      - tapOn:
-          text: "Create an account to get started"
-          optional: true
-          retryTapIfNoChange: false
-      - tapOn:
-          id: "input-confirm-password"
-          optional: true
-      - eraseText:
-          charactersToErase: 50
-          optional: true
-      - inputText:
-          text: "TestPass123!"
-          optional: true
-      - tapOn:
-          text: "Create an account to get started"
-          optional: true
-          retryTapIfNoChange: false
+      # Same password + confirm-password sequence as the main block above —
+      # see e2e/helpers/enter-registration-passwords.yaml. Every step there
+      # is already optional and erase-before-type, so it's safe to re-run
+      # unconditionally each retry round: a silently-failed focus tap (the
+      # keyboard-covered-field mode) degrades to a skipped step instead of
+      # hard-failing the recovery loop.
+      - runFlow: ../../helpers/enter-registration-passwords.yaml
       - tapOn:
           text: "Create Account"
           optional: true
