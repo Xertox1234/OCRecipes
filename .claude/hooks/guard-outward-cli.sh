@@ -71,6 +71,20 @@
 # docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
 # "clause-cut that DECIDES AN ALLOW" section for the full account of both.
 #
+# ROUND 4 (2026-09-02, independent PR #910 review) — a THIRD, also-still-open
+# gap, same total-non-detection family as the `<`/`>` gap above but a
+# different trigger: neither _OUT_POS_SUFFIX (line ~253) nor _OUT_POS_PREFIX
+# (line ~252) nor _OUT_POS_SUFFIX_MERGE_CLAUSE treats a bash sigil that
+# expands to nothing ($VAR unset, $(...)/${...} empty) as a boundary, even
+# though real bash word-splitting collapses it away — `eas update$(true)
+# --branch preview` and `gh pr merge 42$UNSET_VAR` are bash-identical to the
+# spaced form but silently ALLOWED, verified live with paired deny controls.
+# The suffix side looks like one added character; the prefix side is not
+# (bash consumes the whole balanced sigil, leaving no single boundary byte to
+# match on) — see the solution doc's own "second, distinct still-open gap"
+# section for why this is disclosed whole rather than half-fixed. Still a
+# human decision, still out of this repair's scope.
+#
 # MATCHING IS CASE-INSENSITIVE for the command words (`-i` on every verb grep,
 # and on the necessary-substring fast path via `nocasematch`). macOS APFS is
 # case-insensitive, so `EAS update`, `GH pr merge 42` and `RAILWAY down` all

@@ -322,3 +322,37 @@ pr merge` `CLAUSE=` — untouched by rounds 1 or 2, present since before this PR
     the disclosure comment in place; still out of this repair's scope, still a human decision.
   - PR #910's body and the `{`/`}` overclaim row corrected a third time to disclose this
     finding — see the PR for the final text.
+
+### 2026-09-02 (PR #910 review-driven repair, continued — round 4, independent finding, disclosure only, no code change)
+
+- An independently dispatched `security-auditor` review of the round-2/round-3 repair
+  found a fourth, distinct total-non-detection gap, same family as the round-3 `<`/`>`
+  finding above but a different trigger: neither `_OUT_POS_SUFFIX`, `_OUT_POS_PREFIX`, nor
+  the new `_OUT_POS_SUFFIX_MERGE_CLAUSE` treats a bash sigil that expands to nothing
+  (`$VAR` unset, `$(...)`/`${...}` empty) as a command-position boundary, even though real
+  bash word-splitting collapses it away.
+- Independently reproduced and control-verified (paired deny-then-allow, same invocation,
+  bash-equivalence confirmed with `bash -x`) rather than trusting the reviewer's report:
+  - Suffix: `eas update --branch preview` denies; `eas update$(true) --branch preview`
+    silently ALLOWS — `bash -c 'set -x; : eas update$(true) --branch preview'` traces to
+    `+ : eas update --branch preview`, confirming bash treats them identically. This is
+    the exact OTA-incident class the hook exists to prevent.
+  - Prefix: `gh pr merge 42` denies; `$()gh pr merge 42` silently ALLOWS — `bash -c 'set -x;
+: $()gh pr merge 42'` traces to `+ : gh pr merge 42`.
+- **Deliberately not fixed.** The suffix side looks like a one-character fix (`$` added to
+  the closer class); the prefix side is not — real bash consumes an entire balanced
+  `$(...)`/`${...}` sigil, leaving no single boundary byte for a char-class match, so
+  `_OUT_POS_PREFIX` would need a new alternative, not one character. Landing only the
+  one-character suffix half would put `$` inside `_OUT_POS_SUFFIX`'s closer class while
+  `_OUT_POS_PREFIX` still missed it — a future reader would reasonably (and wrongly) infer
+  the `$` class was handled. That is the same overclaiming-by-implication defect this whole
+  repair chain exists to correct, so the gap is disclosed whole, on both sides, rather than
+  half-closed. Root cause pinned in `.claude/hooks/lib/cmd-detect.sh`'s `cmd_words`, which
+  documents (and preserves) a bare `$` sigil unmodified — a missing character in the anchor
+  classes, not a `$WORDS`-construction defect.
+- No test suite change (no code changed): `test-guard-outward-cli.sh` stays 262/262,
+  `scripts/run-hook-tests.sh` stays 34/34 green.
+- Codified as a new top-level section ("A second, distinct still-open gap...") in
+  `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`,
+  a new "ROUND 4" comment block in `guard-outward-cli.sh`'s header, and disclosed in PR
+  #910's body as a fourth, separate item alongside the round-1/2/3 corrections.

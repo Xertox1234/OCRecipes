@@ -467,6 +467,42 @@ matches at all) and `_OUT_POS_SUFFIX_MERGE_CLAUSE` does not touch it. Still a hu
 decision, still genuinely out of this repair's scope — but the disclosure now says what it
 actually is: a total bypass of this check via one glued character, not a partial one.
 
+**A second, distinct still-open gap found by independent PR #910 review (2026-09-02,
+round 4 — disclosure only, deliberately not fixed).** Neither `_OUT_POS_SUFFIX` nor
+`_OUT_POS_PREFIX` (nor the new `_OUT_POS_SUFFIX_MERGE_CLAUSE`) treats a bash sigil that
+expands to nothing (`$VAR` for an unset/empty `VAR`, `$(...)`/`${...}` whose expansion is
+empty) as a command-position boundary. In real bash, word-splitting collapses the glued
+verb-plus-vanishing-sigil back into the identical plain-verb token — `eas
+update$(true)` and `eas update` run the exact same command — but the guard's regex classes
+have no `$` in either the opener or closer alternation, so the per-verb `_RE` detector
+(`GH_MERGE_RE`, `GH_API_RE`, the `eas update` / `npm publish` checks, etc.) fails to match
+at all at that position: not a wrong-capture like the round-3 swallowing bug, a total
+non-match like the `<`/`>` gap above. Independently reproduced and control-verified (paired
+deny-then-allow, same invocation) for both sides:
+
+- Suffix: `eas update --branch preview` denies (control); `eas update$(true) --branch
+  preview` silently ALLOWS — bash itself confirms the two are identical
+  (`bash -c 'set -x; : eas update$(true) --branch preview'` traces to `+ : eas update
+  --branch preview`). Also reproduced on `gh pr merge$UNSET_VAR 42`, `npm
+  publish$UNSET_VAR_XYZ`, and `gh api$UNSET_VAR_XYZ -X POST repos/o/r/pulls/1/merge`.
+- Prefix: `gh pr merge 42` denies (control); `$()gh pr merge 42` silently ALLOWS — bash
+  confirms equivalence (`bash -c 'set -x; : $()gh pr merge 42'` traces to `+ : gh pr merge
+  42`).
+
+**Why this is disclosed whole, not half-fixed.** The suffix side looks like a one-character
+fix (`$` added to the closer class), but the prefix side is not: real bash consumes an
+entire balanced `$(...)`/`${...}` sigil with no single boundary byte left behind for a
+char-class match — `_OUT_POS_PREFIX` would need a new alternative matching a leading
+sigil through to its balanced closer, not a single added character. Landing only the
+one-character suffix fix would put `$` inside `_OUT_POS_SUFFIX`'s closer class while
+`_OUT_POS_PREFIX` still misses it entirely, and a future reader would reasonably (and
+wrongly) infer the `$` class is handled — the exact overclaiming-by-implication defect this
+whole repair chain exists to correct. Disclosing the gap whole, on both sides, is more
+honest than closing half of it. Root cause pinned in `.claude/hooks/lib/cmd-detect.sh`'s
+`cmd_words`, which documents (and preserves) a bare `$` sigil unmodified in `$WORDS`/`$BARE`
+— this is a missing character in the anchor classes, not a `$WORDS`-construction defect.
+Still a human decision, still out of this repair's scope.
+
 ## Related Files
 
 - `.claude/hooks/lib/cmd-detect.sh` — `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`, both widened.
