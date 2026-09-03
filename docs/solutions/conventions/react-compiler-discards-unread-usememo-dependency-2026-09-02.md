@@ -78,6 +78,41 @@ silently keeps the original bug. This is a false-negative class that no amount o
 additional Vitest coverage closes; only compiling the shape through the actual
 pinned compiler (or an integration/E2E check against a real build) can catch it.
 
+### CORRECTION 2026-09-03 — the rule is real; the worked example's own file is exempt
+
+Everything above is verified for the **shape**, compiled in isolation. It is NOT
+verified for `client/components/coach/CoachChat.tsx`, and that distinction was
+originally blurred by this doc, by `docs/rules/hooks.md`, by
+`.claude/agents/mobile-reviewer.md`, and by the in-code comment at the fix site —
+all four read as though the compiler had been observed discarding the dependency
+*in that file*.
+
+Compiling the real `CoachChat.tsx` through the pinned `babel-plugin-react-compiler@1.0.0`
+emits a single non-success event and produces no transformation at all:
+
+```
+kind=CompileError | (BuildHIR::lowerStatement) Handle TryStatement with a finalizer ('finally') clause
+```
+
+The `finally` is `handleConfirmPlanSlot`'s `finally { isSavingPlanRef.current = false; }`.
+It predates this fix, and the bailout takes the **entire component** out of compiler
+coverage — a control component in the same directory with no `finally` compiles with zero
+issues, isolating the cause. So in this specific file a naive
+`useMemo(fn, [unreadTrigger])` would in fact have worked, because real React honours the
+literal array whenever the compiler never touches the function.
+
+Two things follow, and both matter more than the citation itself:
+
+1. **The rule stands and the shipped fix stands.** The `useState` + ref + `useEffect`
+   shape is correct with or without compiler coverage, so it is the right thing to write
+   in any component. Only "confirmed in this file / in the real build" was wrong.
+2. **`CoachChat.tsx` is not compiler-covered today**, so the usual "React Compiler is
+   ACTIVE, manual memoization is redundant" carve-out does NOT apply to it. Every manual
+   `useMemo`/`useCallback` in that file is load-bearing right now, and deleting one as
+   "the compiler handles this" would be a real regression. Re-check with a direct compile
+   before relying on coverage in any file — a single unsupported construct silently opts
+   the whole component out.
+
 ## Examples
 
 ```typescript

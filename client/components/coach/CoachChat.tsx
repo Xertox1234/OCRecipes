@@ -155,9 +155,23 @@ export default function CoachChat({
   // compiler discards the manual `[isPlanSheetOpen]` dependency and
   // compiles it to a compute-once-forever cache, silently reintroducing the
   // "pinned at mount" bug this todo exists to fix (confirmed by compiling
-  // this exact shape with the project's pinned babel-plugin-react-compiler;
-  // Vitest doesn't run that plugin, so a naive test would pass while the
-  // real build stays broken). A `useEffect` call is different: the compiler
+  // this exact shape IN ISOLATION with the project's pinned
+  // babel-plugin-react-compiler; Vitest doesn't run that plugin, so a naive
+  // test would pass while a compiler-covered build stays broken).
+  //
+  // CORRECTION 2026-09-03: THIS FILE is not compiler-covered. Compiling the
+  // real CoachChat.tsx emits `(BuildHIR::lowerStatement) Handle TryStatement
+  // with a finalizer ('finally') clause` and produces no transformation —
+  // handleConfirmPlanSlot's pre-existing `finally` opts the WHOLE component
+  // out. So a naive useMemo would in fact have worked here, because real
+  // React honours the literal array whenever the compiler never runs. The
+  // shape below is still the right thing to write (correct with or without
+  // coverage), but do not read this comment as evidence the compiler was
+  // observed discarding the dep in THIS file. Corollary worth knowing: every
+  // other manual useMemo/useCallback in this file is load-bearing today, not
+  // compiler-backstopped. Full write-up in the solution doc referenced below.
+  //
+  // A `useEffect` call is different: the compiler
   // PRESERVES it with its own real, separately-tracked deps array (real
   // React then does the runtime comparison), so `[isPlanSheetOpen]` here is
   // actually honored regardless of what the body reads — mirrors
