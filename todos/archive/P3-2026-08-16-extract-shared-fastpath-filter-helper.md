@@ -1,9 +1,9 @@
 ---
 title: "Extract the 7x copy-pasted two-stage fast-path filter into a shared lib helper"
-status: backlog
+status: done
 priority: low
 created: 2026-08-16
-updated: 2026-09-01
+updated: 2026-09-02
 assignee:
 labels: [deferred, harness]
 github_issue:
@@ -142,3 +142,56 @@ Net effect on scope: the job is larger and touches the prologue of 7 security ho
 the last AC (strengthen the meta-test) is now called out as independently shippable — it
 addresses the stated risk without touching runtime code at all, and is the part worth
 doing if this is only ever done in half.
+
+### 2026-09-02 — DONE
+
+Implemented all five ACs. `.claude/hooks/lib/fastpath-filter.sh` (new) defines
+`cmd_fastpath_has "$CMD" pattern...`, the shared two-stage necessary-substring filter;
+patterns are passed as separate arguments (never `|`-joined into one string — verified by
+execution that a `|` inside one expanded case pattern does not alternate). All 7 hooks
+converted: fork-free `HERE` (the exact `case "${BASH_SOURCE[0]}" in */*) ... ;; *) HERE=. ;;
+esac` form) moved before the fast-path check and now runs on every Bash call; each hook
+falls through to its EXISTING lib/cmd-detect.sh sourcing + established fail-closed
+(blocking)/fail-silent (advisory) handling if the new lib is unsourceable, rather than
+exiting blindly — no new fail-open surface introduced.
+
+Verified by execution, not modelled: the naive `${BASH_SOURCE[0]%/*}` form (no case guard)
+does silently break on a bare-filename invocation for all 7 hooks — confirmed via `bash -x`
+trace showing `HERE=<hookname>.sh` instead of `HERE=.`; the fixed form resolves correctly for
+bare, relative, and absolute invocation. That check is now a permanent, mutation-verified
+regression test in `test-cmd-detect.sh` ("HERE resolution" section) rather than a one-time
+manual probe.
+
+`test-cmd-detect.sh`'s old textual "grep for the inline block" scan (AC4) would have gone
+vacuous the moment the filter moved out of the 7 hooks — replaced with executed per-hook
+quoted-bypass probes, a subshell-isolated mutation check (stage 2 removed → probes go red),
+a wiring check tying each hook's actual `cmd_fastpath_has` call site back to what was probed,
+and a retained generic directory scan for a future hand-rolled single-stage filter. 408
+assertions, 0 failures, confirmed non-flaky across repeated runs.
+
+Benchmarked (`date +%s%N`, N=200 real subprocess spawns/config, this machine): OLD inline vs
+NEW fork-free+shared, non-matching command — commit-verify.sh ~7.5–7.6ms/call both before and
+after (delta within run-to-run noise); guard-outward-cli.sh (5-needle, nocasematch) ~7.8–7.9ms
+OLD vs ~8.1–8.2ms NEW, a small but consistent ~0.2–0.3ms/call addition from unconditionally
+sourcing the new lib on every call — far below the ~1.9ms/call the subshell-HERE alternative
+would have cost, and a small fraction of the ~60–75ms/9-hook budget across all 7 hooks.
+
+Two review rounds (code-reviewer + security-auditor each round), no CRITICALs. Round-1
+WARNING (no test locked the no-slash case-guard) fixed with the executed regression test
+above. Round-2 found and the implementer fixed: a genuine pipefail/SIGPIPE bug in that new
+test's own assertion (`printf | grep -q` on a multi-line trace — an early-exiting reader
+under `pipefail`, matching docs/rules/harness.md's documented class — switched to a
+here-string), a test hermeticity gap (the new bare-invocation probes weren't isolated from
+the hooks' own `SKIP_BRANCH_PREFLIGHT`/`SKIP_PR_PREFLIGHT`/`ALLOW_OUTWARD_CLI` escape
+hatches — fixed with `env -u`), and a session-id hygiene gap (fixed to a PID-scoped id +
+cleanup trap, mirroring test-drift-detect.sh's own convention). Round 2 also surfaced two
+PRE-EXISTING, out-of-scope pipefail/SIGPIPE bugs elsewhere in branch-preflight.sh's raw-regex
+fallback body (lines ~104, ~148) — not touched by this diff's Scope Contract, deferred rather
+than fixed here; see the executor's DEFERRED_WARNINGS.
+
+Constructed the merge against two unmerged branches that also touch these 7 hooks
+(`blocked/P1-2026-08-17-quoted-command-substitution-inert`,
+`todo/P2-2026-08-29-branch-preflight-fallback-parity-gaps`) via
+`git merge-tree --write-tree`; both merges are clean (exit 0), and the merged content was
+read back and confirmed to carry both sides' changes correctly combined, not just
+absence-of-conflict-markers.

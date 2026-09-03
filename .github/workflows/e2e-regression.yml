@@ -67,6 +67,33 @@ concurrency:
 permissions:
   contents: read
 
+# Backend env shared by both regression jobs (mirrors .github/workflows/ci.yml
+# so the server behaves the same here). The flows hit the backend (login
+# needs a real user; most flows need a logged-in session), so the API must be
+# up with these values in both jobs — hoisted here once both jobs needed the
+# same ~10 vars verbatim (previously duplicated per-job; see
+# todos/archive/P3-2026-08-30-e2e-suite-dedup-and-maintainability-followups.md).
+# Job-specific env (iOS's MAESTRO_DRIVER_STARTUP_TIMEOUT/SENTRY_ALLOW_FAILURE)
+# stays on that job — GitHub Actions merges workflow-level env with job-level
+# env, job-level winning on a name collision.
+env:
+  DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
+  JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
+  LOG_LEVEL: silent
+  AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
+  USDA_API_KEY: stub
+  API_NINJAS_KEY: stub
+  RECEIPT_VALIDATION_STUB: "true"
+  # The suite reloads the app once per flow and logs in after each UI
+  # logout — that legitimately exceeds the production rate-limit ceilings
+  # (login/subscription at 10/15min). Relaxes factory-created limiters
+  # ×1000 (still bounded); the knob is refused when NODE_ENV=production.
+  E2E_RELAXED_RATE_LIMITS: "true"
+  # Credentials consumed by the Maestro flows (see e2e/README.md) and by
+  # scripts/ci/seed-e2e-user.sh, which provisions this account.
+  USERNAME: testuser
+  PASSWORD: testpass123
+
 jobs:
   e2e-ios:
     name: Maestro regression (iOS simulator)
@@ -104,30 +131,15 @@ jobs:
     timeout-minutes: 160
 
     env:
-      # Backend env — mirrors .github/workflows/ci.yml so the server behaves the
-      # same here. The flows hit the backend (login needs a real user; most
-      # flows need a logged-in session), so the API must be up.
-      DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
-      JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
-      LOG_LEVEL: silent
-      AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
-      USDA_API_KEY: stub
-      API_NINJAS_KEY: stub
-      RECEIPT_VALIDATION_STUB: "true"
-      # The suite reloads the app once per flow and logs in after each UI
-      # logout — that legitimately exceeds the production rate-limit ceilings
-      # (login/subscription at 10/15min). Relaxes factory-created limiters
-      # ×1000 (still bounded); the knob is refused when NODE_ENV=production.
-      E2E_RELAXED_RATE_LIMITS: "true"
+      # Backend/credential env shared with the Android job lives in the
+      # workflow-level `env:` block above. Only iOS-specific env stays here.
+      #
       # Maestro's XCUITest driver readiness budget (default 120000 = 120s,
       # polling the runner's /status every 500ms). Run 33348888795 blew the
       # default — "IOSDriverTimeoutException: iOS driver not ready in time" —
       # on a contended runner where driver bring-up also competed with the
       # cold Metro bundle; the exception text itself recommends raising this.
       MAESTRO_DRIVER_STARTUP_TIMEOUT: "300000"
-      # Credentials consumed by the Maestro flows (see e2e/README.md).
-      USERNAME: testuser
-      PASSWORD: testpass123
       # sentry-cli's source-map upload build phase fails hard in CI with "An
       # organization ID or slug is required" — no Sentry org/auth token is
       # configured here (this is a throwaway E2E build, not a release).
@@ -352,43 +364,12 @@ jobs:
           curl -sf http://localhost:3000/api/health >/dev/null 2>&1 || { echo "::error::backend did not become ready within 60s"; cat server.log; exit 1; }
 
       # helpers/login.yaml's ${USERNAME}/${PASSWORD} need this account to
-      # actually exist — nothing else in this job creates it. `|| true` only
-      # covers an idempotent re-run within the same job (the retry below);
-      # each workflow run gets a fresh Postgres instance.
+      # actually exist — nothing else in this job creates it. Shared with the
+      # Android job: scripts/ci/seed-e2e-user.sh (see that file for the
+      # fail-loud register/login/profile-update contract and why `|| true`
+      # only covers an idempotent re-run within the same job).
       - name: Seed E2E test user
-        run: |
-          # Fail LOUD: bare `curl -sf` under this shell's `-eo pipefail`
-          # aborts with an opaque exit code and no body. Register may 409 on
-          # an already-seeded rerun — only a failed login is fatal.
-          REG_BODY=$(curl -s -X POST http://localhost:3000/api/auth/register \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}") \
-            || REG_BODY="(register curl itself failed)"
-          # Mark onboarding complete so a session that persists across a
-          # Maestro flow's app relaunch lands on the known, testable Main app
-          # instead of the onboarding wizard (flows reach a logged-out state
-          # via the UI Sign Out in e2e/helpers/ensure-logged-out.yaml —
-          # launchApp/clearState is banned in this suite, see e2e/README.md).
-          # login.yaml's idempotency handles the "already authenticated,
-          # Sign In never appears" case this produces.
-          TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
-            | jq -r '.token // empty')
-          if [ -z "$TOKEN" ]; then
-            echo "::error::Seed login for $USERNAME failed — the suite cannot run without this account. Register response (token stripped):"
-            echo "$REG_BODY" | jq -c 'del(.token)' 2>/dev/null || echo "$REG_BODY"
-            exit 1
-          fi
-          PROF_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT http://localhost:3000/api/auth/profile \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $TOKEN" \
-            -d '{"onboardingCompleted":true}')
-          if [ "$PROF_CODE" != "200" ]; then
-            echo "::error::Seed profile update returned HTTP $PROF_CODE — $USERNAME would land in the onboarding wizard"
-            exit 1
-          fi
-          echo "seeded $USERNAME (onboardingCompleted=true)"
+        run: bash scripts/ci/seed-e2e-user.sh
 
       # The debug build is a dev client that loads its JS bundle from Metro, so
       # Metro must be running for the app to render anything Maestro can drive.
@@ -576,19 +557,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-    env:
-      DATABASE_URL: postgresql://ocrecipes:ocrecipes@localhost:5432/ocrecipes_test
-      JWT_SECRET: ci-test-jwt-secret-minimum-32-chars-long
-      LOG_LEVEL: silent
-      AI_INTEGRATIONS_OPENAI_API_KEY: sk-stub
-      USDA_API_KEY: stub
-      API_NINJAS_KEY: stub
-      RECEIPT_VALIDATION_STUB: "true"
-      # See the iOS job's note — the suite's per-flow reload + relogin
-      # pattern exceeds production rate-limit ceilings.
-      E2E_RELAXED_RATE_LIMITS: "true"
-      USERNAME: testuser
-      PASSWORD: testpass123
+    # Backend/credential env (DATABASE_URL, USERNAME/PASSWORD,
+    # E2E_RELAXED_RATE_LIMITS, etc.) lives in the workflow-level `env:` block
+    # above — this job has no job-specific env of its own.
 
     steps:
       - uses: actions/checkout@v5
@@ -638,41 +609,10 @@ jobs:
           done
           curl -sf http://localhost:3000/api/health >/dev/null 2>&1 || { echo "::error::backend did not become ready within 60s"; cat server.log; exit 1; }
 
-      # See the iOS job's "Seed E2E test user" note — same reason, same account.
+      # Shared with the iOS job: scripts/ci/seed-e2e-user.sh (see that file
+      # for the fail-loud register/login/profile-update contract).
       - name: Seed E2E test user
-        run: |
-          # Fail LOUD: bare `curl -sf` under this shell's `-eo pipefail`
-          # aborts with an opaque exit code and no body. Register may 409 on
-          # an already-seeded rerun — only a failed login is fatal.
-          REG_BODY=$(curl -s -X POST http://localhost:3000/api/auth/register \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"${USERNAME}@example.com\",\"ageConfirmed\":true}") \
-            || REG_BODY="(register curl itself failed)"
-          # Mark onboarding complete so a session that persists across a
-          # Maestro flow's app relaunch lands on the known, testable Main app
-          # instead of the onboarding wizard (flows reach a logged-out state
-          # via the UI Sign Out in e2e/helpers/ensure-logged-out.yaml —
-          # launchApp/clearState is banned in this suite, see e2e/README.md).
-          # login.yaml's idempotency handles the "already authenticated,
-          # Sign In never appears" case this produces.
-          TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" \
-            | jq -r '.token // empty')
-          if [ -z "$TOKEN" ]; then
-            echo "::error::Seed login for $USERNAME failed — the suite cannot run without this account. Register response (token stripped):"
-            echo "$REG_BODY" | jq -c 'del(.token)' 2>/dev/null || echo "$REG_BODY"
-            exit 1
-          fi
-          PROF_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT http://localhost:3000/api/auth/profile \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer $TOKEN" \
-            -d '{"onboardingCompleted":true}')
-          if [ "$PROF_CODE" != "200" ]; then
-            echo "::error::Seed profile update returned HTTP $PROF_CODE — $USERNAME would land in the onboarding wizard"
-            exit 1
-          fi
-          echo "seeded $USERNAME (onboardingCompleted=true)"
+        run: bash scripts/ci/seed-e2e-user.sh
 
       # See the iOS job's Metro note. On Android the emulator's localhost is the
       # emulator itself, so `adb reverse` (below) tunnels the app's
