@@ -648,10 +648,23 @@ cmd_words_deep() {
 # SAME newline-join and empty-output-invariant reasoning as cmd_words_deep —
 # see its header; not restated here.
 #
-# WIDENING HERE IS SAFE FOR cmd_gh_pr_write_subcommand specifically: it is a
-# pure BOOLEAN mention-detector, so a wider match only ever ADDS a `gh pr
-# view` lookup (never grants a bypass of anything) — the same shape
-# cmd_words_deep's own header proves safe for its deny/warn-shaped consumers.
+# WIDENING HERE IS SAFE FOR cmd_gh_pr_write_subcommand IN THE SENSE THAT IT
+# NEVER GRANTS A GATE BYPASS: this is a pure BOOLEAN mention-detector feeding a
+# NON-blocking verifier, and every one of its four outcomes (create/merge/
+# close/edit/none) only ever triggers a redundant `gh pr view`, never skips a
+# real check. CORRECTED (round-2 security-auditor, 2026-09-02, after the
+# wording below went unchallenged into a second CRITICAL — the same failure
+# mode that hit cmd_gh_pr_ref in round 1): "only ever ADDS a lookup" is true
+# but incomplete — WHICH of the four subcommands wins the first-match still
+# determines WHICH lookup pr-verify.sh performs (create → no-args, resolving
+# the CURRENT branch's PR; merge/close/edit → ref-based, resolving the PASSED
+# ref's PR), and those two lookups can name DIFFERENT PRs. A decoy `gh pr
+# create` mention that wins ahead of a real, substitution-hidden `gh pr merge
+# 42` therefore does not merely add a lookup — it silently SWAPS which PR gets
+# reported as verified. This function now carries its own create-vs-rest
+# co-occurrence refuse-guard for exactly that reason (see inside the
+# function, below); the claim above holds ONLY because of that guard, not
+# inherently from being boolean-shaped.
 #
 # NOT SAFE BY THE SAME REASONING for cmd_gh_pr_ref, and it must not be
 # assumed to be just because it is the file's other caller (corrected,
@@ -1159,6 +1172,62 @@ cmd_is_git_branch_create() {
 cmd_gh_pr_write_subcommand() {
   local words
   words=$(cmd_bare_deep "$1")
+  # CREATE-VS-REST CO-OCCURRENCE REFUSE-GUARD (CRITICAL fix, round-2
+  # security-auditor, 2026-09-02). cmd_bare_deep prints the OUTER command's
+  # cmd_bare rendering FIRST, then each extracted substitution BODY's
+  # rendering after it — output ORDER, not the real command's execution
+  # order. A decoy `gh pr create` mention sitting in the outer text (a
+  # trailing `#` comment is the easiest to author, since cmd_bare does not
+  # strip comments — see pr-verify.sh's own header) after a REAL
+  # `gh pr merge/close/edit` hidden inside a live "$(...)"/backtick
+  # substitution therefore wins this function's `head -1` even though the
+  # comment never executes. Confirmed by construction (2026-09-02):
+  #   echo "$(gh pr merge 42)" # gh pr create
+  # really executes only `gh pr merge 42`, but pre-guard this function
+  # returned "create" (the outer line's decoy, emitted before the
+  # substitution-body line) — driving pr-verify.sh's create branch (a no-args
+  # `gh pr view`, resolving the CURRENT branch's PR) instead of the merge
+  # branch that would have resolved ref 42 correctly. That is not "one
+  # redundant lookup", it is a SILENTLY WRONG PR reported as verified — the
+  # same failure class round 1 fixed for cmd_gh_pr_ref, reached through this
+  # sibling function instead.
+  # WHY create-VS-REST SPECIFICALLY, not "any two mentions of anything"
+  # (rejected, would also silence a currently-safe case — see below): the
+  # create branch (pr-verify.sh line 71) is the ONLY branch that skips
+  # cmd_gh_pr_ref entirely, so it is the only branch with no downstream
+  # ref-based guard to catch a wrong pairing. A merge/close/edit mention
+  # racing ANOTHER merge/close/edit mention (no create involved) is already
+  # made safe by cmd_gh_pr_ref's own separate multi-occurrence guard below —
+  # SUBCOMMAND may name the wrong one of {merge,close,edit}, but PR_REF still
+  # correctly degrades to empty in that case (same >1-occurrence count,
+  # counted independently there), so pr-verify.sh's fallback branch (line 78)
+  # emits the honest "WARNING: could not verify" message rather than staying
+  # silent — an intentionally MORE informative outcome than this function
+  # refusing outright, and the exact behavior Tests 20/26/27/34/36 pin. A
+  # blanket "any >1 occurrence of the four keywords" guard here (tried first,
+  # reverted) silenced ALL of those cases too, trading useful WARNINGs for no
+  # message at all with no corresponding safety gain — the actual exploit
+  # needs a create among the mentions, since only create's branch is
+  # unguarded downstream.
+  # Cost (documented, matching cmd_gh_pr_ref's own accepted tradeoff for the
+  # same input): `gh pr create -t x && gh pr merge 42` (previously resolved
+  # "merge") now also refuses, as does a TRAILING create decoy after a real,
+  # non-hidden merge — `gh pr merge 42 # gh pr create` (previously resolved
+  # "merge" correctly, since cmd_bare does not strip the comment either, but
+  # there was no guard to trip on it pre-fix). Missed verification, never a
+  # wrong one — an honest silence beats a confidently wrong PR.
+  # Existence checks (`grep -q`), not counts — a THIRD `create` mention
+  # co-occurring with a `merge` is exactly as dangerous as a second, so a
+  # count would add nothing here, and `grep -c` counts matching LINES (a
+  # single-line compound with both keywords would misreport 1) — see
+  # cmd_gh_pr_ref's own occurrence guard's header comment for that exact
+  # documented gotcha; `grep -q` sidesteps it by not counting at all.
+  if printf '%s' "$words" \
+       | grep -qE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' \
+     && printf '%s' "$words" \
+       | grep -qE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(merge|close|edit)([[:space:]]|$)'; then
+    return 1
+  fi
   printf '%s' "$words" \
     | grep -oE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|$)' \
     | grep -oE '(create|merge|close|edit)' | head -1
@@ -1255,6 +1324,28 @@ cmd_gh_pr_write_subcommand() {
 # are known to run). Callers MUST treat empty as "could not verify" and never
 # fall back to a no-args lookup, which resolves the CURRENT branch's PR
 # instead.
+#
+# NOT CAUGHT by the guard below (SUGGESTION, round-2 security-auditor,
+# 2026-09-02 — noted, not fixed, since it never produces a clean digit-only
+# wrong ref, unlike the three mechanisms the guard exists for): the guard's
+# content check only looks for `'`/`"`/`\`, so a substitution body containing
+# arithmetic expansion, another (empty) substitution, or a bare `$VAR`
+# reference passes it untouched and this function returns the literal SOURCE
+# TEXT rather than an evaluated value — `gh pr merge $((40+2))` returns
+# `$((40+2))`, not `42`; `gh pr merge 4$()2` returns `4$()2`, not `42`; a
+# bare `gh pr merge $SOME_VAR` (no substitution at all, pre-existing even
+# before `cmd_bare_deep`) returns `$SOME_VAR` literally. Every such deviation
+# retains stray shell-syntax punctuation (`$`, `(`, `)`), which a real
+# `gh pr view` would need an implausibly exact-matching branch name to
+# resolve — structurally different from the guard's three target mechanisms,
+# each of which can produce an attacker-chosen, syntactically clean number.
+# Confirmed pre-existing: replayed against the pre-`183ffa20` implementation,
+# identical output. Also note the guard's own `[ -n "$raw_bodies" ]`
+# short-circuit skips both of its checks when the only substitution is
+# empty-bodied (`gh pr merge 4$()2` → `raw_bodies=""`, trailing-newline
+# stripping erases the empty line) — harmless today only because the
+# resulting ref still carries the same stray punctuation, not because the
+# guard evaluated it.
 cmd_gh_pr_ref() {
   local value_flags='--author-email|--body-file|--body|--match-head-commit|--subject|--comment|--add-assignee|--add-label|--add-project|--add-reviewer|--base|--milestone|--remove-assignee|--remove-label|--remove-project|--remove-reviewer|--title|--repo'
   local bare occurrences full_match ref prev raw_bodies raw_body_count

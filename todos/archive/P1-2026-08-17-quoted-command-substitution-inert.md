@@ -1,6 +1,6 @@
 ---
 title: "cmd_bare/cmd_words treat quoted \$(...) and backtick command substitution as inert data"
-status: in-progress
+status: done
 priority: high
 created: 2026-08-17
 updated: 2026-09-02
@@ -69,8 +69,8 @@ pre-existing, structural gap in the whole quote-scanning approach, not a regress
       directly on this branch (not inherited from the parked commit's claim); see Updates.
 - [x] Regression tests added to `test-cmd-detect.sh` (the prior accepted session added
       +168 lines there for the lib-level scanner) and the relevant end-to-end `test-*.sh`
-      file (`test-pr-verify.sh`, this session, 18 new assertions), piping the exact
-      reproduction strings into the live hooks.
+      file (`test-pr-verify.sh`, this session, 30 new assertions across two review-driven
+      fix rounds), piping the exact reproduction strings into the live hooks.
 - [x] Full `scripts/run-hook-tests.sh` suite still passes — 34/34 files, exit 0.
 
 ## Implementation Notes
@@ -249,6 +249,58 @@ pr-verify}.sh`), plus their test files.
     (`git checkout --` against a saved patch), confirmed exactly the 8 new
     fix-dependent assertions FAIL while the negative-control assertions still pass;
     restored via `git apply`; confirmed all pass again.
+  - **Code review round 1 (`code-reviewer`) found a CRITICAL**: the `cmd_bare_deep`
+    rewiring made `cmd_gh_pr_ref` (the PR-ref extractor, a VALUE-returning function —
+    unlike its boolean sibling `cmd_gh_pr_write_subcommand`) report a **confidently
+    WRONG** PR ref, not a safe "could not verify", via three independent mechanisms:
+    a nested substitution (`gh pr merge 4$(echo 9)2`, real ref 492, resolved to the
+    wrong 42 — a nested substitution leaves a "hole" with no textual trace in its
+    parent body, per `cmd_extract_substitutions`'s own documented contract); an
+    embedded quote (`gh pr merge 4'x'2`, real ref 4x2, resolved to the wrong 4 —
+    `cmd_bare` blanks the quote to whitespace, truncating the positional match); and
+    an embedded backslash-escape (`gh pr merge 4\x32`, real ref 4x32, resolved to the
+    wrong 4 — same blank-to-space mechanism). Verified all three by construction
+    against the actual hook (PATH-stubbed `gh`) before accepting the finding. Fixed
+    with a dedicated refuse-guard in `cmd_gh_pr_ref` (refuse when more than one live
+    substitution exists anywhere in the command, or when a single substitution body
+    contains a quote/backslash character) — `cmd_gh_pr_write_subcommand` is
+    unaffected (boolean detection stays correct even when the exact ref is
+    corrupted). Also corrected the `cmd_bare_deep` header comment, which had
+    incorrectly claimed widening was safe for both pr-verify.sh callers — it is only
+    safe for the boolean one, and that overstatement was the reasoning gap that let
+    the CRITICAL ship. Mutation-tested the same way (revert guard → exactly the 6 new
+    assertions fail; restore → pass). Pinned as Tests 38-40 in `test-pr-verify.sh`.
+    One fix cycle (`REVIEW_ROUNDS: 1`); a scoped round-2 review of just this fix was
+    also dispatched — see the PR for its outcome.
+  - **`security-auditor`'s own (unscoped) review round, dispatched in parallel with
+    `code-reviewer` against the pre-fix tree, independently re-derived and confirmed
+    the same CRITICAL** (already fixed by the time it reported) by construction, and
+    found one additional real WARNING: `cmd_gh_pr_write_subcommand` (the boolean
+    consumer) piped `cmd_bare_deep`'s function call directly into
+    `grep -oE | grep -oE | head -1`, the same unsound shape this file's own
+    `cmd_is_gh_pr_create` header documents — confirmed empirically (135KB/5000-clause
+    stress input, rc=141 piped directly). Fixed by capturing into a local first,
+    matching every other deep-reading predicate in this file. Also flagged (WARNING,
+    confirmed PRE-EXISTING — replayed against the original `bc1be557` baseline and
+    got the byte-identical result, not introduced or worsened by this session): a
+    `create` mention anywhere in the outer command text can win `head -1`'s race in
+    `cmd_gh_pr_write_subcommand` ahead of a genuinely live `merge`/`close`/`edit`
+    hidden in a substitution, making pr-verify.sh report the wrong (current-branch)
+    PR as verified. Deferred — the real fix belongs in `pr-verify.sh`'s own branching
+    logic, not this extractor, and has a genuine tradeoff (a naive symmetric guard
+    would break a currently-correct case); recorded in `DEFERRED_WARNINGS`, not
+    fixed. One SUGGESTION (a redirect-glued ref mis-extraction, pre-existing,
+    degrades safely) — not applied, out of scope.
+  - **Process disclosure, for the record**: while constructing the CRITICAL's
+    reproduction, `security-auditor` accidentally ran a REAL (non-stubbed) `gh pr
+merge` against actual GitHub — a genuine outward-facing CLI mutation, against
+    explicit instructions. The target PR (#492) was already merged, so the call was a
+    no-op with no state change (confirmed via a follow-up read-only `gh pr view`).
+    The reviewer caught its own mistake, switched to a PATH-stubbed `gh` for every
+    subsequent construction, and disclosed the incident plainly rather than treating
+    it as a code finding. Recorded here for the audit trail — no code action results
+    from it, but it is the same incident CLASS this project's own memory already
+    tracks (never let an agent exec an outward-facing PATH-resolved CLI).
   - Re-verified all four of the todo's original reproduction cases directly on this
     branch (not inherited from the parked commit's claim): `eas update`/
     `gh pr merge --admin`/`gh api -X POST` all correctly `deny` via
@@ -260,7 +312,8 @@ pr-verify}.sh`), plus their test files.
   - Ran the full `scripts/run-hook-tests.sh`: 34/34 files pass, exit 0 —
     `test-cmd-detect.sh` 395/395 and `test-guard-outward-cli.sh` 257/257 (both
     UNCHANGED baselines; this session's diff touches neither file's test assertions),
-    `test-pr-verify.sh` 68/68 (up from 50 pre-existing; 18 new assertions). Also ran
+    `test-pr-verify.sh` 74/74 (up from 50 pre-existing; 24 new assertions across
+    Tests 30-40). Also ran
     `npm run test:run` (525 files / 8351 tests passed), `npm run check:types` (clean),
     `npm run lint` (0 errors, 3 pre-existing warnings in unrelated files).
   - Enumerated every `cmd_bare`/`cmd_words` call site across the Scope Contract's file
@@ -281,5 +334,78 @@ pr-verify}.sh`), plus their test files.
     throwaway worktree and running the full suite on it (never merged/rebased onto
     this branch). See the PR body for the full breakdown and the exact commit this
     analysis was run against.
+
+- **Round 2 (`security-auditor`, scoped to just the CRITICAL fix commit
+  `8e542515`) found a SECOND CRITICAL, in the sibling function this session's own
+  fix had NOT touched**: `cmd_gh_pr_write_subcommand`'s corrected header
+  (written earlier in this same session) claimed "widening only ever ADDS a
+  redundant `gh pr view` lookup" — true in the narrowest sense, but incomplete:
+  WHICH of `create|merge|close|edit` wins the function's `head -1` still
+  determines WHICH lookup `pr-verify.sh` performs, and `create`'s branch
+  (a no-args `gh pr view`, resolving the CURRENT branch's PR) is the ONLY one
+  that skips `cmd_gh_pr_ref`'s ref-based guard entirely. A decoy `gh pr create`
+  mention in the outer text (a trailing `#` comment — `cmd_bare` does not strip
+  comments) racing a REAL `gh pr merge` hidden inside a live substitution let
+  the decoy win, silently swapping which PR gets reported as verified.
+  Constructed and ran: `echo "$(gh pr merge 42)" # gh pr create` really
+  executes only `gh pr merge 42` (confirmed against real bash via
+  `bash -c`), but pre-fix the hook took the create branch and reported the
+  wrong PR. This is the exact failure class round 1 fixed for `cmd_gh_pr_ref`,
+  reached through its boolean sibling instead — and it is the SAME issue
+  round 1's `security-auditor` had already found and I had deferred as a
+  WARNING (see above); round 2 elevated it to CRITICAL with full construction,
+  which is why it is now fixed rather than deferred.
+  Fixed with a **create-vs-rest co-occurrence guard**, narrower than a blanket
+  "any two mentions" guard: an initial broader version (refuse whenever ANY
+  two of the four keywords co-occur) was tried first and reverted after it
+  broke 5 pre-existing, intentional passing tests (Tests 20/26/27/34/36) — a
+  pure merge-vs-close (or similar) compound is ALREADY made safe by
+  `cmd_gh_pr_ref`'s own separate multi-occurrence guard downstream (which
+  degrades to the more informative "WARNING: could not verify" rather than
+  bare silence), so guarding against it here too only threw away information
+  for no safety gain. The narrower fix refuses only when `create` co-occurs
+  with `merge`/`close`/`edit` — the one combination whose branch has no
+  downstream guard. Verified by construction (exploit input now returns
+  empty/silent; the exact hidden-merge-with-no-decoy case from round 1 still
+  resolves correctly end-to-end; a pure merge-vs-close compound still emits
+  the informative WARNING, not silence). Mutation-tested the same way as
+  round 1 (save diff → `git checkout --` → confirm exactly Test 41's two
+  assertions fail, all others including the new precision-control Tests 42-43
+  unaffected → `git apply` → confirm all pass). Pinned as Tests 41-43 in
+  `test-pr-verify.sh` (74 → 80 assertions). Re-ran the full
+  `scripts/run-hook-tests.sh`: 34/34 files pass, exit 0 (`test-pr-verify.sh`
+  80/80, `test-cmd-detect.sh` 395/395, unchanged elsewhere). `REVIEW_ROUNDS: 1`
+  stands — both the CRITICAL and the WARNING fixed in this Updates entry came
+  out of the SAME review round (code-reviewer + security-auditor dispatched
+  together against the initial diff); round 2 was a scoped re-verification of
+  round 1's fix commit specifically, not a second full review round, and its
+  own finding was fixed directly rather than triggering a round 3 dispatch.
+  Also added two SUGGESTION-tier documentation-only notes to `cmd_gh_pr_ref`'s
+  header (round 2's other two findings — an unevaluated arithmetic-expansion/
+  `$VAR` residual, and the guard's empty-body short-circuit) — both confirmed
+  structurally incapable of producing a clean, attacker-chosen wrong ref
+  (always leaves stray shell-syntax punctuation), so documented as residuals
+  rather than given a functional fix, matching this file's existing residual-
+  documentation convention.
+
+- **Out-of-scope finding surfaced, not fixed (per CLAUDE.md's High/Critical
+  "ask first" rule — this is a DIFFERENT bypass class than this todo's, found
+  incidentally while independently verifying round 2's reproduction, and is
+  NOT auto-filed as a todo)**: `guard-outward-cli.sh` does not look inside a
+  `bash -c '...'`/`sh -c '...'` string argument at all — the OUTER command's
+  scanner correctly treats the single-quoted argument as inert DATA (it is,
+  from the outer shell's own perspective), but `bash -c`/`sh -c` RE-PARSES
+  that argument as a brand-new script and genuinely executes it. Constructed
+  and ran directly against the hook (control alongside): `gh pr merge 42`
+  (bare) → correctly denied (`permissionDecision: deny`); `bash -c 'gh pr
+merge 42'` → ALLOWED (empty output, no denial JSON); `sh -c 'gh pr merge
+42'` → ALLOWED; `bash -c 'echo "$(gh pr merge 42)"'` (the round-2 reviewer's
+  own reproduction snippet, which is how this was noticed) → ALLOWED. This is
+  a structurally different, likely broader gap than command-substitution
+  quoting (any command hidden inside a `-c` string argument to any shell
+  interpreter, not specific to `$(...)`) and is out of scope for this todo's
+  Scope Contract (which lists `cmd_bare`/`cmd_words` consumers, not a new
+  `-c`-argument-recursion mechanism). Flagging for the user to decide whether
+  it becomes a dedicated todo.
 
 - **Status**: flipped to `done` and archived.

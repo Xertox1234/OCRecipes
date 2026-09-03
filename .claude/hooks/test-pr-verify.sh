@@ -537,6 +537,55 @@ assert_silent "embedded backslash in body: gh is never invoked (never the WRONG 
 assert_contains "embedded backslash in body: could-not-verify" "WARNING: could not verify" "$OUT"
 rm -f "$ARGV_LOG"
 
+# Tests 41-43 (CRITICAL fix, round-2 security-auditor, 2026-09-02):
+# cmd_gh_pr_write_subcommand's own "widening is safe, it only ever ADDS a lookup" claim was
+# incomplete — WHICH of create/merge/close/edit wins the first-match determines WHICH lookup
+# pr-verify.sh performs, and create's branch (no-args `gh pr view`, line 71) is the ONLY one
+# that skips cmd_gh_pr_ref's ref-based guard entirely. A decoy `gh pr create` mention in the
+# OUTER text (a trailing `#` comment — cmd_bare does not strip comments) racing a REAL
+# `gh pr merge/close/edit` hidden inside a live substitution let the decoy win
+# cmd_gh_pr_write_subcommand's `head -1` (cmd_bare_deep prints the outer rendering before any
+# substitution-body rendering), silently swapping which PR gets reported as verified —
+# ground-truthed: `bash -c 'echo "$(gh pr merge 42)" # gh pr create'` really executes only
+# `gh pr merge 42` (the trailing `#...` never runs), but pre-fix the hook took the create
+# branch and reported the CURRENT branch's PR instead of #42.
+
+# Test 41: the exact exploit. Must degrade to COMPLETE silence — not merely a "could not
+# verify" WARNING — because the new guard trips inside cmd_gh_pr_write_subcommand itself,
+# before pr-verify.sh's `[ -n "$SUBCOMMAND" ] || exit 0` line, so the hook never reaches the
+# WARNING-emitting branch at all. assert_silent on $OUT (not just the argv log) is what makes
+# this test distinguish "refused at the subcommand level" from "degraded at the ref level".
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'echo "$(gh pr merge 42)" # gh pr create' "$ARGV_LOG")
+assert_silent "create-decoy-after-hidden-merge: gh is never invoked (never the WRONG current-branch PR)" "$(cat "$ARGV_LOG")"
+assert_silent "create-decoy-after-hidden-merge: hook stays completely silent (refused above the WARNING branch)" "$OUT"
+rm -f "$ARGV_LOG"
+
+# Test 42 (precision control — proves the guard is create-VS-rest co-occurrence, not "any
+# duplicate mention"): two create mentions, no merge/close/edit anywhere. Must NOT refuse —
+# both mentions agree on the subcommand, so which one "wins" is immaterial; create's no-args
+# branch is correct regardless, since create carries no ref to mismatch.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'echo "$(gh pr create -t x)" # gh pr create' "$ARGV_LOG")
+assert_contains "two create mentions, no merge/close/edit: still resolves (gh IS invoked, no-args view)" "pr view --json" "$(cat "$ARGV_LOG")"
+assert_contains "two create mentions, no merge/close/edit: verified message emitted" "PR state verified" "$OUT"
+rm -f "$ARGV_LOG"
+
+# Test 43 (precision control, negative direction — proves the narrowed guard does NOT
+# regress the pre-existing, deliberately informative pure merge/close/edit compound
+# behavior pinned by Tests 20/26/27/34/36): a decoy `merge` racing a real hidden `close`, no
+# `create` anywhere. A first (rejected, reverted) version of this fix counted ALL FOUR
+# keywords and silenced this case too — an unnecessary regression, since cmd_gh_pr_ref's own
+# separate multi-occurrence guard already makes this shape safe (PR_REF degrades to empty
+# even if SUBCOMMAND names the wrong one of merge/close/edit), producing the more useful
+# WARNING rather than bare silence. This test would catch a regression back to that
+# over-broad shape.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'echo "$(gh pr close 7)" # gh pr merge' "$ARGV_LOG")
+assert_silent "merge-decoy-vs-hidden-close, no create: gh is never invoked" "$(cat "$ARGV_LOG")"
+assert_contains "merge-decoy-vs-hidden-close, no create: could-not-verify WARNING (not bare silence)" "WARNING: could not verify" "$OUT"
+rm -f "$ARGV_LOG"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
