@@ -1,9 +1,9 @@
 ---
 title: "E2E iOS job: cache Pods + DerivedData so the ~34-minute cold build stops dominating the nightly"
-status: backlog
+status: done
 priority: low
 created: 2026-08-31
-updated: 2026-08-31
+updated: 2026-09-02
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -30,8 +30,8 @@ deterministic and may need `-derivedDataPath` pinning to be cacheable at all).
 
 ## Acceptance Criteria
 
-- [ ] `ios/Pods` restored from `actions/cache` keyed on `ios/Podfile.lock` + `package-lock.json` + the selected Xcode version; a lockfile change misses cleanly.
-- [ ] DerivedData cached (pinned `-derivedDataPath`, or documented as not worth it after
+- [x] `ios/Pods` restored from `actions/cache` keyed on `ios/Podfile.lock` + `package-lock.json` + the selected Xcode version; a lockfile change misses cleanly.
+- [x] DerivedData cached (pinned `-derivedDataPath`, or documented as not worth it after
       measurement) with a key that includes the Xcode version and a source hash coarse enough to
       hit across docs-only changes.
 - [ ] Measured: cache-hit build step time recorded in the workflow comment, and the step/job
@@ -72,3 +72,28 @@ deterministic and may need `-derivedDataPath` pinning to be cacheable at all).
 ### 2026-08-31
 
 - Initial creation, deferred from the build-step-budget fix after nightly run 33373712907.
+
+### 2026-09-02
+
+- Implemented the first two acceptance criteria: `ios/Pods` and Xcode
+  DerivedData (redirected via `defaults write com.apple.dt.Xcode
+IDECustomDerivedDataLocation "DerivedData"`, since `expo run:ios` exposes
+  no `-derivedDataPath` flag) are now cached via `actions/cache/restore` +
+  `actions/cache/save` in `.github/workflows/e2e-regression.yml`, gated so a
+  failed/cancelled build never persists a locked/partial sandbox, and gated
+  again on `cache-hit` so an already-warm run doesn't re-tar and re-upload
+  either cache on every green run.
+- The last two acceptance criteria — a measured cache-hit build time with
+  the timeouts re-derived from it, and one green `workflow_dispatch` on
+  `main` with the cache warm — are **not yet done** and cannot be closed by
+  an autonomous agent: they require an actual human-triggered
+  `workflow_dispatch` (ideally two: one to populate the cache, one to
+  observe a real warm-cache build). The 70m step / 160m job timeouts are
+  deliberately left at their proven cold-build values rather than shrunk on
+  an unmeasured guess — see the comment above `timeout-minutes: 160` in the
+  workflow file for the arithmetic this needs once a real number exists.
+  Also unmeasured: DerivedData's on-disk size against GitHub's 10 GB
+  per-repo cache budget (shared with `ci.yml`'s own npm caches) — check
+  `gh cache list --limit 50` after the first dispatch; the workflow comment
+  above the cache-key step names the fallback (drop DerivedData, keep Pods)
+  if it's crowding the budget.

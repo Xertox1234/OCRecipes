@@ -1,6 +1,6 @@
 ---
 title: "CoachChat fetches meal-plan items for every user including free ones, and pins the window at mount so the slot picker's has-items dots drift after midnight"
-status: backlog
+status: done
 priority: low
 created: 2026-08-30
 updated: 2026-08-30
@@ -51,12 +51,12 @@ from the sheet's own freshly-computed days, so nothing is mis-filed.
 
 ## Acceptance Criteria
 
-- [ ] The meal-plan items query does not fire for users who cannot reach the slot picker
+- [x] The meal-plan items query does not fire for users who cannot reach the slot picker
       (gate it on the same `catalogSave` premium check that gates the sheet).
-- [ ] The fetched window matches the window the sheet actually renders, including after a date
+- [x] The fetched window matches the window the sheet actually renders, including after a date
       rollover in a long-lived session.
-- [ ] A test pins the premium gate: with `catalogSave` false, the items query is not issued.
-- [ ] No change to which `plannedDate` is written — this todo touches only the dot decoration
+- [x] A test pins the premium gate: with `catalogSave` false, the items query is not issued.
+- [x] No change to which `plannedDate` is written — this todo touches only the dot decoration
       and the fetch, never the value sent to `addMealPlanItem`.
 
 ## Implementation Notes

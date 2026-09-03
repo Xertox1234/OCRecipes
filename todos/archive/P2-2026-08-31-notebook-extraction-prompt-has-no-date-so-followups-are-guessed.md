@@ -1,6 +1,6 @@
 ---
 title: "The notebook extractor has no date anchor, so a user-stated check-in day is guessed — and the guess is written at UTC midnight"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-31
 updated: 2026-08-31
@@ -53,16 +53,16 @@ a commitment on the wrong day.
 
 ## Acceptance Criteria
 
-- [ ] `EXTRACTION_PROMPT` states the user's civil date (and the model is told to resolve relative
+- [x] `EXTRACTION_PROMPT` states the user's civil date (and the model is told to resolve relative
       phrases like "next week" against it), so `followUpDate` is derived rather than guessed.
-- [ ] `followUpDate` is anchored with `civilDateToInstant(dateStr, tz)` rather than
+- [x] `followUpDate` is anchored with `civilDateToInstant(dateStr, tz)` rather than
       `new Date(dateStr)`, so the due comparison lands on the user's day — **and the fix covers
       `coach-notebook.ts:252` (`getDueCommitmentsAllUsers`, the notification path), not only
       `:125`.** Fixing `:125` alone satisfies the letter of this criterion and leaves the push
       firing early, which is the consequence that motivates the todo.
-- [ ] A test pins a **UTC-negative** timezone and an instant where the UTC day and the user's day
+- [x] A test pins a **UTC-negative** timezone and an instant where the UTC day and the user's day
       differ, asserting a commitment does not come due early. CI runs UTC, where it cannot fail.
-- [ ] The prompt-hash cache implications are checked — `coach-pro-chat.ts` derives a template
+- [x] The prompt-hash cache implications are checked — `coach-pro-chat.ts` derives a template
       version from the system-prompt hash; confirm whether this prompt participates.
 
 ## Implementation Notes
@@ -113,3 +113,26 @@ possible in the first place. That is a migration, so weigh it separately.
   above have now each been checked individually. Recording this because a wrong premise in a
   dispatchable todo becomes a decision record: `scripts/todo-gate-check.sh` returns CLEAR, so an
   unattended `/todo` run can pick this up and would have written the false framing forward.
+
+### 2026-09-01
+
+- Implemented. `EXTRACTION_PROMPT` (now `buildExtractionPrompt(now, tz)`) states the user's civil
+  date and instructs the model to resolve relative phrases against it, never into the past; a
+  defense-in-depth runtime filter (comparing civil-day **strings**, not instants — an instant
+  comparison would wrongly reject today's own date) nulls a `followUpDate` the model resolves into
+  the past anyway. `coach-pro-chat.ts` anchors `followUpDate` with `civilDateToInstant(dateStr,
+tz)` at the single write site; `coach-notebook.ts`'s `getDueCommitmentsAllUsers` and
+  `getCommitmentsWithDueFollowUp` needed no code change — both are plain instant comparisons on the
+  same column, correct once the write anchors properly — only test coverage confirming the fix
+  reaches `getDueCommitmentsAllUsers` specifically (the actual notification path). Confirmed
+  `EXTRACTION_PROMPT` does not participate in `getSystemPromptTemplateVersion` /
+  `hashCoachCacheKey` (those hash only `buildSystemPrompt`'s output; extraction makes its own,
+  separate, uncached OpenAI call) — verified independently by two review passes.
+- Tests cover both UTC-negative (`America/Los_Angeles`) and UTC-positive (`Asia/Tokyo`) zones, a
+  same-day boundary case (kept, not wrongly rejected), and a construct-and-run check (each new
+  assertion was verified to fail against the pre-fix code, then pass after restoring the fix).
+- **Deferred, out of Scope Contract:** `server/routes/notebook.ts:109,148` (the manual
+  create/edit-entry screen) writes `followUpDate` via the identical `new Date(followUpDate)`
+  UTC-midnight anchoring this todo fixes on the extraction path. Not a one-line fix — that route
+  does not currently receive `X-Timezone`/`parseTimezone`, so `tz` needs plumbing before
+  `civilDateToInstant` can be called there. Flagged for the user to decide; not auto-filed.

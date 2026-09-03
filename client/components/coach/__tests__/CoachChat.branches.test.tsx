@@ -15,7 +15,15 @@
  * needs before render.
  */
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from "vitest";
 import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
@@ -63,6 +71,10 @@ const state = vi.hoisted(() => ({
   saveCatalog: vi.fn().mockResolvedValue({ id: 99 }),
   addItem: vi.fn().mockResolvedValue({}),
   mealPlanItems: [] as { plannedDate: string }[],
+  // Captures the args CoachChat passed on the most recent useMealPlanItems
+  // call — the query itself is mocked, so this is the only observable
+  // surface for what CoachChat asked for (start/end window, enabled gate).
+  useMealPlanItemsArgs: [] as unknown[],
   // ToastContext / useHaptics
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -142,7 +154,10 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
 }));
 
 vi.mock("@/hooks/useMealPlan", () => ({
-  useMealPlanItems: () => ({ data: state.mealPlanItems }),
+  useMealPlanItems: (...args: unknown[]) => {
+    state.useMealPlanItemsArgs = args;
+    return { data: state.mealPlanItems };
+  },
   useAddMealPlanItem: () => ({
     mutateAsync: state.addItem,
     isPending: false,
@@ -348,6 +363,7 @@ function resetState() {
   state.saveCatalog = vi.fn().mockResolvedValue({ id: 99 });
   state.addItem = vi.fn().mockResolvedValue({});
   state.mealPlanItems = [];
+  state.useMealPlanItemsArgs = [];
   state.toastSuccess = vi.fn();
   state.toastError = vi.fn();
   state.hapticsNotification = vi.fn();
@@ -913,6 +929,98 @@ describe("CoachChat — cleanup", () => {
   });
 });
 
+// ── meal-plan items query: premium gate + window freshness (P3-2026-08-30) ──
+// useMealPlanItems is module-mocked here, so these tests can only observe
+// what CoachChat PASSES to the hook (start/end window, enabled gate) — never
+// whether a network request actually fired. See
+// docs/solutions/code-quality/a-test-comment-must-claim-only-what-its-own-harness-can-observe-2026-08-06.md.
+describe("CoachChat — meal plan items query", () => {
+  it("passes catalogSave as the query's enabled gate when the user is not premium", () => {
+    setPremiumFeatures({ catalogSave: false });
+    renderCoachChat();
+    expect(state.useMealPlanItemsArgs[2]).toBe(false);
+  });
+
+  it("passes catalogSave as the query's enabled gate when the user is premium", () => {
+    setPremiumFeatures({ catalogSave: true });
+    renderCoachChat();
+    expect(state.useMealPlanItemsArgs[2]).toBe(true);
+  });
+
+  // Mirrors the TZ/fake-timer pattern in
+  // MealPlanHomeScreen.test.tsx ("planned_date is keyed to the local
+  // calendar day") rather than reading ambient system state — a
+  // midnight-rollover test that doesn't control the clock and timezone
+  // explicitly would pass by agreeing with whatever the test machine's own
+  // clock says.
+  describe("window freshness across a date rollover", () => {
+    const originalTz = process.env.TZ;
+
+    beforeAll(() => {
+      process.env.TZ = "Europe/Berlin";
+      vi.useFakeTimers({ toFake: ["Date"] });
+    });
+
+    afterAll(() => {
+      vi.useRealTimers();
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    });
+
+    it("recomputes the fetch window when the sheet is reopened after midnight, not the window pinned at mount", () => {
+      // 20:00 Sep 1 in Berlin (UTC+2 in September) — the mount happens here.
+      vi.setSystemTime(new Date("2026-09-01T18:00:00Z"));
+      state.messages = [
+        makeMessage({
+          id: 20,
+          role: "assistant",
+          content: "here's a recipe",
+          metadata: {
+            blocks: [
+              {
+                type: "recipe_card",
+                recipe: {
+                  title: "Lemon Chicken",
+                  calories: 520,
+                  protein: 42,
+                  prepTime: "25 min",
+                  imageUrl: null,
+                  recipeId: 715538,
+                  source: "spoonacular",
+                },
+              },
+            ],
+          } as unknown as ChatMessage["metadata"],
+        }),
+      ];
+      renderCoachChat({ conversationId: 7 });
+      // PLAN_SLOT_DAY_COUNT is 7 — a 7-day window starting Sep 1 ends Sep 7.
+      expect(state.useMealPlanItemsArgs[0]).toBe("2026-09-01");
+      expect(state.useMealPlanItemsArgs[1]).toBe("2026-09-07");
+
+      // Roll the clock past midnight Berlin time — 01:00 Sep 2 local.
+      vi.setSystemTime(new Date("2026-09-01T23:00:00Z"));
+
+      // Opening the sheet (a fresh "Add to Plan" tap) is the same trigger
+      // PlanSlotPickerSheet itself uses to recompute its own days.
+      act(() => {
+        state.onAction?.({
+          type: "add_recipe_to_plan",
+          recipeId: 715538,
+          recipeTitle: "Lemon Chicken",
+        });
+      });
+
+      // The fetched window must start AND end on the new current week (Sep
+      // 2 - Sep 8), not the week pinned at mount (Sep 1 - Sep 7) — the
+      // todo's stated symptom is specifically that the LAST chip's dot goes
+      // missing, i.e. the end of the window, not just its start.
+      expect(state.useMealPlanItemsArgs[0]).toBe("2026-09-02");
+      expect(state.useMealPlanItemsArgs[1]).toBe("2026-09-08");
+    });
+  });
+});
+
 // ── add_recipe_to_plan (client-local action; never enters blockActionSchema) ─
 describe("add_recipe_to_plan", () => {
   // Mounts a real recipe_card block so the mocked BlockRenderer renders and
@@ -1152,5 +1260,237 @@ describe("add_recipe_to_plan", () => {
     await act(async () => {
       resolveSave?.({ id: 99 });
     });
+  });
+
+  it("keeps a later flow's guard held (and its sheet open) after an abandoned earlier flow resolves", async () => {
+    // A is confirmed, then abandoned via dismissal while still in-flight; B
+    // is confirmed next and is itself still in-flight when A's save finally
+    // resolves. Drives the exact interleaving P2-2026-08-30 describes: A's
+    // `finally` must not clear B's guard, and A's success path must not null
+    // out B's still-open sheet out from under it.
+    let resolveA: ((value: { id: number }) => void) | undefined;
+    let resolveB: ((value: { id: number }) => void) | undefined;
+    state.saveCatalog
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ id: number }>((resolve) => {
+            resolveA = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ id: number }>((resolve) => {
+            resolveB = resolve;
+          }),
+      );
+
+    renderWithRecipeCardBlock();
+
+    // Confirm A — leave its saveCatalogRecipe call pending.
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+    expect(state.saveCatalog).toHaveBeenCalledTimes(1);
+
+    // Dismiss mid-save via the visible Close button — one of the three
+    // unconditional dismissal routes named in the todo's Background. A's
+    // saveCatalogRecipe call is still pending underneath.
+    fireEvent.click(
+      screen.getByRole("button", { name: /close plan slot picker/i }),
+    );
+
+    // Reopen for a different recipe (B) and confirm — also left pending.
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 42,
+        recipeTitle: "Other Recipe",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+    expect(state.saveCatalog).toHaveBeenCalledTimes(2);
+
+    // A's abandoned save now resolves. Its completion must not clear B's
+    // guard, close B's sheet, or otherwise disturb B's in-flight state.
+    await act(async () => {
+      resolveA?.({ id: 99 });
+    });
+    await waitFor(() => {
+      // A's own chain completes independently (fire-and-forget) — this is
+      // A's write, not B's.
+      expect(state.addItem).toHaveBeenCalledTimes(1);
+    });
+    expect(state.toastSuccess).toHaveBeenCalledTimes(1);
+
+    // B's sheet must still be open and its Confirm button reachable — proof
+    // A's completion did not null out planTarget out from under B.
+    const confirmButton = screen.getByRole("button", {
+      name: /add to plan/i,
+    });
+
+    // A second confirm on B, while B's own save is still pending, must not
+    // reach saveCatalog a third time — proving B's guard survived A's
+    // finally.
+    fireEvent.click(confirmButton);
+    expect(state.saveCatalog).toHaveBeenCalledTimes(2);
+    expect(state.addItem).toHaveBeenCalledTimes(1);
+
+    // Let B settle — and assert its OWN completion succeeds, not just that
+    // no further saveCatalog call happened. A same-count assertion alone
+    // can't distinguish a correctly-released guard from one stuck true
+    // forever (B's write already happened in the `try` block regardless of
+    // the `finally` guard's correctness) — driving B to a real close proves
+    // the release/close guards fire for B's own matching token, not just
+    // fail to fire for A's stale one.
+    await act(async () => {
+      resolveB?.({ id: 100 });
+    });
+    await waitFor(() => {
+      expect(state.addItem).toHaveBeenCalledTimes(2);
+    });
+    expect(state.toastSuccess).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
+  });
+
+  it("keeps a reopened-but-not-yet-confirmed sheet open when an abandoned earlier flow resolves", async () => {
+    // Narrower than the interleaving test above: B is reopened but NEVER
+    // confirmed (the user is still picking a day/meal) when A's abandoned
+    // save resolves. The reset effect clears isSavingPlanRef on reopen, but
+    // must also invalidate A's token immediately — otherwise A's completion
+    // still matches the token it acquired and can close B's sheet before
+    // the user ever taps Confirm.
+    let resolveA: ((value: { id: number }) => void) | undefined;
+    state.saveCatalog.mockImplementationOnce(
+      () =>
+        new Promise<{ id: number }>((resolve) => {
+          resolveA = resolve;
+        }),
+    );
+
+    renderWithRecipeCardBlock();
+
+    // Confirm A — leave its saveCatalogRecipe call pending.
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+    expect(state.saveCatalog).toHaveBeenCalledTimes(1);
+
+    // Dismiss mid-save, then reopen for a different recipe (B) — but do NOT
+    // confirm B yet.
+    fireEvent.click(
+      screen.getByRole("button", { name: /close plan slot picker/i }),
+    );
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 42,
+        recipeTitle: "Other Recipe",
+      });
+    });
+
+    // A's abandoned save now resolves while B's sheet is open and idle
+    // (unconfirmed). It must not close B's sheet.
+    await act(async () => {
+      resolveA?.({ id: 99 });
+    });
+    await waitFor(() => {
+      expect(state.addItem).toHaveBeenCalledTimes(1);
+    });
+
+    // B's sheet is still open and showing B's own title, not A's.
+    expect(screen.getByText("Other Recipe")).toBeTruthy();
+    expect(screen.queryByText("Lemon Chicken")).toBeNull();
+  });
+
+  it("does not let an abandoned flow's terminal-failure close reach a later flow's sheet", async () => {
+    // Mirrors the success-path interleaving test above, but A settles via a
+    // terminal failure (402/422/404) instead of success — the terminal
+    // branch has its own, separately-guarded setPlanTarget(null) call.
+    let rejectA: ((error: unknown) => void) | undefined;
+    let resolveB: ((value: { id: number }) => void) | undefined;
+    state.saveCatalog
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ id: number }>((_resolve, reject) => {
+            rejectA = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ id: number }>((resolve) => {
+            resolveB = resolve;
+          }),
+      );
+
+    renderWithRecipeCardBlock();
+
+    // Confirm A — leave its saveCatalogRecipe call pending.
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 715538,
+        recipeTitle: "Lemon Chicken",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+    expect(state.saveCatalog).toHaveBeenCalledTimes(1);
+
+    // Dismiss mid-save, reopen for B, and confirm B — also left pending.
+    fireEvent.click(
+      screen.getByRole("button", { name: /close plan slot picker/i }),
+    );
+    act(() => {
+      state.onAction?.({
+        type: "add_recipe_to_plan",
+        recipeId: 42,
+        recipeTitle: "Other Recipe",
+      });
+    });
+    fireEvent.click(screen.getByText("Dinner"));
+    fireEvent.click(screen.getByRole("button", { name: /add to plan/i }));
+    expect(state.saveCatalog).toHaveBeenCalledTimes(2);
+
+    // A's abandoned save now settles as a terminal failure. Its own
+    // guarded setPlanTarget(null) must not close B's still-open sheet.
+    await act(async () => {
+      rejectA?.(new ApiError("402: failed", "CATALOG_QUOTA_EXCEEDED", 402));
+    });
+    await waitFor(() => {
+      expect(state.toastError).toHaveBeenCalledTimes(1);
+    });
+
+    // B's sheet is still open and reachable — proof A's terminal-failure
+    // close guard held.
+    const confirmButton = screen.getByRole("button", {
+      name: /add to plan/i,
+    });
+    fireEvent.click(confirmButton);
+    expect(state.saveCatalog).toHaveBeenCalledTimes(2);
+
+    // Let B settle — and assert its OWN completion succeeds, discriminating
+    // a correctly-released guard from one stuck true forever (see the same
+    // rationale in the success-path interleaving test above).
+    await act(async () => {
+      resolveB?.({ id: 100 });
+    });
+    await waitFor(() => {
+      expect(state.addItem).toHaveBeenCalledTimes(1);
+    });
+    expect(state.toastSuccess).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: /add to plan/i })).toBeNull();
   });
 });

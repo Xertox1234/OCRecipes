@@ -1,6 +1,6 @@
 ---
 title: "Grocery-list and receipt-meal-plan screens still derive calendar days from a UTC basis, and unlike the planner they break at BOTH offset signs"
-status: backlog
+status: done
 priority: medium
 created: 2026-08-31
 updated: 2026-08-31
@@ -58,14 +58,14 @@ display-only one.
 
 ## Acceptance Criteria
 
-- [ ] Each of the four call sites above answers "what calendar day is it on this device" using the
+- [x] Each of the four call sites above answers "what calendar day is it on this device" using the
       local basis (`toLocalDateString` from `shared/lib/date.ts`, added by the P1 work), not
       `toDateString` on a raw instant.
-- [ ] The `+7 days` in `GroceryListPickerModal` is calendar arithmetic (`setDate(getDate() + 7)`),
+- [x] The `+7 days` in `GroceryListPickerModal` is calendar arithmetic (`setDate(getDate() + 7)`),
       not `+ 7*24*60*60*1000`, so a DST week is still seven calendar days.
-- [ ] `getPlannedDate` no longer depends on a noon offset margin; it derives the day from local
+- [x] `getPlannedDate` no longer depends on a noon offset margin; it derives the day from local
       calendar components and is correct at +13 and +14.
-- [ ] Tests pin at least one positive and one negative non-UTC zone, at an hour inside each one's
+- [x] Tests pin at least one positive and one negative non-UTC zone, at an hour inside each one's
       failing window (per the table above). CI runs UTC, where every one of these is silently
       correct.
 
@@ -113,3 +113,22 @@ just how that is spelled.
 
 - Filed from the caller enumeration performed during the P1 local-date-basis work, with the
   per-zone failure windows measured rather than estimated.
+
+### 2026-09-01
+
+- Implemented. All four call sites now use `toLocalDateString`; `GroceryListPickerModal`'s
+  `+7 days` is `setDate`-based calendar arithmetic; `getPlannedDate`/`formatDate` in
+  `ReceiptMealPlanScreen.tsx` parse `startDate`'s components directly (no more `T12:00:00`
+  noon-trick), sharing a private `localDateFromParts` helper that throws `RangeError` on a
+  malformed `startDate` instead of silently producing `"NaN-NaN-NaN"`.
+- Risks section's open question resolved: `grocery_lists.date_range_start/end` IS meant to be
+  device-local. `server/routes/grocery.ts` bounds `getMealPlanIngredientsForDateRange` by these
+  columns against `meal_plan_items.plannedDate`, which the P1 fix already put on the device-local
+  basis — so matching that basis here is required for the range to actually bound the days it is
+  aggregating, not a coincidental match to the planner.
+- Deferred (not in this todo's scope): `server/storage/batch.ts` writes the same two
+  `grocery_lists` columns from `toDateString(new Date())` (raw UTC-instant basis) for
+  auto-created "Batch Scan" lists — the same bug class this todo fixed on the client, found by
+  the `mobile-reviewer` pass. Narrow impact (a label/display date, not used to filter
+  `meal_plan_items`), so left for a separate server-side todo rather than expanding this one's
+  Scope Contract.
