@@ -122,6 +122,11 @@ export default function CoachChat({
     recipeId: number;
     recipeTitle: string;
   } | null>(null);
+  // Recompute trigger for the meal-plan items window below (see the
+  // planWeek effect for why this must be an effect trigger, not a useMemo
+  // dep). Derived boolean, not `planTarget` itself, so a *different* recipe
+  // opened while the sheet is already up does not re-trigger the fetch.
+  const isPlanSheetOpen = planTarget !== null;
 
   const listRef = useRef<FlatList<ChatListItem>>(null);
   const prevStreamingRef = useRef(false);
@@ -157,10 +162,54 @@ export default function CoachChat({
   // flow's state. See P2-2026-08-30-coach-plan-slot-guard-survives-sheet-dismissal.
   const planSaveTokenRef = useRef(0);
 
-  const planWeek = useMemo(() => buildPlanSlotDays(new Date()), []);
+  // This CANNOT be `useMemo(() => buildPlanSlotDays(new Date()), [isPlanSheetOpen])`:
+  // React Compiler (app.json `experiments.reactCompiler`, wired for all
+  // client code via babel-preset-expo) ELIMINATES a useMemo call entirely
+  // and re-derives its own reactivity from what the callback body actually
+  // READS — `buildPlanSlotDays(new Date())` reads no reactive value, so the
+  // compiler discards the manual `[isPlanSheetOpen]` dependency and
+  // compiles it to a compute-once-forever cache, silently reintroducing the
+  // "pinned at mount" bug this todo exists to fix (confirmed by compiling
+  // this exact shape IN ISOLATION with the project's pinned
+  // babel-plugin-react-compiler; Vitest doesn't run that plugin, so a naive
+  // test would pass while a compiler-covered build stays broken).
+  //
+  // CORRECTION 2026-09-03: THIS FILE is not compiler-covered. Compiling the
+  // real CoachChat.tsx emits `(BuildHIR::lowerStatement) Handle TryStatement
+  // with a finalizer ('finally') clause` and produces no transformation —
+  // handleConfirmPlanSlot's pre-existing `finally` opts the WHOLE component
+  // out. So a naive useMemo would in fact have worked here, because real
+  // React honours the literal array whenever the compiler never runs. The
+  // shape below is still the right thing to write (correct with or without
+  // coverage), but do not read this comment as evidence the compiler was
+  // observed discarding the dep in THIS file. Corollary worth knowing: every
+  // other manual useMemo/useCallback in this file is load-bearing today, not
+  // compiler-backstopped. Full write-up in the solution doc referenced below.
+  //
+  // A `useEffect` call is different: the compiler
+  // PRESERVES it with its own real, separately-tracked deps array (real
+  // React then does the runtime comparison), so `[isPlanSheetOpen]` here is
+  // actually honored regardless of what the body reads — mirrors
+  // PlanSlotPickerSheet's own false->true `visible` recompute
+  // (prevVisibleRef effect). The body still reads `isPlanSheetOpen` because
+  // the transition logic below needs its value, not because that's what
+  // makes the effect re-fire.
+  const [planWeek, setPlanWeek] = useState(() => buildPlanSlotDays(new Date()));
+  const prevPlanSheetOpenRef = useRef(isPlanSheetOpen);
+  useEffect(() => {
+    const opened = isPlanSheetOpen && !prevPlanSheetOpenRef.current;
+    prevPlanSheetOpenRef.current = isPlanSheetOpen;
+    if (opened) {
+      setPlanWeek(buildPlanSlotDays(new Date()));
+    }
+  }, [isPlanSheetOpen]);
   const { data: planItems } = useMealPlanItems(
     planWeek[0].iso,
     planWeek[planWeek.length - 1].iso,
+    // The slot picker sheet (and this dot data) is only reachable when
+    // canSaveCatalog is true — see the handleBlockAction gate below. Free
+    // users never see the sheet, so the request should never fire for them.
+    canSaveCatalog,
   );
   const datesWithItems = useMemo(
     () => toPlannedDateSet(planItems),

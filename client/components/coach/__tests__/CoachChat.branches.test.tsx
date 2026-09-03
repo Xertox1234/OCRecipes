@@ -15,7 +15,15 @@
  * needs before render.
  */
 import React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  beforeAll,
+  afterAll,
+} from "vitest";
 import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderComponent } from "../../../../test/utils/render-component";
 import CoachChat from "../CoachChat";
@@ -63,6 +71,10 @@ const state = vi.hoisted(() => ({
   saveCatalog: vi.fn().mockResolvedValue({ id: 99 }),
   addItem: vi.fn().mockResolvedValue({}),
   mealPlanItems: [] as { plannedDate: string }[],
+  // Captures the args CoachChat passed on the most recent useMealPlanItems
+  // call — the query itself is mocked, so this is the only observable
+  // surface for what CoachChat asked for (start/end window, enabled gate).
+  useMealPlanItemsArgs: [] as unknown[],
   // ToastContext / useHaptics
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -142,7 +154,10 @@ vi.mock("@/hooks/useMealPlanRecipes", () => ({
 }));
 
 vi.mock("@/hooks/useMealPlan", () => ({
-  useMealPlanItems: () => ({ data: state.mealPlanItems }),
+  useMealPlanItems: (...args: unknown[]) => {
+    state.useMealPlanItemsArgs = args;
+    return { data: state.mealPlanItems };
+  },
   useAddMealPlanItem: () => ({
     mutateAsync: state.addItem,
     isPending: false,
@@ -348,6 +363,7 @@ function resetState() {
   state.saveCatalog = vi.fn().mockResolvedValue({ id: 99 });
   state.addItem = vi.fn().mockResolvedValue({});
   state.mealPlanItems = [];
+  state.useMealPlanItemsArgs = [];
   state.toastSuccess = vi.fn();
   state.toastError = vi.fn();
   state.hapticsNotification = vi.fn();
@@ -910,6 +926,98 @@ describe("CoachChat — cleanup", () => {
     const { unmount } = renderCoachChat();
     unmount();
     expect(state.abortStream).toHaveBeenCalled();
+  });
+});
+
+// ── meal-plan items query: premium gate + window freshness (P3-2026-08-30) ──
+// useMealPlanItems is module-mocked here, so these tests can only observe
+// what CoachChat PASSES to the hook (start/end window, enabled gate) — never
+// whether a network request actually fired. See
+// docs/solutions/code-quality/a-test-comment-must-claim-only-what-its-own-harness-can-observe-2026-08-06.md.
+describe("CoachChat — meal plan items query", () => {
+  it("passes catalogSave as the query's enabled gate when the user is not premium", () => {
+    setPremiumFeatures({ catalogSave: false });
+    renderCoachChat();
+    expect(state.useMealPlanItemsArgs[2]).toBe(false);
+  });
+
+  it("passes catalogSave as the query's enabled gate when the user is premium", () => {
+    setPremiumFeatures({ catalogSave: true });
+    renderCoachChat();
+    expect(state.useMealPlanItemsArgs[2]).toBe(true);
+  });
+
+  // Mirrors the TZ/fake-timer pattern in
+  // MealPlanHomeScreen.test.tsx ("planned_date is keyed to the local
+  // calendar day") rather than reading ambient system state — a
+  // midnight-rollover test that doesn't control the clock and timezone
+  // explicitly would pass by agreeing with whatever the test machine's own
+  // clock says.
+  describe("window freshness across a date rollover", () => {
+    const originalTz = process.env.TZ;
+
+    beforeAll(() => {
+      process.env.TZ = "Europe/Berlin";
+      vi.useFakeTimers({ toFake: ["Date"] });
+    });
+
+    afterAll(() => {
+      vi.useRealTimers();
+      if (originalTz === undefined) delete process.env.TZ;
+      else process.env.TZ = originalTz;
+    });
+
+    it("recomputes the fetch window when the sheet is reopened after midnight, not the window pinned at mount", () => {
+      // 20:00 Sep 1 in Berlin (UTC+2 in September) — the mount happens here.
+      vi.setSystemTime(new Date("2026-09-01T18:00:00Z"));
+      state.messages = [
+        makeMessage({
+          id: 20,
+          role: "assistant",
+          content: "here's a recipe",
+          metadata: {
+            blocks: [
+              {
+                type: "recipe_card",
+                recipe: {
+                  title: "Lemon Chicken",
+                  calories: 520,
+                  protein: 42,
+                  prepTime: "25 min",
+                  imageUrl: null,
+                  recipeId: 715538,
+                  source: "spoonacular",
+                },
+              },
+            ],
+          } as unknown as ChatMessage["metadata"],
+        }),
+      ];
+      renderCoachChat({ conversationId: 7 });
+      // PLAN_SLOT_DAY_COUNT is 7 — a 7-day window starting Sep 1 ends Sep 7.
+      expect(state.useMealPlanItemsArgs[0]).toBe("2026-09-01");
+      expect(state.useMealPlanItemsArgs[1]).toBe("2026-09-07");
+
+      // Roll the clock past midnight Berlin time — 01:00 Sep 2 local.
+      vi.setSystemTime(new Date("2026-09-01T23:00:00Z"));
+
+      // Opening the sheet (a fresh "Add to Plan" tap) is the same trigger
+      // PlanSlotPickerSheet itself uses to recompute its own days.
+      act(() => {
+        state.onAction?.({
+          type: "add_recipe_to_plan",
+          recipeId: 715538,
+          recipeTitle: "Lemon Chicken",
+        });
+      });
+
+      // The fetched window must start AND end on the new current week (Sep
+      // 2 - Sep 8), not the week pinned at mount (Sep 1 - Sep 7) — the
+      // todo's stated symptom is specifically that the LAST chip's dot goes
+      // missing, i.e. the end of the window, not just its start.
+      expect(state.useMealPlanItemsArgs[0]).toBe("2026-09-02");
+      expect(state.useMealPlanItemsArgs[1]).toBe("2026-09-08");
+    });
   });
 });
 
