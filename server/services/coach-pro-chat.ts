@@ -15,7 +15,7 @@
  */
 
 import { createHash } from "crypto";
-import { civilDateString } from "../lib/civil-date";
+import { civilDateString, civilDateToInstant } from "../lib/civil-date";
 import { storage } from "../storage";
 import {
   generateCoachResponse,
@@ -887,6 +887,16 @@ export async function* handleCoachChat(
           allMessages,
           userId,
           conversationId,
+          // `today` (declared above) is the turn-start instant, captured
+          // before the coach's own response streams — passing it here
+          // anchors the extraction prompt's "Current date" line to when the
+          // user SPOKE, not a later `new Date()` computed after the SSE
+          // stream drains. NOTE: this is not guaranteed to be the identical
+          // instant the coach's own system prompt rendered its date from —
+          // that is a separate, independently-defaulted `new Date()` in
+          // nutrition-coach.ts's `buildSystemPrompt` — just the closer and
+          // more correct of the two available anchors.
+          { now: today, tz },
         );
         if (entries.length > 0) {
           // Build a per-entry dedup fingerprint so SSE retries that replay
@@ -899,7 +909,22 @@ export async function* handleCoachChat(
               type: e.type,
               content: e.content,
               status: "active",
-              followUpDate: e.followUpDate ? new Date(e.followUpDate) : null,
+              // `civilDateToInstant`, not `new Date(dateStr)`: a bare parse
+              // anchors at UTC midnight, which is BEFORE local midnight for
+              // every UTC-negative user, so `getDueCommitmentsAllUsers` /
+              // `getCommitmentsWithDueFollowUp` (coach-notebook.ts) — both
+              // plain `lte(followUpDate, now)` instant comparisons — fire the
+              // push reminder hours early. Anchoring correctly HERE fixes
+              // both reads for rows written through THIS path — neither read
+              // needs its own timezone-aware comparison logic. It does NOT
+              // fix `server/routes/notebook.ts`'s POST/PATCH handlers (the
+              // manual add/edit-entry screen), which still do the identical
+              // `new Date(followUpDate)` — a separate defect, out of this
+              // todo's scope — nor does it retroactively fix rows already
+              // written with the old UTC-midnight anchoring.
+              followUpDate: e.followUpDate
+                ? civilDateToInstant(e.followUpDate, tz)
+                : null,
               sourceConversationId: conversationId,
               dedupeKey: hashNotebookDedupeKey({
                 userId,
