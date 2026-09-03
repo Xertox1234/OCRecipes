@@ -8,6 +8,7 @@ applies_to: [server/services/__tests__/*.test.ts, server/routes/__tests__/*.test
 symptoms: ["A newly written test passes BEFORE the fix it was written for", "A probe reports 'no difference' across several configurations that should differ", "A mutation check fails N tests locally and a different N in CI", "A guard is green on CI and red on a developer machine, or the reverse, with no code change", "Two independent things agree suspiciously well and nothing explains why", "The control row of a parameterised table fails, when by definition it should be a no-op"]
 created: '2026-08-31'
 severity: medium
+last_updated: '2026-09-02'
 ---
 
 # An uncontrolled ambient input makes the check agree with what it checks
@@ -32,10 +33,27 @@ are checkable in the repo, the episodes are not:
 3. **Evidence that is one machine's.** A mutation kill-count quoted as proof of a guard turned
    out to vary by host zone, so the number in the write-up was a property of the author's laptop
    rather than of the guard. The in-repo example is the table in
-   `todos/P2-2026-08-31-plan-slot-timezone-guards-never-run-in-ci.md` (Updates → 2026-08-31): the
-   same mutation kills `UTC 0 / Berlin 4 / Auckland 4 / LA 0` for one revert shape and
+   `todos/archive/P2-2026-08-31-plan-slot-timezone-guards-never-run-in-ci.md` (Updates → 2026-08-31):
+   the same mutation kills `UTC 0 / Berlin 4 / Auckland 4 / LA 0` for one revert shape and
    `UTC 0 / Berlin 1 / Auckland 2 / LA 1` for another. **Note the UTC column is 0 in both** —
    quote a count taken on a developer machine and you claim a guard that CI does not have.
+4. **A check that builds its own expectation from the same ambient read the code under test
+   uses.** Not a missing pin this time — a test whose *expected* value and the code's *actual*
+   value are both derived from the same uncontrolled `new Date()` call, so they move together by
+   construction and the test cannot discriminate a regression in either, in any timezone. Measured
+   directly (`TZ=UTC` and `TZ=Europe/Berlin`, both known regression shapes of
+   `buildPlanSlotDays` applied and reverted):
+   `client/components/coach/__tests__/PlanSlotPickerSheet.test.tsx`'s pre-existing tests build
+   their expected day (`buildPlanSlotDays(new Date())`, same file, line ~123) with the identical
+   ambient call the rendered component makes internally — both sides drift together under a
+   basis regression. `CoachChat.branches.test.tsx`'s "Add to Plan" flow test compares a rendered
+   toast's day word against a `chipLabel` harvested from the same render, and asserts `plannedDate`
+   only against a shape regex (`/^\d{4}-\d{2}-\d{2}$/`), never its value — neither check can ever
+   observe which basis produced the date. Both were **silent at every zone tried, not merely
+   under UTC** — a stronger, structural variant of the pattern: it isn't that CI's zone happens to
+   hide the bug, it's that the check cannot see this class of bug at all. See face 1 above for the
+   general form (test passes before the fix) — this is what makes it possible to pass *permanently*
+   rather than just in one environment.
 
 ## Symptoms
 
@@ -93,6 +111,29 @@ That guard test is load-bearing. Without it, a pin that silently no-ops leaves e
 the file passing for the wrong reason — green, and meaningless. With it asserting zero, the guard
 is itself the thing it was supposed to prevent.
 
+**A zero-offset control row needs one more precaution: negative zero.** Extending the guard to a
+zone SWEEP that includes a `UTC` control row (rather than pinning one nonzero zone alone) hits a
+second trap the snippet above doesn't show. `-new Date(...).getTimezoneOffset()` on a UTC host is
+`-0`, not `0` — `toBe`'s `Object.is` semantics treat them as distinct, so the naive guard **fails on
+correct code**:
+
+```
+AssertionError: expected -0 to be +0 // Object.is equality
+```
+
+Fix by normalizing before the comparison — `-0 + 0` is `0` under IEEE 754, so appending `+ 0` is
+enough:
+
+```ts
+expect(-new Date(2026, 8, 1).getTimezoneOffset() + 0).toBe(ZONE_OFFSET_MINUTES[tz]); // UTC: 0
+```
+
+Neither in-repo instance of this guard (`shared/lib/__tests__/date.test.ts`,
+`client/screens/meal-plan/__tests__/MealPlanHomeScreen.test.tsx`) hits this, because both only ever
+pin nonzero-offset zones. A file's own zone sweep is the first place in this repo to add a `UTC`
+control row to the mechanism guard itself (not just to the domain assertions) — expect this trap
+wherever that pattern is repeated.
+
 **Where to put the pin depends on what builds the fixtures.** A `beforeAll` runs after module
 evaluation, so it does not reach anything constructed at collection time — `describe.each` /
 `it.each` tables most of all (see the See Also entry below). Per-`describe` pins are the right
@@ -149,7 +190,13 @@ CI runs. That is precisely why passing the value as data is the stronger fix.
   `afterAll` restore with `delete`, and per-`describe` pins each asserting a NONZERO offset
   (`Europe/Berlin` → `120`, `America/Los_Angeles` → `-420`)
 - `client/components/coach/__tests__/plan-slot-picker-utils.test.ts` — the same pattern sweeping
-  several zones, which is why its pins are per-`describe` rather than file-scope
+  several zones, which is why its pins are per-`describe` rather than file-scope; also the first
+  in-repo instance of the `-0` control-row trap above
+- `client/components/coach/__tests__/PlanSlotPickerSheet.test.tsx` — a rendered-component variant:
+  pins `process.env.TZ` **and** fakes the system clock (`vi.useFakeTimers({ toFake: ["Date"] })` +
+  `vi.setSystemTime`), because the component calls `new Date()` internally with no injectable
+  seam; also the concrete example behind face 4 above (its pre-existing tests were the
+  self-referential check that motivated adding this guard block)
 - `server/routes/__tests__/goals.test.ts`, `server/routes/__tests__/nutrition.test.ts` — the
   better pattern: the zone travels as an `X-Timezone` header, so nothing is ambient
 - `server/lib/civil-date.ts` — the helpers that let a timezone be passed rather than assumed

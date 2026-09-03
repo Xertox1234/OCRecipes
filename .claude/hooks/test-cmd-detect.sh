@@ -33,7 +33,8 @@ PASS=0; FAIL=0
 # bill of health. Prove the lib sourced and the functions exist before asserting.
 # shellcheck source=/dev/null
 . "$LIB" || { echo "FAIL: lib/cmd-detect.sh is not sourceable"; exit 1; }
-for f in cmd_bare cmd_words cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
+for f in cmd_bare cmd_words cmd_extract_substitutions cmd_words_deep cmd_bare_deep \
+         cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
          cmd_is_git_commit_or_push cmd_is_git_head_mover cmd_is_git_branch_create \
          cmd_git_branch_create_segment cmd_git_repo_dir; do
   declare -F "$f" >/dev/null || { echo "FAIL: $f is not defined by the lib"; exit 1; }
@@ -54,6 +55,25 @@ det() {
 render() {
   local fn="$1" cmd="$2" mode="$3" needle="$4" label="$5" out
   out=$(printf '%s' "$cmd" | "$fn")
+  if [ "$mode" = present ]; then
+    if grep -qF -- "$needle" <<< "$out"; then echo "PASS: $label"; PASS=$((PASS+1))
+    else echo "FAIL: $label (expected '$needle' in: $out)"; FAIL=$((FAIL+1)); fi
+  else
+    if grep -qF -- "$needle" <<< "$out"; then
+      echo "FAIL: $label (unexpected '$needle' in: $out)"; FAIL=$((FAIL+1))
+    else echo "PASS: $label"; PASS=$((PASS+1))
+    fi
+  fi
+}
+
+# render_arg <fn> <command> <expected-substring-present|absent> <needle> <label>
+# Same as render(), but calls "$fn" "$cmd" (an ARGUMENT) rather than piping
+# $cmd into $fn's stdin — cmd_words_deep's calling convention deliberately
+# differs from cmd_bare/cmd_words (see its own header comment: it takes the
+# command as $1, not stdin, because its body needs the text more than once).
+render_arg() {
+  local fn="$1" cmd="$2" mode="$3" needle="$4" label="$5" out
+  out=$("$fn" "$cmd")
   if [ "$mode" = present ]; then
     if grep -qF -- "$needle" <<< "$out"; then echo "PASS: $label"; PASS=$((PASS+1))
     else echo "FAIL: $label (expected '$needle' in: $out)"; FAIL=$((FAIL+1)); fi
@@ -471,6 +491,134 @@ det cmd_is_git_branch_create 'git checkout foo'                      no "checkin
 det cmd_is_git_branch_create 'git branch foo'                        no \
   "scope gap, deliberate: plain 'git branch <name>' (create-without-switching) is NOT matched — rarer form, ambiguous vs. -d/-D/-m/--list"
 
+echo "--- cmd_git_branch_create_segment: a decoy SUBSTRING must not win over a later REAL create ---"
+# Un-anchored checkout/switch matching (fixed 2026-09-02,
+# todos/P3-2026-08-28-branch-create-segment-decoy-substring-false-negative.md): the extraction
+# regex required only the literal text `checkout`/`switch` immediately followed by whitespace,
+# with no boundary before it — so a decoy TOKEN where that text is a trailing SUBSTRING of a
+# longer word (`gcheckout`, glued, no real separator) satisfied the pattern exactly like a real
+# invocation. A command carrying BOTH a decoy shaped like this (with its OWN create flag, so the
+# loop's flag-presence check also passes on it) AND a real create LATER in the same command is
+# the co-occurrence this bug needed — neither a decoy alone nor a real create alone reproduces
+# it, so a corpus that varies only one of them at a time cannot reach this class. See
+# docs/solutions/conventions/one-axis-at-a-time-corpus-misses-co-occurrence-checks-2026-09-01.md.
+#
+# `cmd_is_git_branch_create`'s own boolean is NOT the right assertion for this bug: the decoy and
+# the real segment both carry a create flag of the SAME class, so the boolean returns "yes"
+# whichever one the loop actually picks — it agrees with the correct answer for an unrelated
+# reason (confirmed by mutation: every `det cmd_is_git_branch_create` pin in this file still
+# passes against the pre-fix regex). The bug is only observable in WHICH STRING
+# `cmd_git_branch_create_segment` returns, because branch-preflight.sh reads that string back out
+# as the start-point token — so every pin below asserts on segment CONTENT via seg_clip, not on
+# the boolean, and was confirmed to go RED against the pre-fix regex before being kept (mutation:
+# stub the anchor back to bare `(checkout|switch)[[:space:]]+…`, rerun — every pin in the loop
+# below reported the decoy's own content instead of the real segment; restore, rerun, all green).
+#
+# Generated from independent dimensions rather than hand-listed (a hand-listed corpus reproduces
+# the author's own blind spot): the decoy's glued PREFIX word, the decoy's VERB shape (which also
+# picks its own flag class, -b vs -c), the REAL create's verb — deliberately allowed to MISMATCH
+# the decoy's, since a same-verb pair can look coincidentally right even with the bug present —
+# and the separator, both unspaced (this file's own established "no space before the boundary"
+# dimension, see the SPACING section above) and spaced (the todo's own literal repro shape).
+for _prefix in 'g' 'my'; do
+  for _decoy_verb in 'checkout:-b' 'switch:-c'; do
+    _dverb=${_decoy_verb%%:*}; _dflag=${_decoy_verb##*:}
+    for _real_verb in 'checkout:-b' 'switch:-c'; do
+      _rverb=${_real_verb%%:*}; _rflag=${_real_verb##*:}
+      _decoy="${_prefix}${_dverb} ${_dflag} decoy origin/main"
+      _real="${_rverb} ${_rflag} real"
+      seg_clip "${_decoy};git ${_real}" "$_real" \
+        "decoy '${_prefix}${_dverb}' (unspaced ;) does not shadow a real '${_rverb}' create (decoy=${_dverb}, real=${_rverb})"
+      seg_clip "${_decoy} && git ${_real}" "$_real" \
+        "decoy '${_prefix}${_dverb}' (spaced &&) does not shadow a real '${_rverb}' create (decoy=${_dverb}, real=${_rverb})"
+    done
+  done
+done
+
+# The todo's own literal repro, pinned directly for traceability back to the filed bug report.
+seg_clip 'gcheckout -b decoy origin/main && git checkout -b real' 'checkout -b real' \
+  "todo repro: a 'gcheckout' decoy does not shadow the real 'git checkout -b' that follows"
+
+# Sanity: reversed order (real create FIRST, decoy second) was never buggy — the loop returns on
+# the first flag-carrying segment either way — but pin it so the boundary anchor doesn't
+# accidentally break the common, unproblematic ordering too.
+seg_clip 'git checkout -b real && gcheckout -b decoy origin/main' 'checkout -b real' \
+  "sanity: a real create before an unrelated decoy is unaffected by the anchor"
+
+# Control: a decoy with NO matching create flag was never buggy either (the loop's own
+# flag-presence check already skips it) — pin it so the anchor doesn't OVER-reject and still
+# finds the real create behind a harmless decoy mention.
+seg_clip 'gcheckout main && git checkout -b real' 'checkout -b real' \
+  "control: a flagless decoy mention was already harmless; the real create is still found"
+
+# GLUE-CHARACTER dimension (review round 2, 2026-09-02 — CRITICAL/WARNING, code-reviewer and
+# security-auditor independently constructed and ran the SAME live bypass on the first version
+# of this fix). The corpus above varies the decoy's PREFIX word but fixes the glue between that
+# prefix and the decoy verb at "none" (an alphanumeric character glued directly, `gcheckout`) —
+# it never generated over the boundary whitelist's OWN new alternation, which is exactly the
+# axis review found broken: `!`, `{`, `}` were in the first version's whitelist (copied from
+# `_CMD_POS_PREFIX`/`_CMD_POS_SUFFIX`, which use a wider class for a different, whitespace-gated
+# purpose) even though none of them separates a word when GLUED with no space — `x!checkout`,
+# `x{checkout`, `x}checkout` each tokenize as ONE literal command word in real bash (confirmed by
+# running each: `bash -c 'checkout(){ :;}; x!checkout -b x'` -> `bash: x!checkout: command not
+# found`; identical for the other two) and never invoke `checkout`/`switch` at all — so admitting
+# them as boundaries reopened the exact decoy-shadows-a-later-real-create bug this fix exists to
+# close, just via a different glue character than the todo's own `gcheckout` repro. Mutation-
+# tested: reverting the boundary class to include `!{}` (the first version) turns every pin in
+# this loop RED with the decoy's own content, not the real segment; the current class turns them
+# GREEN. `<`/`>` are pinned too, as a CONTROL that they are harmless despite being excluded from
+# the final whitelist: the redirect-stripping `sed` two stages above deletes them together with
+# their whole target — including `checkout` itself when glued — before this `grep` ever runs, so
+# they can never reach it as live boundary text either way.
+for _glue in '!' '{' '}' '<' '>'; do
+  seg_clip "x${_glue}checkout -b decoy origin/main;git checkout -b real" 'checkout -b real' \
+    "glue '${_glue}' does not open a real checkout segment on a glued decoy (checkout -b real still found)"
+  seg_clip "x${_glue}switch -c decoy origin/main;git switch -c real" 'switch -c real' \
+    "...same for the switch form (glue '${_glue}')"
+done
+
+# CONTROL-BYTE GLUE dimension (review round 3, 2026-09-02 — CRITICAL, security-auditor). The
+# boundary alternation's `[[:space:]]` (before this round narrowed to `[[:blank:]]`) is POSIX
+# space+tab+newline+VT(0x0B)+FF(0x0C)+CR(0x0D) — but bash's own tokenizer only treats
+# space/tab/newline as word-separating. A byte from the other three, glued between an arbitrary
+# prefix and `checkout`/`switch`, fuses them into ONE non-existent command word — the same shape
+# as `gcheckout`, just a different glue byte (confirmed by running each: `checkout` is never
+# invoked, the whole fused token errors as "command not found"). Generated over the dimension the
+# vulnerability actually lived on (every byte the class matches that isn't a real bash separator)
+# rather than the three bytes a specific review happened to try, so a future widening of this
+# class is caught the same way. Mutation-tested: reverting the boundary alternation's
+# `[[:blank:]]` back to `[[:space:]]` (its round-2 state) turns every pin in this loop RED with
+# the decoy's own content; the current `[[:blank:]]` turns them GREEN.
+for _byte in $'\x0b' $'\x0c' $'\x0d'; do
+  seg_clip "x${_byte}checkout -b decoy origin/main;git checkout -b real" 'checkout -b real' \
+    "control byte glue does not open a real checkout segment on a glued decoy (checkout -b real still found)"
+  seg_clip "x${_byte}switch -c decoy origin/main;git switch -c real" 'switch -c real' \
+    "...same for the switch form"
+done
+
+# PARAMETER-EXPANSION glue is a DOCUMENTED RESIDUAL, not a detection this suite claims (review
+# round 2 found the miss as CRITICAL; a same-day neutralization attempt to close it was reverted
+# after round 3 found it created a WORSE bug — see the KNOWN RESIDUALS comment at
+# cmd_git_branch_create_segment's definition, items 3-4, for the full account). `${x}checkout` (a
+# real, live invocation when `x` is unset/empty) is MISSED — the safe-fail direction, matching
+# this whole check's own documented fail-open design — rather than risk a repeat of item 4's
+# false-decoy shadowing. These pins lock in the SAFE-MISS behavior itself, and the two exact
+# constructs round 3 found dangerous, so a future re-attempt at closing item 3 can be checked
+# against them before it ships:
+det cmd_is_git_branch_create 'git ${x}checkout -b real' no \
+  "KNOWN RESIDUAL (accepted, safe-fail): a \${x}-glued real checkout is MISSED, not falsely detected"
+seg_clip 'git checkout main; git ${#x}checkout -b fake origin/other ; git checkout -b real' 'checkout -b real' \
+  "round-3 regression guard: \${#x} (NEVER empty — always a digit string) must not be treated as a boundary and shadow the real later create (this exact construct was a live CRITICAL in the reverted neutralization pass)"
+seg_clip 'git checkout main; git ${a:-${b}}checkout -b fake ; git checkout -b real' 'checkout -b real' \
+  "round-3 regression guard: a NESTED \${a:-\${b}}} expansion (confirmed live in real bash) must not shadow the real later create either (a naive single-pass neutralizer cannot balance this and was reverted for it)"
+# $(...) command substitution is the one glue mechanism that IS fully, safely handled (no
+# neutralization pass needed — see the boundary-whitelist comment on why `)` alone suffices).
+# Pinned as a companion so it can't silently regress alongside the \${...} residual above.
+det cmd_is_git_branch_create 'git checkout main; git $(true)checkout -b real' yes \
+  "companion: a \$(...)-glued real checkout IS detected (unlike \${...}, needs no extra pass)"
+seg_clip 'git $(true)checkout -b real origin/main' 'checkout -b real origin/main' \
+  "...segment content is unaffected by the command-substitution glue"
+
 echo "--- residuals pinned AT THE LAYER THAT OWNS THEM ---"
 # Pinned HERE, at the rendering that OWNS the residual, so it fails if cmd_words
 # ever starts unescaping. When this pin was added the guard-level twin was
@@ -799,6 +947,152 @@ if [ "${FASTPATH_SEEN:-0}" -ge 5 ]; then
 else
   echo "FAIL: control — only $FASTPATH_SEEN fast paths found; the scan is not looking at anything"
   FAIL=$((FAIL+1))
+fi
+
+echo "--- cmd_extract_substitutions: \$(...)/backtick command substitution always executes ---"
+# docs/solutions/logic-errors/quoted-command-substitution-always-executes-2026-08-17.md
+# and todos/P1-2026-08-17-quoted-command-substitution-inert.md — bash
+# always EXECUTES $(...)/backtick regardless of the surrounding quotes, but
+# cmd_bare/cmd_words (a flat state machine, no stack) blanked the whole span
+# uniformly. cmd_extract_substitutions is a separate, genuinely recursive
+# (stack-based) mechanism that finds these bodies without touching cmd_bare or
+# cmd_words at all.
+
+# extract <command> <expected-substring-present|absent> <needle> <label>
+extract() {
+  local cmd="$1" mode="$2" needle="$3" label="$4" out
+  out=$(printf '%s' "$cmd" | cmd_extract_substitutions)
+  if [ "$mode" = present ]; then
+    if grep -qF -- "$needle" <<< "$out"; then echo "PASS: $label"; PASS=$((PASS+1))
+    else echo "FAIL: $label (expected '$needle' in: $out)"; FAIL=$((FAIL+1)); fi
+  else
+    if grep -qF -- "$needle" <<< "$out"; then
+      echo "FAIL: $label (unexpected '$needle' in: $out)"; FAIL=$((FAIL+1))
+    else echo "PASS: $label"; PASS=$((PASS+1)); fi
+  fi
+}
+
+extract 'echo "$(eas update --branch preview --platform all)"' present \
+  'eas update --branch preview --platform all' \
+  "double-quoted \$(...) body is extracted (the exact PR #850 repro)"
+extract 'echo "`gh pr merge --admin 42`"' present 'gh pr merge --admin 42' \
+  "backtick substitution inside double quotes is extracted"
+extract "echo '\$(eas update --branch preview --platform all)'" absent 'eas update' \
+  "SINGLE-quoted \$(...) is genuinely inert in bash - extracts NOTHING"
+extract 'echo $'"'"'$(eas update)'"'"'' absent 'eas update' \
+  "ANSI-C \$'...' is genuinely inert - extracts NOTHING (state 3, not state 2)"
+extract 'echo "text with (parens) and no subst"' absent 'text' \
+  "bare parens in a double-quoted string are NOT mistaken for a substitution opener"
+extract 'echo "$(echo "$(gh pr merge --admin 42)")"' present 'gh pr merge --admin 42' \
+  "nested \$(...) inside \$(...) inside double quotes - innermost body still reachable"
+extract 'gh pr merge 42 -b "$(echo --auto)"' present 'echo --auto' \
+  "a decoy's substitution body is extracted onto its OWN line, never glued to the outer command"
+
+# CRITICAL (security review, 2026-09-02): a first version of the state-2
+# branch copied state 0's $' dollar-quote-sigil handling, which flipped the
+# scanner into ANSI-C state at the sigil EVEN THOUGH a double-quoted span
+# was already open -- ANSI-C quoting is a word-START construct in real
+# bash, meaningful only where a NEW word begins, never meaningful mid-word
+# inside an already-open double quote. That misclassification silently
+# made the extractor treat the very next byte as inert, so a live $(...)
+# immediately following the sigil (which bash genuinely executes --
+# ground-truthed against a real bash below) was never found.
+echo "--- real bash ground-truth: sigil bytes print literally, substitution still executes ---"
+BASH_GT_1=$(bash -c 'echo "prefix $'"'"'$(echo LIVE-EXECUTED)'"'"' suffix"')
+if [ "$BASH_GT_1" = "prefix \$'LIVE-EXECUTED' suffix" ]; then
+  echo "PASS: ground-truth - real bash executes \$(...) after a mid-string \$' and keeps the sigil bytes literal"; PASS=$((PASS+1))
+else
+  echo "FAIL: ground-truth - unexpected real-bash output: [$BASH_GT_1]"; FAIL=$((FAIL+1))
+fi
+
+extract 'echo "prefix $'"'"'$(echo LIVE-EXECUTED)'"'"' suffix"' present 'echo LIVE-EXECUTED' \
+  "CRITICAL fix pin: \$' sigil mid-word inside an ALREADY-OPEN double quote does not mask the live \$(...) that follows it"
+extract 'echo "prefix $'"'"'$(echo LIVE-EXECUTED)'"'"' suffix"' absent "prefix \$'" \
+  "CRITICAL fix pin (two-sided): the sigil bytes are not swallowed into an accumulated substitution body either -- they never opened one"
+
+# WARNING (same review, same branch): a first version also mirrored state
+# 0's $" handling into state 2. Unlike $' this does NOT mask a directly
+# FOLLOWING substitution (state[d]=2 while already at state 2 is a
+# self-transition, mutation-tested below), but it DOES consume the "
+# byte as part of the sigil (i++) instead of running it through the real
+# DQ-closer branch -- desyncing the scanner's open/closed belief from
+# real bash for the remainder of the string. Concretely: a "..."-quoted
+# argument that ends in a bare $" swallows what should have been ITS
+# closing quote, so the scanner stays in state 2 across a segment
+# boundary and reads a SUBSEQUENT, genuinely-single-quoted (inert) body
+# as if it were still inside the live double-quote context. Mutation
+# verified (2026-09-02): a state-2 $" handler mirroring state 0's exactly
+# (state[d]=2 no-op transition + consume the " via i++) makes the FIRST
+# assertion below flip from empty to a false-positive extraction of the
+# genuinely-inert body; reverting to no-$"-handling (current code)
+# restores the correct empty result. This is an over-match (safe
+# direction for a deny-shaped check), not a masking under-match like the
+# $' CRITICAL -- but it is the same "diverges from the proven cmd_bare/
+# cmd_words no-sigil-handling model" defect class, so the fix (deleting
+# the branch, not special-casing it) is identical and is pinned here too.
+extract 'echo "AAA $"'"'"'$(echo SHOULD-BE-INERT)'"'"'"BBB"' absent 'SHOULD-BE-INERT' \
+  "WARNING fix pin: a bare \$\" mid-word does not swallow the real closing quote that follows it -- a genuinely single-quoted (inert) body immediately after is still recognized as inert, not misread as still-open-double-quote-live"
+
+echo "--- cmd_words_deep: the four reproduction cases ---"
+# These four are the exact reproduction cases quoted in the todo's Background
+# section, verified reproducible on main by piping crafted JSON into the live
+# hooks BEFORE this fix (guard-outward-cli.sh / pr-preflight-guard.sh all
+# returned ALLOW). test-guard-outward-cli.sh and test-pr-preflight-guard.sh pin
+# the same four strings through the actual hook scripts; these pin them at the
+# shared-primitive layer. Repros 1-3 (eas update, gh pr merge --admin, gh api
+# -X POST) are guard-outward-cli.sh's OWN pattern matchers, not a cmd_is_*
+# wrapper, so they are pinned as substring-presence checks on cmd_words_deep's
+# own output (what guard-outward-cli.sh's \$WORDS_DEEP actually contains) —
+# repro 4 (gh pr create) has a real cmd_is_* wrapper (cmd_is_gh_pr_create),
+# used directly by pr-preflight-guard.sh, so that one is pinned as a det().
+render_arg cmd_words_deep 'echo "$(eas update --branch preview --platform all)"' present \
+  'eas update --branch preview --platform all' \
+  "repro 1: eas update hidden in a quoted \$(...) reaches cmd_words_deep's output (guard-outward-cli.sh's own eas pattern reads \$WORDS_DEEP against this same text)"
+render_arg cmd_words_deep 'echo "$(gh pr merge --admin 42)"' present \
+  'gh pr merge --admin 42' \
+  "repro 2: gh pr merge --admin hidden in a quoted \$(...) reaches cmd_words_deep's output"
+render_arg cmd_words_deep 'echo "$(gh api -X POST repos/o/r/merges)"' present \
+  'gh api -X POST repos/o/r/merges' \
+  "repro 3: gh api -X POST hidden in a quoted \$(...) reaches cmd_words_deep's output"
+det cmd_is_gh_pr_create 'echo "$(gh pr create --fill)"' yes \
+  "repro 4: gh pr create --fill hidden in a quoted \$(...) is now DETECTED (pr-preflight-guard.sh's stamp gate can no longer be skipped this way)"
+det cmd_is_gh_pr_create "echo '\$(gh pr create --fill)'" no \
+  "control: the SAME text, single-quoted (genuinely inert), stays undetected"
+
+echo "--- cmd_words stays completely UNCHANGED (grant-shaped contract) ---"
+# The single most important invariant of this fix: cmd_words_deep is an
+# ADDITIONAL function, never a modification to cmd_words itself, because
+# guard-outward-cli.sh's \`gh pr merge --auto\` carve-out reads plain \$WORDS to
+# GRANT something, not just to add a deny. If cmd_words itself had grown
+# substitution-awareness, a decoy \`-b "\$(echo --auto)"\` would manufacture a
+# free-standing --auto token INSIDE \$WORDS itself and grant the carve-out to
+# an unrelated, immediate 'gh pr merge' - worse than the bug being fixed.
+render cmd_words 'gh pr merge 42 -b "$(echo --auto)"' absent ' --auto' \
+  "cmd_words (NOT deep) still renders a substitution inside a quoted span as one opaque token - no free-standing --auto"
+
+echo "--- cmd_is_git_head_mover: the ONE consumer where over-matching is unsafe, not just safe-direction ---"
+# drift-detect-update.sh writes a HEAD baseline on a match rather than denying,
+# so a FALSE match here is suppressive (narrows the drift-detection window),
+# not merely over-cautious. The live/inert distinction cmd_extract_substitutions
+# already gets right (see the extract() block above) is what protects this
+# consumer specifically - pin it at the predicate the consumer actually calls.
+det cmd_is_git_head_mover 'echo "$(git reset --hard)"' yes \
+  "a head-mover hidden in a LIVE (double-quoted) substitution genuinely executes - baseline SHOULD refresh"
+det cmd_is_git_head_mover "echo '\$(git reset --hard)'" no \
+  "the SAME text, single-quoted (genuinely inert, never executes) - baseline must NOT spuriously refresh"
+
+echo "--- cmd_words_deep: empty-output invariant survives a broken/absent cmd_extract_substitutions ---"
+# guard-outward-cli.sh's and pr-preflight-guard.sh's broken-awk detectors treat
+# an all-blank rendering from a non-blank command as "the awk backend failed -
+# fail closed via the crude smell test". cmd_words_deep must not defeat that:
+# it always calls plain cmd_words FIRST, unconditionally, so a bug or
+# unavailability in cmd_extract_substitutions can only cost the ADDED matches,
+# never blank the base rendering the existing detector relies on.
+DEEP_BASE=$(cmd_words_deep 'git commit -m x')
+if [ -n "${DEEP_BASE//[[:space:]]/}" ]; then
+  echo "PASS: cmd_words_deep's output is non-blank for a non-blank command (base rendering survives)"; PASS=$((PASS+1))
+else
+  echo "FAIL: cmd_words_deep returned blank for a non-blank command"; FAIL=$((FAIL+1))
 fi
 
 echo ""

@@ -6,7 +6,7 @@ module: shared
 tags: [git, worktree, tooling, husky]
 applies_to: [.husky/post-checkout]
 created: '2026-07-06'
-last_updated: '2026-07-19'
+last_updated: '2026-09-01'
 ---
 
 # Ad hoc git worktrees outside .claude/worktrees/ get no node_modules symlink
@@ -20,6 +20,7 @@ Any `git worktree add` invoked directly (as opposed to through the Agent tool's 
 - A hook failure naming a binary that's normally on `PATH` inside the repo (`eslint`, `tsc`, `vitest`) from a worktree you created by hand rather than through an agent-dispatch convention.
 - `ls <worktree>/node_modules` comes back "No such file or directory" while `.env` is present and correct.
 - A single test fails with ENOENT on a path under `node_modules/<pkg>/...` while every other test in the same run (including other tests in the same file) passes — especially if the failing test constructs the path explicitly (e.g. via `import.meta.resolve`, `require.resolve` with an explicit `basedir`, or string-concatenating `process.cwd()`) rather than using a plain `import`/`require` of the package. Confirm by re-running the identical test from the main checkout — if it passes there, this is the worktree module-resolution artifact, not a real regression.
+- A Postgres-backed vitest test fails with `database "<current unix user>" does not exist` from inside a worktree, while the same test passes in the main checkout — this indicates `DATABASE_URL` was not inherited, likely because `.env` went unsymlinked.
 
 ## Why
 
@@ -33,6 +34,12 @@ Symlink it manually before running any toolchain command in the worktree:
 
 ```bash
 ln -s /absolute/path/to/main-checkout/node_modules /path/to/ad-hoc-worktree/node_modules
+```
+
+Symlink `.env` manually when `DATABASE_URL` (or other env‑driven config) is missing:
+
+```bash
+ln -s /absolute/path/to/main-checkout/.env /path/to/ad-hoc-worktree/.env
 ```
 
 Hit twice in one session with the identical fix both times: once independently verifying a Babel-plugin behavior claim in a detached `/tmp` worktree, once resolving a merge conflict in an ad hoc worktree created off a PR branch.
@@ -55,10 +62,18 @@ Because the hook enumerates worktrees via `git worktree list --porcelain` rather
 
 A fourth confirmed counter-case, same day as the "RESOLVED at the hook level" note above: a `todo-executor` dispatched via `Agent(isolation:"worktree")` — the exact mechanism the `## Exceptions` intro claims "symlink node_modules automatically" — still had `node_modules` containing only `.vite/` (zero real packages) when it reached Step 5b's verification (`npm run test:run` ENOENT'd on the identical `error-reporter.test.ts` path). The PR #669 cache-noise fix inside `worktree-deps.sh` is not in question here — the hook's trigger simply never fired for this dispatch, the same root cause as the third counter-case, just via a different creation path (the harness's own `isolation:"worktree"` machinery instead of a skill's raw `git worktree add`). Whether `PostToolUse:EnterWorktree` fires reliably for every `Agent(isolation:"worktree")` dispatch remains unverified in practice — treat the "Exceptions" claim as aspirational, not guaranteed, and self-heal defensively: **any executor/agent operating inside a freshly dispatched `isolation:"worktree"` worktree should run `bash .claude/hooks/worktree-deps.sh` once, near the start, before trusting `npm run test:run`/`check:types`/`lint` output** — the same explicit-invocation fix as the third counter-case, just applied proactively instead of reactively. The `rm -rf` + symlink is idempotent and near-instant, so running it unconditionally costs nothing even when provisioning already succeeded.
 
+A **fifth confirmed counter-case** (2026-09-01): during a `todo-executor` dispatched via `Agent(isolation:"worktree")` for the "notebook extractor has no date anchor" todo, Step 0 discovered that the worktree had **no `.env` symlink at all** — `git status` showed `.env` as absent, and `ls -la .env*` found nothing. This is a distinct issue from the four preceding counter-cases, all of which concerned `node_modules`: this one is about `.env`, and the responsible hook is different — `.husky/post-checkout`, not `worktree-deps.sh`. The `worktree-deps.sh` hook has no `.env` handling by design (its docstring states `.env*` is covered separately by `.husky/post-checkout`). However, `.husky/post-checkout` is a git hook that fires on `git checkout` / `git worktree add` — it **does not fire** for an `Agent(isolation:"worktree")` dispatch, which is provisioned through a different internal mechanism, not a plain `git worktree add` that the executor itself runs. So **both** the documented self-heal (`bash .claude/hooks/worktree-deps.sh`, which the todo-executor agent already runs unconditionally at Step 0) **and** the `.husky/post-checkout` hook that is supposed to symlink `.env` miss this exact dispatch mechanism. Impact: any Postgres-backed vitest test relying on `DATABASE_URL` from `.env` fails with `database "<current unix user>" does not exist` (pg falls back to the OS username as the default database name when `DATABASE_URL` is unset). Fix applied: manually symlink `.env` from the main checkout root into the worktree root, mirroring exactly what `.husky/post-checkout` would have done:
+
+```bash
+ln -s /absolute/path/to/main-checkout/.env ./.env
+```
+
+(ran from inside the worktree). The self-heal should be added as an explicit, proactive step **alongside** the existing `bash .claude/hooks/worktree-deps.sh` step — the same way that hook itself became a proactive Step-0 self-heal after its own trigger was found unreliable. Any executor/agent operating inside a freshly dispatched `isolation:"worktree"` worktree should symlink `.env` from the main checkout root at the start, before relying on any environment-dependent test or command.
+
 ## Related Files
 
 - `.husky/post-checkout` — the symlink list that doesn't include `node_modules`
-- `.claude/hooks/worktree-deps.sh` — the node_modules-symlinking hook itself; its path predicate covers `.claude/worktrees/*` and `.worktrees/*`, but it only *fires* on `SessionStart`/`PostToolUse:EnterWorktree`, not on a Bash-invoked `git worktree add`
+- `.claude/hooks/worktree-deps.sh` — the node_modules-symlinking hook itself; its path predicate covers `.claude/worktrees/*` and `.worktrees/*`, but it only *fires* on `SessionStart`/`PostToolUse:EnterWorktree`, not on a Bash-invoked `git worktree add`; also has no `.env` handling
 - `.claude/skills/todo-fast/SKILL.md` — Phase 1, the shared-worktree creation block: `ln -sf "$MAIN_CHECKOUT/node_modules" "$WORKTREE/node_modules"` immediately after `git worktree add`, with an inline comment citing this file
 - `.claude/skills/audit/SKILL.md` — Phase 1 step 3, the third counter-case's fix: `bash .claude/hooks/worktree-deps.sh` invoked explicitly right after entering the new `.worktrees/audit-YYYY-MM-DD` worktree
 - `server/lib/__tests__/error-reporter.test.ts` — the concrete cwd-anchored-path test that surfaces this artifact; passes from the main checkout, ENOENTs in an under-provisioned worktree

@@ -818,6 +818,86 @@ assert_allow "a grep for railway up in a file still allows" \
 assert_allow "unquoted gh pr merge --auto still allows (carve-out intact)" \
   "$(jsonc 'gh pr merge 42 --auto --squash --delete-branch')"
 
+# ---------- QUOTED COMMAND SUBSTITUTION (todos/P1-2026-08-17-quoted-command-substitution-inert.md) ----------
+# docs/solutions/logic-errors/quoted-command-substitution-always-executes-2026-08-17.md
+# bash ALWAYS executes $(...)/backtick regardless of the surrounding quotes —
+# quoting only affects word-splitting of the substitution's OUTPUT, never
+# whether the substitution itself runs. cmd_bare/cmd_words blanked the whole
+# quoted span uniformly, including a live $(...)/backtick inside it, so a real
+# outward-facing invocation hid from every check in this file by wrapping in
+# ordinary double quotes. These three are the EXACT reproduction strings from
+# the todo's Background section, verified (before this fix) to return exit 0 /
+# ALLOW by piping the identical crafted JSON into this live hook.
+assert_deny "eas update hidden in a quoted \$(...) substitution denies" \
+  "$(jsonc 'echo "$(eas update --branch preview --platform all)"')" \
+  "eas update/publish/submit"
+assert_deny "gh pr merge --admin hidden in a quoted \$(...) substitution denies" \
+  "$(jsonc 'echo "$(gh pr merge --admin 42)"')" \
+  "without a REAL --auto flag"
+assert_deny "gh api -X POST hidden in a quoted \$(...) substitution denies" \
+  "$(jsonc 'echo "$(gh api -X POST repos/o/r/merges)"')" \
+  "mutating HTTP method"
+# Backtick form of the same bug, inside double quotes.
+assert_deny "eas update hidden in a quoted backtick substitution denies" \
+  "$(jsonc 'echo "`eas update --branch preview --platform all`"')" \
+  "eas update/publish/submit"
+# Two-sided control: the IDENTICAL text, SINGLE-quoted instead of double —
+# bash's single quotes genuinely disable ALL expansion including command
+# substitution, so this is authentically inert and must still allow. If this
+# ever starts denying, the fix over-widened past "live quote context only".
+assert_allow "the SAME eas update text, single-quoted (genuinely inert), still allows" \
+  "$(jsonc "echo '\$(eas update --branch preview --platform all)'")"
+# The grant-shaped hazard this fix could have introduced: a decoy substitution
+# must NEVER manufacture a free-standing --auto and grant the carve-out to an
+# unrelated, immediate 'gh pr merge'. NOTE this row does NOT by itself
+# discriminate whether $CLAUSE reads $WORDS or $WORDS_DEEP (mutation-tested,
+# 2026-09-02: flipping that one assignment to $WORDS_DEEP leaves this row, and
+# every other row in this file, still passing) — the decoy text lands on its
+# OWN line (cmd_extract_substitutions never merges a body into the line that
+# contains the outer 'gh pr merge'), so grep's per-line clause cut cannot see
+# it either way. The row below IS the discriminator.
+assert_deny "a decoy --auto inside a substitution does NOT grant the merge carve-out" \
+  "$(jsonc 'gh pr merge 42 -b "$(echo --auto)"')" \
+  "without a REAL --auto flag"
+# THE ACTUAL DISCRIMINATOR for $CLAUSE staying on plain $WORDS (see this hook's
+# own CLAUSE-assignment comment, and lib/cmd-detect.sh's cmd_words_deep
+# header): a genuinely self-contained `gh pr merge 42 --auto` — subcommand AND
+# a real --auto in the SAME body — hidden entirely inside a live substitution.
+# Verified (2026-09-02, mutation test) that flipping $CLAUSE's source from
+# $WORDS to $WORDS_DEEP makes THIS ONE ALLOW instead of DENY, while every
+# other assertion in this file stays green — this is the one input that
+# proves the shallow/deep choice on that single line is live code, not dead
+# weight. Denying here is the documented CONSERVATIVE residual: the
+# substitution does genuinely execute and does carry a real --auto, so this is
+# a deliberately cautious "cannot verify" rather than a bypass — see the
+# CLAUSE comment for why extending verification to substitution content was
+# judged not worth the larger, harder-to-audit surface for a case none of this
+# todo's four reproduction strings exercise.
+assert_deny "a SELF-CONTAINED real 'gh pr merge --auto' fully hidden in a substitution still denies (documented conservative residual, not a bypass)" \
+  "$(jsonc 'echo "$(gh pr merge 42 --auto)"')" \
+  "without a REAL --auto flag"
+# CRITICAL (security review, 2026-09-02) — the exact repro that broke
+# CLAUSE's "one quoted span = one word" invariant: a quoted VALUE
+# (`-b "..."`) containing its OWN internal double-quoted argument flips
+# cmd_words's flat, non-nesting-aware quote toggle mid-span, manufacturing
+# REAL literal spaces around a forged, free-standing --auto token that does
+# not correspond to any actual argv boundary (confirmed via a `gh(){ for a
+# in "$@"; do echo "[$a]"; done; }` shim on the identical string: the whole
+# thing is ONE argv element, with no standalone --auto). Fixed by denying
+# whenever $CLAUSE contains any literal `$` (see guard-outward-cli.sh's own
+# CLAUSE/GH_MERGE_VALUE_FLAGS comment for the full rationale and the
+# safe-direction tradeoff). Mutation-tested (2026-09-02): removing the `$`
+# guard and letting HAS_REAL_AUTO fall straight to the awk scan flips this
+# row from deny to allow, while every other row in this file stays green —
+# this is the row that proves the guard is live code, not dead weight.
+assert_deny "a quoted VALUE with its OWN internal double-quoted argument does not forge a free-standing --auto (CLAUSE \$-guard fix)" \
+  "$(jsonc 'gh pr merge 42 -b "$(printf %s "AAA "--auto" BBB")"')" \
+  "without a REAL --auto flag"
+# A live substitution that is genuinely harmless (no dangerous verb inside)
+# must still allow — this fix must not become "deny anything containing \$(...)".
+assert_allow "a harmless live substitution with no dangerous verb still allows" \
+  "$(jsonc 'echo "today is $(date)"')"
+
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend
 # on any other external tool (that is C4's lesson applied one layer down).

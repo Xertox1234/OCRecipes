@@ -35,6 +35,17 @@ const ZONES = [
   "America/Los_Angeles", // -7
 ] as const;
 
+// Minutes EAST of UTC (`-getTimezoneOffset()`) for each zone above, on the
+// September 2026 fixture date used throughout this file. Backs the
+// "guards the mechanism" check below — see its comment for why this needs
+// to assert a NONZERO offset rather than just any offset.
+const ZONE_OFFSET_MINUTES: Record<(typeof ZONES)[number], number> = {
+  UTC: 0,
+  "Europe/Berlin": 120,
+  "Pacific/Auckland": 720,
+  "America/Los_Angeles": -420,
+};
+
 const originalTz = process.env.TZ;
 afterAll(() => {
   if (originalTz === undefined) delete process.env.TZ;
@@ -44,6 +55,22 @@ afterAll(() => {
 describe.each(ZONES)("buildPlanSlotDays (TZ=%s)", (tz) => {
   beforeAll(() => {
     process.env.TZ = tz;
+  });
+
+  // Guards the pin itself: a silently no-op TZ (a typo'd zone, `TZ=""`, or no
+  // pin at all) reads back as offset 0 on a UTC host, which is exactly the
+  // failure mode this file exists to catch — so this must assert a NONZERO
+  // offset for every zone but the UTC control, or a broken pin would leave
+  // every assertion below passing for the wrong reason. See
+  // docs/solutions/logic-errors/an-uncontrolled-ambient-input-makes-the-check-agree-with-what-it-checks-2026-08-31.md
+  // and .../each-tables-evaluate-before-hooks-so-pinned-env-misses-fixtures-2026-08-31.md.
+  it("pins the process timezone this block claims (guards the mechanism)", () => {
+    // `+ 0` normalizes negative zero: for the UTC row, the raw offset is `0`,
+    // so `-0` (a distinct value from `0` under `toBe`'s `Object.is` semantics)
+    // would otherwise fail this assertion even though the pin is correct.
+    expect(-new Date(2026, 8, 1).getTimezoneOffset() + 0).toBe(
+      ZONE_OFFSET_MINUTES[tz],
+    );
   });
 
   it("returns 7 consecutive days starting from the given date", () => {
