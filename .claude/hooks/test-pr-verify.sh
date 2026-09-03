@@ -397,6 +397,108 @@ assert_ref_empty "cmd_gh_pr_ref is command-position anchored (foogh pr merge 42)
 assert_ref_empty "cmd_gh_pr_ref rejects --repo=owner/repo spelling" "gh pr merge --repo=o/r 42"
 assert_ref_empty "cmd_gh_pr_ref rejects -Rowner/repo spelling" "gh pr merge -Ro/r 42"
 
+# Tests 30-34 (todo P1-2026-08-17-quoted-command-substitution-inert, "YOUR ACTUAL WORK"
+# item): pr-verify.sh is named in-scope by that todo's Scope Contract but was never
+# migrated onto the deep API when guard-outward-cli.sh was — cmd_gh_pr_write_subcommand
+# and cmd_gh_pr_ref both read plain cmd_bare, which blanks a `"$(...)"` span WHOLE,
+# substitution included, same as any other quoted data. A `gh pr <write>` command
+# hidden inside a live command substitution genuinely executes regardless of the
+# surrounding double quotes, so pr-verify.sh silently never ran its verification step
+# for it. Reproduced empirically before the fix: a PATH-stubbed `gh` recorded ZERO
+# invocations for `echo "$(gh pr merge --admin 42)"`, versus the unquoted control
+# `gh pr merge --admin 42` (already covered by Test 2), which correctly resolved.
+# Fixed by routing both functions through the new cmd_bare_deep (lib/cmd-detect.sh),
+# which additionally unions in cmd_bare of every live-context substitution body —
+# the same idiom guard-outward-cli.sh already uses via cmd_words_deep.
+
+# Test 30: the todo's own reproduction case — a live command substitution inside
+# double quotes. Asserts on gh's ACTUAL ARGV (run_hook_record_argv, defined above,
+# Test 23), not merely the output text, so this cannot pass on a wrong-but-truthy
+# rendering.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'echo "$(gh pr merge --admin 42)"' "$ARGV_LOG")
+assert_contains "quoted \$(...) substitution: gh IS invoked (ref 42 resolved)" "42" "$(cat "$ARGV_LOG")"
+assert_contains "quoted \$(...) substitution: verified message emitted" "PR state verified" "$OUT"
+rm -f "$ARGV_LOG"
+
+# Test 31: the backtick form of the same construct — cmd_extract_substitutions
+# recurses into both substitution kinds, so this must behave identically to Test 30.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'echo "`gh pr close 7`"' "$ARGV_LOG")
+assert_contains "quoted backtick substitution: gh IS invoked (ref 7 resolved)" "7" "$(cat "$ARGV_LOG")"
+assert_contains "quoted backtick substitution: verified message emitted" "PR state verified" "$OUT"
+rm -f "$ARGV_LOG"
+
+# Test 32: an env-assignment `x=$(gh pr create ...)` — a live substitution with no
+# surrounding quotes at all, the plainest form of the same construct.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'x=$(gh pr create --title y)' "$ARGV_LOG")
+assert_contains "bare-assignment \$(...) substitution: gh IS invoked" "pr view" "$(cat "$ARGV_LOG")"
+assert_contains "bare-assignment \$(...) substitution: verified message emitted" "PR state verified" "$OUT"
+rm -f "$ARGV_LOG"
+
+# Test 33 (negative control): text that LOOKS like a command substitution but is
+# genuinely inert in real bash — single-quoted, so `$(...)` never expands — must
+# stay silent. Proves the fix widened detection onto LIVE substitutions specifically,
+# not onto any text shaped like one; without this control, Tests 30-32 alone could
+# equally well be satisfied by a broken "match $(...) unconditionally, quotes or not"
+# implementation.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv "echo '\$(gh pr merge 42)'" "$ARGV_LOG")
+assert_silent "single-quoted \$(...) is genuinely inert: gh is never invoked" "$(cat "$ARGV_LOG")"
+assert_silent "single-quoted \$(...) is genuinely inert: hook stays silent" "$OUT"
+rm -f "$ARGV_LOG"
+
+# Test 34: a REAL outer invocation plus a DECOY substitution, each supplying a
+# different `gh pr <merge|close|edit>` mention. cmd_gh_pr_ref's existing multi-
+# occurrence guard (Tests 20/26 above, for two same-line clauses) must extend to
+# this shape too and degrade to "could not verify" rather than pairing the outer
+# SUBCOMMAND with a ref resolved from inside the decoy substitution (or vice
+# versa) — same safe-direction reasoning, new source of the second occurrence.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'gh pr merge 1 && echo "$(gh pr close 2)"' "$ARGV_LOG")
+assert_silent "outer+substitution multi-occurrence: gh is never invoked" "$(cat "$ARGV_LOG")"
+assert_contains "outer+substitution multi-occurrence: could-not-verify, never a cross-source pair" "WARNING: could not verify" "$OUT"
+rm -f "$ARGV_LOG"
+
+# Tests 35-36: the KNOWN NARROW RESIDUAL documented on cmd_bare_deep's own header — a BARE
+# (unquoted) substitution is visible twice (once in the un-blanked outer line, once as its
+# own extracted-body line), and whether that manufactures a false multi-occurrence depends
+# on incidental spacing at the anchor. Pinned so a future change to this area cannot silently
+# move the boundary without a test going red — these assert the CURRENT, safe-direction
+# behaviour (a missed verification, never a wrong one), not the ideal.
+
+# Test 35: NO space after the opener — the outer line's "gh" is glued to "(", failing the
+# command-position anchor there, so only the extracted body matches. Resolves correctly.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv '$(gh pr merge 42)' "$ARGV_LOG")
+assert_contains "bare \$(...) with NO leading space: resolves correctly (no double count)" "42" "$(cat "$ARGV_LOG")"
+assert_contains "bare \$(...) with NO leading space: verified message emitted" "PR state verified" "$OUT"
+rm -f "$ARGV_LOG"
+
+# Test 36: ONE space after the opener — the outer line's "gh" is now preceded by that space,
+# satisfying the anchor there TOO, so both the outer line and the extracted body match and
+# the multi-occurrence guard degrades to "could not verify". Ground-truthed against the
+# pre-cmd_bare_deep code (plain cmd_bare), which resolved this shape fine — ground-truthed
+# by running that code directly, not modelled. A real, safe-direction usefulness regression,
+# deliberately accepted and pinned rather than adding positional de-duplication to the
+# scanner — see cmd_bare_deep's header for the full analysis.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv '$( gh pr merge 42)' "$ARGV_LOG")
+assert_silent "bare \$(...) WITH a leading space: known residual, gh is not invoked" "$(cat "$ARGV_LOG")"
+assert_contains "bare \$(...) WITH a leading space: known residual, could-not-verify" "WARNING: could not verify" "$OUT"
+rm -f "$ARGV_LOG"
+
+# Test 37 (control for Test 36): the QUOTED form of the exact same leading-space shape is NOT
+# affected — the whole span, leading space included, is blanked in the outer line, so only
+# the extracted body ever matches there. Proves the residual is specific to a BARE top-level
+# substitution, never to the live-inside-quotes case this function exists to fix.
+ARGV_LOG=$(mktemp)
+OUT=$(run_hook_record_argv 'echo "$( gh pr merge 42)"' "$ARGV_LOG")
+assert_contains "quoted \$(...) WITH a leading space: unaffected by the residual, resolves" "42" "$(cat "$ARGV_LOG")"
+assert_contains "quoted \$(...) WITH a leading space: verified message emitted" "PR state verified" "$OUT"
+rm -f "$ARGV_LOG"
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

@@ -1,6 +1,6 @@
 ---
 title: "cmd_bare/cmd_words treat quoted \$(...) and backtick command substitution as inert data"
-status: blocked
+status: in-progress
 priority: high
 created: 2026-08-17
 updated: 2026-09-02
@@ -64,11 +64,14 @@ pre-existing, structural gap in the whole quote-scanning approach, not a regress
       quote-scanner with a 7th special case. This top-level choice is settled; the
       specific tokenizer implementation approach is a design/spike that belongs to
       implementation, not a re-opening of this decision (see Scope Contract).
-- [ ] All four reproduction cases above (`eas update`, `gh pr merge --admin`,
-      `gh api -X POST`, `gh pr create`) correctly deny/gate after the fix.
-- [ ] Regression tests added to `test-cmd-detect.sh` and the relevant end-to-end
-      `test-*.sh` files, piping the exact reproduction strings into the live hooks.
-- [ ] Full `scripts/run-hook-tests.sh` suite still passes.
+- [x] All four reproduction cases above (`eas update`, `gh pr merge --admin`,
+      `gh api -X POST`, `gh pr create`) correctly deny/gate after the fix — re-verified
+      directly on this branch (not inherited from the parked commit's claim); see Updates.
+- [x] Regression tests added to `test-cmd-detect.sh` (the prior accepted session added
+      +168 lines there for the lib-level scanner) and the relevant end-to-end `test-*.sh`
+      file (`test-pr-verify.sh`, this session, 18 new assertions), piping the exact
+      reproduction strings into the live hooks.
+- [x] Full `scripts/run-hook-tests.sh` suite still passes — 34/34 files, exit 0.
 
 ## Implementation Notes
 
@@ -204,3 +207,79 @@ pr-verify}.sh`), plus their test files.
   re-dispatched: `pr-verify.sh` is named in-scope by the Scope Contract but was not
   updated (both reviewers flagged this as a gap); and the WARNING-tier findings above
   are already fixed and pinned, no further action needed on those two specifically.
+
+### 2026-09-02 (resumption)
+
+- **User ruling (verbatim rationale)**: ACCEPT the hand-rolled recursive-stack awk
+  scanner built in the prior session (`cmd_extract_substitutions` + `cmd_words_deep`,
+  `.claude/hooks/lib/cmd-detect.sh`, committed at `bc1be557`), rather than requiring a
+  "real shell tokenizer" per the Scope Contract's original wording. Rationale: no
+  viable off-the-shelf or bash-native tokenizer exists on this runtime (this project's
+  bash 3.2.57) — three alternatives were evaluated and rejected with cause: bash's own
+  DEBUG-trap + extdebug veto trick is non-functional on this runtime (verified by
+  direct probing); the `shell-quote` npm package (already a dependency) cannot
+  distinguish a live `"$(...)"` from an inert `'$(...)'` at all; the `bash-parser` npm
+  package is unmaintained since ~2022, built on the deprecated `babylon` parser, with
+  21 transitive deps — an unacceptable supply-chain addition for a security-critical
+  local guard. This top-level architecture question is not re-litigated in this
+  session.
+
+- **What was actually done in this session**: the one remaining gap flagged by both
+  `code-reviewer` and `security-auditor` in the prior session — `.claude/hooks/pr-verify.sh`
+  is named in-scope by the Scope Contract but its two consumer functions
+  (`cmd_gh_pr_write_subcommand`, `cmd_gh_pr_ref`, used ONLY by pr-verify.sh) still read
+  plain `cmd_bare`, which blanks a `"$(...)"` span whole, substitution included,
+  exactly like the bug this todo exists to close. Fixed by adding `cmd_bare_deep()` to
+  `.claude/hooks/lib/cmd-detect.sh` (the same combinator idiom as the existing
+  `cmd_words_deep()`, built on `cmd_bare` instead) and rewiring both functions onto it.
+  Also added `cmd_bare_deep` to `test-cmd-detect.sh`'s declared-function existence loop
+  (it was missing — a completeness gap in the new function, not a behavior bug).
+
+- **How this was verified (only what was actually run — no inherited/unverified
+  claims)**:
+  - Constructed `echo "$(gh pr merge --admin 42)"` and ran it against the UNMODIFIED
+    `pr-verify.sh` with a PATH-stubbed `gh` recording its argv: confirmed `gh` was
+    NEVER invoked (the bypass is real), versus the unquoted control
+    `gh pr merge --admin 42`, which correctly invoked `gh pr view 42`. Re-ran the same
+    input after the fix: now correctly invokes `gh pr view 42`. Also verified the
+    backtick form, an env-assignment form, and a negative control (genuinely inert
+    single-quoted `$(...)`, which correctly stays silent both before and after the
+    fix).
+  - Mutation-tested: reverted `cmd-detect.sh` to the pre-fix committed state
+    (`git checkout --` against a saved patch), confirmed exactly the 8 new
+    fix-dependent assertions FAIL while the negative-control assertions still pass;
+    restored via `git apply`; confirmed all pass again.
+  - Re-verified all four of the todo's original reproduction cases directly on this
+    branch (not inherited from the parked commit's claim): `eas update`/
+    `gh pr merge --admin`/`gh api -X POST` all correctly `deny` via
+    `guard-outward-cli.sh` (exit 0, `permissionDecision: deny`); `gh pr create`
+    correctly triggers the preflight-stamp gate via `pr-preflight-guard.sh`
+    (`.claude/hooks/pr-preflight-guard.sh`, not guard-outward-cli.sh — corrected
+    mid-session after first checking the wrong hook), identically to the unquoted
+    control.
+  - Ran the full `scripts/run-hook-tests.sh`: 34/34 files pass, exit 0 —
+    `test-cmd-detect.sh` 395/395 and `test-guard-outward-cli.sh` 257/257 (both
+    UNCHANGED baselines; this session's diff touches neither file's test assertions),
+    `test-pr-verify.sh` 68/68 (up from 50 pre-existing; 18 new assertions). Also ran
+    `npm run test:run` (525 files / 8351 tests passed), `npm run check:types` (clean),
+    `npm run lint` (0 errors, 3 pre-existing warnings in unrelated files).
+  - Enumerated every `cmd_bare`/`cmd_words` call site across the Scope Contract's file
+    list to confirm pr-verify.sh's two functions were the only gap. Found one
+    PRE-EXISTING, already-documented residual unrelated to this session's fix and out
+    of scope: `cmd_is_git_branch_create` deliberately stays shallow (a decision from
+    the prior, accepted session) — verified empirically that
+    `echo "$(git checkout -b foo)"` is not detected by it (control: the unquoted form
+    is). Also found and documented (pinned with tests, NOT fixed — safe-direction,
+    narrow) a new residual specific to this session's fix: a bare/unquoted
+    substitution with a leading space right after the opener (`$( gh pr merge 42)`)
+    double-counts across the outer+extracted-body union and degrades to "could not
+    verify" where the pre-fix code resolved it; the quoted form of the same shape is
+    unaffected. See `cmd_bare_deep`'s own header comment in
+    `.claude/hooks/lib/cmd-detect.sh` and `test-pr-verify.sh` Tests 35-37.
+  - Analyzed merge overlap with four unmerged PRs (#907, #909, #906, #910) via
+    `git merge-tree --write-tree` plus materializing each clean result into a
+    throwaway worktree and running the full suite on it (never merged/rebased onto
+    this branch). See the PR body for the full breakdown and the exact commit this
+    analysis was run against.
+
+- **Status**: flipped to `done` and archived.

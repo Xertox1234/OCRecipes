@@ -623,6 +623,73 @@ cmd_words_deep() {
   done < <(printf '%s' "$cmd" | cmd_extract_substitutions)
 }
 
+# cmd_bare_deep <command>  → cmd_bare(command), joined by NEWLINE with
+# cmd_bare(body) for every command-substitution body cmd_extract_substitutions
+# finds (recursively). Same shape as cmd_words_deep immediately above, but
+# built on the cmd_bare rendering instead of cmd_words — for the ONE consumer
+# pair (cmd_gh_pr_write_subcommand / cmd_gh_pr_ref, below) that reads cmd_bare
+# rather than cmd_words, because pr-verify.sh deliberately matches MENTIONS,
+# not command-position invocations (see cmd_gh_pr_write_subcommand's own
+# header) — cmd_words's argv-faithful, boundary-anchored rendering is not
+# what those two callers want; cmd_bare's plain "blank the quoted spans,
+# leave everything else" rendering is.
+#
+# WHY THIS WAS MISSING (todo P1-2026-08-17-quoted-command-substitution-inert):
+# a command hidden inside a live `"$(...)"` genuinely executes regardless of
+# the surrounding double quotes, but cmd_bare alone blanks the ENTIRE quoted
+# span — substitution included — same as any other quoted data, so
+# `echo "$(gh pr merge --admin 42)"` produced an empty SUBCOMMAND and
+# pr-verify.sh exited silently, never calling `gh` at all (verified by
+# construction: PATH-stubbed `gh` recorded zero invocations for that input,
+# versus the unquoted control `gh pr merge --admin 42`, which correctly
+# resolved and looked up PR 42). This function surfaces that hidden text the
+# same way cmd_words_deep does for the anchored matchers.
+#
+# SAME newline-join and empty-output-invariant reasoning as cmd_words_deep —
+# see its header; not restated here.
+#
+# WIDENING HERE IS SAFE: both callers only ever ADD a `gh pr view` lookup
+# (never grant a bypass of anything) on a wider match, and cmd_gh_pr_ref's own
+# multi-occurrence guard (more than one `gh pr <merge|close|edit>` mention
+# across the unioned lines) already degrades to "could not verify" rather than
+# risking a cross-clause mispair — the same safe-direction behaviour that
+# guard applied to two clauses on one line now also covers a mention inside a
+# substitution body.
+#
+# KNOWN NARROW RESIDUAL, pinned rather than fixed (found by construction while
+# implementing this function, 2026-09-02): a BARE (unquoted, no surrounding
+# quotes at all) `$(...)`/backtick substitution is visible TWICE — once in the
+# outer line (cmd_bare does not blank unquoted text) and again as its own
+# extracted-body line — and cmd_gh_pr_ref's occurrence guard cannot tell that
+# apart from two GENUINELY different clauses. Whether this actually produces a
+# double count depends on incidental spacing at the anchor: `$(gh pr merge
+# 42)` (no space after the opener) resolves fine, because the outer line's
+# "gh" is glued to `(`, which fails the `(^|[[:space:]])` anchor — only the
+# extracted-body line matches, occurrences=1. `$( gh pr merge 42)` (one space
+# after the opener) does NOT: the outer line's "gh" is now preceded by that
+# space, satisfying the anchor there too, so BOTH lines match and
+# occurrences=2 degrades to "could not verify" — a real usefulness
+# regression for a shape that plain cmd_bare already resolved correctly
+# pre-cmd_bare_deep, ground-truthed by running the pre-fix code. The QUOTED
+# form (`echo "$( gh pr merge 42)"`) is NOT affected either way: the whole
+# span, leading space included, is blanked in the outer line, so only the
+# extracted body ever matches there — this residual is specific to a bare,
+# top-level substitution, never to the live-inside-quotes case this function
+# exists to fix. Safe-direction (degrades to a missed verification message,
+# never a wrong one) and narrow (an unusual phrasing a human rarely types),
+# so left as a documented, pinned residual rather than adding positional
+# de-duplication to an already carefully-scoped scanner — see
+# test-pr-verify.sh's "bare + leading-space" tests.
+cmd_bare_deep() {
+  local cmd="$1" body
+  printf '%s' "$cmd" | cmd_bare
+  while IFS= read -r body; do
+    [ -n "$body" ] || continue
+    printf '\n'
+    printf '%s' "$body" | cmd_bare
+  done < <(printf '%s' "$cmd" | cmd_extract_substitutions)
+}
+
 # cmd_is_gh_pr_create <command>  → exit 0 if it invokes `gh pr create` in command position.
 # Reads cmd_words_deep, not plain cmd_words: this is a pure boolean DENY-shaped
 # predicate (never grants anything), so also matching a verb hidden inside a
@@ -1021,7 +1088,9 @@ cmd_is_git_branch_create() {
 # (create|merge|close|edit) if present, else nothing. Deliberately LOOSER than the strict
 # matchers (matches after any whitespace, no command-position anchor): this feeds a
 # NON-blocking verifier, so a false positive costs a redundant `gh pr view`, never a gate
-# bypass. Quoted mentions are still suppressed because it reads cmd_bare output.
+# bypass. Genuinely INERT quoted mentions (single-quoted, or double-quoted text with no
+# live substitution inside) are still suppressed, because cmd_bare_deep's per-line
+# renderings each go through cmd_bare's own quote-blanking.
 # That "only costs a redundant `gh pr view`" claim is CONDITIONAL, not inherent: it held
 # because the ref this pairs with could address nothing but the LOCAL repo, so the
 # redundant lookup was local. Matching MENTIONS rather than invocations means inert text —
@@ -1030,8 +1099,17 @@ cmd_is_git_branch_create() {
 # an attacker-chosen host. pr-verify.sh now host-restricts the ref before forwarding it,
 # which is the ONLY reason the claim above is still true. Keep that guard if you reuse
 # this matcher with a ref extractor that can return a URL.
+#
+# READS cmd_bare_deep, NOT plain cmd_bare, as of todo
+# P1-2026-08-17-quoted-command-substitution-inert: a `gh pr <write>` mention
+# hidden inside a LIVE `"$(...)"`/backtick command substitution genuinely
+# executes regardless of the surrounding double quotes, and plain cmd_bare
+# blanked the whole quoted span — substitution included — so pr-verify.sh
+# never called `gh` at all for e.g. `echo "$(gh pr merge --admin 42)"`
+# (verified empirically: a PATH-stubbed `gh` recorded zero invocations for
+# that input before this fix). See cmd_bare_deep's own header.
 cmd_gh_pr_write_subcommand() {
-  printf '%s' "$1" | cmd_bare \
+  cmd_bare_deep "$1" \
     | grep -oE '(^|[[:space:]])gh[[:space:]]+pr[[:space:]]+(create|merge|close|edit)([[:space:]]|$)' \
     | grep -oE '(create|merge|close|edit)' | head -1
 }
@@ -1047,11 +1125,17 @@ cmd_gh_pr_write_subcommand() {
 # `--repo` carve-out below, which disqualifies rather than resolves). Renamed
 # from cmd_gh_pr_number (2026-07-26) because it can now return a non-numeric
 # ref; `gh pr view <ref>` accepts all three forms itself, so callers do not
-# need to know which form it is. Reads cmd_bare'd output like every other
-# predicate here — NOT raw text: a greedy last-match search over raw text is
-# a decoy vector (`gh pr merge 42 --delete-branch && echo "done gh pr merge
-# 999"` would resolve 999, not 42, if run on unblanked text) — same family as
+# need to know which form it is. Reads cmd_bare_deep's output — NOT raw text:
+# a greedy last-match search over raw text is a decoy vector (`gh pr merge 42
+# --delete-branch && echo "done gh pr merge 999"` would resolve 999, not 42,
+# if run on unblanked text) — same family as
 # docs/solutions/logic-errors/quote-strip-escape-glue-hides-real-command-2026-07-18.md.
+# READS cmd_bare_deep, NOT plain cmd_bare, as of todo
+# P1-2026-08-17-quoted-command-substitution-inert — see cmd_gh_pr_write_subcommand's
+# header immediately above and cmd_bare_deep's own header for the mechanism and the
+# empirically-verified bypass this closes (a ref hidden inside a LIVE `"$(...)"`
+# now resolves; the multi-occurrence guard below already degrades a decoy
+# substitution to "could not verify" rather than risking a mispair).
 # Returns EMPTY when the bare text contains MORE THAN ONE `gh pr
 # <merge|close|edit>` occurrence. Taking the first match of each was not
 # enough: `cmd_gh_pr_write_subcommand` (above) picks the first of
@@ -1124,7 +1208,7 @@ cmd_gh_pr_write_subcommand() {
 cmd_gh_pr_ref() {
   local value_flags='--author-email|--body-file|--body|--match-head-commit|--subject|--comment|--add-assignee|--add-label|--add-project|--add-reviewer|--base|--milestone|--remove-assignee|--remove-label|--remove-project|--remove-reviewer|--title|--repo'
   local bare occurrences full_match ref prev
-  bare=$(printf '%s' "$1" | cmd_bare)
+  bare=$(cmd_bare_deep "$1")
   # More than one `gh pr <write>` clause: refuse to pair a subcommand from one
   # clause with a ref from another (see comment above). Counted with `wc -l`
   # over `grep -oE` output, NOT `grep -c` — `-c` counts matching LINES, and a

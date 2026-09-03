@@ -33,7 +33,7 @@ PASS=0; FAIL=0
 # bill of health. Prove the lib sourced and the functions exist before asserting.
 # shellcheck source=/dev/null
 . "$LIB" || { echo "FAIL: lib/cmd-detect.sh is not sourceable"; exit 1; }
-for f in cmd_bare cmd_words cmd_extract_substitutions cmd_words_deep \
+for f in cmd_bare cmd_words cmd_extract_substitutions cmd_words_deep cmd_bare_deep \
          cmd_is_git_commit cmd_is_gh_pr_create cmd_is_git \
          cmd_is_git_commit_or_push cmd_is_git_head_mover cmd_is_git_branch_create \
          cmd_git_branch_create_segment cmd_git_repo_dir; do
