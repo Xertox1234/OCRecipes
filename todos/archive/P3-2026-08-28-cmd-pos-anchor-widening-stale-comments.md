@@ -263,7 +263,13 @@ bug class as
     suite from 256/256 to 254 passed/2 failed (exactly the two `gh api`-clause assertions
     went RED; the `GH_MUTATING_RE`-family assertion and the GET negative control were
     unaffected, confirming they exercise a different code path); restoring the fix returned
-    256/256.
+    256/256. **Corpus-size pin (flagged by round-5's independent baseline reviewer,
+    SUGGESTION-tier): this 256/256↔254/2 count was taken against the round-2 corpus size at
+    the time — the suite has since grown to 268 assertions (rounds 3 and 5 added more).
+    Re-verified today (not assumed): reverting this same fix against the CURRENT 268-assertion
+    corpus yields 268/268→266 passed/2 failed — the same 2 targeted assertions, at the new
+    corpus size. Both counts are correct for the corpus size they were measured against; this
+    note exists so a future re-run isn't read as a discrepancy.**
   - Full details, reproduction transcript, and updated PR body: PR #910.
 
 ### 2026-09-02 (PR #910 review-driven repair, continued — round 3, more severe than round 2)
