@@ -517,8 +517,20 @@ jobs:
       - name: Run Maestro regression flows
         run: bash scripts/ci/e2e-with-flow-retry.sh
 
-      - name: Upload logs on failure
-        if: failure()
+      # always(), NOT failure(): scripts/ci/e2e-with-flow-retry.sh re-runs each
+      # failed flow individually and the job exits 0 when the re-runs pass, so a
+      # failure()-gated upload discards the debug output for every attempt-1
+      # failure that the retry recovered — precisely the ones worth diagnosing,
+      # and the only ones this suite's per-flow retry is designed to absorb.
+      # Cost of the wrong gate, measured: run 33835791711 reported success while
+      # attempt 1 failed 2/9, and the hierarchy dumps that would have identified
+      # the cause were written to e2e/maestro-output/ and then thrown away
+      # (issue #908 spent two dispatches blind for this reason).
+      # Both attempts survive in the payload: Maestro suffixes a repeat run of
+      # the same flow "-2" under --flatten-debug-output, so attempt 1's dump is
+      # not overwritten by its re-run.
+      - name: Upload logs
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: logs-ios
@@ -649,8 +661,11 @@ jobs:
             npx expo run:android --no-bundler
             bash scripts/ci/e2e-with-flow-retry.sh
 
-      - name: Upload logs on failure
-        if: failure()
+      # always(), NOT failure() — see the iOS job's upload step for why the
+      # retry wrapper makes a failure() gate discard exactly the evidence worth
+      # keeping.
+      - name: Upload logs
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: logs-android
