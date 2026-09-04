@@ -107,9 +107,20 @@ appId: com.ocrecipes.app
       # alert window suppresses the app tree in nonobvious ways). index: 1
       # — [0]=title, [1]=confirm button — is the empirically verified tap
       # on iOS 26; validate on Android in the emulator pass.
+      #
+      # 30 s, matching every other wait in this file. At 10 s this was the
+      # suite's most frequent iOS failure (issue #908) — verbatim
+      # `[Failed] Auth - Login flow (Assertion is false: "Are you sure you
+      # want to sign out.*" is visible)` — and because it strands the app
+      # mid-logout it also took the NEXT flow in path order down with it, so
+      # one slow alert read as two unrelated red flows. The native alert can
+      # take longer than 10 s to render on a loaded GitHub-hosted runner.
+      # Raising a timeout is free on the happy path: extendedWaitUntil
+      # returns the moment the condition holds, so this extends
+      # time-to-failure only, never time-to-success.
       - extendedWaitUntil:
           visible: "Are you sure you want to sign out.*"
-          timeout: 10000
+          timeout: 30000
       - tapOn:
           text: "Sign Out"
           index: 1
@@ -117,7 +128,16 @@ appId: com.ocrecipes.app
           visible: "Sign In"
           timeout: 30000
 
-# Contract: this helper exits on the Sign In screen
+# Contract: this helper exits on the Sign In screen.
+#
+# Raised 10 s -> 30 s alongside the alert wait above deliberately, not as
+# collateral: it was this file's only other outlier, and leaving one behind
+# would just re-pose the same question later. It is NOT the failure being
+# fixed here — it is close to a no-op on every path, since the gated logout
+# block above already waited 30 s for "Sign In" before falling through, and
+# on the already-logged-out path the opening wait matched "Sign In" moments
+# earlier. Uniformity is the whole point: a short timeout in this file has
+# now cost one CI regression, and no path benefits from failing 20 s sooner.
 - extendedWaitUntil:
     visible: "Sign In"
-    timeout: 10000
+    timeout: 30000
