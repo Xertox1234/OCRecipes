@@ -1,9 +1,9 @@
 ---
 title: "E2E iOS job: cache Pods + DerivedData so the ~34-minute cold build stops dominating the nightly"
-status: done
-priority: low
+status: backlog
+priority: medium
 created: 2026-08-31
-updated: 2026-09-02
+updated: 2026-09-03
 assignee:
 labels: [deferred, testing]
 github_issue:
@@ -31,7 +31,7 @@ deterministic and may need `-derivedDataPath` pinning to be cacheable at all).
 ## Acceptance Criteria
 
 - [x] `ios/Pods` restored from `actions/cache` keyed on `ios/Podfile.lock` + `package-lock.json` + the selected Xcode version; a lockfile change misses cleanly.
-- [x] DerivedData cached (pinned `-derivedDataPath`, or documented as not worth it after
+- [ ] DerivedData cached (pinned `-derivedDataPath`, or documented as not worth it after
       measurement) with a key that includes the Xcode version and a source hash coarse enough to
       hit across docs-only changes.
 - [ ] Measured: cache-hit build step time recorded in the workflow comment, and the step/job
@@ -97,3 +97,62 @@ IDECustomDerivedDataLocation "DerivedData"`, since `expo run:ios` exposes
   `gh cache list --limit 50` after the first dispatch; the workflow comment
   above the cache-key step names the fallback (drop DerivedData, keep Pods)
   if it's crowding the budget.
+
+### 2026-09-03 — REOPENED: the measurement arrived and it contradicts the premise
+
+This todo was archived `done` before its two measurement criteria could be satisfied — the
+code half looked finished, and the numbers only exist after a `workflow_dispatch`. They now
+exist, and DerivedData caching appears to be a **net loss**.
+
+Three `workflow_dispatch` runs, iOS `Build and install iOS app` step, same runner pool:
+
+| Run         | Cache state at build                                 | Build time  |
+| ----------- | ---------------------------------------------------- | ----------- |
+| 33790849004 | cold — nothing stored                                | **39m 03s** |
+| 33796820565 | DerivedData `restore-keys` PREFIX hit, Pods MISS     | **36m 48s** |
+| 33802822765 | exact hit on BOTH (save steps `skipped`, proving it) | **51m 01s** |
+
+The genuinely warm run was **~12 minutes SLOWER than cold**. Restoring 1.6 GiB of
+DerivedData, plus whatever Xcode spends validating and then discarding most of it, costs
+more than it saves.
+
+Why run 2 was not warm despite following run 1: `package-lock.json` was bumped by a
+Dependabot merge between the two dispatches, and **both** key formulas hash it
+(`PODS_CACHE_KEY` and `DD_CACHE_KEY`). A `restore-keys` prefix match does not set
+`cache-hit: 'true'` — only an exact primary-key match does — so run 2 restored a stale
+DerivedData tree and rebuilt Pods from scratch. Run 3 was the first true warm measurement.
+
+**Pods, separately, looks clearly worth keeping**: 132 MiB, restores in 4 seconds, exact-match
+only. It is DerivedData (1.63 GiB, ~40s restore, ~2m30s save) that does not pay for itself.
+
+### What reopening this asks for
+
+The `DerivedData cached` criterion is un-ticked, because its own wording offers two ways to
+satisfy it — cache it, **or** document it as not worth it after measurement — and the
+measurement now points at the second. Deciding between them is the remaining work:
+
+- **Drop DerivedData caching, keep Pods.** Removes ~40s restore + ~2m30s save per run and,
+  on this evidence, a large build-time penalty. Also removes a 1.6 GiB artifact from the
+  cache quota, which this todo's own Risks section flagged as a trigger to reconsider.
+- **Keep it and investigate why it misses.** A restored DerivedData tree that Xcode largely
+  invalidates is the usual cause; `-derivedDataPath` pinning interacts with absolute paths
+  baked into module maps and `.pcm` files. Worth a look only if someone wants to make it work
+  rather than take the simpler win.
+
+Either way the workflow comment's timeout arithmetic must be re-derived from real numbers —
+that criterion was never met and the comment still cites the pre-cache estimate.
+
+### Caveat on the evidence, stated plainly
+
+One data point per condition, on shared GitHub-hosted macOS runners whose performance varies.
+39 → 51 minutes is far outside plausible noise for a same-runner-class comparison, but if the
+decision is to KEEP DerivedData caching, re-measure first rather than treating a single warm
+run as conclusive. If the decision is to DROP it, the measurement only has to show the cache
+is not clearly winning, which it already does.
+
+### Related
+
+- The `One green workflow_dispatch on main with the cache warm` criterion is also still
+  unmet, and is currently blocked by a separate regression: PR #903 broke the iOS suite
+  (3/3 green before, 2/2 red after), repaired in PR #917. Sequence the green-run criterion
+  after #917 lands, and do not read a red run before then as evidence about caching.
