@@ -41,12 +41,14 @@ tags:
 # disabled until every one of them is satisfied.
 #
 # Password + confirm-password entry (show-password -> type -> blur -> confirm
-# -> blur) is shared with this flow's own self-healing retry loop below —
-# see e2e/helpers/enter-registration-passwords.yaml for the full rationale
-# (iOS-26-sim secure-field swallow, the stable blur-by-id target, and its own
-# mandatory input-password/input-confirm-password existence anchors, so a
-# renamed/removed field fails fast at either call site instead of degrading
-# silently through its optional steps).
+# -> blur). This is the FIRST-ATTEMPT variant: every action step is
+# MANDATORY, because on this path these steps are the only thing that puts
+# credentials in the form. The retry loop below calls the permissive
+# `-retry` sibling instead — same actions, opposite failure semantics.
+# See e2e/helpers/enter-registration-passwords.yaml for the full rationale
+# (iOS-26-sim secure-field swallow, the stable blur-by-id target, its three
+# mandatory existence anchors, and the "WHY TWO FILES" regression note
+# explaining why these two call sites must not share one file).
 - runFlow: ../../helpers/enter-registration-passwords.yaml
 - tapOn:
     id: "input-username"
@@ -107,13 +109,19 @@ tags:
     while:
       notVisible: "(Get Started|Not Now)"
     commands:
-      # Same password + confirm-password sequence as the main block above —
-      # see e2e/helpers/enter-registration-passwords.yaml. Every step there
-      # is already optional and erase-before-type, so it's safe to re-run
-      # unconditionally each retry round: a silently-failed focus tap (the
-      # keyboard-covered-field mode) degrades to a skipped step instead of
-      # hard-failing the recovery loop.
-      - runFlow: ../../helpers/enter-registration-passwords.yaml
+      # Same password + confirm-password sequence as the main block above,
+      # but the RETRY variant: every step optional and erase-before-type, so
+      # a silently-failed focus tap (the keyboard-covered-field mode)
+      # degrades to a skipped step instead of hard-failing the recovery loop,
+      # and the already-flipped "Show password" toggle does not hard-fail
+      # round 2+.
+      #
+      # This MUST NOT be the same file the main block calls. The two call
+      # sites need the same actions under OPPOSITE failure semantics, and a
+      # single union file using this permissive shape for both let the first
+      # attempt submit empty passwords silently — see the "WHY TWO FILES"
+      # note in e2e/helpers/enter-registration-passwords.yaml.
+      - runFlow: ../../helpers/enter-registration-passwords-retry.yaml
       - tapOn:
           text: "Create Account"
           optional: true
