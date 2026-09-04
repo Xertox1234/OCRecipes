@@ -111,6 +111,7 @@ Three `workflow_dispatch` runs, iOS `Build and install iOS app` step, same runne
 | 33790849004 | cold — nothing stored                                | **39m 03s** |
 | 33796820565 | DerivedData `restore-keys` PREFIX hit, Pods MISS     | **36m 48s** |
 | 33802822765 | exact hit on BOTH (save steps `skipped`, proving it) | **51m 01s** |
+| 33826146222 | exact hit on BOTH (save steps `skipped`, proving it) | **47m 17s** |
 
 The genuinely warm run was **~12 minutes SLOWER than cold**. Restoring 1.6 GiB of
 DerivedData, plus whatever Xcode spends validating and then discarding most of it, costs
@@ -120,7 +121,8 @@ Why run 2 was not warm despite following run 1: `package-lock.json` was bumped b
 Dependabot merge between the two dispatches, and **both** key formulas hash it
 (`PODS_CACHE_KEY` and `DD_CACHE_KEY`). A `restore-keys` prefix match does not set
 `cache-hit: 'true'` — only an exact primary-key match does — so run 2 restored a stale
-DerivedData tree and rebuilt Pods from scratch. Run 3 was the first true warm measurement.
+DerivedData tree and rebuilt Pods from scratch. Run 3 was the FIRST true warm
+measurement; run 4 is the second, and it agrees — 47m 17s, also well above cold.
 
 **Pods, separately, looks clearly worth keeping**: 132 MiB, restores in 4 seconds, exact-match
 only. It is DerivedData (1.63 GiB, ~40s restore, ~2m30s save) that does not pay for itself.
@@ -144,15 +146,27 @@ that criterion was never met and the comment still cites the pre-cache estimate.
 
 ### Caveat on the evidence, stated plainly
 
-One data point per condition, on shared GitHub-hosted macOS runners whose performance varies.
-39 → 51 minutes is far outside plausible noise for a same-runner-class comparison, but if the
-decision is to KEEP DerivedData caching, re-measure first rather than treating a single warm
-run as conclusive. If the decision is to DROP it, the measurement only has to show the cache
-is not clearly winning, which it already does.
+Shared GitHub-hosted macOS runners vary, so runner noise is a real confound. But the warm
+condition now has TWO independent measurements — 51m 01s and 47m 17s — and both sit well
+above the 39m 03s cold run. A single warm outlier could have been noise; two agreeing ones
+landing 8–12 minutes on the wrong side of cold is a signal.
+
+Cold and prefix-hit still have one measurement each. That asymmetry does not matter for the
+DROP decision, which only needs the cache to be not clearly winning — already shown twice.
+It would matter for a KEEP decision, so re-measure cold before choosing that branch.
 
 ### Related
 
 - The `One green workflow_dispatch on main with the cache warm` criterion is also still
-  unmet, and is currently blocked by a separate regression: PR #903 broke the iOS suite
-  (3/3 green before, 2/2 red after), repaired in PR #917. Sequence the green-run criterion
-  after #917 lands, and do not read a red run before then as evidence about caching.
+  unmet. It needs the iOS suite green on attempt 1, which is blocked by a **pre-existing**
+  10 s timeout in `e2e/helpers/ensure-logged-out.yaml` (issue #908; candidate fix in PR
+  #919) — nothing in this todo's scope. Sequence the green-run criterion after that
+  resolves, and do not read a red run before then as evidence about caching.
+
+  An earlier draft of this section blamed PR #903 for breaking the suite ("3/3 green
+  before, 2/2 red after"). **That was wrong and is retracted.** Those counts were
+  job-level verdicts, and this workflow re-runs failed flows — so a green job can hide an
+  attempt-1 failure. Compared at the flow level, the pre-#903 control run also failed
+  `2/9` on attempt 1, with the same two flows and the same assertion text. There was no
+  regression at that boundary. Any future claim here about a run's outcome should cite
+  per-flow attempt-1 results, never `conclusion`.
