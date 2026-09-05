@@ -51,9 +51,9 @@
 #     hook's own `_OUT_POS_PREFIX` — FIXED 2026-09-05
 #     (outward-CLI-guard-folded-repair, finding B): `_OUT_POS_PREFIX` now
 #     carries the same `_CMD_REDIR` alternative, referenced by variable, not
-#     duplicated as a second literal pattern (see the "command-position
-#     anchors" section below, relocated to follow the lib source so the
-#     reference resolves). What remains guard-local in the OTHER direction —
+#     duplicated as a second literal pattern (`_OUT_POS_PREFIX`'s own
+#     definition was relocated to follow the lib source so that reference
+#     resolves). What remains guard-local in the OTHER direction —
 #     the KEYWORD absorption (`then|do|else|elif|time`) — has no lib
 #     equivalent and is not a gap. Full comparison in
 #     test-guard-outward-cli.sh's comment above the backtick/brace/keyword
@@ -86,8 +86,8 @@
 # gap, same total-non-detection family the (now-fixed) `<`/`>` gap above was
 # in, but a different trigger, and NOT closed by the 2026-09-05 `<`/`>` fix
 # (nor by the same date's finding-B leading-redirect-absorption fix — a
-# DIFFERENT axis, see the "command-position anchors" section below for the
-# current definition site): neither _OUT_POS_SUFFIX nor _OUT_POS_PREFIX
+# DIFFERENT axis, closed at `_OUT_POS_PREFIX`'s own definition): neither
+# _OUT_POS_SUFFIX nor _OUT_POS_PREFIX
 # nor _OUT_POS_SUFFIX_MERGE_CLAUSE treats a bash sigil that
 # expands to nothing ($VAR unset, $(...)/${...} empty) as a boundary, even
 # though real bash word-splitting collapses it away — `eas update$(true)
@@ -278,7 +278,7 @@
 #         now both are counted and the ambiguous-occurrence DENY fires
 #         correctly. NEW ACCEPTED OVER-DENIAL as a side effect (deny
 #         direction, never a bypass): because the absorbed leading redirect
-#         is now part of the `gh pr merge` CLAUSE capture below, a leading
+#         is now part of the `gh pr merge` CLAUSE= capture, a leading
 #         redirect that itself contains a `$` (`2>$LOGFILE gh pr merge 42
 #         --auto`) trips the existing "any `$` in CLAUSE is unverifiable"
 #         guard and denies a real, uncorrupted `--auto` — the same
@@ -972,14 +972,14 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   #   branch 1 is narrow again as of ROUND 2 and this bare-shape fix
   #   (which never depended on branch 1) is unaffected.
   #   The `_OUT_POS_PREFIX` leading-redirect gap noted in the
-  #   COMMAND-POSITION ANCHORS header above was a SEPARATE mechanism from all
-  #   of the above (this fix only closed the trailing/suffix side) — FIXED
-  #   SEPARATELY 2026-09-05 (outward-CLI-guard-folded-repair, finding B; see
-  #   the "leading:" bullet in the DOCUMENTED RESIDUALS section above for the
-  #   full account, including a new accepted over-denial that fix introduces
-  #   here: a leading redirect that itself carries a `$` now also trips the
-  #   CLAUSE `$`-unverifiability check just below, because the absorbed
-  #   prefix is part of this CLAUSE capture).
+  #   COMMAND-POSITION ANCHORS header above was a SEPARATE mechanism (this fix
+  #   only closed the trailing/suffix side) — FIXED SEPARATELY 2026-09-05
+  #   (outward-CLI-guard-folded-repair, finding B; see the DOCUMENTED
+  #   RESIDUALS section's "leading:" bullet for the full account, including a
+  #   new accepted over-denial that fix introduces: a leading redirect that
+  #   itself carries a `$` now also trips this file's `printf '%s' "$CLAUSE"
+  #   | grep -qF '$'` unverifiability check, because the absorbed prefix is
+  #   part of this CLAUSE capture).
   #
   # FIXED 2026-09-02 (round 3, PR #910 post-merge review): this used to read
   # `${_OUT_POS_SUFFIX}[^;&|]*` — a SWALLOWING pattern that consumes the

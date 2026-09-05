@@ -159,8 +159,8 @@ add co-pref-sufx     DENY  '2>/dev/null eas update>/dev/null'
 add co-sigil-c1      DENY  'eas bu${UNSET}ild --platform ios ${x:---auto-submit}'
 add co-mask-c1       DENY  'gh pr merge 42 --auto ${x:---admin}'   # see NOTE below
 add co-redir-mask    DENY  'gh pr merge 42 --auto >anyfile ${x:---admin}'   # redirect + $-sigil co-occurrence; see NOTE2 below
-add co-pref-multi    DENY  'gh pr merge 42 --auto ; 2>/dev/null gh pr merge 7'   # leading redirect + multi-occurrence; see NOTE3 below
-add co-pref-dollar   DENY  '2>$LOGFILE gh pr merge 42 --auto'   # leading redirect carrying a $ + real --auto; see NOTE3 below
+add co-pref-multi    DENY  'gh pr merge 42 --auto ; 2>/dev/null gh pr merge 7'   # leading redirect + multi-occurrence; see NOTE3
+add co-pref-dollar   DENY  '2>$LOGFILE gh pr merge 42 --auto'   # leading redirect carrying a $ + real --auto; see NOTE3
 add co-two-api       DENY  'gh api repos/o/r && gh api -X PUT repos/o/r/pulls/1/merge'
 add co-nested-brace  ALLOW 'echo ${a:-${b}}'
 
@@ -181,7 +181,7 @@ add fp-mention       ALLOW 'git commit -m "chore: mentions eas update and gh pr 
 add fp-quotedall     ALLOW 'echo "gh pr merge 42"'
 add fp-automerge     ALLOW 'gh pr merge 42 --auto'
 add fp-ghcreate      ALLOW 'gh pr create --title x --body y'   # this repo's own sanctioned PR-creation shape (no --repo)
-add fp-ghcreate-pref ALLOW '2>/dev/null gh pr create --title x --body y'   # same, + leading redirect (finding B axis); see NOTE4 below
+add fp-ghcreate-pref ALLOW '2>/dev/null gh pr create --title x --body y'   # same, + leading redirect (finding B axis); see NOTE4
 
 printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' \
   ID EXPECT PRECISE NOJQ NOLIB NOAWK NOTE

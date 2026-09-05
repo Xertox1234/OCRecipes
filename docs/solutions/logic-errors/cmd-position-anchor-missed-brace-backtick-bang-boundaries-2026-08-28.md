@@ -65,6 +65,18 @@ _CMD_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*
 _CMD_POS_SUFFIX='([[:space:]]|[);&|`{}]|$)'
 ```
 
+**SNAPSHOT NOTICE (added 2026-09-05) — the block above is the 2026-08-28 snapshot, kept
+verbatim as the historical record of what this fix originally shipped; it is not the
+current `lib/cmd-detect.sh`.** Both lines have since grown a further alternative:
+`_CMD_POS_SUFFIX` gained `<`/`>` in its closer alternation on 2026-09-01
+(`_CMD_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'`), and `_CMD_POS_PREFIX` gained a
+`_CMD_REDIR` absorber alternative the same date
+(`_CMD_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|'"$_CMD_REDIR"')[[:space:]]+)*'`,
+where `_CMD_REDIR='([0-9]*|&)[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]+'`). Anyone citing
+"the lib's `_CMD_POS_SUFFIX`"/"`_CMD_POS_PREFIX`" as a byte-identity target should quote
+one of these two current values, or `.claude/hooks/lib/cmd-detect.sh`'s own definition
+lines, not this snapshot.
+
 The suffix's `{`/`}` are wider than the sibling `_OUT_POS_SUFFIX` (which has backtick
 but not `{`/`}`) — a deliberate AC-driven choice for defense-in-depth, not a live gap:
 bash requires a preceding `;`/newline before a REAL brace-group close, so `}` can never
@@ -546,10 +558,12 @@ decision, still genuinely out of this repair's scope — but the disclosure now 
 actually is: a total bypass of this check via one glued character, not a partial one.
 
 **RETRACTED 2026-09-05 (outward-CLI-guard-folded-repair, finding A) — closed, not still
-open.** The paragraph above was accurate when written (2026-09-02) and is kept verbatim as
-the historical record, but its "still-open"/"still a human decision"/"out of scope"
-framing no longer holds: `_OUT_POS_SUFFIX` now carries `<`/`>` in its closer alternation
-(byte-identical to the lib's `_CMD_POS_SUFFIX`), and `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s
+open.** The retracted disclosure — "`_OUT_POS_SUFFIX`'s pre-existing missing `<`/`>` …
+still deliberately unfixed here (out of scope)" — was accurate when written (2026-09-02)
+and is kept verbatim as the historical record, but its "still-open"/"still a human
+decision"/"out of scope" framing no longer holds: `_OUT_POS_SUFFIX` now carries `<`/`>`
+in its closer alternation (byte-identical to the lib's CURRENT `_CMD_POS_SUFFIX`,
+`([[:space:]]|[);&|`{}<>]|$)`), and `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s
 branch 2 (the positive closer class) carries them too — `gh pr merge>log` now correctly
 denies. See `guard-outward-cli.sh`'s own "verb GLUED TO A REDIRECT" residual note and
 `test-guard-outward-cli.sh`'s "2026-09-05: finding A" assertion block for the fix and its
@@ -685,19 +699,20 @@ glued boundary; it is safe by decision-direction, not by pattern shape.
   PR #910 post-merge review found the initial `{`/`}` fix had missed `GH_API_CLAUSE` (the
   `gh api` clause-cut) — search this file for `GH_API_CLAUSE=` for the fixed line and its
   "FIXED 2026-09-02 (round 2)" comment.
-  **RETRACTED 2026-09-05 — both gaps closed, not still open.** The two paragraphs above
-  are kept verbatim as the historical record of what was true on 2026-09-02, but this
-  entry's own "disclosed-but-unfixed" framing is now false for both: `_OUT_POS_SUFFIX`'s
-  missing `<`/`>` was closed by outward-CLI-guard-folded-repair **finding A** (it is now
-  byte-identical to the lib's `_CMD_POS_SUFFIX`, defined above); `_OUT_POS_PREFIX`'s
-  missing `_CMD_REDIR` absorption was closed by **finding B**, which reuses the lib's
-  `_CMD_REDIR` by variable reference rather than a second hand-rolled pattern — the reason
-  it required relocating this file's own anchor definitions to follow the lib source (see
-  `guard-outward-cli.sh`'s "COMMAND-POSITION ANCHORS" header comment). Full account and
-  this same retraction already recorded once above (search "RETRACTED 2026-09-05
-  (outward-CLI-guard-folded-repair, finding A) — closed"); this entry duplicated the same
-  now-false claim and needed its own retraction rather than being assumed covered by the
-  first.
+  **RETRACTED 2026-09-05 — both gaps closed, not still open.** This entry's own
+  "disclosed-but-unfixed" framing (the "two disclosed-but-unfixed live gaps" sentence
+  immediately preceding this note) is now false for both: `_OUT_POS_SUFFIX`'s missing
+  `<`/`>` was closed by outward-CLI-guard-folded-repair **finding A** (it is now
+  byte-identical to the lib's current `_CMD_POS_SUFFIX`, `([[:space:]]|[);&|`{}<>]|$)`);
+  `_OUT_POS_PREFIX`'s missing `_CMD_REDIR` absorption was closed by **finding B**, which
+  reuses the lib's `_CMD_REDIR` by variable reference rather than a second hand-rolled
+  pattern — the reason it required relocating this file's own anchor definitions to
+  follow the lib source (see `guard-outward-cli.sh`'s "COMMAND-POSITION ANCHORS" header
+  comment). This is the same retraction already made once for finding A, in this same
+  document's "RETRACTED 2026-09-05 (outward-CLI-guard-folded-repair, finding A) — closed,
+  not still open" note; this Related Files entry independently asserted the identical
+  now-false claim and needed its own retraction rather than being assumed covered by
+  that one.
 - `.claude/hooks/test-guard-outward-cli.sh` — the two-sided regression test for the
   2026-09-02 `{`/`}` fix (search "2026-09-02 FIX"). What this entry used to describe as
   "the disclosure comments for the two remaining unfixed gaps" (search

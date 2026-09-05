@@ -427,16 +427,17 @@ assert_deny "two gh api occurrences denies (ambiguous — a read-only first call
 #     with a redirect glued onto 'eas update' and onto 'gh pr merge', both
 #     SILENTLY ALLOWED where the spaced/bare forms correctly DENY. FIXED
 #     2026-09-05 (outward-CLI-guard-folded-repair, finding A): `_OUT_POS_SUFFIX`
-#     now carries `<`/`>` in its closer alternation — see the "2026-09-05:
-#     finding A" assertion block below for the pinned regression tests.
+#     now carries `<`/`>` in its closer alternation — pinned in this file's
+#     own "2026-09-05: finding A" assertion block.
 #     The `_OUT_POS_PREFIX` redirect-absorption gap this bullet used to
 #     cross-reference as still open (a leading redirect before the verb — a
 #     DIFFERENT mechanism from this suffix-closer gap, since it is about
 #     _OUT_POS_PREFIX's absorber run, not _OUT_POS_SUFFIX's closer class) was
-#     ALSO fixed the same date, same repair, finding B: see the "2026-09-05:
-#     finding B" assertion block below, and the STALE-AS-OF comment above the
-#     backtick/brace/keyword assertions (search "prefix REDIRECT absorption")
-#     for that fix's own account.
+#     ALSO fixed the same date, same repair, finding B — pinned in this
+#     file's own "2026-09-05: finding B" assertion block, and disclosed in
+#     the "prefix REDIRECT absorption" paragraph of this same STALE-AS-OF
+#     comment block's second half (the one covering the backtick/brace/
+#     keyword assertions).
 assert_deny "npm publish; denies (terminal ';')" \
   "$(json 'npm publish;')" "npm publish"
 assert_deny "eas update; denies (terminal ';')" \
@@ -475,10 +476,10 @@ assert_deny "gh api -X PUT ...; denies (terminal ';', gh api family)" \
 # in this hook, confirmed by running it directly against a redirect-prefixed
 # outward-CLI command. FIXED 2026-09-05 (outward-CLI-guard-folded-repair,
 # finding B): _OUT_POS_PREFIX now carries the lib's _CMD_REDIR alternative by
-# reference (not a duplicated literal pattern) — see the "2026-09-05: finding
-# B" assertion block below and guard-outward-cli.sh's relocated
-# "command-position anchors" section (moved to follow the lib source so the
-# `$_CMD_REDIR` reference resolves to something other than the empty string).
+# reference (not a duplicated literal pattern) — pinned in this file's own
+# "2026-09-05: finding B" assertion block. `_OUT_POS_PREFIX`'s own definition
+# in guard-outward-cli.sh was relocated to follow the lib source so the
+# `$_CMD_REDIR` reference resolves to something other than the empty string.
 assert_deny 'backtick command substitution denies' \
   "$(json '`eas update`')" "eas update/publish/submit"
 assert_deny "brace group denies" \
@@ -1235,7 +1236,7 @@ assert_deny "CRITICAL: a redirect between --auto and a later \$-bearing admin-ov
 # command word. The lib's _CMD_POS_PREFIX gained a redirect alternative on
 # 2026-09-01 (_CMD_REDIR); this hook's copy never did. Reused BY REFERENCE —
 # a second, subtly-different redirect pattern is a fresh instance of the same
-# bug surface (lib/cmd-detect.sh:113-116).
+# bug surface (lib/cmd-detect.sh's `_CMD_REDIR` and `_CMD_POS_PREFIX` definitions).
 assert_deny "leading 2>/dev/null before eas update denies" \
   "$(json '2>/dev/null eas update --branch preview')" "eas update/publish/submit"
 assert_deny "leading >/dev/null before npm publish denies" \
