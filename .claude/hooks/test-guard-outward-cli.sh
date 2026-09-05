@@ -407,9 +407,9 @@ assert_deny "two gh api occurrences denies (ambiguous — a read-only first call
 #
 # STALE AS OF 2026-09-02 (partially): the lib's own _CMD_POS_SUFFIX had grown
 # PAST this guard's copy — it is `([[:space:]]|[);&|`{}<>]|$)`
-# (.claude/hooks/lib/cmd-detect.sh) — by four closers. Two are fixed here as
-# of the same date, so this guard's `_OUT_POS_SUFFIX` is now
-# `([[:space:]]|[);&|`{}]|$)`, a two-closer (not four-closer) gap remaining:
+# (.claude/hooks/lib/cmd-detect.sh) — by four closers. All four are fixed
+# here now: this guard's `_OUT_POS_SUFFIX` is byte-identical to the lib's
+# `_CMD_POS_SUFFIX`, no gap remaining:
 #   - `{`/`}` WERE a LIVE bypass, not the cosmetic gap an earlier version of
 #     this comment claimed: a COMMA-form brace span glued to a verb
 #     (`merge{,x}`) is real bash brace EXPANSION, placing a standalone
@@ -422,14 +422,21 @@ assert_deny "two gh api occurrences denies (ambiguous — a read-only first call
 #     account.
 #   - `<`/`>` are REAL bash redirect operators and DO split a glued verb into
 #     its own word (verified: a verb glued to a redirect word-splits exactly
-#     like the spaced form does). Their absence from `_OUT_POS_SUFFIX` is a
+#     like the spaced form does). Their absence from `_OUT_POS_SUFFIX` WAS a
 #     LIVE bypass, not a cosmetic gap — confirmed directly against this hook
 #     with a redirect glued onto 'eas update' and onto 'gh pr merge', both
-#     SILENTLY ALLOWED where the spaced/bare forms correctly DENY. Flagged
-#     for a human decision (fix vs. accept), same as the `_OUT_POS_PREFIX`
-#     redirect gap below — NOT fixed here: unlike `{`/`}` above, a `<`/`>`
-#     regex change is out of scope for the review round that found and fixed
-#     the `{`/`}` gap.
+#     SILENTLY ALLOWED where the spaced/bare forms correctly DENY. FIXED
+#     2026-09-05 (outward-CLI-guard-folded-repair, finding A): `_OUT_POS_SUFFIX`
+#     now carries `<`/`>` in its closer alternation — see the "2026-09-05:
+#     finding A" assertion block below for the pinned regression tests.
+#     The `_OUT_POS_PREFIX` redirect-absorption gap this bullet used to
+#     cross-reference as still open (a leading redirect before the verb — a
+#     DIFFERENT mechanism from this suffix-closer gap, since it is about
+#     _OUT_POS_PREFIX's absorber run, not _OUT_POS_SUFFIX's closer class) was
+#     ALSO fixed the same date, same repair, finding B: see the "2026-09-05:
+#     finding B" assertion block below, and the STALE-AS-OF comment above the
+#     backtick/brace/keyword assertions (search "prefix REDIRECT absorption")
+#     for that fix's own account.
 assert_deny "npm publish; denies (terminal ';')" \
   "$(json 'npm publish;')" "npm publish"
 assert_deny "eas update; denies (terminal ';')" \

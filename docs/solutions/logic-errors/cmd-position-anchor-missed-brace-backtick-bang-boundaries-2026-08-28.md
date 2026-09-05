@@ -7,7 +7,7 @@ module: server
 applies_to: [".claude/hooks/**"]
 symptoms: ["A quote-aware command-position matcher (`${_PREFIX}verb${_SUFFIX}` shaped) fails to detect a real, executing invocation of the gated verb", "The SAME verb, unwrapped, is correctly detected — isolating the gap to the anchor's boundary character classes, not the verb pattern itself", "A brace-grouped ({ verb; }), backtick-substituted (`verb`), or !-prefixed (! verb) form of the command is silently ALLOWED by a blocking deny gate", "A verb with no whitespace before the next separator (verb;date) is silently ALLOWED even though a spaced form (verb ;date) is correctly DENIED", "A sibling anchor in the same codebase (e.g. a guard-local one) already covers the missing boundary characters, proving the gap is an under-scoped port, not a fundamental limitation"]
 created: 2026-08-28
-last_updated: '2026-09-02'
+last_updated: '2026-09-05'
 severity: high
 ---
 
@@ -544,6 +544,19 @@ from the fix above (that one computed a wrong clause from a valid match; this on
 matches at all) and `_OUT_POS_SUFFIX_MERGE_CLAUSE` does not touch it. Still a human
 decision, still genuinely out of this repair's scope — but the disclosure now says what it
 actually is: a total bypass of this check via one glued character, not a partial one.
+
+**RETRACTED 2026-09-05 (outward-CLI-guard-folded-repair, finding A) — closed, not still
+open.** The paragraph above was accurate when written (2026-09-02) and is kept verbatim as
+the historical record, but its "still-open"/"still a human decision"/"out of scope"
+framing no longer holds: `_OUT_POS_SUFFIX` now carries `<`/`>` in its closer alternation
+(byte-identical to the lib's `_CMD_POS_SUFFIX`), and `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s
+branch 2 (the positive closer class) carries them too — `gh pr merge>log` now correctly
+denies. See `guard-outward-cli.sh`'s own "verb GLUED TO A REDIRECT" residual note and
+`test-guard-outward-cli.sh`'s "2026-09-05: finding A" assertion block for the fix and its
+regression tests. Retracted in place, not silently rewritten — per this repo's own
+`a-retracted-claim-survives-in-every-artifact-you-did-not-grep-2026-09-03.md` — because a
+copy of this exact "still open" claim was independently found to have survived two later
+comment sweeps inside the guard files themselves.
 
 **A second, distinct still-open gap found by independent PR #910 review (2026-09-02,
 round 4 — disclosure only, deliberately not fixed).** Neither `_OUT_POS_SUFFIX` nor
