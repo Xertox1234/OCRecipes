@@ -54,7 +54,7 @@ export const BottomSheetView = React.forwardRef<
 export const BottomSheetModal = React.forwardRef<
   unknown,
   Record<string, unknown>
->(({ children, onDismiss, ...rest }, ref) => {
+>(({ children, onDismiss, accessible, ...rest }, ref) => {
   React.useImperativeHandle(ref, () => ({
     present: () => {},
     dismiss: () => {
@@ -65,9 +65,19 @@ export const BottomSheetModal = React.forwardRef<
     snapToIndex: () => {},
     close: () => {},
   }));
+  // Reflect `accessible` verbatim (String() so `false` is observable, not
+  // dropped as a boolean DOM attr) — lets tests pin that a sheet whose content
+  // must be reachable passes accessible={false}. On iOS new-arch, gorhom's
+  // default accessible=true collapses the whole subtree into one a11y leaf,
+  // hiding the content from VoiceOver and Maestro (see docs/solutions/
+  // logic-errors/gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md).
   return React.createElement(
     "div",
-    { "data-testid": "bottom-sheet-modal", ...rest },
+    {
+      "data-testid": "bottom-sheet-modal",
+      "data-accessible": String(accessible),
+      ...rest,
+    },
     children as React.ReactNode,
   );
 });

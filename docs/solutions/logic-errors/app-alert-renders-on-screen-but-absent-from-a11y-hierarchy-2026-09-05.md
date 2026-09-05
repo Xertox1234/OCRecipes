@@ -55,16 +55,28 @@ Two traps compounded the diagnosis:
 
 ## Solution
 
-**Scope of this fix (bounded 2026-09-05 by validation run 33939156004):** the
-migration below removes the *alert-invisibility* mechanism — the in-app sheet
-IS exposed to the hierarchy (its container appears in the dump) where the
-native alert was not. It is **necessary but NOT sufficient** to make the CI
-logout flow green: that validation run still failed both logout flows twice,
-now because the **native `expo-splash-screen` launch screen
-(`SplashScreenLogo`) re-appeared full-screen over the presented sheet** so its
-content never became visible/tappable. That deeper cause — why the RN root
-stops painting mid-logout on the contended CI sim — is tracked separately and
-is NOT resolved by this migration. Do not cite this doc as closing #908.
+**Two-part fix — the migration ALONE is not enough.** Moving the confirm into
+an in-app surface is necessary but exposed a second, deterministic iOS defect
+that had to be fixed in the same change (validation run 33939156004 failed both
+logout flows twice with only the migration; a local `inspect_screen` on the
+presented sheet then reproduced and fixed it — see the sibling doc
+[gorhom BottomSheetModal collapses its subtree](gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md)):
+
+1. **Migrate off the native alert** (below) so the confirm lives in the app's
+   own view tree.
+2. **Set `accessible={false}` on the `BottomSheetModal`** — `@gorhom/bottom-sheet`
+   defaults `accessible=true` on the wrapper around your children, which on
+   new-arch Fabric makes it an accessibility LEAF, so the sheet's
+   title/message/buttons are unreachable by Maestro (and VoiceOver). Without
+   this the migration trades an *intermittently*-invisible alert for a
+   *deterministically*-invisible sheet.
+
+Note a separate, PRE-EXISTING flake also lives on this path: the native
+`expo-splash-screen` launch screen (`SplashScreenLogo`) can re-appear over the
+app after a dev-client JS reload (documented on `main` since 2026-08-31 in
+several `e2e/flows/**` comments) and sit there 41-177s — long enough to fail
+any wait. That is a dev-client/CI launch-timing artifact, independent of this
+migration, and is NOT what this doc fixes.
 
 Do not require an E2E flow to drive an app-owned native alert. Move the
 confirm into the app's own view tree, where its exposure is deterministic:

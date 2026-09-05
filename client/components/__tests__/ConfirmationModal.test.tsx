@@ -141,6 +141,21 @@ describe("ConfirmationModal", () => {
     });
   });
 
+  it("sets accessible={false} on the sheet so its content is not collapsed into one iOS a11y leaf", () => {
+    // On new-arch iOS, @gorhom/bottom-sheet's default accessible=true makes the
+    // wrapper an accessibility LEAF, hiding the title/message/buttons from
+    // VoiceOver AND Maestro (issue #908 — deterministic on device, invisible to
+    // jsdom which renders children plainly). This pins the fix: the modal must
+    // pass accessible={false} (NOT null — gorhom does `?? undefined`, so null
+    // re-defaults to true). See docs/solutions/logic-errors/
+    // gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+    renderComponent(<TestHarness options={defaultOptions} />);
+    triggerModal();
+    expect(
+      screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
+    ).toBe("false");
+  });
+
   it("hides the decorative destructive warning icon from the a11y tree", () => {
     // The alert-triangle glyph repeats nothing beyond the title/message that
     // follow it; unmarked it becomes its own screen-reader focus stop. The

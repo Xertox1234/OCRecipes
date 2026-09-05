@@ -192,7 +192,20 @@ function ConfirmationModalInner({
       onDismiss={handleDismiss}
       onChange={onSheetChange}
       onAnimate={onSheetAnimate}
-      accessibilityViewIsModal
+      // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
+      // "Bottom Sheet" on the DraggableView that WRAPS these children. On
+      // new-arch Fabric that makes the wrapper an accessibility LEAF
+      // (isAccessibilityElement=YES), so VoiceOver — and Maestro's iOS driver —
+      // see one opaque "Bottom Sheet" element and the title/message/buttons
+      // (incl. their testIDs) become unreachable. accessible={false} keeps the
+      // children individually exposed. MUST be `false`, not `null`: gorhom does
+      // `_providedAccessible ?? undefined`, so null re-defaults to true.
+      // (issue #908; verified on device — ConfirmationModal.test.tsx pins it.)
+      accessible={false}
+      // NOTE: `accessibilityViewIsModal` was here but @gorhom/bottom-sheet's
+      // BottomSheet has no rest-spread, so it was silently dropped — a no-op /
+      // false focus-trap assurance. The real cross-platform focus trap is the
+      // open follow-up: todos/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md
       handleIndicatorStyle={{ display: "none" }}
       backgroundStyle={{ backgroundColor: theme.backgroundDefault }}
       animationConfigs={animationConfigs}
