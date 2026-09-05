@@ -38,9 +38,18 @@ decide() {  # $1=mode $2=command -> DENY|ALLOW
   grep -q '"permissionDecision":[[:space:]]*"deny"' <<< "$out" && echo DENY || echo ALLOW
 }
 
-reason() {  # $1=command -> deny reason fingerprint (attribution matters: a
-            # deny is not evidence the INTENDED check fired -- see spec 2.1)
-  local o; o=$(printf '%s' "$(envelope "$1")" | bash "$HOOK" 2>/dev/null)
+reason() {  # $1=mode $2=command -> deny reason fingerprint (attribution
+            # matters: a deny is not evidence the INTENDED check fired -- see
+            # spec 2.1 -- and that is just as true on a degraded path as on
+            # precise, so this takes the same mode axis decide() does.
+  local mode="$1" cmd="$2" env_json o
+  env_json=$(envelope "$cmd")
+  case "$mode" in
+    precise) o=$(printf '%s' "$env_json" | bash "$HOOK" 2>/dev/null) ;;
+    nojq)    o=$(printf '%s' "$env_json" | env PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null) ;;
+    nolib)   o=$(printf '%s' "$env_json" | bash "$NOLIB_DIR/guard-outward-cli.sh" 2>/dev/null) ;;
+    noawk)   o=$(printf '%s' "$env_json" | env PATH="$NOAWK_BIN" "$NOAWK_BIN/bash" "$HOOK" 2>/dev/null) ;;
+  esac
   grep -q permissionDecision <<< "$o" || { printf '%s' '(allowed)'; return; }
   tr '\n' ' ' <<< "$o" | sed -E 's/.*guard-outward-cli: //; s/ Bypass:.*//' | cut -c1-72
 }
@@ -53,7 +62,13 @@ reason() {  # $1=command -> deny reason fingerprint (attribution matters: a
 ROWS=()
 add() { ROWS+=("$1 @@ $2 @@ $3"); }
 
-# axis: verb family -> a literal, known-denying invocation of each
+# axis: verb family -> a literal, known-denying invocation of each. The
+# VERB_PREFIX is the literal text up to and including the verb word -- for
+# most families that is "<tool> <verb>", but gh's families put a namespace
+# word ('pr') BEFORE the verb, so the verb prefix is 3 words, not 2. A fixed
+# 2-word capture here silently glues onto the namespace instead of the verb
+# for exactly those two families -- this is what FAM_NS_* below exists to
+# name and keep, rather than let it mislabel a sufx-*/vsub-*/vvar-* row.
 FAM_IDS=(easupd easbld npmpub railup ghmerge ghcomment ghapi)
 FAM_CMDS=(
   'eas update --branch preview'
@@ -64,14 +79,45 @@ FAM_CMDS=(
   'gh pr comment 5 --body hi --repo other/org'
   'gh api repos/o/r -X POST'
 )
+FAM_VERB_PREFIX=(
+  'eas update'
+  'eas build'
+  'npm publish'
+  'railway up'
+  'gh pr merge'
+  'gh pr comment'
+  'gh api'
+)
 # axis: glue mechanism applied to the VERB position of each family
 for i in "${!FAM_IDS[@]}"; do
-  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
   add "lit-$id"    DENY "$cmd"
-  add "sufx-$id"   DENY "$(sed -E 's/^([a-z]+ [a-z:]+)/\1>\/dev\/null/' <<< "$cmd")"
+  add "sufx-$id"   DENY "$(sed -E "s/^(${vp})/\1>\/dev\/null/" <<< "$cmd")"
   add "pref-$id"   DENY "2>/dev/null $cmd"
-  add "vsub-$id"   DENY "$(sed -E 's/^([a-z]+ [a-z:]+)/\1$()/' <<< "$cmd")"
-  add "vvar-$id"   DENY "$(sed -E 's/^([a-z]+ [a-z:]+)/\1${UNSET}/' <<< "$cmd")"
+  add "vsub-$id"   DENY "$(sed -E "s/^(${vp})/\1\$()/" <<< "$cmd")"
+  add "vvar-$id"   DENY "$(sed -E "s/^(${vp})/\1\${UNSET}/" <<< "$cmd")"
+done
+
+# axis: NAMESPACE-glued construction -- a real, DISTINCT mechanism from the
+# verb-glue above, kept under its own IDs rather than discarded (or worse,
+# left silently mislabelling sufx-ghmerge/vsub-ghmerge/vvar-ghmerge and their
+# ghcomment counterparts, which is what the fixed 2-word capture used to do).
+# Only families with a namespace word between tool and verb (gh's 'pr') have
+# this axis; the others have nothing between tool and verb to glue onto.
+# EXPECTED=DENY on its own merits, not copied from the verb-glued row: under
+# real bash word-splitting, 'gh pr>/dev/null merge 42' tokenizes to argv
+# (gh, pr, merge, 42) with stdout redirected -- it genuinely still merges.
+FAM_NS_IDS=(ghmerge ghcomment)
+FAM_NS_CMDS=(
+  'gh pr merge 42'
+  'gh pr comment 5 --body hi --repo other/org'
+)
+FAM_NS_PREFIX=('gh pr' 'gh pr')
+for i in "${!FAM_NS_IDS[@]}"; do
+  id=${FAM_NS_IDS[$i]}; cmd=${FAM_NS_CMDS[$i]}; np=${FAM_NS_PREFIX[$i]}
+  add "nssufx-$id" DENY "$(sed -E "s/^(${np})/\1>\/dev\/null/" <<< "$cmd")"
+  add "nsvsub-$id" DENY "$(sed -E "s/^(${np})/\1\$()/" <<< "$cmd")"
+  add "nsvvar-$id" DENY "$(sed -E "s/^(${np})/\1\${UNSET}/" <<< "$cmd")"
 done
 
 # axis: flag-boundary donation (C1) -- families with NO masking guard, so the
@@ -138,7 +184,7 @@ printf '%s\n' '-------------------+--------+---------+--------+--------+--------
 
 GAPS=0
 ALLGAPS=0
-IDS=(); EXPS=(); PS=(); JS=(); LS=(); AS=()
+IDS=(); EXPS=(); CMDS=(); PS=(); JS=(); LS=(); AS=()
 for row in "${ROWS[@]}"; do
   id=$( awk -F' @@ ' '{print $1}' <<< "$row")
   exp=$(awk -F' @@ ' '{print $2}' <<< "$row")
@@ -149,7 +195,7 @@ for row in "${ROWS[@]}"; do
   if [ "$p" != "$exp" ] || [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; then
     ALLGAPS=$((ALLGAPS+1))
   fi
-  IDS+=("$id"); EXPS+=("$exp"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
+  IDS+=("$id"); EXPS+=("$exp"); CMDS+=("$cmd"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
   printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' "$id" "$exp" "$p" "$j" "$l" "$a" "$note"
 done
 
@@ -159,9 +205,14 @@ echo ""
 echo "=== precise-clean, degraded-dirty (hidden from precise-path gaps; invisible in a summary count) ==="
 HIDDEN=0
 for i in "${!IDS[@]}"; do
-  id=${IDS[$i]}; exp=${EXPS[$i]}; p=${PS[$i]}; j=${JS[$i]}; l=${LS[$i]}; a=${AS[$i]}
+  id=${IDS[$i]}; exp=${EXPS[$i]}; cmd=${CMDS[$i]}; p=${PS[$i]}; j=${JS[$i]}; l=${LS[$i]}; a=${AS[$i]}
   if [ "$p" = "$exp" ] && { [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; }; then
     printf '%-18s : want %-5s  precise=%-5s nojq=%-5s nolib=%-5s noawk=%-5s\n' "$id" "$exp" "$p" "$j" "$l" "$a"
+    # attribution on the degraded columns too -- a DENY there is no more
+    # evidence the intended check fired than a DENY on precise is.
+    [ "$j" = DENY ] && printf '%-18s   nojq  reason: %s\n'  '' "$(reason nojq "$cmd")"
+    [ "$l" = DENY ] && printf '%-18s   nolib reason: %s\n'  '' "$(reason nolib "$cmd")"
+    [ "$a" = DENY ] && printf '%-18s   noawk reason: %s\n'  '' "$(reason noawk "$cmd")"
     HIDDEN=$((HIDDEN+1))
   fi
 done
@@ -172,7 +223,7 @@ for row in "${ROWS[@]}"; do
   id=$( awk -F' @@ ' '{print $1}' <<< "$row")
   cmd=$(awk -F' @@ ' '{print $3}' <<< "$row")
   [ "$(decide precise "$cmd")" = "DENY" ] || continue
-  printf '%-18s : %s\n' "$id" "$(reason "$cmd")"
+  printf '%-18s : %s\n' "$id" "$(reason precise "$cmd")"
 done
 
 # NOTE on co-mask-c1: on the pre-fix tree this row DENIES, but for an unrelated
