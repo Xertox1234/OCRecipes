@@ -137,6 +137,8 @@ printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' \
 printf '%s\n' '-------------------+--------+---------+--------+--------+--------+------'
 
 GAPS=0
+ALLGAPS=0
+IDS=(); EXPS=(); PS=(); JS=(); LS=(); AS=()
 for row in "${ROWS[@]}"; do
   id=$( awk -F' @@ ' '{print $1}' <<< "$row")
   exp=$(awk -F' @@ ' '{print $2}' <<< "$row")
@@ -144,11 +146,26 @@ for row in "${ROWS[@]}"; do
   p=$(decide precise "$cmd"); j=$(decide nojq "$cmd")
   l=$(decide nolib "$cmd");   a=$(decide noawk "$cmd")
   if [ "$p" = "$exp" ]; then note='ok'; else note="GAP (want $exp)"; GAPS=$((GAPS+1)); fi
+  if [ "$p" != "$exp" ] || [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; then
+    ALLGAPS=$((ALLGAPS+1))
+  fi
+  IDS+=("$id"); EXPS+=("$exp"); PS+=("$p"); JS+=("$j"); LS+=("$l"); AS+=("$a")
   printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' "$id" "$exp" "$p" "$j" "$l" "$a" "$note"
 done
 
 echo ""
-echo "rows=${#ROWS[@]}  precise-path gaps=$GAPS"
+echo "rows=${#ROWS[@]}  precise-path gaps=$GAPS  all-path gaps=$ALLGAPS"
+echo ""
+echo "=== precise-clean, degraded-dirty (hidden from precise-path gaps; invisible in a summary count) ==="
+HIDDEN=0
+for i in "${!IDS[@]}"; do
+  id=${IDS[$i]}; exp=${EXPS[$i]}; p=${PS[$i]}; j=${JS[$i]}; l=${LS[$i]}; a=${AS[$i]}
+  if [ "$p" = "$exp" ] && { [ "$j" != "$exp" ] || [ "$l" != "$exp" ] || [ "$a" != "$exp" ]; }; then
+    printf '%-18s : want %-5s  precise=%-5s nojq=%-5s nolib=%-5s noawk=%-5s\n' "$id" "$exp" "$p" "$j" "$l" "$a"
+    HIDDEN=$((HIDDEN+1))
+  fi
+done
+[ "$HIDDEN" -eq 0 ] && echo "(none)"
 echo ""
 echo "=== deny-reason attribution (which check actually fired) ==="
 for row in "${ROWS[@]}"; do
