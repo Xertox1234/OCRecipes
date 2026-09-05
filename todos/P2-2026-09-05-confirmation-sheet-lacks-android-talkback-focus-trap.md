@@ -13,12 +13,21 @@ github_issue:
 
 ## Summary
 
-`ConfirmationModal` (`@gorhom/bottom-sheet` portal overlay) sets only
-`accessibilityViewIsModal`, which is iOS-only, so on Android TalkBack can swipe
-past the presented sheet into the host screen's content behind it. All 8
-`useConfirmationModal()` callers share the gap; PR #924 made it newly relevant
-for a destructive flow (sign-out) that previously used a natively-isolated
-`Alert.alert`.
+`ConfirmationModal` (`@gorhom/bottom-sheet` portal overlay) has **no working
+focus trap on either platform**, so a screen reader can move past the presented
+sheet into the host screen's content behind it. All 8 `useConfirmationModal()`
+callers share the gap; PR #924 made it newly relevant for a destructive flow
+(sign-out) that previously used a natively-isolated `Alert.alert`.
+
+**Correction (2026-09-05, PR #924):** an earlier draft of this todo said the
+sheet "sets only `accessibilityViewIsModal` (iOS-only)", implying iOS was
+covered. That is FALSE — verified against `@gorhom/bottom-sheet` source: its
+`BottomSheet` has no rest-spread, so `accessibilityViewIsModal` passed to
+`BottomSheetModal` was **silently dropped and never worked on iOS either**. PR
+#924 removed that dead prop. So neither platform has ever had a trap; do NOT
+assume iOS is done. (Distinct from the leaf-collapse defect #924 fixed with
+`accessible={false}` — that was the sheet's OWN content being unreachable; this
+todo is about the content BEHIND the sheet.)
 
 ## Background
 
@@ -41,7 +50,7 @@ the fix touches the shared hook's API and all 8 call sites.
       (CookSessionCapture, CookSessionReview, SavedItems, ChatList, BatchScan,
       GroceryLists, Pantry, Settings) without per-screen bespoke wiring where
       avoidable.
-- [ ] iOS behavior (accessibilityViewIsModal) unchanged.
+- [ ] iOS gets a REAL focus trap too (it never had one — the old `accessibilityViewIsModal` was dead code, removed in #924). Do not treat iOS as already covered.
 - [ ] Verified per the house method: `adb shell uiautomator dump --compressed`
       diff with the sheet open vs closed (see
       docs/solutions/best-practices/adb-uiautomator-ondevice-android-verification-2026-07-12.md);

@@ -4,7 +4,7 @@ track: bug
 category: logic-errors
 tags: [react-native, accessibility, testing, design-system, ios]
 module: client
-applies_to: ["client/components/**/*.tsx"]
+applies_to: ["client/**/*.tsx"]
 symptoms: ["a BottomSheetModal's title/message/buttons are absent from the iOS view hierarchy dump while the sheet container ('Bottom Sheet') IS present", "a Maestro tapOn/assertVisible on text or testID inside a bottom sheet never matches on iOS", "VoiceOver reads a presented sheet as one 'Bottom Sheet, adjustable' element with no way to reach its contents", "the same selectors work in a jsdom render test (the mock renders children plainly) but fail on device"]
 created: 2026-09-05
 severity: high
