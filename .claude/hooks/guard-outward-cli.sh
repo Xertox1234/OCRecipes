@@ -234,9 +234,16 @@
 #         `>`) was invisible because `_OUT_POS_SUFFIX`'s closer alternation
 #         did not include `<`/`>` as characters — the lib's `_CMD_POS_SUFFIX`
 #         did. FIXED 2026-09-05 (outward-CLI-guard-folded-repair, finding A):
-#         `_OUT_POS_SUFFIX` and both branches of `_OUT_POS_SUFFIX_MERGE_CLAUSE`
-#         now carry `<`/`>` and are byte-identical to `_CMD_POS_SUFFIX`. See
-#         test-guard-outward-cli.sh's "2026-09-05: finding A" block.
+#         `_OUT_POS_SUFFIX` now carries `<`/`>` and is byte-identical to
+#         `_CMD_POS_SUFFIX`. `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s branch 2 (the
+#         positive closer class) also carries `<`/`>`, for the same
+#         anchor-closer reason; branch 2 alone is sufficient here because a
+#         verb glued directly to a bare redirect (`gh pr merge>log`, no
+#         further args) never enters branch 1's capture at all — see the
+#         ACCEPTED OVER-DENIAL residual above for why branch 1 does NOT
+#         carry `<`/`>` (a ROUND 2 revert, after a CRITICAL bypass). See
+#         test-guard-outward-cli.sh's "2026-09-05: finding A" and "... ROUND
+#         2" blocks.
 #       - leading: a redirect right before the verb (a leading `2>/dev/null`
 #         + the verb) is invisible for a DIFFERENT reason — it is not about
 #         boundary characters at all: `_OUT_POS_PREFIX`'s absorber run (the
@@ -254,36 +261,49 @@
 #     redirect — WAS fixed the same review round: see the "2026-09-02 FIX"
 #     comment at this file's `gh pr merge` CLAUSE= assignment.)
 #   * ACCEPTED OVER-DENIAL (ruled 2026-09-05, outward-CLI-guard-folded-repair
-#     finding A follow-up) — a `gh pr merge` clause is now DENIED, not
-#     allowed, when an UNQUOTED `<`/`>` lands strictly BETWEEN the matched
-#     verb and a real, later `--auto` that bash's own tokenizer still
-#     delivers to `gh` (`gh pr merge >/dev/null 42 --auto` is the canonical
-#     shape — the redirect is stripped and gh really does receive
-#     `pr merge 42 --auto`, a genuine armed automerge). This is a DELIBERATE
-#     COST of the finding-A fix, not an unhandled gap: `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s
-#     branch 1 (the negated clause-cut class that decides how far the CLAUSE
-#     capture runs) now stops at the same `<`/`>` boundary branch 2 uses,
-#     because `<`/`>` are real bash redirects and genuinely end the current
-#     WORD — but branch 1's job is "keep capturing the rest of this clause",
-#     and a redirect does not end the CLAUSE the way `;`/`&`/`|` do (bash
+#     finding A, ROUND 2) — a `gh pr merge` clause is DENIED, not allowed,
+#     when a real, standalone `--auto` is GLUED directly to a trailing
+#     redirect with NO space in between (`gh pr merge 42 --auto>/dev/null`
+#     is the canonical shape — real bash argv, once the redirect is
+#     stripped, is `pr merge 42 --auto`, a genuine armed automerge that this
+#     over-denies). This is the pre-Task-2 behavior, NOT a new gap: it is
+#     what `_OUT_POS_SUFFIX_MERGE_CLAUSE` already did before finding A, and
+#     is restored here on purpose. A ROUND-1 attempt widened branch 1 (the
+#     negated clause-cut class that decides how far the CLAUSE capture
+#     runs) to stop at the same `<`/`>` boundary branch 2 uses, which DID
+#     allow this glued shape — but a security review found that the SAME
+#     widening also truncated the CLAUSE before a LATER `$`-bearing sigil on
+#     constructions where a redirect lands between `--auto` and that sigil
+#     (`gh pr merge 42 --auto >anyfile ${x:---admin}`), hiding the sigil
+#     from the co-mask-c1 unverifiability guard at this file's CLAUSE=
+#     assignment and SILENTLY ALLOWING a real administrator-override merge —
+#     a live, CRITICAL bypass, not a theoretical one. ROUND 2 reverted
+#     branch 1's `<`/`>` addition (branch 2 keeps it — a genuinely different,
+#     closer-position role, unaffected by this revert) to close that bypass,
+#     accepting this narrower over-denial instead: `<`/`>` are real bash
+#     redirects that do not end the CLAUSE the way `;`/`&`/`|` do (bash
 #     strips the redirect and keeps reading the words after it as the same
-#     invocation). Teaching branch 1 to SKIP a redirect and keep going
-#     instead of stopping there would reintroduce exactly the swallowing-
-#     clause bug `_OUT_POS_SUFFIX_MERGE_CLAUSE` was created to prevent (see
-#     the "FIXED 2026-09-02 (round 3, PR #910 post-merge review)" comment at
-#     the `gh pr merge` CLAUSE= assignment below) — so the safe-direction
-#     tradeoff (over-deny a rare, unusual argument ordering; never a bypass)
-#     was accepted rather than reopening that mechanism. Two OTHER shapes
-#     were checked and are UNAFFECTED: a redirect glued directly to the
-#     verb's OWN trailing `--auto` (`gh pr merge 42 --auto>/dev/null`) still
-#     correctly ALLOWS — that is the finding-A fix itself, not this residual
-#     — and so does the realistic ordering a real user writes, redirect last
-#     with a space (`gh pr merge 42 --auto >/dev/null`): `--auto` is already
-#     bounded by real whitespace on both sides before the redirect is ever
-#     reached, so branch 1's stop-at-redirect behavior never engages for
-#     that shape. All three pinned in test-guard-outward-cli.sh's
-#     "2026-09-05: finding A follow-up" block; full three-state evidence
-#     (pre-fix / branch-1-isolated / fixed) in task-2-report.md.
+#     invocation), but branch 1's job is "keep capturing the rest of this
+#     clause" — teaching it to STOP at a redirect anyway is exactly the
+#     tradeoff that reopened the bypass, so it stays narrow. NEVER a bypass:
+#     an over-deny here can only cost someone the escape hatch
+#     (`ALLOW_OUTWARD_CLI=1`), never grant one. Two OTHER shapes were
+#     checked and are UNAFFECTED: the realistic ordering a real user
+#     writes, redirect last WITH a space (`gh pr merge 42 --auto
+#     >/dev/null`), still correctly ALLOWS — `--auto` is already bounded by
+#     real whitespace on both sides before the redirect is ever reached, so
+#     branch 1's behavior at the redirect is irrelevant to that shape — and
+#     a redirect landing BETWEEN the verb and a later real `--auto`
+#     (`gh pr merge >/dev/null 42 --auto`) now correctly ALLOWS too (ROUND
+#     1's over-denial on that shape no longer exists after this revert).
+#     CANDIDATE IMPROVEMENT, explicitly NOT taken here (out of finding A's
+#     scope, which is the closer class, not the grant-shaped `--auto` field
+#     scan): keep branch 1 narrow AND teach the `--auto` field scan itself
+#     to treat `<`/`>` as token boundaries, which would allow the glued
+#     form too while keeping the CLAUSE intact for the `$`-guard. All four
+#     constructions pinned in test-guard-outward-cli.sh's "2026-09-05:
+#     finding A follow-up, ROUND 2" block, plus a corpus row
+#     (`co-redir-mask`); full evidence in task-2-report.md.
 #
 # Escape: `ALLOW_OUTWARD_CLI=1 <command>` as an INLINE prefix on the one Bash
 # command (recognized from the command string itself — see the case
@@ -350,7 +370,7 @@ _OUT_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
 # mutation evidence in
 # docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
 # "round 5" section.
-_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}<>]*|[);&|`{}<>]|$)'
+_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 
 # `--repo`/`-R` in any spelling gh's flag parser accepts (`--repo v`,
 # `--repo=v`, `"--repo" v`, `-R v`, `-Rv`). Case-SENSITIVE on purpose — see
@@ -890,16 +910,30 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   #   never got a match at all).
   #
   #   FIXED 2026-09-05 (outward-CLI-guard-folded-repair, finding A):
-  #   `_OUT_POS_SUFFIX` now includes `<`/`>` in its closer alternation, and
-  #   both branches of `_OUT_POS_SUFFIX_MERGE_CLAUSE` (the clause-cut
-  #   negated class AND the positive closer class) carry the same two
-  #   characters, so GH_MERGE_RE now matches `gh pr merge>log` at all and
-  #   the CLAUSE is computed and scanned correctly. `gh pr merge>log`
-  #   (bare, no decoy) now DENIES; regression tests in
-  #   test-guard-outward-cli.sh's "2026-09-05: finding A" block. The
-  #   `_OUT_POS_PREFIX` leading-redirect gap noted in the COMMAND-POSITION
-  #   ANCHORS header above is a SEPARATE mechanism and remains open — this
-  #   fix only closes the trailing/suffix side.
+  #   `_OUT_POS_SUFFIX` now includes `<`/`>` in its closer alternation, so
+  #   GH_MERGE_RE now matches `gh pr merge>log` at all. `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s
+  #   branch 2 (the positive closer class) also carries `<`/`>`, so the
+  #   CLAUSE cut recognizes the `>` right after `merge` as a valid closer
+  #   too (branch 1, the negated clause-cut class, never engages for this
+  #   bare shape — the character right after `merge` is `>`, not a space,
+  #   so branch 1's space-anchored alternative does not apply here at all).
+  #   `gh pr merge>log` (bare, no decoy) now DENIES; regression tests in
+  #   test-guard-outward-cli.sh's "2026-09-05: finding A" block.
+  #   ROUND 2 (2026-09-05, same repair, after a CRITICAL security review):
+  #   branch 1's OWN `<`/`>` addition — a SEPARATE change from the two
+  #   above, needed only for a DIFFERENT shape (`gh pr merge 42
+  #   --auto>/dev/null`, a redirect glued to a LATER flag inside the
+  #   clause, not to the verb itself) — was REVERTED after it was found to
+  #   also truncate the CLAUSE ahead of a later `$`-bearing sigil
+  #   (`gh pr merge 42 --auto >anyfile ${x:---admin}`), hiding the `$` from
+  #   the unverifiability guard just below and silently allowing a real
+  #   administrator-override merge. See the ACCEPTED OVER-DENIAL residual
+  #   in the COMMAND-POSITION ANCHORS header above for the full account;
+  #   branch 1 is narrow again as of ROUND 2 and this bare-shape fix
+  #   (which never depended on branch 1) is unaffected.
+  #   The `_OUT_POS_PREFIX` leading-redirect gap noted in the
+  #   COMMAND-POSITION ANCHORS header above is a SEPARATE mechanism and
+  #   remains open — this fix only closes the trailing/suffix side.
   #
   # FIXED 2026-09-02 (round 3, PR #910 post-merge review): this used to read
   # `${_OUT_POS_SUFFIX}[^;&|]*` — a SWALLOWING pattern that consumes the

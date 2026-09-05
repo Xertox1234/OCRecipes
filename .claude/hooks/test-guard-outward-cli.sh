@@ -1176,30 +1176,49 @@ assert_allow "a read-only eas colon form glued to a redirect stays allowed" \
 assert_allow "the automerge carve-out survives the widened merge clause" \
   "$(json 'gh pr merge 42 --auto')"
 
-# ---------- 2026-09-05: finding A follow-up — branch 1's grant-shaped side
-# effect, pinned per coordinator ruling (accepted over-denial, not a gap) --
-# _OUT_POS_SUFFIX_MERGE_CLAUSE's branch 1 (the negated clause-cut class) now
-# stops capturing at an UNQUOTED `<`/`>`, same boundary set as branch 2's
-# closer. That is correct when the redirect abuts the verb's OWN --auto (the
-# finding-A fix below): the anchor now matches at all, and the captured
-# clause still contains a real, standalone --auto. It is NOT correct when a
-# redirect lands BETWEEN the matched verb and a real, later --auto that
-# bash's own tokenizer still delivers to gh (redirects are not command
-# terminators) — that construction now denies a genuinely armed automerge.
-# RULING (coordinator, 2026-09-05): accept the over-denial rather than teach
-# branch 1 to skip past a redirect, which would reintroduce the swallowing-
-# clause bug this anchor exists to prevent. Safe-direction (over-deny, not a
-# bypass); the escape hatch (ALLOW_OUTWARD_CLI=1) still works. See this
-# file's own "DOCUMENTED RESIDUALS" entry and task-2-report.md's "Fix round"
-# section for the full three-state evidence (ec50d4a5 / branch-1-isolated /
-# committed fix) and the quoted-redirect-divergence check that evidenced the
-# first assertion as correct rather than merely inferred.
-assert_allow "a real --auto glued directly to a trailing redirect allows (the finding-A fix; pinned against regression back to DENY)" \
-  "$(json 'gh pr merge 42 --auto>/dev/null')"
-assert_allow "a real --auto followed by a spaced trailing redirect allows (the realistic ordering a real user writes)" \
+# ---------- 2026-09-05: finding A follow-up, ROUND 2 — branch 1's `<`/`>`
+# addition REVERTED after a CRITICAL bypass; branch 2 (and the bare
+# _OUT_POS_SUFFIX) keep it. ROUND 1 (the block this replaces) widened BOTH
+# branches of _OUT_POS_SUFFIX_MERGE_CLAUSE to match branch 2's closer set.
+# That was wrong for branch 1: branch 1 is a NEGATED class over command
+# SEPARATORS (captures clause content after a space); branch 2 is a
+# POSITIVE closer class terminating the verb match. `<`/`>` are not command
+# separators — they appear INSIDE a simple command; bash strips a redirect
+# and keeps reading the words after it as the SAME invocation — so
+# excluding them from branch 1's capture truncates the clause MID-COMMAND.
+# CRITICAL (coordinator review, 2026-09-05): ROUND 1's wide branch 1
+# truncated `gh pr merge 42 --auto >anyfile ${x:---admin}`'s CLAUSE right
+# before the `>`, so the `${x:---admin}` sigil — and the literal `$` inside
+# it the unverifiability guard at this file's CLAUSE= assignment keys on —
+# never reached $CLAUSE, and the check SILENTLY ALLOWED a real
+# `gh pr merge 42 --auto --admin` (administrator-override merge; real bash
+# argv once the redirect is stripped). Measured attribution
+# (task-2-report.md "Fix round 2 — Step 1"): isolating the two Task-2 edits
+# independently showed this bypass, AND the DENY→ALLOW flip on the glued
+# form below, are BOTH solely caused by branch 1's `<>` addition — the bare
+# `_OUT_POS_SUFFIX` widening was never implicated in either.
+# RULING (coordinator, 2026-09-05): revert branch 1's `<`/`>` addition;
+# keep it on branch 2 (a genuine closer-position class, unaffected by this
+# revert — see the finding-A anchor-match fix elsewhere in this file). This
+# trades a security bypass for a safe-direction over-denial that already
+# existed before Task 2: the GLUED form (no space before the redirect)
+# returns to DENY — the pre-Task-2 behavior, not a new gap — while the
+# SPACED form a real user actually writes still ALLOWS, because narrow
+# branch 1 captures the whole clause and --auto remains its own
+# space-bounded field regardless of what follows it.
+# CANDIDATE IMPROVEMENT, explicitly NOT taken here (out of this task's
+# scope, which is the closer class, not the grant-shaped --auto field
+# scan): keep branch 1 narrow AND teach the --auto field scan itself to
+# treat `<`/`>` as token boundaries, which would allow the glued form too
+# while keeping `$` inside the clause. Noted, not implemented.
+assert_deny "a real --auto glued directly to a trailing redirect denies (accepted over-denial — DOCUMENTED RESIDUAL, not a bypass; reverted from ROUND 1's assert_allow after the CRITICAL finding)" \
+  "$(json 'gh pr merge 42 --auto>/dev/null')" "without a REAL --auto flag"
+assert_allow "a real --auto followed by a spaced trailing redirect allows (the realistic ordering a real user writes; unaffected by the branch-1 revert)" \
   "$(json 'gh pr merge 42 --auto >/dev/null')"
-assert_deny "a redirect landing between the verb and a later real --auto denies (accepted over-denial — DOCUMENTED RESIDUAL, not a bypass)" \
-  "$(json 'gh pr merge >/dev/null 42 --auto')" "without a REAL --auto flag"
+assert_allow "a redirect landing between the verb and a later real --auto allows (ROUND 1's over-denial no longer exists after the branch-1 revert)" \
+  "$(json 'gh pr merge >/dev/null 42 --auto')"
+assert_deny "CRITICAL: a redirect between --auto and a later \$-bearing admin-override sigil denies (the administrator-override bypass this revert closes)" \
+  "$(json 'gh pr merge 42 --auto >anyfile ${x:---admin}')" "without a REAL --auto flag"
 
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend

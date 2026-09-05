@@ -158,6 +158,7 @@ add syn-binary       DENY  '${e:-eas} update --branch preview'
 add co-pref-sufx     DENY  '2>/dev/null eas update>/dev/null'
 add co-sigil-c1      DENY  'eas bu${UNSET}ild --platform ios ${x:---auto-submit}'
 add co-mask-c1       DENY  'gh pr merge 42 --auto ${x:---admin}'   # see NOTE below
+add co-redir-mask    DENY  'gh pr merge 42 --auto >anyfile ${x:---admin}'   # redirect + $-sigil co-occurrence; see NOTE2 below
 add co-two-api       DENY  'gh api repos/o/r && gh api -X PUT repos/o/r/pulls/1/merge'
 add co-nested-brace  ALLOW 'echo ${a:-${b}}'
 
@@ -232,3 +233,21 @@ done
 #   gh pr merge 42 --auto $UNRELATED   -> same reason
 #   gh pr merge 42 --auto ${x:-hello}  -> same reason
 # Read this row's ATTRIBUTION line, never its verdict alone.
+#
+# NOTE2 on co-redir-mask (added 2026-09-05, outward-CLI-guard-folded-repair,
+# finding A ROUND 2): this is the exact CRITICAL construction a security
+# review caught -- the redirect axis (finding A) and the `$`-sigil axis
+# (co-mask-c1's masking mechanism) were each tested ALONE and never
+# COMBINED, so the guard that fires only on their intersection was never
+# reached by any earlier row. On ROUND 1's tree (both branches of
+# _OUT_POS_SUFFIX_MERGE_CLAUSE widened with `<`/`>`), this row SILENTLY
+# ALLOWED: branch 1 truncated the CLAUSE capture at the `>` in `>anyfile`,
+# so `${x:---admin}` -- and the literal `$` the co-mask-c1 unverifiability
+# guard at :928 keys on -- never reached $CLAUSE at all, and the check saw
+# a clean, fully-verified `--auto` with nothing after it. Real bash argv
+# once the redirect is stripped is `gh pr merge 42 --auto --admin`, a
+# genuine administrator-override merge -- this was a live bypass, not a
+# theoretical one. ROUND 2 reverted branch 1's `<`/`>` addition (keeping it
+# on branch 2, a genuinely different closer-position role) specifically to
+# close this. DENIES correctly on the shipped tree; same ATTRIBUTION
+# caveat as co-mask-c1 applies -- read the reason, not just the verdict.
