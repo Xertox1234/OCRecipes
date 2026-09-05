@@ -6,6 +6,7 @@
     "node": "24.x"
   },
   "scripts": {
+    "preexpo:dev": "tsx scripts/check-api-domain.ts",
     "expo:dev": "npx expo start --tunnel",
     "server:dev": "NODE_ENV=development tsx watch server/index.ts",
     "expo:start:static:build": "npx expo start --no-dev --minify",
@@ -42,7 +43,9 @@
     "mutation:explore": "node scripts/mutation-explore.mjs",
     "prepare": "husky",
     "postinstall": "patch-package",
+    "preandroid": "tsx scripts/check-api-domain.ts",
     "android": "expo run:android",
+    "preios": "tsx scripts/check-api-domain.ts",
     "ios": "expo run:ios",
     "update:preview": "CI=1 EXPO_PUBLIC_DOMAIN=https://api.ocrecipes.com EXPO_PUBLIC_SENTRY_DSN=https://bf62b005c5085c50b08ad690c613ded4@o4511605735489536.ingest.us.sentry.io/4511605740142592 sh -c 'ok=0; for a in \"$@\"; do case \"$a\" in --message|--message=*) ok=1 ;; --platform|--platform=*) echo \"error: do not pass --platform; this script always publishes both native targets via --platform all\" >&2; exit 1 ;; esac; done; if [ \"$ok\" != \"1\" ]; then echo \"error: --message is required. Usage: npm run update:preview -- --message \\\"your message\\\"\" >&2; exit 1; fi; exec eas update --branch preview --platform all \"$@\"' --",
     "update:production": "CI=1 EXPO_PUBLIC_DOMAIN=https://api.ocrecipes.com EXPO_PUBLIC_SENTRY_DSN=https://bf62b005c5085c50b08ad690c613ded4@o4511605735489536.ingest.us.sentry.io/4511605740142592 sh -c 'ok=0; for a in \"$@\"; do case \"$a\" in --message|--message=*) ok=1 ;; --platform|--platform=*) echo \"error: do not pass --platform; this script always publishes both native targets via --platform all\" >&2; exit 1 ;; esac; done; if [ \"$ok\" != \"1\" ]; then echo \"error: --message is required. Usage: npm run update:production -- --message \\\"your message\\\"\" >&2; exit 1; fi; exec eas update --branch production --platform all \"$@\"' --",
