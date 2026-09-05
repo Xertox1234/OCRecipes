@@ -1176,6 +1176,31 @@ assert_allow "a read-only eas colon form glued to a redirect stays allowed" \
 assert_allow "the automerge carve-out survives the widened merge clause" \
   "$(json 'gh pr merge 42 --auto')"
 
+# ---------- 2026-09-05: finding A follow-up — branch 1's grant-shaped side
+# effect, pinned per coordinator ruling (accepted over-denial, not a gap) --
+# _OUT_POS_SUFFIX_MERGE_CLAUSE's branch 1 (the negated clause-cut class) now
+# stops capturing at an UNQUOTED `<`/`>`, same boundary set as branch 2's
+# closer. That is correct when the redirect abuts the verb's OWN --auto (the
+# finding-A fix below): the anchor now matches at all, and the captured
+# clause still contains a real, standalone --auto. It is NOT correct when a
+# redirect lands BETWEEN the matched verb and a real, later --auto that
+# bash's own tokenizer still delivers to gh (redirects are not command
+# terminators) — that construction now denies a genuinely armed automerge.
+# RULING (coordinator, 2026-09-05): accept the over-denial rather than teach
+# branch 1 to skip past a redirect, which would reintroduce the swallowing-
+# clause bug this anchor exists to prevent. Safe-direction (over-deny, not a
+# bypass); the escape hatch (ALLOW_OUTWARD_CLI=1) still works. See this
+# file's own "DOCUMENTED RESIDUALS" entry and task-2-report.md's "Fix round"
+# section for the full three-state evidence (ec50d4a5 / branch-1-isolated /
+# committed fix) and the quoted-redirect-divergence check that evidenced the
+# first assertion as correct rather than merely inferred.
+assert_allow "a real --auto glued directly to a trailing redirect allows (the finding-A fix; pinned against regression back to DENY)" \
+  "$(json 'gh pr merge 42 --auto>/dev/null')"
+assert_allow "a real --auto followed by a spaced trailing redirect allows (the realistic ordering a real user writes)" \
+  "$(json 'gh pr merge 42 --auto >/dev/null')"
+assert_deny "a redirect landing between the verb and a later real --auto denies (accepted over-denial — DOCUMENTED RESIDUAL, not a bypass)" \
+  "$(json 'gh pr merge >/dev/null 42 --auto')" "without a REAL --auto flag"
+
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend
 # on any other external tool (that is C4's lesson applied one layer down).

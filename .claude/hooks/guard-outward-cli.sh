@@ -253,6 +253,37 @@
 #     `_OUT_POS_SUFFIX` gap — `{`/`}`, real bash brace expansion, not a
 #     redirect — WAS fixed the same review round: see the "2026-09-02 FIX"
 #     comment at this file's `gh pr merge` CLAUSE= assignment.)
+#   * ACCEPTED OVER-DENIAL (ruled 2026-09-05, outward-CLI-guard-folded-repair
+#     finding A follow-up) — a `gh pr merge` clause is now DENIED, not
+#     allowed, when an UNQUOTED `<`/`>` lands strictly BETWEEN the matched
+#     verb and a real, later `--auto` that bash's own tokenizer still
+#     delivers to `gh` (`gh pr merge >/dev/null 42 --auto` is the canonical
+#     shape — the redirect is stripped and gh really does receive
+#     `pr merge 42 --auto`, a genuine armed automerge). This is a DELIBERATE
+#     COST of the finding-A fix, not an unhandled gap: `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s
+#     branch 1 (the negated clause-cut class that decides how far the CLAUSE
+#     capture runs) now stops at the same `<`/`>` boundary branch 2 uses,
+#     because `<`/`>` are real bash redirects and genuinely end the current
+#     WORD — but branch 1's job is "keep capturing the rest of this clause",
+#     and a redirect does not end the CLAUSE the way `;`/`&`/`|` do (bash
+#     strips the redirect and keeps reading the words after it as the same
+#     invocation). Teaching branch 1 to SKIP a redirect and keep going
+#     instead of stopping there would reintroduce exactly the swallowing-
+#     clause bug `_OUT_POS_SUFFIX_MERGE_CLAUSE` was created to prevent (see
+#     the "FIXED 2026-09-02 (round 3, PR #910 post-merge review)" comment at
+#     the `gh pr merge` CLAUSE= assignment below) — so the safe-direction
+#     tradeoff (over-deny a rare, unusual argument ordering; never a bypass)
+#     was accepted rather than reopening that mechanism. Two OTHER shapes
+#     were checked and are UNAFFECTED: a redirect glued directly to the
+#     verb's OWN trailing `--auto` (`gh pr merge 42 --auto>/dev/null`) still
+#     correctly ALLOWS — that is the finding-A fix itself, not this residual
+#     — and so does the realistic ordering a real user writes, redirect last
+#     with a space (`gh pr merge 42 --auto >/dev/null`): `--auto` is already
+#     bounded by real whitespace on both sides before the redirect is ever
+#     reached, so branch 1's stop-at-redirect behavior never engages for
+#     that shape. All three pinned in test-guard-outward-cli.sh's
+#     "2026-09-05: finding A follow-up" block; full three-state evidence
+#     (pre-fix / branch-1-isolated / fixed) in task-2-report.md.
 #
 # Escape: `ALLOW_OUTWARD_CLI=1 <command>` as an INLINE prefix on the one Bash
 # command (recognized from the command string itself — see the case
