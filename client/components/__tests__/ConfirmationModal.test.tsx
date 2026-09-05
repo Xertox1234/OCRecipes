@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import React from "react";
 import { screen, fireEvent } from "@testing-library/react";
+import { AccessibilityInfo } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import { useConfirmationModal } from "../ConfirmationModal";
 import type { ConfirmOptions } from "../ConfirmationModal";
@@ -107,5 +108,63 @@ describe("ConfirmationModal", () => {
     renderComponent(<TestHarness options={defaultOptions} />);
     // Before triggering, options ref is null → empty strings
     expect(screen.queryByText("Delete Entry")).toBeNull();
+  });
+
+  describe("screen-reader announcement on open", () => {
+    // The sheet replaced native Alert.alert call sites (issue #908), and
+    // Alert.alert got its title/message read aloud by the OS for free. The
+    // sheet must announce its own purpose — same delayed pattern and
+    // rationale as UpgradeModal (the ~500ms delay outlasts the present
+    // animation so iOS VoiceOver doesn't swallow it).
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("announces title and message after the open delay", () => {
+      vi.useFakeTimers();
+      const spy = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+      renderComponent(<TestHarness options={defaultOptions} />);
+      triggerModal();
+      expect(spy).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(500);
+      expect(spy).toHaveBeenCalledWith("Delete Entry. Remove this item?");
+    });
+
+    it("does not announce when the sheet is dismissed before the delay", () => {
+      vi.useFakeTimers();
+      const spy = vi.spyOn(AccessibilityInfo, "announceForAccessibility");
+      renderComponent(<TestHarness options={defaultOptions} />);
+      triggerModal();
+      fireEvent.click(screen.getByText("Cancel"));
+      vi.advanceTimersByTime(1000);
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  it("sets accessible={false} on the sheet so its content is not collapsed into one iOS a11y leaf", () => {
+    // On new-arch iOS, @gorhom/bottom-sheet's default accessible=true makes the
+    // wrapper an accessibility LEAF, hiding the title/message/buttons from
+    // VoiceOver AND Maestro (issue #908 — deterministic on device, invisible to
+    // jsdom which renders children plainly). This pins the fix: the modal must
+    // pass accessible={false} (NOT null — gorhom does `?? undefined`, so null
+    // re-defaults to true). See docs/solutions/logic-errors/
+    // gorhom-bottomsheetmodal-collapses-a11y-subtree-on-ios-2026-09-05.md.
+    renderComponent(<TestHarness options={defaultOptions} />);
+    triggerModal();
+    expect(
+      screen.getByTestId("bottom-sheet-modal").getAttribute("data-accessible"),
+    ).toBe("false");
+  });
+
+  it("hides the decorative destructive warning icon from the a11y tree", () => {
+    // The alert-triangle glyph repeats nothing beyond the title/message that
+    // follow it; unmarked it becomes its own screen-reader focus stop. The
+    // jsdom RN mock maps the accessibilityElementsHidden +
+    // importantForAccessibility="no-hide-descendants" pair to aria-hidden,
+    // which is the assertable signal here.
+    renderComponent(<TestHarness options={defaultOptions} />);
+    triggerModal();
+    const icon = screen.getByTestId("confirmation-modal-destructive-icon");
+    expect(icon.getAttribute("aria-hidden")).toBe("true");
   });
 });

@@ -19,7 +19,7 @@ appId: com.ocrecipes.app
 # Three entry states are possible:
 #   Sign In   — already logged out: both gated blocks skip, contract holds.
 #   Hello.*   — Main app: the logout block walks Profile tab → Settings →
-#               Sign Out → confirms the native alert.
+#               Sign Out → confirms the in-app confirmation sheet.
 #   wizard    — a PREVIOUS attempt died mid-onboarding, leaving an account
 #               with onboardingCompleted:false; relaunch routes straight into
 #               the wizard (Get Started / Go back screens), which has no tab
@@ -100,19 +100,21 @@ appId: com.ocrecipes.app
       # ProfileStack screen
       - tapOn: "Settings"
       - tapOn: "Sign Out"
-      # Native confirmation alert. The alert's own TITLE is also "Sign Out"
-      # and it precedes the confirm button in the hierarchy, so a bare text
-      # tap hits the non-interactive title (observed locally: the alert
-      # stayed open; a below:-anchored tap ALSO failed on iOS 26, where the
-      # alert window suppresses the app tree in nonobvious ways). index: 1
-      # — [0]=title, [1]=confirm button — is the empirically verified tap
-      # on iOS 26; validate on Android in the emulator pass.
+      # In-app ConfirmationModal sheet (issue #908). This was a native
+      # Alert.alert, which the CI simulator intermittently rendered ON SCREEN
+      # while exposing NO alert nodes to the accessibility hierarchy for 30s+
+      # (run 33935553286 attempt-1: the failure screenshot shows the alert up,
+      # the same moment's hierarchy dump has no alert in it) — no hierarchy
+      # wait or tap can ever see such an alert, which is why raising this
+      # wait's timeout (closed PR #919) changed nothing. The sheet lives in
+      # the app's own view tree, so it is always exposed, and its confirm
+      # button's distinct "Yes, Sign Out" label is a unique full-string match
+      # (the Settings row and the sheet title both read "Sign Out") — no
+      # index needed, nothing to silently reorder.
       - extendedWaitUntil:
           visible: "Are you sure you want to sign out.*"
           timeout: 10000
-      - tapOn:
-          text: "Sign Out"
-          index: 1
+      - tapOn: "Yes, Sign Out"
       - extendedWaitUntil:
           visible: "Sign In"
           timeout: 30000

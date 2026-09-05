@@ -1,5 +1,11 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
-import { StyleSheet, View, Pressable } from "react-native";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { AccessibilityInfo, StyleSheet, View, Pressable } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -50,20 +56,46 @@ export interface ConfirmOptions {
 export function useConfirmationModal() {
   const sheetRef = useRef<BottomSheetModal>(null);
   const optionsRef = useRef<ConfirmOptions | null>(null);
+  const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, setRevision] = useState(0);
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     optionsRef.current = opts;
     setRevision((r) => r + 1);
     sheetRef.current?.present();
+    // Announce the sheet's purpose on open — same pattern and rationale as
+    // UpgradeModal: without it the only screen-reader feedback is the present
+    // focus shift, with no context for why the sheet appeared. This matters
+    // doubly here since the sheet replaced native Alert.alert call sites
+    // (issue #908), whose title/message the OS read aloud for free. Delayed
+    // ~500ms (past the slide-present animation) so iOS VoiceOver doesn't
+    // swallow it mid screen-change; cleared on dismiss (ConfirmationModalInner)
+    // and unmount so a sheet closed within the delay stays silent.
+    if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
+    announceTimerRef.current = setTimeout(() => {
+      AccessibilityInfo.announceForAccessibility(
+        `${opts.title}. ${opts.message}`,
+      );
+    }, 500);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
+    },
+    [],
+  );
 
   // Stable component identity — never changes, so React re-renders (not remounts)
   const ConfirmationModal = useMemo(
     () =>
       function StableConfirmationModal() {
         return (
-          <ConfirmationModalInner sheetRef={sheetRef} optionsRef={optionsRef} />
+          <ConfirmationModalInner
+            sheetRef={sheetRef}
+            optionsRef={optionsRef}
+            announceTimerRef={announceTimerRef}
+          />
         );
       },
     [],
@@ -77,6 +109,7 @@ export function useConfirmationModal() {
 interface ConfirmationModalInnerProps {
   sheetRef: React.RefObject<BottomSheetModal | null>;
   optionsRef: React.RefObject<ConfirmOptions | null>;
+  announceTimerRef: React.RefObject<ReturnType<typeof setTimeout> | null>;
 }
 
 const MAX_DYNAMIC_HEIGHT = 350;
@@ -84,6 +117,7 @@ const MAX_DYNAMIC_HEIGHT = 350;
 function ConfirmationModalInner({
   sheetRef,
   optionsRef,
+  announceTimerRef,
 }: ConfirmationModalInnerProps) {
   const options = optionsRef.current;
   const { theme } = useTheme();
@@ -100,11 +134,17 @@ function ConfirmationModalInner({
   const cancelStyle = getCancelButtonStyle(theme);
 
   const handleDismiss = useCallback(() => {
+    // A sheet dismissed within the announce delay stays silent — see the
+    // announce comment in useConfirmationModal's confirm().
+    if (announceTimerRef.current) {
+      clearTimeout(announceTimerRef.current);
+      announceTimerRef.current = null;
+    }
     if (!isActioning.current) {
       optionsRef.current?.onCancel?.();
     }
     isActioning.current = false;
-  }, [optionsRef]);
+  }, [optionsRef, announceTimerRef]);
 
   // Imperative host — see useSheetBackHandler's JSDoc for onSheetChange/onSheetAnimate semantics.
   const { onSheetChange, onSheetAnimate } = useSheetBackHandler(sheetRef);
@@ -152,7 +192,20 @@ function ConfirmationModalInner({
       onDismiss={handleDismiss}
       onChange={onSheetChange}
       onAnimate={onSheetAnimate}
-      accessibilityViewIsModal
+      // @gorhom/bottom-sheet defaults accessible=true + accessibilityLabel
+      // "Bottom Sheet" on the DraggableView that WRAPS these children. On
+      // new-arch Fabric that makes the wrapper an accessibility LEAF
+      // (isAccessibilityElement=YES), so VoiceOver — and Maestro's iOS driver —
+      // see one opaque "Bottom Sheet" element and the title/message/buttons
+      // (incl. their testIDs) become unreachable. accessible={false} keeps the
+      // children individually exposed. MUST be `false`, not `null`: gorhom does
+      // `_providedAccessible ?? undefined`, so null re-defaults to true.
+      // (issue #908; verified on device — ConfirmationModal.test.tsx pins it.)
+      accessible={false}
+      // NOTE: `accessibilityViewIsModal` was here but @gorhom/bottom-sheet's
+      // BottomSheet has no rest-spread, so it was silently dropped — a no-op /
+      // false focus-trap assurance. The real cross-platform focus trap is the
+      // open follow-up: todos/P2-2026-09-05-confirmation-sheet-lacks-android-talkback-focus-trap.md
       handleIndicatorStyle={{ display: "none" }}
       backgroundStyle={{ backgroundColor: theme.backgroundDefault }}
       animationConfigs={animationConfigs}
@@ -172,9 +225,17 @@ function ConfirmationModalInner({
             ]}
           />
 
-          {/* Warning icon (destructive only) */}
+          {/* Warning icon (destructive only) — decorative: it repeats nothing
+              beyond the title/message that follow, so hide it from the a11y
+              tree with the full container pair (a bare accessible={false}
+              leaves the subtree in Android's tree). */}
           {destructive && (
-            <View style={styles.iconContainer}>
+            <View
+              style={styles.iconContainer}
+              testID="confirmation-modal-destructive-icon"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
               <Feather name="alert-triangle" size={28} color={theme.error} />
             </View>
           )}

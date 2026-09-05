@@ -22,6 +22,7 @@ import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { DeleteAccountModal } from "@/components/DeleteAccountModal";
 import { ChangeEmailModal } from "@/components/ChangeEmailModal";
+import { useConfirmationModal } from "@/components/ConfirmationModal";
 import { useTheme } from "@/hooks/useTheme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useAuthContext } from "@/context/AuthContext";
@@ -82,6 +83,7 @@ export default function SettingsScreen() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [showChangeEmailModal, setShowChangeEmailModal] = useState(false);
+  const { confirm, ConfirmationModal } = useConfirmationModal();
   const [isExporting, setIsExporting] = useState(false);
 
   const handleDeleteAccount = useCallback(
@@ -204,23 +206,32 @@ export default function SettingsScreen() {
           handleExportData();
           break;
         case "signout":
-          Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Sign Out",
-              style: "destructive",
-              onPress: () => {
-                void logout();
-              },
+          // In-app ConfirmationModal sheet, NEVER a native Alert.alert: on the
+          // CI iOS simulator the UIAlertController renders on screen but is
+          // intermittently ABSENT from the accessibility hierarchy for 30s+
+          // (issue #908, run 33935553286 attempt-1 dump — screenshot shows the
+          // alert, the hierarchy has no alert nodes), so neither Maestro nor
+          // assistive tech can reliably drive it. The sheet lives in the app's
+          // own view tree and is always exposed — and matches this screen's
+          // sibling confirms (DeleteAccountModal/ChangeEmailModal). The
+          // distinct "Yes, Sign Out" label gives E2E a unique full-string
+          // selector (the Settings row and sheet title both read "Sign Out").
+          confirm({
+            title: "Sign Out",
+            message: "Are you sure you want to sign out?",
+            confirmLabel: "Yes, Sign Out",
+            destructive: true,
+            onConfirm: () => {
+              void logout();
             },
-          ]);
+          });
           break;
         case "deleteAccount":
           setShowDeleteAccountModal(true);
           break;
       }
     },
-    [haptics, navigation, isPremium, logout, handleExportData],
+    [haptics, navigation, isPremium, logout, handleExportData, confirm],
   );
 
   const visibleItems = SETTINGS_ITEMS.filter(
@@ -504,6 +515,8 @@ export default function SettingsScreen() {
         onConfirm={handleChangeEmail}
         currentEmail={user?.email}
       />
+
+      <ConfirmationModal />
     </ScreenScrollView>
   );
 }
