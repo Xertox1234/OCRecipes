@@ -45,8 +45,17 @@
 #     `_OUT_POS_SUFFIX` past the occurrence-count check). `_OUT_POS_SUFFIX`
 #     is now byte-identical to the lib's `_CMD_POS_SUFFIX`;
 #   * prefix — opener class (backtick, `{`, `!`) is now IDENTICAL between the
-#     two; what remains guard-local vs. lib-local (in BOTH directions, one of
-#     them an unfixed live gap in this hook) is detailed in
+#     two. The lib's redirect-absorption alternative (`_CMD_REDIR`, added
+#     2026-09-01) was the one remaining guard-local GAP — a leading
+#     `2>/dev/null`-shaped prefix before the verb was invisible to this
+#     hook's own `_OUT_POS_PREFIX` — FIXED 2026-09-05
+#     (outward-CLI-guard-folded-repair, finding B): `_OUT_POS_PREFIX` now
+#     carries the same `_CMD_REDIR` alternative, referenced by variable, not
+#     duplicated as a second literal pattern (see the "command-position
+#     anchors" section below, relocated to follow the lib source so the
+#     reference resolves). What remains guard-local in the OTHER direction —
+#     the KEYWORD absorption (`then|do|else|elif|time`) — has no lib
+#     equivalent and is not a gap. Full comparison in
 #     test-guard-outward-cli.sh's comment above the backtick/brace/keyword
 #     assertion block (search "STALE AS OF" there).
 # The widening lives HERE, not in lib/cmd-detect.sh, because that lib feeds
@@ -75,9 +84,11 @@
 #
 # ROUND 4 (2026-09-02, independent PR #910 review) — a THIRD, still-open
 # gap, same total-non-detection family the (now-fixed) `<`/`>` gap above was
-# in, but a different trigger, and NOT closed by the 2026-09-05 `<`/`>` fix:
-# neither _OUT_POS_SUFFIX (line ~253) nor _OUT_POS_PREFIX
-# (line ~252) nor _OUT_POS_SUFFIX_MERGE_CLAUSE treats a bash sigil that
+# in, but a different trigger, and NOT closed by the 2026-09-05 `<`/`>` fix
+# (nor by the same date's finding-B leading-redirect-absorption fix — a
+# DIFFERENT axis, see the "command-position anchors" section below for the
+# current definition site): neither _OUT_POS_SUFFIX nor _OUT_POS_PREFIX
+# nor _OUT_POS_SUFFIX_MERGE_CLAUSE treats a bash sigil that
 # expands to nothing ($VAR unset, $(...)/${...} empty) as a boundary, even
 # though real bash word-splitting collapses it away — `eas update$(true)
 # --branch preview` and `gh pr merge 42$UNSET_VAR` are bash-identical to the
@@ -245,21 +256,44 @@
 #         test-guard-outward-cli.sh's "2026-09-05: finding A" and "... ROUND
 #         2" blocks.
 #       - leading: a redirect right before the verb (a leading `2>/dev/null`
-#         + the verb) is invisible for a DIFFERENT reason — it is not about
+#         + the verb) was invisible for a DIFFERENT reason — it is not about
 #         boundary characters at all: `_OUT_POS_PREFIX`'s absorber run (the
 #         part that skips env-assignments and zero-arg runner words before
-#         the verb) has no redirect-token alternative, so it cannot skip PAST
-#         a leading redirect to reach the verb. The lib's `_CMD_POS_PREFIX`
-#         gained exactly that alternative (`_CMD_REDIR`, in
-#         lib/cmd-detect.sh) — this hook's own copy was never given one.
-#         STILL NOT FIXED here as of 2026-09-05.
+#         the verb) had no redirect-token alternative, so it could not skip
+#         PAST a leading redirect to reach the verb. The lib's
+#         `_CMD_POS_PREFIX` gained exactly that alternative (`_CMD_REDIR`, in
+#         lib/cmd-detect.sh) on 2026-09-01; this hook's own copy was never
+#         given one. FIXED 2026-09-05 (outward-CLI-guard-folded-repair,
+#         finding B): `_OUT_POS_PREFIX` now carries the SAME `_CMD_REDIR`
+#         alternative, referenced by variable (not a duplicated literal
+#         pattern) — which is why the whole "command-position anchors"
+#         definition block had to move to follow the lib source further down
+#         in this file (interpolating `$_CMD_REDIR` before the lib is sourced
+#         would silently resolve to the empty string, no error, bypass
+#         open). This also closes a related multi-occurrence undercount:
+#         `gh pr merge 42 --auto ; 2>/dev/null gh pr merge 7` used to see
+#         only the FIRST occurrence (the second's leading redirect hid it
+#         from the count) and ALLOWED on the strength of the first's real
+#         `--auto` while the second, --auto-less merge ran unconditionally —
+#         now both are counted and the ambiguous-occurrence DENY fires
+#         correctly. NEW ACCEPTED OVER-DENIAL as a side effect (deny
+#         direction, never a bypass): because the absorbed leading redirect
+#         is now part of the `gh pr merge` CLAUSE capture below, a leading
+#         redirect that itself contains a `$` (`2>$LOGFILE gh pr merge 42
+#         --auto`) trips the existing "any `$` in CLAUSE is unverifiable"
+#         guard and denies a real, uncorrupted `--auto` — the same
+#         documented over-broad-in-the-safe-direction behavior the CLAUSE=
+#         assignment's own comment already discloses for a `$VAR` mention
+#         elsewhere in the clause, now also reachable via the prefix.
+#         Regression tests in test-guard-outward-cli.sh's "2026-09-05:
+#         finding B" block.
 #     See the COMMAND-POSITION ANCHORS header above and
-#     test-guard-outward-cli.sh's "STALE AS OF 2026-09-02" comment for the
-#     confirmed repro and the full anchor-by-anchor comparison. The leading
-#     case remains flagged for a human decision. (A THIRD, related
-#     `_OUT_POS_SUFFIX` gap — `{`/`}`, real bash brace expansion, not a
-#     redirect — WAS fixed the same review round: see the "2026-09-02 FIX"
-#     comment at this file's `gh pr merge` CLAUSE= assignment.)
+#     test-guard-outward-cli.sh's "STALE AS OF 2026-09-02" comment (now
+#     updated to reflect the finding-B fix) for the confirmed repro and the
+#     full anchor-by-anchor comparison. (A THIRD, related `_OUT_POS_SUFFIX`
+#     gap — `{`/`}`, real bash brace expansion, not a redirect — WAS fixed
+#     the same review round: see the "2026-09-02 FIX" comment at this file's
+#     `gh pr merge` CLAUSE= assignment.)
 #   * ACCEPTED OVER-DENIAL (ruled 2026-09-05, outward-CLI-guard-folded-repair
 #     finding A, ROUND 2) — a `gh pr merge` clause is DENIED, not allowed,
 #     when a real, standalone `--auto` is GLUED directly to a trailing
@@ -315,62 +349,10 @@ set -uo pipefail
 
 [ -n "${ALLOW_OUTWARD_CLI:-}" ] && exit 0
 
-# Command-position building blocks — GUARD-LOCAL widened copies of
-# lib/cmd-detect.sh's `_CMD_POS_*`. See the header's "COMMAND-POSITION ANCHORS
-# ARE GUARD-LOCAL" note for why these are not upstreamed. `!` is deliberately
-# NOT first in the prefix bracket class (a leading `!`/`^` reads as negation to
-# some bracket-expression implementations); a backtick inside a single-quoted
-# shell string is literal, so no escaping is needed for either constant.
-_OUT_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|then|do|else|elif|time)[[:space:]]+)*'
-_OUT_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
-# NON-SWALLOWING variant for a clause-cut whose downstream check DECIDES AN
-# ALLOW on flag presence (currently: the `gh pr merge` --auto clause below —
-# see its CLAUSE= comment for the full account of why this exists). Plain
-# `${_OUT_POS_SUFFIX}[^;&|]*` CONSUMES the boundary character and then keeps
-# capturing past it: when that boundary is whitespace this is correct and
-# intended (more of the SAME clause follows, e.g. `merge 42 --auto`), but
-# when the boundary is a hard separator/bracket (`;`,`&`,`|`,`)`,backtick,
-# `{`,`}`) the verb's own clause has NO more of its own arguments — anything
-# after that character belongs to a DIFFERENT command or construct, and must
-# not be captured into THIS clause. This variant only continues capturing
-# after WHITESPACE; a hard-separator or end-of-string boundary ends the
-# clause immediately, with nothing captured past it — mirroring real bash
-# command-position semantics exactly (verified: `gh pr merge;curl --auto`
-# treats `curl` as a wholly separate command bash-side too).
-#
-# ROUND 5 (2026-09-02, independent baseline-reviewer finding on round 3's own
-# fix): branch 1's continuation-stop class `[^;&|]*` only excluded `;`/`&`/`|`
-# — it did NOT match branch 2's own boundary set (`)`,backtick,`{`,`}`), so
-# once ANY argument preceded the boundary (branch 1 fires instead of branch
-# 2), the swallow reopened for those four characters. Live, verified bypass
-# for two of them: `$(gh pr merge 42)curl --auto` and `` `gh pr merge 42`curl
-# --auto `` both silently ALLOWED — real bash executes `gh pr merge 42`
-# UNCONDITIONALLY as the command-substitution subprocess, with no --auto
-# reaching it at all, before ever getting to the `curl --auto` half; verified
-# with a paired deny control and traced to the same CLAUSE=[...] literal the
-# round-3 comment above describes. `{`/`}` in this same arg-present position
-# are DIFFERENT: verified via `bash -c 'for w in ...; do printf "[%s]\n"
-# "$w"; done'` that `gh pr merge 42{,x}curl --auto` real-bash-expands to
-# `--auto` as a genuine SEPARATE argument of the SAME `gh pr merge` command
-# (comma-brace-expansion splits words, it does not glue two commands
-# together), and a bare `}` (no matching `{`, so no expansion at all) simply
-# stays glued into the preceding argument token with `--auto` following as a
-# normal, space-separated, genuine argument — in both cases `--auto`
-# genuinely reaches `gh`, so ALLOW was never actually wrong for `{`/`}` here.
-# Branch 1 is widened to the full `)`,backtick,`{`,`}` set anyway, matching
-# branch 2 exactly on principle (the two branches partition one boundary
-# concept and must not silently diverge again) and erring toward the
-# established deny-conservative precedent for `{`/`}` set by round 1's fix to
-# `_OUT_POS_SUFFIX` itself — this denies two more, harmless-but-bizarre
-# shapes (a literal `}`/comma-brace glued straight onto a merge argument) as
-# a side effect, never removes a real ALLOW: the sanctioned
-# `gh pr merge --auto` / `gh pr merge 42 --auto --squash --delete-branch`
-# paths contain none of `;&|)`{}` before `--auto` and are unaffected. Full
-# 16-shape {zero-arg,arg-present}×{;,&,|,),backtick,{,},EOS} sweep and
-# mutation evidence in
-# docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
-# "round 5" section.
-_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
+# COMMAND-POSITION ANCHORS: defined AFTER lib/cmd-detect.sh is sourced (below),
+# because _OUT_POS_PREFIX interpolates the lib's $_CMD_REDIR. Defining them here
+# would interpolate an UNSET variable to the empty string — no error, suite
+# green, bypass open. See the definitions further down.
 
 # `--repo`/`-R` in any spelling gh's flag parser accepts (`--repo v`,
 # `--repo=v`, `"--repo" v`, `-R v`, `-Rv`). Case-SENSITIVE on purpose — see
@@ -581,6 +563,64 @@ if ! . "$HERE/lib/cmd-detect.sh" 2>/dev/null || ! declare -F cmd_bare >/dev/null
   fi
   exit 0
 fi
+
+# --- command-position anchors (must follow the lib source: _CMD_REDIR) -------
+# Command-position building blocks — GUARD-LOCAL widened copies of
+# lib/cmd-detect.sh's `_CMD_POS_*`. See the header's "COMMAND-POSITION ANCHORS
+# ARE GUARD-LOCAL" note for why these are not upstreamed. `!` is deliberately
+# NOT first in the prefix bracket class (a leading `!`/`^` reads as negation to
+# some bracket-expression implementations); a backtick inside a single-quoted
+# shell string is literal, so no escaping is needed for either constant.
+_OUT_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|then|do|else|elif|time|'"$_CMD_REDIR"')[[:space:]]+)*'
+_OUT_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'
+# NON-SWALLOWING variant for a clause-cut whose downstream check DECIDES AN
+# ALLOW on flag presence (currently: the `gh pr merge` --auto clause below —
+# see its CLAUSE= comment for the full account of why this exists). Plain
+# `${_OUT_POS_SUFFIX}[^;&|]*` CONSUMES the boundary character and then keeps
+# capturing past it: when that boundary is whitespace this is correct and
+# intended (more of the SAME clause follows, e.g. `merge 42 --auto`), but
+# when the boundary is a hard separator/bracket (`;`,`&`,`|`,`)`,backtick,
+# `{`,`}`) the verb's own clause has NO more of its own arguments — anything
+# after that character belongs to a DIFFERENT command or construct, and must
+# not be captured into THIS clause. This variant only continues capturing
+# after WHITESPACE; a hard-separator or end-of-string boundary ends the
+# clause immediately, with nothing captured past it — mirroring real bash
+# command-position semantics exactly (verified: `gh pr merge;curl --auto`
+# treats `curl` as a wholly separate command bash-side too).
+#
+# ROUND 5 (2026-09-02, independent baseline-reviewer finding on round 3's own
+# fix): branch 1's continuation-stop class `[^;&|]*` only excluded `;`/`&`/`|`
+# — it did NOT match branch 2's own boundary set (`)`,backtick,`{`,`}`), so
+# once ANY argument preceded the boundary (branch 1 fires instead of branch
+# 2), the swallow reopened for those four characters. Live, verified bypass
+# for two of them: `$(gh pr merge 42)curl --auto` and `` `gh pr merge 42`curl
+# --auto `` both silently ALLOWED — real bash executes `gh pr merge 42`
+# UNCONDITIONALLY as the command-substitution subprocess, with no --auto
+# reaching it at all, before ever getting to the `curl --auto` half; verified
+# with a paired deny control and traced to the same CLAUSE=[...] literal the
+# round-3 comment above describes. `{`/`}` in this same arg-present position
+# are DIFFERENT: verified via `bash -c 'for w in ...; do printf "[%s]\n"
+# "$w"; done'` that `gh pr merge 42{,x}curl --auto` real-bash-expands to
+# `--auto` as a genuine SEPARATE argument of the SAME `gh pr merge` command
+# (comma-brace-expansion splits words, it does not glue two commands
+# together), and a bare `}` (no matching `{`, so no expansion at all) simply
+# stays glued into the preceding argument token with `--auto` following as a
+# normal, space-separated, genuine argument — in both cases `--auto`
+# genuinely reaches `gh`, so ALLOW was never actually wrong for `{`/`}` here.
+# Branch 1 is widened to the full `)`,backtick,`{`,`}` set anyway, matching
+# branch 2 exactly on principle (the two branches partition one boundary
+# concept and must not silently diverge again) and erring toward the
+# established deny-conservative precedent for `{`/`}` set by round 1's fix to
+# `_OUT_POS_SUFFIX` itself — this denies two more, harmless-but-bizarre
+# shapes (a literal `}`/comma-brace glued straight onto a merge argument) as
+# a side effect, never removes a real ALLOW: the sanctioned
+# `gh pr merge --auto` / `gh pr merge 42 --auto --squash --delete-branch`
+# paths contain none of `;&|)`{}` before `--auto` and are unaffected. Full
+# 16-shape {zero-arg,arg-present}×{;,&,|,),backtick,{,},EOS} sweep and
+# mutation evidence in
+# docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md's
+# "round 5" section.
+_OUT_POS_SUFFIX_MERGE_CLAUSE='([[:space:]][^;&|)`{}]*|[);&|`{}<>]|$)'
 
 BARE=$(printf '%s' "$CMD" | cmd_bare)
 # WORDS is the argv-faithful rendering (lib/cmd-detect.sh): quote characters
@@ -932,8 +972,14 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   #   branch 1 is narrow again as of ROUND 2 and this bare-shape fix
   #   (which never depended on branch 1) is unaffected.
   #   The `_OUT_POS_PREFIX` leading-redirect gap noted in the
-  #   COMMAND-POSITION ANCHORS header above is a SEPARATE mechanism and
-  #   remains open — this fix only closes the trailing/suffix side.
+  #   COMMAND-POSITION ANCHORS header above was a SEPARATE mechanism from all
+  #   of the above (this fix only closed the trailing/suffix side) — FIXED
+  #   SEPARATELY 2026-09-05 (outward-CLI-guard-folded-repair, finding B; see
+  #   the "leading:" bullet in the DOCUMENTED RESIDUALS section above for the
+  #   full account, including a new accepted over-denial that fix introduces
+  #   here: a leading redirect that itself carries a `$` now also trips the
+  #   CLAUSE `$`-unverifiability check just below, because the absorbed
+  #   prefix is part of this CLAUSE capture).
   #
   # FIXED 2026-09-02 (round 3, PR #910 post-merge review): this used to read
   # `${_OUT_POS_SUFFIX}[^;&|]*` — a SWALLOWING pattern that consumes the

@@ -462,13 +462,16 @@ assert_deny "gh api -X PUT ...; denies (terminal ';', gh api family)" \
 # docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md).
 # Those three are no longer guard-exclusive. What DOES remain guard-local is
 # prefix KEYWORD absorption (then|do|else|elif|time — _OUT_POS_PREFIX below);
-# the lib has no equivalent. The reverse also now holds and is UNFIXED: the
-# lib separately gained prefix REDIRECT absorption (a `2>/dev/null`-shaped
-# prefix before the verb, 2026-09-01) that this guard's own _OUT_POS_PREFIX
-# does not have — a live gap in this hook, confirmed by running it directly
-# against a redirect-prefixed outward-CLI command; flagged for a human
-# decision rather than fixed here (comment/prose only is this todo's Scope
-# Contract for this file).
+# the lib has no equivalent. The reverse used to hold too: the lib separately
+# gained prefix REDIRECT absorption (a `2>/dev/null`-shaped prefix before the
+# verb, 2026-09-01) that this guard's own _OUT_POS_PREFIX lacked — a live gap
+# in this hook, confirmed by running it directly against a redirect-prefixed
+# outward-CLI command. FIXED 2026-09-05 (outward-CLI-guard-folded-repair,
+# finding B): _OUT_POS_PREFIX now carries the lib's _CMD_REDIR alternative by
+# reference (not a duplicated literal pattern) — see the "2026-09-05: finding
+# B" assertion block below and guard-outward-cli.sh's relocated
+# "command-position anchors" section (moved to follow the lib source so the
+# `$_CMD_REDIR` reference resolves to something other than the empty string).
 assert_deny 'backtick command substitution denies' \
   "$(json '`eas update`')" "eas update/publish/submit"
 assert_deny "brace group denies" \
@@ -1219,6 +1222,33 @@ assert_allow "a redirect landing between the verb and a later real --auto allows
   "$(json 'gh pr merge >/dev/null 42 --auto')"
 assert_deny "CRITICAL: a redirect between --auto and a later \$-bearing admin-override sigil denies (the administrator-override bypass this revert closes)" \
   "$(json 'gh pr merge 42 --auto >anyfile ${x:---admin}')" "without a REAL --auto flag"
+
+# ---------- 2026-09-05: finding B — _OUT_POS_PREFIX absorbs a leading redirect
+# Bash permits a redirect ANYWHERE in a simple command, including before the
+# command word. The lib's _CMD_POS_PREFIX gained a redirect alternative on
+# 2026-09-01 (_CMD_REDIR); this hook's copy never did. Reused BY REFERENCE —
+# a second, subtly-different redirect pattern is a fresh instance of the same
+# bug surface (lib/cmd-detect.sh:113-116).
+assert_deny "leading 2>/dev/null before eas update denies" \
+  "$(json '2>/dev/null eas update --branch preview')" "eas update/publish/submit"
+assert_deny "leading >/dev/null before npm publish denies" \
+  "$(json '>/dev/null npm publish')" "npm publish"
+assert_deny "leading 2>/dev/null before railway up denies" \
+  "$(json '2>/dev/null railway up')" "railway up/deploy"
+assert_deny "leading >/dev/null before gh pr merge denies" \
+  "$(json '>/dev/null gh pr merge 42')" "without a REAL --auto flag"
+# Negative controls.
+assert_allow "a leading redirect before a benign command stays allowed" \
+  "$(json '2>/dev/null ls -la')"
+assert_allow "a leading redirect before a read-only gh call stays allowed" \
+  "$(json '2>/dev/null gh pr view 42')"
+# CO-OCCURRENCE follow-ups discovered while closing finding B — the leading-
+# redirect axis crossed with two OTHER mechanisms this file already guards,
+# per the "test the intersection, not each axis alone" lesson from finding A.
+assert_deny "CO-OCCURRENCE: a leading redirect hiding a SECOND gh pr merge occurrence denies (pre-fix this undercounted to 1 occurrence and ALLOWED on the first's real --auto while the second, --auto-less merge ran unconditionally)" \
+  "$(json 'gh pr merge 42 --auto ; 2>/dev/null gh pr merge 7')" "ambiguous, cannot verify"
+assert_deny "NEW ACCEPTED OVER-DENIAL: a leading redirect that itself carries a \$ denies a real --auto (the absorbed prefix is now part of the CLAUSE capture, so its \$ trips the existing \$-unverifiability guard — deny-direction, not a bypass)" \
+  "$(json '2>$LOGFILE gh pr merge 42 --auto')" "without a REAL --auto flag"
 
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend

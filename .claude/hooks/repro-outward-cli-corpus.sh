@@ -159,6 +159,8 @@ add co-pref-sufx     DENY  '2>/dev/null eas update>/dev/null'
 add co-sigil-c1      DENY  'eas bu${UNSET}ild --platform ios ${x:---auto-submit}'
 add co-mask-c1       DENY  'gh pr merge 42 --auto ${x:---admin}'   # see NOTE below
 add co-redir-mask    DENY  'gh pr merge 42 --auto >anyfile ${x:---admin}'   # redirect + $-sigil co-occurrence; see NOTE2 below
+add co-pref-multi    DENY  'gh pr merge 42 --auto ; 2>/dev/null gh pr merge 7'   # leading redirect + multi-occurrence; see NOTE3 below
+add co-pref-dollar   DENY  '2>$LOGFILE gh pr merge 42 --auto'   # leading redirect carrying a $ + real --auto; see NOTE3 below
 add co-two-api       DENY  'gh api repos/o/r && gh api -X PUT repos/o/r/pulls/1/merge'
 add co-nested-brace  ALLOW 'echo ${a:-${b}}'
 
@@ -178,6 +180,8 @@ add fp-npmrun        ALLOW 'npm run build'
 add fp-mention       ALLOW 'git commit -m "chore: mentions eas update and gh pr merge"'
 add fp-quotedall     ALLOW 'echo "gh pr merge 42"'
 add fp-automerge     ALLOW 'gh pr merge 42 --auto'
+add fp-ghcreate      ALLOW 'gh pr create --title x --body y'   # this repo's own sanctioned PR-creation shape (no --repo)
+add fp-ghcreate-pref ALLOW '2>/dev/null gh pr create --title x --body y'   # same, + leading redirect (finding B axis); see NOTE4 below
 
 printf '%-18s | %-6s | %-7s | %-6s | %-6s | %-6s | %s\n' \
   ID EXPECT PRECISE NOJQ NOLIB NOAWK NOTE
@@ -251,3 +255,37 @@ done
 # on branch 2, a genuinely different closer-position role) specifically to
 # close this. DENIES correctly on the shipped tree; same ATTRIBUTION
 # caveat as co-mask-c1 applies -- read the reason, not just the verdict.
+#
+# NOTE3 on co-pref-multi and co-pref-dollar (added 2026-09-05,
+# outward-CLI-guard-folded-repair, finding B): the leading-redirect axis
+# crossed with two OTHER mechanisms this file already exercises alone.
+#   co-pref-multi: pre-fix, the second `gh pr merge` occurrence's leading
+#   `2>/dev/null` hid it from the occurrence count entirely -- the count saw
+#   only the FIRST (real `--auto`) occurrence and ALLOWED, while real bash
+#   runs the SECOND `gh pr merge 7` (no --auto at all) unconditionally. A
+#   live bypass, closed by the same _OUT_POS_PREFIX fix that closes the
+#   simple leading-redirect cases -- post-fix the count is 2 and the
+#   ambiguous-occurrence DENY fires.
+#   co-pref-dollar: NOT a bypass -- a NEW accepted over-denial. Because the
+#   absorbed leading redirect is now part of the `gh pr merge` CLAUSE capture
+#   (CLAUSE= keys off `${_OUT_POS_PREFIX}gh...`, and the prefix match now
+#   starts at the redirect, not at `gh`), a `$` inside that redirect
+#   (`2>$LOGFILE`) trips the pre-existing "any `$` in CLAUSE is unverifiable"
+#   guard and denies a real, uncorrupted `--auto`. Same documented
+#   over-broad-in-the-safe-direction behavior as co-mask-c1's own `$VAR`
+#   mention, now also reachable via the prefix -- deny direction, never a
+#   bypass. Read the ATTRIBUTION line: it reads identically to a real missing
+#   `--auto`, which is the disclosure-worthy part.
+#
+# NOTE4 on fp-ghcreate / fp-ghcreate-pref (added 2026-09-05,
+# outward-CLI-guard-folded-repair, finding B): `gh pr create`/`gh pr comment`
+# are the OTHER "clause decides an ALLOW" family this file's own CAVEAT warns
+# about (the `--repo`/`-R` carve-out in `gh_pr_clause_has_repo`), and neither
+# had an `fp-` control before this task even though `pref-ghcomment` already
+# exercised the DENY side (a `--repo`-bearing clause). `gh_pr_clause_has_repo`
+# cuts its own clause from literal `gh` in $WORDS_DEEP, not from
+# `${_OUT_POS_PREFIX}`, so the newly-absorbed leading redirect should never
+# reach that cut -- verified directly (both rows ALLOW, precise and
+# degraded), closing the one crossing finding B's own five pinned crossings
+# did not cover: the create/comment ALLOW-deciding path with a leading
+# redirect present.
