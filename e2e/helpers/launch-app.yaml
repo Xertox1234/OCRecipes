@@ -53,24 +53,28 @@ appId: com.ocrecipes.app
 - openLink: "exp+ocrecipes://expo-development-client/?url=http%3A%2F%2Flocalhost%3A8081"
 
 # Readiness gate — see header (1). Also matches two stranded states a
-# previous attempt's kill can leave behind: the Sign-Out confirmation alert
-# (killed mid-logout; while a native alert is up nothing else is in the
-# hierarchy) and the onboarding wizard ("Get Started"/"Go back" — killed
-# mid-registration; ensure-logged-out's wizard-escape recovers from it, and
-# auth/login, which calls it, is always the first flow in path order).
+# previous attempt's kill can leave behind: the Sign-Out confirmation sheet
+# (killed mid-logout; an in-app sheet since issue #908 — the native alert it
+# replaced could render on screen while absent from the accessibility
+# hierarchy on CI, see ensure-logged-out.yaml) and the onboarding wizard
+# ("Get Started"/"Go back" — killed mid-registration; ensure-logged-out's
+# wizard-escape recovers from it, and every flow reaches that escape via the
+# login helper's own wizard-strand gate — auth/login is NOT reliably first
+# in path order (measured 4th; todos/P3-2026-09-03-launch-app-comment-claims-auth-login-runs-first.md)).
 - extendedWaitUntil:
     visible: "(Continue|Sign In|Hello.*|Not Now|Connected to:|Are you sure you want to sign out.*|Get Started|Go back)"
     timeout: 240000
 
-# Finish an interrupted logout: [0] is the alert's title, [1] the confirm
-# button (see ensure-logged-out.yaml for the evidence)
+# Finish an interrupted logout: the in-app confirmation sheet (issue #908 —
+# see ensure-logged-out.yaml for why this is no longer a native alert) may
+# still be up from a previous attempt killed mid-logout; its confirm button's
+# "Yes, Sign Out" label is a unique full-string match.
 - runFlow:
     when:
       visible: "Are you sure you want to sign out.*"
     commands:
       - tapOn:
-          text: "Sign Out"
-          index: 1
+          text: "Yes, Sign Out"
           optional: true
 
 # Lingering iOS Save-Password dialog from a previous flow — dismiss first so
