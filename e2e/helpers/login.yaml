@@ -93,6 +93,17 @@ appId: com.ocrecipes.app
       - tapOn:
           id: "input-password"
       - inputText: ${PASSWORD}
+      # Drop the keyboard so the Sign In button's coordinates are tappable.
+      # Once the app's "Please fill in all fields" validation renders, it pushes
+      # the submit button down UNDER the iOS keyboard (button [24,525][369,577]
+      # vs keyboard top y=517 — run 33930429696 step-037 dump), so a coordinate
+      # tap lands on the keyboard's autofill bar and silently no-ops (Maestro
+      # reports COMPLETED on any UI change). Blur via the static header subtitle
+      # by id — NOT hideKeyboard (iOS-flaky) — exactly as complete-onboarding.yaml
+      # does before Create Account.
+      - tapOn:
+          id: "auth-form-subtitle"
+          retryTapIfNoChange: false
       - tapOn: "Sign In"
       # Outcome-oracle retry (same pattern as the register flow): run
       # 33397038006 submitted an EMPTY form — both fields blank, the app's
@@ -132,6 +143,15 @@ appId: com.ocrecipes.app
             - inputText:
                 text: ${PASSWORD}
                 optional: true
+            # Same keyboard-drop as the first submit (see above); optional to
+            # match this loop's permissive semantics — a silently-failed blur
+            # degrades to a skipped step rather than hard-failing the recovery.
+            # The mandatory first-submit blur is the anchor that proves the
+            # selector is live (docs/solutions/.../optional-e2e-steps-cannot-fail).
+            - tapOn:
+                id: "auth-form-subtitle"
+                optional: true
+                retryTapIfNoChange: false
             - tapOn:
                 text: "Sign In"
                 optional: true
