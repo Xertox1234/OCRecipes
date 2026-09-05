@@ -685,10 +685,28 @@ glued boundary; it is safe by decision-direction, not by pattern shape.
   PR #910 post-merge review found the initial `{`/`}` fix had missed `GH_API_CLAUSE` (the
   `gh api` clause-cut) — search this file for `GH_API_CLAUSE=` for the fixed line and its
   "FIXED 2026-09-02 (round 2)" comment.
+  **RETRACTED 2026-09-05 — both gaps closed, not still open.** The two paragraphs above
+  are kept verbatim as the historical record of what was true on 2026-09-02, but this
+  entry's own "disclosed-but-unfixed" framing is now false for both: `_OUT_POS_SUFFIX`'s
+  missing `<`/`>` was closed by outward-CLI-guard-folded-repair **finding A** (it is now
+  byte-identical to the lib's `_CMD_POS_SUFFIX`, defined above); `_OUT_POS_PREFIX`'s
+  missing `_CMD_REDIR` absorption was closed by **finding B**, which reuses the lib's
+  `_CMD_REDIR` by variable reference rather than a second hand-rolled pattern — the reason
+  it required relocating this file's own anchor definitions to follow the lib source (see
+  `guard-outward-cli.sh`'s "COMMAND-POSITION ANCHORS" header comment). Full account and
+  this same retraction already recorded once above (search "RETRACTED 2026-09-05
+  (outward-CLI-guard-folded-repair, finding A) — closed"); this entry duplicated the same
+  now-false claim and needed its own retraction rather than being assumed covered by the
+  first.
 - `.claude/hooks/test-guard-outward-cli.sh` — the two-sided regression test for the
-  2026-09-02 `{`/`}` fix (search "2026-09-02 FIX"), plus the disclosure comments for the
-  two remaining unfixed gaps (search "STALE AS OF 2026-09-02"). The round-2
-  `GH_API_CLAUSE` regression tests are in the "2026-09-02 FIX (round 2)" block.
+  2026-09-02 `{`/`}` fix (search "2026-09-02 FIX"). What this entry used to describe as
+  "the disclosure comments for the two remaining unfixed gaps" (search
+  "STALE AS OF 2026-09-02") now — as of 2026-09-05 — document both as **closed**: finding
+  A (suffix `<`/`>`) and finding B (prefix `_CMD_REDIR` absorption). Their own pinned
+  regression tests are in the "2026-09-05: finding A" and "2026-09-05: finding B"
+  assertion blocks respectively (the "STALE AS OF 2026-09-02" search still finds the right
+  two comments — they just no longer say "unfixed"). The round-2 `GH_API_CLAUSE`
+  regression tests are in the "2026-09-02 FIX (round 2)" block.
 
 ## See Also
 
