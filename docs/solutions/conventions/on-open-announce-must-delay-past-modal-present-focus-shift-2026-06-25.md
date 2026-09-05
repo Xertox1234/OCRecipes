@@ -7,6 +7,7 @@ tags: [accessibility, talkback, voiceover, react-native, announce-for-accessibil
 symptoms: ['A modal/sheet opens and the screen reader only reads its first accessible element (often a close button), never the modal''s purpose', An on-open announceForAccessibility fires but VoiceOver seems to drop/cut it on iOS, An announce works on Android but is silent on iOS specifically when a view is being presented]
 applies_to: [client/**/*.tsx]
 created: '2026-06-25'
+last_updated: '2026-09-05'
 ---
 
 # On-open / on-present screen-reader announces must be delayed past the modal present focus shift
@@ -26,6 +27,18 @@ in `docs/rules/accessibility.md` (success/error/busy). Those fire while the
 surface is **already presented and settled**, so there is no present focus-shift
 to race. The on-open case is the new wrinkle: the announce coincides with the
 presentation.
+
+**Mandatory trigger — replacing a native dialog with an in-app surface.**
+`Alert.alert` (and other OS dialogs) get their title/message read aloud by
+VoiceOver/TalkBack for free; a migration to an in-app modal/sheet silently
+drops that announcement, so adding the on-open announce is part of the
+migration, not polish (found on the #908 sign-out migration — the sheet was
+mute where the alert had spoken). For an **imperatively presented** sheet
+(no `visible` prop — e.g. `useConfirmationModal`'s `sheetRef.present()`),
+the `visible`-edge effect shape below has no edge to hook: start the delayed
+timer at the present call site (`confirm()`), keep it in a ref, and clear it
+both on dismiss-within-delay and on unmount — same semantics, different
+plumbing (see `ConfirmationModal.tsx`).
 
 ## Smell patterns
 
@@ -106,6 +119,8 @@ apply on the open path:
 
 - `client/components/UpgradeModal.tsx` — the on-open purpose announce (visible-edge
   `useEffect`, 500ms delay, both-platforms, status-independent string)
+- `client/components/ConfirmationModal.tsx` — the imperative-present variant
+  (timer started in `confirm()`, ref-held, cleared on dismiss and unmount)
 - `client/components/__tests__/UpgradeModal.a11y.test.tsx` — fake-timer tests for
   the open edge, mount-while-hidden guard, once-per-open + re-arm, and fast-close
   cleanup

@@ -41,9 +41,14 @@ query. Consequences:
   title precedes the button, so a bare `tapOn: "Sign Out"` hits the
   non-interactive title (observed: alert stays open). A `below:`-anchored tap
   ALSO failed on iOS 26. `tapOn: { text: "Sign Out", index: 1 }` —
-  [0]=title, [1]=button — is the empirically verified confirm on BOTH
-  platforms (order is stable precisely because the dialog suppresses
-  everything else).
+  [0]=title, [1]=button — was the empirically verified confirm on BOTH
+  platforms at the time. **Retired 2026-09-05 (#908):** that app-owned alert
+  proved unreliable in the opposite direction on CI — rendered on screen but
+  ABSENT from the hierarchy — and was replaced by an in-app sheet with a
+  unique "Yes, Sign Out" label; also, Maestro's `index` sorts by y/x bounds,
+  not tree order, so the [0]/[1] stability depended on the suppressed-tree
+  geometry. Index disambiguation remains a last resort for SYSTEM dialogs
+  only, which cannot be migrated in-app.
 
 ## Solution
 
@@ -64,8 +69,9 @@ as the alert's title.
 
 - `e2e/helpers/launch-app.yaml` — the readiness-gate alternation
 - `e2e/helpers/login.yaml` — post-submit `(Hello.*|Not Now)` wait + gated tap
-- `e2e/helpers/ensure-logged-out.yaml` — the `index: 1` alert confirm
+- `e2e/helpers/ensure-logged-out.yaml` — formerly the `index: 1` alert confirm; now taps the in-app sheet's unique "Yes, Sign Out" label (see the 2026-09-05 note above)
 
 ## See Also
 
 - [ios-sim-secure-fields-swallow-synthetic-input](ios-sim-secure-fields-swallow-synthetic-input-2026-08-30.md) — the AutoFill cousin that is NOT visible even in-test
+- [An app-owned native alert can render on screen while absent from the a11y hierarchy](app-alert-renders-on-screen-but-absent-from-a11y-hierarchy-2026-09-05.md) — the inverse signature (alert missing from the dump, app tree present) and why app-owned confirms moved in-app
