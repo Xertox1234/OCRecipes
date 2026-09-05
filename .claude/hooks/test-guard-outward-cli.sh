@@ -1149,6 +1149,33 @@ assert_deny "a quoted VALUE with its OWN internal double-quoted argument does no
 assert_allow "a harmless live substitution with no dangerous verb still allows" \
   "$(jsonc 'echo "today is $(date)"')"
 
+# ---------- 2026-09-05: finding A — _OUT_POS_SUFFIX closes on < and > --------
+# A redirect operator tokenizes regardless of adjacent whitespace, so a verb
+# glued directly to one is a real invocation. The lib's _CMD_POS_SUFFIX has
+# always included `<`/`>`; this hook's copy did not. Both branches of
+# _OUT_POS_SUFFIX_MERGE_CLAUSE move in the same change — fixing one branch of a
+# two-branch boundary check and not the other is the round-3/round-5 defect
+# that recurred twice inside the PR #910 repair chain.
+assert_deny "eas update glued to a trailing redirect denies" \
+  "$(json 'eas update>/dev/null')" "eas update/publish/submit"
+assert_deny "npm publish glued to a trailing redirect denies" \
+  "$(json 'npm publish>/dev/null')" "npm publish"
+assert_deny "railway up glued to a trailing redirect denies" \
+  "$(json 'railway up>/dev/null')" "railway up/deploy"
+assert_deny "gh pr merge glued to a trailing output redirect denies" \
+  "$(json 'gh pr merge>/dev/null')" "without a REAL --auto flag"
+assert_deny "gh pr merge glued to a trailing input redirect denies" \
+  "$(json 'gh pr merge</dev/null')" "without a REAL --auto flag"
+assert_deny "eas build glued to a redirect still sees --auto-submit" \
+  "$(json 'eas build>/dev/null --auto-submit')" "eas build --auto-submit"
+# Negative controls: widening a closer class must not swallow ordinary text.
+assert_allow "a redirect not fronting a gated verb stays allowed" \
+  "$(json 'grep -r foo . >/dev/null 2>&1')"
+assert_allow "a read-only eas colon form glued to a redirect stays allowed" \
+  "$(json 'eas update:list>/dev/null')"
+assert_allow "the automerge carve-out survives the widened merge clause" \
+  "$(json 'gh pr merge 42 --auto')"
+
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend
 # on any other external tool (that is C4's lesson applied one layer down).
