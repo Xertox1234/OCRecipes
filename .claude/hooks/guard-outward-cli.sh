@@ -354,14 +354,78 @@ set -uo pipefail
 # would interpolate an UNSET variable to the empty string — no error, suite
 # green, bypass open. See the definitions further down.
 
+# Leading boundary for the three DENY-ONLY flag checks (this file's --repo/-R,
+# --auto-submit, and --admin scans). Two alternatives:
+#   1. `^` or a character that is not part of a flag token — the original class.
+#   2. A default-value parameter expansion's operator. Bash's `:-` and bare `-`
+#      each consume exactly one literal `-` from the source text and leave the
+#      REST of the word as the expansion, so `${x:---repo}` places a literal
+#      `-` immediately before a real, functioning two-dash `--repo` — argv
+#      genuinely carries the flag, but the original class (which rejects a
+#      preceding dash) never matches it (finding C1,
+#      outward-CLI-guard-folded-repair, 2026-09-05).
+# Alternative 2 covers every bash `${PARAM:-...}`/`${PARAM-...}` PARAM shape
+# that (a) is valid syntax immediately before `:-`/bare `-` and (b) can
+# plausibly expand via that operator (i.e. PARAM can be unset or null),
+# enumerated by grammar, not by the handful of examples an earlier revision
+# happened to try — a per-example patch leaves whatever spelling wasn't
+# tried:
+#   - a NAME (`${x:-`), same as always.
+#   - a positional parameter, one or more digits, single- or multi-digit
+#     (`${1:-`, `${10:-`) — real bash, verified: unset positional params
+#     default exactly like an unset NAME.
+#   - indirect expansion, `!` followed by a NAME or a digit sequence
+#     (`${!v:-`, `${!1:-`) — verified live: `${!1:-word}` really does fire
+#     when $1 is unset, not just `${!v:-word}` for a NAME target.
+#   - an array element or the array-KEYS-listing form, either bare or
+#     bang-prefixed, with any bracket contents (`${a[0]:-`, `${a[@]:-`,
+#     `${!a[@]:-`) — the bracket contents are never inspected; anything
+#     without a literal `]` closes it.
+#   - the "all positional parameters" specials, `@` and `*` (`${@:-`,
+#     `${*:-`) — verified live: these DO default via `:-`/bare `-` when
+#     there are zero positional parameters, exactly like a NAME.
+#   - bare `!` alone (`${!:-`) — the last-background-PID special parameter,
+#     commonly unset (nothing has ever been backgrounded) — DISTINCT from
+#     indirect expansion, which needs a NAME/digit after the `!`.
+# Deliberately excluded, each verified rather than assumed:
+#   - `${?:-`, `${#:-`, `${$:-`, `${-:-` — $?, $#, $$, and $- are each
+#     ALWAYS set to a non-empty string (verified: `0`, `0`, a PID, and a
+#     flag string respectively, live), so `:-`/bare `-` never fires; none is
+#     attacker-controlled either.
+#   - `${#x:-` (the LENGTH operator) — not valid bash syntax at all when
+#     combined with `:-`/bare `-` (verified: "bad substitution"), so it
+#     cannot be swept in regardless of what this alternative matches.
+#   - `${!prefix*}`/`${!prefix@}` (the variable-NAME-matching forms) — also
+#     not valid bash syntax combined with `:-`/bare `-` (verified: "bad
+#     substitution"); excluded structurally, not by omission.
+#   - `:+` and `:=` are NOT covered by this alternative at all: `+`/`=`
+#     already satisfy alternative 1, so a default-value OR assign-default
+#     expansion using either operator already denies today, on every PARAM
+#     shape, without needing a PARAM-aware alternative here.
+# SAFE ONLY BECAUSE ALL THREE CONSUMERS ARE DENY-SHAPED — an added alternative
+# here can only ever ADD a deny, never grant a carve-out. Verified by reading
+# the call sites, not assumed: `scan_both`'s own precondition comment restricts
+# it to deny-shaped callers, and `gh_pr_clause_has_repo`'s own comment states
+# "`--repo`/`-R` only ever ADDS a deny, it never grants a carve-out" — its two
+# callers both call `deny()` on a true result and do nothing on false.
+# Anchoring the flag match immediately after the consumed operator also keeps
+# this precise, not just wider, for every PARAM shape uniformly (not per-form
+# special-casing): none of them can consume more than the operator's single
+# mandatory `-`, so `${x:----admin}`, `${1:----admin}`, `${!v:----admin}`,
+# `${a[0]:----admin}`, `${@:----admin}`, and `${!:----admin}` all leave a
+# leftover bare dash before the flag text, which the class still rejects —
+# verified live for each, not just the plain-NAME case.
+_OUT_FLAG_LEAD='(^|[^-A-Za-z0-9]|\$\{(!([A-Za-z_][A-Za-z0-9_]*|[0-9]+)(\[[^]]*\])?|!|[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?|[0-9]+|[@*]):?-)'
+
 # `--repo`/`-R` in any spelling gh's flag parser accepts (`--repo v`,
 # `--repo=v`, `"--repo" v`, `-R v`, `-Rv`). Case-SENSITIVE on purpose — see
-# the header. Boundary class is "not a word/dash character" rather than
+# the header. Boundary class is "not a word/dash character" (plus the
+# default-value-expansion alternative in `_OUT_FLAG_LEAD`) rather than
 # strictly whitespace, exactly like the `--admin` check below, so a QUOTED
 # flag name is still seen; `--repo`'s trailing boundary keeps a hypothetical
 # `--repository` from matching, while `-R` deliberately has none so the glued
 # `-Rowner/repo` form is caught.
-_OUT_REPO_FLAG_RE='(^|[^-A-Za-z0-9])(--repo([^-A-Za-z0-9]|$)|-R)'
+_OUT_REPO_FLAG_RE="${_OUT_FLAG_LEAD}"'(--repo([^-A-Za-z0-9]|$)|-R)'
 
 # gh_pr_clause_has_repo <subcommand-alternation> → exit 0 if the FIRST
 # `gh pr <sub>` clause in $WORDS_DEEP carries --repo/-R.
@@ -746,9 +810,11 @@ fi
 # mutation wearing a build command's name. Plain `eas build` stays allowed.
 # Flag scan via scan_both (see its definition for why both renderings are read
 # and why they must stay newline-joined). No trailing boundary, so
-# `--auto-submit-with-profile` is caught by the same pattern.
+# `--auto-submit-with-profile` is caught by the same pattern. Leading boundary
+# is `_OUT_FLAG_LEAD` (see its own definition) so a default-value expansion
+# (`${x:---auto-submit}`) cannot donate the flag's boundary.
 if grep -Eqi "${_OUT_POS_PREFIX}eas[[:space:]]+build${_OUT_POS_SUFFIX}" <<< "$WORDS_DEEP" \
-   && scan_both '(^|[^-A-Za-z0-9])--auto-submit'; then
+   && scan_both "${_OUT_FLAG_LEAD}"'--auto-submit'; then
   deny "guard-outward-cli: command-position 'eas build --auto-submit' submits the finished binary to the app store — an outward mutation, not just a build. Plain 'eas build' is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
 fi
 
@@ -1084,7 +1150,16 @@ elif [ "${GH_PR_MERGE_OCCURRENCES:-0}" -eq 1 ]; then
   # `--admin=1`, and a trailing quote/comma/etc.
   # Flag scan via scan_both — see its definition for why both renderings are read
   # and why they must stay newline-joined (this check is the seam example there).
-  if scan_both '(^|[^-A-Za-z0-9])--admin([^-A-Za-z0-9]|$)'; then
+  # Leading boundary is `_OUT_FLAG_LEAD` (see its own definition) so a
+  # default-value expansion (`${x:---admin}`) cannot donate the flag's
+  # boundary. NOT independently regression-tested on this family: ANY literal
+  # `$` surviving in CLAUSE already denies earlier, at the "without a REAL
+  # --auto flag" check (documented at that check's own CLAUSE= assignment),
+  # before this line ever runs — a `${x:---admin}` assertion here would pass
+  # on the unfixed tree too and pin nothing. Applied anyway, for the same
+  # reason the other two sites are: leaving one of three copies of a widened
+  # detector unfixed is this file's own documented recurring defect.
+  if scan_both "${_OUT_FLAG_LEAD}"'--admin([^-A-Za-z0-9]|$)'; then
     deny "guard-outward-cli: command-position 'gh pr merge --admin' uses administrator privileges to merge a PR that may not meet requirements — this contradicts the --auto carve-out's premise (branch protection gating). Denying regardless of --auto. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
 fi

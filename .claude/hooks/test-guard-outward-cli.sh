@@ -1258,6 +1258,119 @@ assert_deny "CO-OCCURRENCE: a leading redirect hiding a SECOND gh pr merge occur
 assert_deny "NEW ACCEPTED OVER-DENIAL: a leading redirect that itself carries a \$ denies a real --auto (the absorbed prefix is now part of the CLAUSE capture, so its \$ trips the existing \$-unverifiability guard — deny-direction, not a bypass)" \
   "$(json '2>$LOGFILE gh pr merge 42 --auto')" "without a REAL --auto flag"
 
+# ---------- 2026-09-05: C1 — default-value expansion donates the boundary ----
+# `${x:---repo}` is `${x:-` followed by a REAL two-dash `--repo`. The `-` that
+# the `:-` operator contributes sits immediately before the flag, so a boundary
+# class rejecting a preceding dash never matches — while argv genuinely carries
+# the flag. `${x:+...}` and `${x:=...}` are unaffected: `+` and `=` already pass
+# the class, which is what isolates the default-value operator family as the
+# cause rather than leaving it a regex-reading guess.
+#
+# NOT written on the `gh pr merge` family ON PURPOSE: any `$` in the merge
+# clause denies at the "without a REAL --auto flag" check (see that check's own
+# CLAUSE= assignment) before the --admin check ever runs, so a merge-family
+# assertion here would pass WITHOUT this fix and pin nothing (measured live,
+# three times, most recently at this task's own HEAD — see
+# co-mask-c1/c1-threedash in repro-outward-cli-corpus.sh for the standing
+# documentation of that masking). Using families with no such masking guard
+# instead: `eas build --auto-submit` and `gh pr create|comment --repo`/`-R`.
+assert_deny "eas build --auto-submit via \${x:-} denies" \
+  "$(json 'eas build --platform ios ${x:---auto-submit}')" "eas build --auto-submit"
+assert_deny "eas build --auto-submit via the no-colon form denies" \
+  "$(json 'eas build --platform ios ${x---auto-submit}')" "eas build --auto-submit"
+assert_deny "gh pr comment --repo via \${x:-} denies" \
+  "$(json 'gh pr comment 5 --body hi ${x:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+assert_deny "gh pr comment -R via \${x:-} denies (the short flag has no trailing boundary by design)" \
+  "$(json 'gh pr comment 5 --body hi ${x:--R} other/org')" "--repo/-R writes to a DIFFERENT"
+assert_deny "gh pr create --repo via \${x:-} denies (the 'create' path of the same create|comment alternation as the row above)" \
+  "$(json 'gh pr create --title t --body b ${x:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+# Negative controls — the alternative must be precise, not just wider.
+assert_allow "a three-dash remainder is NOT the gated flag (the operator donates exactly ONE dash, leaving two literal dashes before the flag text — a bare dash satisfies neither original alternative)" \
+  "$(json 'gh pr comment 5 --body hi ${x:----repo} other/org')"
+assert_allow "an ordinary default-value expansion stays allowed" \
+  "$(json 'echo ${HOME:-/tmp}')"
+assert_allow "a default-value expansion of an unrelated flag stays allowed" \
+  "$(json 'eslint ${FIX:---quiet} client/src')"
+# CO-OCCURRENCE — a cross product picks ONE value per axis, so a check firing
+# only on the INTERSECTION of two mechanisms is never reached by any row above
+# and passes by agreeing, per the "test the intersection, not each axis alone"
+# lesson from findings A and B (this same file's own history: each shipped or
+# nearly shipped a live bypass from exactly this gap).
+assert_deny "CO-OCCURRENCE (C1 x finding B): a default-value expansion behind a leading redirect still denies" \
+  "$(json '2>/dev/null eas build --platform ios ${x:---auto-submit}')" "eas build --auto-submit"
+assert_deny "CO-OCCURRENCE (C1 x finding A): a default-value expansion still denies when the verb is glued to a trailing redirect" \
+  "$(json 'eas build>/dev/null ${x:---auto-submit}')" "eas build --auto-submit"
+assert_deny "CO-OCCURRENCE: two default-value expansions in one clause both still deny (a second, unrelated \${y:--R} in the same clause must not confuse the single grep -Eq match into missing or mis-scoping the first)" \
+  "$(json 'gh pr comment 5 --body hi ${x:---repo} ${y:--R} other/org')" "--repo/-R writes to a DIFFERENT"
+
+# ---------- 2026-09-05: C1 grammar widening (coordinator ruling) ------------
+# The plain-name-only alternative above closed C1 for ONE bash parameter-
+# expansion spelling; every other spelling that can legally precede `:-`/bare
+# `-` and still expand to attacker-chosen text donated the same boundary
+# undetected. `_OUT_FLAG_LEAD`'s own definition enumerates the covered and
+# excluded PARAM shapes by grammar; this block pins one reason-asserting deny
+# per newly covered form, paired with that SAME form's three-dash-remainder
+# allow-control (the "exactly one dash consumed" precision property is
+# verified per form, not assumed to carry over from the plain-name case).
+assert_deny "positional single-digit \${1:-} denies" \
+  "$(json 'gh pr comment 5 --body hi ${1:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+assert_allow "positional single-digit three-dash remainder stays allowed" \
+  "$(json 'gh pr comment 5 --body hi ${1:----repo} other/org')"
+assert_deny "positional multi-digit \${10:-} denies (brace form, digits only)" \
+  "$(json 'gh pr comment 5 --body hi ${10:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+assert_allow "positional multi-digit three-dash remainder stays allowed" \
+  "$(json 'gh pr comment 5 --body hi ${10:----repo} other/org')"
+assert_deny "indirect expansion \${!v:-} denies" \
+  "$(json 'gh pr comment 5 --body hi ${!v:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+assert_allow "indirect expansion three-dash remainder stays allowed" \
+  "$(json 'gh pr comment 5 --body hi ${!v:----repo} other/org')"
+assert_deny "indirect-of-positional \${!1:-} denies (bang followed by digits, not just a name)" \
+  "$(json 'eas build --platform ios ${!1:---auto-submit}')" "eas build --auto-submit"
+assert_allow "indirect-of-positional three-dash remainder stays allowed" \
+  "$(json 'eas build --platform ios ${!1:----auto-submit}')"
+assert_deny "array element \${a[0]:-} denies" \
+  "$(json 'gh pr comment 5 --body hi ${a[0]:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+assert_allow "array element three-dash remainder stays allowed" \
+  "$(json 'gh pr comment 5 --body hi ${a[0]:----repo} other/org')"
+assert_deny "array all-elements \${a[@]:-} denies" \
+  "$(json 'eas build --platform ios ${a[@]:---auto-submit}')" "eas build --auto-submit"
+assert_allow "array all-elements three-dash remainder stays allowed" \
+  "$(json 'eas build --platform ios ${a[@]:----auto-submit}')"
+assert_deny "array all-elements star form \${a[*]:-} denies" \
+  "$(json 'gh pr comment 5 --body hi ${a[*]:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+assert_allow "array all-elements star form three-dash remainder stays allowed" \
+  "$(json 'gh pr comment 5 --body hi ${a[*]:----repo} other/org')"
+assert_deny "array-KEYS-listing \${!a[@]:-} denies (bang + name + subscript, distinct from plain indirect expansion)" \
+  "$(json 'eas build --platform ios ${!a[@]:---auto-submit}')" "eas build --auto-submit"
+assert_allow "array-KEYS-listing three-dash remainder stays allowed" \
+  "$(json 'eas build --platform ios ${!a[@]:----auto-submit}')"
+assert_deny "all-positional-args \${@:-} denies (fires with zero positional params, exactly like an unset NAME)" \
+  "$(json 'gh pr comment 5 --body hi ${@:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+assert_allow "all-positional-args three-dash remainder stays allowed" \
+  "$(json 'gh pr comment 5 --body hi ${@:----repo} other/org')"
+assert_deny "all-positional-args star form \${*:-} denies" \
+  "$(json 'eas build --platform ios ${*:---auto-submit}')" "eas build --auto-submit"
+assert_allow "all-positional-args star form three-dash remainder stays allowed" \
+  "$(json 'eas build --platform ios ${*:----auto-submit}')"
+assert_deny "bare bang \${!:-} denies (the last-background-PID special parameter, commonly unset — distinct from indirect expansion, which needs a name or digits after the bang)" \
+  "$(json 'gh pr comment 5 --body hi ${!:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+assert_allow "bare bang three-dash remainder stays allowed" \
+  "$(json 'gh pr comment 5 --body hi ${!:----repo} other/org')"
+# Excluded-forms negative controls — per _OUT_FLAG_LEAD's own comment, these
+# are deliberately NOT swept in: an always-non-empty special parameter, and a
+# form that is not even valid bash syntax combined with :-/bare -.
+assert_allow "\${?:-} stays allowed (\$? is always set to a non-empty string, verified live)" \
+  "$(json 'gh pr comment 5 --body hi ${?:---repo} other/org')"
+assert_allow "\${#x:-} length form stays allowed (not valid bash syntax combined with :-, verified live; excluded structurally here too)" \
+  "$(json 'gh pr comment 5 --body hi ${#x:---repo} other/org')"
+# CO-OCCURRENCE with a NEWLY covered form — the earlier crossings in this file
+# used plain names only; a check firing only on the intersection of two
+# mechanisms is never reached by testing either axis alone.
+assert_deny "CO-OCCURRENCE: indirect expansion behind a leading redirect still denies" \
+  "$(json '2>/dev/null eas build --platform ios ${!v:---auto-submit}')" "eas build --auto-submit"
+assert_deny "CO-OCCURRENCE: a positional parameter supplying --repo on the gh pr create path denies" \
+  "$(json 'gh pr create --title t --body b ${1:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
+
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend
 # on any other external tool (that is C4's lesson applied one layer down).

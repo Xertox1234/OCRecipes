@@ -132,6 +132,32 @@ add c1-repo-short    DENY  'gh pr comment 5 --body hi ${x:--R} other/org'
 add c1-create-colon  DENY  'gh pr create --title t --body b ${x:---repo} other/org'
 add c1-threedash     ALLOW 'gh pr merge 42 --auto ${x:----admin}'
 
+# axis: C1 grammar widening (coordinator ruling, 2026-09-05) -- every other
+# bash PARAM shape that can legally precede :-/bare - and still expand to
+# attacker text, not just the plain NAME the first C1 pass covered.
+# _OUT_FLAG_LEAD's own definition enumerates covered/excluded forms by
+# grammar; each DENY row here is one covered form's two-dash case, paired
+# with an ALLOW row for that same form's three-dash remainder.
+add c1g-pos1-lit     DENY  'gh pr comment 5 --body hi ${1:---repo} other/org'
+add c1g-pos1-3dash   ALLOW 'gh pr comment 5 --body hi ${1:----repo} other/org'
+add c1g-pos10-lit    DENY  'gh pr comment 5 --body hi ${10:---repo} other/org'
+add c1g-ind-lit      DENY  'gh pr comment 5 --body hi ${!v:---repo} other/org'
+add c1g-ind-3dash    ALLOW 'gh pr comment 5 --body hi ${!v:----repo} other/org'
+add c1g-inddig-lit   DENY  'eas build --platform ios ${!1:---auto-submit}'
+add c1g-arrelem-lit  DENY  'gh pr comment 5 --body hi ${a[0]:---repo} other/org'
+add c1g-arrelem-3dash ALLOW 'gh pr comment 5 --body hi ${a[0]:----repo} other/org'
+add c1g-arrat-lit    DENY  'eas build --platform ios ${a[@]:---auto-submit}'
+add c1g-arrstar-lit  DENY  'gh pr comment 5 --body hi ${a[*]:---repo} other/org'
+add c1g-bangkeys-lit DENY  'eas build --platform ios ${!a[@]:---auto-submit}'
+add c1g-allargs-lit  DENY  'gh pr comment 5 --body hi ${@:---repo} other/org'
+add c1g-allargs-3dash ALLOW 'gh pr comment 5 --body hi ${@:----repo} other/org'
+add c1g-allargstar   DENY  'eas build --platform ios ${*:---auto-submit}'
+add c1g-barebang-lit DENY  'gh pr comment 5 --body hi ${!:---repo} other/org'
+add c1g-barebang-3dash ALLOW 'gh pr comment 5 --body hi ${!:----repo} other/org'
+# Excluded forms -- must stay ALLOW, per _OUT_FLAG_LEAD's own comment.
+add c1g-excl-status  ALLOW 'gh pr comment 5 --body hi ${?:---repo} other/org'
+add c1g-excl-length  ALLOW 'gh pr comment 5 --body hi ${#x:---repo} other/org'
+
 # axis: gh api method value (C2)
 add c2-lit           DENY  'gh api repos/o/r -X POST'
 add c2-expand        DENY  'gh api repos/o/r -X ${x:-POST}'
@@ -163,6 +189,8 @@ add co-pref-multi    DENY  'gh pr merge 42 --auto ; 2>/dev/null gh pr merge 7'  
 add co-pref-dollar   DENY  '2>$LOGFILE gh pr merge 42 --auto'   # leading redirect carrying a $ + real --auto; see NOTE3
 add co-two-api       DENY  'gh api repos/o/r && gh api -X PUT repos/o/r/pulls/1/merge'
 add co-nested-brace  ALLOW 'echo ${a:-${b}}'
+add co-ind-pref      DENY  '2>/dev/null eas build --platform ios ${!v:---auto-submit}'   # C1-grammar-widening x finding B
+add co-pos-create    DENY  'gh pr create --title t --body b ${1:---repo} other/org'   # C1-grammar-widening on the create path specifically
 
 # FALSE-POSITIVE controls -- everyday idioms that MUST stay allowed. A control
 # that stays green under mutation is not a control; these are re-checked after
