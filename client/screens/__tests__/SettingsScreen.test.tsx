@@ -4,9 +4,10 @@ import { screen, fireEvent } from "@testing-library/react";
 import { Alert } from "react-native";
 import { renderComponent } from "../../../test/utils/render-component";
 import SettingsScreen from "../SettingsScreen";
+import type { ConfirmOptions } from "@/components/ConfirmationModal";
 
 const { mockConfirm, mockLogout } = vi.hoisted(() => ({
-  mockConfirm: vi.fn(),
+  mockConfirm: vi.fn<(options: ConfirmOptions) => void>(),
   mockLogout: vi.fn(),
 }));
 
@@ -89,7 +90,11 @@ vi.mock("@/components/ChangeEmailModal", () => ({
 vi.mock("@/components/ConfirmationModal", () => ({
   useConfirmationModal: () => ({
     confirm: mockConfirm,
-    ConfirmationModal: () => null,
+    // Render an observable marker (not null) so the suite can assert the
+    // screen actually mounts the hook's component — without this, deleting
+    // <ConfirmationModal /> from the JSX would keep every test green.
+    ConfirmationModal: () =>
+      React.createElement("div", { "data-testid": "confirmation-modal-mount" }),
   }),
 }));
 
@@ -98,14 +103,15 @@ beforeEach(() => {
 });
 
 describe("SettingsScreen sign-out confirmation", () => {
-  // The sign-out confirm must be the in-app ConfirmationModal sheet, NEVER the
+  // The sign-out confirm must go through useConfirmationModal, NEVER the
   // native Alert.alert: on the CI iOS simulator the UIAlertController renders
   // on screen but is intermittently ABSENT from the accessibility hierarchy
   // for 30s+ (issue #908, run 33935553286 attempt-1 dump: screenshot shows the
-  // alert, the hierarchy dump has no alert nodes), so neither Maestro nor
-  // assistive tech can reliably drive it. The in-app sheet lives in the app's
-  // own view tree and is always exposed.
-  it("opens the in-app confirmation sheet instead of a native alert", () => {
+  // alert, the hierarchy dump has no alert nodes). This suite mocks the hook,
+  // so it pins the CONTRACT (confirm() called, Alert.alert not, the hook's
+  // component mounted); the real sheet's rendering/exposure is owned by
+  // client/components/__tests__/ConfirmationModal.test.tsx.
+  it("requests confirmation via the confirmation-sheet hook, not Alert.alert", () => {
     renderComponent(<SettingsScreen />);
 
     fireEvent.click(screen.getByRole("button", { name: "Sign Out" }));
@@ -122,6 +128,16 @@ describe("SettingsScreen sign-out confirmation", () => {
     expect(Alert.alert).not.toHaveBeenCalled();
   });
 
+  it("mounts the hook's ConfirmationModal component", () => {
+    // Guards the <ConfirmationModal /> line in the JSX: confirm() presents
+    // via the hook's sheetRef, which only works if the screen renders the
+    // hook's component. Without this, deleting that line keeps every other
+    // test here green while sign-out silently stops confirming.
+    renderComponent(<SettingsScreen />);
+
+    expect(screen.getByTestId("confirmation-modal-mount")).toBeTruthy();
+  });
+
   it("logs out only when the sheet's confirm action fires", () => {
     renderComponent(<SettingsScreen />);
 
@@ -129,9 +145,7 @@ describe("SettingsScreen sign-out confirmation", () => {
 
     expect(mockLogout).not.toHaveBeenCalled();
 
-    const options = mockConfirm.mock.calls[0]?.[0] as
-      | { onConfirm: () => void }
-      | undefined;
+    const options = mockConfirm.mock.calls[0]?.[0];
     expect(options).toBeDefined();
     options?.onConfirm();
 
