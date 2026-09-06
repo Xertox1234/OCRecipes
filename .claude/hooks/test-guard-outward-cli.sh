@@ -1371,6 +1371,83 @@ assert_deny "CO-OCCURRENCE: indirect expansion behind a leading redirect still d
 assert_deny "CO-OCCURRENCE: a positional parameter supplying --repo on the gh pr create path denies" \
   "$(json 'gh pr create --title t --body b ${1:---repo} other/org')" "--repo/-R writes to a DIFFERENT"
 
+# ---------- 2026-09-05: C2 — an unreadable gh api method denies -------------
+# The mutating-method check just below requires the LITERAL text
+# POST/PUT/PATCH/DELETE after -X/--method. An expansion or substitution is
+# not that literal text, so `-X ${x:-POST}` fell through to this block's
+# ALLOW-by-default (see the fix's own comment on GH_API_CLAUSE for why this
+# block, unlike the `gh pr merge` CLAUSE, allows by default). Reuses the
+# house rule already pinned above for the merge clause: a surviving `$` means
+# the token cannot be read statically. Scoped to CO-OCCURRENCE with a method
+# flag on purpose, so a dynamic ROUTE or --jq filter (no -X/--method at all)
+# is unaffected — the narrowing is the deliverable, not an afterthought.
+assert_deny "gh api -X via a default-value expansion denies" \
+  "$(json 'gh api repos/o/r -X ${x:-POST}')" "not literal text"
+assert_deny "gh api -X via a bare variable denies" \
+  "$(json 'gh api repos/o/r -X $METHOD')" "not literal text"
+assert_deny "gh api --method via a substitution denies" \
+  "$(json 'gh api repos/o/r --method $(printf PUT)')" "not literal text"
+assert_deny "gh api -X glued directly to a default-value expansion denies (no space between flag and value, mirrors the pre-existing glued-literal spelling -XPOST)" \
+  "$(json 'gh api repos/o/r -X${x:-POST}')" "not literal text"
+# STRUCTURAL-TRAP PROOF: this block ALLOWS by default, so an EMPTY
+# GH_API_CLAUSE would fall through to a silent allow (neither this check's
+# flag-presence grep nor the pre-existing check's `[ -n "$GH_API_CLAUSE" ]`
+# would ever fire on ""). That path is UNREACHABLE only because GH_API_RE
+# (the occurrence counter) and the clause cut share the identical
+# `${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}` anchor — a
+# consistency this task's own operational facts required verifying, not
+# assuming. Proven with the exact construction that DID produce an empty
+# clause before the round-2 fix (this file's own "2026-09-02 FIX (round 2)"
+# block): a brace-glued verb. Both forms below deny, attributed to two
+# DIFFERENT checks — proof the clause is genuinely non-empty and reaches the
+# right branch, not that "an empty clause denies" (it does not; nothing
+# makes it deny, the clause is simply never empty while this consistency
+# holds).
+assert_deny "detector/consumer consistency: a brace-glued gh api verb still yields a non-empty clause, so an unreadable method inside it still denies via THIS fix" \
+  "$(json 'gh api{,x} -X ${x:-POST}')" "not literal text"
+assert_deny "same brace-glued construction with a LITERAL mutating method attributes to the pre-existing check, not this fix's own (confirms the clause capture, not just the flag scan, survived the glue)" \
+  "$(json 'gh api{,x} -X POST')" "mutating HTTP method"
+# Negative controls — this is the change's largest new over-denial surface,
+# so the false-positive corpus is deliberately wider than the minimum: every
+# read-only/benign gh api idiom this repo or a real user would write.
+assert_allow "read-only gh api with no method flag stays allowed" \
+  "$(json 'gh api repos/o/r')"
+assert_allow "gh api with a dynamic ROUTE but no method flag stays allowed" \
+  "$(json 'gh api repos/$OWNER/$REPO')"
+assert_allow "gh api -X GET stays allowed (literal, no \$)" \
+  "$(json 'gh api repos/o/r -X GET')"
+assert_allow "gh api /user (bare read endpoint, no method flag) stays allowed" \
+  "$(json 'gh api /user')"
+assert_allow "gh api --paginate (paginated read, no method flag) stays allowed" \
+  "$(json 'gh api --paginate repos/o/r/issues')"
+assert_allow "gh api --jq filter (no method flag) stays allowed" \
+  "$(jsonc 'gh api repos/o/r --jq ".[] | .name"')"
+assert_allow "gh api -f field on an explicit literal GET stays allowed" \
+  "$(json 'gh api repos/o/r -X GET -f name=value')"
+assert_allow "gh api -H header flag (no method flag) stays allowed" \
+  "$(jsonc 'gh api repos/o/r -H "Accept: application/vnd.github+json"')"
+assert_allow "a longer flag sharing the --method prefix is not mistaken for the real flag (boundary precision — \$ elsewhere in the same clause must not trip on '"'"'--methodology'"'"')" \
+  "$(json 'gh api repos/o/r -f notes=$X --methodology=custom')"
+# DESIGN CHOICE, accepted over-denial (see the fix's own DESIGN CHOICE
+# comment on GH_API_CLAUSE): the predicate reads for a \$ ANYWHERE in the
+# clause once a method flag is present, not only inside the flag's own
+# value — a real literal GET with an unrelated \$ elsewhere also denies, in
+# exchange for not re-deriving the value's own token boundary a second time.
+assert_deny "ACCEPTED OVER-DENIAL: a literal -X GET with an unrelated \$ elsewhere in the same clause denies" \
+  "$(json 'gh api repos/o/r -X GET -f note=$SOMETHING')" "not literal text"
+# CO-OCCURRENCE — mandatory per this task: a cross product picks ONE value
+# per axis, so a guard firing only on the intersection of two mechanisms is
+# never reached by any row above and passes by agreeing, per findings A/B/C1's
+# own history in this file.
+assert_deny "CO-OCCURRENCE (C2 x finding B): a leading redirect before an unreadable gh api method still denies" \
+  "$(json '2>/dev/null gh api repos/o/r -X ${x:-POST}')" "not literal text"
+assert_deny "CO-OCCURRENCE (C2 x finding A): an unreadable gh api method still denies when glued to a trailing redirect" \
+  "$(json 'gh api repos/o/r -X ${x:-POST}>/dev/null')" "not literal text"
+assert_deny "CO-OCCURRENCE: a literal mutating gh api method still denies behind a leading redirect (regression guard — the new unreadable-method branch runs BEFORE this pre-existing check and must not swallow it)" \
+  "$(json '2>/dev/null gh api repos/o/r -X POST')" "mutating HTTP method"
+assert_deny "CO-OCCURRENCE: two gh api invocations, one read-only and one with an unreadable method, still deny (the pre-existing multi-occurrence ambiguity check fires first, before either single-clause check runs)" \
+  "$(json 'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}')" "ambiguous, cannot verify"
+
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend
 # on any other external tool (that is C4's lesson applied one layer down).

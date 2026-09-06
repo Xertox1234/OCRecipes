@@ -1286,6 +1286,66 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # can only ever ADD a deny) — unlike the grant-shaped `gh pr merge` CLAUSE
   # above, which must stay on shallow `$WORDS` for the reason documented there.
   GH_API_CLAUSE=$(printf '%s' "$WORDS_DEEP" | grep -oiE "${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}[^;&|]*" | head -1)
+  # FIXED 2026-09-05 (C2): a method value that is not literal text (an
+  # expansion or substitution, e.g. `-X ${x:-POST}`, `-X $METHOD`, `--method
+  # $(printf PUT)`) never matches the literal POST/PUT/PATCH/DELETE text the
+  # check below reads for, so it fell through UNDENIED. This block ALLOWS by
+  # default (see the CLAUSE= comment above: an empty or unreadable clause is
+  # the opposite failure mode from the `gh pr merge` CLAUSE, which DENIES by
+  # default) — so an unreadable method must be its own EXPLICIT, unconditional
+  # deny here, placed before the literal-value check ever runs, rather than an
+  # extra alternative folded into that check's condition: a value that never
+  # satisfies the literal match would otherwise still fall through to this
+  # block's allow-by-default. Same "cannot verify -> deny" rule the `gh pr
+  # merge` CLAUSE applies at its own `printf '%s' "$CLAUSE" | grep -qF '$'`
+  # check above (this file's C1 neighbourhood) — ruled by the repository
+  # owner, 2026-09-05: never evaluate the expansion to try to read its value;
+  # unreadable means deny.
+  #
+  # NARROWED to co-occurrence with a method FLAG on purpose, not "any `$`
+  # anywhere in GH_API_CLAUSE": a bare `$` in the clause is ordinary and
+  # common with no method flag present at all — `gh api repos/$OWNER/$REPO`
+  # (a dynamic route) and `gh api repos/o/r --jq '.[] | .name'` (a --jq
+  # filter) are both routine read-only calls that must stay allowed. It is
+  # the COMBINATION of "a method flag is present" and "something in this
+  # clause is unreadable" that cannot be cleared: once a method flag exists,
+  # its value is what decides whether the call mutates, and an unreadable
+  # clause means that value cannot be confirmed literal.
+  #
+  # DESIGN CHOICE, accepted over-denial: the `$` test below reads the WHOLE
+  # clause, not just the -X/--method value's own token — matching
+  # this file's existing `gh pr merge` precedent for the identical shape
+  # (cited above). A real `gh api repos/o/r -X GET -f note=$SOMETHING` (a
+  # literal GET, an unrelated `$` elsewhere in the same clause) also denies
+  # under this choice. Re-deriving the value's own token boundary a SECOND
+  # time (glued -XPOST vs spaced -X POST vs `=`-joined --method=POST) in a
+  # DIFFERENT regex than the literal-value check below already uses would
+  # narrow this, but a boundary bug in that second derivation would silently
+  # reopen exactly the gap this fix closes — and reasoning harder about the
+  # expansion's shape is the mechanism the 2026-09-05 ruling forbids.
+  # Measured against this repo's OWN `gh api` usage cited below
+  # (scripts/todo-automerge-guard.sh, .claude/skills/land/SKILL.md): neither
+  # passes -X/--method at all, so this over-denial has no production surface
+  # today. Checked against a false-positive corpus of read-only/benign gh api
+  # idioms with no method flag at all — a bare read, --paginate, --jq, a -f
+  # field on an explicit GET, a -H header — every one of which this
+  # co-occurrence gate leaves untouched; pinned in test-guard-outward-cli.sh's
+  # own "C2" assertion block.
+  #
+  # Flag detection stays case-SENSITIVE (`-X`, `--method`), matching this
+  # file's stated flag-detection policy just below (the `-x`/`- post`
+  # collision, review 2026-08-16) — a case-insensitive `-x` would match the
+  # alphanumeric placeholder cmd_words can insert for an unrelated quoted
+  # value. A non-word trailing boundary (`[^-A-Za-z0-9]` or end-of-string)
+  # after each flag spelling rejects an unrelated longer flag sharing the same
+  # prefix (`--methodology`) while still admitting every real spelling this
+  # check must catch: a space or `=` after either flag, and a glued `$`
+  # immediately after `-X` (`-X${x:-POST}`, `-X$METHOD` — `$` is not in
+  # `[A-Za-z0-9-]`, so the boundary is satisfied without a space).
+  if grep -Eq '(^|[[:space:]])(-X|--method)([^-A-Za-z0-9]|$)' <<< "$GH_API_CLAUSE" \
+     && printf '%s' "$GH_API_CLAUSE" | grep -qF '$'; then
+    deny "guard-outward-cli: command-position 'gh api' with a method flag (-X/--method) whose value is not literal text (an expansion or substitution) cannot be verified read-only — denying, the same 'cannot verify -> deny' rule the 'gh pr merge' --auto check applies. Read-only 'gh api' with no -X/--method is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
+  fi
   # Matches BOTH the spaced/`=` form (-X POST, -X=POST, --method POST,
   # --method=POST) AND the glued short-flag form (-XPOST — the common
   # curl-style spelling; found bypassing a separator-only pattern in review

@@ -162,8 +162,36 @@ add c1g-excl-length  ALLOW 'gh pr comment 5 --body hi ${#x:---repo} other/org'
 add c2-lit           DENY  'gh api repos/o/r -X POST'
 add c2-expand        DENY  'gh api repos/o/r -X ${x:-POST}'
 add c2-dynamic       DENY  'gh api repos/o/r -X $METHOD'
+add c2-glued         DENY  'gh api repos/o/r -X${x:-POST}'
 add c2-readonly      ALLOW 'gh api repos/o/r'
 add c2-dynpath       ALLOW 'gh api repos/$OWNER/$REPO'
+# DESIGN CHOICE (guard-outward-cli.sh's own GH_API_CLAUSE= comment has the
+# full reasoning): the predicate keys on "a $ ANYWHERE in
+# GH_API_CLAUSE once a method flag is present", not "a $ inside the method
+# VALUE specifically" — matching this file's own `gh pr merge` CLAUSE
+# precedent (the co-mask-c1 row above) for the identical allow/deny shape.
+# Accepted over-denial: a real literal GET with an unrelated $ elsewhere in
+# the same clause also denies.
+add c2-tension       DENY  'gh api repos/o/r -X GET -f note=$SOMETHING'
+# False-positive corpus: read-only/benign gh api idioms that must survive the
+# new co-occurrence gate untouched (none carry a -X/--method flag, so the new
+# check's flag-presence gate excludes them regardless of the $ elsewhere).
+add c2-fp-user       ALLOW 'gh api /user'
+add c2-fp-paginate   ALLOW 'gh api --paginate repos/o/r/issues'
+add c2-fp-jq         ALLOW 'gh api repos/o/r --jq ".[] | .name"'
+add c2-fp-getf       ALLOW 'gh api repos/o/r -X GET -f name=value'
+add c2-fp-header     ALLOW 'gh api repos/o/r -H "Accept: application/vnd.github+json"'
+add c2-fp-methodology ALLOW 'gh api repos/o/r -f notes=$X --methodology=custom'
+
+# Structural-trap proof (task-5): this block ALLOWS by default, so an EMPTY
+# GH_API_CLAUSE would fall through undenied. That path is unreachable only
+# because GH_API_RE and the clause cut share one anchor
+# (`${_OUT_POS_PREFIX}gh[[:space:]]+api${_OUT_POS_SUFFIX}`) -- proven with the
+# brace-glued verb that DID produce an empty clause before the round-2 fix.
+# Both DENY, attributed to two different checks (see the attribution section
+# below) -- proof the clause is non-empty, not that "empty denies".
+add c2-empty-proof-expand DENY 'gh api{,x} -X ${x:-POST}'
+add c2-empty-proof-lit    DENY 'gh api{,x} -X POST'
 
 # axis: mid-token sigil (no boundary exists; only the vanished rendering reaches these)
 add mid-backtick     DENY  'gh pr me``rge 42'
@@ -191,6 +219,9 @@ add co-two-api       DENY  'gh api repos/o/r && gh api -X PUT repos/o/r/pulls/1/
 add co-nested-brace  ALLOW 'echo ${a:-${b}}'
 add co-ind-pref      DENY  '2>/dev/null eas build --platform ios ${!v:---auto-submit}'   # C1-grammar-widening x finding B
 add co-pos-create    DENY  'gh pr create --title t --body b ${1:---repo} other/org'   # C1-grammar-widening on the create path specifically
+add co-c2-predB      DENY  '2>/dev/null gh api repos/o/r -X ${x:-POST}'   # C2 x finding B: leading redirect + unreadable method
+add co-c2-predA      DENY  'gh api repos/o/r -X ${x:-POST}>/dev/null'   # C2 x finding A: trailing glued redirect + unreadable method
+add co-two-api-c2    DENY  'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}'   # two occurrences, second carries an unreadable method — the pre-existing >1-occurrence ambiguity check fires first
 
 # FALSE-POSITIVE controls -- everyday idioms that MUST stay allowed. A control
 # that stays green under mutation is not a control; these are re-checked after
