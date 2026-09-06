@@ -130,7 +130,7 @@ add c1-repo-lit      DENY  'gh pr comment 5 --body hi --repo other/org'
 add c1-repo-colon    DENY  'gh pr comment 5 --body hi ${x:---repo} other/org'
 add c1-repo-short    DENY  'gh pr comment 5 --body hi ${x:--R} other/org'
 add c1-create-colon  DENY  'gh pr create --title t --body b ${x:---repo} other/org'
-add c1-threedash     ALLOW 'gh pr merge 42 --auto ${x:----admin}'
+add c1-threedash     DENY  'gh pr merge 42 --auto ${x:----admin}'   # masked, not a C1 over-denial; see NOTE5
 
 # axis: C1 grammar widening (coordinator ruling, 2026-09-05) -- every other
 # bash PARAM shape that can legally precede :-/bare - and still expand to
@@ -387,3 +387,28 @@ done
 # degraded), closing the one crossing finding B's own five pinned crossings
 # did not cover: the create/comment ALLOW-deciding path with a leading
 # redirect present.
+#
+# NOTE5 on c1-threedash (expectation CORRECTED 2026-09-05,
+# outward-CLI-guard-folded-repair, Task 7 pre-flight): this row was filed
+# expecting ALLOW as C1's over-matching control -- a three-dash remainder
+# (`${x:----admin}`) leaves real argv carrying `---admin`, not `--admin`, so
+# no administrator override actually happens and C1's fix must not deny it.
+# The mechanism reasoning is right; the FAMILY is wrong. It sits on `gh pr
+# merge`, the one family where a pre-existing coarse guard (`grep -qF '$'` on
+# the merge clause => --auto unverifiable) denies EVERY `$`-bearing clause
+# before the `--admin` boundary check ever runs. ALLOW is therefore
+# unreachable here without weakening that guard, which we do not want.
+# Attribution measured live 2026-09-05, same technique as spec 2.1 -- these
+# three produce the IDENTICAL deny reason, and two of them contain no flag at
+# all, so the deny cannot be C1's:
+#   gh pr merge 42 --auto ${x:----admin}  -> "without a REAL --auto flag"
+#   gh pr merge 42 --auto ${x:-hello}     -> "without a REAL --auto flag"  [control]
+#   gh pr merge 42 --auto $HOME           -> "without a REAL --auto flag"  [control]
+# while the same three-dash shape on the two UNMASKED families correctly
+# ALLOWs (`eas build ... ${x:----auto-submit}`, `gh pr comment ...
+# ${x:----repo} other/org`), which is where C1's real over-matching controls
+# live: the five green c1g-*-3dash rows. This row is retained, flipped to
+# DENY, as a PIN on the masking guard itself: if `:928` is ever narrowed this
+# row flips to ALLOW and reappears as a gap, which is the correct signal that
+# the `--admin` boundary check has started to matter. Read its ATTRIBUTION
+# line, never its verdict alone -- same rule as co-mask-c1.
