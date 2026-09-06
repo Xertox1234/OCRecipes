@@ -1357,7 +1357,27 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # `-xpost` and falsely denied (review, 2026-08-16). `-X post` is a real
   # spelling, so the value must stay case-insensitive.
   _GH_API_M='([Pp][Oo][Ss][Tt]|[Pp][Uu][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])'
-  if [ -n "$GH_API_CLAUSE" ] && grep -Eq "(^|[[:space:]])(-X${_GH_API_M}([[:space:]]|$)|(-X|--method)([[:space:]]+|=)${_GH_API_M}([[:space:]]|$))" <<< "$GH_API_CLAUSE"; then
+  # FIXED 2026-09-05 (found by this task's own mandated finding-A co-occurrence
+  # test, distinct from the C2 fix in the previous commit): the trailing
+  # boundary after the method literal was hardcoded to `([[:space:]]|$)`, so a
+  # literal method glued directly to a trailing redirect —
+  # `gh api repos/o/r -X POST>/dev/null` — never matched: the character right
+  # after "POST" is `>`, neither whitespace nor end-of-string. Real bash still
+  # tokenizes "POST" as its own complete argv word (a redirect operator
+  # terminates a word without needing whitespace); gh genuinely receives
+  # `-X POST`. Confirmed a live, silent ALLOW at HEAD 9c9ba75b (pre-Task-5).
+  # Reusing `${_OUT_POS_SUFFIX}` here (rather than inventing a second closer
+  # class) is the same fix finding A already gave the VERB's own trailing
+  # boundary just above — this hardcoded copy was simply never migrated to
+  # it. This is a closer-position ASSERTION inside a boolean `grep -Eq`, not a
+  # CAPTURE bound, so the round-2 CRITICAL (a wide capture-bounding branch 1
+  # truncating a CLAUSE before a later `$`) does not apply here — nothing here
+  # shortens what GH_API_CLAUSE itself captures. Safe to widen: this whole
+  # check is DENY-shaped (see the CLAUSE= comment above), so a broader
+  # boundary can only ever ADD a deny. Two-sided regression test:
+  # test-guard-outward-cli.sh's "CO-OCCURRENCE ... glued to a trailing
+  # redirect (same regression guard, finding A axis)" row.
+  if [ -n "$GH_API_CLAUSE" ] && grep -Eq "(^|[[:space:]])(-X${_GH_API_M}${_OUT_POS_SUFFIX}|(-X|--method)([[:space:]]+|=)${_GH_API_M}${_OUT_POS_SUFFIX})" <<< "$GH_API_CLAUSE"; then
     deny "guard-outward-cli: command-position 'gh api' with a mutating HTTP method (-X/--method POST/PUT/PATCH/DELETE, spaced/=/glued) can invoke an arbitrary GitHub REST mutation — including a PR merge via a different subcommand than the dedicated 'gh pr merge' check above. Read-only 'gh api' (GET, the default with no -X/--method) is unaffected. Bypass: ALLOW_OUTWARD_CLI=1 (one command)."
   fi
 fi

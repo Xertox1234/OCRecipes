@@ -1445,6 +1445,8 @@ assert_deny "CO-OCCURRENCE (C2 x finding A): an unreadable gh api method still d
   "$(json 'gh api repos/o/r -X ${x:-POST}>/dev/null')" "not literal text"
 assert_deny "CO-OCCURRENCE: a literal mutating gh api method still denies behind a leading redirect (regression guard — the new unreadable-method branch runs BEFORE this pre-existing check and must not swallow it)" \
   "$(json '2>/dev/null gh api repos/o/r -X POST')" "mutating HTTP method"
+assert_deny "CO-OCCURRENCE: a literal mutating gh api method still denies glued to a trailing redirect (same regression guard, finding A axis)" \
+  "$(json 'gh api repos/o/r -X POST>/dev/null')" "mutating HTTP method"
 assert_deny "CO-OCCURRENCE: two gh api invocations, one read-only and one with an unreadable method, still deny (the pre-existing multi-occurrence ambiguity check fires first, before either single-clause check runs)" \
   "$(json 'gh api repos/o/r && gh api repos/o/r -X ${x:-POST}')" "ambiguous, cannot verify"
 

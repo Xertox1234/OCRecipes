@@ -183,6 +183,19 @@ add c2-fp-getf       ALLOW 'gh api repos/o/r -X GET -f name=value'
 add c2-fp-header     ALLOW 'gh api repos/o/r -H "Accept: application/vnd.github+json"'
 add c2-fp-methodology ALLOW 'gh api repos/o/r -f notes=$X --methodology=custom'
 
+# axis: gh api literal method + redirect boundary (found while closing C2 via
+# this task's own mandated finding-A co-occurrence test; a SEPARATE mechanism
+# from C2 itself — the value here is fully literal, no `$` involved). The
+# mutating-method check's trailing value boundary was hardcoded to
+# `([[:space:]]|$)`, so a literal method glued directly to a trailing
+# redirect never matched (the char after "POST" is `>`, neither whitespace
+# nor end-of-string) even though real bash still tokenizes POST as its own
+# complete argv word. Confirmed a live, silent ALLOW on the pre-Task-5 tree
+# (9c9ba75b). Fixed by reusing `${_OUT_POS_SUFFIX}` — the same closer class
+# finding A already gave the VERB's own trailing boundary — for the VALUE's
+# trailing boundary too.
+add ghapi-redir-trail DENY 'gh api repos/o/r -X POST>/dev/null'
+
 # Structural-trap proof (task-5): this block ALLOWS by default, so an EMPTY
 # GH_API_CLAUSE would fall through undenied. That path is unreachable only
 # because GH_API_RE and the clause cut share one anchor
