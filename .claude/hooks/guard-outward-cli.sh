@@ -489,6 +489,34 @@
 #     across both degraded paths on read-only and no-gated-CLI shapes; zero
 #     decision flips).
 #
+#   * UNHANDLED, NEW (2026-09-06, degraded paths only): the span-deleting pass
+#     `_out_crude_vanish` that the degraded mirror unions in is a character
+#     scan with no quote- or depth-awareness, and it fails in TWO separate
+#     ways. Both are stated here because an earlier revision collapsed them
+#     into one sentence and the second is much the wider of the two.
+#       (a) SPAN END MISJUDGED. It closes each span at the FIRST closer, so a
+#           nested or quoted closer ends it early and the deletion is WRONG,
+#           not merely absent:
+#             e$(: $(:))as update --branch preview   -> ALLOW on all 3 degraded
+#           Blast radius: that one span.
+#       (b) SCAN ABANDONED AT AN UNTERMINATED OPENER. An opener with no closer
+#           after it stops the loop and appends the whole remainder verbatim,
+#           so EVERY later span goes undeleted. No real substitution is needed
+#           to trigger it — an INERT opener inside quotes is enough, because
+#           the scan cannot see quotes:
+#             : '$(' ; e${UNSET}as update --branch preview
+#                                                    -> ALLOW on all 3 degraded
+#           while the same command without the leading `: '$('` DENIES on all
+#           four. Blast radius: everything after the first unterminated opener.
+#           Also reachable with no quoting at all if a JSON envelope field
+#           ordered before `command` contains a lone `$(`.
+#     Precise path is unaffected in both — it uses the lib's stateful scanner.
+#     NOT FIXED, deliberately: teaching this loop to skip an unterminated
+#     opener would be a FOURTH attempt to decide span boundaries from raw text
+#     at a point where the stateful scanner is unavailable, and the first three
+#     each shipped and were each defeated by a construction the enumeration had
+#     not anticipated. See the comment above `_out_crude_vanish`.
+#
 #   * ACCEPTED OVER-DENIAL, NEW (2026-09-06, precise path): a `gh api` clause
 #     that is readable ONLY after deleting an expansion, WITH a method flag
 #     present, denies even when the method value itself is literal and
@@ -542,7 +570,15 @@
 #     exempting that whole class: with no gated needle in the raw text it took
 #     the cheap exit and the rule never ran. Declining lets the rule apply as it
 #     was ruled. Measured on 4,525 historical span-carrying commands: exactly ONE
-#     decision flip, allow -> deny, and it is this shape. Correctly narrow —
+#     decision flip, allow -> deny, and it is this shape. NOT REPRODUCIBLE FROM
+#     THIS REPO — the population was harvested from local Claude Code transcript
+#     .jsonl files, which are not tracked here, so treat the 4,525 denominator
+#     and the "exactly one" uniqueness as a dated one-off measurement rather than
+#     a standing invariant. To redo it: extract every Bash `command` field from
+#     the transcripts, keep those containing `${`, `$(` or a backtick, and run
+#     each through the old and new hook, diffing the decisions. What IS pinned in
+#     this repo, and re-checkable, is the SHAPE of the flip and its bounds —
+#     test-guard-outward-cli.sh asserts all six rows below. Correctly narrow —
 #     `echo ${TOOL} run build` and `foo ${TOOL} run build` (not command position)
 #     and `${TOOL} test` / `${TOOL} lint` (not gated verbs) all still ALLOW.
 #
@@ -550,13 +586,58 @@
 #     the above): a BARE `$name` in command position escapes the same rule —
 #     `$RUNNER up` ALLOWS, before and after. The stage-3 decline keys on the
 #     three digraphs `${`, `$(` and a backtick, and a bare `$name` has none of
-#     them, so it still takes the cheap exit. Deliberately not widened here: `$`
-#     alone appears in a large share of real commands, so including it would move
-#     most of them onto the full path for a shape that cannot split a token
-#     mid-word anyway (a bare `$name` greedily consumes following alphanumerics,
-#     so it cannot rejoin two halves of a verb). It is only the narrow-deny
-#     rule's own reach that is short here, and that is a scope decision, not a
-#     defect in this block.
+#     them, so it still takes the cheap exit.
+#
+#     CORRECTION, 2026-09-06 round 4. An earlier revision of this entry (and the
+#     commit message that introduced it) justified not widening by asserting that
+#     a bare `$name` is "a shape that cannot split a token mid-word anyway —
+#     it greedily consumes following alphanumerics, so it cannot rejoin two
+#     halves of a verb". THAT IS FALSE, and it is false for the whole family of
+#     SPECIAL parameters, which are one character long and therefore terminate
+#     against a following letter instead of absorbing it: `$!`, `$@`, `$*`, `$?`,
+#     `$$`, `$#` and `$1`..`$9`. Each can expand to empty, so each rejoins the
+#     halves exactly the way `${UNSET}` does. The greedy-absorption argument
+#     holds only for an ORDINARY identifier (`$RUNNER`), and I generalised it to
+#     a syntax class it does not cover. Measured, this hook, round 4:
+#
+#       eas up$!date --branch preview   precise=ALLOW  nojq/nolib/noawk=DENY
+#       gh pr me$!rge 42                precise=ALLOW  nojq/nolib/noawk=DENY
+#       npm pub$1lish                   precise=ALLOW  nojq/nolib/noawk=DENY
+#       e$!as update --branch preview   ALLOW on ALL FOUR paths
+#       e$1as update --branch preview   ALLOW on ALL FOUR paths
+#       g$1h pr merge 42                ALLOW on ALL FOUR paths
+#
+#     Controls: `eas up${UNSET}date` and `eas up$'d'ate` DENY on precise, and
+#     `e${UNSET}as update` / `e$'a's update` DENY on all four — so the mechanism
+#     is the SPELLING of the vanishing expansion, not the position.
+#
+#     Two things in that table are worth stating outright rather than leaving to
+#     be inferred. First, the VERB rows INVERT this file's usual asymmetry: the
+#     PRECISE path is WEAKER than the three degraded ones, because the degraded
+#     mirror keys on a gated binary near a `$` sigil and the precise path has no
+#     equivalent — every previous finding in this chain went the other way, so
+#     "degraded is the fail-closed direction" is not a safe default here. Second,
+#     the TOOL rows allow on all four, which is a live outward-CLI bypass.
+#
+#     Still deliberately not widened in THIS block, but the reason is cost, not
+#     the false claim above: `$` alone appears in a large share of real commands.
+#     The gap is real, is NOT a regression (it allows on `main` too), and is an
+#     open finding surfaced to the owner rather than closed here — the fix is in
+#     lib/cmd-detect.sh's allow-list, which by its own stated criterion ("an
+#     expansion form must be PROVEN capable of evaluating to EMPTY before it may
+#     be deleted") should already admit these forms and does not.
+#
+#   * UNHANDLED, PRE-EXISTING (round 4, same measurement session): BRACE RANGE
+#     expansion splits a token with NO `$` and NO backtick anywhere in the
+#     command, so no sigil-keyed decline can ever see it —
+#     `{e..e}as update --branch preview`, `eas up{d..d}ate --branch preview` and
+#     `gh pr me{r..r}ge 42` all ALLOW on ALL FOUR paths. The control
+#     `gh pr merge{1..3} 42` DENIES, because there the verb is intact and the
+#     brace only follows it. This is why enumerating `$`-spellings at the fast
+#     path can never be complete: it is not a missing spelling, it is a second
+#     expansion mechanism. Closing it needs a narrow deny on a brace RANGE that
+#     shares a token with a gated binary or verb — NOT another deleting
+#     rendering, which would re-open the span-end problem round 3 closed.
 #
 #   * ACCEPTED COST, not a gap (2026-09-06, round 3): the fast path DECLINES its
 #     cheap exit for any command containing `${`, `$(` or a backtick, so those
@@ -817,19 +898,48 @@ gh_pr_clause_has_repo() {
 # from. The fast path does not consult it at all — see the STAGE 3 block, which
 # declines outright rather than trusting any answer from here.
 #
-# WHAT THIS COSTS, stated rather than hidden: a nested or quoted-closer span
-# defeats this rendering, so on the three degraded paths
-# `e$(: $(:))as update --branch preview` is ALLOWED. Those paths run only when
-# jq, awk, or the lib is already broken. Documented in DOCUMENTED RESIDUALS
+# WHAT THIS COSTS, stated rather than hidden. TWO DISTINCT residuals, not one —
+# they were collapsed into a single sentence until round 4 and they have
+# different mechanisms and different blast radii:
+#
+#   (a) SPAN-END MISJUDGED. A nested or quoted-closer span ends at the wrong
+#       `)`, so the deletion is wrong rather than merely absent:
+#       `e$(: $(:))as update --branch preview` is ALLOWED on the three degraded
+#       paths. Scope: the one malformed span.
+#
+#   (b) SCAN ABANDONED. An opener with NO closer anywhere after it hits the
+#       `*) s="$rest"; break` arm, which appends the entire remainder verbatim
+#       and stops looking. Every later span — however well-formed — goes
+#       undeleted. This scan is character-based and has no quote awareness, so
+#       an INERT opener inside quotes is enough to trigger it:
+#
+#         in : `: '$(' ; e${UNSET}as update --branch preview`
+#         out: `: '' ; e${UNSET}as update --branch preview`   <- ${UNSET} intact
+#
+#       so `eas` never forms and the command ALLOWS on all three degraded paths,
+#       while the same command without the leading `: '$('` DENIES on all four.
+#       Scope: the whole rest of the command, which is why it is worth naming
+#       separately — (a) loses one span, (b) loses every span after the first
+#       unterminated opener. Also reachable without any quoting via the JSON
+#       envelope, if a field ordered before `command` happens to contain a lone
+#       `$(`.
+#
+# Those paths run only when jq, awk, or the lib is already broken. Deliberately
+# NOT fixed here: making the loop skip an unterminated opener and keep scanning
+# is a fourth attempt to decide span boundaries from text alone, and the first
+# three each shipped and were each defeated. Documented in DOCUMENTED RESIDUALS
 # rather than papered over — claiming closure this function does not have is
 # what made three review rounds block.
 #
 # THE CAP IS DERIVED FROM THE INPUT, not a magic number. It was a fixed 200, and
 # that was itself a live bypass with a sharp edge: 199 leading `${z}` spans
 # before `g${x}h pr merge 42` DENIED (200 spans, all processed) and 200 ALLOWED
-# (201 spans, the last one unreached). Every iteration consumes at least the
-# two-character opener, so `length + 8` cannot be reached by any input and the
-# cap is a non-termination backstop rather than a limit on what is scanned.
+# (201 spans, the last one unreached). Every successful iteration consumes at
+# least TWO characters — an opener and its closer — so `length + 8` cannot be
+# reached by any input and the cap is a non-termination backstop rather than a
+# limit on what is scanned. (Stated as "the two-character opener" until
+# 2026-09-06: wrong for the backtick arm, whose opener is one character. The
+# bound is unaffected — it rests on opener+closer, not on the opener alone.)
 _out_crude_vanish() {
   local s="$1" out="" x rest close best kind n=0 pb pp pt
   local cap=$(( ${#1} + 8 ))
@@ -942,10 +1052,16 @@ crude_smells_outward() {
   #     project's real transcripts afterwards: 247/247 real Bash envelopes carry
   #     a `description` (and often a `timeout`) AFTER `command`, so the `"}}`
   #     anchor only ever fired for the TEST HARNESS's envelope shape. It was
-  #     tuned to the fixture, not to production.
-  # Neither is replaced with a third hand-rolled scanner. The residual — a nested
-  # or quoted-closer span defeats this rendering on the degraded paths — is
-  # recorded in DOCUMENTED RESIDUALS instead. A stated residual is honest; a
+  #     tuned to the fixture, not to production. (That 247/247 came from local
+  #     transcript .jsonl files, which this repo does not track — dated evidence
+  #     for a mechanism now DELETED, not a claim anyone need re-verify. The
+  #     conclusion it supported stands on its own: the anchor assumed `command`
+  #     was the envelope's last key, and the harness was the only place that
+  #     was true.)
+  # Neither is replaced with a third hand-rolled scanner. The residuals — a
+  # misjudged span end (a), and a scan abandoned at an unterminated opener (b),
+  # both on the degraded paths — are recorded in DOCUMENTED RESIDUALS and above
+  # _out_crude_vanish instead. A stated residual is honest; a
   # scanner that looks sound until someone constructs the case it missed is what
   # three review rounds have now shown this position cannot support.
   if case "$t" in *'${'*|*'$('*|*'`'*) true ;; *) false ;; esac; then

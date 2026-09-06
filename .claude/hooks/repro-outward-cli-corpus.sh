@@ -179,6 +179,62 @@ for i in "${!FAM_IDS[@]}"; do
     add "tool${TOOL_MIDS[$m]}-$id" DENY "${first}${TOOL_MECHS[$m]}${restc}"
   done
 done
+# axis: ROUND-4 MECHANISMS (2026-09-06). Four spellings that split a token, none
+# of which the fast path's `${` / `$(` / backtick decline can see, generated
+# across BOTH glue positions so the position axis is not held fixed -- holding it
+# fixed is what hid the TOOL-position class for three rounds.
+#
+# The two mechanism SHAPES are different and the generator treats them as such:
+#   INSERTED  an empty expansion placed BETWEEN two characters. These are the
+#             SPECIAL parameters, each one character long, so unlike an ordinary
+#             `$name` they terminate against a following letter instead of
+#             absorbing it -- `e$!as` really is `e` + `$!` + `as`.
+#               r4spec  `$!`   last background pid; empty in a fresh shell
+#               r4dig   `$1`   positional; empty with no args
+#   RESPELLED a character replaced by another spelling OF ITSELF, so the token
+#             is split without inserting anything:
+#               r4ansic  `$'\x64'`  ANSI-C quoting
+#               r4brange `{d..d}`   brace RANGE -- carries NO `$` and NO
+#                        backtick ANYWHERE, which is why no sigil-keyed
+#                        enumeration at the fast path can ever be complete.
+#                        Note this is a RANGE sharing a token with the binary
+#                        or verb, NOT the already-documented `merge{1..3}`
+#                        form that follows an intact verb (that one DENIES).
+#
+# 56 ROWS (4 mechanisms x 2 positions x 7 families), ALL EXPECTED-DENY. They are real,
+# reproduced bypasses, pre-existing (they allow on `main` too), and deliberately
+# NOT closed in this PR -- see the guard's DOCUMENTED RESIDUALS entries. The rows
+# exist so the gap is measured on every run instead of living in a review
+# transcript. Verb-position rows additionally INVERT this file's usual asymmetry:
+# precise ALLOWs while all three degraded paths DENY.
+R4_INS_MECHS=('$!' '$1');       R4_INS_IDS=(r4spec r4dig)
+R4_RSP_IDS=(r4ansic r4brange)
+for i in "${!FAM_IDS[@]}"; do
+  id=${FAM_IDS[$i]}; cmd=${FAM_CMDS[$i]}; vp=${FAM_VERB_PREFIX[$i]}
+  # split point 1: TOOL position, immediately after the binary's first char.
+  # split point 2: VERB position, at the midpoint of the verb's LAST word --
+  # mid-word, not appended after the verb the way vsub-/vvar- do it.
+  lw=${vp##* }; lead=${vp%"$lw"}; h=$(( ${#lw} / 2 ))
+  vhead="${lead}${lw:0:$h}"; vtail="${lw:$h}"; vrest=${cmd#"$vp"}
+  for m in "${!R4_INS_MECHS[@]}"; do
+    mech=${R4_INS_MECHS[$m]}; mid=${R4_INS_IDS[$m]}
+    add "$mid-tool-$id" DENY "${cmd:0:1}${mech}${cmd:1}"
+    add "$mid-verb-$id" DENY "${vhead}${mech}${vtail}${vrest}"
+  done
+  for m in "${!R4_RSP_IDS[@]}"; do
+    mid=${R4_RSP_IDS[$m]}
+    for pos in tool verb; do
+      if [ "$pos" = tool ]; then c=${cmd:0:1}; pre=''; post=${cmd:1}
+      else c=${vtail:0:1}; pre="$vhead"; post="${vtail:1}${vrest}"; fi
+      case "$mid" in
+        r4ansic)  sp="\$'\\x$(printf '%02x' "'$c")'" ;;
+        r4brange) sp="{$c..$c}" ;;
+      esac
+      add "$mid-$pos-$id" DENY "${pre}${sp}${post}"
+    done
+  done
+done
+
 # The span cap must not be a decision boundary. Before the fix this had a sharp
 # edge: 199 leading empty spans DENIED and 200 ALLOWED, because the scanner's
 # fixed 200-iteration limit was reached and the needle never reformed. Pinned
@@ -563,10 +619,30 @@ done
 #      dimensions this file generates. The wording corrected at
 #      guard-outward-cli.sh's WORDS_VANISHED assignment failed exactly that test.
 #
-# GAP INVENTORY, 2026-09-06 after round 3. `precise-path gaps=17` is the CORRECT
+# GAP INVENTORY, 2026-09-06 after round 4. `precise-path gaps=73` is the CORRECT
 # expected output of this file. The number went UP from 3, and reading that as a
 # regression would be exactly the mistake this note exists to prevent — it is the
 # corpus finally SEEING classes it was blind to, not the guard getting worse.
+#
+# ROUND 4 ADDED 56 ROWS AND 56 GAPS (17 -> 73 precise, 69 -> 125 all-path). The
+# deltas are equal to the row count on BOTH axes, which is the check that matters
+# here: every new row is a gap AND no pre-existing row changed status. Verified by
+# diffing per-ID dirty sets across the two corpora, not by subtracting totals.
+# The 56 are the r4spec-/r4dig-/r4ansic-/r4brange- rows (4 mechanisms x 2 glue
+# positions x 7 families) described at the generator. They are pre-existing
+# bypasses this PR does NOT close, recorded so they are measured every run:
+#
+#   r4*-tool-*     (28 rows)  ALLOW on ALL FOUR paths — a total detection
+#                             failure at the binary-name position.
+#   r4spec/r4dig/r4ansic-verb-*
+#                  (21 rows)  precise ALLOW, all three degraded DENY. This
+#                             INVERTS the file's usual asymmetry and is the
+#                             reason "degraded fails closed" must not be
+#                             assumed: here the precise path is the weak one.
+#   r4brange-verb-*  (7 rows) ALLOW on all four — the ONLY verb-position
+#                             mechanism that also defeats the degraded paths,
+#                             because that mirror keys on `$`/backtick and a
+#                             brace range contains neither.
 # Attributed by ID against the previous hook, running THIS corpus on both sides
 # (the only like-for-like comparison; comparing an old corpus's count against a
 # new corpus's count compares two different questions):
@@ -576,19 +652,40 @@ done
 #                                 type nested inside the other, which the
 #                                 prefilter's since-deleted "odd quote count"
 #                                 test mis-judged as unambiguous.
-#   all-path gaps      47 -> 69   29 rows newly degraded-dirty, and every one is
-#                                 toolvnest-* / toolvdqclose-* / toolvsqclose-* /
-#                                 toolvmixq-* (4 mechanisms x 7 families) plus
-#                                 trailclose-ctl. That is precisely the cost of
-#                                 deleting the GREEDY rendering, disclosed rather
-#                                 than absorbed. See the guard's DOCUMENTED
-#                                 RESIDUALS entry for why greedy was unsound.
+#   all-path gaps      47 -> 69   22 rows NEWLY all-path-dirty: toolvnest-*,
+#                                 toolvdqclose-* and toolvsqclose-* (3 mechanisms
+#                                 x 7 families) plus trailclose-ctl. 47 + 22 = 69
+#                                 exactly. That is the cost of deleting the
+#                                 GREEDY rendering, disclosed rather than
+#                                 absorbed. See the guard's DOCUMENTED RESIDUALS
+#                                 entry for why greedy was unsound.
 #
-# The 14 remaining NEW precise-path gaps are toolvbareparen-* and toolvcasearm-*
-# (7 families each). They are NOT guard defects: lib/cmd-detect.sh's own scanner
-# desynchronises on a bare `(`, so no prefilter change can reach them. Tracked at
-# todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
-# and expected to clear when that lands. They allow on `main` too.
+# A COUNT HIDES ROWS THAT GOT WORSE WITHOUT CROSSING THE THRESHOLD, and this
+# delta has three of them. toolvmixq-*, toolvbareparen-* and toolvcasearm-* were
+# ALREADY all-path-dirty on both sides, so they cannot appear in the 22 — but
+# each went from ONE failing degraded path (noawk) to THREE (nojq, nolib, noawk).
+# For toolvmixq-* that is the trade the closure bought: its PRECISE column went
+# ALLOW -> DENY (those are the seven closures above) while its degraded columns
+# went 1 -> 3. An earlier revision of this note said "29 rows newly
+# degraded-dirty ... 4 mechanisms": that double-counted toolvmixq-* as new when
+# it was pre-existing, and 47 + 29 = 76 never equalled the 69 printed two lines
+# above it. Verified by running THIS corpus against both hooks and diffing the
+# per-ID dirty sets, not by subtracting the two totals.
+#
+# FULL ATTRIBUTION of the 73 precise-path gaps, so no reader has to infer any
+# part of the total (14 + 56 + 3 = 73):
+#
+#   14  toolvbareparen-* and toolvcasearm-* (7 families each). NOT guard
+#       defects: lib/cmd-detect.sh's own scanner desynchronises on a bare `(`,
+#       so no prefilter change can reach them. Tracked at
+#       todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
+#       and expected to clear when that lands.
+#   56  the round-4 r4spec-/r4dig-/r4ansic-/r4brange- rows, itemised above.
+#    3  nssufx-ghmerge, nssufx-ghcomment and c2-ansic-hex, each with its own
+#       named entry below.
+#
+# Every one of the 73 allows on `main` too — this corpus has never reported a
+# gap that the guard's own changes opened.
 #
 # Each remaining row is a REAL, reachable bypass out of the folded repair's Scope
 # Contract — the list below is exhaustive OF THIS FILE'S ROWS, which is not the

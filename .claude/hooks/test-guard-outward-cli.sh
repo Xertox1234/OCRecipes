@@ -2145,6 +2145,17 @@ assert_allow "RE control: a quoted closer in an ordinary command stays allowed" 
 assert_allow "RE control: 250 leading empty spans with NO gated tool stays allowed" \
   "$(json "$(_re_cap 250 'ec${x}ho done')")"
 
+# The two mechanisms round 3 added corpus rows for -- a quote of one type nested
+# inside the other, and a closer appearing AFTER the verb -- had DENY coverage
+# and no ALLOW coverage. A bypass corpus only ever asks "does the gated shape
+# still escape"; it never asks "did widening the scan start denying benign
+# commands that use the same syntax". These two pin the other side, in a command
+# that names no gated CLI at all.
+assert_allow "RE control: mixed-quote nested span in a NON-gated command stays allowed" \
+  "$(jsonc "ec\$(: '\"' \"a)b\" )ho done")"
+assert_allow "RE control: a closer after the verb in a NON-gated command stays allowed" \
+  "$(json 'ec$(: $(:))ho done && (echo done)')"
+
 # ---------- assertion-total pin (2026-09-05, outward-CLI-guard-folded-repair)
 # Every mutation claim this suite's commits make is of the form "reverting the
 # fix fails exactly N assertions". That evidence rests on the total being what
@@ -2166,7 +2177,7 @@ assert_allow "RE control: 250 leading empty spans with NO gated tool stays allow
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-EXPECTED_TOTAL=460
+EXPECTED_TOTAL=462
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))
