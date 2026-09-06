@@ -1687,6 +1687,32 @@ assert_allow "a quoted mention of a gated binary with a variable stays allowed" 
 assert_allow "a read-only eas colon subcommand with a variable stays allowed" \
   "$(json 'eas update:list --branch $B')"
 
+# ---------- 2026-09-05: gh_pr_clause_has_repo's vanished fallback -----------
+# The SAME detector/consumer pair defect already fixed at GH_API_CLAUSE, left
+# half-done here. Once the occurrence counters read a per-rendering maximum, a
+# NAMESPACE-glued sigil (`gh pr${UNSET} comment`) raises the create/comment
+# count to 1 via the vanished rendering — but gh_pr_clause_has_repo cut its
+# clause from $WORDS_DEEP only, where the verb is still split, so the clause
+# came back EMPTY and the --repo egress was never seen. The merge family
+# closed and the comment family did not: shipping that asymmetry is exactly
+# docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md.
+# Safe: both call sites deny() on a true result with no carve-out branch —
+# verified by reading them, not by trusting the function's own comment.
+# ATTRIBUTION on the merge row: it already denied for the "no REAL --auto"
+# reason, so this asserts the --repo reason specifically. A row asserting the
+# generic deny would have passed without the fix.
+assert_deny "a namespace-glued unset param still shows --repo egress (comment)" \
+  "$(json 'gh pr${UNSET} comment 5 --body hi --repo other/org')" "writes to a DIFFERENT GitHub repository"
+assert_deny "a namespace-glued empty substitution still shows --repo egress (comment)" \
+  "$(json 'gh pr$() comment 5 --body hi --repo other/org')" "writes to a DIFFERENT GitHub repository"
+assert_deny "a namespace-glued unset param still shows --repo egress (merge)" \
+  "$(json 'gh pr${UNSET} merge 42 --auto --repo other/org')" "targets a DIFFERENT GitHub repository"
+# Negative control — the SANCTIONED shape must survive. Without --repo this is
+# this repo's own routine PR workflow and must stay allowed even though the
+# vanished rendering now makes the verb readable.
+assert_allow "a namespace-glued comment WITHOUT --repo stays allowed" \
+  "$(json 'gh pr${UNSET} comment 5 --body hi')"
+
 # ---------- jq-missing fallback (mirrors test-git-safety.sh's NOJQ_BIN fixture) ----------
 # Deliberately links ONLY bash/cat/grep: crude_smells_outward() must not depend
 # on any other external tool (that is C4's lesson applied one layer down).

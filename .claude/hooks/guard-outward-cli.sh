@@ -486,6 +486,21 @@ _OUT_REPO_FLAG_RE="${_OUT_FLAG_LEAD}"'(--repo([^-A-Za-z0-9]|$)|-R)'
 gh_pr_clause_has_repo() {
   local clause
   clause=$(printf '%s' "$WORDS_DEEP" | grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*" | head -1)
+  # ADDED 2026-09-05 (vanishing sigil): both occurrence counters that gate this
+  # function now read a per-rendering MAXIMUM, so the count can be 1 because
+  # the VANISHED rendering saw a NAMESPACE-glued sigil (`gh pr${UNSET} comment`)
+  # that WORDS_DEEP cannot see. In exactly that case this cut returns empty and
+  # the --repo egress goes unexamined — the merge family closed while the
+  # create/comment family stayed open, which is the selectively-applied-guard
+  # defect in
+  # docs/solutions/logic-errors/occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md.
+  # Detector and consumer move together. Safe on the same monotonicity argument
+  # as the WORDS_DEEP cut above and re-verified at BOTH call sites rather than
+  # taken from this function's own comment: each deny()s on a true result with
+  # no carve-out branch, so an extra clause can only ever ADD a deny.
+  if [ -z "$clause" ]; then
+    clause=$(printf '%s' "$WORDS_VANISHED" | grep -oiE "gh[[:space:]]+pr[[:space:]]+($1)[^;&|]*" | head -1)
+  fi
   [ -n "$clause" ] && grep -Eq "$_OUT_REPO_FLAG_RE" <<< "$clause"
 }
 

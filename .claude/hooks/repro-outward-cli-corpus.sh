@@ -412,3 +412,45 @@ done
 # row flips to ALLOW and reappears as a gap, which is the correct signal that
 # the `--admin` boundary check has started to matter. Read its ATTRIBUTION
 # line, never its verdict alone -- same rule as co-mask-c1.
+#
+# NOTE6 -- THE THREE ROWS THAT ARE STILL GAPS, AND WHY THEY STAY GAPS
+# (2026-09-06, outward-CLI-guard-folded-repair, Tasks 7-9 complete).
+#
+# `precise-path gaps=3` is the CORRECT expected output of this file, not a
+# failure to finish. Each remaining row is a REAL, reachable bypass that is
+# out of the folded repair's Scope Contract. Their expectations are
+# deliberately left at DENY: flipping a reachable-but-unfixed row to match
+# current behaviour would encode "this bypass is fine" into the fixture and
+# retire the only thing still pointing at it. Contrast c1-threedash (NOTE5),
+# which was flipped precisely because its ALLOW was UNREACHABLE BY DESIGN --
+# a masking guard will always deny it. Unreachable-by-design gets corrected;
+# reachable-but-unfixed stays a visible gap.
+#
+#   nssufx-ghmerge / nssufx-ghcomment -- UNHANDLED, OUT OF SCOPE.
+#     `gh pr>/dev/null merge 42` glues a redirect between the NAMESPACE word
+#     and the verb. Real bash tokenizes this to argv (gh, pr, merge, 42) with
+#     stdout redirected, so it genuinely merges. Neither mechanism in this
+#     repair reaches it: the vanished rendering leaves it untouched (a
+#     redirect is NOT a provably-empty expansion, and must not be treated as
+#     one), and finding A's closer-class widening covers the verb's own
+#     boundary, not an INTERIOR redirect. Closing it needs a new anchor shape
+#     at a new position across GH_PR_MERGE_RE, GH_PR_CREATE_RE and
+#     GH_MUTATING_RE -- which the Scope Contract ("widen existing boundary
+#     character classes; reuse the shared lib's existing _CMD_REDIR; no new
+#     parsing layer") does not authorise. This axis was already labelled "a
+#     real, DISTINCT mechanism" by this file's own FAM_NS_* comment above.
+#
+#   c2-ansic-hex -- UNHANDLED, OUT OF SCOPE, NEEDS A DECODER.
+#     `gh api repos/o/r -X $'\x50\x4f\x53\x54'` supplies POST as ANSI-C hex.
+#     Measured cause (not inferred): cmd_words renders it
+#     `-X xx50xx4fxx53xx54`, so the `$` is CONSUMED -- C2's "method value is
+#     not literal text" branch reads for a surviving `$`/backtick and finds
+#     none, while the literal-method branch finds no POST either. Closing it
+#     requires decoding ANSI-C escapes, a new parsing layer the Scope Contract
+#     forbids. Already recorded as a confirmed gap in commit 3131de37; this
+#     row is its executable counterpart. Note the degraded paths DENY it --
+#     precise-clean/degraded-dirty inverted, which is why it must not be read
+#     from a summary count alone.
+#
+# Do not "fix" any of these by editing this file. Fix the guard, or leave the
+# gap visible.
