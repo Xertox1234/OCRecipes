@@ -174,9 +174,12 @@ add c2-dynpath       ALLOW 'gh api repos/$OWNER/$REPO'
 # unrelated $ elsewhere in the same clause also denies.
 add c2-tension       DENY  'gh api repos/o/r -X GET -f note=$SOMETHING'
 # A second unreadable-value SPELLING (found by constructing the legacy
-# command-substitution form): no deny row above this one lacks a literal `$`
-# character, so this row alone pins the ruled MECHANISM ("not literal text")
-# rather than the implementation detail ("contains a dollar sign"). Confirmed
+# command-substitution form). Observation, not an enforced property: the C2
+# axis's own preceding deny rows (c2-lit, c2-expand, c2-dynamic, c2-glued,
+# c2-tension) all happen to carry a literal `$` character, so without this
+# row the C2 corpus would only ever pin the implementation detail ("contains
+# a dollar sign") rather than the ruled MECHANISM ("not literal text"). This
+# row alone carries no `$` at all. Confirmed
 # a live, silent ALLOW before the fix's own backtick widening: WORDS_DEEP
 # keeps a NON-empty backtick pair's literal text intact (a DIFFERENT
 # mechanism from the mid-backtick row's EMPTY pair, which vanishes and fuses

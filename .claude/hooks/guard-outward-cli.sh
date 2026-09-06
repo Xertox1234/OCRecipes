@@ -1315,9 +1315,10 @@ elif [ "${GH_API_OCCURRENCES:-0}" -eq 1 ]; then
   # expansion or substitution, e.g. `-X ${x:-POST}`, `-X $METHOD`, `--method
   # $(printf PUT)`) never matches the literal POST/PUT/PATCH/DELETE text the
   # check below reads for, so it fell through UNDENIED. This block ALLOWS by
-  # default (see the CLAUSE= comment above: an empty or unreadable clause is
-  # the opposite failure mode from the `gh pr merge` CLAUSE, which DENIES by
-  # default) — so an unreadable method must be its own EXPLICIT, unconditional
+  # default (see the GH_API_CLAUSE= assignment's own comment: an empty or
+  # unreadable clause is the opposite failure mode from the `gh pr merge`
+  # CLAUSE, which DENIES by default) — so an unreadable method must be its
+  # own EXPLICIT, unconditional
   # deny here, placed before the literal-value check ever runs, rather than an
   # extra alternative folded into that check's condition: a value that never
   # satisfies the literal match would otherwise still fall through to this

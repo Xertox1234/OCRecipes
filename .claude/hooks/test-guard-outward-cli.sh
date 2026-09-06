@@ -1407,11 +1407,14 @@ assert_deny "gh api --method via a substitution denies" \
 assert_deny "gh api -X glued directly to a default-value expansion denies (no space between flag and value, mirrors the pre-existing glued-literal spelling -XPOST)" \
   "$(json 'gh api repos/o/r -X${x:-POST}')" "not literal text"
 # A second unreadable-value SPELLING, found by constructing the legacy
-# backtick command-substitution form (every deny row above this one happens
-# to contain a literal `$` character; the mechanism this check exists to
-# close is "not literal text", not "contains a dollar sign", so the corpus
-# needs a row with no `$` at all to avoid pinning an implementation detail
-# instead of the ruled mechanism). Confirmed a live, silent ALLOW before this
+# backtick command-substitution form. Observation, not an enforced property:
+# this file's own preceding C2 unreadable-method assert_deny rows (the
+# default-value-expansion, bare-variable, substitution, and glued-expansion
+# rows just above) all happen to carry a literal `$` character. The
+# mechanism this check exists to close is "not literal text", not "contains
+# a dollar sign", so without this row the assertions would only ever pin the
+# implementation detail rather than the ruled mechanism — this row alone
+# carries no `$` at all. Confirmed a live, silent ALLOW before this
 # row's own fix: WORDS_DEEP keeps a NON-empty backtick pair's literal text
 # intact (a DIFFERENT mechanism from an EMPTY backtick pair, which vanishes
 # and fuses the surrounding text — corpus row mid-backtick in
