@@ -11,6 +11,37 @@ set -uo pipefail
 HOOK="$(cd "$(dirname "$0")" && pwd)/guard-outward-cli.sh"
 PASS=0; FAIL=0
 
+# ---------- truncation guard (2026-09-06, security review of PR #926) --------
+# The assertion-total pin at the END of this file catches an assertion that was
+# DELETED or skipped, but it cannot catch a run that never reached it: an early
+# `exit`, a syntax error, or a killed process terminates BEFORE the pin, and
+# scripts/run-hook-tests.sh:27 (`bash "$t" || exit 1`) then sees only the exit
+# code — which an early `exit 0` makes zero. Verified: an injected early exit
+# produced EXIT CODE 0 and a green line. The pin's own comment claimed to defend
+# against exactly that and could not; this is what actually does, so the claim
+# and the mechanism now match.
+#
+# ONE trap, registered HERE rather than beside the fixtures it cleans up, for
+# two reasons: a second `trap ... EXIT` REPLACES the first rather than adding to
+# it, so the tempdir cleanup and this check MUST share one handler; and a
+# handler registered next to the fixtures (line ~1770) would not be installed
+# yet during the ~1700 assertions above it, leaving the majority of the file
+# unguarded. The fixture variables are read with `${VAR:-}` because they do not
+# exist yet at this point in the file.
+_PIN_RAN=0
+_on_exit() {
+  local rc=$? d
+  for d in "${NOJQ_BIN:-}" "${NOLIB_DIR:-}" "${NOAWK_BIN:-}"; do
+    [ -n "$d" ] && rm -rf "$d"
+  done
+  if [ "$_PIN_RAN" -ne 1 ]; then
+    echo "FAIL: the suite exited before reaching its assertion-total pin — this run was TRUNCATED (early exit, syntax error, or killed process), not green. A partial run must never report success."
+    exit 1
+  fi
+  exit "$rc"
+}
+trap _on_exit EXIT
+
 run_hook() { echo "$1" | bash "$HOOK" 2>/dev/null; }
 
 # Two-sided per docs/solutions/conventions/gate-test-needs-two-sided-negative-control-2026-07-25.md:
@@ -1482,26 +1513,41 @@ assert_deny "same brace-glued construction with a LITERAL mutating method attrib
 # exists to catch, so the check iterates over EVERY assignment and the count
 # is asserted too: a third cut added later without updating this number fails
 # here rather than silently going unchecked.
+# RESHAPED 2026-09-06 (security review of PR #926, findings C2/C3). The two cuts
+# no longer each carry their own copy of the anchor text: both now read a single
+# `_GH_API_CUT` constant. That is strictly stronger — two literals can drift
+# apart, one constant cannot drift from itself — so the invariant this assertion
+# defends has MOVED rather than gone away, and the assertion moves with it
+# instead of being relaxed. Two things are now checked: the shared constant
+# still agrees with GH_API_RE's anchor, and EVERY clause cut actually goes
+# through that constant. A third cut added later with the anchor inlined again
+# fails here, which is the same failure this has always caught.
 GH_API_RE_LINE=$(grep -m1 '^GH_API_RE=' "$HOOK")
 _ANCHOR_RE="${GH_API_RE_LINE#GH_API_RE=\"}"
 _ANCHOR_RE="${_ANCHOR_RE%\"}"
-_CLAUSE_CUTS=$(grep -c 'GH_API_CLAUSE=\$(printf' "$HOOK")
+_CUT_DEFS=$(grep -c '_GH_API_CUT="' "$HOOK")
+_CUT_DEF_LINE=$(grep -m1 '_GH_API_CUT="' "$HOOK")
+_CLAUSE_CUTS=$(grep -c 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 _CUTS_OK=1
 _BAD_CUT=""
 while IFS= read -r _line; do
-  printf '%s' "$_line" | grep -qF -- "${_ANCHOR_RE}[^;&|]*" || { _CUTS_OK=0; _BAD_CUT="$_line"; }
-done < <(grep 'GH_API_CLAUSE=\$(printf' "$HOOK")
+  printf '%s' "$_line" | grep -qF -- '"$_GH_API_CUT"' || { _CUTS_OK=0; _BAD_CUT="$_line"; }
+done < <(grep 'GH_API_CLAUSE_[A-Z]*=\$(printf' "$HOOK")
 if [ -n "$_ANCHOR_RE" ] \
    && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh[[:space:]]+api' \
+   && [ "$_CUT_DEFS" -eq 1 ] \
+   && printf '%s' "$_CUT_DEF_LINE" | grep -qF -- "${_ANCHOR_RE}[^;&|]*" \
    && [ "$_CLAUSE_CUTS" -eq 2 ] \
    && [ "$_CUTS_OK" -eq 1 ]; then
-  echo "PASS: GH_API_RE and ALL $_CLAUSE_CUTS GH_API_CLAUSE cuts share one anchor (structural, not behavioural)"; PASS=$((PASS+1))
+  echo "PASS: GH_API_RE and ALL $_CLAUSE_CUTS GH_API_CLAUSE cuts share one anchor via a single _GH_API_CUT constant (structural, not behavioural)"; PASS=$((PASS+1))
 else
   echo "FAIL: GH_API_RE and the GH_API_CLAUSE cuts share one anchor (structural, not behavioural) -- they have DIVERGED, reopening the empty-clause fall-through to ALLOW"
-  echo "  GH_API_RE line:     $GH_API_RE_LINE"
-  echo "  extracted anchor:   $_ANCHOR_RE"
-  echo "  clause cuts found:  $_CLAUSE_CUTS (expected 2)"
-  echo "  diverged cut:       $_BAD_CUT"
+  echo "  GH_API_RE line:      $GH_API_RE_LINE"
+  echo "  extracted anchor:    $_ANCHOR_RE"
+  echo "  _GH_API_CUT defs:    $_CUT_DEFS (expected 1)"
+  echo "  _GH_API_CUT line:    $_CUT_DEF_LINE"
+  echo "  clause cuts found:   $_CLAUSE_CUTS (expected 2)"
+  echo "  cut not using const: $_BAD_CUT"
   FAIL=$((FAIL+1))
 fi
 # Negative controls — this is the change's largest new over-denial surface,
@@ -1583,8 +1629,21 @@ assert_deny "prefix vanishing substitution denies" \
   "$(json '$() gh pr merge 42')" "without a REAL --auto flag"
 assert_deny "prefix vanishing parameter denies" \
   "$(json '${UNSET} gh pr merge 42')" "without a REAL --auto flag"
-assert_deny "mid-token split reaches the gh api block" \
-  "$(json 'gh a${UNSET}pi repos/o/r -X POST')" "mutating HTTP method"
+# RE-ATTRIBUTED 2026-09-06 (security review of PR #926, finding C2), following
+# the SAME precedent and the SAME justification already written for the
+# backtick-glue row above, and the same solution doc
+# docs/solutions/logic-errors/deny-reason-assertion-goes-stale-when-a-stricter-branch-fires-first-2026-09-03.md.
+# C2's fix makes a clause that exists ONLY in the vanished rendering count as
+# unreadable on its own — the deletion that rejoined `api` is itself the
+# evidence that something was deleted — so the unreadable-method check fires
+# first, even though this row's method value ("POST") is perfectly literal.
+# This is NOT a relaxation that turns the row into a decoration: it still
+# proves the same original mechanism (the vanished clause-cut reaches a
+# mid-token-split verb rather than coming back empty). If that regressed, an
+# empty clause would satisfy NEITHER check's flag-presence scan and the row
+# would flip to a silent ALLOW — a failure, not a different reason string.
+assert_deny "mid-token split reaches the gh api block (reason re-attributed to C2's span-derived-clause rule — see comment above)" \
+  "$(json 'gh a${UNSET}pi repos/o/r -X POST')" "not literal text"
 # A vanishing sigil standing where a WHOLE WORD would go, rather than inside
 # the verb. Same mechanism, different position: deleting the word leaves the
 # tool and its verb separated by whitespace the `[[:space:]]+` anchors already
@@ -1730,7 +1789,9 @@ NOAWK_BIN=$(mktemp -d)
 for b in bash cat grep sed jq wc tr head env dirname; do
   ln -s "$(command -v "$b")" "$NOAWK_BIN/$b" 2>/dev/null
 done
-trap 'rm -rf "$NOJQ_BIN" "$NOLIB_DIR" "$NOAWK_BIN"' EXIT
+# Cleanup is handled by the single `_on_exit` EXIT trap registered at the top of
+# this file — a second `trap ... EXIT` here would REPLACE it and silently drop
+# the truncation guard along with it. Do not re-add one.
 
 nojq_hook()  { printf '%s' "$1" | env PATH="$NOJQ_BIN" "$NOJQ_BIN/bash" "$HOOK" 2>/dev/null; }
 nolib_hook() { printf '%s' "$1" | bash "$NOLIB_DIR/guard-outward-cli.sh" 2>/dev/null; }
@@ -1854,6 +1915,91 @@ check "no-awk: mid-token BACKTICK split verb fails closed" \
 check "no-jq: a backtick with no gated binary stays allowed" \
   allow "$(nojq_hook "$(json 'echo `date`')")"
 
+# ---------- 2026-09-06: security review of PR #926 — the four CRITICALs -------
+# One root cause behind three of them: cmd_words_vanished is a SUBTRACTIVE
+# rendering and the guard reused cmd_words_deep's ADDITIVE monotonicity argument
+# ("deny-shaped, so a wider rendering can only ADD a deny"). Deleting text
+# DISARMS any check triggered by a token's PRESENCE. Every row below was a
+# measured, silent ALLOW before this fix, and none was a regression — a
+# main-version fixture allows them too. They block because PR #926 CLAIMED the
+# vanishing-sigil class closed while it was open at the tool and flag positions.
+
+# --- C1: the sigil is inside the TOOL NAME, so no needle is ever synthesized --
+# The fast-path prefilter strips five CHARACTERS and exit 0s on a miss, so
+# `e${UNSET}as` reduced to `e{UNSET}as`, matched nothing, and the hook exited
+# BEFORE cmd_words_vanished ever ran. lib/fastpath-filter.sh's own header
+# demanded a re-audit "whenever cmd_words' character set changes"; a
+# span-deleting rendering was added and the re-audit was not done.
+assert_deny "C1: vanishing sigil inside the eas TOOL name (an OTA publish to end users)" \
+  "$(json 'e${UNSET}as update --branch preview')" "eas update/publish/submit"
+assert_deny "C1: vanishing sigil inside the npm TOOL name" \
+  "$(json 'n${UNSET}pm publish')" "npm publish"
+assert_deny "C1: empty BACKTICK pair inside the eas TOOL name" \
+  "$(json 'e``as update --branch preview')" "eas update/publish/submit"
+assert_deny "C1: vanishing sigil inside the railway TOOL name" \
+  "$(json 'rail${UNSET}way up')" "railway up/deploy"
+# The attribution control that isolated C1 to the prefilter and not the matcher:
+# identical input plus an unrelated literal `gh` restoring the stage-1 needle
+# ALREADY denied before the fix. It must still deny, for the same reason.
+assert_deny "C1 control: an unrelated literal gh restores the needle (denied before AND after)" \
+  "$(json 'cd gh-notes && e${UNSET}as update --branch preview')" "eas update/publish/submit"
+# Negative controls for the widened prefilter: stage 3 deletes spans and
+# re-tests the needles, so it must not synthesize one out of ordinary text.
+assert_allow "C1 control: a span-split NON-gated tool stays allowed" \
+  "$(json 'ec${UNSET}ho done')"
+assert_allow "C1 control: an expansion beside an unrelated gh path stays allowed" \
+  "$(json 'echo ${HOME}/gh')"
+# C1 was open on ALL FOUR paths, so the degraded mirror was fixed too — a
+# precise-only fix would repeat the very overclaiming that made these block.
+check "C1 no-jq: vanishing sigil inside the TOOL name fails closed" \
+  deny "$(nojq_hook "$(json 'e${UNSET}as update --branch preview')")"
+check "C1 no-lib: vanishing sigil inside the TOOL name fails closed" \
+  deny "$(nolib_hook "$(json 'e${UNSET}as update --branch preview')")"
+check "C1 no-awk: vanishing sigil inside the TOOL name fails closed" \
+  deny "$(noawk_hook "$(json 'e${UNSET}as update --branch preview')")"
+check "C1 no-jq control: a span-split NON-gated tool stays allowed" \
+  allow "$(nojq_hook "$(json 'ec${UNSET}ho done')")"
+
+# --- C2: the one deletion that rejoins the verb also erases the method sigil --
+# Not fixable by unioning the two clause cuts: NEITHER rendering holds both
+# halves of the evidence. A clause that exists ONLY in the vanished rendering is
+# itself proof a span was deleted, hence unreadable — which is what denies here.
+assert_deny "C2: split gh api verb AND a non-literal method (neither rendering holds both halves)" \
+  "$(json 'gh a${UNSET}pi repos/o/r -X ${METHOD}')" "not literal text"
+assert_deny "C2: same, with a command substitution supplying the method" \
+  "$(json 'gh a${UNSET}pi repos/o/r -X $(printf POST)')" "not literal text"
+# The documented narrowing must survive: a split-verb READ has no method flag
+# and stays allowed, or the span-derived rule would deny every dynamic route.
+assert_allow "C2 control: split gh api verb with NO method flag stays allowed" \
+  "$(json 'gh a${UNSET}pi repos/o/r')"
+
+# --- C3: `[ -z "$clause" ]` made both fallbacks empty-only -------------------
+# With a LITERAL verb the deep cut is non-empty, so the vanished rendering was
+# never consulted — even though it held exactly the flag being looked for. The
+# guard computed the answer and discarded it.
+assert_deny "C3: literal gh pr comment verb, --repo split by a vanishing sigil (PAT egress)" \
+  "$(json 'gh pr comment 5 --body hi --re${UNSET}po other/org')" "--repo/-R"
+assert_deny "C3: literal gh pr create verb, --repo split by a vanishing sigil" \
+  "$(json 'gh pr create --title x --body y --re${UNSET}po other/org')" "--repo/-R"
+assert_deny "C3: literal gh api verb, -X split by a vanishing sigil" \
+  "$(json 'gh api repos/o/r -${UNSET}X POST')" "gh api"
+assert_deny "C3: literal gh api verb, --method split by a vanishing sigil" \
+  "$(json 'gh api repos/o/r --met${UNSET}hod POST')" "gh api"
+
+# --- C4: an effective GRANT, not merely a missed deny ------------------------
+# With no --admin deny, the --auto carve-out proceeded on an administrator merge
+# that bypasses branch protection — contradicting the carve-out's own premise.
+assert_deny "C4: --admin split by an empty backtick pair (was an effective GRANT of an admin merge)" \
+  "$(json 'gh pr merge 42 --auto --ad``min')" "--admin"
+assert_deny "C4: --auto-submit split by an empty backtick pair (store submission)" \
+  "$(json 'eas build --platform ios --auto-su``bmit')" "--auto-submit"
+# scan_renderings gained a THIRD newline-joined rendering, which adds a SECOND
+# seam with the identical forging hazard the $CMD/$WORDS seam already has. This
+# is that seam's own two-sided control: `--ad` ending one rendering and `min`
+# starting the next must not read as `--admin`.
+assert_allow "C4 control: the \$WORDS/\$WORDS_VANISHED seam cannot forge --admin" \
+  "$(json 'gh pr merge 42 --auto --ad')"
+
 # ---------- assertion-total pin (2026-09-05, outward-CLI-guard-folded-repair)
 # Every mutation claim this suite's commits make is of the form "reverting the
 # fix fails exactly N assertions". That evidence rests on the total being what
@@ -1867,7 +2013,15 @@ check "no-jq: a backtick with no gated binary stays allowed" \
 # green result that is green because a check did not run. Update the number
 # DELIBERATELY when adding assertions — that edit is the point at which you
 # confirm the new count is the one you intended.
-EXPECTED_TOTAL=414
+#
+# NARROWED 2026-09-06 (security review of PR #926). The original comment also
+# claimed to catch "an early `return`/`exit` inserted above it" and a truncated
+# file. It cannot: those terminate the run BEFORE this line, so nothing here
+# ever executes. That half of the claim now lives on the `_on_exit` trap at the
+# top of the file, which does enforce it; this pin's real and only job is a
+# DELETED or skipped assertion in a run that otherwise completed.
+_PIN_RAN=1
+EXPECTED_TOTAL=435
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

@@ -594,7 +594,7 @@ cmd_extract_substitutions() {
 # multi-line input never spans a match across the newline), so each extracted
 # body starts a fresh command position and cannot graft its own tokens onto an
 # adjacent line's — the exact "seam spells tokens present in neither string"
-# hazard this file's `scan_both` already documents for its own two-source join.
+# hazard this file's `scan_renderings` already documents for its own three-source join.
 #
 # DENY-SHAPED CONSUMERS ONLY — never call this from a check that GRANTS
 # something (a carve-out, an allow) rather than only adding a deny. Widening
@@ -625,9 +625,20 @@ cmd_words_deep() {
 
 # cmd_words_vanished <cmd> -- a rendering in which every construct PROVABLY
 # capable of expanding to the empty string is DELETED, so a verb split by a
-# vanishing sigil rejoins into the word bash actually builds. Closes the
-# mid-token case (`me` + vanishing sigil + `rge` -> argv `merge`), which no
-# boundary character class can reach because the verb is SPLIT, not bounded.
+# vanishing sigil rejoins into the word bash actually builds. Makes the
+# mid-token case (`me` + vanishing sigil + `rge` -> argv `merge`) VISIBLE, which
+# no boundary character class can reach because the verb is SPLIT, not bounded.
+#
+# "MAKES VISIBLE", not "closes" -- corrected 2026-09-06 after the security
+# review of PR #926. The earlier wording said this function CLOSES the mid-token
+# case. It cannot: a rendering closes nothing on its own. Whether a case is
+# closed depends entirely on which gates run BEFORE this rendering is computed
+# and which consumers actually READ it, and PR #926 shipped with a prefilter
+# that exit 0'd first (the tool position) and consumers that read this only as
+# an `if [ -z "$deep" ]` fallback (the flag position). Both were live bypasses
+# under a comment claiming closure. A producer's header must describe what it
+# PRODUCES; only the consumer can claim a case is closed.
+#
 # Consumes lib/cmd-detect.sh:cmd_words. Takes the command as $1 directly, the
 # same calling convention as cmd_words_deep (piping in instead leaves $1
 # unset under this file's callers' `set -u` and aborts) -- NOT the stdin
@@ -636,8 +647,20 @@ cmd_words_deep() {
 # not newline-joined with anything -- there is nothing to join). WIRED
 # 2026-09-05 into guard-outward-cli.sh, which is its only caller: it feeds
 # $WORDS_SCAN (the boolean-matcher union), _out_max_count (the per-rendering
-# occurrence maximum) and the GH_API_CLAUSE fallback cut. Never $WORDS, whose
-# one grant-shaped reader must not see a deletion-synthesized flag.
+# occurrence maximum), both GH_API_CLAUSE cuts, gh_pr_clause_has_repo's clause
+# loop and scan_renderings' flag scan. Never $WORDS, whose one grant-shaped
+# reader must not see a deletion-synthesized flag.
+#
+# EVERY CONSUMER UNIONS THIS IN; NONE SUBSTITUTES IT FOR the deep rendering, and
+# that distinction is not stylistic. cmd_words_deep APPENDS, so "this check is
+# deny-shaped, so a wider rendering can only ADD a deny" is sound for it. This
+# function DELETES, and deletion DISARMS any check triggered by a token's
+# PRESENCE (`--repo`, `--admin`, `--auto-submit`, a literal HTTP method, a
+# `$`/backtick). Three of the four CRITICALs in the PR #926 security review were
+# that one invalid transfer, written into three separate comments as if proven.
+# A consumer that reads this rendering INSTEAD of the deep one -- including the
+# `if [ -z "$deep" ]; then use_vanished; fi` shape, which is substitution
+# wearing a fallback's clothes -- reopens them.
 #
 # UNBALANCED INPUT is asymmetric depending on which construct is unbalanced:
 # an unterminated $(...)/backtick emits NOTHING (see the depth check at the
