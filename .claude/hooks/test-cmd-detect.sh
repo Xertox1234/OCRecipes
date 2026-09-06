@@ -1439,6 +1439,123 @@ van 'a bare ) inside a double-quoted span inside $(...) does not close it early'
 van 'a backtick inside a double-quoted span inside a backtick body opens, not closes' \
   'gh pr me`echo "x`echo y`z"`rge' 'gh pr merge'
 
+# ---------- 2026-09-06: bare-paren depth + the widened deletable allow-list ----
+# EXACT-VALUE PINS, NOT diff_live ROWS, and that choice is forced rather than
+# stylistic: diff_live only asserts that an extracted body's RAW TEXT is absent
+# from the vanished output, so a rendering that GARBLES a construct into
+# fragments satisfies it exactly as well as a clean deletion does (this file's
+# own diff_live header says so). The bare-paren defect is precisely that class --
+# it left a stray `)` behind -- so only an exact-value comparison can catch it.
+echo "--- cmd_words_vanished: a bare ( inside \$(...) must not close it early ---"
+# Before: 'gh pr me )rge 42' -- the first `)` of the inner subshell closed the
+# OUTER construct three characters early, `merge` never re-formed, and the guard
+# ALLOWED `e$( (:) )as update --branch preview`, a real OTA publish to end users.
+van 'bare-paren subshell does not close the outer substitution' \
+  'gh pr me$( (:) )rge 42' 'gh pr merge 42'
+van 'bare-paren subshell at the binary-name position' \
+  'e$( (:) )as update --branch preview' 'eas update --branch preview'
+van 'nested bare parens balance' 'gh pr me$( ( (:) ) )rge 42' 'gh pr merge 42'
+van 'a top-level bare paren is still emitted verbatim' \
+  'x=$( (cd /tmp) ) && (echo a)' 'x= && (echo a)'
+# A paren inside a quoted span is LITERAL TEXT. Counting it would unbalance the
+# level and reopen the desynchronisation, so the counter is gated to state 0 --
+# the same gate the close condition already had.
+van 'a ( inside a double-quoted span does not move depth' \
+  'gh pr me$(echo "(")rge' 'gh pr merge'
+van 'a ( inside a single-quoted span does not move depth' \
+  "gh pr me\$(echo '(')rge" 'gh pr merge'
+
+echo "--- cmd_extract_substitutions must agree: same input, whole body ---"
+sub_eq() {  # $1=name $2=input $3=expected single body
+  local got; got=$(printf '%s' "$2" | cmd_extract_substitutions)
+  if [ "$got" = "$3" ]; then echo "PASS: $1"; PASS=$((PASS+1))
+  else echo "FAIL: $1"; echo "  in:  $2"; echo "  got: [$got]"; echo "  want: [$3]"; FAIL=$((FAIL+1)); fi
+}
+sub_eq 'extractor yields the WHOLE subshell body, not a truncation' \
+  'f$( (:) )oo bar' ' (:) '
+
+echo "--- cmd_words_vanished: ARITHMETIC is never empty and must survive ---"
+# With paren depth tracked, `$((expr))` otherwise reads as a substitution level
+# whose body happens to balance, and would be DELETED -- manufacturing `foo` from
+# `f$((1+2))oo`, whose real argv is `f3oo`. Same class as ${#x}.
+van 'arithmetic expansion is copied verbatim' 'f$((1+2))oo bar' 'f$((1+2))oo bar'
+van 'arithmetic expansion mid-command survives'  'x=$((i+1))' 'x=$((i+1))'
+# The interior is never re-scanned, so an embedded $(...) inside arithmetic is
+# not independently deleted -- the reversed-pass-order trap ${x:-$(echo hi)}
+# already pins for the brace form. An earlier draft of the arithmetic arm got
+# this wrong and rendered `gh pr me$((  ))rge`.
+van 'a substitution nested INSIDE arithmetic is not independently deleted' \
+  'gh pr me$(( $(printf 1) ))rge' 'gh pr me$(( $(printf 1) ))rge'
+
+echo "--- cmd_words_vanished: SPECIAL parameters are deletable, by the same criterion ---"
+# Each is ONE character long, so unlike an ordinary $name it TERMINATES against a
+# following letter instead of absorbing it, and each can be empty -- which is
+# exactly this allow-list's own eligibility test. PR #926 shipped a comment
+# asserting the opposite of the whole syntax class; it was true only of an
+# ordinary identifier.
+van 'last-background-pid special vanishes' 'e$!as update' 'eas update'
+van 'positional parameter vanishes'        'e$1as update' 'eas update'
+van 'ninth positional vanishes'            'gh pr me$9rge 42' 'gh pr merge 42'
+van 'all-positional @ vanishes'            'e$@as update' 'eas update'
+van 'all-positional * vanishes'            'e$*as update' 'eas update'
+
+echo "--- cmd_words_vanished: NEVER-empty specials must NOT be deleted ---"
+# $?, $$, $# and $0 are always set to a non-empty string, so deleting one would
+# manufacture a clean match for text that never executes -- `e$?as update` is
+# really `e0as update`, which invokes nothing.
+van 'exit-status special is never empty' 'e$?as update' 'e$?as update'
+van 'pid special is never empty'         'e$$as update' 'e$$as update'
+van 'argc special is never empty'        'e$#as update' 'e$#as update'
+van 'argv0 special is never empty'       'e$0as update' 'e$0as update'
+# Bare $10 is $1 followed by a LITERAL 0 -- one digit only, never two.
+van 'bare $10 consumes ONE digit, leaving the 0' 'e$10as update' 'e0as update'
+# An ordinary identifier greedily absorbs the following alphanumerics, so it
+# cannot rejoin two halves of a word. This is the claim that was wrongly
+# generalised to the whole class above; here it is the correct one.
+van 'an ordinary identifier is NOT deleted' 'e$_as update' 'e$_as update'
+van 'a plain $name is NOT deleted'          'e$RUNNERas update' 'e$RUNNERas update'
+
+echo "--- cmd_words_vanished: ANSI-C respelling is DECODED ---"
+# $(sq)\x61(sq) is not empty, but it RESPELLS a character, which splits a token just as
+# effectively. Decoded HERE and not in cmd_words because this rendering is
+# deny-shaped-consumers only, so a decoder here can never manufacture a flag that
+# GRANTS a carve-out. Ground-truthed against real bash argv via an argv-printing
+# shell function, byte by byte.
+van 'ANSI-C hex escape respells a letter'  "e\$'\\x61's update" 'eas update'
+van 'ANSI-C hex at the binary-name position' "\$'\\x65'as update" 'eas update'
+van 'ANSI-C octal escape'                  "e\$'\\141's update" 'eas update'
+van 'ANSI-C plain character still works'   "e\$'a's update" 'eas update'
+van 'ANSI-C respells a whole flag'         "gh api -X \$'\\x50\\x4f\\x53\\x54'" 'gh api -X POST'
+# A decoded byte is RE-SCANNED by cmd_words, so a decoded quote would open a span
+# and corrupt everything after it. Only characters inert to both cmd_words state
+# and every consumer boundary class survive literally; every other decoded byte
+# becomes the placeholder. Structural closure, not an enumeration of bad bytes.
+# THE TRAILING TEXT IS LOAD-BEARING IN THESE TWO ROWS. An earlier version pinned
+# the bare `echo $(sq)\x27(sq)` -> `echo x`, which stayed GREEN when the safe-character
+# filter was deleted -- cmd_words swallows a trailing unterminated span and
+# produces the same answer either way, so the row proved nothing. Caught by
+# mutation testing, not by review. With a real command AFTER the decoded quote
+# the difference is the whole point: unfiltered, the quote opens a span in
+# cmd_words and the rest collapses into ONE word (`echo xghxprxmergex42x`), so
+# the `gh pr merge` deny is LOST. A row that survives its own mutation is a
+# decoration.
+van 'a decoded quote cannot swallow the following command' \
+  "echo \$'\\x27' gh pr merge 42" 'echo x gh pr merge 42'
+van 'a decoded double quote cannot swallow the following command' \
+  "echo \$'\\x22' gh pr merge 42" 'echo x gh pr merge 42'
+van 'a decoded backtick cannot reach the consumer sigil class' \
+  "echo \$'\\x60' gh pr merge 42" 'echo x gh pr merge 42'
+van 'a decoded \$( cannot inject syntax'    "echo \$'\\x24\\x28foo\\x29'" 'echo xxfoox'
+van 'a decoded newline stays inside one word' "echo \$'a\\nb'" 'echo axb'
+# VERIFIED BY od, bash 3.2: e$(sq)\0(sq)as builds the three bytes `eas` -- the NUL is
+# DROPPED and the token REJOINS. Emitting a placeholder here rendered `exas`,
+# which matches no deny pattern, so the guard would have ALLOWED a real
+# invocation. This row is a security property, not a fidelity one.
+van 'a NUL escape is DROPPED, so the token rejoins' "e\$'\\0'as update" 'eas update'
+# Both bash and zsh keep an unknown escape as the backslash AND the character,
+# two bytes; rendering one placeholder lost a letter.
+van 'an unknown escape renders as TWO characters' "e\$'\\q'as update" 'exqas update'
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

@@ -2156,6 +2156,86 @@ assert_allow "RE control: mixed-quote nested span in a NON-gated command stays a
 assert_allow "RE control: a closer after the verb in a NON-gated command stays allowed" \
   "$(json 'ec$(: $(:))ho done && (echo done)')"
 
+# ---------- 2026-09-06: the widened STAGE 3 decline set -------------------------
+# These constructions carry NONE of the three original digraphs (`${`, `$(`,
+# backtick), so before this change they missed stage 1, missed stage 2, and took
+# the CHEAP EXIT -- $WORDS_VANISHED was never computed and no lib fix could be
+# reached. Each is a real invocation: `e$1as update --branch preview` is an OTA
+# publish to end users. The deny REASON is asserted, not just the verdict,
+# because a deny from the occurrence-ambiguity or `$`-unverifiability branch
+# would look identical to success while meaning the intended check never fired.
+assert_deny "stage3: positional parameter splits the binary name" \
+  "$(json 'e$1as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: last-background-pid special splits the binary name" \
+  "$(json 'e$!as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: all-positional @ splits the binary name" \
+  "$(json 'e$@as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: all-positional * splits the binary name" \
+  "$(json 'e$*as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: ANSI-C respelling splits the binary name" \
+  "$(jsonc "\$'\\x65'as update --branch preview")" \
+  "eas update/publish/submit"
+assert_deny "stage3: positional parameter splits gh's binary name" \
+  "$(json 'g$1h pr merge 42')" \
+  "gh pr merge"
+# The VERB position reached the lib before this change (stage 1 hits the intact
+# binary name) but the allow-list did not delete these forms, so the PRECISE path
+# allowed while all three degraded paths denied -- this file's usual asymmetry
+# INVERTED. Pinned so a regression shows up on the strong path.
+assert_deny "stage3: special parameter splits the verb, precise path" \
+  "$(json 'eas up$!date --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "stage3: positional parameter splits npm's verb" \
+  "$(json 'npm pub$1lish')" \
+  "npm publish"
+
+# NEVER-EMPTY specials must NOT gain a deny. `$?`, `$$`, `$#` and `$0` are always
+# set to a non-empty string, so `e$?as update` is really `e0as update` and
+# invokes nothing -- deleting them would manufacture a match for text that never
+# executes. Declining the cheap exit for them costs a slow path, not a verdict.
+assert_allow "stage3 control: \$? cannot be empty, so no deny is manufactured" \
+  "$(json 'e$?as update --branch preview')"
+assert_allow "stage3 control: \$# cannot be empty, so no deny is manufactured" \
+  "$(json 'e$#as update --branch preview')"
+assert_allow "stage3 control: \$0 cannot be empty, so no deny is manufactured" \
+  "$(json 'e$0as update --branch preview')"
+# THE COST MUST BE LATENCY, NOT VERDICTS. Everyday commands carrying the newly
+# declined sigils and no gated binary must still allow -- the widening moves them
+# onto the slow path and the slow path must then say nothing.
+assert_allow "stage3 FP: \"\$@\" passthrough with no gated binary stays allowed" \
+  "$(jsonc 'bash script.sh "$@"')"
+assert_allow "stage3 FP: a positional parameter with no gated binary stays allowed" \
+  "$(json 'echo $1 && mv $2 $3')"
+assert_allow "stage3 FP: ANSI-C quoting with no gated binary stays allowed" \
+  "$(jsonc "printf \$'a\\tb\\n'")"
+assert_allow "stage3 FP: a bare \$name still takes the cheap exit and allows" \
+  "$(json 'echo $HOME')"
+
+# ---------- 2026-09-06: bare-paren subshell (lib scanner desync) ----------------
+# The first `)` of an inner subshell used to close the OUTER $(...) three
+# characters early, so the verb never re-formed and all four paths ALLOWED.
+assert_deny "bare-paren subshell splits the binary name" \
+  "$(json 'e$( (:) )as update --branch preview')" \
+  "eas update/publish/submit"
+assert_deny "bare-paren subshell splits gh's binary name" \
+  "$(json 'g$( (:) )h pr merge 42')" \
+  "gh pr merge"
+assert_deny "bare-paren subshell splits the verb" \
+  "$(json 'eas up$( (:) )date --branch preview')" \
+  "eas update/publish/submit"
+# ARITHMETIC is never empty, so the paren counter must not start deleting it --
+# `f$((1+2))oo` is really `f3oo`. Two-sided: the gated shape must NOT deny.
+assert_allow "bare-paren control: arithmetic is not deleted into a gated verb" \
+  "$(json 'e$((1+2))as update --branch preview')"
+assert_allow "bare-paren FP: an ordinary subshell assignment stays allowed" \
+  "$(json 'x=$( (cd /tmp && pwd) )')"
+assert_allow "bare-paren FP: arithmetic in an ordinary command stays allowed" \
+  "$(json 'echo $((i+1))')"
+
 # ---------- assertion-total pin (2026-09-05, outward-CLI-guard-folded-repair)
 # Every mutation claim this suite's commits make is of the form "reverting the
 # fix fails exactly N assertions". That evidence rests on the total being what
@@ -2177,7 +2257,9 @@ assert_allow "RE control: a closer after the verb in a NON-gated command stays a
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-EXPECTED_TOTAL=462
+# 462 -> 483 on 2026-09-06: +21 for the widened STAGE 3 decline set and the
+# bare-paren scanner fix (8 denies attributed by reason, 13 controls/FP allows).
+EXPECTED_TOTAL=483
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

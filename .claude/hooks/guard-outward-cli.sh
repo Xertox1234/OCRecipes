@@ -619,13 +619,61 @@
 #     "degraded is the fail-closed direction" is not a safe default here. Second,
 #     the TOOL rows allow on all four, which is a live outward-CLI bypass.
 #
-#     Still deliberately not widened in THIS block, but the reason is cost, not
-#     the false claim above: `$` alone appears in a large share of real commands.
-#     The gap is real, is NOT a regression (it allows on `main` too), and is an
-#     open finding surfaced to the owner rather than closed here — the fix is in
-#     lib/cmd-detect.sh's allow-list, which by its own stated criterion ("an
-#     expansion form must be PROVEN capable of evaluating to EMPTY before it may
-#     be deleted") should already admit these forms and does not.
+#     CLOSED 2026-09-06 (todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-
+#     breaks-substitution-scanners.md). Every construction in the table above now
+#     DENIES on the precise path, each attributed to the intended
+#     command-position check rather than to an ambiguity fallback.
+#
+#     THE FIX WAS IN TWO PLACES AND THE PREVIOUS REVISION OF THIS ENTRY NAMED
+#     ONLY ONE. It said "the fix is in lib/cmd-detect.sh's allow-list". That was
+#     necessary and NOT sufficient, and the missing half was in this very file:
+#     the STAGE 3 decline keyed on `${`, `$(` and a backtick, none of which a
+#     special parameter or an ANSI-C respelling carries, so
+#     `e$1as update --branch preview` missed stages 1 and 2 and took the CHEAP
+#     EXIT — $WORDS_VANISHED was never computed, and no allow-list change could
+#     have been reached. A correct fix in the right file is still unreachable
+#     when a prefilter upstream of it declines on a NARROWER signal than the
+#     fix's own grammar. Both halves landed in one change:
+#       * lib/cmd-detect.sh — cmd_words_vanished now deletes `$!`, `$@`, `$*` and
+#         `$1`..`$9` (each PROVABLY capable of expanding to empty) and DECODES
+#         ANSI-C escapes. `$?`, `$$`, `$#`, `$0` and `$-` are deliberately NEVER
+#         deleted: none can be empty, and deleting a never-empty form
+#         manufactures a clean match for text that never executes.
+#       * this file — the STAGE 3 decline set was widened, on a MEASURED cost of
+#         +0.8% of Bash tool calls moving to the slow path (the block itself
+#         carries the harvest and the numbers).
+#
+#     A bare `$name` (`$RUNNER up`) remains an ACCEPTED residual and still takes
+#     the cheap exit. The greedy-absorption argument that was wrongly
+#     generalised to the whole syntax class is TRUE of an ordinary identifier:
+#     `$RUNNERup` is one variable name, so it cannot rejoin two halves of a verb.
+#
+#   * BARE-PAREN SUBSHELL — CLOSED 2026-09-06, same change. lib/cmd-detect.sh's
+#     shared substitution scanner counted depth for `$(` but not for a bare `(`,
+#     so the first `)` of an inner subshell closed the OUTER construct early:
+#     `e$( (:) )as update --branch preview` rendered as `e )as update …`, the
+#     verb never re-formed, and all four paths ALLOWED an OTA publish. Both
+#     functions sharing that scanner shape — cmd_extract_substitutions and
+#     cmd_words_vanished — now carry a per-level paren counter, fixed in ONE
+#     change rather than one function at a time.
+#
+#     ARITHMETIC EXPANSION had to be exempted in the same edit, and that is a
+#     consequence of the counter rather than a separate concern: with paren depth
+#     tracked, `$((expr))` otherwise reads as a substitution level whose body
+#     happens to balance, and would be DELETED — but it always evaluates to a
+#     number, so deleting it manufactures `foo` from `f$((1+2))oo`, whose real
+#     argv is `f3oo`. It is copied verbatim instead, exactly like `${#x}`.
+#
+#   * A `case` ARM'S `)` IS THE SAME SYMPTOM AND IS STILL OPEN.
+#     `e$(case x in a) : ;; esac)as update --branch preview` ALLOWS on all four.
+#     A paren counter cannot reach it: that `)` has no matching opener, so no
+#     depth arithmetic can distinguish it from the construct's real closer.
+#     Deliberately NOT fixed by tracking the `case`/`esac` keywords — a naive
+#     tracker is a deny→ALLOW regression generator, because `e$(echo case)as
+#     update` DENIES today and would leave the depth permanently open, emptying
+#     the rendering and silently losing that coverage. Tracked at
+#     todos/P0-2026-09-06-cmd-detect-case-arm-paren-closes-substitution-early.md
+#     and measured every run by this repo's corpus (`toolvcasearm-*`).
 #
 #   * UNHANDLED, PRE-EXISTING (round 4, same measurement session): BRACE RANGE
 #     expansion splits a token with NO `$` and NO backtick anywhere in the
@@ -1203,24 +1251,47 @@ if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >
   # `cd gh-notes && e${UNSET}as update --branch preview` DENIES, differing only
   # by an unrelated literal `gh` substring restoring the stage-1 needle.
   #
-  # WHY A RAW-TEXT DIGRAPH TEST IS A COMPLETE SUPERSET, not an approximation:
-  # cmd_words_vanished's awk deletes a span only on `$`+`{`, `$`+`(`, or a
-  # backtick found in its input buffer, which is the RAW $CMD (it is called as
-  # `cmd_words_vanished "$CMD"`, not through cmd_words) — and real bash likewise
-  # requires those two bytes ADJACENT and UNESCAPED in source text for a live
-  # expansion at all (`e"$"{U}as` is the literal string `e${U}as`, not an
-  # expansion; the awk's own backslash arm emits `\$` verbatim). So no deletable
-  # span can exist without one of these three digraphs appearing literally here.
-  # Over-broad only on inert spellings (an escaped or single-quoted `${`), which
-  # is the deny-monotone direction.
+  # WHY A RAW-TEXT SIGIL TEST IS A COMPLETE SUPERSET, not an approximation:
+  # cmd_words_vanished's awk neutralises a construct only where one of the
+  # sigils below appears in its input buffer, which is the RAW $CMD (it is
+  # called as `cmd_words_vanished "$CMD"`, not through cmd_words) — and real
+  # bash likewise requires those bytes ADJACENT and UNESCAPED in source text for
+  # a live expansion at all (`e"$"{U}as` is the literal string `e${U}as`, not an
+  # expansion; the awk's own backslash arm emits `\$` verbatim). So no
+  # neutralisable construct can exist without one of them appearing literally
+  # here. Over-broad only on inert spellings (an escaped or single-quoted
+  # `${`), which is the deny-monotone direction.
+  #
+  # THE SET GREW ON 2026-09-06 and the reason is worth stating, because the
+  # entry in DOCUMENTED RESIDUALS above previously asserted the fix for this
+  # class lived entirely in lib/cmd-detect.sh's allow-list. THAT WAS NECESSARY
+  # BUT NOT SUFFICIENT, and the lib fix was unreachable without this line:
+  # `$!`, `$@`, `$*`, `$1`..`$9` and the ANSI-C `$'…'` respelling carry NONE of
+  # the three original digraphs, so `e$1as update --branch preview` — an OTA
+  # publish — missed stage 1 and stage 2 and took the cheap exit HERE, before
+  # $WORDS_VANISHED was ever computed. Measured on this tree by running the real
+  # cmd_fastpath_has and this very `case`, not inferred.
+  #
+  # THE COST WAS THE ONLY REASON NOT TO, and it is now measured rather than
+  # asserted. The old entry declined on the grounds that "`$` alone appears in a
+  # large share of real commands" — true of a bare `$`, false of this narrow
+  # set. Over 28,469 real Bash tool calls harvested from this project's own
+  # transcripts: the three original digraphs match 3,709 (13.0%); these
+  # additions match 333 (1.2%); and only 238 (0.8%) are NEWLY pushed onto the
+  # slow path, i.e. roughly +0.7 ms on the average Bash tool call. A bare
+  # `$name` still takes the cheap exit and is still a documented residual — it
+  # cannot split a token, because an ordinary identifier greedily absorbs the
+  # following alphanumerics. That absorption argument is TRUE HERE and false for
+  # the special parameters above, which is exactly the over-generalisation this
+  # widening repairs.
   #
   # NOT pushed into cmd_fastpath_has: the other six hooks that share it read
   # only cmd_bare/cmd_words, so their superset claim still holds, and widening
   # the shared helper would move every one of them onto the slow path too.
   #
-  # IT DECLINES. IT DOES NOT PARSE. If $CMD contains any of the three digraphs,
-  # this hook does not take the cheap exit — full stop, no analysis of what the
-  # spans are or where they end.
+  # IT DECLINES. IT DOES NOT PARSE. If $CMD contains any of these sigils, this
+  # hook does not take the cheap exit — full stop, no analysis of what the
+  # constructs are or where they end.
   #
   # THREE ATTEMPTS TO BE CLEVERER THAN THIS EACH SHIPPED A LIVE OTA-PUBLISH
   # BYPASS, and the sequence is recorded because the next reader's instinct will
@@ -1263,6 +1334,17 @@ if . "$HERE/lib/fastpath-filter.sh" 2>/dev/null && declare -F cmd_fastpath_has >
   if [ "$_OUT_FP_RC" != 0 ]; then
     case "$CMD" in
       *'${'*|*'$('*|*'`'*) : ;;   # a span may build a needle we cannot see here
+      # A SPECIAL parameter or an ANSI-C respelling may do the same (2026-09-06).
+      # Each is ONE character long, so it terminates against a following letter
+      # instead of absorbing it, and each can expand to empty or respell a
+      # character -- so each can rejoin two halves of a binary name or verb that
+      # no needle in stage 1 or 2 can see. `$?`, `$$` and `$#` are deliberately
+      # ABSENT: each is always set to a non-empty string, so cmd_words_vanished
+      # leaves it verbatim by its own allow-list criterion and declining here
+      # would buy nothing. `$0` is swept in by the digit class and is likewise
+      # never deleted downstream -- declining on it costs a slow path, not a
+      # verdict.
+      *'$!'*|*'$@'*|*'$*'*|*'$'"'"*|*'$'[0-9]*) : ;;
       *) exit 0 ;;
     esac
   fi

@@ -465,6 +465,7 @@ cmd_extract_substitutions() {
       n = length(buf)
       depth = 0
       state[0] = 0
+      parens[0] = 0
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1)
         d = depth
@@ -476,12 +477,12 @@ cmd_extract_substitutions() {
             if (i <= n) { if (d >= 1) accbuf[d] = accbuf[d] substr(buf, i, 1) }
           }
           else if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
-            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""
+            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""; parens[depth] = 0
             i++
           }
           else if (c == BT) {
             if (d >= 1 && kind[d] == "B") { print accbuf[d]; depth-- }
-            else { depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = "" }
+            else { depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""; parens[depth] = 0 }
           }
           else if (c == "$" && i < n && substr(buf, i+1, 1) == SQ) {
             state[d] = 3
@@ -497,7 +498,17 @@ cmd_extract_substitutions() {
           }
           else if (c == SQ) { state[d] = 1; if (d >= 1) accbuf[d] = accbuf[d] c }
           else if (c == DQ) { state[d] = 2; if (d >= 1) accbuf[d] = accbuf[d] c }
-          else if (c == ")" && d >= 1 && kind[d] == "P") { print accbuf[d]; depth-- }
+          # BARE-PAREN DEPTH, per level, state 0 ONLY (2026-09-06). A bare `(`
+          # opens a SUBSHELL inside a substitution body, and its `)` must not be
+          # mistaken for the one closing the enclosing $(...). Before this, the
+          # first `)` of `$( (:) )` closed the outer construct three characters
+          # early and everything after it was re-scanned as if outside the
+          # substitution. Gated to state 0 because a paren inside a quoted span
+          # is literal text -- counting it there would unbalance the level and
+          # reopen the very desynchronisation this closes.
+          else if (c == "(") { parens[d]++; if (d >= 1) accbuf[d] = accbuf[d] c }
+          else if (c == ")" && d >= 1 && kind[d] == "P" && parens[d] == 0) { print accbuf[d]; depth-- }
+          else if (c == ")" && parens[d] > 0) { parens[d]--; if (d >= 1) accbuf[d] = accbuf[d] c }
           else { if (d >= 1) accbuf[d] = accbuf[d] c }
         }
         else if (s == 1) {
@@ -559,11 +570,11 @@ cmd_extract_substitutions() {
             if (i <= n) { if (d >= 1) accbuf[d] = accbuf[d] substr(buf, i, 1) }
           }
           else if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
-            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""
+            depth++; state[depth] = 0; kind[depth] = "P"; accbuf[depth] = ""; parens[depth] = 0
             i++
           }
           else if (c == BT) {
-            depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""
+            depth++; state[depth] = 0; kind[depth] = "B"; accbuf[depth] = ""; parens[depth] = 0
           }
           else if (c == DQ) { state[d] = 0; if (d >= 1) accbuf[d] = accbuf[d] c }
           else { if (d >= 1) accbuf[d] = accbuf[d] c }
@@ -734,10 +745,51 @@ cmd_words_deep() {
 # either draft shipped.
 cmd_words_vanished() {
   printf '%s' "$1" | awk '
-    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96) }
+    # ANSI-C decoding helpers. BSD awk (this runtime) has NO strtonum, so hex and
+    # octal are converted by digit-position lookup rather than a library call.
+    function hexval(s,   k, v, p) {
+      v = 0
+      for (k = 1; k <= length(s); k++) {
+        p = index("0123456789abcdef", tolower(substr(s, k, 1))) - 1
+        v = v * 16 + p
+      }
+      return v
+    }
+    function octval(s,   k, v) {
+      v = 0
+      for (k = 1; k <= length(s); k++) v = v * 8 + (substr(s, k, 1) + 0)
+      return v
+    }
+    # A decoded byte is emitted LITERALLY only when it is inert to cmd_words
+    # state (not a quote, backslash or dollar) and to every consumer boundary
+    # class in this file and in guard-outward-cli.sh (not whitespace, not a
+    # separator, not a command-position opener or closer). Everything else
+    # becomes the placeholder, which keeps the span ONE argv word and makes
+    # syntax injection through a decoded byte structurally impossible.
+    function safech(ch) {
+      return (ch != "" && index(SAFE, ch) > 0) ? ch : PH
+    }
+    # CODE 0 EMITS NOTHING, and that is the one case here that is a security
+    # property rather than a fidelity one. Verified by od, bash 3.2:
+    # e$(sq)\0(sq)as builds the three bytes `eas` -- the NUL is DROPPED and the token
+    # REJOINS. Emitting a placeholder there would render `exas`, which matches no
+    # deny pattern, so the guard would ALLOW a real invocation. zsh keeps a NUL
+    # byte instead, which cannot survive execve either; deleting is the
+    # over-DENY direction and over-denial is this rendering documented posture.
+    # Every other sub-space or DEL code becomes the placeholder: those are real
+    # bytes in argv that keep the token split, exactly like a separator inside a
+    # quoted span.
+    function fromcode(code) {
+      if (code == 0) return ""
+      return (code >= 32 && code < 127) ? safech(sprintf("%c", code)) : PH
+    }
+    BEGIN {
+      SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96); PH = "x"
+      SAFE = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_./:=+,@%"
+    }
     { buf = buf $0 "\n" }
     END {
-      n = length(buf); depth = 0; state[0] = 0; out = ""
+      n = length(buf); depth = 0; state[0] = 0; parens[0] = 0; out = ""
       for (i = 1; i <= n; i++) {
         c = substr(buf, i, 1); d = depth; s = state[d]
         if (s == 0 || s == 2) {
@@ -763,21 +815,86 @@ cmd_words_vanished() {
             if (d == 0) out = out c
             continue
           }
+          if (c == "$" && i < n && index("!@*123456789", substr(buf, i+1, 1)) > 0) {
+            i++
+            continue
+          }
+          # ARITHMETIC EXPANSION is NEVER EMPTY and must NOT be deleted. Tested
+          # BEFORE the $( walk below, never after: with the bare-paren counter in
+          # place `$((expr))` otherwise reads as a substitution level whose body
+          # happens to balance, and would be deleted -- manufacturing `foo` from
+          # `f$((1+2))oo`, whose real argv is `f3oo`. That is precisely the
+          # ${#x} class this allow-list exists to exclude. The whole span is
+          # copied VERBATIM and `i` advanced past it in ONE step; its interior is
+          # never re-scanned, so an embedded $(...) inside the arithmetic is
+          # never independently reached and deleted -- the same reversed-pass-
+          # order trap the ${...} grammar-failure path above avoids, and the
+          # reason the two are written the same way. A safe MISS on that inner
+          # substitution, never a false match.
+          #
+          # NOTE cmd_extract_substitutions deliberately does NOT mirror this: an
+          # embedded $(...) inside arithmetic genuinely EXECUTES (verified:
+          # `$(( $(printf 1) + 1 ))` evaluates to 2), so the extractor must still
+          # descend into it. The differential invariant the two share is
+          # agreement on COMMAND-substitution liveness; arithmetic is outside it.
+          if (c == "$" && i + 1 < n && substr(buf, i+1, 2) == "((") {
+            k = i + 1; pdepth = 0
+            while (k <= n) {
+              ch = substr(buf, k, 1)
+              if (ch == "(") pdepth++
+              else if (ch == ")") { pdepth--; if (pdepth == 0) break }
+              k++
+            }
+            # `k` is where the paren opened at i+1 CLOSES, which is the final
+            # `)` of the whole `$((...))` construct -- not the inner one. An
+            # earlier draft additionally required substr(buf, k+1, 1) to be `)`,
+            # on the assumption k landed on the inner closer; for a NESTED
+            # substitution (`$(( $(printf 1) ))`) that test failed, the span fell
+            # into the rescan branch below, and the inner $(...) was deleted
+            # independently -- the exact reversed-pass-order regression this arm
+            # exists to prevent. Caught by running the nested form, not by review.
+            if (k <= n) {
+              if (d == 0) out = out substr(buf, i, k + 1 - i)
+              i = k
+              continue
+            }
+            # Unbalanced: emit the sigil and rescan normally (safe miss).
+            if (d == 0) out = out c
+            continue
+          }
           if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
-            depth++; state[depth] = 0; kind[depth] = "P"; i++
+            depth++; state[depth] = 0; kind[depth] = "P"; parens[depth] = 0; i++
             continue
           }
           if (c == BT) {
             if (s == 0 && d >= 1 && kind[d] == "B") depth--
-            else { depth++; state[depth] = 0; kind[depth] = "B" }
+            else { depth++; state[depth] = 0; kind[depth] = "B"; parens[depth] = 0 }
             continue
           }
-          if (c == ")" && s == 0 && d >= 1 && kind[d] == "P") { depth--; continue }
+          # BARE-PAREN DEPTH, per level, state 0 ONLY (2026-09-06) -- the mirror
+          # of the counter in cmd_extract_substitutions, applied in the SAME
+          # change because a detector widened without its sibling consumer is
+          # the documented recurring defect of this file. A bare `(` opens a SUBSHELL
+          # inside a substitution body; before this, the first `)` of `$( (:) )`
+          # closed the outer construct three characters early, leaving a stray
+          # `)` in the rendering so `eas` never re-formed and the guard ALLOWED a
+          # real OTA publish. NEITHER arm emits or suppresses anything: the
+          # counter changes only the CLOSE DECISION, so a paren at depth 0 is
+          # still written out exactly as before. Gated to state 0 for the same
+          # reason the close condition is -- a paren inside a quoted span is
+          # literal text, and counting it there would unbalance the level.
+          if (c == "(" && s == 0) parens[d]++
+          if (c == ")" && s == 0) {
+            if (d >= 1 && kind[d] == "P" && parens[d] == 0) { depth--; continue }
+            if (parens[d] > 0) parens[d]--
+          }
         }
         if (s == 0) {
           if (c == "$" && i < n && (substr(buf, i+1, 1) == SQ || substr(buf, i+1, 1) == DQ)) {
             if (substr(buf, i+1, 1) == SQ) state[d] = 3; else state[d] = 2
-            if (d == 0) out = out c substr(buf, i+1, 1)
+            # The ANSI-C sigil is CONSUMED, not emitted -- see the state-3
+            # decoder below. The locale form $"..." keeps its old passthrough.
+            if (d == 0 && substr(buf, i+1, 1) == DQ) out = out c substr(buf, i+1, 1)
             i++
           }
           else if (c == SQ) { state[d] = 1; if (d == 0) out = out c }
@@ -786,13 +903,71 @@ cmd_words_vanished() {
         }
         else if (s == 1) { if (d == 0) out = out c; if (c == SQ) state[d] = 0 }
         else if (s == 3) {
-          if (c == BS) {
-            if (d == 0) out = out c
+          # ANSI-C RESPELLING IS DECODED HERE, not passed through (2026-09-06).
+          # $(sq)\x61(sq) is not empty, but it RESPELLS a character, which splits a
+          # token just as effectively as a vanishing expansion: e + $(sq)\x61(sq) + s
+          # is really the single word eas, and the guard could not see it.
+          # Previously this branch copied the span verbatim and cmd_words then
+          # rendered each escape as two placeholder letters, so \x61 became xx61
+          # and the verb never re-formed.
+          #
+          # DECODED HERE AND NOT IN cmd_words, deliberately. This rendering is
+          # DENY-SHAPED CONSUMERS ONLY, so a decoder here can never manufacture a
+          # flag that GRANTS a carve-out; cmd_words is read by the one
+          # grant-shaped check in this codebase (the --auto carve-out, via
+          # $WORDS). Blast radius is also one rendering here versus all seven
+          # fast-path hooks there.
+          #
+          # THE OUTPUT OF THIS FUNCTION IS RE-SCANNED BY cmd_words, so a decoded
+          # byte is not inert -- a decoded quote would open a span and corrupt
+          # everything after it. Only characters that are inert to BOTH cmd_words
+          # state and every consumer boundary class are emitted literally; every
+          # other decoded byte becomes the placeholder. That is a structural
+          # closure of the injection surface, not an enumeration of bad bytes.
+          if (c == BS && i < n) {
             i++
-            if (i <= n && d == 0) out = out substr(buf, i, 1)
+            esc = substr(buf, i, 1)
+            code = -1
+            if (esc == "x") {
+              hv = ""
+              while (length(hv) < 2 && i < n && index("0123456789abcdefABCDEF", substr(buf, i+1, 1)) > 0) {
+                i++; hv = hv substr(buf, i, 1)
+              }
+              if (hv != "") code = hexval(hv)
+            }
+            else if (esc == "u" || esc == "U") {
+              maxd = (esc == "u") ? 4 : 8
+              hv = ""
+              while (length(hv) < maxd && i < n && index("0123456789abcdefABCDEF", substr(buf, i+1, 1)) > 0) {
+                i++; hv = hv substr(buf, i, 1)
+              }
+              if (hv != "") code = hexval(hv)
+            }
+            else if (index("01234567", esc) > 0) {
+              ov = esc
+              while (length(ov) < 3 && i < n && index("01234567", substr(buf, i+1, 1)) > 0) {
+                i++; ov = ov substr(buf, i, 1)
+              }
+              code = octval(ov)
+            }
+            # \cX consumes the X. Emitting only one placeholder for the `c` and
+            # then letting X fall through as a literal rendered \cA as `xA`,
+            # two characters where real bash builds one control byte.
+            else if (esc == "c") { if (i < n) i++; code = -3 }
+            # \a \b \e \E \f \n \r \t \v \\ \(sq) \" \? -- a control character, a
+            # quote, a backslash or punctuation, never a word character. The
+            # list must be COMPLETE: omitting `r` sent \r down the unknown-escape
+            # arm below, which emits TWO characters, and the byte-exact ground
+            # truth caught it as `xr` against a real one-byte argv.
+            else if (index("abeEfnrtv\\" SQ DQ "?", esc) > 0) { code = -3 }
+            # ANY OTHER escape is kept by BOTH shells as the backslash AND the
+            # character, two bytes (verified by od: bash 3.2 and zsh both build
+            # `e\qas` for e$(sq)\q(sq)as), so it must render as two, not one.
+            else { if (d == 0) out = out PH safech(esc); code = -4 }
+            if (d == 0 && code != -4) out = out fromcode(code)
           }
-          else if (c == SQ) { state[d] = 0; if (d == 0) out = out c }
-          else { if (d == 0) out = out c }
+          else if (c == SQ) { state[d] = 0 }
+          else { if (d == 0) out = out safech(c) }
         }
         else {
           if (c == DQ) { state[d] = 0; if (d == 0) out = out c }
