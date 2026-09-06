@@ -1854,6 +1854,25 @@ check "no-awk: mid-token BACKTICK split verb fails closed" \
 check "no-jq: a backtick with no gated binary stays allowed" \
   allow "$(nojq_hook "$(json 'echo `date`')")"
 
+# ---------- assertion-total pin (2026-09-05, outward-CLI-guard-folded-repair)
+# Every mutation claim this suite's commits make is of the form "reverting the
+# fix fails exactly N assertions". That evidence rests on the total being what
+# we think it is — and nothing here defended it. An assertion silently SKIPPED
+# (a helper renamed, an early `return`/`exit` added above it, a truncated file,
+# a heredoc swallowing the rest of the block) removes it from the run without
+# producing a single FAIL, so the suite still prints 0 failed and the mutation
+# arithmetic quietly stops meaning anything.
+#
+# This is the same defect class the suite exists to catch, one level up: a
+# green result that is green because a check did not run. Update the number
+# DELIBERATELY when adding assertions — that edit is the point at which you
+# confirm the new count is the one you intended.
+EXPECTED_TOTAL=414
+if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
+  echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
+  FAIL=$((FAIL + 1))
+fi
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]
