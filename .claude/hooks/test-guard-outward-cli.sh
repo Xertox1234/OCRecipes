@@ -1437,6 +1437,54 @@ assert_deny "detector/consumer consistency: a brace-glued gh api verb still yiel
   "$(json 'gh api{,x} -X ${x:-POST}')" "not literal text"
 assert_deny "same brace-glued construction with a LITERAL mutating method attributes to the pre-existing check, not this fix's own (confirms the clause capture, not just the flag scan, survived the glue)" \
   "$(json 'gh api{,x} -X POST')" "mutating HTTP method"
+# STRUCTURAL INVARIANT (coordinator ruling, task 5): the two behavioural
+# rows just above prove the anchors currently agree, on ONE construction.
+# They do not, by themselves, force the anchors to keep agreeing after a
+# future edit — a behavioural probe can pass for a reason unrelated to the
+# thing it is meant to guard (this file's own co-mask-c1 row is the standing
+# example: it denies, but the ORIGINAL mechanism it was meant to exercise is
+# not what fires). GH_API_RE and the GH_API_CLAUSE cut have ALREADY diverged
+# once in this file's history (the round-2 fix: the clause cut hardcoded a
+# literal space where the occurrence counter had already migrated to
+# `${_OUT_POS_SUFFIX}`) — a future edit to either side, made without
+# updating the other, would silently reopen the empty-clause fall-through to
+# ALLOW with every behavioural assertion in this file still green, since
+# none of them force the two SOURCE-CODE anchors to stay textually
+# identical.
+#
+# Extracts the anchor TEXT each call site's own source line uses (not their
+# runtime-EXPANDED regex values) and compares them directly, rather than
+# pinning a hardcoded expected string that would need updating every time
+# the anchor's own definition legitimately changes for an unrelated reason.
+# `grep -m1 '^GH_API_RE='` reads GH_API_RE's own top-level assignment line;
+# `grep -m1 'GH_API_CLAUSE=\$(printf'` reads the clause cut's assignment
+# line. Both markers used to strip the GH_API_RE line down to its bare
+# anchor value (`GH_API_RE="` and the trailing `"`) are themselves free of
+# glob metacharacters (`* ? [ ]`), so bash's own `${var#pattern}`/`${var%pattern}`
+# parameter expansion strips them unambiguously regardless of what
+# metacharacters the ANCHOR text itself contains — no separate escaping
+# mechanism is needed for the value being extracted, only for the fixed
+# markers around it. The extracted anchor is then checked as a FIXED STRING
+# (`grep -qF`, which needs no escaping either) against the clause line,
+# immediately followed by the literal suffix this file's own GH_API_CLAUSE=
+# comment documents the cut as appending (`[^;&|]*`) — if the clause line's
+# actual text does not contain the CURRENT anchor immediately followed by
+# that suffix, the two sides have diverged.
+GH_API_RE_LINE=$(grep -m1 '^GH_API_RE=' "$HOOK")
+GH_API_CLAUSE_LINE=$(grep -m1 'GH_API_CLAUSE=\$(printf' "$HOOK")
+_ANCHOR_RE="${GH_API_RE_LINE#GH_API_RE=\"}"
+_ANCHOR_RE="${_ANCHOR_RE%\"}"
+if [ -n "$_ANCHOR_RE" ] \
+   && printf '%s' "$_ANCHOR_RE" | grep -qF 'gh[[:space:]]+api' \
+   && printf '%s' "$GH_API_CLAUSE_LINE" | grep -qF -- "${_ANCHOR_RE}[^;&|]*"; then
+  echo "PASS: GH_API_RE and the GH_API_CLAUSE cut share one anchor (structural, not behavioural)"; PASS=$((PASS+1))
+else
+  echo "FAIL: GH_API_RE and the GH_API_CLAUSE cut share one anchor (structural, not behavioural) -- they have DIVERGED, reopening the empty-clause fall-through to ALLOW"
+  echo "  GH_API_RE line:     $GH_API_RE_LINE"
+  echo "  extracted anchor:   $_ANCHOR_RE"
+  echo "  GH_API_CLAUSE line: $GH_API_CLAUSE_LINE"
+  FAIL=$((FAIL+1))
+fi
 # Negative controls — this is the change's largest new over-denial surface,
 # so the false-positive corpus is deliberately wider than the minimum: every
 # read-only/benign gh api idiom this repo or a real user would write.

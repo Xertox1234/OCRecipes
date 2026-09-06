@@ -338,6 +338,31 @@
 #     constructions pinned in test-guard-outward-cli.sh's "2026-09-05:
 #     finding A follow-up, ROUND 2" block, plus a corpus row
 #     (`co-redir-mask`); full evidence in task-2-report.md.
+#   * UNHANDLED GAP, CONFIRMED LIVE (labeled a gap, not an accepted cost —
+#     this is a limitation, not a deliberate tradeoff), found and verified by
+#     construction while documenting this residual, 2026-09-05: the `gh api`
+#     unreadable-method check (C2) reads for a surviving `$` or backtick as
+#     evidence a method value is not literal text. A plain ANSI-C-quoted
+#     value (`-X $'POST'`) or locale-translated string (`-X $"POST"`) with NO
+#     escape sequence inside is harmless — this hook's word-splitting strips
+#     the sigil and quotes down to the bare literal text, so it still matches
+#     the pre-existing literal-method check and correctly denies. The GAP is
+#     an ANSI-C ESCAPE SEQUENCE inside the `$'...'` form: `-X
+#     $'\x50\x4f\x53\x54'` is real bash for the literal string "POST" — CONFIRMED
+#     (`VAL=$'\x50\x4f\x53\x54'; echo "$VAL"` prints `POST`) — but this
+#     hook's word-splitting renders each `\xNN` escape as an alphanumeric
+#     placeholder instead of either the escaped byte OR a surviving `$`/
+#     backtick, so the clause contains neither the literal method text nor
+#     either covered sigil. CONFIRMED a live, silent ALLOW against the real
+#     hook (`gh api repos/o/r -X $'\x50\x4f\x53\x54'` → exit 0, empty output).
+#     Octal (`\NNN`) and unicode (`\uHHHH`/`\UHHHHHHHH`) ANSI-C escapes are
+#     the same mechanism and were not individually re-verified but have no
+#     reason to render differently. NOT fixed here: the placeholder rendering
+#     is produced by lib/cmd-detect.sh's shared word-splitting, which is
+#     off-limits for this task's scope, and a guard-outward-cli.sh-only
+#     workaround (detecting the placeholder's own text as a THIRD
+#     "unreadable" signal) was not attempted — it would need its own
+#     dedicated design and false-positive review, not a same-commit patch.
 #
 # Escape: `ALLOW_OUTWARD_CLI=1 <command>` as an INLINE prefix on the one Bash
 # command (recognized from the command string itself — see the case

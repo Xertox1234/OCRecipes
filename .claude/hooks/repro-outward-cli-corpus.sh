@@ -194,6 +194,17 @@ add c2-fp-header     ALLOW 'gh api repos/o/r -H "Accept: application/vnd.github+
 add c2-fp-methodology ALLOW 'gh api repos/o/r -f notes=$X --methodology=custom'
 add c2-fp-backtick   ALLOW 'gh api repos/o/r --jq ".[] | .name" -f note=see `code` here'
 add c2-tension-bt    DENY  'gh api repos/o/r -X GET -f note=see `code` here'
+# UNHANDLED GAP, CONFIRMED LIVE (guard-outward-cli.sh's own DOCUMENTED
+# RESIDUALS header has the full writeup) -- an ANSI-C hex-escape inside
+# $'...' evaluates to a literal mutating method in real bash
+# (VAL=$'\x50\x4f\x53\x54'; echo "$VAL" prints POST) but this hook's own
+# word-splitting renders each \xNN escape as an alphanumeric placeholder,
+# leaving neither the literal method text nor a $/backtick sigil in the
+# clause -- confirmed a live, silent ALLOW against the real hook. EXPECTED
+# is what a future fix should produce; not fixed in this task (the root
+# cause is lib/cmd-detect.sh's shared placeholder rendering, off-limits
+# here).
+add c2-ansic-hex     DENY  'gh api repos/o/r -X $'\''\x50\x4f\x53\x54'\'
 
 # axis: gh api literal method + redirect boundary (found while closing C2 via
 # this task's own mandated finding-A co-occurrence test; a SEPARATE mechanism
