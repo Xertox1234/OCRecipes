@@ -1355,19 +1355,43 @@ echo "--- cmd_words_vanished: unbalanced input must not over-delete ---"
 van 'unbalanced substitution emits nothing' 'gh pr merge $(foo' ''
 
 # Differential pin: cmd_words_vanished and cmd_extract_substitutions must agree
-# on WHICH substitution spans are live. If the extractor emits a body, the
-# vanisher must have deleted that span (the body text is gone from its output);
-# if the extractor emits nothing, the vanisher must not have deleted one.
+# on WHICH substitution spans are live. If the extractor emits a body, that
+# exact body's text must be gone from the vanisher's output; if the extractor
+# emits nothing, the vanisher must not have deleted anything either. Compares
+# PER EXTRACTED LINE (cmd_extract_substitutions emits one body per line), not
+# by concatenating every line into one search string first: a concatenated
+# key loses each body's own identity, so with two or more live bodies in a
+# single command the artificially joined string can fail to represent
+# whether either individual body was actually deleted.
+#
+# THIS IS A COARSE CONSISTENCY CHECK, NOT A DRIFT DETECTOR, and that
+# distinction is the point of this comment: it only asserts that a body's
+# RAW TEXT is no longer present verbatim. A rendering that mis-deletes a
+# construct into GARBLED fragments -- rather than either leaving the raw
+# text in place or cleanly removing it -- satisfies "the raw text is absent"
+# just as well as a correct deletion does, so this check cannot tell the two
+# apart, no matter how the comparison is implemented. Ground-truthed, not
+# assumed: reproducing a real close-condition divergence in
+# cmd_words_vanished (a backtick or `)` closing an ENCLOSING construct while
+# still inside a nested double-quoted span, instead of leaving it open) left
+# every diff_live pin tested against it green -- single-body and multi-body
+# alike -- while the two exact-value pins added for that exact divergence
+# correctly turned red. Exact-value comparison is what actually catches that
+# class of drift; a NEW divergence needs an exact-value pin, not a row here.
 diff_live() {  # $1=name $2=input $3=yes|no (extractor sees a live span)
-  local bodies got
-  bodies=$(printf '%s' "$2" | cmd_extract_substitutions | tr -d '\n')
+  local got body saw_body=0 all_absent=1
   got=$(cmd_words_vanished "$2")
-  if [ "$3" = yes ] && [ -n "$bodies" ] && [ "${got#*"$bodies"}" = "$got" ]; then
+  while IFS= read -r body; do
+    [ -n "$body" ] || continue
+    saw_body=1
+    case "$got" in *"$body"*) all_absent=0 ;; esac
+  done < <(printf '%s' "$2" | cmd_extract_substitutions)
+  if [ "$3" = yes ] && [ "$saw_body" = 1 ] && [ "$all_absent" = 1 ]; then
     echo "PASS: $1"; PASS=$((PASS+1))
-  elif [ "$3" = no ] && [ -z "$bodies" ]; then
+  elif [ "$3" = no ] && [ "$saw_body" = 0 ]; then
     echo "PASS: $1"; PASS=$((PASS+1))
   else
-    echo "FAIL: $1"; echo "  bodies: [$bodies]"; echo "  vanished: [$got]"; FAIL=$((FAIL+1))
+    echo "FAIL: $1"; echo "  saw_body: $saw_body all_absent: $all_absent"; echo "  vanished: [$got]"; FAIL=$((FAIL+1))
   fi
 }
 echo "--- cmd_words_vanished vs cmd_extract_substitutions: differential liveness pins ---"
@@ -1379,6 +1403,12 @@ diff_live 'double-quoted substitution is live in both' 'echo "me$(printf x)rge"'
 # literal text) -- both scanners must treat it as carrying zero live spans.
 diff_live 'ANSI-C-quoted substitution is inert in both' \
   "gh pr me\$'x\$(echo y)z'rge" no
+# TWO live bodies in one command, each checked on its own line: the extractor
+# reports both "true" and 'echo "a)b"' separately, and both are genuinely,
+# independently deleted -- the loop must confirm EACH one's absence rather
+# than concatenating the two into a single joined string first.
+diff_live 'two live bodies in one command are both independently confirmed deleted' \
+  'gh pr me$(true)rge$(echo "a)b")z' yes
 
 echo "--- cmd_words_vanished: scanner-shape drift found and fixed during this task ---"
 # cmd_extract_substitutions documents (see its own s==2 branch comment) that a
