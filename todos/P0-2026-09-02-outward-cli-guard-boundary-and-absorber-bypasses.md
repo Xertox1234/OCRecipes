@@ -1,9 +1,9 @@
 ---
 title: "guard-outward-cli.sh: four confirmed live bypasses from boundary-class and redirect-absorber gaps"
-status: backlog
+status: done
 priority: critical
 created: 2026-09-02
-updated: 2026-09-02
+updated: 2026-09-06
 assignee:
 labels: [security, harness]
 github_issue:
@@ -13,10 +13,27 @@ github_issue:
 
 ## Summary
 
+> **CLOSED 2026-09-06.** All four findings are fixed on branch
+> `todo/P0-2026-09-05-outward-cli-guard-folded-repair`, which folds this todo with the two
+> sibling decision todos into one change under one generated corpus. See **Updates →
+> 2026-09-06** at the bottom of this file for the per-finding disposition, the measured
+> counts, and the three claims in this file that had to be RETRACTED.
+
 `.claude/hooks/guard-outward-cli.sh` silently **ALLOWS** real invocations of gated
 outward-facing CLIs through four distinct static-text gaps. All four were constructed and
 executed against the live hook on `main` during the PR #910 review wave (2026-09-02); none
-is hypothetical, and none appears in the guard's own `DOCUMENTED RESIDUALS` section.
+is hypothetical.
+
+> **RETRACTED 2026-09-06 — the sentence above originally ended "…and none appears in the
+> guard's own `DOCUMENTED RESIDUALS` section." That was false for two of the four.**
+> Verified by direct read of `main`'s own copy of the file, not from memory:
+> `git show main:.claude/hooks/guard-outward-cli.sh` line 227 already carried
+> _"A verb GLUED TO A REDIRECT, no space required, on EITHER side"_ with explicit
+> `trailing:` (finding A) and `leading:` (finding B) sub-bullets. Only C1 and C2 were
+> genuinely undocumented. The claim is struck rather than deleted, per this repo's
+> `a-retracted-claim-survives-in-every-artifact-you-did-not-grep-2026-09-03.md`.
+> The general lesson, now recorded in memory: **"this is new/undocumented" is itself a
+> structural claim** and must be grepped before it is written.
 
 The four share one fix shape — widen a boundary character class, or absorb a redirect — so
 they belong in one pass. The structurally different fifth finding (verb synthesis via
@@ -77,6 +94,41 @@ the exact thing the carve-out near `guard-outward-cli.sh:82` exists to prevent),
 app-store submission, and a real cross-repo `--repo` egress with the PAT all receive a
 silent ALLOW.
 
+> **RETRACTED 2026-09-06 — the administrator-override third of that Impact sentence is
+> FALSE, and so are the three `PRMERGE` rows of the matrix above.** They are kept verbatim
+> as the historical record; the correction is here.
+>
+> `gh pr merge 42 --auto ${x:---admin}` DENIES on `main` and always did — but for an
+> unrelated reason. Attribution measured live (2026-09-05, re-measured 2026-09-06),
+> exactly the technique this file's own preamble demands:
+>
+> | command                                                           | verdict | reason                                             |
+> | ----------------------------------------------------------------- | ------- | -------------------------------------------------- |
+> | `gh pr merge 42 --auto --admin` (literal)                         | DENY    | `'gh pr merge --admin' uses administrator privil…` |
+> | `gh pr merge 42 --auto ${x:---admin}`                             | DENY    | `'gh pr merge' without a REAL --auto flag…`        |
+> | `gh pr merge 42 --auto ${x:-hello}` **[control, no flag at all]** | DENY    | `'gh pr merge' without a REAL --auto flag…`        |
+> | `gh pr merge 42 --auto $HOME` **[control, no flag at all]**       | DENY    | `'gh pr merge' without a REAL --auto flag…`        |
+>
+> The two controls carry no `--admin` text whatsoever and produce the **identical** reason,
+> while the literal baseline produces a **different** one. So the deny comes from the
+> coarse `grep -qF '$'` on the merge clause (any `$` ⇒ `--auto` unverifiable), not from the
+> `--admin` boundary check the finding is about. **A DENY is not evidence the intended
+> check fired.**
+>
+> Two consequences, both acted on:
+>
+> 1. `--admin` via a default-value expansion was **never a live bypass**. Fixing the
+>    boundary was still correct — uniformity across the three sites, and the masking guard
+>    is coarse enough that a future narrowing would expose it — but it is defence in depth,
+>    not closure of an open hole. The other two thirds of the sentence (`eas build
+--auto-submit`, `gh pr create/comment --repo`) were genuinely live and are genuinely
+>    closed.
+> 2. **No C1 regression test may use the `gh pr merge` family** — such a test passes on the
+>    unfixed tree and pins nothing. C1's assertions therefore live on `eas build
+--auto-submit` and `gh pr create|comment --repo/-R`, which have no masking guard.
+>    The corpus row `c1-threedash` was corrected for the same reason (commit `eca7cc3`,
+>    and `NOTE5` in `repro-outward-cli-corpus.sh`).
+
 Control: the literal three-dash form (no expansion) produces a _different_ argv token and is
 not itself a bypass — confirming this is an expansion-driven defeat, not a misread regex.
 
@@ -119,7 +171,7 @@ construction at all, independent of the guard.
       input, run the hook, record its actual exit code. If any does not reproduce, that is a
       finding: report it instead of fixing something that is not broken.
 - [ ] C1 fixed: the boundary class no longer treats a `-` contributed by a default-value
-      expansion operator as a legitimate preceding character, for every `scan_both`
+      expansion operator as a legitimate preceding character, for every `scan_renderings` (named `scan_both` at the time)
       boundary-guarded flag check — not only the administrator-override one.
 - [ ] C2 fixed: the `gh api` method check is not defeated by an expansion standing in for
       the literal method token.
@@ -191,6 +243,18 @@ construction at all, independent of the guard.
 - C1's fix touches the shared boundary construct used by _every_ flag check, so its blast
   radius is wider than the other three. Give it the largest corpus.
 
+  > **CORRECTED 2026-09-06 — "every flag check" is wrong, and the blast radius is
+  > SMALLER than this paragraph claims.** Counted in the implemented tree, not estimated:
+  > the shared constant `_OUT_FLAG_LEAD` feeds **3** consumer sites —
+  > `_OUT_REPO_FLAG_RE`, the `eas build --auto-submit` scan, and the `gh pr merge --admin`
+  > scan — out of **6** `scan_renderings` (named `scan_both` at the time) callers in the file. The other flag checks keep their
+  > own boundary text and were not touched.
+  >
+  > The instruction that followed ("give it the largest corpus") was still followed, so the
+  > correction changes the justification, not the work: C1 carries per-form coverage for
+  > every bash PARAM shape that can precede `:-`/bare `-`, each paired with a three-dash
+  > negative control (`c1-*`, `c1g-*` rows).
+
 ## Updates
 
 ### 2026-09-02
@@ -224,6 +288,15 @@ correct — a guard that looks closed on the side people test. If your work here
 `_OUT_POS_SUFFIX`, leave the empty-expansion case alone and let the decision todo own both
 sides.
 
+> **FENCE LIFTED by the repository owner, 2026-09-05.** The three todos were folded into
+> one branch and one corpus, at which point the fence's own condition was satisfied rather
+> than violated: it existed to stop the cheap half shipping ALONE, and both halves now ship
+> together. The suffix side is closed by the closer-class widening; the prefix and
+> mid-token sides are closed by `cmd_words_vanished`, a new rendering in
+> `lib/cmd-detect.sh` that deletes every construct provably capable of expanding to empty
+> so a split verb rejoins. All three positions are covered, which is what the sigil
+> decision todo ruled (option (a), 2026-09-03).
+
 ### Severity note on finding A, strengthened 2026-09-02
 
 Round 3 of the PR #910 repair re-verified finding A (`_OUT_POS_SUFFIX` missing `<`/`>`) and
@@ -249,3 +322,95 @@ boundary check must be applied to both branches in the same change.** Round 3 fi
 left the other, and round 5 had to find it. That is the same
 `occurrence-ambiguity-guard-applied-selectively-not-uniformly` shape already cited in the
 Implementation Notes above — it recurred twice inside a single repair chain.
+
+### 2026-09-06 — CLOSED
+
+Implemented on `todo/P0-2026-09-05-outward-cli-guard-folded-repair`, which folds this todo
+with `…-vanishing-sigil-boundary-decision` and `…-command-position-expansion-decision` into
+one branch under one generated corpus (`.claude/hooks/repro-outward-cli-corpus.sh` — the
+durable replacement for the scratchpad fixtures the Updates entry above records as lost).
+
+**Per-finding disposition.** Every AC's "reproduce first" requirement was met: each row was
+measured on the unmodified tree before its fix was written, and each fix was mutation-tested
+by reverting it and confirming the named assertions fail.
+
+| Finding                                              | Disposition                                                                                                                                                                                     |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C1 — default-value expansion donates a flag boundary | **Fixed.** `_OUT_FLAG_LEAD`, routed to its 3 consumer sites. Live for `eas build --auto-submit` and `gh pr create/comment --repo`; **never live** for `--admin` (see the RETRACTED note above). |
+| C2 — expansion defeats the `gh api` method check     | **Fixed** — an unreadable method denies. One spelling remains open: ANSI-C hex, see below.                                                                                                      |
+| A — `_OUT_POS_SUFFIX` lacks `<`/`>`                  | **Fixed** on both anchors and both branches of the merge clause, with one disclosed accepted over-denial.                                                                                       |
+| B — `_OUT_POS_PREFIX` lacks `_CMD_REDIR` absorption  | **Fixed** by reference to the lib's construct, which required relocating the anchor definitions below the lib source.                                                                           |
+
+**Also closed here, from the two folded decision todos:** the vanishing-sigil class at the
+suffix / prefix / mid-token positions **of the VERB** via the new `cmd_words_vanished`
+rendering, and the narrow-deny rule for a synthesized verb on both the precise and degraded
+paths.
+
+> **CORRECTED 2026-09-06 — this paragraph originally read "the vanishing-sigil class at all
+> three positions", which was false.** The security review of PR #926 established that the
+> class has a TOOL position and a FLAG position too, and both were open: `e${UNSET}as update
+--branch preview` (an OTA publish to real users) was ALLOWED on all four execution paths,
+> and `--re${UNSET}po` / ``--ad`​`min`` defeated the `--repo` and `--admin` checks. Four
+> CRITICALs, none a regression — all pre-existing gaps this PR claimed to have closed. The
+> claim was made from a corpus whose glue axis varied the sigil MECHANISM while holding the
+> POSITION fixed at the verb, so it could not have seen them. Fixed on this same branch; the
+> corpus now generates the position axis (`rows=125 → 163`), the guard suite is
+> `435 passed, 0 failed`, and both "closes the class" comments in the hook and the lib are
+> reworded to say what they actually establish. "Three positions" was never the whole class —
+> counting the positions someone happened to test is not the same as enumerating them.
+
+**Measured counts** (real, quoted from the runs — not estimates):
+
+- `.claude/hooks/test-guard-outward-cli.sh`: `280` (spec baseline) → **`414 passed, 0 failed`**
+- `.claude/hooks/test-cmd-detect.sh`: **`492 passed, 0 failed`**
+- `scripts/run-hook-tests.sh`: **`24 passed, 0 failed`; `✓ 34 hook self-tests passed`**
+- `repro-outward-cli-corpus.sh`: `rows=125`, precise-path gaps **`32 → 3`**, all-path
+  **`52 → 23`**. Both "before" numbers are the same 125-row corpus measured at the start of
+  the final work session (with the C1/C2/A/B fixes already committed but the sigil and
+  narrow-deny work not yet), so they are a like-for-like before/after of Tasks 7–9, **not**
+  a comparison against `main` — the corpus did not exist on `main`.
+
+**The remaining `gaps=3` is deliberate and is the corpus's correct output**, not unfinished
+work. Each is a real, reachable bypass that is out of this repair's Scope Contract, and each
+keeps its `DENY` expectation so it stays visible — flipping a reachable-but-unfixed row to
+match current behaviour would encode the bypass as acceptable. They are:
+
+- `nssufx-ghmerge` / `nssufx-ghcomment` — an **interior redirect**, glued where the anchors
+  require whitespace between two words (`gh pr>/dev/null merge 42`, which real bash tokenizes
+  to a genuine merge). A _separator_ problem, not a _boundary_ problem, so no character-class
+  widening reaches it; it needs one interior absorber applied uniformly.
+
+  > **SCOPE CORRECTED 2026-09-06, and it is much wider than these two rows.** This entry
+  > first described the gap as specific to the namespace word before a multi-word `gh pr`
+  > verb. That was read off the two corpus rows that happened to exist, before any
+  > cross-family measurement, and it **understated the finding**. Measured against the live
+  > hook, the same glue defeats **every gated family**, including single-word-verb families
+  > via the tool→verb position: `eas>/dev/null update` (this repo's own OTA-incident command
+  > class), `npm>/dev/null publish`, `railway>/dev/null up`, `gh>/dev/null api … -X POST`,
+  > plus `gh release`, `gh repo`, `railway variable set` and `railway service delete`. Every
+  > spaced baseline denies, so each is a **total detection failure** — no check runs at all,
+  > which is why even the `--repo` egress check is skipped.
+  >
+  > **Do not read the corpus gap count as this gap's size**; the two rows cover two of ten
+  > measured families. Now tracked as its own `critical` todo:
+  > `todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with
+  > the full matrix. Also written up in
+  > `docs/solutions/logic-errors/cmd-position-anchor-missed-brace-backtick-bang-boundaries-2026-08-28.md`.
+
+- `c2-ansic-hex` — an **ANSI-C hex method value** (`-X $'\x50\x4f\x53\x54'`). Measured cause:
+  the shared word-splitting renders it `-X xx50xx4fxx53xx54`, so C2's "not literal text"
+  branch sees no surviving sigil and the literal branch sees no `POST`. Needs an escape
+  decoder — a new parsing layer the Scope Contract forbids. Tracked as
+  `todos/P2-2026-09-06-outward-cli-guard-ansic-escape-method-value.md`.
+
+Neither was patched into this branch: each needs its own false-positive review, and the
+interior-redirect one has the widest blast radius of any change yet made to this file.
+
+**False-positive measurement**, required by the narrow-deny ruling and forbidden from being
+estimated: 17,913 unique historical Bash commands were harvested from this project's
+transcripts; the 4,525 containing a `$` or backtick (the only ones the new predicate can
+match) were run against both the pre-change and post-change hooks — **0 decision flips**.
+The harness was validated against a known flip first. Reported honestly as evidence about
+the construct's _frequency_: a raw-text census found the shape essentially absent from real
+work (3 of 4 raw matches are this repo's own prior probe artifacts or prose; the one real
+command's match sits inside a quoted argument that `cmd_words` blanks).

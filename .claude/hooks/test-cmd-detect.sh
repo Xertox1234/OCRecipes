@@ -1292,6 +1292,153 @@ else
   echo "FAIL: cmd_words_deep returned blank for a non-blank command"; FAIL=$((FAIL+1))
 fi
 
+# ---------- 2026-09-05: cmd_words_vanished -----------------------------------
+van() {  # $1=name $2=input $3=expected output
+  local got; got=$(cmd_words_vanished "$2")
+  if [ "$got" = "$3" ]; then echo "PASS: $1"; PASS=$((PASS+1))
+  else echo "FAIL: $1"; echo "  in:  $2"; echo "  got: $got"; echo "  want: $3"; FAIL=$((FAIL+1)); fi
+}
+
+echo "--- cmd_words_vanished: deletable forms PROVABLY capable of expanding to the empty string ---"
+van 'bare parameter vanishes'        'gh pr me${UNSET}rge 42' 'gh pr merge 42'
+van 'empty substitution vanishes'    'gh pr me$()rge 42'      'gh pr merge 42'
+van 'empty backticks vanish'         'gh pr me``rge 42'       'gh pr merge 42'
+van 'indirect parameter vanishes'    'gh pr me${!i}rge 42'    'gh pr merge 42'
+van 'empty default vanishes'         'gh pr me${x:-}rge 42'   'gh pr merge 42'
+van 'empty no-colon default vanishes' 'gh pr me${x-}rge 42'   'gh pr merge 42'
+van 'prefix sigil vanishes'          '${UNSET} gh pr merge'   ' gh pr merge'
+van 'suffix sigil vanishes'          'eas update$() --branch p' 'eas update --branch p'
+van 'non-empty substitution body goes too' 'gh pr me$(printf x)rge' 'gh pr merge'
+# ADDED 2026-09-06 (security review of PR #926). The function's own header names
+# EIGHT deletable brace forms; only four of them were pinned, so half the
+# documented allow-list was regression-proofed by nothing but the comment that
+# claimed it. All four below were verified working when this was written, so
+# these are pins, not fixes — but an allow-list is exactly the kind of table
+# that gets edited by someone reading the header, and the header is not a test.
+van 'empty alternate vanishes'        'gh pr me${x:+}rge 42'  'gh pr merge 42'
+van 'empty no-colon alternate vanishes' 'gh pr me${x+}rge 42' 'gh pr merge 42'
+van 'empty assign-default vanishes'   'gh pr me${x:=}rge 42'  'gh pr merge 42'
+van 'empty no-colon assign vanishes'  'gh pr me${x=}rge 42'   'gh pr merge 42'
+
+echo "--- cmd_words_vanished: NOT deletable -- an expansion form must be PROVEN capable of ---"
+echo "--- evaluating to empty before it may be neutralized, not merely opened with \${ ---"
+# (lib/cmd-detect.sh's cmd_git_branch_create_segment residual item 4). Deleting
+# a never-empty form MANUFACTURES a clean match for text that never executes.
+van 'length expansion is never empty' 'gh pr ${#x}merge'      'gh pr ${#x}merge'
+van 'non-empty default is never empty' 'gh api -X ${x:-POST}' 'gh api -X ${x:-POST}'
+# CORRECTED from this todo's own brief (task-6-brief.md's illustrative sample
+# code emitted 'gh pr ${a:-}merge' here): that sample code has the exact
+# reversed-pass-order bug its own header comment warns against -- on a grammar
+# failure it emitted only the bare `$` and let the loop re-scan the body,
+# which let the INNER ${b} be independently matched and deleted. Ground-
+# truthed by running the sample verbatim through this suite's `van` before
+# writing the real implementation (see task-6-report.md's pass-order section
+# for the exact before/after). The shipped function copies the whole matched
+# span through the first `}` VERBATIM on a grammar failure and skips past it
+# in one step, so neither brace pair is ever touched.
+van 'nested braces are left FULLY verbatim' 'gh pr ${a:-${b}}merge' 'gh pr ${a:-${b}}merge'
+
+echo "--- cmd_words_vanished: the pass-order trap this whole allow-list exists to prevent ---"
+# `${x:-$(echo hi)}` can NEVER be empty: if x is set, its value is used; if
+# unset, the default `$(echo hi)` is -- and that always prints "hi". Testing
+# `${...}` BEFORE descending into `$(...)` (never the reverse) is what keeps
+# this verbatim; reversed, the inner $(...) would be deleted first, leaving
+# `${x:-}`, which then itself matches the empty-default grammar and would be
+# deleted too -- two individually-correct passes composing into exactly the
+# regression this allow-list exists to prevent.
+van 'never-empty default with an embedded $(...) survives INTACT' \
+  'gh api -X ${x:-$(echo hi)}' 'gh api -X ${x:-$(echo hi)}'
+
+echo "--- cmd_words_vanished: quote state must be respected ---"
+# An INERT span is not a live expansion, and deleting one would manufacture a
+# verb the shell never builds. Expected values here are cmd_words's OWN
+# placeholder rendering of a quoted span (every quote-breaking byte, `{`/`}`/
+# `(`/`)` included, becomes a single `x`) -- ground-truthed by piping the raw
+# single-quoted text through plain cmd_words directly and confirming the same
+# placeholder text comes back, since cmd_words_vanished always ends by piping
+# through cmd_words and an inert span is untouched by the vanish pass itself.
+van 'single-quoted sigil is inert'   "echo 'me\${x}rge'"      "echo me\$xxxrge"
+van 'single-quoted substitution inert' "echo 'me\$()rge'"     "echo me\$xxrge"
+van 'double-quoted substitution is LIVE' 'echo "me$()rge"'    'echo merge'
+
+echo "--- cmd_words_vanished: unbalanced input must not over-delete ---"
+van 'unbalanced substitution emits nothing' 'gh pr merge $(foo' ''
+
+# Differential pin: cmd_words_vanished and cmd_extract_substitutions must agree
+# on WHICH substitution spans are live. If the extractor emits a body, that
+# exact body's text must be gone from the vanisher's output; if the extractor
+# emits nothing, the vanisher must not have deleted anything either. Compares
+# PER EXTRACTED LINE (cmd_extract_substitutions emits one body per line), not
+# by concatenating every line into one search string first: a concatenated
+# key loses each body's own identity, so with two or more live bodies in a
+# single command the artificially joined string can fail to represent
+# whether either individual body was actually deleted.
+#
+# THIS IS A COARSE CONSISTENCY CHECK, NOT A DRIFT DETECTOR, and that
+# distinction is the point of this comment: it only asserts that a body's
+# RAW TEXT is no longer present verbatim. A rendering that mis-deletes a
+# construct into GARBLED fragments -- rather than either leaving the raw
+# text in place or cleanly removing it -- satisfies "the raw text is absent"
+# just as well as a correct deletion does, so this check cannot tell the two
+# apart, no matter how the comparison is implemented. Ground-truthed, not
+# assumed: reproducing a real close-condition divergence in
+# cmd_words_vanished (a backtick or `)` closing an ENCLOSING construct while
+# still inside a nested double-quoted span, instead of leaving it open) left
+# every diff_live pin tested against it green -- single-body and multi-body
+# alike -- while the two exact-value pins added for that exact divergence
+# correctly turned red. Exact-value comparison is what actually catches that
+# class of drift; a NEW divergence needs an exact-value pin, not a row here.
+diff_live() {  # $1=name $2=input $3=yes|no (extractor sees a live span)
+  local got body saw_body=0 all_absent=1
+  got=$(cmd_words_vanished "$2")
+  while IFS= read -r body; do
+    [ -n "$body" ] || continue
+    saw_body=1
+    case "$got" in *"$body"*) all_absent=0 ;; esac
+  done < <(printf '%s' "$2" | cmd_extract_substitutions)
+  if [ "$3" = yes ] && [ "$saw_body" = 1 ] && [ "$all_absent" = 1 ]; then
+    echo "PASS: $1"; PASS=$((PASS+1))
+  elif [ "$3" = no ] && [ "$saw_body" = 0 ]; then
+    echo "PASS: $1"; PASS=$((PASS+1))
+  else
+    echo "FAIL: $1"; echo "  saw_body: $saw_body all_absent: $all_absent"; echo "  vanished: [$got]"; FAIL=$((FAIL+1))
+  fi
+}
+echo "--- cmd_words_vanished vs cmd_extract_substitutions: differential liveness pins ---"
+diff_live 'live substitution: both scanners agree'   'gh pr me$(printf x)rge' yes
+diff_live 'inert substitution: both scanners agree'  "echo 'me\$(printf x)rge'" no
+diff_live 'double-quoted substitution is live in both' 'echo "me$(printf x)rge"' yes
+# ANSI-C $'...' disables substitution entirely in real bash (unlike single
+# quotes it processes backslash escapes, but $(...)/backtick inside it stays
+# literal text) -- both scanners must treat it as carrying zero live spans.
+diff_live 'ANSI-C-quoted substitution is inert in both' \
+  "gh pr me\$'x\$(echo y)z'rge" no
+# TWO live bodies in one command, each checked on its own line: the extractor
+# reports both "true" and 'echo "a)b"' separately, and both are genuinely,
+# independently deleted -- the loop must confirm EACH one's absence rather
+# than concatenating the two into a single joined string first.
+diff_live 'two live bodies in one command are both independently confirmed deleted' \
+  'gh pr me$(true)rge$(echo "a)b")z' yes
+
+echo "--- cmd_words_vanished: scanner-shape drift found and fixed during this task ---"
+# cmd_extract_substitutions documents (see its own s==2 branch comment) that a
+# backtick or `)` met while the CURRENT level is double-quoted (state 2) never
+# closes an ENCLOSING $(...)/backtick level -- only state 0 can close one. An
+# early draft of cmd_words_vanished shared its close-check across states 0 AND
+# 2 unconditionally, which is exactly "precisely how a same-shape copy drifts
+# from its original": a bare `)` inside a double-quoted span nested in a live
+# $(...) closed the OUTER construct at the FIRST `)`, and a backtick nested
+# the same way inside an outer backtick body closed the OUTER span instead of
+# opening its own nested one -- both left garbled fragments of the substitution
+# body sitting in the rendering instead of a clean deletion. The differential
+# diff_live helper cannot catch this shape (it only asserts the raw body text is
+# ABSENT from the output, which a garbled-but-different rendering also
+# satisfies), so these two are pinned as exact-value cases instead.
+van 'a bare ) inside a double-quoted span inside $(...) does not close it early' \
+  'gh pr me$(echo "a)b")rge' 'gh pr merge'
+van 'a backtick inside a double-quoted span inside a backtick body opens, not closes' \
+  'gh pr me`echo "x`echo y`z"`rge' 'gh pr merge'
+
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
 [ $FAIL -eq 0 ]

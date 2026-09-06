@@ -7,7 +7,7 @@ module: server
 applies_to: [".claude/hooks/**"]
 symptoms: ["A quote-aware command-position matcher (`${_PREFIX}verb${_SUFFIX}` shaped) fails to detect a real, executing invocation of the gated verb", "The SAME verb, unwrapped, is correctly detected — isolating the gap to the anchor's boundary character classes, not the verb pattern itself", "A brace-grouped ({ verb; }), backtick-substituted (`verb`), or !-prefixed (! verb) form of the command is silently ALLOWED by a blocking deny gate", "A verb with no whitespace before the next separator (verb;date) is silently ALLOWED even though a spaced form (verb ;date) is correctly DENIED", "A sibling anchor in the same codebase (e.g. a guard-local one) already covers the missing boundary characters, proving the gap is an under-scoped port, not a fundamental limitation"]
 created: 2026-08-28
-last_updated: '2026-09-02'
+last_updated: '2026-09-06'
 severity: high
 ---
 
@@ -64,6 +64,18 @@ Widen both character classes to match the full real-bash command-position gramma
 _CMD_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid)[[:space:]]+)*'
 _CMD_POS_SUFFIX='([[:space:]]|[);&|`{}]|$)'
 ```
+
+**SNAPSHOT NOTICE (added 2026-09-05) — the block above is the 2026-08-28 snapshot, kept
+verbatim as the historical record of what this fix originally shipped; it is not the
+current `lib/cmd-detect.sh`.** Both lines have since grown a further alternative:
+`_CMD_POS_SUFFIX` gained `<`/`>` in its closer alternation on 2026-09-01
+(`_CMD_POS_SUFFIX='([[:space:]]|[);&|`{}<>]|$)'`), and `_CMD_POS_PREFIX` gained a
+`_CMD_REDIR` absorber alternative the same date
+(`_CMD_POS_PREFIX='(^|[;&|(`{!])[[:space:]]*(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|env|command|builtin|exec|nohup|setsid|'"$_CMD_REDIR"')[[:space:]]+)*'`,
+where `_CMD_REDIR='([0-9]*|&)[<>]+[&|]?[[:space:]]*[^[:space:];&|)`]+'`). Anyone citing
+"the lib's `_CMD_POS_SUFFIX`"/"`_CMD_POS_PREFIX`" as a byte-identity target should quote
+one of these two current values, or `.claude/hooks/lib/cmd-detect.sh`'s own definition
+lines, not this snapshot.
 
 The suffix's `{`/`}` are wider than the sibling `_OUT_POS_SUFFIX` (which has backtick
 but not `{`/`}`) — a deliberate AC-driven choice for defense-in-depth, not a live gap:
@@ -545,6 +557,68 @@ matches at all) and `_OUT_POS_SUFFIX_MERGE_CLAUSE` does not touch it. Still a hu
 decision, still genuinely out of this repair's scope — but the disclosure now says what it
 actually is: a total bypass of this check via one glued character, not a partial one.
 
+**RETRACTED 2026-09-05 (outward-CLI-guard-folded-repair, finding A) — closed, not still
+open.** The retracted disclosure — "`_OUT_POS_SUFFIX`'s pre-existing missing `<`/`>` …
+still deliberately unfixed here (out of scope)" — was accurate when written (2026-09-02)
+and is kept verbatim as the historical record, but its "still-open"/"still a human
+decision"/"out of scope" framing no longer holds: `_OUT_POS_SUFFIX` now carries `<`/`>`
+in its closer alternation (byte-identical to the lib's CURRENT `_CMD_POS_SUFFIX`,
+`([[:space:]]|[);&|`{}<>]|$)`), and `_OUT_POS_SUFFIX_MERGE_CLAUSE`'s
+branch 2 (the positive closer class) carries them too — `gh pr merge>log` now correctly
+denies. See `guard-outward-cli.sh`'s own "verb GLUED TO A REDIRECT" residual note and
+`test-guard-outward-cli.sh`'s "2026-09-05: finding A" assertion block for the fix and its
+regression tests. Retracted in place, not silently rewritten — per this repo's own
+`a-retracted-claim-survives-in-every-artifact-you-did-not-grep-2026-09-03.md` — because a
+copy of this exact "still open" claim was independently found to have survived two later
+comment sweeps inside the guard files themselves.
+
+**A THIRD redirect position, found 2026-09-06 while closing the other two — still open, out
+of scope, and the widest gap this document has recorded.** Findings A and B between them
+cover a redirect that CLOSES the verb (`merge>log`) and one that PRECEDES the command
+(`2>/dev/null gh pr merge`). Neither reaches a redirect glued *where the anchors require
+whitespace between two words*.
+
+**The lesson this section exists for: the "boundary character class" framing has a blind spot
+that widening the class cannot reach.** A, B, `{`/`}` and backtick were all *boundary*
+problems — the verb was present, adjacent to a character the class did not accept. This is a
+*separator* problem: two required-adjacent words pushed apart by a token the pattern does not
+model. Every fix in this document so far has been "add a character to a class"; this one
+cannot be, and recognising that distinction is the transferable part.
+
+**Scope, measured 2026-09-06 across families — and larger than first written.** The initial
+note here described the gap as specific to a namespace word before a multi-word verb
+(`gh pr>/dev/null merge`). That was written from the two corpus rows that happened to exist,
+before any cross-family measurement, and it **understated the gap**. Measurement against the
+live hook shows the same glue defeats *every gated family*, including single-word-verb
+families via the tool→verb position: `eas>/dev/null update` (the 2026-08-16 OTA incident's
+own command class), `npm>/dev/null publish`, `railway>/dev/null up`,
+`gh>/dev/null api … -X POST`, plus `gh release`/`gh repo`/`railway variable`/`railway
+service`. Every spaced baseline denies, so each is a **total detection failure** — no check
+runs at all, which is why even the `--repo` cross-repo egress check is skipped. The
+output-redirect, fd-duplicating and input-redirect forms were each measured and each allows.
+
+That correction is itself the recurring lesson of this document: **a scope claim written from
+the fixtures that happen to exist, rather than from a measurement across the axis, will
+understate the finding.** The two corpus rows were an artifact of which families the
+generator's `FAM_NS_*` list covered, not of where the defect lives.
+
+The lib does not cover it either — `_CMD_POS_PREFIX` absorbs `_CMD_REDIR` only in the prefix
+run *before* the command word, so this is not a case of the guard lagging the lib.
+
+A future fix should be **one interior absorber applied uniformly**, not a per-regex patch —
+the selectivity trap
+[occurrence-ambiguity-guard-applied-selectively-not-uniformly](occurrence-ambiguity-guard-applied-selectively-not-uniformly-2026-08-17.md)
+already cost this file three separate repairs, twice inside a single chain.
+
+Deliberately NOT fixed by the folded repair (its Scope Contract allows widening existing
+boundary classes and reusing the lib's `_CMD_REDIR`, not a new anchor shape at a new
+position). Tracked in
+`todos/P0-2026-09-06-outward-cli-guard-interior-redirect-defeats-every-family.md`, with an
+executable record in `repro-outward-cli-corpus.sh`'s `nssufx-ghmerge` / `nssufx-ghcomment`
+rows — whose expectations are deliberately left at `DENY` so they keep reporting as gaps, but
+which cover only two of the ten measured families, so the corpus gap count must not be read
+as this gap's size. See that file's `NOTE6`.
+
 **A second, distinct still-open gap found by independent PR #910 review (2026-09-02,
 round 4 — disclosure only, deliberately not fixed).** Neither `_OUT_POS_SUFFIX` nor
 `_OUT_POS_PREFIX` (nor the new `_OUT_POS_SUFFIX_MERGE_CLAUSE`) treats a bash sigil that
@@ -672,10 +746,29 @@ glued boundary; it is safe by decision-direction, not by pattern shape.
   PR #910 post-merge review found the initial `{`/`}` fix had missed `GH_API_CLAUSE` (the
   `gh api` clause-cut) — search this file for `GH_API_CLAUSE=` for the fixed line and its
   "FIXED 2026-09-02 (round 2)" comment.
+  **RETRACTED 2026-09-05 — both gaps closed, not still open.** This entry's own
+  "disclosed-but-unfixed" framing (the "two disclosed-but-unfixed live gaps" sentence
+  immediately preceding this note) is now false for both: `_OUT_POS_SUFFIX`'s missing
+  `<`/`>` was closed by outward-CLI-guard-folded-repair **finding A** (it is now
+  byte-identical to the lib's current `_CMD_POS_SUFFIX`, `([[:space:]]|[);&|`{}<>]|$)`);
+  `_OUT_POS_PREFIX`'s missing `_CMD_REDIR` absorption was closed by **finding B**, which
+  reuses the lib's `_CMD_REDIR` by variable reference rather than a second hand-rolled
+  pattern — the reason it required relocating this file's own anchor definitions to
+  follow the lib source (see `guard-outward-cli.sh`'s "COMMAND-POSITION ANCHORS" header
+  comment). This is the same retraction already made once for finding A, in this same
+  document's "RETRACTED 2026-09-05 (outward-CLI-guard-folded-repair, finding A) — closed,
+  not still open" note; this Related Files entry independently asserted the identical
+  now-false claim and needed its own retraction rather than being assumed covered by
+  that one.
 - `.claude/hooks/test-guard-outward-cli.sh` — the two-sided regression test for the
-  2026-09-02 `{`/`}` fix (search "2026-09-02 FIX"), plus the disclosure comments for the
-  two remaining unfixed gaps (search "STALE AS OF 2026-09-02"). The round-2
-  `GH_API_CLAUSE` regression tests are in the "2026-09-02 FIX (round 2)" block.
+  2026-09-02 `{`/`}` fix (search "2026-09-02 FIX"). What this entry used to describe as
+  "the disclosure comments for the two remaining unfixed gaps" (search
+  "STALE AS OF 2026-09-02") now — as of 2026-09-05 — document both as **closed**: finding
+  A (suffix `<`/`>`) and finding B (prefix `_CMD_REDIR` absorption). Their own pinned
+  regression tests are in the "2026-09-05: finding A" and "2026-09-05: finding B"
+  assertion blocks respectively (the "STALE AS OF 2026-09-02" search still finds the right
+  two comments — they just no longer say "unfixed"). The round-2 `GH_API_CLAUSE`
+  regression tests are in the "2026-09-02 FIX (round 2)" block.
 
 ## See Also
 
