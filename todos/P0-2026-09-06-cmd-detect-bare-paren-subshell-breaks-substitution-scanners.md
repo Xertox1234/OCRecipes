@@ -80,25 +80,32 @@ Fix the scanner regardless — a consumer that is safe today is one refactor fro
 
 ### Guard impact, all four execution paths
 
-| construction                          | precise   | no-jq | no-lib | no-awk    | real argv                   |
-| ------------------------------------- | --------- | ----- | ------ | --------- | --------------------------- |
-| `e$( (:) )as update --branch preview` | **ALLOW** | DENY  | DENY   | **ALLOW** | an OTA publish to end users |
-| `g$( (:) )h pr merge 42`              | **ALLOW** | DENY  | DENY   | **ALLOW** | a PR merge                  |
-| `n$( (:) )pm publish`                 | **ALLOW** | DENY  | DENY   | **ALLOW** | a package publish           |
-| `rail$( (:) )way up`                  | **ALLOW** | DENY  | DENY   | **ALLOW** | a deploy                    |
+Measured at `bf5b782e` (re-measured after the round-3 repair landed, not copied forward):
+
+| construction                          | precise   | no-jq     | no-lib    | no-awk    | real argv                   |
+| ------------------------------------- | --------- | --------- | --------- | --------- | --------------------------- |
+| `e$( (:) )as update --branch preview` | **ALLOW** | **ALLOW** | **ALLOW** | **ALLOW** | an OTA publish to end users |
+| `g$( (:) )h pr merge 42`              | **ALLOW** | **ALLOW** | **ALLOW** | **ALLOW** | a PR merge                  |
+| `n$( (:) )pm publish`                 | **ALLOW** | **ALLOW** | **ALLOW** | **ALLOW** | a package publish           |
+| `rail$( (:) )way up`                  | **ALLOW** | **ALLOW** | **ALLOW** | **ALLOW** | a deploy                    |
+
+A `case` arm's `)` is the same defect through a different grammar and behaves identically:
+`e$(case x in a) : ;; esac)as update --branch preview` -> ALLOW on all four.
 
 Control, isolating the bare paren as the only variable — the same shape with the inner
 subshell removed DENIES on all four paths:
 
 ```
 e$(:)as update --branch preview          ->  DENY  ('eas update/publish/submit')
-e$(: $(:))as update --branch preview     ->  DENY  (nested $( ) is fine)
+e$(: $(:))as update --branch preview     ->  DENY  (a NESTED $( ) is handled correctly)
 ```
 
-**Do not read the no-jq/no-lib DENYs as coverage.** They came from a `_OUT_CRUDE_GREEDY`
-rendering in `guard-outward-cli.sh` that the round-3 repair REMOVES as unsound, so after that
-change these two paths allow as well and all four columns read ALLOW. Re-measure rather than
-copying this table forward.
+An earlier draft of this table recorded no-jq/no-lib as DENY. That was real at the time but
+came from a `_OUT_CRUDE_GREEDY` rendering in `guard-outward-cli.sh` which the round-3 repair
+then deleted as unsound — it was the only rendering reconstructing the needle, so its
+over-deletion was itself a miss. The table above is the post-repair measurement. **Re-measure
+rather than trusting either version**: this row's verdict has already moved twice for reasons
+unrelated to the defect itself.
 
 ## Acceptance Criteria
 

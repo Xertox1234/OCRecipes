@@ -2077,6 +2077,21 @@ assert_deny "R3: closer AFTER the verb (defeated the deleted greedy rendering)" 
   "$(json 'e$(: $(:))as update --branch preview && (echo done)')" "eas update/publish/submit"
 assert_deny "R3: composed — mixed quotes AND a closer after the verb (was ALLOW on all four paths)" \
   "$(jsonc "e\$(: '\"' \"a)b\" )as update --branch preview && (echo done)")" "eas update/publish/submit"
+# The ONE decision flip the 4,525-command false-positive sweep produced, pinned
+# so it is a decision and not a surprise. Declining stops the fast path from
+# exempting the 2026-09-03 narrow-deny rule's own target shape: an expansion in
+# COMMAND POSITION followed by a gated verb. Real bash runs the expansion's
+# OUTPUT as the command, so it cannot be verified read-only. The controls below
+# are what keep this narrow — they are the difference between the rule applying
+# as ruled and a blanket deny on every `$VAR`.
+assert_deny "R3 sweep flip: command-position expansion + gated verb now reaches the narrow-deny rule" \
+  "$(json '${TOOL} run build')" "not literal text"
+assert_deny "R3 sweep flip: same shape with a different gated verb" \
+  "$(json '${PKG} publish')" "not literal text"
+assert_allow "R3 bound: same expansion NOT in command position stays allowed" \
+  "$(json 'echo ${TOOL} run build')"
+assert_allow "R3 bound: command-position expansion with a NON-gated verb stays allowed" \
+  "$(json '${TOOL} test')"
 # The bare-paren and case-arm spellings are NOT pinned as denies: they are still
 # ALLOWED, and the cause is one level down in lib/cmd-detect.sh's scanner, which
 # desynchronises on a bare `(` (measured: cmd_words_vanished renders
@@ -2151,7 +2166,7 @@ assert_allow "RE control: 250 leading empty spans with NO gated tool stays allow
 # top of the file, which does enforce it; this pin's real and only job is a
 # DELETED or skipped assertion in a run that otherwise completed.
 _PIN_RAN=1
-EXPECTED_TOTAL=456
+EXPECTED_TOTAL=460
 if [ $((PASS + FAIL)) -ne "$EXPECTED_TOTAL" ]; then
   echo "FAIL: assertion total is $((PASS + FAIL)), expected $EXPECTED_TOTAL — an assertion was skipped, or the total was changed without updating this pin"
   FAIL=$((FAIL + 1))

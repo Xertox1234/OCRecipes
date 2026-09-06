@@ -534,6 +534,30 @@
 #     todos/P0-2026-09-06-cmd-detect-bare-paren-subshell-breaks-substitution-scanners.md
 #     Corpus rows toolvbareparen-*, toolvcasearm-*.
 #
+#   * SIDE EFFECT OF DECLINING, and it is a CORRECTNESS GAIN, not just a cost
+#     (2026-09-06, round 3): the 2026-09-03 narrow-deny rule denies an expansion
+#     in COMMAND POSITION followed by a gated verb (`${TOOL} run build`,
+#     `${PKG} publish`) — real bash executes the expansion's OUTPUT as the
+#     command, so it cannot be verified read-only. The fast path was silently
+#     exempting that whole class: with no gated needle in the raw text it took
+#     the cheap exit and the rule never ran. Declining lets the rule apply as it
+#     was ruled. Measured on 4,525 historical span-carrying commands: exactly ONE
+#     decision flip, allow -> deny, and it is this shape. Correctly narrow —
+#     `echo ${TOOL} run build` and `foo ${TOOL} run build` (not command position)
+#     and `${TOOL} test` / `${TOOL} lint` (not gated verbs) all still ALLOW.
+#
+#   * UNHANDLED, PRE-EXISTING AND UNCHANGED (recorded 2026-09-06 while measuring
+#     the above): a BARE `$name` in command position escapes the same rule —
+#     `$RUNNER up` ALLOWS, before and after. The stage-3 decline keys on the
+#     three digraphs `${`, `$(` and a backtick, and a bare `$name` has none of
+#     them, so it still takes the cheap exit. Deliberately not widened here: `$`
+#     alone appears in a large share of real commands, so including it would move
+#     most of them onto the full path for a shape that cannot split a token
+#     mid-word anyway (a bare `$name` greedily consumes following alphanumerics,
+#     so it cannot rejoin two halves of a verb). It is only the narrow-deny
+#     rule's own reach that is short here, and that is a scope decision, not a
+#     defect in this block.
+#
 #   * ACCEPTED COST, not a gap (2026-09-06, round 3): the fast path DECLINES its
 #     cheap exit for any command containing `${`, `$(` or a backtick, so those
 #     run the full guard. Measured ~16 ms -> ~105-125 ms per call; span-carrying
