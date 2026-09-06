@@ -623,6 +623,165 @@ cmd_words_deep() {
   done < <(printf '%s' "$cmd" | cmd_extract_substitutions)
 }
 
+# cmd_words_vanished <cmd> -- a rendering in which every construct PROVABLY
+# capable of expanding to the empty string is DELETED, so a verb split by a
+# vanishing sigil rejoins into the word bash actually builds. Closes the
+# mid-token case (`me` + vanishing sigil + `rge` -> argv `merge`), which no
+# boundary character class can reach because the verb is SPLIT, not bounded.
+# Consumes lib/cmd-detect.sh:cmd_words. Takes the command as $1 directly, the
+# same calling convention as cmd_words_deep (piping in instead leaves $1
+# unset under this file's callers' `set -u` and aborts) -- NOT the stdin
+# convention plain cmd_words/cmd_bare/cmd_extract_substitutions use. Produces
+# ONE line on stdout with NO trailing newline (unlike cmd_words_deep, this is
+# not newline-joined with anything -- there is nothing to join). Task 7 is its
+# only caller -- this task does not wire it into any guard.
+#
+# UNBALANCED INPUT is asymmetric depending on which construct is unbalanced:
+# an unterminated $(...)/backtick emits NOTHING (see the depth check at the
+# end of the awk program) -- but an unterminated ${ with no closing `}`
+# anywhere in the rest of the string is a SAFE MISS instead: the lone `$` is
+# emitted literally and scanning continues normally, same as any other
+# ordinary character. Neither shape can manufacture a rejoined verb, which is
+# why both are safe, but a caller must not assume empty-output uniformly means
+# unbalanced.
+#
+# DENY-SHAPED CONSUMERS ONLY. Over-deletion here produces an over-DENIAL (a
+# `${x}` that is actually set renders a word the shell would not build), which
+# is the safe direction for a deny gate and the unsafe direction for a segment
+# extractor -- which is why this is a separate rendering and not a change to
+# cmd_words. This is the OPPOSITE operation to cmd_words_deep
+# (lib/cmd-detect.sh:cmd_words_deep): that one EXTRACTS and APPENDS
+# substitution bodies so a verb hiding inside one is still seen; this one
+# DELETES them so a verb split by a vanishing one is still seen. Both are
+# wanted; neither subsumes the other.
+#
+# THE ALLOW-LIST IS THE POINT. An expansion form must be proven capable of
+# evaluating to EMPTY before it may be deleted, not merely opened with `${`
+# (see cmd_git_branch_create_segment's KNOWN RESIDUALS item 4: a pass that
+# deleted `${#x}` -- always a non-empty digit string -- manufactured a clean
+# boundary for text that can never execute, and was reverted). Deletable:
+#   ${name}  ${!name}  ${name:-}  ${name-}  ${name:+}  ${name+}  ${name:=}
+#   ${name=}  $(...)  `...`
+# Left verbatim: everything else, ${#name} foremost.
+#
+# NO BALANCED-BRACE WALK IS NEEDED, and that is not an oversight: every
+# deletable body above is brace-free by construction, so scanning to the next
+# `}` and testing the body against the grammar is provably sufficient. A
+# nested form (`${a:-${b}}`) fails the grammar test and is left alone -- a
+# safe MISS, never a false match: the two literal `{`/`}` bytes of each brace
+# pair stay in the rendering, so no two halves of a split verb can rejoin
+# through it. This is NOT the reverted pass's hazard (that pass deleted a
+# NEVER-empty form outright); a safe miss just fails to widen coverage.
+#
+# ORDER IS LOAD-BEARING: `${...}` is tested BEFORE the `$(...)` walk descends,
+# never after. Reversed, `${x:-$(echo hi)}` -- which can never be empty --
+# would have its inner substitution deleted first, leaving `${x:-}`, which
+# then matches the empty-default grammar and is deleted too. Two individually
+# correct passes composing into exactly the regression this allow-list exists
+# to prevent. THE MECHANISM: on a grammar-test FAILURE, the entire matched
+# span -- from the opening `$` through the first `}` found, inclusive -- is
+# copied out VERBATIM (or dropped, at depth >= 1) and `i` is advanced past it
+# in ONE step, exactly like the success path advances past a deletion. The
+# span's interior is never re-scanned character-by-character, so an embedded
+# $(...)/backtick inside a non-empty default is never independently reached
+# and deleted. (An earlier draft of this function emitted only the bare `$`
+# on grammar failure and let the loop re-scan the body normally -- exactly
+# the reversed-pass-order bug this comment warns against; caught before this
+# landed by running `${x:-$(echo hi)}` through it and observing `${x:-}`
+# come out, not the input unchanged.)
+#
+# Quote states mirror cmd_extract_substitutions exactly (0 unquoted, 1 single,
+# 2 double, 3 ANSI-C): a substitution inside single quotes is INERT and must
+# survive, or the rendering forges a verb the shell never builds. The
+# backtick-close and `)`-close conditions are gated to state 0 ONLY, never
+# state 2, for the same reason cmd_extract_substitutions gates them that way
+# (see that function's own s==2 comment): a `)` or backtick met while still
+# inside a double-quoted span nested in an outer $(...)/backtick body does
+# NOT close the outer construct in real bash, so closing early there would
+# reopen quote-tracking on already-consumed text and corrupt everything after
+# it. Sharing the close condition across both states unconditionally (an
+# earlier draft did exactly this) let `$(echo "a)b")` close after the FIRST
+# `)`, and let a backtick nested inside a double-quoted span inside an outer
+# backtick body close the OUTER span instead of opening its own -- both
+# caught by comparing this function's output against cmd_extract_substitutions
+# on the same input (see the differential pins in test-cmd-detect.sh) before
+# either draft shipped.
+cmd_words_vanished() {
+  printf '%s' "$1" | awk '
+    BEGIN { SQ = sprintf("%c", 39); DQ = "\""; BS = "\\"; BT = sprintf("%c", 96) }
+    { buf = buf $0 "\n" }
+    END {
+      n = length(buf); depth = 0; state[0] = 0; out = ""
+      for (i = 1; i <= n; i++) {
+        c = substr(buf, i, 1); d = depth; s = state[d]
+        if (s == 0 || s == 2) {
+          if (c == BS) {
+            if (d == 0) out = out c
+            i++
+            if (i <= n && d == 0) out = out substr(buf, i, 1)
+            continue
+          }
+          if (c == "$" && i < n && substr(buf, i+1, 1) == "{") {
+            j = index(substr(buf, i+2), "}")
+            if (j > 0) {
+              body = substr(buf, i+2, j-1)
+              if (body ~ /^!?[A-Za-z_][A-Za-z0-9_]*$/ || \
+                  body ~ /^[A-Za-z_][A-Za-z0-9_]*(:?[-+=])?$/) {
+                i = i + 1 + j
+                continue
+              }
+              if (d == 0) out = out substr(buf, i, j + 2)
+              i = i + 1 + j
+              continue
+            }
+            if (d == 0) out = out c
+            continue
+          }
+          if (c == "$" && i < n && substr(buf, i+1, 1) == "(") {
+            depth++; state[depth] = 0; kind[depth] = "P"; i++
+            continue
+          }
+          if (c == BT) {
+            if (s == 0 && d >= 1 && kind[d] == "B") depth--
+            else { depth++; state[depth] = 0; kind[depth] = "B" }
+            continue
+          }
+          if (c == ")" && s == 0 && d >= 1 && kind[d] == "P") { depth--; continue }
+        }
+        if (s == 0) {
+          if (c == "$" && i < n && (substr(buf, i+1, 1) == SQ || substr(buf, i+1, 1) == DQ)) {
+            if (substr(buf, i+1, 1) == SQ) state[d] = 3; else state[d] = 2
+            if (d == 0) out = out c substr(buf, i+1, 1)
+            i++
+          }
+          else if (c == SQ) { state[d] = 1; if (d == 0) out = out c }
+          else if (c == DQ) { state[d] = 2; if (d == 0) out = out c }
+          else { if (d == 0) out = out c }
+        }
+        else if (s == 1) { if (d == 0) out = out c; if (c == SQ) state[d] = 0 }
+        else if (s == 3) {
+          if (c == BS) {
+            if (d == 0) out = out c
+            i++
+            if (i <= n && d == 0) out = out substr(buf, i, 1)
+          }
+          else if (c == SQ) { state[d] = 0; if (d == 0) out = out c }
+          else { if (d == 0) out = out c }
+        }
+        else {
+          if (c == DQ) { state[d] = 0; if (d == 0) out = out c }
+          else { if (d == 0) out = out c }
+        }
+      }
+      # Unbalanced input swallowed the tail. Over-deletion is the direction
+      # that MANUFACTURES matches, so emit nothing rather than a truncated
+      # rendering.
+      if (depth >= 1) exit
+      sub(/\n$/, "", out)
+      printf "%s", out
+    }' | cmd_words
+}
+
 # cmd_bare_deep <command>  → cmd_bare(command), joined by NEWLINE with
 # cmd_bare(body) for every command-substitution body cmd_extract_substitutions
 # finds (recursively). Same shape as cmd_words_deep immediately above, but
